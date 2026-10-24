@@ -78,6 +78,8 @@ vi.mock('@/api/social', () => ({
   getE2eeKeyring: vi.fn().mockResolvedValue({ wrapped_keyring: null, public_key: null, version: 0 }),
   putE2eeKeyring: vi.fn(),
   relayE2eeEnvelope: vi.fn(),
+  sendMessageQueue: vi.fn().mockResolvedValue({ status: 'ok', enqueued: 1 }),
+  sendReadReceipt: vi.fn().mockResolvedValue({ status: 'ok' }),
   fetchE2eeEnvelopes: e2eeEnvelopeMock,
   fetchAlleE2eeEnvelopes: e2eeEnvelopeMock,
   getPublicProfiles: vi.fn().mockResolvedValue([]),
@@ -478,6 +480,7 @@ describe('Messenger (Allround Chat)', () => {
     identitaet.decryptionKeys = ['{"kty":"oct"}']
     identitaet.empfaengerSchluessel = 'mock-empfaenger-pub-key'
     vi.mocked(socialApi.relayE2eeEnvelope).mockResolvedValue({ id: 1 } as any)
+    vi.mocked(socialApi.sendMessageQueue).mockResolvedValue({ status: 'ok', enqueued: 1, client_uuid: 'test' })
 
     vi.mocked(socialApi.getFriends).mockResolvedValue([
       {
@@ -1220,9 +1223,13 @@ describe('Messenger (Allround Chat)', () => {
     fireEvent.click(sendBtn)
 
     await waitFor(() => {
-      expect(socialApi.relayE2eeEnvelope).toHaveBeenCalledWith(
+      expect(socialApi.sendMessageQueue).toHaveBeenCalledWith(
         expect.objectContaining({
-          blind_mailbox_id: 'test-blind-mailbox',
+          chat_type: 'direct',
+          chat_id: '101',
+          envelopes: expect.arrayContaining([
+            expect.objectContaining({ encrypted_payload: expect.any(String), client_uuid: expect.stringMatching(/^ctrl:/) }),
+          ]),
         })
       )
     })
@@ -1232,9 +1239,13 @@ describe('Messenger (Allround Chat)', () => {
     fireEvent.click(screen.getByText(i18n.t('messenger.deleteForAllShort')))
 
     await waitFor(() => {
-      expect(socialApi.relayE2eeEnvelope).toHaveBeenCalledWith(
+      expect(socialApi.sendMessageQueue).toHaveBeenCalledWith(
         expect.objectContaining({
-          blind_mailbox_id: 'test-blind-mailbox',
+          chat_type: 'direct',
+          chat_id: '101',
+          envelopes: expect.arrayContaining([
+            expect.objectContaining({ encrypted_payload: expect.any(String), client_uuid: expect.stringMatching(/^ctrl:/) }),
+          ]),
         })
       )
     })
@@ -2187,6 +2198,7 @@ describe('Messenger (Allround Chat)', () => {
     // reichte vorher und war der Grund, warum im Tauri-Fenster unter Windows
     // Nachrichten stillschweigend liegenblieben, obwohl das Netz stand.
     vi.mocked(socialApi.relayE2eeEnvelope).mockRejectedValue(new TypeError('Failed to fetch'))
+    vi.mocked(socialApi.sendMessageQueue).mockRejectedValue(new TypeError('Failed to fetch'))
 
     vi.mocked(socialApi.getFriends).mockResolvedValue([
       {
@@ -3286,8 +3298,13 @@ describe('Messenger (Allround Chat)', () => {
       fireEvent.click(await screen.findByText(i18n.t('messenger.retention.h24')))
 
       expect(await screen.findByText(vonMirGestellt('h24'))).toBeInTheDocument()
-      expect(socialApi.relayE2eeEnvelope).toHaveBeenCalledWith(
-        expect.objectContaining({ is_control: true, control_type: 'retention' }),
+      expect(socialApi.sendMessageQueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_type: 'direct', chat_id: '101',
+          envelopes: expect.arrayContaining([
+            expect.objectContaining({ client_uuid: expect.stringMatching(/^ctrl:/), encrypted_payload: expect.any(String) }),
+          ]),
+        }),
       )
       expect(verfallStand(DIREKT).sekunden).toBe(86_400)
     })

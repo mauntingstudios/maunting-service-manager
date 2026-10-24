@@ -543,7 +543,21 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
       expect(res.failed).toBe(0)
       expect(res.remaining).toBe(0)
       expect(getOutbox()).toHaveLength(0)
-      expect(client.api).toHaveBeenCalledWith('/social/e2ee/relay', expect.anything())
+      expect(client.api).toHaveBeenCalledWith(
+        expect.stringMatching(/\/social\/(messages\/send|e2ee\/relay)/),
+        expect.anything()
+      )
+    })
+
+    it('behält beim Queue-Replay die eindeutige lokale ID statt sie durch 1 zu ersetzen', async () => {
+      lokalesNachrichtenUpdate.mockClear()
+      enqueueMessageMutation({
+        blind_mailbox_id: 'queue-dm', client_uuid: 'queue-u#devA', ciphertext_envelope: 'test-cipher',
+        chat_type: 'direct', chat_id: '2', target_device_id: 'test-device',
+      })
+      vi.mocked(client.api).mockResolvedValueOnce({ status: 'ok', enqueued: 1 })
+      await replayOutbox()
+      expect(lokalesNachrichtenUpdate).toHaveBeenCalledWith('queue-dm', 'queue-u', { status: 'sent', viaInbox: true })
     })
 
     it('replays offline message mutations and dispatches msm:message-confirmed', async () => {

@@ -11,7 +11,7 @@
  * nicht zum Zustellen.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { getFriends, getGroups, type ChatGroupItem } from '@/api/social'
@@ -19,6 +19,7 @@ import { meldeChat } from '@/services/benachrichtigung/chatMeldung'
 import { IDENTITY_LOADING, resolveIdentity, type E2eeIdentity } from '@/services/e2eeIdentity'
 import { istGesperrt, useMessengerSperre } from '@/services/messengerSperre'
 import { usePostfachWache, type PostfachFreund } from '@/hooks/usePostfachWache'
+import { useMessengerSync } from '@/hooks/useMessengerSync'
 import { useAuthStore } from '@/stores/authStore'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 
@@ -75,6 +76,14 @@ export function MessengerHintergrund() {
       window.removeEventListener('online', laden)
     }
   }, [userId, gesperrt])
+
+  const partnerActivityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Quittungen betreffen auch Chats, die gerade nicht geöffnet sind.
+  useMessengerSync({
+    blindMailboxId: '', leseMailboxen: [], currentUserId: userId ?? 0,
+    geraeteMeldungen: null, loadMessages: async () => {}, setGroups: () => {},
+    setActiveGroup: () => {}, setPartnerActivity: () => {}, partnerActivityTimeoutRef,
+  })
 
   usePostfachWache({
     eigeneId: userId ?? 0,

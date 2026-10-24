@@ -24,7 +24,20 @@ vi.mock('@/api/legal', () => ({
     Promise.resolve({ imprint_enabled: false, imprint_url: '' }),
 }))
 
+vi.mock('@/browser/MessengerHintergrund', () => ({
+  MessengerHintergrund: () => <span data-testid="queue-background" />,
+}))
+
 describe('Shell', () => {
+  it('hält das Gerätepostfach auch außerhalb des Messengers offen', () => {
+    render(
+      <MemoryRouter initialEntries={['/servers']}>
+        <Routes><Route path="/servers" element={<Shell />} /></Routes>
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('queue-background')).toBeInTheDocument()
+  })
+
   const renderShell = () => render(
     <MemoryRouter>
       <Routes>

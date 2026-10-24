@@ -166,6 +166,10 @@ function zieleFuer(alt: string) {
     : { senden: alt, lesen: [alt], nachweis: null }
 }
 
+vi.mock('@/services/gruppen/gruppenVerteilung', () => ({
+  frischeMitglieder: vi.fn(async (k: { mitglieder: number[] }) => k.mitglieder),
+}))
+
 vi.mock('@/services/ratchetSitzung', () => ({
   baueZustellungen: vi.fn(async (_k: any, klartext: string, basisUuid: string) => [
     {
@@ -1101,6 +1105,8 @@ describe('useKonversation', () => {
     })
 
     it('schickt die Gruppenquittung über den Gruppenschlüssel', async () => {
+      geraete.push({ device_id: 'fremd-a', public_key: 'pub-a' })
+      eigeneGeraete.push({ device_id: 'eigen-a', public_key: 'eigen-pub' })
       const { result } = await baueHook({ art: 'gruppe', groupId: 7, mitglieder: [ICH, DU] })
       const auftraege = await result.current.baueSteuerversand('{"type":"read_receipt"}', 'ctrl-2', 'read_receipt')
 

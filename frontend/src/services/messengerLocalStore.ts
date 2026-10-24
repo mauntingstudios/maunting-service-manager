@@ -57,6 +57,8 @@ export interface LocalStoredMessage {
   text: string
   createdAt: string
   isSelf: boolean
+  /** Queue-Zeile: die lokale ID gehört nicht zum alten Umschlag-ID-Raum. */
+  viaInbox?: boolean
   isDelivered?: boolean
   isRead?: boolean
   isEdited?: boolean
@@ -555,48 +557,21 @@ function gewinnt(
   return !isOptimisticMessage(neu) || isOptimisticMessage(alt)
 }
 
-export function isOptimisticMessage(m: { id?: number; status?: string }): boolean {
-  // `failed` gehört dazu: der Server hat die Nachricht nie bestätigt, sie hat
-  // also keine echte Kennung und keinen Platz zwischen den bestätigten Zeilen.
+export function isOptimisticMessage(m: { id?: number; status?: string; viaInbox?: boolean }): boolean {
+  if (m.viaInbox && ['sent', 'delivered', 'read'].includes(m.status ?? '')) return false
   return !m.id || m.id >= 1e11 || m.status === 'queued' || m.status === 'failed'
 }
 
-/**
- * Sorts messages strictly and monotonically:
- * 1. Server-confirmed messages always come before unconfirmed/optimistic messages.
- * 2. Confirmed messages are ordered primarily by monotonic server ID and normalized timestamps.
- * 3. Optimistic messages are ordered by their local creation timestamp at the end of the timeline.
- */
+/** Zeit entscheidet über die Reihenfolge; Transport-IDs sind nicht vergleichbar. */
 export function sortMessagesChronologically<T extends { id: number; createdAt: string; clientUuid?: string; status?: string }>(
   msgs: T[]
 ): T[] {
   return [...msgs].sort((a, b) => {
-    const isAOpt = isOptimisticMessage(a)
-    const isBOpt = isOptimisticMessage(b)
-
-    // Confirmed messages before optimistic messages
-    if (isAOpt !== isBOpt) {
-      return isAOpt ? 1 : -1
-    }
-
-    if (!isAOpt) {
-      const tA = parseMessageTimestamp(a.createdAt)
-      const tB = parseMessageTimestamp(b.createdAt)
-      // If timestamps differ by more than 60 seconds, use timestamp
-      if (Math.abs(tA - tB) > 60_000) {
-        return tA - tB
-      }
-      // Within the same minute / conversational flow, server monotonic ID is the authoritative order
-      if (a.id && b.id && a.id !== b.id) {
-        return a.id - b.id
-      }
-      return tA - tB
-    }
-
-    // Both optimistic: sort by local timestamp
-    const tA = parseMessageTimestamp(a.createdAt) || (a.id || 0)
-    const tB = parseMessageTimestamp(b.createdAt) || (b.id || 0)
-    return tA - tB
+    const zeit = parseMessageTimestamp(a.createdAt) - parseMessageTimestamp(b.createdAt)
+    if (zeit !== 0) return zeit
+    const uuidA = a.clientUuid ?? ''
+    const uuidB = b.clientUuid ?? ''
+    return uuidA < uuidB ? -1 : uuidA > uuidB ? 1 : 0
   })
 }
 

@@ -1001,6 +1001,8 @@ export async function recordActivityTime(category: string, seconds: number): Pro
 // ── E2EE Queue (KISS-Zustellung) ──────────────────────────────────────────────
 
 export interface QueueEnvelope {
+  /** Umschlagkennung: hält Sitzungsaufbauten und Steuerung von Nachrichten getrennt. */
+  client_uuid?: string
   target_device_id?: number
   device_id?: string
   encrypted_payload: string

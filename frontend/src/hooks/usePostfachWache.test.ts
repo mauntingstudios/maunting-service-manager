@@ -133,6 +133,21 @@ describe('usePostfachWache', () => {
     })
   })
 
+  it('holt new_message während eines laufenden Abrufs ohne Intervall-Wartezeit nach', async () => {
+    vi.useFakeTimers()
+    let fertig!: (wert: { verarbeitet: number; quittiert: number }) => void
+    postfach.verarbeitePostfach.mockReturnValueOnce(new Promise((resolve) => { fertig = resolve }))
+    const opts = optionen()
+    renderHook(() => usePostfachWache(opts))
+    await durchatmen()
+    window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: { type: 'new_message' } }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+    expect(postfach.verarbeitePostfach).toHaveBeenCalledTimes(1)
+    await act(async () => { fertig({ verarbeitet: 0, quittiert: 0 }) })
+    await durchatmen()
+    expect(postfach.verarbeitePostfach).toHaveBeenCalledTimes(2)
+  })
+
   it('nimmt das nächste Sync-Ereignis nicht mehr an, wenn die App zu ist', async () => {
     const { unmount } = renderHook(() => usePostfachWache(optionen()))
     await durchatmen()

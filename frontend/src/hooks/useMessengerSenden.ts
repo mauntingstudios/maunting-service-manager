@@ -863,7 +863,9 @@ export function useMessengerSenden(optionen: Optionen) {
 
       if (niedrigsteId > 0) {
         if (!weitergeleitet) meldeInhaltsErrungenschaften(auftrag, rawText)
-        const serverId = niedrigsteId
+        // Die Queue bestätigt ohne Nachrichten-ID. Die eindeutige lokale
+        // Kennung bleibt bestehen; eine feste 1 überschriebe die vorige Zeile.
+        const serverId = ueberInbox ? optimisticMessage.id : niedrigsteId
         // Ausdrückliche Kennungen gelten vor der Obergrenze — der Partner
         // nennt seit 23.10.2026 die Nachricht selbst.
         const bestaetigt = partnerKennungen(targetBlindMailboxId)

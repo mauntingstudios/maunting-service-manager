@@ -18,7 +18,9 @@ import { useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 
 import type { ChatGroupItem } from '@/api/social'
-import { merkePartnerKennungen } from '@/services/quittungsstand'
+import { merkePartnerKennungen, partnerKennungen } from '@/services/quittungsstand'
+import { deriveBlindMailboxId } from '@/services/e2eeCrypto'
+import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { updateMessageInLocalStore } from '@/services/messengerLocalStore'
 import { useCallStore } from '@/stores/useCallStore'
 
@@ -60,6 +62,8 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
   } = optionen
 
   useEffect(() => {
+    // Quittungen bleiben in Empfangsreihenfolge, auch während IndexedDB schreibt.
+    let quittungen = Promise.resolve()
     const handleSync = (e: Event) => {
       const ce = e as CustomEvent<any>
       const detail = ce.detail
@@ -103,28 +107,29 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
       } else if (detail?.type === 'new_message') {
         void loadMessages(false)
       } else if (detail?.type === 'delivery_receipt' || detail?.type === 'read_receipt') {
-        const uuids = Array.isArray(detail.client_uuids)
-          ? (detail.client_uuids as string[])
-          : detail.client_uuid
-            ? [String(detail.client_uuid)]
-            : []
+        if (detail.chat_type && detail.chat_type !== 'direct') return
+        const peerId = Number(detail.reader_id ?? detail.recipient_id ?? detail.chat_id)
+        if (!Number.isSafeInteger(peerId) || peerId <= 0 || peerId === currentUserId) return
+        const roh = Array.isArray(detail.client_uuids) ? detail.client_uuids : [detail.client_uuid]
+        const uuids = [...new Set<string>(roh
+          .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+          .map((id: string) => id.split('#')[0]))]
         const isRead = detail.type === 'read_receipt'
-        const targetMid = blindMailboxId || (detail.chat_id ? String(detail.chat_id) : '')
-        if (uuids.length > 0 && targetMid) {
-          if (isRead) {
-            merkePartnerKennungen(targetMid, 'gelesen', uuids)
-            merkePartnerKennungen(targetMid, 'zugestellt', uuids)
-            for (const uuid of uuids) {
-              void updateMessageInLocalStore(targetMid, uuid, { status: 'read', isRead: true, isDelivered: true })
-            }
-          } else {
-            merkePartnerKennungen(targetMid, 'zugestellt', uuids)
-            for (const uuid of uuids) {
-              void updateMessageInLocalStore(targetMid, uuid, { status: 'delivered', isDelivered: true })
-            }
+        quittungen = quittungen.then(async () => {
+          const targetMid = await deriveBlindMailboxId(currentUserId, peerId)
+          if (angemeldetesKonto() !== currentUserId) return
+          if (isRead) merkePartnerKennungen(targetMid, 'gelesen', uuids)
+          merkePartnerKennungen(targetMid, 'zugestellt', uuids)
+          for (const uuid of uuids) {
+            const gelesen = partnerKennungen(targetMid).gelesen.has(uuid)
+            await updateMessageInLocalStore(targetMid, uuid, gelesen
+              ? { status: 'read', isRead: true, isDelivered: true }
+              : { status: 'delivered', isDelivered: true })
           }
-          void loadMessages(false)
-        }
+          if (targetMid === blindMailboxId && uuids.length > 0) await loadMessages(false)
+        }).catch((fehler: unknown) => {
+          console.warn('[Messenger] Quittung konnte nicht übernommen werden', fehler instanceof Error ? fehler.name : 'Error')
+        })
       } else if (detail?.type === 'e2ee_blind_message') {
         const isCurrentActive =
           detail.blind_mailbox_id === blindMailboxId ||

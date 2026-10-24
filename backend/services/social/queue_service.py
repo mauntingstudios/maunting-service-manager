@@ -116,7 +116,7 @@ class E2eeQueueService:
                 sender_device_id=sender_device_id,
                 chat_type=chat_type,
                 chat_id=str(chat_id),
-                client_uuid=client_uuid,
+                client_uuid=str(env.get("client_uuid") or client_uuid),
                 encrypted_payload=str(encrypted_payload),
                 created_at=datetime.now(timezone.utc),
             )
@@ -211,26 +211,33 @@ class E2eeQueueService:
 
         now_iso = datetime.now(timezone.utc).isoformat()
         deleted_count = 0
+        receipts = []
 
         for item in items:
-            # Wenn die Nachricht von einem anderen Benutzer kam: Zustellquittung feuern (2 Häkchen grau)
-            if item.sender_user_id != device.user_id:
-                SyncEventService.publish(
+            # Gruppen, eigene Kopien und Steuerpakete erzeugen keine Nachrichtenquittung.
+            is_control = item.client_uuid.startswith("ctrl:") or "#i" in item.client_uuid
+            if item.chat_type == "direct" and item.sender_user_id != device.user_id and not is_control:
+                logical_uuid = item.client_uuid.split("#", 1)[0]
+                receipts.append((
                     {
                         "type": "delivery_receipt",
-                        "client_uuid": item.client_uuid,
-                        "client_uuids": [item.client_uuid],
-                        "chat_id": item.chat_id,
+                        "client_uuid": logical_uuid,
+                        "client_uuids": [logical_uuid],
+                        "chat_type": "direct",
+                        "chat_id": str(device.user_id),
                         "recipient_id": device.user_id,
                         "timestamp": now_iso,
                     },
-                    user_id=item.sender_user_id,
-                )
+                    item.sender_user_id,
+                ))
 
             db.delete(item)
             deleted_count += 1
 
         db.commit()
+        # Erst die Löschung festschreiben, dann die Zustellung bekanntgeben.
+        for event, sender_id in receipts:
+            SyncEventService.publish(event, user_id=sender_id)
         return deleted_count
 
     @classmethod
@@ -257,37 +264,14 @@ class E2eeQueueService:
             SyncEventService.publish(
                 {
                     "type": "read_receipt",
-                    "client_uuids": client_uuids,
+                    "client_uuids": list(dict.fromkeys(uid.split("#", 1)[0] for uid in client_uuids)),
+                    "chat_type": "direct",
                     "chat_id": str(reader.id),
                     "reader_id": reader.id,
                     "timestamp": now_iso,
                 },
                 user_id=partner_id,
             )
-        elif chat_type == "group":
-            try:
-                group_id = int(chat_id)
-            except ValueError:
-                return
-
-            # Alle Mitglieder der Gruppe über den Lesestatus informieren
-            members = (
-                db.query(ChatGroupMember.user_id)
-                .filter(ChatGroupMember.group_id == group_id)
-                .all()
-            )
-            for (mid,) in members:
-                if mid != reader.id:
-                    SyncEventService.publish(
-                        {
-                            "type": "read_receipt",
-                            "client_uuids": client_uuids,
-                            "chat_id": str(group_id),
-                            "reader_id": reader.id,
-                            "timestamp": now_iso,
-                        },
-                        user_id=mid,
-                    )
 
     @classmethod
     def cleanup_expired_messages(cls, db: Session, max_age_days: int = 30) -> int:

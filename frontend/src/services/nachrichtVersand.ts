@@ -317,6 +317,7 @@ export async function stelleZu(
         target_device_id: a.target_device_db_id,
         device_id: a.target_device_id,
         encrypted_payload: a.ciphertext_envelope,
+        client_uuid: a.is_control ? `ctrl:${a.client_uuid}` : a.client_uuid,
       }))
 
       await sendMessageQueue({

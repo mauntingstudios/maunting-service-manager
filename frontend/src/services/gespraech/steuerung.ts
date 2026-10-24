@@ -12,7 +12,7 @@
  * Ein Weg für beide: der Hook reicht hinein, der Postfachlauf ebenso.
  */
 
-import { relayE2eeEnvelope } from '@/api/social'
+import { sendMessageQueue } from '@/api/social'
 import {
   deriveUserDeviceMailboxId,
   encryptE2eeHybrid,
@@ -24,6 +24,7 @@ import {
   verschluesseleFuerGruppe,
   type GruppenKontext,
 } from '@/services/gruppenSchluessel'
+import { frischeMitglieder } from '@/services/gruppen/gruppenVerteilung'
 import type { DrKontext } from '@/services/ratchetSitzung'
 import { signiereNutzlast } from '@/services/nutzlastSignatur'
 import type { Versandauftrag } from '@/hooks/useKonversation'
@@ -85,6 +86,10 @@ export async function baueSteuerVersand(
           client_uuid: `${clientUuid}#own${i}`,
           is_control: true,
           control_type: typ,
+          chat_type: 'direct' as const,
+          chat_id: String(drKontext?.peerId),
+          target_device_id: geraet.device_id,
+          target_device_db_id: geraet.id,
         })),
     )
     return auftraege
@@ -92,16 +97,25 @@ export async function baueSteuerVersand(
 
   if (gruppenKontext) {
     const umschlag = await verschluesseleFuerGruppe(gruppenKontext, payload)
-    return [
-      {
+    const mitglieder = await frischeMitglieder(gruppenKontext)
+    const meins = await eigenesGeraet()
+    const listen = await Promise.all(mitglieder.map(async (konto) => ({
+      konto,
+      geraete: await verlangeGeraeteVon(konto, { frisch: true }),
+    })))
+    return listen.flatMap(({ konto, geraete }) => geraete
+      .filter((geraet) => konto !== eigeneId || geraet.device_id !== meins.kennung)
+      .map((geraet) => ({
         blind_mailbox_id: mailbox,
         ciphertext_envelope: umschlag,
         client_uuid: clientUuid,
         is_control: true,
         control_type: typ,
-      },
-      ...(await eigeneAuftraege()),
-    ]
+        chat_type: 'group' as const,
+        chat_id: String(gruppenKontext.groupId),
+        target_device_id: geraet.device_id,
+        target_device_db_id: geraet.id,
+      })))
   }
 
   if (!drKontext) return []
@@ -126,6 +140,10 @@ export async function baueSteuerVersand(
       client_uuid: `${clientUuid}#${i}`,
       is_control: true,
       control_type: typ,
+      chat_type: 'direct' as const,
+      chat_id: String(drKontext.peerId),
+      target_device_id: geraet.device_id,
+      target_device_db_id: geraet.id,
     })),
   )
   return [...auftraege, ...(await eigeneAuftraege())]
@@ -159,6 +177,18 @@ export async function sendeSteuerpaket(
     String(payloadObj.type || 'control'),
   )
   if (auftraege.length === 0) return null
-  await Promise.all(auftraege.map((auftrag) => relayE2eeEnvelope(auftrag)))
+  const meins = await eigenesGeraet()
+  await sendMessageQueue({
+    client_uuid: clientUuid,
+    chat_type: kontext.gruppenKontext ? 'group' : 'direct',
+    chat_id: String(kontext.gruppenKontext?.groupId ?? kontext.drKontext?.peerId),
+    device_id: meins.kennung,
+    envelopes: auftraege.map((auftrag) => ({
+      target_device_id: auftrag.target_device_db_id,
+      device_id: auftrag.target_device_id,
+      encrypted_payload: auftrag.ciphertext_envelope,
+      client_uuid: `ctrl:${auftrag.client_uuid}`,
+    })),
+  })
   return clientUuid
 }

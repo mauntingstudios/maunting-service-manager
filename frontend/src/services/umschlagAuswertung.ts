@@ -456,6 +456,7 @@ export async function werteUmschlaegeAus(
 
         decryptedList.push({
           id: env.id,
+          ...(env.annahme_seq !== undefined ? { viaInbox: true } : {}),
           clientUuid,
           senderId,
           senderName,
@@ -569,6 +570,7 @@ export async function werteUmschlaegeAus(
     }
     decryptedList.push({
       id: env.id,
+      ...(env.annahme_seq !== undefined ? { viaInbox: true } : {}),
       clientUuid,
       senderId,
       text,

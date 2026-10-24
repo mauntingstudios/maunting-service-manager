@@ -92,6 +92,7 @@ export function usePostfachWache({
 
     let aktiv = true
     let laeuft = false
+    let nachholen = false
     let geplant: ReturnType<typeof setTimeout> | null = null
 
     const gespraeche = async (): Promise<PostfachGespraech[]> => {
@@ -134,8 +135,13 @@ export function usePostfachWache({
     }
 
     const lauf = async () => {
-      if (!aktiv || laeuft) return
+      if (!aktiv) return
+      if (laeuft) {
+        nachholen = true
+        return
+      }
       laeuft = true
+      nachholen = false
       try {
         const liste = await gespraeche()
         if (!aktiv) return
@@ -186,6 +192,7 @@ export function usePostfachWache({
         // erneut. Ein Fehler hier darf den Chat nicht aufhalten.
       } finally {
         laeuft = false
+        if (aktiv && nachholen) void lauf()
       }
     }
 

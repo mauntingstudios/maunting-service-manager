@@ -538,6 +538,23 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     expect(sorted.map((m) => m.id)).toEqual([10, 11, 1773680000000])
   })
 
+  it('ordnet Queue-, Bestands- und wartende Zeilen ausschließlich nach UTC-Zeit und UUID', () => {
+    const zeilen = [
+      { id: -12, createdAt: '2026-10-24T10:00:02Z', clientUuid: 'c', status: 'sent' },
+      { id: 1, createdAt: '2026-10-24T12:00:01+02:00', clientUuid: 'b', status: 'sent' },
+      { id: 900, createdAt: '2026-10-24 10:00:00', clientUuid: 'a', status: 'sent' },
+      { id: 999999999999, createdAt: '2026-10-24T09:59:59Z', clientUuid: 'queued', status: 'queued' },
+    ]
+    expect(sortMessagesChronologically(zeilen).map((m) => m.clientUuid)).toEqual(['queued', 'a', 'b', 'c'])
+    const gleicheZeit = zeilen.map((m) => ({ ...m, createdAt: '2026-10-24T10:00:00Z' }))
+    expect(sortMessagesChronologically(gleicheZeit).map((m) => m.clientUuid)).toEqual(['a', 'b', 'c', 'queued'])
+    expect(zeilen[0].clientUuid).toBe('c')
+  })
+
+  it('stuft eine bestätigte Queue-Zeile mit erhaltener lokaler ID nicht als wartend ein', () => {
+    expect(isOptimisticMessage({ id: 999999999999, status: 'sent', viaInbox: true })).toBe(false)
+  })
+
   it('verhindert das Überschreiben von lastSyncedEnvelopeId durch temporäre Date.now() IDs', async () => {
     const mid = 'box-opt-id-guard'
     await saveLocalMessages(mid, [

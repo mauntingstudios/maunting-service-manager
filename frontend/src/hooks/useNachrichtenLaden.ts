@@ -310,6 +310,21 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
         }).catch(() => {})
       }
 
+      // Queue-Zeilen wurden oft bereits im Hintergrund abgelegt und quittiert.
+      // Beim Öffnen kommen dann keine neuen Umschläge und keine maxIncomingId.
+      const queueGelesenIds = Array.from(new Set([...processedList, ...lokalerVerlauf]
+        .filter((m) => !m.isSelf && m.viaInbox && m.clientUuid)
+        .map((m) => (m.clientUuid as string).split('#')[0])))
+        .filter((id) => !frueherGelesen.includes(id))
+      if (!istGruppe && activeContact && !isTargetBlocked && readReceiptsEnabled && isDocVisible) {
+        for (let i = 0; i < queueGelesenIds.length; i += 100) {
+          const ids = queueGelesenIds.slice(i, i + 100)
+          await sendReadReceipt({ chat_type: 'direct', chat_id: String(activeContact.userId), client_uuids: ids })
+          merkeQuittungKennungen(currentMid, 'gelesen', ids)
+          merkeQuittungKennungen(currentMid, 'zugestellt', ids)
+        }
+      }
+
       // Send read receipt if there are new incoming unacknowledged messages and document is visible
       const needsRead =
         !istGruppe &&
@@ -331,19 +346,6 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
         merkeQuittungKennungen(currentMid, 'gelesen', gelesenIds)
         // Gelesen schließt zugestellt ein; die Zustellliste zieht mit.
         merkeQuittungKennungen(currentMid, 'zugestellt', gelesenIds)
-
-        // Lesequittung über den neuen FIFO-Queue-Dienst an den Absender melden
-        if (gelesenIds.length > 0) {
-          const chat_type = istGruppe ? 'group' : 'direct'
-          const chat_id = istGruppe ? String(activeGroup?.id) : String(activeContact?.userId)
-          if (chat_id) {
-            void sendReadReceipt({
-              chat_type,
-              chat_id,
-              client_uuids: gelesenIds,
-            }).catch(() => {})
-          }
-        }
 
         const dispatchReadReceipt = () => {
           sendE2eeControlMessage({

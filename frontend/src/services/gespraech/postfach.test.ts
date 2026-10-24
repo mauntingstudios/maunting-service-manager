@@ -236,6 +236,24 @@ describe('verarbeitePostfach', () => {
     ])
   })
 
+  it('meldet eine Basis-UUID auch bei zeitversetzten Geräte-Suffixen nur einmal', async () => {
+    apiSocial.fetchPendingQueue.mockResolvedValue({ messages: [eintrag(2, 'sv-e2ee-dr-v1:2:rumpf')] })
+    uebernahme.uebernimmLesungen.mockResolvedValue({
+      processedList: [
+        { id: -2, clientUuid: 'logical#devB', senderId: 2, isSelf: false },
+        { id: -3, clientUuid: 'fresh#devA', senderId: 2, isSelf: false },
+        { id: -4, clientUuid: 'fresh#devB', senderId: 2, isSelf: false },
+      ],
+      lokalerVerlauf: [{ id: -1, clientUuid: 'logical#devA', senderId: 2, isSelf: false }],
+      combined: [], verlaufsArt: 'direkt', mailbox: 'm-dm', maxIncomingId: 2, unlesbar: 0,
+    })
+    const melden = vi.fn()
+    await verarbeitePostfach({ ...lauf, beiNeuerNachricht: melden })
+    expect(melden.mock.calls[0][1]).toEqual([
+      expect.objectContaining({ clientUuid: 'fresh' }),
+    ])
+  })
+
   it('schweigt und quittiert nicht bei einem blockierten Kontakt', async () => {
     apiSocial.fetchPendingQueue.mockResolvedValue({
       messages: [eintrag(1, 'sv-e2ee-dr-v1:2:rumpf')]

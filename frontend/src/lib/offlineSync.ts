@@ -473,30 +473,62 @@ export async function replayOutbox(): Promise<{ processed: number; failed: numbe
           }
         } else if (mutation.entity === 'message') {
           if (mutation.action === 'relay' || mutation.action === 'create') {
-            if (mutation.payload?.chat_type && mutation.payload?.chat_id) {
-              const baseUuid = String(mutation.payload.client_uuid || mutation.id).split('#')[0]
-              await api('/social/messages/send', {
-                method: 'POST',
-                body: JSON.stringify({
-                  client_uuid: baseUuid,
-                  chat_type: mutation.payload.chat_type,
-                  chat_id: mutation.payload.chat_id,
-                  envelopes: [
+            const chatType = mutation.payload?.chat_type || 'direct'
+            const chatId = String(
+              mutation.payload?.chat_id ||
+                mutation.payload?.recipient_id ||
+                mutation.payload?.blind_mailbox_id ||
+                '',
+            )
+            const baseUuid = String(mutation.payload?.client_uuid || mutation.id).split('#')[0]
+            const envelopes =
+              Array.isArray(mutation.payload?.envelopes) && mutation.payload.envelopes.length > 0
+                ? mutation.payload.envelopes
+                : [
                     {
-                      target_device_id: mutation.payload.target_device_db_id,
-                      device_id: mutation.payload.target_device_id,
-                      encrypted_payload: mutation.payload.ciphertext_envelope,
+                      target_device_id: mutation.payload?.target_device_db_id,
+                      device_id: mutation.payload?.target_device_id,
+                      encrypted_payload: mutation.payload?.ciphertext_envelope || '',
+                      client_uuid: mutation.payload?.is_control
+                        ? `ctrl:${mutation.payload.client_uuid}`
+                        : mutation.payload?.client_uuid || baseUuid,
                     },
-                  ],
-                }),
-              })
-              if (mutation.payload?.blind_mailbox_id) {
-                await updateMessageInLocalStore(
-                  mutation.payload.blind_mailbox_id,
-                  logischeNachrichtUuid(mutation.payload?.client_uuid || mutation.id),
-                  { id: 1, status: 'sent' },
-                ).catch(() => {})
+                  ]
+
+            const res = await api<any>('/social/messages/send', {
+              method: 'POST',
+              body: JSON.stringify({
+                client_uuid: baseUuid,
+                chat_type: chatType,
+                chat_id: chatId,
+                envelopes,
+              }),
+            })
+            const envelopeId = res?.queue_ids?.[0] || res?.id
+            if (mutation.payload?.blind_mailbox_id) {
+              const updates: Record<string, any> = { status: 'sent' }
+              if (res?.id) {
+                updates.id = res.id
+              } else {
+                updates.viaInbox = true
               }
+              await updateMessageInLocalStore(
+                mutation.payload.blind_mailbox_id,
+                logischeNachrichtUuid(mutation.payload?.client_uuid || mutation.id),
+                updates,
+              ).catch(() => {})
+            }
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent('msm:message-confirmed', {
+                  detail: {
+                    client_uuid: mutation.payload?.client_uuid || mutation.id,
+                    envelope_id: envelopeId || 1,
+                    blind_mailbox_id:
+                      res?.blind_mailbox_id || mutation.payload?.blind_mailbox_id,
+                  },
+                }),
+              )
             }
           }
         }

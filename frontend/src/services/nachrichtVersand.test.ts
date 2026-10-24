@@ -360,6 +360,19 @@ describe('stelleZu über die FIFO-Queue', () => {
     expect(ergebnis).toEqual({ niedrigsteId: 1, verbindungsfehler: false, ueberInbox: true })
   })
 
+  it('hält Steuer- und Nachrichtenkennungen in einem Queue-Stapel getrennt', async () => {
+    await stelleZu([
+      auftrag({ client_uuid: 'u-1#iA', is_control: true, control_type: 'dr-init' }),
+      auftrag({ client_uuid: 'u-1#A' }),
+    ])
+    expect(queueVersand).toHaveBeenCalledWith(expect.objectContaining({
+      envelopes: [
+        expect.objectContaining({ client_uuid: 'ctrl:u-1#iA' }),
+        expect.objectContaining({ client_uuid: 'u-1#A' }),
+      ],
+    }))
+  })
+
   it('reiht bei Netzwerkfehlern in die Offline-Queue ein', async () => {
     queueVersand.mockRejectedValue(new Error('offline'))
     const ergebnis = await stelleZu([auftrag({ client_uuid: 'u-1#A' })])

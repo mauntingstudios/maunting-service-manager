@@ -31,6 +31,7 @@ class MessageEnvelopeItem(BaseModel):
     target_device_id: int | None = None
     device_id: str | None = None
     encrypted_payload: str
+    client_uuid: str | None = None
 
 
 class SendMessageRequest(BaseModel):
@@ -97,6 +98,7 @@ def send_message(
             "target_device_id": e.target_device_id,
             "device_id": e.device_id,
             "encrypted_payload": e.encrypted_payload,
+            "client_uuid": e.client_uuid,
         }
         for e in req.envelopes
     ]

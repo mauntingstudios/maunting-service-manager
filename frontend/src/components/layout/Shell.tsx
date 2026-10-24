@@ -11,6 +11,7 @@ import { CrossDeviceCallBanner } from '@/components/calling/CrossDeviceCallBanne
 import { api } from '@/api/client'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
+import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
 
 export function Shell() {
   useMessengerSperreBereitschaft()
@@ -141,6 +142,7 @@ export function Shell() {
 
       {/* Push- & Pop-up-Benachrichtigungen bei Server-Vorfällen & Kalender-Erinnerungen */}
       <ServerIncidentNotifier />
+      {socialEnabled && !isChatPage && <MessengerHintergrund />}
 
       {/* Aktive Pop-ups / Ankündigungen des Panels */}
       <PanelPopupModal />

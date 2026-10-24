@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const relay = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/social', () => ({
-  relayE2eeEnvelope: relay,
+  sendMessageQueue: relay,
 }))
 
 vi.mock('./e2eeCrypto', () => ({
@@ -64,6 +64,10 @@ vi.mock('./gruppenSchluessel', () => ({
   dmZiele: async () => ({ senden: 'dm-ziel', lesen: [] }),
   verschluesseleFuerGruppe: async () => 'sv-gruppe-v1:schluessel.rund',
   umgezogeneMailbox: () => null,
+}))
+
+vi.mock('./gruppen/gruppenVerteilung', () => ({
+  frischeMitglieder: async (kontext: { mitglieder: number[] }) => kontext.mitglieder,
 }))
 
 import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
@@ -130,7 +134,7 @@ beforeEach(() => {
   geraete.set(PARTNER, [
     { device_id: 'geraet-beta', public_key: 'pub-beta', label: 'Beta' },
   ])
-  relay.mockImplementation(async () => ({ id: 1 }))
+  relay.mockImplementation(async () => ({ status: 'ok', enqueued: 1 }))
 })
 
 /** Ein Relais, das erst antwortet, wenn der Test es sagt. */
@@ -188,20 +192,23 @@ describe('Outbox der Steuerwirkungen', () => {
     expect(auftrag.felder).not.toHaveProperty('client_uuid')
 
     relay.mockClear()
-    relay.mockImplementation(async () => ({ id: 1 }))
+    relay.mockImplementation(async () => ({ status: 'ok', enqueued: 1 }))
     await stosseSteuerOutboxAn({ jetzt: () => Date.now() + 10 * 60_000 })
 
     expect(await ladeSteuerAuftraege()).toEqual([])
     expect(relay).toHaveBeenCalledTimes(1)
     const gesendet = relay.mock.calls[0][0]
     expect(gesendet).toMatchObject({
-      blind_mailbox_id: 'dm-ziel',
-      is_control: true,
-      control_type: 'reaction',
+      chat_type: 'direct',
+      chat_id: String(PARTNER),
+      envelopes: [expect.objectContaining({ device_id: 'geraet-beta' })],
     })
+    const klartext = JSON.parse(Buffer.from(gesendet.envelopes[0].encrypted_payload.split(':').at(-1), 'base64').toString('utf-8'))
+    expect(klartext.type).toBe('reaction')
     // Dieselbe Kennung wie der Auftrag, mit dem Zusatz je Zielgerät: daran
     // erkennt das Relais die Wiederholung und legt nichts doppelt ab.
-    expect(gesendet.client_uuid).toBe(`${auftrag.id}#0`)
+    expect(gesendet.client_uuid).toBe(auftrag.id)
+    expect(gesendet.envelopes[0].client_uuid).toBe(`ctrl:${auftrag.id}#0`)
   })
 
   it('reiht auch Bearbeitung und Löschung ein und schickt alle drei nach dem Neustart', async () => {
@@ -244,12 +251,12 @@ describe('Outbox der Steuerwirkungen', () => {
     ])
 
     relay.mockReset()
-    relay.mockImplementation(async () => ({ id: 1 }))
+    relay.mockImplementation(async () => ({ status: 'ok', enqueued: 1 }))
     await stosseSteuerOutboxAn({ jetzt: () => Date.now() + 10 * 60_000 })
 
     expect(await ladeSteuerAuftraege()).toEqual([])
     expect(
-      relay.mock.calls.map((c) => (c[0] as { control_type?: string }).control_type).sort(),
+      relay.mock.calls.map((c) => JSON.parse(Buffer.from(c[0].envelopes[0].encrypted_payload.split(':').at(-1), 'base64').toString('utf-8')).type).sort(),
     ).toEqual(['delete_message', 'edit_message', 'reaction'])
   })
 
@@ -332,8 +339,8 @@ describe('Outbox der Steuerwirkungen', () => {
     const kennungen = relay.mock.calls.map(
       (c) => (c[0] as { client_uuid: string }).client_uuid,
     )
-    expect(kennungen).toContain(`${erste.id}#0`)
-    expect(kennungen).toContain('nachzuegler#0')
+    expect(kennungen).toContain(erste.id)
+    expect(kennungen).toContain('nachzuegler')
   })
 
   it('bricht bei einem Kontowechsel ab und lässt den Auftrag liegen', async () => {
@@ -409,7 +416,10 @@ describe('Outbox der Steuerwirkungen', () => {
     const kennungen = relay.mock.calls.map(
       (c) => (c[0] as { client_uuid: string }).client_uuid,
     )
-    expect(kennungen).toEqual([`${auftrag.id}#0`, `${auftrag.id}#0`])
+    expect(kennungen).toEqual([auftrag.id, auftrag.id])
+    expect(relay.mock.calls.map((c) => c[0].envelopes[0].client_uuid)).toEqual([
+      `ctrl:${auftrag.id}#0`, `ctrl:${auftrag.id}#0`,
+    ])
     expect(new Set(kennungen).size).toBe(1)
     expect(await ladeSteuerAuftraege()).toEqual([])
   })
@@ -439,14 +449,19 @@ describe('Outbox der Steuerwirkungen', () => {
     })
 
     relay.mockClear()
-    relay.mockImplementation(async () => ({ id: 1 }))
+    relay.mockImplementation(async () => ({ status: 'ok', enqueued: 1 }))
     await stosseSteuerOutboxAn({ jetzt: () => Date.now() + 10 * 60_000 })
 
     expect(relay).toHaveBeenCalledTimes(1)
     expect(relay.mock.calls[0][0]).toMatchObject({
-      blind_mailbox_id: MAILBOX,
-      ciphertext_envelope: 'sv-gruppe-v1:schluessel.rund',
+      chat_type: 'group',
+      chat_id: '77',
       client_uuid: auftrag.id,
+      envelopes: [{
+        device_id: 'geraet-beta',
+        encrypted_payload: 'sv-gruppe-v1:schluessel.rund',
+        client_uuid: `ctrl:${auftrag.id}`,
+      }],
     })
   })
 

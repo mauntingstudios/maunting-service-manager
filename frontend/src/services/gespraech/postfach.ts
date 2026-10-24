@@ -337,11 +337,11 @@ async function verarbeitePostfachInnen(
        */
       const bekannt = new Set(
         uebernahme.lokalerVerlauf
-          .map((m) => m.clientUuid)
+          .map((m) => m.clientUuid?.split('#')[0])
           .filter((id): id is string => Boolean(id)),
       )
       const roheNeueZeilen = uebernahme.processedList.filter(
-        (m) => !m.isSelf && Boolean(m.clientUuid) && !bekannt.has(m.clientUuid as string),
+        (m) => !m.isSelf && Boolean(m.clientUuid) && !bekannt.has((m.clientUuid as string).split('#')[0]),
       )
       // Deduplizieren auf Basis-UUID (verhindert Mehrfachmeldung bei Multi-Device-Umschlägen)
       const gesehenUuids = new Set<string>()
@@ -350,7 +350,7 @@ async function verarbeitePostfachInnen(
         const base = (z.clientUuid || '').split('#')[0]
         if (base && !gesehenUuids.has(base)) {
           gesehenUuids.add(base)
-          neueZeilen.push(z)
+          neueZeilen.push({ ...z, clientUuid: base })
         }
       }
       const neue = neueZeilen.map((m) => m.clientUuid as string)
@@ -410,6 +410,13 @@ async function verarbeitePostfachInnen(
             crypto.randomUUID(),
           ).catch(() => null)
         }
+      }
+
+      // Die offene Ansicht liest erst nach dem lokalen Commit nach.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('msm:messages-updated', {
+          detail: { blind_mailbox_id: gespraech.mailbox },
+        }))
       }
 
       // **Nach dem Commit.** Was hier quittiert wird, ist entschluesselt und

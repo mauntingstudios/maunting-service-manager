@@ -116,6 +116,14 @@ beforeEach(() => {
 })
 
 describe('Direktchat', () => {
+  it('bewahrt die Queue-Herkunft für spätere Lesequittungen', async () => {
+    const lesung = klartext({ text: 'test', sender_id: BERT, client_uuid: 'queued-u' }, { vonKonto: BERT })
+    lesung.env.id = -99
+    lesung.env.annahme_seq = 99
+    const { decryptedList } = await werteUmschlaegeAus([lesung], kontext())
+    expect(decryptedList).toEqual([expect.objectContaining({ clientUuid: 'queued-u', viaInbox: true })])
+  })
+
   it('verwirft eine gefälschte Unterschrift', async () => {
     const { decryptedList } = await werteUmschlaegeAus(
       [klartext({ text: 'hallo', _beleg: `gefaelscht:${BERT}` })],
