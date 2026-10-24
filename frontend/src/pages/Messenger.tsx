@@ -1422,6 +1422,59 @@ function MessengerSeite() {
   }, [blindMailboxId])
 
   /**
+   * Signal-Quittungen: Zustell- und Lesequittungen direkt und verzögerungsfrei
+   * im UI-Zustand und Klartext-Cache aktualisieren (0 ms Feedback).
+   */
+  useEffect(() => {
+    const handleReceipt = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (!detail) return
+      const uuids: string[] = Array.isArray(detail.client_uuids)
+        ? detail.client_uuids
+        : detail.client_uuid
+        ? [detail.client_uuid]
+        : []
+      if (uuids.length === 0) return
+      const uuidSet = new Set(uuids.map((u: string) => String(u).split('#')[0]))
+      const isRead = detail.type === 'read_receipt'
+
+      setMessages((prev) => {
+        let changed = false
+        const updated = prev.map((m) => {
+          const baseUuid = (m.clientUuid || '').split('#')[0]
+          if (baseUuid && uuidSet.has(baseUuid)) {
+            const nextRead = isRead ? true : Boolean(m.isRead)
+            const nextDelivered = true
+            const nextStatus: 'read' | 'delivered' = nextRead ? 'read' : m.status === 'read' ? 'read' : 'delivered'
+            if (m.isRead !== nextRead || m.isDelivered !== nextDelivered || m.status !== nextStatus) {
+              changed = true
+              return {
+                ...m,
+                isDelivered: nextDelivered,
+                isRead: nextRead,
+                status: nextStatus,
+              }
+            }
+          }
+          return m
+        })
+        if (!changed) return prev
+        if (blindMailboxId) {
+          sessionChatCache.set(blindMailboxId, updated.slice(-80))
+        }
+        return updated
+      })
+    }
+
+    window.addEventListener('msm:delivery-receipt', handleReceipt)
+    window.addEventListener('msm:read-receipt', handleReceipt)
+    return () => {
+      window.removeEventListener('msm:delivery-receipt', handleReceipt)
+      window.removeEventListener('msm:read-receipt', handleReceipt)
+    }
+  }, [blindMailboxId])
+
+  /**
    * Wenn dieses Gerät sich nicht beim Konto melden kann, sieht es niemand.
    *
    * Der Fehler wird in `e2eeIdentity.resolveIdentity` gedrosselt gemeldet; hier

@@ -40,6 +40,7 @@
 import i18n from '@/i18n'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { entsiegleZeile, entsiegleZeilen, versiegleZeile } from './lokaleVersiegelung'
+import { merkePartnerKennungen } from './quittungsstand'
 import type { AugenblickMarke, RettungsMarke } from './funkenService'
 import { istSteuerzeile } from './nachrichtBezug'
 import {
@@ -2293,6 +2294,12 @@ export async function updateDeliveryStatus(
 
     for (const roh of rohzeilen) {
       const mailbox = roh.blindMailboxId
+      if (mailbox) {
+        if (status === 'read') {
+          merkePartnerKennungen(mailbox, 'gelesen', [logicalUuid])
+        }
+        merkePartnerKennungen(mailbox, 'zugestellt', [logicalUuid])
+      }
       const aad = nachrichtAad(mailbox, roh.id)
       const offen = await entsiegleZeile<LocalStoredMessage>(roh, aad)
       if (!offen) continue

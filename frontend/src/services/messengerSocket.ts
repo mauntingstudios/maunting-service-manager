@@ -215,7 +215,7 @@ class MessengerSocketService {
     return false
   }
 
-  private handleIncoming(data: any): void {
+  private async handleIncoming(data: any): Promise<void> {
     if (!data || typeof data !== 'object') return
     const msgType = data.type
 
@@ -240,10 +240,9 @@ class MessengerSocketService {
         : data.client_uuid
         ? [data.client_uuid]
         : []
-      for (const uid of uuids) {
-        void updateDeliveryStatus(uid, 'delivered')
-      }
+      await Promise.all(uuids.map((uid) => updateDeliveryStatus(uid, 'delivered')))
       if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('msm:delivery-receipt', { detail: data }))
         window.dispatchEvent(new CustomEvent('msm:messages-updated', { detail: data }))
       }
     }
@@ -255,10 +254,9 @@ class MessengerSocketService {
         : data.client_uuid
         ? [data.client_uuid]
         : []
-      for (const uid of uuids) {
-        void updateDeliveryStatus(uid, 'read')
-      }
+      await Promise.all(uuids.map((uid) => updateDeliveryStatus(uid, 'read')))
       if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('msm:read-receipt', { detail: data }))
         window.dispatchEvent(new CustomEvent('msm:messages-updated', { detail: data }))
       }
     }

@@ -311,10 +311,9 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
         }).catch(() => {})
       }
 
-      // Queue-Zeilen wurden oft bereits im Hintergrund abgelegt und quittiert.
-      // Beim Öffnen kommen dann keine neuen Umschläge und keine maxIncomingId.
+      // Eingehende ungelesene Zeilen im offenen Chat als gelesen quittieren (Signal-Architektur)
       const queueGelesenIds = Array.from(new Set([...processedList, ...lokalerVerlauf]
-        .filter((m) => !m.isSelf && m.viaInbox && m.clientUuid)
+        .filter((m) => !m.isSelf && Boolean(m.clientUuid))
         .map((m) => (m.clientUuid as string).split('#')[0])))
         .filter((id) => !frueherGelesen.includes(id))
       if (!istGruppe && activeContact && !isTargetBlocked && readReceiptsEnabled && isDocVisible) {
