@@ -178,17 +178,8 @@ def veroeffentlichen(
 
 
 def _inbox_merken(db: Session, eintrag: UserE2eeDevice, inbox_hash: str) -> None:
-    """Traegt die Zustelladresse des Geraets ein (oder laesst sie weg).
-
-    Leer heisst: das Geraet benutzt den alten Weg. Es wird **nicht**
-    nachgetragen — ein Geraet, das seine Adresse nicht kennt, soll keine
-    bekommen.
-    """
-    if not (inbox_hash or "").strip():
-        return
-    from services.social import zustellung
-
-    zustellung.inbox_registrieren(db, eintrag, inbox_hash.strip())
+    """Wird im neuen Queue-Transport nicht mehr benötigt."""
+    return
 
 
 def _selbst_beglaubigen(eintrag: UserE2eeDevice, user_id: int, signatur: str | None) -> bool:
@@ -407,35 +398,18 @@ def _deckel_einhalten(db: Session, user: User) -> None:
 
 
 def eintrag_als_dict(e: UserE2eeDevice, db: Session | None = None) -> dict:
-    """Der Eintrag, wie er im Verzeichnis herauskommt.
-
-    `db` wird gebraucht, um die Zustelladresse des Geraets zu finden. Ohne
-    Sitzung (etwa in einem Aufruf ohne Datenbank) bleibt das Feld leer — der
-    Eintrag nennt dann nur, was ohnehin am Geraet steht.
-    """
-    inbox_hash = ""
-    transport = ""
-    if db is not None:
-        from services.social import zustellung
-
-        inbox = zustellung.inbox_von_geraet(db, e.id)
-        if inbox is not None:
-            inbox_hash = inbox.inbox_hash
-            transport = "geraet-v1"
+    """Der Eintrag, wie er im Verzeichnis herauskommt."""
     return {
         "id": e.id,
         "device_id": e.device_id,
         "public_key": e.public_key_jwk,
         "signing_public_key": e.signing_public_key_jwk or "",
-        # Bestand von vor 10/2026: das Feld ist leer, weil es damals niemand
-        # gefuellt hat. Die Anzeige nennt trotzdem einen Namen, statt auf jedem
-        # anderen Geraet „Unbenanntes Geraet" zu zeigen.
         "label": (e.label or "").strip() or STANDARD_BEZEICHNUNG,
         "is_approved": bool(e.is_approved),
         "approved_by": e.approved_by or "",
         "approval_signature": e.approval_signature or "",
-        "inbox_hash": inbox_hash,
-        "transport": transport,
+        "inbox_hash": "",
+        "transport": "queue-v1",
     }
 
 
