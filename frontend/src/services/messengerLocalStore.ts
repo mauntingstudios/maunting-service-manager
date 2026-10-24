@@ -2169,6 +2169,159 @@ export async function updateMessageInLocalStore(
 }
 
 /**
+ * Löscht eine Nachricht dauerhaft in der lokalen IndexedDB (Markierung als Grabstein).
+ * Übersteht F5-Reloads und App-Neustarts garantiert.
+ */
+export async function deleteMessageFromLocalStore(
+  chatId: string,
+  clientUuid: string,
+): Promise<void> {
+  if (!clientUuid) return
+  const logicalUuid = clientUuid.split('#')[0]
+  try {
+    const db = await openLocalDatabase()
+    const rohzeilen = await new Promise<Record<string, any>[]>((resolve, reject) => {
+      const tx = db.transaction(STORE_MESSAGES, 'readonly')
+      const store = tx.objectStore(STORE_MESSAGES)
+      const req = store.index('by_client_uuid').getAll(logicalUuid)
+      req.onsuccess = () => resolve(req.result || [])
+      req.onerror = () => reject(req.error)
+    })
+
+    const geloeschtAm = new Date().toISOString()
+    for (const roh of rohzeilen) {
+      const mailbox = roh.blindMailboxId || chatId
+      const aad = nachrichtAad(mailbox, roh.id)
+      const offen = await entsiegleZeile<LocalStoredMessage>(roh, aad)
+      if (!offen) continue
+      const aktualisiert: LocalStoredMessage = {
+        ...offen,
+        blindMailboxId: mailbox,
+        isDeleted: true,
+        deletedAt: geloeschtAm,
+        text: '',
+        noteAttachment: undefined,
+        calendarAttachment: undefined,
+        imageAttachment: undefined,
+        audioAttachment: undefined,
+        fileAttachment: undefined,
+        videoNoteAttachment: undefined,
+        stickerAttachment: undefined,
+        storyReply: undefined,
+        videoUrl: undefined,
+      }
+      const zeile = await versiegleZeile(aktualisiert, NACHRICHT_KLARFELDER, aad)
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_MESSAGES, 'readwrite')
+        tx.objectStore(STORE_MESSAGES).put(zeile)
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+      })
+      if (typeof roh.id === 'number') {
+        await leereUmschlagKlartext(mailbox, roh.id).catch(() => {})
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
+/**
+ * Bearbeitet den Text einer Nachricht dauerhaft in der lokalen IndexedDB.
+ */
+export async function editMessageInLocalStore(
+  chatId: string,
+  clientUuid: string,
+  newText: string,
+): Promise<void> {
+  if (!clientUuid || typeof newText !== 'string') return
+  const logicalUuid = clientUuid.split('#')[0]
+  try {
+    const db = await openLocalDatabase()
+    const rohzeilen = await new Promise<Record<string, any>[]>((resolve, reject) => {
+      const tx = db.transaction(STORE_MESSAGES, 'readonly')
+      const store = tx.objectStore(STORE_MESSAGES)
+      const req = store.index('by_client_uuid').getAll(logicalUuid)
+      req.onsuccess = () => resolve(req.result || [])
+      req.onerror = () => reject(req.error)
+    })
+
+    const editedAt = new Date().toISOString()
+    for (const roh of rohzeilen) {
+      const mailbox = roh.blindMailboxId || chatId
+      const aad = nachrichtAad(mailbox, roh.id)
+      const offen = await entsiegleZeile<LocalStoredMessage>(roh, aad)
+      if (!offen) continue
+      const aktualisiert: LocalStoredMessage = {
+        ...offen,
+        blindMailboxId: mailbox,
+        text: newText,
+        isEdited: true,
+        editedAt,
+      }
+      const zeile = await versiegleZeile(aktualisiert, NACHRICHT_KLARFELDER, aad)
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_MESSAGES, 'readwrite')
+        tx.objectStore(STORE_MESSAGES).put(zeile)
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+      })
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
+/**
+ * Aktualisiert den Zustell- und Lesestatus einer Nachricht global nach clientUuid (Häkchen-Update).
+ */
+export async function updateDeliveryStatus(
+  clientUuid: string,
+  status: 'delivered' | 'read',
+): Promise<void> {
+  if (!clientUuid) return
+  const logicalUuid = clientUuid.split('#')[0]
+  try {
+    const db = await openLocalDatabase()
+    const rohzeilen = await new Promise<Record<string, any>[]>((resolve, reject) => {
+      const tx = db.transaction(STORE_MESSAGES, 'readonly')
+      const store = tx.objectStore(STORE_MESSAGES)
+      const req = store.index('by_client_uuid').getAll(logicalUuid)
+      req.onsuccess = () => resolve(req.result || [])
+      req.onerror = () => reject(req.error)
+    })
+
+    for (const roh of rohzeilen) {
+      const mailbox = roh.blindMailboxId
+      const aad = nachrichtAad(mailbox, roh.id)
+      const offen = await entsiegleZeile<LocalStoredMessage>(roh, aad)
+      if (!offen) continue
+
+      const isRead = status === 'read' ? true : Boolean(offen.isRead)
+      const isDelivered = true
+      const finalStatus = isRead ? 'read' : 'delivered'
+
+      const aktualisiert: LocalStoredMessage = {
+        ...offen,
+        isDelivered,
+        isRead,
+        status: finalStatus,
+      }
+      const zeile = await versiegleZeile(aktualisiert, NACHRICHT_KLARFELDER, aad)
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_MESSAGES, 'readwrite')
+        tx.objectStore(STORE_MESSAGES).put(zeile)
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+      })
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
+
+/**
  * Alle Mailboxen, zu denen hier Nachrichten liegen.
  *
  * Gelesen wird über den Index auf `blindMailboxId`, nicht über den

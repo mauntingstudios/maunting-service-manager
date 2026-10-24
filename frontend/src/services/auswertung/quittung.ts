@@ -109,9 +109,9 @@ export function hakenFuer(
         ? 'delivered'
         : zeile.status === 'failed'
           ? 'failed'
-          : zeile.id > 0
-            ? 'sent'
-            : zeile.status || 'queued',
+          : zeile.status === 'queued'
+            ? 'queued'
+            : zeile.status || (zeile.id > 0 && zeile.id < 1e11 ? 'sent' : 'queued'),
   }
 }
 

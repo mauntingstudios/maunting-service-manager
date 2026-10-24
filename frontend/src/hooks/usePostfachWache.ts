@@ -197,26 +197,37 @@ export function usePostfachWache({
     }
 
     /**
-     * Ein Sync-Ereignis der geteilten Mailbox ist ein guter Anlass, sofort
-     * auch das Gerätepostfach zu leeren. Kurz entprellt, weil ein Stapel
-     * mehrere Ereignisse in derselben Sekunde liefert.
+     * Ein Sync-Ereignis stößt die Postfachverarbeitung sofort an.
      */
-    const anstossen = () => {
+    const anstossen = (sofort = false) => {
+      if (sofort) {
+        if (geplant) {
+          clearTimeout(geplant)
+          geplant = null
+        }
+        void lauf()
+        return
+      }
       if (geplant) return
       geplant = setTimeout(() => {
         geplant = null
         void lauf()
-      }, 250)
+      }, 50)
     }
     const beiSync = (ereignis: Event) => {
       const detail = (ereignis as CustomEvent<{ type?: string }>).detail
       if (
+        detail?.type === 'incoming_message' ||
+        detail?.type === 'incoming_messages'
+      ) {
+        anstossen(true)
+      } else if (
         detail?.type === 'new_message' ||
         detail?.type === 'e2ee_blind_message' ||
         detail?.type === 'delivery_receipt' ||
         detail?.type === 'read_receipt'
       ) {
-        anstossen()
+        anstossen(false)
       }
     }
 

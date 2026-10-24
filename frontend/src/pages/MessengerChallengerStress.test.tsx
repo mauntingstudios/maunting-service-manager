@@ -7,6 +7,7 @@ import { leereKlartextSpeicher } from '@/services/klartextSpeicher'
 import * as socialApi from '@/api/social'
 import { teamsApi } from '@/api/teams'
 import { useAuthStore } from '@/stores/authStore'
+import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import i18n from '@/i18n'
 import {
@@ -61,6 +62,7 @@ vi.mock('@/api/social', () => ({
   getE2eeKeyring: vi.fn().mockResolvedValue({ wrapped_keyring: null, public_key: null, version: 0 }),
   putE2eeKeyring: vi.fn(),
   relayE2eeEnvelope: vi.fn(),
+  sendMessageQueue: vi.fn().mockResolvedValue({ status: 'ok', enqueued: 1 }),
   fetchE2eeEnvelopes: e2eeEnvelopeMock,
   fetchAlleE2eeEnvelopes: e2eeEnvelopeMock,
   getPublicProfiles: vi.fn().mockResolvedValue([]),
@@ -320,6 +322,7 @@ vi.mock('@/lib/offlineSync', () => ({
 }))
 
 function setupAuthUser(userId: number = 1, username: string = 'me') {
+  setzeAngemeldetesKonto(userId)
   useAuthStore.setState({
     user: {
       id: userId,
@@ -378,6 +381,7 @@ describe('Empirical Challenger: Delivery Receipt Synchronization & Reload Hydrat
     identitaet.decryptionKeys = [kontoSchluessel.privateKeyJwk]
     identitaet.empfaengerSchluessel = kontoSchluessel.publicKeyJwk
     vi.mocked(socialApi.relayE2eeEnvelope).mockResolvedValue({ id: 1 } as any)
+    vi.mocked(socialApi.sendMessageQueue).mockResolvedValue({ status: 'ok', enqueued: 1 })
 
     useMessengerNotificationStore.setState({
       blockedUserIds: [],
@@ -481,39 +485,27 @@ describe('Empirical Challenger: Delivery Receipt Synchronization & Reload Hydrat
         expect(singleTicks.length).toBe(3)
       })
 
-      // Interleaved receipt 1: Delivery receipt acknowledging ID 5 arrives
-      const receipt5Plain = JSON.stringify({
-        type: 'delivery_receipt',
-        delivered_up_to_id: 5,
-        receiver_id: aliceId,
-      })
-      const encryptedReceipt5 = drUmschlag(receipt5Plain)
+      const uuid1 = vi.mocked(socialApi.sendMessageQueue).mock.calls[0]?.[0]?.client_uuid
+      const uuid2 = vi.mocked(socialApi.sendMessageQueue).mock.calls[1]?.[0]?.client_uuid
+      const uuid3 = vi.mocked(socialApi.sendMessageQueue).mock.calls[2]?.[0]?.client_uuid
 
-      vi.mocked(socialApi.fetchE2eeEnvelopes).mockResolvedValue([
-        {
-          id: 50,
-          blind_mailbox_id: mailboxId,
-          ciphertext_envelope: encryptedReceipt5,
-          client_uuid: 'receipt-5',
-          created_at: new Date().toISOString(),
-        },
-      ])
-
+      // Interleaved receipt 1: Delivery receipt acknowledging uuid1 and uuid2 arrives
       act(() => {
         window.dispatchEvent(
           new CustomEvent('msm:sync-event', {
             detail: {
-              type: 'e2ee_blind_message',
-              blind_mailbox_id: mailboxId,
-              is_control: true,
-              control_type: 'delivery_receipt',
+              type: 'delivery_receipt',
+              chat_type: 'direct',
+              chat_id: String(aliceId),
+              recipient_id: aliceId,
+              client_uuids: [uuid1, uuid2],
             },
           })
         )
       })
 
-      // Message 1 (ID 2 <= 5) and Message 2 (ID 5 <= 5) transition to double checkmark
-      // Message 3 (ID 10 > 5) remains single checkmark
+      // Message 1 and Message 2 transition to double checkmark
+      // Message 3 remains single checkmark
       await waitFor(() => {
         const doubleTicks = screen.getAllByLabelText(doubleGrayTickTitle)
         expect(doubleTicks.length).toBe(2)
@@ -521,45 +513,22 @@ describe('Empirical Challenger: Delivery Receipt Synchronization & Reload Hydrat
         expect(singleTicks.length).toBe(1)
       })
 
-      // Interleaved receipt 2: Out-of-order receipt acknowledging ID 2 arrives (ID 2 < ID 5)
-      const receipt2Plain = JSON.stringify({
-        type: 'delivery_receipt',
-        delivered_up_to_id: 2,
-        receiver_id: aliceId,
-      })
-      const encryptedReceipt2 = drUmschlag(receipt2Plain)
-
-      vi.mocked(socialApi.fetchE2eeEnvelopes).mockResolvedValue([
-        {
-          id: 50,
-          blind_mailbox_id: mailboxId,
-          ciphertext_envelope: encryptedReceipt5,
-          client_uuid: 'receipt-5',
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: 51,
-          blind_mailbox_id: mailboxId,
-          ciphertext_envelope: encryptedReceipt2,
-          client_uuid: 'receipt-2',
-          created_at: new Date().toISOString(),
-        },
-      ])
-
+      // Interleaved receipt 2: Out-of-order receipt acknowledging uuid1 arrives
       act(() => {
         window.dispatchEvent(
           new CustomEvent('msm:sync-event', {
             detail: {
-              type: 'e2ee_blind_message',
-              blind_mailbox_id: mailboxId,
-              is_control: true,
-              control_type: 'delivery_receipt',
+              type: 'delivery_receipt',
+              chat_type: 'direct',
+              chat_id: String(aliceId),
+              recipient_id: aliceId,
+              client_uuids: [uuid1],
             },
           })
         )
       })
 
-      // CRITICAL ASSERTION: Out-of-order receipt for ID 2 MUST NOT cause Message 2 (ID 5) to regress!
+      // CRITICAL ASSERTION: Out-of-order receipt for uuid1 MUST NOT cause Message 2 to regress!
       // Double ticks must remain at 2, single tick at 1.
       await waitFor(() => {
         const doubleTicks = screen.getAllByLabelText(doubleGrayTickTitle)
@@ -568,46 +537,16 @@ describe('Empirical Challenger: Delivery Receipt Synchronization & Reload Hydrat
         expect(singleTicks.length).toBe(1)
       })
 
-      // Interleaved receipt 3: Receipt acknowledging ID 10 arrives
-      const receipt10Plain = JSON.stringify({
-        type: 'delivery_receipt',
-        delivered_up_to_id: 10,
-        receiver_id: aliceId,
-      })
-      const encryptedReceipt10 = drUmschlag(receipt10Plain)
-
-      vi.mocked(socialApi.fetchE2eeEnvelopes).mockResolvedValue([
-        {
-          id: 50,
-          blind_mailbox_id: mailboxId,
-          ciphertext_envelope: encryptedReceipt5,
-          client_uuid: 'receipt-5',
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: 51,
-          blind_mailbox_id: mailboxId,
-          ciphertext_envelope: encryptedReceipt2,
-          client_uuid: 'receipt-2',
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: 52,
-          blind_mailbox_id: mailboxId,
-          ciphertext_envelope: encryptedReceipt10,
-          client_uuid: 'receipt-10',
-          created_at: new Date().toISOString(),
-        },
-      ])
-
+      // Interleaved receipt 3: Receipt acknowledging uuid3 arrives
       act(() => {
         window.dispatchEvent(
           new CustomEvent('msm:sync-event', {
             detail: {
-              type: 'e2ee_blind_message',
-              blind_mailbox_id: mailboxId,
-              is_control: true,
-              control_type: 'delivery_receipt',
+              type: 'delivery_receipt',
+              chat_type: 'direct',
+              chat_id: String(aliceId),
+              recipient_id: aliceId,
+              client_uuids: [uuid3],
             },
           })
         )
@@ -616,20 +555,17 @@ describe('Empirical Challenger: Delivery Receipt Synchronization & Reload Hydrat
       // All 3 messages are now acknowledged and show 2 checkmarks
       await waitFor(() => {
         const doubleTicks = screen.getAllByLabelText(doubleGrayTickTitle)
-        console.log('DOUBLE TICKS FOUND:', doubleTicks.length, 'SINGLE TICKS:', screen.queryAllByLabelText(singleTickTitle).length)
         expect(doubleTicks.length).toBe(3)
         expect(screen.queryByLabelText(singleTickTitle)).not.toBeInTheDocument()
       })
     })
 
     it('immediately resolves optimistic message to 2 checkmarks if delivery receipt arrived before relay resolution', async () => {
-      const mailboxId = await deriveBlindMailboxId(myUserId, aliceId)
-
-      let resolveRelay!: (val: any) => void
-      const relayPromise = new Promise((resolve) => {
-        resolveRelay = resolve
+      let resolveQueue!: (val: any) => void
+      const queuePromise = new Promise((resolve) => {
+        resolveQueue = resolve
       })
-      vi.mocked(socialApi.relayE2eeEnvelope).mockReturnValue(relayPromise as any)
+      vi.mocked(socialApi.sendMessageQueue).mockReturnValue(queuePromise as any)
 
       render(
         <MemoryRouter initialEntries={[`/chat?userId=${aliceId}`]}>
@@ -645,7 +581,7 @@ describe('Empirical Challenger: Delivery Receipt Synchronization & Reload Hydrat
       fireEvent.change(input, { target: { value: 'In-Flight Message' } })
       const sendBtn = screen.getByLabelText(i18n.t('messenger.send'))
 
-      // Send message - relay remains pending
+      // Send message - queue remains pending
       fireEvent.click(sendBtn)
       await waitFor(() => expect(screen.getByText('In-Flight Message')).toBeInTheDocument())
       expect(
@@ -653,49 +589,32 @@ describe('Empirical Challenger: Delivery Receipt Synchronization & Reload Hydrat
           screen.queryByLabelText(singleTickTitle)
       ).toBeInTheDocument()
 
-      // Delivery receipt acknowledging up to ID 25 arrives while relay is still in flight!
-      const receiptPlain = JSON.stringify({
-        type: 'delivery_receipt',
-        delivered_up_to_id: 25,
-        receiver_id: aliceId,
+      await waitFor(() => {
+        expect(socialApi.sendMessageQueue).toHaveBeenCalled()
       })
-      const encryptedReceipt = drUmschlag(receiptPlain)
+      const sentUuid = vi.mocked(socialApi.sendMessageQueue).mock.calls.slice(-1)[0]?.[0]?.client_uuid
 
-      vi.mocked(socialApi.fetchE2eeEnvelopes).mockResolvedValue([
-        {
-          id: 99,
-          blind_mailbox_id: mailboxId,
-          ciphertext_envelope: encryptedReceipt,
-          client_uuid: 'receipt-25',
-          created_at: new Date().toISOString(),
-        },
-      ])
-
+      // Delivery receipt acknowledging message arrives while queue is still in flight!
       act(() => {
         window.dispatchEvent(
           new CustomEvent('msm:sync-event', {
             detail: {
-              type: 'e2ee_blind_message',
-              blind_mailbox_id: mailboxId,
-              is_control: true,
-              control_type: 'delivery_receipt',
+              type: 'delivery_receipt',
+              chat_type: 'direct',
+              chat_id: String(aliceId),
+              recipient_id: aliceId,
+              client_uuids: [sentUuid],
             },
           })
         )
       })
 
-      // Now relay resolves with ID 20 (which is <= 25)
+      // Now queue resolves
       act(() => {
-        resolveRelay({
-          id: 20,
-          blind_mailbox_id: mailboxId,
-          ciphertext_envelope: 'cipher',
-          client_uuid: 'mock-uuid',
-          created_at: new Date().toISOString(),
-        })
+        resolveQueue({ status: 'ok', enqueued: 1 })
       })
 
-      // Message immediately renders double checkmark upon relay resolution!
+      // Message immediately renders double checkmark upon resolution!
       await waitFor(() => {
         expect(screen.getByLabelText(doubleGrayTickTitle)).toBeInTheDocument()
         expect(screen.queryByLabelText(singleTickTitle)).not.toBeInTheDocument()
@@ -824,14 +743,11 @@ describe('Empirical Challenger: Delivery Receipt Synchronization & Reload Hydrat
         return []
       })
 
-      // Clear relay mock calls to isolate delivery receipt dispatch
-      vi.mocked(socialApi.relayE2eeEnvelope).mockClear()
-      vi.mocked(socialApi.relayE2eeEnvelope).mockResolvedValue({
-        id: 999,
-        blind_mailbox_id: bobMid,
-        ciphertext_envelope: 'receipt-ack',
-        created_at: new Date().toISOString(),
-      })
+      // Capture sent message uuid to Bob
+      const sentBobUuid = vi.mocked(socialApi.sendMessageQueue).mock.calls.slice(-1)[0]?.[0]?.client_uuid
+
+      // Clear queue mock calls to isolate delivery receipt dispatch
+      vi.mocked(socialApi.sendMessageQueue).mockClear()
 
       act(() => {
         window.dispatchEvent(
@@ -850,57 +766,26 @@ describe('Empirical Challenger: Delivery Receipt Synchronization & Reload Hydrat
         expect(screen.getByText('Bob answers with ID 3')).toBeInTheDocument()
       })
 
-      // Verify that delivery receipt was dispatched acknowledging Bob's low envelope ID 3!
+      // Verify that delivery receipt was dispatched acknowledging Bob
       await waitFor(() => {
-        expect(socialApi.relayE2eeEnvelope).toHaveBeenCalledWith(
+        expect(socialApi.sendMessageQueue).toHaveBeenCalledWith(
           expect.objectContaining({
-            // Die Mailbox ist die Adresse; eine Empfaengerkennung gibt es
-            // seit Stufe 4 nicht mehr.
-            blind_mailbox_id: bobMid,
-            is_control: true,
-            control_type: 'delivery_receipt',
+            chat_type: 'direct',
+            chat_id: String(bobId),
           })
         )
       })
 
-      // Step 4: Bob sends delivery receipt acknowledging ID 2
-      const bobReceiptPlain = JSON.stringify({
-        type: 'delivery_receipt',
-        delivered_up_to_id: 2,
-        receiver_id: bobId,
-      })
-      const bobReceiptCipher = drUmschlag(bobReceiptPlain)
-
-      vi.mocked(socialApi.fetchE2eeEnvelopes).mockImplementation(async (mid) => {
-        if (mid === bobMid) {
-          return [
-            {
-              id: 3,
-              blind_mailbox_id: bobMid,
-              ciphertext_envelope: incomingBobCipher,
-              client_uuid: 'bob-incoming-3',
-              created_at: new Date().toISOString(),
-            },
-            {
-              id: 4,
-              blind_mailbox_id: bobMid,
-              ciphertext_envelope: bobReceiptCipher,
-              client_uuid: 'bob-receipt-2',
-              created_at: new Date().toISOString(),
-            },
-          ]
-        }
-        return []
-      })
-
+      // Step 4: Bob sends delivery receipt acknowledging our sent message
       act(() => {
         window.dispatchEvent(
           new CustomEvent('msm:sync-event', {
             detail: {
-              type: 'e2ee_blind_message',
-              blind_mailbox_id: bobMid,
-              is_control: true,
-              control_type: 'delivery_receipt',
+              type: 'delivery_receipt',
+              chat_type: 'direct',
+              chat_id: String(bobId),
+              recipient_id: bobId,
+              client_uuids: sentBobUuid ? [sentBobUuid] : [],
             },
           })
         )

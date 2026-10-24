@@ -22,6 +22,7 @@ import type { Dispatch, SetStateAction } from 'react'
 
 import type { ChatGroupItem } from '@/api/social'
 import { sendReadReceipt } from '@/api/social'
+import { messengerSocket } from '@/services/messengerSocket'
 import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 import type { ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import type { Konversation } from '@/hooks/useKonversation'
@@ -220,10 +221,10 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
         return [...processedList, ...lokalerVerlauf].find((m) => m.clientUuid === gemerkt) || null
       })
 
-      // Ungelesenes, das dieser Stand nicht mehr öffnen kann: Nur wenn wirklich
-      // keine Nachrichten im lokalen Verlauf sind, zeigen wir einen Hinweis.
-      // Wenn der Verlauf bereits intakt geladen ist, darf niemals eine falsche Warnung erscheinen.
-      if (unlesbar > 0 && lokalerVerlauf.length === 0 && processedList.length === 0) {
+      // Ungelesenes, das dieser Stand nicht mehr öffnen kann: **eine**
+      // Systemzeile je Gespräch, nicht je Umschlag. Die Kennung ist stabil,
+      // damit der nächste Durchlauf sie nicht noch einmal anhängt.
+      if (unlesbar > 0) {
         zeigeSystemzeile(
           t('messenger.unreadableOlderMessages'),
           `unlesbar-${currentMid}`,
@@ -319,7 +320,9 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
       if (!istGruppe && activeContact && !isTargetBlocked && readReceiptsEnabled && isDocVisible) {
         for (let i = 0; i < queueGelesenIds.length; i += 100) {
           const ids = queueGelesenIds.slice(i, i + 100)
-          await sendReadReceipt({ chat_type: 'direct', chat_id: String(activeContact.userId), client_uuids: ids })
+          await messengerSocket
+            .sendReadReceipt({ chat_type: 'direct', chat_id: String(activeContact.userId), client_uuids: ids })
+            .catch(() => sendReadReceipt({ chat_type: 'direct', chat_id: String(activeContact.userId), client_uuids: ids }))
           merkeQuittungKennungen(currentMid, 'gelesen', ids)
           merkeQuittungKennungen(currentMid, 'zugestellt', ids)
         }

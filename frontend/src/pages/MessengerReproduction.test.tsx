@@ -8,6 +8,7 @@ import { ChatMediaImage } from '@/components/social/ChatMediaAttachments'
 import * as socialApi from '@/api/social'
 import { teamsApi } from '@/api/teams'
 import { useAuthStore } from '@/stores/authStore'
+import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
 import i18n from '@/i18n'
 import {
   generateLocalE2eeKeyPair,
@@ -64,6 +65,7 @@ vi.mock('@/api/social', () => ({
   getE2eeKeyring: vi.fn().mockResolvedValue({ wrapped_keyring: null, public_key: null, version: 0 }),
   putE2eeKeyring: vi.fn(),
   relayE2eeEnvelope: vi.fn(),
+  sendMessageQueue: vi.fn().mockResolvedValue({ status: 'ok', enqueued: 1 }),
   fetchE2eeEnvelopes: e2eeEnvelopeMock,
   fetchAlleE2eeEnvelopes: e2eeEnvelopeMock,
   getPublicProfiles: vi.fn().mockResolvedValue([]),
@@ -327,6 +329,7 @@ vi.mock('@/lib/offlineSync', () => ({
 }))
 
 function setupAuthUser(userId: number = 2, username: string = 'user_b') {
+  setzeAngemeldetesKonto(userId)
   useAuthStore.setState({
     user: {
       id: userId,
@@ -663,9 +666,10 @@ describe('Requirement R1 Reproduction: E2EE Messenger Failure Modes', () => {
       await waitFor(() => {
         expect(screen.getAllByText('alice').length).toBeGreaterThan(0)
       })
+      fireEvent.click(screen.getAllByText('alice')[0])
 
       // Send a message via input
-      const input = screen.getByPlaceholderText(i18n.t('messenger.writePlaceholder'))
+      const input = await screen.findByPlaceholderText(i18n.t('messenger.writePlaceholder'))
       fireEvent.change(input, { target: { value: 'Wichtige Nachricht' } })
 
       const sendBtn = screen.getByLabelText(i18n.t('messenger.send'))
@@ -676,14 +680,20 @@ describe('Requirement R1 Reproduction: E2EE Messenger Failure Modes', () => {
         expect(screen.getByText('Wichtige Nachricht')).toBeInTheDocument()
       })
 
-      // Simulate incoming delivery receipt event from Alice acknowledging envelope 42
+      await waitFor(() => {
+        expect(socialApi.sendMessageQueue).toHaveBeenCalled()
+      })
+      const sentUuid = vi.mocked(socialApi.sendMessageQueue).mock.calls[0]?.[0]?.client_uuid
+
+      // Simulate incoming delivery receipt event from Alice acknowledging message
       window.dispatchEvent(
         new CustomEvent('msm:sync-event', {
           detail: {
-            type: 'e2ee_blind_message',
-            blind_mailbox_id: expectedMid,
-            is_control: true,
-            control_type: 'delivery_receipt',
+            type: 'delivery_receipt',
+            chat_type: 'direct',
+            chat_id: String(aliceId),
+            recipient_id: aliceId,
+            client_uuids: sentUuid ? [sentUuid] : [],
           },
         })
       )

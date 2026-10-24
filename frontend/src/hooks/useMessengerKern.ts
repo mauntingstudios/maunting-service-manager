@@ -11,11 +11,13 @@ import { IDENTITY_LOADING, resolveIdentity, type E2eeIdentity } from '@/services
 import { decryptE2eeHybridWithKeyring, deriveBlindMailboxId, scrubPlaintextStorage } from '@/services/e2eeCrypto'
 import { uebernimmAltbestand } from '@/services/altbestandUebernahme'
 import {
+  eigenesGeraet,
   eigenesGeraetFreigegeben,
   geraeteVon,
   onEigeneFreigabe,
   onSchluesselWarnung,
 } from '@/services/e2eeGeraet'
+import { messengerSocket } from '@/services/messengerSocket'
 import { sendeVerlaufAnNeueGeraete } from '@/services/geraet/verlaufsAbgleich'
 import { merkeWirkungAusKlartext } from '@/services/eigeneWirkungen'
 import {
@@ -206,6 +208,11 @@ export function useMessengerKern({
     let active = true
     resolveIdentity(currentUserId)
       .then((next) => { if (active) setIdentity(next) })
+      .catch(() => {})
+    eigenesGeraet()
+      .then((g) => {
+        if (active && g?.kennung) messengerSocket.connect(g.kennung)
+      })
       .catch(() => {})
     return () => { active = false }
   }, [currentUserId, messengerGesperrt])

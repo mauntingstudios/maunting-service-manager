@@ -11,7 +11,8 @@
  * geblieben; die Namen im Inneren sind die der Seite.
  */
 
-import { ladeAnhangHoch, relayE2eeEnvelope, sendMessageQueue, type QueueEnvelope } from '@/api/social'
+import { ladeAnhangHoch, relayE2eeEnvelope, type QueueEnvelope } from '@/api/social'
+import { messengerSocket } from '@/services/messengerSocket'
 import type {
   AntwortBezug,
   CalendarAttachment,
@@ -320,13 +321,14 @@ export async function stelleZu(
         client_uuid: a.is_control ? `ctrl:${a.client_uuid}` : a.client_uuid,
       }))
 
-      await sendMessageQueue({
+      const queuePayload = {
         client_uuid: baseUuid,
         chat_type: erster.chat_type,
         chat_id: erster.chat_id,
         envelopes,
         device_id: ownDevice?.kennung,
-      })
+      }
+      await messengerSocket.sendMessage(queuePayload)
       return { niedrigsteId: 1, verbindungsfehler: false, ueberInbox: true }
     } catch (fehler) {
       const status = statusVon(fehler)

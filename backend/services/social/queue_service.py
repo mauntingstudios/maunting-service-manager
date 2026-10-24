@@ -94,6 +94,8 @@ class E2eeQueueService:
         target_user_ids: set[int] = set()
         has_self_sync = False
 
+        created_items_meta: list[tuple[dict[str, Any], int]] = []
+
         for env in envelopes:
             target_device_id = env.get("target_device_id")
             target_device_str = env.get("target_device_str") or env.get("device_id")
@@ -110,19 +112,38 @@ class E2eeQueueService:
             if not target_device or not target_device.is_approved:
                 continue
 
+            item_client_uuid = str(env.get("client_uuid") or client_uuid)
+            now_dt = datetime.now(timezone.utc)
             queue_item = E2eeDeviceQueue(
                 target_device_id=target_device.id,
                 sender_user_id=sender.id,
                 sender_device_id=sender_device_id,
                 chat_type=chat_type,
                 chat_id=str(chat_id),
-                client_uuid=str(env.get("client_uuid") or client_uuid),
+                client_uuid=item_client_uuid,
                 encrypted_payload=str(encrypted_payload),
-                created_at=datetime.now(timezone.utc),
+                created_at=now_dt,
             )
             db.add(queue_item)
             db.flush()
             created_ids.append(queue_item.id)
+
+            created_items_meta.append((
+                {
+                    "type": "incoming_message",
+                    "queue_id": queue_item.id,
+                    "target_device_id": target_device.device_id,
+                    "target_device_db_id": target_device.id,
+                    "sender_user_id": sender.id,
+                    "sender_device_id": sender_device_id,
+                    "chat_type": chat_type,
+                    "chat_id": str(chat_id),
+                    "client_uuid": item_client_uuid,
+                    "encrypted_payload": queue_item.encrypted_payload,
+                    "created_at": now_dt.isoformat(),
+                },
+                target_device.user_id,
+            ))
 
             if target_device.user_id == sender.id:
                 has_self_sync = True
@@ -131,7 +152,11 @@ class E2eeQueueService:
 
         db.commit()
 
-        # Echtzeit-Signale an die Empfänger
+        # Direkte Chiffrat-Zustellung über WebSocket an die Zielgeräte (Signal-Modell)
+        for msg_payload, uid in created_items_meta:
+            SyncEventService.publish(msg_payload, user_id=uid)
+
+        # Echtzeit-Signale an die Empfänger (für Abwärtskompatibilität & Zähler)
         sender_name = getattr(sender, "display_name", None) or sender.username
         now_iso = datetime.now(timezone.utc).isoformat()
 

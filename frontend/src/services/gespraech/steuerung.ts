@@ -12,7 +12,7 @@
  * Ein Weg für beide: der Hook reicht hinein, der Postfachlauf ebenso.
  */
 
-import { sendMessageQueue } from '@/api/social'
+import { messengerSocket } from '@/services/messengerSocket'
 import {
   deriveUserDeviceMailboxId,
   encryptE2eeHybrid,
@@ -178,9 +178,9 @@ export async function sendeSteuerpaket(
   )
   if (auftraege.length === 0) return null
   const meins = await eigenesGeraet()
-  await sendMessageQueue({
+  const payloadData = {
     client_uuid: clientUuid,
-    chat_type: kontext.gruppenKontext ? 'group' : 'direct',
+    chat_type: kontext.gruppenKontext ? ('group' as const) : ('direct' as const),
     chat_id: String(kontext.gruppenKontext?.groupId ?? kontext.drKontext?.peerId),
     device_id: meins.kennung,
     envelopes: auftraege.map((auftrag) => ({
@@ -189,6 +189,7 @@ export async function sendeSteuerpaket(
       encrypted_payload: auftrag.ciphertext_envelope,
       client_uuid: `ctrl:${auftrag.client_uuid}`,
     })),
-  })
+  }
+  await messengerSocket.sendMessage(payloadData)
   return clientUuid
 }

@@ -27,11 +27,11 @@
  */
 
 import {
-  ackQueueMessages,
   fetchPendingQueue,
   type BlindEnvelopeItem,
   type ChatGroupItem,
 } from '@/api/social'
+import { messengerSocket } from '@/services/messengerSocket'
 import { decryptE2eeHybridWithKeyring } from '@/services/e2eeCrypto'
 import { eigenesGeraet } from '@/services/e2eeGeraet'
 import type { E2eeIdentity } from '@/services/e2eeIdentity'
@@ -433,8 +433,8 @@ async function verarbeitePostfachInnen(
         .filter((e) => e.is_from_queue && !offen.has(-e.seq))
         .map((e) => e.queue_id)
       if (queueIds.length > 0 && geraet?.kennung) {
-        const ackAntwort = await ackQueueMessages(geraet.kennung, queueIds).catch(() => null)
-        if (ackAntwort) quittiert += ackAntwort.acknowledged
+        await messengerSocket.ackMessages(queueIds, undefined, geraet.kennung)
+        quittiert += queueIds.length
       }
 
     } catch {

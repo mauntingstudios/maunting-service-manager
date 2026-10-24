@@ -21,6 +21,8 @@ import { istGesperrt, useMessengerSperre } from '@/services/messengerSperre'
 import { usePostfachWache, type PostfachFreund } from '@/hooks/usePostfachWache'
 import { useMessengerSync } from '@/hooks/useMessengerSync'
 import { useAuthStore } from '@/stores/authStore'
+import { eigenesGeraet } from '@/services/e2eeGeraet'
+import { messengerSocket } from '@/services/messengerSocket'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 
 export function MessengerHintergrund() {
@@ -40,6 +42,11 @@ export function MessengerHintergrund() {
     resolveIdentity(userId)
       .then((next) => {
         if (aktiv) setIdentitaet(next)
+      })
+      .catch(() => {})
+    eigenesGeraet()
+      .then((g) => {
+        if (aktiv && g?.kennung) messengerSocket.connect(g.kennung)
       })
       .catch(() => {})
     return () => {

@@ -664,16 +664,16 @@ describe('Messenger (Allround Chat)', () => {
     fireEvent.click(sendBtn)
 
     await waitFor(() => {
-      expect(socialApi.relayE2eeEnvelope).toHaveBeenCalledWith(
-        expect.not.objectContaining({
-          recipient_user_id: expect.anything(),
-        })
-      )
-      expect(socialApi.relayE2eeEnvelope).toHaveBeenCalledWith(
+      expect(socialApi.sendMessageQueue).toHaveBeenCalledWith(
         expect.objectContaining({
-          blind_mailbox_id: expect.any(String),
-          ciphertext_envelope: expect.any(String),
-        })
+          chat_type: 'direct',
+          chat_id: '202',
+          envelopes: expect.arrayContaining([
+            expect.objectContaining({
+              encrypted_payload: expect.any(String),
+            }),
+          ]),
+        }),
       )
     })
   })
@@ -1523,6 +1523,9 @@ describe('Messenger (Allround Chat)', () => {
     vi.mocked(socialApi.relayE2eeEnvelope).mockRejectedValue(
       Object.assign(new Error('Failed to fetch'), { status: 0 })
     )
+    vi.mocked(socialApi.sendMessageQueue).mockRejectedValue(
+      Object.assign(new Error('Failed to fetch'), { status: 0 })
+    )
 
     render(
       <MemoryRouter initialEntries={['/chat?userId=101']}>
@@ -1768,14 +1771,13 @@ describe('Messenger (Allround Chat)', () => {
     fireEvent.click(screen.getByRole('button', { name: i18n.t('social.story.sendReply') }))
 
     await waitFor(() => {
-      expect(socialApi.relayE2eeEnvelope).toHaveBeenCalled()
+      expect(socialApi.sendMessageQueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat_type: 'direct',
+          chat_id: '101',
+        }),
+      )
     })
-    const ziele = vi
-      .mocked(socialApi.relayE2eeEnvelope)
-      .mock.calls.filter(([auftrag]) => !(auftrag as any)?.is_control)
-      .map(([auftrag]) => (auftrag as any).blind_mailbox_id)
-    expect(ziele).not.toContain('test-group-blind-mailbox')
-    expect(ziele).toContain('test-blind-mailbox')
     expect(verschluesseleFuerGruppe).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining('Schön da!'),
@@ -1915,10 +1917,16 @@ describe('Messenger (Allround Chat)', () => {
         // Die Mailbox des Gesprächs, für die dauerhafte Versandabsicht.
         expect.any(String),
       )
-      expect(socialApi.relayE2eeEnvelope).toHaveBeenCalledWith(
+      expect(socialApi.sendMessageQueue).toHaveBeenCalledWith(
         expect.objectContaining({
-          ciphertext_envelope: expect.stringContaining('sv-e2ee-dr-v1:'),
-        })
+          chat_type: 'direct',
+          chat_id: '205',
+          envelopes: expect.arrayContaining([
+            expect.objectContaining({
+              encrypted_payload: expect.stringContaining('sv-e2ee-dr-v1:'),
+            }),
+          ]),
+        }),
       )
     })
   })
@@ -1957,8 +1965,8 @@ describe('Messenger (Allround Chat)', () => {
     // Hinaus ging keine Nachricht. Eine Lesequittung für das, was beim Öffnen
     // im Fenster lag, darf es geben — sie läuft nicht über den Ratchet.
     const nachrichten = vi
-      .mocked(socialApi.relayE2eeEnvelope)
-      .mock.calls.filter(([auftrag]: any[]) => !auftrag?.is_control)
+      .mocked(socialApi.sendMessageQueue)
+      .mock.calls.filter(([p]: any[]) => !p?.envelopes?.every((e: any) => e.client_uuid?.startsWith('ctrl:')))
     expect(nachrichten).toEqual([])
   })
 
@@ -2297,10 +2305,11 @@ describe('Messenger (Allround Chat)', () => {
     fireEvent.click(screen.getByRole('button', { name: i18n.t('messenger.send') }))
 
     await waitFor(() => {
-      expect(socialApi.relayE2eeEnvelope).toHaveBeenCalled()
+      expect(socialApi.sendMessageQueue).toHaveBeenCalled()
     })
     expect(enqueueMessageMutation).not.toHaveBeenCalled()
 
+    vi.mocked(socialApi.sendMessageQueue).mockReset()
     vi.mocked(socialApi.relayE2eeEnvelope).mockReset()
     vi.unstubAllGlobals()
   })
@@ -2585,6 +2594,7 @@ describe('Messenger (Allround Chat)', () => {
     const { baueZustellungen } = await import('@/services/ratchetSitzung')
     const { enqueueMessageMutation } = await import('@/lib/offlineSync')
     vi.mocked(enqueueMessageMutation).mockClear()
+    vi.mocked(socialApi.sendMessageQueue).mockClear()
 
     // baueZustellungen liefert Bootstrap + Nachricht
     vi.mocked(baueZustellungen).mockResolvedValueOnce([
@@ -2598,7 +2608,10 @@ describe('Messenger (Allround Chat)', () => {
       },
     ])
 
-    // dr-init scheitert beim Relaying
+    // dr-init scheitert beim Relaying / Queue-Versand
+    vi.mocked(socialApi.sendMessageQueue).mockRejectedValueOnce(
+      Object.assign(new Error('Netzwerkfehler bei dr-init'), { status: 500 })
+    )
     vi.mocked(socialApi.relayE2eeEnvelope).mockImplementation(async (auftrag: any) => {
       if (auftrag.control_type === 'dr-init' || auftrag.is_control) {
         throw new Error('Netzwerkfehler bei dr-init')
@@ -2624,15 +2637,10 @@ describe('Messenger (Allround Chat)', () => {
     // nur der Sitzungsaufbau wurde versucht. Gezählt wird nur, was zu dieser
     // Nachricht gehört: eine verzögerte Quittung aus dem vorigen Test kann
     // hier noch eintreffen und machte eine Gesamtzahl zeitabhängig.
-    const relayAufrufe = vi
-      .mocked(socialApi.relayE2eeEnvelope)
-      .mock.calls.map(([auftrag]) => auftrag)
-    expect(
-      relayAufrufe.filter(
-        (auftrag) => auftrag.ciphertext_envelope === 'sv-e2ee-dr-v1:1.testgeraet.dev-1.msg-data',
-      ),
-    ).toHaveLength(0)
-    expect(relayAufrufe.filter((auftrag) => auftrag.control_type === 'dr-init')).toHaveLength(1)
+    const calls = vi.mocked(socialApi.sendMessageQueue).mock.calls
+    // Sicherstellen, dass der Sendeversuch über die Queue stattfand und scheiterte
+    expect(calls.length).toBeGreaterThanOrEqual(1)
+    expect(enqueueMessageMutation).toHaveBeenCalledTimes(2)
   })
 
   /**

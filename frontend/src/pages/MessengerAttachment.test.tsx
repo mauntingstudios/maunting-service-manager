@@ -30,6 +30,7 @@ vi.mock('@/api/social', () => ({
   getE2eeKeyring: vi.fn().mockResolvedValue({ wrapped_keyring: null, public_key: null, version: 0 }),
   putE2eeKeyring: vi.fn(),
   relayE2eeEnvelope: vi.fn(),
+  sendMessageQueue: vi.fn().mockResolvedValue({ status: 'ok', enqueued: 1 }),
   fetchE2eeEnvelopes: e2eeEnvelopeMock,
   fetchAlleE2eeEnvelopes: e2eeEnvelopeMock,
   getPublicProfiles: vi.fn().mockResolvedValue([]),
@@ -433,7 +434,7 @@ describe('Messenger Attachment Flow', () => {
     fireEvent.click(sendButton)
 
     await waitFor(() => {
-      expect(socialApi.relayE2eeEnvelope).toHaveBeenCalled()
+      expect(socialApi.sendMessageQueue).toHaveBeenCalled()
     })
 
     await waitFor(() => {

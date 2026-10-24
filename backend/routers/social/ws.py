@@ -12,6 +12,8 @@ from dependencies import (
     ws_session_familie,
     ws_subprotokoll,
 )
+from models import ChatGroupMember, User, UserE2eeDevice
+from services.social.queue_service import E2eeQueueService
 from services.social_service import SocialService
 from services.sync_event_service import MAX_MAILBOXES, SyncEventService
 
@@ -52,6 +54,7 @@ async def social_websocket(
         user_id=user_id, familie=ws_session_familie(websocket)
     )
     ws_lock = asyncio.Lock()
+    device_id_param = websocket.query_params.get("device_id") or websocket.headers.get("x-device-id")
 
     async def _send_loop():
         try:
@@ -73,18 +76,38 @@ async def social_websocket(
             pass
 
     async def _mit_sitzung(arbeit):
-        """Datenbankarbeit im Thread, nie auf der Ereignisschleife.
-
-        Bis 27.09.2026 lief sie hier direkt. Die Mailbox-Pruefung rechnet je
-        aktivem Konto zwei SHA-256, und ein Abo mit 200 Mailboxen hielt so bei
-        jedem Neuverbinden das ganze Panel an: Stimme, Konsole, alle Stroeme.
-        """
-
+        """Datenbankarbeit im Thread, nie auf der Ereignisschleife."""
         def _lauf():
             with SessionLocal() as db:
                 return arbeit(db)
 
         return await asyncio.to_thread(_lauf)
+
+    # Initialer Push offener Chiffrate bei Verbindungsaufbau (Signal-Modell)
+    if device_id_param:
+        def _hole_anstehende_connect(db):
+            dev = (
+                db.query(UserE2eeDevice)
+                .filter(
+                    UserE2eeDevice.user_id == user_id,
+                    UserE2eeDevice.device_id == str(device_id_param),
+                )
+                .first()
+            )
+            if dev and dev.is_approved:
+                return E2eeQueueService.fetch_pending_messages(db, dev)
+            return []
+
+        try:
+            anstehende = await _mit_sitzung(_hole_anstehende_connect)
+            if anstehende:
+                async with ws_lock:
+                    await websocket.send_json({
+                        "type": "incoming_messages",
+                        "messages": anstehende,
+                    })
+        except Exception as exc:
+            logger.debug("Fehler beim Abrufen anstehender Nachrichten bei WS Connect: %s", exc)
 
     async def _recv_loop():
         while True:
@@ -105,15 +128,151 @@ async def social_websocket(
                         await websocket.send_json({"type": "joined", "status": "ok", "user_id": user_id})
                 except Exception as exc:
                     logger.debug("Fehler bei broadcast_user_joined: %s", exc)
+            elif msg_type in ("init", "fetch_pending"):
+                dev_id = data.get("device_id") or device_id_param
+                def _hole_anstehende_init(db):
+                    if not dev_id:
+                        return []
+                    dev = (
+                        db.query(UserE2eeDevice)
+                        .filter(
+                            UserE2eeDevice.user_id == user_id,
+                            UserE2eeDevice.device_id == str(dev_id),
+                        )
+                        .first()
+                    )
+                    if dev and dev.is_approved:
+                        return E2eeQueueService.fetch_pending_messages(db, dev)
+                    return []
+
+                try:
+                    anstehende = await _mit_sitzung(_hole_anstehende_init)
+                    async with ws_lock:
+                        await websocket.send_json({
+                            "type": "incoming_messages",
+                            "messages": anstehende,
+                        })
+                except Exception as exc:
+                    logger.debug("Fehler bei WS init/fetch_pending: %s", exc)
+            elif msg_type == "send_message":
+                c_uuid = str(data.get("client_uuid") or "")
+                c_type = str(data.get("chat_type") or "direct")
+                c_id = str(data.get("chat_id") or "")
+                raw_envelopes = data.get("envelopes") or []
+                dev_id = data.get("device_id") or device_id_param
+
+                def _sende_nachricht(db):
+                    s_dev_id = None
+                    if dev_id:
+                        s_dev = (
+                            db.query(UserE2eeDevice)
+                            .filter(
+                                UserE2eeDevice.user_id == user_id,
+                                UserE2eeDevice.device_id == str(dev_id),
+                            )
+                            .first()
+                        )
+                        if s_dev:
+                            s_dev_id = s_dev.id
+
+                    u = db.query(User).filter(User.id == user_id).first()
+                    if not u:
+                        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden.")
+
+                    return E2eeQueueService.enqueue_message(
+                        db=db,
+                        sender=u,
+                        envelopes=raw_envelopes,
+                        client_uuid=c_uuid,
+                        chat_type=c_type,
+                        chat_id=c_id,
+                        sender_device_id=s_dev_id,
+                    )
+
+                try:
+                    created_ids = await _mit_sitzung(_sende_nachricht)
+                    async with ws_lock:
+                        await websocket.send_json({
+                            "type": "message_sent",
+                            "client_uuid": c_uuid,
+                            "status": "ok",
+                            "enqueued": len(created_ids),
+                        })
+                except HTTPException as he:
+                    async with ws_lock:
+                        await websocket.send_json({
+                            "type": "error",
+                            "error": "send_message_failed",
+                            "status_code": he.status_code,
+                            "detail": he.detail,
+                            "client_uuid": c_uuid,
+                        })
+                except Exception as exc:
+                    logger.warning("Fehler bei WS send_message für User %s: %s", user_id, exc)
+                    async with ws_lock:
+                        await websocket.send_json({
+                            "type": "error",
+                            "error": "send_message_failed",
+                            "status_code": 500,
+                            "detail": str(exc),
+                            "client_uuid": c_uuid,
+                        })
+            elif msg_type == "ack_message":
+                queue_ids = data.get("queue_ids") or []
+                dev_id = data.get("device_id") or device_id_param
+                ack_client_uuid = data.get("client_uuid")
+
+                def _quittiere(db):
+                    if not dev_id:
+                        return 0
+                    dev = (
+                        db.query(UserE2eeDevice)
+                        .filter(
+                            UserE2eeDevice.user_id == user_id,
+                            UserE2eeDevice.device_id == str(dev_id),
+                        )
+                        .first()
+                    )
+                    if not dev or not dev.is_approved:
+                        return 0
+                    return E2eeQueueService.acknowledge_messages(db, dev, queue_ids)
+
+                try:
+                    count = await _mit_sitzung(_quittiere)
+                    async with ws_lock:
+                        await websocket.send_json({
+                            "type": "ack_ok",
+                            "acknowledged": count,
+                            "client_uuid": ack_client_uuid,
+                        })
+                except Exception as exc:
+                    logger.debug("Fehler bei WS ack_message: %s", exc)
+            elif msg_type == "read_receipt":
+                c_type = str(data.get("chat_type") or "direct")
+                c_id = str(data.get("chat_id") or "")
+                client_uuids = data.get("client_uuids") or []
+
+                def _lesequittung(db):
+                    u = db.query(User).filter(User.id == user_id).first()
+                    if u and client_uuids:
+                        E2eeQueueService.mark_chat_read(
+                            db=db,
+                            reader=u,
+                            chat_type=c_type,
+                            chat_id=c_id,
+                            client_uuids=client_uuids,
+                        )
+
+                try:
+                    await _mit_sitzung(_lesequittung)
+                    async with ws_lock:
+                        await websocket.send_json({
+                            "type": "read_ok",
+                            "chat_id": c_id,
+                        })
+                except Exception as exc:
+                    logger.debug("Fehler bei WS read_receipt: %s", exc)
             elif msg_type == "mailboxes":
-                # Der Client sagt, über welche Mailboxen er Bescheid wissen
-                # will. Der Weg für Kennungen, die der Server nicht ausrechnen
-                # kann — bei ihnen gibt es keinen Empfänger nachzuschlagen.
-                #
-                # Geprüft wird in `SocialService.erlaubte_mailboxen` — dieselbe
-                # Prüfung wie auf dem SSE-Weg und bei der Push-Adresse. Ohne
-                # sie wäre das Abo eine Verkehrsanalyse für jedermann:
-                # abonnieren und zusehen, wann es sich regt.
                 eintraege = data.get("eintraege")
                 erlaubt: list[str] = []
                 if isinstance(eintraege, list):
@@ -137,27 +296,67 @@ async def social_websocket(
                 except Exception as exc:
                     logger.debug("Fehler bei update_presence: %s", exc)
             elif msg_type == "typing":
-                blind_mailbox_id = data.get("blind_mailbox_id", "")
+                chat_id_val = data.get("chat_id")
+                chat_type_val = data.get("chat_type") or "direct"
                 status = data.get("status", "idle")
-                def _tippen(db, blind_mailbox_id=blind_mailbox_id, status=status, data=data):
-                    # Dieselbe Prüfung wie auf dem HTTP-Weg. Ohne sie wäre
-                    # der WebSocket die offene Hintertür neben der
-                    # verschlossenen Vordertür.
-                    SocialService.assert_mailbox_zugang(
-                        db, user_id, blind_mailbox_id, data.get("mailbox_token")
-                    )
-                    SocialService.broadcast_typing_signal(
-                        blind_mailbox_id=blind_mailbox_id,
-                        status=status,
-                        sender_id=user_id,
-                        sender_username=user_username,
-                        db=db,
-                    )
+                if chat_id_val and chat_type_val == "direct":
+                    try:
+                        partner_id = int(chat_id_val)
+                        SyncEventService.publish(
+                            {
+                                "type": "typing",
+                                "sender_id": user_id,
+                                "sender_username": user_username,
+                                "chat_type": "direct",
+                                "chat_id": str(user_id),
+                                "status": status,
+                            },
+                            user_id=partner_id,
+                        )
+                    except Exception as exc:
+                        logger.debug("Fehler bei direct typing signal: %s", exc)
+                elif chat_id_val and chat_type_val == "group":
+                    def _tippen_gruppe(db):
+                        try:
+                            gid = int(chat_id_val)
+                            members = db.query(ChatGroupMember.user_id).filter(ChatGroupMember.group_id == gid).all()
+                            for m in members:
+                                if m[0] != user_id:
+                                    SyncEventService.publish(
+                                        {
+                                            "type": "typing",
+                                            "sender_id": user_id,
+                                            "sender_username": user_username,
+                                            "chat_type": "group",
+                                            "chat_id": str(gid),
+                                            "status": status,
+                                        },
+                                        user_id=m[0],
+                                    )
+                        except Exception:
+                            pass
+                    try:
+                        await _mit_sitzung(_tippen_gruppe)
+                    except Exception as exc:
+                        logger.debug("Fehler bei group typing signal: %s", exc)
+                else:
+                    blind_mailbox_id = data.get("blind_mailbox_id", "")
+                    def _tippen(db, blind_mailbox_id=blind_mailbox_id, status=status, data=data):
+                        SocialService.assert_mailbox_zugang(
+                            db, user_id, blind_mailbox_id, data.get("mailbox_token")
+                        )
+                        SocialService.broadcast_typing_signal(
+                            blind_mailbox_id=blind_mailbox_id,
+                            status=status,
+                            sender_id=user_id,
+                            sender_username=user_username,
+                            db=db,
+                        )
 
-                try:
-                    await _mit_sitzung(_tippen)
-                except Exception as exc:
-                    logger.debug("Fehler bei broadcast_typing_signal: %s", exc)
+                    try:
+                        await _mit_sitzung(_tippen)
+                    except Exception as exc:
+                        logger.debug("Fehler bei broadcast_typing_signal: %s", exc)
             elif msg_type == "relay":
                 blind_mailbox_id = data.get("blind_mailbox_id", "")
                 ciphertext_envelope = data.get("ciphertext_envelope", "")

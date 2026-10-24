@@ -24,9 +24,12 @@ import {
   speichereEntwurf,
   ladeEntwurf,
   ladeAlleEntwuerfe,
+  speichereMedium,
   leseMedium,
   loescheMedium,
-  speichereMedium,
+  deleteMessageFromLocalStore,
+  editMessageInLocalStore,
+  updateDeliveryStatus,
   type LocalStoredMessage,
 } from './messengerLocalStore'
 
@@ -147,16 +150,31 @@ function installMockIndexedDb() {
       },
       index: (indexName: string) => ({
         getAll: (range?: any) => {
-          const targetMid = range?.lower || range
+          const target = range?.lower || range
           const allItems = Array.from(map!.values())
-          const matched = allItems.filter((i) => !targetMid || i.blindMailboxId === targetMid)
+          let matched: any[]
+          if (indexName === 'by_client_uuid') {
+            matched = allItems.filter((i) => {
+              if (!target) return true
+              const uuid = i.clientUuid || ''
+              return uuid === target || (typeof uuid === 'string' && uuid.startsWith(target + '#'))
+            })
+          } else {
+            matched = allItems.filter((i) => !target || i.blindMailboxId === target)
+          }
           const req: any = { onsuccess: null, onerror: null, result: matched }
           queueMicrotask(() => req.onsuccess?.())
           return req
         },
         get: (val: any) => {
           const allItems = Array.from(map!.values())
-          const found = allItems.find((i) => i.clientUuid === val)
+          const found = allItems.find((i) => {
+            if (indexName === 'by_client_uuid') {
+              const uuid = i.clientUuid || ''
+              return uuid === val || (typeof uuid === 'string' && uuid.startsWith(val + '#'))
+            }
+            return i.clientUuid === val
+          })
           const req: any = { onsuccess: null, onerror: null, result: found || null }
           queueMicrotask(() => req.onsuccess?.())
           return req
@@ -1320,4 +1338,72 @@ describe('Ablage je Konto', () => {
 
     expect(geloeschteDatenbanken).toContain('msm_messenger_local')
   })
+
+  describe('Signal Refactor: deleteMessageFromLocalStore, editMessageInLocalStore & updateDeliveryStatus', () => {
+    const testMid = 'box-signal-refactor-tests'
+    const msgUuid = 'uuid-signal-test-123'
+
+    beforeEach(async () => {
+      setzeAngemeldetesKonto(TEST_KONTO)
+      installMockIndexedDb()
+      await saveLocalMessages(testMid, [
+        {
+          blindMailboxId: testMid,
+          id: 501,
+          clientUuid: msgUuid,
+          senderId: 1,
+          text: 'Ursprünglicher Nachrichtentext',
+          createdAt: '2026-10-24T12:00:00.000Z',
+          isSelf: true,
+          status: 'sent',
+          isDelivered: false,
+          isRead: false,
+          imageAttachment: { mediaId: 'img-1' },
+        },
+      ])
+    })
+
+    it('bearbeitet eine Nachricht in IndexedDB (editMessageInLocalStore)', async () => {
+      await editMessageInLocalStore(testMid, msgUuid, 'Geänderter Nachrichtentext')
+
+      const msgs = await loadLocalMessages(testMid)
+      expect(msgs).toHaveLength(1)
+      expect(msgs[0].text).toBe('Geänderter Nachrichtentext')
+      expect(msgs[0].isEdited).toBe(true)
+      expect(msgs[0].editedAt).toBeDefined()
+    })
+
+    it('löscht eine Nachricht als Grabstein in IndexedDB (deleteMessageFromLocalStore)', async () => {
+      await deleteMessageFromLocalStore(testMid, msgUuid)
+
+      // Direkt aus IndexedDB abrufen:
+      const db = await (await import('./messengerLocalStore')).schreibeNachrichtenBestandNeu()
+      expect(db).toBeGreaterThanOrEqual(1)
+
+      // Prüfe, dass sie als gelöscht markiert ist
+      const raw = await loadLocalMessages(testMid)
+      // loadLocalMessages filtert gelöschte Grabsteine aus oder liefert tilgeInhalt
+      expect(raw.find((m) => m.clientUuid === msgUuid)?.text ?? '').toBe('')
+    })
+
+    it('aktualisiert Zustellstatus auf delivered (2 graue Haken)', async () => {
+      await updateDeliveryStatus(msgUuid, 'delivered')
+
+      const msgs = await loadLocalMessages(testMid)
+      expect(msgs).toHaveLength(1)
+      expect(msgs[0].isDelivered).toBe(true)
+      expect(msgs[0].status).toBe('delivered')
+    })
+
+    it('aktualisiert Lesestatus auf read (2 blaue Haken)', async () => {
+      await updateDeliveryStatus(msgUuid, 'read')
+
+      const msgs = await loadLocalMessages(testMid)
+      expect(msgs).toHaveLength(1)
+      expect(msgs[0].isDelivered).toBe(true)
+      expect(msgs[0].isRead).toBe(true)
+      expect(msgs[0].status).toBe('read')
+    })
+  })
 })
+
