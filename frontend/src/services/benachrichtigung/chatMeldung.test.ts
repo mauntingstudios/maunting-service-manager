@@ -83,6 +83,15 @@ describe('meldeChat', () => {
     expect(hub.melde).toHaveBeenCalledTimes(1)
   })
 
+  it('zählt dieselbe Nachricht mit unterschiedlichen Geräte-Suffixen nur einmal', () => {
+    meldeChat(eingang({ clientUuid: 'u-unique-123#devA' }))
+    meldeChat(eingang({ clientUuid: 'u-unique-123#devB' }))
+    meldeChat(eingang({ clientUuid: 'u-unique-123#devC' }))
+
+    expect(useMessengerNotificationStore.getState().unreadCounts[MID]).toBe(1)
+    expect(hub.melde).toHaveBeenCalledTimes(1)
+  })
+
   it('meldet die eigene Nachricht nicht', () => {
     meldeChat(eingang({ senderId: ICH }))
 

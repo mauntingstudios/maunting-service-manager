@@ -856,7 +856,9 @@ export function useMessengerSenden(optionen: Optionen) {
       const { niedrigsteId, verbindungsfehler, ueberInbox } = await stelleZu(auftraege)
 
       if (verbindungsfehler && niedrigsteId === 0) {
-        toast.info(t('messenger.queuedOffline'))
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          toast.info(t('messenger.queuedOffline'))
+        }
       }
 
       if (niedrigsteId > 0) {

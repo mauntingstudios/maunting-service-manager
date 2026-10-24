@@ -107,7 +107,11 @@ export function hakenFuer(
       ? 'read'
       : angekommen
         ? 'delivered'
-        : zeile.status || (zeile.id > 0 ? 'sent' : 'queued'),
+        : zeile.status === 'failed'
+          ? 'failed'
+          : zeile.id > 0
+            ? 'sent'
+            : zeile.status || 'queued',
   }
 }
 

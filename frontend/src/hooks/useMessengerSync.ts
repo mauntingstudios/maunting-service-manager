@@ -103,19 +103,24 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
       } else if (detail?.type === 'new_message') {
         void loadMessages(false)
       } else if (detail?.type === 'delivery_receipt' || detail?.type === 'read_receipt') {
-        const uuids = Array.isArray(detail.client_uuids) ? (detail.client_uuids as string[]) : []
+        const uuids = Array.isArray(detail.client_uuids)
+          ? (detail.client_uuids as string[])
+          : detail.client_uuid
+            ? [String(detail.client_uuid)]
+            : []
         const isRead = detail.type === 'read_receipt'
-        if (uuids.length > 0 && blindMailboxId) {
+        const targetMid = blindMailboxId || (detail.chat_id ? String(detail.chat_id) : '')
+        if (uuids.length > 0 && targetMid) {
           if (isRead) {
-            merkePartnerKennungen(blindMailboxId, 'gelesen', uuids)
-            merkePartnerKennungen(blindMailboxId, 'zugestellt', uuids)
+            merkePartnerKennungen(targetMid, 'gelesen', uuids)
+            merkePartnerKennungen(targetMid, 'zugestellt', uuids)
             for (const uuid of uuids) {
-              void updateMessageInLocalStore(blindMailboxId, uuid, { status: 'read', isRead: true, isDelivered: true })
+              void updateMessageInLocalStore(targetMid, uuid, { status: 'read', isRead: true, isDelivered: true })
             }
           } else {
-            merkePartnerKennungen(blindMailboxId, 'zugestellt', uuids)
+            merkePartnerKennungen(targetMid, 'zugestellt', uuids)
             for (const uuid of uuids) {
-              void updateMessageInLocalStore(blindMailboxId, uuid, { status: 'delivered', isDelivered: true })
+              void updateMessageInLocalStore(targetMid, uuid, { status: 'delivered', isDelivered: true })
             }
           }
           void loadMessages(false)

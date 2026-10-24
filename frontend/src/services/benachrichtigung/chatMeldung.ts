@@ -92,9 +92,11 @@ export function meldeChat(eingang: ChatMeldungEingang): void {
    * Dieselbe Nachricht kann in einem kurzen Fenster über zwei Wege eintreffen
    * (geteilte Mailbox und Gerätepostfach, etwa während eines Umzugs). `melde`
    * hält Ton und Einblendung zurück; der Ungelesen-Zähler liegt davor und würde
-   * sonst doppelt steigen. Der Schlüssel gilt über alle Fenster.
+   * sonst doppelt steigen. Der Schlüssel gilt über alle Fenster und filtert
+   * gerätespezifische Suffixe (#dev-...) heraus.
    */
-  if (eingang.clientUuid && !beanspruche(`zaehlen:${mid}:${eingang.clientUuid}`, 5000)) {
+  const logischeUuid = (eingang.clientUuid || '').split('#')[0]
+  if (logischeUuid && !beanspruche(`zaehlen:${mid}:${logischeUuid}`, 5000)) {
     return
   }
 
@@ -157,7 +159,7 @@ export function meldeChat(eingang: ChatMeldungEingang): void {
   void melde(lage, {
     schluessel:
       eingang.ereignis ||
-      `chat:${mid}:${eingang.clientUuid || ''}`,
+      `chat:${mid}:${logischeUuid || ''}`,
     titel: title,
     text,
     toastText: meta.isGroup

@@ -13,7 +13,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api, apiStream } from '@/api/client'
-import { nachweisKopf } from '@/services/mailboxNachweis'
 import { merkeStromKennung, vergissStromKennung } from '@/services/mailboxAbo'
 import { merkePraesenzKennung, vergissPraesenzKennung } from '@/services/praesenz'
 import type { NoteItem } from '@/pages/Notes'
@@ -474,37 +473,29 @@ export async function replayOutbox(): Promise<{ processed: number; failed: numbe
           }
         } else if (mutation.entity === 'message') {
           if (mutation.action === 'relay' || mutation.action === 'create') {
-            const res = await api<any>('/social/e2ee/relay', {
-              method: 'POST',
-              body: JSON.stringify(mutation.payload),
-              // Auch hier: die Warteschlange ruft `/e2ee/relay` direkt auf und
-              // geht an `relayE2eeEnvelope` vorbei. Ohne den Nachweis waere
-              // sie der eine Sendeweg, den die Mailbox abweist.
-              headers: nachweisKopf(mutation.payload?.blind_mailbox_id),
-            })
-            if (res && res.id) {
-              // Erst festschreiben, dann melden. Ein Ereignis, das schneller
-              // ist als die Ablage, lädt den alten Stand und schreibt die Uhr
-              // zurück (Regel 45: nach dem `await` gilt der alte Zustand nicht
-              // mehr).
+            if (mutation.payload?.chat_type && mutation.payload?.chat_id) {
+              const baseUuid = String(mutation.payload.client_uuid || mutation.id).split('#')[0]
+              await api('/social/messages/send', {
+                method: 'POST',
+                body: JSON.stringify({
+                  client_uuid: baseUuid,
+                  chat_type: mutation.payload.chat_type,
+                  chat_id: mutation.payload.chat_id,
+                  envelopes: [
+                    {
+                      target_device_id: mutation.payload.target_device_db_id,
+                      device_id: mutation.payload.target_device_id,
+                      encrypted_payload: mutation.payload.ciphertext_envelope,
+                    },
+                  ],
+                }),
+              })
               if (mutation.payload?.blind_mailbox_id) {
                 await updateMessageInLocalStore(
                   mutation.payload.blind_mailbox_id,
                   logischeNachrichtUuid(mutation.payload?.client_uuid || mutation.id),
-                  { id: res.id, status: 'sent' },
+                  { id: 1, status: 'sent' },
                 ).catch(() => {})
-              }
-              if (typeof window !== 'undefined') {
-                window.dispatchEvent(
-                  new CustomEvent('msm:message-confirmed', {
-                    detail: {
-                      client_uuid: mutation.payload?.client_uuid || mutation.id,
-                      envelope_id: res.id,
-                      blind_mailbox_id:
-                        res.blind_mailbox_id || mutation.payload?.blind_mailbox_id,
-                    },
-                  })
-                )
               }
             }
           }

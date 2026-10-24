@@ -23,6 +23,14 @@ describe('hakenFuer', () => {
     })
   })
 
+  it('wechselt von queued auf sent, sobald die Nachricht eine Server-ID hat', () => {
+    expect(hakenFuer({ id: 1, isSelf: true, status: 'queued' }, OHNE)).toEqual({
+      isRead: false,
+      isDelivered: false,
+      status: 'sent',
+    })
+  })
+
   it('zeigt zwei graue Haken nach der Zustellquittung', () => {
     expect(hakenFuer({ id: 358, isSelf: true }, { maxPartnerReadId: 0, maxPartnerDeliveredId: 358 })).toEqual({
       isRead: false,

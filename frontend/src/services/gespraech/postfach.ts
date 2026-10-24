@@ -340,9 +340,19 @@ async function verarbeitePostfachInnen(
           .map((m) => m.clientUuid)
           .filter((id): id is string => Boolean(id)),
       )
-      const neueZeilen = uebernahme.processedList.filter(
+      const roheNeueZeilen = uebernahme.processedList.filter(
         (m) => !m.isSelf && Boolean(m.clientUuid) && !bekannt.has(m.clientUuid as string),
       )
+      // Deduplizieren auf Basis-UUID (verhindert Mehrfachmeldung bei Multi-Device-Umschlägen)
+      const gesehenUuids = new Set<string>()
+      const neueZeilen: typeof roheNeueZeilen = []
+      for (const z of roheNeueZeilen) {
+        const base = (z.clientUuid || '').split('#')[0]
+        if (base && !gesehenUuids.has(base)) {
+          gesehenUuids.add(base)
+          neueZeilen.push(z)
+        }
+      }
       const neue = neueZeilen.map((m) => m.clientUuid as string)
       const blockiert = Boolean(
         !gespraech.group &&

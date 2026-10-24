@@ -79,6 +79,17 @@ class E2eeQueueService:
             if not member:
                 raise HTTPException(status_code=403, detail="Kein Mitglied dieser Gruppe.")
 
+        allowed_user_ids: set[int] = set()
+        if chat_type == "direct":
+            allowed_user_ids = {recipient_id, sender.id}
+        elif chat_type == "group":
+            group_members = (
+                db.query(ChatGroupMember.user_id)
+                .filter(ChatGroupMember.group_id == group_id)
+                .all()
+            )
+            allowed_user_ids = {m[0] for m in group_members}
+
         created_ids: list[int] = []
         target_user_ids: set[int] = set()
         has_self_sync = False
@@ -90,7 +101,7 @@ class E2eeQueueService:
             if not encrypted_payload or (not target_device_id and not target_device_str):
                 continue
 
-            query = db.query(UserE2eeDevice)
+            query = db.query(UserE2eeDevice).filter(UserE2eeDevice.user_id.in_(allowed_user_ids))
             if target_device_id:
                 query = query.filter(UserE2eeDevice.id == int(target_device_id))
             elif target_device_str:
@@ -98,23 +109,6 @@ class E2eeQueueService:
             target_device = query.first()
             if not target_device or not target_device.is_approved:
                 continue
-
-            # Sicherstellen, dass das Zielgerät zum Chat gehört (Empfänger oder eigenes Zweitgerät)
-            if chat_type == "direct":
-                if target_device.user_id not in (recipient_id, sender.id):
-                    continue
-            elif chat_type == "group":
-                # Prüfen, ob das Zielgerät zu einem Mitglied der Gruppe gehört
-                is_group_member = (
-                    db.query(ChatGroupMember)
-                    .filter(
-                        ChatGroupMember.group_id == group_id,
-                        ChatGroupMember.user_id == target_device.user_id,
-                    )
-                    .first()
-                )
-                if not is_group_member:
-                    continue
 
             queue_item = E2eeDeviceQueue(
                 target_device_id=target_device.id,
@@ -225,6 +219,7 @@ class E2eeQueueService:
                     {
                         "type": "delivery_receipt",
                         "client_uuid": item.client_uuid,
+                        "client_uuids": [item.client_uuid],
                         "chat_id": item.chat_id,
                         "recipient_id": device.user_id,
                         "timestamp": now_iso,
