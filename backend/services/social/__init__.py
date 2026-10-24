@@ -15,11 +15,12 @@ from .mailbox import MailboxMixin
 from .mailbox_zugang import MailboxZugangMixin
 from .praesenz import PraesenzMixin
 from .profile import ProfilMixin
+from .queue_service import E2eeQueueService
 from .stories import StoriesMixin
-from . import zustellung
 
 __all__ = [
     "DirektchatMixin",
+    "E2eeQueueService",
     "FreundschaftenMixin",
     "GruppenMixin",
     "GruppenRollenMixin",
@@ -28,5 +29,4 @@ __all__ = [
     "PraesenzMixin",
     "ProfilMixin",
     "StoriesMixin",
-    "zustellung",
 ]
