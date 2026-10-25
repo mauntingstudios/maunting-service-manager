@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from models import User, ChatMedia, ChatGroup, ChatGroupMember, DirectChat, UserFriend
 from services.auth_service import AuthService
 from services.social_service import SocialService
-from services.chat_media_service import MEDIEN_AUFBEWAHRUNG_TAGE, ChatMediaService
+from services.chat_media_service import ChatMediaService
 from services.chat_media_validator import (
     MAX_MEDIA_BYTES,
     MAX_IMAGE_BYTES,
@@ -347,41 +347,13 @@ def test_max_media_bytes_traegt_eine_volle_videonotiz():
     assert roh_grenze > 20 * 1024 * 1024
 
 
-def test_medien_aufbewahrung_ist_30_tage_fuer_neue_uploads():
-    """Neue Uploads liegen 30 Tage auf dem Server; die lokale Frist bleibt.
-
-    Die Nutzerentscheidung vom 23.10.2026 trennt zwei Regeln, die vorher an
-    derselben Zahl hingen: der Server haelt den Chiffratblock nur fuer den
-    Erstdownload (30 Tage), waehrend die lokale Verfallsfrist im Chat bis
-    90 Tage reicht (`VERFALL_STUFEN` in `nachrichtVerfall.ts`). Eine 40 Tage
-    alte Nachricht darf lokal weiterleben; ihr Anhang ist dann nur noch auf
-    einem Geraet zu haben, das ihn vorher gesichert hat.
-
-    Wer hier eine laengere Serverfrist eintraegt, verlaengert damit nicht die
-    lokale Frist, und umgekehrt. Beide Zahlen stehen deshalb nebeneinander.
-    """
-    assert MEDIEN_AUFBEWAHRUNG_TAGE == 30
-
-    quelle = (
-        Path(__file__).resolve().parents[2]
-        / "frontend"
-        / "src"
-        / "services"
-        / "nachrichtVerfall.ts"
-    ).read_text(encoding="utf-8")
-    # Die laengste waehlbare Stufe bleibt 90 Tage. Der Server ist nur der
-    # Erstdownload und ersetzt diese lokale Frist nicht.
-    assert "sekunden: 7_776_000" in quelle
-
-
-def test_hochgeladener_anhang_bekommt_30_tage(
+def test_hochgeladener_anhang_laeuft_nicht_von_selbst_ab(
     db: Session, owner_user: User, regular_user: User
 ):
-    """Die Konstante allein genuegt nicht: der Upload muss sie auch benutzen.
+    """Normale Anhaenge bleiben, bis jemand sie loescht.
 
-    Der Fehler sass nicht in einer Zahl, sondern in der Aufrufstelle, die eine
-    eigene mitbrachte. Ein Test auf die Konstante haette ihn nicht gefunden.
-    Geprueft wird an den beiden gespeicherten Zeitpunkten, nicht an der Uhr.
+    Nur eine ausdrueckliche Frist (verschwindende Nachrichten) setzt
+    `expires_at`; ohne sie raeumt der Scheduler nichts weg.
     """
     friend_req = SocialService.send_friend_request(db, owner_user.id, regular_user.username)
     SocialService.accept_friend_request(db, regular_user.id, friend_req["id"])
@@ -390,20 +362,34 @@ def test_hochgeladener_anhang_bekommt_30_tage(
     media = ChatMediaService.upload_encrypted_media(
         db,
         uploader=owner_user,
-        blind_mailbox_id=chat.blind_mailbox_id,
+        chat_type="direct",
+        chat_id=chat.id,
         ciphertext_blob="sv-blob-v1:AES-GCM:iv=12345678:tag=87654321:ciphertext=EncryptedPayloadXYZ",
         file_name="urlaubsbild.jpg",
     )
 
+    assert media.expires_at is None
+
+
+def test_ausdrueckliche_frist_wird_gespeichert(
+    db: Session, owner_user: User, regular_user: User
+):
+    friend_req = SocialService.send_friend_request(db, owner_user.id, regular_user.username)
+    SocialService.accept_friend_request(db, regular_user.id, friend_req["id"])
+    chat = SocialService.ensure_direct_chat(db, owner_user.id, regular_user.id)
+    faellig = datetime.now(timezone.utc) + timedelta(hours=24)
+
+    media = ChatMediaService.upload_encrypted_media(
+        db,
+        uploader=owner_user,
+        chat_type="direct",
+        chat_id=chat.id,
+        ciphertext_blob="sv-blob-v1:AES-GCM:iv=12345678:tag=87654321:ciphertext=EncryptedPayloadXYZ",
+        file_name="kurz.jpg",
+        expires_at=faellig,
+    )
+
     assert media.expires_at is not None
-    assert media.created_at is not None
-    erstellt = media.created_at
-    if erstellt.tzinfo is None:
-        erstellt = erstellt.replace(tzinfo=timezone.utc)
-    gesetzt = media.expires_at
-    if gesetzt.tzinfo is None:
-        gesetzt = gesetzt.replace(tzinfo=timezone.utc)
-    assert gesetzt - erstellt == timedelta(days=MEDIEN_AUFBEWAHRUNG_TAGE)
 
 
 def test_altbestand_behaelt_seine_90_tage_bis_zum_ablauf(
@@ -593,14 +579,14 @@ def test_chat_media_upload_and_signed_url_flow(db: Session, owner_user: User, re
     friend_req = SocialService.send_friend_request(db, owner_user.id, regular_user.username)
     SocialService.accept_friend_request(db, regular_user.id, friend_req["id"])
     chat = SocialService.ensure_direct_chat(db, owner_user.id, regular_user.id)
-    blind_box = chat.blind_mailbox_id
 
     # 2. Owner laedt verschluesselten Blob hoch
     ciphertext = "sv-blob-v1:AES-GCM:iv=12345678:tag=87654321:ciphertext=EncryptedPayloadBytesXYZ"
     media = ChatMediaService.upload_encrypted_media(
         db,
         uploader=owner_user,
-        blind_mailbox_id=blind_box,
+        chat_type="direct",
+        chat_id=chat.id,
         ciphertext_blob=ciphertext,
         file_name="geheimdokument.pdf",
         media_type="application/pdf",
@@ -630,7 +616,7 @@ def test_chat_media_upload_and_signed_url_flow(db: Session, owner_user: User, re
             db, user=stranger, media_id=media.id, ttl_seconds=600
         )
     assert exc_info.value.status_code == 403
-    assert "Keine Chat-Mitgliedschaft" in exc_info.value.detail
+    assert "Keine Mitgliedschaft" in exc_info.value.detail
 
     # 6. Partner kann Medium ueber signierte URL abrufen
     import urllib.parse
@@ -699,11 +685,11 @@ def test_group_chat_media_membership_enforcement(db: Session, owner_user: User, 
     blob = "sv-blob-v1:AES-GCM-256:group_payload_data_here"
     media = ChatMediaService.upload_encrypted_media(
         db,
-        uploader=regular_user,
-        blind_mailbox_id=f"group-{group.id}",
+        uploader=owner_user,
+        chat_type="group",
+        chat_id=group.id,
         ciphertext_blob=blob,
         file_name="exploit_analysis.pdf",
-        group_id=group.id,
     )
     assert media.group_id == group.id
 
@@ -712,10 +698,10 @@ def test_group_chat_media_membership_enforcement(db: Session, owner_user: User, 
         ChatMediaService.upload_encrypted_media(
             db,
             uploader=stranger,
-            blind_mailbox_id=f"group-{group.id}",
+            chat_type="group",
+            chat_id=group.id,
             ciphertext_blob=blob,
             file_name="evil.pdf",
-            group_id=group.id,
         )
     assert exc_up.value.status_code == 403
 
@@ -747,7 +733,7 @@ def test_group_chat_media_membership_enforcement(db: Session, owner_user: User, 
             user_id=regular_user.id,
         )
     assert exc_revoked.value.status_code == 403
-    assert "Keine Chat-Mitgliedschaft" in exc_revoked.value.detail
+    assert "Keine Mitgliedschaft" in exc_revoked.value.detail
 
 
 def test_sanitize_attachment_filename():
@@ -788,7 +774,8 @@ def test_chat_media_blocked_user_denial(db: Session, owner_user: User, regular_u
     media = ChatMediaService.upload_encrypted_media(
         db,
         uploader=owner_user,
-        blind_mailbox_id=chat.blind_mailbox_id,
+        chat_type="direct",
+        chat_id=chat.id,
         ciphertext_blob=ciphertext,
         file_name="geheim.pdf",
     )
@@ -809,7 +796,8 @@ def test_chat_media_blocked_user_denial(db: Session, owner_user: User, regular_u
         ChatMediaService.upload_encrypted_media(
             db,
             uploader=regular_user,
-            blind_mailbox_id=chat.blind_mailbox_id,
+            chat_type="direct",
+            chat_id=chat.id,
             ciphertext_blob=ciphertext,
             file_name="spam.pdf",
         )
@@ -827,7 +815,8 @@ def test_chat_media_expired_media_denial(db: Session, owner_user: User, regular_
     media = ChatMediaService.upload_encrypted_media(
         db,
         uploader=owner_user,
-        blind_mailbox_id=chat.blind_mailbox_id,
+        chat_type="direct",
+        chat_id=chat.id,
         ciphertext_blob=ciphertext,
         file_name="veraltet.pdf",
     )
@@ -972,7 +961,8 @@ def test_signed_url_tampering_protection(db: Session, owner_user: User, regular_
     media = ChatMediaService.upload_encrypted_media(
         db,
         uploader=owner_user,
-        blind_mailbox_id=chat.blind_mailbox_id,
+        chat_type="direct",
+        chat_id=chat.id,
         ciphertext_blob=ciphertext,
         file_name="tamper_test.pdf",
     )
@@ -1152,51 +1142,3 @@ def test_filename_ntfs_alternate_data_stream_sanitization():
     sanitized = sanitize_attachment_filename("malicious.exe:hidden_stream")
     assert ":" not in sanitized
     assert sanitized == "malicious.exe_hidden_stream"
-
-
-def test_upload_unauthorized_mailbox_rejection(db: Session, owner_user: User):
-    """Verhindert, dass unberechtigte Blobs fuer frei erfundene Mailbox-IDs ohne Chat hochgeladen werden."""
-    ciphertext = "sv-blob-v1:AES-GCM:iv=111:tag=222:ciphertext=ValidE2EEPayload"
-    with pytest.raises(HTTPException) as exc_info:
-        ChatMediaService.upload_encrypted_media(
-            db,
-            uploader=owner_user,
-            blind_mailbox_id="completely-bogus-mailbox-id-without-chat",
-            ciphertext_blob=ciphertext,
-            file_name="unauthorized.pdf",
-        )
-    assert exc_info.value.status_code == 403
-    # Seit 09/2026 dieselbe Meldung wie im Relais: der Upload prueft die
-    # Mailbox mit `assert_mailbox_zugang` statt mit einer eigenen Fassung
-    # derselben Frage. Eine zweite Fassung waere irgendwann die nachsichtigere.
-    assert "Keine Berechtigung" in exc_info.value.detail
-
-
-
-
-def test_geheime_mailbox_medien_brauchen_nachweis_bei_ausstellung_und_download(
-    client, db, owner_user, regular_user, user_cookies,
-):
-    from models import E2eeBlindMailbox
-    mailbox = "a" * 64
-    proof = "b" * 64
-    db.add(E2eeBlindMailbox(mailbox_id=mailbox, auth_verifier=SocialService._verifier_von(proof)))
-    media = ChatMedia(
-        id="secret-mailbox-media", uploader_user_id=owner_user.id, blind_mailbox_id=mailbox,
-        ciphertext_blob="synthetic-ciphertext", media_type="application/octet-stream",
-        file_name="encrypted.bin", size_bytes=20, sha256="c" * 64,
-    )
-    db.add(media)
-    db.commit()
-    path = f"/api/social/media/{media.id}/signed-url"
-    for headers in [{}, {"X-Mailbox-Token": "d" * 64}]:
-        assert client.get(path, cookies=user_cookies, headers=headers).status_code == 403
-    signed = client.get(path, cookies=user_cookies, headers={"X-Mailbox-Token": proof})
-    assert signed.status_code == 200
-    url = signed.json()["signed_url"]
-    assert proof not in url
-    for headers in [{}, {"X-Mailbox-Token": "d" * 64}]:
-        assert client.get(url, headers=headers).status_code == 403
-    downloaded = client.get(url, headers={"X-Mailbox-Token": proof})
-    assert downloaded.status_code == 200
-    assert downloaded.text == "synthetic-ciphertext"

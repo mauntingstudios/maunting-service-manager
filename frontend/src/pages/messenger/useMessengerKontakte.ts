@@ -5,7 +5,7 @@ import type { PresenceStatus } from '@/components/social/StatusIndicator'
 import type { ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import { useKontaktdaten } from '@/hooks/useKontaktdaten'
 import { useStoryAnsicht } from '@/hooks/useStoryAnsicht'
-import { deriveBlindMailboxId, deriveGroupBlindMailboxId } from '@/services/e2eeCrypto'
+// Chat-Kennungen werden lokal aus peerId/groupId gebildet.
 import { fuelleNamenNach, zeigeGespraech } from '@/services/gespraechsListe'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 
@@ -132,23 +132,22 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
   useEffect(() => {
     if (versteckt.size === 0) return
     const beiEreignis = (e: Event) => {
-      const detail = (e as CustomEvent<{ type?: string; blind_mailbox_id?: string; sender_user_id?: number }>)
-        .detail
-      if (detail?.type !== 'e2ee_blind_message' || !detail.blind_mailbox_id) return
-      if (detail.sender_user_id && Number(detail.sender_user_id) === Number(currentUserId)) return
-      const treffer = Object.entries(contactMailboxMap).find(
-        ([, mailbox]) => mailbox === detail.blind_mailbox_id,
-      )
-      if (!treffer) return
-      const userId = Number(treffer[0])
-      if (!versteckt.has(userId)) return
-      void zeigeGespraech(userId)
+      const detail = (e as CustomEvent<{
+        type?: string
+        chat_type?: string
+        sender_user_id?: number
+      }>).detail
+      if (detail?.type !== 'message_created' || detail.chat_type !== 'direct') return
+      const sender = Number(detail.sender_user_id)
+      if (!sender || sender === Number(currentUserId)) return
+      if (!versteckt.has(sender)) return
+      void zeigeGespraech(sender)
         .then(() => loadData())
         .catch(() => {})
     }
     window.addEventListener('msm:sync-event', beiEreignis)
     return () => window.removeEventListener('msm:sync-event', beiEreignis)
-  }, [versteckt, contactMailboxMap, currentUserId, loadData])
+  }, [versteckt, currentUserId, loadData])
 
   // Namenlose Gespräche bekommen ihren Namen aus der Kontaktliste dieses Geräts.
   useEffect(() => {
@@ -208,26 +207,23 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
   // Mailbox-Verzeichnis und Zuordnungen im Benachrichtigungs-Store registrieren.
   useEffect(() => {
     if (!currentUserId) return
-    let active = true
     const store = useMessengerNotificationStore.getState()
+    const kontakte: Record<number, string> = {}
     for (const c of alleKontakte) {
-      deriveBlindMailboxId(currentUserId, c.userId).then((mid) => {
-        if (!active) return
-        setContactMailboxMap((prev) => (prev[c.userId] === mid ? prev : { ...prev, [c.userId]: mid }))
-        store.registerMailbox(mid, { name: c.username, avatarUrl: c.avatarUrl, isGroup: false, userId: c.userId })
-      }).catch(() => {})
+      const mid = `direct:peer:${c.userId}`
+      kontakte[c.userId] = mid
+      store.registerMailbox(mid, { name: c.username, avatarUrl: c.avatarUrl, isGroup: false, userId: c.userId })
     }
+    const gruppen: Record<number, string> = {}
     for (const g of groups) {
-      deriveGroupBlindMailboxId(g.id).then((mid) => {
-        if (!active) return
-        setGroupMailboxMap((prev) => (prev[g.id] === mid ? prev : { ...prev, [g.id]: mid }))
-        store.registerMailbox(mid, { name: gruppenTitel(g), avatarUrl: g.avatar_url, isGroup: true, groupId: g.id })
-      }).catch(() => {})
+      const mid = `group:${g.id}`
+      gruppen[g.id] = mid
+      store.registerMailbox(mid, { name: gruppenTitel(g), avatarUrl: g.avatar_url, isGroup: true, groupId: g.id })
     }
-    return () => { active = false }
+    setContactMailboxMap(kontakte)
+    setGroupMailboxMap(gruppen)
     // `alleKontakte`, nicht `contactsList`: ein verstecktes Gespräch bleibt
-    // abonniert und zugeordnet, sonst käme die Nachricht nie an, die es
-    // zurückholen soll.
+    // zugeordnet, sonst käme die Nachricht nie an, die es zurückholen soll.
   }, [alleKontakte, groups, currentUserId, gruppenTitel])
 
   const storyAnsicht = useStoryAnsicht(stories, currentUserId, alleKontakte)

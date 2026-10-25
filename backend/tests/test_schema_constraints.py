@@ -1629,46 +1629,59 @@ def test_vault_blind_buckets_and_composite_pk_migration(tmp_path: Path, pg_wegwe
         settings.database_url = vorher
 
 
-def test_e2ee_blind_envelopes_client_uuid_migration(tmp_path: Path, pg_wegwerf) -> None:
-    """Migration 20260907_07 ergaenzt e2ee_blind_envelopes.client_uuid, Indizes und UniqueConstraint.
+def test_die_einheits_transport_migration_legt_die_neuen_tabellen_an(
+    tmp_path: Path, pg_wegwerf
+) -> None:
+    """Migration 20261025_01 ersetzt die drei alten Transporte durch eine Tabelle.
 
-    Verifiziert:
-    1. Downgrade auf 20260907_06 entfernt client_uuid.
-    2. Upgrade auf 20260907_07 (head) ergaenzt client_uuid und Indizes idempotent.
-    3. initialize_or_upgrade_schema laeuft fehlerfrei durch.
+    Geprueft wird der Rundlauf: unterhalb der Revision gibt es weder
+    `e2ee_messages` noch die Mitgliederzeile; danach stehen beide, die
+    Nachricht ist ueber `client_uuid` eindeutig, und `direct_chats` nennt
+    weiterhin keine Menschen.
     """
-    from services.schema_manager import initialize_or_upgrade_schema
-
-    db_url = pg_wegwerf("e2ee_client_uuid_migration")
+    db_url = pg_wegwerf("einheits_transport_migration")
     vorher = settings.database_url
     settings.database_url = db_url
     backend_dir = Path(__file__).resolve().parent.parent
     config = Config(str(backend_dir / "alembic.ini"))
     config.set_main_option("script_location", str(backend_dir / "migrations"))
     engine = create_engine(db_url)
+    neu = {
+        "e2ee_messages",
+        "e2ee_chat_keys",
+        "e2ee_chat_states",
+        "e2ee_message_reactions",
+        "e2ee_accounts",
+        "e2ee_account_key_vault",
+        "direct_chat_members",
+    }
     try:
         Base.metadata.create_all(engine)
         command.stamp(config, "head")
 
-        # Downgrade auf Stand vor client_uuid (20260907_06)
-        command.downgrade(config, "20260907_06")
-        inspector = _frisch(engine)
-        cols_before = {c["name"] for c in inspector.get_columns("e2ee_blind_envelopes")}
-        assert "client_uuid" not in cols_before
+        command.downgrade(config, "20261024_02")
+        tabellen = set(inspect(engine).get_table_names())
+        assert neu & tabellen == set()
 
-        # Upgrade auf head (20260907_07)
         command.upgrade(config, "head")
-        inspector = _frisch(engine)
-        cols_after = {c["name"] for c in inspector.get_columns("e2ee_blind_envelopes")}
-        assert "client_uuid" in cols_after
+        inspector = inspect(engine)
+        tabellen = set(inspector.get_table_names())
+        assert neu <= tabellen
 
-        # Schema Manager validiert vollstaendiges Schema
-        status = initialize_or_upgrade_schema(engine)
-        assert status == "upgraded"
+        eindeutig = {
+            u["name"] for u in inspector.get_unique_constraints("e2ee_messages")
+        }
+        assert "uq_e2ee_message_client_uuid" in eindeutig
+
+        spalten_direct = {c["name"] for c in inspector.get_columns("direct_chats")}
+        assert "user_a_id" not in spalten_direct
+        assert "user_b_id" not in spalten_direct
+
+        fk = _fremdschluessel(inspector, "direct_chat_members", "user_id")
+        assert fk["options"] == {"ondelete": "CASCADE"}
     finally:
         engine.dispose()
         settings.database_url = vorher
-
 
 
 def test_ein_geraeteschluessel_verschwindet_mit_seinem_konto(db: Session, owner_user) -> None:
@@ -1854,44 +1867,3 @@ def test_die_migration_legt_die_zustelladressen_an(tmp_path: Path, pg_wegwerf) -
         settings.database_url = vorher
 
 
-def test_die_blinde_mailbox_zeigt_auf_keinen_menschen(tmp_path: Path, pg_wegwerf) -> None:
-    """Die eine Zusage dieser Tabelle, und sie ist eine Zusage ans Schema.
-
-    `e2ee_blind_mailboxes` traegt den Besitznachweis einer Mailbox. Ihr ganzer
-    Zweck ist, dass ein Datenbankabzug daraus nichts ueber Menschen verraet —
-    und der einzige Weg, das kaputtzumachen, ist eine Spalte, die auf ein Konto
-    zeigt. Genau dafuer ist dieser Test da: er faellt, sobald jemand „nur mal
-    eben" ein `user_id` dazulegt, weil es an einer Stelle bequem waere.
-
-    Der Rueckbau bis **vor** die Revision und wieder vor beweist zugleich, dass
-    die Tabelle in der Alembic-Kette steht und nicht bloss aus `create_all`
-    stammt.
-    """
-    db_url = pg_wegwerf("blinde_mailbox")
-    vorher = settings.database_url
-    settings.database_url = db_url
-    backend_dir = Path(__file__).resolve().parent.parent
-    config = Config(str(backend_dir / "alembic.ini"))
-    config.set_main_option("script_location", str(backend_dir / "migrations"))
-    engine = create_engine(db_url)
-    try:
-        Base.metadata.create_all(engine)
-        command.stamp(config, "head")
-
-        command.downgrade(config, "20260922_10")
-        assert "e2ee_blind_mailboxes" not in inspect(engine).get_table_names()
-
-        command.upgrade(config, "head")
-        inspector = inspect(engine)
-        assert "e2ee_blind_mailboxes" in inspector.get_table_names()
-
-        spalten = {s["name"] for s in inspector.get_columns("e2ee_blind_mailboxes")}
-        assert spalten == {"mailbox_id", "auth_verifier", "created_at", "updated_at"}
-
-        # Kein Fremdschluessel — auch keiner auf etwas anderes als `users`.
-        # Jede Beziehung waere eine Spur, an der sich die Mailbox einem Konto
-        # zuordnen liesse.
-        assert inspector.get_foreign_keys("e2ee_blind_mailboxes") == []
-    finally:
-        engine.dispose()
-        settings.database_url = vorher

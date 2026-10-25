@@ -1,20 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { messengerSocket } from './messengerSocket'
 import * as socialApi from '@/api/social'
-import * as localStore from './messengerLocalStore'
 
 vi.mock('@/api/social', () => ({
-  sendMessageQueue: vi.fn(async (payload) => ({
-    status: 'ok',
+  sendChatMessage: vi.fn(async (payload: { client_uuid: string }) => ({
+    id: 4242,
     client_uuid: payload.client_uuid,
-    enqueued: payload.envelopes?.length ?? 1,
   })),
-  ackQueueMessages: vi.fn(async () => ({ status: 'ok', acknowledged: 1 })),
-  sendReadReceipt: vi.fn(async () => ({ status: 'ok' })),
-}))
-
-vi.mock('./messengerLocalStore', () => ({
-  updateDeliveryStatus: vi.fn(async () => {}),
 }))
 
 class MockWebSocket {
@@ -46,7 +38,13 @@ class MockWebSocket {
   }
 }
 
-describe('messengerSocket', () => {
+async function verbunden(): Promise<MockWebSocket> {
+  messengerSocket.connect('dev-123')
+  await new Promise((r) => setTimeout(r, 10))
+  return MockWebSocket.instances[0]
+}
+
+describe('messengerSocket im Einheits-Transport', () => {
   const origWebSocket = global.WebSocket
 
   beforeEach(() => {
@@ -61,100 +59,87 @@ describe('messengerSocket', () => {
   })
 
   it('baut Verbindung auf und sendet init mit deviceId', async () => {
-    messengerSocket.connect('dev-123')
-    await new Promise((r) => setTimeout(r, 10))
-
-    const ws = MockWebSocket.instances[0]
-    expect(ws).toBeDefined()
+    const ws = await verbunden()
     expect(ws.url).toContain('device_id=dev-123')
     expect(ws.sent.some((m) => JSON.parse(m).type === 'init')).toBe(true)
   })
 
-  it('sendet Nachricht über WebSocket und quittiert via message_sent', async () => {
-    messengerSocket.connect('dev-123')
-    await new Promise((r) => setTimeout(r, 10))
-    const ws = MockWebSocket.instances[0]
+  it('sendet ein Chiffrat über den WebSocket und löst mit message_sent auf', async () => {
+    const ws = await verbunden()
 
-    const sendPromise = messengerSocket.sendMessage({
-      client_uuid: 'uuid-ws-1',
+    const sendPromise = messengerSocket.sendChatMessage({
       chat_type: 'direct',
-      chat_id: '42',
-      envelopes: [{ device_id: 'target-1', encrypted_payload: 'cipher-1' }],
+      chat_id: 55,
+      client_uuid: 'uuid-ws-1',
+      key_version: 1,
+      encrypted_payload: 'cipher-1',
     })
 
-    // Server antwortet mit message_sent
     ws.onmessage?.({
-      data: JSON.stringify({
-        type: 'message_sent',
-        client_uuid: 'uuid-ws-1',
-        status: 'ok',
-        enqueued: 1,
-      }),
+      data: JSON.stringify({ type: 'message_sent', id: 88, client_uuid: 'uuid-ws-1' }),
     })
 
-    const result = await sendPromise
-    expect(result.status).toBe('ok')
-    expect(result.client_uuid).toBe('uuid-ws-1')
+    await expect(sendPromise).resolves.toEqual({ id: 88, client_uuid: 'uuid-ws-1' })
     expect(ws.sent.some((m) => JSON.parse(m).type === 'send_message')).toBe(true)
+    expect(socialApi.sendChatMessage).not.toHaveBeenCalled()
   })
 
-  it('fällt transparent auf HTTP-Queue zurück, wenn WebSocket nicht verbunden ist', async () => {
+  it('fällt ohne Verbindung auf den HTTP-Weg zurück', async () => {
     messengerSocket.disconnect()
 
-    const result = await messengerSocket.sendMessage({
-      client_uuid: 'uuid-http-fallback',
-      chat_type: 'direct',
-      chat_id: '42',
-      envelopes: [{ device_id: 'target-1', encrypted_payload: 'cipher-1' }],
-    })
+    await expect(
+      messengerSocket.sendChatMessage({
+        chat_type: 'direct',
+        chat_id: 55,
+        client_uuid: 'uuid-http',
+        key_version: 1,
+        encrypted_payload: 'cipher-2',
+      }),
+    ).resolves.toEqual({ id: 4242, client_uuid: 'uuid-http' })
 
-    expect(result.status).toBe('ok')
-    expect(socialApi.sendMessageQueue).toHaveBeenCalledWith(expect.objectContaining({
-      client_uuid: 'uuid-http-fallback',
+    expect(socialApi.sendChatMessage).toHaveBeenCalledWith(expect.objectContaining({
+      chat_id: 55,
+      client_uuid: 'uuid-http',
     }))
   })
 
-  it('verarbeitet delivery_receipt und ruft updateDeliveryStatus mit delivered auf', async () => {
-    messengerSocket.connect('dev-123')
-    await new Promise((r) => setTimeout(r, 10))
-    const ws = MockWebSocket.instances[0]
-
-    ws.onmessage?.({
-      data: JSON.stringify({
-        type: 'delivery_receipt',
-        client_uuid: 'uuid-receipt-1',
-      }),
-    })
-
-    expect(localStore.updateDeliveryStatus).toHaveBeenCalledWith('uuid-receipt-1', 'delivered')
+  it('meldet neue, geänderte und gelöschte Nachrichten als message-event', async () => {
+    const ws = await verbunden()
+    const empfangen: any[] = []
+    const hoeren = (e: Event) => empfangen.push((e as CustomEvent).detail)
+    window.addEventListener('msm:message-event', hoeren)
+    try {
+      for (const type of ['message_created', 'message_updated', 'message_deleted']) {
+        ws.onmessage?.({ data: JSON.stringify({ type, chat_id: 55, client_uuid: 'u1' }) })
+      }
+    } finally {
+      window.removeEventListener('msm:message-event', hoeren)
+    }
+    expect(empfangen.map((e) => e.type)).toEqual([
+      'message_created',
+      'message_updated',
+      'message_deleted',
+    ])
   })
 
-  it('verarbeitet read_receipt und ruft updateDeliveryStatus mit read auf', async () => {
-    messengerSocket.connect('dev-123')
-    await new Promise((r) => setTimeout(r, 10))
-    const ws = MockWebSocket.instances[0]
-
-    ws.onmessage?.({
-      data: JSON.stringify({
-        type: 'read_receipt',
-        client_uuids: ['uuid-read-1', 'uuid-read-2'],
-      }),
-    })
-
-    expect(localStore.updateDeliveryStatus).toHaveBeenCalledWith('uuid-read-1', 'read')
-    expect(localStore.updateDeliveryStatus).toHaveBeenCalledWith('uuid-read-2', 'read')
-  })
-
-  it('sendet ACK über WebSocket wenn verbunden', async () => {
-    messengerSocket.connect('dev-123')
-    await new Promise((r) => setTimeout(r, 10))
-    const ws = MockWebSocket.instances[0]
-
-    await messengerSocket.ackMessages([101, 102], 'uuid-ack-1')
-
-    const sentAck = ws.sent.find((m) => JSON.parse(m).type === 'ack_message')
-    expect(sentAck).toBeDefined()
-    const parsed = JSON.parse(sentAck!)
-    expect(parsed.queue_ids).toEqual([101, 102])
+  it('meldet Quittungen mit eigenem Ereignis und stößt das Nachladen an', async () => {
+    const ws = await verbunden()
+    const quittungen: string[] = []
+    let aktualisierungen = 0
+    const hoeren = (e: Event) => quittungen.push(e.type)
+    const nachladen = () => { aktualisierungen += 1 }
+    window.addEventListener('msm:delivery-receipt', hoeren)
+    window.addEventListener('msm:read-receipt', hoeren)
+    window.addEventListener('msm:messages-updated', nachladen)
+    try {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'delivery_receipt', chat_id: 55, up_to_id: 9 }) })
+      ws.onmessage?.({ data: JSON.stringify({ type: 'read_receipt', chat_id: 55, up_to_id: 9 }) })
+    } finally {
+      window.removeEventListener('msm:delivery-receipt', hoeren)
+      window.removeEventListener('msm:read-receipt', hoeren)
+      window.removeEventListener('msm:messages-updated', nachladen)
+    }
+    expect(quittungen).toEqual(['msm:delivery-receipt', 'msm:read-receipt'])
+    expect(aktualisierungen).toBe(2)
   })
 })

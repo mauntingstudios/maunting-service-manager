@@ -7,13 +7,7 @@
  */
 
 import { wsUrl } from '@/config/api'
-import {
-  ackQueueMessages,
-  sendMessageQueue,
-  sendReadReceipt as sendHttpReadReceipt,
-  type QueueEnvelope,
-} from '@/api/social'
-import { updateDeliveryStatus } from './messengerLocalStore'
+import { sendChatMessage } from '@/api/social'
 
 export interface MessengerSocketConfig {
   deviceId?: string
@@ -28,7 +22,7 @@ class MessengerSocketService {
   private reconnectTimer: any = null
   private pingInterval: any = null
   private attempt = 0
-  private pendingAcks = new Map<string, { resolve: (val: any) => void; reject: (err: any) => void; timer: any }>()
+  private pendingChat = new Map<string, { resolve: (val: { id: number; client_uuid: string }) => void; reject: (err: any) => void; timer: any }>()
   private listeners = new Set<MessageCallback>()
 
   /** Initialisiert den Socket mit der aktuellen Gerätekennung. */
@@ -42,7 +36,7 @@ class MessengerSocketService {
       return
     }
 
-    const url = wsUrl(this.deviceId ? `/social/ws?device_id=${encodeURIComponent(this.deviceId)}` : '/social/ws')
+    const url = wsUrl(this.deviceId ? `/api/social/ws?device_id=${encodeURIComponent(this.deviceId)}` : '/api/social/ws')
 
     try {
       this.ws = new WebSocket(url)
@@ -103,94 +97,76 @@ class MessengerSocketService {
   }
 
   /**
-   * Sendet eine verschlüsselte Nachricht für die Zielgeräte.
-   * Bevorzugt direkten WebSocket-Push, fällt sonst auf HTTP-POST zurück.
+   * Sendet eine verschluesselte Chat-Nachricht. Bevorzugt WebSocket, faellt
+   * nach drei Sekunden auf HTTP zurueck.
    */
-  public async sendMessage(payload: {
-    client_uuid: string
+  public async sendChatMessage(payload: {
     chat_type: 'direct' | 'group'
-    chat_id: string
-    envelopes: QueueEnvelope[]
-    device_id?: string
-  }): Promise<{ status: string; client_uuid: string; enqueued: number }> {
-    const devId = payload.device_id || this.deviceId
+    chat_id: number
+    client_uuid: string
+    key_version: number
+    encrypted_payload: string
+  }): Promise<{ id: number; client_uuid: string }> {
     if (this.isConnected()) {
-      return new Promise<{ status: string; client_uuid: string; enqueued: number }>((resolve, reject) => {
+      return new Promise<{ id: number; client_uuid: string }>((resolve, reject) => {
         const timer = setTimeout(() => {
-          this.pendingAcks.delete(payload.client_uuid)
-          // Fallback auf HTTP bei WebSocket-Timeout
-          void sendMessageQueue({ ...payload, device_id: devId || undefined })
-            .then(resolve)
+          this.pendingChat.delete(payload.client_uuid)
+          void sendChatMessage(payload)
+            .then((res) => resolve({ id: res.id, client_uuid: res.client_uuid }))
             .catch(reject)
         }, 3000)
-
-        this.pendingAcks.set(payload.client_uuid, {
+        this.pendingChat.set(payload.client_uuid, {
           resolve: (val) => {
             clearTimeout(timer)
             resolve(val)
           },
           reject: () => {
             clearTimeout(timer)
-            void sendMessageQueue({ ...payload, device_id: devId || undefined })
-              .then(resolve)
+            void sendChatMessage(payload)
+              .then((res) => resolve({ id: res.id, client_uuid: res.client_uuid }))
               .catch(reject)
           },
           timer,
         })
-
         this.sendRaw({
           type: 'send_message',
-          client_uuid: payload.client_uuid,
           chat_type: payload.chat_type,
           chat_id: payload.chat_id,
-          envelopes: payload.envelopes,
-          device_id: devId,
+          client_uuid: payload.client_uuid,
+          key_version: payload.key_version,
+          encrypted_payload: payload.encrypted_payload,
+          device_id: this.deviceId,
         })
       })
     }
-
-    return sendMessageQueue({ ...payload, device_id: devId || undefined })
+    const res = await sendChatMessage(payload)
+    return { id: res.id, client_uuid: res.client_uuid }
   }
 
   /**
-   * Quittiert empfangene Chiffrate beim Server (löscht aus Queue & sendet Zustellquittung).
+   * Sendet eine verschluesselte Nachricht für die Zielgeräte.
+   * Bevorzugt direkten WebSocket-Push, fällt sonst auf HTTP-POST zurück.
    */
-  public async ackMessages(queueIds: number[], clientUuid?: string, deviceId?: string): Promise<void> {
-    if (!queueIds || queueIds.length === 0) return
-    const devId = deviceId || this.deviceId
-    if (this.isConnected() && devId) {
-      this.sendRaw({
-        type: 'ack_message',
-        queue_ids: queueIds,
-        device_id: devId,
-        client_uuid: clientUuid,
-      })
-      return
-    }
-    if (devId) {
-      await ackQueueMessages(devId, queueIds).catch(() => {})
-    }
+  public async sendMessage(_payload: {
+    client_uuid: string
+    chat_type: 'direct' | 'group'
+    chat_id: string
+    envelopes: Array<{ target_device_id?: number; device_id?: string; encrypted_payload: string; client_uuid?: string }>
+    device_id?: string
+  }): Promise<{ status: string; client_uuid: string; enqueued: number }> {
+    // Altweg. Der Einheits-Transport ruft `sendChatMessage` auf.
+    throw new Error('Der alte Umschlag-Transport ist entfernt.')
+  }
+
+  public async ackMessages(): Promise<void> {
+    // Der Einheits-Transport quittiert ueber `ackChatMessages` mit up_to_id.
   }
 
   /**
    * Meldet gelesene Nachrichten an den Absender (2 blaue Häkchen).
    */
-  public async sendReadReceipt(payload: {
-    chat_type: 'direct' | 'group'
-    chat_id: string
-    client_uuids: string[]
-  }): Promise<void> {
-    if (!payload.client_uuids || payload.client_uuids.length === 0) return
-    if (this.isConnected()) {
-      this.sendRaw({
-        type: 'read_receipt',
-        chat_type: payload.chat_type,
-        chat_id: payload.chat_id,
-        client_uuids: payload.client_uuids,
-      })
-      return
-    }
-    await sendHttpReadReceipt(payload).catch(() => {})
+  public async sendReadReceipt(): Promise<void> {
+    // Der Einheits-Transport quittiert ueber `readChatMessages` mit up_to_id.
   }
 
   /**
@@ -221,51 +197,37 @@ class MessengerSocketService {
 
     // 1. Quittung für selbst gesendete Nachricht
     if (msgType === 'message_sent' && data.client_uuid) {
-      const pending = this.pendingAcks.get(data.client_uuid)
+      const pending = this.pendingChat.get(data.client_uuid)
       if (pending) {
-        this.pendingAcks.delete(data.client_uuid)
+        this.pendingChat.delete(data.client_uuid)
         clearTimeout(pending.timer)
         pending.resolve({
-          status: 'ok',
+          id: Number(data.id || 0),
           client_uuid: data.client_uuid,
-          enqueued: data.enqueued ?? 1,
         })
       }
     }
 
-    // 2. Zustellquittung (2 graue Häkchen)
-    if (msgType === 'delivery_receipt') {
-      const uuids: string[] = Array.isArray(data.client_uuids)
-        ? data.client_uuids
-        : data.client_uuid
-        ? [data.client_uuid]
-        : []
-      await Promise.all(uuids.map((uid) => updateDeliveryStatus(uid, 'delivered')))
+    // 2. Zustell- und Lesequittungen tragen jetzt den Wasserstand des Chats.
+    if (msgType === 'delivery_receipt' || msgType === 'read_receipt' || msgType === 'chat_state') {
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('msm:delivery-receipt', { detail: data }))
+        window.dispatchEvent(
+          new CustomEvent(msgType === 'read_receipt' ? 'msm:read-receipt' : 'msm:delivery-receipt', {
+            detail: data,
+          }),
+        )
         window.dispatchEvent(new CustomEvent('msm:messages-updated', { detail: data }))
       }
     }
 
-    // 3. Lesequittung (2 blaue Häkchen)
-    if (msgType === 'read_receipt') {
-      const uuids: string[] = Array.isArray(data.client_uuids)
-        ? data.client_uuids
-        : data.client_uuid
-        ? [data.client_uuid]
-        : []
-      await Promise.all(uuids.map((uid) => updateDeliveryStatus(uid, 'read')))
+    // 3. Neue, geänderte oder gelöschte Nachricht.
+    if (
+      msgType === 'message_created' ||
+      msgType === 'message_updated' ||
+      msgType === 'message_deleted'
+    ) {
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('msm:read-receipt', { detail: data }))
-        window.dispatchEvent(new CustomEvent('msm:messages-updated', { detail: data }))
-      }
-    }
-
-    // 4. Eingehende Chiffrate (Direkt-Push vom Server)
-    if (msgType === 'incoming_message' || msgType === 'incoming_messages') {
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('msm:incoming-message', { detail: data }))
-        window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: data }))
+        window.dispatchEvent(new CustomEvent('msm:message-event', { detail: data }))
       }
     }
 

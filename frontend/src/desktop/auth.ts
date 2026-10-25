@@ -13,7 +13,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { api } from '@/api/client'
 import { geraetVeroeffentlichen, sicherheitsnummer } from '@/services/e2eeGeraet'
 import { MessengerVerschlossenError } from '@/services/lokaleVersiegelung'
-import { holeVerlaufAb } from '@/services/verlaufsUebergabe'
 import { useAuthStore } from '@/stores/authStore'
 import { geraeteArt } from './geraeteArt'
 import { konfigAendern } from './tauri'
@@ -107,9 +106,8 @@ export async function koppeln(code: string, bezeichnung: string): Promise<Kopplu
  * Wirft `MessengerVerschlossenError`, solange der Messenger-PIN den
  * Geräteschlüssel versiegelt.
  */
-export async function geraetMelden(code: string, bezeichnung: string): Promise<string> {
+export async function geraetMelden(_code: string, bezeichnung: string): Promise<string> {
   const geraet = await geraetVeroeffentlichen(bezeichnung)
-  void holeVerlaufAb(code, geraet.paar.privateKeyJwk).catch(() => 0)
   return sicherheitsnummer(geraet.paar.publicKeyJwk)
 }
 

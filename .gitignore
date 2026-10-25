@@ -153,3 +153,4 @@ docs/messenger-e2ee-umsetzungsplan.md
 # Wetter-Sidecar: Modell- und Ortsdaten bleiben lokal
 wetter-sidecar/daten/*
 !wetter-sidecar/daten/.gitkeep
+/.idea

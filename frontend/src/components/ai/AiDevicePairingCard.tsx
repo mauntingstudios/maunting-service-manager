@@ -18,7 +18,7 @@ import {
   uebergebeVerlauf,
   type KopplungsStatus,
   type UebergabeZiel,
-} from '@/services/verlaufsUebergabe'
+} from '@/services/geraet/kopplung'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 

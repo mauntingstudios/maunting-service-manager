@@ -355,6 +355,7 @@ class SyncEventService:
         event_data: dict[str, Any],
         *,
         user_id: int | None = None,
+        user_ids: set[int] | None = None,
         team_id: int | None = None,
         mailbox_id: str | None = None,
         exclude_conn_id: str | None = None,
@@ -393,11 +394,13 @@ class SyncEventService:
 
             if user_id is not None and sub.user_id == user_id:
                 is_recipient = True
+            elif user_ids is not None and sub.user_id in user_ids:
+                is_recipient = True
             elif team_id is not None and team_id in sub.team_ids:
                 is_recipient = True
             elif ziel_mailbox is not None and ziel_mailbox in sub.mailboxes:
                 is_recipient = True
-            elif user_id is None and team_id is None and ziel_mailbox is None:
+            elif user_id is None and user_ids is None and team_id is None and ziel_mailbox is None:
                 # Systemweites Signal
                 is_recipient = True
 

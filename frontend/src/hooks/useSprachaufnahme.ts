@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { sendTypingSignal } from '@/api/social'
+import { messengerSocket } from '@/services/messengerSocket'
 import type { AudioAttachment } from '@/components/social/ChatMediaAttachments'
 import { getAudioTrackConstraints } from '@/lib/audioSettings'
 import { toast } from '@/stores/toastStore'
@@ -31,10 +31,15 @@ function getSupportedAudioMimeType(): string {
 interface SprachaufnahmeOptionen {
   /** Dorthin geht der Hinweis „nimmt auf"; leer, solange kein Gespräch offen ist. */
   blindMailboxId: string
+  chatType?: 'direct' | 'group' | null
+  chatId?: number | null
   onFertig: (audio: AudioAttachment) => void
 }
 
-export function useSprachaufnahme({ blindMailboxId, onFertig }: SprachaufnahmeOptionen) {
+export function useSprachaufnahme({ blindMailboxId, chatType, chatId, onFertig }: SprachaufnahmeOptionen) {
+  const tippen = (status: 'typing' | 'idle') => {
+    if (chatType && chatId) messengerSocket.sendTyping(chatType, String(chatId), status)
+  }
   const { t } = useTranslation()
   const [laeuft, setLaeuft] = useState(false)
   const [dauer, setDauer] = useState(0)
@@ -90,12 +95,7 @@ export function useSprachaufnahme({ blindMailboxId, onFertig }: SprachaufnahmeOp
       setLaeuft(true)
       setDauer(0)
 
-      if (blindMailboxId) {
-        void sendTypingSignal({
-          blind_mailbox_id: blindMailboxId,
-          status: 'recording',
-        }).catch(() => {})
-      }
+      if (blindMailboxId) tippen('typing')
 
       timerIntervalRef.current = setInterval(() => {
         setDauer((prev) => prev + 1)
@@ -107,12 +107,7 @@ export function useSprachaufnahme({ blindMailboxId, onFertig }: SprachaufnahmeOp
 
   /** Beendet die Aufnahme; mit `senden` geht sie an `onFertig`, sonst wird sie verworfen. */
   const beende = (senden: boolean) => {
-    if (blindMailboxId) {
-      void sendTypingSignal({
-        blind_mailbox_id: blindMailboxId,
-        status: 'idle',
-      }).catch(() => {})
-    }
+    if (blindMailboxId) tippen('idle')
 
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current)

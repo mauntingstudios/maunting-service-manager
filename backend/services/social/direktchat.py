@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 from models import (
     User,
     UserFriend,
-    E2eeBlindEnvelope,
     ChatGroupMember,
     DirectChat,
+    DirectChatMember,
 )
 from services.social.basis import _GEGENUEBER_ABLAGE, _GEGENUEBER_FRIST, _now
 
@@ -358,12 +358,9 @@ class DirektchatMixin:
             return True, None
 
         # Prüfe auch, ob schon Umschläge in der abgeleiteten Mailbox existieren
+        # (Altbestand). Neue Gespraeche entstehen ueber `direct_chats`.
         derived_mid = cls.derive_blind_mailbox_id(sender_id, target_user_id)
-        existing_envelope = (
-            db.query(E2eeBlindEnvelope)
-            .filter(E2eeBlindEnvelope.blind_mailbox_id == derived_mid)
-            .first()
-        )
+        existing_envelope = None
         if existing_envelope:
             return True, None
 
@@ -414,5 +411,17 @@ class DirektchatMixin:
                     raise
         else:
             chat.updated_at = _now()
-            db.commit()
+
+        # Beide Seiten gehoeren zu diesem Gespraech. Die Zeile ist die Schranke
+        # fuer Lesen, Senden und Chat-Schluessel.
+        for uid in {int(sender_id), int(target_user_id)}:
+            vorhanden = (
+                db.query(DirectChatMember)
+                .filter_by(chat_id=chat.id, user_id=uid)
+                .first()
+            )
+            if vorhanden is None:
+                db.add(DirectChatMember(chat_id=chat.id, user_id=uid))
+        db.commit()
+        db.refresh(chat)
         return chat

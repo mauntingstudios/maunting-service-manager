@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from models import (
@@ -89,7 +89,13 @@ class StoriesMixin:
         return story
 
     @classmethod
-    def list_active_stories(cls, db: Session, user_id: int) -> list[dict[str, Any]]:
+    def list_active_stories(
+        cls,
+        db: Session,
+        user_id: int,
+        limit: int = 100,
+        before_id: int | None = None,
+    ) -> list[dict[str, Any]]:
         cls.assert_social_enabled(db)
         now = _now()
         friend_ids = {user_id}
@@ -115,22 +121,27 @@ class StoriesMixin:
         )
         blocked_ids = {r.friend_id if r.user_id == user_id else r.user_id for r in blocked_rels}
 
-        # Sichtbar: Eigene Stories + Stories von bestätigten Freunden + Stories von Profilen mit "public"
+        # Sichtbarkeit: public fuer alle Angemeldeten, friends nur fuer
+        # bestaetigte Freunde, private nur fuer den Verfasser selbst.
         stories_query = (
             db.query(ChatStory, User.username, User.avatar_url, User.social_privacy)
             .join(User, User.id == ChatStory.user_id)
             .filter(
                 ChatStory.expires_at > now,
                 or_(
-                    ChatStory.user_id.in_(friend_ids),
-                    User.social_privacy == "public",
+                    ChatStory.user_id == user_id,
+                    and_(User.social_privacy == "public", ChatStory.user_id != user_id),
+                    and_(User.social_privacy == "friends", ChatStory.user_id.in_(friend_ids)),
                 ),
             )
         )
         if blocked_ids:
             stories_query = stories_query.filter(ChatStory.user_id.notin_(blocked_ids))
+        if before_id:
+            stories_query = stories_query.filter(ChatStory.id < int(before_id))
 
-        stories_query = stories_query.order_by(ChatStory.created_at.desc())
+        stories_query = stories_query.order_by(ChatStory.created_at.desc(), ChatStory.id.desc())
+        stories_query = stories_query.limit(max(1, min(int(limit or 100), 200)))
         with vorab_entschluesselt(db, stories_query, ChatStory.content, ChatStory.media_url):
             stories = stories_query.all()
 

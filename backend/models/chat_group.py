@@ -56,6 +56,14 @@ class ChatGroup(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )
+    #: Verschwindende Nachrichten: 0/NULL heisst aus. In Gruppen darf sie
+    #: ausserdem der Eigentuemer oder ein Admin aendern.
+    ephemeral_ttl_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ephemeral_enabled_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     members: Mapped[list["ChatGroupMember"]] = relationship(
         "ChatGroupMember", back_populates="group", cascade="all, delete-orphan"

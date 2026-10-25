@@ -673,18 +673,18 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning("KI-Freigaben-Cleanup fehlgeschlagen: %s", exc)
-    # E2EE: Abgelaufene blinde Umschläge (> 30 Tage) auf dem Relais-Server aufräumen
+    # E2EE: nur Nachrichten mit ausdruecklicher Frist (verschwindende Nachrichten)
     try:
         from database import SessionLocal as _SessionLocalEnv
-        from services.social_service import SocialService
+        from services.social.messages_service import cleanup_expired as _cleanup_messages
         _env_db = _SessionLocalEnv()
         try:
-            SocialService.cleanup_expired_envelopes(_env_db)
+            _cleanup_messages(_env_db)
         finally:
             _env_db.close()
     except Exception as exc:
         import logging
-        logging.getLogger(__name__).warning("E2EE-Envelope-Cleanup fehlgeschlagen: %s", exc)
+        logging.getLogger(__name__).warning("E2EE-Nachrichten-Cleanup fehlgeschlagen: %s", exc)
 
 
     from services.ai_proposal_service import reconcile_interrupted_actions

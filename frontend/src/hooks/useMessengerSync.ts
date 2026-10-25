@@ -5,7 +5,7 @@
  * unverändert — dieselben Ereignisse, dieselben Filter, dasselbe Aufräumen.
  *
  * Er ist die einzige Stelle, an der ein **eingehender** Umschlag ein Neuladen
- * auslöst. Ein Abo je Mailbox meldet ihn (`mailboxAbo`), und was hier
+ * auslöst. Der Echtzeitkanal haengt am Konto, und was hier
  * entschieden wird, entscheidet über die Latenz des ganzen Chats: die Nachricht
  * wird nicht beim nächsten Fünf-Sekunden-Takt sichtbar, sondern sofort.
  *
@@ -18,10 +18,6 @@ import { useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 
 import type { ChatGroupItem } from '@/api/social'
-import { merkePartnerKennungen, partnerKennungen } from '@/services/quittungsstand'
-import { deriveBlindMailboxId } from '@/services/e2eeCrypto'
-import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
-import { updateMessageInLocalStore } from '@/services/messengerLocalStore'
 import { useCallStore } from '@/stores/useCallStore'
 
 type Aktivitaet = { status: 'typing' | 'recording'; username?: string } | null
@@ -62,8 +58,6 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
   } = optionen
 
   useEffect(() => {
-    // Quittungen bleiben in Empfangsreihenfolge, auch während IndexedDB schreibt.
-    let quittungen = Promise.resolve()
     const handleSync = (e: Event) => {
       const ce = e as CustomEvent<any>
       const detail = ce.detail
@@ -104,64 +98,30 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
         detail?.type === 'call_ended_remotely'
       ) {
         useCallStore.getState().handleCallSyncEvent(detail)
-      } else if (detail?.type === 'new_message') {
+      } else if (
+        detail?.type === 'message_created' ||
+        detail?.type === 'message_updated' ||
+        detail?.type === 'message_deleted' ||
+        detail?.type === 'new_message'
+      ) {
         void loadMessages(false)
-      } else if (detail?.type === 'delivery_receipt' || detail?.type === 'read_receipt') {
-        if (detail.chat_type && detail.chat_type !== 'direct') return
-        const peerId = Number(detail.reader_id ?? detail.recipient_id ?? detail.chat_id)
-        if (!Number.isSafeInteger(peerId) || peerId <= 0 || peerId === currentUserId) return
-        const roh = Array.isArray(detail.client_uuids) ? detail.client_uuids : [detail.client_uuid]
-        const uuids = [...new Set<string>(roh
-          .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
-          .map((id: string) => id.split('#')[0]))]
-        const isRead = detail.type === 'read_receipt'
-        quittungen = quittungen.then(async () => {
-          const targetMid = await deriveBlindMailboxId(currentUserId, peerId)
-          if (angemeldetesKonto() !== currentUserId) return
-          if (isRead) merkePartnerKennungen(targetMid, 'gelesen', uuids)
-          merkePartnerKennungen(targetMid, 'zugestellt', uuids)
-          for (const uuid of uuids) {
-            const gelesen = partnerKennungen(targetMid).gelesen.has(uuid)
-            await updateMessageInLocalStore(targetMid, uuid, gelesen
-              ? { status: 'read', isRead: true, isDelivered: true }
-              : { status: 'delivered', isDelivered: true })
-          }
-          if (targetMid === blindMailboxId && uuids.length > 0) await loadMessages(false)
-        }).catch((fehler: unknown) => {
-          console.warn('[Messenger] Quittung konnte nicht übernommen werden', fehler instanceof Error ? fehler.name : 'Error')
-        })
-      } else if (detail?.type === 'e2ee_blind_message') {
-        const isCurrentActive =
-          detail.blind_mailbox_id === blindMailboxId ||
-          leseMailboxen.includes(detail.blind_mailbox_id)
-        // Outgoing Echo Prevention: Sender niemals benachrichtigen
-        if (detail.sender_user_id && currentUserId && Number(detail.sender_user_id) === Number(currentUserId)) {
-          if (isCurrentActive) {
-            void loadMessages(false)
-          }
-          return
+      } else if (detail?.type === 'delivery_receipt' || detail?.type === 'read_receipt' || detail?.type === 'chat_state') {
+        // Der Wasserstand steht im Ereignis; der nächste Ladevorgang holt ihn
+        // mit der Seite und rechnet die Häkchen neu.
+        void loadMessages(false)
+      } else if (detail?.type === 'typing' || detail?.type === 'e2ee_typing_signal') {
+        if (detail.sender_id === currentUserId) return
+        if (partnerActivityTimeoutRef.current) {
+          clearTimeout(partnerActivityTimeoutRef.current)
+          partnerActivityTimeoutRef.current = null
         }
-        // Empfänger-Filterung: Nur Empfänger verarbeitet Nachricht
-        if (detail.recipient_id && currentUserId && Number(detail.recipient_id) !== Number(currentUserId)) {
-          return
-        }
-        if (isCurrentActive) {
-          void loadMessages(false)
-        }
-      } else if (detail?.type === 'e2ee_typing_signal') {
-        if (detail.blind_mailbox_id === blindMailboxId && detail.sender_id !== currentUserId) {
-          if (partnerActivityTimeoutRef.current) {
-            clearTimeout(partnerActivityTimeoutRef.current)
-            partnerActivityTimeoutRef.current = null
-          }
-          if (detail.status === 'idle') {
+        if (detail.status === 'idle') {
+          setPartnerActivity(null)
+        } else if (detail.status === 'typing' || detail.status === 'recording') {
+          setPartnerActivity({ status: detail.status, username: detail.sender_username })
+          partnerActivityTimeoutRef.current = setTimeout(() => {
             setPartnerActivity(null)
-          } else if (detail.status === 'typing' || detail.status === 'recording') {
-            setPartnerActivity({ status: detail.status, username: detail.sender_username })
-            partnerActivityTimeoutRef.current = setTimeout(() => {
-              setPartnerActivity(null)
-            }, 4500)
-          }
+          }, 4500)
         }
       }
     }

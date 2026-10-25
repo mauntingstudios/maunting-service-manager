@@ -43,11 +43,30 @@ import { entsiegleZeile, entsiegleZeilen, versiegleZeile } from './lokaleVersieg
 import { merkePartnerKennungen } from './quittungsstand'
 import type { AugenblickMarke, RettungsMarke } from './funkenService'
 import { istSteuerzeile } from './nachrichtBezug'
-import {
-  MAX_AUFTRAEGE,
-  type SteuerAuftrag,
-} from './steuerOutboxTypen'
-import { LOESCH_AUFTRAEGE_MAX, type LoeschAuftrag } from './loeschAuftraege'
+export interface SteuerAuftrag {
+  id: string
+  mailbox: string
+  typ: string
+  ziel?: string | null
+  zielId?: number | null
+  felder: Record<string, unknown>
+  ruecknahme?: { art?: string } | null
+  versuche?: number
+  naechsterVersuch?: number
+  angelegtAm?: number
+  art?: string
+}
+
+export interface LoeschAuftrag {
+  id: string
+  mailbox: string
+  clientUuid?: string | null
+  medien?: { mediaId: string; [key: string]: unknown }[]
+  [key: string]: unknown
+}
+
+const MAX_AUFTRAEGE = 200
+const LOESCH_AUFTRAEGE_MAX = 500
 
 export interface LocalStoredMessage {
   blindMailboxId?: string
@@ -746,15 +765,8 @@ export async function ladeAlleEntwuerfe(): Promise<Record<string, string>> {
  * späterer Abruf sie wieder aufbaut. Bliebe sie stehen, käme die gelöschte
  * Nachricht beim nächsten Öffnen des Gesprächs zurück.
  *
- * Die Zeile selbst muss bleiben. Sie ist zugleich die Marke „dieser Umschlag
- * ist geöffnet", und ein Nachrichtenschlüssel des Double Ratchet ist nach dem
- * ersten Öffnen verbraucht: ohne die Marke liefe der Ratchet ein zweites Mal
- * über denselben Umschlag und bräche die Sitzung. Der leere Text ist dafür
- * ausreichend, die Prüfung fragt auf `null` (`ratchetSitzung.ts`).
- *
- * Gab es zu diesem Umschlag noch keine Zeile — etwa beim Absender, der seine
- * eigene Ratchet-Nachricht nie geöffnet hat —, entsteht hier eine leere. Das
- * schadet nicht: sie markiert einen Umschlag, der ohnehin verschwindet.
+ * Die Zeile selbst bleibt: sie ist der Grabstein, der den Inhalt vom Server
+ * fernhaelt. Der leere Text genuegt dafuer; die Pruefung fragt auf `null`.
  */
 export async function leereUmschlagKlartext(
   blindMailboxId: string,
@@ -1366,7 +1378,7 @@ export async function ladeLoeschAuftraege(): Promise<LoeschAuftrag[]> {
           Number.isFinite(a.naechsterVersuch) &&
           Number.isFinite(a.angelegtAm),
       )
-      .sort((a, b) => a.angelegtAm - b.angelegtAm)
+      .sort((a, b) => Number(a.angelegtAm || 0) - Number(b.angelegtAm || 0))
   } catch {
     return []
   }
@@ -1492,7 +1504,7 @@ export async function ladeSteuerAuftraege(): Promise<SteuerAuftrag[]> {
           Number.isFinite(a.naechsterVersuch) &&
           (a.art === 'direkt' || a.art === 'gruppe'),
       )
-      .sort((a, b) => a.angelegtAm - b.angelegtAm)
+      .sort((a, b) => Number(a.angelegtAm || 0) - Number(b.angelegtAm || 0))
   } catch {
     return []
   }
@@ -2401,9 +2413,61 @@ export async function getLocalMailboxLastSyncedId(blindMailboxId: string): Promi
  * abgebrochene große Transaktion macht die halbe Arbeit rückgängig, hier bleibt
  * jede fertige Zeile fertig.
  */
+async function bestandNeu(
+  storeName: string,
+  klarFelder: readonly string[],
+  aadFuer: (roh: Record<string, any>) => string,
+): Promise<number> {
+  const db = await openLocalDatabase()
+  const rohzeilen = await new Promise<Record<string, any>[]>((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readonly')
+    const req = tx.objectStore(storeName).getAll()
+    req.onsuccess = () => resolve(req.result || [])
+    req.onerror = () => reject(req.error)
+  })
+  let geschrieben = 0
+  for (const roh of rohzeilen) {
+    const aad = aadFuer(roh)
+    const offen = await entsiegleZeile<Record<string, any>>(roh, aad)
+    if (!offen) continue
+    const zeile = await versiegleZeile(offen, klarFelder, aad)
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readwrite')
+      tx.objectStore(storeName).put(zeile)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    geschrieben++
+  }
+  return geschrieben
+}
+
+export function schreibeEntwuerfeBestandNeu(): Promise<number> {
+  return bestandNeu(STORE_ENTWUERFE, ['blindMailboxId'], (roh) =>
+    entwurfAad(String(roh.blindMailboxId || '')),
+  )
+}
+
+export function schreibeFunkenBestandNeu(): Promise<number> {
+  return bestandNeu(STORE_FUNKEN, ['partnerId'], (roh) =>
+    funkenAad(Number(roh.partnerId || 0)),
+  )
+}
+
+export function schreibeMedienBestandNeu(): Promise<number> {
+  return bestandNeu(STORE_MEDIEN, ['mediaId'], (roh) => mediumAad(String(roh.mediaId || '')))
+}
+
+export function schreibeMedienTeileBestandNeu(): Promise<number> {
+  return bestandNeu(
+    STORE_MEDIEN_TEILE,
+    ['id', 'transferId', 'teil', 'mediaId'],
+    (roh) => medienTeilAad(String(roh.transferId || ''), Number(roh.teil || 0)),
+  )
+}
+
 export async function schreibeNachrichtenBestandNeu(): Promise<number> {
   const db = await openLocalDatabase()
-
   const rohNachrichten = await new Promise<Record<string, any>[]>((resolve, reject) => {
     const tx = db.transaction(STORE_MESSAGES, 'readonly')
     const req = tx.objectStore(STORE_MESSAGES).getAll()

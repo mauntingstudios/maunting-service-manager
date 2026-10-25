@@ -1,68 +1,80 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const ablage = vi.hoisted(() => ({ updateMessageInLocalStore: vi.fn(async () => {}) }))
-vi.mock('@/services/messengerLocalStore', () => ablage)
-vi.mock('@/services/e2eeCrypto', () => ({
-  deriveBlindMailboxId: vi.fn(async (a: number, b: number) => `dm-${Math.min(a, b)}-${Math.max(a, b)}`),
-  deriveGroupBlindMailboxId: vi.fn(async (id: number) => `group-${id}`),
+const anrufe = vi.hoisted(() => ({ handleCallSyncEvent: vi.fn() }))
+vi.mock('@/stores/useCallStore', () => ({
+  useCallStore: { getState: () => ({ handleCallSyncEvent: anrufe.handleCallSyncEvent }) },
 }))
-vi.mock('@/stores/useCallStore', () => ({ useCallStore: { getState: () => ({ handleCallSyncEvent: vi.fn() }) } }))
 
 import { useMessengerSync } from './useMessengerSync'
-import { partnerKennungen } from '@/services/quittungsstand'
-import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
 
-function start(mailbox = 'dm-1-2') {
+function start(leseMailboxen = ['direct:peer:2']) {
   const loadMessages = vi.fn(async () => {})
+  const setPartnerActivity = vi.fn()
   renderHook(() => useMessengerSync({
-    blindMailboxId: mailbox, leseMailboxen: [mailbox], currentUserId: 1, geraeteMeldungen: true,
-    loadMessages, setGroups: vi.fn(), setActiveGroup: vi.fn(), setPartnerActivity: vi.fn(),
+    blindMailboxId: 'direct:peer:2',
+    leseMailboxen,
+    currentUserId: 1,
+    geraeteMeldungen: true,
+    loadMessages,
+    setGroups: vi.fn(),
+    setActiveGroup: vi.fn(),
+    setPartnerActivity,
     partnerActivityTimeoutRef: { current: null },
   }))
-  return loadMessages
+  return { loadMessages, setPartnerActivity }
 }
+
 async function sync(detail: Record<string, unknown>) {
-  await act(async () => { window.dispatchEvent(new CustomEvent('msm:sync-event', { detail })) })
+  await act(async () => {
+    window.dispatchEvent(new CustomEvent('msm:sync-event', { detail }))
+  })
 }
+
 beforeEach(() => {
   vi.clearAllMocks()
-  localStorage.clear()
-  setzeAngemeldetesKonto(1)
-  ablage.updateMessageInLocalStore.mockResolvedValue()
 })
 
-describe('Queue-Quittungen im Messenger', () => {
-  it('lädt den Verlauf erst nach dem lokalen Commit der Zustellquittung neu', async () => {
-    let fertig!: () => void
-    ablage.updateMessageInLocalStore.mockReturnValueOnce(new Promise((resolve) => { fertig = resolve }))
-    const laden = start()
-    await sync({ type: 'delivery_receipt', chat_type: 'direct', chat_id: '2', recipient_id: 2, client_uuid: 'u#devA' })
-    expect(laden).not.toHaveBeenCalled()
-    await act(async () => { fertig() })
-    expect(ablage.updateMessageInLocalStore).toHaveBeenCalledWith('dm-1-2', 'u', expect.objectContaining({ status: 'delivered', isDelivered: true }))
-    expect(laden).toHaveBeenCalledTimes(1)
+describe('Ereignisse im Einheits-Transport', () => {
+  it('lädt bei neuen, geänderten und gelöschten Nachrichten nach', async () => {
+    const { loadMessages } = start()
+
+    await sync({ type: 'message_created', chat_type: 'direct', chat_id: 55 })
+    await sync({ type: 'message_updated', chat_type: 'direct', chat_id: 55 })
+    await sync({ type: 'message_deleted', chat_type: 'direct', chat_id: 55 })
+
+    expect(loadMessages).toHaveBeenCalledTimes(3)
+    expect(loadMessages).toHaveBeenCalledWith(false)
   })
 
-  it('ordnet eine Quittung dem richtigen Gespräch statt dem geöffneten zu', async () => {
-    start('dm-1-3')
-    await sync({ type: 'delivery_receipt', chat_type: 'direct', chat_id: '2', recipient_id: 2, client_uuids: ['u#devA', 'u#devB'] })
-    expect(ablage.updateMessageInLocalStore).toHaveBeenCalledTimes(1)
-    expect(ablage.updateMessageInLocalStore).toHaveBeenCalledWith('dm-1-2', 'u', expect.objectContaining({ status: 'delivered' }))
-    expect(partnerKennungen('dm-1-2').zugestellt.has('u')).toBe(true)
-    expect(partnerKennungen('dm-1-3').zugestellt.size).toBe(0)
+  it('lädt bei Quittungen nach, weil der Wasserstand in der Seite steht', async () => {
+    const { loadMessages } = start()
+
+    await sync({ type: 'delivery_receipt', chat_type: 'direct', chat_id: 55, up_to_id: 9 })
+    await sync({ type: 'read_receipt', chat_type: 'direct', chat_id: 55, up_to_id: 9 })
+    await sync({ type: 'chat_state', chat_type: 'direct', chat_id: 55, ephemeral_ttl_seconds: 0 })
+
+    expect(loadMessages).toHaveBeenCalledTimes(3)
   })
 
-  it('nimmt eine verspätete Zustellquittung nicht als Rückschritt von gelesen', async () => {
+  it('zeigt das Tippen des Gegenübers und blendet es nach der Frist aus', async () => {
+    vi.useFakeTimers()
+    try {
+      const { setPartnerActivity } = start()
+
+      await sync({ type: 'typing', sender_id: 2, sender_username: 'alice', status: 'typing' })
+      expect(setPartnerActivity).toHaveBeenLastCalledWith({ status: 'typing', username: 'alice' })
+
+      await sync({ type: 'typing', sender_id: 2, status: 'idle' })
+      expect(setPartnerActivity).toHaveBeenLastCalledWith(null)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reicht Rufereignisse an den Anruf-Store weiter', async () => {
     start()
-    await sync({ type: 'read_receipt', chat_type: 'direct', chat_id: '2', reader_id: 2, client_uuids: ['u'] })
-    await sync({ type: 'delivery_receipt', chat_type: 'direct', chat_id: '2', recipient_id: 2, client_uuids: ['u'] })
-    expect(ablage.updateMessageInLocalStore.mock.calls.at(-1)).toEqual(['dm-1-2', 'u', { status: 'read', isRead: true, isDelivered: true }])
-  })
-
-  it('nimmt fremde Gruppenquittungen nicht als Direktchat-Quittung', async () => {
-    start()
-    await sync({ type: 'delivery_receipt', chat_type: 'group', chat_id: '7', recipient_id: 2, client_uuids: ['u'] })
-    expect(ablage.updateMessageInLocalStore).not.toHaveBeenCalled()
+    await sync({ type: 'call_key', call_id: 7, key: 'x' })
+    expect(anrufe.handleCallSyncEvent).toHaveBeenCalledWith({ type: 'call_key', call_id: 7, key: 'x' })
   })
 })

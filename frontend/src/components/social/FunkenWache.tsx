@@ -34,10 +34,6 @@ function DirektWache({ partnerId, eigeneId, identitaetRef }: WacheProps) {
     ziel,
     eigeneId,
     identitaetRef,
-    // Ein Sitzungsbruch gehört in das Gespräch, in dem er auftritt; die Wache
-    // schweigt, wie die Erwähnungswache.
-    meldeSitzungsbruch: () => {},
-    meldeAufbauAbgelehnt: () => {},
   })
   const mid = konversation.blindMailboxId
   const liesRef = useRef(konversation.liesUmschlaege)

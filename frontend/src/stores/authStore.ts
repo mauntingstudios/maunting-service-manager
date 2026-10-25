@@ -11,15 +11,13 @@ import { usePromptStore } from '@/stores/promptStore'
 import { clearSqlConsoleHistory } from '@/lib/sqlConsoleStorage'
 import { useVaultStore } from '@/desktop/vault/vaultStore'
 import { clearMemoryKeyStore } from '@/services/e2eeCrypto'
+import { setzeInhaltsSchluessel } from '@/services/lokaleVersiegelung'
 import { clearGeraeteMemory } from '@/services/e2eeGeraet'
 import { clearNotesKeyCache } from '@/services/notesCalendarCrypto'
 import { leereAntwortSperren, leereGeraeteStand, leereUmzuege } from '@/services/gruppenSchluessel'
-import { leereMailboxAbos } from '@/services/mailboxAbo'
 import { leereGruppenNamen } from '@/services/gruppenName'
 import { leereGespraeche } from '@/services/gespraechsListe'
-import { leereMailboxNachweise } from '@/services/mailboxNachweis'
 import { leereKlartextSpeicher } from '@/services/klartextSpeicher'
-import { kuendigeMailboxPush, leereMailboxPush } from '@/services/mailboxPush'
 import { kuendige } from '@/services/pushAbo'
 import type { User } from '@/types'
 
@@ -189,17 +187,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // an die Sitzung, und ein erneutes Anmelden soll nicht wieder nach dem
     // Wiederherstellungsschlüssel fragen.
     clearMemoryKeyStore()
+    setzeInhaltsSchluessel(null)
+    void import('@/services/chatKrypto').then((m) => m.leereChatSchluesselCache()).catch(() => {})
+    void import('@/services/messengerSocket').then((m) => m.messengerSocket.disconnect()).catch(() => {})
     clearGeraeteMemory()
     clearNotesKeyCache()
     leereUmzuege()
     leereAntwortSperren()
-    // Die Besitznachweise der Mailboxen liegen nur im Arbeitsspeicher und sind
-    // aus dem Gruppengeheimnis jederzeit nachrechenbar. Hier stehenzulassen
-    // hiesse, dem naechsten Menschen an diesem Geraet fertige Nachweise zu
-    // hinterlassen.
-    leereMailboxNachweise()
-    // Und die Abos: was der Strom melden soll, gehoert dem angemeldeten Konto.
-    leereMailboxAbos()
     // Die Gruppennamen. Sie liegen versiegelt, aber sie liegen da — und wie
     // eine Gruppe heisst, sagt ueber ihren Besitzer oft mehr als jede einzelne
     // Nachricht darin. Der naechste Mensch an diesem Geraet erbt sie nicht.
@@ -212,7 +206,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // weg, solange die Sitzung noch gilt; hier faellt nur der gemerkte Stand,
     // damit der naechste Anmelder nicht auf eine Meldung wartet, die diese
     // Datei fuer laengst abgeschickt haelt.
-    leereMailboxPush()
     // Und der Lesestand der eigenen Geräte-Mailbox. Er ist je Konto getrennt,
     // aber stehenzulassen hiesse, dem nächsten Konto in diesem Tab zu
     // verschweigen, was vor seiner Anmeldung dort ankam.
@@ -239,17 +232,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // das Austragen ab und das Gerät bekäme weiter Benachrichtigungen für ein
     // Konto, das sich hier abgemeldet hat.
     //
-    // Zweimal, weil es zwei Tabellen sind: `kuendigeMailboxPush` trägt die
-    // mailboxgebundenen Zeilen aus, `kuendige` die kontogebundene Adresse. Die
-    // ersten kennen kein Konto — sie können deshalb auch nicht mit einem
-    // wegfallen, und sie stehenzulassen hiesse, dass dieses Gerät weiter
-    // Meldungen über Mailboxen bekommt, deren Schlüssel gerade aus dem
-    // Speicher gefallen sind.
-    //
-    // **In dieser Reihenfolge.** `kuendige` beendet am Ende das Abonnement im
-    // Browser, und danach findet `kuendigeMailboxPush` keine Adresse mehr, die
-    // es austragen könnte. Andersherum bliebe die Zeile für immer stehen.
-    await kuendigeMailboxPush()
+    // Die Push-Adresse haengt am Konto; mit der Sitzung faellt sie.
     await kuendige()
     await import('@/desktop/vault/kameraSicherung').then((k) => k.kameraBeimAbmelden()).catch(() => {})
     try {

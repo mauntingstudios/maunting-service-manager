@@ -33,21 +33,16 @@ import type { Konversation } from '@/hooks/useKonversation'
 import type { E2eeIdentity } from '@/services/e2eeIdentity'
 import type { Erwaehnungsvorschlag } from '@/services/erwaehnungen'
 import type { getOutbox } from '@/lib/offlineSync'
-import { sendTypingSignal } from '@/api/social'
 import { maxAnhangBytes } from '@/services/medienKrypto'
+import { messengerSocket } from '@/services/messengerSocket'
 import { baueVersandFuer } from '@/hooks/useKonversation'
-import {
-  logischeUuid,
-  DrGeraetNichtEingetragenError,
-  DrZustellungFehlgeschlagenError,
-} from '@/services/ratchetSitzung'
+import { ChatSchluesselFehltError } from '@/services/chatKrypto'
 import {
   resolveIdentity,
   forgetRecipientPublicKey,
   E2eeRecipientKeyMissingError,
 } from '@/services/e2eeIdentity'
 import { meldeErrungenschaft } from '@/lib/errungenschaft'
-import { signiereNutzlast } from '@/services/nutzlastSignatur'
 import {
   entferneLokaleNachricht,
   saveLocalMessagesStrict,
@@ -55,19 +50,17 @@ import {
   updateMessageInLocalStore,
 } from '@/services/messengerLocalStore'
 import {
-  baueLoeschauftrag,
+  tilgeFremdeNachrichtBeimServer,
   tilgeInhalt,
   tilgeNachrichtLokal,
 } from '@/services/nachrichtLoeschen'
-import { merkeUndRaeumeServerkopie } from '@/services/loeschNachholen'
 import { sessionChatCache } from '@/services/klartextSpeicher'
 import { partnerKennungen } from '@/services/quittungsstand'
 import { vergissMailbox } from '@/services/verlaufSuche'
 import { findeErwaehnungen } from '@/services/erwaehnungen'
 import { verfaelltAm as berechneVerfall } from '@/services/nachrichtVerfall'
 import { baueNutzlast, ladeAnhaengeHoch, stelleZu } from '@/services/nachrichtVersand'
-import { istAbweisung, type SteuerAusgang } from '@/services/steuerOutbox'
-import type { SteuerEintrag } from '@/services/steuerOutboxTypen'
+import { istAbweisung, type SteuerAusgang, type SteuerEintrag } from '@/services/wirkungTypen'
 import {
   baueAugenblickNutzlast,
   baueWiederherstellungNutzlast,
@@ -79,6 +72,12 @@ import {
 } from '@/services/funkenService'
 import { useFunkenStore } from '@/stores/funkenStore'
 import { toast } from '@/stores/toastStore'
+
+const logischeUuid = (kennung: string | null | undefined): string | undefined => {
+  if (!kennung) return undefined
+  const schnitt = kennung.indexOf('#')
+  return schnitt === -1 ? kennung : kennung.slice(0, schnitt)
+}
 
 /** Was gesendet werden soll. */
 export interface SendeAuftrag {
@@ -448,10 +447,10 @@ export function useMessengerSenden(optionen: Optionen) {
       //    schon ein Grabstein. Bricht die App nach dem Ablegen ab, holt der
       //    nächste Anlass den Auftrag nach. Ein Fehlschlag wird gesagt, nicht
       //    verschluckt.
-      const ausgang = await merkeUndRaeumeServerkopie(
-        baueLoeschauftrag(blindMailboxId, msg, fremd),
-      )
-      const serverRest = ausgang.offen
+      // Der Serverteil ist die REST-Loeschung aus Schritt 1; hier bleiben nur
+      // die Blobs, die der Absender selbst hochgeladen hat.
+      const ausgang = await tilgeFremdeNachrichtBeimServer(msg)
+      const serverRest = false
 
       // Kein „für alle gelöscht", solange ein Anhang nachweislich bleibt: der
       // Lauf hat das schon über `setzeLoeschMelder` gesagt. Ein Erfolg daneben
@@ -723,11 +722,8 @@ export function useMessengerSenden(optionen: Optionen) {
     justSentRef.current = true
     lastTypingSentRef.current = 0
 
-    if (targetBlindMailboxId) {
-      void sendTypingSignal({
-        blind_mailbox_id: targetBlindMailboxId,
-        status: 'idle',
-      }).catch(() => {})
+    if (konversation.chatType && konversation.chatId) {
+      messengerSocket.sendTyping(konversation.chatType, String(konversation.chatId), 'idle')
     }
 
     setSending(true)
@@ -744,17 +740,25 @@ export function useMessengerSenden(optionen: Optionen) {
           aktiveIdentitaet = await resolveIdentity(currentUserId)
           setIdentity(aktiveIdentitaet)
         }
-        if (aktiveIdentitaet.state !== 'ready' || !aktiveIdentitaet.sendPair) {
+        if (aktiveIdentitaet.state !== 'ready') {
           throw new E2eeIdentityLockedError()
         }
       }
 
       const erwaehnt = erwaehnungsFelder(rawText)
       const zeitpunkt = new Date().toISOString()
+      const chatZiel = await konversation.ensureChat()
+      if (!chatZiel) throw new Error(t('messenger.noDeviceOnline', { name: activeContact?.username || '' }))
 
       const { finalImg, finalFile, finalAudio, finalVideoNote } = await ladeAnhaengeHoch(
         { img, file, audio, videoNote },
-        { blindMailboxId: targetBlindMailboxId, absenderId: currentUserId, groupId: currentGroupId },
+        {
+          blindMailboxId: targetBlindMailboxId,
+          chatType: chatZiel.type,
+          chatId: chatZiel.id,
+          absenderId: currentUserId,
+          expiresAt: optimisticMessage.verfaelltAm,
+        },
       )
       if (augenblickMarke && !finalImg?.mediaId) throw new AugenblickNichtHochgeladenError()
 
@@ -794,11 +798,9 @@ export function useMessengerSenden(optionen: Optionen) {
         funkenRettung: rettungsMarke,
       })
 
-      // Der Beleg über den Absender. Im Direktchat trägt ihn schon der Ratchet,
-      // in der Gruppe gäbe es ihn sonst nirgends — siehe `nutzlastSignatur.ts`.
-      const payload = JSON.stringify(
-        await signiereNutzlast(targetBlindMailboxId, currentUserId, payloadObj),
-      )
+      // Die Nutzlast wird in `baueVersand` mit dem Konto-Schluessel signiert
+      // und mit dem Chat-Schluessel verschluesselt.
+      const payload = JSON.stringify(payloadObj)
 
       // Welche Umschläge daraus werden, entscheidet `useKonversation`: einer
       // für die Gruppe, oder je Empfängergerät und eigenem Zweitgerät einer aus
@@ -806,7 +808,7 @@ export function useMessengerSenden(optionen: Optionen) {
       // Gruppenschlüssel rotiert dabei, falls sich die Mitgliedschaft geändert
       // hat. Das steht bewusst vor der Offline-Abzweigung: ohne Netz gibt es
       // weder einen frischen Schlüssel noch einen Weg, ihn zu verteilen.
-      if (!currentGroupId && !aktiveIdentitaet.sendPair) {
+      if (!currentGroupId && !aktiveIdentitaet.state) {
         throw new Error(t('messenger.deviceKeyNotReady'))
       }
       /*
@@ -922,8 +924,7 @@ export function useMessengerSenden(optionen: Optionen) {
       const istSchluesselProblem =
         err instanceof E2eeRecipientKeyMissingError ||
         err instanceof E2eeIdentityLockedError ||
-        err instanceof DrZustellungFehlgeschlagenError ||
-        err instanceof DrGeraetNichtEingetragenError ||
+        err instanceof ChatSchluesselFehltError ||
         err instanceof AugenblickNichtHochgeladenError
 
       if (istSchluesselProblem) {
@@ -956,15 +957,12 @@ export function useMessengerSenden(optionen: Optionen) {
           // nächsten Versuch steht er — es gibt nichts, was der Benutzer dafür
           // tun müsste.
           toast.error(t('messenger.deviceKeyNotReadyRetry'))
-        } else if (err instanceof DrZustellungFehlgeschlagenError) {
-          // Die Gegenstelle ist angemeldet, das Verschlüsseln hat versagt. Der
-          // nächste Versuch setzt die Sitzung neu auf, deshalb der Hinweis auf
-          // das Wiederholen statt einer Aussage über den Kontakt.
-          toast.error(t('messenger.encryptFailed'))
-        } else if (err instanceof DrGeraetNichtEingetragenError) {
-          // Dieses Gerät wurde in der Geräteliste entfernt. Der Text sagt,
-          // warum nicht gesendet wird und was es wieder einträgt.
-          toast.error(err.message)
+        } else if (err instanceof ChatSchluesselFehltError) {
+          toast.error(
+            t('messenger.noDeviceOnline', {
+              name: activeContact?.username ?? t('messenger.thisContact'),
+            }),
+          )
         } else {
           toast.error(
             t('messenger.noDeviceOnline', {

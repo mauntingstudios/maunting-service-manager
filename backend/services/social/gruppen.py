@@ -46,6 +46,7 @@ class GruppenMixin:
         group = ChatGroup(
             invite_code=invite_code,
             owner_user_id=user.id,
+            default_permissions="send_messages,attach_media,invite_members",
             created_at=_now(),
         )
         db.add(group)
@@ -147,7 +148,7 @@ class GruppenMixin:
                 "default_permissions": ",".join(
                     sorted(
                         cls.expand_group_permissions(
-                            g.default_permissions or "send_messages,invite_members"
+                            g.default_permissions or "send_messages,attach_media,invite_members"
                         )
                     )
                 ),

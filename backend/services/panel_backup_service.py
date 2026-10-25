@@ -80,31 +80,22 @@ _DEFAULT_RETENTION = 7
 _DUMP_TIMEOUT = 300
 
 # Tabellen, deren Zeilen nur ein Zustellpuffer sind. Sie bleiben als **Schema**
-# im Dump (Tabellen, Spalten, Fremdschluessel, Indizes und die Folge
-# `e2ee_delivery_seq`), ihre Daten fehlen. Ein Panel-Backup ist kein Archiv
-# dieser Puffer, und nach einer Wiederherstellung darf kein abgelaufener
-# Chiffretext wieder ausgeliefert werden.
+# im Dump (Tabellen, Spalten, Fremdschluessel, Indizes), ihre Daten fehlen. Ein
+# Panel-Backup ist kein Archiv dieser Puffer, und nach einer Wiederherstellung
+# darf kein abgelaufener Chiffretext wieder ausgeliefert werden.
 #
 # `--exclude-table` waere hier falsch: es liesse die Tabelle ganz aus dem Dump,
 # und ein Restore braeche an jedem Fremdschluessel, der auf sie zeigt. Genau
 # deshalb steht `--exclude-table-data` in der Kommandozeile
 # (`_pg_dump_postgres`).
 PANEL_BACKUP_OHNE_DATEN: tuple[str, ...] = (
-    # Geraetebezogener Transport seit 23.10.2026. Die Zustelladresse wird bei
-    # jedem Start erneuert; nach einem Restore meldet sie das Geraet selbst
-    # wieder an.
-    "e2ee_device_inboxes",
-    "e2ee_delivery_payloads",
-    "e2ee_deliveries",
-    "e2ee_delivery_receipts",
     # Der alte Relaisbestand und die verschluesselten Chat-Anhaenge. Beides
     # sind Serverkopien, die nach ihrer Frist ohnehin geloescht werden.
-    "e2ee_blind_envelopes",
     "chat_media",
-    # Kopplungscodes und der versiegelte Verlaufs-Erstabgleich. Eine offene
-    # Kopplung ist ein kurzer Vorgang (Code zehn Minuten), kein Bestand, den
-    # ein Restore weiterfuehren soll. Oeffnen koennte den Blob nur das
-    # Zielgeraet, aber nach einer Wiederherstellung beginnt eine Kopplung neu.
+    # Kopplungscodes und der versiegelte Konto-Schluessel fuer ein neues
+    # Geraet. Eine offene Kopplung ist ein kurzer Vorgang (Code zehn Minuten),
+    # kein Bestand, den ein Restore weiterfuehren soll. Nach einer
+    # Wiederherstellung beginnt eine Kopplung neu.
     "device_pairings",
 )
 

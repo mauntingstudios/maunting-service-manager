@@ -32,18 +32,25 @@ vi.mock('./geraeteSchluesselfach', () => fach)
 const umstellung = {
   nachrichten: vi.fn(async () => 0),
   geraet: vi.fn(async () => true),
-  ratchet: vi.fn(async () => 0),
+  entwuerfe: vi.fn(async () => 0),
+  funken: vi.fn(async () => 0),
+  medien: vi.fn(async () => 0),
+  medienTeile: vi.fn(async () => 0),
   gruppen: vi.fn(async () => 0),
 }
-vi.mock('./messengerLocalStore', () => ({
+vi.mock('./messengerLocalStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./messengerLocalStore')>(),
   schreibeNachrichtenBestandNeu: umstellung.nachrichten,
+  schreibeEntwuerfeBestandNeu: umstellung.entwuerfe,
+  schreibeFunkenBestandNeu: umstellung.funken,
+  schreibeMedienBestandNeu: umstellung.medien,
+  schreibeMedienTeileBestandNeu: umstellung.medienTeile,
 }))
 const geraeteSpeicherGeleert = vi.fn()
 vi.mock('./e2eeGeraet', () => ({
   schreibeGeraetBestandNeu: umstellung.geraet,
   clearGeraeteMemory: geraeteSpeicherGeleert,
 }))
-vi.mock('./ratchetSpeicher', () => ({ schreibeRatchetBestandNeu: umstellung.ratchet }))
 vi.mock('./gruppenSchluessel', () => ({ schreibeGruppenBestandNeu: umstellung.gruppen }))
 
 const { istOffen, siegelAktiv } = await import('./lokaleVersiegelung')
@@ -105,11 +112,14 @@ describe('messengerSperre', () => {
       expect(stand.entsperrt).toBe(true)
       expect(siegelAktiv()).toBe(true)
 
-      // Alle vier Ablagen müssen durchlaufen worden sein. Eine vergessene
+      // Alle Ablagen müssen durchlaufen worden sein. Eine vergessene
       // bliebe im Klartext liegen, ohne dass es jemandem auffiele.
       expect(umstellung.nachrichten).toHaveBeenCalledOnce()
       expect(umstellung.geraet).toHaveBeenCalledOnce()
-      expect(umstellung.ratchet).toHaveBeenCalledOnce()
+      expect(umstellung.entwuerfe).toHaveBeenCalledOnce()
+      expect(umstellung.funken).toHaveBeenCalledOnce()
+      expect(umstellung.medien).toHaveBeenCalledOnce()
+      expect(umstellung.medienTeile).toHaveBeenCalledOnce()
       expect(umstellung.gruppen).toHaveBeenCalledOnce()
     },
     FRIST,
@@ -206,7 +216,7 @@ describe('messengerSperre', () => {
       // geschrieben. Würde hier der Bestand angefasst, dauerte ein Wechsel bei
       // gewachsenem Verlauf Minuten statt eines Augenblicks.
       expect(umstellung.nachrichten).not.toHaveBeenCalled()
-      expect(umstellung.ratchet).not.toHaveBeenCalled()
+      expect(umstellung.entwuerfe).not.toHaveBeenCalled()
 
       useMessengerSperre.getState().sperren()
       expect(await useMessengerSperre.getState().entsperren(PIN)).toBe(false)
@@ -242,7 +252,10 @@ describe('messengerSperre', () => {
       // Derselbe Durchlauf wie beim Einschalten, nur mit umgelegtem Schalter.
       expect(umstellung.nachrichten).toHaveBeenCalledOnce()
       expect(umstellung.geraet).toHaveBeenCalledOnce()
-      expect(umstellung.ratchet).toHaveBeenCalledOnce()
+      expect(umstellung.entwuerfe).toHaveBeenCalledOnce()
+      expect(umstellung.funken).toHaveBeenCalledOnce()
+      expect(umstellung.medien).toHaveBeenCalledOnce()
+      expect(umstellung.medienTeile).toHaveBeenCalledOnce()
       expect(umstellung.gruppen).toHaveBeenCalledOnce()
       expect(istOffen()).toBe(true)
     },
@@ -253,7 +266,7 @@ describe('messengerSperre', () => {
     'bleibt zu, wenn die Umstellung beim Abschalten abbricht',
     async () => {
       await useMessengerSperre.getState().einrichten(PIN)
-      umstellung.ratchet.mockRejectedValueOnce(new Error('Platte voll'))
+      umstellung.entwuerfe.mockRejectedValueOnce(new Error('Platte voll'))
 
       await expect(useMessengerSperre.getState().abschalten(PIN)).rejects.toThrow()
 

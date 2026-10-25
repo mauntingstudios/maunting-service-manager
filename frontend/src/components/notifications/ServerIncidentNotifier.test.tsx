@@ -194,13 +194,11 @@ describe('ServerIncidentNotifier — Chat über den Hub', () => {
   const zustand = nachrichtenStore.zustand
 
   const nachricht = (teile: Record<string, unknown> = {}) => ({
-    type: 'e2ee_blind_message',
-    blind_mailbox_id: 'mb-anna',
+    type: 'message_created',
+    chat_type: 'direct',
+    chat_id: 1,
     sender_user_id: 6,
-    recipient_id: 5,
-    id: 4711,
     client_uuid: 'uuid-4711',
-    is_control: false,
     ...teile,
   })
 
@@ -217,7 +215,7 @@ describe('ServerIncidentNotifier — Chat über den Hub', () => {
     nachrichtenStore.chime.mockClear()
     vi.mocked(sendeGeraeteBenachrichtigung).mockReset()
     vi.mocked(sendeGeraeteBenachrichtigung).mockResolvedValue({ weg: 'tauri', ok: true })
-    zustand.mailboxDirectory = { 'mb-anna': { name: 'owner', isGroup: false, userId: 6 } }
+    zustand.mailboxDirectory = { 'direct:peer:6': { name: 'owner', isGroup: false, userId: 6 } }
     zustand.activeMailboxId = null
     zustand.isMuted = () => false
     zustand.isBlocked = () => false
@@ -238,7 +236,7 @@ describe('ServerIncidentNotifier — Chat über den Hub', () => {
     render(<ServerIncidentNotifier />)
     await schicke()
     await waitFor(() => expect(nachrichtenStore.chime).toHaveBeenCalledTimes(1))
-    expect(zustand.incrementUnread).toHaveBeenCalledWith('mb-anna')
+    expect(zustand.incrementUnread).toHaveBeenCalledWith('direct:peer:6')
     expect(sendeGeraeteBenachrichtigung).toHaveBeenCalledTimes(1)
   })
 
@@ -274,14 +272,14 @@ describe('ServerIncidentNotifier — Chat über den Hub', () => {
       await schicke()
       expect(nachrichtenStore.chime).not.toHaveBeenCalled()
       expect(sendeGeraeteBenachrichtigung).not.toHaveBeenCalled()
-      expect(gehoert).toContain('mb-anna')
+      expect(gehoert).toContain('direct:peer:6')
     } finally {
       window.removeEventListener('msm:mailbox-neu', horcher)
     }
   })
 
   it('schweigt im offenen Chat und zählt nicht', async () => {
-    zustand.activeMailboxId = 'mb-anna'
+    zustand.activeMailboxId = 'direct:peer:6'
     // jsdom hat keinen echten Fokus; ohne diese Vorgabe wäre „offen" hier nie
     // erreicht und der Test prüfte den falschen Zweig.
     const fokus = vi.spyOn(document, 'hasFocus').mockReturnValue(true)

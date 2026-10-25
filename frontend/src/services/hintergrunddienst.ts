@@ -23,7 +23,6 @@ import { invoke } from '@tauri-apps/api/core'
 
 import { api } from '@/api/client'
 import { getEffectiveApiUrl } from '@/config/api'
-import { beiMailboxAenderung, offeneMailboxEintraege } from '@/services/mailboxAbo'
 import { passkeyNachweis } from '@/services/passkeyService'
 
 const KANAL_ABLAGE = 'msm:hintergrundkanal'
@@ -122,7 +121,7 @@ export async function einschalten(label?: string): Promise<boolean> {
   await invoke('dienst_starten', {
     ausweis: kanal.token,
     basis: panelBasis(),
-    mailboxen: JSON.stringify(offeneMailboxEintraege()),
+    mailboxen: '[]',
   })
   // Die Akku-Ausnahme ist der Unterschied zwischen „kommt an" und „kommt
   // manchmal an": ohne sie beendet Samsung/Xiaomi den Dienst nach Stunden.
@@ -144,29 +143,4 @@ export async function ausschalten(): Promise<void> {
   if (kanal !== null) {
     await api(`/notifications/channels/${kanal}`, { method: 'DELETE' }).catch(() => {})
   }
-}
-
-/**
- * Die Mailboxen, über die der Dienst Bescheid wissen soll.
- *
- * Der Strom kennt sie nur, wenn sie ihm gesagt werden; die Liste ändert sich
- * mit jedem geöffneten Gespräch und jeder verlassenen Gruppe. Ohne diesen
- * Aufruf bliebe der Dienst bei dem Stand vom Einschalten stehen — und ein
- * Gruppenbeitritt wäre stumm.
- */
-export async function mailboxenMelden(): Promise<void> {
-  if (!dienstVerfuegbar()) return
-  const eintraege = offeneMailboxEintraege()
-  if (eintraege.length === 0) return
-  await invoke('dienst_mailboxen', {
-    mailboxen: JSON.stringify(eintraege),
-  }).catch(() => {})
-}
-
-// Jeder neue oder verlassene Chat geht sofort an den Dienst. Ohne das bliebe
-// er bei dem Stand vom Einschalten stehen — ein Gruppenbeitritt wäre stumm.
-if (dienstVerfuegbar()) {
-  beiMailboxAenderung(() => {
-    void mailboxenMelden()
-  })
 }

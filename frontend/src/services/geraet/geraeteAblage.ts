@@ -26,7 +26,6 @@ import {
   istOffen,
   versiegleZeile,
 } from '../lokaleVersiegelung'
-import { uebernehmeAltbestand as benenneSitzungenUm } from '../ratchetSpeicher'
 
 /** 16 Bytes hex. Bedeutungsfrei — die Kennung steht im Klartext in jedem Umschlag. */
 const KENNUNG_BYTES = 16
@@ -46,6 +45,13 @@ export interface EigenesGeraet {
    * zwei Stellen „vielleicht da" heißen muss.
    */
   signaturPaar: SignaturPaar
+  /**
+   * Die Konto-Identitaet. Sie ist auf jedem freigegebenen Geraet dieselbe;
+   * der private Teil liegt versiegelt hier und wird beim Freigeben eines
+   * weiteren Geraets gegen dessen Geraeteschluessel verpackt.
+   */
+  kontoPaar?: LocalE2eeKeyPair
+  kontoSignaturPaar?: SignaturPaar
 }
 
 let geraetImRam: { konto: number; geraet: EigenesGeraet } | null = null
@@ -108,6 +114,8 @@ interface GeraeteZeile {
   paar: LocalE2eeKeyPair
   /** `null` heißt: abgelegt vor 09/2026, das Signaturpaar fehlt noch. */
   signaturPaar: SignaturPaar | null
+  accountPaar?: LocalE2eeKeyPair
+  accountSignaturPaar?: SignaturPaar
   sitzungenUebernommen: boolean
 }
 
@@ -120,6 +128,20 @@ function ausZeile(zeile: any): GeraeteZeile | null {
       zeile.signPublicKeyJwk && zeile.signPrivateKeyJwk
         ? { publicKeyJwk: zeile.signPublicKeyJwk, privateKeyJwk: zeile.signPrivateKeyJwk }
         : null,
+    accountPaar:
+      zeile.accountPublicKeyJwk && zeile.accountPrivateKeyJwk
+        ? {
+            publicKeyJwk: zeile.accountPublicKeyJwk,
+            privateKeyJwk: zeile.accountPrivateKeyJwk,
+          }
+        : undefined,
+    accountSignaturPaar:
+      zeile.accountSignPublicKeyJwk && zeile.accountSignPrivateKeyJwk
+        ? {
+            publicKeyJwk: zeile.accountSignPublicKeyJwk,
+            privateKeyJwk: zeile.accountSignPrivateKeyJwk,
+          }
+        : undefined,
     sitzungenUebernommen: zeile.sitzungenUebernommen === true,
   }
 }
@@ -152,6 +174,18 @@ async function zuZeile(
       // auftreten.
       signPublicKeyJwk: geraet.signaturPaar.publicKeyJwk,
       signPrivateKeyJwk: geraet.signaturPaar.privateKeyJwk,
+      ...(geraet.kontoPaar
+        ? {
+            accountPublicKeyJwk: geraet.kontoPaar.publicKeyJwk,
+            accountPrivateKeyJwk: geraet.kontoPaar.privateKeyJwk,
+          }
+        : {}),
+      ...(geraet.kontoSignaturPaar
+        ? {
+            accountSignPublicKeyJwk: geraet.kontoSignaturPaar.publicKeyJwk,
+            accountSignPrivateKeyJwk: geraet.kontoSignaturPaar.privateKeyJwk,
+          }
+        : {}),
       sitzungenUebernommen,
     },
     ['id'],
@@ -214,7 +248,26 @@ async function vollstaendig(zeile: GeraeteZeile): Promise<EigenesGeraet> {
     kennung: zeile.kennung,
     paar: zeile.paar,
     signaturPaar: zeile.signaturPaar ?? (await erzeugeSignaturPaar()),
+    kontoPaar: zeile.accountPaar,
+    kontoSignaturPaar: zeile.accountSignaturPaar,
   }
+}
+
+/** Schreibt die Konto-Identitaet in die versiegelte Geraetezeile. */
+export async function speichereKontoPaar(
+  kontoId: number,
+  kontoPaar: LocalE2eeKeyPair,
+  kontoSignaturPaar: SignaturPaar,
+): Promise<EigenesGeraet> {
+  if (!istOffen()) throw new MessengerVerschlossenError()
+  const vorhanden = await lies(kontoId)
+  if (!vorhanden) throw new Error(i18n.t('chat.errors.indexedDbUnavailable'))
+  const geraet = await vollstaendig(vorhanden)
+  geraet.kontoPaar = kontoPaar
+  geraet.kontoSignaturPaar = kontoSignaturPaar
+  await schreibe(kontoId, geraet, vorhanden.sitzungenUebernommen)
+  geraetImRam = { konto: kontoId, geraet }
+  return geraet
 }
 
 /**
@@ -348,7 +401,6 @@ export async function eigenesGeraet(): Promise<EigenesGeraet> {
       if (!zeile.signaturPaar) {
         await schreibe(konto, geraet, zeile.sitzungenUebernommen)
       }
-      if (!zeile.sitzungenUebernommen) await holeSitzungenNach(konto, geraet)
       geraetImRam = { konto, geraet }
       return geraet
     }
@@ -388,15 +440,6 @@ export async function eigenesGeraet(): Promise<EigenesGeraet> {
  * lauter unauffindbaren Sitzungen da. Ein Fehlschlag darf einen Versuch kosten,
  * nicht den Gesprächsfaden.
  */
-async function holeSitzungenNach(kontoId: number, geraet: EigenesGeraet): Promise<void> {
-  try {
-    await benenneSitzungenUm(geraet.kennung)
-    await schreibe(kontoId, geraet, true)
-  } catch {
-    // Beim nächsten Start noch einmal. `uebernehmeAltbestand` ist wiederholbar.
-  }
-}
-
 /** Das im Arbeitsspeicher liegende Gerät eines Kontos, oder `null`. */
 export function ramGeraetFuer(kontoId: number): EigenesGeraet | null {
   return geraetImRam?.konto === kontoId ? geraetImRam.geraet : null

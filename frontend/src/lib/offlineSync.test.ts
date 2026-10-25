@@ -519,7 +519,8 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
           // Concurrently enqueue a message while the first HTTP request is in-flight
           enqueueMessageMutation({
             blind_mailbox_id: 'mailbox-concurrent-1',
-            ciphertext_envelope: 'cipher-concurrent-1',
+            chat_type: 'direct', chat_id: '42', key_version: 1,
+            encrypted_payload: 'cipher-concurrent-1',
             client_uuid: 'uuid-concurrent-1',
           })
           return {
@@ -528,9 +529,10 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
             title: 'First Note',
           }
         }
-        if (path === '/social/e2ee/relay') {
+        if (path === '/social/messages/send') {
           return {
             id: 202,
+            client_uuid: 'uuid-concurrent-1',
             blind_mailbox_id: 'mailbox-concurrent-1',
           }
         }
@@ -549,15 +551,15 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
       )
     })
 
-    it('behält beim Queue-Replay die eindeutige lokale ID statt sie durch 1 zu ersetzen', async () => {
+    it('übernimmt beim Nachholen die Serverkennung und behält die logische Kennung', async () => {
       lokalesNachrichtenUpdate.mockClear()
       enqueueMessageMutation({
-        blind_mailbox_id: 'queue-dm', client_uuid: 'queue-u#devA', ciphertext_envelope: 'test-cipher',
-        chat_type: 'direct', chat_id: '2', target_device_id: 'test-device',
+        blind_mailbox_id: 'queue-dm', client_uuid: 'queue-u#devA', encrypted_payload: 'test-cipher',
+        chat_type: 'direct', chat_id: '2', key_version: 1,
       })
-      vi.mocked(client.api).mockResolvedValueOnce({ status: 'ok', enqueued: 1 })
+      vi.mocked(client.api).mockResolvedValueOnce({ id: 2, client_uuid: 'queue-u#devA' })
       await replayOutbox()
-      expect(lokalesNachrichtenUpdate).toHaveBeenCalledWith('queue-dm', 'queue-u', { status: 'sent', viaInbox: true })
+      expect(lokalesNachrichtenUpdate).toHaveBeenCalledWith('queue-dm', 'queue-u', { id: 2, status: 'sent' })
     })
 
     it('replays offline message mutations and dispatches msm:message-confirmed', async () => {
@@ -566,8 +568,8 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
 
       enqueueMessageMutation({
         blind_mailbox_id: 'test-mailbox-msg',
-        ciphertext_envelope: 'cipher-offline-envelope',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-offline-envelope',
         client_uuid: 'uuid-offline-msg-42',
       })
 
@@ -606,8 +608,8 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
         setOutbox([])
         enqueueMessageMutation({
           blind_mailbox_id: 'mailbox-drossel',
-          ciphertext_envelope: 'cipher-drossel',
-          recipient_id: 7,
+          chat_type: 'direct', chat_id: '42', key_version: 1,
+          encrypted_payload: 'cipher-drossel',
           client_uuid: 'uuid-drossel-' + status,
         })
 
@@ -768,21 +770,21 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
     it('enqueues offline message mutations with deduplication via client_uuid', () => {
       const mut1 = enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-1',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-1',
         client_uuid: 'uuid-msg-101',
       })
 
       expect(mut1.id).toBe('uuid-msg-101')
       expect(mut1.entity).toBe('message')
-      expect(mut1.action).toBe('relay')
+      expect(mut1.action).toBe('send')
       expect(getOutbox()).toHaveLength(1)
 
       // Duplicate enqueue with same client_uuid should not duplicate
       const mut2 = enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-1',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-1',
         client_uuid: 'uuid-msg-101',
       })
 
@@ -803,14 +805,14 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
 
       enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-kaputt',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-kaputt',
         client_uuid: 'uuid-haengt',
       })
       enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-danach',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-danach',
         client_uuid: 'uuid-danach',
       })
 
@@ -834,14 +836,14 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
       // abgewiesene verschwand ohne jedes Zeichen, die Uhr drehte weiter.
       enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-kaputt',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-kaputt',
         client_uuid: 'uuid-eins',
       })
       enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-gut',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-gut',
         client_uuid: 'uuid-zwei',
       })
 
@@ -877,8 +879,8 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
       // zurückzuschreiben löschte die neue Nachricht still.
       const aufgegeben = enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-aufgegeben',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-aufgegeben',
         client_uuid: 'uuid-aufgegeben',
       })
       setOutbox([{ ...aufgegeben, retryCount: 5 }])
@@ -886,8 +888,8 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
       vi.mocked(lokalesNachrichtenUpdate).mockImplementationOnce(async () => {
         enqueueMessageMutation({
           blind_mailbox_id: 'mailbox-abc',
-          ciphertext_envelope: 'cipher-neu',
-          recipient_id: 42,
+          chat_type: 'direct', chat_id: '42', key_version: 1,
+          encrypted_payload: 'cipher-neu',
           client_uuid: 'uuid-neu',
         })
       })
@@ -911,8 +913,8 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
       })
       enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-1',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-1',
         client_uuid: 'uuid-vor-ereignis',
       })
       vi.mocked(client.api).mockResolvedValueOnce({ id: 2001, blind_mailbox_id: 'mailbox-abc' })
@@ -935,14 +937,14 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
     it('replays queued message mutations in FIFO order and dispatches confirmation events', async () => {
       enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-1',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-1',
         client_uuid: 'uuid-msg-1',
       })
       enqueueMessageMutation({
         blind_mailbox_id: 'mailbox-abc',
-        ciphertext_envelope: 'cipher-2',
-        recipient_id: 42,
+        chat_type: 'direct', chat_id: '42', key_version: 1,
+        encrypted_payload: 'cipher-2',
         client_uuid: 'uuid-msg-2',
       })
 
@@ -1214,66 +1216,7 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
       }).not.toThrow()
     })
 
-    it('liest Schlüsselumschläge unter dem angemeldeten Konto, nicht unter dem des Einwerfers', async () => {
-      // Auf dem Mailbox-Weg steht in `recipient_id` nichts, und `sender_user_id`
-      // ist, wer den Umschlag eingeworfen hat. Unter dessen Kennung zu lesen
-      // hiesse, seine Mailbox nach einem Schlüssel zu durchsuchen, den er selbst
-      // hineingelegt hat.
-      useAuthStore.setState({ user: { id: 31, username: 'ich' } as any })
-      try {
-        clearNotesKeyCache()
-        localStorage.removeItem('msm_e2ee_notes_key_31')
-        localStorage.removeItem('msm_e2ee_notes_key_77')
-        vi.mocked(client.api).mockResolvedValue([] as any)
-        const eigene = await deriveUserDeviceMailboxId(31)
-        const fremde = await deriveUserDeviceMailboxId(77)
-        const abgerufen = () => vi.mocked(client.api).mock.calls.map(([pfad]) => String(pfad))
-
-        handleIncomingSyncEvent('sync', {
-          type: 'e2ee_blind_message',
-          control_type: 'notes_key_sync',
-          recipient_id: null,
-          sender_user_id: 77,
-        } as any)
-
-        await vi.waitFor(() => expect(abgerufen().some((p) => p.includes(eigene))).toBe(true))
-        expect(abgerufen().some((p) => p.includes(fremde))).toBe(false)
-      } finally {
-        useAuthStore.setState({ user: null })
-      }
-    })
-
-    it('beantwortet eine gemeldete Anfrage aus der Mailbox, statt den Schlüssel an alle zu schicken', async () => {
-      // Bis 09/2026 schickte jede solche Meldung den Schlüssel an jedes eigene
-      // Gerät — auch an die, die ihn längst hatten. Gefragt hat ein Gerät, und
-      // dessen Anfrage liegt in der Mailbox: die wird beantwortet, einmal.
-      // Geprüft wird hier der Weg — die Meldung führt in die eigene Mailbox,
-      // die Verteilung an alle hätte sie nie geöffnet. Dass dabei nichts
-      // hinausgeht, beweist dieser Test nicht: der Messenger ist hier
-      // gesperrt, und ohne Gerät sendet keiner der beiden Wege.
-      useAuthStore.setState({ user: { id: 32, username: 'ich' } as any })
-      try {
-        clearNotesKeyCache()
-        await setUserNotesKey(32, btoa(String.fromCharCode(...new Uint8Array(32).fill(3))))
-        vi.mocked(client.api).mockResolvedValue([] as any)
-        const eigene = await deriveUserDeviceMailboxId(32)
-        const abgerufen = () => vi.mocked(client.api).mock.calls.map(([pfad]) => String(pfad))
-
-        handleIncomingSyncEvent('sync', {
-          type: 'e2ee_blind_message',
-          control_type: 'notes_key_request',
-          recipient_id: null,
-          sender_user_id: 77,
-        } as any)
-
-        await vi.waitFor(() => expect(abgerufen().some((p) => p.includes(eigene))).toBe(true))
-      } finally {
-        localStorage.removeItem('msm_e2ee_notes_key_32')
-        useAuthStore.setState({ user: null })
-      }
-    })
-
-    it('preserves encrypted notes from server when key is absent and re-decrypts on key sync', async () => {
+            it('preserves encrypted notes from server when key is absent and re-decrypts on key sync', async () => {
       const userId = 205
       // 1. Primärgerät verschlüsselt Note mit Schlüssel
       const keyDevA = await getOrCreateUserNotesKey(userId)

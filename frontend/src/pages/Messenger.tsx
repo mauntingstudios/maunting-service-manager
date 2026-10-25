@@ -56,11 +56,12 @@ import {
   type ChatStoryItem,
   joinGroupByInvite,
   sendFriendRequest,
-  sendTypingSignal,
   getGroupInviteInfo,
+  getChatEphemeral,
 } from '@/api/social'
-import { deriveBlindMailboxId } from '@/services/e2eeCrypto'
+// Chat-Kennungen werden lokal aus peerId/groupId gebildet.
 import { maxAnhangBytes } from '@/services/medienKrypto'
+import { messengerSocket } from '@/services/messengerSocket'
 import {
   type FileAttachment,
   type ImageAttachment,
@@ -89,9 +90,7 @@ import {
 } from '@/lib/offlineSync'
 import type { NoteItem } from '@/pages/Notes'
 import type { CalendarEventItem } from '@/pages/Calendar'
-import {
-  logischeUuid,
-} from '@/services/ratchetSitzung'
+import { logischeUuid } from '@/services/wirkungTypen'
 import { abonniereBekannteGespraeche } from '@/services/gruppenSchluessel'
 import {
   lieseEinladungsKarte,
@@ -125,7 +124,7 @@ import {
   type Weiterleitungsziel,
 } from '@/services/nachrichtWeiterleiten'
 import { vergissMailbox, type Treffer } from '@/services/verlaufSuche'
-import { istAbweisung } from '@/services/steuerOutbox'
+import { istAbweisung } from '@/services/wirkungTypen'
 import {
   faelligeZeilen,
   raeumeAlleChats,
@@ -449,6 +448,7 @@ function MessengerSeite() {
   /** Verfallsfrist dieses Chats in Sekunden, 0 = aus. */
   const [verfallSekunden, setVerfallSekunden] = useState(0)
   const [verfallOffen, setVerfallOffen] = useState(false)
+  const [verfallVon, setVerfallVon] = useState<number | null>(null)
 
   const gruppenrechteVonRef = useRef<(konto: number) => Set<string>>(() => new Set())
   const wahlLeerenRef = useRef<() => void>(() => {})
@@ -561,18 +561,16 @@ function MessengerSeite() {
     if (text.trim()) {
       if (now - lastTypingSentRef.current > 2500) {
         lastTypingSentRef.current = now
-        void sendTypingSignal({
-          blind_mailbox_id: blindMailboxId,
-          status: 'typing',
-        }).catch(() => {})
+        if (konversation.chatType && konversation.chatId) {
+          messengerSocket.sendTyping(konversation.chatType, String(konversation.chatId), 'typing')
+        }
       }
     } else {
       if (lastTypingSentRef.current > 0) {
         lastTypingSentRef.current = 0
-        void sendTypingSignal({
-          blind_mailbox_id: blindMailboxId,
-          status: 'idle',
-        }).catch(() => {})
+        if (konversation.chatType && konversation.chatId) {
+          messengerSocket.sendTyping(konversation.chatType, String(konversation.chatId), 'idle')
+        }
       }
     }
 
@@ -1100,16 +1098,48 @@ function MessengerSeite() {
     })
 
   /**
-   * Ob ich die Verfallsfrist dieses Chats umstellen darf.
-   *
-   * Im Direktchat immer, dort gibt es keine Rollen. In der Gruppe entscheidet
-   * der Server — dieselbe Rechnung, deren Marke die anderen Geräte am Mitglied
-   * prüfen. Nicht `gruppenrechteVon`: der verschlüsselte Rollenblock gibt
-   * dieses Recht beim Empfänger nicht, und eine Auswahl, die bei allen anderen
-   * folgenlos verpufft, wäre eine Irreführung. Hier sperren ist die Höflichkeit,
-   * dort verwerfen die Wirkung.
+   * Wer die Frist eingeschaltet hat, entscheidet, ob ich sie umstellen darf.
+   * Der Server haelt dieselbe Regel; hier ist sie sichtbar, bevor jemand
+   * klickt. Der Stand kommt beim Oeffnen des Chats frisch vom Server.
    */
-  const darfVerfallStellen = !activeGroup || Boolean(activeGroup.can_set_disappearing_messages)
+  useEffect(() => {
+    const typ = konversation.chatType
+    const id = konversation.chatId
+    if (!typ || !id) {
+      setVerfallVon(null)
+      return
+    }
+    let aktiv = true
+    getChatEphemeral(typ, id)
+      .then((stand) => {
+        if (!aktiv) return
+        setVerfallVon(stand.ephemeral_enabled_by_user_id)
+        setVerfallSekunden(stand.ephemeral_ttl_seconds)
+      })
+      .catch(() => {})
+    return () => {
+      aktiv = false
+    }
+  }, [konversation.chatType, konversation.chatId])
+
+  const verfallVonAnderem = verfallVon !== null && verfallVon !== currentUserId
+  const darfVerfallStellen =
+    (!activeGroup || Boolean(activeGroup.can_set_disappearing_messages)) &&
+    (!verfallVonAnderem ||
+      Boolean(
+        activeGroup &&
+          (activeGroup.owner_user_id === currentUserId || activeGroup.role === 'admin'),
+      ))
+
+  const verfallVonName =
+    verfallVon === null
+      ? ''
+      : verfallVon === currentUserId
+        ? t('messenger.retentionYou')
+        : activeContact?.userId === verfallVon
+          ? activeContact.username
+          : (activeGroup?.members ?? []).find((m) => Number(m.user_id) === verfallVon)?.username ||
+            t('messenger.thisContact')
 
   /**
    * Die Verfallsfrist dieses Chats umstellen.
@@ -1141,6 +1171,7 @@ function MessengerSeite() {
     setVerfallSekunden(sekunden)
     setzeVerfallsfrist(blindMailboxId, sekunden, jetzt)
     setVerfallOffen(false)
+    setVerfallVon(sekunden > 0 ? currentUserId : null)
     try {
       // Seit 10/2026 als dauerhafte Wirkung: ohne Netz wartet sie in der
       // Outbox, statt die Umstellung hier zurückzunehmen. Zurückgenommen wird
@@ -1172,6 +1203,7 @@ function MessengerSeite() {
       if (!istAbweisung(fehler)) return
       setVerfallSekunden(vorher.sekunden)
       setzeVerfallsfrist(blindMailboxId, vorher.sekunden, vorher.stand || jetzt)
+      setVerfallVon(vorher.sekunden > 0 ? verfallVon : null)
       toast.error(t('messenger.actionRejected'))
     }
   }
@@ -1698,6 +1730,8 @@ function MessengerSeite() {
   // Die fertige Sprachnachricht geht denselben Weg wie jede andere Nachricht.
   const aufnahme = useSprachaufnahme({
     blindMailboxId,
+    chatType: konversation.chatType,
+    chatId: konversation.chatId,
     onFertig: (audio) => void handleSendMessage({ text: '', audio }),
   })
 
@@ -2845,6 +2879,14 @@ function MessengerSeite() {
           <p className="text-label-sm text-on-surface-variant leading-relaxed">
             {t('messenger.disappearingHint')}
           </p>
+
+          {verfallVonAnderem && (
+            <p className="mt-2 text-label-sm text-on-surface-variant leading-relaxed">
+              {darfVerfallStellen
+                ? t('messenger.disappearingEnabledBy', { name: verfallVonName })
+                : t('messenger.disappearingLocked', { name: verfallVonName })}
+            </p>
+          )}
         </div>
         <div className="pb-2">
           {VERFALL_STUFEN.map((stufe) => (
@@ -2858,6 +2900,7 @@ function MessengerSeite() {
                 )
               }
               label={t(stufe.labelKey)}
+              disabled={!darfVerfallStellen}
               onClick={() => void handleVerfallWaehlen(stufe.sekunden)}
             />
           ))}
@@ -2979,7 +3022,7 @@ function MessengerSeite() {
           // noch das offene Gespräch, und die private Antwort samt Storyfoto
           // ging an die gerade offene Gruppe.
           const mailbox =
-            contactMailboxMap[contact.userId] ?? (await deriveBlindMailboxId(currentUserId, contact.userId))
+            contactMailboxMap[contact.userId] ?? `direct:peer:${contact.userId}`
           await handleSendMessage({
             text,
             storyReply: storyContext,

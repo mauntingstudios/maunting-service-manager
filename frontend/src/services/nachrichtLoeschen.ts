@@ -21,10 +21,8 @@
  * trotzdem als gelöscht und der nächste Versuch räumt den Rest.
  */
 
-import { loescheBlindeUmschlaege, loescheChatMedium } from '@/api/social'
-import { umgezogeneMailbox } from './gruppenSchluessel'
+import { loescheChatMedium } from '@/api/social'
 import { chatMediaBlobCache } from './klartextSpeicher'
-import { istEndgueltigAbgelehnt, type LoeschAuftrag } from './loeschAuftraege'
 import {
   leereUmschlagKlartext,
   loescheMedium,
@@ -86,37 +84,6 @@ export function medienKennungen(msg: TilgbareNachricht): string[] {
  * Gibt `null` zurück, wenn es nichts zu räumen gibt: ohne logische Kennung und
  * ohne Anhang hat der Server keine Kopie, die dieser Auftrag ansprechen könnte.
  */
-export function baueLoeschauftrag(
-  blindMailboxId: string,
-  msg: TilgbareNachricht & { senderId?: number },
-  fremd: boolean,
-  jetzt = Date.now(),
-): LoeschAuftrag | null {
-  if (!blindMailboxId) return null
-  const clientUuid =
-    typeof msg.clientUuid === 'string' && msg.clientUuid ? msg.clientUuid : null
-  const nachrichtId = Number.isFinite(msg.id) ? msg.id : 0
-  const absenderId = Number(msg.senderId)
-  const medien = medienKennungen(msg).map((mediaId) => ({
-    mediaId,
-    absenderId: Number.isFinite(absenderId) ? absenderId : 0,
-    mailbox: blindMailboxId,
-  }))
-  if (!clientUuid && medien.length === 0) return null
-  const kennung = clientUuid ? `u:${clientUuid}` : `#${nachrichtId}`
-  return {
-    id: `${blindMailboxId}:${kennung}:${fremd ? 'fremd' : 'eigen'}`,
-    mailbox: blindMailboxId,
-    clientUuid,
-    nachrichtId,
-    medien,
-    fremd,
-    angelegtAm: jetzt,
-    versuche: 0,
-    naechsterVersuch: jetzt,
-  }
-}
-
 /**
  * Die Felder eines Grabsteins: Zeitpunkt bleibt, Inhalt geht.
  *
@@ -222,22 +189,6 @@ export async function tilgeNachrichtLokal(
 }
 
 /**
- * Alle Mailboxen, in denen diese Nachricht liegen könnte.
- *
- * Eine Gruppe zieht in eine Kennung aus ihrem Geheimnis um, und während des
- * Umzugs liegen Nachrichten in beiden. Nur die eine zu räumen hiesse: „gelöscht"
- * anzeigen, während der Chiffretext in der anderen liegenbleibt — genau die
- * falsche Zusage, gegen die der Rest dieser Datei geschrieben ist.
- *
- * Ein Löschen in der falschen Mailbox kostet nichts: es findet die Kennung
- * nicht und meldet `deleted: 0`.
- */
-function loeschZiele(blindMailboxId: string): string[] {
-  const neu = umgezogeneMailbox(blindMailboxId)
-  return neu ? [neu, blindMailboxId] : [blindMailboxId]
-}
-
-/**
  * Dasselbe für eine **fremde** Nachricht, die moderiert wird.
  *
  * Zwei Dinge verhalten sich hier anders, und beide haben denselben Grund: der
@@ -256,7 +207,6 @@ function loeschZiele(blindMailboxId: string): string[] {
  * wegging.
  */
 export async function tilgeFremdeNachrichtBeimServer(
-  blindMailboxId: string,
   msg: TilgbareNachricht
 ): Promise<{ medienGeblieben: number }> {
   let medienGeblieben = 0
@@ -268,11 +218,6 @@ export async function tilgeFremdeNachrichtBeimServer(
     }
   }
 
-  if (blindMailboxId && msg.clientUuid) {
-    for (const kennung of loeschZiele(blindMailboxId)) {
-      await loescheBlindeUmschlaege(kennung, msg.clientUuid)
-    }
-  }
   return { medienGeblieben }
 }
 
@@ -288,23 +233,3 @@ export async function tilgeFremdeNachrichtBeimServer(
  * verschwinden, auch wenn ein Bild bleibt. Ein flüchtiger Fehler wird
  * weitergereicht; dann bleibt der ganze Auftrag offen und wird erneut versucht.
  */
-export async function raeumeServerkopieAuf(
-  auftrag: LoeschAuftrag
-): Promise<{ medienGeblieben: number }> {
-  let medienGeblieben = 0
-  for (const medium of auftrag.medien ?? []) {
-    try {
-      await loescheChatMedium(medium.mediaId)
-    } catch (fehler) {
-      if (!istEndgueltigAbgelehnt(fehler)) throw fehler
-      medienGeblieben++
-    }
-  }
-
-  if (auftrag.mailbox && auftrag.clientUuid) {
-    for (const kennung of loeschZiele(auftrag.mailbox)) {
-      await loescheBlindeUmschlaege(kennung, auftrag.clientUuid)
-    }
-  }
-  return { medienGeblieben }
-}

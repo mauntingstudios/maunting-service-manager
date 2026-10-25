@@ -1,50 +1,36 @@
 /**
- * Nachrichten laden und darstellen — der Anzeigeteil des Lesepfads.
+ * Nachrichten laden und anzeigen — ohne Mailbox, Queue oder Ratchet.
  *
- * Der Block stand bis 10/2026 als 380-Zeilen-Funktion mitten in
- * `Messenger.tsx`. Herausgelöst ist er **unverändert**: dieselben Abbruchwächter,
- * dieselbe Reihenfolge, dieselben Häkchen. Was er braucht, kommt als ein
- * Optionsobjekt herein; die Namen darin sind die der Seite, damit der Umzug
- * nichts umbenennt und niemand beim Vergleich zweier Fassungen stolpert.
- *
- * Die Trennung ist die zwischen Entschlüsseln und Anzeigen:
- * `useKonversation` sagt, was ein Umschlag bedeutet, `werteUmschlaegeAus`
- * prüft, wer ihn geschrieben hat, und hier entsteht daraus der Verlauf —
- * Löschungen, Bearbeitungen, Reaktionen, Häkchen, Anheftung und Quittungen.
- *
- * **Warum es ein Hook ist und keine Hilfsfunktion.** Der Körper braucht
- * React-Zustand (`setMessages`), Refs gegen überholte Durchläufe und den
- * Konversations-Hook. Als freie Funktion müsste er all das einzeln
- * entgegennehmen, ohne dass die Seite dadurch kürzer würde.
+ * Der Server liefert die neuesten 50 Nachrichten; der Client entschluesselt sie
+ * mit dem Chat-Schluessel und prueft die Absendersignatur. Aeltere Seiten holt
+ * `ladeAeltere` per `before_id`, neue per `after_id`. Die Wasserstaende fuer
+ * die Haekchen kommen direkt aus derselben Antwort.
  */
 
 import type { Dispatch, SetStateAction } from 'react'
 
 import type { ChatGroupItem } from '@/api/social'
-import { sendReadReceipt } from '@/api/social'
-import { messengerSocket } from '@/services/messengerSocket'
+import { ackChatMessages, readChatMessages } from '@/api/social'
 import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 import type { ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import type { Konversation } from '@/hooks/useKonversation'
 import type { E2eeIdentity } from '@/services/e2eeIdentity'
-import { vergissEigeneWirkungen } from '@/services/eigeneWirkungen'
-import { anheftung } from '@/services/nachrichtAnheftung'
 import {
-  merkePartnerKennungen,
   merkePartnerQuittung,
   merkeQuittung,
-  merkeQuittungKennungen,
-  quittungsKennungen,
 } from '@/services/quittungsstand'
-import { anzeigeVerlauf, uebernimmLesungen } from '@/services/gespraech/uebernahme'
+import {
+  loadLocalMessages,
+  mischeVerlauf,
+  saveLocalMessagesStrict,
+  sortMessagesChronologically,
+} from '@/services/messengerLocalStore'
 
 export interface NachrichtenLadenOptionen {
-  /** Die Mailbox des offenen Gesprächs. Leer heißt: noch nichts zu laden. */
   blindMailboxId: string
   currentUserId: number
   activeContact: ChatContact | null
   activeGroup: ChatGroupItem | null
-  /** Was ein Konto in der offenen Gruppe darf; aus `wirksameGruppenrechte`. */
   gruppenrechteVon: (konto: number) => Set<string>
   t: (schluessel: string, werte?: Record<string, unknown>) => string
   messages: ChatMessage[]
@@ -58,322 +44,164 @@ export interface NachrichtenLadenOptionen {
   readReceiptsEnabled: boolean
   konversation: Konversation
   identityRef: { current: E2eeIdentity | null }
-  /** Woran ein laufender Abruf merkt, dass er zu spät kommt. */
   activeMailboxIdRef: { current: string }
   currentLoadSeqRef: { current: number }
   maxPartnerReadIdRef: { current: number }
   maxPartnerDeliveredIdRef: { current: number }
   highestIncomingIdDeliveredRef: { current: number }
   highestIncomingIdAcknowledgedRef: { current: number }
-  /** Wirft; der Aufrufer entscheidet, ob er den Fehler zeigt. */
   sendE2eeControlMessage: (payload: Record<string, unknown>) => Promise<void>
 }
 
-/**
- * Gibt die Ladefunktion der Seite zurück.
- *
- * `isInitial` steuert nur die Ladeanzeige: ein Hintergrunddurchlauf soll den
- * Verlauf nicht grau werden lassen.
- */
 export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
   const {
     blindMailboxId,
     currentUserId,
     activeContact,
     activeGroup,
-    gruppenrechteVon,
     t,
-    messages,
     setMessages,
     setLoadingMessages,
-    setAngeheftet,
     setVerfallSekunden,
     zeigeSystemzeile,
     markAsRead,
     isBlocked,
     readReceiptsEnabled,
     konversation,
-    identityRef,
     activeMailboxIdRef,
     currentLoadSeqRef,
     maxPartnerReadIdRef,
     maxPartnerDeliveredIdRef,
     highestIncomingIdDeliveredRef,
     highestIncomingIdAcknowledgedRef,
-    sendE2eeControlMessage,
   } = optionen
 
-  /** Der Name bleibt: die Aufrufer in der Seite heißen seit je so. */
+  const art = activeGroup ? ('gruppe' as const) : ('direkt' as const)
+
+  const quittiere = async (messages: ChatMessage[]) => {
+    const chatType = konversation.chatType
+    const chatId = konversation.chatId
+    if (!chatType || !chatId) return
+    const incoming = messages.filter((m) => !m.isSelf && m.id > 0)
+    const maxIncomingId = incoming.reduce((max, m) => Math.max(max, m.id), 0)
+    const istGruppe = Boolean(activeGroup)
+    const isTargetBlocked = activeContact ? isBlocked(activeContact.userId) : false
+    const sichtbar =
+      typeof document === 'undefined' || document.visibilityState === 'visible'
+
+    if (
+      !istGruppe &&
+      maxIncomingId > 0 &&
+      maxIncomingId > highestIncomingIdDeliveredRef.current &&
+      !isTargetBlocked
+    ) {
+      highestIncomingIdDeliveredRef.current = maxIncomingId
+      merkeQuittung(blindMailboxId, 'zugestellt', maxIncomingId)
+      await ackChatMessages(chatType, chatId, maxIncomingId).catch(() => null)
+    }
+
+    if (
+      !istGruppe &&
+      maxIncomingId > 0 &&
+      maxIncomingId > highestIncomingIdAcknowledgedRef.current &&
+      readReceiptsEnabled &&
+      sichtbar &&
+      !isTargetBlocked
+    ) {
+      highestIncomingIdAcknowledgedRef.current = maxIncomingId
+      merkeQuittung(blindMailboxId, 'gelesen', maxIncomingId)
+      merkeQuittung(blindMailboxId, 'zugestellt', maxIncomingId)
+      await readChatMessages(chatType, chatId, maxIncomingId).catch(() => null)
+    }
+  }
+
   const loadMessages = async (isInitial = false) => {
     const currentMid = blindMailboxId
     if (!currentMid || !currentUserId) return
     if (activeMailboxIdRef.current !== currentMid) return
-    // Erst entschlüsseln, wenn feststeht, welche Schlüssel dieses Gerät hat.
-    // Ein Durchlauf während `loading` hätte keine, würde auf den Altpfad fallen
-    // und dessen Ergebnis im Zwischenspeicher festschreiben — der richtige
-    // Klartext käme danach nicht mehr durch.
-    //
-    // Das gilt seit der Umstellung auch für Gruppen: ihr Schlüssel kommt in
-    // einem Hybridumschlag, der gegen den Geräteschlüssel versiegelt ist.
-    const aktuelleIdentitaet = identityRef.current
-    if (!aktuelleIdentitaet || aktuelleIdentitaet.state === 'loading') return
     const seq = ++currentLoadSeqRef.current
-
-    if (isInitial && messages.length === 0) {
-      setLoadingMessages(true)
-    }
+    if (isInitial) setLoadingMessages(true)
     try {
-      // Der ganze Entschlüsselungsteil steht in `useKonversation`: welche
-      // Mailbox, welches Verfahren, was ein Umschlag bedeutet. Hier bleibt die
-      // Anzeige — Quittungen, Häkchen, Bearbeiten und Löschen.
-      const gelesen = await konversation.liesUmschlaege()
-      if (gelesen === null) return
+      const gelesen = await konversation.liesNachrichten()
+      if (!gelesen) return
       if (activeMailboxIdRef.current !== currentMid || currentLoadSeqRef.current !== seq) return
 
-      // Der Schreibweg steht in `services/gespraech/uebernahme.ts`:
-      // auswerten, Wirkungen anwenden, mischen, speichern. Hier bleibt die
-      // Anzeige — Häkchen, Quittungen, Leiste, Ungelesen-Zähler.
-      const uebernahme = await uebernimmLesungen(
-        {
-          mailbox: currentMid,
-          eigeneId: currentUserId,
-          contact: activeContact
-            ? { userId: activeContact.userId, username: activeContact.username, isFriend: activeContact.isFriend }
-            : null,
-          group: activeGroup,
-          gruppenrechteVon,
-          t,
-          maxPartnerReadId: maxPartnerReadIdRef.current,
-          maxPartnerDeliveredId: maxPartnerDeliveredIdRef.current,
-          quittiertGelesen: (bis) => {
-            maxPartnerReadIdRef.current = Math.max(maxPartnerReadIdRef.current, bis)
-            // Was der Partner gelesen hat, überlebt das Schließen des Chats.
-            merkePartnerQuittung(currentMid, 'gelesen', bis)
-          },
-          quittiertZugestellt: (bis) => {
-            maxPartnerDeliveredIdRef.current = Math.max(maxPartnerDeliveredIdRef.current, bis)
-            merkePartnerQuittung(currentMid, 'zugestellt', bis)
-          },
-          quittiertGelesenIds: (ids) => merkePartnerKennungen(currentMid, 'gelesen', ids),
-          quittiertZugestelltIds: (ids) => merkePartnerKennungen(currentMid, 'zugestellt', ids),
-          markAsRead,
-          setVerfallSekunden,
-          zeigeSystemzeile,
-        },
-        gelesen,
-        {
-          istAktuell: () =>
-            activeMailboxIdRef.current === currentMid && currentLoadSeqRef.current === seq,
-        },
+      const lokal = await loadLocalMessages(currentMid)
+      const lokalMitHaken = lokal.map((m) =>
+        m.isSelf && m.id > 0 && m.id < 1e11
+          ? {
+              ...m,
+              isRead: m.isRead || m.id <= gelesen.page.partner_last_read_id,
+              isDelivered:
+                m.isDelivered ||
+                m.isRead ||
+                m.id <= gelesen.page.partner_last_delivered_id,
+              status:
+                m.isRead || m.id <= gelesen.page.partner_last_read_id
+                  ? ('read' as const)
+                  : m.isDelivered || m.id <= gelesen.page.partner_last_delivered_id
+                    ? ('delivered' as const)
+                    : m.status,
+            }
+          : m,
       )
-      if (!uebernahme) return
-      if (activeMailboxIdRef.current !== currentMid || currentLoadSeqRef.current !== seq) return
-      const { processedList, lokalerVerlauf, maxIncomingId, unlesbar } = uebernahme
+      const gemischt = mischeVerlauf(lokalMitHaken.slice(-500), gelesen.messages, art)
+      setMessages(gemischt)
 
-      setMessages((prev) =>
-        anzeigeVerlauf(uebernahme, prev, maxPartnerReadIdRef.current, maxPartnerDeliveredIdRef.current),
+      await saveLocalMessagesStrict(currentMid, gelesen.messages, art)
+      gelesen.uebernimm()
+
+      maxPartnerReadIdRef.current = Math.max(
+        maxPartnerReadIdRef.current,
+        gelesen.page.partner_last_read_id,
       )
+      maxPartnerDeliveredIdRef.current = Math.max(
+        maxPartnerDeliveredIdRef.current,
+        gelesen.page.partner_last_delivered_id,
+      )
+      merkePartnerQuittung(currentMid, 'gelesen', gelesen.page.partner_last_read_id)
+      merkePartnerQuittung(currentMid, 'zugestellt', gelesen.page.partner_last_delivered_id)
 
-      /*
-       * Erst jetzt den Lesestand übernehmen.
-       *
-       * Jeder vorzeitige `return` oben (fremder Chat, neuerer Durchlauf,
-       * Schreibfehler) hat diese Lesung verworfen — dann bleibt der Stand
-       * stehen und der nächste Abruf holt dieselben Umschläge noch einmal. Der
-       * Klartext liegt dann schon in der Ablage, ein Ratchet-Schlüssel wird
-       * also nicht ein zweites Mal verbraucht.
-       *
-       * Bis 22.10.2026 rückte der Stand schon im Leselauf vor. Startete
-       * währenddessen ein zweiter Durchlauf (Takt, Sync-Ereignis), verwarf
-       * dieser hier das Ergebnis des ersten — und der zweite fand nichts mehr:
-       * Nachrichten der Gegenseite fehlten dauerhaft, bis die Seite neu lud.
-       */
-      konversation.uebernimmLesestand(gelesen)
+      if (gelesen.page.ephemeral_ttl_seconds > 0) {
+        setVerfallSekunden(gelesen.page.ephemeral_ttl_seconds)
+      }
 
-      /**
-       * Angewendet heißt erledigt — aber erst **hier**.
-       *
-       * Die aufbewahrten Wirkungen der eigenen Zweitgeräte fielen bis 10/2026
-       * direkt nach dem Auswerten weg, also bevor der Verlauf geschrieben war.
-       * Scheiterte der Schreibweg danach (Ablage voll, Messenger gesperrt),
-       * stand die Bearbeitung nirgends mehr: die Quelle war verbraucht, die
-       * Zeile unverändert. Jetzt fällt sie erst, wenn der neue Stand gesetzt
-       * ist — ein zweiter Durchlauf wendet dieselbe Wirkung idempotent noch
-       * einmal an.
-       */
-      await vergissEigeneWirkungen(currentMid).catch(() => {})
+      markAsRead(currentMid)
+      await quittiere(gelesen.messages)
 
-      /**
-       * Die Leiste wird aus der Ablage abgeglichen, nicht aus dem Umschlag.
-       *
-       * Die Kennung überlebt das Hundert-Umschläge-Fenster, der Anheft-Umschlag
-       * nicht. Deshalb ist die Ablage die Wahrheit und die Leiste nur ihre
-       * Anzeige — das deckt beides ab: eine frisch übernommene Anheftung und
-       * eine, die schon vor dem Öffnen des Chats galt. Nach dem `setMessages`,
-       * denn im Updater wäre es ein Seiteneffekt mitten in der Berechnung.
-       */
-      const gemerkt = anheftung(currentMid).clientUuid
-      setAngeheftet((bisher) => {
-        if ((bisher?.clientUuid || '') === gemerkt) return bisher
-        if (!gemerkt) return null
-        // Noch nicht im Verlauf: keine Leiste. Der nächste Durchgang holt sie
-        // nach, sobald die Zeile da ist — eine falsche wäre schlimmer als keine.
-        return [...processedList, ...lokalerVerlauf].find((m) => m.clientUuid === gemerkt) || null
-      })
-
-      // Ungelesenes, das dieser Stand nicht mehr öffnen kann: **eine**
-      // Systemzeile je Gespräch, nicht je Umschlag. Die Kennung ist stabil,
-      // damit der nächste Durchlauf sie nicht noch einmal anhängt.
-      if (unlesbar > 0) {
+      if (gelesen.unlesbar > 0) {
         zeigeSystemzeile(
           t('messenger.unreadableOlderMessages'),
           `unlesbar-${currentMid}`,
         )
       }
-
-      // Ungelesen-Zähler zurücksetzen
-      markAsRead(currentMid)
-
-      // Prüfen, ob der Ziel-Kontakt blockiert ist: Wenn blockiert, werden keinerlei
-      // Zustell- oder Lesequittungen (delivery_receipt, read_receipt) an die Mailbox gesendet!
-      // Dadurch verbleibt die Nachricht beim blockierten Absender dauerhaft auf genau 1 grauem Häkchen (✓).
-      const isTargetBlocked = activeContact ? isBlocked(activeContact.userId) : false
-      // In einer Gruppe keine Quittungen. Jedes Mitglied schickte je Nachricht
-      // zwei in die Gruppenmailbox; bei
-      // zehn Mitgliedern 18 Umschläge je Nachricht, und das Hundert-Fenster
-      // hielt kaum noch echte Nachrichten (bis 26.09.2026).
-      const istGruppe = Boolean(activeGroup)
-      const isDocVisible = typeof document === 'undefined' || document.visibilityState === 'visible'
-
-      /*
-       * Die Nachrichten selbst, nicht nur eine Obergrenze.
-       *
-       * Eine Zahl über Umschlagkennungen zählte auch Kopien für andere Geräte
-       * und Steuerpakete mit: der Absender konnte „gelesen“ sehen, ohne dass
-       * diese Nachricht je auf einem Schirm war. Die Quittung nennt deshalb
-       * die logischen Kennungen der Zeilen, die dieser Durchlauf abgelegt hat
-       * — höchstens hundert, das deckt ein Mailboxfenster.
-       */
-      const eingehendeKennungen = Array.from(
-        new Set(
-          processedList
-            .filter((m) => !m.isSelf && Boolean(m.clientUuid))
-            .map((m) => m.clientUuid as string),
-        ),
-      )
-      // Die zuletzt quittierten gehen mit: eine verlorene Quittung holt damit
-      // die nächste nach, ohne dass eine hohe Zahl fremde Zeilen mitnimmt.
-      const frueherZugestellt = quittungsKennungen(currentMid, 'zugestellt')
-      const frueherGelesen = quittungsKennungen(currentMid, 'gelesen')
-      const zugestelltIds = Array.from(
-        new Set([...frueherZugestellt, ...eingehendeKennungen]),
-      ).slice(-100)
-      const gelesenIds = Array.from(
-        new Set([...frueherGelesen, ...eingehendeKennungen]),
-      ).slice(-100)
-
-      // Sende Zustellbestätigung (delivery_receipt), sobald neue Nachrichten empfangen wurden
-      const needsDelivery =
-        !istGruppe &&
-        maxIncomingId > 0 &&
-        maxIncomingId > highestIncomingIdDeliveredRef.current &&
-        !isTargetBlocked
-
-      if (needsDelivery) {
-        const idToDeliver = maxIncomingId
-        /*
-         * Der Stand steigt **vor** dem Versand, nicht danach.
-         *
-         * Bis 09/2026 wanderte er erst im `.then()` hoch. Jeder gescheiterte
-         * Versand ließ ihn stehen, und der nächste Abruf ein paar Sekunden
-         * später schickte dieselbe Quittung noch einmal. Bremste der Server
-         * mit 429, hielt sich das von selbst am Leben: gemessen waren 64 % der
-         * Umschläge in der Mailbox Zustellquittungen, und das Fenster fasst
-         * hundert — verdrängt wurden Bearbeitungen und Reaktionen.
-         *
-         * Ein Verlust kostet nichts: `delivered_up_to_id` nennt eine
-         * Obergrenze. Die nächste Nachricht bringt eine höhere Kennung und
-         * damit eine Quittung, die den Bereich mit abdeckt.
-         */
-        highestIncomingIdDeliveredRef.current = Math.max(
-          highestIncomingIdDeliveredRef.current,
-          idToDeliver,
-        )
-        merkeQuittung(currentMid, 'zugestellt', idToDeliver)
-        merkeQuittungKennungen(currentMid, 'zugestellt', zugestelltIds)
-        sendE2eeControlMessage({
-          type: 'delivery_receipt',
-          delivered_up_to_id: idToDeliver,
-          // Der genaue Weg; `delivered_up_to_id` bleibt für ältere Clients.
-          delivered_ids: zugestelltIds,
-          receiver_id: currentUserId,
-          timestamp: new Date().toISOString(),
-        }).catch(() => {})
-      }
-
-      // Eingehende ungelesene Zeilen im offenen Chat als gelesen quittieren (Signal-Architektur)
-      const queueGelesenIds = Array.from(new Set([...processedList, ...lokalerVerlauf]
-        .filter((m) => !m.isSelf && Boolean(m.clientUuid))
-        .map((m) => (m.clientUuid as string).split('#')[0])))
-        .filter((id) => !frueherGelesen.includes(id))
-      if (!istGruppe && activeContact && !isTargetBlocked && readReceiptsEnabled && isDocVisible) {
-        for (let i = 0; i < queueGelesenIds.length; i += 100) {
-          const ids = queueGelesenIds.slice(i, i + 100)
-          await messengerSocket
-            .sendReadReceipt({ chat_type: 'direct', chat_id: String(activeContact.userId), client_uuids: ids })
-            .catch(() => sendReadReceipt({ chat_type: 'direct', chat_id: String(activeContact.userId), client_uuids: ids }))
-          merkeQuittungKennungen(currentMid, 'gelesen', ids)
-          merkeQuittungKennungen(currentMid, 'zugestellt', ids)
-        }
-      }
-
-      // Send read receipt if there are new incoming unacknowledged messages and document is visible
-      const needsRead =
-        !istGruppe &&
-        maxIncomingId > 0 &&
-        maxIncomingId > highestIncomingIdAcknowledgedRef.current &&
-        readReceiptsEnabled &&
-        isDocVisible &&
-        !isTargetBlocked
-
-      if (needsRead) {
-        const idToAck = maxIncomingId
-        // Derselbe Grund wie bei der Zustellquittung: kumulativ, also lieber
-        // einmal zu wenig als in jeder Runde erneut.
-        highestIncomingIdAcknowledgedRef.current = Math.max(
-          highestIncomingIdAcknowledgedRef.current,
-          idToAck,
-        )
-        merkeQuittung(currentMid, 'gelesen', idToAck)
-        merkeQuittungKennungen(currentMid, 'gelesen', gelesenIds)
-        // Gelesen schließt zugestellt ein; die Zustellliste zieht mit.
-        merkeQuittungKennungen(currentMid, 'zugestellt', gelesenIds)
-
-        const dispatchReadReceipt = () => {
-          sendE2eeControlMessage({
-            type: 'read_receipt',
-            read_up_to_id: idToAck,
-            read_ids: gelesenIds,
-            reader_id: currentUserId,
-            timestamp: new Date().toISOString(),
-          }).catch(() => {})
-        }
-
-        if (needsDelivery) {
-          setTimeout(dispatchReadReceipt, 350)
-        } else {
-          dispatchReadReceipt()
-        }
-      }
     } catch {
-      // Offline fallback
+      // Der nächste Takt versucht es erneut. Kein stiller Zustand: die Seite
+      // behält den lokalen Verlauf.
     } finally {
-      if (isInitial && activeMailboxIdRef.current === currentMid) {
-        setLoadingMessages(false)
-      }
+      if (isInitial) setLoadingMessages(false)
     }
   }
 
+  const ladeAeltere = async (): Promise<void> => {
+    const currentMid = blindMailboxId
+    if (!currentMid) return
+    const ids = optionen.messages.map((m) => m.id).filter((id) => id > 0)
+    const minId = ids.length ? Math.min(...ids) : 0
+    if (!minId) return
+    try {
+      const gelesen = await konversation.ladeAeltere(minId)
+      if (!gelesen.messages.length) return
+      const lokal = await loadLocalMessages(currentMid)
+      const gemischt = sortMessagesChronologically(
+        mischeVerlauf(lokal, gelesen.messages, art),
+      )
+      setMessages(gemischt)
+      await saveLocalMessagesStrict(currentMid, gelesen.messages, art)
+    } catch {
+      // Siehe oben: die nächste Berührung versucht es erneut.
+    }
+  }
 
-  return loadMessages
+  return { loadMessages, ladeAeltere }
 }

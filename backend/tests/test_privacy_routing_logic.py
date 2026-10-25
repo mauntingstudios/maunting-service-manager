@@ -147,8 +147,10 @@ def test_visibility_private_profile_and_presence(db: Session):
     assert pres_friend is not None
     assert pres_friend["status"] == "online"
     assert pres_friend["activity_label"] == "Geheimes Projekt"
+    # Privat heisst seit 10/2026: nur der Verfasser selbst. Auch ein Freund
+    # sieht die Story nicht.
     friend_stories = SocialService.list_active_stories(db, friend.id)
-    assert any(s["id"] == story.id for s in friend_stories)
+    assert not any(s["id"] == story.id for s in friend_stories)
 
     # 2. Fremder heidi: Profil ist restricted, und via get_presence_for_viewer sieht heidi den REINEN Online-Indikator
     profile_stranger = SocialService.get_profile(db, viewer_user_id=stranger.id, target_user=private_user)
@@ -276,24 +278,25 @@ def test_messaging_non_friend_to_public_user_and_reply_rule(db: Session):
     assert can_msg is True
     assert reason is None
 
-    mid = SocialService.derive_blind_mailbox_id(user_a.id, user_b.id)
+    chat = SocialService.ensure_direct_chat(db, user_a.id, user_b.id)
+    from services.social.messages_service import assert_member, send_message, store_chat_keys
+
+    store_chat_keys(
+        db,
+        user_a,
+        "direct",
+        chat.id,
+        1,
+        [
+            {"user_id": user_a.id, "encrypted_chat_key": "chiffrat-a"},
+            {"user_id": user_b.id, "encrypted_chat_key": "chiffrat-b"},
+        ],
+    )
 
     # A sendet die erste Nachricht an B
-    env1 = SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=mid,
-        ciphertext_envelope=_valid_test_envelope(payload_tag="first_message_from_a"),
-        sender_user_id=user_a.id,
-    )
-    assert env1.id is not None
-
-    # Chat existiert nun in direct_chats — als Kennung, nicht als Namenspaar.
-    # `initiated_by_user_id` stand hier bis Stufe 6b; die Zeile sagt seitdem
-    # „dieses Gespraech gibt es", nicht „diese beiden fuehren es".
-    chat = db.query(DirectChat).filter_by(blind_mailbox_id=mid).first()
-    assert chat is not None
-    assert not hasattr(chat, "initiated_by_user_id")
-    assert not hasattr(chat, "user_a_id")
+    erste = send_message(db, user_a, "direct", chat.id, "erste-von-a", 1, "chiffrat")
+    assert erste["id"] is not None
+    assert erste["sender_user_id"] == user_a.id
 
     # 2. Antwort-Erlaubnis: B muss direkt antworten können, obwohl A 'private' ist und keine Freundschaft besteht!
     can_reply, reply_reason = SocialService.can_message_user(db, user_b.id, user_a.id)
@@ -301,26 +304,15 @@ def test_messaging_non_friend_to_public_user_and_reply_rule(db: Session):
     assert reply_reason is None
 
     # B antwortet an A
-    env2 = SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=mid,
-        ciphertext_envelope=_valid_test_envelope(payload_tag="reply_message_from_b"),
-        sender_user_id=user_b.id,
-    )
-    assert env2.id is not None
+    antwort = send_message(db, user_b, "direct", chat.id, "antwort-von-b", 1, "chiffrat")
+    assert antwort["sender_user_id"] == user_b.id
 
-    # 3. Unterhaltung funktioniert in beide Richtungen uneingeschränkt.
-    #
-    # Geprueft wird am Zugang, nicht mehr an einer Liste: `list_direct_chats`
-    # gab es bis Stufe 6b, und sie beantwortete genau die Frage, die der Server
-    # nicht mehr beantworten soll. Was bleibt, ist die Tuer — beide kommen an
-    # die gemeinsame Mailbox, ein Dritter nicht.
-    SocialService.assert_mailbox_participant(db, user_a.id, mid)
-    SocialService.assert_mailbox_participant(db, user_b.id, mid)
+    # 3. Beide kommen an das Gespräch, ein Dritter nicht.
+    assert assert_member(db, user_a.id, "direct", chat.id) == {user_a.id, user_b.id}
 
     fremder = _create_user(db, "fremder_im_gespraech", privacy="public")
     with pytest.raises(HTTPException) as fehler:
-        SocialService.assert_mailbox_participant(db, fremder.id, mid)
+        assert_member(db, fremder.id, "direct", chat.id)
     assert fehler.value.status_code == 403
 
 
@@ -339,14 +331,9 @@ def test_messaging_forbidden_for_private_non_friend_without_existing_chat(db: Se
     assert can_msg_fr is False
     assert "nur von bestätigten Freunden" in reason_fr
 
-    # Sendeversuch wirft 403
+    # Sendeversuch wirft 403 — schon beim Anlegen des Gespraechs.
     with pytest.raises(HTTPException) as exc1:
-        SocialService.relay_blind_envelope(
-            db,
-            blind_mailbox_id=SocialService.derive_blind_mailbox_id(sender.id, target_private.id),
-            ciphertext_envelope=_valid_test_envelope(payload_tag="unauthorized_attempt"),
-            sender_user_id=sender.id,
-        )
+        SocialService.ensure_direct_chat(db, sender.id, target_private.id)
     assert exc1.value.status_code == 403
 
 
@@ -456,34 +443,22 @@ async def test_server_presence_broadcast_invisible_masks_as_offline(db: Session)
         SyncEventService.unsubscribe(conn_friend)
 
 
-def test_messaging_relay_erfundene_mailbox_abgewiesen(db: Session):
-    """Eine frei erfundene Mailbox-Kennung wird abgewiesen — mit 403.
+def test_nachricht_an_ein_unbekanntes_gespraech_wird_abgewiesen(db: Session):
+    """Ein Gespraech, das es nicht gibt, nimmt keine Nachricht an.
 
-    Bis 09/2026 war das ein 400 mit „stimmt nicht mit dem angegebenen
-    Empfänger überein": der Absender nannte ein `recipient_id`, und der Server
-    rechnete nach, ob die Kennung dazu passt. Das Feld gibt es nicht mehr, und
-    damit auch diesen Abgleich nicht.
-
-    Die Zusage bleibt und wird sogar schärfer: eine Kennung, zu der der Server
-    kein Konto findet, braucht **Besitznachweis oder Teilnahme**. Dieser
-    Absender hat weder das eine noch das andere. 403 statt 400 ist dabei die
-    bessere Antwort — ein 400 unterschiede „gibt es, passt aber nicht" von
-    „gibt es nicht", und genau diese Unterscheidung soll niemand aus einer
-    Antwort ablesen können.
+    Die fruaehere Mailbox-Kennung ist weg; die Nachricht nennt jetzt
+    `chat_type` und `chat_id`. Eine erfundene Kennung findet keine Zeile und
+    endet mit 404, ohne dass ein Aussenstehender daraus ablesen koennte, ob es
+    das Gespraech je gab.
     """
+    from services.social.messages_service import send_message
+
     sender = _create_user(db, "sender_spoof", privacy="public")
     _create_user(db, "target_spoof", privacy="public")
 
-    fake_mailbox = "0" * 64
     with pytest.raises(HTTPException) as exc_info:
-        SocialService.relay_blind_envelope(
-            db,
-            blind_mailbox_id=fake_mailbox,
-            ciphertext_envelope=_valid_test_envelope(payload_tag="spoofed_payload"),
-            sender_user_id=sender.id,
-        )
-    assert exc_info.value.status_code == 403
-    assert "Keine Berechtigung" in exc_info.value.detail
+        send_message(db, sender, "direct", 999_999, "spoofed-payload", 1, "chiffrat")
+    assert exc_info.value.status_code == 404
 
 
 def test_blocked_user_gets_no_presence_and_cannot_message(db: Session):
@@ -513,30 +488,10 @@ def test_blocked_user_gets_no_presence_and_cannot_message(db: Session):
     assert prof_b_sees_a["presence"] is None
     assert prof_b_sees_a["is_friend"] is False
 
-    # 3. B kann A keine Nachricht senden
-    mid = SocialService.derive_blind_mailbox_id(user_b.id, user_a.id)
+    # 3. B kann A keine Nachricht senden — das Gespraech entsteht gar nicht.
     with pytest.raises(HTTPException) as exc_msg:
-        SocialService.relay_blind_envelope(
-            db,
-            blind_mailbox_id=mid,
-            ciphertext_envelope=_valid_test_envelope(payload_tag="blocked_attempt"),
-            sender_user_id=user_b.id,
-        )
+        SocialService.ensure_direct_chat(db, user_b.id, user_a.id)
     assert exc_msg.value.status_code == 403
-
-    # 4. Typing-Signal von B an A wird abgewiesen/unterdrückt
-    conn_a, queue_a = SyncEventService.subscribe(user_id=user_a.id)
-    try:
-        SocialService.broadcast_typing_signal(
-            blind_mailbox_id=mid,
-            status="typing",
-            sender_id=user_b.id,
-            sender_username=user_b.username,
-            db=db,
-        )
-        assert queue_a.empty()
-    finally:
-        SyncEventService.unsubscribe(conn_a)
 
 
 def test_concurrent_direct_chat_creation_race_condition(db: Session):
@@ -551,73 +506,48 @@ def test_concurrent_direct_chat_creation_race_condition(db: Session):
     assert chat1.blind_mailbox_id == chat2.blind_mailbox_id
 
 
-@pytest.mark.asyncio
-async def test_typing_signal_targeted_to_recipient_only(db: Session):
-    """Typing-Signale in 1:1 Chats erreichen gezielt den Chatpartner und keinen fremden Client."""
-    sender = _create_user(db, "typing_sender", privacy="public")
-    recipient = _create_user(db, "typing_recipient", privacy="public")
-    stranger = _create_user(db, "typing_stranger", privacy="public")
+def test_eine_nachricht_erreicht_nur_die_teilnehmer(db: Session):
+    """Eine Nachricht im Direktgespraech geht an beide Mitglieder, an einen
+    Unbeteiligten nicht — weder im Kanal noch beim Laden."""
+    from services.social.messages_service import list_messages, send_message, store_chat_keys
 
-    mid = SocialService.derive_blind_mailbox_id(sender.id, recipient.id)
-    SocialService.ensure_direct_chat(db, sender.id, recipient.id)
-
-    conn_rec, queue_rec = SyncEventService.subscribe(user_id=recipient.id)
-    conn_stranger, queue_stranger = SyncEventService.subscribe(user_id=stranger.id)
-
-    try:
-        SocialService.broadcast_typing_signal(
-            blind_mailbox_id=mid,
-            status="typing",
-            sender_id=sender.id,
-            sender_username=sender.username,
-            db=db,
-        )
-
-        # Empfänger erhält Signal
-        assert not queue_rec.empty()
-        sig = queue_rec.get_nowait()
-        assert sig["type"] == "e2ee_typing_signal"
-        assert sig["sender_id"] == sender.id
-
-        # Fremder erhält NICHTS
-        assert queue_stranger.empty()
-    finally:
-        SyncEventService.unsubscribe(conn_rec)
-        SyncEventService.unsubscribe(conn_stranger)
-
-
-@pytest.mark.asyncio
-async def test_message_relay_targeted_to_chat_participants_only(db: Session):
-    """E2EE-Umschläge in 1:1 Chats werden nur an die Teilnehmer übertragen, nicht an Unbeteiligte."""
     sender = _create_user(db, "relay_sender", privacy="public")
     recipient = _create_user(db, "relay_recipient", privacy="public")
     stranger = _create_user(db, "relay_stranger", privacy="public")
 
-    mid = SocialService.derive_blind_mailbox_id(sender.id, recipient.id)
+    chat = SocialService.ensure_direct_chat(db, sender.id, recipient.id)
+    store_chat_keys(
+        db,
+        sender,
+        "direct",
+        chat.id,
+        1,
+        [
+            {"user_id": sender.id, "encrypted_chat_key": "chiffrat-a"},
+            {"user_id": recipient.id, "encrypted_chat_key": "chiffrat-b"},
+        ],
+    )
 
     conn_rec, queue_rec = SyncEventService.subscribe(user_id=recipient.id)
     conn_snd, queue_snd = SyncEventService.subscribe(user_id=sender.id)
     conn_stranger, queue_stranger = SyncEventService.subscribe(user_id=stranger.id)
 
     try:
-        SocialService.relay_blind_envelope(
-            db,
-            blind_mailbox_id=mid,
-            ciphertext_envelope=_valid_test_envelope(payload_tag="private_message"),
-            sender_user_id=sender.id,
-        )
+        send_message(db, sender, "direct", chat.id, "privat-1", 1, "chiffrat")
 
         assert not queue_rec.empty()
         msg_rec = queue_rec.get_nowait()
-        assert msg_rec["type"] == "e2ee_blind_message"
-        assert msg_rec["blind_mailbox_id"] == mid
+        assert msg_rec["type"] == "message_created"
+        assert msg_rec["message"]["chat_id"] == chat.id
 
         assert not queue_snd.empty()
-        msg_snd = queue_snd.get_nowait()
-        assert msg_snd["type"] == "e2ee_blind_message"
+        assert queue_snd.get_nowait()["type"] == "message_created"
 
-        # Fremder darf keine Benachrichtigung erhalten
         assert queue_stranger.empty()
+
+        with pytest.raises(HTTPException) as fehler:
+            list_messages(db, stranger, "direct", chat.id)
+        assert fehler.value.status_code == 403
     finally:
         SyncEventService.unsubscribe(conn_rec)
         SyncEventService.unsubscribe(conn_snd)

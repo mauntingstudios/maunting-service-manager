@@ -75,6 +75,10 @@ export async function resolveIdentity(userId: number): Promise<E2eeIdentity> {
   // `.catch(() => {})`; das Gerät war stumm und niemand erfuhr warum.
   try {
     await geraetVeroeffentlichen()
+    // Die Konto-Identitaet ist der Schluessel, mit dem Chat-Schluessel
+    // verpackt werden. Ohne sie kann niemand diesem Konto schreiben.
+    const { ensureAccountKeys } = await import('./accountKeys')
+    await ensureAccountKeys().catch(() => null)
   } catch (fehler) {
     const jetzt = Date.now()
     if (jetzt - letzteVeroeffentlichungsMeldung > 60_000) {

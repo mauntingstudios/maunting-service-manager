@@ -7,10 +7,8 @@
  * einer endgültigen Ablehnung, dieselbe Reihenfolge beim Weiterleiten. Die
  * Seite reicht Zustand und den fertigen Sendeweg hinein.
  *
- * Seit 10/2026 geht der Sendeweg über die dauerhafte Outbox
- * (`services/steuerOutbox.ts`): ein Netzfehler nimmt die Wirkung **nicht** mehr
- * zurück, sie wartet und geht später hinaus. Zurückgenommen wird nur, was der
- * Server endgültig abgelehnt hat.
+ * Der Sendeweg geht direkt über REST; zurueckgenommen wird nur, was der Server
+ * endgueltig abgelehnt hat.
  */
 
 import type { Dispatch, SetStateAction } from 'react'
@@ -38,9 +36,7 @@ import { schalteReaktion } from '@/services/reaktionen'
 import { sessionChatCache } from '@/services/klartextSpeicher'
 import { vergissMailbox } from '@/services/verlaufSuche'
 import { updateMessageInLocalStore } from '@/services/messengerLocalStore'
-import type { SteuerAusgang } from '@/services/steuerOutbox'
-import { istAbweisung } from '@/services/steuerOutbox'
-import type { SteuerEintrag } from '@/services/steuerOutboxTypen'
+import { istAbweisung, type SteuerAusgang, type SteuerEintrag } from '@/services/wirkungTypen'
 import { toast } from '@/stores/toastStore'
 
 interface Optionen {

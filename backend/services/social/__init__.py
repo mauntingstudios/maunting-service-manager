@@ -11,21 +11,15 @@ from .direktchat import DirektchatMixin
 from .freundschaften import FreundschaftenMixin
 from .gruppen import GruppenMixin
 from .gruppen_rollen import GruppenRollenMixin
-from .mailbox import MailboxMixin
-from .mailbox_zugang import MailboxZugangMixin
 from .praesenz import PraesenzMixin
 from .profile import ProfilMixin
-from .queue_service import E2eeQueueService
 from .stories import StoriesMixin
 
 __all__ = [
     "DirektchatMixin",
-    "E2eeQueueService",
     "FreundschaftenMixin",
     "GruppenMixin",
     "GruppenRollenMixin",
-    "MailboxMixin",
-    "MailboxZugangMixin",
     "PraesenzMixin",
     "ProfilMixin",
     "StoriesMixin",

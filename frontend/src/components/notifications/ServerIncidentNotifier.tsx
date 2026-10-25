@@ -16,7 +16,6 @@ import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { sendeGeraeteBenachrichtigung, pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
 import { abonniere, kuendige } from '@/services/pushAbo'
-import { kuendigeMailboxPush } from '@/services/mailboxPush'
 import { useMessengerNotificationStore, chimeEntsperren } from '@/stores/messengerNotificationStore'
 import { meldeChat } from '@/services/benachrichtigung/chatMeldung'
 import { loadCalendarEventsOfflineFirst } from '@/lib/offlineSync'
@@ -213,7 +212,7 @@ export function ServerIncidentNotifier() {
       // auszutragen. Dass der Schalter auch für den Mailbox-Weg gilt, kann nur
       // hier entschieden werden — dort steht kein Konto mehr, an dem der
       // Server ihn nachschlagen könnte.
-      void kuendigeMailboxPush().then(() => kuendige())
+      void kuendige()
       if (aufAndroid() && planRef.current !== '[]') {
         planRef.current = '[]'
         void erinnerungenUebergeben([]).catch(() => {})
@@ -363,23 +362,21 @@ export function ServerIncidentNotifier() {
         if (ach?.title) {
           toast.success(t('notifications.achievementUnlockedToast', { title: ach.title, points: ach.points ?? 0 }))
         }
-      } else if (detail?.type === 'e2ee_blind_message') {
-        if (!detail.blind_mailbox_id) return
+      } else if (detail?.type === 'message_created') {
+        const senderId = Number(detail.sender_user_id ?? detail.sender_id ?? 0)
+        if (!senderId || senderId === Number(user.id)) return
+        const istGruppe = detail.chat_type === 'group'
         /*
-         * Geteilte Mailbox und Gerätepostfach gehen durch dieselbe Meldestelle.
-         * Die Regeln (eigene Aktion, Steuerung, Stumm, Blockiert, offener Chat)
-         * stehen dort; hier bleibt nur die Übersetzung des Ereignisses.
+         * Die Meldestelle prueft Stumm, Blockiert und den offenen Chat. Hier
+         * bleibt nur die Uebersetzung des Ereignisses in ein Gespraech.
          */
         meldeChat({
-          mailbox: detail.blind_mailbox_id,
-          senderId: detail.sender_user_id ?? detail.sender_id,
-          empfaengerId: detail.recipient_id,
+          mailbox: istGruppe
+            ? `group:${Number(detail.chat_id ?? 0)}`
+            : `direct:peer:${senderId}`,
+          senderId,
           clientUuid: detail.client_uuid ?? null,
-          istGruppe: detail.is_group,
-          meldenErlaubt: detail.melden !== false,
-          isControl: Boolean(detail.is_control),
-          controlType: detail.control_type ?? null,
-          ereignis: detail.ereignis ?? null,
+          istGruppe,
           t,
         })
       }

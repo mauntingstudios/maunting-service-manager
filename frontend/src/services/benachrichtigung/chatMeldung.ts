@@ -1,14 +1,8 @@
 /**
- * Eine Chat-Nachricht melden — für geteilte Mailbox **und** Gerätepostfach.
+ * Eine Chat-Nachricht melden.
  *
- * Bis 10/2026 lag diese Entscheidung nur im `ServerIncidentNotifier`, und der
- * hörte ausschließlich auf `e2ee_blind_message` aus der geteilten Mailbox. Das
- * Gerätepostfach erzeugt kein solches Ereignis: eine dort zugestellte Nachricht
- * blieb ohne Zahl und ohne Ton, obwohl sie längst lokal lag. Wer den Messenger
- * schloss, sah gar nichts mehr.
- *
- * Deshalb entscheidet **eine** Stelle, was mit einer neuen Chat-Zeile geschieht;
- * der Ereignis-Listener und der Postfach-Hintergrundlauf rufen sie beide auf.
+ * Eine Stelle entscheidet, ob Zahl, Ton und Geraetebenachrichtigung entstehen;
+ * der Ereignis-Listener und der Hintergrundlauf rufen sie beide auf.
  * Die Regeln selbst stehen unverändert in `planeMeldung` (eigene Aktion,
  * Steuerung, Stumm, Blockiert, offener Chat) — hier stehen nur die Tatsachen,
  * die der Hub nicht kennen kann, und die Ausführung.
@@ -96,7 +90,10 @@ export function meldeChat(eingang: ChatMeldungEingang): void {
    * gerätespezifische Suffixe (#dev-...) heraus.
    */
   const logischeUuid = (eingang.clientUuid || '').split('#')[0]
-  if (logischeUuid && !beanspruche(`zaehlen:${mid}:${logischeUuid}`, 5000)) {
+  const dedupKey =
+    eingang.ereignis ||
+    (logischeUuid ? `zaehlen:${mid}:${logischeUuid}` : `zaehlen:${mid}:zeit:${Math.floor(Date.now() / 2000)}`)
+  if (!beanspruche(dedupKey, 5000)) {
     return
   }
 

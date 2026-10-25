@@ -44,6 +44,7 @@ import {
 import { DisDecryptionError } from '@msdis/shield/core'
 import { create } from 'zustand'
 import i18n from '@/i18n'
+import { clearMemoryKeyStore } from './e2eeCrypto'
 
 import { leereKlartextSpeicher } from './klartextSpeicher'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
@@ -68,13 +69,19 @@ import {
 } from './geraeteSchluesselfach'
 import { schreibeGruppenBestandNeu } from './gruppenSchluessel'
 import {
+  schreibeEntwuerfeBestandNeu,
+  schreibeFunkenBestandNeu,
+  schreibeMedienBestandNeu,
+  schreibeMedienTeileBestandNeu,
+} from './messengerLocalStore'
+import {
   setzeInhaltsSchluessel,
   setzeSiegelAktiv,
   setzeVerschlussMelder,
   siegelAktiv,
 } from './lokaleVersiegelung'
 import { schreibeNachrichtenBestandNeu } from './messengerLocalStore'
-import { schreibeRatchetBestandNeu } from './ratchetSpeicher'
+// Der Ratchet-Bestand ist entfernt.
 import { meldeErrungenschaft } from '@/lib/errungenschaft'
 
 /**
@@ -115,6 +122,18 @@ function wartezeitFuer(fehlversuche: number): number {
   if (fehlversuche < WARTEN_AB_VERSUCH) return 0
   const stufen = fehlversuche - WARTEN_AB_VERSUCH
   return Math.min(WARTEN_GRUND_MS * 2 ** stufen, WARTEN_DECKEL_MS)
+}
+
+/** Zaehlt einen Fehlversuch auch auf den Wegen „PIN aendern" und „Biometrie". */
+function bremseNachFehler(
+  get: () => MessengerSperrZustand,
+  set: (teil: Partial<MessengerSperrZustand>) => void,
+): void {
+  const fehlversuche = get().fehlversuche + 1
+  const warteMs = wartezeitFuer(fehlversuche)
+  const gesperrtBis = warteMs > 0 ? Date.now() + warteMs : 0
+  schreibeVersuchsstand(fehlversuche, gesperrtBis)
+  set({ fehlversuche, gesperrtBis })
 }
 
 // ==========================================
@@ -300,8 +319,11 @@ function pinFehler(err: unknown, beiFalschemPin: string): Error {
 async function stelleBestandUm(kontoId: number): Promise<void> {
   await schreibeNachrichtenBestandNeu()
   await schreibeGeraetBestandNeu(kontoId)
-  await schreibeRatchetBestandNeu()
   await schreibeGruppenBestandNeu()
+  await schreibeEntwuerfeBestandNeu()
+  await schreibeFunkenBestandNeu()
+  await schreibeMedienBestandNeu()
+  await schreibeMedienTeileBestandNeu()
 }
 
 // ==========================================
@@ -559,6 +581,8 @@ export const useMessengerSperre = create<MessengerSperrZustand>((set, get) => ({
   sperren: () => {
     if (!siegelAktiv()) return
     setzeInhaltsSchluessel(null)
+    clearMemoryKeyStore()
+    void import('./chatKrypto').then((m) => m.leereChatSchluesselCache()).catch(() => {})
     // Der Geräteausweis liegt nach dem ersten Zugriff auch im Arbeitsspeicher.
     // Bliebe er dort, liefe der Messenger nach der automatischen Sperre
     // fröhlich weiter: er hätte alles, was er zum Entschlüsseln braucht, und
@@ -572,6 +596,10 @@ export const useMessengerSperre = create<MessengerSperrZustand>((set, get) => ({
   },
 
   pinAendern: async (alt: string, neu: string) => {
+    const warten = get().gesperrtBis - Date.now()
+    if (warten > 0) {
+      throw new Error(i18n.t('profile.messengerLock.waiting', { count: Math.ceil(warten / 1000) }))
+    }
     if (neu.length < PIN_MINDESTLAENGE) {
       throw new Error(i18n.t('profile.messengerLock.errors.pinTooShort', { count: PIN_MINDESTLAENGE }))
     }
@@ -600,6 +628,7 @@ export const useMessengerSperre = create<MessengerSperrZustand>((set, get) => ({
       // Der hinterlegte PIN wäre sonst der alte — und der öffnet nichts mehr.
       if (get().biometrieAktiv) await verwahrePin(neu)
     } catch (err) {
+      if (!istSpeicherWeg(err)) bremseNachFehler(get, set)
       throw pinFehler(err, i18n.t('profile.messengerLock.errors.currentPinWrong'))
     } finally {
       wische(alteBytes)
@@ -672,6 +701,10 @@ export const useMessengerSperre = create<MessengerSperrZustand>((set, get) => ({
   },
 
   biometrieEinschalten: async (pin: string) => {
+    const warten = get().gesperrtBis - Date.now()
+    if (warten > 0) {
+      throw new Error(i18n.t('profile.messengerLock.waiting', { count: Math.ceil(warten / 1000) }))
+    }
     if (!get().eingerichtet) throw new Error(i18n.t('profile.messengerLock.errors.setupFirst'))
     const umschlag = lies(UMSCHLAG)
     const salz = lies(SALZ)
@@ -694,6 +727,7 @@ export const useMessengerSperre = create<MessengerSperrZustand>((set, get) => ({
       // Ein falscher PIN kam hier bis 09/2026 als rohes „Decryption failed"
       // der Bibliothek an. Andere Fehler, etwa aus dem Fach, tragen ihre
       // eigene Meldung und gehen weiter durch.
+      if (!istSpeicherWeg(err)) bremseNachFehler(get, set)
       if (err instanceof DisDecryptionError) {
         throw new Error(i18n.t('profile.messengerLock.errors.pinIncorrect'))
       }

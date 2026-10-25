@@ -46,24 +46,6 @@ DOMAENEN = {
             "ensure_direct_chat",
         },
     ),
-    "mailbox": (
-        "MailboxMixin",
-        {
-            "relay_blind_envelope",
-            "get_blind_envelopes",
-            "delete_blind_envelopes",
-            "cleanup_expired_envelopes",
-        },
-    ),
-    "mailbox_zugang": (
-        "MailboxZugangMixin",
-        {
-            "register_blind_mailbox",
-            "assert_mailbox_token",
-            "assert_mailbox_zugang",
-            "erlaubte_mailboxen",
-        },
-    ),
     "gruppen": (
         "GruppenMixin",
         {
@@ -120,7 +102,7 @@ def test_social_service_setzt_alle_domaenen_zusammen() -> None:
         for name in vars(klasse)
         if not name.startswith("__") and callable(getattr(klasse, name, None))
     }
-    assert len(methoden) == 74, f"Erwartet 74 Domänenmethoden, gefunden {len(methoden)}"
+    assert len(methoden) == 58, f"Erwartet 58 Domänenmethoden, gefunden {len(methoden)}"
     fehlend = sorted(name for name in methoden if not callable(getattr(SocialService, name, None)))
     assert not fehlend, f"SocialService erreicht nicht: {fehlend}"
 
@@ -135,7 +117,7 @@ def test_sozialrouter_behaelt_allen_vertraegen() -> None:
         else:
             vertraege.append(("WEBSOCKET", route.path))
 
-    assert len(vertraege) == 69, f"Erwartet 69 Social-Routen, gefunden {len(vertraege)}"
+    assert len(vertraege) == 71, f"Erwartet 71 Social-Routen, gefunden {len(vertraege)}"
     doppelt = sorted({v for v in vertraege if vertraege.count(v) > 1})
     assert not doppelt, f"Doppelte Route-Verträge: {doppelt}"
 
@@ -143,9 +125,9 @@ def test_sozialrouter_behaelt_allen_vertraegen() -> None:
     for pfad in (
         "/api/social/friends",
         "/api/social/profile/{target_user_id}",
-        "/api/social/e2ee/relay",
-        "/api/social/e2ee/deliveries",
-        "/api/social/e2ee/deliveries/ack",
+        "/api/social/messages/send",
+        "/api/social/messages",
+        "/api/social/e2ee/chat-keys",
         "/api/social/media/upload",
         "/api/social/groups",
         "/api/social/stories",

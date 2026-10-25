@@ -21,10 +21,8 @@ import {
 import { signiere } from '../absenderSignatur'
 import { STANDARD_BEZEICHNUNG, geraeteBezeichnung } from '../geraeteBezeichnung'
 import { eigenesGeraet, meinKonto, type EigenesGeraet } from './geraeteAblage'
-import { inboxAdresseAus } from './inboxAdresse'
 import { entfernenDaten, freigabeDaten, setzeEigeneFreigabe } from './geraeteVertrauen'
 import { vergessenGeraete } from './geraeteVerzeichnis'
-import { sendeVerlaufAnGeraet } from './verlaufsAbgleich'
 
 let veroeffentlichtAls: string | null = null
 
@@ -39,10 +37,6 @@ async function veroeffentliche(
     signingPublicKey: geraet.signaturPaar.publicKeyJwk,
     label,
     approvalSignature,
-    // Die Zustelladresse dieses Geräts. Sie geht mit jeder Veroeffentlichung
-    // mit, damit der Server sie kennt — auch wenn der Geraeteschluessel
-    // unveraendert bleibt.
-    inboxHash: await inboxAdresseAus(geraet),
   })
 }
 
@@ -136,24 +130,18 @@ export async function gebeGeraetFrei(geraet: E2eeGeraetItem): Promise<void> {
   await approveEigenesGeraet(geraet.device_id, kennung, sig)
   vergessenGeraete(konto)
 
-  /*
-   * Der Verlauf dieses Geräts geht an das neue.
-   *
-   * Ohne ihn beginnt das freigegebene Gerät am Tag seiner Freigabe: die
-   * Umschläge davor sind für die alten Geräte versiegelt und für dieses
-   * unlesbar. Die Übergabe läuft nach der Freigabe, damit der neue Eintrag im
-   * Verzeichnis schon steht; scheitert sie, bleibt die Freigabe gültig und der
-   * nächste Versand erreicht das Gerät trotzdem.
-   */
+  // Der Konto-Schluessel geht an das neue Geraet, damit es alle Chat-Schluessel
+  // oeffnen kann. Der Verlauf selbst liegt auf dem Server und wird dort gelesen.
   try {
-    // Der Merker `msm:history_sent` fällt seit 10/2026 erst nach
-    // `history_done` des Ziels (`verlaufsText.ts`) — nicht hier und nicht nach
-    // dem Absenden. Ein verlorener Teil bleibt damit offen, und der nächste
-    // Start holt ihn unter derselben Kennung nach.
-    await sendeVerlaufAnGeraet(geraet)
+    const { sendeKontoSchluesselAnGeraet } = await import('../accountKeys')
+    await sendeKontoSchluesselAnGeraet({
+      device_id: geraet.device_id,
+      public_key: geraet.public_key,
+    })
   } catch {
-    // Der Verlauf ist ein Zusatz, kein Teil der Freigabe.
+    // Ein nicht erreichbares Geraet holt sich den Bund beim naechsten Versuch.
   }
+
 }
 
 /**

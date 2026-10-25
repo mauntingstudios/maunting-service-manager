@@ -34,7 +34,7 @@ describe('useStoryAnsicht', () => {
       [3, true],
       [2, false],
     ])
-    expect(JSON.parse(localStorage.getItem('msm_seen_story_ids')!)).toEqual([20])
+    expect(JSON.parse(localStorage.getItem('msm_seen_story_ids:1')!)).toEqual([20])
 
     // Beim nächsten Öffnen der Seite ist es noch gesehen.
     const neu = renderHook(() => useStoryAnsicht(STORIES, ICH, KONTAKTE))

@@ -24,10 +24,11 @@
  *   Quittungen — überall dort, wo gegen einen veröffentlichten Geräteschlüssel
  *   versiegelt wird.
  * - **Die Schlüsselablage** des alten Kontoschlüssels. Sie wird nicht mehr
- *   befüllt; `altbestandUebernahme.ts` liest sie einmal aus und löscht sie.
+ *   befuellt; sie wird beim naechsten Aufraeumen entfernt.
  *
- * Wer verschlüsselt, findet es in `ratchetSitzung.ts` (1:1),
- * `gruppenSchluessel.ts` (Gruppen) oder `medienKrypto.ts` (Anhänge).
+ * Wer verschluesselt, findet es in `chatKrypto.ts` (Chats),
+ * `gruppenSchluessel.ts` (Gruppenkonfiguration) oder `medienKrypto.ts`
+ * (Anhaenge).
  *
  * Invarianten:
  * - Der Server bleibt blindes Relais: kein Klartext, keine Teilnehmerbindung,
@@ -63,7 +64,7 @@ export const E2EE_HYBRID_ENVELOPE_SPEC: VersionedCipherEnvelopeSpec = {
   subject: 'e2ee hybrid envelope',
 }
 
-/** Der Double Ratchet aus `ratchetSitzung.ts`. Hier steht nur das Präfix. */
+/** Altbestand: Dieses Präfix wird nur noch gelesen, nie erzeugt. */
 export const E2EE_DR_PREFIX = 'sv-e2ee-dr-v1:'
 
 // ==========================================
@@ -72,7 +73,6 @@ export const E2EE_DR_PREFIX = 'sv-e2ee-dr-v1:'
 
 const blindMailboxIdCache = new Map<string, string>()
 const groupBlindMailboxIdCache = new Map<string, string>()
-const deviceBlindMailboxIdCache = new Map<number, string>()
 
 /**
  * Returns the synchronously cached blind mailbox identifier if previously computed.
@@ -98,7 +98,6 @@ export function getCachedGroupBlindMailboxId(groupId: number, groupSalt: string 
 export function clearBlindMailboxIdCache(): void {
   blindMailboxIdCache.clear()
   groupBlindMailboxIdCache.clear()
-  deviceBlindMailboxIdCache.clear()
 }
 
 /**
@@ -117,25 +116,6 @@ export async function deriveBlindMailboxId(userAId: number, userBId: number, sal
   try {
     const res = await sha256Hex(seed)
     blindMailboxIdCache.set(cacheKey, res)
-    return res
-  } finally {
-    seed.fill(0)
-  }
-}
-
-/**
- * Derives the deterministic blind mailbox identifier for all devices of a user.
- * Used for inter-device synchronization (e.g. E2EE notes/calendar key distribution).
- */
-export async function deriveUserDeviceMailboxId(userId: number): Promise<string> {
-  const cached = deviceBlindMailboxIdCache.get(userId)
-  if (cached) return cached
-
-  const payload = `msm:devices:${userId}`
-  const seed = new TextEncoder().encode(payload)
-  try {
-    const res = await sha256Hex(seed)
-    deviceBlindMailboxIdCache.set(userId, res)
     return res
   } finally {
     seed.fill(0)

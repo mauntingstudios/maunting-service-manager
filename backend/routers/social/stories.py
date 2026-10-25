@@ -26,10 +26,12 @@ router = APIRouter()
 
 @router.get("/stories", response_model=list[ChatStoryResponse], dependencies=[Depends(_check_social_enabled)])
 def list_active_stories(
+    limit: int = 100,
+    before_id: int | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[dict]:
-    return SocialService.list_active_stories(db, user.id)
+    return SocialService.list_active_stories(db, user.id, limit=limit, before_id=before_id)
 
 
 @router.post("/stories", response_model=ChatStoryResponse, dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)])

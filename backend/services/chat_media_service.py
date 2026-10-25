@@ -1,11 +1,8 @@
-"""Service fuer sichere Handhabung von Chat-Medien und E2EE-Dateianhaengen.
+"""Sichere Chat-Medien: verschluesselte Blobs, Mitgliedschaft, signierte URLs.
 
-Enforces:
-- Client-seitige E2EE-Verschluesselung (Server sieht nur verschluesselte Blobs)
-- Chat-Mitgliedschafts-Pruefung fuer Medienzugriffe
-- Zeitlich limitierte, kryptographisch signierte Download-URLs (CDN/Signed-URLs)
-- Expiration und Token-Validierung
-- Schutz vor unberechtigtem Fremdzugriff
+Der neue Transport kennt nur noch ``chat_type`` und ``chat_id``. Die alten
+Mailbox-Kennungen bleiben als Ablagefeld erhalten, tragen aber nur noch
+``direct:<id>`` beziehungsweise ``group:<id>``.
 """
 
 from __future__ import annotations
@@ -24,7 +21,9 @@ from models import (
     ChatGroupMember,
     ChatMedia,
     DirectChat,
+    DirectChatMember,
     User,
+    UserFriend,
 )
 from services.chat_media_validator import (
     MAX_MEDIA_BYTES,
@@ -47,60 +46,28 @@ def _utc(dt: datetime | None) -> datetime | None:
 
 
 def _signing_secret() -> str:
-    """Holt das Signiergeheimnis aus den Einstellungen."""
     secret = getattr(settings, "secret_key", None)
     if not secret:
         raise RuntimeError("MSM_SECRET_KEY ist nicht konfiguriert.")
     return secret
 
 
-def _ist_blockiert(db: Session, user_a_id: int, user_b_id: int) -> bool:
-    """Prueft, ob eine Blockierung zwischen zwei Benutzern vorliegt."""
+def _blockiert(db: Session, user_a_id: int, user_b_id: int) -> bool:
     return SocialService.is_blocked(db, user_a_id, user_b_id)
 
 
-# Wie lange ein hochgeladener Blob serverseitig liegen bleibt.
-#
-# Seit 23.10.2026 gilt die verbindliche Nutzerentscheidung: neue Uploads
-# bleiben 30 Tage, danach loescht der stuendliche Lauf den Chiffratblock. Die
-# Serverkopie ist nur der Erstdownload fuer die Geraete. Die lokale
-# Verfallsfrist im Chat (bis 90 Tage, `VERFALL_STUFEN` in
-# `frontend/src/services/nachrichtVerfall.ts`) ist eine eigene Regel und wird
-# von dieser Zahl nicht ersetzt: ein Anhang, der vor der Serverfrist gesichert
-# wurde, bleibt auf dem Geraet lesbar; ein spaeterer Abruf vom Server ist nach
-# 30 Tagen nicht mehr moeglich.
-#
-# Die Verkuerzung wirkt nicht rueckwirkend. `expires_at` steht beim Upload in
-# der Zeile; bestehende Zeilen behalten ihren gespeicherten Wert (bis zu 90
-# Tage) und laufen damit ohne Migration aus, spaetestens 90 Tage nach ihrem
-# Upload. `cleanup_expired_media` loescht nur, was seine gespeicherte Frist
-# ueberschritten hat. Kein Bestand wird vor seiner beworbenen Frist entfernt.
-#
-# Wer eine laengere lokale Verfallsfrist ergaenzt, zieht diese Zahl nicht mit.
-# `test_medien_aufbewahrung_ist_30_tage_fuer_neue_uploads` haelt beide Regeln
-# fest.
-MEDIEN_AUFBEWAHRUNG_TAGE = 30
-
-# Wie viel ein Konto gleichzeitig an Anhaengen liegen haben darf. Ohne Grenze
-# fuellte ein einzelnes Konto mit 60-MB-Uploads die Platte. 2 GiB sind bei
-# 30 Tagen Aufbewahrung weit mehr, als Fotos, Sprachnachrichten und Dateien im
-# Alltag brauchen; abgelaufene Anhaenge raeumt der Stundenjob ab.
 MEDIEN_KONTINGENT_BYTES = 2 * 1024 * 1024 * 1024
+
+
+def _chat_key(chat_type: str, chat_id: int) -> str:
+    return f"{chat_type}:{int(chat_id)}"
 
 
 class ChatMediaService:
     """Zentrale Geschaeftslogik fuer Chat-Medienanhaenge und signierte URLs."""
 
     @classmethod
-    def assert_chat_membership(
-        cls, db: Session, user_id: int, media: ChatMedia, mailbox_token: str | None = None
-    ) -> None:
-        """Prueft strikt, ob der angefragte Benutzer Mitglied des Chats ist.
-        
-        Fremde (Nicht-Mitglieder) erhalten keine Berechtigung und duerfen
-        weder signierte URLs erstellen noch Medien herunterladen.
-        """
-        # 1. Gruppenchat
+    def assert_chat_membership(cls, db: Session, user_id: int, media: ChatMedia) -> None:
         if media.group_id is not None:
             group = db.query(ChatGroup).filter(ChatGroup.id == media.group_id).first()
             if not group:
@@ -114,148 +81,100 @@ class ChatMediaService:
                 .first()
             ) is not None
             if not is_member:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Keine Chat-Mitgliedschaft: Benutzer ist kein Mitglied dieser Chat-Gruppe.",
-                )
+                raise HTTPException(status_code=403, detail="Keine Mitgliedschaft in dieser Gruppe.")
             return
 
-        # 2. Direktchat (1:1)
-        #
-        # Bis Stufe 6b stand in der Chatzeile, wer dazugehoert; hier wurde
-        # nachgeschlagen. Jetzt steht dort nur noch die Kennung der Mailbox,
-        # und die Zugehoerigkeit wird gerechnet: `gegenueber_aus_mailbox`
-        # leitet fuer jedes aktive Konto die Kennung ab, die dieses Paar
-        # ergaebe. Dieselbe Antwort, ohne dass der Server eine Liste fuehrt.
-        clean_mailbox = media.blind_mailbox_id.strip()
-        zeile = None
         if media.direct_chat_id is not None:
-            zeile = db.query(DirectChat).filter(DirectChat.id == media.direct_chat_id).first()
-            if zeile is None:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Keine Chat-Mitgliedschaft: Benutzer gehoert nicht zu dieser Konversation.",
+            is_member = (
+                db.query(DirectChatMember)
+                .filter(
+                    DirectChatMember.chat_id == media.direct_chat_id,
+                    DirectChatMember.user_id == user_id,
                 )
-            clean_mailbox = (zeile.blind_mailbox_id or clean_mailbox).strip()
-        else:
-            zeile = db.query(DirectChat).filter_by(blind_mailbox_id=clean_mailbox).first()
-
-        if zeile is not None:
-            gegenueber = SocialService.gegenueber_aus_mailbox(db, user_id, clean_mailbox)
-            if gegenueber is None:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Keine Chat-Mitgliedschaft: Benutzer gehoert nicht zu diesem Chat.",
+                .first()
+            ) is not None
+            if not is_member:
+                raise HTTPException(status_code=403, detail="Keine Mitgliedschaft in diesem Chat.")
+            other = (
+                db.query(DirectChatMember.user_id)
+                .filter(
+                    DirectChatMember.chat_id == media.direct_chat_id,
+                    DirectChatMember.user_id != user_id,
                 )
-            if _ist_blockiert(db, user_id, gegenueber):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Kommunikation blockiert: Zugriff auf Medien verweigert.",
-                )
+                .first()
+            )
+            if other and _blockiert(db, user_id, int(other[0])):
+                raise HTTPException(status_code=403, detail="Kommunikation blockiert.")
             return
 
-        # Uploader selbst darf immer zugreifen
-        if media.uploader_user_id == user_id:
-            return
-
-        # Pruefe ob der Benutzer mit dem Uploader eine abgeleitete Mailbox teilt (O(1) statt O(N))
-        if SocialService.derive_blind_mailbox_id(user_id, media.uploader_user_id) == clean_mailbox:
-            if _ist_blockiert(db, user_id, media.uploader_user_id):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Kommunikation blockiert: Zugriff auf Medien verweigert.",
-                )
-            return
-
-        SocialService.assert_mailbox_zugang(db, user_id, clean_mailbox, mailbox_token)
+        # Altbestand ohne direkte Zuordnung: nur der Uploader selbst.
+        if media.uploader_user_id != user_id:
+            raise HTTPException(status_code=403, detail="Keine Berechtigung fuer diesen Anhang.")
 
     @classmethod
     def upload_encrypted_media(
         cls,
         db: Session,
         uploader: User,
-        blind_mailbox_id: str,
+        chat_type: str,
+        chat_id: int,
         ciphertext_blob: str,
         file_name: str,
         media_type: str = "application/octet-stream",
-        group_id: int | None = None,
-        mailbox_token: str | None = None,
+        expires_at: datetime | None = None,
     ) -> ChatMedia:
-        """Nimmt einen clientseitig verschluesselten E2EE-Medienblob entgegen."""
         SocialService.assert_social_enabled(db)
-
-        clean_mailbox = blind_mailbox_id.strip()
+        if chat_type not in ("direct", "group") or chat_id <= 0:
+            raise HTTPException(status_code=400, detail="Ungueltiges Gespraech.")
         clean_name = sanitize_attachment_filename(file_name)
 
-        # 1. Berechtigungs- und Mitgliedschaftspruefung vor Upload
         direct_chat_id = None
         target_group_id = None
-
-        if group_id:
-            group_member = (
+        if chat_type == "group":
+            member = (
                 db.query(ChatGroupMember)
-                .filter(ChatGroupMember.group_id == group_id, ChatGroupMember.user_id == uploader.id)
+                .filter(
+                    ChatGroupMember.group_id == chat_id,
+                    ChatGroupMember.user_id == uploader.id,
+                )
                 .first()
             )
-            if not group_member:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Upload fehlgeschlagen: Keine Mitgliedschaft in der Chat-Gruppe.",
-                )
-            target_group_id = group_id
+            if not member:
+                raise HTTPException(status_code=403, detail="Keine Mitgliedschaft in dieser Chat-Gruppe.")
+            if not SocialService.has_group_permission(db, chat_id, uploader.id, "attach_media"):
+                raise HTTPException(status_code=403, detail="Kein Recht fuer Anhaenge in dieser Gruppe.")
+            target_group_id = chat_id
         else:
-            target_recipient_id, direct_chat = SocialService.resolve_mailbox_target(
-                db,
-                sender_user_id=uploader.id,
-                blind_mailbox_id=clean_mailbox,
-            )
-            if target_recipient_id:
-                can_msg, reason = SocialService.can_message_user(db, uploader.id, target_recipient_id)
-                if not can_msg:
-                    raise HTTPException(status_code=403, detail=reason or "Keine Berechtigung fuer diesen Chat.")
-                direct_chat_id = direct_chat.id if direct_chat else SocialService.ensure_direct_chat(db, uploader.id, target_recipient_id).id
-            else:
-                # Eine Mailbox, die der Server keinem Konto zuordnen kann.
-                #
-                # Bis 09/2026 war das hier ein 403 — und damit war jeder
-                # Anhang in einer Gruppe mit geheimer Mailbox unmoeglich,
-                # ausser der Client nannte die `group_id` dazu. Die Zeile
-                # bleibt ohne `direct_chat_id` und ohne `group_id`: sie sagt
-                # nicht mehr, zu welchem Gespraech der Anhang gehoert, und
-                # `assert_chat_membership` faellt beim Lesen auf denselben
-                # Mailbox-Weg zurueck.
-                #
-                # Die Schranke ist dieselbe wie im Relais: Besitznachweis
-                # **oder** Teilnahme. Eine erfundene Kennung ohne beides ist
-                # weiter 403 — sonst waere der Upload eine Ablage, die jedes
-                # angemeldete Konto unter beliebigen Kennungen fuellen kann.
-                SocialService.assert_mailbox_zugang(db, uploader.id, clean_mailbox, mailbox_token)
+            members = {
+                int(r[0])
+                for r in db.query(DirectChatMember.user_id)
+                .filter(DirectChatMember.chat_id == chat_id)
+                .all()
+            }
+            if uploader.id not in members:
+                raise HTTPException(status_code=403, detail="Kein Mitglied dieses Chats.")
+            for other in members - {uploader.id}:
+                if _blockiert(db, uploader.id, other):
+                    raise HTTPException(status_code=403, detail="Kommunikation blockiert.")
+            direct_chat_id = chat_id
 
-        # 2. Server-seitige Validierung des verschluesselten Blobs
-        # Stellt sicher: Server akzeptiert NUR E2EE Blobs, keine Klartexte und keine Riesen-Dateien
         validate_encrypted_blob_payload(ciphertext_blob, max_bytes=MAX_MEDIA_BYTES)
-
         blob_bytes = ciphertext_blob.encode("utf-8")
+
+        # Die Kontingentpruefung und der Insert laufen unter der Kontosperre;
+        # parallele Uploads koennen die 2-GiB-Grenze nicht ueberschreiten.
+        db.query(User.id).filter(User.id == uploader.id).with_for_update().one()
         belegt = (
             db.query(func.coalesce(func.sum(ChatMedia.size_bytes), 0))
             .filter(ChatMedia.uploader_user_id == uploader.id)
             .scalar()
         )
         if belegt + len(blob_bytes) > MEDIEN_KONTINGENT_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=(
-                    "Speicher für Anhänge voll (2 GB). Ältere Anhänge werden nach "
-                    f"{MEDIEN_AUFBEWAHRUNG_TAGE} Tagen frei oder lassen sich löschen."
-                ),
-            )
-        blob_sha256 = hashlib.sha256(blob_bytes).hexdigest()
-        media_id = str(uuid.uuid4())
-        jetzt = _now()
+            raise HTTPException(status_code=413, detail="Speicher fuer Anhaenge voll (2 GB).")
 
         media = ChatMedia(
-            id=media_id,
-            blind_mailbox_id=clean_mailbox,
+            id=str(uuid.uuid4()),
+            blind_mailbox_id=_chat_key(chat_type, chat_id),
             direct_chat_id=direct_chat_id,
             group_id=target_group_id,
             uploader_user_id=uploader.id,
@@ -263,9 +182,9 @@ class ChatMediaService:
             media_type=media_type[:64],
             file_name=clean_name,
             size_bytes=len(blob_bytes),
-            sha256=blob_sha256,
-            created_at=jetzt,
-            expires_at=jetzt + timedelta(days=MEDIEN_AUFBEWAHRUNG_TAGE),
+            sha256=hashlib.sha256(blob_bytes).hexdigest(),
+            created_at=_now(),
+            expires_at=expires_at,
         )
         db.add(media)
         db.commit()
@@ -274,76 +193,37 @@ class ChatMediaService:
 
     @classmethod
     def generate_signed_url(
-        cls,
-        db: Session,
-        user: User,
-        media_id: str,
-        ttl_seconds: int = 900,  # 15 Minuten Gueltigkeit
-        mailbox_token: str | None = None,
+        cls, db: Session, user: User, media_id: str, ttl_seconds: int = 900
     ) -> tuple[str, datetime]:
-        """Erzeugt eine signierte Medien-URL mit Ablaufzeit und Chat-Mitgliedschaftspruefung."""
         SocialService.assert_social_enabled(db)
-
         media = db.query(ChatMedia).filter(ChatMedia.id == media_id).first()
         if not media:
             raise HTTPException(status_code=404, detail="Medienanhang nicht gefunden.")
-
-        # Strikte Pruefung: Fremde duerfen keine signierten URLs fuer Chat-Medien generieren!
-        cls.assert_chat_membership(db, user.id, media, mailbox_token)
-
+        cls.assert_chat_membership(db, user.id, media)
         expires_at = _now() + timedelta(seconds=max(60, min(ttl_seconds, 86400)))
         expires_ts = int(expires_at.timestamp())
-
         secret = _signing_secret()
-        msg_to_sign = f"msm:chat-media:{media.id}:{user.id}:{expires_ts}".encode("utf-8")
-        signature = hmac.new(secret.encode("utf-8"), msg_to_sign, hashlib.sha256).hexdigest()
-
-        signed_url = f"/api/social/media/{media.id}/download?token={signature}&expires={expires_ts}&user_id={user.id}"
-        return signed_url, expires_at
+        msg = f"msm:chat-media:{media.id}:{user.id}:{expires_ts}".encode("utf-8")
+        signature = hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+        return (
+            f"/api/social/media/{media.id}/download?token={signature}&expires={expires_ts}&user_id={user.id}",
+            expires_at,
+        )
 
     @classmethod
     def delete_media(cls, db: Session, user: User, media_id: str) -> bool:
-        """Loescht einen Medienblob endgueltig. Nur der Hochladende darf das.
-
-        Gehoert zum Loeschen einer Nachricht: der Anhang liegt nicht im
-        Umschlag, sondern als eigener Blob daneben. Bliebe er stehen, waere die
-        Nachricht weg und das Bild weiter abrufbar — jedes Chat-Mitglied kann
-        sich dafuer eine signierte URL ausstellen lassen.
-
-        Die Beschraenkung auf den Hochladenden ist die engste Regel, die hier
-        passt: geloescht wird ueber den Knopf an der eigenen Nachricht, und wer
-        eine Datei nicht hochgeladen hat, hat an ihr nichts zu loeschen. Ein
-        bereits verschwundener Blob ist kein Fehler, sondern das Ziel.
-        """
         SocialService.assert_social_enabled(db)
-
         media = db.query(ChatMedia).filter(ChatMedia.id == media_id).first()
         if not media:
             return False
         if media.uploader_user_id != user.id:
-            raise HTTPException(
-                status_code=403,
-                detail="Nur der Absender kann einen Anhang loeschen.",
-            )
-
+            raise HTTPException(status_code=403, detail="Nur der Absender kann einen Anhang loeschen.")
         db.delete(media)
         db.commit()
         return True
 
     @classmethod
     def cleanup_expired_media(cls, db: Session) -> int:
-        """Loescht Anhaenge, deren gespeicherte Aufbewahrung abgelaufen ist.
-
-        Massgeblich ist allein `expires_at` in der Zeile, nicht die heutige
-        Konstante. Damit laufen Zeilen aus der Zeit vor der Verkuerzung auf
-        30 Tage mit ihrer damaligen Frist aus (bis zu 90 Tage nach dem Upload),
-        und der Lauf fasst sie nicht vorher an. Eine Migration braucht es
-        dafuer nicht.
-
-        Bis 09/2026 galt `expires_at` nur beim Abruf (410) — der verschluesselte
-        Blob lag danach unbegrenzt weiter in der Datenbank. Die Frist steht in
-        der Datenschutzerklaerung; sie muss also auch loeschen.
-        """
         getroffen = (
             db.query(ChatMedia)
             .filter(ChatMedia.expires_at.isnot(None), ChatMedia.expires_at < _now())
@@ -354,44 +234,23 @@ class ChatMediaService:
 
     @classmethod
     def get_media_by_signed_url(
-        cls,
-        db: Session,
-        media_id: str,
-        token: str,
-        expires: int,
-        user_id: int,
-        mailbox_token: str | None = None,
+        cls, db: Session, media_id: str, token: str, expires: int, user_id: int
     ) -> ChatMedia:
-        """Validiert Signatur, Ablaufzeit und Chat-Mitgliedschaft beim Abruf eines Medien-Blobs."""
         now_ts = int(_now().timestamp())
         if now_ts > expires:
-            raise HTTPException(
-                status_code=403,
-                detail="Signierte Medien-URL ist abgelaufen. Bitte neue URL anfordern.",
-            )
-
+            raise HTTPException(status_code=403, detail="Signierte Medien-URL ist abgelaufen.")
         secret = _signing_secret()
         expected_msg = f"msm:chat-media:{media_id}:{user_id}:{expires}".encode("utf-8")
         expected_token = hmac.new(secret.encode("utf-8"), expected_msg, hashlib.sha256).hexdigest()
-
         if not hmac.compare_digest(expected_token, token):
-            raise HTTPException(
-                status_code=403,
-                detail="Ungueltige Signatur fuer signierte Medien-URL.",
-            )
-
+            raise HTTPException(status_code=403, detail="Ungueltige Signatur fuer signierte Medien-URL.")
         user = db.query(User).filter(User.id == user_id).first()
         if not user or not user.is_active:
             raise HTTPException(status_code=403, detail="Benutzerkonto inaktiv oder nicht autorisiert.")
-
         media = db.query(ChatMedia).filter(ChatMedia.id == media_id).first()
         if not media:
             raise HTTPException(status_code=404, detail="Medienanhang nicht gefunden.")
-
         if media.expires_at and _now() > _utc(media.expires_at):
             raise HTTPException(status_code=410, detail="Medienanhang ist abgelaufen.")
-
-        # Strikte Pruefung beim Abruf: Auch bei gueltigem Token wird die aktuelle Chat-Mitgliedschaft geprueft!
-        cls.assert_chat_membership(db, user.id, media, mailbox_token)
-
+        cls.assert_chat_membership(db, user.id, media)
         return media

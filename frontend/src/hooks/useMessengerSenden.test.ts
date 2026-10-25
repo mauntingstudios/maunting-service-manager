@@ -1,24 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 
-const speichern = vi.hoisted(() => ({ saveLocalMessagesStrict: vi.fn(async () => {}), updateMessageInLocalStore: vi.fn(async () => {}) }))
+const speichern = vi.hoisted(() => ({
+  saveLocalMessagesStrict: vi.fn(async () => {}),
+  updateMessageInLocalStore: vi.fn(async () => {}),
+}))
+const zustellen = vi.hoisted(() => ({ stelleZu: vi.fn() }))
 vi.mock('@/services/messengerLocalStore', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/services/messengerLocalStore')>(), ...speichern,
 }))
 vi.mock('@/services/nachrichtVersand', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/services/nachrichtVersand')>(),
   ladeAnhaengeHoch: vi.fn(async () => ({})),
-  stelleZu: vi.fn(async () => ({ niedrigsteId: 1, verbindungsfehler: false, ueberInbox: true })),
+  stelleZu: zustellen.stelleZu,
 }))
 vi.mock('@/services/nutzlastSignatur', () => ({ signiereNutzlast: vi.fn(async (_mid: string, _id: number, payload: unknown) => payload) }))
 vi.mock('@/lib/errungenschaft', () => ({ meldeErrungenschaft: vi.fn() }))
 
 import { useMessengerSenden } from './useMessengerSenden'
 
-beforeEach(() => { vi.clearAllMocks(); localStorage.clear() })
+beforeEach(() => {
+  vi.clearAllMocks()
+  localStorage.clear()
+  zustellen.stelleZu
+    .mockResolvedValueOnce({ niedrigsteId: 11, verbindungsfehler: false, ueberInbox: false })
+    .mockResolvedValueOnce({ niedrigsteId: 12, verbindungsfehler: false, ueberInbox: false })
+})
 
-describe('Queue-Sendebestätigung', () => {
-  it('bestätigt zwei Nachrichten sofort als sent, ohne beide unter ID 1 abzulegen', async () => {
+describe('Sendebestätigung im Einheits-Transport', () => {
+  it('bestätigt zwei Nachrichten als sent, jede unter ihrer Serverkennung', async () => {
     let messages: ChatMessage[] = []
     const identitaet = { state: 'ready', sendPair: { publicKeyJwk: 'synthetic-public' }, decryptionKeys: ['synthetic-private'] }
     const optionen = {
@@ -32,17 +42,27 @@ describe('Queue-Sendebestätigung', () => {
       setSending: vi.fn(), setIdentity: vi.fn(), identityRef: { current: identitaet },
       maxPartnerReadIdRef: { current: 0 }, maxPartnerDeliveredIdRef: { current: 0 }, justSentRef: { current: false },
       lastTypingSentRef: { current: 0 }, sendeLaeuft: { current: false }, entwuerfe: { verwirf: vi.fn() },
-      konversation: { baueVersand: vi.fn(async () => [{ ciphertext_envelope: 'test-cipher' }]) },
+      konversation: {
+        ensureChat: vi.fn(async () => ({ type: 'direct', id: 55 })),
+        baueVersand: vi.fn(async (_payload: string, clientUuid: string) => [{
+          blind_mailbox_id: 'dm',
+          ciphertext_envelope: 'test-cipher',
+          client_uuid: clientUuid,
+          chat_type: 'direct',
+          chat_id: '55',
+          key_version: 1,
+        }]),
+      },
       loadMessages: vi.fn(async () => {}), sendeWirkung: vi.fn(), getOutbox: () => [], setOutbox: vi.fn(),
     } as unknown as Parameters<typeof useMessengerSenden>[0]
     const { handleSendMessage } = useMessengerSenden(optionen)
     vi.spyOn(Date, 'now').mockReturnValueOnce(1792850000000).mockReturnValueOnce(1792850000001)
     await handleSendMessage()
     await handleSendMessage()
-    const updates = speichern.updateMessageInLocalStore.mock.calls.map((call) => call[2]) as { id: number; status: string; viaInbox: boolean }[]
+    const updates = speichern.updateMessageInLocalStore.mock.calls.map((call) => call[2]) as { id: number; status: string; viaInbox?: boolean }[]
     expect(updates).toHaveLength(2)
-    expect(updates.every((patch) => patch.status === 'sent' && patch.viaInbox && patch.id > 1)).toBe(true)
-    expect(new Set(updates.map((patch) => patch.id)).size).toBe(2)
+    expect(updates.every((patch) => patch.status === 'sent' && patch.viaInbox === undefined)).toBe(true)
+    expect(updates.map((patch) => patch.id)).toEqual([11, 12])
     expect(messages.every((message) => message.status === 'sent')).toBe(true)
   })
 })

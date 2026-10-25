@@ -81,27 +81,34 @@ def test_notification_service_echo_prevention_and_recipient_filtering():
 
 
 def test_quittung_erreicht_nur_den_empfaenger(db: Session, owner_user: User):
-    """Der Benachrichtigungsfilter am echten Relais, ohne jedes KI-Werkzeug.
+    """Der Benachrichtigungsfilter am echten Nachrichtenweg, ohne jedes KI-Werkzeug.
 
-    Hier stand bis 09/2026 zusätzlich die semantische Kontaktauflösung. Sie ist
-    mit ihrem Dienst entfernt: die KI hat kein Werkzeug mehr, das den Messenger
-    anfasst, und der Auflöser hatte danach keinen Aufrufer. Was bleibt, ist der
-    Teil, der wirklich läuft — das Relais trägt Absender und Empfänger im
-    Ereignis, und der Filter entscheidet daraus.
+    Hier stand bis 09/2026 zusaetzlich die semantische Kontaktaufloesung. Sie
+    ist mit ihrem Dienst entfernt: die KI hat kein Werkzeug mehr, das den
+    Messenger anfasst, und der Aufloeser hatte danach keinen Aufrufer. Was
+    bleibt, ist der Teil, der wirklich laeuft — das Ereignis traegt Absender
+    und Gespraech, und der Filter entscheidet daraus.
     """
+    from services.social.messages_service import send_message, store_chat_keys
+
     charlie = User(username="charlie_chief", password_hash="hashc", is_active=True)
     db.add(charlie)
     db.commit()
 
     db.add(UserFriend(user_id=owner_user.id, friend_id=charlie.id, status="accepted"))
     db.commit()
-
-    # Ein Umschlag geht durch das Relais und trägt Absender und Empfänger im
-    # Ereignis — ohne die müsste der Filter unten raten.
-    mailbox = SocialService.derive_blind_mailbox_id(owner_user.id, charlie.id)
-    ciphertext = "sv-e2ee-group-v1:" + _GRUPPEN_KEY + base64.b64encode(
-        bytes(range(1, 13)) + b"verschluesselter-rumpf" + bytes(16)
-    ).decode("ascii")
+    chat = SocialService.ensure_direct_chat(db, owner_user.id, charlie.id)
+    store_chat_keys(
+        db,
+        owner_user,
+        "direct",
+        chat.id,
+        1,
+        [
+            {"user_id": owner_user.id, "encrypted_chat_key": "chiffrat-a"},
+            {"user_id": charlie.id, "encrypted_chat_key": "chiffrat-b"},
+        ],
+    )
 
     published_events: list[dict] = []
     original_publish = SyncEventService.publish
@@ -112,31 +119,32 @@ def test_quittung_erreicht_nur_den_empfaenger(db: Session, owner_user: User):
 
     SyncEventService.publish = mock_publish
     try:
-        SocialService.relay_blind_envelope(
+        send_message(
             db,
-            blind_mailbox_id=mailbox,
-            ciphertext_envelope=ciphertext,
-            sender_user_id=owner_user.id,
+            owner_user,
+            "direct",
+            chat.id,
+            "quittung-1",
+            1,
+            "verschluesselter-rumpf",
         )
     finally:
         SyncEventService.publish = original_publish
 
-    msg_event = next(e for e in published_events if e.get("type") == "e2ee_blind_message")
-    assert msg_event["sender_user_id"] == owner_user.id
-    assert msg_event["recipient_id"] == charlie.id
+    msg_event = next(e for e in published_events if e.get("type") == "message_created")
+    assert msg_event["message"]["sender_user_id"] == owner_user.id
+    assert msg_event["message"]["chat_id"] == chat.id
 
     # Der Absender darf seine eigene Nachricht nicht als Benachrichtigung
-    # zurückbekommen, der Empfänger schon, und Unbeteiligte gar nicht.
+    # zurueckbekommen, der Empfaenger schon, und Unbeteiligte gar nicht.
     def benachrichtigt(wer: int) -> bool:
         return NotificationService.should_notify(
-            recipient_id=msg_event["recipient_id"],
+            recipient_id=charlie.id,
             current_user_id=wer,
-            sender_user_id=msg_event["sender_user_id"],
+            sender_user_id=msg_event["message"]["sender_user_id"],
             is_read=False,
         )
 
     assert benachrichtigt(owner_user.id) is False
     assert benachrichtigt(charlie.id) is True
     assert benachrichtigt(99999) is False
-
-

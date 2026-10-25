@@ -13,7 +13,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api, apiStream } from '@/api/client'
-import { merkeStromKennung, vergissStromKennung } from '@/services/mailboxAbo'
+import { sendChatMessage } from '@/api/social'
 import { merkePraesenzKennung, vergissPraesenzKennung } from '@/services/praesenz'
 import type { NoteItem } from '@/pages/Notes'
 import type { CalendarEventItem, KalenderVorkommen } from '@/pages/Calendar'
@@ -49,7 +49,7 @@ export { STORAGE_KEYS }
 export interface OutboxMutation {
   id: string
   entity: 'note' | 'calendar' | 'message'
-  action: 'create' | 'update' | 'delete' | 'toggle_pin' | 'toggle_archive' | 'relay' | 'neu_verschluesseln'
+  action: 'create' | 'update' | 'delete' | 'toggle_pin' | 'toggle_archive' | 'relay' | 'neu_verschluesseln' | 'send'
   entityId: string
   payload?: any
   timestamp: string
@@ -196,22 +196,16 @@ export function enqueueMutation(
  */
 export function enqueueMessageMutation(payload: {
   blind_mailbox_id: string
-  ciphertext_envelope: string
+  chat_type: 'direct' | 'group'
+  chat_id: number | string
+  key_version: number
+  encrypted_payload: string
   client_uuid: string
-  /**
-   * Steuerumschläge müssen ihre Kennzeichnung auch über die Outbox behalten.
-   * Ein Sitzungsaufbau (`dr-init`), der sie unterwegs verliert, landet beim
-   * Empfänger als unlesbare Nachricht im Verlauf statt als das, was er ist.
-   * Die FIFO-Zusage der Outbox sorgt dafür, dass er vor der Nachricht ankommt,
-   * für die er gebraucht wird.
-   */
-  is_control?: boolean
-  control_type?: string
 }): OutboxMutation {
   return enqueueMutation({
     id: payload.client_uuid,
     entity: 'message',
-    action: 'relay',
+    action: 'send',
     entityId: payload.blind_mailbox_id,
     payload,
   })
@@ -472,60 +466,32 @@ export async function replayOutbox(): Promise<{ processed: number; failed: numbe
             await neuVerschluesseltSenden('/calendar/events/neu-verschluesseln', mutation.payload)
           }
         } else if (mutation.entity === 'message') {
-          if (mutation.action === 'relay' || mutation.action === 'create') {
+          if (mutation.action === 'send' || mutation.action === 'relay') {
             const chatType = mutation.payload?.chat_type || 'direct'
-            const chatId = String(
-              mutation.payload?.chat_id ||
-                mutation.payload?.recipient_id ||
-                mutation.payload?.blind_mailbox_id ||
-                '',
-            )
-            const baseUuid = String(mutation.payload?.client_uuid || mutation.id).split('#')[0]
-            const envelopes =
-              Array.isArray(mutation.payload?.envelopes) && mutation.payload.envelopes.length > 0
-                ? mutation.payload.envelopes
-                : [
-                    {
-                      target_device_id: mutation.payload?.target_device_db_id,
-                      device_id: mutation.payload?.target_device_id,
-                      encrypted_payload: mutation.payload?.ciphertext_envelope || '',
-                      client_uuid: mutation.payload?.is_control
-                        ? `ctrl:${mutation.payload.client_uuid}`
-                        : mutation.payload?.client_uuid || baseUuid,
-                    },
-                  ]
-
-            const res = await api<any>('/social/messages/send', {
-              method: 'POST',
-              body: JSON.stringify({
-                client_uuid: baseUuid,
-                chat_type: chatType,
-                chat_id: chatId,
-                envelopes,
-              }),
+            const chatId = Number(mutation.payload?.chat_id || 0)
+            if (!chatId) throw { status: 400, message: 'chat_id fehlt' }
+            const res = await sendChatMessage({
+              chat_type: chatType,
+              chat_id: chatId,
+              client_uuid: mutation.payload?.client_uuid || mutation.id,
+              key_version: Number(mutation.payload?.key_version || 1),
+              encrypted_payload: String(mutation.payload?.encrypted_payload || ''),
             })
-            const envelopeId = res?.queue_ids?.[0] || res?.id
-            if (mutation.payload?.blind_mailbox_id) {
-              const updates: Record<string, any> = { status: 'sent' }
-              if (res?.id) {
-                updates.id = res.id
-              } else {
-                updates.viaInbox = true
-              }
+            const messageId = Number(res?.id || 0)
+            if (mutation.payload?.blind_mailbox_id && messageId > 0) {
               await updateMessageInLocalStore(
                 mutation.payload.blind_mailbox_id,
                 logischeNachrichtUuid(mutation.payload?.client_uuid || mutation.id),
-                updates,
+                { id: messageId, status: 'sent' },
               ).catch(() => {})
             }
-            if (typeof window !== 'undefined') {
+            if (typeof window !== 'undefined' && messageId > 0) {
               window.dispatchEvent(
                 new CustomEvent('msm:message-confirmed', {
                   detail: {
                     client_uuid: mutation.payload?.client_uuid || mutation.id,
-                    envelope_id: envelopeId || 1,
-                    blind_mailbox_id:
-                      res?.blind_mailbox_id || mutation.payload?.blind_mailbox_id,
+                    envelope_id: messageId,
+                    blind_mailbox_id: mutation.payload?.blind_mailbox_id,
                   },
                 }),
               )
@@ -1912,7 +1878,6 @@ export function startLiveSync(): () => void {
                 // ihn angehen. Nötig für Kennungen, die der Server nicht
                 // ausrechnen kann — dort gibt es keinen Empfänger
                 // nachzuschlagen.
-                merkeStromKennung((data as { conn_id?: string }).conn_id ?? null)
                 // Derselbe Rückweg, zweiter Zweck: vorne oder hinten. Der
                 // Server wählt daraus **einen** Zusteller je Konto, statt
                 // jedem offenen Fenster eine eigene Meldung zu schicken.
@@ -1938,7 +1903,6 @@ export function startLiveSync(): () => void {
       // Die Kennung gehoert zu diesem Strom und stirbt mit ihm. Ohne das
       // meldete der Client nach dem Neuverbinden an eine Verbindung, die es
       // nicht mehr gibt — und bliebe stumm.
-      vergissStromKennung()
       vergissPraesenzKennung()
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('msm:sync-status', { detail: { connected: false } }))
@@ -1959,32 +1923,6 @@ export function startLiveSync(): () => void {
  */
 export function handleIncomingSyncEvent(eventName: string, data: SyncEventPayload): void {
   if (typeof window === 'undefined') return
-
-  if ((data as any)?.type === 'e2ee_blind_message' && (data as any)?.control_type?.startsWith('notes_key_')) {
-    const cType = (data as any).control_type
-    // Der Notizschlüssel wandert nur zwischen Geräten des angemeldeten Kontos,
-    // gleich wer das Ereignis ausgelöst hat. Auf dem Mailbox-Weg steht in
-    // `recipient_id` nichts, und `sender_user_id` ist, wer den Umschlag
-    // eingeworfen hat — das darf jeder Freund. Bis 09/2026 wurde unter dessen
-    // Kennung gelesen und abgelegt.
-    const targetUid = useAuthStore.getState().user?.id
-    if (typeof targetUid !== 'number' || targetUid <= 0) return
-    if (cType === 'notes_key_sync') {
-      // Auch mit Schlüssel: die Übergabe kann der des Kontos sein, der den
-      // eigenen ablöst (`kontoschluesselAbgleichen`).
-      void (hasUserNotesKey(targetUid)
-        ? checkAndRespondToDeviceKeyRequests(targetUid)
-        : checkAndReceiveDeviceNotesKey(targetUid))
-    } else if (cType === 'notes_key_request') {
-      // Gefragt hat ein Gerät, und seine Anfrage liegt in der Mailbox: die wird
-      // beantwortet, einmal. Bis 09/2026 ging bei jeder solchen Meldung der
-      // Schlüssel an jedes eigene Gerät — auch an alle, die ihn längst hatten.
-      if (hasUserNotesKey(targetUid)) {
-        void checkAndRespondToDeviceKeyRequests(targetUid)
-      }
-    }
-    return
-  }
 
   if (eventName === 'sync' || data.entity) {
     const entity = data.entity

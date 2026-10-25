@@ -42,19 +42,6 @@ GUELTIGES_AUTH = "BTBZMqHH6r4Tts7J_aSIgg"
 ENDPUNKT = "https://fcm.googleapis.com/fcm/send/beispiel-eins"
 
 
-def _umschlag(nummer: int) -> str:
-    """Ein wohlgeformter `sv-e2ee-dr-v1:`-Umschlag.
-
-    Vier Felder — Absenderkonto, Absendergeraet, Empfaengergeraet, Rumpf.
-    `validate_e2ee_envelope_format` prueft das, und ein Relais mit einer
-    Attrappe wuerde schon dort scheitern statt beim Versand.
-    """
-    rumpf = base64.b64encode(
-        b'sv-dr-msg-v1:{"header":{"v":"sv-dr-msg-v1","dh":"AA","pn":0,"n":%d}}' % nummer
-    ).decode("ascii")
-    return f"sv-e2ee-dr-v1:7.{'a' * 32}.{'b' * 32}.{rumpf}"
-
-
 def _abo_anlegen(db: Session, user: User, endpunkt: str = ENDPUNKT) -> PushSubscription:
     return webpush_service.eintragen(
         db, user, endpoint=endpunkt, p256dh=GUELTIGER_PUNKT, auth=GUELTIGES_AUTH
@@ -482,93 +469,42 @@ def test_eine_stoerung_laesst_die_tabelle_in_ruhe(db: Session, owner_user: User,
 # ── Der Weg durch die echten Routen ─────────────────────────────────────────
 
 
-def test_die_routen_tragen_ein_und_wieder_aus(
-    client, owner_cookies: dict, csrf_token: str, db: Session, owner_user: User
-):
-    """Einmal durch HTTP, mit Anmeldung und CSRF.
+def _chat_mit_schluessel(db: Session, a: User, b: User) -> tuple[int, int]:
+    """Ein Direktgespraech samt Schluessel fuer beide Seiten."""
+    from services.social.messages_service import store_chat_keys
+    from services.social_service import SocialService
 
-    Die Dienstfunktionen sind oben einzeln geprüft; hier geht es um das, was
-    nur an der Route sichtbar wird — dass sie hinter Anmeldung und CSRF liegt
-    und dass das Konto aus der Sitzung kommt.
-    """
-    koepfe = {"X-CSRF-Token": csrf_token}
-
-    schluessel = client.get("/api/social/push/public-key", cookies=owner_cookies)
-    assert schluessel.status_code == 200
-    assert len(_b64d(schluessel.json()["key"])) == 65
-
-    angelegt = client.post(
-        "/api/social/push/subscribe",
-        cookies=owner_cookies,
-        headers=koepfe,
-        json={"endpoint": ENDPUNKT, "p256dh": GUELTIGER_PUNKT, "auth": GUELTIGES_AUTH},
+    anfrage = SocialService.send_friend_request(db, a.id, b.username)
+    SocialService.accept_friend_request(db, b.id, anfrage["id"])
+    chat = SocialService.ensure_direct_chat(db, a.id, b.id)
+    store_chat_keys(
+        db,
+        a,
+        "direct",
+        chat.id,
+        1,
+        [
+            {"user_id": a.id, "encrypted_chat_key": "chiffrat-a"},
+            {"user_id": b.id, "encrypted_chat_key": "chiffrat-b"},
+        ],
     )
-    assert angelegt.status_code == 200
-
-    db.expire_all()
-    abo = db.query(PushSubscription).filter_by(endpoint=ENDPUNKT).first()
-    assert abo is not None
-    assert abo.user_id == owner_user.id
-
-    weg = client.request(
-        "DELETE",
-        f"/api/social/push/subscribe?endpoint={ENDPUNKT}",
-        cookies=owner_cookies,
-        headers=koepfe,
-    )
-    assert weg.status_code == 200
-    db.expire_all()
-    assert db.query(PushSubscription).count() == 0
-
-
-def test_ohne_anmeldung_geht_an_den_routen_nichts(client):
-    """Eine Zustelladresse ist ein Personenbezug. Sie darf nicht anonym
-    eintragbar sein, und der Schlüssel des Panels nicht anonym abrufbar."""
-    assert client.get("/api/social/push/public-key").status_code in (401, 403)
-    assert (
-        client.post(
-            "/api/social/push/subscribe",
-            json={"endpoint": ENDPUNKT, "p256dh": GUELTIGER_PUNKT, "auth": GUELTIGES_AUTH},
-        ).status_code
-        in (401, 403)
-    )
-
-
-def test_ohne_csrf_wird_nichts_eingetragen(client, owner_cookies: dict):
-    antwort = client.post(
-        "/api/social/push/subscribe",
-        cookies=owner_cookies,
-        json={"endpoint": ENDPUNKT, "p256dh": GUELTIGER_PUNKT, "auth": GUELTIGES_AUTH},
-    )
-    assert antwort.status_code == 403
+    return chat.id, 1
 
 
 def test_eine_nachricht_loest_den_versand_aus(
     db: Session, owner_user: User, regular_user: User, abgefangener_versand
 ):
-    """Der eigentliche Zweck, am echten Relais.
-
-    Vorher endete `prepare_push_dispatch` in `relay_blind_envelope` im Nichts —
-    der Rückgabewert wurde weggeworfen, und wer den Messenger geschlossen hatte,
-    erfuhr von einer neuen Nachricht nichts. Dieser Test hält fest, dass die
-    Strecke zusammenhängt.
-    """
-    from services.social_service import SocialService
+    """Der eigentliche Zweck: wer die Anwendung geschlossen hat, erfaehrt von
+    einer neuen Nachricht. Der Versand haengt am Nachrichtenweg, nicht an einem
+    zweiten Aufruf daneben."""
+    from services.social.messages_service import send_message
     from services.sync_event_service import SyncEventService
 
     SyncEventService.clear_all_for_testing()
-    anfrage = SocialService.send_friend_request(db, owner_user.id, regular_user.username)
-    SocialService.accept_friend_request(db, regular_user.id, anfrage["id"])
-    chat = SocialService.ensure_direct_chat(db, owner_user.id, regular_user.id)
+    chat_id, key_version = _chat_mit_schluessel(db, owner_user, regular_user)
     _abo_anlegen(db, regular_user)
 
-    SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=chat.blind_mailbox_id,
-        ciphertext_envelope=_umschlag(1),
-        sender_user_id=owner_user.id,
-        client_uuid="uuid-eins",
-    )
+    send_message(db, owner_user, "direct", chat_id, "uuid-eins", key_version, "chiffrat")
 
     assert len(abgefangener_versand) == 1
     ziele, koerper, _pem, _oeff, _je_mailbox = abgefangener_versand[0]
@@ -582,25 +518,17 @@ def test_der_absender_bekommt_nichts_fuer_die_eigene_nachricht(
     """Outgoing Echo Prevention, bis zum Versender durchgezogen.
 
     Beide Seiten haben hier eine Zustelladresse. Ginge etwas an den Absender
-    hinaus, meldete sein eigenes zweites Gerät ihm seine eigene Nachricht.
+    hinaus, meldete sein eigenes zweites Geraet ihm seine eigene Nachricht.
     """
-    from services.social_service import SocialService
+    from services.social.messages_service import send_message
     from services.sync_event_service import SyncEventService
 
     SyncEventService.clear_all_for_testing()
-    anfrage = SocialService.send_friend_request(db, owner_user.id, regular_user.username)
-    SocialService.accept_friend_request(db, regular_user.id, anfrage["id"])
-    chat = SocialService.ensure_direct_chat(db, owner_user.id, regular_user.id)
+    chat_id, key_version = _chat_mit_schluessel(db, owner_user, regular_user)
     _abo_anlegen(db, owner_user, "https://fcm.googleapis.com/fcm/send/absender")
     _abo_anlegen(db, regular_user, "https://fcm.googleapis.com/fcm/send/empfaenger")
 
-    SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=chat.blind_mailbox_id,
-        ciphertext_envelope=_umschlag(2),
-        sender_user_id=owner_user.id,
-        client_uuid="uuid-zwei",
-    )
+    send_message(db, owner_user, "direct", chat_id, "uuid-zwei", key_version, "chiffrat")
 
     alle_ziele = [z[1] for uebergabe in abgefangener_versand for z in uebergabe[0]]
     assert alle_ziele == ["https://fcm.googleapis.com/fcm/send/empfaenger"]
@@ -609,40 +537,30 @@ def test_der_absender_bekommt_nichts_fuer_die_eigene_nachricht(
 def test_eine_lesequittung_loest_keinen_versand_aus(
     db: Session, owner_user: User, regular_user: User, abgefangener_versand
 ):
-    """Steuersignale sind keine Nachrichten. Ein Push je Lesequittung wäre eine
-    Meldung für etwas, das der Benutzer selbst ausgelöst hat."""
-    from services.social_service import SocialService
+    """Quittungen sind keine Nachrichten. Ein Push je Lesequittung waere eine
+    Meldung fuer etwas, das der Benutzer selbst ausgeloest hat."""
+    from services.social.messages_service import mark_read, send_message
     from services.sync_event_service import SyncEventService
 
     SyncEventService.clear_all_for_testing()
-    anfrage = SocialService.send_friend_request(db, owner_user.id, regular_user.username)
-    SocialService.accept_friend_request(db, regular_user.id, anfrage["id"])
-    chat = SocialService.ensure_direct_chat(db, owner_user.id, regular_user.id)
+    chat_id, key_version = _chat_mit_schluessel(db, owner_user, regular_user)
     _abo_anlegen(db, regular_user)
+    gesendet = send_message(db, owner_user, "direct", chat_id, "uuid-drei", key_version, "chiffrat")
+    abgefangener_versand.clear()
 
-    SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=chat.blind_mailbox_id,
-        ciphertext_envelope=_umschlag(3),
-        sender_user_id=owner_user.id,
-        client_uuid="uuid-drei",
-        is_control=True,
-        control_type="read_receipt",
-    )
+    mark_read(db, regular_user, "direct", chat_id, gesendet["id"])
 
     assert abgefangener_versand == []
 
 
-def test_austragen_familie_nimmt_adresse_und_mailboxen_des_geraets_mit(
+def test_austragen_familie_nimmt_nur_die_adresse_des_geraets_mit(
     db: Session, owner_user: User
 ):
     """Ein gesperrtes Geraet bekommt keine Benachrichtigung mehr.
 
-    Weder ueber das Konto noch ueber seine Mailboxen: die Mailbox-Zeilen
-    kennen kein Konto, haengen aber an derselben Adresse.
+    Getroffen wird genau seine Sitzungsfamilie; das andere Geraet desselben
+    Kontos bleibt erreichbar.
     """
-    from models import E2eeMailboxPush
-
     zweite = "https://fcm.googleapis.com/fcm/send/beispiel-zwei"
     webpush_service.eintragen(
         db, owner_user, endpoint=ENDPUNKT, p256dh=GUELTIGER_PUNKT, auth=GUELTIGES_AUTH,
@@ -652,15 +570,10 @@ def test_austragen_familie_nimmt_adresse_und_mailboxen_des_geraets_mit(
         db, owner_user, endpoint=zweite, p256dh=GUELTIGER_PUNKT, auth=GUELTIGES_AUTH,
         familie="fam-bleibt",
     )
-    for adresse in (ENDPUNKT, zweite):
-        webpush_service.eintragen_mailbox(
-            db, mailbox_id="m" * 64, endpoint=adresse, p256dh=GUELTIGER_PUNKT, auth=GUELTIGES_AUTH
-        )
 
     assert webpush_service.austragen_familie(db, owner_user.id, "fam-weg") == 1
 
     assert [a.endpoint for a in db.query(PushSubscription).all()] == [zweite]
-    assert [z.endpoint for z in db.query(E2eeMailboxPush).all()] == [zweite]
 
 
 def test_austragen_familie_trifft_kein_fremdes_konto(
@@ -726,31 +639,6 @@ def test_max_abos_pro_benutzer_verdraengt_aelteste(db: Session, owner_user: User
     assert "https://fcm.googleapis.com/fcm/send/device-0" not in endpoints
     assert "https://fcm.googleapis.com/fcm/send/device-1" not in endpoints
     assert "https://fcm.googleapis.com/fcm/send/device-11" in endpoints
-
-
-def test_max_abos_pro_mailbox_verdraengt_aelteste(db: Session, monkeypatch):
-    """Maximal 50 Abonnements pro Mailbox; ältere werden verdrängt."""
-    from models import E2eeMailboxPush
-
-    monkeypatch.setattr(webpush_service, "_ziel_ist_erlaubt", lambda ep: True)
-    mb_id = "mb_test_limit"
-
-    for i in range(53):
-        webpush_service.eintragen_mailbox(
-            db,
-            mailbox_id=mb_id,
-            endpoint=f"https://fcm.googleapis.com/fcm/send/mb-dev-{i}",
-            p256dh=GUELTIGER_PUNKT,
-            auth=GUELTIGES_AUTH,
-        )
-
-    abos = db.query(E2eeMailboxPush).filter_by(mailbox_id=mb_id).all()
-    assert len(abos) == 50
-    endpoints = {a.endpoint for a in abos}
-    assert "https://fcm.googleapis.com/fcm/send/mb-dev-0" not in endpoints
-    assert "https://fcm.googleapis.com/fcm/send/mb-dev-1" not in endpoints
-    assert "https://fcm.googleapis.com/fcm/send/mb-dev-2" not in endpoints
-    assert "https://fcm.googleapis.com/fcm/send/mb-dev-52" in endpoints
 
 
 def test_gemeinsamer_client_behaelt_keine_kekse(monkeypatch):

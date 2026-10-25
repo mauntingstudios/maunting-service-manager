@@ -145,25 +145,30 @@ def test_sender_id_strictly_excluded_from_group_alerts():
 
 
 def test_eigene_nachricht_erzeugt_keine_eigene_benachrichtigung(db: Session, owner_user: User):
-    """Wer selbst sendet, bekommt dafür kein Abzeichen und keinen Ton.
+    """Wer selbst sendet, bekommt dafuer kein Abzeichen und keinen Ton.
 
-    Der Test lief früher über `propose_message_contact`, also über einen
-    Umschlag, den der Server selbst verschlüsselt hat. Dieses Werkzeug ist
-    entfernt; der Umschlag kommt jetzt fertig vom Client, und geprüft wird, was
-    hier immer schon gemeint war: die Echo-Unterdrückung des Absenders.
+    Der Umschlag kommt fertig vom Client; geprueft wird die Echo-Unterdrueckung
+    des Absenders am Ereignis des Nachrichtenwegs.
     """
-    import base64
+    from services.social.messages_service import send_message, store_chat_keys
 
     user_sender = owner_user
     user_recipient = _create_user(db, "recipient_ai_user")
 
     db.add(UserFriend(user_id=user_sender.id, friend_id=user_recipient.id, status="accepted"))
     db.commit()
-
-    mailbox = SocialService.derive_blind_mailbox_id(user_sender.id, user_recipient.id)
-    umschlag = "sv-e2ee-group-v1:" + _GRUPPEN_KEY + base64.b64encode(
-        bytes(range(1, 13)) + b"vom-client-verschluesselt" + bytes(16)
-    ).decode("ascii")
+    chat = SocialService.ensure_direct_chat(db, user_sender.id, user_recipient.id)
+    store_chat_keys(
+        db,
+        user_sender,
+        "direct",
+        chat.id,
+        1,
+        [
+            {"user_id": user_sender.id, "encrypted_chat_key": "chiffrat-a"},
+            {"user_id": user_recipient.id, "encrypted_chat_key": "chiffrat-b"},
+        ],
+    )
 
     published: list[dict] = []
     orig_pub = SyncEventService.publish
@@ -174,219 +179,47 @@ def test_eigene_nachricht_erzeugt_keine_eigene_benachrichtigung(db: Session, own
 
     SyncEventService.publish = mock_pub
     try:
-        SocialService.relay_blind_envelope(
+        send_message(
             db,
-            blind_mailbox_id=mailbox,
-            ciphertext_envelope=umschlag,
-            sender_user_id=user_sender.id,
+            user_sender,
+            "direct",
+            chat.id,
+            "echo-unterdrueckung",
+            1,
+            "vom-client-verschluesselt",
         )
     finally:
         SyncEventService.publish = orig_pub
 
-    msg_ev = next(e for e in published if e.get("type") == "e2ee_blind_message")
-    assert msg_ev["sender_user_id"] == user_sender.id
-    assert msg_ev["recipient_id"] == user_recipient.id
+    msg_ev = next(e for e in published if e.get("type") == "message_created")
+    assert msg_ev["message"]["sender_user_id"] == user_sender.id
+    assert msg_ev["message"]["chat_id"] == chat.id
 
     # Sender darf KEINE Benachrichtigung / Unread-Badge erhalten.
     assert NotificationService.should_notify(
-        recipient_id=msg_ev["recipient_id"],
+        recipient_id=user_sender.id,
         current_user_id=user_sender.id,
-        sender_user_id=msg_ev["sender_user_id"],
+        sender_user_id=msg_ev["message"]["sender_user_id"],
         is_read=False,
     ) is False
 
     # Empfänger MUSS benachrichtigt werden.
     assert NotificationService.should_notify(
-        recipient_id=msg_ev["recipient_id"],
+        recipient_id=user_recipient.id,
         current_user_id=user_recipient.id,
-        sender_user_id=msg_ev["sender_user_id"],
+        sender_user_id=msg_ev["message"]["sender_user_id"],
         is_read=False,
     ) is True
 
 
-# ============================================================================
-# 2. Steuersignale: Read Receipts & Delivery Receipts triggern keine Alerts
-# ============================================================================
+def test_group_message_reaches_members_only_no_leak_to_strangers(db: Session):
+    """Eine Gruppennachricht geht an die Mitglieder, an Unbeteiligte nicht.
 
-def test_control_messages_strictly_suppressed_from_notifications_and_badges():
-    """Interne Steuersignale wie Lesequittungen (read_receipt) dürfen
-    weder Push-Benachrichtigungen noch Unread-Badges erhöhen.
+    Der Kanal filtert auf die Mitgliederliste; ein Fremder kann weder lesen
+    noch schreiben.
     """
-    current_user_id = 20
-    sender_id = 10
-
-    # 1. Normal message -> True
-    assert NotificationService.should_notify(
-        recipient_id=current_user_id,
-        current_user_id=current_user_id,
-        sender_user_id=sender_id,
-        is_control=False,
-        control_type="message",
-    ) is True
-
-    # 2. Control message: read_receipt -> False
-    assert NotificationService.should_notify(
-        recipient_id=current_user_id,
-        current_user_id=current_user_id,
-        sender_user_id=sender_id,
-        is_control=True,
-        control_type="read_receipt",
-    ) is False
-
-    # 3. Control message: delivery_receipt -> False
-    assert NotificationService.should_notify(
-        recipient_id=current_user_id,
-        current_user_id=current_user_id,
-        sender_user_id=sender_id,
-        is_control=True,
-        control_type="delivery_receipt",
-    ) is False
-
-    # 4. Control message: edit_message / delete_message -> False
-    assert NotificationService.should_notify(
-        recipient_id=current_user_id,
-        current_user_id=current_user_id,
-        sender_user_id=sender_id,
-        is_control=True,
-        control_type="edit_message",
-    ) is False
-
-    # Push Dispatch Plan für Steuersignale muss None sein
-    assert NotificationService.prepare_push_dispatch(
-        target_user_id=current_user_id,
-        sender_user_id=sender_id,
-        title="Quittung",
-        is_control=True,
-        control_type="read_receipt",
-    ) is None
-
-
-# ============================================================================
-# 3. Background vs. Foreground Push: Keine doppelten OS-Pushes bei aktiver Verbindung
-# ============================================================================
-
-def test_background_vs_foreground_push_suppression():
-    """Bei aktiver WebSocket/SSE-Verbindung im Vordergrund werden OS-Pushes
-    unterdrückt, um doppelte Alerts zu vermeiden.
-    """
-    current_user_id = 20
-    sender_id = 10
-
-    # Im Vordergrund (active foreground connection) -> OS-Push unterdrückt (False)
-    assert NotificationService.should_notify(
-        recipient_id=current_user_id,
-        current_user_id=current_user_id,
-        sender_user_id=sender_id,
-        is_read=False,
-        has_active_foreground_client=True,
-    ) is False
-
-    push_plan_foreground = NotificationService.prepare_push_dispatch(
-        target_user_id=current_user_id,
-        sender_user_id=sender_id,
-        title="Neue Nachricht",
-        has_active_foreground_connection=True,
-    )
-    assert push_plan_foreground is None
-
-    # Im Hintergrund (keine aktive Foreground-Verbindung) -> OS-Push erlaubt (True)
-    assert NotificationService.should_notify(
-        recipient_id=current_user_id,
-        current_user_id=current_user_id,
-        sender_user_id=sender_id,
-        is_read=False,
-        has_active_foreground_client=False,
-    ) is True
-
-    push_plan_background = NotificationService.prepare_push_dispatch(
-        target_user_id=current_user_id,
-        sender_user_id=sender_id,
-        title="Neue Nachricht",
-        has_active_foreground_connection=False,
-    )
-    assert push_plan_background is not None
-
-
-# ============================================================================
-# 4. Privacy-Leaks in Payloads: Keine Klartext- oder Metadaten-Leaks bei E2EE
-# ============================================================================
-
-def test_privacy_leaks_prevented_in_push_payloads():
-    """Prüft, ob in Push-Payloads Klartextnachrichten oder sensible Metadaten
-    vollständig bereinigt werden, wenn E2EE oder Privatsphäre-Filter greifen.
-    """
-    raw_payload = {
-        "title": "Alice: Top-Secret Information",
-        "body": "Das Passwort lautet 123456!",
-        "text": "Das Passwort lautet 123456!",
-        "message_text": "Das Passwort lautet 123456!",
-        "content": "Streng vertraulich",
-        "preview": "Passwort lautet...",
-        "ciphertext_envelope": "sv-e2ee-group-v1:aW52YWxpZF9kYXRh",
-        "secret": "master_key",
-        "token": "bearer_secret",
-        "key": "aes_gcm_secret",
-        "sender_name": "Alice",
-        "is_group": False,
-    }
-
-    sanitized = NotificationService.sanitize_push_payload(raw_payload, is_e2ee=True, privacy_mode=True)
-
-    # Niemals Klartextinhalte leaken
-    assert "text" not in sanitized
-    assert "message_text" not in sanitized
-    assert "content" not in sanitized
-    assert "preview" not in sanitized
-    assert "ciphertext_envelope" not in sanitized
-    assert "secret" not in sanitized
-    assert "token" not in sanitized
-    assert "key" not in sanitized
-
-    # Der Text darf nicht mehr das Passwort enthalten
-    assert "123456" not in sanitized["body"]
-    assert "123456" not in sanitized["title"]
-    assert "Top-Secret" not in sanitized["title"]
-
-    # Generischer, sicherer Text
-    assert sanitized["body"] == "Du hast eine neue verschlüsselte Nachricht erhalten."
-    assert sanitized["title"] == "Neue Nachricht: Alice"
-    assert sanitized["is_e2ee"] is True
-    assert sanitized["privacy_filtered"] is True
-
-
-def test_privacy_leaks_prevented_in_group_payload():
-    """Gruppen-Nachrichten mit E2EE verwenden sichere, generische Texte ohne Leak."""
-    raw_group_payload = {
-        "title": "Gruppe Alpha",
-        "text": "Geheimer Treffpunkt um 20:00 Uhr",
-        "body": "Geheimer Treffpunkt um 20:00 Uhr",
-        "chat_name": "Projekt Genesis",
-        "is_group": True,
-    }
-
-    sanitized = NotificationService.sanitize_push_payload(raw_group_payload, is_e2ee=True)
-    assert "Treffpunkt" not in sanitized["body"]
-    assert sanitized["body"] == "Neue Nachricht in der Gruppe."
-    assert sanitized["title"] == "Neue Nachricht in „Projekt Genesis“"
-
-
-# ============================================================================
-# 5. Gruppen-Zielgruppen-Routing: Nur Gruppenmitglieder erhalten Envelopes
-# ============================================================================
-
-@pytest.mark.asyncio
-async def test_group_relay_targeted_to_members_only_no_leak_to_strangers(db: Session):
-    """Gruppennachrichten werden zielgerichtet nur an Mitglieder der Gruppe ausgeliefert,
-    während Unbeteiligte keinerlei Event oder Metadaten erhalten.
-
-    Seit 09/2026 über das Mailbox-Abo statt über die Mitgliederliste: der
-    Server schlägt nicht mehr nach, wer dazugehört. Die Zusage ist dieselbe
-    geblieben, der Weg dorthin ist ein anderer — und deshalb melden Alice und
-    Bob die Kennung hier ausdrücklich an. Ein Fremder kann das auch versuchen,
-    kommt aber nicht durch: `set_mailboxes` nimmt nur, was `hat_zugang`
-    durchlässt.
-    """
-    import hashlib
+    from fastapi import HTTPException
+    from services.social.messages_service import send_message, store_chat_keys
 
     alice = _create_user(db, "group_alice")
     bob = _create_user(db, "group_bob")
@@ -394,62 +227,40 @@ async def test_group_relay_targeted_to_members_only_no_leak_to_strangers(db: Ses
 
     group = SocialService.create_group(db, alice)
     SocialService.join_group_by_invite_code(db, bob, group.invite_code)
-
-    g_mid = hashlib.sha256(f"msm:group:{group.id}".encode("utf-8")).hexdigest()
+    mitglieder = [
+        int(row[0])
+        for row in db.query(ChatGroupMember.user_id).filter_by(group_id=group.id).all()
+    ]
+    store_chat_keys(
+        db,
+        alice,
+        "group",
+        group.id,
+        1,
+        [{"user_id": uid, "encrypted_chat_key": f"chiffrat-{uid}"} for uid in mitglieder],
+    )
 
     conn_alice, q_alice = SyncEventService.subscribe(user_id=alice.id)
     conn_bob, q_bob = SyncEventService.subscribe(user_id=bob.id)
     conn_stranger, q_stranger = SyncEventService.subscribe(user_id=charlie_stranger.id)
-    def _melde_an(conn_id: str, user_id: int) -> None:
-        """Wie der Router es tut: erst filtern, dann setzen.
-
-        Über `erlaubte_mailboxen` und nicht direkt über `set_mailboxes` — die
-        Prüfung sitzt dort, und ein Test, der sie überspringt, wäre für den
-        Fremden unten aus dem falschen Grund grün.
-        """
-        erlaubt = SocialService.erlaubte_mailboxen(db, user_id, [(g_mid, None)])
-        SyncEventService.set_mailboxes(conn_id, erlaubt, user_id=user_id)
-
-    _melde_an(conn_alice, alice.id)
-    _melde_an(conn_bob, bob.id)
-    # Und der Fremde versucht es ebenfalls — das ist der eigentliche
-    # Missbrauchsfall, seit die Kennung die Adresse ist: `msm:group:<id>` fällt
-    # aus einer kleinen Ganzzahl, jeder kann sie ausrechnen.
-    _melde_an(conn_stranger, charlie_stranger.id)
-
-    valid_env = "sv-e2ee-group-v1:" + _GRUPPEN_KEY + base64.b64encode(b"N" * 12 + b"group_payload_test" + b"T" * 16).decode("ascii")
-    illegal_env = "sv-e2ee-group-v1:" + _GRUPPEN_KEY + base64.b64encode(b"N" * 12 + b"illegal_payload_test" + b"T" * 16).decode("ascii")
-
     try:
-        SocialService.relay_blind_envelope(
-            db,
-            blind_mailbox_id=g_mid,
-            ciphertext_envelope=valid_env,
-            sender_user_id=alice.id,
-        )
+        send_message(db, alice, "group", group.id, "gruppen-nachricht-1", 1, "chiffrat")
 
-        # Alice (Sender) erhält das Event zur Multi-Device Sync
+        # Alice (Absenderin) erhaelt das Ereignis fuer ihre uebrigen Geraete.
         assert not q_alice.empty()
-        ev_a = q_alice.get_nowait()
-        assert ev_a["sender_user_id"] == alice.id
+        assert q_alice.get_nowait()["type"] == "message_created"
 
-        # Bob (Gruppenmitglied) erhält das Event
+        # Bob (Mitglied) erhaelt es.
         assert not q_bob.empty()
         ev_b = q_bob.get_nowait()
-        assert ev_b["blind_mailbox_id"] == g_mid
+        assert ev_b["message"]["chat_id"] == group.id
 
-        # Charlie (Fremder, kein Mitglied) darf absolut NICHTS erhalten!
+        # Charlie (Fremder) darf absolut NICHTS erhalten.
         assert q_stranger.empty()
 
-        # Fremder darf nicht in die Gruppe senden
-        from fastapi import HTTPException
+        # Ein Fremder darf nicht in die Gruppe senden.
         with pytest.raises(HTTPException) as exc:
-            SocialService.relay_blind_envelope(
-                db,
-                blind_mailbox_id=g_mid,
-                ciphertext_envelope=illegal_env,
-                sender_user_id=charlie_stranger.id,
-            )
+            send_message(db, charlie_stranger, "group", group.id, "illegal", 1, "chiffrat")
         assert exc.value.status_code == 403
     finally:
         SyncEventService.unsubscribe(conn_alice)

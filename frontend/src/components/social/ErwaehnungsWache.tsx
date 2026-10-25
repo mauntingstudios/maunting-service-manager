@@ -53,13 +53,6 @@ function GruppenWache({ gruppe, eigeneId, identitaetRef, onErwaehnung }: WachePr
     },
     eigeneId,
     identitaetRef,
-    // Ein Sitzungsbruch gehört in das Gespräch, in dem er auftritt, und wird
-    // dort gemeldet. Die Wache schweigt: eine Systemzeile in einem Chat, den
-    // gerade niemand ansieht, wäre eine Meldung ins Leere. Dasselbe gilt für
-    // einen abgewiesenen Sitzungsaufbau — den es in einer Gruppe ohnehin nicht
-    // gibt, er gehört zum Direktchat.
-    meldeSitzungsbruch: () => {},
-    meldeAufbauAbgelehnt: () => {},
   })
 
   const mid = konversation.blindMailboxId

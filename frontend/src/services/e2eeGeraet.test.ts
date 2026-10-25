@@ -31,8 +31,6 @@ function installiereLocalStorage() {
 const {
   hochgeladen,
   fremdeGeraete,
-  uebernommen,
-  umbenennen,
   gespeicherterName,
   gespeicherteSignatur,
   wiederFreigegeben,
@@ -55,16 +53,6 @@ const {
     rufe: 0,
     fehler: null as Error | null,
   },
-  uebernommen: [] as string[],
-  umbenennen: { fehler: null as Error | null },
-}))
-
-vi.mock('./ratchetSpeicher', () => ({
-  uebernehmeAltbestand: vi.fn(async (kennung: string) => {
-    uebernommen.push(kennung)
-    if (umbenennen.fehler) throw umbenennen.fehler
-    return 0
-  }),
 }))
 
 vi.mock('@/api/social', () => ({
@@ -195,8 +183,6 @@ describe('e2eeGeraet', () => {
     fremdeGeraete.liste = []
     fremdeGeraete.rufe = 0
     setzeAngemeldetesKonto(10)
-    uebernommen.length = 0
-    umbenennen.fehler = null
   })
 
   describe('bei gesperrtem Messenger', () => {
@@ -420,11 +406,6 @@ describe('e2eeGeraet', () => {
       expect(platte.has('devices:self')).toBe(false)
       expect(platte.get('devices:konto:10')?.kennung).toBe('altbestand0000')
 
-      // Die Ratchet-Sitzungen hängen an diesem Schlüssel und tragen seit
-      // 09/2026 die eigene Gerätekennung im Namen. Bleiben sie unter dem alten
-      // Namen liegen, meldet der Messenger jedem Gesprächspartner einen Bruch.
-      expect(uebernommen).toEqual(['altbestand0000'])
-
       // Das zweite Konto erbt nichts, sondern legt frisch an.
       clearGeraeteMemory()
       setzeAngemeldetesKonto(11)
@@ -448,43 +429,11 @@ describe('e2eeGeraet', () => {
       expect(platte.has('devices:self')).toBe(true)
     }, 60_000)
 
-    it('versucht das Umbenennen der Sitzungen erneut, wenn es scheitert', async () => {
-      // Am laufenden System schiefgegangen: der Schlüssel war umgehängt, das
-      // Umbenennen scheiterte, `self` war weg — und es gab keinen zweiten
-      // Versuch mehr. Der Browser stand mit einem gültigen Schlüssel und lauter
-      // unauffindbaren Sitzungen da.
-      platte.clear()
-      platte.set('devices:self', {
-        id: 'self',
-        kennung: 'altbestand0000',
-        publicKeyJwk: '{"kty":"RSA","n":"alt"}',
-        privateKeyJwk: '{"kty":"RSA","d":"alt"}',
-      })
-      umbenennen.fehler = new Error('Ablage weg')
-
-      await eigenesGeraet()
-      expect(uebernommen).toEqual(['altbestand0000'])
-      expect(platte.get('devices:konto:10')?.sitzungenUebernommen).toBe(false)
-
-      // Nächster Start, diesmal geht es durch.
-      umbenennen.fehler = null
-      clearGeraeteMemory()
-      await eigenesGeraet()
-      expect(uebernommen).toEqual(['altbestand0000', 'altbestand0000'])
-      expect(platte.get('devices:konto:10')?.sitzungenUebernommen).toBe(true)
-
-      // Und danach nicht noch einmal.
-      clearGeraeteMemory()
-      await eigenesGeraet()
-      expect(uebernommen).toHaveLength(2)
-    }, 60_000)
-
-    it('lässt ein frisch erzeugtes Gerät die Sitzungen nicht anfassen', async () => {
+    it('legt für ein frisch erzeugtes Gerät die Zeile sofort geschlossen an', async () => {
       // Sonst zöge das **zweite** Konto in diesem Browser die verwaisten
       // Sitzungen des ersten an sich.
       platte.clear()
       await eigenesGeraet()
-      expect(uebernommen).toEqual([])
       expect(platte.get('devices:konto:10')?.sitzungenUebernommen).toBe(true)
     }, 60_000)
 

@@ -437,6 +437,26 @@ def entferne_teilnehmer(raum: str, identity: str, db: Session | None = None) -> 
         raise LivekitNichtErreichbar("Der Anrufserver hat die Änderung nicht angenommen.") from exc
 
 
+def loesche_raum(raum: str, db: Session | None = None) -> None:
+    """Loescht den Medienraum. Ohne das laeuft er nach dem Ende weiter."""
+    konf = konfiguration(db)
+    if not konf.konfiguriert:
+        return
+    try:
+        _twirp(
+            konf.api_url,
+            konf.api_key,
+            konf.api_secret,
+            "DeleteRoom",
+            {"room": raum},
+            raum=raum,
+        )
+    except Exception:  # noqa: BLE001
+        # Der Panel-Raum ist bereits beendet. Ein nicht erreichbarer Sidecar
+        # darf das Auflegen nicht in einen Fehler verwandeln.
+        return
+
+
 def status(db: Session | None = None) -> dict[str, Any]:
     """Was der Admin-Bereich anzeigt. Enthaelt nie das Geheimnis."""
     konf = konfiguration(db)

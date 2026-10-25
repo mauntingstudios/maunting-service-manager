@@ -7,19 +7,23 @@
  * `Messenger.tsx`.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { ChatStoryItem } from '@/api/social'
 import type { StoryGruppe } from '@/components/social/sidebar/StoriesCarouselBar'
 
-const SEEN_STORIES_KEY = 'msm_seen_story_ids'
+const SEEN_STORIES_PREFIX = 'msm_seen_story_ids'
 
 type Kontakt = { userId: number; username: string; avatarUrl?: string | null }
 
-function ladeGesehene(): Set<number> {
+function speicherSchluessel(currentUserId: number): string {
+  return `${SEEN_STORIES_PREFIX}:${currentUserId}`
+}
+
+function ladeGesehene(schluessel: string): Set<number> {
   if (typeof window === 'undefined') return new Set()
   try {
-    const raw = localStorage.getItem(SEEN_STORIES_KEY)
+    const raw = localStorage.getItem(schluessel)
     return raw ? new Set(JSON.parse(raw)) : new Set()
   } catch {
     return new Set()
@@ -33,7 +37,11 @@ export function useStoryAnsicht(stories: ChatStoryItem[], currentUserId: number,
   const [betrachterOffen, setBetrachterOffen] = useState(false)
   const [betrachterIndex, setBetrachterIndex] = useState(0)
   const [betrachterStories, setBetrachterStories] = useState<ChatStoryItem[]>([])
-  const [gesehen, setGesehen] = useState<Set<number>>(ladeGesehene)
+  const [gesehen, setGesehen] = useState<Set<number>>(() => ladeGesehene(speicherSchluessel(currentUserId)))
+
+  useEffect(() => {
+    setGesehen(ladeGesehene(speicherSchluessel(currentUserId)))
+  }, [currentUserId])
 
   const markiereGesehen = (liste: ChatStoryItem[]) => {
     setGesehen((prev) => {
@@ -47,7 +55,7 @@ export function useStoryAnsicht(stories: ChatStoryItem[], currentUserId: number,
       }
       if (changed && typeof window !== 'undefined') {
         try {
-          localStorage.setItem(SEEN_STORIES_KEY, JSON.stringify(Array.from(next)))
+          localStorage.setItem(speicherSchluessel(currentUserId), JSON.stringify(Array.from(next)))
         } catch {}
       }
       return next
@@ -69,14 +77,17 @@ export function useStoryAnsicht(stories: ChatStoryItem[], currentUserId: number,
     }
     const grouped = Array.from(map.entries()).map(([userId, userStories]) => {
       const contact = kontakte.find((c) => c.userId === userId)
-      const first = userStories[0]
-      const hasUnseen = userStories.some((s) => !gesehen.has(s.id))
+      const sortiert = [...userStories].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      )
+      const first = sortiert[0]
+      const hasUnseen = sortiert.some((s) => !gesehen.has(s.id))
       return {
         userId,
         username: contact?.username || first?.username || 'Freund',
         avatarUrl: contact?.avatarUrl || first?.avatar_url,
-        stories: userStories,
-        latestStory: userStories[userStories.length - 1],
+        stories: sortiert,
+        latestStory: sortiert[sortiert.length - 1],
         hasUnseen,
       }
     })

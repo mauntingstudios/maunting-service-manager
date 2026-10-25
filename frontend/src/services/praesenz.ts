@@ -7,7 +7,7 @@
  * Push" — und ein Fenster im Hintergrund verschluckte die Meldung, während
  * zwei Fenster sie doppelt zeigten.
  *
- * Der Rückweg ist derselbe wie bei `mailboxAbo`: die `conn_id` aus dem
+ * Der Rückweg ist derselbe wie beim Echtzeitkanal: die `conn_id` aus dem
  * `ready`-Signal. Sie stirbt mit der Verbindung; ein neuer Strom meldet sich
  * deshalb von selbst erneut an.
  *

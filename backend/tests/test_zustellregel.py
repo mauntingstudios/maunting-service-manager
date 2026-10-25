@@ -162,95 +162,66 @@ def test_gruppenmailbox_waehlt_je_konto_einen() -> None:
     assert b1 in gewaehlt
 
 
-# ── Der Weg durch das Relais ────────────────────────────────────────────────
+# ── Der Weg durch den Nachrichtenkanal ─────────────────────────────────────
 
 
-def test_relais_zeigt_die_meldung_nur_einem_client(
-    db: Session, owner_user: User, versand: list
-) -> None:
-    """MSS und Pontis auf demselben Gerät: einer meldet, der andere schweigt.
-
-    Der Push bleibt auf diesem Weg draußen vor der Rechnung — eine
-    Mailbox-Adresse kennt kein Konto, also lässt sich nicht sagen, welchem
-    Empfänger sie gehört (`E2eeMailboxPush` hat bewusst keine `user_id`).
-    Genau deshalb zählt hier die Marke `melden`: sie entscheidet ohne Konto.
-    """
-    SocialService.register_blind_mailbox(db, owner_user.id, UNABLEITBAR, TOKEN)
-    webpush_service.eintragen_mailbox(
-        db, mailbox_id=UNABLEITBAR, endpoint=ENDPUNKT, p256dh=PUNKT, auth=AUTH
-    )
-    _erst, erste_queue = _verbinde(owner_user.id, zustand="vordergrund", mailboxes=(UNABLEITBAR,))
-    _zweit, zweite_queue = _verbinde(owner_user.id, zustand="vordergrund", mailboxes=(UNABLEITBAR,))
-
-    SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=UNABLEITBAR,
-        ciphertext_envelope=_umschlag("regel-1"),
-        sender_user_id=owner_user.id + 1,
-        mailbox_token=TOKEN,
-    )
-
-    assert sorted(
-        [erste_queue.get_nowait().get("melden"), zweite_queue.get_nowait().get("melden")]
-    ) == [False, True]
-
-
-# ── Der eigene Absender ────────────────────────────────────────────────────
-
-
-def test_die_eigene_kopie_meldet_nichts(
+def test_eine_nachricht_erreicht_den_empfaenger_ueber_seine_verbindung(
     db: Session, owner_user: User, regular_user: User
 ) -> None:
-    """Was jemand selbst geschrieben hat, poppt auf den eigenen Geräten nicht
-    als „Neue Nachricht" auf.
+    """Der Nachrichtenweg meldet ueber den Echtzeitkanal, nicht ueber einen
+    zweiten Aufruf daneben. Beide Fenster des Empfaengers bekommen das
+    Ereignis, der Absender seine eigene Kopie ebenfalls (der Client filtert
+    sie anhand der Absenderkennung)."""
+    from services.social.messages_service import send_message, store_chat_keys
 
-    Die Echokopie ging an alle Verbindungen des Absenders, und ohne Marke gilt
-    beim Dienst „melden" — er hätte den eigenen Text gemeldet. Sie trägt deshalb
-    `melden: false`; ein Zusteller wird für sie gar nicht erst gewählt.
-    """
-    # Eine aus zwei Konten abgeleitete Mailbox: nur bei ihr kennt der Server
-    # den Empfänger und schickt dem Absender die Kopie. Dafür müssen die beiden
-    # sich schreiben dürfen.
-    db.add(UserFriend(user_id=owner_user.id, friend_id=regular_user.id, status="accepted"))
-    db.add(UserFriend(user_id=regular_user.id, friend_id=owner_user.id, status="accepted"))
-    db.commit()
-    mailbox = SocialService.derive_blind_mailbox_id(owner_user.id, regular_user.id)
-    # Der Absender hört nicht auf die Mailbox des Empfängers — nur seine eigene
-    # Kopie kommt hier an.
-    _conn, queue = _verbinde(regular_user.id, zustand="hintergrund")
-
-    SocialService.relay_blind_envelope(
+    anfrage = SocialService.send_friend_request(db, owner_user.id, regular_user.username)
+    SocialService.accept_friend_request(db, regular_user.id, anfrage["id"])
+    chat = SocialService.ensure_direct_chat(db, owner_user.id, regular_user.id)
+    store_chat_keys(
         db,
-        blind_mailbox_id=mailbox,
-        ciphertext_envelope=_umschlag("echo-1"),
-        sender_user_id=regular_user.id,
+        owner_user,
+        "direct",
+        chat.id,
+        1,
+        [
+            {"user_id": owner_user.id, "encrypted_chat_key": "chiffrat-a"},
+            {"user_id": regular_user.id, "encrypted_chat_key": "chiffrat-b"},
+        ],
     )
+    _erst, erste_queue = _verbinde(regular_user.id, zustand="vordergrund")
+    _zweit, zweite_queue = _verbinde(regular_user.id, zustand="hintergrund")
 
-    # Der Absender bekommt davor noch sein Errungenschafts-Signal; gesucht ist
-    # die Echokopie der Nachricht.
-    signal = None
-    while not queue.empty():
-        eintrag = queue.get_nowait()
-        if eintrag.get("type") == "e2ee_blind_message":
-            signal = eintrag
-            break
-    assert signal is not None
-    assert signal["melden"] is False
+    send_message(db, owner_user, "direct", chat.id, "zustellregel-1", 1, "chiffrat")
+
+    for queue in (erste_queue, zweite_queue):
+        ereignis = queue.get_nowait()
+        assert ereignis["type"] == "message_created"
+        assert ereignis["message"]["client_uuid"] == "zustellregel-1"
 
 
-def test_relais_schickt_wenn_niemand_die_meldung_zeigt(db: Session, owner_user: User, versand: list) -> None:
-    SocialService.register_blind_mailbox(db, owner_user.id, UNABLEITBAR, TOKEN)
-    webpush_service.eintragen_mailbox(
-        db, mailbox_id=UNABLEITBAR, endpoint=ENDPUNKT, p256dh=PUNKT, auth=AUTH
-    )
+def test_ein_fremder_bekommt_kein_ereignis(
+    db: Session, owner_user: User, regular_user: User
+) -> None:
+    """Der Kanal filtert auf Mitglieder. Wer nicht dazugehoert, sieht nichts."""
+    from services.social.messages_service import send_message, store_chat_keys
 
-    SocialService.relay_blind_envelope(
+    anfrage = SocialService.send_friend_request(db, owner_user.id, regular_user.username)
+    SocialService.accept_friend_request(db, regular_user.id, anfrage["id"])
+    chat = SocialService.ensure_direct_chat(db, owner_user.id, regular_user.id)
+    store_chat_keys(
         db,
-        blind_mailbox_id=UNABLEITBAR,
-        ciphertext_envelope=_umschlag("regel-2"),
-        sender_user_id=owner_user.id + 1,
-        mailbox_token=TOKEN,
+        owner_user,
+        "direct",
+        chat.id,
+        1,
+        [
+            {"user_id": owner_user.id, "encrypted_chat_key": "chiffrat-a"},
+            {"user_id": regular_user.id, "encrypted_chat_key": "chiffrat-b"},
+        ],
     )
+    fremd, fremde_queue = _verbinde(regular_user.id + 1000, zustand="vordergrund")
 
-    assert len(versand) == 1
-    assert [ziel[1] for ziel in versand[0][0]] == [ENDPUNKT]
+    send_message(db, owner_user, "direct", chat.id, "zustellregel-2", 1, "chiffrat")
+
+    assert fremde_queue.empty()
+    assert fremd

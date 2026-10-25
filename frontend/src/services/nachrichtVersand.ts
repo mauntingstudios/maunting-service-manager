@@ -11,7 +11,7 @@
  * geblieben; die Namen im Inneren sind die der Seite.
  */
 
-import { ladeAnhangHoch, relayE2eeEnvelope, type QueueEnvelope } from '@/api/social'
+import { ladeAnhangHoch } from '@/api/social'
 import { messengerSocket } from '@/services/messengerSocket'
 import type {
   AntwortBezug,
@@ -31,7 +31,6 @@ import type { Versandauftrag } from '@/hooks/useKonversation'
 import type { AugenblickMarke, RettungsMarke } from './funkenService'
 import { enqueueMessageMutation } from '@/lib/offlineSync'
 import { chatMediaBlobCache } from './klartextSpeicher'
-import { eigenesGeraet } from './e2eeGeraet'
 import { speichereMedium } from './messengerLocalStore'
 /**
  * Legt den Anhang zusätzlich dauerhaft ab.
@@ -77,8 +76,11 @@ export interface RoheAnhaenge {
 /** Woran die Anhänge gebunden werden: Gespräch und Absender. */
 export interface AnhangBindung {
   blindMailboxId: string
+  chatType: 'direct' | 'group'
+  chatId: number
   absenderId: number
-  groupId?: number | null
+  /** Die Frist der Nachricht. Ohne sie bleibt der Block dauerhaft. */
+  expiresAt?: string | null
 }
 
 /** Was nach dem Hochladen in die Nutzlast geht. */
@@ -101,8 +103,10 @@ export async function ladeAnhaengeHoch(
 ): Promise<HochgeladeneAnhaenge> {
   const {
     blindMailboxId: targetBlindMailboxId,
+    chatType,
+    chatId,
     absenderId: currentUserId,
-    groupId: currentGroupId,
+    expiresAt,
   } = bindung
 
   let finalImg: ImageAttachment | undefined = undefined
@@ -124,8 +128,10 @@ export async function ladeAnhaengeHoch(
       dateiname,
       mimeType,
       blindMailboxId: targetBlindMailboxId,
+      chatType,
+      chatId,
       absenderId: currentUserId,
-      groupId: currentGroupId,
+      expiresAt: expiresAt ?? null,
     })
 
   if (img) {
@@ -300,81 +306,44 @@ function statusVon(fehler: unknown): number | null {
 }
 
 /**
- * Stellt die Umschläge einer Nachricht zu, oder reiht sie für später ein.
+ * Stellt die eine verschluesselte Nachricht zu, oder reiht sie fuer spaeter ein.
+ *
+ * Es gibt keine Umschlaege je Geraet und keine blinde Mailbox mehr: eine
+ * Nachricht, ein Chiffrat, ein Server-Insert.
  */
 export async function stelleZu(
   auftraege: Versandauftrag[],
 ): Promise<{ niedrigsteId: number; verbindungsfehler: boolean; ueberInbox: boolean }> {
-  if (auftraege.length === 0) {
-    return { niedrigsteId: 0, verbindungsfehler: false, ueberInbox: true }
-  }
-
   const erster = auftraege[0]
-  if (erster && erster.chat_type && erster.chat_id) {
-    const baseUuid = erster.client_uuid.split('#')[0]
-    try {
-      const ownDevice = await eigenesGeraet().catch(() => null)
-      const envelopes: QueueEnvelope[] = auftraege.map((a) => ({
-        target_device_id: a.target_device_db_id,
-        device_id: a.target_device_id,
-        encrypted_payload: a.ciphertext_envelope,
-        client_uuid: a.is_control ? `ctrl:${a.client_uuid}` : a.client_uuid,
-      }))
-
-      const queuePayload = {
-        client_uuid: baseUuid,
+  if (!erster || !erster.chat_type || !erster.chat_id || !erster.key_version) {
+    return { niedrigsteId: 0, verbindungsfehler: false, ueberInbox: false }
+  }
+  try {
+    const nachricht = await messengerSocket.sendChatMessage({
+      chat_type: erster.chat_type,
+      chat_id: Number(erster.chat_id),
+      client_uuid: erster.client_uuid,
+      key_version: erster.key_version,
+      encrypted_payload: erster.ciphertext_envelope,
+    })
+    return {
+      niedrigsteId: Number(nachricht.id || 0),
+      verbindungsfehler: false,
+      ueberInbox: false,
+    }
+  } catch (fehler) {
+    const status = statusVon(fehler)
+    if (!status || status >= 500) {
+      enqueueMessageMutation({
+        blind_mailbox_id: erster.blind_mailbox_id,
         chat_type: erster.chat_type,
         chat_id: erster.chat_id,
-        envelopes,
-        device_id: ownDevice?.kennung,
-      }
-      await messengerSocket.sendMessage(queuePayload)
-      return { niedrigsteId: 1, verbindungsfehler: false, ueberInbox: true }
-    } catch (fehler) {
-      const status = statusVon(fehler)
-      if (!status || status >= 500) {
-        for (const a of auftraege) {
-          enqueueMessageMutation(a)
-        }
-        return { niedrigsteId: 0, verbindungsfehler: true, ueberInbox: true }
-      }
-      throw fehler
+        key_version: erster.key_version,
+        encrypted_payload: erster.ciphertext_envelope,
+        client_uuid: erster.client_uuid,
+      })
+      return { niedrigsteId: 0, verbindungsfehler: true, ueberInbox: false }
     }
+    throw fehler
   }
-
-  // Fallback für Mailbox-Altsysteme / Tests:
-  let niedrigsteId = 0
-  let verbindungsfehler = false
-  const gescheiterteGeraete = new Set<string>()
-  let ueberspringeNaechsteNachricht = false
-
-  for (const a of auftraege) {
-    const geraetKey = a.client_uuid ? a.client_uuid.split('#')[1]?.replace(/^i/, '') : ''
-    const mussUeberspringen =
-      (ueberspringeNaechsteNachricht && !a.is_control) ||
-      Boolean(geraetKey && gescheiterteGeraete.has(geraetKey))
-
-    if (mussUeberspringen) {
-      enqueueMessageMutation(a)
-      ueberspringeNaechsteNachricht = false
-      continue
-    }
-
-    try {
-      const r = await relayE2eeEnvelope(a)
-      if (!a.is_control && r && typeof r.id === 'number') {
-        if (niedrigsteId === 0 || r.id < niedrigsteId) {
-          niedrigsteId = r.id
-        }
-      }
-    } catch {
-      if (geraetKey) gescheiterteGeraete.add(geraetKey)
-      if (a.is_control && a.control_type === 'dr-init') {
-        ueberspringeNaechsteNachricht = true
-      }
-      enqueueMessageMutation(a)
-      verbindungsfehler = true
-    }
-  }
-  return { niedrigsteId, verbindungsfehler, ueberInbox: false }
 }

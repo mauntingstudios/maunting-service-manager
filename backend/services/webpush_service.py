@@ -76,7 +76,7 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from database import SessionLocal
-from models import E2eeMailboxPush, PanelSetting, PushSubscription, User
+from models import PanelSetting, PushSubscription, User
 
 logger = logging.getLogger(__name__)
 
@@ -482,6 +482,8 @@ def austragen(db: Session, user: User, endpoint: str) -> bool:
 
 
 def eintragen_mailbox(db: Session, *, mailbox_id: str, endpoint: str, p256dh: str, auth: str) -> None:
+    """Altweg der blinden Mailbox. Wird nicht mehr benutzt."""
+    return None
     """Merkt sich: in diese Mailbox faellt etwas, schick es an diese Adresse.
 
     Kein `user`-Parameter, und das ist der ganze Punkt. Die Sitzung, ueber die
@@ -538,6 +540,8 @@ def eintragen_mailbox(db: Session, *, mailbox_id: str, endpoint: str, p256dh: st
 
 
 def mailboxen_von(db: Session, endpoint: str) -> set[str]:
+    """Altweg der blinden Mailbox. Wird nicht mehr benutzt."""
+    return set()
     """Wofuer dieser Browser heute eingetragen ist.
 
     Gebraucht beim Melden, um abzuraeumen, was nicht mehr genannt wird. Nur
@@ -557,6 +561,8 @@ def mailboxen_von(db: Session, endpoint: str) -> set[str]:
 
 
 def austragen_mailboxen(db: Session, endpoint: str, *, nur: set[str] | None = None) -> int:
+    """Altweg der blinden Mailbox. Wird nicht mehr benutzt."""
+    return 0
     """Entfernt die Zustellungen dieses Browsers. Gibt deren Zahl zurueck.
 
     Ohne `nur` faellt alles, was zu dieser Adresse gehoert — der Weg beim
@@ -590,6 +596,8 @@ def sende_an_mailbox(
     *,
     ausser_abdruck: str | None = None,
 ) -> int:
+    """Altweg der blinden Mailbox. Wird nicht mehr benutzt."""
+    return 0
     """Stellt `nutzlast` an alle Adressen dieser Mailbox zu. Gibt deren Zahl zurueck.
 
     Das Gegenstueck zu `sende_an_konto` fuer Mailboxen, die der Server niemandem
@@ -719,7 +727,7 @@ def _zustellen_alle(
         # Ein 404 oder 410 heisst: diesen Browser gibt es nicht mehr. Die Zeile
         # stehen zu lassen hiesse, bei jeder Nachricht erneut dagegen zu
         # laufen.
-        modell = E2eeMailboxPush if je_mailbox else PushSubscription
+        modell = PushSubscription
         db.query(modell).filter(modell.id.in_(tot)).delete(synchronize_session=False)
         db.commit()
         logger.info("webpush: %d abgelaufene Abonnements entfernt", len(tot))

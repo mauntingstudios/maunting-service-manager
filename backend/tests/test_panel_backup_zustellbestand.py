@@ -68,21 +68,21 @@ def test_pg_dump_nimmt_die_zustellpuffer_ohne_daten_mit(monkeypatch) -> None:
     assert not any(arg.startswith("--exclude-table=") for arg in cmd)
 
 
-def test_jede_zustelltabelle_mit_frist_ist_ausgeschlossen() -> None:
+def test_nur_die_puffer_stehen_ohne_daten_in_der_liste() -> None:
     tabellen = Base.metadata.tables
 
     for name in pbs.PANEL_BACKUP_OHNE_DATEN:
         assert name in tabellen, name
 
-    # Jede Tabelle mit eigener Frist ist ein Zustellpuffer. Kommt eine neue
-    # dazu und fehlt in der Liste, faellt es hier auf.
-    mit_frist = {
-        tabelle.name
-        for tabelle in tabellen.values()
-        if "ablauf_am" in tabelle.c
-    }
-    ohne_frist = {"e2ee_blind_envelopes", "chat_media", "device_pairings"}
-    assert set(pbs.PANEL_BACKUP_OHNE_DATEN) == mit_frist | ohne_frist
+    # Die Liste nennt genau die Puffer: die verschluesselten Anhaenge (eigene
+    # Frist) und die Kopplungen (kurzer Vorgang, kein Bestand).
+    assert set(pbs.PANEL_BACKUP_OHNE_DATEN) == {"chat_media", "device_pairings"}
+
+    # `e2ee_messages` traegt den bleibenden Nachrichtenbestand. Nur
+    # verschwindende Nachrichten haben eine Frist; die Tabelle gehoert
+    # deshalb in jedes Backup. Wer sie hier eintraegt, loescht den Verlauf.
+    assert "e2ee_messages" not in pbs.PANEL_BACKUP_OHNE_DATEN
+    assert "expires_at" in tabellen["e2ee_messages"].c
 
     # Die Kopplung ist ein kurzer Vorgang, kein Bestand. Nach einem Restore
     # darf weder ein alter Code noch ein versiegelter Verlaufsblob

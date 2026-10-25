@@ -28,6 +28,14 @@ class GruppenRollenMixin:
             .first()
         )
 
+    #: Was ohne eigene Einstellung gilt. `None` heisst „nicht gesetzt", nicht
+    #: „nichts"; ein ausdruecklich leerer String bleibt leer.
+    DEFAULT_GROUP_PERMISSIONS: set[str] = {
+        "send_messages",
+        "attach_media",
+        "invite_members",
+    }
+
     @classmethod
     def expand_group_permissions(cls, raw: str | None) -> set[str]:
         """Parst eine gespeicherte Rechteliste und löst Altbezeichnungen auf.
@@ -71,6 +79,8 @@ class GruppenRollenMixin:
         """
         raw = member_permissions if member_permissions is not None else group_default
         gesetzt = cls.expand_group_permissions(raw)
+        if raw is None:
+            gesetzt |= cls.DEFAULT_GROUP_PERMISSIONS
         if role in ("owner", "admin"):
             gesetzt |= GROUP_CALL_PERMISSIONS
             gesetzt |= GROUP_MODERATION_PERMISSIONS
