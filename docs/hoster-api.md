@@ -382,16 +382,18 @@ Base path: `/api/hoster`
 |---|---|---|---|
 | `GET` | `/integrations` | `panel.hoster.read` | List configured integrations |
 | `POST` | `/integrations` | `panel.hoster.write` | Create integration (returns API key **once**) |
-| `PATCH` | `/integrations/{id}` | `panel.hoster.write` | Update name, webhook URL, or grace periods |
-| `POST` | `/integrations/{id}/api-key` | `panel.hoster.write` | Rotate API key (invalidates old key immediately) |
-| `POST` | `/integrations/{id}/webhook-secret` | `panel.hoster.write` | Rotate HMAC webhook secret |
-| `DELETE` | `/integrations/{id}` | `panel.hoster.write` | Delete integration (blocked if active contracts exist) |
-| `GET` | `/integrations/{id}/products` | `panel.hoster.read` | List mapped product SKUs |
-| `PUT` | `/integrations/{id}/products` | `panel.hoster.write` | Create or update product SKU mapping |
-| `DELETE` | `/integrations/{id}/products/{product_id}` | `panel.hoster.write` | Delete product mapping |
-| `GET` | `/integrations/{id}/services` | `panel.hoster.read` | List active customer service contracts |
-| `GET` | `/integrations/{id}/deliveries` | `panel.hoster.read` | Inspect webhook delivery logs |
-| `POST` | `/integrations/{id}/deliveries/{delivery_id}/retry` | `panel.hoster.write` | Manually queue retry for failed webhook |
+| `PATCH` | `/integrations/{integration_id}` | `panel.hoster.write` | Update name, status, service user, webhook URL, or grace periods |
+| `POST` | `/integrations/{integration_id}/api-key` | `panel.hoster.write` | Rotate API key (invalidates old key immediately) |
+| `POST` | `/integrations/{integration_id}/webhook-secret` | `panel.hoster.write` | Rotate HMAC webhook secret |
+| `DELETE` | `/integrations/{integration_id}` | `panel.hoster.write` | Delete integration (blocked if active contracts exist) |
+| `GET` | `/integrations/{integration_id}/products` | `panel.hoster.read` | List mapped product SKUs |
+| `PUT` | `/integrations/{integration_id}/products` | `panel.hoster.write` | Create or update product SKU mapping |
+| `DELETE` | `/integrations/{integration_id}/products/{product_id}` | `panel.hoster.write` | Delete product mapping |
+| `GET` | `/integrations/{integration_id}/services` | `panel.hoster.read` | List active customer service contracts |
+| `GET` | `/integrations/{integration_id}/deliveries` | `panel.hoster.read` | Inspect webhook delivery logs |
+| `POST` | `/integrations/{integration_id}/deliveries/{delivery_id}/retry` | `panel.hoster.write` | Manually queue retry for failed webhook delivery |
+| `POST` | `/integrations/{integration_id}/simulate` | `panel.hoster.write` | Simulate store event (purchase, suspend, resume, terminate, webhook) in sandbox |
+| `DELETE` | `/integrations/{integration_id}/sandbox-data` | `panel.hoster.write` | Purge sandbox test data (services, servers, handoff tokens) |
 
 ---
 
