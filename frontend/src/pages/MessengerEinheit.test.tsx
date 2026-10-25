@@ -14,6 +14,7 @@ import i18n from '@/i18n'
 
 import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 import type { E2eeMessagePage } from '@/api/social'
+import { stufenDativ } from '@/services/nachrichtVerfall'
 
 // ---- Stellvertreter fuer Ablage, Server und Geraet ------------------------
 
@@ -83,6 +84,7 @@ function setzeServer(messages: ChatMessage[]) {
   serverStand.nachrichten = messages
   serverStand.seite = {
     messages: [],
+    pinned_message: null,
     has_more: false,
     my_last_delivered_id: 0,
     my_last_read_id: 0,
@@ -104,12 +106,26 @@ const conversation = vi.hoisted(() => {
     liesNachrichten: vi.fn(async () => ({
       messages: serverStand.nachrichten,
       page: serverStand.seite,
+      speicherId: 'direct:peer:2',
+      chatType: 'direct',
+      chatId: 55,
       hasMore: false,
       unlesbar: 0,
       uebernimm: () => {},
     })),
     ladeAeltere: vi.fn(async () => ({ messages: [], hasMore: false })),
     uebernimmLesestand: vi.fn(),
+    verarbeiteEreignis: vi.fn(async (raw: { client_uuid?: string; chat_type?: string; chat_id?: number }, typ: string) => {
+      if (raw.chat_type !== 'direct' || Number(raw.chat_id) !== 55) return null
+      const vorhanden = serverStand.nachrichten.find(
+        (m) => m.clientUuid === raw.client_uuid,
+      )
+      if (!vorhanden) return null
+      if (typ === 'message_deleted') {
+        return { ...vorhanden, isDeleted: true, text: '', deletedAt: '2026-10-25T10:00:01.000Z' }
+      }
+      return vorhanden
+    }),
     baueVersand: vi.fn(async (payload: string, clientUuid: string) => [
       {
         blind_mailbox_id: 'direct:peer:2',
@@ -321,13 +337,151 @@ describe('Messenger im Einheits-Transport', () => {
     await oeffneChat()
     expect(await screen.findByText('Hallo von Alice')).toBeInTheDocument()
 
-    setzeServer([nachricht({ text: 'Hallo, berichtigt', isEdited: true })])
+    const berichtigt = nachricht({ text: 'Hallo, berichtigt', isEdited: true })
+    setzeServer([berichtigt])
     await act(async () => {
-      window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: { type: 'message_updated' } }))
+      window.dispatchEvent(
+        new CustomEvent('msm:sync-event', {
+          detail: {
+            type: 'message_updated',
+            chat_type: 'direct',
+            chat_id: 55,
+            message: {
+              ...berichtigt,
+              client_uuid: 'eingehend-1',
+              chat_type: 'direct',
+              chat_id: 55,
+              encrypted_payload: 'chiffrat',
+              key_version: 1,
+              sender_user_id: 2,
+            },
+          },
+        }),
+      )
     })
 
     expect(await screen.findByText('Hallo, berichtigt')).toBeInTheDocument()
     expect(screen.queryByText('Hallo von Alice')).not.toBeInTheDocument()
+  })
+
+  it('setzt bei einer Quittung sofort den gelesen-Haken', async () => {
+    setzeServer([
+      nachricht(),
+      {
+        ...nachricht(),
+        id: 90,
+        clientUuid: 'eigen-1',
+        senderId: 1,
+        senderName: 'me',
+        isSelf: true,
+        text: 'Meine Nachricht',
+        status: 'sent',
+      },
+    ])
+    await oeffneChat()
+    expect(await screen.findByText('Meine Nachricht')).toBeInTheDocument()
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('msm:read-receipt', {
+          detail: {
+            type: 'read_receipt',
+            chat_type: 'direct',
+            chat_id: 55,
+            up_to_id: 90,
+          },
+        }),
+      )
+    })
+
+    expect(await screen.findByLabelText(i18n.t('messenger.stateRead'))).toBeInTheDocument()
+  })
+
+  it('nimmt eine Loeschung aus message_deleted sofort aus dem Verlauf', async () => {
+    await oeffneChat()
+    expect(await screen.findByText('Hallo von Alice')).toBeInTheDocument()
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('msm:sync-event', {
+          detail: {
+            type: 'message_deleted',
+            chat_type: 'direct',
+            chat_id: 55,
+            message: {
+              ...nachricht(),
+              client_uuid: 'eingehend-1',
+              chat_type: 'direct',
+              chat_id: 55,
+              encrypted_payload: '',
+              key_version: 1,
+              sender_user_id: 2,
+              is_deleted: true,
+            },
+          },
+        }),
+      )
+    })
+
+    expect(await screen.findByText(i18n.t('messenger.messageWasDeleted'))).toBeInTheDocument()
+    expect(screen.queryByText('Hallo von Alice')).not.toBeInTheDocument()
+  })
+
+  it('zeigt eine live angeheftete Nachricht in der Leiste', async () => {
+    await oeffneChat()
+    expect(await screen.findByText('Hallo von Alice')).toBeInTheDocument()
+
+    const angeheftet = nachricht({ isPinned: true, pinnedAt: '2026-10-24T11:00:00.000Z' })
+    setzeServer([angeheftet])
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('msm:sync-event', {
+          detail: {
+            type: 'message_updated',
+            chat_type: 'direct',
+            chat_id: 55,
+            message: {
+              ...angeheftet,
+              client_uuid: 'eingehend-1',
+              chat_type: 'direct',
+              chat_id: 55,
+              encrypted_payload: 'chiffrat',
+              key_version: 1,
+              sender_user_id: 2,
+              is_pinned: true,
+            },
+          },
+        }),
+      )
+    })
+
+    expect(await screen.findByText('Angeheftet')).toBeInTheDocument()
+  })
+
+  it('zeigt einen Verfall-Wechsel einmal, auch wenn das eigene Ereignis zurueckkommt', async () => {
+    await oeffneChat()
+    expect(await screen.findByText('Hallo von Alice')).toBeInTheDocument()
+    const zeile = i18n.t('messenger.retentionSetOther', {
+      name: i18n.t('messenger.retentionYou'),
+      frist: stufenDativ(3600, i18n.t),
+    })
+    const ereignis = {
+      type: 'chat_ephemeral',
+      chat_type: 'direct',
+      chat_id: 55,
+      ephemeral_ttl_seconds: 3600,
+      ephemeral_enabled_by_user_id: 1,
+    }
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: ereignis }))
+    })
+    expect(await screen.findByText(zeile)).toBeInTheDocument()
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: ereignis }))
+    })
+    expect(screen.getAllByText(zeile)).toHaveLength(1)
   })
 
   it('nimmt eine mit 403 abgewiesene Verfallsfrist zurueck und sagt es', async () => {

@@ -11,6 +11,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { meldeChat } from '@/services/benachrichtigung/chatMeldung'
+import { ackChatMessages } from '@/api/social'
+import { entpackeChatNutzlast } from '@/services/chatKrypto'
 import { resolveIdentity, type E2eeIdentity } from '@/services/e2eeIdentity'
 import { istGesperrt, useMessengerSperre } from '@/services/messengerSperre'
 import { useMessengerSync } from '@/hooks/useMessengerSync'
@@ -57,19 +59,43 @@ export function MessengerHintergrund() {
       const detail = (e as CustomEvent<Record<string, unknown>>).detail
       const typ = String(detail?.type ?? '')
       if (typ !== 'message_created' && typ !== 'new_message') return
-      const senderId = Number(detail?.sender_user_id ?? detail?.sender_id ?? 0)
+      const msg = (detail?.message ?? detail) as Record<string, unknown>
+      const senderId = Number(msg.sender_user_id ?? msg.sender_id ?? 0)
       if (!senderId || senderId === userId) return
-      const istGruppe = detail?.chat_type === 'group'
+      const istGruppe = String(msg.chat_type ?? '') === 'group'
       const mailbox = istGruppe
-        ? `group:${Number(detail?.chat_id ?? 0)}`
+        ? `group:${Number(msg.chat_id ?? 0)}`
         : `direct:peer:${senderId}`
       meldeChat({
         mailbox,
         senderId,
-        clientUuid: (detail?.client_uuid as string | null) ?? null,
+        clientUuid: (msg.client_uuid as string | null) ?? null,
         istGruppe,
+        meldenErlaubt: detail?.melden !== false,
         t,
       })
+
+      // Zustellung quittieren, sobald die Zeile wirklich entschluesselt ist.
+      // Das ist die einzige Stelle ausserhalb des offenen Chats, die den
+      // Chat-Schluessel hat; ohne sie blieb der Absender auf einem Haken.
+      if (
+        !istGruppe &&
+        !msg.is_deleted &&
+        msg.encrypted_payload &&
+        msg.key_version &&
+        msg.client_uuid
+      ) {
+        void entpackeChatNutzlast(
+          'direct',
+          Number(msg.chat_id),
+          String(msg.client_uuid),
+          senderId,
+          Number(msg.key_version),
+          String(msg.encrypted_payload),
+        )
+          .then(() => ackChatMessages('direct', Number(msg.chat_id), Number(msg.id)))
+          .catch(() => {})
+      }
     }
     window.addEventListener('msm:sync-event', handle)
     return () => window.removeEventListener('msm:sync-event', handle)

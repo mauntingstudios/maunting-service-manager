@@ -209,22 +209,29 @@ def test_android_asks_for_no_overlay_and_no_microphone_service() -> None:
     assert 'android:foregroundServiceType="microphone' not in manifest
 
 
-def test_android_reminders_need_no_background_service() -> None:
-    """Terminerinnerungen plant die App bei Android, kein Dienst fragt die Instanz.
+def test_android_reminders_need_no_query_background_service() -> None:
+    """Terminerinnerungen plant die App; der Dienst ist nur der Chat-Kanal.
 
-    Bis 03.10.2026 lief ein Vordergrunddienst in eigenem Prozess, der alle 25 s
-    beim Panel nachfragen sollte, aber Konfiguration und Token am falschen Ort
-    las und nie durchkam. Jetzt stellt `Erinnerungen.kt` Wecker; der Empfänger
-    ist nur für das eigene Paket da, und ohne Dienst entfallen dessen Rechte.
+    Bis 03.10.2026 lief ein Vordergrunddienst, der alle 25 s beim Panel nach
+    Terminen fragte. Der ist weg. Seit 10/2026 gibt es wieder einen Dienst,
+    aber fuer einen anderen Zweck: er haelt die Benachrichtigungsverbindung
+    bei geschlossener App (`Hintergrunddienst.kt`). Er darf im eigenen Prozess
+    laufen, aber nicht nach Terminen fragen; die plant `Erinnerungen.kt` als
+    Wecker, und der Empfaenger ist nur fuer das eigene Paket da.
     """
     manifest = (
         ROOT / "smart-system" / "src-tauri" / "gen" / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
     ).read_text(encoding="utf-8")
-    assert "<service" not in manifest
-    assert "android.permission.FOREGROUND_SERVICE" not in manifest
+    assert 'android:name=".Hintergrunddienst"' in manifest
+    assert 'android:process=":dienst"' in manifest
+    assert 'android:foregroundServiceType="specialUse"' in manifest
+    assert "android:foregroundServiceType=\"microphone" not in manifest
+    assert "android.permission.FOREGROUND_SERVICE_MICROPHONE" not in manifest
     empfaenger = re.search(r'<receiver\s+android:name="\.ErinnerungEmpfaenger"\s+android:exported="false"', manifest)
     assert empfaenger is not None
+    # Der alte Abfragedienst darf nicht zurueckkommen.
     assert ":alert_service" not in manifest
+    assert ".AlertService" not in manifest
 
 
 def test_release_prueft_das_vollpaket_mit_kanal_im_namen() -> None:

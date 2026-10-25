@@ -8,7 +8,13 @@ vi.mock('@/stores/useCallStore', () => ({
 
 import { useMessengerSync } from './useMessengerSync'
 
-function start(leseMailboxen = ['direct:peer:2']) {
+function start(
+  leseMailboxen = ['direct:peer:2'],
+  extra: {
+    beiNachrichtenEreignis?: (detail: { type?: string; message?: unknown }) => Promise<void>
+    beiEphemeral?: (detail: Record<string, unknown>) => void
+  } = {},
+) {
   const loadMessages = vi.fn(async () => {})
   const setPartnerActivity = vi.fn()
   renderHook(() => useMessengerSync({
@@ -17,10 +23,13 @@ function start(leseMailboxen = ['direct:peer:2']) {
     currentUserId: 1,
     geraeteMeldungen: true,
     loadMessages,
+    chatType: 'direct',
+    chatId: 55,
     setGroups: vi.fn(),
     setActiveGroup: vi.fn(),
     setPartnerActivity,
     partnerActivityTimeoutRef: { current: null },
+    ...extra,
   }))
   return { loadMessages, setPartnerActivity }
 }
@@ -45,6 +54,51 @@ describe('Ereignisse im Einheits-Transport', () => {
 
     expect(loadMessages).toHaveBeenCalledTimes(3)
     expect(loadMessages).toHaveBeenCalledWith(false)
+  })
+
+  it('wendet eine Bearbeitung direkt an, statt auf einen Cursor-Abruf zu warten', async () => {
+    const beiNachrichtenEreignis = vi.fn(async () => {})
+    const { loadMessages } = start(undefined, { beiNachrichtenEreignis })
+    const message = {
+      id: 9,
+      client_uuid: 'u-9',
+      chat_type: 'direct',
+      chat_id: 55,
+      sender_user_id: 2,
+    }
+    await sync({ type: 'message_updated', chat_type: 'direct', chat_id: 55, message })
+    expect(beiNachrichtenEreignis).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message_updated', message }),
+    )
+    expect(loadMessages).not.toHaveBeenCalled()
+  })
+
+  it('wendet ein Ereignis eines anderen Chats nicht auf den offenen an', async () => {
+    const beiNachrichtenEreignis = vi.fn(async () => {})
+    const { loadMessages } = start(undefined, { beiNachrichtenEreignis })
+    await sync({
+      type: 'message_updated',
+      chat_type: 'direct',
+      chat_id: 56,
+      message: { id: 9, chat_type: 'direct', chat_id: 56, client_uuid: 'u-9' },
+    })
+    expect(beiNachrichtenEreignis).not.toHaveBeenCalled()
+    expect(loadMessages).toHaveBeenCalled()
+  })
+
+  it('reicht eine Verfall-Aenderung an den Chat weiter', async () => {
+    const beiEphemeral = vi.fn()
+    start(undefined, { beiEphemeral })
+    await sync({
+      type: 'chat_ephemeral',
+      chat_type: 'direct',
+      chat_id: 55,
+      ephemeral_ttl_seconds: 3600,
+      ephemeral_enabled_by_user_id: 2,
+    })
+    expect(beiEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ ephemeral_ttl_seconds: 3600 }),
+    )
   })
 
   it('lädt bei Quittungen nach, weil der Wasserstand in der Seite steht', async () => {

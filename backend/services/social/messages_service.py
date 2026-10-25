@@ -180,10 +180,38 @@ def _publish_message(db: Session, message: E2eeMessage, typ: str = "message_crea
     payload = {
         "type": typ,
         "message": _message_dict(message, _reactions_for(db, [int(message.id)]).get(int(message.id), [])),
+        # Flache Felder fuer Benachrichtigung und den Android-Dienst. Der
+        # Datensatz bleibt unter `message` fuer die direkte Anwendung im Chat.
+        "chat_type": message.chat_type,
+        "chat_id": int(message.chat_id),
+        "sender_user_id": int(message.sender_user_id),
+        "client_uuid": message.client_uuid,
+        "is_group": message.chat_type == "group",
+        "sender_name": (
+            db.query(User.username).filter(User.id == message.sender_user_id).scalar() or ""
+        ),
     }
-    # Ein Aufruf, nicht einer je Mitglied: `user_ids` filtert die Abonnenten.
-    SyncEventService.publish(payload, user_ids=mitglieder)
-    _push(db, message, mitglieder)
+    if typ == "message_created":
+        # Genau ein Client je Konto zeigt die Meldung. Alle anderen bekommen
+        # `melden: false`; der Push geht nur hinaus, wenn niemand offen ist.
+        # Der Absender steht nicht darunter: seine eigene Nachricht meldet kein
+        # Gerät, auch nicht das, auf dem gerade kein Fenster offen ist.
+        zusteller: set[str] = set()
+        for uid in mitglieder:
+            if uid == message.sender_user_id:
+                continue
+            conn_id = SyncEventService.zustelllage(user_id=uid)[0]
+            if conn_id:
+                zusteller.add(conn_id)
+        SyncEventService.publish(
+            payload,
+            user_ids=mitglieder,
+            zusteller=zusteller,
+            melden_markieren=True,
+        )
+        _push(db, message, mitglieder)
+    else:
+        SyncEventService.publish(payload, user_ids=mitglieder)
 
 
 def _push(db: Session, message: E2eeMessage, mitglieder: set[int]) -> None:
@@ -411,6 +439,11 @@ def send_message(
         expires_at=expires_at,
     )
     db.add(message)
+    from services.achievement_service import AchievementService
+
+    # Die erste E2EE-Nachricht ist der Weg zu "Kryptographischer Pakt". Der
+    # Savepoint von `melde` traegt die Zeile mit dem Commit dieser Nachricht.
+    AchievementService.melde(db, user.id, "social_zero_knowledge")
     try:
         db.commit()
     except IntegrityError:
@@ -471,8 +504,22 @@ def list_messages(
             break
 
     chat = _chat_row(db, chat_type, chat_id)
+    angeheftet = (
+        db.query(E2eeMessage)
+        .filter_by(chat_type=chat_type, chat_id=chat_id, is_pinned=True, is_deleted=False)
+        .order_by(E2eeMessage.pinned_at.desc(), E2eeMessage.id.desc())
+        .first()
+    )
     return {
         "messages": messages,
+        "pinned_message": (
+            _message_dict(
+                angeheftet,
+                _reactions_for(db, [int(angeheftet.id)]).get(int(angeheftet.id), []),
+            )
+            if angeheftet is not None
+            else None
+        ),
         "has_more": has_more,
         "my_last_delivered_id": int(meine.last_delivered_message_id),
         "my_last_read_id": int(meine.last_read_message_id),

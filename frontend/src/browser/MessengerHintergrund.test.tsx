@@ -9,6 +9,8 @@ const geraet = vi.hoisted(() => ({
 }))
 const socket = vi.hoisted(() => ({ connect: vi.fn() }))
 const melden = vi.hoisted(() => ({ meldeChat: vi.fn() }))
+const krypto = vi.hoisted(() => ({ entpackeChatNutzlast: vi.fn(async () => ({})) }))
+const quittung = vi.hoisted(() => ({ ackChatMessages: vi.fn(async () => ({})) }))
 
 vi.mock('@/services/e2eeIdentity', () => ({
   IDENTITY_LOADING: { state: 'loading' },
@@ -17,6 +19,14 @@ vi.mock('@/services/e2eeIdentity', () => ({
 vi.mock('@/services/e2eeGeraet', () => geraet)
 vi.mock('@/services/messengerSocket', () => ({ messengerSocket: socket }))
 vi.mock('@/services/benachrichtigung/chatMeldung', () => melden)
+vi.mock('@/services/chatKrypto', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/chatKrypto')>()),
+  ...krypto,
+}))
+vi.mock('@/api/social', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/social')>()),
+  ...quittung,
+}))
 
 import { useAuthStore } from '@/stores/authStore'
 import { useMessengerSperre } from '@/services/messengerSperre'
@@ -92,5 +102,55 @@ describe('MessengerHintergrund', () => {
     })
 
     expect(melden.meldeChat).not.toHaveBeenCalled()
+  })
+
+  it('quittiert eine Nachricht, deren Chiffretext sich hier oeffnen laesst', async () => {
+    render(<MessengerHintergrund />)
+    await waitFor(() => expect(identitaet.resolveIdentity).toHaveBeenCalled())
+
+    await ereignis({
+      type: 'message_created',
+      chat_type: 'direct',
+      chat_id: 55,
+      sender_user_id: 2,
+      client_uuid: 'u-3',
+      message: {
+        id: 77,
+        chat_id: 55,
+        sender_user_id: 2,
+        client_uuid: 'u-3',
+        key_version: 1,
+        encrypted_payload: 'chiffrat',
+      },
+    })
+
+    await waitFor(() =>
+      expect(quittung.ackChatMessages).toHaveBeenCalledWith('direct', 55, 77),
+    )
+  })
+
+  it('quittiert nicht, was sich hier nicht oeffnen laesst', async () => {
+    krypto.entpackeChatNutzlast.mockRejectedValueOnce(new Error('kein Schluessel'))
+    render(<MessengerHintergrund />)
+    await waitFor(() => expect(identitaet.resolveIdentity).toHaveBeenCalled())
+
+    await ereignis({
+      type: 'message_created',
+      chat_type: 'direct',
+      chat_id: 55,
+      sender_user_id: 2,
+      client_uuid: 'u-4',
+      message: {
+        id: 78,
+        chat_id: 55,
+        sender_user_id: 2,
+        client_uuid: 'u-4',
+        key_version: 1,
+        encrypted_payload: 'chiffrat',
+      },
+    })
+
+    await act(async () => {})
+    expect(quittung.ackChatMessages).not.toHaveBeenCalled()
   })
 })

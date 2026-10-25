@@ -138,6 +138,10 @@ export interface NachrichtenLesung {
   page: E2eeMessagePage
   hasMore: boolean
   unlesbar: number
+  /** Die Kennungen, unter denen diese Seite wirklich geholt wurde. */
+  speicherId: string
+  chatType: 'direct' | 'group'
+  chatId: number
   uebernimm: () => void
 }
 
@@ -151,6 +155,11 @@ export interface Konversation {
   liesNachrichten: () => Promise<NachrichtenLesung | null>
   ladeAeltere: (beforeId: number) => Promise<{ messages: ChatMessage[]; hasMore: boolean }>
   uebernimmLesestand: (lesung: Lesung[]) => void
+  /** Verarbeitet ein einzelnes Live-Ereignis aus dem Echtzeitkanal. */
+  verarbeiteEreignis: (
+    message: E2eeMessageItem,
+    typ: 'message_created' | 'message_updated' | 'message_deleted',
+  ) => Promise<ChatMessage | null>
   baueVersand: (payload: string, clientUuid: string) => Promise<Versandauftrag[]>
   baueSteuerversand: (payload: string, clientUuid: string, typ: string) => Promise<Versandauftrag[]>
   sendeSteuerpaket: (payloadObj: Record<string, unknown>) => Promise<string | null>
@@ -176,38 +185,42 @@ function useChatZiel(ziel: GespraechsZiel, eigeneId: number): ChatZiel {
       : ziel.art === 'direkt'
         ? `direct:peer:${ziel.peerId}`
         : ''
-  const [chatId, setChatId] = useState<number | null>(
-    ziel.art === 'gruppe' ? ziel.groupId : null,
-  )
+  const [zustand, setZustand] = useState<{ speicherId: string; id: number | null }>(() => ({
+    speicherId,
+    id: ziel.art === 'gruppe' ? ziel.groupId : null,
+  }))
 
   useEffect(() => {
     if (ziel.art === 'gruppe') {
-      setChatId(ziel.groupId)
+      setZustand({ speicherId, id: ziel.groupId })
       return
     }
     if (ziel.art !== 'direkt' || !eigeneId) {
-      setChatId(null)
+      setZustand({ speicherId, id: null })
       return
     }
     const cached = direkteChats.get(direkterSchluessel(eigeneId, ziel.peerId))
     if (cached) {
-      setChatId(cached)
+      setZustand({ speicherId, id: cached })
       return
     }
     let aktiv = true
     void startDirectChat(ziel.peerId)
       .then((chat) => {
         direkteChats.set(direkterSchluessel(eigeneId, ziel.peerId), chat.id)
-        if (aktiv) setChatId(chat.id)
+        if (aktiv) setZustand({ speicherId, id: chat.id })
       })
       .catch(() => {
-        if (aktiv) setChatId(null)
+        if (aktiv) setZustand({ speicherId, id: null })
       })
     return () => {
       aktiv = false
     }
-  }, [ziel.art, ziel.art === 'gruppe' ? ziel.groupId : ziel.art === 'direkt' ? ziel.peerId : 0, eigeneId])
+  }, [speicherId, ziel.art, ziel.art === 'gruppe' ? ziel.groupId : ziel.art === 'direkt' ? ziel.peerId : 0, eigeneId])
 
+  // Der Zustand des vorigen Gespraechs gilt hier nie. Vor dem Effekt ist die
+  // chatId deshalb leer, nicht die des Vorgaengers.
+  const chatId = zustand.speicherId === speicherId ? zustand.id : null
   return {
     speicherId,
     chatType: ziel.art === 'gruppe' ? 'group' : ziel.art === 'direkt' ? 'direct' : null,
@@ -238,6 +251,7 @@ export function useKonversation({
 
   const ensureChat = useCallback(async (): Promise<{ type: 'direct' | 'group'; id: number } | null> => {
     const aktuell = chatRef.current
+    if (aktuell.speicherId !== chat.speicherId) return null
     if (aktuell.chatType === 'group' && aktuell.chatId) {
       return { type: 'group', id: aktuell.chatId }
     }
@@ -341,6 +355,10 @@ export function useKonversation({
       isRead,
       isEdited: Boolean(message.edited_at),
       editedAt: message.edited_at || undefined,
+      chatType: chatZiel.type,
+      chatId: Number(chatZiel.id),
+      isPinned: Boolean(message.is_pinned),
+      pinnedAt: message.pinned_at || undefined,
       isDeleted: false,
       noteAttachment: alsAnhang(payload.note_attachment),
       calendarAttachment: alsAnhang(payload.calendar_attachment),
@@ -397,7 +415,16 @@ export function useKonversation({
       const hoechste = page.messages.reduce((max, m) => Math.max(max, m.id), 0)
       if (hoechste > cursorRef.current) cursorRef.current = hoechste
     }
-    return { messages, page, hasMore: page.has_more, unlesbar, uebernimm }
+    return {
+      messages,
+      page,
+      hasMore: page.has_more,
+      unlesbar,
+      speicherId: chatRef.current.speicherId,
+      chatType: chatZiel.type,
+      chatId: chatZiel.id,
+      uebernimm,
+    }
   }, [ensureChat, holeSeite])
 
   const ladeAeltere = useCallback(async (beforeId: number) => {
@@ -448,6 +475,37 @@ export function useKonversation({
     const hoechste = lesung.reduce((max, l) => Math.max(max, l.env.id), 0)
     if (hoechste > cursorRef.current) cursorRef.current = hoechste
   }, [])
+
+  /**
+   * Ein einzelnes Live-Ereignis (Bearbeiten, Loeschen, Anheften) in die
+   * Anzeigeform bringen. Die Serverzeile wird dabei erneut entschluesselt;
+   * nur so erfaehrt der offene Chat die neue Fassung, ohne auf den Cursor zu
+   * warten, der aeltere Zeilen nie mehr zurueckgibt.
+   */
+  const verarbeiteEreignis = useCallback(async (
+    message: E2eeMessageItem,
+    _typ: 'message_created' | 'message_updated' | 'message_deleted',
+  ): Promise<ChatMessage | null> => {
+    const chatZiel = await ensureChat()
+    if (!chatZiel) return null
+    if (chatZiel.type !== message.chat_type || Number(chatZiel.id) !== Number(message.chat_id)) return null
+    const leer: E2eeMessagePage = {
+      messages: [message],
+      pinned_message: null,
+      has_more: false,
+      my_last_delivered_id: 0,
+      my_last_read_id: 0,
+      partner_last_delivered_id: 0,
+      partner_last_read_id: 0,
+      ephemeral_ttl_seconds: 0,
+      ephemeral_enabled_by_user_id: null,
+    }
+    try {
+      return await entschluessle(chatZiel, message, leer)
+    } catch {
+      return null
+    }
+  }, [ensureChat, entschluessle])
 
   const baueVersand = useCallback(async (payload: string, clientUuid: string): Promise<Versandauftrag[]> => {
     const chatZiel = await ensureChat()
@@ -566,6 +624,7 @@ export function useKonversation({
     liesNachrichten,
     ladeAeltere,
     uebernimmLesestand,
+    verarbeiteEreignis,
     baueVersand,
     baueSteuerversand,
     sendeSteuerpaket,

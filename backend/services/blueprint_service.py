@@ -35,7 +35,9 @@ import json
 import logging
 import os
 import re
+import stat
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +57,11 @@ from models import Server
 
 
 logger = logging.getLogger(__name__)
+
+# Windows verweigert zwei gleichzeitige Ersetzungen desselben Ziels
+# gelegentlich mit WinError 5. Der Austausch ist die letzte, kurze Bewegung;
+# eine gemeinsame Sperre macht ihn auf jeder Plattform eindeutig.
+_SCHREIB_SPERRE = threading.Lock()
 
 # Derselbe Zwang wie beim Dateinamen in der Registry. Er steht hier noch einmal,
 # weil ein abgeleiteter Blueprint seine ID nicht aus einer Datei bekommt,
@@ -166,7 +173,30 @@ def save_community_blueprint(raw: dict[str, Any]) -> str:
             temporary.write(content)
             temporary.flush()
             os.fsync(temporary.fileno())
-        temp_ziel.replace(ziel)
+        # Die Temporärdatei entsteht je nach Plattform mit 0o666. Eine
+        # Blueprint ist keine ausführbare Datei; group/other schreiben nicht.
+        os.chmod(temp_ziel, 0o644)
+        # Windows verweigert das Ersetzen einer schreibgeschützten Datei, die
+        # POSIX-Regel (Verzeichnisrecht genügt) gilt dort nicht. Nur dort die
+        # Marke lösen und bei einem Fehlschlag den alten Stand zurückgeben.
+        alte_rechte: int | None = None
+        try:
+            with _SCHREIB_SPERRE:
+                if os.name == "nt" and ziel.exists():
+                    alte_rechte = stat.S_IMODE(ziel.stat().st_mode)
+                    if not os.access(ziel, os.W_OK):
+                        os.chmod(ziel, stat.S_IWRITE)
+                try:
+                    temp_ziel.replace(ziel)
+                except OSError:
+                    if alte_rechte is not None and ziel.exists():
+                        try:
+                            os.chmod(ziel, alte_rechte)
+                        except OSError:
+                            pass
+                    raise
+        except OSError:
+            raise
     except PermissionError as exc:
         logger.error(
             "Konnte Blueprint %s nicht schreiben (Permission denied): %s. "

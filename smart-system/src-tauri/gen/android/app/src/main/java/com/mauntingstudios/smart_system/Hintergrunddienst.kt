@@ -360,13 +360,15 @@ class Hintergrunddienst : Service() {
         val json = runCatching { JSONObject(inhalt) }.getOrNull() ?: return
         val type = json.optString("type", "")
 
-        if (type == "new_message") {
+        if (type == "message_created" || type == "new_message") {
+            if (!json.optBoolean("melden", true)) return
             if (json.optBoolean("is_self_sync", false)) return
-            val clientUuid = json.optString("client_uuid", "")
+            val msg = json.optJSONObject("message") ?: json
+            val clientUuid = msg.optString("client_uuid", json.optString("client_uuid", ""))
             if (clientUuid.isNotEmpty() && schonGesehen(clientUuid)) return
 
-            val senderName = json.optString("sender_name", "").ifEmpty { "Jemand" }
-            val chatType = json.optString("chat_type", "direct")
+            val senderName = msg.optString("sender_name", "").ifEmpty { "Jemand" }
+            val chatType = msg.optString("chat_type", json.optString("chat_type", "direct"))
             val titel = if (chatType == "group") "Gruppe: $senderName" else senderName
             val text = "Neue Nachricht"
 

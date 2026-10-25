@@ -28,6 +28,10 @@ class TestAuthCookiesShareDomainWithStateCookie:
     def test_access_token_inherits_effective_cookie_domain(self, monkeypatch):
         # panel_url auf nicht-loopback Host zwingen
         monkeypatch.setattr(config.settings, "panel_url", "https://panel.example.com", raising=False)
+        # Ohne API-Adresse gilt der Rückfall auf die Panel-Adresse. Das ist der
+        # Fall, den diese Tests prüfen; mit der Test-API (localhost) bliebe das
+        # Cookie richtigerweise host-only.
+        monkeypatch.setattr(config.settings, "api_url", "", raising=False)
         monkeypatch.setattr(config.settings, "cookie_domain", "", raising=False)
         resp = Response()
         _set_cookie(resp, "__Secure-access_token", "tok123", max_age=600)
@@ -44,6 +48,10 @@ class TestAuthCookiesShareDomainWithStateCookie:
 
     def test_refresh_token_inherits_effective_cookie_domain(self, monkeypatch):
         monkeypatch.setattr(config.settings, "panel_url", "https://panel.example.com", raising=False)
+        # Ohne API-Adresse gilt der Rückfall auf die Panel-Adresse. Das ist der
+        # Fall, den diese Tests prüfen; mit der Test-API (localhost) bliebe das
+        # Cookie richtigerweise host-only.
+        monkeypatch.setattr(config.settings, "api_url", "", raising=False)
         monkeypatch.setattr(config.settings, "cookie_domain", "", raising=False)
         resp = Response()
         _set_cookie(resp, "__Secure-refresh_token", "rtok", max_age=600)
@@ -58,6 +66,10 @@ class TestAuthCookiesShareDomainWithStateCookie:
 
     def test_csrf_token_inherits_effective_cookie_domain(self, monkeypatch):
         monkeypatch.setattr(config.settings, "panel_url", "https://panel.example.com", raising=False)
+        # Ohne API-Adresse gilt der Rückfall auf die Panel-Adresse. Das ist der
+        # Fall, den diese Tests prüfen; mit der Test-API (localhost) bliebe das
+        # Cookie richtigerweise host-only.
+        monkeypatch.setattr(config.settings, "api_url", "", raising=False)
         monkeypatch.setattr(config.settings, "cookie_domain", "", raising=False)
         resp = Response()
         _set_cookie(resp, "__Secure-csrf_token", "csrf", max_age=600)
@@ -116,6 +128,10 @@ class TestAuthCookiesShareDomainWithStateCookie:
         uebereinstimmen, sonst verwirft der Browser das Delete und der
         'Phantom-Cookie'-Effekt tritt auf."""
         monkeypatch.setattr(config.settings, "panel_url", "https://panel.example.com", raising=False)
+        # Ohne API-Adresse gilt der Rückfall auf die Panel-Adresse. Das ist der
+        # Fall, den diese Tests prüfen; mit der Test-API (localhost) bliebe das
+        # Cookie richtigerweise host-only.
+        monkeypatch.setattr(config.settings, "api_url", "", raising=False)
         monkeypatch.setattr(config.settings, "cookie_domain", "", raising=False)
         resp = Response()
         _clear_auth_cookies(resp)

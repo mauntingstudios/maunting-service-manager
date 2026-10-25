@@ -14,10 +14,10 @@
  * zuerst in die Ablage, und ein paralleles Neuladen läse den alten Stand.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 
-import type { ChatGroupItem } from '@/api/social'
+import type { ChatGroupItem, E2eeMessageItem } from '@/api/social'
 import { useCallStore } from '@/stores/useCallStore'
 
 type Aktivitaet = { status: 'typing' | 'recording'; username?: string } | null
@@ -38,6 +38,17 @@ export interface MessengerSyncOptionen {
   /** Nur für die Abhängigkeiten: eine geänderte Einstellung soll neu binden. */
   geraeteMeldungen: unknown
   loadMessages: (isInitial?: boolean) => Promise<void>
+  /** Verarbeitet die geaenderte Zeile direkt statt eines Cursor-Abrufs. */
+  beiNachrichtenEreignis?: (detail: { type?: string; message?: E2eeMessageItem }) => Promise<void>
+  /** Verarbeitet eine Verfall-Aenderung des Gegenuebers. */
+  beiEphemeral?: (detail: {
+    chat_type?: string
+    chat_id?: number
+    ephemeral_ttl_seconds?: number
+    ephemeral_enabled_by_user_id?: number | null
+  }) => void
+  chatType?: 'direct' | 'group' | null
+  chatId?: number | null
   setGroups: Dispatch<SetStateAction<ChatGroupItem[]>>
   setActiveGroup: Dispatch<SetStateAction<ChatGroupItem | null>>
   setPartnerActivity: Dispatch<SetStateAction<Aktivitaet>>
@@ -51,11 +62,22 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
     currentUserId,
     geraeteMeldungen,
     loadMessages,
+    beiNachrichtenEreignis,
+    beiEphemeral,
+    chatType,
+    chatId,
     setGroups,
     setActiveGroup,
     setPartnerActivity,
     partnerActivityTimeoutRef,
   } = optionen
+
+  const loadRef = useRef(loadMessages)
+  loadRef.current = loadMessages
+  const ereignisRef = useRef(beiNachrichtenEreignis)
+  ereignisRef.current = beiNachrichtenEreignis
+  const ephemeralRef = useRef(beiEphemeral)
+  ephemeralRef.current = beiEphemeral
 
   useEffect(() => {
     const handleSync = (e: Event) => {
@@ -104,11 +126,31 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
         detail?.type === 'message_deleted' ||
         detail?.type === 'new_message'
       ) {
-        void loadMessages(false)
+        if (
+          (detail?.type === 'message_updated' || detail?.type === 'message_deleted') &&
+          detail?.message &&
+          ereignisRef.current &&
+          chatType && chatId &&
+          String(detail.chat_type ?? '') === chatType &&
+          Number(detail.chat_id) === Number(chatId)
+        ) {
+          void ereignisRef.current(detail)
+        } else {
+          void loadRef.current(false)
+        }
+      } else if (detail?.type === 'chat_ephemeral') {
+        if (
+          ephemeralRef.current &&
+          chatType && chatId &&
+          String(detail.chat_type ?? '') === chatType &&
+          Number(detail.chat_id) === Number(chatId)
+        ) {
+          ephemeralRef.current(detail)
+        }
       } else if (detail?.type === 'delivery_receipt' || detail?.type === 'read_receipt' || detail?.type === 'chat_state') {
-        // Der Wasserstand steht im Ereignis; der nächste Ladevorgang holt ihn
-        // mit der Seite und rechnet die Häkchen neu.
-        void loadMessages(false)
+        // Der Wasserstand steht im Ereignis; der naechste Ladevorgang holt ihn
+        // mit der Seite und rechnet die Haekchen neu.
+        void loadRef.current(false)
       } else if (detail?.type === 'typing' || detail?.type === 'e2ee_typing_signal') {
         if (detail.sender_id === currentUserId) return
         if (partnerActivityTimeoutRef.current) {
@@ -127,12 +169,12 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
     }
 
     const handleMessagesUpdated = () => {
-      void loadMessages(false)
+      void loadRef.current(false)
     }
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void loadMessages(false)
+        void loadRef.current(false)
       }
     }
 
@@ -156,5 +198,5 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
     }
     // Die Liste selbst wechselt bei jedem Render die Referenz; ihre
     // zusammengesetzte Form nicht.
-  }, [blindMailboxId, currentUserId, geraeteMeldungen, leseMailboxen.join('|')])
+  }, [blindMailboxId, currentUserId, geraeteMeldungen, leseMailboxen.join('|'), chatType, chatId])
 }

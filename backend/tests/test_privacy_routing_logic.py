@@ -541,7 +541,10 @@ def test_eine_nachricht_erreicht_nur_die_teilnehmer(db: Session):
         assert msg_rec["message"]["chat_id"] == chat.id
 
         assert not queue_snd.empty()
-        assert queue_snd.get_nowait()["type"] == "message_created"
+        typen = []
+        while not queue_snd.empty():
+            typen.append(queue_snd.get_nowait()["type"])
+        assert "message_created" in typen
 
         assert queue_stranger.empty()
 

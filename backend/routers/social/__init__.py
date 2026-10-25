@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import chats, devices, friends, groups, media, messages, profiles, stories, ws, e2ee_keys
+from . import chats, devices, friends, groups, media, messages, profiles, push, stories, ws, e2ee_keys
 
 router = APIRouter(prefix="/api/social", tags=["social"])
 
 router.include_router(chats.router)
 router.include_router(messages.router)
+router.include_router(push.router)
 router.include_router(e2ee_keys.router)
 router.include_router(friends.router)
 router.include_router(profiles.router)

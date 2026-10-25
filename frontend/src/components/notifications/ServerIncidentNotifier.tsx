@@ -362,21 +362,23 @@ export function ServerIncidentNotifier() {
         if (ach?.title) {
           toast.success(t('notifications.achievementUnlockedToast', { title: ach.title, points: ach.points ?? 0 }))
         }
-      } else if (detail?.type === 'message_created') {
-        const senderId = Number(detail.sender_user_id ?? detail.sender_id ?? 0)
+      } else if (detail?.type === 'message_created' || detail?.type === 'new_message') {
+        const msg = (detail.message ?? detail) as Record<string, unknown>
+        const senderId = Number(msg.sender_user_id ?? msg.sender_id ?? 0)
         if (!senderId || senderId === Number(user.id)) return
-        const istGruppe = detail.chat_type === 'group'
+        const istGruppe = String(msg.chat_type ?? '') === 'group'
         /*
          * Die Meldestelle prueft Stumm, Blockiert und den offenen Chat. Hier
          * bleibt nur die Uebersetzung des Ereignisses in ein Gespraech.
          */
         meldeChat({
           mailbox: istGruppe
-            ? `group:${Number(detail.chat_id ?? 0)}`
+            ? `group:${Number(msg.chat_id ?? 0)}`
             : `direct:peer:${senderId}`,
           senderId,
-          clientUuid: detail.client_uuid ?? null,
+          clientUuid: (msg.client_uuid as string | null) ?? null,
           istGruppe,
+          meldenErlaubt: detail.melden !== false,
           t,
         })
       }

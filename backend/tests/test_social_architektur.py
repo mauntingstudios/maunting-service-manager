@@ -117,7 +117,7 @@ def test_sozialrouter_behaelt_allen_vertraegen() -> None:
         else:
             vertraege.append(("WEBSOCKET", route.path))
 
-    assert len(vertraege) == 71, f"Erwartet 71 Social-Routen, gefunden {len(vertraege)}"
+    assert len(vertraege) == 74, f"Erwartet 74 Social-Routen, gefunden {len(vertraege)}"
     doppelt = sorted({v for v in vertraege if vertraege.count(v) > 1})
     assert not doppelt, f"Doppelte Route-Verträge: {doppelt}"
 
@@ -130,7 +130,13 @@ def test_sozialrouter_behaelt_allen_vertraegen() -> None:
         "/api/social/e2ee/chat-keys",
         "/api/social/media/upload",
         "/api/social/groups",
+        "/api/social/push/public-key",
+        "/api/social/push/subscribe",
         "/api/social/stories",
         "/api/social/ws",
     ):
         assert pfad in pfade, f"Social-Route fehlt: {pfad}"
+
+    # Der alte Umschlagweg ist wirklich weg, nicht nur unbenutzt.
+    for pfad in ("/api/social/e2ee/relay", "/api/social/e2ee/typing", "/api/social/e2ee/sync"):
+        assert pfad not in pfade, f"Alt-Transport-Route lebt noch: {pfad}"

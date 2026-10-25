@@ -866,6 +866,7 @@ app.add_middleware(
         "Content-Type",
         "Authorization",
         "X-CSRF-Token",
+        "X-Device-Id",
         "Idempotency-Key",
         "X-Task-Retry-Of",
         "X-Provider-Api-Key",

@@ -43,6 +43,8 @@ interface Optionen {
   t: (schluessel: string, werte?: Record<string, unknown>) => string
   currentUserId: number
   blindMailboxId: string
+  chatType: 'direct' | 'group' | null
+  chatId: number | null
   activeGroup: ChatGroupItem | null
   angeheftet: ChatMessage | null
   setAngeheftet: Dispatch<SetStateAction<ChatMessage | null>>
@@ -63,7 +65,8 @@ export function useMessengerInteraktionen(optionen: Optionen) {
     t,
     currentUserId,
     blindMailboxId,
-    activeGroup,
+    chatType,
+    chatId,
     angeheftet,
     setAngeheftet,
     darfAnheften,
@@ -152,7 +155,7 @@ export function useMessengerInteraktionen(optionen: Optionen) {
    * Client anhand der Rechte des Anheftenden, ob die Leiste erscheint.
    */
   const handleAnheften = async (msg: ChatMessage) => {
-    if (!activeGroup || !msg.clientUuid) return
+    if (!msg.clientUuid) return
     if (!darfAnheften) {
       toast.error(t('messenger.pinNoRightInGroup'))
       return
@@ -199,7 +202,10 @@ export function useMessengerInteraktionen(optionen: Optionen) {
    */
   const medienBindung = (msg: ChatMessage): MedienBindungsKontext => ({
     absenderId: Number(msg.senderId) || Number(currentUserId) || 0,
-    blindMailboxId,
+    // Beide Seiten muessen denselben Wert binden. Die eigene conversation-
+    // Mailbox ist je Seite verschieden; die Serverkennung ist es nicht.
+    blindMailboxId:
+      chatType && chatId ? `${chatType}:${chatId}` : blindMailboxId,
   })
 
 

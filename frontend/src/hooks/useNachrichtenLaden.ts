@@ -62,6 +62,7 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
     t,
     setMessages,
     setLoadingMessages,
+    setAngeheftet,
     setVerfallSekunden,
     zeigeSystemzeile,
     markAsRead,
@@ -78,10 +79,12 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
 
   const art = activeGroup ? ('gruppe' as const) : ('direkt' as const)
 
-  const quittiere = async (messages: ChatMessage[]) => {
-    const chatType = konversation.chatType
-    const chatId = konversation.chatId
-    if (!chatType || !chatId) return
+  const quittiere = async (
+    messages: ChatMessage[],
+    chatType: 'direct' | 'group',
+    chatId: number,
+  ) => {
+    if (!chatId) return
     const incoming = messages.filter((m) => !m.isSelf && m.id > 0)
     const maxIncomingId = incoming.reduce((max, m) => Math.max(max, m.id), 0)
     const istGruppe = Boolean(activeGroup)
@@ -124,7 +127,13 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
     try {
       const gelesen = await konversation.liesNachrichten()
       if (!gelesen) return
-      if (activeMailboxIdRef.current !== currentMid || currentLoadSeqRef.current !== seq) return
+      if (
+        activeMailboxIdRef.current !== currentMid ||
+        currentLoadSeqRef.current !== seq ||
+        gelesen.speicherId !== currentMid
+      ) {
+        return
+      }
 
       const lokal = await loadLocalMessages(currentMid)
       const lokalMitHaken = lokal.map((m) =>
@@ -145,8 +154,37 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
             }
           : m,
       )
+      if (
+        activeMailboxIdRef.current !== currentMid ||
+        currentLoadSeqRef.current !== seq ||
+        gelesen.speicherId !== currentMid
+      ) {
+        return
+      }
       const gemischt = mischeVerlauf(lokalMitHaken.slice(-500), gelesen.messages, art)
       setMessages(gemischt)
+
+      // Der Pin gehoert zum Serverzustand, nicht in einen lokalen zweiten
+      // Speicher. Die Seite nennt die neueste Anheftung unabhaengig davon,
+      // ob sie in den letzten 50 Zeilen liegt.
+      if (gelesen.page.pinned_message) {
+        const angeheftet = await konversation.verarbeiteEreignis(
+          gelesen.page.pinned_message,
+          'message_updated',
+        )
+        // Nach dem Entschluesseln kann das Gespraech gewechselt haben. Der Pin
+        // der alten Seite gehoert dann nicht in die neue Leiste.
+        if (
+          activeMailboxIdRef.current !== currentMid ||
+          currentLoadSeqRef.current !== seq ||
+          gelesen.speicherId !== currentMid
+        ) {
+          return
+        }
+        setAngeheftet(angeheftet)
+      } else {
+        setAngeheftet(null)
+      }
 
       await saveLocalMessagesStrict(currentMid, gelesen.messages, art)
       gelesen.uebernimm()
@@ -162,12 +200,10 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
       merkePartnerQuittung(currentMid, 'gelesen', gelesen.page.partner_last_read_id)
       merkePartnerQuittung(currentMid, 'zugestellt', gelesen.page.partner_last_delivered_id)
 
-      if (gelesen.page.ephemeral_ttl_seconds > 0) {
-        setVerfallSekunden(gelesen.page.ephemeral_ttl_seconds)
-      }
+      setVerfallSekunden(gelesen.page.ephemeral_ttl_seconds)
 
       markAsRead(currentMid)
-      await quittiere(gelesen.messages)
+      await quittiere(gelesen.messages, gelesen.chatType, gelesen.chatId)
 
       if (gelesen.unlesbar > 0) {
         zeigeSystemzeile(

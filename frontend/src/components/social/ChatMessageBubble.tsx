@@ -132,6 +132,12 @@ export interface ChatMessage {
   isRead?: boolean
   isEdited?: boolean
   editedAt?: string
+  /** Das Gespraech, zu dem die Zeile gehoert (Serverkennung). */
+  chatType?: 'direct' | 'group'
+  chatId?: number
+  /** Global angeheftet — nicht zu verwechseln mit `istMarkiert`. */
+  isPinned?: boolean
+  pinnedAt?: string
   isDeleted?: boolean
   deletedAt?: string
   originalText?: string

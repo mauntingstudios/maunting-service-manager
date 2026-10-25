@@ -753,7 +753,7 @@ export function useMessengerSenden(optionen: Optionen) {
       const { finalImg, finalFile, finalAudio, finalVideoNote } = await ladeAnhaengeHoch(
         { img, file, audio, videoNote },
         {
-          blindMailboxId: targetBlindMailboxId,
+          blindMailboxId: `${chatZiel.type}:${chatZiel.id}`,
           chatType: chatZiel.type,
           chatId: chatZiel.id,
           absenderId: currentUserId,

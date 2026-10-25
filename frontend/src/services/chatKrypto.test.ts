@@ -62,6 +62,7 @@ describe.each(FAELLE)('Chat-Nutzlast in %s', (typ, chatId) => {
       timestamp: '2026-10-25T10:00:00.000Z',
     })
     expect(verschluesselt.key_version).toBe(1)
+    expect(verschluesselt.encrypted_payload.startsWith('sv-e2ee-msg-v1:')).toBe(true)
     expect(verschluesselt.encrypted_payload).not.toContain('hallo')
 
     const roh = await entpackeChatNutzlast(
@@ -100,6 +101,15 @@ describe.each(FAELLE)('Chat-Nutzlast in %s', (typ, chatId) => {
     ).rejects.toBeInstanceOf(ChatNutzlastUngueltigError)
   })
 
+  it('liest auch rohes Base64 aus der Zeit vor dem Praefix', async () => {
+    const { encrypted_payload } = await verschluessleChatNutzlast(typ, chatId, 'u-1', ICH, 1, {
+      text: 'alt',
+    })
+    const roh = encrypted_payload.replace('sv-e2ee-msg-v1:', '')
+    const gelesen = await entpackeChatNutzlast(typ, chatId, 'u-1', ICH, 1, roh)
+    expect(gelesen.text).toBe('alt')
+  })
+
   it('verwirft ein gekipptes Chiffrat', async () => {
     const { encrypted_payload } = await verschluessleChatNutzlast(typ, chatId, 'u-1', ICH, 1, {
       text: 'hallo',
@@ -122,6 +132,7 @@ describe.each(FAELLE)('Chat-Nutzlast in %s', (typ, chatId) => {
 
   it('bindet eine Reaktion an Nachricht und Nutzer', async () => {
     const emoji = await verschluessleReaktion(typ, chatId, 1, 77, ICH, '👍')
+    expect(emoji.startsWith('sv-e2ee-react-v1:')).toBe(true)
     expect(await entpackeReaktion(typ, chatId, 1, 77, ICH, emoji)).toBe('👍')
     expect(await entpackeReaktion(typ, chatId, 1, 78, ICH, emoji)).toBeNull()
     expect(await entpackeReaktion(typ, chatId, 1, 77, 2, emoji)).toBeNull()

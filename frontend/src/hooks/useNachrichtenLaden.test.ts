@@ -45,6 +45,7 @@ type Seite = {
   messages: ReturnType<typeof zeile>[]
   page: {
     messages: unknown[]
+    pinned_message?: unknown
     has_more: boolean
     my_last_delivered_id: number
     my_last_read_id: number
@@ -53,6 +54,9 @@ type Seite = {
     ephemeral_ttl_seconds: number
     ephemeral_enabled_by_user_id: number | null
   }
+  speicherId: string
+  chatType: 'direct' | 'group'
+  chatId: number
   hasMore: boolean
   unlesbar: number
   uebernimm: () => void
@@ -67,6 +71,7 @@ function seite(
     messages,
     page: {
       messages,
+      pinned_message: null,
       has_more: false,
       my_last_delivered_id: 0,
       my_last_read_id: 0,
@@ -75,6 +80,9 @@ function seite(
       ephemeral_ttl_seconds: 0,
       ephemeral_enabled_by_user_id: null,
     },
+    speicherId: 'direct:peer:2',
+    chatType: 'direct',
+    chatId: 2,
     hasMore: false,
     unlesbar: 0,
     uebernimm: vi.fn(),
@@ -121,6 +129,33 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
   vi.mocked(ablage.loadLocalMessages).mockResolvedValue([])
+})
+
+describe('Chat-Identitaet', () => {
+  it('verwirft eine Seite, die zu einer anderen speicherId gehoert', async () => {
+    const opts = optionen()
+    const fremd = seite([zeile(9, false)])
+    fremd.speicherId = 'direct:peer:3'
+    vi.mocked(opts.konversation.liesNachrichten).mockResolvedValue(fremd)
+
+    await useNachrichtenLaden(opts).loadMessages(true)
+
+    expect(ablage.saveLocalMessagesStrict).not.toHaveBeenCalled()
+    expect(api.ackChatMessages).not.toHaveBeenCalled()
+  })
+
+  it('quittiert mit der chatId, die die Seite wirklich geholt hat', async () => {
+    const opts = optionen()
+    const gelesen = seite([zeile(9, false)])
+    gelesen.chatId = 77
+    vi.mocked(opts.konversation.liesNachrichten).mockResolvedValue(gelesen)
+    opts.konversation.chatId = null
+
+    await useNachrichtenLaden(opts).loadMessages(true)
+
+    expect(api.ackChatMessages).toHaveBeenCalledWith('direct', 77, 9)
+    expect(api.readChatMessages).toHaveBeenCalledWith('direct', 77, 9)
+  })
 })
 
 describe('Quittungen im Einheits-Transport', () => {

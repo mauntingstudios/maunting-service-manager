@@ -462,6 +462,7 @@ function MessengerSeite() {
     messengerGesperrt,
     gruppenrechteVon: (konto) => gruppenrechteVonRef.current(konto),
     setAngeheftet,
+    angeheftet,
     setVerfallSekunden,
     markAsRead,
     isBlocked,
@@ -478,7 +479,7 @@ function MessengerSeite() {
   const {
     messages, setMessages, loadingMessages, sending, setSending,
     identity, setIdentity, identityRef, geraetWartet, blindMailboxId, konversation,
-    sendeWirkung, loadMessages, zeigeSystemzeile,
+    sendeWirkung, loadMessages, verarbeiteNachrichtenEreignis, zeigeSystemzeile,
     eingabeBeruehrtRef, highestIncomingIdAcknowledgedRef, highestIncomingIdDeliveredRef,
     maxPartnerReadIdRef, maxPartnerDeliveredIdRef,
   } = kern
@@ -1077,13 +1078,17 @@ function MessengerSeite() {
   }, [groups, activeGroup])
 
   /** Ob ich in dieser Gruppe anheften darf — vom Server entschieden. */
-  const darfAnheften = Boolean(activeGroup?.can_pin_messages)
+  const darfAnheften = activeGroup
+    ? Boolean(activeGroup.can_pin_messages)
+    : Boolean(activeContact)
 
   const { handleReaktion, handleAnheften, handleWeiterleiten, medienBindung } =
     useMessengerInteraktionen({
       t,
       currentUserId,
       blindMailboxId,
+      chatType: konversation.chatType,
+      chatId: konversation.chatId,
       activeGroup,
       angeheftet,
       setAngeheftet,
@@ -1299,12 +1304,54 @@ function MessengerSeite() {
   }, [messengerGesperrt])
 
   // Echtzeitstrom: Anrufe, eintreffende Nachrichten, Tippen.
+  /**
+   * Der Gegenueber hat die Verfallfrist gestellt. Die Zustandsanzeige unten
+   * haengt an `verfallVon`; ohne dieses Ereignis blieb sie bis zum Neuladen
+   * stehen und liess die falsche Seite aendern.
+   */
+  const handleEphemeral = useCallback((detail: {
+    ephemeral_ttl_seconds?: number
+    ephemeral_enabled_by_user_id?: number | null
+  }) => {
+    const ttl = Number(detail.ephemeral_ttl_seconds || 0)
+    const von = detail.ephemeral_enabled_by_user_id ?? null
+    // Das eigene Gerät hat den Wechsel schon lokal gesetzt und die Systemzeile
+    // geschrieben. Dasselbe Ereignis kommt über den Kanal zurück; ohne diesen
+    // Vergleich stünde die Zeile zweimal da.
+    const unveraendert = ttl === verfallSekunden && von === verfallVon
+    setVerfallSekunden(ttl)
+    setVerfallVon(von)
+    if (blindMailboxId) {
+      setzeVerfallsfrist(blindMailboxId, ttl, new Date().toISOString())
+    }
+    if (unveraendert) return
+    const name =
+      von === null
+        ? t('messenger.thisContact')
+        : von === currentUserId
+          ? t('messenger.retentionYou')
+          : activeContact?.userId === von
+            ? activeContact.username
+            : (activeGroup?.members ?? []).find((m) => Number(m.user_id) === von)?.username ||
+              t('messenger.thisContact')
+    zeigeSystemzeile(
+      ttl > 0
+        ? t('messenger.retentionSetOther', { name, frist: stufenDativ(ttl, t) })
+        : t('messenger.retentionOffOther', { name }),
+      `verfall-${ttl}-${von ?? 'niemand'}`,
+    )
+  }, [activeContact, activeGroup, blindMailboxId, currentUserId, setVerfallSekunden, t, verfallSekunden, verfallVon, zeigeSystemzeile])
+
   useMessengerSync({
     blindMailboxId,
     leseMailboxen: kern.konversation.leseMailboxen,
     currentUserId,
     geraeteMeldungen: user?.device_notifications,
     loadMessages,
+    beiNachrichtenEreignis: verarbeiteNachrichtenEreignis,
+    beiEphemeral: handleEphemeral,
+    chatType: konversation.chatType,
+    chatId: konversation.chatId,
     setGroups,
     setActiveGroup,
     setPartnerActivity,
@@ -1461,23 +1508,31 @@ function MessengerSeite() {
     const handleReceipt = (e: Event) => {
       const detail = (e as CustomEvent).detail
       if (!detail) return
+      if (
+        String(detail.chat_type ?? '') !== String(konversation.chatType ?? '') ||
+        Number(detail.chat_id) !== Number(konversation.chatId)
+      ) {
+        return
+      }
       const uuids: string[] = Array.isArray(detail.client_uuids)
         ? detail.client_uuids
         : detail.client_uuid
         ? [detail.client_uuid]
         : []
-      if (uuids.length === 0) return
       const uuidSet = new Set(uuids.map((u: string) => String(u).split('#')[0]))
+      const upTo = Number(detail.up_to_id || 0)
       const isRead = detail.type === 'read_receipt'
 
       setMessages((prev) => {
         let changed = false
         const updated = prev.map((m) => {
           const baseUuid = (m.clientUuid || '').split('#')[0]
-          if (baseUuid && uuidSet.has(baseUuid)) {
+          const perUuid = Boolean(baseUuid && uuidSet.has(baseUuid))
+          const perWatermark = !m.isSelf || upTo <= 0 ? false : m.id > 0 && m.id <= upTo
+          if (perUuid || perWatermark) {
             const nextRead = isRead ? true : Boolean(m.isRead)
             const nextDelivered = true
-            const nextStatus: 'read' | 'delivered' = nextRead ? 'read' : m.status === 'read' ? 'read' : 'delivered'
+            const nextStatus: 'read' | 'delivered' = nextRead ? 'read' : 'delivered'
             if (m.isRead !== nextRead || m.isDelivered !== nextDelivered || m.status !== nextStatus) {
               changed = true
               return {
@@ -1504,7 +1559,7 @@ function MessengerSeite() {
       window.removeEventListener('msm:delivery-receipt', handleReceipt)
       window.removeEventListener('msm:read-receipt', handleReceipt)
     }
-  }, [blindMailboxId])
+  }, [blindMailboxId, konversation.chatId, konversation.chatType])
 
   /**
    * Wenn dieses Gerät sich nicht beim Konto melden kann, sieht es niemand.

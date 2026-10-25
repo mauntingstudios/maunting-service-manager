@@ -125,6 +125,8 @@ export interface LocalStoredMessage {
   weitergeleitet?: boolean
   /** Sternchen. Rein lokal — welche Nachricht mir wichtig ist, geht niemanden an. */
   istMarkiert?: boolean
+  isPinned?: boolean
+  pinnedAt?: string
   /** Ab wann diese Zeile von selbst verschwindet (ISO). */
   verfaelltAm?: string
   /** Ein Augenblick für den Funken. Siehe `funkenService.ts`. */

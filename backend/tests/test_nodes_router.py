@@ -144,8 +144,8 @@ def test_install_command_uses_configured_api_url_and_contains_no_secret(
 
     assert response.status_code == 200, response.text
     command = response.json()["command"]
-    assert "http://localhost:3000/api/nodes/install.sh" in command
-    assert "--panel http://localhost:3000" in command
+    assert "http://localhost:8000/api/nodes/install.sh" in command
+    assert "--panel http://localhost:8000" in command
     assert "token" not in command.lower()
     assert "claim" not in command.lower()
 

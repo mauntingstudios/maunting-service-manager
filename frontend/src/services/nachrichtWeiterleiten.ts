@@ -107,7 +107,7 @@ async function hängeAnhangUm(
     klartext,
     dateiname: String(anhang.name || 'anhang'),
     mimeType: String(anhang.mimeType || 'application/octet-stream'),
-    blindMailboxId: ziel.blindMailboxId,
+    blindMailboxId: `${chatZiel.chatType}:${chatZiel.chatId}`,
     chatType: chatZiel.chatType,
     chatId: chatZiel.chatId,
     absenderId: eigeneId,

@@ -18,7 +18,7 @@ import {
   onSchluesselWarnung,
 } from '@/services/e2eeGeraet'
 import { messengerSocket } from '@/services/messengerSocket'
-import { ladeEntwurf, loadLocalMessages, sichereDauerhafteAblage, sortMessagesChronologically } from '@/services/messengerLocalStore'
+import { ladeEntwurf, loadLocalMessages, sichereDauerhafteAblage, sortMessagesChronologically, updateMessageInLocalStore } from '@/services/messengerLocalStore'
 import { holeOffeneMedien } from '@/services/medienNachholen'
 import { sessionChatCache } from '@/services/klartextSpeicher'
 import { partnerstand, quittungsstand } from '@/services/quittungsstand'
@@ -39,6 +39,7 @@ interface Optionen {
   messengerGesperrt: boolean
   gruppenrechteVon: (konto: number) => Set<string>
   setAngeheftet: Dispatch<SetStateAction<ChatMessage | null>>
+  angeheftet: ChatMessage | null
   setVerfallSekunden: (sekunden: number) => void
   markAsRead: (mailbox: string) => void
   isBlocked: (userId: number) => boolean
@@ -67,6 +68,7 @@ export function useMessengerKern({
   messengerGesperrt,
   gruppenrechteVon,
   setAngeheftet,
+  angeheftet,
   setVerfallSekunden,
   markAsRead,
   isBlocked,
@@ -75,6 +77,10 @@ export function useMessengerKern({
   onEntwurf,
 }: Optionen) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  // Der sichtbare Verlauf gilt nur fuer das Gespraech, das ihn geladen hat.
+  // Der Effekt unten leert ihn, aber erst nach dem Render; diese Marke
+  // verhindert schon im Wechsel-Render, dass der alte Verlauf kurz stehen bleibt.
+  const [messagesZiel, setMessagesZiel] = useState('')
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sending, setSending] = useState(false)
   const [identity, setIdentity] = useState<E2eeIdentity>(IDENTITY_LOADING)
@@ -378,6 +384,7 @@ export function useMessengerKern({
       : activeContact ? `u:${activeContact.userId}` : ''
     const neuesGespraech = gespraechsZielRef.current !== zielSchluessel
     gespraechsZielRef.current = zielSchluessel
+    setMessagesZiel(zielSchluessel)
 
     if (neuesGespraech) {
       onGespraechWechsel()
@@ -508,11 +515,85 @@ export function useMessengerKern({
     sendE2eeControlMessage,
   })
 
+  /**
+   * Der Echtzeitkanal liefert die geaenderte Zeile selbst. Sie wird hier
+   * entschluesselt und sofort in Anzeige und Ablage uebernommen. Ein erneuter
+   * Abruf ueber `after_id` wuerde eine aeltere Nachricht nie zurueckgeben.
+   */
+  const verarbeiteNachrichtenEreignis = useCallback(async (detail: {
+    type?: string
+    message?: import('@/api/social').E2eeMessageItem
+  }) => {
+    const typ = detail?.type
+    const raw = detail?.message
+    if (!raw || (typ !== 'message_updated' && typ !== 'message_deleted')) return
+    const fertig = await konversation.verarbeiteEreignis(
+      raw,
+      typ as 'message_updated' | 'message_deleted',
+    )
+    if (!fertig) return
+
+    setMessages((vorher) => {
+      const index = vorher.findIndex(
+        (m) => (raw.client_uuid && m.clientUuid === raw.client_uuid) || (raw.id > 0 && m.id === raw.id),
+      )
+      if (index < 0) return vorher
+      const alt = vorher[index]
+      const neu = [...vorher]
+      neu[index] = {
+        ...alt,
+        ...fertig,
+        status: alt.status,
+        istMarkiert: alt.istMarkiert,
+      }
+      return sortMessagesChronologically(neu)
+    })
+
+    await updateMessageInLocalStore(blindMailboxId, raw.client_uuid || raw.id, {
+      text: fertig.text,
+      isDeleted: fertig.isDeleted,
+      deletedAt: fertig.deletedAt,
+      isEdited: fertig.isEdited,
+      editedAt: fertig.editedAt,
+      imageAttachment: fertig.imageAttachment,
+      audioAttachment: fertig.audioAttachment,
+      fileAttachment: fertig.fileAttachment,
+      videoNoteAttachment: fertig.videoNoteAttachment,
+      stickerAttachment: fertig.stickerAttachment,
+      storyReply: fertig.storyReply,
+      noteAttachment: fertig.noteAttachment,
+      calendarAttachment: fertig.calendarAttachment,
+      antwortAuf: fertig.antwortAuf,
+      reaktionen: fertig.reaktionen,
+      isPinned: fertig.isPinned,
+      pinnedAt: fertig.pinnedAt,
+    }).catch(() => {})
+
+    if (fertig.isPinned) setAngeheftet(fertig)
+    else if (angeheftet?.clientUuid === fertig.clientUuid) setAngeheftet(null)
+  }, [angeheftet, blindMailboxId, konversation, setAngeheftet, setMessages])
+
+  const loadMessagesRef = useRef(loadMessages)
+  loadMessagesRef.current = loadMessages
+  const loadMessagesStabil = useCallback(
+    (isInitial = false) => loadMessagesRef.current(isInitial),
+    [],
+  )
+
+  const sichtbarerZielSchluessel = activeGroup
+    ? `g:${activeGroup.id}`
+    : activeContact
+      ? `u:${activeContact.userId}`
+      : ''
+  const sichtbareMessages = messagesZiel === sichtbarerZielSchluessel ? messages : []
+
   return {
-    messages, setMessages, loadingMessages, setLoadingMessages, sending, setSending,
+    messages: sichtbareMessages, setMessages, loadingMessages, setLoadingMessages, sending, setSending,
     identity, setIdentity, identityRef, geraetWartet, gespraechsZiel, blindMailboxId,
     konversation, sendE2eeControlMessage, sendeWirkung: konversation.sendeWirkung,
-    loadMessages, ladeAeltere, zeigeSystemzeile,
+    loadMessages: loadMessagesStabil,
+    verarbeiteNachrichtenEreignis,
+    ladeAeltere, zeigeSystemzeile,
     gespraechsZielRef, entwurfGeholtRef, eingabeBeruehrtRef, activeMailboxIdRef,
     currentLoadSeqRef, highestIncomingIdAcknowledgedRef, highestIncomingIdDeliveredRef,
     maxPartnerReadIdRef, maxPartnerDeliveredIdRef,

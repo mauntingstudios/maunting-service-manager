@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -407,11 +408,14 @@ def test_parallele_blueprints_nutzen_eigene_tempdateien(patched_blueprints_dir, 
     replace = Path.replace
     def concurrent_replace(source, target):
         temporary.append(source)
-        rendezvous.wait(timeout=5)
         return replace(source, target)
     monkeypatch.setattr(Path, "replace", concurrent_replace)
     monkeypatch.setattr(blueprint_service, "reload_registry", lambda: None)
     def save(name):
+        # Beide Aufrufe beginnen zugleich; die Temporärdateien entstehen also
+        # nebeneinander. Der Austausch selbst ist serialisiert (Windows
+        # verweigert zwei gleichzeitige Ersetzungen desselben Ziels).
+        rendezvous.wait(timeout=5)
         return blueprint_service.save_community_blueprint({
             "version": 1, "meta": {"id": "parallel", "name": name, "category": "bot"},
             "runtime": {"image": "alpine", "startup": "echo 1"}, "ports": [],
@@ -422,5 +426,10 @@ def test_parallele_blueprints_nutzen_eigene_tempdateien(patched_blueprints_dir, 
     assert len(set(temporary)) == 2
     target = patched_blueprints_dir / "parallel.blueprint.json"
     assert json.loads(target.read_text())["meta"]["name"] in {"First", "Second"}
-    assert target.stat().st_mode & 0o022 == 0
+    # Windows kennt keine POSIX-Gruppenbits; dort zaehlt, dass die Datei
+    # beschreibbar bleibt und kein Read-only-Rest aus dem Austausch haengt.
+    if os.name == "nt":
+        assert target.stat().st_mode & 0o200
+    else:
+        assert target.stat().st_mode & 0o022 == 0
     assert list(target.parent.glob(".*.tmp")) == []

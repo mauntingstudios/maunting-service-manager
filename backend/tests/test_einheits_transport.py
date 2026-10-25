@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from models import ChatGroupMember, E2eeChatKey, E2eeMessage, User
 from services.auth_service import AuthService
 from services.social import messages_service
+from services.sync_event_service import SyncEventService
 from services.social_service import SocialService
 
 CHIFFRAT = "sv-e2ee-test-v1:chiffrat"
@@ -71,6 +72,74 @@ def test_direktchat_senden_lesen_und_doppelte_kennung(
     seite = messages_service.list_messages(db, regular_user, "direct", chat.id)
     assert [m["client_uuid"] for m in seite["messages"]] == ["kennung-1"]
     assert seite["messages"][0]["encrypted_payload"] == CHIFFRAT
+
+
+def test_message_created_traegt_flache_felder_und_zusteller(
+    monkeypatch, db: Session, owner_user: User, regular_user: User
+):
+    chat = _direktchat(db, owner_user, regular_user)
+    aufrufe: list[tuple[dict, dict]] = []
+
+    def merke(payload, **kwargs):
+        aufrufe.append((payload, kwargs))
+        return 1
+
+    monkeypatch.setattr(SyncEventService, "publish", classmethod(lambda cls, payload, **kw: merke(payload, **kw)))
+    gesendet = messages_service.send_message(
+        db, owner_user, "direct", chat.id, "event-1", 1, CHIFFRAT
+    )
+
+    ereignis, optionen = next(
+        (p, k) for p, k in aufrufe if p.get("type") == "message_created"
+    )
+    assert ereignis["type"] == "message_created"
+    assert ereignis["sender_user_id"] == owner_user.id
+    assert ereignis["chat_type"] == "direct"
+    assert ereignis["chat_id"] == chat.id
+    assert ereignis["client_uuid"] == "event-1"
+    assert ereignis["message"]["id"] == gesendet["id"]
+    assert ereignis["message"]["sender_user_id"] == owner_user.id
+    assert optionen["melden_markieren"] is True
+    assert isinstance(optionen["zusteller"], set)
+
+
+def test_der_absender_bekommt_keine_meldung_fuer_seine_eigene_nachricht(
+    monkeypatch, db: Session, owner_user: User, regular_user: User
+):
+    chat = _direktchat(db, owner_user, regular_user)
+    optionen: dict = {}
+
+    def merke(payload, **kwargs):
+        optionen.update(kwargs)
+        return 1
+
+    monkeypatch.setattr(
+        SyncEventService, "publish", classmethod(lambda cls, payload, **kw: merke(payload, **kw))
+    )
+    # Fuer jedes Konto steht eine Verbindung offen, auch fuer den Absender.
+    monkeypatch.setattr(
+        SyncEventService,
+        "zustelllage",
+        classmethod(
+            lambda cls, *, user_id=None, mailbox_id=None: (f"conn-{user_id}", True)
+        ),
+    )
+    messages_service.send_message(db, owner_user, "direct", chat.id, "event-2", 1, CHIFFRAT)
+
+    assert optionen["zusteller"] == {f"conn-{regular_user.id}"}
+
+
+def test_angeheftete_nachricht_kommt_mit_der_seite(
+    db: Session, owner_user: User, regular_user: User
+):
+    chat = _direktchat(db, owner_user, regular_user)
+    gesendet = messages_service.send_message(db, owner_user, "direct", chat.id, "pin-1", 1, CHIFFRAT)
+    messages_service.set_pinned(db, owner_user, "pin-1", True)
+
+    seite = messages_service.list_messages(db, regular_user, "direct", chat.id)
+    assert seite["pinned_message"] is not None
+    assert seite["pinned_message"]["id"] == gesendet["id"]
+    assert seite["pinned_message"]["is_pinned"] is True
 
 
 def test_gruppe_mit_sechzig_mitgliedern(
@@ -402,6 +471,50 @@ def test_gruppenadmin_darf_chat_schluessel_rotieren(
     with pytest.raises(HTTPException) as fehler:
         messages_service.store_chat_keys(db, regular_user, "group", gruppe.id, 3, rows)
     assert fehler.value.status_code == 403
+
+
+def test_chat_schluessel_nur_fuer_mitglieder(
+    db: Session, owner_user: User, regular_user: User
+):
+    """Der fruehere Geraete-Posteingang ist weg; Schluessel liegen am Chat.
+
+    Wer nicht Mitglied ist, darf weder schreiben noch lesen. Und wer
+    schreibt, nennt jedes Mitglied genau einmal — sonst bliebe ein Geraet
+    ohne Schluessel und saehe die Nachricht nie.
+    """
+    chat = _direktchat(db, owner_user, regular_user)
+    fremd = _konto(db, "schluessel-fremd")
+
+    with pytest.raises(HTTPException) as schreiben:
+        messages_service.store_chat_keys(
+            db, fremd, "direct", chat.id, 2,
+            [
+                {"user_id": owner_user.id, "encrypted_chat_key": "x"},
+                {"user_id": regular_user.id, "encrypted_chat_key": "y"},
+            ],
+        )
+    assert schreiben.value.status_code == 403
+
+    with pytest.raises(HTTPException) as lesen:
+        messages_service.list_chat_keys(db, fremd.id, "direct", chat.id)
+    assert lesen.value.status_code == 403
+
+    # Ein Mitglied darf schreiben, muss aber alle nennen.
+    with pytest.raises(HTTPException) as unvollstaendig:
+        messages_service.store_chat_keys(
+            db, owner_user, "direct", chat.id, 2,
+            [{"user_id": owner_user.id, "encrypted_chat_key": "x"}],
+        )
+    assert unvollstaendig.value.status_code == 403
+
+    messages_service.store_chat_keys(
+        db, owner_user, "direct", chat.id, 2,
+        [
+            {"user_id": owner_user.id, "encrypted_chat_key": "x"},
+            {"user_id": regular_user.id, "encrypted_chat_key": "y"},
+        ],
+    )
+    assert messages_service.latest_chat_key_version(db, "direct", chat.id) == 2
 
 
 def test_konto_bund_nur_von_eigenem_geraet_und_nicht_ueberschreiben(

@@ -10,6 +10,7 @@
 
 import { decryptString, encryptString, importAesGcmRawKey } from '@msdis/shield/aead'
 import { base64ToBytes, bytesToBase64 } from '@msdis/shield/core'
+import { formatEnvelope, parseEnvelope, type VersionedCipherEnvelopeSpec } from '@msdis/shield/format-versioning'
 import { randomBytes } from '@msdis/shield/random'
 
 import {
@@ -40,6 +41,28 @@ export class ChatNutzlastUngueltigError extends Error {
 }
 
 const CHAT_KEY_BYTES = 32
+
+/** Versioniertes Chiffrat im Nachrichtenweg; rohe Base64 bleibt lesbar. */
+export const MESSAGE_ENVELOPE_SPEC: VersionedCipherEnvelopeSpec = {
+  currentPrefix: 'sv-e2ee-msg-v1:',
+  familyPrefix: 'sv-e2ee-msg-',
+  subject: 'E2EE message payload',
+}
+
+/** Reaktionen tragen eine eigene Familie, damit ein Tausch auffaellt. */
+export const REACTION_ENVELOPE_SPEC: VersionedCipherEnvelopeSpec = {
+  currentPrefix: 'sv-e2ee-react-v1:',
+  familyPrefix: 'sv-e2ee-react-',
+  subject: 'E2EE reaction payload',
+}
+
+function entpackeChiffrat(
+  spec: VersionedCipherEnvelopeSpec,
+  payload: string,
+): string {
+  if (!payload.startsWith(spec.familyPrefix)) return payload
+  return parseEnvelope(spec, payload).payload
+}
 const cache = new Map<string, CryptoKey>()
 const rohCache = new Map<string, Uint8Array>()
 
@@ -207,7 +230,11 @@ export async function verschluessleChatNutzlast(
     key,
     aad(chatType, chatId, clientUuid, senderId),
   )
-  return { encrypted_payload: encrypted, key_version: keyVersion, client_uuid: clientUuid }
+  return {
+    encrypted_payload: formatEnvelope(MESSAGE_ENVELOPE_SPEC, encrypted),
+    key_version: keyVersion,
+    client_uuid: clientUuid,
+  }
 }
 
 export async function entpackeChatNutzlast(
@@ -222,7 +249,7 @@ export async function entpackeChatNutzlast(
   let roh: Record<string, unknown>
   try {
     const klartext = await decryptString(
-      encryptedPayload,
+      entpackeChiffrat(MESSAGE_ENVELOPE_SPEC, encryptedPayload),
       key,
       aad(chatType, chatId, clientUuid, senderId),
     )
@@ -258,7 +285,10 @@ export async function verschluessleReaktion(
   emoji: string,
 ): Promise<string> {
   const key = await holeChatSchluessel(chatType, chatId, keyVersion)
-  return await encryptString(emoji, key, reaktionAad(messageId, userId))
+  return formatEnvelope(
+    REACTION_ENVELOPE_SPEC,
+    await encryptString(emoji, key, reaktionAad(messageId, userId)),
+  )
 }
 
 export async function entpackeReaktion(
@@ -271,7 +301,11 @@ export async function entpackeReaktion(
 ): Promise<string | null> {
   try {
     const key = await holeChatSchluessel(chatType, chatId, keyVersion)
-    const text = await decryptString(encryptedReaction, key, reaktionAad(messageId, userId))
+    const text = await decryptString(
+      entpackeChiffrat(REACTION_ENVELOPE_SPEC, encryptedReaction),
+      key,
+      reaktionAad(messageId, userId),
+    )
     return text || null
   } catch {
     return null

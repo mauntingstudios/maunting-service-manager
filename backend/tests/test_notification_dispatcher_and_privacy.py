@@ -247,8 +247,12 @@ def test_group_message_reaches_members_only_no_leak_to_strangers(db: Session):
         send_message(db, alice, "group", group.id, "gruppen-nachricht-1", 1, "chiffrat")
 
         # Alice (Absenderin) erhaelt das Ereignis fuer ihre uebrigen Geraete.
+        # Davor liegt ggf. das Abzeichen fuer die erste E2EE-Nachricht.
         assert not q_alice.empty()
-        assert q_alice.get_nowait()["type"] == "message_created"
+        typen = []
+        while not q_alice.empty():
+            typen.append(q_alice.get_nowait()["type"])
+        assert "message_created" in typen
 
         # Bob (Mitglied) erhaelt es.
         assert not q_bob.empty()

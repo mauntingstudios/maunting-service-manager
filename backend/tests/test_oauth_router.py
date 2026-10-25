@@ -1011,6 +1011,7 @@ class TestGhostCookieHandling:
         import config
 
         monkeypatch.setattr(config.settings, "panel_url", "https://panel.example.com", raising=False)
+        monkeypatch.setattr(config.settings, "api_url", "", raising=False)
         monkeypatch.setattr(config.settings, "cookie_domain", "", raising=False)
 
         resp = Response()

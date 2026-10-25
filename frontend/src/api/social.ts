@@ -904,6 +904,8 @@ export interface E2eeMessageItem {
 
 export interface E2eeMessagePage {
   messages: E2eeMessageItem[]
+  /** Die neueste Anheftung des Chats, unabhaengig von der geladenen Seite. */
+  pinned_message?: E2eeMessageItem | null
   has_more: boolean
   my_last_delivered_id: number
   my_last_read_id: number
