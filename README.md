@@ -6,7 +6,7 @@
 Autonomous monitoring with the Guardian Engine, rootless container security, E2EE backups, and AI-assisted operations.
 
 [![Status](https://img.shields.io/badge/Status-Active%20Development-orange)](https://github.com/mauntingstudios/maunting-service-manager)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
 [Quick Start](#installation) • [Key Features](#what-msm-can-do) • [Comparison](#msm-compared) • [Architecture](#how-everything-connects) • [Documentation](docs/self-hosting.md)
 
@@ -322,4 +322,11 @@ The desktop client (*Maunting Smart System*, MSS) can broadcast your activity vi
 
 ## License
 
-MSM is licensed under the [MIT License](LICENSE).
+Maunting Service Manager (MSM) is free and open-source software licensed under the **[GNU Affero General Public License v3 (AGPL-3.0)](LICENSE)**.
+
+### Summary of Terms:
+- **Free to Use & Self-Host:** You can run, deploy, and self-host MSM for personal, community, or commercial hosting operations.
+- **Commercial Use Allowed:** You are permitted to use MSM to operate commercial server hosting infrastructure and earn revenue.
+- **Strong Copyleft (Network / SaaS Clause):** If you modify MSM or create a derivative work and make it available over a network (e.g., offering a hosted service to users), you **must make the complete corresponding source code of your modified version publicly available under the AGPL-3.0**. Closed-source proprietary forks are prohibited.
+- **Authorship & Ownership:** The original copyright, ownership, and authorship remain with **Maunting Studios**. Copyright and attribution notices must be preserved in all source code distributions and user interfaces.
+- **Trademarks & Branding:** The names "Maunting Studios", "Maunting Service Manager", "MSM", and "Maunting Pontis", along with associated logos, are protected trademarks and brand assets of Maunting Studios and are not licensed for unauthorized branding or misleading re-use.
