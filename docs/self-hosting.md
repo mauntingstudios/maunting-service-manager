@@ -1,7 +1,8 @@
 # Self-Hosting & Deployment Guide
 
 > [!NOTE]
-> Die deutschsprachige Fassung dieser Dokumentation befindet sich unter [docs/de-docs/self-hosting.md](de-docs/self-hosting.md).
+> Die deutschsprachige Fassung dieser Dokumentation befindet sich unter [docs/de-docs/self-hosting.md](de-docs/self-hosting.md) (im Panel unter `/docs/self-hosting`).
+> PostgreSQL ist die einzige unterstützte Panel-Runtime-Datenbank.
 
 This guide is the canonical operational documentation for deploying, configuring, and maintaining the Maunting Service Manager (MSM) ecosystem. While the repository is structured as a monorepo, its architectural components are built and packaged as decoupled, modular deployment artifacts.
 
@@ -55,7 +56,7 @@ flowchart TD
 | :--- | :--- | :--- |
 | **Panel / Control Plane** | Backend orchestrator, DIS sidecar, LiveKit sidecar, Weather sidecar, Panel PostgreSQL, Vite frontend, and local worker agent. | No. The production release archive `msm-panel-<VERSION>.tar.gz` contains only the required services. |
 | **Separate Frontend** | Pre-built static Vite bundle served via Caddy, Nginx, or CDN. | No. `msm-frontend-<VERSION>.tar.gz` is sufficient. |
-| **Remote Worker Nodes** | Worker agent, rootless Docker engine, TLS termination, and node-local game server data. | No. Nodes fetch their self-contained agent archive directly from the control plane during enrollment. |
+| **Remote Worker Nodes** | Worker agent, rootless Docker engine, TLS termination, and node-local game server data. | No. Nodes fetch their self-contained agent archive directly from the control plane during enrollment (weder einen Repository-Clone noch manuelles Kopieren). |
 
 ---
 
@@ -141,9 +142,19 @@ curl -fsSL https://panel.example.com/api/agent/bootstrap.sh \
 
 MSM includes an integrated Zero-Knowledge Vault for managing configuration files, credentials, secrets, and private game data.
 
-- Encrypted vault binary blobs are stored on disk under `/opt/msm/vault-blobs`.
+- Encrypted vault binary blobs are stored on disk as `vault-blobs` under `/opt/msm/vault-blobs`.
 - File content is encrypted client-side or at the API boundary using AES-256-GCM before reaching the database.
 - **Backup Policy:** The PostgreSQL snapshot contains vault metadata and key derivations, but file blobs reside on the filesystem. Always include `/opt/msm/vault-blobs` in your daily host backup schedules.
+
+---
+
+## Splitting an All-in-One Deployment
+
+To split an existing single-host deployment across multiple nodes, execute the migration helper:
+
+```bash
+sudo /opt/msm/helper-scripts/migrate-panel-components.sh
+```
 
 ---
 
