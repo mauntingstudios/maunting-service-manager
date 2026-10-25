@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Ohne sie meldet Android dem WebView keine Netzwechsel: navigator.onLine
@@ -28,9 +28,9 @@
         </intent>
     </queries>
 
-    <!-- Keine Datensicherung und kein Umzug aufs neue Gerät: Cookies der Seiten,
-         Verlauf und das Fach mit dem Token gehören diesem Gerät. allowBackup
-         reicht ab Android 12 nicht für den Umzug, deshalb dataExtractionRules. -->
+    <!-- Keine Datensicherung und kein Umzug aufs neue GerÃ¤t: Cookies der Seiten,
+         Verlauf und das Fach mit dem Token gehÃ¶ren diesem GerÃ¤t. allowBackup
+         reicht ab Android 12 nicht fÃ¼r den Umzug, deshalb dataExtractionRules. -->
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -43,7 +43,7 @@
              schickt Adressen an Google, die Metriken Nutzungsdaten der WebView. -->
         <meta-data android:name="android.webkit.WebView.EnableSafeBrowsing" android:value="false" />
         <meta-data android:name="android.webkit.WebView.MetricsOptOut" android:value="true" />
-        <!-- Drehen ist erlaubt (Videos im Vollbild); `configChanges` hält die
+        <!-- Drehen ist erlaubt (Videos im Vollbild); `configChanges` hÃ¤lt die
              Activity samt Tabs dabei am Leben. -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
@@ -68,7 +68,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Trägt nur den BiometricPrompt vor dem Android-Keystore
+        <!-- TrÃ¤gt nur den BiometricPrompt vor dem Android-Keystore
              (Schluesselfach.kt); durchsichtig, nicht exportiert. -->
         <activity
             android:name=".SchluesselfachActivity"
@@ -77,7 +77,7 @@
             android:excludeFromRecents="true"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" />
 
-        <!-- Such-Widget (SuchWidget.kt); was es anstößt, läuft über die
+        <!-- Such-Widget (SuchWidget.kt); was es anstÃ¶ÃŸt, lÃ¤uft Ã¼ber die
              WidgetActivity, die keine fremde App erreicht. -->
         <receiver
             android:name=".SuchWidget"
@@ -89,7 +89,7 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_suche" />
         </receiver>
         <!-- Wetter-Widget (WetterWidget.kt); die Werte holt WetterWorker.kt
-             über MSM, auch bei geschlossener App. -->
+             Ã¼ber MSM, auch bei geschlossener App. -->
         <receiver
             android:name=".WetterWidget"
             android:label="@string/widget_wetter_name"
@@ -107,7 +107,7 @@
             android:taskAffinity=""
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" />
 
-        <!-- Status-Receiver für geräuschlose Hintergrund-Installationen via PackageInstaller -->
+        <!-- Status-Receiver fÃ¼r gerÃ¤uschlose Hintergrund-Installationen via PackageInstaller -->
         <receiver
             android:name=".InstallStatusReceiver"
             android:exported="false">

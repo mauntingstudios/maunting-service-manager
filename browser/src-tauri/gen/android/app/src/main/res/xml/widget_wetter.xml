@@ -2,6 +2,8 @@
 <!-- Wetter-Widget: 2 x 2 Zellen. Aktualisiert wird über WorkManager
      (WetterWorker), nicht über den System-Scheduler. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_wetter"
+    android:previewLayout="@layout/widget_wetter"
     android:minWidth="180dp"
     android:minHeight="110dp"
     android:minResizeWidth="140dp"
