@@ -1,21 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Das Wetter-Widget (WetterWidget.kt): eine ruhige Karte in den Farben der
-     Oberfläche. Die Werte schreibt WetterWorker.kt; ohne Ort steht dort ein
-     Hinweis statt eines leeren Kastens. -->
+<!-- Das Wetter-Widget (WetterWidget.kt): Gestaltet wie die Wetter-Kachel auf der Startseite.
+     Kompakt aufgebaut mit Kopfzeile (Wettersymbol + „Wetter“ + Ort), Haupttemperatur mit
+     korrekten Umlauten, amtlicher DWD-Warnung (falls aktiv) und einer 3-Stunden-Vorhersage. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/wetter_flaeche"
     android:layout_width="match_parent"
-    android:layout_height="140dp"
+    android:layout_height="match_parent"
     android:background="@drawable/widget_hintergrund"
-    android:gravity="center_vertical"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="14dp">
 
+    <!-- Kopfzeile: Symbol + „Wetter“ links, Ortsname rechts -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/wetter_header_icon"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:contentDescription="@string/widget_wetter_name"
+            android:src="@drawable/widget_wetter_teils" />
+
+        <TextView
+            android:id="@+id/wetter_header_titel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:fontFamily="sans-serif-medium"
+            android:text="@string/widget_wetter_name"
+            android:textColor="#A9BDC3"
+            android:textSize="12sp" />
 
         <TextView
             android:id="@+id/wetter_ort"
@@ -23,40 +40,203 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:ellipsize="end"
+            android:gravity="end"
             android:maxLines="1"
-            android:text="@string/widget_wetter_name"
             android:textColor="#A9BDC3"
             android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/wetter_quelle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:maxLines="1"
-            android:text="@string/widget_wetter_quelle"
-            android:textColor="#5B737A"
-            android:textSize="9sp" />
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/wetter_temp"
+    <!-- Aktuelles Wetter: Große Temperatur links, daneben Wetterlage -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:fontFamily="sans-serif-medium"
-        android:maxLines="1"
-        android:text="–"
-        android:textColor="#E7F4F7"
-        android:textSize="34sp" />
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-    <TextView
-        android:id="@+id/wetter_lage"
+        <TextView
+            android:id="@+id/wetter_temp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:text="–"
+            android:textColor="#E7F4F7"
+            android:textSize="32sp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/wetter_lage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:text="@string/widget_wetter_nicht_konfiguriert"
+                android:textColor="#E7F4F7"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Amtliche Warnungen (z. B. DWD): nur sichtbar wenn Warnungen aktiv sind -->
+    <LinearLayout
+        android:id="@+id/wetter_warnung_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:ellipsize="end"
-        android:maxLines="2"
-        android:text="@string/widget_wetter_nicht_konfiguriert"
-        android:textColor="#A9BDC3"
-        android:textSize="12sp" />
+        android:layout_marginBottom="6dp"
+        android:background="@drawable/widget_warnung_hintergrund"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="@string/widget_wetter_warnung"
+            android:src="@drawable/widget_wetter_warnung" />
+
+        <TextView
+            android:id="@+id/wetter_warnung_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="#FFB74D"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- 3-Stunden-Vorhersage: Kacheln nebeneinander -->
+    <LinearLayout
+        android:id="@+id/wetter_stunden_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_stunde_kachel"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="6dp">
+
+            <TextView
+                android:id="@+id/wetter_stunde1_zeit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="–"
+                android:textColor="#A9BDC3"
+                android:textSize="10sp" />
+
+            <ImageView
+                android:id="@+id/wetter_stunde1_icon"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="2dp"
+                android:contentDescription="@string/widget_wetter_name"
+                android:src="@drawable/widget_wetter_teils" />
+
+            <TextView
+                android:id="@+id/wetter_stunde1_temp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="–"
+                android:textColor="#E7F4F7"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_stunde_kachel"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="6dp">
+
+            <TextView
+                android:id="@+id/wetter_stunde2_zeit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="–"
+                android:textColor="#A9BDC3"
+                android:textSize="10sp" />
+
+            <ImageView
+                android:id="@+id/wetter_stunde2_icon"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="2dp"
+                android:contentDescription="@string/widget_wetter_name"
+                android:src="@drawable/widget_wetter_teils" />
+
+            <TextView
+                android:id="@+id/wetter_stunde2_temp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="–"
+                android:textColor="#E7F4F7"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_stunde_kachel"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="6dp">
+
+            <TextView
+                android:id="@+id/wetter_stunde3_zeit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="–"
+                android:textColor="#A9BDC3"
+                android:textSize="10sp" />
+
+            <ImageView
+                android:id="@+id/wetter_stunde3_icon"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="2dp"
+                android:contentDescription="@string/widget_wetter_name"
+                android:src="@drawable/widget_wetter_teils" />
+
+            <TextView
+                android:id="@+id/wetter_stunde3_temp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="–"
+                android:textColor="#E7F4F7"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

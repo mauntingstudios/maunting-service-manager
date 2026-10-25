@@ -20,6 +20,7 @@ class WetterBasisTest {
         assertTrue(wetterBasisErlaubt("http://localhost:8000"))
         assertTrue(wetterBasisErlaubt("http://LOCALHOST:8000"))
         assertTrue(wetterBasisErlaubt("http://[::1]:8000"))
+        assertTrue(wetterBasisErlaubt("http://10.0.2.2:8000"))
     }
 
     @Test
