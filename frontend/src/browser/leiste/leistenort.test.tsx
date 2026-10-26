@@ -11,6 +11,7 @@ const { Anordnung } = await import('../einstellungen/Anordnung')
 const { ALLE_EINTRAEGE, geordnet, leistenziel } = await import('./eintraege')
 const { useEinstellungenStore } = await import('../services/einstellungenStore')
 const { useSitzung } = await import('../services/sitzung')
+const { useDrittanbieterHinweisStore } = await import('../services/drittanbieterHinweisStore')
 
 function Ort() {
   return <span data-testid="ort">{useLocation().pathname}</span>
@@ -84,7 +85,9 @@ describe('Wo die Einträge stehen', () => {
     expect(useEinstellungenStore.getState().ausgeblendet).toEqual(['verlauf'])
   })
 
-  it('öffnet externe Messenger in der Seitenleiste und blendet sie aus', () => {
+  it('öffnet externe Messenger in der Seitenleiste erst nach Bestätigung und blendet sie aus', () => {
+    window.localStorage.removeItem('msb:drittanbieter_datenschutz')
+    useDrittanbieterHinweisStore.getState().schliessen()
     useEinstellungenStore.setState({ leiste: 'links' })
     zeigen(
       <>
@@ -93,6 +96,14 @@ describe('Wo die Einträge stehen', () => {
       </>,
     )
     expect(leistenNamen()).toEqual(expect.arrayContaining(['WhatsApp', 'Discord', 'Telegram', 'Instagram']))
+
+    // Klick ohne vorherige Bestätigung öffnet das zentrale Modal und navigiert NICHT in die Seitenleiste
+    fireEvent.click(screen.getByRole('button', { name: 'WhatsApp' }))
+    expect(useDrittanbieterHinweisStore.getState().ausstehend).toBe('whatsapp')
+    expect(screen.getByTestId('ort')).toHaveTextContent('/')
+
+    // Nach Bestätigung öffnet der Klick das Panel normal
+    window.localStorage.setItem('msb:drittanbieter_datenschutz', JSON.stringify({ dismissed: true }))
     fireEvent.click(screen.getByRole('button', { name: 'WhatsApp' }))
     expect(screen.getByTestId('ort')).toHaveTextContent('/whatsapp')
     fireEvent.click(screen.getByRole('button', { name: 'WhatsApp' }))
