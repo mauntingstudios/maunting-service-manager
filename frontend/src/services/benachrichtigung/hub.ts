@@ -22,7 +22,7 @@
 import { sendeGeraeteBenachrichtigung, type BenachrichtigungsErgebnis } from '@/lib/benachrichtigung'
 import { NotificationService } from '@/services/notificationService'
 import { playNotificationChime } from '@/stores/messengerNotificationStore'
-import { toast } from '@/stores/toastStore'
+import { toast, type ToastAktion } from '@/stores/toastStore'
 
 import { ereignisIstNeu } from './ereignisAblage'
 import { beanspruche } from './einmalig'
@@ -148,6 +148,8 @@ export interface Meldungstext {
   toastText?: string
   /** Wie lange der Schlüssel verbraucht bleibt. */
   fristMs?: number
+  /** Eine Handlung an der Einblendung, etwa „Ansehen“ bei einer Anfrage. */
+  aktion?: ToastAktion
 }
 
 export interface MeldungsErgebnis {
@@ -174,7 +176,7 @@ export async function melde(lage: MeldungsLage, text: Meldungstext): Promise<Mel
   }
 
   if (plan.ton) playNotificationChime()
-  if (plan.toast) toast.success(text.toastText ?? text.titel)
+  if (plan.toast) toast.success(text.toastText ?? text.titel, text.aktion)
 
   let system: BenachrichtigungsErgebnis | null = null
   // Dieselbe Kennung teilt sich diese Seite mit dem Service Worker. Hat der

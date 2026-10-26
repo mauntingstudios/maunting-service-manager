@@ -28,7 +28,7 @@ vi.mock('@/api/social', () => ({
     return antwort.profil
   }),
   getFriends: vi.fn(async () => []),
-  sendFriendRequest: vi.fn(async () => ({ success: true, message: '' })),
+  sendFriendRequest: vi.fn(async () => ({ id: 1, request_id: 1, status: 'pending', message: '' })),
 }))
 
 vi.mock('@/stores/useCallStore', () => ({

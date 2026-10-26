@@ -17,6 +17,7 @@ import { BrowserBestaetigungDialog } from '@/components/BrowserBestaetigungDialo
 import { AnrufEbene } from '@/components/calling/AnrufEbene'
 import { PanelPopupModal } from '@/components/popups/PanelPopupModal'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
+import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { PromptDialog } from '@/components/ui/PromptDialog'
 import { eingangBeobachten } from '@/desktop/vault/tresorEingang'
@@ -257,6 +258,7 @@ function Wurzel() {
     >
       {/* Dieselbe Meldestelle wie in Web und MSS: Zahl, Ton und Toast. */}
       {angemeldet && <ServerIncidentNotifier />}
+      {angemeldet && <FreundschaftsWache />}
       {/* Bei geschlossenem Messenger hält Pontis das Gerätepostfach offen. */}
       {angemeldet && social && gekoppelt && !messengerOffen && <MessengerHintergrund />}
       {handy ? (

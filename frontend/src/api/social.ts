@@ -109,23 +109,34 @@ export async function getFriends(): Promise<FriendItem[]> {
   return api<FriendItem[]>('/social/friends')
 }
 
-export async function sendFriendRequest(targetUsername: string): Promise<{ success: boolean; message: string }> {
-  return api<{ success: boolean; message: string }>('/social/friends/request', {
-    method: 'POST',
-    body: JSON.stringify({ username: targetUsername, target_username: targetUsername }),
-  })
+export async function sendFriendRequest(
+  targetUsername: string,
+): Promise<{ id: number; request_id: number; status: 'pending'; message: string }> {
+  return api<{ id: number; request_id: number; status: 'pending'; message: string }>(
+    '/social/friends/request',
+    {
+      method: 'POST',
+      body: JSON.stringify({ username: targetUsername, target_username: targetUsername }),
+    },
+  )
 }
 
-export async function acceptFriendRequest(requestId: number): Promise<{ success: boolean; message: string }> {
-  return api<{ success: boolean; message: string }>(`/social/friends/${requestId}/accept`, {
-    method: 'POST',
-  })
+export async function acceptFriendRequest(
+  requestId: number,
+): Promise<{ ok: boolean; status?: string; message: string }> {
+  return api<{ ok: boolean; status?: string; message: string }>(
+    `/social/friends/${requestId}/accept`,
+    { method: 'POST' },
+  )
 }
 
-export async function declineFriendRequest(requestId: number): Promise<{ success: boolean; message: string }> {
-  return api<{ success: boolean; message: string }>(`/social/friends/${requestId}/decline`, {
-    method: 'POST',
-  })
+export async function declineFriendRequest(
+  requestId: number,
+): Promise<{ ok: boolean; message: string }> {
+  return api<{ ok: boolean; message: string }>(
+    `/social/friends/${requestId}/decline`,
+    { method: 'POST' },
+  )
 }
 
 /**

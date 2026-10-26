@@ -201,9 +201,17 @@ export function useKontaktdaten(currentUserId: number, messengerGesperrt: boolea
       if (sichtbar()) laden()
     }
     document.addEventListener('visibilitychange', beiSichtbar)
+    // Annahme und Entfernen sollen nicht bis zum naechsten Takt warten.
+    // Abgelehnt/Zurueckgezogen betrifft nur die Anfrageliste, nicht die Freunde.
+    const beiFreundschaft = (event: Event) => {
+      const typ = (event as CustomEvent<{ type?: string }>).detail?.type
+      if (typ === 'friend_request_accepted' || typ === 'friend_removed') laden()
+    }
+    window.addEventListener('msm:sync-event', beiFreundschaft)
     return () => {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', beiSichtbar)
+      window.removeEventListener('msm:sync-event', beiFreundschaft)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, messengerGesperrt])

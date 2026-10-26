@@ -374,6 +374,15 @@ class Hintergrunddienst : Service() {
             return
         }
 
+        if (type == "friend_request_received") {
+            if (!json.optBoolean("melden", true)) return
+            val kennung = json.optString("ereignis", "")
+            if (kennung.isNotEmpty() && schonGesehen(kennung)) return
+            val name = json.optString("from_username", "").ifEmpty { "Jemand" }
+            melden("Neue Freundschaftsanfrage", "$name möchte mit dir befreundet sein.")
+            return
+        }
+
         if (type == "incoming_call") {
             val callerName = json.optString("caller_name", "").ifEmpty { "Jemand" }
             melden("Eingehender Anruf", "$callerName ruft an...")

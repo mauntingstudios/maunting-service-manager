@@ -203,4 +203,14 @@ describe('melde', () => {
     expect(warnung).toHaveBeenCalled()
     warnung.mockRestore()
   })
+
+  it('reicht eine Aktion an die Einblendung weiter', async () => {
+    mocks.toast.mockClear()
+    const aktion = { label: 'Ansehen', ausfuehren: vi.fn() }
+    await melde(
+      lage({ art: 'freundschaft', absenderId: PARTNER }),
+      { titel: 'Neue Freundschaftsanfrage', text: 'alice', aktion },
+    )
+    expect(mocks.toast).toHaveBeenCalledWith('Neue Freundschaftsanfrage', aktion)
+  })
 })

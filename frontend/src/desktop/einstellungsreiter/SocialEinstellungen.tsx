@@ -146,6 +146,12 @@ export function SocialEinstellungen() {
   useEffect(() => {
     void loadData()
     void syncBlockedFromBackend()
+    const beiFreundschaft = (event: Event) => {
+      const typ = (event as CustomEvent<{ type?: string }>).detail?.type
+      if (typ?.startsWith('friend_')) void loadData()
+    }
+    window.addEventListener('msm:sync-event', beiFreundschaft)
+    return () => window.removeEventListener('msm:sync-event', beiFreundschaft)
   }, [loadData, syncBlockedFromBackend])
 
   const handleSendFriendRequest = async (e: React.FormEvent) => {
@@ -162,6 +168,8 @@ export function SocialEinstellungen() {
       setIncomingRequests(rData.incoming)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : t('profile.friends.sendError'))
+      // Eine bestehende Gegenanfrage (409) sofort im Eingang zeigen.
+      await loadData()
     } finally {
       setSendingRequest(false)
     }

@@ -157,7 +157,8 @@ describe('SocialTab (Profile page)', () => {
 
   it('ermöglicht das Annehmen einer Freundschaftsanfrage', async () => {
     vi.mocked(socialApi.acceptFriendRequest).mockResolvedValueOnce({
-      success: true,
+      ok: true,
+      status: 'accepted',
       message: 'Angenommen',
     })
 
@@ -207,7 +208,9 @@ describe('SocialTab (Profile page)', () => {
 
   it('validiert das Hinzufügen von Freunden (ignoriert Whitespace und akzeptiert Benutzernamen)', async () => {
     vi.mocked(socialApi.sendFriendRequest).mockResolvedValueOnce({
-      success: true,
+      id: 1,
+      request_id: 1,
+      status: 'pending',
       message: 'Anfrage gesendet',
     })
 

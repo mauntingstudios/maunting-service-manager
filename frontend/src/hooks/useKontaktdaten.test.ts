@@ -82,4 +82,15 @@ describe('useKontaktdaten', () => {
     rerender({ gesperrt: false })
     await waitFor(() => expect(api.getGroups).toHaveBeenCalledTimes(2))
   })
+
+  it('holt die Freundesliste sofort, wenn eine Anfrage angenommen wurde', async () => {
+    renderHook(() => useKontaktdaten(ICH, false))
+    await waitFor(() => expect(api.getFriends).toHaveBeenCalledTimes(1))
+
+    window.dispatchEvent(
+      new CustomEvent('msm:sync-event', { detail: { type: 'friend_request_accepted', friend_id: 5 } }),
+    )
+
+    await waitFor(() => expect(api.getFriends).toHaveBeenCalledTimes(2))
+  })
 })

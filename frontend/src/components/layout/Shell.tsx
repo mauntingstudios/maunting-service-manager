@@ -5,6 +5,7 @@ import { Topbar } from './Topbar'
 import { VersionFooter } from '@/components/VersionFooter'
 import { AiRunNotice } from '@/components/ai/AiRunNotice'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
+import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
 import { PanelPopupModal } from '@/components/popups/PanelPopupModal'
 import { AnrufEbene } from '@/components/calling/AnrufEbene'
 import { CrossDeviceCallBanner } from '@/components/calling/CrossDeviceCallBanner'
@@ -142,6 +143,7 @@ export function Shell() {
 
       {/* Push- & Pop-up-Benachrichtigungen bei Server-Vorfällen & Kalender-Erinnerungen */}
       <ServerIncidentNotifier />
+      <FreundschaftsWache />
       {socialEnabled && !isChatPage && <MessengerHintergrund />}
 
       {/* Aktive Pop-ups / Ankündigungen des Panels */}

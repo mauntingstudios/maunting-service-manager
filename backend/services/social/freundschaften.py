@@ -208,7 +208,7 @@ class FreundschaftenMixin:
         if target.id == user_id:
             raise HTTPException(status_code=400, detail="Sie können sich nicht selbst als Freund hinzufügen")
 
-        existing = (
+        rows = (
             db.query(UserFriend)
             .filter(
                 or_(
@@ -216,30 +216,26 @@ class FreundschaftenMixin:
                     and_(UserFriend.user_id == target.id, UserFriend.friend_id == user_id),
                 )
             )
-            .first()
+            .all()
         )
         # Eigens gefragt: bei gegenseitiger Sperre liegen zwei Zeilen im
         # Bestand, und `.first()` sähe womöglich nur eine davon.
         if cls.is_blocked(db, user_id, target.id):
             raise HTTPException(status_code=400, detail="Aktion nicht möglich: Benutzer ist blockiert")
-        if existing:
-            if existing.status == "accepted":
-                raise HTTPException(status_code=400, detail="Sie sind bereits mit diesem Benutzer befreundet")
-            if existing.status == "pending":
-                if existing.user_id == user_id:
-                    raise HTTPException(status_code=400, detail="Freundschaftsanfrage wurde bereits gesendet")
-                else:
-                    # Der andere hat bereits angefragt -> automatisch annehmen!
-                    existing.status = "accepted"
-                    existing.updated_at = _now()
-                    db.commit()
-                    AchievementService.unlock_achievement(db, user_id, "social_handshake")
-                    AchievementService.unlock_achievement(db, target.id, "social_handshake")
-                    SyncEventService.publish(
-                        {"type": "friend_request_accepted", "friend_id": user_id},
-                        user_id=target.id,
-                    )
-                    return {"id": existing.id, "status": "accepted", "message": "Freundschaftsanfrage bestätigt"}
+        if any(r.status == "accepted" for r in rows):
+            raise HTTPException(status_code=409, detail="Sie sind bereits mit diesem Benutzer befreundet")
+        if any(r.status == "pending" and r.user_id == user_id for r in rows):
+            raise HTTPException(status_code=409, detail="Freundschaftsanfrage wurde bereits gesendet")
+        if any(r.status == "pending" and r.friend_id == user_id for r in rows):
+            # Eine Gegenanfrage ist kein Einverständnis. Sie bleibt liegen, bis
+            # der Empfänger sie ausdrücklich annimmt.
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{target.username} hat dir bereits eine Freundschaftsanfrage gesendet. "
+                    "Nimm sie im Messenger an."
+                ),
+            )
 
         req = UserFriend(
             user_id=user_id,
@@ -253,17 +249,49 @@ class FreundschaftenMixin:
 
         sender = db.query(User).filter_by(id=user_id).first()
         sender_name = sender.username if sender else "Jemand"
+        ereignis = f"friend-request:{req.id}"
 
-        # Benachrichtigung via SSE
+        zusteller = SyncEventService.zustelllage(user_id=target.id)[0]
         SyncEventService.publish(
             {
                 "type": "friend_request_received",
+                "request_id": req.id,
                 "from_user_id": user_id,
                 "from_username": sender_name,
+                "from_avatar_url": sender.avatar_url if sender else None,
+                "ereignis": ereignis,
             },
             user_id=target.id,
+            zusteller=zusteller,
+            melden_markieren=True,
         )
-        return {"id": req.id, "status": "pending", "message": "Freundschaftsanfrage erfolgreich gesendet"}
+        # Ohne offenen Client (kein Fenster, kein Android-Dienst) traegt Push
+        # die Meldung. Mit Client zeigt genau dieser sie; Push waere die zweite.
+        if zusteller is None:
+            try:
+                from services import webpush_service
+
+                webpush_service.sende_an_konto(
+                    db,
+                    target.id,
+                    {
+                        "type": "friend_request",
+                        "title": "Neue Freundschaftsanfrage",
+                        "body": f"{sender_name} möchte mit dir befreundet sein.",
+                        "tag": f"msm-friend-{req.id}",
+                        "ereignis": ereignis,
+                        "url": "/chat",
+                        "from_user_id": user_id,
+                    },
+                )
+            except Exception:
+                logger.warning("Freundschafts-Push nicht zugestellt", exc_info=True)
+        return {
+            "id": req.id,
+            "request_id": req.id,
+            "status": "pending",
+            "message": "Freundschaftsanfrage erfolgreich gesendet",
+        }
 
     @classmethod
     def accept_friend_request(cls, db: Session, user_id: int, request_id: int) -> dict[str, Any]:
@@ -274,14 +302,55 @@ class FreundschaftenMixin:
 
         req.status = "accepted"
         req.updated_at = _now()
+        # Eine zweite offene Zeile in der Gegenrichtung (zwei gleichzeitige
+        # Anfragen) ist mit dieser Annahme erledigt. Sie darf nicht als
+        # Geisteranfrage stehen bleiben.
+        db.query(UserFriend).filter(
+            or_(
+                and_(UserFriend.user_id == req.user_id, UserFriend.friend_id == req.friend_id),
+                and_(UserFriend.user_id == req.friend_id, UserFriend.friend_id == req.user_id),
+            ),
+            UserFriend.status == "pending",
+            UserFriend.id != req.id,
+        ).delete(synchronize_session=False)
         db.commit()
 
         AchievementService.unlock_achievement(db, user_id, "social_handshake")
         AchievementService.unlock_achievement(db, req.user_id, "social_handshake")
 
+        annehmender = db.query(User).filter_by(id=user_id).first()
+        anfragender = db.query(User).filter_by(id=req.user_id).first()
+        annehmender_name = annehmender.username if annehmender else "Jemand"
+        anfragender_name = anfragender.username if anfragender else "Jemand"
+
+        # Der Anfragende erfährt es in genau einem seiner Clients; seine
+        # übrigen Fenster aktualisieren still. Die übrigen Geräte des
+        # Annehmenden auch.
+        zusteller = SyncEventService.zustelllage(user_id=req.user_id)[0]
         SyncEventService.publish(
-            {"type": "friend_request_accepted", "friend_id": user_id},
+            {
+                "type": "friend_request_accepted",
+                "request_id": req.id,
+                "friend_id": user_id,
+                "friend_username": annehmender_name,
+                "accepted_by": user_id,
+                "ereignis": f"friend-accepted:{req.id}:{req.user_id}",
+            },
             user_id=req.user_id,
+            zusteller=zusteller,
+            melden_markieren=True,
+        )
+        SyncEventService.publish(
+            {
+                "type": "friend_request_accepted",
+                "request_id": req.id,
+                "friend_id": req.user_id,
+                "friend_username": anfragender_name,
+                "accepted_by": user_id,
+                "melden": False,
+                "ereignis": f"friend-accepted:{req.id}:{user_id}",
+            },
+            user_id=user_id,
         )
         return {"ok": True, "status": "accepted", "message": "Freundschaft angenommen"}
 
@@ -292,8 +361,24 @@ class FreundschaftenMixin:
         if not req or (req.user_id != user_id and req.friend_id != user_id):
             raise HTTPException(status_code=404, detail="Anfrage nicht gefunden")
 
+        ergebnis = "declined" if req.friend_id == user_id else "cancelled"
+        anfragender_id = req.user_id
+        empfaenger_id = req.friend_id
         db.delete(req)
         db.commit()
+
+        SyncEventService.publish(
+            {
+                "type": f"friend_request_{ergebnis}",
+                "request_id": request_id,
+                "actor_id": user_id,
+                "requester_id": anfragender_id,
+                "target_user_id": empfaenger_id,
+                "melden": False,
+                "ereignis": f"friend-{ergebnis}:{request_id}",
+            },
+            user_ids={anfragender_id, empfaenger_id},
+        )
         return True
 
     @classmethod
@@ -334,8 +419,25 @@ class FreundschaftenMixin:
         db.commit()
 
         SyncEventService.publish(
-            {"type": "friend_removed", "friend_id": user_id},
+            {
+                "type": "friend_removed",
+                "friend_id": user_id,
+                "removed_by": user_id,
+                "melden": False,
+                "ereignis": f"friend-removed:{user_id}:{other_id}",
+            },
             user_id=other_id,
+        )
+        # Auch die eigenen übrigen Fenster nehmen die Zeile sofort heraus.
+        SyncEventService.publish(
+            {
+                "type": "friend_removed",
+                "friend_id": other_id,
+                "removed_by": user_id,
+                "melden": False,
+                "ereignis": f"friend-removed:{user_id}:{other_id}:self",
+            },
+            user_id=user_id,
         )
         return True
 

@@ -342,20 +342,12 @@ export function ServerIncidentNotifier() {
       }
     }, POLL_INTERVAL_MS)
 
-    // Sofortige Echtzeit-Push-Benachrichtigung für Freundschaftsanfragen & Messenger-Nachrichten
+    // Sofortige Echtzeitmeldungen fuer Messenger-Nachrichten. Freundschafts-
+    // anfragen meldet `FreundschaftsWache` – mit Aktion und `melden`-Regel.
     const handleSyncEvent = (e: Event) => {
       const ce = e as CustomEvent<any>
       const detail = ce.detail
-      if (detail?.type === 'friend_request_received') {
-        const senderName = detail.from_username || t('notifications.someUser')
-        if (user.device_notifications !== false) {
-          void sendeGeraeteBenachrichtigung({
-            titel: t('notifications.friendRequestTitle'),
-            text: t('notifications.friendRequestText', { name: senderName }),
-          })
-          toast.success(t('notifications.friendRequestToast', { name: senderName }))
-        }
-      } else if (detail?.type === 'achievement_unlocked') {
+      if (detail?.type === 'achievement_unlocked') {
         // Bis 09/2026 verschickte das Backend dieses Ereignis, und niemand
         // hörte zu: neue Abzeichen sah nur, wer die Liste selbst öffnete.
         const ach = detail.achievement

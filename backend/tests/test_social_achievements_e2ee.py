@@ -83,6 +83,9 @@ def test_friends_workflow_and_handshake(db: Session):
     # Alice sendet Anfrage an Bob
     req_res = SocialService.send_friend_request(db, u1.id, "bob")
     assert req_res["status"] == "pending"
+    # Senden ist kein Einverstaendnis: erst Bobs Annahme macht sie zu Freunden.
+    assert SocialService.is_confirmed_friend(db, u1.id, u2.id) is False
+    assert SocialService.get_friends(db, u1.id) == []
 
     # Bob sieht eingehende Anfrage
     requests = SocialService.get_requests(db, u2.id)

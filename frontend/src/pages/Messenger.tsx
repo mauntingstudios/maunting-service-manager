@@ -137,6 +137,7 @@ import {
 } from '@/services/nachrichtVerfall'
 import { sessionChatCache } from '@/services/klartextSpeicher'
 import { ErwaehnungsWache } from '@/components/social/ErwaehnungsWache'
+import { FreundschaftsanfragenKarte } from '@/components/social/FreundschaftsanfragenKarte'
 import { FunkenWache } from '@/components/social/FunkenWache'
 import { FunkenAbzeichen } from '@/components/social/FunkenBadge'
 import { rettungMoeglich } from '@/services/funkenService'
@@ -290,6 +291,25 @@ function MessengerSeite() {
     handleAnheftenChat,
     handleArchivieren,
   } = useMessengerAuswahl({ kontakte: contactsList, gruppen: groups, kontakteGeladen, t })
+
+  /**
+   * „Ansehen“ aus der Freundschaftsmeldung.
+   *
+   * Auf dem Handy liegt die Liste hinter dem offenen Chat. Der Knopf soll
+   * deshalb den Chat schliessen und die Karte ins Bild holen, nicht nur zur
+   * ohnehin offenen Route wechseln.
+   */
+  useEffect(() => {
+    const zeigen = () => {
+      handleZurueckZurListe()
+      setMobileNavTab('chats')
+      window.setTimeout(() => {
+        document.getElementById('freundschaftsanfragen')?.scrollIntoView?.({ block: 'nearest' })
+      }, 0)
+    }
+    window.addEventListener('msm:freundschaftsanfragen-zeigen', zeigen)
+    return () => window.removeEventListener('msm:freundschaftsanfragen-zeigen', zeigen)
+  }, [handleZurueckZurListe, setMobileNavTab])
 
   const {
     isCreateGroupOpen,
@@ -2249,6 +2269,7 @@ function MessengerSeite() {
           }`}
         >
           <MessengerModeNav modus={mobileNavTab} onModus={setMobileNavTab} hatStories={stories.length > 0} />
+          <FreundschaftsanfragenKarte />
 
           {/* Top Search & Category Tabs */}
           <div className="p-2.5 border-b border-outline-variant/15 space-y-2 bg-surface-container/40">

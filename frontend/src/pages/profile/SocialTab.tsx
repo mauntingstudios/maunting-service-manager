@@ -107,6 +107,13 @@ export function SocialTab() {
     void loadFriendsData()
     void loadMilestonesData()
     void syncBlockedFromBackend()
+    const beiFreundschaft = (event: Event) => {
+      const typ = (event as CustomEvent<{ type?: string }>).detail?.type
+      if (typ?.startsWith('friend_')) void loadFriendsData()
+    }
+    window.addEventListener('msm:sync-event', beiFreundschaft)
+    return () => window.removeEventListener('msm:sync-event', beiFreundschaft)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleSendFriendRequest = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -123,6 +130,9 @@ export function SocialTab() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t('social.contacts.requestSendFailed')
       toast.error(msg)
+      // Bei einer Gegenanfrage (409) steht sie bereits im Eingang; sofort
+      // anzeigen, statt auf den naechsten Takt zu warten.
+      await loadFriendsData()
     } finally {
       setSendingRequest(false)
     }

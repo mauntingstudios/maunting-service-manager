@@ -22,6 +22,7 @@ import { api, isNetworkOrOfflineError } from '@/api/client'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiRunNotice } from '@/components/ai/AiRunNotice'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
+import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
 import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
 import { BrowserBestaetigungDialog } from '@/components/BrowserBestaetigungDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -558,6 +559,7 @@ export function DesktopApp() {
             <KalibrierungsHinweis />
             <AiRunNotice />
             <ServerIncidentNotifier />
+            <FreundschaftsWache />
             <PanelPopupModal />
             {publicSettings.social_enabled && <AnrufEbene />}
             {isAndroid && <OverlayFenster inApp={true} />}

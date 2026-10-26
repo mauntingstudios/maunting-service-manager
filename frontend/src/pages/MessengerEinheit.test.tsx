@@ -175,6 +175,9 @@ const api = vi.hoisted(() => ({
     ephemeral_enabled_by_user_id: null,
   })),
   sendTypingSignal: vi.fn(async () => ({ ok: true })),
+  getFriendRequests: vi.fn(async () => ({ incoming: [], outgoing: [] })),
+  acceptFriendRequest: vi.fn(async () => ({ ok: true, status: 'accepted', message: '' })),
+  declineFriendRequest: vi.fn(async () => ({ ok: true, message: '' })),
 }))
 
 vi.mock('@/api/social', async (importOriginal) => {
