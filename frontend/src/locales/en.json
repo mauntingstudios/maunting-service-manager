@@ -8869,7 +8869,7 @@
       "fortschrittName": "Progress of {{name}}",
       "titel": "Downloads",
       "keineTreffer": "No downloads found.",
-      "suchen": "Search downloads…",
+      "suchen": "Search downloads",
       "kategorieFilter": "Filter file category",
       "dateiFehlt": "File no longer exists",
       "leerenTitel": "Clear download list?",
@@ -8880,9 +8880,9 @@
       "kategorien": {
         "alle": "All downloads",
         "dokumente": "Documents (PDF, Office, Text)",
-        "bilder": "Images & Graphics",
-        "programme": "Applications & Scripts",
-        "archive": "Archives & Images (ZIP, ISO)",
+        "bilder": "Images & graphics",
+        "programme": "Applications & scripts",
+        "archive": "Archives & disk images (ZIP, ISO)",
         "andere": "Other file types"
       }
     },
