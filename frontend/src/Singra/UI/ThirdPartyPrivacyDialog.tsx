@@ -121,29 +121,29 @@ export function ThirdPartyPrivacyDialog({
           <p className="text-body-sm leading-relaxed text-on-surface-variant">
             {t('browser.drittanbieterHinweis.fazit')}
           </p>
-
-          <div className="pt-2">
-            <label
-              htmlFor={checkboxId}
-              className="flex items-center gap-2.5 cursor-pointer text-body-sm font-medium text-on-surface select-none"
-            >
-              <Checkbox
-                id={checkboxId}
-                checked={nieWieder}
-                onCheckedChange={setNieWieder}
-              />
-              <span>{t('browser.drittanbieterHinweis.nichtMehrAnzeigen')}</span>
-            </label>
-          </div>
         </div>
 
-        <div className="px-6 pb-6 pt-3 border-t border-outline-variant/20 bg-transparent flex flex-col-reverse sm:flex-row items-center sm:justify-end gap-2.5 shrink-0">
-          <Button variant="ghost" size="sm" onClick={onCancel}>
-            {t('browser.drittanbieterHinweis.abbrechen')}
-          </Button>
-          <Button variant="primary" size="sm" autoFocus onClick={handleConfirm}>
-            {t('browser.drittanbieterHinweis.fortfahren')}
-          </Button>
+        <div className="px-6 pb-6 pt-3 border-t border-outline-variant/20 bg-transparent flex flex-col gap-3.5 shrink-0">
+          <label
+            htmlFor={checkboxId}
+            className="flex items-center gap-2.5 cursor-pointer text-body-sm font-medium text-on-surface select-none"
+          >
+            <Checkbox
+              id={checkboxId}
+              checked={nieWieder}
+              onCheckedChange={setNieWieder}
+            />
+            <span>{t('browser.drittanbieterHinweis.nichtMehrAnzeigen')}</span>
+          </label>
+
+          <div className="flex flex-col-reverse sm:flex-row items-center sm:justify-end gap-2.5">
+            <Button variant="ghost" size="sm" onClick={onCancel}>
+              {t('browser.drittanbieterHinweis.abbrechen')}
+            </Button>
+            <Button variant="primary" size="sm" autoFocus onClick={handleConfirm}>
+              {t('browser.drittanbieterHinweis.fortfahren')}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
