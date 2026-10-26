@@ -108,7 +108,7 @@ jobs:
           # Ein zweiter Lauf fuer denselben Tag findet das eigene Paket als
           # "vorheriges"; vpk pack bricht dann mit "exists" ab (20.10.2026).
           if [[ -n "$previous_version" && "$previous_version" != "${{ steps.version.outputs.clean_version }}" ]]; then
-            vpk download github --repoUrl "https://github.com/einmalmaik/maunting-server-manager" --outputDir "browser-velopack" --channel "pontis"
+            vpk download github --repoUrl "https://github.com/mauntingstudios/maunting-service-manager" --outputDir "browser-velopack" --channel "pontis"
           else
             echo "Kein aelterer Pontis-Feed; das Paket wird als Vollpaket gebaut."
           fi

@@ -17,13 +17,17 @@ vi.mock('../vault/TresorSicherheitTab', () => ({
   ),
 }))
 
+vi.mock('@/pages/profile/DevicesTab', () => ({
+  DevicesTab: () => <div data-testid="mock-devices-tab">Geräte</div>,
+}))
+
 describe('SicherheitEinstellungen', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     usePublicSettingsStore.setState({ social_enabled: true, vault_enabled: true })
   })
 
-  it('rendert beide Bereiche bei aktiven Modulen', () => {
+  it('rendert alle Bereiche bei aktiven Modulen', () => {
     render(
       <MemoryRouter>
         <SicherheitEinstellungen />
@@ -31,6 +35,7 @@ describe('SicherheitEinstellungen', () => {
     )
     expect(screen.getByTestId('mock-messenger-tab')).toBeInTheDocument()
     expect(screen.getByTestId('mock-tresor-tab')).toBeInTheDocument()
+    expect(screen.getByTestId('mock-devices-tab')).toBeInTheDocument()
     expect(screen.getByText('Messenger')).toBeInTheDocument()
     expect(screen.getByText('Tresor')).toBeInTheDocument()
   })
@@ -55,12 +60,13 @@ describe('SicherheitEinstellungen', () => {
     expect(screen.queryByTestId('mock-tresor-tab')).not.toBeInTheDocument()
   })
 
-  it('reicht offline an TresorSicherheitTab weiter', () => {
+  it('reicht offline an TresorSicherheitTab weiter und blendet Geraete aus', () => {
     render(
       <MemoryRouter>
         <SicherheitEinstellungen offline={true} />
       </MemoryRouter>,
     )
     expect(screen.getByTestId('mock-tresor-tab')).toHaveAttribute('data-offline', 'true')
+    expect(screen.queryByTestId('mock-devices-tab')).not.toBeInTheDocument()
   })
 })

@@ -12,6 +12,7 @@ import { toast } from '@/stores/toastStore'
 import { useAnkerLage } from '@/Singra/UI/Ankerlage'
 import { Omnibox } from '@/Singra/UI'
 
+import { formatiereAdresseZurAnzeige } from '../services/urlFormat'
 import { useEinstellungenStore, useWirksameSuche } from '../services/einstellungenStore'
 import { msmSucheBegriff } from '../services/intern'
 import { bereinigeUrl } from '../services/linkReiniger'
@@ -57,7 +58,7 @@ export const Adresszeile = forwardRef<AdresszeileGriff>(function Adresszeile(_, 
 
   // Bei der MSM-Suche steht der Begriff da, nicht `msb://suche?q=…`.
   const begriff = tab ? msmSucheBegriff(tab.url) : null
-  const adresse = begriff ?? tab?.url ?? ''
+  const adresse = begriff ?? (tab?.url ? formatiereAdresseZurAnzeige(tab.url) : '')
   useEffect(() => {
     if (!tippt) setText(adresse)
   }, [adresse, tippt, tab?.id])
@@ -253,11 +254,11 @@ export const Adresszeile = forwardRef<AdresszeileGriff>(function Adresszeile(_, 
                 <span className="min-w-0 flex-1 truncate">
                   {v.art === 'eingabe'
                     ? istAdresse(v.titel)
-                      ? v.url
+                      ? formatiereAdresseZurAnzeige(v.url)
                       : t('browser.adresse.suchenMit', { begriff: v.titel, suchmaschine: suchName(suche, t) })
                     : v.titel}
                 </span>
-                {v.art !== 'eingabe' && <span className="max-w-[40%] truncate text-label-sm text-on-surface-variant">{v.url}</span>}
+                {v.art !== 'eingabe' && <span className="max-w-[40%] truncate text-label-sm text-on-surface-variant">{formatiereAdresseZurAnzeige(v.url)}</span>}
               </li>
             ))}
           </ul>,
