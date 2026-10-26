@@ -1,6 +1,6 @@
 """Zentraler Suchmaschinen-Dienst fuer Maunting Search und Singra (`ai_web_search_service.py`).
 
-Eine gemeinsame Suchschicht fuer den Secure Browser (`POST /api/browser/suche`)
+Eine gemeinsame Suchschicht fuer Maunting Pontis (`POST /api/browser/suche`)
 und das Werkzeug `web_search` der KI:
 
 1. **Lokaler SearXNG-Sidecar oder eigener SearXNG-Endpunkt** als private

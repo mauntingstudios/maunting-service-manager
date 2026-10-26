@@ -1,4 +1,4 @@
-"""Neutrale, temporäre KI-Suchzusammenfassung für SearXNG im Secure Browser.
+"""Neutrale, temporäre KI-Suchzusammenfassung für SearXNG in Maunting Pontis.
 
 Eigenschaften:
 - 0 Bytes Speicherung in der Datenbank (kein Chat, keine Nachricht, keine Persistenz).

@@ -7,6 +7,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (befehl: string, args: Record<string, unknown>) => {
     gerufen.push({ befehl, args })
     if (befehl === 'konfig_aendern') return Promise.resolve({ ...(args.felder as object) })
+    if (befehl === 'download_pruefen') return Promise.resolve(true)
     return Promise.resolve(null)
   },
 }))
@@ -15,7 +16,7 @@ const { useDownloadsStore } = await import('../services/downloadsStore')
 const { DownloadsPanel } = await import('./Downloads')
 const { Downloads } = await import('../einstellungen/Downloads')
 
-const melde = (nr: number, stand: 'start' | 'pruefung' | 'fertig' | 'blockiert' | 'fehler' | 'speicher', datei: string) =>
+const melde = (nr: number, stand: 'start' | 'pruefung' | 'fertig' | 'blockiert' | 'fehler' | 'speicher' | 'abgebrochen', datei: string) =>
   useDownloadsStore.getState().ereignis({ art: 'download', id: 'tab-a', nr, stand, url: 'https://example.com/datei.zip', datei })
 
 beforeEach(() => {
@@ -168,5 +169,46 @@ describe('Download-Fortschritt', () => {
     render(<DownloadsPanel />)
     const zeile = screen.getByText('doch-nicht.zip').closest('li')!
     expect(within(zeile).getByText('Abgebrochen')).toBeInTheDocument()
+  })
+})
+
+describe('Modulare Suche und Dateistatus', () => {
+  it('filtert Downloads über das Suchfeld nach Dateiname', () => {
+    melde(1, 'fertig', 'C:\\Downloads\\bericht.pdf')
+    melde(2, 'fertig', 'C:\\Downloads\\foto.png')
+    render(<DownloadsPanel />)
+
+    expect(screen.getByText('bericht.pdf')).toBeInTheDocument()
+    expect(screen.getByText('foto.png')).toBeInTheDocument()
+
+    const suchFeld = screen.getByRole('textbox', { name: /downloads durchsuchen/i })
+    fireEvent.change(suchFeld, { target: { value: 'foto' } })
+
+    expect(screen.queryByText('bericht.pdf')).toBeNull()
+    expect(screen.getByText('foto.png')).toBeInTheDocument()
+  })
+
+  it('zeigt fehlende Dateien mit Hinweistext an und deaktiviert das Öffnen', () => {
+    melde(1, 'fertig', 'C:\\Downloads\\geloescht.pdf')
+    useDownloadsStore.getState().existenzSetzen(1, false)
+
+    render(<DownloadsPanel />)
+    const zeile = screen.getByText('geloescht.pdf').closest('li')!
+    expect(within(zeile).getByText('Datei nicht mehr vorhanden')).toBeInTheDocument()
+    expect(within(zeile).queryByRole('button', { name: /öffnen/i })).toBeNull()
+  })
+
+  it('öffnet den Bestätigungsdialog bei vorhandenen Dateien auf der Festplatte', async () => {
+    melde(1, 'fertig', 'C:\\Downloads\\aufheben.pdf')
+    render(<DownloadsPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Liste leeren' }))
+    expect(await screen.findByText('Download-Liste leeren?')).toBeInTheDocument()
+
+    // Dialog bestätigen ohne Checkbox -> leert nur die Liste, löscht keine Dateien von Platte
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Liste leeren' }))
+    expect(useDownloadsStore.getState().downloads).toHaveLength(0)
+    expect(gerufen.filter((g) => g.befehl === 'download_loeschen')).toHaveLength(0)
   })
 })

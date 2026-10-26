@@ -249,6 +249,7 @@ export const nativ = {
   downloadLoeschen: (pfad?: string | null) => rufen('download_loeschen', { pfad: pfad ?? null }),
   downloadOrdner: () => rufen<string>('download_ordner'),
   downloadOrdnerOeffnen: () => rufen('download_ordner_oeffnen'),
+  downloadPruefen: (pfad: string) => rufen<boolean>('download_pruefen', { pfad }),
   /** `seit` in Millisekunden seit 1970; ohne: alles. */
   seitendatenLoeschen: (seit?: number) => rufen('seitendaten_loeschen', { seit: seit ?? null }),
   seitenrechte: () => rufen<Seitenrecht[]>('seitenrechte'),

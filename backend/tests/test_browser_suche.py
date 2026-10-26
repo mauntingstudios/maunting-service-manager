@@ -1,4 +1,4 @@
-"""Die MSM-Suche des Secure Browsers (`routers/browser_suche.py`).
+"""Die MSM-Suche von Maunting Pontis (`routers/browser_suche.py`).
 
 Eigene kleine App mit dem Router: die Anmeldung kommt per Override, SearXNG
 ist nachgestellt. So prüft der Test die Route selbst, ohne Datenbank.

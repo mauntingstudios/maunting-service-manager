@@ -1,7 +1,7 @@
 # Maunting Search Sidecar (SearXNG)
 
 Isolierter, lokaler Metasuchmaschinen-Sidecar für den Maunting Server Manager.
-Er versorgt die Suchseite des Secure Browsers (**Maunting Search**) und die
+Er versorgt die Suchseite von Maunting Pontis (**Maunting Search**) und die
 Websuche des KI-Assistenten. Der Browser zeigt im UI keinen SearXNG-Hinweis –
 die Suchseite tritt als **Maunting Search** auf. Die Metasuche-Architektur basiert
 technisch auf SearXNG, das unter der **GNU Affero General Public License

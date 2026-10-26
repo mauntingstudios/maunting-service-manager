@@ -8836,7 +8836,7 @@
       "leerenText": "Alle besuchten Seiten verschwinden aus der Liste. Cookies und Website-Daten bleiben; die löscht man in den Einstellungen."
     },
     "downloads": {
-      "leer": "In dieser Sitzung wurde nichts heruntergeladen.",
+      "leer": "Noch keine Downloads vorhanden.",
       "listeLeeren": "Liste leeren",
       "ordner": "Ordner öffnen",
       "ordnerOeffnen": "Download-Ordner öffnen",
@@ -8866,7 +8866,25 @@
       "wartet": "Wartet seit {{zeit}} — der Transfer steht, läuft aber weiter",
       "abbrechen": "Download abbrechen",
       "abbrechenName": "{{name}} abbrechen",
-      "fortschrittName": "Fortschritt von {{name}}"
+      "fortschrittName": "Fortschritt von {{name}}",
+      "titel": "Downloads",
+      "keineTreffer": "Keine Downloads gefunden.",
+      "suchen": "Downloads durchsuchen…",
+      "kategorieFilter": "Dateikategorie filtern",
+      "dateiFehlt": "Datei nicht mehr vorhanden",
+      "leerenTitel": "Download-Liste leeren?",
+      "leerenBeschreibung": "Möchtest du die Einträge aus der Chronik des Browsers entfernen?",
+      "auchDateienLoeschen": "Zugehörige Dateien auch von der Festplatte löschen",
+      "auchDateienLoeschenHinweis": "{{anzahl}} heruntergeladene Dateien werden endgültig vom Datenträger entfernt.",
+      "allesEndgueltigLoeschen": "Dateien & Liste löschen",
+      "kategorien": {
+        "alle": "Alle Downloads",
+        "dokumente": "Dokumente (PDF, Office, Text)",
+        "bilder": "Bilder & Grafiken",
+        "programme": "Programme & Skripte",
+        "archive": "Archive & Abbilder (ZIP, ISO)",
+        "andere": "Andere Dateitypen"
+      }
     },
     "hintergrund": {
       "schlicht": "Schlicht",
@@ -8881,14 +8899,13 @@
       "feld": "Sommerfeld",
       "eigen": "Eigenes Bild"
     },
-
     "update": {
       "name": "Updates",
       "hinweis": "Fragt bei GitHub nach einer neuen Version. Unter Windows lädt sie sich still im Hintergrund; neu gestartet wird erst auf deinen Klick.",
       "pruefen": "Jetzt prüfen",
       "aktuell": "Du hast die neueste Version.",
       "da": "Version {{version}} ist da.",
-    "bereit": "Version {{version}} wird im Hintergrund vorbereitet. Neu starten über die Update-Anzeige.",
+      "bereit": "Version {{version}} wird im Hintergrund vorbereitet. Neu starten über die Update-Anzeige.",
       "installieren": "Installieren und neu starten",
       "nichtErreicht": "GitHub war nicht erreichbar. Versuch es später noch einmal.",
       "fehler": "Das Update ließ sich nicht installieren.",
@@ -8938,7 +8955,6 @@
       "bildWaehlen": "Eigenes Bild wählen",
       "bildZuGross": "Bitte ein Bild unter 3 MB wählen.",
       "bildFehler": "Das Bild konnte nicht verarbeitet werden.",
-
       "kopplung": "MSM-Kopplung",
       "gekoppeltMit": "Gekoppelt mit {{adresse}}",
       "gekoppeltOffline": "Gekoppelt mit {{adresse}}, gerade nicht erreichbar",
@@ -9339,7 +9355,8 @@
       "nochmal": "Erneut versuchen",
       "spracheNichtErkannt": "Die Sprache der Seite wurde nicht erkannt. Wähle sie selbst.",
       "spracheNichtVerfuegbar": "Für {{sprache}} gibt es keine Sprachdaten. Übersetzen ist für diese Seite nicht möglich.",
-      "zielGleich": "Wähle eine andere Zielsprache.",      "zustimmung": "Für diese Sprachen lädt der Browser einmalig {{groesse}} Sprachdaten von Mozilla. Der Text der Seite bleibt auf dem Gerät.",
+      "zielGleich": "Wähle eine andere Zielsprache.",
+      "zustimmung": "Für diese Sprachen lädt der Browser einmalig {{groesse}} Sprachdaten von Mozilla. Der Text der Seite bleibt auf dem Gerät.",
       "bereit": "Die Seite wird auf dem Gerät übersetzt.",
       "von": "Sprache der Seite",
       "vonLeer": "Sprache wählen",
