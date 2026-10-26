@@ -7,7 +7,6 @@
  * - Barrierefreie Aktions-Schaltflächen (Öffnen, Im Ordner zeigen, Löschen/Entfernen)
  */
 import {
-  CheckCircle2,
   ExternalLink,
   File,
   FileArchive,
