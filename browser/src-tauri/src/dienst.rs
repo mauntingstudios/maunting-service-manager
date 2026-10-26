@@ -2,8 +2,8 @@
 //!
 //! Die Arbeit macht `Hintergrunddienst.kt`. Hier wird nur durchgereicht und
 //! geprüft, was ein Tippfehler still kaputtmachen würde: ein Ausweis, der kein
-//! Ausweis ist, eine Adresse ohne `https`, eine Mailboxliste, die keine Liste
-//! ist. Der Dienst selbst merkte das erst beim Verbinden — und dann stünde er
+//! Ausweis ist, und eine Adresse ohne `https`. Der Dienst selbst merkte das
+//! erst beim Verbinden — und dann stünde er
 //! still, ohne dass jemand erfährt, warum.
 //!
 //! Dieselbe Datei liegt in MSS und Pontis (`browser/src-tauri/src/dienst.rs`);
@@ -16,9 +16,6 @@ use tauri::{AppHandle, WebviewWindow};
 /// Das Android-Paket dieser App — für `register_android_plugin`.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 const PAKET: &str = "com.mauntingstudios.secure_browser";
-
-/// So viele Mailboxen nimmt auch das Panel entgegen (`StreamMailboxAbos`).
-const HOECHSTENS_MAILBOXEN: usize = 200;
 
 fn nur_hauptfenster(fenster: &WebviewWindow) -> Result<(), String> {
     if fenster.label() == "main" {
@@ -60,42 +57,6 @@ fn pruefe_basis(basis: &str) -> Result<(), String> {
     }
 }
 
-/// Baut die Mailboxliste neu: nur Kennung und Token, nichts sonst.
-///
-/// Was hier durchfällt, käme sonst in die Einstellungen der App und von dort in
-/// den Ereignisstrom — als Zeichenkette, die niemand mehr prüft.
-fn pruefe_mailboxen(mailboxen: &str) -> Result<String, String> {
-    let wert: Value =
-        serde_json::from_str(mailboxen).map_err(|_| "Mailboxliste ist kein JSON".to_string())?;
-    let liste = wert.as_array().ok_or("Mailboxliste ist keine Liste")?;
-    if liste.len() > HOECHSTENS_MAILBOXEN {
-        return Err("Zu viele Mailboxen".into());
-    }
-    let mut sauber = Vec::with_capacity(liste.len());
-    for eintrag in liste {
-        let objekt = eintrag.as_object().ok_or("Mailbox ohne Kennung")?;
-        let id = objekt
-            .get("mailbox_id")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .trim()
-            .to_lowercase();
-        if id.is_empty() || id.len() > 200 {
-            return Err("Ungültige Mailbox-Kennung".into());
-        }
-        let mut neu = serde_json::Map::new();
-        neu.insert("mailbox_id".into(), json!(id));
-        if let Some(token) = objekt.get("mailbox_token").and_then(Value::as_str) {
-            if token.len() > 300 {
-                return Err("Ungültiges Mailbox-Token".into());
-            }
-            neu.insert("mailbox_token".into(), json!(token));
-        }
-        sauber.push(Value::Object(neu));
-    }
-    Ok(Value::Array(sauber).to_string())
-}
-
 #[cfg(target_os = "android")]
 pub struct DienstState<R: tauri::Runtime>(pub tauri::plugin::PluginHandle<R>);
 
@@ -131,7 +92,7 @@ fn ruf(_app: &AppHandle, _befehl: &str, _daten: Value) -> Result<Value, String> 
     Err("Den Hintergrunddienst gibt es nur unter Android.".to_string())
 }
 
-/// Einschalten: Ausweis, Adresse und Mailboxen an Android geben und starten.
+/// Einschalten: Ausweis und Adresse an Android geben und starten.
 #[cfg(target_os = "android")]
 #[tauri::command(async)]
 pub async fn dienst_starten(
@@ -139,19 +100,16 @@ pub async fn dienst_starten(
     fenster: WebviewWindow,
     ausweis: String,
     basis: String,
-    mailboxen: String,
 ) -> Result<(), String> {
     nur_hauptfenster(&fenster)?;
     pruefe_ausweis(&ausweis)?;
     pruefe_basis(&basis)?;
-    let mailboxen = pruefe_mailboxen(&mailboxen)?;
     ruf(
         &app,
         "starten",
         json!({
             "ausweis": ausweis,
             "basis": basis.trim_end_matches('/'),
-            "mailboxen": mailboxen,
         }),
     )
     .map(|_| ())
@@ -164,12 +122,10 @@ pub async fn dienst_starten(
     fenster: WebviewWindow,
     ausweis: String,
     basis: String,
-    mailboxen: String,
 ) -> Result<(), String> {
     nur_hauptfenster(&fenster)?;
     pruefe_ausweis(&ausweis)?;
     pruefe_basis(&basis)?;
-    pruefe_mailboxen(&mailboxen)?;
     Err("Den Hintergrunddienst gibt es nur unter Android.".to_string())
 }
 
@@ -177,18 +133,6 @@ pub async fn dienst_starten(
 pub async fn dienst_stoppen(app: AppHandle, fenster: WebviewWindow) -> Result<(), String> {
     nur_hauptfenster(&fenster)?;
     ruf(&app, "stoppen", json!({})).map(|_| ())
-}
-
-/// Die geöffneten Mailboxen nachreichen, ohne neu zu starten.
-#[tauri::command(async)]
-pub async fn dienst_mailboxen(
-    app: AppHandle,
-    fenster: WebviewWindow,
-    mailboxen: String,
-) -> Result<(), String> {
-    nur_hauptfenster(&fenster)?;
-    let mailboxen = pruefe_mailboxen(&mailboxen)?;
-    ruf(&app, "mailboxen", json!({ "mailboxen": mailboxen })).map(|_| ())
 }
 
 /// Ob der Mensch ihn eingeschaltet hat — und ob Android ihn laufen lässt.
@@ -238,24 +182,5 @@ mod tests {
         assert!(pruefe_basis("").is_err());
     }
 
-    #[test]
-    fn mailboxen_verlieren_alles_unbekannte() {
-        let liste = pruefe_mailboxen(
-            r#"[{"mailbox_id":"ABC","mailbox_token":"t","extra":"x"}]"#,
-        )
-        .unwrap();
-        assert_eq!(liste, r#"[{"mailbox_id":"abc","mailbox_token":"t"}]"#);
-    }
-
-    #[test]
-    fn mailboxen_ohne_kennung_und_zu_viele_sind_fehler() {
-        assert!(pruefe_mailboxen(r#"[{"mailbox_id":""}]"#).is_err());
-        assert!(pruefe_mailboxen("kein json").is_err());
-        assert!(pruefe_mailboxen(r#"{"mailbox_id":"a"}"#).is_err());
-        let zu_viele: Vec<String> = (0..=HOECHSTENS_MAILBOXEN)
-            .map(|i| format!(r#"{{"mailbox_id":"mb-{i}"}}"#))
-            .collect();
-        assert!(pruefe_mailboxen(&format!("[{}]", zu_viele.join(","))).is_err());
-    }
 
 }

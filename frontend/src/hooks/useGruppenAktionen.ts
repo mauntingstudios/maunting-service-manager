@@ -12,12 +12,12 @@ import { starteGruppenanruf } from '@/api/calls'
 import type { ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import {
   baueEinladungsKarte,
-  einladungsschluesselAus,
+  erzeugeEinladungsschluessel,
   logoAlsDatenUrl,
   mitSchluessel,
 } from '@/services/einladungsKarte'
 import { deriveGroupBlindMailboxId } from '@/services/e2eeCrypto'
-import { gruppenGeheimnis, verwirfGruppenSchluessel } from '@/services/gruppenSchluessel'
+import { verwirfGruppenSchluessel } from '@/services/gruppenSchluessel'
 import {
   merkeGruppenName,
   sichereGruppenAnsicht,
@@ -199,16 +199,14 @@ export function useGruppenAktionen({
     const url = `${window.location.origin}/chat/join/${group.invite_code}`
     let fertig = url
     try {
-      const geheimnis = await gruppenGeheimnis(group.id)
-      if (geheimnis) {
-        const karte = await baueEinladungsKarte(geheimnis, group.invite_code, {
-          name: group.name,
-          beschreibung: group.description ?? null,
-          logo: group.avatar_url?.startsWith('data:image/') ? group.avatar_url : null,
-        })
-        await setzeEinladungsKarte(group.id, karte)
-        fertig = mitSchluessel(url, await einladungsschluesselAus(geheimnis))
-      }
+      const einladungsschluessel = erzeugeEinladungsschluessel()
+      const karte = await baueEinladungsKarte(einladungsschluessel, group.invite_code, {
+        name: group.name,
+        beschreibung: group.description ?? null,
+        logo: group.avatar_url?.startsWith('data:image/') ? group.avatar_url : null,
+      })
+      await setzeEinladungsKarte(group.id, karte)
+      fertig = mitSchluessel(url, einladungsschluessel)
     } catch {
       // Eine Karte, die nicht zustande kommt, darf das Einladen nicht aufhalten.
     }

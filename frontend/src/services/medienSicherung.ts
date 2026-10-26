@@ -199,6 +199,26 @@ export async function sichereMediumMitGrund(
 }
 
 /**
+ * Der Anzeigeweg: sichern, dann aus der Ablage lesen.
+ *
+ * Die Anzeige darf nicht mehr direkt downloaden. Sonst lag das Bild nur im
+ * Arbeitsspeicher, und nach einem Neuladen war es weg. Ein offener Anhang
+ * bekommt hier denselben dauerhaften Auftrag wie beim Sammellauf.
+ */
+export async function ladeUndSichereMedium(
+  zeiger: MedienZeiger,
+  bindung: MedienBindung,
+  name?: string | null,
+): Promise<{ url: string | null; grund: SicherungsGrund }> {
+  const grund = await sichereMediumMitGrund(zeiger, bindung, name)
+  if (grund === 'offen') {
+    await merkeMedienNachholauftrag(zeiger, bindung, name).catch(() => {})
+  }
+  if (grund !== 'gesichert') return { url: null, grund }
+  return { url: await holeMedium(zeiger.mediaId), grund }
+}
+
+/**
  * Holt alle Anhänge dieser Nachrichten und legt sie ab.
  *
  * **Auch die eigenen Nachrichten.** Das ist nicht selbstverständlich: das

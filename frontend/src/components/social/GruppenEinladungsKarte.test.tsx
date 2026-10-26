@@ -17,9 +17,10 @@ vi.mock('@/config/api', () => ({ apiUrl: (pfad: string) => `https://panel.test${
 const { GruppenEinladungsKarte, findeEinladung, findeEinladungsCode } = await import(
   './GruppenEinladungsKarte'
 )
-const { baueEinladungsKarte, einladungsschluesselAus } = await import(
+const { baueEinladungsKarte, erzeugeEinladungsschluessel } = await import(
   '@/services/einladungsKarte'
 )
+const KARTENSCHLUESSEL = erzeugeEinladungsschluessel()
 
 const ORIGIN = 'https://panel.test'
 
@@ -150,7 +151,6 @@ describe('GruppenEinladungsKarte', () => {
 })
 
 describe('GruppenEinladungsKarte, verschlüsselt', () => {
-  const GEHEIMNIS = 'A'.repeat(43) + '='
   const CODE = 'AbCd1234efGH'
   const LOGO = 'data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA=='
 
@@ -163,7 +163,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
       name: null,
       description: null,
       avatar_url: null,
-      invite_card: await baueEinladungsKarte(GEHEIMNIS, CODE, {
+      invite_card: await baueEinladungsKarte(KARTENSCHLUESSEL, CODE, {
         name: 'Serverteam',
         beschreibung: 'Wir bauen Dinge',
         ...inhalt,
@@ -173,7 +173,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
 
   it('zeigt Name und Logo aus der entschlüsselten Karte', async () => {
     getGroupInviteInfo.mockResolvedValue(await mitKarte({ logo: LOGO }))
-    const schluessel = await einladungsschluesselAus(GEHEIMNIS)
+    const schluessel = KARTENSCHLUESSEL
 
     render(
       <GruppenEinladungsKarte inviteCode={CODE} schluessel={schluessel} onJoin={vi.fn()} />,
@@ -204,7 +204,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
 
   it('bleibt mit dem falschen Schlüssel zu', async () => {
     getGroupInviteInfo.mockResolvedValue(await mitKarte())
-    const fremd = await einladungsschluesselAus('B'.repeat(43) + '=')
+    const fremd = erzeugeEinladungsschluessel()
 
     render(<GruppenEinladungsKarte inviteCode={CODE} schluessel={fremd} onJoin={vi.fn()} />)
 
@@ -222,7 +222,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
       name: 'Name vom Server',
       avatar_url: '/api/social/groups/avatar/group_7_abc.png',
     })
-    const schluessel = await einladungsschluesselAus(GEHEIMNIS)
+    const schluessel = KARTENSCHLUESSEL
 
     render(
       <GruppenEinladungsKarte inviteCode={CODE} schluessel={schluessel} onJoin={vi.fn()} />,
@@ -254,7 +254,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
      * „Verschlüsselte Gruppe".
      */
     getGroupInviteInfo.mockResolvedValue(await mitKarte({ logo: LOGO }))
-    const schluessel = await einladungsschluesselAus(GEHEIMNIS)
+    const schluessel = KARTENSCHLUESSEL
     const onJoin = vi.fn().mockResolvedValue(undefined)
 
     render(<GruppenEinladungsKarte inviteCode={CODE} schluessel={schluessel} onJoin={onJoin} />)

@@ -76,6 +76,19 @@ export function leereChatSchluesselCache(): void {
   cache.clear()
 }
 
+/** Vergisst alle Versionen eines Chats, etwa nach dem Verlassen einer Gruppe. */
+export function vergissChatSchluessel(chatType: 'direct' | 'group', chatId: number): void {
+  const prefix = `${chatType}:${Number(chatId)}:`
+  for (const [id, bytes] of rohCache) {
+    if (!id.startsWith(prefix)) continue
+    bytes.fill(0)
+    rohCache.delete(id)
+  }
+  for (const id of cache.keys()) {
+    if (id.startsWith(prefix)) cache.delete(id)
+  }
+}
+
 async function importiere(bytes: Uint8Array): Promise<CryptoKey> {
   return await importAesGcmRawKey(bytes, ['encrypt', 'decrypt'])
 }

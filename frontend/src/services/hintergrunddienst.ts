@@ -23,6 +23,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 import { api } from '@/api/client'
 import { getEffectiveApiUrl } from '@/config/api'
+import { getStorageItem, removeStorageItem, setStorageItem } from '@/lib/offlineAblage'
 import { passkeyNachweis } from '@/services/passkeyService'
 
 const KANAL_ABLAGE = 'msm:hintergrundkanal'
@@ -70,23 +71,14 @@ export async function stand(): Promise<DienstStand> {
 }
 
 function merkeKanal(id: number | null): void {
-  try {
-    if (id === null) localStorage.removeItem(KANAL_ABLAGE)
-    else localStorage.setItem(KANAL_ABLAGE, String(id))
-  } catch {
-    // Ohne Ablage bleibt der Kanal offen; er ist dann nur nicht mehr von hier
-    // aus zu widerrufen. Beim nächsten Einschalten entsteht ein neuer.
-  }
+  if (id === null) removeStorageItem(KANAL_ABLAGE)
+  else setStorageItem(KANAL_ABLAGE, String(id))
 }
 
 function gemerkterKanal(): number | null {
-  try {
-    const roh = localStorage.getItem(KANAL_ABLAGE)
-    const zahl = Number(roh)
-    return Number.isFinite(zahl) && zahl > 0 ? zahl : null
-  } catch {
-    return null
-  }
+  const roh = getStorageItem(KANAL_ABLAGE)
+  const zahl = Number(roh)
+  return Number.isFinite(zahl) && zahl > 0 ? zahl : null
 }
 
 /**
@@ -121,7 +113,6 @@ export async function einschalten(label?: string): Promise<boolean> {
   await invoke('dienst_starten', {
     ausweis: kanal.token,
     basis: panelBasis(),
-    mailboxen: '[]',
   })
   // Die Akku-Ausnahme ist der Unterschied zwischen „kommt an" und „kommt
   // manchmal an": ohne sie beendet Samsung/Xiaomi den Dienst nach Stunden.

@@ -29,6 +29,8 @@ from models import (
     UserFriend,
 )
 from services.sync_event_service import SyncEventService
+from services.social.messages_push import push_message
+from services.social.messages_reaktionen import reaktionen_fuer
 
 MAX_PAYLOAD_CHARS = 4 * 1024 * 1024
 MAX_PAGE = 100
@@ -161,25 +163,11 @@ def _message_dict(message: E2eeMessage, reactions: Iterable[E2eeMessageReaction]
     }
 
 
-def _reactions_for(db: Session, message_ids: list[int]) -> dict[int, list[E2eeMessageReaction]]:
-    if not message_ids:
-        return {}
-    rows = (
-        db.query(E2eeMessageReaction)
-        .filter(E2eeMessageReaction.message_id.in_(message_ids))
-        .all()
-    )
-    out: dict[int, list[E2eeMessageReaction]] = {}
-    for row in rows:
-        out.setdefault(int(row.message_id), []).append(row)
-    return out
-
-
 def _publish_message(db: Session, message: E2eeMessage, typ: str = "message_created") -> None:
     mitglieder = _members(db, message.chat_type, message.chat_id)
     payload = {
         "type": typ,
-        "message": _message_dict(message, _reactions_for(db, [int(message.id)]).get(int(message.id), [])),
+        "message": _message_dict(message, reaktionen_fuer(db, [int(message.id)]).get(int(message.id), [])),
         # Flache Felder fuer Benachrichtigung und den Android-Dienst. Der
         # Datensatz bleibt unter `message` fuer die direkte Anwendung im Chat.
         "chat_type": message.chat_type,
@@ -209,42 +197,9 @@ def _publish_message(db: Session, message: E2eeMessage, typ: str = "message_crea
             zusteller=zusteller,
             melden_markieren=True,
         )
-        _push(db, message, mitglieder)
+        push_message(db, message, mitglieder)
     else:
         SyncEventService.publish(payload, user_ids=mitglieder)
-
-
-def _push(db: Session, message: E2eeMessage, mitglieder: set[int]) -> None:
-    """WebPush an die uebrigen Mitglieder, solange die Gruppe ueberschaubar ist.
-
-    Bei sehr grossen Gruppen waere ein Push je Mitglied teurer als der Nutzen;
-    dort tragen Echtzeitkanal und Ungelesen-Stand. Der Absender bekommt keinen
-    Push fuer seine eigene Nachricht.
-    """
-    if len(mitglieder) > 200:
-        return
-    try:
-        from services import webpush_service
-
-        for uid in mitglieder:
-            if uid == message.sender_user_id:
-                continue
-            webpush_service.sende_an_konto(
-                db,
-                uid,
-                {
-                    "type": "chat_message",
-                    "chat_type": message.chat_type,
-                    "chat_id": int(message.chat_id),
-                    "client_uuid": message.client_uuid,
-                    "title": "Neue Nachricht",
-                    "body": "Du hast eine neue verschluesselte Nachricht.",
-                    "tag": f"msm-chat-{message.chat_type}-{message.chat_id}",
-                },
-            )
-    except Exception:
-        # Push ist Beiwerk; die Nachricht liegt bereits.
-        return
 
 
 def _state(db: Session, chat_type: str, chat_id: int, user_id: int, *, lock: bool = False) -> E2eeChatState:
@@ -393,6 +348,41 @@ def _has_chat_key(db: Session, user_id: int, chat_type: str, chat_id: int, key_v
     )
 
 
+def _assert_key_shared_by_members(
+    db: Session,
+    chat_type: str,
+    chat_id: int,
+    key_version: int,
+    mitglieder: set[int],
+) -> None:
+    """Eine neue Nachricht darf nur eine Version nennen, die alle Mitglieder haben.
+
+    Die neueste Version ist nicht Pflicht: eine offline eingereihte Nachricht
+    unter einer aelteren Version bleibt sendbar, solange die Mitgliedschaft
+    dieselbe ist. Kommt ein Mitglied hinzu, fehlt ihm die alte Version, und der
+    Absender muss zuerst rotieren.
+    """
+    halter = {
+        int(row[0])
+        for row in db.query(E2eeChatKey.user_id)
+        .filter_by(
+            chat_type=chat_type,
+            chat_id=chat_id,
+            key_version=key_version,
+        )
+        .all()
+    }
+    fehlend = {int(uid) for uid in mitglieder} - halter
+    if fehlend:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "key_version_not_shared",
+                "message": "Diese Schluesselversion fehlt mindestens einem Mitglied.",
+            },
+        )
+
+
 def send_message(
     db: Session,
     user: User,
@@ -416,14 +406,26 @@ def send_message(
 
     mitglieder = assert_member(db, user.id, chat_type, chat_id)
     _assert_send(db, user.id, chat_type, chat_id, mitglieder)
-    if not _has_chat_key(db, user.id, chat_type, chat_id, key_version):
-        raise HTTPException(status_code=409, detail="Chat-Schluessel fehlt oder ist nicht freigegeben.")
 
+    # Die UUID ist global eindeutig. Ein Treffer in einem anderen Chat ist
+    # deshalb keine Wiederholung, sondern ein Konflikt.
     bestand = db.query(E2eeMessage).filter_by(client_uuid=clean_uuid).first()
     if bestand is not None:
         if int(bestand.sender_user_id) != user.id:
             raise HTTPException(status_code=409, detail="client_uuid gehoert einer anderen Nachricht.")
+        if bestand.chat_type != chat_type or int(bestand.chat_id) != int(chat_id):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "client_uuid_other_chat",
+                    "message": "Diese client_uuid gehoert zu einem anderen Gespraech.",
+                },
+            )
         return _message_dict(bestand)
+
+    if not _has_chat_key(db, user.id, chat_type, chat_id, key_version):
+        raise HTTPException(status_code=409, detail="Chat-Schluessel fehlt oder ist nicht freigegeben.")
+    _assert_key_shared_by_members(db, chat_type, chat_id, key_version, mitglieder)
 
     chat = _chat_row(db, chat_type, chat_id)
     ttl = getattr(chat, "ephemeral_ttl_seconds", None)
@@ -480,7 +482,7 @@ def list_messages(
     has_more = len(rows) > limit
     rows = rows[:limit]
     rows.reverse()
-    reaktionen = _reactions_for(db, [int(r.id) for r in rows])
+    reaktionen = reaktionen_fuer(db, [int(r.id) for r in rows])
     messages = [
         _message_dict(row, reaktionen.get(int(row.id), []))
         for row in rows
@@ -515,7 +517,7 @@ def list_messages(
         "pinned_message": (
             _message_dict(
                 angeheftet,
-                _reactions_for(db, [int(angeheftet.id)]).get(int(angeheftet.id), []),
+                reaktionen_fuer(db, [int(angeheftet.id)]).get(int(angeheftet.id), []),
             )
             if angeheftet is not None
             else None
@@ -551,7 +553,7 @@ def update_message(
     db.commit()
     db.refresh(message)
     _publish_message(db, message, "message_updated")
-    return _message_dict(message, _reactions_for(db, [int(message.id)]).get(int(message.id), []))
+    return _message_dict(message, reaktionen_fuer(db, [int(message.id)]).get(int(message.id), []))
 
 
 def delete_message(db: Session, user: User, client_uuid: str) -> dict[str, Any]:
@@ -602,7 +604,7 @@ def set_reaction(db: Session, user: User, client_uuid: str, encrypted_reaction: 
         db.commit()
     db.refresh(message)
     _publish_message(db, message, "message_updated")
-    return _message_dict(message, _reactions_for(db, [int(message.id)]).get(int(message.id), []))
+    return _message_dict(message, reaktionen_fuer(db, [int(message.id)]).get(int(message.id), []))
 
 
 def set_pinned(db: Session, user: User, client_uuid: str, pinned: bool) -> dict[str, Any]:
@@ -618,7 +620,7 @@ def set_pinned(db: Session, user: User, client_uuid: str, pinned: bool) -> dict[
     db.commit()
     db.refresh(message)
     _publish_message(db, message, "message_updated")
-    return _message_dict(message, _reactions_for(db, [int(message.id)]).get(int(message.id), []))
+    return _message_dict(message, reaktionen_fuer(db, [int(message.id)]).get(int(message.id), []))
 
 
 def ack_messages(db: Session, user: User, chat_type: str, chat_id: int, up_to_id: int) -> dict[str, Any]:

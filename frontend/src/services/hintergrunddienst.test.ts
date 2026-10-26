@@ -41,13 +41,10 @@ vi.mock('@/services/passkeyService', () => ({
   },
 }))
 
-vi.mock('@/services/mailboxAbo', () => ({
-  offeneMailboxEintraege: () => [{ mailbox_id: 'mb-1' }],
-}))
-
 vi.mock('@/config/api', () => ({ getEffectiveApiUrl: () => 'https://panel.test' }))
 
-import { ausschalten, dienstVerfuegbar, einschalten, mailboxenMelden, stand } from './hintergrunddienst'
+import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
+import { ausschalten, dienstVerfuegbar, einschalten, stand } from './hintergrunddienst'
 
 const ruhe = () => new Promise((r) => setTimeout(r, 0))
 
@@ -57,6 +54,7 @@ describe('hintergrunddienst', () => {
     aufrufe.api.length = 0
     aufrufe.nachweis.length = 0
     localStorage.clear()
+    setzeAngemeldetesKonto(1)
     Object.defineProperty(navigator, 'userAgent', {
       value: 'Mozilla/5.0 (Linux; Android 14; Pixel 8)',
       configurable: true,
@@ -81,7 +79,6 @@ describe('hintergrunddienst', () => {
     expect(start?.args).toMatchObject({
       ausweis: 'a'.repeat(64),
       basis: 'https://panel.test',
-      mailboxen: JSON.stringify([{ mailbox_id: 'mb-1' }]),
     })
     expect(localStorage.getItem('msm:hintergrundkanal')).toBe('7')
   })
@@ -98,13 +95,6 @@ describe('hintergrunddienst', () => {
       { pfad: '/notifications/channels/7', methode: 'DELETE', koerper: null },
     ])
     expect(localStorage.getItem('msm:hintergrundkanal')).toBeNull()
-  })
-
-  it('meldet die geöffneten Mailboxen nach', async () => {
-    await mailboxenMelden()
-
-    const nach = aufrufe.invoke.find((a) => a.befehl === 'dienst_mailboxen')
-    expect(nach?.args).toEqual({ mailboxen: JSON.stringify([{ mailbox_id: 'mb-1' }]) })
   })
 
   it('liest den Stand aus Android, nicht aus dem Fenster', async () => {

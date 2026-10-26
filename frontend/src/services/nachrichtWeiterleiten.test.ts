@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/api/social', () => ({
   ladeAnhangHerunter: vi.fn(),
   ladeAnhangHoch: vi.fn(),
+  startDirectChat: vi.fn(async () => ({ id: 99 })),
 }))
 
 import { ladeAnhangHerunter, ladeAnhangHoch } from '@/api/social'
@@ -70,11 +71,12 @@ describe('Medien gehen wirklich noch einmal hoch', () => {
     )
     expect(vi.mocked(ladeAnhangHoch)).toHaveBeenCalledWith(
       expect.objectContaining({
-        blindMailboxId: 'mb-neu',
+        blindMailboxId: 'group:7',
         // Der Weiterleitende wird Eigentümer des neuen Blobs — nur der
         // Hochladende darf ihn später löschen.
         absenderId: ICH,
-        groupId: 7,
+        chatType: 'group',
+        chatId: 7,
         dateiname: 'bild.png',
         mimeType: 'image/png',
       }),
@@ -148,12 +150,10 @@ describe('Medien gehen wirklich noch einmal hoch', () => {
     expect(vi.mocked(ladeAnhangHerunter)).not.toHaveBeenCalled()
   })
 
-  it('nennt bei einem Direktchat keine Gruppe — und auch keinen Empfänger', async () => {
+  it('bindet einen Direktchat an die aufgelöste Chatkennung', async () => {
     /*
-     * Seit Stufe 4 trägt der Upload keine Empfängerkennung mehr. Für eine
-     * Mailbox, die der Server ausrechnen kann, verriet sie nichts Neues; für
-     * eine aus einem Geheimnis verriet sie alles. Er löst die Mailbox selbst
-     * auf, oder er weiß es nicht — und dann entscheidet der Besitznachweis.
+     * Der Upload braucht die Chatkennung, nicht die Empfängerkennung. Sie
+     * entsteht aus `startDirectChat` und ist auf beiden Seiten dieselbe.
      */
     await baueWeiterleitung(
       { imageAttachment: ALTER_ANHANG },
@@ -162,9 +162,14 @@ describe('Medien gehen wirklich noch einmal hoch', () => {
       ICH,
     )
     expect(vi.mocked(ladeAnhangHoch)).toHaveBeenCalledWith(
-      expect.objectContaining({ blindMailboxId: 'mb-direkt', groupId: null }),
+      expect.objectContaining({
+        blindMailboxId: 'direct:99',
+        chatType: 'direct',
+        chatId: 99,
+      }),
     )
     expect(vi.mocked(ladeAnhangHoch).mock.calls[0][0]).not.toHaveProperty('recipientId')
+    expect(vi.mocked(ladeAnhangHoch).mock.calls[0][0]).not.toHaveProperty('groupId')
   })
 })
 

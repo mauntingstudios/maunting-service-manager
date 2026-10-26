@@ -49,7 +49,20 @@ export const MESSENGER_KEYS = {
    */
   VERLAUF_TRANSFER: 'msm:chat_verlauf_transfer',
   VERLAUF_EMPFANG: 'msm:chat_verlauf_empfang',
+  QUITTUNGSSTAND: 'msm:chat_quittungsstand',
+  PARTNERSTAND: 'msm:chat_partnerstand',
+  PINNED_MESSAGE: 'msm:chat_pinned_message',
+  RETENTION: 'msm:chat_retention',
+  HINTERGRUNDKANAL: 'msm:hintergrundkanal',
 } as const
+
+/** Dynamische Schlüssel, die kein fester Eintrag abdeckt. */
+export const GRUPPEN_MERKER_PREFIX = 'msm:group_key_members:'
+
+/** Der Merker einer Gruppe: welche Mitglieder die aktuelle Version haben. */
+export function gruppenMerkerSchluessel(groupId: number): string {
+  return `${GRUPPEN_MERKER_PREFIX}${groupId}`
+}
 
 /** Zwischenspeicher der Kontaktliste (`hooks/useKontaktdaten.ts`). Er kommt vom Server wieder. */
 export const KONTAKTE_CACHE_KEY = 'msm:chat_contacts_cache'
@@ -110,6 +123,13 @@ export function leereOfflineAblage(): void {
     for (const schluessel of ALLE_SCHLUESSEL) {
       s.removeItem(schluessel)
     }
+    // Gruppenmerker tragen die Gruppenkennung im Schlüssel.
+    const dynamisch: string[] = []
+    for (let i = 0; i < s.length; i += 1) {
+      const key = s.key(i)
+      if (key?.startsWith(GRUPPEN_MERKER_PREFIX)) dynamisch.push(key)
+    }
+    for (const key of dynamisch) s.removeItem(key)
   } catch {
     // nichts zu tun
   }
@@ -132,4 +152,18 @@ export function getStorageItem(schluessel: string): string | null {
 
 export function setStorageItem(schluessel: string, wert: string): void {
   if (gehoertDemKonto()) schreib(schluessel, wert)
+}
+
+export function removeStorageItem(schluessel: string): void {
+  if (!gehoertDemKonto()) return
+  const s = speicher()
+  if (s) {
+    try {
+      s.removeItem(schluessel)
+      return
+    } catch {
+      // Ersatz
+    }
+  }
+  delete ersatz[schluessel]
 }

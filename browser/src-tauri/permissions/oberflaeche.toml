@@ -20,7 +20,6 @@ permissions = [
   "allow-benachrichtigung-senden",
   "allow-dienst-starten",
   "allow-dienst-stoppen",
-  "allow-dienst-mailboxen",
   "allow-dienst-stand",
   "allow-dienst-akku-befreien",
   "allow-tab-laden",

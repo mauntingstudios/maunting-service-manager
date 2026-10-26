@@ -104,7 +104,7 @@ describe('MessengerHintergrund', () => {
     expect(melden.meldeChat).not.toHaveBeenCalled()
   })
 
-  it('quittiert eine Nachricht, deren Chiffretext sich hier oeffnen laesst', async () => {
+  it('quittiert ein Wecksignal nicht', async () => {
     render(<MessengerHintergrund />)
     await waitFor(() => expect(identitaet.resolveIdentity).toHaveBeenCalled())
 
@@ -124,9 +124,8 @@ describe('MessengerHintergrund', () => {
       },
     })
 
-    await waitFor(() =>
-      expect(quittung.ackChatMessages).toHaveBeenCalledWith('direct', 55, 77),
-    )
+    await act(async () => {})
+    expect(quittung.ackChatMessages).not.toHaveBeenCalled()
   })
 
   it('quittiert nicht, was sich hier nicht oeffnen laesst', async () => {

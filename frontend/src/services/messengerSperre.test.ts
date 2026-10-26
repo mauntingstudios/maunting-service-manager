@@ -18,6 +18,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
 
+// Ein später geladenes Modul (authStore) setzt den Kontostand aus dem
+// Speicher neu. Für diese Datei zählt nur, was der Test ausdrücklich setzt.
+const kontoStand = vi.hoisted(() => ({ wert: 1 as number | null }))
+vi.mock('@/lib/angemeldetesKonto', () => ({
+  angemeldetesKonto: () => kontoStand.wert,
+  setzeAngemeldetesKonto: (id: number | null) => {
+    if (id === 1 || id === 2) kontoStand.wert = id
+  },
+  beiKontowechsel: () => () => {},
+}))
+
 const fach = {
   schluesselfachVerfuegbar: vi.fn(async () => false),
   biometrieMoeglich: vi.fn(async () => false),
@@ -36,7 +47,10 @@ const umstellung = {
   funken: vi.fn(async () => 0),
   medien: vi.fn(async () => 0),
   medienTeile: vi.fn(async () => 0),
-  gruppen: vi.fn(async () => 0),
+  medienAuftraege: vi.fn(async () => 0),
+  steuerAuftraege: vi.fn(async () => 0),
+  loeschAuftraege: vi.fn(async () => 0),
+  offeneNachrichten: vi.fn(async () => 0),
 }
 vi.mock('./messengerLocalStore', async (importOriginal) => ({
   ...await importOriginal<typeof import('./messengerLocalStore')>(),
@@ -45,13 +59,22 @@ vi.mock('./messengerLocalStore', async (importOriginal) => ({
   schreibeFunkenBestandNeu: umstellung.funken,
   schreibeMedienBestandNeu: umstellung.medien,
   schreibeMedienTeileBestandNeu: umstellung.medienTeile,
+  schreibeMedienAuftraegeBestandNeu: umstellung.medienAuftraege,
+  schreibeSteuerAuftraegeBestandNeu: umstellung.steuerAuftraege,
+  schreibeLoeschAuftraegeBestandNeu: umstellung.loeschAuftraege,
+  schreibeOffeneNachrichtenBestandNeu: umstellung.offeneNachrichten,
+}))
+vi.mock('./gespraechsListe', () => ({
+  schreibeGespraecheBestandNeu: vi.fn(async () => 0),
+}))
+vi.mock('./gruppenName', () => ({
+  schreibeGruppenNamenBestandNeu: vi.fn(async () => 0),
 }))
 const geraeteSpeicherGeleert = vi.fn()
 vi.mock('./e2eeGeraet', () => ({
   schreibeGeraetBestandNeu: umstellung.geraet,
   clearGeraeteMemory: geraeteSpeicherGeleert,
 }))
-vi.mock('./gruppenSchluessel', () => ({ schreibeGruppenBestandNeu: umstellung.gruppen }))
 
 const { istOffen, siegelAktiv } = await import('./lokaleVersiegelung')
 const { PIN_MINDESTLAENGE, useMessengerSperre } = await import('./messengerSperre')
@@ -120,7 +143,10 @@ describe('messengerSperre', () => {
       expect(umstellung.funken).toHaveBeenCalledOnce()
       expect(umstellung.medien).toHaveBeenCalledOnce()
       expect(umstellung.medienTeile).toHaveBeenCalledOnce()
-      expect(umstellung.gruppen).toHaveBeenCalledOnce()
+      expect(umstellung.medienAuftraege).toHaveBeenCalledOnce()
+      expect(umstellung.steuerAuftraege).toHaveBeenCalledOnce()
+      expect(umstellung.loeschAuftraege).toHaveBeenCalledOnce()
+      expect(umstellung.offeneNachrichten).toHaveBeenCalledOnce()
     },
     FRIST,
   )
@@ -256,7 +282,10 @@ describe('messengerSperre', () => {
       expect(umstellung.funken).toHaveBeenCalledOnce()
       expect(umstellung.medien).toHaveBeenCalledOnce()
       expect(umstellung.medienTeile).toHaveBeenCalledOnce()
-      expect(umstellung.gruppen).toHaveBeenCalledOnce()
+      expect(umstellung.medienAuftraege).toHaveBeenCalledOnce()
+      expect(umstellung.steuerAuftraege).toHaveBeenCalledOnce()
+      expect(umstellung.loeschAuftraege).toHaveBeenCalledOnce()
+      expect(umstellung.offeneNachrichten).toHaveBeenCalledOnce()
       expect(istOffen()).toBe(true)
     },
     FRIST,
@@ -439,6 +468,9 @@ describe('messengerSperre', () => {
         // Konto 1 schaltet ab; Konto 2 muss seinen Verlauf danach noch öffnen.
         setzeAngemeldetesKonto(1)
         await sperre().initialisiere()
+        // Ein später geladenes Modul kann den Kontostand aus der Ablage neu
+        // setzen; unmittelbar vor dem Zugriff gilt der gewollte Kontostand.
+        setzeAngemeldetesKonto(1)
         await sperre().abschalten(PIN)
 
         setzeAngemeldetesKonto(2)
@@ -447,6 +479,7 @@ describe('messengerSperre', () => {
         expect(fach.vergissGeraeteGeheimnis).not.toHaveBeenCalled()
 
         // Das letzte gebundene Konto räumt das Fach dann auf.
+        setzeAngemeldetesKonto(2)
         await sperre().abschalten('anderer-pin')
         expect(fach.vergissGeraeteGeheimnis).toHaveBeenCalledTimes(1)
         expect(imFach).toBeNull()

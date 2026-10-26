@@ -14,15 +14,10 @@
  * Der Link heisst deshalb `…/chat/join/<code>#k=<schlüssel>`, und die Karte
  * entschlüsselt sich im Browser des Eingeladenen.
  *
- * **Woher der Schlüssel kommt.** Aus dem Gruppengeheimnis, mit einem dritten
- * Vorsatz neben Mailbox und Nachweis. Das spart eine eigene Verteilung — jedes
- * Mitglied hat das Geheimnis ohnehin und kann denselben Link bauen.
- *
- * Und es gibt nichts preis: der Eingeladene bekommt `sha256(vorsatz +
- * geheimnis)` und kommt davon nicht zurück zum Geheimnis. Er kann also weder
- * die Mailbox-Kennung noch den Besitznachweis bilden — er sieht die Karte und
- * sonst nichts, bis er beigetreten ist und das Geheimnis regulär zugestellt
- * bekommt.
+ * **Woher der Schlüssel kommt.** Jede Einladung bekommt einen eigenen
+ * Zufallsschlüssel. Er reist nur im Fragment des Links und ist nicht der
+ * Chat-Schlüssel: der Eingeladene sieht die Karte und sonst nichts, bis er
+ * beigetreten ist und der Chat-Schlüssel regulär zugestellt wird.
  *
  * **Gebunden an den Einladungscode.** Der Code steht im AAD. Wer die Karte
  * einer Gruppe unter dem Code einer anderen unterschiebt, bekommt einen
@@ -32,10 +27,7 @@
  */
 
 import { decryptString, encryptString, importAesGcmRawKey } from '@msdis/shield/aead'
-import { sha256Hex } from '@msdis/shield/integrity'
-
-/** Der dritte Wert aus dem Gruppengeheimnis, neben Mailbox und Nachweis. */
-const EINLADUNG_VORSATZ = 'msm:gruppe:einladung:'
+import { randomBytes } from '@msdis/shield/random'
 
 export const EINLADUNG_PREFIX = 'sv-einladung-v1:'
 
@@ -54,9 +46,14 @@ export interface EinladungsInhalt {
   logo?: string | null
 }
 
-/** Der Einladungsschlüssel aus dem Gruppengeheimnis. 64 Hexzeichen. */
-export async function einladungsschluesselAus(geheimnis: string): Promise<string> {
-  return sha256Hex(new TextEncoder().encode(EINLADUNG_VORSATZ + geheimnis))
+/** Ein eigener Schlüssel für genau eine Einladung. 64 Hexzeichen. */
+export function erzeugeEinladungsschluessel(): string {
+  const roh = randomBytes(32)
+  try {
+    return Array.from(roh, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  } finally {
+    roh.fill(0)
+  }
 }
 
 /** Bindet eine Karte an genau einen Einladungscode. */
@@ -94,11 +91,14 @@ export function istEinladungsschluessel(wert: string): boolean {
  * Fehler hier kein Alltagsfall, sondern ein Programmierfehler.
  */
 export async function baueEinladungsKarte(
-  geheimnis: string,
+  schluesselHex: string,
   inviteCode: string,
   inhalt: EinladungsInhalt,
 ): Promise<string> {
-  const schluessel = await alsSchluessel(await einladungsschluesselAus(geheimnis))
+  if (!istEinladungsschluessel(schluesselHex)) {
+    throw new Error('Ungültiger Einladungsschlüssel.')
+  }
+  const schluessel = await alsSchluessel(schluesselHex)
   const klartext = JSON.stringify({
     v: 1,
     name: inhalt.name ?? null,

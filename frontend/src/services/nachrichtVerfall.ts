@@ -104,6 +104,8 @@ export function stufenDativ(sekunden: number, t: Uebersetzer): string {
   return stufe ? t(stufe.dativKey) : t('messenger.retentionSeconds', { count: sekunden })
 }
 
+import { getStorageItem, setStorageItem } from '@/lib/offlineAblage'
+
 const SCHLUESSEL = 'msm:chat_retention'
 
 /** Die Frist eines Chats und wann sie zuletzt umgestellt wurde. */
@@ -118,7 +120,7 @@ type Eintrag = Verfallstand | number
 
 function lies(): Record<string, Eintrag> {
   try {
-    const roh = localStorage.getItem(SCHLUESSEL)
+    const roh = getStorageItem(SCHLUESSEL)
     const gelesen = roh ? JSON.parse(roh) : {}
     return gelesen && typeof gelesen === 'object' ? gelesen : {}
   } catch {
@@ -163,11 +165,7 @@ export function setzeVerfallsfrist(
 ): void {
   const alle = lies()
   alle[blindMailboxId] = { sekunden, stand }
-  try {
-    localStorage.setItem(SCHLUESSEL, JSON.stringify(alle))
-  } catch {
-    // Ohne localStorage gilt die Frist eben nur für diese Sitzung.
-  }
+  setStorageItem(SCHLUESSEL, JSON.stringify(alle))
 }
 
 /**

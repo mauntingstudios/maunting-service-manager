@@ -42,6 +42,7 @@ interface Medienanhang {
 export interface TilgbareNachricht {
   id: number
   clientUuid?: string
+  senderId?: number
   text: string
   isDeleted?: boolean
   deletedAt?: string
@@ -84,6 +85,49 @@ export function medienKennungen(msg: TilgbareNachricht): string[] {
  * Gibt `null` zurück, wenn es nichts zu räumen gibt: ohne logische Kennung und
  * ohne Anhang hat der Server keine Kopie, die dieser Auftrag ansprechen könnte.
  */
+/**
+ * Baut den dauerhaften Auftrag für die Serverkopie und die Blobs.
+ *
+ * Die Medienzeiger werden vor dem lokalen Löschen abgelesen; danach ist die
+ * Zeile ein Grabstein. Ein Auftrag ohne Serverkennung und ohne Blob hat nichts
+ * zu tun.
+ */
+export function baueLoeschauftrag(
+  msg: TilgbareNachricht,
+  mailbox: string,
+  chatType: 'direct' | 'group',
+  chatId: number,
+  fremd: boolean,
+): import('./messengerLocalStore').LoeschAuftrag | null {
+  const medien = [
+    msg.imageAttachment,
+    msg.audioAttachment,
+    msg.fileAttachment,
+    msg.videoNoteAttachment,
+  ]
+    .filter((a): a is Medienanhang & { mediaId: string } => Boolean(a?.mediaId))
+    .map((a) => ({
+      mediaId: a.mediaId,
+      mailbox,
+      absenderId: Number(msg.senderId) || 0,
+    }))
+  if (!msg.clientUuid && medien.length === 0) return null
+  const jetzt = Date.now()
+  return {
+    id: `${mailbox}:${msg.clientUuid ?? msg.id}`,
+    mailbox,
+    chatType,
+    chatId,
+    clientUuid: msg.clientUuid ?? null,
+    nachrichtId: msg.id,
+    medien,
+    fremd,
+    versuche: 0,
+    naechsterVersuch: jetzt,
+    angelegtAm: jetzt,
+  }
+}
+
 /**
  * Die Felder eines Grabsteins: Zeitpunkt bleibt, Inhalt geht.
  *

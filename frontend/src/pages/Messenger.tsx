@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
@@ -91,7 +91,6 @@ import {
 import type { NoteItem } from '@/pages/Notes'
 import type { CalendarEventItem } from '@/pages/Calendar'
 import { logischeUuid } from '@/services/wirkungTypen'
-import { abonniereBekannteGespraeche } from '@/services/gruppenSchluessel'
 import {
   lieseEinladungsKarte,
   schluesselAusLink,
@@ -99,7 +98,6 @@ import {
 } from '@/services/einladungsKarte'
 import { merkeGruppenName } from '@/services/gruppenName'
 import {
-  gespraechsPartner,
   vergissGespraech,
   versteckeGespraech,
 } from '@/services/gespraechsListe'
@@ -111,7 +109,7 @@ import {
   updateMessageInLocalStore,
   sortMessagesChronologically,
 } from '@/services/messengerLocalStore'
-import { partnerKennungen, quittungsstand } from '@/services/quittungsstand'
+import { quittungsstand } from '@/services/quittungsstand'
 import {
   binIchGemeint,
   offeneErwaehnung,
@@ -251,7 +249,6 @@ function MessengerSeite() {
     friends,
     groups,
     setGroups,
-    directChats,
     stories,
     setStories,
     loadData,
@@ -500,6 +497,7 @@ function MessengerSeite() {
     messages, setMessages, loadingMessages, sending, setSending,
     identity, setIdentity, identityRef, geraetWartet, blindMailboxId, konversation,
     sendeWirkung, loadMessages, verarbeiteNachrichtenEreignis, zeigeSystemzeile,
+    ladeAeltere, hatMehrRef, laedtAeltereRef,
     eingabeBeruehrtRef, highestIncomingIdAcknowledgedRef, highestIncomingIdDeliveredRef,
     maxPartnerReadIdRef, maxPartnerDeliveredIdRef,
   } = kern
@@ -598,50 +596,6 @@ function MessengerSeite() {
     entwuerfe.merke(blindMailboxId, text)
   }
 
-
-  /*
-   * Jede bekannte Mailbox beim Strom anmelden, nicht nur die offene.
-   *
-   * Der Server schlägt seit Stufe 4 nicht mehr nach, wer zu einer Gruppe
-   * gehört — er stellt an die Abonnenten einer Mailbox zu und sonst an
-   * niemanden. Ohne diese Stelle erführe man von einer Gruppennachricht erst
-   * beim Öffnen genau dieses Gesprächs, und auf dem geschlossenen Tab nie.
-   *
-   * Der Abdruck statt der Listen selbst: `groups` und `directChats` sind bei
-   * jedem Abruf neue Felder, auch wenn sich nichts geändert hat. An ihnen zu
-   * hängen hiesse, bei jedem Abruf erneut über alle Gespräche zu laufen und
-   * die Ablage zu lesen.
-   */
-  const gespraechsAbdruck = useMemo(
-    () =>
-      [...groups.map((g) => `g${g.id}`), ...directChats.map((c) => `d${c.other_user_id}`)]
-        .sort()
-        .join(','),
-    [groups, directChats],
-  )
-
-  useEffect(() => {
-    if (!currentUserId || !gespraechsAbdruck) return
-    void (async () => {
-      /*
-       * Die Gegenstellen kommen aus `gespraechsPartner()` und nicht aus
-       * `directChats`. Der Unterschied sind die noch **namenlosen** Einträge:
-       * ein Chatgeheimnis bringt eine Konto-Id mit, den Namen holt die
-       * Kontaktliste später nach. Bis dahin steht das Gespräch nicht in
-       * `directChats` — abonniert werden muss es trotzdem, sonst kommt die
-       * erste Nachricht des neuen Gegenübers nirgends an.
-       */
-      const partner = await gespraechsPartner().catch(() => [] as number[])
-      await abonniereBekannteGespraeche(
-        currentUserId,
-        groups.map((g) => g.id),
-        partner,
-      )
-    })()
-    // `groups`/`directChats` bewusst nicht in der Liste: der Abdruck ist ihr
-    // Inhalt, und die Felder selbst wechseln bei jedem Abruf die Identität.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUserId, gespraechsAbdruck])
 
   const handleStoryCreated = (story: ChatStoryItem) => {
     setStories((prev) => [story, ...prev])
@@ -1452,36 +1406,36 @@ function MessengerSeite() {
        */
       const client_uuid = logischeUuid(detail.client_uuid) ?? detail.client_uuid
 
+      const isRead = maxPartnerReadIdRef.current >= envelope_id
+      const isDelivered = isRead || maxPartnerDeliveredIdRef.current >= envelope_id
+      const status: 'queued' | 'sent' | 'delivered' | 'read' = isRead
+        ? 'read'
+        : isDelivered
+          ? 'delivered'
+          : 'sent'
       if (confirmedMid === blindMailboxId) {
-        const bestaetigt = partnerKennungen(confirmedMid)
         setMessages((prev) =>
           sortMessagesChronologically(
-            prev.map((m) => {
-              if (m.clientUuid === client_uuid) {
-                const perIdRead = bestaetigt.gelesen.has(client_uuid)
-                const isRead = perIdRead || maxPartnerReadIdRef.current >= envelope_id
-                const isDelivered =
-                  isRead ||
-                  bestaetigt.zugestellt.has(client_uuid) ||
-                  maxPartnerDeliveredIdRef.current >= envelope_id
-                const status: 'queued' | 'sent' | 'delivered' | 'read' = isRead ? 'read' : isDelivered ? 'delivered' : 'sent'
-                return {
-                  ...m,
-                  id: envelope_id,
-                  status,
-                  isRead: m.isRead || isRead,
-                  isDelivered: m.isDelivered || isDelivered,
-                }
-              }
-              return m
-            })
-          )
+            prev.map((m) =>
+              m.clientUuid === client_uuid
+                ? {
+                    ...m,
+                    id: envelope_id,
+                    status,
+                    isRead: m.isRead || isRead,
+                    isDelivered: m.isDelivered || isDelivered,
+                  }
+                : m,
+            ),
+          ),
         )
       }
       if (confirmedMid) {
         void updateMessageInLocalStore(confirmedMid, client_uuid, {
           id: envelope_id,
-          status: 'sent',
+          status,
+          isRead,
+          isDelivered,
         })
       }
     }
@@ -1612,6 +1566,8 @@ function MessengerSeite() {
    * hört das sofort auf: ab da scrollt nur noch er.
    */
   const ansEndeRef = useRef(false)
+  /** Scrollhöhe vor dem Nachladen älterer Nachrichten. */
+  const seitenAnkerRef = useRef<{ hoehe: number; oben: number } | null>(null)
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -1697,11 +1653,28 @@ function MessengerSeite() {
     if (!container) return
     const pruefe = () => {
       setWeitOben(container.scrollHeight - container.scrollTop - container.clientHeight > 400)
+      if (
+        container.scrollTop < 120 &&
+        hatMehrRef.current &&
+        !laedtAeltereRef.current &&
+        !ansEndeRef.current
+      ) {
+        seitenAnkerRef.current = { hoehe: container.scrollHeight, oben: container.scrollTop }
+        void ladeAeltere()
+      }
     }
     pruefe()
     container.addEventListener('scroll', pruefe, { passive: true })
     return () => container.removeEventListener('scroll', pruefe)
-  }, [blindMailboxId])
+  }, [blindMailboxId, ladeAeltere, hatMehrRef, laedtAeltereRef])
+
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current
+    const anker = seitenAnkerRef.current
+    if (!container || !anker) return
+    seitenAnkerRef.current = null
+    container.scrollTop = anker.oben + (container.scrollHeight - anker.hoehe)
+  }, [messages])
 
   /**
    * Eine endgültig gescheiterte Nachricht noch einmal schicken.
@@ -1748,11 +1721,16 @@ function MessengerSeite() {
       cal: msg.calendarAttachment,
       storyReply: msg.storyReply,
       weitergeleitet: msg.weitergeleitet,
+      ...(msg.clientUuid
+        ? { wiederholung: { clientUuid: msg.clientUuid, id: msg.id } }
+        : {}),
     })
     if (!angenommen) return
 
-    if (msg.clientUuid) {
-      setMessages((prev) => prev.filter((m) => m.clientUuid !== msg.clientUuid))
+    // Mit clientUuid wurde dieselbe Zeile aktualisiert. Sie darf nicht
+    // entfernt werden, sonst verschwindet die einzige Kopie nach dem Erfolg.
+    if (!msg.clientUuid) {
+      setMessages((prev) => prev.filter((m) => m.id !== msg.id))
       await entferneLokaleNachricht(blindMailboxId, {
         clientUuid: msg.clientUuid,
         id: msg.id,

@@ -154,3 +154,6 @@ docs/messenger-e2ee-umsetzungsplan.md
 wetter-sidecar/daten/*
 !wetter-sidecar/daten/.gitkeep
 /.idea
+
+# Laufzeit-Logdumps gehoeren nicht ins Repository.
+logdump.txt

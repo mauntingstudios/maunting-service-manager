@@ -8,6 +8,7 @@
 
 import { wsUrl } from '@/config/api'
 import { sendChatMessage } from '@/api/social'
+import { beiKontowechsel } from '@/lib/angemeldetesKonto'
 
 export interface MessengerSocketConfig {
   deviceId?: string
@@ -15,14 +16,34 @@ export interface MessengerSocketConfig {
 }
 
 type MessageCallback = (data: any) => void
+type PendingChat = {
+  resolve: (val: { id: number; client_uuid: string }) => void
+  reject: (err: any) => void
+  fallback: () => void
+  timer: any
+}
+
+/** Der Socket wurde absichtlich oder durch eine abgelaufene Sitzung beendet. */
+export class SocketGetrenntError extends Error {
+  readonly status = 400
+  readonly code = 'socket_closed'
+
+  constructor() {
+    super('Die Verbindung wurde getrennt.')
+    this.name = 'SocketGetrenntError'
+  }
+}
 
 class MessengerSocketService {
   private ws: WebSocket | null = null
   private deviceId: string | null = null
+  private connectedDeviceId: string | null = null
   private reconnectTimer: any = null
   private pingInterval: any = null
   private attempt = 0
-  private pendingChat = new Map<string, { resolve: (val: { id: number; client_uuid: string }) => void; reject: (err: any) => void; timer: any }>()
+  private manualClose = false
+  private epoch = 0
+  private pendingChat = new Map<string, PendingChat>()
   private listeners = new Set<MessageCallback>()
 
   /** Initialisiert den Socket mit der aktuellen Gerätekennung. */
@@ -30,32 +51,57 @@ class MessengerSocketService {
     if (deviceId) this.deviceId = deviceId
     if (typeof window === 'undefined') return
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-      if (this.deviceId && this.ws.readyState === WebSocket.OPEN) {
-        this.sendRaw({ type: 'init', device_id: this.deviceId })
+      if (
+        this.deviceId &&
+        this.connectedDeviceId &&
+        this.connectedDeviceId !== this.deviceId
+      ) {
+        // Ein anderes Konto/Gerät: die alte Verbindung darf nicht weiter
+        // Nachrichten unter der alten Sitzung senden.
+        const alt = this.ws
+        this.ws = null
+        this.connectedDeviceId = null
+        this.epoch += 1
+        try {
+          alt.close()
+        } catch {}
+      } else {
+        if (this.deviceId && this.ws.readyState === WebSocket.OPEN) {
+          this.sendRaw({ type: 'init', device_id: this.deviceId })
+        }
+        return
       }
-      return
     }
 
+    this.manualClose = false
+    this.epoch += 1
+    const epoch = this.epoch
     const url = wsUrl(this.deviceId ? `/api/social/ws?device_id=${encodeURIComponent(this.deviceId)}` : '/api/social/ws')
 
+    let sock: WebSocket
     try {
-      this.ws = new WebSocket(url)
+      sock = new WebSocket(url)
+      this.ws = sock
     } catch {
       this.scheduleReconnect()
       return
     }
 
-    this.ws.onopen = () => {
+    sock.onopen = () => {
+      if (this.ws !== sock || this.epoch !== epoch) return
       this.attempt = 0
+      this.connectedDeviceId = this.deviceId
       this.startHeartbeat()
       if (this.deviceId) {
         this.sendRaw({ type: 'init', device_id: this.deviceId })
       }
-      // UI über erfolgreichen Reconnect benachrichtigen
-      window.dispatchEvent(new CustomEvent('msm:sync-status', { detail: { connected: true } }))
+      window.dispatchEvent(
+        new CustomEvent('msm:messenger-socket-status', { detail: { connected: true } }),
+      )
     }
 
-    this.ws.onmessage = (event) => {
+    sock.onmessage = (event) => {
+      if (this.ws !== sock || this.epoch !== epoch) return
       try {
         const data = JSON.parse(event.data)
         this.handleIncoming(data)
@@ -64,26 +110,59 @@ class MessengerSocketService {
       }
     }
 
-    this.ws.onerror = () => {
+    sock.onerror = () => {
       // Fehler führt zu close -> Reconnect
     }
 
-    this.ws.onclose = () => {
+    sock.onclose = (event) => {
+      if (this.ws !== sock || this.epoch !== epoch) return
       this.stopHeartbeat()
       this.ws = null
-      window.dispatchEvent(new CustomEvent('msm:sync-status', { detail: { connected: false } }))
+      this.connectedDeviceId = null
+      window.dispatchEvent(
+        new CustomEvent('msm:messenger-socket-status', { detail: { connected: false } }),
+      )
+      if (this.manualClose) return
+      if (event.code === 4401 || event.code === 4403) {
+        this.manualClose = true
+        this.rejectPending(new SocketGetrenntError())
+        return
+      }
       this.scheduleReconnect()
     }
   }
 
   public disconnect(): void {
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.manualClose = true
+    this.epoch += 1
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
     this.stopHeartbeat()
-    if (this.ws) {
+    const sock = this.ws
+    this.ws = null
+    this.connectedDeviceId = null
+    this.deviceId = null
+    this.attempt = 0
+    this.rejectPending(new SocketGetrenntError())
+    if (sock) {
       try {
-        this.ws.close()
+        sock.close()
       } catch {}
-      this.ws = null
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('msm:messenger-socket-status', { detail: { connected: false } }),
+      )
+    }
+  }
+
+  private rejectPending(fehler: Error): void {
+    for (const [id, pending] of this.pendingChat) {
+      clearTimeout(pending.timer)
+      pending.reject(fehler)
+      this.pendingChat.delete(id)
     }
   }
 
@@ -109,23 +188,26 @@ class MessengerSocketService {
   }): Promise<{ id: number; client_uuid: string }> {
     if (this.isConnected()) {
       return new Promise<{ id: number; client_uuid: string }>((resolve, reject) => {
-        const timer = setTimeout(() => {
+        let timer: any
+        const fallback = () => {
+          if (!this.pendingChat.has(payload.client_uuid)) return
           this.pendingChat.delete(payload.client_uuid)
+          clearTimeout(timer)
           void sendChatMessage(payload)
             .then((res) => resolve({ id: res.id, client_uuid: res.client_uuid }))
             .catch(reject)
-        }, 3000)
+        }
+        timer = setTimeout(fallback, 3000)
         this.pendingChat.set(payload.client_uuid, {
           resolve: (val) => {
             clearTimeout(timer)
             resolve(val)
           },
-          reject: () => {
+          reject: (err) => {
             clearTimeout(timer)
-            void sendChatMessage(payload)
-              .then((res) => resolve({ id: res.id, client_uuid: res.client_uuid }))
-              .catch(reject)
+            reject(err)
           },
+          fallback,
           timer,
         })
         this.sendRaw({
@@ -141,32 +223,6 @@ class MessengerSocketService {
     }
     const res = await sendChatMessage(payload)
     return { id: res.id, client_uuid: res.client_uuid }
-  }
-
-  /**
-   * Sendet eine verschluesselte Nachricht für die Zielgeräte.
-   * Bevorzugt direkten WebSocket-Push, fällt sonst auf HTTP-POST zurück.
-   */
-  public async sendMessage(_payload: {
-    client_uuid: string
-    chat_type: 'direct' | 'group'
-    chat_id: string
-    envelopes: Array<{ target_device_id?: number; device_id?: string; encrypted_payload: string; client_uuid?: string }>
-    device_id?: string
-  }): Promise<{ status: string; client_uuid: string; enqueued: number }> {
-    // Altweg. Der Einheits-Transport ruft `sendChatMessage` auf.
-    throw new Error('Der alte Umschlag-Transport ist entfernt.')
-  }
-
-  public async ackMessages(): Promise<void> {
-    // Der Einheits-Transport quittiert ueber `ackChatMessages` mit up_to_id.
-  }
-
-  /**
-   * Meldet gelesene Nachrichten an den Absender (2 blaue Häkchen).
-   */
-  public async sendReadReceipt(): Promise<void> {
-    // Der Einheits-Transport quittiert ueber `readChatMessages` mit up_to_id.
   }
 
   /**
@@ -195,6 +251,22 @@ class MessengerSocketService {
     if (!data || typeof data !== 'object') return
     const msgType = data.type
 
+    // Der Server hat den Versand abgelehnt. Kein HTTP-Fallback: der Fehler
+    // ist ein Urteil, keine verlorene Verbindung.
+    if (msgType === 'error' && data.client_uuid) {
+      const pending = this.pendingChat.get(data.client_uuid)
+      if (pending) {
+        this.pendingChat.delete(data.client_uuid)
+        clearTimeout(pending.timer)
+        const fehler = Object.assign(new Error(String(data.detail || 'Der Versand ist fehlgeschlagen.')), {
+          status: Number(data.status_code) || 0,
+          code: typeof data.code === 'string' ? data.code : undefined,
+        })
+        pending.reject(fehler)
+      }
+      return
+    }
+
     // 1. Quittung für selbst gesendete Nachricht
     if (msgType === 'message_sent' && data.client_uuid) {
       const pending = this.pendingChat.get(data.client_uuid)
@@ -217,17 +289,6 @@ class MessengerSocketService {
           }),
         )
         window.dispatchEvent(new CustomEvent('msm:messages-updated', { detail: data }))
-      }
-    }
-
-    // 3. Neue, geänderte oder gelöschte Nachricht.
-    if (
-      msgType === 'message_created' ||
-      msgType === 'message_updated' ||
-      msgType === 'message_deleted'
-    ) {
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('msm:message-event', { detail: data }))
       }
     }
 
@@ -258,7 +319,7 @@ class MessengerSocketService {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) return
+    if (this.manualClose || this.reconnectTimer) return
     const delays = [1000, 2000, 4000, 8000, 10000]
     const base = delays[Math.min(this.attempt, delays.length - 1)]
     const jitter = base * (0.85 + Math.random() * 0.3)
@@ -271,3 +332,6 @@ class MessengerSocketService {
 }
 
 export const messengerSocket = new MessengerSocketService()
+
+// Ein Kontowechsel darf keine Verbindung des vorigen Kontos weiterführen.
+beiKontowechsel(() => messengerSocket.disconnect())

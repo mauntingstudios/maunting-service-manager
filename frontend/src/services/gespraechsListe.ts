@@ -165,6 +165,14 @@ async function schreibeStand(): Promise<void> {
   }
 }
 
+/** Schreibt den vorhandenen Stand beim PIN-Wechsel neu. */
+export async function schreibeGespraecheBestandNeu(): Promise<number> {
+  await ladeGespraeche()
+  if (!stand) return 0
+  await schreibeStand()
+  return stand.size
+}
+
 /**
  * Merkt sich ein Gespräch.
  *

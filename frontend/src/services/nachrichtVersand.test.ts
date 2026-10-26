@@ -25,7 +25,14 @@ import { ladeAnhangHoch } from '@/api/social'
 import { enqueueMessageMutation } from '@/lib/offlineSync'
 import { messengerSocket } from '@/services/messengerSocket'
 import { chatMediaBlobCache } from './klartextSpeicher'
-import { baueNutzlast, ladeAnhaengeHoch, stelleZu, type Nutzlastangaben } from './nachrichtVersand'
+import {
+  baueNutzlast,
+  ChatSchluesselNichtGeteiltError,
+  ladeAnhaengeHoch,
+  NachrichtAbgewiesenError,
+  stelleZu,
+  type Nutzlastangaben,
+} from './nachrichtVersand'
 
 const sendChatMessage = vi.mocked(messengerSocket.sendChatMessage)
 
@@ -272,21 +279,21 @@ describe('stelleZu', () => {
       key_version: 1,
       encrypted_payload: 'chiffrat',
     })
-    expect(ergebnis).toEqual({ niedrigsteId: 42, verbindungsfehler: false, ueberInbox: false })
+    expect(ergebnis).toEqual({ niedrigsteId: 42, verbindungsfehler: false })
     expect(einreihen).not.toHaveBeenCalled()
   })
 
-  it('sendet nie zwei Kopien derselben Nachricht', async () => {
-    // Frueher gingen Aufbau und Nachricht als zwei Umschlaege hinaus; der
-    // zweite Versand derselben Kennung war die Doppelmeldung.
-    await stelleZu([auftrag(), auftrag({ client_uuid: 'u-2' })])
-    expect(sendChatMessage).toHaveBeenCalledTimes(1)
-    expect(sendChatMessage.mock.calls[0][0].client_uuid).toBe('u-1')
+  it('verlangt genau einen Versandauftrag', async () => {
+    await expect(stelleZu([auftrag(), auftrag({ client_uuid: 'u-2' })])).rejects.toThrow(
+      'genau einen Versandauftrag',
+    )
+    expect(sendChatMessage).not.toHaveBeenCalled()
   })
 
   it('schickt nichts ohne Chat, Version und Kennung', async () => {
     expect(await stelleZu([auftrag({ chat_id: undefined })])).toEqual({
-      niedrigsteId: 0, verbindungsfehler: false, ueberInbox: false,
+      niedrigsteId: 0,
+      verbindungsfehler: false,
     })
     expect(sendChatMessage).not.toHaveBeenCalled()
   })
@@ -294,7 +301,7 @@ describe('stelleZu', () => {
   it('reiht bei einem Netzwerkfehler mit allen Angaben in die Outbox ein', async () => {
     sendChatMessage.mockRejectedValue(new Error('offline'))
     const ergebnis = await stelleZu([auftrag()])
-    expect(ergebnis).toEqual({ niedrigsteId: 0, verbindungsfehler: true, ueberInbox: false })
+    expect(ergebnis).toEqual({ niedrigsteId: 0, verbindungsfehler: true })
     expect(einreihen).toHaveBeenCalledWith({
       blind_mailbox_id: 'direct:peer:5',
       chat_type: 'direct',
@@ -311,15 +318,37 @@ describe('stelleZu', () => {
     expect(einreihen).toHaveBeenCalledTimes(1)
   })
 
+  it('reiht ein Ratenlimit ein, statt es als Urteil zu behandeln', async () => {
+    sendChatMessage.mockRejectedValue(Object.assign(new Error('spaeter'), { status: 429 }))
+    expect(await stelleZu([auftrag()])).toEqual({
+      niedrigsteId: 0,
+      verbindungsfehler: true,
+    })
+    expect(einreihen).toHaveBeenCalledTimes(1)
+  })
+
   it('wirft bei einer endgueltigen Ablehnung und reiht nicht ein', async () => {
     sendChatMessage.mockRejectedValue(Object.assign(new Error('abgelehnt'), { status: 400 }))
-    await expect(stelleZu([auftrag()])).rejects.toThrow('abgelehnt')
+    await expect(stelleZu([auftrag()])).rejects.toBeInstanceOf(NachrichtAbgewiesenError)
     expect(einreihen).not.toHaveBeenCalled()
   })
 
-  it('gibt einen fehlenden Chat-Schluessel (409) weiter, statt ihn zu verschlucken', async () => {
-    sendChatMessage.mockRejectedValue(Object.assign(new Error('kein schluessel'), { status: 409 }))
-    await expect(stelleZu([auftrag()])).rejects.toThrow('kein schluessel')
+  it('wirft bei fehlender Schluesselabdeckung einen eigenen Fehler', async () => {
+    sendChatMessage.mockRejectedValue(
+      Object.assign(new Error('kein schluessel'), {
+        status: 409,
+        code: 'key_version_not_shared',
+      }),
+    )
+    await expect(stelleZu([auftrag()])).rejects.toBeInstanceOf(
+      ChatSchluesselNichtGeteiltError,
+    )
+    expect(einreihen).not.toHaveBeenCalled()
+  })
+
+  it('behandelt ein anderes 409 als endgueltig', async () => {
+    sendChatMessage.mockRejectedValue(Object.assign(new Error('konflikt'), { status: 409 }))
+    await expect(stelleZu([auftrag()])).rejects.toBeInstanceOf(NachrichtAbgewiesenError)
     expect(einreihen).not.toHaveBeenCalled()
   })
 })

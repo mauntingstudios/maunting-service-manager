@@ -11,6 +11,11 @@
 import { blobHerunterladen } from '@/lib/herunterladen'
 import { api } from '@/api/client'
 import i18n from '@/i18n'
+import {
+  GRUPPEN_MERKER_PREFIX,
+  MESSENGER_KEYS,
+  getStorageItem,
+} from '@/lib/offlineAblage'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { blobTeile, inDerAppSpeichern } from '@/lib/geraetSpeichern'
 import { zipSchreiben, type ZipEintrag } from '@/lib/zipSchreiben'
@@ -66,15 +71,7 @@ export interface ExportErgebnis {
 }
 
 /** Chat-Einstellungen, die nur auf diesem Gerät liegen. */
-const LOKALE_CHAT_SCHLUESSEL = [
-  'msm:chat_pins',
-  'msm:chat_archive',
-  'msm:chat_mutes',
-  'msm:chat_blocks',
-  'msm:chat_blocked_profiles',
-  'msm:chat_pinned_message',
-  'msm:chat_retention',
-]
+const LOKALE_CHAT_SCHLUESSEL = Object.values(MESSENGER_KEYS)
 
 const NOTIZ_FELDER = ['title', 'content'] as const
 const TERMIN_FELDER = ['title', 'description', 'location', 'recurrence'] as const
@@ -146,8 +143,17 @@ async function messengerEintraege(): Promise<ZipEintrag[] | null> {
     verlauf[mailbox] = await loadLocalMessages(mailbox)
   }
   const einstellungen: Record<string, unknown> = {}
-  for (const schluessel of LOKALE_CHAT_SCHLUESSEL) {
-    const wert = localStorage.getItem(schluessel)
+  const schluesselListe: string[] = [...LOKALE_CHAT_SCHLUESSEL]
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(GRUPPEN_MERKER_PREFIX)) schluesselListe.push(key)
+    }
+  } catch {
+    // Ohne Ablage bleibt der Export bei den festen Schlüsseln.
+  }
+  for (const schluessel of schluesselListe) {
+    const wert = getStorageItem(schluessel)
     if (wert !== null) einstellungen[schluessel] = wert
   }
   /*

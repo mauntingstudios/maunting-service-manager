@@ -36,6 +36,7 @@ import type { getOutbox } from '@/lib/offlineSync'
 import { maxAnhangBytes } from '@/services/medienKrypto'
 import { messengerSocket } from '@/services/messengerSocket'
 import { baueVersandFuer } from '@/hooks/useKonversation'
+import { KontoSchluesselNichtUebertragenError } from '@/services/accountKeys'
 import { ChatSchluesselFehltError } from '@/services/chatKrypto'
 import {
   resolveIdentity,
@@ -50,16 +51,25 @@ import {
   updateMessageInLocalStore,
 } from '@/services/messengerLocalStore'
 import {
-  tilgeFremdeNachrichtBeimServer,
+  baueLoeschauftrag,
   tilgeInhalt,
   tilgeNachrichtLokal,
 } from '@/services/nachrichtLoeschen'
+import { legeLoeschauftragAn } from '@/services/messengerLocalStore'
+import { stosseLoeschungenAn } from '@/services/loeschAuftraege'
+import { stosseSteuerOutboxAn } from '@/services/steuerOutboxLauf'
 import { sessionChatCache } from '@/services/klartextSpeicher'
-import { partnerKennungen } from '@/services/quittungsstand'
 import { vergissMailbox } from '@/services/verlaufSuche'
 import { findeErwaehnungen } from '@/services/erwaehnungen'
-import { verfaelltAm as berechneVerfall } from '@/services/nachrichtVerfall'
-import { baueNutzlast, ladeAnhaengeHoch, stelleZu } from '@/services/nachrichtVersand'
+import { rechteAusGruppe } from '@/services/gruppenRollen'
+import { verfaelltAm as berechneVerfall, verfallsfrist } from '@/services/nachrichtVerfall'
+import {
+  baueNutzlast,
+  ChatSchluesselNichtGeteiltError,
+  ladeAnhaengeHoch,
+  NachrichtAbgewiesenError,
+  stelleZu,
+} from '@/services/nachrichtVersand'
 import { istAbweisung, type SteuerAusgang, type SteuerEintrag } from '@/services/wirkungTypen'
 import {
   baueAugenblickNutzlast,
@@ -102,6 +112,8 @@ export interface SendeAuftrag {
   augenblick?: boolean
   /** Stellt den erloschenen Funken mit der Gegenseite wieder her. */
   funkenRettung?: boolean
+  /** Erneuter Versand einer bestehenden Zeile; dieselbe Kennung bleibt. */
+  wiederholung?: { clientUuid: string; id: number }
 }
 
 /**
@@ -227,9 +239,9 @@ export function useMessengerSenden(optionen: Optionen) {
    * erst adressieren muss. Aufgelöst wird beim **Senden**, gegen die
    * Mitgliederliste — der Text trägt danach den Namen, die Wirkung die Kennung.
    */
-  const erwaehnungsFelder = (text: string) => {
-    if (!activeGroup) return {}
-    const { erwaehnungen, erwaehntAlle } = findeErwaehnungen(text, activeGroup.members || [])
+  const erwaehnungsFelder = (text: string, gruppe: ChatGroupItem | null = activeGroup) => {
+    if (!gruppe) return {}
+    const { erwaehnungen, erwaehntAlle } = findeErwaehnungen(text, gruppe.members || [])
     return {
       erwaehnungen: erwaehnungen.length ? erwaehnungen : undefined,
       erwaehntAlle: erwaehntAlle || undefined,
@@ -403,32 +415,22 @@ export function useMessengerSenden(optionen: Optionen) {
 
     const geloeschtAm = new Date().toISOString()
     try {
-      // 1. Die Gegenseite erfährt es. Steht am Anfang, weil nur dieser Schritt
-      //    ein fremdes Gerät erreicht; was danach kommt, kann man wiederholen.
-      //    Seit 10/2026 als dauerhafte Wirkung: ohne Netz wartet sie in der
-      //    Outbox, statt die Löschung hier abzubrechen. Der Schritt ist auch
-      //    für die eigene Löschung nötig — sonst bliebe sie auf den anderen
-      //    Geräten stehen.
-      await sendeWirkung({
-        typ: 'delete_message',
-        felder: {
-          type: 'delete_message',
-          target_id: msg.id,
-          target_client_uuid: msg.clientUuid,
-          deleted_at: geloeschtAm,
-        },
-        ziel: msg.clientUuid ?? null,
-        zielId: msg.id,
-        // Eine Löschung ist nicht umkehrbar; es gibt nichts zurückzunehmen.
-        ruecknahme: { art: 'keine' },
-      })
+      const chatType = msg.chatType ?? (activeGroup ? 'group' : 'direct')
+      const chatId = Number(msg.chatId ?? activeGroup?.id ?? 0)
+      const auftrag = baueLoeschauftrag(
+        msg,
+        blindMailboxId,
+        chatType,
+        chatId,
+        fremd,
+      )
+      let serverAuftragAngenommen = auftrag === null
+      if (auftrag) {
+        serverAuftragAngenommen = await legeLoeschauftragAn(auftrag).catch(() => false)
+      }
 
-      // 2. Dieses Gerät — **vor** dem Serverteil, und ohne von ihm abzuhängen.
-      //    Seit die Wirkung in der Outbox liegt, ist die Löschung auch ohne
-      //    Netz unterwegs; bliebe sie hier stehen, löschte die Gegenseite und
-      //    wir behielten sie. Der Löschbefehl des eigenen Umschlags kommt hier
-      //    nie an: eine Ratchet-Nachricht kann ihr Absender nicht öffnen,
-      //    `deleteMap` bliebe für diese Nachricht auf immer leer.
+      // 1. Dieses Gerät. Die Serverkopie hängt am dauerhaften Auftrag; die
+      //    lokale Löschung darf nicht auf das Netz warten.
       await tilgeNachrichtLokal(blindMailboxId, msg, geloeschtAm)
 
       setMessages((prev) => {
@@ -441,28 +443,13 @@ export function useMessengerSenden(optionen: Optionen) {
         return geaendert
       })
 
-      // 3. Chiffretext und Anhänge vom Server nehmen — als **dauerhafter
-      //    Auftrag**, abgelegt vor dem ersten Serveraufruf. Die Medienkennungen
-      //    stehen ausschließlich im `msg`-Objekt von eben: die Zeile ist hier
-      //    schon ein Grabstein. Bricht die App nach dem Ablegen ab, holt der
-      //    nächste Anlass den Auftrag nach. Ein Fehlschlag wird gesagt, nicht
-      //    verschluckt.
-      // Der Serverteil ist die REST-Loeschung aus Schritt 1; hier bleiben nur
-      // die Blobs, die der Absender selbst hochgeladen hat.
-      const ausgang = await tilgeFremdeNachrichtBeimServer(msg)
-      const serverRest = false
-
-      // Kein „für alle gelöscht", solange ein Anhang nachweislich bleibt: der
-      // Lauf hat das schon über `setzeLoeschMelder` gesagt. Ein Erfolg daneben
-      // wäre die falsche Zusage, gegen die diese Datei geschrieben ist.
-      if (ausgang.medienGeblieben === 0) {
+      if (serverAuftragAngenommen) {
         if (fremd) toast.success(t('messenger.messageRemovedByModeration'))
         else toast.success(t('messenger.messageDeletedForAll'))
-      }
-      if (serverRest) {
-        // Hier ist sie weg; die Serverkopie liegt noch und wird weiter
-        // versucht. Das zu sagen ist besser, als „für alle gelöscht" zu
-        // behaupten.
+        // Der Auftrag liegt jetzt dauerhaft. Der Lauf versucht ihn sofort;
+        // scheitert er, sagt die Systemzeile es später.
+        void stosseLoeschungenAn()
+      } else {
         toast.info(t('messenger.messageServerCopyRemains'))
       }
       await loadMessages(false)
@@ -506,9 +493,27 @@ export function useMessengerSenden(optionen: Optionen) {
     // Gruppe, Eingabefeld) gilt dafür nicht.
     const fremdesZiel = auftrag.ziel ?? null
     const zielDirekt = !!fremdesZiel?.recipientId && !fremdesZiel.groupId
+    const zielGruppe = fremdesZiel?.groupId
+      ? groups.find((g) => g.id === fremdesZiel.groupId) ?? null
+      : fremdesZiel
+        ? null
+        : activeGroup
+    const zielRechte = zielGruppe ? rechteAusGruppe(zielGruppe, currentUserId) : null
+    const darfAmZielSchreiben = zielGruppe
+      ? zielRechte?.has('send_messages') === true
+      : zielDirekt || darfSchreiben
+    const darfAmZielAnhaengen = zielGruppe
+      ? zielRechte?.has('attach_media') === true
+      : zielDirekt || darfAnhaengen
 
     // If currently editing a message, redirect to edit handler
-    if (editingMessage && !fremdesZiel && !auftrag.augenblick && !auftrag.funkenRettung) {
+    if (
+      editingMessage &&
+      !fremdesZiel &&
+      !auftrag.augenblick &&
+      !auftrag.funkenRettung &&
+      !auftrag.wiederholung
+    ) {
       const textToSave = customText !== undefined ? customText : inputText
       await handleEditMessage(editingMessage, textToSave)
       return false
@@ -527,13 +532,12 @@ export function useMessengerSenden(optionen: Optionen) {
     // Die Rechtelage der Gruppe, bevor irgendetwas verschlüsselt wird. Das
     // Eingabefeld ist bereits gesperrt; dies fängt die anderen Wege ab —
     // Weiterleiten, Sprachnachricht, Videonotiz, Sticker.
-    if (!zielDirekt && !darfSchreiben) {
+    if (!darfAmZielSchreiben) {
       toast.error(t('messenger.sendNoRight'))
       return false
     }
     if (
-      !zielDirekt &&
-      !darfAnhaengen &&
+      !darfAmZielAnhaengen &&
       (note || cal || img || audio || file || sticker || storyReply || videoNote)
     ) {
       toast.error(t('messenger.attachNoRight'))
@@ -616,15 +620,21 @@ export function useMessengerSenden(optionen: Optionen) {
     const targetBlindMailboxId = fremdesZiel?.blindMailboxId ?? blindMailboxId
     const targetUserId = fremdesZiel ? (fremdesZiel.recipientId ?? undefined) : activeContact?.userId
     const currentGroupId = fremdesZiel ? (fremdesZiel.groupId ?? undefined) : activeGroup?.id
+    const zielVerfallSekunden = fremdesZiel
+      ? verfallsfrist(targetBlindMailboxId)
+      : verfallSekunden
 
+    const wiederholung = auftrag.wiederholung
     const clientUuid =
-      typeof crypto !== 'undefined' && crypto.randomUUID
+      wiederholung?.clientUuid ??
+      (typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
-        : 'msg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9)
+        : 'msg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9))
+    const optimisticId = wiederholung?.id ?? Date.now()
 
     // Instant optimistic update (<5ms, non-blocking UI)
     const optimisticMessage: ChatMessage = {
-      id: Date.now(),
+      id: optimisticId,
       clientUuid,
       senderId: currentUserId,
       senderName: user?.username || 'Ich',
@@ -650,8 +660,8 @@ export function useMessengerSenden(optionen: Optionen) {
       videoUrl,
       antwortAuf: bezug || undefined,
       weitergeleitet: weitergeleitet || undefined,
-      ...erwaehnungsFelder(rawText),
-      verfaelltAm: berechneVerfall(verfallSekunden),
+      ...erwaehnungsFelder(rawText, zielGruppe),
+      verfaelltAm: berechneVerfall(zielVerfallSekunden),
       augenblick: augenblickMarke,
       funkenRettung: rettungsMarke,
       isDelivered: false,
@@ -697,7 +707,12 @@ export function useMessengerSenden(optionen: Optionen) {
         .then(() => vergissMailbox(targetBlindMailboxId))
     } else {
       setMessages((prev) => {
-        const updated = [...prev, optimisticMessage]
+        const vorhanden = wiederholung
+          ? prev.some((m) => m.clientUuid === clientUuid)
+          : false
+        const updated = vorhanden
+          ? prev.map((m) => (m.clientUuid === clientUuid ? optimisticMessage : m))
+          : [...prev, optimisticMessage]
         sessionChatCache.set(targetBlindMailboxId, updated.slice(-80))
         return updated
       })
@@ -722,11 +737,12 @@ export function useMessengerSenden(optionen: Optionen) {
     justSentRef.current = true
     lastTypingSentRef.current = 0
 
-    if (konversation.chatType && konversation.chatId) {
+    if (!fremdesZiel && konversation.chatType && konversation.chatId) {
       messengerSocket.sendTyping(konversation.chatType, String(konversation.chatId), 'idle')
     }
 
     setSending(true)
+    let angenommen = false
     try {
       // Die Schlüsselprüfung steht hinter dem optimistischen Einfügen, damit die
       // Eingabe sofort leer ist. Scheitert sie, nimmt der catch-Zweig die
@@ -745,7 +761,7 @@ export function useMessengerSenden(optionen: Optionen) {
         }
       }
 
-      const erwaehnt = erwaehnungsFelder(rawText)
+      const erwaehnt = erwaehnungsFelder(rawText, zielGruppe)
       const zeitpunkt = new Date().toISOString()
       const chatZiel = await konversation.ensureChat()
       if (!chatZiel) throw new Error(t('messenger.noDeviceOnline', { name: activeContact?.username || '' }))
@@ -802,60 +818,81 @@ export function useMessengerSenden(optionen: Optionen) {
       // und mit dem Chat-Schluessel verschluesselt.
       const payload = JSON.stringify(payloadObj)
 
-      // Welche Umschläge daraus werden, entscheidet `useKonversation`: einer
-      // für die Gruppe, oder je Empfängergerät und eigenem Zweitgerät einer aus
-      // dem Double Ratchet, dem sein Sitzungsaufbau vorausgeht. Der
-      // Gruppenschlüssel rotiert dabei, falls sich die Mitgliedschaft geändert
-      // hat. Das steht bewusst vor der Offline-Abzweigung: ohne Netz gibt es
-      // weder einen frischen Schlüssel noch einen Weg, ihn zu verteilen.
-      if (!currentGroupId && !aktiveIdentitaet.state) {
-        throw new Error(t('messenger.deviceKeyNotReady'))
-      }
       /*
-       * **Die Zeile liegt, bevor der Ratchet-Schritt läuft.**
+       * Die Zeile liegt, bevor der Chat-Schlüssel den Umschlag baut. Geht der
+       * Versand danach schief, bleibt sie als sichtbarer Auftrag stehen.
        *
-       * Der Schritt verbraucht eine Kettenposition und legt den Umschlag in
-       * derselben Transaktion ab. Bräche die App davor ab und die Zeile fehlte,
-       * ginge die Nachricht beim Wiederaufnehmen hinaus, ohne dass der Absender
-       * sie je sähe — den eigenen Ratchet-Umschlag kann er nicht öffnen.
+       * Ein fehlender Schlüssel für ein neues Mitglied ist ein Sonderfall:
+       * Owner und Admins erneuern die Version einmal und versuchen es erneut.
+       * Alle anderen bekommen eine sichtbare, wiederholbare Fehlzeile.
        */
       await ablageBereit
-      const auftraege = fremdesZiel
-        ? await baueVersandFuer(
-            // Für eine fremde Gruppe braucht der Schlüssel ihre Mitglieder;
-            // für einen fremden Direktchat reicht das Gegenüber.
-            fremdesZiel.groupId
-              ? {
-                  groupId: fremdesZiel.groupId,
-                  blindMailboxId: targetBlindMailboxId,
-                  eigeneId: currentUserId,
-                  mitglieder: (() => {
-                    const g = groups.find((x) => x.id === fremdesZiel.groupId)
-                    const ids = (g?.members ?? []).map((m) => Number(m.user_id))
-                    if (!ids.includes(currentUserId)) ids.push(currentUserId)
-                    return ids
-                  })(),
-                  istEigentuemer:
-                    groups.find((x) => x.id === fremdesZiel.groupId)?.role === 'owner',
-                }
-              : null,
-            fremdesZiel.recipientId
-              ? { eigeneId: currentUserId, peerId: Number(fremdesZiel.recipientId) }
-              : null,
-            targetBlindMailboxId,
-            payload,
-            clientUuid,
-          )
-        : await konversation.baueVersand(payload, clientUuid)
-      if (auftraege.length === 0) {
-        // Früher fiel der Sendepfad hier auf einen Schlüssel zurück, den das
-        // Backend aus den beiden Benutzerkennungen selbst bilden kann. Lieber
-        // nicht senden und es sagen.
-        if (currentGroupId) throw new Error(t('messenger.groupNotReady'))
-        throw new E2eeRecipientKeyMissingError(targetUserId ?? 0)
+
+      let niedrigsteId = 0
+      let verbindungsfehler = false
+      let schluesselErneuert = false
+      const darfSchluesselErneuern =
+        !fremdesZiel &&
+        (!currentGroupId ||
+          activeGroup?.role === 'owner' ||
+          activeGroup?.role === 'admin')
+
+      for (let versuch = 0; versuch < 2; versuch += 1) {
+        const auftraege = fremdesZiel
+          ? await baueVersandFuer(
+              // Für eine fremde Gruppe braucht der Schlüssel ihre Mitglieder;
+              // für einen fremden Direktchat reicht das Gegenüber.
+              fremdesZiel.groupId
+                ? {
+                    groupId: fremdesZiel.groupId,
+                    blindMailboxId: targetBlindMailboxId,
+                    eigeneId: currentUserId,
+                    mitglieder: (() => {
+                      const g = groups.find((x) => x.id === fremdesZiel.groupId)
+                      const ids = (g?.members ?? []).map((m) => Number(m.user_id))
+                      if (!ids.includes(currentUserId)) ids.push(currentUserId)
+                      return ids
+                    })(),
+                    istEigentuemer:
+                      groups.find((x) => x.id === fremdesZiel.groupId)?.role === 'owner',
+                  }
+                : null,
+              fremdesZiel.recipientId
+                ? { eigeneId: currentUserId, peerId: Number(fremdesZiel.recipientId) }
+                : null,
+              targetBlindMailboxId,
+              payload,
+              clientUuid,
+            )
+          : await konversation.baueVersand(payload, clientUuid)
+        if (auftraege.length === 0) {
+          if (currentGroupId) throw new Error(t('messenger.groupNotReady'))
+          throw new E2eeRecipientKeyMissingError(targetUserId ?? 0)
+        }
+
+        try {
+          const ergebnis = await stelleZu(auftraege)
+          niedrigsteId = ergebnis.niedrigsteId
+          verbindungsfehler = ergebnis.verbindungsfehler
+          break
+        } catch (fehler) {
+          if (
+            fehler instanceof ChatSchluesselNichtGeteiltError &&
+            !schluesselErneuert &&
+            darfSchluesselErneuern
+          ) {
+            schluesselErneuert = true
+            await konversation.erneuereSchluessel()
+            continue
+          }
+          throw fehler
+        }
       }
 
-      const { niedrigsteId, verbindungsfehler, ueberInbox } = await stelleZu(auftraege)
+      if (niedrigsteId === 0 && !verbindungsfehler) {
+        throw new Error(t('messenger.sendFailed'))
+      }
+      angenommen = true
 
       if (verbindungsfehler && niedrigsteId === 0) {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -865,21 +902,9 @@ export function useMessengerSenden(optionen: Optionen) {
 
       if (niedrigsteId > 0) {
         if (!weitergeleitet) meldeInhaltsErrungenschaften(auftrag, rawText)
-        // Die Queue bestätigt ohne Nachrichten-ID. Die eindeutige lokale
-        // Kennung bleibt bestehen; eine feste 1 überschriebe die vorige Zeile.
-        const serverId = ueberInbox ? optimisticMessage.id : niedrigsteId
-        // Ausdrückliche Kennungen gelten vor der Obergrenze — der Partner
-        // nennt seit 23.10.2026 die Nachricht selbst.
-        const bestaetigt = partnerKennungen(targetBlindMailboxId)
-        const perIdRead = bestaetigt.gelesen.has(clientUuid)
-        // Eine Zeile aus dem Gerätepostfach trägt eine Annahmenummer; die
-        // alten Zahlenquittungen gehören zu einem anderen Kennungsraum.
-        const zahlenGelten = !ueberInbox
-        const isRead = perIdRead || (zahlenGelten && maxPartnerReadIdRef.current >= serverId)
-        const isDelivered =
-          isRead ||
-          bestaetigt.zugestellt.has(clientUuid) ||
-          (zahlenGelten && maxPartnerDeliveredIdRef.current >= serverId)
+        const serverId = niedrigsteId
+        const isRead = maxPartnerReadIdRef.current >= serverId
+        const isDelivered = isRead || maxPartnerDeliveredIdRef.current >= serverId
         const status: 'queued' | 'sent' | 'delivered' | 'read' = isRead
           ? 'read'
           : isDelivered
@@ -893,9 +918,6 @@ export function useMessengerSenden(optionen: Optionen) {
                 status,
                 isRead: m.isRead || isRead,
                 isDelivered: m.isDelivered || isDelivered,
-                // Einmal über das Postfach, immer über das Postfach: die
-                // Kennung dieser Zeile bleibt eine Annahmenummer.
-                ...(ueberInbox ? { viaInbox: true } : {}),
               }
             : m
         setMessages((prev) => sortMessagesChronologically(prev.map(nachziehen)))
@@ -912,11 +934,17 @@ export function useMessengerSenden(optionen: Optionen) {
           status,
           isRead,
           isDelivered,
-          ...(ueberInbox ? { viaInbox: true } : {}),
         }).catch(() => {})
       }
 
       await loadMessages()
+      if (niedrigsteId > 0) {
+        // Ein erfolgreicher Versand ist der beste Anlass, liegengebliebene
+        // Wirkungen nachzuholen: die Verbindung steht gerade.
+        void stosseSteuerOutboxAn((ziel, eintrag) =>
+          konversation.sendeWirkungFuerZiel(ziel, eintrag),
+        ).catch(() => {})
+      }
     } catch (err: unknown) {
       // Was nicht hinausging, zählt nicht für den Funken.
       if (funkenEreignis) void useFunkenStore.getState().nimmZurueck(funkenPartner, funkenEreignis.kennung)
@@ -925,26 +953,76 @@ export function useMessengerSenden(optionen: Optionen) {
         err instanceof E2eeRecipientKeyMissingError ||
         err instanceof E2eeIdentityLockedError ||
         err instanceof ChatSchluesselFehltError ||
+        err instanceof KontoSchluesselNichtUebertragenError ||
         err instanceof AugenblickNichtHochgeladenError
+      const istDauerhaft =
+        err instanceof NachrichtAbgewiesenError ||
+        err instanceof ChatSchluesselNichtGeteiltError
 
-      if (istSchluesselProblem) {
-        // Konnte nicht verschlüsselt werden: die optimistisch eingefügte
-        // Nachricht wieder herausnehmen, sonst stünde im Verlauf etwas, das nie
-        // gesendet wurde. Der Text kommt in die Eingabe zurück, damit er nicht
-        // verloren geht.
-        if (err instanceof E2eeRecipientKeyMissingError && targetUserId) {
-          forgetRecipientPublicKey(targetUserId)
-        }
+      if (istDauerhaft) {
+        // Der Server hat geurteilt. Die Zeile bleibt sichtbar und wiederholbar;
+        // sie darf nicht als „Uhr" weiterlaufen.
         setMessages((prev) => {
-          const updated = prev.filter((m) => m.clientUuid !== clientUuid)
+          const updated = prev.map((m) =>
+            m.clientUuid === clientUuid
+              ? { ...m, status: 'failed' as const, isRead: false, isDelivered: false }
+              : m,
+          )
           sessionChatCache.set(targetBlindMailboxId, updated.slice(-80))
           return updated
         })
-        if (rawText) setInputText(rawText)
-
-        // Auch aus der Ablage: sonst holte der nächste Abgleich die Zeile
-        // zurück, und mit ihr den Augenblick.
-        if (funkenEreignis) {
+        void ablageBereit
+          .then(() =>
+            updateMessageInLocalStore(targetBlindMailboxId, clientUuid, {
+              status: 'failed',
+              isRead: false,
+              isDelivered: false,
+            }),
+          )
+          .catch(() => {})
+        toast.error(
+          err instanceof ChatSchluesselNichtGeteiltError
+            ? t('messenger.keyNotSharedRetry')
+            : t('messenger.sendFailed'),
+        )
+      } else if (istSchluesselProblem) {
+        if (err instanceof E2eeRecipientKeyMissingError && targetUserId) {
+          forgetRecipientPublicKey(targetUserId)
+        }
+        if (wiederholung) {
+          // Eine Wiederholung darf die einzige verbliebene Zeile nicht
+          // entfernen. Sie bleibt als failed stehen, bis der Schlüssel da ist.
+          setMessages((prev) => {
+            const updated = prev.map((m) =>
+              m.clientUuid === clientUuid
+                ? { ...m, status: 'failed' as const, isRead: false, isDelivered: false }
+                : m,
+            )
+            sessionChatCache.set(targetBlindMailboxId, updated.slice(-80))
+            return updated
+          })
+          void ablageBereit
+            .then(() =>
+              updateMessageInLocalStore(targetBlindMailboxId, clientUuid, {
+                status: 'failed',
+                isRead: false,
+                isDelivered: false,
+              }),
+            )
+            .catch(() => {})
+        } else {
+          // Konnte nicht verschlüsselt werden: die optimistisch eingefügte
+          // Nachricht wieder herausnehmen, sonst stünde im Verlauf etwas, das
+          // nie gesendet wurde.
+          setMessages((prev) => {
+            const updated = prev.filter((m) => m.clientUuid !== clientUuid)
+            sessionChatCache.set(targetBlindMailboxId, updated.slice(-80))
+            return updated
+          })
+          if (rawText && !fremdesZiel) setInputText(rawText)
+          if (img && !fremdesZiel) setSelectedImage(img)
+          if (file && !fremdesZiel) setStagedFile(file)
+          if (bezug && !fremdesZiel) setAntwortAuf(bezug)
           void ablageBereit
             .then(() => entferneLokaleNachricht(targetBlindMailboxId, { clientUuid }))
             .catch(() => {})
@@ -953,32 +1031,36 @@ export function useMessengerSenden(optionen: Optionen) {
         if (err instanceof AugenblickNichtHochgeladenError) {
           toast.error(t('messenger.moment.uploadFailed'))
         } else if (err instanceof E2eeIdentityLockedError) {
-          // Der Schlüssel dieses Geräts war noch nicht fertig angelegt. Beim
-          // nächsten Versuch steht er — es gibt nichts, was der Benutzer dafür
-          // tun müsste.
           toast.error(t('messenger.deviceKeyNotReadyRetry'))
-        } else if (err instanceof ChatSchluesselFehltError) {
+        } else {
           toast.error(
             t('messenger.noDeviceOnline', {
               name: activeContact?.username ?? t('messenger.thisContact'),
             }),
           )
-        } else {
-          toast.error(
-            t('messenger.noDeviceOnline', {
-              name: activeContact?.username ?? t('messenger.thisContact'),
-            })
-          )
         }
       } else {
-        const msg = err instanceof Error ? err.message : t('messenger.sendFailed')
-        toast.error(msg)
+        // Ein unerwarteter Fehler vor dem Serverurteil: nichts ist draußen,
+        // also keine queued-Zeile stehen lassen.
+        setMessages((prev) => {
+          const updated = prev.filter((m) => m.clientUuid !== clientUuid)
+          sessionChatCache.set(targetBlindMailboxId, updated.slice(-80))
+          return updated
+        })
+        if (rawText && !fremdesZiel) setInputText(rawText)
+        if (img && !fremdesZiel) setSelectedImage(img)
+        if (file && !fremdesZiel) setStagedFile(file)
+        if (bezug && !fremdesZiel) setAntwortAuf(bezug)
+        void ablageBereit
+          .then(() => entferneLokaleNachricht(targetBlindMailboxId, { clientUuid }))
+          .catch(() => {})
+        toast.error(err instanceof Error ? err.message : t('messenger.sendFailed'))
       }
     } finally {
       sendeLaeuft.current = false
       setSending(false)
     }
-    return true
+    return angenommen
   }
 
 

@@ -155,6 +155,14 @@ async function schreibeStand(): Promise<void> {
   }
 }
 
+/** Schreibt den vorhandenen Stand beim PIN-Wechsel neu. */
+export async function schreibeGruppenNamenBestandNeu(): Promise<number> {
+  await ladeGruppenNamen()
+  if (!stand) return 0
+  await schreibeStand()
+  return stand.size
+}
+
 /**
  * Merkt sich, wie eine Gruppe heisst.
  *

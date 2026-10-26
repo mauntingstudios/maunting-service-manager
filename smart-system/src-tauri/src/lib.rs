@@ -995,7 +995,6 @@ pub fn run() {
             erinnerung::erinnerungen_planen,
             dienst::dienst_starten,
             dienst::dienst_stoppen,
-            dienst::dienst_mailboxen,
             dienst::dienst_stand,
             dienst::dienst_akku_befreien,
             updater::update_pruefen,

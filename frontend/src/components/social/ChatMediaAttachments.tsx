@@ -4,11 +4,10 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileText, Download, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { getSafeAttachmentUrl } from '@/lib/sanitizeSvg'
-import { ladeAnhangHerunter } from '@/api/social'
 import type { MedienZeiger } from '@/services/medienKrypto'
 import { toast } from '@/stores/toastStore'
 import { chatMediaBlobCache } from '@/services/klartextSpeicher'
-import { holeMedium } from '@/services/medienSicherung'
+import { ladeUndSichereMedium } from '@/services/medienSicherung'
 
 /**
  * Woran ein Anhang hängt: wer ihn geschickt hat und in welche Mailbox.
@@ -105,17 +104,8 @@ export async function holeAnhangUrl(
   if (!zeiger) return null
   // Der Arbeitsspeicher zuerst, dann die Ablage: was einmal geholt wurde,
   // liegt dauerhaft auf diesem Gerät und braucht weder Netz noch Server.
-  const zwischengespeichert = await holeMedium(zeiger.mediaId)
-  if (zwischengespeichert) return zwischengespeichert
-  try {
-    const klartext = await ladeAnhangHerunter(zeiger, bindung)
-    const sicher = getSafeAttachmentUrl(klartext)
-    if (!sicher) return null
-    chatMediaBlobCache.set(zeiger.mediaId, sicher)
-    return sicher
-  } catch {
-    return null
-  }
+  const { url } = await ladeUndSichereMedium(zeiger, bindung)
+  return url
 }
 
 /**
@@ -198,13 +188,6 @@ export function ChatMediaImage({ attachment, bindung, onViewImage }: ChatMediaIm
     setLoading(true)
     setError(false)
     try {
-      const cachedItem = await holeMedium(mediaId)
-      if (cachedItem) {
-        setDecryptedUrl(cachedItem)
-        setLoading(false)
-        return
-      }
-
       const zeiger = medienZeiger({ mediaId, paketSchluessel, fileId })
       if (!zeiger) {
         // Altbestand: ein Anhang aus der Zeit vor dem Paketschlüssel. Sein
@@ -215,11 +198,11 @@ export function ChatMediaImage({ attachment, bindung, onViewImage }: ChatMediaIm
         return
       }
 
-      const decrypted = await ladeAnhangHerunter(zeiger, { absenderId, blindMailboxId })
-      const safe = getSafeAttachmentUrl(decrypted)
-      if (safe) {
-        chatMediaBlobCache.set(mediaId, safe)
-        setDecryptedUrl(safe)
+      // Kein direkter Download mehr: der Anhang wird dauerhaft abgelegt und
+      // erst danach angezeigt. Ein offener Anhang bekommt einen Nachholauftrag.
+      const { url } = await ladeUndSichereMedium(zeiger, { absenderId, blindMailboxId })
+      if (url) {
+        setDecryptedUrl(url)
       } else {
         setError(true)
         hasLoadedRef.current = null
@@ -307,24 +290,15 @@ export function ChatMediaFile({ attachment, bindung, isSelf = false }: ChatMedia
     if (attachment.mediaId && (!directSafeHref || directSafeHref === '#')) {
       setIsDownloading(true)
       try {
-        let decrypted = await holeMedium(attachment.mediaId)
-        if (!decrypted) {
-          const zeiger = medienZeiger(attachment)
-          if (!zeiger) {
-            // Altbestand aus der Zeit der ableitbaren Kanalschlüssel.
-            toast.error(t('social.attachment.legacyFormat'))
-            return
-          }
-          decrypted = await ladeAnhangHerunter(zeiger, bindung)
-          const safe = getSafeAttachmentUrl(decrypted)
-          if (safe) {
-            chatMediaBlobCache.set(attachment.mediaId, safe)
-            decrypted = safe
-          }
+        const zeiger = medienZeiger(attachment)
+        if (!zeiger) {
+          // Altbestand aus der Zeit der ableitbaren Kanalschlüssel.
+          toast.error(t('social.attachment.legacyFormat'))
+          return
         }
-        const safe = getSafeAttachmentUrl(decrypted)
-        if (safe) {
-          triggerDownload(safe, safeName)
+        const { url } = await ladeUndSichereMedium(zeiger, bindung, attachment.name)
+        if (url) {
+          triggerDownload(url, safeName)
         } else {
           toast.error(t('social.attachment.decryptBadFormat'))
         }

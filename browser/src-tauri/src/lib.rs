@@ -225,7 +225,6 @@ pub fn run() {
             benachrichtigung_senden,
             dienst::dienst_starten,
             dienst::dienst_stoppen,
-            dienst::dienst_mailboxen,
             dienst::dienst_stand,
             dienst::dienst_akku_befreien,
             schluesselfach::befehle::refresh_token_speichern,

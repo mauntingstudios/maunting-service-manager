@@ -153,6 +153,14 @@ export function useMessengerSync(optionen: MessengerSyncOptionen): void {
         void loadRef.current(false)
       } else if (detail?.type === 'typing' || detail?.type === 'e2ee_typing_signal') {
         if (detail.sender_id === currentUserId) return
+        if (
+          !chatType ||
+          !chatId ||
+          String(detail.chat_type ?? '') !== chatType ||
+          Number(detail.chat_id) !== Number(chatId)
+        ) {
+          return
+        }
         if (partnerActivityTimeoutRef.current) {
           clearTimeout(partnerActivityTimeoutRef.current)
           partnerActivityTimeoutRef.current = null

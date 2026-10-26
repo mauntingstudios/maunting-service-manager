@@ -7,6 +7,7 @@ import type { ChatContact } from '@/components/social/sidebar/ConversationListIt
 import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 import { useKonversation, type GespraechsZiel } from '@/hooks/useKonversation'
 import { useNachrichtenLaden } from '@/hooks/useNachrichtenLaden'
+import { getStorageItem, gruppenMerkerSchluessel, setStorageItem } from '@/lib/offlineAblage'
 import { IDENTITY_LOADING, resolveIdentity, type E2eeIdentity } from '@/services/e2eeIdentity'
 import { scrubPlaintextStorage } from '@/services/e2eeCrypto'
 // Altbestand des Double Ratchet wird nicht mehr uebernommen.
@@ -20,6 +21,9 @@ import {
 import { messengerSocket } from '@/services/messengerSocket'
 import { ladeEntwurf, loadLocalMessages, sichereDauerhafteAblage, sortMessagesChronologically, updateMessageInLocalStore } from '@/services/messengerLocalStore'
 import { holeOffeneMedien } from '@/services/medienNachholen'
+import { stosseKontoBundNachholenAn } from '@/services/kontoBundNachholen'
+import { setzeLoeschMelder, stosseLoeschungenAn } from '@/services/loeschAuftraege'
+import { setzeSteuerOutboxMelder, stosseSteuerOutboxAn } from '@/services/steuerOutboxLauf'
 import { sessionChatCache } from '@/services/klartextSpeicher'
 import { partnerstand, quittungsstand } from '@/services/quittungsstand'
 import { verfallsfrist } from '@/services/nachrichtVerfall'
@@ -77,6 +81,10 @@ export function useMessengerKern({
   onEntwurf,
 }: Optionen) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const messagesRef = useRef<ChatMessage[]>([])
+  messagesRef.current = messages
+  const hatMehrRef = useRef(false)
+  const laedtAeltereRef = useRef(false)
   // Der sichtbare Verlauf gilt nur fuer das Gespraech, das ihn geladen hat.
   // Der Effekt unten leert ihn, aber erst nach dem Render; diese Marke
   // verhindert schon im Wechsel-Render, dass der alte Verlauf kurz stehen bleibt.
@@ -211,16 +219,13 @@ export function useMessengerKern({
   }, [currentUserId, identity, messengerGesperrt])
 
   /**
-   * Der Sicherheitsnachschlag fuer die dauerhaften Auftraege.
+   * Der Sicherheitsnachschlag fuer die Medien.
    *
-   * Outbox, Medien-Nachholen und Server-Loeschauftrag haben eigene Anlaesse
-   * (Start, online, Sichtbarkeit, Entsperren). Ein Auftrag, der beim ersten
-   * Versuch in den Rueckzug ging, wird aber erst spaeter faellig — und wenn
-   * `online` vorher feuerte, gab es bis 24.10.2026 keinen weiteren Anlass: er
-   * wartete beliebig lange. Dieser eigene Takt ist der periodische Nachschlag;
-   * die Dienste lesen nur, was faellig ist, und laufen ohnehin nur einmal
-   * zugleich. Er haengt bewusst nicht am Postfachlauf: ein haengender Abruf
-   * dort darf die Wirkungen nicht mit anhalten.
+   * Ein Anhang, dessen erster Versuch in den Rueckzug ging, wird erst spaeter
+   * faellig — und wenn `online` vorher feuerte, gab es bis 24.10.2026 keinen
+   * weiteren Anlass. Dieser eigene Takt holt ihn nach; Outbox und
+   * Server-Loeschauftrag haben ihre eigenen Takte, damit ein haengender
+   * Medienabruf sie nicht mit anhaelt.
    */
   useEffect(() => {
     if (!currentUserId || messengerGesperrt) return
@@ -262,14 +267,8 @@ export function useMessengerKern({
         (a, b) => a - b,
       )
       if (mitglieder.length === 0) continue
-      const merkmal = `msm:group_key_members:${gruppe.id}`
-      const vorher = (() => {
-        try {
-          return localStorage.getItem(merkmal)
-        } catch {
-          return null
-        }
-      })()
+      const merkmal = gruppenMerkerSchluessel(gruppe.id)
+      const vorher = getStorageItem(merkmal)
       const jetzt = JSON.stringify(mitglieder)
       if (vorher === jetzt) continue
       void (async () => {
@@ -281,12 +280,7 @@ export function useMessengerKern({
           mitglieder,
           latest_key_version > 0 ? latest_key_version + 1 : 1,
         )
-        try {
-          localStorage.setItem(merkmal, jetzt)
-        } catch {
-          // Ohne Ablage rotiert der naechste Lauf erneut; der Server weist die
-          // bereits vorhandene Version mit 409 ab und die Schluessel bleiben.
-        }
+        setStorageItem(merkmal, jetzt)
       })().catch(() => {})
     }
   }, [groups, currentUserId, messengerGesperrt])
@@ -357,6 +351,67 @@ export function useMessengerKern({
     identitaetRef: identityRef,
   })
   const blindMailboxId = konversation.blindMailboxId
+  const konversationRef = useRef(konversation)
+  konversationRef.current = konversation
+
+  useEffect(() => {
+    if (!currentUserId || messengerGesperrt) return
+    if (identity.state !== 'ready') return
+    const lauf = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      void stosseSteuerOutboxAn((ziel, eintrag) =>
+        konversationRef.current.sendeWirkungFuerZiel(ziel, eintrag),
+      ).catch(() => {})
+      void stosseKontoBundNachholenAn().catch(() => {})
+    }
+    lauf()
+    window.addEventListener('online', lauf)
+    document.addEventListener('visibilitychange', lauf)
+    const takt = setInterval(lauf, 10_000)
+    return () => {
+      window.removeEventListener('online', lauf)
+      document.removeEventListener('visibilitychange', lauf)
+      clearInterval(takt)
+    }
+  }, [currentUserId, identity.state, messengerGesperrt])
+
+  useEffect(() => {
+    return setzeSteuerOutboxMelder((_auftrag, grund) => {
+      zeigeSystemzeile(
+        grund === 'abgelehnt'
+          ? t('messenger.actionRejected')
+          : t('messenger.sendFailed'),
+        `wirkung-${grund}`,
+      )
+    })
+  }, [t, zeigeSystemzeile])
+
+  useEffect(() => {
+    if (!currentUserId || messengerGesperrt) return
+    const lauf = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      void stosseLoeschungenAn().catch(() => {})
+    }
+    lauf()
+    window.addEventListener('online', lauf)
+    document.addEventListener('visibilitychange', lauf)
+    const takt = setInterval(lauf, 10_000)
+    return () => {
+      window.removeEventListener('online', lauf)
+      document.removeEventListener('visibilitychange', lauf)
+      clearInterval(takt)
+    }
+  }, [currentUserId, messengerGesperrt])
+
+  useEffect(() => {
+    return setzeLoeschMelder((_auftrag, grund, medienGeblieben) => {
+      if (grund === 'aufgegeben') {
+        zeigeSystemzeile(t('messenger.messageDeleteFailed'), 'loesch-aufgegeben')
+      } else if (grund === 'medienGeblieben' || medienGeblieben > 0) {
+        zeigeSystemzeile(t('messenger.messageServerCopyRemains'), 'loesch-medien')
+      }
+    })
+  }, [t, zeigeSystemzeile])
 
   // Das offene Gespräch im versiegelten örtlichen Speicher merken.
   useEffect(() => {
@@ -370,12 +425,6 @@ export function useMessengerKern({
     ).catch(() => {})
   }, [activeContact?.userId, activeContact?.username, blindMailboxId])
 
-  const sendE2eeControlMessage = async (payloadObj: Record<string, unknown>) => {
-    if (!blindMailboxId || !currentUserId || (!activeContact && !activeGroup)) return
-    // Ein Weg für Oberfläche und Hintergrund (`services/gespraech/steuerung`).
-    await konversation.sendeSteuerpaket(payloadObj)
-  }
-
   // Der Wechsel in ein anderes Gespräch: Anzeige leeren, Zähler setzen, Verlauf zeigen.
   useEffect(() => {
     let active = true
@@ -387,6 +436,7 @@ export function useMessengerKern({
     setMessagesZiel(zielSchluessel)
 
     if (neuesGespraech) {
+      currentLoadSeqRef.current += 1
       onGespraechWechsel()
       eingabeBeruehrtRef.current = false
       if (!zielSchluessel) entwurfGeholtRef.current = ''
@@ -493,6 +543,9 @@ export function useMessengerKern({
     currentUserId,
     activeContact,
     activeGroup,
+    messagesRef,
+    hatMehrRef,
+    laedtAeltereRef,
     gruppenrechteVon,
     t,
     messages,
@@ -512,7 +565,6 @@ export function useMessengerKern({
     maxPartnerDeliveredIdRef,
     highestIncomingIdDeliveredRef,
     highestIncomingIdAcknowledgedRef,
-    sendE2eeControlMessage,
   })
 
   /**
@@ -590,10 +642,10 @@ export function useMessengerKern({
   return {
     messages: sichtbareMessages, setMessages, loadingMessages, setLoadingMessages, sending, setSending,
     identity, setIdentity, identityRef, geraetWartet, gespraechsZiel, blindMailboxId,
-    konversation, sendE2eeControlMessage, sendeWirkung: konversation.sendeWirkung,
+    konversation, sendeWirkung: konversation.sendeWirkung,
     loadMessages: loadMessagesStabil,
     verarbeiteNachrichtenEreignis,
-    ladeAeltere, zeigeSystemzeile,
+    ladeAeltere, hatMehrRef, laedtAeltereRef, zeigeSystemzeile,
     gespraechsZielRef, entwurfGeholtRef, eingabeBeruehrtRef, activeMailboxIdRef,
     currentLoadSeqRef, highestIncomingIdAcknowledgedRef, highestIncomingIdDeliveredRef,
     maxPartnerReadIdRef, maxPartnerDeliveredIdRef,

@@ -19,7 +19,7 @@ vi.mock('@/services/e2eeGeraet', () => ({
     paar: { publicKeyJwk: 'pub', privateKeyJwk: 'priv' },
   })),
   entferneGeraet: vi.fn(async () => undefined),
-  gebeGeraetFrei: vi.fn(async () => undefined),
+  gebeGeraetFrei: vi.fn(async () => ({ schluesselOffen: false })),
 }))
 
 vi.mock('@/api/social', () => ({

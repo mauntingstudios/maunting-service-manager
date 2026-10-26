@@ -11,7 +11,6 @@ import {
   saveLocalMessages,
   schreibeNachrichtenBestandNeu,
   updateMessageInLocalStore,
-  getLocalMailboxLastSyncedId,
   clearLocalMessengerStore,
   parseMessageTimestamp,
   sortMessagesChronologically,
@@ -27,9 +26,12 @@ import {
   speichereMedium,
   leseMedium,
   loescheMedium,
+  legeOffeneNachrichtAb,
+  ladeOffeneNachrichten,
+  schreibeOffeneNachricht,
+  loescheOffeneNachricht,
   deleteMessageFromLocalStore,
   editMessageInLocalStore,
-  updateDeliveryStatus,
   type LocalStoredMessage,
 } from './messengerLocalStore'
 
@@ -103,6 +105,8 @@ function installMockIndexedDb() {
         } else if (storeName === 'medien') {
           // Eigener Schlüssel wie im Schema: die Medienkennung.
           key = String(item.mediaId)
+        } else if (storeName === 'offene_nachrichten') {
+          key = String(item.id)
         } else {
           key = String(item.blindMailboxId)
         }
@@ -197,6 +201,9 @@ function installMockIndexedDb() {
         return {
           createIndex: () => {},
         }
+      },
+      deleteObjectStore: (n: string) => {
+        stores.delete(n)
       },
       transaction: (_storeNames: any) => {
         const tx: any = {
@@ -452,10 +459,6 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     expect(reloaded[1].text).toBe('Bestätigt!')
     expect(reloaded[1].isRead).toBe(true)
     expect(reloaded[1].status).toBe('read')
-
-    // 3. Mailbox-Meta verifiziert
-    const lastId = await getLocalMailboxLastSyncedId(mid)
-    expect(lastId).toBe(401)
   })
 
   it('aktualisiert optimistische Nachrichten nach Server-Quittung (Upgrade ID & Status)', async () => {
@@ -509,8 +512,35 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     await clearLocalMessengerStore()
     const result = await loadLocalMessages(mid)
     expect(result).toHaveLength(0)
-    const lastId = await getLocalMailboxLastSyncedId(mid)
-    expect(lastId).toBe(0)
+  })
+
+  it('legt offene Umschläge ab, lässt die erste Fassung stehen und löscht sie wieder', async () => {
+    const eingabe = {
+      id: 'direct:7:uuid-offen',
+      chatType: 'direct' as const,
+      chatId: 7,
+      clientUuid: 'uuid-offen',
+      senderId: 2,
+      keyVersion: 3,
+      encryptedPayload: 'alt',
+      createdAt: '2026-10-26T10:00:00.000Z',
+    }
+    await legeOffeneNachrichtAb(eingabe)
+    // Ein zweiter Fehlversuch derselben Nachricht darf den Auftrag nicht
+    // zurücksetzen.
+    await legeOffeneNachrichtAb({ ...eingabe, encryptedPayload: 'neu' })
+
+    const geladen = await ladeOffeneNachrichten()
+    expect(geladen).toHaveLength(1)
+    expect(geladen[0].encryptedPayload).toBe('alt')
+
+    await schreibeOffeneNachricht({ ...geladen[0], versuche: 2, naechsterVersuch: 123 })
+    const fortgeschrieben = await ladeOffeneNachrichten()
+    expect(fortgeschrieben[0].versuche).toBe(2)
+    expect(fortgeschrieben[0].naechsterVersuch).toBe(123)
+
+    await loescheOffeneNachricht(eingabe.id)
+    expect(await ladeOffeneNachrichten()).toEqual([])
   })
 
   it('parseMessageTimestamp normalisiert Zeitzonen und Datumsformate robust nach UTC', () => {
@@ -573,9 +603,17 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     expect(isOptimisticMessage({ id: 999999999999, status: 'sent', viaInbox: true })).toBe(false)
   })
 
-  it('verhindert das Überschreiben von lastSyncedEnvelopeId durch temporäre Date.now() IDs', async () => {
+  it('entfernt beim Upgrade den alten Mailbox-Cursor und lässt die Nachrichten liegen', async () => {
+    // Frisches Modul: die geöffnete Datenbank aus den vorigen Tests kennt das
+    // Upgrade nicht mehr.
+    vi.resetModules()
+    const { setzeAngemeldetesKonto: setzeFrisch } = await import('@/lib/angemeldetesKonto')
+    setzeFrisch(TEST_KONTO)
+    const frisch = await import('./messengerLocalStore')
     const mid = 'box-opt-id-guard'
-    await saveLocalMessages(mid, [
+    // Eine Ablage aus Version 9: der Cursor lag in einem eigenen Store.
+    mockStores.set('mailboxes', new Map([[mid, { blindMailboxId: mid, lastSyncedEnvelopeId: 105 }]]))
+    await frisch.saveLocalMessages(mid, [
       {
         blindMailboxId: mid,
         id: 105,
@@ -584,20 +622,12 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
         createdAt: new Date().toISOString(),
         isSelf: false,
       },
-      {
-        blindMailboxId: mid,
-        id: Date.now(), // z. B. 1773680000000
-        clientUuid: 'opt-temp',
-        senderId: 2,
-        text: 'In Warteschlange',
-        createdAt: new Date().toISOString(),
-        isSelf: true,
-        status: 'queued',
-      },
     ])
 
-    const lastId = await getLocalMailboxLastSyncedId(mid)
-    expect(lastId).toBe(105)
+    expect(mockStores.has('mailboxes')).toBe(false)
+    const geladen = await frisch.loadLocalMessages(mid)
+    expect(geladen).toHaveLength(1)
+    expect(geladen[0].text).toBe('Bestätigt')
   })
 
   it('dedupliziert optimistische Nachrichten beim Laden sobald die Server-Bestätigung existiert', async () => {
@@ -1317,7 +1347,6 @@ describe('Ablage je Konto', () => {
     // Ablage: der Aufruf tut schlicht nichts.
     await saveLocalMessages(mid, [zeile])
     expect(await loadLocalMessages(mid)).toEqual([])
-    expect(await getLocalMailboxLastSyncedId(mid)).toBe(0)
     expect(geoeffneteDatenbanken).toEqual([])
 
     // Nach der Anmeldung ist die eigene Ablage da — und leer, denn abgelegt
@@ -1339,7 +1368,7 @@ describe('Ablage je Konto', () => {
     expect(geloeschteDatenbanken).toContain('msm_messenger_local')
   })
 
-  describe('Signal Refactor: deleteMessageFromLocalStore, editMessageInLocalStore & updateDeliveryStatus', () => {
+  describe('Signal Refactor: deleteMessageFromLocalStore & editMessageInLocalStore', () => {
     const testMid = 'box-signal-refactor-tests'
     const msgUuid = 'uuid-signal-test-123'
 
@@ -1386,24 +1415,6 @@ describe('Ablage je Konto', () => {
       expect(raw.find((m) => m.clientUuid === msgUuid)?.text ?? '').toBe('')
     })
 
-    it('aktualisiert Zustellstatus auf delivered (2 graue Haken)', async () => {
-      await updateDeliveryStatus(msgUuid, 'delivered')
-
-      const msgs = await loadLocalMessages(testMid)
-      expect(msgs).toHaveLength(1)
-      expect(msgs[0].isDelivered).toBe(true)
-      expect(msgs[0].status).toBe('delivered')
-    })
-
-    it('aktualisiert Lesestatus auf read (2 blaue Haken)', async () => {
-      await updateDeliveryStatus(msgUuid, 'read')
-
-      const msgs = await loadLocalMessages(testMid)
-      expect(msgs).toHaveLength(1)
-      expect(msgs[0].isDelivered).toBe(true)
-      expect(msgs[0].isRead).toBe(true)
-      expect(msgs[0].status).toBe('read')
-    })
   })
 })
 

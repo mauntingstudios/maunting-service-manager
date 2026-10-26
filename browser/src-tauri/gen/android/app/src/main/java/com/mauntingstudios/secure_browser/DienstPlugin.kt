@@ -19,9 +19,9 @@ import app.tauri.plugin.Plugin
 /**
  * Steuerung des Dauerdienstes von der Oberfläche aus.
  *
- * Die Oberfläche ruft `dienst_starten`, `dienst_stoppen`, `dienst_mailboxen`,
- * `dienst_stand`, `dienst_akku_befreien`; `dienst.rs` reicht sie hier als
- * `starten`, `stoppen`, `mailboxen`, `laeuft`, `akkuBefreien` durch. Geprüft
+ * Die Oberfläche ruft `dienst_starten`, `dienst_stoppen`, `dienst_stand` und
+ * `dienst_akku_befreien`; `dienst.rs` reicht sie hier als `starten`,
+ * `stoppen`, `laeuft` und `akkuBefreien` durch. Geprüft
  * wird hier nur die Form — den Ausweis prüft der Server, und ob der Mensch ihn
  * anlegen durfte, hat er vorher mit einem frischen Nachweis belegt.
  */
@@ -29,12 +29,6 @@ import app.tauri.plugin.Plugin
 class DienstStartArgs {
     var ausweis: String = ""
     var basis: String = ""
-    var mailboxen: String = "[]"
-}
-
-@InvokeArg
-class DienstMailboxArgs {
-    var mailboxen: String = "[]"
 }
 
 @TauriPlugin
@@ -54,13 +48,8 @@ class DienstPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.reject("Unvollständiger Kanal-Ausweis")
             return
         }
-        if (!args.mailboxen.trimStart().startsWith("[")) {
-            invoke.reject("Mailboxliste ist kein JSON")
-            return
-        }
-
         val ctx = activity.applicationContext
-        Hintergrunddienst.einrichten(ctx, args.ausweis, args.basis, args.mailboxen)
+        Hintergrunddienst.einrichten(ctx, args.ausweis, args.basis)
         Hintergrunddienst.starten(ctx)
 
         // Ab Android 13 darf ohne diese Erlaubnis keine Meldung erscheinen —
@@ -77,25 +66,6 @@ class DienstPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun stoppen(invoke: Invoke) {
         Hintergrunddienst.stoppen(activity.applicationContext)
-        invoke.resolve()
-    }
-
-    @Command
-    fun mailboxen(invoke: Invoke) {
-        val args = try {
-            invoke.parseArgs(DienstMailboxArgs::class.java)
-        } catch (e: Exception) {
-            invoke.reject("Unvollständige Anfrage")
-            return
-        }
-        if (!args.mailboxen.trimStart().startsWith("[")) {
-            invoke.reject("Mailboxliste ist kein JSON")
-            return
-        }
-        // Der Dienst läuft in einem eigenen Prozess; ein Merker hier erreichte
-        // ihn nicht. `mailboxenSetzen` schickt die Liste mit einem Start-Intent
-        // hinüber und merkt sie für den nächsten Start.
-        Hintergrunddienst.mailboxenSetzen(activity.applicationContext, args.mailboxen)
         invoke.resolve()
     }
 

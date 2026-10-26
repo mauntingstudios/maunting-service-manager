@@ -116,10 +116,17 @@ describe('Ereignisse im Einheits-Transport', () => {
     try {
       const { setPartnerActivity } = start()
 
-      await sync({ type: 'typing', sender_id: 2, sender_username: 'alice', status: 'typing' })
+      await sync({
+        type: 'typing',
+        chat_type: 'direct',
+        chat_id: 55,
+        sender_id: 2,
+        sender_username: 'alice',
+        status: 'typing',
+      })
       expect(setPartnerActivity).toHaveBeenLastCalledWith({ status: 'typing', username: 'alice' })
 
-      await sync({ type: 'typing', sender_id: 2, status: 'idle' })
+      await sync({ type: 'typing', chat_type: 'direct', chat_id: 55, sender_id: 2, status: 'idle' })
       expect(setPartnerActivity).toHaveBeenLastCalledWith(null)
     } finally {
       vi.useRealTimers()

@@ -142,8 +142,9 @@ export function E2eeGeraeteCard() {
   const freigeben = async (geraet: E2eeGeraetItem) => {
     setLaeuft(geraet.device_id)
     try {
-      await gebeGeraetFrei(geraet)
-      toast.success(t('profile.e2eeDevices.approved'))
+      const { schluesselOffen } = await gebeGeraetFrei(geraet)
+      if (schluesselOffen) toast.info(t('profile.e2eeDevices.keyPending'))
+      else toast.success(t('profile.e2eeDevices.approved'))
       await laden()
     } catch (err: any) {
       toast.error(err?.message || t('common.error'))

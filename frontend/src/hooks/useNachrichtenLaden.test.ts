@@ -24,8 +24,15 @@ const ablage = vi.hoisted(() => ({
 
 const funken = vi.hoisted(() => ({ nimmAuf: vi.fn(async () => {}) }))
 
+const medien = vi.hoisted(() => ({
+  sichereAnhaenge: vi.fn(async () => ({ gesichert: 0, offen: 0 })),
+}))
+const medienNachholen = vi.hoisted(() => ({ holeOffeneMedien: vi.fn(async () => {}) }))
+
 vi.mock('@/api/social', () => api)
 vi.mock('@/services/messengerLocalStore', () => ablage)
+vi.mock('@/services/medienSicherung', () => medien)
+vi.mock('@/services/medienNachholen', () => medienNachholen)
 vi.mock('@/services/quittungsstand', () => ({
   merkePartnerQuittung: vi.fn(),
   merkeQuittung: vi.fn(),
@@ -65,6 +72,7 @@ type Seite = {
   chatId: number
   hasMore: boolean
   unlesbar: number
+  offen: number
   uebernimm: () => void
 }
 
@@ -91,12 +99,14 @@ function seite(
     chatId: 2,
     hasMore: false,
     unlesbar: 0,
+    offen: 0,
     uebernimm: vi.fn(),
   }
 }
 
 function optionen(over: Partial<NachrichtenLadenOptionen> = {}): NachrichtenLadenOptionen {
   const gelesen = seite([zeile(9, false)], 0, 0)
+  const nachrichten = over.messages ?? []
   return {
     blindMailboxId: 'direct:peer:2',
     currentUserId: 1,
@@ -104,7 +114,10 @@ function optionen(over: Partial<NachrichtenLadenOptionen> = {}): NachrichtenLade
     activeGroup: null,
     gruppenrechteVon: () => new Set(),
     t: (s: string) => s,
-    messages: [],
+    messages: nachrichten,
+    messagesRef: { current: nachrichten },
+    hatMehrRef: { current: true },
+    laedtAeltereRef: { current: false },
     setMessages: vi.fn(),
     setLoadingMessages: vi.fn(),
     setAngeheftet: vi.fn(),
@@ -126,7 +139,6 @@ function optionen(over: Partial<NachrichtenLadenOptionen> = {}): NachrichtenLade
     maxPartnerDeliveredIdRef: { current: 0 },
     highestIncomingIdDeliveredRef: { current: 0 },
     highestIncomingIdAcknowledgedRef: { current: 0 },
-    sendE2eeControlMessage: vi.fn(async () => {}),
     ...over,
   }
 }
@@ -173,6 +185,19 @@ describe('Quittungen im Einheits-Transport', () => {
     expect(api.ackChatMessages).toHaveBeenCalledWith('direct', 2, 9)
     expect(api.readChatMessages).toHaveBeenCalledWith('direct', 2, 9)
     expect(opts.markAsRead).toHaveBeenCalledWith('direct:peer:2')
+  })
+
+  it('sichert empfangene Anhänge erst nach dem lokalen Commit', async () => {
+    const opts = optionen()
+    await useNachrichtenLaden(opts).loadMessages(true)
+
+    await waitFor(() => {
+      expect(medien.sichereAnhaenge).toHaveBeenCalledWith(expect.any(Array), 'direct:peer:2')
+      expect(medienNachholen.holeOffeneMedien).toHaveBeenCalled()
+    })
+    expect(medien.sichereAnhaenge.mock.invocationCallOrder[0]).toBeGreaterThan(
+      ablage.saveLocalMessagesStrict.mock.invocationCallOrder[0],
+    )
   })
 
   it('quittiert keine zweite Runde fuer dieselbe Kennung', async () => {
@@ -283,6 +308,34 @@ describe('Augenblicke im offenen Chat', () => {
 })
 
 describe('Cursor', () => {
+  it('setzt nach einem Chatwechsel während des Speicherns keinen Cursor', async () => {
+    let speichernFertig: (() => void) | undefined
+    ablage.saveLocalMessagesStrict.mockImplementationOnce(
+      () => new Promise<void>((resolve) => {
+        speichernFertig = resolve
+      }),
+    )
+    const gelesen = seite([zeile(9, false)])
+    const opts = optionen({
+      konversation: {
+        chatType: 'direct',
+        chatId: 2,
+        liesNachrichten: vi.fn(async () => gelesen),
+        ladeAeltere: vi.fn(async () => seite([])),
+      } as never,
+    })
+    const { loadMessages } = useNachrichtenLaden(opts)
+    const lauf = loadMessages()
+
+    await waitFor(() => expect(ablage.saveLocalMessagesStrict).toHaveBeenCalledOnce())
+    opts.activeMailboxIdRef.current = 'direct:peer:3'
+    opts.currentLoadSeqRef.current += 1
+    speichernFertig?.()
+    await lauf
+
+    expect(gelesen.uebernimm).not.toHaveBeenCalled()
+  })
+
   it('laedt aeltere Nachrichten vor der aeltesten bekannten Kennung', async () => {
     const ladeAeltere = vi.fn(async () => seite([zeile(1, false)]))
     const opts = optionen({

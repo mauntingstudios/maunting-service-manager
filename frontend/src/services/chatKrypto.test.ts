@@ -33,11 +33,13 @@ vi.mock('./e2eeCrypto', () => ({
 }))
 
 import { pruefeKonto } from './accountKeys'
+import { getE2eeChatKeys } from '@/api/social'
 import {
   ChatNutzlastUngueltigError,
   entpackeChatNutzlast,
   entpackeReaktion,
   leereChatSchluesselCache,
+  vergissChatSchluessel,
   verschluessleChatNutzlast,
   verschluessleReaktion,
 } from './chatKrypto'
@@ -136,5 +138,24 @@ describe.each(FAELLE)('Chat-Nutzlast in %s', (typ, chatId) => {
     expect(await entpackeReaktion(typ, chatId, 1, 77, ICH, emoji)).toBe('👍')
     expect(await entpackeReaktion(typ, chatId, 1, 78, ICH, emoji)).toBeNull()
     expect(await entpackeReaktion(typ, chatId, 1, 77, 2, emoji)).toBeNull()
+  })
+})
+
+describe('vergissChatSchluessel', () => {
+  it('leert nur den genannten Chat und lässt die übrigen Schlüssel stehen', async () => {
+    const nutzlast = { text: 'hallo' }
+    await verschluessleChatNutzlast('group', 3, 'u-1', ICH, 1, nutzlast)
+    await verschluessleChatNutzlast('group', 4, 'u-1', ICH, 1, nutzlast)
+    await verschluessleChatNutzlast('direct', 12, 'u-1', ICH, 1, nutzlast)
+
+    vi.mocked(getE2eeChatKeys).mockClear()
+    vergissChatSchluessel('group', 3)
+
+    await verschluessleChatNutzlast('group', 4, 'u-1', ICH, 1, nutzlast)
+    await verschluessleChatNutzlast('direct', 12, 'u-1', ICH, 1, nutzlast)
+    expect(getE2eeChatKeys).not.toHaveBeenCalled()
+
+    await verschluessleChatNutzlast('group', 3, 'u-1', ICH, 1, nutzlast)
+    expect(getE2eeChatKeys).toHaveBeenCalledTimes(1)
   })
 })

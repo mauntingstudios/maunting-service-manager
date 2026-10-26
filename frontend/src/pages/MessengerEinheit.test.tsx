@@ -136,8 +136,6 @@ const conversation = vi.hoisted(() => {
         key_version: 1,
       },
     ]),
-    baueSteuerversand: vi.fn(async () => []),
-    sendeSteuerpaket: vi.fn(async () => 'gesendet'),
     sendeWirkung: vi.fn(async () => 'gesendet' as const),
   }
   return objekt

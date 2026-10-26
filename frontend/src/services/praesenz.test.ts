@@ -33,6 +33,10 @@ describe('praesenz', () => {
     rufe.length = 0
     apiKaputt = false
     vergissPraesenzKennung()
+    Object.defineProperty(document, 'hasFocus', {
+      value: () => true,
+      configurable: true,
+    })
     sichtbarkeit('visible')
     rufe.length = 0
   })

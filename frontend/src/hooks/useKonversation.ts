@@ -33,7 +33,15 @@ import {
   verschluessleReaktion,
 } from '@/services/chatKrypto'
 import { leseAugenblickMarke, leseRettungsMarke } from '@/services/funkenService'
-import type { SteuerAusgang, SteuerEintrag } from '@/services/wirkungTypen'
+import {
+  legeOffeneNachrichtAb,
+  ladeOffeneNachrichten,
+  loescheOffeneNachricht,
+  saveLocalMessagesStrict,
+  schreibeOffeneNachricht,
+} from '@/services/messengerLocalStore'
+import { sendeWirkungMitOutbox, type Wirkungsziel } from '@/services/steuerOutbox'
+import { SteuerAbgewiesenError, type SteuerAusgang, type SteuerEintrag } from '@/services/wirkungTypen'
 
 export type GespraechsZiel =
   | { art: 'direkt'; peerId: number }
@@ -138,6 +146,8 @@ export interface NachrichtenLesung {
   page: E2eeMessagePage
   hasMore: boolean
   unlesbar: number
+  /** Umschlaege, die auf einen Schluessel warten; der Cursor darf weiterlaufen. */
+  offen: number
   /** Die Kennungen, unter denen diese Seite wirklich geholt wurde. */
   speicherId: string
   chatType: 'direct' | 'group'
@@ -151,6 +161,10 @@ export interface Konversation {
   chatType: 'direct' | 'group' | null
   chatId: number | null
   ensureChat: () => Promise<{ type: 'direct' | 'group'; id: number } | null>
+  /** Erzwingt eine neue Chat-Schlüsselversion für alle aktuellen Mitglieder. */
+  erneuereSchluessel: () => Promise<void>
+  /** Versucht aufgeschobene Umschlaege erneut zu oeffnen. */
+  verarbeiteOffene: () => Promise<number>
   liesUmschlaege: () => Promise<Lesung[] | null>
   liesNachrichten: () => Promise<NachrichtenLesung | null>
   ladeAeltere: (beforeId: number) => Promise<{ messages: ChatMessage[]; hasMore: boolean }>
@@ -161,9 +175,9 @@ export interface Konversation {
     typ: 'message_created' | 'message_updated' | 'message_deleted',
   ) => Promise<ChatMessage | null>
   baueVersand: (payload: string, clientUuid: string) => Promise<Versandauftrag[]>
-  baueSteuerversand: (payload: string, clientUuid: string, typ: string) => Promise<Versandauftrag[]>
-  sendeSteuerpaket: (payloadObj: Record<string, unknown>) => Promise<string | null>
   sendeWirkung: (eintrag: SteuerEintrag) => Promise<SteuerAusgang>
+  /** Eine Wirkung für ein ausdrückliches Ziel (auch aus der Outbox). */
+  sendeWirkungFuerZiel: (ziel: Wirkungsziel, eintrag: SteuerEintrag) => Promise<void>
 }
 
 interface ChatZiel {
@@ -272,20 +286,40 @@ export function useKonversation({
     return [eigeneId]
   }, [ziel, eigeneId])
 
-  const ensureKeyVersion = useCallback(async (chatZiel: { type: 'direct' | 'group'; id: number }): Promise<number> => {
-    const { keys, latest_key_version } = await getE2eeChatKeys(chatZiel.type, chatZiel.id)
+  const ensureKeyVersionFuer = useCallback(async (
+    chatType: 'direct' | 'group',
+    chatId: number,
+    memberIds: number[],
+  ): Promise<number> => {
+    const { keys, latest_key_version } = await getE2eeChatKeys(chatType, chatId)
     const eigeneVersionen = keys.map((k) => k.key_version)
     if (latest_key_version > 0 && eigeneVersionen.includes(latest_key_version)) {
       return latest_key_version
     }
+    const version = latest_key_version > 0 ? latest_key_version + 1 : 1
+    await erzeugeChatSchluessel(chatType, chatId, memberIds, version)
+    const nachher = await getE2eeChatKeys(chatType, chatId)
+    if (!nachher.keys.some((k) => k.key_version === version)) {
+      throw new ChatSchluesselFehltError()
+    }
+    return version
+  }, [])
+
+  const ensureKeyVersion = useCallback(async (chatZiel: { type: 'direct' | 'group'; id: number }): Promise<number> => {
+    return ensureKeyVersionFuer(chatZiel.type, chatZiel.id, mitglieder())
+  }, [ensureKeyVersionFuer, mitglieder])
+
+  const erneuereSchluessel = useCallback(async (): Promise<void> => {
+    const chatZiel = await ensureChat()
+    if (!chatZiel) throw new ChatSchluesselFehltError()
+    const { latest_key_version } = await getE2eeChatKeys(chatZiel.type, chatZiel.id)
     const version = latest_key_version > 0 ? latest_key_version + 1 : 1
     await erzeugeChatSchluessel(chatZiel.type, chatZiel.id, mitglieder(), version)
     const nachher = await getE2eeChatKeys(chatZiel.type, chatZiel.id)
     if (!nachher.keys.some((k) => k.key_version === version)) {
       throw new ChatSchluesselFehltError()
     }
-    return version
-  }, [mitglieder])
+  }, [ensureChat, mitglieder])
 
   const entschluessle = useCallback(async (
     chatZiel: { type: 'direct' | 'group'; id: number },
@@ -385,13 +419,19 @@ export function useKonversation({
   const holeSeite = useCallback(async (
     chatZiel: { type: 'direct' | 'group'; id: number },
     beforeId?: number,
-  ): Promise<{ page: E2eeMessagePage; messages: ChatMessage[]; unlesbar: number }> => {
+  ): Promise<{
+    page: E2eeMessagePage
+    messages: ChatMessage[]
+    unlesbar: number
+    offen: number
+  }> => {
     const page = await fetchChatMessages(chatZiel.type, chatZiel.id, {
       limit: beforeId ? 50 : cursorRef.current > 0 ? 100 : 50,
       ...(beforeId ? { beforeId } : cursorRef.current > 0 ? { afterId: cursorRef.current } : {}),
     })
     const messages: ChatMessage[] = []
     let unlesbar = 0
+    let offen = 0
     for (const message of page.messages) {
       try {
         const fertig = await entschluessle(chatZiel, message, page)
@@ -401,16 +441,32 @@ export function useKonversation({
           unlesbar += 1
           continue
         }
-        unlesbar += 1
+        if (!message.client_uuid || !message.encrypted_payload) {
+          unlesbar += 1
+          continue
+        }
+        // Kein Urteil, sondern ein Aufschub. Der Cursor darf weiterlaufen;
+        // der Umschlag bleibt fuer den naechsten Schluessel liegen.
+        await legeOffeneNachrichtAb({
+          id: `${chatZiel.type}:${chatZiel.id}:${message.client_uuid}`,
+          chatType: chatZiel.type,
+          chatId: chatZiel.id,
+          clientUuid: message.client_uuid,
+          senderId: Number(message.sender_user_id),
+          keyVersion: Number(message.key_version),
+          encryptedPayload: message.encrypted_payload,
+          createdAt: message.created_at,
+        })
+        offen += 1
       }
     }
-    return { page, messages, unlesbar }
+    return { page, messages, unlesbar, offen }
   }, [entschluessle])
 
   const liesNachrichten = useCallback(async (): Promise<NachrichtenLesung | null> => {
     const chatZiel = await ensureChat()
     if (!chatZiel) return null
-    const { page, messages, unlesbar } = await holeSeite(chatZiel)
+    const { page, messages, unlesbar, offen } = await holeSeite(chatZiel)
     const uebernimm = () => {
       const hoechste = page.messages.reduce((max, m) => Math.max(max, m.id), 0)
       if (hoechste > cursorRef.current) cursorRef.current = hoechste
@@ -420,12 +476,82 @@ export function useKonversation({
       page,
       hasMore: page.has_more,
       unlesbar,
+      offen,
       speicherId: chatRef.current.speicherId,
       chatType: chatZiel.type,
       chatId: chatZiel.id,
       uebernimm,
     }
   }, [ensureChat, holeSeite])
+
+  const verarbeiteOffene = useCallback(async (): Promise<number> => {
+    const chatZiel = await ensureChat()
+    if (!chatZiel) return 0
+    const speicherId = chatRef.current.speicherId
+    if (!speicherId) return 0
+    const leer: E2eeMessagePage = {
+      messages: [],
+      pinned_message: null,
+      has_more: false,
+      my_last_delivered_id: 0,
+      my_last_read_id: 0,
+      partner_last_delivered_id: 0,
+      partner_last_read_id: 0,
+      ephemeral_ttl_seconds: 0,
+      ephemeral_enabled_by_user_id: null,
+    }
+    const jetzt = Date.now()
+    let verarbeitet = 0
+    for (const auftrag of await ladeOffeneNachrichten()) {
+      if (auftrag.chatType !== chatZiel.type || Number(auftrag.chatId) !== Number(chatZiel.id)) {
+        continue
+      }
+      if (auftrag.naechsterVersuch > jetzt) continue
+      const message: E2eeMessageItem = {
+        id: 0,
+        client_uuid: auftrag.clientUuid,
+        chat_type: auftrag.chatType,
+        chat_id: auftrag.chatId,
+        sender_user_id: auftrag.senderId,
+        key_version: auftrag.keyVersion,
+        encrypted_payload: auftrag.encryptedPayload,
+        is_deleted: false,
+        edited_at: null,
+        deleted_at: null,
+        expires_at: null,
+        is_pinned: false,
+        pinned_at: null,
+        pinned_by_user_id: null,
+        created_at: auftrag.createdAt,
+        reactions: [],
+      }
+      try {
+        const fertig = await entschluessle(chatZiel, message, leer)
+        if (fertig) {
+          await saveLocalMessagesStrict(
+            speicherId,
+            [fertig],
+            chatZiel.type === 'group' ? 'gruppe' : 'direkt',
+          )
+          await loescheOffeneNachricht(auftrag.id)
+          verarbeitet += 1
+        }
+      } catch (fehler) {
+        if (fehler instanceof ChatNutzlastUngueltigError) {
+          await loescheOffeneNachricht(auftrag.id).catch(() => {})
+          continue
+        }
+        const versuche = auftrag.versuche + 1
+        const rueckzug = [30_000, 120_000, 600_000, 3_600_000]
+        await schreibeOffeneNachricht({
+          ...auftrag,
+          versuche,
+          naechsterVersuch: jetzt + rueckzug[Math.min(versuche - 1, rueckzug.length - 1)],
+        }).catch(() => {})
+      }
+    }
+    return verarbeitet
+  }, [ensureChat, entschluessle])
 
   const ladeAeltere = useCallback(async (beforeId: number) => {
     const chatZiel = await ensureChat()
@@ -530,19 +656,18 @@ export function useKonversation({
     }]
   }, [eigeneId, ensureChat, ensureKeyVersion])
 
-  const baueSteuerversand = useCallback(async (): Promise<Versandauftrag[]> => [], [])
-
-  const sendeWirkung = useCallback(async (eintrag: SteuerEintrag): Promise<SteuerAusgang> => {
-    const chatZiel = await ensureChat()
-    if (!chatZiel) throw new ChatSchluesselFehltError()
+  const sendeWirkungFuerZiel = useCallback(async (
+    ziel: Wirkungsziel,
+    eintrag: SteuerEintrag,
+  ): Promise<void> => {
     const zielUuid = eintrag.ziel || String(eintrag.felder.target_client_uuid || '')
     switch (eintrag.typ) {
       case 'edit_message': {
-        const version = await ensureKeyVersion(chatZiel)
+        const version = await ensureKeyVersionFuer(ziel.chatType, ziel.chatId, ziel.mitglieder)
         const text = String(eintrag.felder.new_text || '')
         const verschluesselt = await verschluessleChatNutzlast(
-          chatZiel.type,
-          chatZiel.id,
+          ziel.chatType,
+          ziel.chatId,
           zielUuid,
           eigeneId,
           version,
@@ -558,56 +683,57 @@ export function useKonversation({
           encrypted_payload: verschluesselt.encrypted_payload,
           key_version: version,
         })
-        return 'gesendet'
+        return
       }
       case 'delete_message':
+        // Altbestand: neue Löschungen laufen über `loesch_auftraege`.
         await deleteChatMessage(zielUuid)
-        return 'gesendet'
+        return
       case 'reaction': {
-        const version = await ensureKeyVersion(chatZiel)
+        const version = await ensureKeyVersionFuer(ziel.chatType, ziel.chatId, ziel.mitglieder)
         const emoji = String(eintrag.felder.emoji || '')
         const nehmen = eintrag.felder.aktion === 'nehmen'
         const messageId = Number(eintrag.felder.target_id || eintrag.zielId || 0)
-        if (!emoji || !messageId) return 'gesendet'
+        if (!emoji || !messageId) throw new SteuerAbgewiesenError(400)
         const verschluesselt = await verschluessleReaktion(
-          chatZiel.type,
-          chatZiel.id,
+          ziel.chatType,
+          ziel.chatId,
           version,
           messageId,
           eigeneId,
           emoji,
         )
         await reactToChatMessage(zielUuid, nehmen ? null : verschluesselt)
-        return 'gesendet'
+        return
       }
       case 'pin_message':
         await pinChatMessage(zielUuid, eintrag.felder.aktion !== 'loesen')
-        return 'gesendet'
+        return
       case 'verfall':
       case 'retention':
-        await setChatEphemeral(
-          chatZiel.type,
-          chatZiel.id,
-          Number(eintrag.felder.sekunden || 0),
-        )
-        return 'gesendet'
+        await setChatEphemeral(ziel.chatType, ziel.chatId, Number(eintrag.felder.sekunden || 0))
+        return
       default:
-        return 'gesendet'
+        throw new SteuerAbgewiesenError(null)
     }
-  }, [eigeneId, ensureChat, ensureKeyVersion])
+  }, [eigeneId, ensureKeyVersionFuer])
 
-  const sendeSteuerpaket = useCallback(async (payloadObj: Record<string, unknown>): Promise<string | null> => {
-    const typ = String(payloadObj.type || '')
-    if (!typ) return null
-    const clientUuid = String(payloadObj.client_uuid || crypto.randomUUID())
-    const eintrag: SteuerEintrag = {
-      typ,
-      felder: { ...payloadObj, target_client_uuid: payloadObj.client_uuid },
-      ziel: typeof payloadObj.client_uuid === 'string' ? payloadObj.client_uuid : null,
+  const sendeWirkung = useCallback(async (eintrag: SteuerEintrag): Promise<SteuerAusgang> => {
+    const chatZiel = await ensureChat()
+    if (!chatZiel) throw new ChatSchluesselFehltError()
+    const mailbox = chatRef.current.speicherId
+    if (!mailbox) throw new ChatSchluesselFehltError()
+    const wirkungsziel: Wirkungsziel = {
+      mailbox,
+      chatType: chatZiel.type,
+      chatId: chatZiel.id,
+      peerId: ziel.art === 'direkt' ? ziel.peerId : null,
+      groupId: ziel.art === 'gruppe' ? ziel.groupId : null,
+      mitglieder: mitglieder(),
+      istEigentuemer: ziel.art === 'gruppe' ? Boolean(ziel.istEigentuemer) : false,
     }
-    await sendeWirkung(eintrag)
-    return clientUuid
-  }, [sendeWirkung])
+    return sendeWirkungMitOutbox(wirkungsziel, eintrag, sendeWirkungFuerZiel)
+  }, [ensureChat, mitglieder, sendeWirkungFuerZiel, ziel])
 
   const leseMailboxen = useMemo(
     () => (chat.speicherId ? [chat.speicherId] : []),
@@ -620,14 +746,15 @@ export function useKonversation({
     chatType: chat.chatType,
     chatId: chat.chatId,
     ensureChat,
+    erneuereSchluessel,
+    verarbeiteOffene,
     liesUmschlaege,
     liesNachrichten,
     ladeAeltere,
     uebernimmLesestand,
     verarbeiteEreignis,
     baueVersand,
-    baueSteuerversand,
-    sendeSteuerpaket,
     sendeWirkung,
+    sendeWirkungFuerZiel,
   }
 }

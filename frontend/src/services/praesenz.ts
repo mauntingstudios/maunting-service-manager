@@ -26,7 +26,10 @@ let zuhoererAngehaengt = false
 
 function aktuellerStand(): Praesenz {
   if (typeof document === 'undefined') return 'vordergrund'
-  return document.visibilityState === 'visible' ? 'vordergrund' : 'hintergrund'
+  const sichtbar =
+    document.visibilityState === 'visible' &&
+    (typeof document.hasFocus !== 'function' || document.hasFocus())
+  return sichtbar ? 'vordergrund' : 'hintergrund'
 }
 
 async function melde(erzwingen = false): Promise<void> {

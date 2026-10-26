@@ -23,7 +23,6 @@ const BEFEHLE: &[&str] = &[
     "benachrichtigung_senden",
     "dienst_starten",
     "dienst_stoppen",
-    "dienst_mailboxen",
     "dienst_stand",
     "dienst_akku_befreien",
     "tab_laden",

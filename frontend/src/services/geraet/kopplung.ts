@@ -28,16 +28,17 @@ export async function uebergebeVerlauf(
   _code: string,
   ziele: UebergabeZiel[],
 ): Promise<boolean> {
-  let ok = false
+  let ok = ziele.length > 0
   for (const ziel of ziele) {
     try {
       await sendeKontoSchluesselAnGeraet({
         device_id: ziel.device_id,
         public_key: ziel.public_key,
       })
-      ok = true
     } catch {
-      // Ein nicht erreichbares Geraet haelt die uebrigen nicht auf.
+      // Ein nicht erreichbares Geraet haelt die uebrigen nicht auf, aber die
+      // Übergabe gilt nur als vollständig, wenn jedes Ziel den Bund hat.
+      ok = false
     }
   }
   return ok

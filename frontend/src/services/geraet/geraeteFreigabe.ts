@@ -118,7 +118,9 @@ async function unterschreibeMitEigenem(daten: string): Promise<{ kennung: string
 }
 
 /** Gibt ein wartendes Gerät des eigenen Kontos frei — unterschrieben von diesem. */
-export async function gebeGeraetFrei(geraet: E2eeGeraetItem): Promise<void> {
+export async function gebeGeraetFrei(
+  geraet: E2eeGeraetItem,
+): Promise<{ schluesselOffen: boolean }> {
   const konto = meinKonto()
   const daten = await freigabeDaten(
     konto,
@@ -132,6 +134,7 @@ export async function gebeGeraetFrei(geraet: E2eeGeraetItem): Promise<void> {
 
   // Der Konto-Schluessel geht an das neue Geraet, damit es alle Chat-Schluessel
   // oeffnen kann. Der Verlauf selbst liegt auf dem Server und wird dort gelesen.
+  let schluesselOffen = false
   try {
     const { sendeKontoSchluesselAnGeraet } = await import('../accountKeys')
     await sendeKontoSchluesselAnGeraet({
@@ -139,9 +142,11 @@ export async function gebeGeraetFrei(geraet: E2eeGeraetItem): Promise<void> {
       public_key: geraet.public_key,
     })
   } catch {
-    // Ein nicht erreichbares Geraet holt sich den Bund beim naechsten Versuch.
+    // Das Gerät ist freigegeben, aber ohne Bund. `kontoBundNachholen` schickt
+    // ihn beim nächsten Start, online oder im Zehn-Sekunden-Takt nach.
+    schluesselOffen = true
   }
-
+  return { schluesselOffen }
 }
 
 /**

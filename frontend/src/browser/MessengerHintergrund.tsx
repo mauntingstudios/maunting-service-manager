@@ -11,8 +11,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { meldeChat } from '@/services/benachrichtigung/chatMeldung'
-import { ackChatMessages } from '@/api/social'
-import { entpackeChatNutzlast } from '@/services/chatKrypto'
 import { resolveIdentity, type E2eeIdentity } from '@/services/e2eeIdentity'
 import { istGesperrt, useMessengerSperre } from '@/services/messengerSperre'
 import { useMessengerSync } from '@/hooks/useMessengerSync'
@@ -75,27 +73,8 @@ export function MessengerHintergrund() {
         t,
       })
 
-      // Zustellung quittieren, sobald die Zeile wirklich entschluesselt ist.
-      // Das ist die einzige Stelle ausserhalb des offenen Chats, die den
-      // Chat-Schluessel hat; ohne sie blieb der Absender auf einem Haken.
-      if (
-        !istGruppe &&
-        !msg.is_deleted &&
-        msg.encrypted_payload &&
-        msg.key_version &&
-        msg.client_uuid
-      ) {
-        void entpackeChatNutzlast(
-          'direct',
-          Number(msg.chat_id),
-          String(msg.client_uuid),
-          senderId,
-          Number(msg.key_version),
-          String(msg.encrypted_payload),
-        )
-          .then(() => ackChatMessages('direct', Number(msg.chat_id), Number(msg.id)))
-          .catch(() => {})
-      }
+      // Keine Zustellquittung aus einem Wecksignal. Sie entsteht nur nach dem
+      // lokalen Commit einer geprüften Nachricht im Ladepfad.
     }
     window.addEventListener('msm:sync-event', handle)
     return () => window.removeEventListener('msm:sync-event', handle)

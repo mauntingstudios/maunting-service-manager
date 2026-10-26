@@ -162,15 +162,16 @@ def test_gruppe_mit_sechzig_mitgliedern(
             )
         )
     db.commit()
-    db.add(
-        E2eeChatKey(
-            chat_type="group",
-            chat_id=gruppe.id,
-            user_id=owner_user.id,
-            key_version=1,
-            encrypted_chat_key="gepackt",
+    for user in mitglieder:
+        db.add(
+            E2eeChatKey(
+                chat_type="group",
+                chat_id=gruppe.id,
+                user_id=user.id,
+                key_version=1,
+                encrypted_chat_key=f"gepackt-{user.id}",
+            )
         )
-    )
     db.commit()
 
     messages_service.send_message(
@@ -515,6 +516,108 @@ def test_chat_schluessel_nur_fuer_mitglieder(
         ],
     )
     assert messages_service.latest_chat_key_version(db, "direct", chat.id) == 2
+
+
+def test_send_message_verlangt_schluessel_aller_mitglieder(
+    db: Session, owner_user: User, regular_user: User
+):
+    """Ein neues Mitglied ohne Schluessel macht die alte Version unbrauchbar."""
+    gruppe = _gruppe_mit_mitglied(db, owner_user, regular_user)
+    for uid in (owner_user.id, regular_user.id):
+        db.add(
+            E2eeChatKey(
+                chat_type="group",
+                chat_id=gruppe.id,
+                user_id=uid,
+                key_version=1,
+                encrypted_chat_key=f"gepackt-{uid}",
+            )
+        )
+    db.commit()
+
+    neu = _konto(db, "neu-ohne-schluessel")
+    SocialService.join_group_by_invite_code(db, neu, gruppe.invite_code)
+
+    with pytest.raises(HTTPException) as fehler:
+        messages_service.send_message(
+            db, owner_user, "group", gruppe.id, "ohne-abdeckung-1", 1, CHIFFRAT
+        )
+    assert fehler.value.status_code == 409
+    assert fehler.value.detail["code"] == "key_version_not_shared"
+
+
+def test_send_message_verlangt_schluessel_des_partners_im_direktchat(
+    db: Session, owner_user: User, regular_user: User
+):
+    chat = _direktchat(db, owner_user, regular_user)
+    db.query(E2eeChatKey).filter_by(
+        chat_type="direct", chat_id=chat.id, user_id=regular_user.id
+    ).delete()
+    db.commit()
+
+    with pytest.raises(HTTPException) as fehler:
+        messages_service.send_message(
+            db, owner_user, "direct", chat.id, "ohne-partner-schluessel-1", 1, CHIFFRAT
+        )
+    assert fehler.value.status_code == 409
+    assert fehler.value.detail["code"] == "key_version_not_shared"
+
+
+def test_send_message_alte_version_bleibt_bei_gleicher_mitgliedschaft_erlaubt(
+    db: Session, owner_user: User, regular_user: User
+):
+    """Eine offline eingereihte Nachricht darf eine aeltere Version nennen."""
+    gruppe = _gruppe_mit_mitglied(db, owner_user, regular_user)
+    for version in (1, 2):
+        for uid in (owner_user.id, regular_user.id):
+            db.add(
+                E2eeChatKey(
+                    chat_type="group",
+                    chat_id=gruppe.id,
+                    user_id=uid,
+                    key_version=version,
+                    encrypted_chat_key=f"gepackt-{version}-{uid}",
+                )
+            )
+    db.commit()
+
+    gesendet = messages_service.send_message(
+        db, owner_user, "group", gruppe.id, "alte-version-1", 1, CHIFFRAT
+    )
+    assert gesendet["id"]
+
+
+def test_client_uuid_gilt_nur_im_eigenen_chat(
+    db: Session, owner_user: User, regular_user: User
+):
+    erster = _direktchat(db, owner_user, regular_user)
+    dritter = _konto(db, "uuid-dritter")
+    _freunde(db, owner_user, dritter)
+    zweiter = SocialService.ensure_direct_chat(db, owner_user.id, dritter.id)
+    for uid in (owner_user.id, dritter.id):
+        db.add(
+            E2eeChatKey(
+                chat_type="direct",
+                chat_id=zweiter.id,
+                user_id=uid,
+                key_version=1,
+                encrypted_chat_key=f"gepackt-{uid}",
+            )
+        )
+    db.commit()
+
+    erste = messages_service.send_message(
+        db, owner_user, "direct", erster.id, "gleiche-uuid-1", 1, CHIFFRAT
+    )
+    assert erste["id"]
+
+    with pytest.raises(HTTPException) as fehler:
+        messages_service.send_message(
+            db, owner_user, "direct", zweiter.id, "gleiche-uuid-1", 1, CHIFFRAT
+        )
+    assert fehler.value.status_code == 409
+    assert fehler.value.detail["code"] == "client_uuid_other_chat"
+    assert db.query(E2eeMessage).filter_by(client_uuid="gleiche-uuid-1").count() == 1
 
 
 def test_konto_bund_nur_von_eigenem_geraet_und_nicht_ueberschreiben(

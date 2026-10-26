@@ -11,11 +11,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import '@/i18n'
 
-const { sendTypingSignal, toastError } = vi.hoisted(() => ({
-  sendTypingSignal: vi.fn(),
+const { sendTyping, toastError } = vi.hoisted(() => ({
+  sendTyping: vi.fn(),
   toastError: vi.fn(),
 }))
-vi.mock('@/api/social', () => ({ sendTypingSignal }))
+vi.mock('@/services/messengerSocket', () => ({ messengerSocket: { sendTyping } }))
 vi.mock('@/lib/audioSettings', () => ({ getAudioTrackConstraints: () => ({}) }))
 vi.mock('@/stores/toastStore', () => ({ toast: { error: toastError } }))
 
@@ -40,7 +40,7 @@ class FakeRecorder {
 let spur: { stop: ReturnType<typeof vi.fn> }
 
 beforeEach(() => {
-  sendTypingSignal.mockReset().mockResolvedValue(undefined)
+  sendTyping.mockReset()
   toastError.mockReset()
   spur = { stop: vi.fn() }
   vi.stubGlobal('MediaRecorder', FakeRecorder)
@@ -50,9 +50,13 @@ beforeEach(() => {
   })
 })
 
-function aufnahme(blindMailboxId = 'mb') {
+function aufnahme(
+  blindMailboxId = 'mb',
+  chatType: 'direct' | 'group' | null = 'direct',
+  chatId: number | null = 7,
+) {
   const onFertig = vi.fn()
-  const hook = renderHook(() => useSprachaufnahme({ blindMailboxId, onFertig }))
+  const hook = renderHook(() => useSprachaufnahme({ blindMailboxId, chatType, chatId, onFertig }))
   return { ...hook, onFertig }
 }
 
@@ -83,20 +87,20 @@ describe('useSprachaufnahme', () => {
     expect(spur.stop).toHaveBeenCalled()
   })
 
-  it('meldet Aufnehmen und Ende an die Mailbox, ohne Gespräch aber nicht', async () => {
+  it('meldet Aufnehmen und Ende an den offenen Chat, ohne Gespräch aber nicht', async () => {
     const mit = aufnahme('mb')
     await act(() => mit.result.current.starte())
     act(() => mit.result.current.beende(false))
-    expect(sendTypingSignal.mock.calls.map((c) => c[0])).toEqual([
-      { blind_mailbox_id: 'mb', status: 'recording' },
-      { blind_mailbox_id: 'mb', status: 'idle' },
+    expect(sendTyping.mock.calls).toEqual([
+      ['direct', '7', 'typing'],
+      ['direct', '7', 'idle'],
     ])
 
-    sendTypingSignal.mockClear()
-    const ohne = aufnahme('')
+    sendTyping.mockClear()
+    const ohne = aufnahme('', null, null)
     await act(() => ohne.result.current.starte())
     act(() => ohne.result.current.beende(false))
-    expect(sendTypingSignal).not.toHaveBeenCalled()
+    expect(sendTyping).not.toHaveBeenCalled()
   })
 
   it('gibt das Mikrofon frei, wenn der Messenger mitten in der Aufnahme verlassen wird', async () => {

@@ -48,8 +48,7 @@ interface KontoBundle {
 
 const accountCache = new Map<number, { item: E2eeAccountItem; at: number }>()
 const ACCOUNT_CACHE_MS = 5 * 60_000
-let laufendesSicherstellen: Promise<EigenesGeraet> | null = null
-let laufendesKonto: number | null = null
+const laufendeSicherstellungen = new Map<number, Promise<EigenesGeraet>>()
 
 function statusVon(fehler: unknown): number | null {
   const status = (fehler as { status?: unknown } | null)?.status
@@ -127,9 +126,15 @@ async function holeBundleVomServer(geraet: EigenesGeraet): Promise<EigenesGeraet
   return geraetMitSchluessel
 }
 
+function verlangeSelbesKonto(kontoId: number): void {
+  if (angemeldetesKonto() !== kontoId) throw new KontoSchluesselFehltError()
+}
+
 async function tuSicherstellen(kontoId: number): Promise<EigenesGeraet> {
   await geraetVeroeffentlichen().catch(() => null)
+  verlangeSelbesKonto(kontoId)
   let geraet = await eigenesGeraet()
+  verlangeSelbesKonto(kontoId)
 
   // Hat dieses Gerät den Konto-Schlüssel schon? Dann nur den Bund für dieses
   // Gerät aktuell halten (nach einer Neuinstallation kann er fehlen).
@@ -140,6 +145,7 @@ async function tuSicherstellen(kontoId: number): Promise<EigenesGeraet> {
         JSON.stringify(bundle),
         geraet.paar.publicKeyJwk,
       )
+      verlangeSelbesKonto(kontoId)
       await publishE2eeAccount({
         device_id: geraet.kennung,
         public_key: bundle.publicKeyJwk,
@@ -152,9 +158,11 @@ async function tuSicherstellen(kontoId: number): Promise<EigenesGeraet> {
       // 409 heißt: der Server hat eine andere Konto-Identitaet. Dann gilt
       // seine, und dieses Gerät muss den Bund von einem Geschwister holen.
       if (status !== 409) throw fehler
+      verlangeSelbesKonto(kontoId)
       geraet = await holeBundleVomServer(geraet)
     }
     accountCache.clear()
+    verlangeSelbesKonto(kontoId)
     return geraet
   }
 
@@ -165,18 +173,22 @@ async function tuSicherstellen(kontoId: number): Promise<EigenesGeraet> {
   } catch (fehler) {
     if (statusVon(fehler) !== 404) throw fehler
   }
+  verlangeSelbesKonto(kontoId)
   if (vorhanden) {
     geraet = await holeBundleVomServer(geraet)
     accountCache.set(kontoId, { item: vorhanden, at: Date.now() })
+    verlangeSelbesKonto(kontoId)
     return geraet
   }
 
   // Erstes Gerät: Konto-Identitaet erzeugen und veröffentlichen.
   const kontoPaar = await generateLocalE2eeKeyPair()
   const kontoSignatur = await erzeugeSignaturPaar()
+  verlangeSelbesKonto(kontoId)
   geraet = await speichereKontoPaar(kontoId, kontoPaar, kontoSignatur)
   const bundle = await bundleAus(geraet)
   const verschluesselt = await encryptE2eeHybrid(JSON.stringify(bundle), geraet.paar.publicKeyJwk)
+  verlangeSelbesKonto(kontoId)
   await publishE2eeAccount({
     device_id: geraet.kennung,
     public_key: bundle.publicKeyJwk,
@@ -191,6 +203,7 @@ async function tuSicherstellen(kontoId: number): Promise<EigenesGeraet> {
     },
     at: Date.now(),
   })
+  verlangeSelbesKonto(kontoId)
   return geraet
 }
 
@@ -198,13 +211,25 @@ async function tuSicherstellen(kontoId: number): Promise<EigenesGeraet> {
 export function ensureAccountKeys(): Promise<EigenesGeraet> {
   const kontoId = angemeldetesKonto()
   if (!kontoId) return Promise.reject(new KontoSchluesselFehltError())
-  if (laufendesSicherstellen && laufendesKonto === kontoId) return laufendesSicherstellen
-  laufendesKonto = kontoId
-  laufendesSicherstellen = tuSicherstellen(kontoId).finally(() => {
-    laufendesSicherstellen = null
-    laufendesKonto = null
-  })
-  return laufendesSicherstellen
+  const laufend = laufendeSicherstellungen.get(kontoId)
+  if (laufend) return laufend
+  let versprechen: Promise<EigenesGeraet>
+  versprechen = tuSicherstellen(kontoId)
+    .then((geraet) => {
+      // Zwischen letzter Prüfung und Rückgabe kann die Sitzung gewechselt
+      // haben; fremde Schlüssel gehören nicht in den neuen Aufrufer.
+      if (angemeldetesKonto() !== kontoId) throw new KontoSchluesselFehltError()
+      return geraet
+    })
+    .finally(() => {
+      // Nur den eigenen Eintrag entfernen. Ein Lauf für ein anderes Konto darf
+      // den Latch dieses Kontos nicht löschen.
+      if (laufendeSicherstellungen.get(kontoId) === versprechen) {
+        laufendeSicherstellungen.delete(kontoId)
+      }
+    })
+  laufendeSicherstellungen.set(kontoId, versprechen)
+  return versprechen
 }
 
 /** Öffentliche Konto-Identität eines beliebigen Kontos. */
@@ -272,5 +297,11 @@ export async function sendeKontoSchluesselAnGeraet(geraet: {
   const meins = await ensureAccountKeys()
   const bundle = await bundleAus(meins)
   const verschluesselt = await encryptE2eeHybrid(JSON.stringify(bundle), geraet.public_key)
-  await transferE2eeAccountBundle(geraet.device_id, verschluesselt, meins.kennung)
+  try {
+    await transferE2eeAccountBundle(geraet.device_id, verschluesselt, meins.kennung)
+  } catch (fehler) {
+    // 409 heißt: das Ziel hat den Bund schon. Das ist ein Erfolg, kein Fehler.
+    if (statusVon(fehler) === 409) return
+    throw fehler
+  }
 }

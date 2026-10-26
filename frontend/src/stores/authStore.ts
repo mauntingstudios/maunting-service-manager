@@ -14,7 +14,6 @@ import { clearMemoryKeyStore } from '@/services/e2eeCrypto'
 import { setzeInhaltsSchluessel } from '@/services/lokaleVersiegelung'
 import { clearGeraeteMemory } from '@/services/e2eeGeraet'
 import { clearNotesKeyCache } from '@/services/notesCalendarCrypto'
-import { leereAntwortSperren, leereGeraeteStand, leereUmzuege } from '@/services/gruppenSchluessel'
 import { leereGruppenNamen } from '@/services/gruppenName'
 import { leereGespraeche } from '@/services/gespraechsListe'
 import { leereKlartextSpeicher } from '@/services/klartextSpeicher'
@@ -192,8 +191,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     void import('@/services/messengerSocket').then((m) => m.messengerSocket.disconnect()).catch(() => {})
     clearGeraeteMemory()
     clearNotesKeyCache()
-    leereUmzuege()
-    leereAntwortSperren()
     // Die Gruppennamen. Sie liegen versiegelt, aber sie liegen da — und wie
     // eine Gruppe heisst, sagt ueber ihren Besitzer oft mehr als jede einzelne
     // Nachricht darin. Der naechste Mensch an diesem Geraet erbt sie nicht.
@@ -206,10 +203,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // weg, solange die Sitzung noch gilt; hier faellt nur der gemerkte Stand,
     // damit der naechste Anmelder nicht auf eine Meldung wartet, die diese
     // Datei fuer laengst abgeschickt haelt.
-    // Und der Lesestand der eigenen Geräte-Mailbox. Er ist je Konto getrennt,
-    // aber stehenzulassen hiesse, dem nächsten Konto in diesem Tab zu
-    // verschweigen, was vor seiner Anmeldung dort ankam.
-    leereGeraeteStand()
     // Entschlüsselte Verläufe, Anhänge und die Suche darüber. Sie lagen bis
     // 09/2026 nach dem Abmelden bis zum Neuladen des Tabs im Speicher.
     leereKlartextSpeicher()
@@ -235,6 +228,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Die Push-Adresse haengt am Konto; mit der Sitzung faellt sie.
     await kuendige()
     await import('@/desktop/vault/kameraSicherung').then((k) => k.kameraBeimAbmelden()).catch(() => {})
+    // Der Android-Dienst und die lokale Ablage gehören zur Sitzung. Beides
+    // vor dem Logout, solange die Sitzung den Kanal noch widerrufen darf.
+    await import('@/services/hintergrunddienst').then((m) => m.ausschalten()).catch(() => {})
+    await import('@/services/messengerLocalStore')
+      .then((m) => m.clearLocalMessengerStore())
+      .catch(() => {})
     try {
       await api('/auth/logout', { method: 'POST' })
     } catch {

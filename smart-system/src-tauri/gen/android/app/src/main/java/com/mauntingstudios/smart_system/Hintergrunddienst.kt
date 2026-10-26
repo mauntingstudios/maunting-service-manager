@@ -78,13 +78,11 @@ class Hintergrunddienst : Service() {
         private const val KEY_AKTIV = "aktiv"
         private const val KEY_AUSWEIS = "ausweis"
         private const val KEY_BASIS = "basis"
-        private const val KEY_MAILBOXEN = "mailboxen"
         private const val KEY_GESEHEN = "gesehen"
         private const val GESEHEN_MAX = 100
 
         const val EXTRA_AUSWEIS = "ausweis"
         const val EXTRA_BASIS = "basis"
-        const val EXTRA_MAILBOXEN = "mailboxen"
 
         fun einstellungen(ctx: Context) =
             ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -100,12 +98,11 @@ class Hintergrunddienst : Service() {
                 (prefs.getString(KEY_AUSWEIS, "") ?: "").length == 64
         }
 
-        fun einrichten(ctx: Context, ausweis: String, basis: String, mailboxen: String) {
+        fun einrichten(ctx: Context, ausweis: String, basis: String) {
             einstellungen(ctx).edit()
                 .putBoolean(KEY_AKTIV, true)
                 .putString(KEY_AUSWEIS, ausweis)
                 .putString(KEY_BASIS, basis.trimEnd('/'))
-                .putString(KEY_MAILBOXEN, mailboxen)
                 .apply()
         }
 
@@ -121,28 +118,7 @@ class Hintergrunddienst : Service() {
             val absicht = Intent(ctx, Hintergrunddienst::class.java)
                 .putExtra(EXTRA_AUSWEIS, prefs.getString(KEY_AUSWEIS, "") ?: "")
                 .putExtra(EXTRA_BASIS, prefs.getString(KEY_BASIS, "") ?: "")
-                .putExtra(EXTRA_MAILBOXEN, prefs.getString(KEY_MAILBOXEN, "[]") ?: "[]")
             starte(ctx, absicht)
-        }
-
-        /**
-         * Neue Mailboxliste: sofort neu verbinden, damit sie gilt.
-         *
-         * Ohne eingeschalteten Dienst nur merken — ein Chatwechsel darf keinen
-         * Dienst starten, den jemand ausgeschaltet hat.
-         */
-        fun mailboxenSetzen(ctx: Context, mailboxen: String) {
-            einstellungen(ctx).edit().putString(KEY_MAILBOXEN, mailboxen).apply()
-            if (!istEingeschaltet(ctx)) return
-            // Aus dem Hintergrund darf Android den Start verbieten (ab 12).
-            // Die Liste ist gehalten; der nächste Verbindungsaufbau nimmt sie
-            // mit — ein Chatwechsel darf die App nicht beenden.
-            runCatching {
-                starte(
-                    ctx,
-                    Intent(ctx, Hintergrunddienst::class.java).putExtra(EXTRA_MAILBOXEN, mailboxen),
-                )
-            }.onFailure { Log.w(TAG, "Dienst nicht angestoßen: ${it.message}") }
         }
 
         /** Aus: Merker weg, Dienst weg. Der Ausweis wird woanders widerrufen. */
@@ -209,7 +185,6 @@ class Hintergrunddienst : Service() {
         val neu = mutableMapOf<String, String>()
         intent.getStringExtra(EXTRA_AUSWEIS)?.let { neu[KEY_AUSWEIS] = it }
         intent.getStringExtra(EXTRA_BASIS)?.let { neu[KEY_BASIS] = it.trimEnd('/') }
-        intent.getStringExtra(EXTRA_MAILBOXEN)?.let { neu[KEY_MAILBOXEN] = it }
         if (neu.isEmpty()) return false
         val edit = laufAblage(this).edit()
         for ((schluessel, wert) in neu) edit.putString(schluessel, wert)
@@ -324,15 +299,6 @@ class Hintergrunddienst : Service() {
             put("conn_id", connId)
             put("zustand", "hintergrund")
         }.toString())
-
-        val mailboxen = laufAblage(this).getString(KEY_MAILBOXEN, "[]") ?: "[]"
-        val liste = runCatching { JSONArray(mailboxen) }.getOrNull()
-        if (liste != null && liste.length() > 0) {
-            post(basis, ausweis, "/api/events/mailboxes", JSONObject().apply {
-                put("conn_id", connId)
-                put("eintraege", liste)
-            }.toString())
-        }
     }
 
     private fun post(basis: String, ausweis: String, pfad: String, koerper: String) {

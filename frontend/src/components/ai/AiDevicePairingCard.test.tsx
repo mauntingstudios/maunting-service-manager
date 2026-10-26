@@ -23,7 +23,7 @@ const { lage, uebergabe, entzogen, ausDerZustellung, freigegeben } = vi.hoisted(
   /** Die Familien, deren Anmeldung widerrufen wurde. */
   entzogen: [] as string[],
   ausDerZustellung: vi.fn(async (_geraet: { device_id: string }) => undefined),
-  freigegeben: vi.fn(async (_geraet: { device_id: string }) => undefined),
+  freigegeben: vi.fn(async (_geraet: { device_id: string }) => ({ schluesselOffen: false })),
 }))
 
 vi.mock('@/api/client', () => ({
@@ -59,7 +59,7 @@ vi.mock('@/lib/angemeldetesKonto', async (importOriginal) => ({
   angemeldetesKonto: () => 10,
 }))
 
-vi.mock('@/services/verlaufsUebergabe', () => ({ uebergebeVerlauf: uebergabe }))
+vi.mock('@/services/geraet/kopplung', () => ({ uebergebeVerlauf: uebergabe }))
 
 vi.mock('@/services/e2eeGeraet', () => ({
   // Die Rechnung selbst prüft `e2eeGeraet.test.ts`. Hier zählt, dass die

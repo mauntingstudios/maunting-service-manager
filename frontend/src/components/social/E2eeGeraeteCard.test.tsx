@@ -50,7 +50,7 @@ vi.mock('@/services/e2eeGeraet', () => ({
   })),
   sicherheitsnummer: vi.fn(async () => '11111 22222 33333 44444'),
   entferneGeraet: vi.fn(async () => undefined),
-  gebeGeraetFrei: vi.fn(async () => undefined),
+  gebeGeraetFrei: vi.fn(async () => ({ schluesselOffen: false })),
   geraeteZuruecksetzen: vi.fn(async () => undefined),
   gibMichSelbstFrei: vi.fn(async () => undefined),
   vertrauteGeraete: vi.fn(async (_id: number, liste: any[]) => liste),
@@ -263,6 +263,23 @@ describe('E2eeGeraeteCard', () => {
     await waitFor(() =>
       expect(gebeGeraetFrei).toHaveBeenCalledWith(
         expect.objectContaining({ device_id: 'wartendes-geraet-03' }),
+      ),
+    )
+  })
+
+  it('sagt, wenn der Kontoschlüssel erst nachgereicht wird', async () => {
+    liste.inhalt = [
+      { device_id: 'dieses-geraet-0001', public_key: 'pub-1', label: '', is_approved: true },
+      { device_id: 'wartendes-geraet-03', public_key: 'pub-3', label: 'Zweitgerät', is_approved: false },
+    ]
+    vi.mocked(gebeGeraetFrei).mockResolvedValueOnce({ schluesselOffen: true })
+    const gemeldet = vi.spyOn(toast, 'info').mockImplementation(() => {})
+    render(<E2eeGeraeteCard />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Freigeben/ }))
+    await waitFor(() =>
+      expect(gemeldet).toHaveBeenCalledWith(
+        expect.stringContaining('Kontoschlüssel wird beim nächsten Abgleich nachgereicht'),
       ),
     )
   })

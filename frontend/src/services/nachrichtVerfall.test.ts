@@ -9,6 +9,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
+
 vi.mock('./messengerLocalStore', () => ({
   listeLokaleMailboxen: vi.fn(async () => []),
   loadLocalMessages: vi.fn(async () => []),
@@ -36,7 +38,9 @@ const MID = 'mb-1'
 
 beforeEach(() => {
   localStorage.clear()
+  localStorage.setItem('msm_offline_konto', '1')
   vi.clearAllMocks()
+  setzeAngemeldetesKonto(1)
 })
 
 describe('Frist übernehmen', () => {

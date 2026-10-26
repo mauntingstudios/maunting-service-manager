@@ -305,6 +305,37 @@ function statusVon(fehler: unknown): number | null {
   return typeof status === 'number' ? status : null
 }
 
+function codeVon(fehler: unknown): string | null {
+  const code = (fehler as { code?: unknown } | null)?.code
+  return typeof code === 'string' ? code : null
+}
+
+/** Der Server hat die Nachricht endgültig abgelehnt; Warten hilft nicht. */
+export class NachrichtAbgewiesenError extends Error {
+  readonly status: number
+  readonly code: string | null
+
+  constructor(status: number, code: string | null = null) {
+    super('Die Nachricht wurde abgelehnt.')
+    this.name = 'NachrichtAbgewiesenError'
+    this.status = status
+    this.code = code
+  }
+}
+
+/** Die Schlüsselversion deckt nicht alle aktuellen Mitglieder ab. */
+export class ChatSchluesselNichtGeteiltError extends Error {
+  readonly status = 409
+  readonly code = 'key_version_not_shared'
+
+  constructor() {
+    super('Die Schlüsselversion fehlt mindestens einem Mitglied.')
+    this.name = 'ChatSchluesselNichtGeteiltError'
+  }
+}
+
+const TRANSIENT = new Set([0, 408, 425, 429])
+
 /**
  * Stellt die eine verschluesselte Nachricht zu, oder reiht sie fuer spaeter ein.
  *
@@ -313,10 +344,13 @@ function statusVon(fehler: unknown): number | null {
  */
 export async function stelleZu(
   auftraege: Versandauftrag[],
-): Promise<{ niedrigsteId: number; verbindungsfehler: boolean; ueberInbox: boolean }> {
+): Promise<{ niedrigsteId: number; verbindungsfehler: boolean }> {
+  if (auftraege.length > 1) {
+    throw new Error('Der Einheitstransport erwartet genau einen Versandauftrag.')
+  }
   const erster = auftraege[0]
   if (!erster || !erster.chat_type || !erster.chat_id || !erster.key_version) {
-    return { niedrigsteId: 0, verbindungsfehler: false, ueberInbox: false }
+    return { niedrigsteId: 0, verbindungsfehler: false }
   }
   try {
     const nachricht = await messengerSocket.sendChatMessage({
@@ -329,11 +363,18 @@ export async function stelleZu(
     return {
       niedrigsteId: Number(nachricht.id || 0),
       verbindungsfehler: false,
-      ueberInbox: false,
     }
   } catch (fehler) {
     const status = statusVon(fehler)
-    if (!status || status >= 500) {
+    const code = codeVon(fehler)
+    if (code === 'key_version_not_shared') {
+      throw new ChatSchluesselNichtGeteiltError()
+    }
+    if (
+      status === null ||
+      TRANSIENT.has(status) ||
+      (status >= 500 && status < 600)
+    ) {
       enqueueMessageMutation({
         blind_mailbox_id: erster.blind_mailbox_id,
         chat_type: erster.chat_type,
@@ -342,8 +383,8 @@ export async function stelleZu(
         encrypted_payload: erster.ciphertext_envelope,
         client_uuid: erster.client_uuid,
       })
-      return { niedrigsteId: 0, verbindungsfehler: true, ueberInbox: false }
+      return { niedrigsteId: 0, verbindungsfehler: true }
     }
-    throw fehler
+    throw new NachrichtAbgewiesenError(status, code)
   }
 }

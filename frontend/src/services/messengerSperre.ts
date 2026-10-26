@@ -67,12 +67,15 @@ import {
   vergissPin,
   verwahrePin,
 } from './geraeteSchluesselfach'
-import { schreibeGruppenBestandNeu } from './gruppenSchluessel'
 import {
   schreibeEntwuerfeBestandNeu,
   schreibeFunkenBestandNeu,
+  schreibeLoeschAuftraegeBestandNeu,
+  schreibeMedienAuftraegeBestandNeu,
   schreibeMedienBestandNeu,
   schreibeMedienTeileBestandNeu,
+  schreibeOffeneNachrichtenBestandNeu,
+  schreibeSteuerAuftraegeBestandNeu,
 } from './messengerLocalStore'
 import {
   setzeInhaltsSchluessel,
@@ -81,6 +84,8 @@ import {
   siegelAktiv,
 } from './lokaleVersiegelung'
 import { schreibeNachrichtenBestandNeu } from './messengerLocalStore'
+import { schreibeGespraecheBestandNeu } from './gespraechsListe'
+import { schreibeGruppenNamenBestandNeu } from './gruppenName'
 // Der Ratchet-Bestand ist entfernt.
 import { meldeErrungenschaft } from '@/lib/errungenschaft'
 
@@ -319,11 +324,16 @@ function pinFehler(err: unknown, beiFalschemPin: string): Error {
 async function stelleBestandUm(kontoId: number): Promise<void> {
   await schreibeNachrichtenBestandNeu()
   await schreibeGeraetBestandNeu(kontoId)
-  await schreibeGruppenBestandNeu()
   await schreibeEntwuerfeBestandNeu()
   await schreibeFunkenBestandNeu()
   await schreibeMedienBestandNeu()
   await schreibeMedienTeileBestandNeu()
+  await schreibeMedienAuftraegeBestandNeu()
+  await schreibeSteuerAuftraegeBestandNeu()
+  await schreibeLoeschAuftraegeBestandNeu()
+  await schreibeOffeneNachrichtenBestandNeu()
+  await schreibeGespraecheBestandNeu()
+  await schreibeGruppenNamenBestandNeu()
 }
 
 // ==========================================

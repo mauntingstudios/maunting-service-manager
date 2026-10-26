@@ -16,6 +16,8 @@ import type { ChatContact } from '@/components/social/sidebar/ConversationListIt
 import type { Konversation } from '@/hooks/useKonversation'
 import type { E2eeIdentity } from '@/services/e2eeIdentity'
 import { ereignisseAusNachrichten } from '@/services/funkenService'
+import { sichereAnhaenge } from '@/services/medienSicherung'
+import { holeOffeneMedien } from '@/services/medienNachholen'
 import {
   merkePartnerQuittung,
   merkeQuittung,
@@ -33,6 +35,9 @@ export interface NachrichtenLadenOptionen {
   currentUserId: number
   activeContact: ChatContact | null
   activeGroup: ChatGroupItem | null
+  messagesRef: { current: ChatMessage[] }
+  hatMehrRef: { current: boolean }
+  laedtAeltereRef: { current: boolean }
   gruppenrechteVon: (konto: number) => Set<string>
   t: (schluessel: string, werte?: Record<string, unknown>) => string
   messages: ChatMessage[]
@@ -52,7 +57,6 @@ export interface NachrichtenLadenOptionen {
   maxPartnerDeliveredIdRef: { current: number }
   highestIncomingIdDeliveredRef: { current: number }
   highestIncomingIdAcknowledgedRef: { current: number }
-  sendE2eeControlMessage: (payload: Record<string, unknown>) => Promise<void>
 }
 
 export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
@@ -62,6 +66,9 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
     activeContact,
     activeGroup,
     t,
+    messagesRef,
+    hatMehrRef,
+    laedtAeltereRef,
     setMessages,
     setLoadingMessages,
     setAngeheftet,
@@ -81,12 +88,16 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
 
   const art = activeGroup ? ('gruppe' as const) : ('direkt' as const)
 
+  const istAktuell = (mid: string, seq: number): boolean =>
+    activeMailboxIdRef.current === mid && currentLoadSeqRef.current === seq
+
   const quittiere = async (
     messages: ChatMessage[],
     chatType: 'direct' | 'group',
     chatId: number,
   ) => {
     if (!chatId) return
+    if (activeMailboxIdRef.current !== blindMailboxId) return
     const incoming = messages.filter((m) => !m.isSelf && m.id > 0)
     const maxIncomingId = incoming.reduce((max, m) => Math.max(max, m.id), 0)
     const istGruppe = Boolean(activeGroup)
@@ -127,13 +138,12 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
     const seq = ++currentLoadSeqRef.current
     if (isInitial) setLoadingMessages(true)
     try {
+      // Was beim letzten Mal keinen Schluessel hatte, bekommt hier die
+      // naechste Gelegenheit. Der Fehler haelt den frischen Abruf nicht auf.
+      await konversation.verarbeiteOffene?.().catch(() => 0)
       const gelesen = await konversation.liesNachrichten()
       if (!gelesen) return
-      if (
-        activeMailboxIdRef.current !== currentMid ||
-        currentLoadSeqRef.current !== seq ||
-        gelesen.speicherId !== currentMid
-      ) {
+      if (!istAktuell(currentMid, seq) || gelesen.speicherId !== currentMid) {
         return
       }
 
@@ -156,11 +166,7 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
             }
           : m,
       )
-      if (
-        activeMailboxIdRef.current !== currentMid ||
-        currentLoadSeqRef.current !== seq ||
-        gelesen.speicherId !== currentMid
-      ) {
+      if (!istAktuell(currentMid, seq) || gelesen.speicherId !== currentMid) {
         return
       }
       const gemischt = mischeVerlauf(lokalMitHaken.slice(-500), gelesen.messages, art)
@@ -196,11 +202,7 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
         )
         // Nach dem Entschluesseln kann das Gespraech gewechselt haben. Der Pin
         // der alten Seite gehoert dann nicht in die neue Leiste.
-        if (
-          activeMailboxIdRef.current !== currentMid ||
-          currentLoadSeqRef.current !== seq ||
-          gelesen.speicherId !== currentMid
-        ) {
+        if (!istAktuell(currentMid, seq) || gelesen.speicherId !== currentMid) {
           return
         }
         setAngeheftet(angeheftet)
@@ -209,7 +211,18 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
       }
 
       await saveLocalMessagesStrict(currentMid, gelesen.messages, art)
+      // Nach dem Speichern kann der Chat gewechselt haben. Der Cursor und die
+      // Wasserstände gehören dann nicht mehr in das neue Gespräch.
+      if (!istAktuell(currentMid, seq) || gelesen.speicherId !== currentMid) {
+        return
+      }
+      // Ab hier liegt der Verlauf. Anhänge werden zusätzlich dauerhaft
+      // gesichert; ein Fehlschlag erzeugt einen Nachholauftrag.
+      void sichereAnhaenge(gelesen.messages, currentMid)
+        .then(() => holeOffeneMedien())
+        .catch(() => {})
       gelesen.uebernimm()
+      hatMehrRef.current = gelesen.hasMore
 
       maxPartnerReadIdRef.current = Math.max(
         maxPartnerReadIdRef.current,
@@ -225,6 +238,7 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
       setVerfallSekunden(gelesen.page.ephemeral_ttl_seconds)
 
       markAsRead(currentMid)
+      if (!istAktuell(currentMid, seq)) return
       await quittiere(gelesen.messages, gelesen.chatType, gelesen.chatId)
 
       if (gelesen.unlesbar > 0) {
@@ -243,21 +257,37 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
 
   const ladeAeltere = async (): Promise<void> => {
     const currentMid = blindMailboxId
-    if (!currentMid) return
-    const ids = optionen.messages.map((m) => m.id).filter((id) => id > 0)
+    if (!currentMid || !hatMehrRef.current || laedtAeltereRef.current) return
+    if (activeMailboxIdRef.current !== currentMid) return
+    const ids = messagesRef.current.map((m) => m.id).filter((id) => id > 0)
     const minId = ids.length ? Math.min(...ids) : 0
     if (!minId) return
+    laedtAeltereRef.current = true
+    const seq = ++currentLoadSeqRef.current
     try {
       const gelesen = await konversation.ladeAeltere(minId)
-      if (!gelesen.messages.length) return
+      if (!istAktuell(currentMid, seq)) return
+      if (!gelesen.messages.length) {
+        hatMehrRef.current = false
+        return
+      }
       const lokal = await loadLocalMessages(currentMid)
+      if (!istAktuell(currentMid, seq)) return
       const gemischt = sortMessagesChronologically(
         mischeVerlauf(lokal, gelesen.messages, art),
       )
       setMessages(gemischt)
+      hatMehrRef.current = gelesen.hasMore
       await saveLocalMessagesStrict(currentMid, gelesen.messages, art)
+      if (istAktuell(currentMid, seq)) {
+        void sichereAnhaenge(gelesen.messages, currentMid)
+          .then(() => holeOffeneMedien())
+          .catch(() => {})
+      }
     } catch {
       // Siehe oben: die nächste Berührung versucht es erneut.
+    } finally {
+      laedtAeltereRef.current = false
     }
   }
 

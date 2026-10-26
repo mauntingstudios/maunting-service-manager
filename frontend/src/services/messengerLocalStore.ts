@@ -5,10 +5,9 @@
  * browser refreshes (F5) and app restarts (Web, Desktop, Mobile) without
  * re-entering recovery keys or waiting for network round-trips.
  *
- * Database: `msm_messenger_local:konto:<id>` (v9)
+ * Database: `msm_messenger_local:konto:<id>` (v10)
  * Object Stores:
  *  - `messages`: keyed by `[blindMailboxId, id]`, indexed by `blindMailboxId`, `createdAt`, `clientUuid`
- *  - `mailboxes`: keyed by `blindMailboxId`, tracks `lastSyncedEnvelopeId` and `updatedAt`
  *
  * Seit 09/2026 liegt der Inhalt hier nicht mehr offen, sobald ein Messenger-PIN
  * eingerichtet ist: jede Zeile geht durch `lokaleVersiegelung`, nur die
@@ -40,28 +39,41 @@
 import i18n from '@/i18n'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { entsiegleZeile, entsiegleZeilen, versiegleZeile } from './lokaleVersiegelung'
-import { merkePartnerKennungen } from './quittungsstand'
 import type { AugenblickMarke, RettungsMarke } from './funkenService'
 import { istSteuerzeile } from './nachrichtBezug'
 export interface SteuerAuftrag {
   id: string
   mailbox: string
   typ: string
+  /** Wohin die Wirkung gehört; der Lauf baut daraus den Zielchat. */
+  art: 'direkt' | 'gruppe'
+  chatType: 'direct' | 'group'
+  chatId: number
+  peerId?: number | null
+  groupId?: number | null
+  mitglieder?: number[]
+  istEigentuemer?: boolean
   ziel?: string | null
   zielId?: number | null
   felder: Record<string, unknown>
-  ruecknahme?: { art?: string } | null
-  versuche?: number
-  naechsterVersuch?: number
-  angelegtAm?: number
-  art?: string
+  ruecknahme?: Record<string, unknown> | null
+  versuche: number
+  naechsterVersuch: number
+  angelegtAm: number
 }
 
 export interface LoeschAuftrag {
   id: string
   mailbox: string
+  chatType?: 'direct' | 'group'
+  chatId?: number
   clientUuid?: string | null
-  medien?: { mediaId: string; [key: string]: unknown }[]
+  nachrichtId?: number
+  medien?: { mediaId: string; mailbox: string; absenderId: number }[]
+  fremd?: boolean
+  versuche?: number
+  naechsterVersuch?: number
+  angelegtAm?: number
   [key: string]: unknown
 }
 
@@ -135,21 +147,38 @@ export interface LocalStoredMessage {
   funkenRettung?: RettungsMarke
 }
 
-export interface LocalMailboxMeta {
-  blindMailboxId: string
-  lastSyncedEnvelopeId: number
-  updatedAt: string
+/**
+ * Eine Nachricht, deren Entschlüsselung gerade nicht möglich war.
+ *
+ * Der Cursor darf über sie hinweggehen, sonst blockiert ein einziger fehlender
+ * Schlüssel den ganzen weiteren Verlauf. Der rohe Umschlag bleibt deshalb hier
+ * liegen und wird nach einem neuen Schlüssel oder beim nächsten Lauf erneut
+ * versucht.
+ */
+export interface OffeneNachricht {
+  id: string
+  chatType: 'direct' | 'group'
+  chatId: number
+  clientUuid: string
+  senderId: number
+  keyVersion: number
+  encryptedPayload: string
+  createdAt: string
+  versuche: number
+  naechsterVersuch: number
+  angelegtAm: number
 }
 
 const DB_PRAEFIX = 'msm_messenger_local'
-const DB_VERSION = 9
+const DB_VERSION = 10
 
 /** Die Ablage dieses Kontos. Ein anderes Konto, eine andere Datenbank. */
 function dbName(kontoId: number): string {
   return `${DB_PRAEFIX}:konto:${kontoId}`
 }
 const STORE_MESSAGES = 'messages'
-const STORE_MAILBOXES = 'mailboxes'
+/** Bis Version 9 der Lesestand je Mailbox; seit Version 10 entfällt er. */
+const STORE_MAILBOXES_ALT = 'mailboxes'
 const STORE_KLARTEXTE = 'envelope_plaintexts'
 const STORE_ENTWUERFE = 'entwuerfe'
 const STORE_FUNKEN = 'funken'
@@ -164,6 +193,8 @@ const STORE_MEDIEN_GRABSTEINE = 'medien_grabsteine'
 const STORE_STEUER_AUFTRAEGE = 'steuer_auftraege'
 /** Offene Server-Aufraeumauftraege zu geloeschten Nachrichten. */
 const STORE_LOESCH_AUFTRAEGE = 'loesch_auftraege'
+/** Umschlaege, deren Entschluesselung noch aussteht. */
+const STORE_OFFENE_NACHRICHTEN = 'offene_nachrichten'
 
 /**
  * So viele Grabsteine bleiben.
@@ -201,6 +232,12 @@ function nachrichtAad(blindMailboxId: string, id: number | undefined): string {
 /** Bindet einen Umschlag-Klartext an seinen Platz. */
 function klartextAad(blindMailboxId: string, envelopeId: number): string {
   return `msm-umschlag:${blindMailboxId}:${envelopeId}`
+}
+
+const OFFENE_KLARFELDER = ['id', 'chatType', 'chatId', 'clientUuid', 'angelegtAm'] as const
+
+function offeneAad(id: string): string {
+  return `msm-offene-nachricht:${id}`
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null
@@ -317,8 +354,10 @@ function openLocalDatabase(): Promise<IDBDatabase> {
         msgStore.createIndex('by_created_at', 'createdAt', { unique: false })
         msgStore.createIndex('by_client_uuid', 'clientUuid', { unique: false })
       }
-      if (!db.objectStoreNames.contains(STORE_MAILBOXES)) {
-        db.createObjectStore(STORE_MAILBOXES, { keyPath: 'blindMailboxId' })
+      // Version 10: die alte Cursorzeile je Mailbox entfällt. Den Lesestand
+      // führt inzwischen der Aufrufer; die Nachrichten bleiben unberührt.
+      if (db.objectStoreNames.contains(STORE_MAILBOXES_ALT)) {
+        db.deleteObjectStore(STORE_MAILBOXES_ALT)
       }
       // Version 2: der Klartext je Umschlag.
       //
@@ -428,6 +467,16 @@ function openLocalDatabase(): Promise<IDBDatabase> {
         const loesch = db.createObjectStore(STORE_LOESCH_AUFTRAEGE, { keyPath: 'id' })
         loesch.createIndex('by_faellig', 'naechsterVersuch', { unique: false })
         loesch.createIndex('by_angelegt', 'angelegtAm', { unique: false })
+      }
+      /*
+       * Version 10: Umschlaege, die noch nicht entschluesselt werden konnten.
+       * Der Cursor darf weiterlaufen; der Inhalt bleibt trotzdem erhalten.
+       */
+      if (!db.objectStoreNames.contains(STORE_OFFENE_NACHRICHTEN)) {
+        const offene = db.createObjectStore(STORE_OFFENE_NACHRICHTEN, { keyPath: 'id' })
+        offene.createIndex('by_chat', 'chatType', { unique: false })
+        offene.createIndex('by_faellig', 'naechsterVersuch', { unique: false })
+        offene.createIndex('by_angelegt', 'angelegtAm', { unique: false })
       }
       // Die vorhandene Tabelle aus Version 6 bekommt ihren Index nach. In
       // einer frisch angelegten steht er schon oben.
@@ -573,6 +622,26 @@ function gewinnt(
   neu: LocalStoredMessage,
   alt: LocalStoredMessage,
 ): boolean {
+  // Ein Grabstein ist die letzte Fassung. Kein später eintreffender Abruf
+  // darf den Inhalt wieder anlegen.
+  const neuGrabstein = Boolean(neu.isDeleted)
+  const altGrabstein = Boolean(alt.isDeleted)
+  if (neuGrabstein !== altGrabstein) return neuGrabstein
+  if (neuGrabstein && altGrabstein) {
+    const zeitNeu = Date.parse(neu.deletedAt || '') || 0
+    const zeitAlt = Date.parse(alt.deletedAt || '') || 0
+    if (zeitNeu !== zeitAlt) return zeitNeu > zeitAlt
+  }
+
+  const neuEdit = Date.parse(neu.editedAt || '') || 0
+  const altEdit = Date.parse(alt.editedAt || '') || 0
+  if (neuEdit !== altEdit) return neuEdit > altEdit
+
+  const rang = { read: 4, delivered: 3, sent: 2, queued: 1, failed: 1 } as const
+  const rangNeu = rang[neu.status as keyof typeof rang] ?? 0
+  const rangAlt = rang[alt.status as keyof typeof rang] ?? 0
+  if (rangNeu !== rangAlt) return rangNeu > rangAlt
+
   const neuPlatzhalter = istVerschluesselterPlatzhalter(neu)
   const altPlatzhalter = istVerschluesselterPlatzhalter(alt)
   if (neuPlatzhalter !== altPlatzhalter) return !neuPlatzhalter
@@ -1271,6 +1340,97 @@ export async function loescheMedienAuftrag(id: string): Promise<void> {
   })
 }
 
+/** Legt einen offenen Umschlag ab; ein vorhandener bleibt unangetastet. */
+export async function legeOffeneNachrichtAb(
+  eingabe: Omit<OffeneNachricht, 'versuche' | 'naechsterVersuch' | 'angelegtAm'>,
+): Promise<void> {
+  if (!eingabe?.id || !eingabe.clientUuid || !eingabe.encryptedPayload) return
+  const jetzt = Date.now()
+  const auftrag: OffeneNachricht = {
+    ...eingabe,
+    versuche: 0,
+    naechsterVersuch: jetzt,
+    angelegtAm: jetzt,
+  }
+  const zeile = await versiegleZeile(
+    auftrag,
+    OFFENE_KLARFELDER,
+    offeneAad(auftrag.id),
+  )
+  const db = await openLocalDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_OFFENE_NACHRICHTEN, 'readwrite')
+    const store = tx.objectStore(STORE_OFFENE_NACHRICHTEN)
+    const vorhanden = store.get(auftrag.id)
+    vorhanden.onsuccess = () => {
+      if (vorhanden.result == null) store.put(zeile)
+    }
+    vorhanden.onerror = () => reject(vorhanden.error)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
+export async function ladeOffeneNachrichten(): Promise<OffeneNachricht[]> {
+  try {
+    const db = await openLocalDatabase()
+    const rohzeilen = await new Promise<Record<string, any>[]>((resolve, reject) => {
+      const tx = db.transaction(STORE_OFFENE_NACHRICHTEN, 'readonly')
+      const req = tx.objectStore(STORE_OFFENE_NACHRICHTEN).getAll()
+      req.onsuccess = () => resolve(req.result || [])
+      req.onerror = () => reject(req.error)
+    })
+    const offen = await entsiegleZeilen<OffeneNachricht>(rohzeilen, (z) =>
+      offeneAad(String(z.id)),
+    )
+    return offen.filter(
+      (a) =>
+        typeof a?.id === 'string' &&
+        (a.chatType === 'direct' || a.chatType === 'group') &&
+        Number.isInteger(a.chatId) &&
+        typeof a.clientUuid === 'string' &&
+        Number.isInteger(a.senderId) &&
+        Number.isInteger(a.keyVersion) &&
+        typeof a.encryptedPayload === 'string' &&
+        typeof a.createdAt === 'string' &&
+        Number.isInteger(a.versuche) &&
+        Number.isFinite(a.naechsterVersuch),
+    )
+  } catch {
+    return []
+  }
+}
+
+export async function schreibeOffeneNachricht(auftrag: OffeneNachricht): Promise<void> {
+  if (!auftrag?.id) return
+  const zeile = await versiegleZeile(
+    auftrag,
+    OFFENE_KLARFELDER,
+    offeneAad(auftrag.id),
+  )
+  const db = await openLocalDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_OFFENE_NACHRICHTEN, 'readwrite')
+    tx.objectStore(STORE_OFFENE_NACHRICHTEN).put(zeile)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
+export async function loescheOffeneNachricht(id: string): Promise<void> {
+  if (!id) return
+  const db = await openLocalDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_OFFENE_NACHRICHTEN, 'readwrite')
+    tx.objectStore(STORE_OFFENE_NACHRICHTEN).delete(id)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
 // ==========================================
 // Die Server-Aufraeumauftraege beim Loeschen
 // ==========================================
@@ -1504,7 +1664,10 @@ export async function ladeSteuerAuftraege(): Promise<SteuerAuftrag[]> {
           typeof a.typ === 'string' &&
           Number.isInteger(a.versuche) &&
           Number.isFinite(a.naechsterVersuch) &&
-          (a.art === 'direkt' || a.art === 'gruppe'),
+          (a.art === 'direkt' || a.art === 'gruppe') &&
+          (a.chatType === 'direct' || a.chatType === 'group') &&
+          Number.isInteger(a.chatId) &&
+          Array.isArray(a.mitglieder),
       )
       .sort((a, b) => Number(a.angelegtAm || 0) - Number(b.angelegtAm || 0))
   } catch {
@@ -1843,7 +2006,6 @@ async function speichereNachrichten(
     for (const [k, m] of gewaehlt) gewinnerId.set(k, m.id)
 
     // Versiegeln passiert vollständig vor der Transaktion. Siehe Dateikopf.
-    let maxEnvelopeId = 0
     const zeilen: Record<string, unknown>[] = []
     for (const m of auswahl) {
       // Siehe `isSystem`: eine Meldung über die Sitzung dieses Geräts ist
@@ -1855,10 +2017,6 @@ async function speichereNachrichten(
           nachrichtAad(blindMailboxId, m.id),
         ),
       )
-      // Only real server envelope IDs (< 1e11) advance lastSyncedEnvelopeId
-      if (typeof m.id === 'number' && m.id > maxEnvelopeId && m.id < 1e11) {
-        maxEnvelopeId = m.id
-      }
     }
 
     /*
@@ -1885,6 +2043,12 @@ async function speichereNachrichten(
         rohzeilen,
         (z) => nachrichtAad(blindMailboxId, z.id)
       )
+      const grabsteine = new Set<string>()
+      for (const m of vorhanden) {
+        if (!m.isDeleted) continue
+        grabsteine.add(`id:${m.id}`)
+        if (m.clientUuid) grabsteine.add(`u:${m.clientUuid.split('#')[0]}`)
+      }
       for (const m of vorhanden) {
         if (m.blindMailboxId !== blindMailboxId) continue
         if (!m.clientUuid) continue
@@ -1894,27 +2058,33 @@ async function speichereNachrichten(
         // optimistisch oder eine zweite bestätigte Fassung: eine bleibt.
         zuLoeschen.push(m.id)
       }
+      // Ein vorhandener Grabstein wird nicht durch eine spätere, nicht
+      // gelöschte Fassung überschrieben. Nur ein Grabstein darf ihn ersetzen.
+      if (grabsteine.size > 0) {
+        for (let i = auswahl.length - 1; i >= 0; i -= 1) {
+          const m = auswahl[i]
+          if (m.isDeleted) continue
+          const gleicheId = grabsteine.has(`id:${m.id}`)
+          const gleicheUuid = m.clientUuid
+            ? grabsteine.has(`u:${m.clientUuid.split('#')[0]}`)
+            : false
+          if (gleicheId || gleicheUuid) {
+            auswahl.splice(i, 1)
+            zeilen.splice(i, 1)
+          }
+        }
+      }
     }
 
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction([STORE_MESSAGES, STORE_MAILBOXES], 'readwrite')
+      const tx = db.transaction(STORE_MESSAGES, 'readwrite')
       const msgStore = tx.objectStore(STORE_MESSAGES)
-      const mbStore = tx.objectStore(STORE_MAILBOXES)
 
       for (const zeile of zeilen) msgStore.put(zeile)
       // Nach dem Schreiben: die bestätigte Fassung steht dann schon, und es
       // gibt keinen Augenblick, in dem die Nachricht gar nicht in der Ablage
       // liegt.
       for (const id of zuLoeschen) msgStore.delete([blindMailboxId, id])
-
-      if (maxEnvelopeId > 0) {
-        const mbMeta: LocalMailboxMeta = {
-          blindMailboxId,
-          lastSyncedEnvelopeId: maxEnvelopeId,
-          updatedAt: new Date().toISOString(),
-        }
-        mbStore.put(mbMeta)
-      }
 
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
@@ -2079,8 +2249,8 @@ export async function entferneLokaleNachricht(
  * holten sie beim nächsten Öffnen zurück — ein gelöschter Chat, der wieder da
  * ist, sobald man ihn erneut öffnet.
  *
- * Gelesen wird über den Mailbox-Index, nicht über die Mailbox-Zeile: die
- * entsteht erst mit einer echten Umschlagkennung.
+ * Gelesen wird über den Mailbox-Index, nicht über eine eigene Cursorzeile:
+ * die gibt es seit Version 10 nicht mehr.
  *
  * **Fehler werden weitergereicht.** Ein Gespräch, das in der Ablage bleibt,
  * ist nicht entfernt; der Aufrufer zeigt dann den Fehler statt „entfernt“.
@@ -2092,7 +2262,7 @@ export async function leereMailboxLokal(blindMailboxId: string): Promise<void> {
   // der Verlauf lag weiter auf der Platte.
   const db = await openLocalDatabase()
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction([STORE_MESSAGES, STORE_KLARTEXTE, STORE_MAILBOXES, STORE_ENTWUERFE], 'readwrite')
+    const tx = db.transaction([STORE_MESSAGES, STORE_KLARTEXTE, STORE_ENTWUERFE], 'readwrite')
     const nachrichten = tx.objectStore(STORE_MESSAGES)
     const index = nachrichten.index('by_mailbox')
     const req = index.openKeyCursor(IDBKeyRange.only(blindMailboxId))
@@ -2118,7 +2288,6 @@ export async function leereMailboxLokal(blindMailboxId: string): Promise<void> {
     }
     klartextReq.onerror = () => reject(klartextReq.error)
 
-    tx.objectStore(STORE_MAILBOXES).delete(blindMailboxId)
     tx.objectStore(STORE_ENTWUERFE).delete(blindMailboxId)
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
@@ -2158,6 +2327,9 @@ export async function updateMessageInLocalStore(
       nachrichtAad(blindMailboxId, roh.id),
     )
     if (!alt) return
+    // Ein Grabstein bleibt Grabstein. Nur ein ausdrücklicher Lösch-Patch darf
+    // ihn ersetzen; späte Status- oder Kennungsupdates laufen ins Leere.
+    if (alt.isDeleted && patch.isDeleted !== true) return
 
     const alteId = roh.id as number
     const neu = { ...alt, ...patch, blindMailboxId }
@@ -2288,61 +2460,6 @@ export async function editMessageInLocalStore(
 }
 
 /**
- * Aktualisiert den Zustell- und Lesestatus einer Nachricht global nach clientUuid (Häkchen-Update).
- */
-export async function updateDeliveryStatus(
-  clientUuid: string,
-  status: 'delivered' | 'read',
-): Promise<void> {
-  if (!clientUuid) return
-  const logicalUuid = clientUuid.split('#')[0]
-  try {
-    const db = await openLocalDatabase()
-    const rohzeilen = await new Promise<Record<string, any>[]>((resolve, reject) => {
-      const tx = db.transaction(STORE_MESSAGES, 'readonly')
-      const store = tx.objectStore(STORE_MESSAGES)
-      const req = store.index('by_client_uuid').getAll(logicalUuid)
-      req.onsuccess = () => resolve(req.result || [])
-      req.onerror = () => reject(req.error)
-    })
-
-    for (const roh of rohzeilen) {
-      const mailbox = roh.blindMailboxId
-      if (mailbox) {
-        if (status === 'read') {
-          merkePartnerKennungen(mailbox, 'gelesen', [logicalUuid])
-        }
-        merkePartnerKennungen(mailbox, 'zugestellt', [logicalUuid])
-      }
-      const aad = nachrichtAad(mailbox, roh.id)
-      const offen = await entsiegleZeile<LocalStoredMessage>(roh, aad)
-      if (!offen) continue
-
-      const isRead = status === 'read' ? true : Boolean(offen.isRead)
-      const isDelivered = true
-      const finalStatus = isRead ? 'read' : 'delivered'
-
-      const aktualisiert: LocalStoredMessage = {
-        ...offen,
-        isDelivered,
-        isRead,
-        status: finalStatus,
-      }
-      const zeile = await versiegleZeile(aktualisiert, NACHRICHT_KLARFELDER, aad)
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_MESSAGES, 'readwrite')
-        tx.objectStore(STORE_MESSAGES).put(zeile)
-        tx.oncomplete = () => resolve()
-        tx.onerror = () => reject(tx.error)
-      })
-    }
-  } catch {
-    // Non-fatal
-  }
-}
-
-
-/**
  * Alle Mailboxen, zu denen hier Nachrichten liegen.
  *
  * Gelesen wird über den Index auf `blindMailboxId`, nicht über den
@@ -2379,24 +2496,6 @@ async function ladeMailboxen(streng: boolean): Promise<string[]> {
   } catch (fehler) {
     if (streng) throw fehler
     return []
-  }
-}
-
-/**
- * Retrieves the last synced envelope ID for a mailbox.
- */
-export async function getLocalMailboxLastSyncedId(blindMailboxId: string): Promise<number> {
-  if (!blindMailboxId) return 0
-  try {
-    const db = await openLocalDatabase()
-    return await new Promise<number>((resolve) => {
-      const tx = db.transaction(STORE_MAILBOXES, 'readonly')
-      const req = tx.objectStore(STORE_MAILBOXES).get(blindMailboxId)
-      req.onsuccess = () => resolve(req.result?.lastSyncedEnvelopeId ?? 0)
-      req.onerror = () => resolve(0)
-    })
-  } catch {
-    return 0
   }
 }
 
@@ -2465,6 +2564,30 @@ export function schreibeMedienTeileBestandNeu(): Promise<number> {
     STORE_MEDIEN_TEILE,
     ['id', 'transferId', 'teil', 'mediaId'],
     (roh) => medienTeilAad(String(roh.transferId || ''), Number(roh.teil || 0)),
+  )
+}
+
+export function schreibeMedienAuftraegeBestandNeu(): Promise<number> {
+  return bestandNeu(STORE_MEDIEN_AUFTRAEGE, AUFTRAG_KLARFELDER, (roh) =>
+    medienAuftragAad(String(roh.id || '')),
+  )
+}
+
+export function schreibeSteuerAuftraegeBestandNeu(): Promise<number> {
+  return bestandNeu(STORE_STEUER_AUFTRAEGE, STEUER_KLARFELDER, (roh) =>
+    steuerAuftragAad(String(roh.id || '')),
+  )
+}
+
+export function schreibeLoeschAuftraegeBestandNeu(): Promise<number> {
+  return bestandNeu(STORE_LOESCH_AUFTRAEGE, LOESCH_KLARFELDER, (roh) =>
+    loeschAuftragAad(String(roh.id || '')),
+  )
+}
+
+export function schreibeOffeneNachrichtenBestandNeu(): Promise<number> {
+  return bestandNeu(STORE_OFFENE_NACHRICHTEN, OFFENE_KLARFELDER, (roh) =>
+    offeneAad(String(roh.id || '')),
   )
 }
 
@@ -2539,14 +2662,17 @@ export async function clearLocalMessengerStore(): Promise<void> {
       const tx = db.transaction(
         [
           STORE_MESSAGES,
-          STORE_MAILBOXES,
           STORE_KLARTEXTE,
           STORE_FUNKEN,
+          STORE_ENTWUERFE,
+          STORE_MEDIEN,
+          STORE_MEDIEN_TEILE,
           // Die Nachholauftraege und Grabsteine gehoeren zu diesem Konto wie
           // der Verlauf. Ein „alles loeschen", das sie stehen laesst, holte
           // spaeter Anhaenge zu Nachrichten, die es hier nicht mehr gibt.
           STORE_MEDIEN_AUFTRAEGE,
           STORE_MEDIEN_GRABSTEINE,
+          STORE_OFFENE_NACHRICHTEN,
           // Die Outbox der Steuerwirkungen ebenso: ein Auftrag nennt Mailbox,
           // Mitglieder und Inhalt einer Wirkung. Nach dem Abmelden darf davon
           // nichts liegen bleiben — und mit der Sitzung des naechsten Kontos
@@ -2560,11 +2686,14 @@ export async function clearLocalMessengerStore(): Promise<void> {
         'readwrite'
       )
       tx.objectStore(STORE_MESSAGES).clear()
-      tx.objectStore(STORE_MAILBOXES).clear()
       tx.objectStore(STORE_KLARTEXTE).clear()
       tx.objectStore(STORE_FUNKEN).clear()
+      tx.objectStore(STORE_ENTWUERFE).clear()
+      tx.objectStore(STORE_MEDIEN).clear()
+      tx.objectStore(STORE_MEDIEN_TEILE).clear()
       tx.objectStore(STORE_MEDIEN_AUFTRAEGE).clear()
       tx.objectStore(STORE_MEDIEN_GRABSTEINE).clear()
+      tx.objectStore(STORE_OFFENE_NACHRICHTEN).clear()
       tx.objectStore(STORE_STEUER_AUFTRAEGE).clear()
       tx.objectStore(STORE_LOESCH_AUFTRAEGE).clear()
       tx.oncomplete = () => resolve()

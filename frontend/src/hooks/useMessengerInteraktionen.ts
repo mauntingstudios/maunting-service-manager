@@ -231,7 +231,7 @@ export function useMessengerInteraktionen(optionen: Optionen) {
               currentUserId,
               setWlFortschritt,
             )
-            await handleSendMessage({
+            const angenommen = await handleSendMessage({
               text: inhalt.text || '',
               note: inhalt.noteAttachment as NoteAttachment | undefined,
               cal: inhalt.calendarAttachment as CalendarAttachment | undefined,
@@ -244,6 +244,7 @@ export function useMessengerInteraktionen(optionen: Optionen) {
               antwortAuf: null,
               ziel,
             })
+            if (!angenommen) gescheitert += 1
           } catch {
             gescheitert++
           }
