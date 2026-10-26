@@ -9,7 +9,7 @@ import { breitenAlsContainer } from './vite.breitenAlsContainer'
 import { fontsourceWoff2Only } from './vite.fontsource'
 
 /**
- * Der Browser-Bau (MSB — Maunting Secure Browser).
+ * Der Browser-Bau (Maunting Pontis).
  *
  * Dieselbe Codebasis, dritter Einstieg: `browser.html` lädt
  * `src/browser/main.tsx`, und Tauri (`browser/src-tauri`) zeigt seine

@@ -21,10 +21,11 @@ use crate::konfig::KonfigZustand;
 #[cfg(windows)]
 pub mod pruefung;
 pub mod quarantaene;
+pub mod historie;
 
 /// Dateien, die in dieser Sitzung fertig wurden; nur sie und der
 /// Download-Ordner lassen sich im Explorer zeigen.
-static FERTIG: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(Default::default);
+pub(crate) static FERTIG: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(Default::default);
 
 /// Die Nummer, unter der ein Download in allen Meldungen steht (`TabEreignis::Download`).
 pub fn naechste_nr() -> u64 {
@@ -168,7 +169,9 @@ pub fn ablegen(app: &AppHandle, datei: &Path, name: &str, gewaehlt: Option<PathB
     let _schloss = SCHLOSS.lock().unwrap();
     let ziel = gewaehlt.unwrap_or_else(|| freier_pfad(&ordner(app), name));
     quarantaene::verschieben(datei, &ziel)?;
-    FERTIG.lock().unwrap().insert(ziel.canonicalize().unwrap_or_else(|_| ziel.clone()));
+    let canon = ziel.canonicalize().unwrap_or_else(|_| ziel.clone());
+    FERTIG.lock().unwrap().insert(canon.clone());
+    historie::hinzufuegen(app, &canon);
     Ok(ziel)
 }
 
@@ -223,8 +226,8 @@ pub fn download_zeigen(app: AppHandle, pfad: String) -> Result<(), String> {
 pub fn download_oeffnen(app: AppHandle, pfad: String) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        let _ = (app, pfad);
-        Ok(())
+        let _ = pfad;
+        crate::tabs::android::downloads_zeigen(&app)
     }
     #[cfg(windows)]
     {
@@ -277,6 +280,7 @@ pub fn download_loeschen(app: AppHandle, pfad: Option<String>) -> Result<(), Str
             return Err("Die Datei liegt nicht im Download-Ordner.".into());
         }
         FERTIG.lock().unwrap().remove(&echte_datei);
+        historie::entfernen(&app, &echte_datei);
         let sauber = strip_verbatim(&echte_datei);
         if sauber.exists() {
             std::fs::remove_file(&sauber).map_err(|e| format!("Datei konnte nicht gelöscht werden: {e}"))?;
@@ -504,5 +508,40 @@ mod tests {
         assert_eq!(strip_verbatim(Path::new(r"\\?\C:\a\b.txt")), PathBuf::from(r"C:\a\b.txt"));
         assert_eq!(strip_verbatim(Path::new(r"\\?\UNC\server\share\b.txt")), PathBuf::from(r"\\server\share\b.txt"));
         assert_eq!(strip_verbatim(Path::new(r"C:\a\b.txt")), PathBuf::from(r"C:\a\b.txt"));
+    }
+
+    #[test]
+    fn download_pruefen_erkennt_existenz_und_fehlen() {
+        // Negativ-Test: Datei existiert nicht
+        assert!(!download_pruefen("C:\\nirgendwo_123456789.xyz".to_string()));
+
+        // Positiv-Test: Temporäre Testdatei existiert
+        let temp_ordner = std::env::temp_dir();
+        let datei = temp_ordner.join("msb_pruefen_test.txt");
+        std::fs::write(&datei, b"test").unwrap();
+        assert!(download_pruefen(datei.to_string_lossy().to_string()));
+        let _ = std::fs::remove_file(&datei);
+        assert!(!download_pruefen(datei.to_string_lossy().to_string()));
+    }
+}
+
+/// Prüft, ob eine heruntergeladene Datei noch auf der Festplatte existiert.
+#[tauri::command(async)]
+pub fn download_pruefen(pfad: String) -> bool {
+    #[cfg(target_os = "android")]
+    {
+        let p = std::path::Path::new(&pfad);
+        if p.is_file() {
+            return true;
+        }
+        let android_dl = std::path::Path::new("/storage/emulated/0/Download").join(p);
+        if android_dl.is_file() {
+            return true;
+        }
+        true
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        std::path::Path::new(&pfad).is_file()
     }
 }

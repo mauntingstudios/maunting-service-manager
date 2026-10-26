@@ -1,6 +1,6 @@
-name: Build Secure Browser
+name: Build Maunting Pontis
 
-# Baut den Maunting Secure Browser (MSB) fuer Windows und Android. Wird von
+# Baut Maunting Pontis fuer Windows und Android. Wird von
 # `release-artifacts.yml` aufgerufen; veroeffentlicht wird dort, in einem
 # Release mit MSM und MSS und mit derselben Version (AGENTS.md, Punkt 11).
 
@@ -14,7 +14,7 @@ on:
 
 jobs:
   windows:
-    name: Build Secure Browser (Windows)
+    name: Build Maunting Pontis (Windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -147,7 +147,7 @@ jobs:
           retention-days: 7
 
   android:
-    name: Build Secure Browser (Android APK)
+    name: Build Maunting Pontis (Android APK)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

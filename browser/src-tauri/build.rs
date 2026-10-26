@@ -73,6 +73,7 @@ const BEFEHLE: &[&str] = &[
     "download_oeffnen",
     "download_loeschen",
     "download_ordner_oeffnen",
+    "download_pruefen",
     "fenster_aktion",
     "fenster_start_info",
     "kurzinfo",

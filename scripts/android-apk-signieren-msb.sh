@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Signiert die unsignierten Release-APKs des Maunting Secure Browsers.
+# Signiert die unsignierten Release-APKs von Maunting Pontis.
 #
 # Der Schluessel liegt nur in den Repository-Secrets, nie im Repo
 # (AGENTS.md, Punkt 70). Anders als beim Smart System gibt es keinen

@@ -16,7 +16,7 @@ import java.io.File
 import java.io.FileInputStream
 
 /**
- * Zuverlässiger APK-Installer für den Maunting Secure Browser:
+ * Zuverlässiger APK-Installer für Maunting Pontis:
  * 1. Primär: Android PackageInstaller.Session mit USER_ACTION_NOT_REQUIRED (ab Android 12)
  *    ermöglicht Self-Updates ohne unnötige Nutzerinteraktion.
  * 2. Sekundär / Fallback: FileProvider-Intent mit content:// URI (Android 10+ sicher,

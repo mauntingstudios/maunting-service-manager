@@ -8836,7 +8836,7 @@
       "leerenText": "Alle besuchten Seiten verschwinden aus der Liste. Cookies und Website-Daten bleiben; die löscht man in den Einstellungen."
     },
     "downloads": {
-      "leer": "In dieser Sitzung wurde nichts heruntergeladen.",
+      "leer": "Noch keine Downloads vorhanden.",
       "listeLeeren": "Liste leeren",
       "ordner": "Ordner öffnen",
       "ordnerOeffnen": "Download-Ordner öffnen",
@@ -8866,7 +8866,25 @@
       "wartet": "Wartet seit {{zeit}} — der Transfer steht, läuft aber weiter",
       "abbrechen": "Download abbrechen",
       "abbrechenName": "{{name}} abbrechen",
-      "fortschrittName": "Fortschritt von {{name}}"
+      "fortschrittName": "Fortschritt von {{name}}",
+      "titel": "Downloads",
+      "keineTreffer": "Keine Downloads gefunden.",
+      "suchen": "Downloads durchsuchen…",
+      "kategorieFilter": "Dateikategorie filtern",
+      "dateiFehlt": "Datei nicht mehr vorhanden",
+      "leerenTitel": "Download-Liste leeren?",
+      "leerenBeschreibung": "Möchtest du die Einträge aus der Chronik des Browsers entfernen?",
+      "auchDateienLoeschen": "Zugehörige Dateien auch von der Festplatte löschen",
+      "auchDateienLoeschenHinweis": "{{anzahl}} heruntergeladene Dateien werden endgültig vom Datenträger entfernt.",
+      "allesEndgueltigLoeschen": "Dateien & Liste löschen",
+      "kategorien": {
+        "alle": "Alle Downloads",
+        "dokumente": "Dokumente (PDF, Office, Text)",
+        "bilder": "Bilder & Grafiken",
+        "programme": "Programme & Skripte",
+        "archive": "Archive & Abbilder (ZIP, ISO)",
+        "andere": "Andere Dateitypen"
+      }
     },
     "hintergrund": {
       "schlicht": "Schlicht",

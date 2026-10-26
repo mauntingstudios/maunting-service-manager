@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-# Jede Android-App im Repo: Smart System und Secure Browser.
+# Jede Android-App im Repo: Smart System und Maunting Pontis.
 ANDROID_APPS = [
     ROOT / "smart-system" / "src-tauri" / "gen" / "android",
     ROOT / "browser" / "src-tauri" / "gen" / "android",

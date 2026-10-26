@@ -1,4 +1,4 @@
-"""Die Maunting-Search-Fläche des Secure Browsers (`routers/browser_suche.py`).
+"""Die Maunting-Search-Fläche von Maunting Pontis (`routers/browser_suche.py`).
 
 Ein gekoppelter Browser sucht über die SearXNG-Instanz des eigenen Servers,
 dieselbe, die auch Singra benutzt (`ai_web_search_service.searxng_treffer`).
