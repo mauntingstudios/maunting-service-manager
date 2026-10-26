@@ -65,14 +65,26 @@ describe('findeEinladungsCode', () => {
     // einer Chatnachricht gezeichnet, und dort steht der ganze Link.
     const k = 'a'.repeat(64)
     const text = `Komm rein: ${ORIGIN}/chat/join/AbCd1234efGH#k=${k}`
-    expect(findeEinladung(text, ORIGIN)).toEqual({ code: 'AbCd1234efGH', schluessel: k })
+    expect(findeEinladung(text, ORIGIN)).toEqual({
+      code: 'AbCd1234efGH',
+      schluessel: k,
+      link: `${ORIGIN}/chat/join/AbCd1234efGH#k=${k}`,
+    })
   })
 
   it('kommt ohne Schluessel aus', () => {
     expect(findeEinladung(`${ORIGIN}/chat/join/AbCd1234efGH`, ORIGIN)).toEqual({
       code: 'AbCd1234efGH',
       schluessel: null,
+      link: `${ORIGIN}/chat/join/AbCd1234efGH`,
     })
+  })
+
+  it('akzeptiert die kanonische Panel-Adresse neben der eigenen Origin', () => {
+    const panel = 'https://panel.example'
+    const text = `Komm rein: ${panel}/chat/join/AbCd1234efGH`
+    expect(findeEinladung(text, [ORIGIN, panel])?.code).toBe('AbCd1234efGH')
+    expect(findeEinladung(text, [ORIGIN])).toBeNull()
   })
 
   it('ignoriert einen krummen Schluessel, behaelt aber den Code', () => {
@@ -81,6 +93,7 @@ describe('findeEinladungsCode', () => {
     expect(findeEinladung(`${ORIGIN}/chat/join/AbCd1234efGH#k=zukurz`, ORIGIN)).toEqual({
       code: 'AbCd1234efGH',
       schluessel: null,
+      link: `${ORIGIN}/chat/join/AbCd1234efGH`,
     })
   })
 })

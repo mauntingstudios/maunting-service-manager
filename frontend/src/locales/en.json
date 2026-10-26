@@ -7218,7 +7218,14 @@
     "wrongKeyLength": "Room key has incorrect length",
     "participantUnmuted": "{{username}} can speak again.",
     "participantMuted": "{{username}} is muted.",
-    "unauthorizedKeyExchange": "An unauthorised key change for this call was rejected."
+    "unauthorizedKeyExchange": "An unauthorised key change for this call was rejected.",
+    "errors": {
+      "joinForbidden": "You do not have permission to join this group call.",
+      "callGone": "This call is no longer active.",
+      "callEnded": "This call has already ended.",
+      "serverUnavailable": "The call server is not configured or currently unreachable.",
+      "unreachable": "Could not connect to the call server. Please check your network."
+    }
   },
   "social": {
     "status": {
@@ -8020,7 +8027,10 @@
     },
     "send": "Send",
     "chatMuted": "Muted",
-    "searchInMessages": "Search messages for “{{query}}”"
+    "searchInMessages": "Search messages for “{{query}}”",
+    "inviteNoPanelUrl": "The panel address is not configured, so the invitation link cannot be created.",
+    "showInviteLink": "Show link",
+    "hideInviteLink": "Hide link"
   },
   "databaseManager": {
     "subtitle": "Manage and edit this server’s PostgreSQL databases.",
@@ -8956,14 +8966,13 @@
       "feld": "Summer field",
       "eigen": "Your image"
     },
-
     "update": {
       "name": "Updates",
       "hinweis": "Asks GitHub for a new version. On Windows it downloads quietly in the background; it restarts only when you click.",
       "pruefen": "Check now",
       "aktuell": "You have the latest version.",
       "da": "Version {{version}} is available.",
-    "bereit": "Version {{version}} is being prepared in the background. Restart from the update badge.",
+      "bereit": "Version {{version}} is being prepared in the background. Restart from the update badge.",
       "installieren": "Install and restart",
       "nichtErreicht": "GitHub could not be reached. Try again later.",
       "fehler": "The update could not be installed.",
@@ -9013,7 +9022,6 @@
       "bildWaehlen": "Choose your own image",
       "bildZuGross": "Please choose an image under 3 MB.",
       "bildFehler": "The image could not be processed.",
-
       "kopplung": "MSM pairing",
       "gekoppeltMit": "Paired with {{adresse}}",
       "gekoppeltOffline": "Paired with {{adresse}}, currently unreachable",

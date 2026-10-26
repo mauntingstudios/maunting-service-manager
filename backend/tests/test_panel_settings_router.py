@@ -423,3 +423,11 @@ class TestBooleanToggleRoundTrip:
                 f"{key} kam als {body[key]!r} zurueck, erwartet war {erwartet!r} -- "
                 "vermutlich fehlt die Normalisierung auf 'true'/'false'."
             )
+
+
+def test_public_settings_expose_panel_url_without_trailing_slash(client: TestClient):
+    from config import settings
+
+    res = client.get("/api/settings/public")
+    assert res.status_code == 200
+    assert res.json()["panel_url"] == (settings.panel_url or "").rstrip("/")

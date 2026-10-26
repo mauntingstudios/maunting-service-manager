@@ -19,28 +19,45 @@ export interface GefundeneEinladung {
    * und beim Aufruf des Links lässt der Browser alles hinter der Raute weg.
    */
   schluessel: string | null
+  /** Der vollständig erkannte Link, damit die Anzeige den Rohtext ersetzen kann. */
+  link: string
 }
 
 /**
  * Findet den ersten Gruppen-Einladungslink in einem Nachrichtentext.
  *
- * Bewusst auf den eigenen Ursprung beschränkt: ein Link auf ein fremdes Panel
- * gehört nicht als Vorschaukarte hierher, weil die Karte dann Daten von dort
- * nachladen müsste.
+ * Akzeptiert die eigene Origin und die kanonische Panel-Adresse. Fremde Panels
+ * gehören nicht als Vorschaukarte hierher; die Karte lädt ihre Daten ohnehin
+ * über die eigene API, nicht über den Link-Host.
  */
-export function findeEinladung(text: string, origin: string): GefundeneEinladung | null {
+export function findeEinladung(
+  text: string,
+  ursprunge: string | readonly string[],
+): GefundeneEinladung | null {
   if (!text) return null
+  const liste = (Array.isArray(ursprunge) ? ursprunge : [ursprunge])
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  if (!liste.length) return null
   const muster = new RegExp(
-    `${origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/chat/join/([A-Za-z0-9_-]{8,64})(#k=([0-9a-f]{64}))?`,
+    `(${liste.join('|')})/chat/join/([A-Za-z0-9_-]{8,64})(#k=([0-9a-f]{64}))?`,
   )
   const treffer = muster.exec(text)
   if (!treffer) return null
-  return { code: treffer[1], schluessel: treffer[3] ?? null }
+  return {
+    code: treffer[2],
+    schluessel: treffer[4] ?? null,
+    link: treffer[0],
+  }
 }
 
 /** Nur der Code — für Aufrufer, die den Schlüssel nicht brauchen. */
-export function findeEinladungsCode(text: string, origin: string): string | null {
-  return findeEinladung(text, origin)?.code ?? null
+export function findeEinladungsCode(
+  text: string,
+  ursprunge: string | readonly string[],
+): string | null {
+  return findeEinladung(text, ursprunge)?.code ?? null
 }
 
 export interface GruppenEinladungsKarteProps {

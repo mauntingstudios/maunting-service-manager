@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { ProtectedRoute } from './ProtectedRoute'
 import { PublicOnlyRoute } from './PublicOnlyRoute'
 import { useAuthStore } from '@/stores/authStore'
@@ -72,6 +72,31 @@ describe('ProtectedRoute', () => {
     await waitFor(() => {
       expect(screen.getByTestId('login-page')).toBeInTheDocument()
     })
+  })
+
+  it('nimmt den Einladungsschluessel aus dem Hash mit zur Anmeldung', async () => {
+    vi.mocked(client.api).mockRejectedValue(new Error('Unauthorized'))
+
+    function LoginMitZiel() {
+      const location = useLocation()
+      return <div data-testid="login-page">{location.search}</div>
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/chat/join/AbCd1234efGH#k=abc']}>
+        <Routes>
+          <Route path="/login" element={<LoginMitZiel />} />
+          <Route
+            path="/*"
+            element={<ProtectedRoute><div /></ProtectedRoute>}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const seite = await screen.findByTestId('login-page')
+    const ziel = new URLSearchParams(seite.textContent || '').get('redirect')
+    expect(ziel).toBe('/chat/join/AbCd1234efGH#k=abc')
   })
 
   it('should render protected content when authenticated', async () => {

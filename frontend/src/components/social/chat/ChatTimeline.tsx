@@ -87,6 +87,25 @@ export function ChatTimeline({
         </div>
       </div>
 
+      {laedt && nachrichten.length === 0 && (
+        <div role="status" aria-live="polite" className="space-y-3 py-4">
+          <span className="sr-only">{t('common.loading')}</span>
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              aria-hidden="true"
+              className={`flex ${i % 2 === 0 ? 'justify-start' : 'justify-end'}`}
+            >
+              <div
+                className={`h-9 rounded-2xl bg-surface-container-high/70 animate-pulse ${
+                  i === 0 ? 'w-40' : i === 1 ? 'w-56' : 'w-32'
+                }`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
       {nachrichten.length === 0 && !laedt && (
         <div className="py-16 text-center text-xs text-on-surface-variant/70">
           {t('messenger.noMessagesYet')}

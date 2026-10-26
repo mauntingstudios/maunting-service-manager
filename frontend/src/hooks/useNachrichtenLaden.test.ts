@@ -41,6 +41,7 @@ vi.mock('@/stores/funkenStore', () => ({
   useFunkenStore: { getState: () => funken },
 }))
 
+import { sessionChatCache } from '@/services/klartextSpeicher'
 import { useNachrichtenLaden, type NachrichtenLadenOptionen } from './useNachrichtenLaden'
 
 function zeile(id: number, isSelf: boolean) {
@@ -177,6 +178,15 @@ describe('Chat-Identitaet', () => {
 })
 
 describe('Quittungen im Einheits-Transport', () => {
+  it('legt den geladenen Verlauf in den Sitzungscache', async () => {
+    sessionChatCache.clear()
+    const opts = optionen()
+
+    await useNachrichtenLaden(opts).loadMessages(true)
+
+    expect(sessionChatCache.get('direct:peer:2')?.some((m) => m.id === 9)).toBe(true)
+  })
+
   it('speichert, dann quittiert es Zustellung und Lesen', async () => {
     const opts = optionen()
     await useNachrichtenLaden(opts).loadMessages(true)

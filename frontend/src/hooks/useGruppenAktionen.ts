@@ -17,6 +17,7 @@ import {
   mitSchluessel,
 } from '@/services/einladungsKarte'
 import { deriveGroupBlindMailboxId } from '@/services/e2eeCrypto'
+import { oeffentlicheBasisUrl } from '@/lib/einladungsUrsprung'
 import { verwirfGruppenSchluessel } from '@/services/gruppenSchluessel'
 import {
   merkeGruppenName,
@@ -196,7 +197,12 @@ export function useGruppenAktionen({
       toast.error(t('messenger.inviteNoRight'))
       return
     }
-    const url = `${window.location.origin}/chat/join/${group.invite_code}`
+    const basis = oeffentlicheBasisUrl()
+    if (!basis) {
+      toast.error(t('messenger.inviteNoPanelUrl'))
+      return
+    }
+    const url = `${basis}/chat/join/${group.invite_code}`
     let fertig = url
     try {
       const einladungsschluessel = erzeugeEinladungsschluessel()

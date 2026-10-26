@@ -57,7 +57,9 @@ import {
 import { CircularVideoNotePlayer } from '@/components/social/CircularVideoNotePlayer'
 import { GruppenEinladungsKarte, findeEinladung } from '@/components/social/GruppenEinladungsKarte'
 import { STORY_GRADIENTS } from '@/components/social/CreateStoryModal'
+import { erlaubteEinladungsUrsprunge } from '@/lib/einladungsUrsprung'
 import { sanitizeSvg, getSafeAttachmentUrl } from '@/lib/sanitizeSvg'
+import type { EinladungsInhalt } from '@/services/einladungsKarte'
 import { useLangdruck } from '@/hooks/useLangdruck'
 import { erkenneWischen, rueckmeldung, wischWeg, WISCH_SCHWELLE_PX } from '@/lib/gesten'
 import { reaktionsknoepfe, type Reaktionen } from '@/services/reaktionen'
@@ -266,7 +268,10 @@ export interface BlasenAktionen {
   onDelete: (msg: ChatMessage) => void
   onImportNote: (note: NoteAttachment, itemKey: string) => void
   onImportCalendar: (cal: CalendarAttachment, itemKey: string) => void
-  onJoinByInviteCode: (inviteCode: string) => void | Promise<void>
+  onJoinByInviteCode: (
+    inviteCode: string,
+    karte?: EinladungsInhalt | null,
+  ) => void | Promise<void>
   /** Langes Drücken: das volle Menü zu dieser Nachricht. */
   onMenue: (msg: ChatMessage) => void
   /** Wischen nach rechts, oder aus dem Menü heraus. */
@@ -361,6 +366,7 @@ function ChatMessageBubbleContent({
   // bedeutet jeder Tipper schon etwas.
   const darfHandeln = !msg.isDeleted && !auswahl.aktiv
   const [wischX, setWischX] = useState(0)
+  const [zeigeEinladungslink, setZeigeEinladungslink] = useState(false)
 
   /**
    * Langes Drücken öffnet das Menü, nicht bloß die zwei Knöpfe.
@@ -903,58 +909,81 @@ function ChatMessageBubbleContent({
             <span>{t('messenger.messageWasDeleted')}</span>
           </div>
         ) : (
-          msg.text && (
-            <div className="space-y-1">
-              <p className="leading-relaxed">
-                {(() => {
-                  const roh = msg.text.startsWith('[Antwort auf Status]:')
-                    ? msg.text.replace(/^\[Antwort auf Status\]:\s*"?/, '').replace(/"?$/, '')
-                    : msg.text
-                  // Ohne Erwähnung bleibt es bei genau einem Textknoten —
-                  // dieselbe Ausgabe wie bisher.
-                  const stuecke: Textstueck[] = teileText(roh, erwaehnungsWorte)
-                  if (stuecke.length === 1 && stuecke[0].art === 'text') return stuecke[0].inhalt
-                  return stuecke.map((s, i) =>
-                    s.art === 'erwaehnung' ? (
-                      <span
-                        key={i}
-                        className={`font-semibold rounded px-0.5 ${
-                          msg.isSelf ? 'bg-white/20 text-white' : 'bg-primary/20 text-primary'
-                        }`}
-                      >
-                        {s.inhalt}
-                      </span>
-                    ) : (
-                      <React.Fragment key={i}>{s.inhalt}</React.Fragment>
-                    ),
-                  )
-                })()}
-              </p>
-              {(() => {
-                // Einladungslink im Text: statt der rohen URL eine
-                // Karte mit Logo, Name und Beitreten-Knopf.
-                const einladung = findeEinladung(msg.text, window.location.origin)
-                if (!einladung) return null
-                return (
-                  <GruppenEinladungsKarte
-                    inviteCode={einladung.code}
-                    // Der Schlüssel steht hinter der Raute im Link, und der
-                    // Link steht in dieser Nachricht. Ohne ihn bliebe eine
-                    // verschlüsselte Karte zu.
-                    schluessel={einladung.schluessel}
-                    istEigene={msg.isSelf}
-                    onJoin={aktionen.onJoinByInviteCode}
-                  />
-                )
-              })()}
-              {msg.isEdited && (
-                <span className="text-label-sm opacity-70 italic inline-flex items-center gap-1">
-                  <Pencil className="w-2.5 h-2.5" />
-                  <span>bearbeitet</span>
-                </span>
-              )}
-            </div>
-          )
+          (() => {
+            const roh = msg.text?.startsWith('[Antwort auf Status]:')
+              ? msg.text.replace(/^\[Antwort auf Status\]:\s*"?/, '').replace(/"?$/, '')
+              : msg.text
+            if (!roh) return null
+            /*
+             * Ein Einladungslink wird zur Karte. Die rohe URL steht dann nicht
+             * mehr als Text da; sie bleibt über „Link anzeigen“ und im
+             * unveränderten `msg.text` fürs Weiterleiten erhalten.
+             */
+            const einladung = findeEinladung(roh, erlaubteEinladungsUrsprunge())
+            const sichtbar = einladung ? roh.replace(einladung.link, '').trim() : roh
+            if (!sichtbar && !einladung) return null
+            // Ohne Erwähnung bleibt es bei genau einem Textknoten — dieselbe
+            // Ausgabe wie bisher.
+            const stuecke: Textstueck[] = teileText(sichtbar, erwaehnungsWorte)
+            return (
+              <div className="space-y-1">
+                {sichtbar && (
+                  <p className="leading-relaxed">
+                    {stuecke.length === 1 && stuecke[0].art === 'text'
+                      ? stuecke[0].inhalt
+                      : stuecke.map((s, i) =>
+                          s.art === 'erwaehnung' ? (
+                            <span
+                              key={i}
+                              className={`font-semibold rounded px-0.5 ${
+                                msg.isSelf ? 'bg-white/20 text-white' : 'bg-primary/20 text-primary'
+                              }`}
+                            >
+                              {s.inhalt}
+                            </span>
+                          ) : (
+                            <React.Fragment key={i}>{s.inhalt}</React.Fragment>
+                          ),
+                        )}
+                  </p>
+                )}
+                {einladung && (
+                  <>
+                    <GruppenEinladungsKarte
+                      inviteCode={einladung.code}
+                      // Der Schlüssel steht hinter der Raute im Link, und der
+                      // Link steht in dieser Nachricht. Ohne ihn bliebe eine
+                      // verschlüsselte Karte zu.
+                      schluessel={einladung.schluessel}
+                      istEigene={msg.isSelf}
+                      onJoin={aktionen.onJoinByInviteCode}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setZeigeEinladungslink((offen) => !offen)}
+                      aria-expanded={zeigeEinladungslink}
+                      className="text-label-sm underline decoration-dotted underline-offset-2 opacity-70 hover:opacity-100"
+                    >
+                      {t(
+                        zeigeEinladungslink
+                          ? 'messenger.hideInviteLink'
+                          : 'messenger.showInviteLink',
+                      )}
+                    </button>
+                    {zeigeEinladungslink && (
+                      <p className="break-all text-label-sm opacity-70">{einladung.link}</p>
+                    )}
+                  </>
+                )}
+                {msg.isEdited && (
+                  <span className="text-label-sm opacity-70 italic inline-flex items-center gap-1">
+                    <Pencil className="w-2.5 h-2.5" />
+                    <span>bearbeitet</span>
+                  </span>
+                )}
+              </div>
+            )
+          })()
         )}
       </div>
 

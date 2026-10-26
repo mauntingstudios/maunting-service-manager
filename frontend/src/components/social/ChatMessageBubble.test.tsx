@@ -2,6 +2,12 @@ import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import i18n from '@/i18n'
+
+const einladungsApi = vi.hoisted(() => ({ getGroupInviteInfo: vi.fn() }))
+vi.mock('@/api/social', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/social')>()),
+  getGroupInviteInfo: einladungsApi.getGroupInviteInfo,
+}))
 import {
   ChatMessageBubble,
   MessageErrorBoundary,
@@ -74,6 +80,7 @@ describe('ChatMessageBubble Resilienz & Fehlerbehandlung', () => {
       onViewImage: vi.fn(),
       onImportNote: vi.fn(),
       onImportCalendar: vi.fn(),
+      onJoinByInviteCode: vi.fn(),
     }
 
     const defaultTon = {
@@ -128,6 +135,46 @@ describe('ChatMessageBubble Resilienz & Fehlerbehandlung', () => {
       // Die Uhr für „wartet noch“ bleibt auch in der Gruppe.
       zeige(gruppe, { ...eigene, isRead: false, status: 'queued' })
       expect(screen.getByRole('img', { name: i18n.t('messenger.stateQueued') })).toBeDefined()
+    })
+
+    it('zeigt eine Einladung als Karte und blendet den rohen Link optional ein', async () => {
+      einladungsApi.getGroupInviteInfo.mockResolvedValue({
+        group_id: 7,
+        name: 'Serverteam',
+        description: null,
+        avatar_url: null,
+        member_count: 4,
+        live_call: false,
+        live_participants: 0,
+      })
+      const link = `${window.location.origin}/chat/join/AbCd1234efGH#k=${'a'.repeat(64)}`
+      const msg: ChatMessage = {
+        id: 80,
+        senderId: 2,
+        text: link,
+        createdAt: '2026-09-25T14:30:00.000Z',
+        isSelf: false,
+      }
+
+      render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={defaultAktionen}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+
+      expect(await screen.findByText('Serverteam')).toBeInTheDocument()
+      expect(screen.queryByText(link)).toBeNull()
+
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('messenger.showInviteLink') }))
+      expect(screen.getByText(link)).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('messenger.hideInviteLink') }))
+      expect(screen.queryByText(link)).toBeNull()
     })
 
     it('macht aus einer gescheiterten Nachricht einen Knopf zum erneuten Senden', () => {

@@ -343,7 +343,12 @@ def ausstehende_anrufe(
     # Namensspeicher.
     for group_id in [row[0] for row in user_groups]:
         room_token = GroupCallRoomRegistry.find_for_group(group_id)
-        if room_token:
+        if room_token and SocialService.has_group_permission(
+            db, group_id, user.id, "join_group_calls"
+        ):
+            # Wer nicht beitreten darf, erfaehrt auch hier nichts vom Anruf.
+            # Der Token-Endpunkt prueft dasselbe Recht; ohne diesen Filter
+            # zeigte die Oberflaeche einen Beitrittsknopf, der nur 403 kennt.
             group_calls.append({
                 "group_id": group_id,
                 "room_token": room_token,

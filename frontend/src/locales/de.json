@@ -7218,7 +7218,14 @@
     "wrongKeyLength": "Raumschlüssel hat die falsche Länge",
     "participantUnmuted": "{{username}} darf wieder sprechen.",
     "participantMuted": "{{username}} ist stummgeschaltet.",
-    "unauthorizedKeyExchange": "Ein unberechtigter Schlüsselwechsel für den Anruf wurde abgewiesen."
+    "unauthorizedKeyExchange": "Ein unberechtigter Schlüsselwechsel für den Anruf wurde abgewiesen.",
+    "errors": {
+      "joinForbidden": "Du hast keine Berechtigung, diesem Gruppenanruf beizutreten.",
+      "callGone": "Dieser Anruf ist nicht mehr aktiv.",
+      "callEnded": "Der Anruf wurde bereits beendet.",
+      "serverUnavailable": "Der Anrufserver ist nicht konfiguriert oder gerade nicht erreichbar.",
+      "unreachable": "Die Verbindung zum Anrufserver kam nicht zustande. Bitte Netzwerk prüfen."
+    }
   },
   "social": {
     "status": {
@@ -8020,7 +8027,10 @@
     },
     "send": "Senden",
     "chatMuted": "Stummgeschaltet",
-    "searchInMessages": "„{{query}}“ in Nachrichten suchen"
+    "searchInMessages": "„{{query}}“ in Nachrichten suchen",
+    "inviteNoPanelUrl": "Die Panel-Adresse ist nicht konfiguriert; der Einladungslink kann nicht erzeugt werden.",
+    "showInviteLink": "Link anzeigen",
+    "hideInviteLink": "Link ausblenden"
   },
   "databaseManager": {
     "subtitle": "Verwalte und bearbeite die PostgreSQL-Datenbanken dieses Servers.",
@@ -8956,14 +8966,13 @@
       "feld": "Sommerfeld",
       "eigen": "Eigenes Bild"
     },
-
     "update": {
       "name": "Updates",
       "hinweis": "Fragt bei GitHub nach einer neuen Version. Unter Windows lädt sie sich still im Hintergrund; neu gestartet wird erst auf deinen Klick.",
       "pruefen": "Jetzt prüfen",
       "aktuell": "Du hast die neueste Version.",
       "da": "Version {{version}} ist da.",
-    "bereit": "Version {{version}} wird im Hintergrund vorbereitet. Neu starten über die Update-Anzeige.",
+      "bereit": "Version {{version}} wird im Hintergrund vorbereitet. Neu starten über die Update-Anzeige.",
       "installieren": "Installieren und neu starten",
       "nichtErreicht": "GitHub war nicht erreichbar. Versuch es später noch einmal.",
       "fehler": "Das Update ließ sich nicht installieren.",
@@ -9013,7 +9022,6 @@
       "bildWaehlen": "Eigenes Bild wählen",
       "bildZuGross": "Bitte ein Bild unter 3 MB wählen.",
       "bildFehler": "Das Bild konnte nicht verarbeitet werden.",
-
       "kopplung": "MSM-Kopplung",
       "gekoppeltMit": "Gekoppelt mit {{adresse}}",
       "gekoppeltOffline": "Gekoppelt mit {{adresse}}, gerade nicht erreichbar",
@@ -9414,7 +9422,8 @@
       "nochmal": "Erneut versuchen",
       "spracheNichtErkannt": "Die Sprache der Seite wurde nicht erkannt. Wähle sie selbst.",
       "spracheNichtVerfuegbar": "Für {{sprache}} gibt es keine Sprachdaten. Übersetzen ist für diese Seite nicht möglich.",
-      "zielGleich": "Wähle eine andere Zielsprache.",      "zustimmung": "Für diese Sprachen lädt der Browser einmalig {{groesse}} Sprachdaten von Mozilla. Der Text der Seite bleibt auf dem Gerät.",
+      "zielGleich": "Wähle eine andere Zielsprache.",
+      "zustimmung": "Für diese Sprachen lädt der Browser einmalig {{groesse}} Sprachdaten von Mozilla. Der Text der Seite bleibt auf dem Gerät.",
       "bereit": "Die Seite wird auf dem Gerät übersetzt.",
       "von": "Sprache der Seite",
       "vonLeer": "Sprache wählen",

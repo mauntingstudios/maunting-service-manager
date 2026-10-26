@@ -208,4 +208,23 @@ describe('ChatTimeline', () => {
     zeichne([])
     expect(screen.getByText(i18n.t('messenger.noMessagesYet'))).toBeInTheDocument()
   })
+
+  it('zeigt beim ersten Laden ein Skelett statt einer leeren Fläche', () => {
+    const { container } = render(
+      <ChatTimeline
+        scrollRef={createRef()}
+        endeRef={createRef()}
+        nachrichten={[]}
+        laedt
+        trennerId={null}
+        aktivitaet={null}
+        istGruppe={false}
+        zeichneNachricht={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(i18n.t('common.loading'))
+    expect(container.querySelectorAll('.animate-pulse')).toHaveLength(3)
+    expect(screen.queryByText(i18n.t('messenger.noMessagesYet'))).toBeNull()
+  })
 })

@@ -16,6 +16,7 @@ import type { ChatContact } from '@/components/social/sidebar/ConversationListIt
 import type { Konversation } from '@/hooks/useKonversation'
 import type { E2eeIdentity } from '@/services/e2eeIdentity'
 import { ereignisseAusNachrichten } from '@/services/funkenService'
+import { sessionChatCache } from '@/services/klartextSpeicher'
 import { sichereAnhaenge } from '@/services/medienSicherung'
 import { holeOffeneMedien } from '@/services/medienNachholen'
 import {
@@ -171,6 +172,8 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
       }
       const gemischt = mischeVerlauf(lokalMitHaken.slice(-500), gelesen.messages, art)
       setMessages(gemischt)
+      // Der nächste Wechsel in dieses Gespräch soll sofort etwas zeigen.
+      sessionChatCache.set(currentMid, gemischt.slice(-500))
 
       /*
        * Der offene Chat ist die zweite Quelle fuer Augenblicke. `FunkenWache`

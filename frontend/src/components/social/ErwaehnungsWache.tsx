@@ -30,6 +30,7 @@ import { useEffect, useRef, type MutableRefObject } from 'react'
 import type { ChatGroupItem } from '@/api/social'
 import { useKonversation } from '@/hooks/useKonversation'
 import { binIchGemeint } from '@/services/erwaehnungen'
+import { saveLocalMessagesStrict } from '@/services/messengerLocalStore'
 import { istOffen, siegelAktiv } from '@/services/lokaleVersiegelung'
 import type { E2eeIdentity } from '@/services/e2eeIdentity'
 import { STEUERTYPEN } from '@/services/nachrichtBezug'
@@ -72,6 +73,7 @@ function GruppenWache({ gruppe, eigeneId, identitaetRef, onErwaehnung }: WachePr
       // Vor der Schleife, weil ein Treffer sie früh zurückkehren lässt.
       konversation.uebernimmLesestand(gelesen)
 
+      let gefunden = false
       for (const lesung of gelesen) {
         if (lesung.art !== 'klartext' || !lesung.text) continue
         let paket: Record<string, unknown>
@@ -95,10 +97,20 @@ function GruppenWache({ gruppe, eigeneId, identitaetRef, onErwaehnung }: WachePr
           gruppeRef.current,
         )
         if (gemeint) {
-          onErwaehnung(mid)
-          return
+          /*
+           * Der Filter „@ und Antworten an mich“ liest den lokalen Verlauf.
+           * Ohne diese Zeile hätte eine nie geöffnete Gruppe nur das Abzeichen,
+           * aber keinen Treffer. Fehler beim Ablegen dürfen das Abzeichen nicht
+           * verhindern; der nächste Lauf versucht es erneut.
+           */
+          if (lesung.nachricht) {
+            await saveLocalMessagesStrict(mid, [lesung.nachricht], 'gruppe').catch(() => {})
+            if (!lebt) return
+          }
+          gefunden = true
         }
       }
+      if (gefunden) onErwaehnung(mid)
     }
 
     /**

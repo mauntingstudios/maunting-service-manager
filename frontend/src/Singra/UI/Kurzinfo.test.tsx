@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { Kurzinfo } from './Kurzinfo'
@@ -49,6 +49,27 @@ describe('Kurzinfo', () => {
     expect(frei).toHaveClass('absolute')
     expect(frei).not.toHaveClass('relative')
     expect(imFluss).toHaveClass('relative', 'md:absolute')
+  })
+
+  it('legt die Blase im Portal außerhalb eines Überlauf-Containers', () => {
+    const { container } = render(
+      <div style={{ overflow: 'hidden' }}>
+        <Kurzinfo text="Beitreten" seite="ende" portal>
+          <button type="button">Beitreten</button>
+        </Kurzinfo>
+      </div>,
+    )
+    const knopf = screen.getByRole('button', { name: 'Beitreten' })
+    const huelle = knopf.parentElement!
+
+    fireEvent.pointerEnter(huelle, { pointerType: 'mouse' })
+    const blase = document.body.querySelector('[data-kurzinfo="Beitreten"]')!
+    expect(blase).not.toBeNull()
+    expect(container.contains(blase)).toBe(false)
+    expect(blase).toHaveClass('fixed', 'pointer-events-none')
+
+    fireEvent.pointerLeave(huelle, { pointerType: 'mouse' })
+    expect(document.body.querySelector('[data-kurzinfo="Beitreten"]')).toBeNull()
   })
 
   it('steht bei senkrechten Leisten rechts neben dem Knopf', () => {

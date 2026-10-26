@@ -1,6 +1,6 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
-import { BellOff, Camera, ChevronLeft, Phone, Search, UserPlus, UsersRound } from 'lucide-react'
+import { BellOff, Camera, ChevronLeft, Phone, Search, UserPlus } from 'lucide-react'
 import { Blattknopf, Kurzinfo } from '@/Singra/UI'
 
 interface ChatHeaderProps {
@@ -116,6 +116,7 @@ export function ChatHeader({
           <Kurzinfo
             text={gruppenanruf.erlaubt ? t('messenger.startGroupCall') : t('messenger.noStartCallRight')}
             seite="ende"
+            portal
           >
             <button
               type="button"
@@ -125,7 +126,7 @@ export function ChatHeader({
               aria-label={t('messenger.startGroupCall')}
               aria-description={gruppenanruf.erlaubt ? undefined : t('messenger.noStartCallRight')}
             >
-              <UsersRound className="w-4 h-4" />
+              <Phone className="w-4 h-4" />
             </button>
           </Kurzinfo>
         )}

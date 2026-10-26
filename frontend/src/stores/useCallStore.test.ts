@@ -532,6 +532,20 @@ describe('Gruppenanruf', () => {
     expect(useCallStore.getState().group).toEqual(GRUPPE)
   })
 
+  it.each([
+    [403, 'calls.errors.joinForbidden'],
+    [404, 'calls.errors.callGone'],
+    [410, 'calls.errors.callEnded'],
+    [503, 'calls.errors.serverUnavailable'],
+  ])('nennt bei HTTP %i die passende Meldung statt „Server nicht erreichbar“', async (status, key) => {
+    api.holeZugang.mockRejectedValueOnce(Object.assign(new Error('abgelehnt'), { status }))
+
+    await useCallStore.getState().joinGroupCall(GRUPPE, 'grp_abc')
+
+    expect(useCallStore.getState().errorMessage).toBe(i18n.t(key))
+    expect(useCallStore.getState().state).toBe('idle')
+  })
+
   it('verteilt beim Beitreten zu einem laufenden Anruf nichts', async () => {
     // Der Schlüssel liegt dort schon; ein neuer würde alle aussperren.
     await useCallStore.getState().joinGroupCall(GRUPPE, 'grp_abc')

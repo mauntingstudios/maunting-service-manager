@@ -729,3 +729,39 @@ def test_gruppenadmin_darf_verfall_einschalten(db: Session, owner_user: User, re
 
     stand = messages_service.set_ephemeral(db, regular_user, "group", gruppe.id, 1800)
     assert stand["ephemeral_enabled_by_user_id"] == regular_user.id
+
+
+def test_verschwindende_nachrichten_in_gruppen_verschwinden_fuer_alle(
+    db: Session, owner_user: User, regular_user: User
+):
+    gruppe = _gruppe_mit_mitglied(db, owner_user, regular_user)
+    messages_service.store_chat_keys(
+        db,
+        owner_user,
+        "group",
+        gruppe.id,
+        1,
+        [
+            {"user_id": owner_user.id, "encrypted_chat_key": "key-owner"},
+            {"user_id": regular_user.id, "encrypted_chat_key": "key-member"},
+        ],
+    )
+    messages_service.set_ephemeral(db, owner_user, "group", gruppe.id, 3600)
+
+    kurz = messages_service.send_message(
+        db, regular_user, "group", gruppe.id, "gruppe-kurz", 1, CHIFFRAT
+    )
+    zeile = db.query(E2eeMessage).filter_by(client_uuid="gruppe-kurz").one()
+    assert zeile.expires_at is not None
+
+    sichtbar_owner = messages_service.list_messages(db, owner_user, "group", gruppe.id)
+    sichtbar_mitglied = messages_service.list_messages(db, regular_user, "group", gruppe.id)
+    assert any(m["id"] == kurz["id"] for m in sichtbar_owner["messages"])
+    assert any(m["id"] == kurz["id"] for m in sichtbar_mitglied["messages"])
+
+    zeile.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db.commit()
+    assert messages_service.cleanup_expired(db) >= 1
+
+    assert messages_service.list_messages(db, owner_user, "group", gruppe.id)["messages"] == []
+    assert messages_service.list_messages(db, regular_user, "group", gruppe.id)["messages"] == []

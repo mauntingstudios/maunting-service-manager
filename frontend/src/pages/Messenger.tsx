@@ -896,6 +896,24 @@ function MessengerSeite() {
     })
   }, [groups, contactsList, groupMailboxMap, contactMailboxMap, blindMailboxId, pinnedChats])
 
+  /**
+   * Namen der Gruppen für die Trefferliste. Der Server liefert sie seit Stufe 6
+   * nicht mehr; `gruppenTitel` holt sie aus dem versiegelten Namensspeicher.
+   */
+  const verzeichnisMitGruppen = useMemo(() => {
+    const out = { ...mailboxDirectory }
+    for (const gruppe of groups) {
+      const mid = groupMailboxMap[gruppe.id] || `group:${gruppe.id}`
+      out[mid] = {
+        ...(out[mid] ?? { name: gruppenTitel(gruppe) }),
+        name: gruppenTitel(gruppe),
+        isGroup: true,
+        groupId: gruppe.id,
+      }
+    }
+    return out
+  }, [mailboxDirectory, groups, groupMailboxMap, gruppenTitel])
+
   const { handleSendMessage, handleDeleteMessage } = useMessengerSenden({
     t,
     currentUserId,
@@ -1209,7 +1227,7 @@ function MessengerSeite() {
   /** Öffnet einen Treffer aus der Ansicht über alle Chats. */
   const oeffneTreffer = async (treffer: Treffer) => {
     ueberall.schliesse()
-    const meta = mailboxDirectory[treffer.blindMailboxId]
+    const meta = verzeichnisMitGruppen[treffer.blindMailboxId]
     if (meta?.isGroup && meta.groupId) {
       const gruppe = groups.find((g) => g.id === meta.groupId)
       if (gruppe) {
@@ -2117,7 +2135,8 @@ function MessengerSeite() {
       onDelete: (m) => blasenHandler.current.aktionen.onDelete(m),
       onImportNote: (note, schluessel) => blasenHandler.current.aktionen.onImportNote(note, schluessel),
       onImportCalendar: (cal, schluessel) => blasenHandler.current.aktionen.onImportCalendar(cal, schluessel),
-      onJoinByInviteCode: (code) => blasenHandler.current.aktionen.onJoinByInviteCode(code),
+      onJoinByInviteCode: (code, karte) =>
+        blasenHandler.current.aktionen.onJoinByInviteCode(code, karte),
       onMenue: (m) => blasenHandler.current.aktionen.onMenue(m),
       onAntworten: (m) => blasenHandler.current.aktionen.onAntworten(m),
       onReaktion: (m, emoji) => blasenHandler.current.aktionen.onReaktion(m, emoji),
@@ -2396,7 +2415,7 @@ function MessengerSeite() {
                     className="w-full min-h-11 px-2.5 flex items-center gap-2.5 rounded-xl text-left text-xs text-on-surface-variant hover:bg-surface-container-high/60 transition-colors"
                   >
                     <AtSign className="w-4 h-4 text-primary shrink-0" />
-                    <span>@ und Antworten an mich</span>
+                    <span>{t('messenger.mentionsAndReplies')}</span>
                   </button>
                   {searchQuery.trim().length > 1 && (
                     <button
@@ -2861,7 +2880,7 @@ function MessengerSeite() {
               : t('messenger.noChatHasThisText')
         }
         chats={ueberall.chats}
-        verzeichnis={mailboxDirectory}
+        verzeichnis={verzeichnisMitGruppen}
         gesperrt={ueberall.gesperrt}
         laeuft={ueberall.laeuft}
         onSchliessen={ueberall.schliesse}

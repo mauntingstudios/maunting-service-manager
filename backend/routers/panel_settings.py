@@ -179,6 +179,11 @@ def get_public_settings() -> dict:
     """Öffentlich abfragbare Panel-Einstellungen (z. B. Desktop-Download-Banner, Kalender, Notizen, Tresor)."""
     all_db = PanelSettingsService.get_all()
     return {
+        # Die kanonische Adresse des Panels. Sie ist oeffentlich — sie steht
+        # ohnehin in Mails und OAuth-Rueckleitungen — und wird fuer
+        # Einladungslinks gebraucht, damit die App nicht ihre WebView-Origin
+        # (tauri.localhost) teilt.
+        "panel_url": (settings.panel_url or "").rstrip("/"),
         "desktop_app_download_enabled": all_db.get("desktop_app_download_enabled", "true") != "false",
         "browser_download_enabled": all_db.get("browser_download_enabled", "true") != "false",
         # Vorgabe aus: Der Download zeigt auf ein GitHub-Release, das erst existieren muss.

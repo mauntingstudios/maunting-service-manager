@@ -527,7 +527,10 @@ export function useMessengerKern({
       loadLocalMessages(blindMailboxId)
         .then((localMsgs) => {
           if (active && activeMailboxIdRef.current === blindMailboxId && localMsgs.length > 0) {
-            sessionChatCache.set(blindMailboxId, localMsgs)
+            // Der Netzabruf kann schneller fertig sein als das Entsiegeln der
+            // lokalen Ablage. Dann steht in `sessionChatCache` schon der
+            // frischere Stand, und die lokale Kopie darf ihn nicht ersetzen.
+            if (sessionChatCache.get(blindMailboxId)?.length) return
             setMessages((vorher) => mitSystemzeilen(vorher, localMsgs))
             setLoadingMessages(false)
           }

@@ -163,7 +163,7 @@ export const CrossDeviceCallBanner: React.FC<CrossDeviceCallBannerProps> = ({ cl
 
           {/* Rechte Seite: Beitritts-Knopf */}
           <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
-            <Kurzinfo text={t('calls.joinGroupCall')} seite="ende" aussen="flex-1 sm:flex-initial">
+            <Kurzinfo text={t('calls.joinGroupCall')} seite="ende" aussen="flex-1 sm:flex-initial" portal>
               <button
                 type="button"
                 onClick={() => {

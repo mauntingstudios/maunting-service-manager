@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { api } from '@/api/client'
 
 export interface PublicSettings {
+  /** Kanonische Panel-Adresse, z. B. fuer Einladungslinks. Leer heisst unkonfiguriert. */
+  panel_url: string
   desktop_app_download_enabled: boolean
   browser_download_enabled: boolean
   story_fable_download_enabled: boolean
@@ -14,6 +16,7 @@ export interface PublicSettings {
 }
 
 export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
+  panel_url: '',
   desktop_app_download_enabled: true,
   browser_download_enabled: true,
   story_fable_download_enabled: false,
@@ -23,6 +26,16 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   notes_enabled: true,
   vault_enabled: true,
   social_enabled: true,
+}
+
+function istHttpAdresse(wert: unknown): wert is string {
+  if (typeof wert !== 'string' || !wert.trim()) return false
+  try {
+    const url = new URL(wert)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 const CACHED_SETTINGS_KEY = 'msm_cached_public_settings'
@@ -35,6 +48,9 @@ function loadCachedSettings(): PublicSettings {
     const parsed = JSON.parse(raw)
     if (parsed && typeof parsed === 'object') {
       return {
+        panel_url: istHttpAdresse(parsed.panel_url)
+          ? parsed.panel_url.replace(/\/+$/, '')
+          : DEFAULT_PUBLIC_SETTINGS.panel_url,
         desktop_app_download_enabled:
           typeof parsed.desktop_app_download_enabled === 'boolean'
             ? parsed.desktop_app_download_enabled
@@ -112,6 +128,9 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
         const remote = await api<Partial<PublicSettings>>('/settings/public')
         if (abfrage !== letzteAbfrage) return get()
         const aktualisiert: PublicSettings = {
+          panel_url: istHttpAdresse(remote.panel_url)
+            ? remote.panel_url.replace(/\/+$/, '')
+            : get().panel_url,
           desktop_app_download_enabled:
             typeof remote.desktop_app_download_enabled === 'boolean'
               ? remote.desktop_app_download_enabled
@@ -165,6 +184,9 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
 
     setSettings: (partial: Partial<PublicSettings>) => {
       const updated: PublicSettings = {
+        panel_url: istHttpAdresse(partial.panel_url)
+          ? partial.panel_url.replace(/\/+$/, '')
+          : get().panel_url,
         desktop_app_download_enabled:
           partial.desktop_app_download_enabled ?? get().desktop_app_download_enabled,
         browser_download_enabled:

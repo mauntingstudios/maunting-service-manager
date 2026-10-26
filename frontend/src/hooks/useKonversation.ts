@@ -65,6 +65,8 @@ export type Lesung =
       }
       text: string
       vonKonto?: number
+      /** Die bereits entschlüsselte und geprüfte Anzeigezeile. */
+      nachricht?: ChatMessage
     }
   | { art: 'still'; env: { id: number } }
 
@@ -585,6 +587,7 @@ export function useKonversation({
         },
         text: JSON.stringify(payload),
         vonKonto: message.senderId,
+        nachricht: message,
       })
     }
     uebernimmCache.current.set(lesungen, gelesen.uebernimm)

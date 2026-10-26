@@ -58,7 +58,7 @@ function ZeilenAbzeichen({ mid }: { mid: string | undefined }) {
       {archivedChats.includes(mid) && <Archive className="w-3.5 h-3.5 text-on-surface-variant/50" />}
       {isMuted(mid) && <BellOff className="w-3.5 h-3.5 text-on-surface-variant/50" />}
       {mentionedChats.includes(mid) && (
-        <Kurzinfo text={t('messenger.youWereMentioned')} seite="ende">
+        <Kurzinfo text={t('messenger.youWereMentioned')} seite="ende" portal>
           <span
             role="img"
             aria-label={t('messenger.youWereMentioned')}

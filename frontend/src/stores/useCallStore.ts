@@ -342,7 +342,19 @@ export const useCallStore = create<UseCallState>((set, get) => {
         text = 'Mikrofon oder Kamera konnten nicht geöffnet werden.'
       }
     } else if (phase === 'zugang') {
-      text = 'Der Anrufserver ist gerade nicht erreichbar. Bitte später erneut versuchen.'
+      const status = Number((fehler as { status?: unknown } | null)?.status ?? 0)
+      const art = get().kind
+      if (art === 'gruppe' && status === 403) {
+        text = i18n.t('calls.errors.joinForbidden')
+      } else if (status === 404) {
+        text = i18n.t('calls.errors.callGone')
+      } else if (status === 410) {
+        text = i18n.t('calls.errors.callEnded')
+      } else if (status === 503) {
+        text = i18n.t('calls.errors.serverUnavailable')
+      } else {
+        text = i18n.t('calls.errors.unreachable')
+      }
     } else {
       text = 'Die Verbindung zum Anrufserver kam nicht zustande. Bitte Netzwerk prüfen.'
     }
