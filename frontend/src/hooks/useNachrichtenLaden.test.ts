@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { waitFor } from '@testing-library/react'
 
 /**
  * Laden, Haekchen und Cursor im Einheits-Transport.
@@ -21,11 +22,16 @@ const ablage = vi.hoisted(() => ({
   sortMessagesChronologically: vi.fn((liste: unknown[]) => liste),
 }))
 
+const funken = vi.hoisted(() => ({ nimmAuf: vi.fn(async () => {}) }))
+
 vi.mock('@/api/social', () => api)
 vi.mock('@/services/messengerLocalStore', () => ablage)
 vi.mock('@/services/quittungsstand', () => ({
   merkePartnerQuittung: vi.fn(),
   merkeQuittung: vi.fn(),
+}))
+vi.mock('@/stores/funkenStore', () => ({
+  useFunkenStore: { getState: () => funken },
 }))
 
 import { useNachrichtenLaden, type NachrichtenLadenOptionen } from './useNachrichtenLaden'
@@ -254,6 +260,25 @@ describe('Haekchen aus den Wasserstaenden', () => {
       status?: string
     }[]
     expect(gesetzt.find((m) => m.id === 5)?.status).toBe('read')
+  })
+})
+
+describe('Augenblicke im offenen Chat', () => {
+  it('gibt einen eingehenden Augenblick an den Funken-Store, auch wenn der Chat offen ist', async () => {
+    const opts = optionen()
+    const eingehend = {
+      ...zeile(9, false),
+      augenblick: { zeitpunkt: '2026-10-25T10:00:00.000Z' },
+    }
+    vi.mocked(opts.konversation.liesNachrichten).mockResolvedValue(seite([eingehend]) as never)
+
+    await useNachrichtenLaden(opts).loadMessages()
+
+    await waitFor(() =>
+      expect(funken.nimmAuf).toHaveBeenCalledWith(2, [
+        expect.objectContaining({ art: 'augenblick', von: 2, kennung: '2:u-9' }),
+      ]),
+    )
   })
 })
 

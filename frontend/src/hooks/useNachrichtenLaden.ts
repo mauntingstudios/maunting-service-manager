@@ -15,10 +15,12 @@ import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 import type { ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import type { Konversation } from '@/hooks/useKonversation'
 import type { E2eeIdentity } from '@/services/e2eeIdentity'
+import { ereignisseAusNachrichten } from '@/services/funkenService'
 import {
   merkePartnerQuittung,
   merkeQuittung,
 } from '@/services/quittungsstand'
+import { useFunkenStore } from '@/stores/funkenStore'
 import {
   loadLocalMessages,
   mischeVerlauf,
@@ -163,6 +165,26 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
       }
       const gemischt = mischeVerlauf(lokalMitHaken.slice(-500), gelesen.messages, art)
       setMessages(gemischt)
+
+      /*
+       * Der offene Chat ist die zweite Quelle fuer Augenblicke. `FunkenWache`
+       * ueberspringt ihn bewusst (`akte.partnerId === aktiverPartner`), weil
+       * sonst jede Zeile doppelt gelesen wuerde. Ohne diese Uebergabe fiel die
+       * eingehende Haelfte weg, solange der Chat offen war: der eigene Versand
+       * zaehlt sich in `useMessengerSenden` selbst, die Gegenseite kam nie an.
+       * Die Nachrichten sind hier bereits mit dem Chat-Schluessel geoeffnet
+       * und ueber die Kontosignatur geprueft.
+       */
+      if (gelesen.chatType === 'direct' && activeContact) {
+        const augenblicke = ereignisseAusNachrichten(
+          gelesen.messages,
+          currentUserId,
+          activeContact.userId,
+        )
+        if (augenblicke.length) {
+          void useFunkenStore.getState().nimmAuf(activeContact.userId, augenblicke)
+        }
+      }
 
       // Der Pin gehoert zum Serverzustand, nicht in einen lokalen zweiten
       // Speicher. Die Seite nennt die neueste Anheftung unabhaengig davon,
