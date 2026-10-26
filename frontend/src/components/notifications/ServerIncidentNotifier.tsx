@@ -17,6 +17,7 @@ import { toast } from '@/stores/toastStore'
 import { sendeGeraeteBenachrichtigung, pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
 import { abonniere, kuendige } from '@/services/pushAbo'
 import { useMessengerNotificationStore, chimeEntsperren } from '@/stores/messengerNotificationStore'
+import { istGesperrt, useMessengerSperre } from '@/services/messengerSperre'
 import { meldeChat } from '@/services/benachrichtigung/chatMeldung'
 import { loadCalendarEventsOfflineFirst } from '@/lib/offlineSync'
 import { erinnerungenAus, PLAN_TAGE, type GeplanteErinnerung } from '@/lib/erinnerungsplan'
@@ -118,6 +119,47 @@ async function erinnerungenUebergeben(liste: GeplanteErinnerung[]): Promise<void
   // Nachgeladen: im Panel und am Desktop gehört die Brücke nicht ins Startbündel.
   const { erinnerungenPlanen } = await import('@/desktop/tauri')
   await erinnerungenPlanen(liste)
+}
+
+/**
+ * Quittiert eine eingehende Direktnachricht erst, nachdem dieser Client den
+ * Chiffretext geöffnet und die Absendersignatur geprüft hat.
+ *
+ * Der Server sieht dabei keinen Klartext: `ackChatMessages` trägt nur die
+ * Kennungen. Ein bloßes Ereignis, ein gesperrter Messenger, ein blockierter
+ * Absender, eine Gruppe, eine gelöschte Nachricht oder ein offenes Gespräch
+ * (dort quittiert `useNachrichtenLaden` nach dem lokalen Ablegen) löst
+ * keinen Ack aus.
+ */
+async function quittiereGeprueftenEingang(
+  msg: Record<string, unknown>,
+  senderId: number,
+): Promise<void> {
+  if (String(msg.chat_type ?? '') !== 'direct' || msg.is_deleted === true) return
+
+  const id = Number(msg.id ?? 0)
+  const chatId = Number(msg.chat_id ?? 0)
+  const keyVersion = Number(msg.key_version ?? 0)
+  const clientUuid = typeof msg.client_uuid === 'string' ? msg.client_uuid : ''
+  const chiffrat = typeof msg.encrypted_payload === 'string' ? msg.encrypted_payload : ''
+  if (id <= 0 || chatId <= 0 || keyVersion <= 0 || !clientUuid || !chiffrat) return
+  if (istGesperrt(useMessengerSperre.getState())) return
+
+  const store = useMessengerNotificationStore.getState()
+  if (store.isBlocked(senderId)) return
+  if (store.activeMailboxId === `direct:peer:${senderId}`) return
+
+  try {
+    // Nachgeladen: der Notifier hängt auf jeder Seite, die Krypto gehört
+    // nicht in den Startbestand.
+    const { entpackeChatNutzlast } = await import('@/services/chatKrypto')
+    await entpackeChatNutzlast('direct', chatId, clientUuid, senderId, keyVersion, chiffrat)
+    const { ackChatMessages } = await import('@/api/social')
+    await ackChatMessages('direct', chatId, id)
+  } catch {
+    // Kein Schlüssel, falsche Signatur oder Netz: kein Ack. Der Lesepfad
+    // holt es beim Öffnen des Gesprächs nach.
+  }
 }
 
 const POLL_INTERVAL_MS = 20_000
@@ -323,11 +365,10 @@ export function ServerIncidentNotifier() {
     // Hintergrund-Synchronisierung für Blockierungen und bekannte Mailboxen
     void useMessengerNotificationStore.getState().syncBlockedFromBackend()
     if (user?.id) {
-      // Nur die Liste der Mailboxen auffrischen. **Keine Quittung hier**: ein
-      // Wecksignal sagt nicht, ob der Umschlag für dieses Gerät war, ob er
-      // sich öffnen ließ oder ob er überhaupt eine Nachricht ist. Eine
-      // Zustellquittung entsteht deshalb erst nach dem lokalen Commit im
-      // Lesepfad (`useNachrichtenLaden`), nie aus einer Umschlagliste.
+      // Nur die Liste der Mailboxen auffrischen. **Keine Quittung aus dieser
+      // Liste**: sie sagt nicht, ob der Umschlag für dieses Gerät war oder
+      // sich öffnen ließ. Eine Zustellquittung entsteht erst nach dem Öffnen
+      // und Prüfen des Chiffretexts im Chat-Zweig unten.
       void useMessengerNotificationStore.getState().syncMailboxDirectoryFromBackend(user.id)
     }
 
@@ -373,6 +414,8 @@ export function ServerIncidentNotifier() {
           meldenErlaubt: detail.melden !== false,
           t,
         })
+
+        void quittiereGeprueftenEingang(msg, senderId)
       }
     }
 

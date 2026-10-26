@@ -73,8 +73,8 @@ export function MessengerHintergrund() {
         t,
       })
 
-      // Keine Zustellquittung aus einem Wecksignal. Sie entsteht nur nach dem
-      // lokalen Commit einer geprüften Nachricht im Ladepfad.
+      // Nur die Meldung. Die Zustellquittung entsteht zentral in
+      // `ServerIncidentNotifier`, sobald der Chiffretext geprüft ist.
     }
     window.addEventListener('msm:sync-event', handle)
     return () => window.removeEventListener('msm:sync-event', handle)
