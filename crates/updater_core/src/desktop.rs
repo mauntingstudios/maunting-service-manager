@@ -42,6 +42,7 @@ struct SignedGithubSource {
     trusted_key: minisign_verify::PublicKey,
     package_id: &'static str,
     package_prefix: &'static str,
+    channel: &'static str,
 }
 
 impl SignedGithubSource {
@@ -58,18 +59,23 @@ impl SignedGithubSource {
             trusted_key,
             package_id,
             package_prefix,
+            channel: config.velopack_channel,
         })
     }
 
-    fn asset_valid(asset: &velopack::VelopackAsset, package_id: &str) -> bool {
+    fn asset_valid(asset: &velopack::VelopackAsset, package_id: &str, channel: &str) -> bool {
         let package_type = match asset.Type.as_str() {
             "Full" => "full",
             "Delta" => "delta",
             _ => return false,
         };
+        let expected_with_channel =
+            format!("{package_id}-{}-{channel}-{package_type}.nupkg", asset.Version);
+        let expected_without_channel =
+            format!("{package_id}-{}-{package_type}.nupkg", asset.Version);
         asset.PackageId == package_id
             && semver::Version::parse(&asset.Version).is_ok()
-            && asset.FileName == format!("{package_id}-{}-{package_type}.nupkg", asset.Version)
+            && (asset.FileName == expected_with_channel || asset.FileName == expected_without_channel)
             && asset.SHA256.len() == 64
             && asset.SHA256.bytes().all(|byte| byte.is_ascii_hexdigit())
             && asset.Size > 0
@@ -165,7 +171,7 @@ impl UpdateSource for SignedGithubSource {
             ));
         }
         for asset in &feed.Assets {
-            if !Self::asset_valid(asset, self.package_id)
+            if !Self::asset_valid(asset, self.package_id, self.channel)
                 || !asset.FileName.starts_with(self.package_prefix)
             {
                 return Err(velopack::Error::Other(
@@ -182,7 +188,7 @@ impl UpdateSource for SignedGithubSource {
         local_file: &Path,
         progress_sender: Option<mpsc::Sender<i16>>,
     ) -> Result<(), velopack::Error> {
-        if !Self::asset_valid(asset, self.package_id)
+        if !Self::asset_valid(asset, self.package_id, self.channel)
             || !asset.FileName.starts_with(self.package_prefix)
         {
             return Err(velopack::Error::Other(
@@ -560,6 +566,7 @@ mod tests {
                 .expect("Test-Schlüssel ist lesbar"),
             package_id: "Pontis",
             package_prefix: "Pontis-",
+            channel: "pontis",
         }
     }
 
@@ -794,10 +801,22 @@ mod tests {
         assert!(SignedGithubSource::asset_valid(
             &asset("Pontis", "Full", "Pontis-5.5.2-full.nupkg"),
             "Pontis",
+            "pontis",
+        ));
+        assert!(SignedGithubSource::asset_valid(
+            &asset("Pontis", "Full", "Pontis-5.5.2-pontis-full.nupkg"),
+            "Pontis",
+            "pontis",
         ));
         assert!(SignedGithubSource::asset_valid(
             &asset("Pontis", "Delta", "Pontis-5.5.2-delta.nupkg"),
             "Pontis",
+            "pontis",
+        ));
+        assert!(SignedGithubSource::asset_valid(
+            &asset("Pontis", "Delta", "Pontis-5.5.2-pontis-delta.nupkg"),
+            "Pontis",
+            "pontis",
         ));
         assert!(!SignedGithubSource::asset_valid(
             &asset(
@@ -806,6 +825,7 @@ mod tests {
                 "https://evil.invalid/Pontis-5.5.2-full.nupkg"
             ),
             "Pontis",
+            "pontis",
         ));
         assert!(!SignedGithubSource::asset_valid(
             &asset(
@@ -814,10 +834,12 @@ mod tests {
                 "MauntingSmartSystem-5.5.2-full.nupkg"
             ),
             "Pontis",
+            "pontis",
         ));
         assert!(!SignedGithubSource::asset_valid(
             &asset("Pontis", "Full", "Pontis-5.5.2-full.nupkg"),
             "MauntingSmartSystem",
+            "mss",
         ));
     }
 }

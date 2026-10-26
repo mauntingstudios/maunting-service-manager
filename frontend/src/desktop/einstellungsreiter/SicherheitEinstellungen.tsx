@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 
 import { MessengerSicherheitTab } from '@/pages/profile/MessengerSicherheitTab'
 import { TresorSicherheitTab } from '../vault/TresorSicherheitTab'
+import { DevicesTab } from '@/pages/profile/DevicesTab'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 const GRUPPENTITEL = 'font-headline text-title-md font-semibold text-on-surface'
@@ -31,7 +32,7 @@ export function SicherheitEinstellungen({
 
   return (
     <>
-      {/* Zwei Gruppen mit eigener Überschrift: sonst beginnt beim
+      {/* Drei Gruppen mit eigener Überschrift: sonst beginnt beim
           Scrollen mitten in den Messenger-Karten plötzlich der Tresor. */}
       {social && (
         <section aria-labelledby="sicherheit-messenger" className="flex flex-col gap-3">
@@ -47,6 +48,14 @@ export function SicherheitEinstellungen({
             {t('mss.einstellungen.sicherheit.tresor')}
           </h2>
           <TresorSicherheitTab offline={offline} />
+        </section>
+      )}
+      {!offline && (
+        <section aria-labelledby="sicherheit-geraete" className="flex flex-col gap-3 pt-2">
+          <h2 id="sicherheit-geraete" className={GRUPPENTITEL}>
+            {t('profile.tabs.devices')}
+          </h2>
+          <DevicesTab />
         </section>
       )}
     </>
