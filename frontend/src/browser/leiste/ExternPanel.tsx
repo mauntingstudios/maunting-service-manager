@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
 import { Zustandsflaeche } from '@/Singra/UI/Zustandsflaeche'
+import { ThirdPartyPrivacyDialog, istDrittanbieterHinweisBestaetigt } from '@/Singra/UI'
 
 import { seitenHost } from '../services/geraetKonfig'
 import { SCHUTZ_NICHT_BEREIT, nativ, tabEreignisse } from '../services/nativ'
@@ -33,8 +34,17 @@ export function ExternPanel({ id, voll }: { id: ExterneId; voll: boolean }) {
   const lauf = useRef(0)
   const rahmenAktuell = useRef<Rahmen | null>(null)
   const rahmenSchluessel = useRef('')
+  const [hinweisBestaetigt, setHinweisBestaetigt] = useState(() => istDrittanbieterHinweisBestaetigt())
   const [stand, setStand] = useState<Tab>(() => ({ ...leererTab(tabId), url, titel: eintrag ? t(eintrag.name) : '' }))
   const standRef = useRef(stand)
+
+  const onCancel = useCallback(() => {
+    navigate('/')
+  }, [navigate])
+
+  const onConfirm = useCallback(() => {
+    setHinweisBestaetigt(true)
+  }, [])
 
   const aendernLokal = useCallback((teil: Partial<Tab>) => {
     standRef.current = { ...standRef.current, ...teil }
@@ -43,7 +53,7 @@ export function ExternPanel({ id, voll }: { id: ExterneId; voll: boolean }) {
 
   const zeigen = useCallback(() => {
     void nativ.panelRahmen(tabId, webviewZeigen(standRef.current) ? rahmenAktuell.current : null)
-  }, [tabId])
+  }, [tabId, hinweisBestaetigt])
 
   const laden = useCallback(() => {
     if (!url) return
@@ -71,10 +81,14 @@ export function ExternPanel({ id, voll }: { id: ExterneId; voll: boolean }) {
     rahmenSchluessel.current = schluessel
     const rahmen = { x: r.left, y: r.top, breite: r.width, hoehe: r.height }
     rahmenAktuell.current = rahmen
-    void nativ.panelRahmen(tabId, webviewZeigen(standRef.current) ? rahmen : null)
-  }, [tabId])
+    if (hinweisBestaetigt) {
+      void nativ.panelRahmen(tabId, webviewZeigen(standRef.current) ? rahmen : null)
+    }
+  }, [tabId, hinweisBestaetigt])
 
   useEffect(() => {
+    if (!hinweisBestaetigt) return
+    messen()
     panelRegistrieren(tabId)
     if (voll) void nativ.tabAktivieren(null)
     laden()
@@ -84,7 +98,7 @@ export function ExternPanel({ id, voll }: { id: ExterneId; voll: boolean }) {
       void nativ.tabSchliessen(tabId)
       if (voll) void nativ.tabAktivieren(useTabsStore.getState().aktivId)
     }
-  }, [tabId, laden, voll])
+  }, [tabId, laden, voll, hinweisBestaetigt, messen])
 
   useEffect(() => {
     let abmelden: (() => void) | null = null
@@ -164,6 +178,13 @@ export function ExternPanel({ id, voll }: { id: ExterneId; voll: boolean }) {
       )}
       <SeitenDialoge tab={stand} />
       <SeitenMenue tab={stand} flaeche={container} />
+      {!hinweisBestaetigt && (
+        <ThirdPartyPrivacyDialog
+          open={!hinweisBestaetigt}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        />
+      )}
     </div>
   )
 }

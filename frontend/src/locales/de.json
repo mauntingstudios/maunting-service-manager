@@ -8881,14 +8881,13 @@
       "feld": "Sommerfeld",
       "eigen": "Eigenes Bild"
     },
-
     "update": {
       "name": "Updates",
       "hinweis": "Fragt bei GitHub nach einer neuen Version. Unter Windows lädt sie sich still im Hintergrund; neu gestartet wird erst auf deinen Klick.",
       "pruefen": "Jetzt prüfen",
       "aktuell": "Du hast die neueste Version.",
       "da": "Version {{version}} ist da.",
-    "bereit": "Version {{version}} wird im Hintergrund vorbereitet. Neu starten über die Update-Anzeige.",
+      "bereit": "Version {{version}} wird im Hintergrund vorbereitet. Neu starten über die Update-Anzeige.",
       "installieren": "Installieren und neu starten",
       "nichtErreicht": "GitHub war nicht erreichbar. Versuch es später noch einmal.",
       "fehler": "Das Update ließ sich nicht installieren.",
@@ -8938,7 +8937,6 @@
       "bildWaehlen": "Eigenes Bild wählen",
       "bildZuGross": "Bitte ein Bild unter 3 MB wählen.",
       "bildFehler": "Das Bild konnte nicht verarbeitet werden.",
-
       "kopplung": "MSM-Kopplung",
       "gekoppeltMit": "Gekoppelt mit {{adresse}}",
       "gekoppeltOffline": "Gekoppelt mit {{adresse}}, gerade nicht erreichbar",
@@ -9339,7 +9337,8 @@
       "nochmal": "Erneut versuchen",
       "spracheNichtErkannt": "Die Sprache der Seite wurde nicht erkannt. Wähle sie selbst.",
       "spracheNichtVerfuegbar": "Für {{sprache}} gibt es keine Sprachdaten. Übersetzen ist für diese Seite nicht möglich.",
-      "zielGleich": "Wähle eine andere Zielsprache.",      "zustimmung": "Für diese Sprachen lädt der Browser einmalig {{groesse}} Sprachdaten von Mozilla. Der Text der Seite bleibt auf dem Gerät.",
+      "zielGleich": "Wähle eine andere Zielsprache.",
+      "zustimmung": "Für diese Sprachen lädt der Browser einmalig {{groesse}} Sprachdaten von Mozilla. Der Text der Seite bleibt auf dem Gerät.",
       "bereit": "Die Seite wird auf dem Gerät übersetzt.",
       "von": "Sprache der Seite",
       "vonLeer": "Sprache wählen",
@@ -10021,6 +10020,19 @@
       "linksHervorgehoben": "Hervorgehoben",
       "linksAus": "Aus",
       "kopieren": "Text kopieren"
+    },
+    "drittanbieterHinweis": {
+      "eyebrow": "Datenschutz-Hinweis",
+      "titel": "Hinweis zur Datensicherheit bei Drittanbietern",
+      "beschreibung": "Du bist dabei, einen integrierten Drittanbieter-Messenger zu öffnen. Diese Einbindung dient deiner Bequemlichkeit. Beachte bitte die Unterschiede beim Datenschutz gegenüber unserem eigenen Ökosystem:",
+      "telegram": "Telegram: Standard-Chats und Gruppen sind nicht Ende-zu-Ende verschlüsselt (nur optionale geheime 1:1-Chats auf Mobilgeräten).",
+      "discord": "Discord: Nur Audio- und Videoanrufe sind Ende-zu-Ende verschlüsselt. Textnachrichten und Kanäle werden auf Servern von Discord verarbeitet.",
+      "instagram": "Instagram: Direktnachrichten im Web sind standardmäßig nicht Ende-zu-Ende verschlüsselt und liegen auf Meta-Servern.",
+      "whatsapp": "WhatsApp: Zwar standardmäßig mit dem Signal-Protokoll Ende-zu-Ende verschlüsselt, aber eine proprietäre Closed-Source-Anwendung auf der Infrastruktur von Meta.",
+      "fazit": "Gehe bewusst mit deinen Daten um. Für sensible Kommunikation empfehlen wir Messenger mit durchgehender Verschlüsselung auf überprüfbarer Infrastruktur.",
+      "nichtMehrAnzeigen": "Diesen Hinweis nicht mehr anzeigen",
+      "fortfahren": "Verstanden & fortfahren",
+      "abbrechen": "Abbrechen"
     }
   },
   "searchEngineSettings": {

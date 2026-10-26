@@ -37,7 +37,7 @@ describe('Wo die Einträge stehen', () => {
 
   it('ordnet nach der Wahl des Nutzers, Neues folgt in der Grundordnung', () => {
     const namen = geordnet(ALLE_EINTRAEGE, ['downloads', 'singra']).map(leistenziel)
-    expect(namen).toEqual(['downloads', 'singra', 'messenger', 'notizen', 'kalender', 'tresor', 'lesezeichen', 'verlauf', 'whatsapp', 'discord', 'telegram', 'instagram'])
+    expect(namen).toEqual(['downloads', 'singra', 'messenger', 'notizen', 'kalender', 'tresor', 'lesezeichen', 'whatsapp', 'discord', 'telegram', 'instagram', 'verlauf'])
   })
 
   it('öffnet aus dem Menü ein Panel und schließt das Menü', () => {
@@ -76,9 +76,9 @@ describe('Wo die Einträge stehen', () => {
         <Seitenleiste seite="links" />
       </>,
     )
-    expect(leistenNamen().slice(6, 8)).toEqual(['Verlauf', 'Downloads'])
+    expect(leistenNamen().slice(10, 12)).toEqual(['Verlauf', 'Downloads'])
     fireEvent.click(screen.getByRole('button', { name: 'Downloads nach oben' }))
-    expect(leistenNamen().slice(6, 8)).toEqual(['Downloads', 'Verlauf'])
+    expect(leistenNamen().slice(10, 12)).toEqual(['Downloads', 'Verlauf'])
     fireEvent.click(screen.getByRole('switch', { name: 'Verlauf' }))
     expect(leistenNamen()).not.toContain('Verlauf')
     expect(useEinstellungenStore.getState().ausgeblendet).toEqual(['verlauf'])

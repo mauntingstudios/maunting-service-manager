@@ -102,4 +102,11 @@ export { Omnibox, type OmniboxProps } from './Omnibox'
 export { UpdateBadge, type UpdateBadgeProps, type UpdatePhase } from './UpdateBadge'
 // Markdownansicht und PdfAnsicht ziehen große Bibliotheken nach sich und stehen
 // deshalb nicht hier: direkt aus ihrer Datei importieren, am besten per lazy().
-
+export {
+  ThirdPartyPrivacyDialog,
+  DRITTANBIETER_HINWEIS_STORAGE_KEY,
+  istDrittanbieterHinweisBestaetigt,
+  bestaetigeDrittanbieterHinweis,
+  type ThirdPartyPrivacyDialogProps,
+  type DrittanbieterHinweisStatus,
+} from './ThirdPartyPrivacyDialog'

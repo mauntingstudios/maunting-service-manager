@@ -8881,14 +8881,13 @@
       "feld": "Summer field",
       "eigen": "Your image"
     },
-
     "update": {
       "name": "Updates",
       "hinweis": "Asks GitHub for a new version. On Windows it downloads quietly in the background; it restarts only when you click.",
       "pruefen": "Check now",
       "aktuell": "You have the latest version.",
       "da": "Version {{version}} is available.",
-    "bereit": "Version {{version}} is being prepared in the background. Restart from the update badge.",
+      "bereit": "Version {{version}} is being prepared in the background. Restart from the update badge.",
       "installieren": "Install and restart",
       "nichtErreicht": "GitHub could not be reached. Try again later.",
       "fehler": "The update could not be installed.",
@@ -8938,7 +8937,6 @@
       "bildWaehlen": "Choose your own image",
       "bildZuGross": "Please choose an image under 3 MB.",
       "bildFehler": "The image could not be processed.",
-
       "kopplung": "MSM pairing",
       "gekoppeltMit": "Paired with {{adresse}}",
       "gekoppeltOffline": "Paired with {{adresse}}, currently unreachable",
@@ -10022,6 +10020,19 @@
       "linksHervorgehoben": "Highlighted",
       "linksAus": "Off",
       "kopieren": "Copy text"
+    },
+    "drittanbieterHinweis": {
+      "eyebrow": "Privacy notice",
+      "titel": "Third-party data privacy notice",
+      "beschreibung": "You are about to open an integrated third-party messenger. This integration is provided for convenience. Please note the privacy differences compared to our own ecosystem:",
+      "telegram": "Telegram: Cloud chats and groups are not end-to-end encrypted by default (only optional 1:1 secret chats on mobile devices).",
+      "discord": "Discord: Only voice and video calls use end-to-end encryption. Text messages and channels are processed on Discord servers.",
+      "instagram": "Instagram: Direct web messages are not end-to-end encrypted by default and are stored on Meta servers.",
+      "whatsapp": "WhatsApp: End-to-end encrypted by default with the Signal protocol, but a proprietary closed-source application on Meta infrastructure.",
+      "fazit": "Handle your data with care. For sensitive communication, we recommend using end-to-end encrypted messengers on verifiable infrastructure.",
+      "nichtMehrAnzeigen": "Do not show this notice again",
+      "fortfahren": "Understood & proceed",
+      "abbrechen": "Cancel"
     }
   },
   "searchEngineSettings": {
