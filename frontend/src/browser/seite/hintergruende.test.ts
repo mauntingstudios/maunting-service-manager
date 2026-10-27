@@ -9,9 +9,20 @@ import {
 } from './hintergruende'
 
 describe('Hintergruende Logik', () => {
-  it('haelt genau 5 KI-Standardhintergruende vor', () => {
-    expect(BILD_HINTERGRUENDE).toHaveLength(5)
-    expect(BILD_HINTERGRUENDE.map((b) => b.id)).toEqual(['erde', 'sonnensystem', 'bergwald', 'ozean', 'feld'])
+  it('haelt genau 10 KI-Standardhintergruende vor', () => {
+    expect(BILD_HINTERGRUENDE).toHaveLength(10)
+    expect(BILD_HINTERGRUENDE.map((b) => b.id)).toEqual([
+      'erde',
+      'sonnensystem',
+      'bergwald',
+      'ozean',
+      'feld',
+      'balkon',
+      'bergsee',
+      'bahnhof',
+      'mars',
+      'wasserfaelle',
+    ])
     for (const bild of BILD_HINTERGRUENDE) {
       expect(bild.pfad).toMatch(/^\/hintergruende\/[a-z]+\.webp$/)
     }
@@ -26,8 +37,13 @@ describe('Hintergruende Logik', () => {
     expect(aktuellesWechselBild(basis + 2 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[2].id)
     expect(aktuellesWechselBild(basis + 3 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[3].id)
     expect(aktuellesWechselBild(basis + 4 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[4].id)
-    // Nach 5 Intervallen wieder am Anfang
-    expect(aktuellesWechselBild(basis + 5 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[0].id)
+    expect(aktuellesWechselBild(basis + 5 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[5].id)
+    expect(aktuellesWechselBild(basis + 6 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[6].id)
+    expect(aktuellesWechselBild(basis + 7 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[7].id)
+    expect(aktuellesWechselBild(basis + 8 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[8].id)
+    expect(aktuellesWechselBild(basis + 9 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[9].id)
+    // Nach 10 Intervallen wieder am Anfang
+    expect(aktuellesWechselBild(basis + 10 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[0].id)
   })
 
   it('erzeugt passenden Hintergrundstil fuer Farben, feste Bilder und Wechselmodus', () => {

@@ -13,6 +13,11 @@ export const BILD_HINTERGRUENDE: BildHintergrund[] = [
   { id: 'bergwald', pfad: '/hintergruende/bergwald.webp', titelKey: 'browser.hintergrund.bergwald' },
   { id: 'ozean', pfad: '/hintergruende/ozean.webp', titelKey: 'browser.hintergrund.ozean' },
   { id: 'feld', pfad: '/hintergruende/feld.webp', titelKey: 'browser.hintergrund.feld' },
+  { id: 'balkon', pfad: '/hintergruende/balkon.webp', titelKey: 'browser.hintergrund.balkon' },
+  { id: 'bergsee', pfad: '/hintergruende/bergsee.webp', titelKey: 'browser.hintergrund.bergsee' },
+  { id: 'bahnhof', pfad: '/hintergruende/bahnhof.webp', titelKey: 'browser.hintergrund.bahnhof' },
+  { id: 'mars', pfad: '/hintergruende/mars.webp', titelKey: 'browser.hintergrund.mars' },
+  { id: 'wasserfaelle', pfad: '/hintergruende/wasserfaelle.webp', titelKey: 'browser.hintergrund.wasserfaelle' },
 ]
 
 export const FARB_HINTERGRUENDE: Record<'schlicht' | 'nacht' | 'wald' | 'tiefsee', string> = {
@@ -32,6 +37,11 @@ export const HINTERGRUND_OPTIONEN: Hintergrund[] = [
   'bergwald',
   'ozean',
   'feld',
+  'balkon',
+  'bergsee',
+  'bahnhof',
+  'mars',
+  'wasserfaelle',
   'schlicht',
   'nacht',
   'wald',
