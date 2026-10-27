@@ -7736,7 +7736,6 @@
     "logoLocalOnly": "Gruppenlogo gesetzt — bisher nur auf diesem Gerät.",
     "logoFailed": "Das Gruppenlogo konnte nicht gesetzt werden.",
     "groupNotReady": "Die Gruppe ist noch nicht bereit.",
-    "e2eeReady": "E2EE-Chat bereit",
     "e2eeBanner": "Nachrichten in diesem Chat sind Ende-zu-Ende verschlüsselt.",
     "encryptedMessage": "Verschlüsselte Nachricht",
     "unreadableOlderMessages": "Ältere Nachrichten dieses Geräts lassen sich nicht mehr lesen.",

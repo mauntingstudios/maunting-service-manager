@@ -7736,7 +7736,6 @@
     "logoLocalOnly": "Group logo set — on this device only so far.",
     "logoFailed": "The group logo could not be set.",
     "groupNotReady": "The group is not ready yet.",
-    "e2eeReady": "E2EE chat ready",
     "e2eeBanner": "Messages in this chat are end-to-end encrypted.",
     "encryptedMessage": "Encrypted message",
     "unreadableOlderMessages": "Older messages from this device can no longer be read.",

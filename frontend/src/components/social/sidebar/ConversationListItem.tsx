@@ -188,9 +188,6 @@ export function ContactListItem({ kontakt: c, entwurf, ...zeile }: ZeileProps & 
               <span>{c.teamName}</span>
             </p>
           )}
-          {c.isPublicUser && !c.isFriend && !c.teamName && (
-            <p className="text-label-sm text-on-surface-variant/70 truncate">{t('messenger.e2eeReady')}</p>
-          )}
           {c.activityLabel && !c.teamName && (
             <p className="text-label-sm text-on-surface-variant/80 truncate">{c.activityLabel}</p>
           )}
