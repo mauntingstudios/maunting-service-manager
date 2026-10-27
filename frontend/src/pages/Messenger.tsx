@@ -38,7 +38,6 @@ import {
   AtSign,
 } from 'lucide-react'
 import { useCallStore } from '@/stores/useCallStore'
-import { apiUrl } from '@/config/api'
 import {
   CircularVideoNoteRecorder,
   type VideoNoteAufnahme,
@@ -1313,6 +1312,12 @@ function MessengerSeite() {
 
   const chatSuche = useChatSuche(blindMailboxId, springeZu)
 
+  /** Eine gesendete Freundschaftsanfrage gilt für diesen Kontakt, nicht für immer. */
+  const [anfrageGesendet, setAnfrageGesendet] = useState(false)
+  useEffect(() => {
+    setAnfrageGesendet(false)
+  }, [activeContact?.userId])
+
   /**
    * Zwei Wege zurück, ein Ziel: der offene Chat geht zur Liste.
    *
@@ -2211,6 +2216,9 @@ function MessengerSeite() {
     if (!activeContact) return
     try {
       await sendFriendRequest(activeContact.username)
+      // Der Knopf verschwindet, sobald die Anfrage unterwegs ist. Sonst stünde
+      // er bis zum nächsten Laden da, obwohl nichts mehr zu tun ist.
+      setAnfrageGesendet(true)
       toast.success(t('messenger.friendRequestSent', { name: activeContact.username }))
     } catch (err: any) {
       toast.error(err?.message || t('messenger.friendRequestFailed'))
@@ -2341,7 +2349,9 @@ function MessengerSeite() {
 
   return (
     <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
-      <MessengerBetaBanner />
+      {/* Im offenen Chat hat der Hinweis keinen Platz: der Chat soll oben
+          beginnen. In der Liste bleibt er sichtbar. */}
+      {!isChatOpen && <MessengerBetaBanner />}
       {geraetWartet && (
         <button
           type="button"
@@ -2651,7 +2661,9 @@ function MessengerSeite() {
 
           {isChatOpen ? (
             <>
-              {auswahlModus && (
+              {/* Eine Leiste, zwei Rollen: Auswahl ersetzt den Kopf, sonst
+                  steht er. Beide liegen im Fluss; der Verlauf beginnt darunter. */}
+              {auswahlModus ? (
                 <ChatSelectionBar
                   anzahl={wahl.auswahl?.size ?? 0}
                   loeschenMoeglich={gewaehlteNachrichten().some((m) => m.isSelf && !m.isDeleted)}
@@ -2671,84 +2683,86 @@ function MessengerSeite() {
                   }}
                   onLoeschen={() => void handleAuswahlLoeschen()}
                 />
-              )}
-
-              <ChatHeader
-                verborgen={auswahlModus || chatSuche.offen}
-                titel={(activeGroup ? gruppenTitel(activeGroup) : activeContact?.username) ?? ''}
-                gruppenBild={activeGroup?.avatar_url ? apiUrl(activeGroup.avatar_url) : null}
-                stumm={Boolean(blindMailboxId && isChatMuted(blindMailboxId))}
-                blockiert={Boolean(activeContact && isBlocked(activeContact.userId))}
-                onZurueck={handleZurueckZurListe}
-                gruppenanruf={
-                  activeGroup
-                    ? { erlaubt: groupCallPermissions.canStart, onStarten: () => handleStartGroupCall(false) }
-                    : undefined
-                }
-                onSprachanruf={activeContact?.isFriend ? () => void starteAnruf('audio') : undefined}
-                funke={
-                  activeContact?.isFriend ? (
-                    <FunkenAbzeichen
-                      partnerId={activeContact.userId}
-                      name={activeContact.username}
-                      interaktiv
-                      onWiederherstellen={() => void oeffneFunkenRettung(activeContact)}
-                    />
-                  ) : null
-                }
-                onAugenblick={
-                  activeContact?.isFriend && !isBlocked(activeContact.userId) ? oeffneAugenblick : undefined
-                }
-                onFreundschaftsanfrage={
-                  activeContact && !activeContact.isFriend ? () => void sendeFreundschaftsanfrage() : undefined
-                }
-                onProfil={activeContact ? () => navigate(`/user/${activeContact.userId}`) : undefined}
-                onSuche={chatSuche.oeffne}
-                menue={(schliessen) => (
-                  <ChatActionsMenu
-                    schliessen={schliessen}
-                    stumm={blindMailboxId ? isChatMuted(blindMailboxId) : null}
-                    kontakt={
-                      activeContact
-                        ? { istFreund: activeContact.isFriend, blockiert: isBlocked(activeContact.userId) }
-                        : null
+              ) : (
+                <ChatHeader
+                  titel={(activeGroup ? gruppenTitel(activeGroup) : activeContact?.username) ?? ''}
+                  bild={activeGroup ? activeGroup.avatar_url ?? null : activeContact?.avatarUrl ?? null}
+                  stumm={Boolean(blindMailboxId && isChatMuted(blindMailboxId))}
+                  blockiert={Boolean(activeContact && isBlocked(activeContact.userId))}
+                  onZurueck={handleZurueckZurListe}
+                  funke={
+                    activeContact?.isFriend ? (
+                      <FunkenAbzeichen
+                        partnerId={activeContact.userId}
+                        name={activeContact.username}
+                        interaktiv
+                        onWiederherstellen={() => void oeffneFunkenRettung(activeContact)}
+                      />
+                      ) : null
                     }
-                    gruppe={
-                      activeGroup
-                        ? {
-                            hatEinladung: Boolean(activeGroup.invite_code),
-                            istEigentuemer: activeGroup.owner_user_id === currentUserId,
-                            istAdmin: activeGroup.role === 'admin',
-                          }
-                        : null
+                    onFreundschaftsanfrage={
+                      activeContact && !activeContact.isFriend ? () => void sendeFreundschaftsanfrage() : undefined
                     }
-                    verfallStufe={stufenLabel(verfallSekunden > 0 ? verfallSekunden : 0, t)}
-                    verfallErlaubt={darfVerfallStellen}
-                    onStumm={() => setIsMuteModalOpen(true)}
-                    onProfil={() => activeContact && navigate(`/user/${activeContact.userId}`)}
-                    onSicherheitsnummer={() => sicherheitsnummern.setOffen(true)}
-                    onVerfall={() => setVerfallOffen(true)}
-                    onVideoanruf={() => void starteAnruf('video')}
-                    onHintergrund={() => {
-                      if (activeGroup) {
-                        setGroupSettingsTab('background')
-                        setIsGroupPermissionsOpen(true)
-                      } else {
-                        setIsWallpaperModalOpen(true)
+                    anfrageGesendet={anfrageGesendet}
+                    onProfil={activeContact ? () => navigate(`/user/${activeContact.userId}`) : undefined}
+                    onSuche={chatSuche.oeffne}
+                  menue={(schliessen) => (
+                    <ChatActionsMenu
+                      schliessen={schliessen}
+                      stumm={blindMailboxId ? isChatMuted(blindMailboxId) : null}
+                      kontakt={
+                        activeContact
+                          ? { istFreund: activeContact.isFriend, blockiert: isBlocked(activeContact.userId) }
+                          : null
                       }
-                    }}
-                    onEinladung={() => activeGroup && handleCopyInviteLink(activeGroup)}
-                    onEinstellungen={() => {
-                      setGroupSettingsTab('general')
-                      setIsGroupPermissionsOpen(true)
-                    }}
-                    onLoeschen={() => activeGroup && handleDeleteGroup(activeGroup)}
-                    onVerlassen={() => activeGroup && handleLeaveGroup(activeGroup)}
-                    onBlockieren={() => setIsBlockConfirmOpen(true)}
-                    onChatEntfernen={() => setChatEntfernenOffen(true)}
-                  />
-                )}
-              />
+                      gruppe={
+                        activeGroup
+                          ? {
+                              hatEinladung: Boolean(activeGroup.invite_code),
+                              istEigentuemer: activeGroup.owner_user_id === currentUserId,
+                              istAdmin: activeGroup.role === 'admin',
+                            }
+                          : null
+                      }
+                      verfallStufe={stufenLabel(verfallSekunden > 0 ? verfallSekunden : 0, t)}
+                      verfallErlaubt={darfVerfallStellen}
+                      onStumm={() => setIsMuteModalOpen(true)}
+                      onProfil={() => activeContact && navigate(`/user/${activeContact.userId}`)}
+                      onSicherheitsnummer={() => sicherheitsnummern.setOffen(true)}
+                      onVerfall={() => setVerfallOffen(true)}
+                      onVideoanruf={() => void starteAnruf('video')}
+                      onSprachanruf={
+                        activeContact?.isFriend ? () => void starteAnruf('audio') : undefined
+                      }
+                      onGruppenanruf={
+                        activeGroup
+                          ? { erlaubt: groupCallPermissions.canStart, onStarten: () => handleStartGroupCall(false) }
+                          : undefined
+                      }
+                      onAugenblick={
+                        activeContact?.isFriend && !isBlocked(activeContact.userId) ? oeffneAugenblick : undefined
+                      }
+                      onHintergrund={() => {
+                        if (activeGroup) {
+                          setGroupSettingsTab('background')
+                          setIsGroupPermissionsOpen(true)
+                        } else {
+                          setIsWallpaperModalOpen(true)
+                        }
+                      }}
+                      onEinladung={() => activeGroup && handleCopyInviteLink(activeGroup)}
+                      onEinstellungen={() => {
+                        setGroupSettingsTab('general')
+                        setIsGroupPermissionsOpen(true)
+                      }}
+                      onLoeschen={() => activeGroup && handleDeleteGroup(activeGroup)}
+                      onVerlassen={() => activeGroup && handleLeaveGroup(activeGroup)}
+                      onBlockieren={() => setIsBlockConfirmOpen(true)}
+                      onChatEntfernen={() => setChatEntfernenOffen(true)}
+                    />
+                  )}
+                />
+              )}
 
               {angeheftet && !auswahlModus && !chatSuche.offen && (
                 <ChatPinnedBar

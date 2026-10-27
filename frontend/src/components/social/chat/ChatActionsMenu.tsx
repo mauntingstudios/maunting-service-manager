@@ -3,8 +3,10 @@ import {
   Ban,
   Bell,
   BellOff,
+  Camera,
   Image as ImageIcon,
   LogOut,
+  Phone,
   Share2,
   Settings2,
   ShieldCheck,
@@ -43,6 +45,12 @@ interface ChatActionsMenuProps {
   onSicherheitsnummer: () => void
   onVerfall: () => void
   onVideoanruf: () => void
+  /** Fehlt außerhalb einer Freundschaft; dann gibt es keinen Sprachanruf. */
+  onSprachanruf?: () => void
+  /** Nur in Gruppen; ohne Recht erscheint der Eintrag gesperrt. */
+  onGruppenanruf?: { erlaubt: boolean; onStarten: () => void }
+  /** Kamera für einen Augenblick; nur bei Freunden. */
+  onAugenblick?: () => void
   onHintergrund: () => void
   onEinladung: () => void
   /** Öffnet die Gruppen-Einstellungen: Allgemein, Mitglieder, Rollen, Hintergrund. */
@@ -113,6 +121,31 @@ export function ChatActionsMenu({
           icon={<Video className="w-4 h-4" />}
           label={t('messenger.videoCall')}
           onClick={tu(aktion.onVideoanruf)}
+        />
+      )}
+      {/* Anruf und Augenblick standen bis 27.10.2026 als eigene Knöpfe im Kopf.
+          Dort nahmen sie dem Namen den Platz; hier bleiben sie erreichbar. */}
+      {aktion.onSprachanruf && (
+        <Blatteintrag
+          icon={<Phone className="w-4 h-4" />}
+          label={t('messenger.startVoiceCall')}
+          onClick={tu(aktion.onSprachanruf)}
+        />
+      )}
+      {aktion.onGruppenanruf && (
+        <Blatteintrag
+          icon={<Phone className="w-4 h-4" />}
+          label={t('messenger.startGroupCall')}
+          hinweis={aktion.onGruppenanruf.erlaubt ? undefined : t('messenger.noStartCallRight')}
+          disabled={!aktion.onGruppenanruf.erlaubt}
+          onClick={tu(aktion.onGruppenanruf.onStarten)}
+        />
+      )}
+      {aktion.onAugenblick && (
+        <Blatteintrag
+          icon={<Camera className="w-4 h-4" />}
+          label={t('messenger.moment.take')}
+          onClick={tu(aktion.onAugenblick)}
         />
       )}
       <Blatteintrag

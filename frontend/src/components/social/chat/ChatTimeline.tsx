@@ -2,6 +2,7 @@ import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Lock, Mic, Shield, Sparkles } from 'lucide-react'
 import type { ChatMessage } from '@/components/social/ChatMessageBubble'
+import { parseMessageTimestamp } from '@/services/messengerLocalStore'
 
 export interface PartnerAktivitaet {
   status: 'typing' | 'recording'
@@ -21,42 +22,86 @@ interface ChatTimelineProps {
   zeichneNachricht: (msg: ChatMessage) => React.ReactNode
 }
 
+/**
+ * Der Tag eines Zeitpunkts in **Ortszeit**, als `YYYY-MM-DD`; `''` heißt
+ * „kein brauchbares Datum".
+ *
+ * Die Zeit kommt aus `parseMessageTimestamp` — derselben Normalisierung, nach
+ * der auch sortiert wird. Vorher parste das Label mit `new Date(iso)` und die
+ * Sortierung mit angehängtem `Z`; bei UTC+1/+2 konnten dadurch Tags in anderer
+ * Reihenfolge stehen, als die Trenner behaupteten.
+ */
+export function tagVonZeit(zeit: number): string {
+  if (!Number.isFinite(zeit) || zeit <= 0) return ''
+  const d = new Date(zeit)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function tagesSchluessel(iso: string | null | undefined): string {
+  return tagVonZeit(parseMessageTimestamp(iso))
+}
+
 /** „Heute", „Gestern" oder das Datum in der Sprache der Oberfläche. */
 export function formatChatDateBadge(
   isoDateString: string,
   t: (schluessel: string) => string,
   sprache: string,
+  jetzt: Date = new Date(),
 ): string {
-  try {
-    const d = new Date(isoDateString)
-    if (isNaN(d.getTime())) return ''
-    const now = new Date()
+  const zeit = parseMessageTimestamp(isoDateString)
+  const tag = tagVonZeit(zeit)
+  if (!tag) return ''
 
-    const isToday =
-      d.getDate() === now.getDate() &&
-      d.getMonth() === now.getMonth() &&
-      d.getFullYear() === now.getFullYear()
-    if (isToday) return t('messenger.today')
+  if (tag === tagVonZeit(jetzt.getTime())) return t('messenger.today')
 
-    const yesterday = new Date(now)
-    yesterday.setDate(now.getDate() - 1)
-    const isYesterday =
-      d.getDate() === yesterday.getDate() &&
-      d.getMonth() === yesterday.getMonth() &&
-      d.getFullYear() === yesterday.getFullYear()
-    if (isYesterday) return t('messenger.yesterday')
+  // Kalendertag, nicht „minus 24 Stunden": sonst fällt der Vortag an einer
+  // Zeitumstellung aus.
+  const gestern = new Date(jetzt.getTime())
+  gestern.setDate(gestern.getDate() - 1)
+  if (tag === tagVonZeit(gestern.getTime())) return t('messenger.yesterday')
 
-    const isSameYear = d.getFullYear() === now.getFullYear()
-    // Die Sprache kommt von i18next, nicht fest aus dem Code: sonst stünde im
-    // englischen Messenger ein deutsches Datum.
-    return d.toLocaleDateString(sprache, {
-      day: 'numeric',
-      month: 'long',
-      ...(isSameYear ? {} : { year: 'numeric' }),
-    })
-  } catch {
-    return ''
-  }
+  const d = new Date(zeit)
+  const isSameYear = d.getFullYear() === jetzt.getFullYear()
+  // Kurz wie in der Vorschau: „14.11." statt „14. November". Im Englischen
+  // entscheidet die Sprache über die Reihenfolge.
+  return new Intl.DateTimeFormat(sprache, {
+    day: '2-digit',
+    month: '2-digit',
+    ...(isSameYear ? {} : { year: 'numeric' }),
+  }).format(d)
+}
+
+/**
+ * Welche Zeile einen Tagestrenner trägt, in der Reihenfolge des Verlaufs.
+ *
+ * `null` heißt „kein Trenner". Gezählt wird jede Zeile mit brauchbarem Datum —
+ * auch eine System- oder Funkenzeile. Vorher hing der Vergleich an der
+ * vorherigen Nachricht: begann ein Tag mit einer Systemzeile, blieb er ganz
+ * ohne Datum.
+ */
+export function tagesTrenner(nachrichten: readonly { createdAt?: string | null }[]): (string | null)[] {
+  let letzter: string | null = null
+  return nachrichten.map((msg) => {
+    const tag = tagesSchluessel(msg.createdAt)
+    if (!tag) return null
+    const wechsel = tag !== letzter
+    letzter = tag
+    return wechsel ? tag : null
+  })
+}
+
+/** Ein Tagesabschnitt: dünne Linie, Datum als Pille in der Mitte. */
+function TagesTrenner({ text }: { text: string }) {
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <span className="h-px flex-1 bg-outline-variant/30" />
+      <span className="px-3.5 py-1 rounded-full text-label-sm font-semibold bg-surface-container/90 text-on-surface-variant backdrop-blur-md border border-outline-variant/30 shadow-sm">
+        {text}
+      </span>
+      <span className="h-px flex-1 bg-outline-variant/30" />
+    </div>
+  )
 }
 
 /** Der Nachrichtenverlauf des offenen Chats. */
@@ -71,14 +116,17 @@ export function ChatTimeline({
   zeichneNachricht,
 }: ChatTimelineProps) {
   const { t, i18n } = useTranslation()
+  // Ein Durchgang für alle Tage; die Zeile selbst weiß dann nur noch, ob sie
+  // einen Trenner trägt.
+  const tagesFolge = tagesTrenner(nachrichten)
 
   return (
     <div
       ref={scrollRef}
-      // Das obere Polster muss die schwebende Kopfzeile freihalten. Am
-      // Telefon ist sie 44 px hoch (Trefffläche), am Zeigergerät 32 px; mit
-      // einem festen pt-12 verdeckte sie dort die ersten Zeilen des Verlaufs.
-      className="flex-1 overflow-y-auto p-4 pt-16 sm:pt-12 space-y-3 relative z-1"
+      // Die Kopfleiste liegt jetzt im Fluss; der Verlauf beginnt direkt
+      // darunter. Das frühere `pt-16 sm:pt-12` hielt eine schwebende Kopfzeile
+      // frei und ließ am Telefon einen leeren Streifen stehen.
+      className="flex-1 overflow-y-auto p-4 space-y-3 relative z-1"
     >
       <div className="py-1 text-center">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high/60 border border-outline-variant/30 text-label-sm text-on-surface-variant shadow-2xs">
@@ -113,18 +161,25 @@ export function ChatTimeline({
       )}
 
       {nachrichten.map((msg, idx) => {
+        const tagesText = tagesFolge[idx]
+          ? formatChatDateBadge(msg.createdAt, t, i18n.language)
+          : null
+
         // Eine Systemzeile ist keine Nachricht: sie hat keinen Absender, keine
         // Quittung und kein Kontextmenü. In der Sprechblase gerendert sah sie
         // aus, als hätte das Gegenüber sie geschrieben — bei einer Meldung über
         // die Sicherheit dieses Gesprächs die denkbar schlechteste Verwechslung.
         if (msg.isSystem) {
           return (
-            <div key={msg.id} className="py-1 text-center">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high/60 border border-outline-variant/30 text-label-sm text-on-surface-variant shadow-2xs">
-                <Shield className="w-3 h-3 text-status-warning shrink-0" />
-                <span>{msg.text}</span>
+            <React.Fragment key={msg.id}>
+              {tagesText && <TagesTrenner text={tagesText} />}
+              <div className="py-1 text-center">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high/60 border border-outline-variant/30 text-label-sm text-on-surface-variant shadow-2xs">
+                  <Shield className="w-3 h-3 text-status-warning shrink-0" />
+                  <span>{msg.text}</span>
+                </div>
               </div>
-            </div>
+            </React.Fragment>
           )
         }
 
@@ -134,37 +189,31 @@ export function ChatTimeline({
         if (msg.funkenRettung) {
           const count = msg.funkenRettung.verloren
           return (
-            <div key={msg.id} className="py-1 text-center" data-funken-rettung="">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-status-warning/10 border border-status-warning/30 text-label-sm text-on-surface-variant shadow-2xs">
-                <Sparkles className="w-3 h-3 text-status-warning shrink-0" />
-                <span>
-                  {msg.isSelf
-                    ? t('messenger.streak.restoredSelf', { count })
-                    : t('messenger.streak.restoredOther', { count, name: msg.senderName || '' })}
-                </span>
+            <React.Fragment key={msg.id}>
+              {tagesText && <TagesTrenner text={tagesText} />}
+              <div className="py-1 text-center" data-funken-rettung="">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-status-warning/10 border border-status-warning/30 text-label-sm text-on-surface-variant shadow-2xs">
+                  <Sparkles className="w-3 h-3 text-status-warning shrink-0" />
+                  <span>
+                    {msg.isSelf
+                      ? t('messenger.streak.restoredSelf', { count })
+                      : t('messenger.streak.restoredOther', { count, name: msg.senderName || '' })}
+                  </span>
+                </div>
               </div>
-            </div>
+            </React.Fragment>
           )
         }
 
-        const datum = formatChatDateBadge(msg.createdAt, t, i18n.language)
-        const datumDavor = idx > 0 ? formatChatDateBadge(nachrichten[idx - 1].createdAt, t, i18n.language) : null
-
         return (
           <React.Fragment key={msg.id}>
-            {datum && datum !== datumDavor && (
-              <div className="flex justify-center my-3 pointer-events-none">
-                <span className="px-3.5 py-1 rounded-full text-label-sm font-semibold bg-surface-container/90 text-on-surface-variant backdrop-blur-md border border-outline-variant/30 shadow-sm">
-                  {datum}
-                </span>
-              </div>
-            )}
+            {tagesText && <TagesTrenner text={tagesText} />}
 
             {trennerId !== null && msg.id === trennerId && (
               <div className="flex items-center gap-2 my-3">
                 <span className="h-px flex-1 bg-primary/30" />
                 <span className="text-label-sm font-semibold text-primary uppercase tracking-wide">
-                  Neue Nachrichten
+                  {t('messenger.newMessages')}
                 </span>
                 <span className="h-px flex-1 bg-primary/30" />
               </div>

@@ -8076,7 +8076,9 @@
     "searchInMessages": "„{{query}}“ in Nachrichten suchen",
     "inviteNoPanelUrl": "Die Panel-Adresse ist nicht konfiguriert; der Einladungslink kann nicht erzeugt werden.",
     "showInviteLink": "Link anzeigen",
-    "hideInviteLink": "Link ausblenden"
+    "hideInviteLink": "Link ausblenden",
+    "pinnedLabel": "Angeheftet",
+    "newMessages": "Neue Nachrichten"
   },
   "databaseManager": {
     "subtitle": "Verwalte und bearbeite die PostgreSQL-Datenbanken dieses Servers.",

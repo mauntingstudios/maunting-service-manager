@@ -21,11 +21,13 @@ export function ChatPinnedBar({ text, onOeffnen, onLoesen }: ChatPinnedBarProps)
     <button
       type="button"
       onClick={onOeffnen}
-      className="absolute top-[4.25rem] sm:top-14 left-3 right-3 z-20 min-h-11 px-3 py-2 flex items-center gap-2.5 rounded-xl bg-surface-container-high/90 backdrop-blur-md border border-outline-variant/30 shadow-sm text-left"
+      className="mx-3 mb-1 mt-2 flex min-h-11 shrink-0 items-center gap-2.5 rounded-xl border border-outline-variant/30 bg-surface-container-high/90 px-3 py-2 text-left shadow-sm"
     >
       <Pin className="w-3.5 h-3.5 text-primary shrink-0" />
       <span className="min-w-0 flex-1">
-        <span className="block text-label-sm font-semibold text-primary">Angeheftet</span>
+        <span className="block text-label-sm font-semibold text-primary">
+          {t('messenger.pinnedLabel')}
+        </span>
         <span className="block text-label-sm text-on-surface-variant truncate">{text}</span>
       </span>
       {onLoesen && (

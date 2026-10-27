@@ -138,6 +138,26 @@ describe('ChatActionsMenu', () => {
     fireEvent.click(screen.getByText(i18n.t('messenger.deleteGroup')))
     expect(reihenfolge).toEqual(['schliessen', 'loeschen'])
   })
+
+  it('hält Sprach- und Videoanruf sowie den Augenblick erreichbar', () => {
+    // Sie standen bis 27.10.2026 als eigene Knöpfe im Kopf und nahmen dort dem
+    // Namen den Platz. Erreichbar bleiben sie im Menü.
+    menue({
+      kontakt: { istFreund: true, blockiert: false },
+      onSprachanruf: vi.fn(),
+      onAugenblick: vi.fn(),
+    })
+    expect(zeigt('messenger.videoCall')).toBe(true)
+    expect(zeigt('messenger.startVoiceCall')).toBe(true)
+    expect(zeigt('messenger.moment.take')).toBe(true)
+  })
+
+  it('sperrt den Gruppenanruf ohne Recht und nennt den Grund', () => {
+    menue({ gruppe: gruppe({}), onGruppenanruf: { erlaubt: false, onStarten: vi.fn() } })
+    const eintrag = screen.getByText(i18n.t('messenger.startGroupCall')).closest('button')!
+    expect(eintrag).toBeDisabled()
+    expect(eintrag).toHaveTextContent(i18n.t('messenger.noStartCallRight'))
+  })
 })
 
 describe('ChatPinnedBar', () => {
@@ -157,8 +177,15 @@ describe('ChatPinnedBar', () => {
 })
 
 describe('ChatTimeline', () => {
-  const heute = new Date()
-  const gestern = new Date(heute.getTime() - 24 * 3600 * 1000)
+  /** Ein fester Vormittag: DST-fest, egal wann der Test läuft. */
+  const mittag = (tageZurueck: number): Date => {
+    const d = new Date()
+    d.setHours(12, 0, 0, 0)
+    d.setDate(d.getDate() - tageZurueck)
+    return d
+  }
+  const heute = mittag(0)
+  const gestern = mittag(1)
   const nachricht = (id: number, datum: Date, teil: Partial<ChatMessage> = {}): ChatMessage => ({
     id,
     senderId: 2,
@@ -189,10 +216,28 @@ describe('ChatTimeline', () => {
     zeichne([nachricht(1, gestern), nachricht(2, gestern), nachricht(3, heute)], 3)
     expect(screen.getAllByText(i18n.t('messenger.yesterday'))).toHaveLength(1)
     expect(screen.getAllByText(i18n.t('messenger.today'))).toHaveLength(1)
-    const neu = screen.getByText('Neue Nachrichten')
+    const neu = screen.getByText(i18n.t('messenger.newMessages'))
     // Der Trenner steht vor Nachricht 3, nicht vor 2.
     expect(neu.compareDocumentPosition(screen.getByText('Nachricht 3')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(neu.compareDocumentPosition(screen.getByText('Nachricht 2')) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+
+  it('zeigt den Tag auch dann, wenn er mit einer Systemzeile beginnt', () => {
+    // Bis 27.10.2026 verbrauchte die Systemzeile den Tagesvergleich, ohne
+    // selbst ein Datum zu tragen: der ganze Tag stand ohne Trenner da.
+    zeichne([
+      nachricht(1, gestern),
+      nachricht(2, heute, { isSystem: true, text: 'Schlüssel geändert' }),
+      nachricht(3, heute),
+    ])
+    expect(screen.getAllByText(i18n.t('messenger.today'))).toHaveLength(1)
+    expect(screen.getAllByText(i18n.t('messenger.yesterday'))).toHaveLength(1)
+  })
+
+  it('lässt eine Zeile ohne brauchbares Datum ohne Trenner', () => {
+    zeichne([nachricht(1, heute, { createdAt: 'kein-datum' }), nachricht(2, heute)])
+    // Die zweite Zeile bekommt den Trenner, weil der Tag davor unbekannt war.
+    expect(screen.getAllByText(i18n.t('messenger.today'))).toHaveLength(1)
   })
 
   it('zeichnet eine Systemzeile nie als Sprechblase', () => {
