@@ -21,7 +21,7 @@ export function ChatPinnedBar({ text, onOeffnen, onLoesen }: ChatPinnedBarProps)
     <button
       type="button"
       onClick={onOeffnen}
-      className="mx-3 mb-1 mt-2 flex min-h-11 shrink-0 items-center gap-2.5 rounded-xl border border-outline-variant/30 bg-surface-container-high/90 px-3 py-2 text-left shadow-sm"
+      className="relative mx-3 mb-1 mt-2 flex min-h-11 shrink-0 items-center gap-2.5 rounded-xl border border-outline-variant/30 bg-surface-container-high/90 px-3 py-2 text-left shadow-sm"
     >
       <Pin className="w-3.5 h-3.5 text-primary shrink-0" />
       <span className="min-w-0 flex-1">

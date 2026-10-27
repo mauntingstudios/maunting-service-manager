@@ -126,7 +126,7 @@ export function ChatTimeline({
       // Die Kopfleiste liegt jetzt im Fluss; der Verlauf beginnt direkt
       // darunter. Das frühere `pt-16 sm:pt-12` hielt eine schwebende Kopfzeile
       // frei und ließ am Telefon einen leeren Streifen stehen.
-      className="flex-1 overflow-y-auto p-4 space-y-3 relative z-1"
+      className="flex-1 overflow-y-auto p-4 space-y-3 relative"
     >
       <div className="py-1 text-center">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high/60 border border-outline-variant/30 text-label-sm text-on-surface-variant shadow-2xs">

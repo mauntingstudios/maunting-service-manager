@@ -2823,7 +2823,7 @@ function MessengerSeite() {
                   Inhalt bis an den Rand — auf einem iPhone lag die Eingabeleiste
                   damit unter dem Home-Balken, und jeder Griff dorthin wischte
                   die App weg, statt zu tippen. */}
-              <div className="p-2.5 pb-[calc(0.625rem+var(--msm-unten-sicher))] border-t border-outline-variant/20 bg-surface-container-low relative z-1">
+              <div className="p-2.5 pb-[calc(0.625rem+var(--msm-unten-sicher))] border-t border-outline-variant/20 bg-surface-container-low relative">
                 {activeContact && isBlocked(activeContact.userId) ? (
                   <BlockedNotice onAufheben={() => void unblockUser(activeContact.userId)} />
                 ) : aufnahme.laeuft ? (

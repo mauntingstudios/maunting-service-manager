@@ -53,7 +53,7 @@ export function VerlaufSuchleiste({
 
   return (
     <>
-      <div className="shrink-0 px-2 py-2 border-b border-outline-variant/20 bg-surface-container-lowest flex items-center gap-1">
+      <div className="relative shrink-0 px-2 py-2 border-b border-outline-variant/20 bg-surface-container-lowest flex items-center gap-1">
         <span className="w-9 h-9 flex items-center justify-center text-on-surface-variant shrink-0" aria-hidden="true">
           <Search className="w-4 h-4" />
         </span>
@@ -87,7 +87,7 @@ export function VerlaufSuchleiste({
       {/* Die Navigation. Liegt als eigene Leiste unmittelbar über der Eingabe
           und damit über der Tastatur — oben käme man mit dem Daumen nicht hin. */}
       {(frage.trim() || gesperrt) && (
-        <div className="shrink-0 px-3 py-1.5 border-t border-outline-variant/20 bg-surface-container-low flex items-center justify-between gap-2 text-xs">
+        <div className="relative shrink-0 px-3 py-1.5 border-t border-outline-variant/20 bg-surface-container-low flex items-center justify-between gap-2 text-xs">
           {gesperrt ? (
             <span className="flex items-center gap-1.5 text-on-surface-variant">
               <Lock className="w-3.5 h-3.5" />

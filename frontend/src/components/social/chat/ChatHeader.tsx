@@ -28,7 +28,7 @@ interface ChatHeaderProps {
 // h-8 w-8 fest, und weil die Klassen nur aneinandergehängt werden, gewinnt im
 // CSS die feste Größe gegen jede mitgegebene. Am Telefon braucht es 44 px.
 const rundknopf =
-  'flex items-center justify-center rounded-md h-11 w-11 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high backdrop-blur-md border border-outline-variant/30 shadow-sm'
+  'flex items-center justify-center rounded-md h-11 w-11 sm:h-8 sm:w-8 bg-surface-container-high/85 hover:bg-surface-container-high backdrop-blur-md border border-outline-variant/30 shadow-sm'
 
 /**
  * Die Kopfleiste des offenen Chats.
