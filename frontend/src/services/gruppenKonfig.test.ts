@@ -83,6 +83,7 @@ import {
   type Gruppenzustand,
 } from './gruppenKonfig'
 import { signiereNutzlast } from './nutzlastSignatur'
+import { gruppenSignaturKontext } from './gruppenSignatur'
 import type { GruppenKontext } from './gruppenSchluessel'
 
 const ANNA = 101
@@ -173,7 +174,7 @@ describe('gruppenKonfig', () => {
   })
 
   it('verwirft einen Block mit gefälschter Unterschrift', async () => {
-    const echt = await signiereNutzlast(MAILBOX, ANNA, {
+    const echt = await signiereNutzlast(gruppenSignaturKontext(KONTEXT.groupId), ANNA, {
       v: KONFIG_FORMAT,
       rollen: [AUFSICHT],
       zuordnung: {},
@@ -189,7 +190,7 @@ describe('gruppenKonfig', () => {
   it('verwirft einen echt signierten Block von jemandem ohne Befugnis', async () => {
     // Berts Unterschrift ist gültig — er durfte nur nicht.
     ich = await neuesGeraet(BERT, 'berts-handy')
-    const vonBert = await signiereNutzlast(MAILBOX, BERT, {
+    const vonBert = await signiereNutzlast(gruppenSignaturKontext(KONTEXT.groupId), BERT, {
       v: KONFIG_FORMAT,
       rollen: [AUFSICHT],
       zuordnung: { custom_1: [BERT] },
@@ -226,7 +227,7 @@ describe('gruppenKonfig', () => {
   it('fasst eine unbekannte Formatnummer nicht an', async () => {
     // Von einem neueren Gerät. Würde es hier angenommen, schriebe das ältere
     // Gerät beim nächsten Speichern alles zurück, was es nicht verstanden hat.
-    legeAb(await signiereNutzlast(MAILBOX, ANNA, { v: 99, rollen: [], zuordnung: {} }))
+    legeAb(await signiereNutzlast(gruppenSignaturKontext(KONTEXT.groupId), ANNA, { v: 99, rollen: [], zuordnung: {} }))
 
     const gelesen = await ladeGruppenzustand(KONTEXT, NUR_ANNA)
 
@@ -235,7 +236,7 @@ describe('gruppenKonfig', () => {
 
   it('verwirft eine Zuordnung, die keine Kontenliste ist', async () => {
     legeAb(
-      await signiereNutzlast(MAILBOX, ANNA, {
+      await signiereNutzlast(gruppenSignaturKontext(KONTEXT.groupId), ANNA, {
         v: KONFIG_FORMAT,
         rollen: [AUFSICHT],
         zuordnung: { custom_1: ['Bert'] },
@@ -354,7 +355,7 @@ describe('gruppenKonfig', () => {
      * Name ist eine fehlende Überschrift. Den ganzen Block deswegen
      * wegzuwerfen, nähme der Gruppe ihre Rollen mit.
      */
-    const beglaubigt = await signiereNutzlast(MAILBOX, ANNA, {
+    const beglaubigt = await signiereNutzlast(gruppenSignaturKontext(KONTEXT.groupId), ANNA, {
       v: KONFIG_FORMAT,
       name: 42,
       beschreibung: { boeses: 'objekt' },
@@ -375,7 +376,7 @@ describe('gruppenKonfig', () => {
   })
 
   it('kürzt einen überlangen Namen, statt ihn zu übernehmen', async () => {
-    const beglaubigt = await signiereNutzlast(MAILBOX, ANNA, {
+    const beglaubigt = await signiereNutzlast(gruppenSignaturKontext(KONTEXT.groupId), ANNA, {
       v: KONFIG_FORMAT,
       name: 'x'.repeat(500),
       beschreibung: 'y'.repeat(1000),

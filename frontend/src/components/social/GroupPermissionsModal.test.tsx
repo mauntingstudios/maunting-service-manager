@@ -180,6 +180,30 @@ describe('GroupPermissionsModal — Allgemein', () => {
     )
   })
 
+  it('lässt das Speichern zu, während die Gruppeninfo noch geladen wird', async () => {
+    // Der erste Abruf holt den Gruppenschluessel und dauert dadurch einige
+    // Sekunden. Wer in dieser Zeit tippt, muss nicht warten, bis der Ladevorgang
+    // fertig ist — sonst waere der Knopf grundlos gesperrt.
+    infoDienste.ladeGruppenInfo.mockReturnValueOnce(new Promise(() => {}) as never)
+    render(
+      <GroupPermissionsModal
+        open
+        onOpenChange={() => {}}
+        group={gruppe()}
+        currentUserId={1}
+        onGroupUpdated={vi.fn()}
+      />,
+    )
+
+    const feld = await screen.findByLabelText(i18n.t('social.groupRoles.generalName'))
+    fireEvent.change(feld, { target: { value: 'Während des Ladens' } })
+
+    const knopf = await screen.findByRole('button', {
+      name: i18n.t('social.groupRoles.generalSave'),
+    })
+    expect(knopf).not.toBeDisabled()
+  })
+
   it('sperrt die Felder ohne edit_group', async () => {
     const ohneRecht = {
       ...gruppe(),

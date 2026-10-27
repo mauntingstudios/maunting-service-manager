@@ -58,6 +58,7 @@ import {
   sendFriendRequest,
   getGroupInviteInfo,
   getChatEphemeral,
+  setChatEphemeral,
 } from '@/api/social'
 // Chat-Kennungen werden lokal aus peerId/groupId gebildet.
 import { maxAnhangBytes } from '@/services/medienKrypto'
@@ -1227,29 +1228,31 @@ function MessengerSeite() {
     }
     const vorher = verfallStand(blindMailboxId)
     const jetzt = new Date().toISOString()
+    const typ = konversation.chatType
+    const chatId = konversation.chatId
     setVerfallSekunden(sekunden)
     setzeVerfallsfrist(blindMailboxId, sekunden, jetzt)
     setVerfallOffen(false)
     setVerfallVon(sekunden > 0 ? currentUserId : null)
     try {
-      // Seit 10/2026 als dauerhafte Wirkung: ohne Netz wartet sie in der
-      // Outbox, statt die Umstellung hier zurückzunehmen. Zurückgenommen wird
-      // nur, was der Server endgültig abgelehnt hat.
-      await sendeWirkung({
-        typ: 'retention',
-        felder: {
-          type: 'retention',
-          dauer: sekunden,
-          actor_id: currentUserId,
-          zeitpunkt: jetzt,
-        },
-        ruecknahme: {
-          art: 'verfall',
-          mailbox: blindMailboxId,
-          vorher: { sekunden: vorher.sekunden, stand: vorher.stand },
-          nachher: { sekunden, stand: jetzt },
-        },
-      })
+      /*
+       * Der Server ist die Wahrheit — auch in einer Gruppe.
+       *
+       * Bis hierher trug nur die **Wirkung** die Frist zum Gegenüber, und der
+       * Server erfuhr sie erst, wenn die Gegenseite die Wirkung anwandte. In
+       * einer Gruppe kam das rarely vor: die Mitglieder sind nicht alle online,
+       * und niemand öffnet den Chat, nur um eine Frist zu übernehmen. Folge
+       * war zweierlei: die Auswahl beim Setzenden drehte sich beim nächsten
+       * Abruf zurück (die Seite brachte wieder den Serverstand 0), und die
+       * übrigen Mitglieder erfuhren nichts.
+       *
+       * Der Server setzt die Frist jetzt selbst und meldet sie per Ereignis an
+       * alle Mitglieder. Die Wirkung bleibt nur der Weg für den Fall, dass
+       * gar kein Netz da ist.
+       */
+      if (typ && chatId) {
+        await setChatEphemeral(typ, chatId, sekunden)
+      }
       zeigeSystemzeile(
         sekunden > 0
           ? t('messenger.retentionSetSelf', {
@@ -1259,11 +1262,40 @@ function MessengerSeite() {
           : t('messenger.retentionOffSelf', { name: t('messenger.retentionYou') }),
       )
     } catch (fehler) {
-      if (!istAbweisung(fehler)) return
-      setVerfallSekunden(vorher.sekunden)
-      setzeVerfallsfrist(blindMailboxId, vorher.sekunden, vorher.stand || jetzt)
-      setVerfallVon(vorher.sekunden > 0 ? verfallVon : null)
-      toast.error(t('messenger.actionRejected'))
+      const zuruecknehmen = () => {
+        setVerfallSekunden(vorher.sekunden)
+        setzeVerfallsfrist(blindMailboxId, vorher.sekunden, vorher.stand || jetzt)
+        setVerfallVon(vorher.sekunden > 0 ? verfallVon : null)
+      }
+      if (istAbweisung(fehler)) {
+        zuruecknehmen()
+        toast.error(t('messenger.actionRejected'))
+        return
+      }
+      // Kein Netz: die Umstellung wartet in der Outbox, statt sie hier
+      // zurückzunehmen. Zurückgenommen wird nur, was der Server endgültig
+      // abgelehnt hat.
+      try {
+        await sendeWirkung({
+          typ: 'retention',
+          felder: {
+            type: 'retention',
+            dauer: sekunden,
+            sekunden,
+            actor_id: currentUserId,
+            zeitpunkt: jetzt,
+          },
+          ruecknahme: {
+            art: 'verfall',
+            mailbox: blindMailboxId,
+            vorher: { sekunden: vorher.sekunden, stand: vorher.stand },
+            nachher: { sekunden, stand: jetzt },
+          },
+        })
+      } catch (zweite) {
+        zuruecknehmen()
+        if (istAbweisung(zweite)) toast.error(t('messenger.actionRejected'))
+      }
     }
   }
 

@@ -172,6 +172,12 @@ const api = vi.hoisted(() => ({
     ephemeral_ttl_seconds: 0,
     ephemeral_enabled_by_user_id: null,
   })),
+  setChatEphemeral: vi.fn(async (_typ: string, _id: number, sekunden: number) => ({
+    chat_type: 'direct',
+    chat_id: 55,
+    ephemeral_ttl_seconds: sekunden,
+    ephemeral_enabled_by_user_id: 1,
+  })),
   sendTypingSignal: vi.fn(async () => ({ ok: true })),
   getFriendRequests: vi.fn(async () => ({ incoming: [], outgoing: [] })),
   acceptFriendRequest: vi.fn(async () => ({ ok: true, status: 'accepted', message: '' })),
@@ -485,7 +491,20 @@ describe('Messenger im Einheits-Transport', () => {
     expect(screen.getAllByText(zeile)).toHaveLength(1)
   })
 
+  it('setzt die Verfallsfrist beim Server, damit sie allen Mitgliedern gilt', async () => {
+    await oeffneChat()
+
+    fireEvent.click(await screen.findByLabelText(i18n.t('messenger.moreChatSettings')))
+    fireEvent.click(await screen.findByText(i18n.t('messenger.disappearingMessages')))
+    fireEvent.click(await screen.findByText(i18n.t('messenger.retention.h24')))
+
+    await waitFor(() =>
+      expect(api.setChatEphemeral).toHaveBeenCalledWith('direct', 55, 86400),
+    )
+  })
+
   it('nimmt eine mit 403 abgewiesene Verfallsfrist zurueck und sagt es', async () => {
+    api.setChatEphemeral.mockRejectedValueOnce({ status: 403 })
     conversation.sendeWirkung.mockRejectedValueOnce({ status: 403 })
     await oeffneChat()
 
@@ -504,6 +523,8 @@ describe('Messenger im Einheits-Transport', () => {
       name: new RegExp(i18n.t('messenger.disappearingMessages')),
     })
     expect(within(eintrag).getByText(i18n.t('messenger.retention.off'))).toBeInTheDocument()
-    expect(conversation.sendeWirkung).toHaveBeenCalledTimes(1)
+    // Der Server hat abgelehnt; eine Wirkung zusätzlich zu schicken wäre
+    // zwecklos — sie würde denselben Fehler nur an die Gegenseite weitergeben.
+    expect(conversation.sendeWirkung).not.toHaveBeenCalled()
   })
 })

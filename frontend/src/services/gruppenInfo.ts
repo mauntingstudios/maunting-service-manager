@@ -32,8 +32,12 @@ import {
   verschluesseleFuerGruppe,
   type GruppenKontext,
 } from './gruppenSchluessel'
+import {
+  gruppenSignaturKontext,
+  pruefeGruppenSignatur,
+} from './gruppenSignatur'
 import { ladeGruppenzustand } from './gruppenKonfig'
-import { pruefeNutzlast, signiereNutzlast } from './nutzlastSignatur'
+import { signiereNutzlast } from './nutzlastSignatur'
 
 export const INFO_FORMAT = 1
 export const HINTERGRUND_FORMAT = 1
@@ -123,7 +127,7 @@ function alsHintergrund(roh: Record<string, unknown>): GruppenHintergrund | null
 }
 
 function signaturKontext(kontext: GruppenKontext): string {
-  return kontext.blindMailboxId || `group:${kontext.groupId}`
+  return gruppenSignaturKontext(kontext.groupId)
 }
 
 function meldeGeschrieben(
@@ -143,6 +147,7 @@ async function leseBlock(
   kontext: GruppenKontext,
   umschlag: string,
   zweck: 'info' | 'background',
+  darfSchreiben?: (konto: number) => boolean,
 ): Promise<
   | { roh: Record<string, unknown>; vonKonto: number }
   | { art: 'kein-schluessel' | 'unbefugt' | 'unlesbar'; behauptet?: number; grund?: string }
@@ -165,12 +170,16 @@ async function leseBlock(
     return { art: 'unlesbar', grund: 'kein-json' }
   }
 
-  const beleg = await pruefeNutzlast(signaturKontext(kontext), roh)
-  if (beleg.art !== 'geprueft') {
-    return {
-      art: 'unbefugt',
-      behauptet: beleg.art === 'gefaelscht' ? beleg.behauptet : 0,
-    }
+  const beleg = await pruefeGruppenSignatur(roh, signaturKontext(kontext))
+  if (beleg.art === 'gefaelscht') {
+    return { art: 'unbefugt', behauptet: beleg.vonKonto }
+  }
+  // Ein Gerät, das dem Leser unbekannt ist, macht den Block nicht falsch —
+  // aber der Schreibende muss trotzdem berechtigt sein. Zwei Mitglieder, die
+  // ihre Geräte nie freigegeben haben, kennen sich nicht; die Berechtigung
+  // entscheidet, wer den Block überhaupt schreiben darf.
+  if (beleg.art === 'unbekanntesGeraet' && darfSchreiben && !darfSchreiben(beleg.vonKonto)) {
+    return { art: 'unbefugt', behauptet: beleg.vonKonto }
   }
   return { roh, vonKonto: beleg.vonKonto }
 }
@@ -208,7 +217,7 @@ export async function ladeGruppenInfo(
     return alt
   }
 
-  const gelesen = await leseBlock(kontext, antwort.blob, 'info')
+  const gelesen = await leseBlock(kontext, antwort.blob, 'info', darfSchreiben)
   if ('art' in gelesen) {
     return {
       art: gelesen.art,
@@ -245,7 +254,7 @@ export async function ladeGruppenHintergrund(
   const antwort = await getGroupBackground(kontext.groupId)
   if (!antwort || !antwort.blob) return { art: 'leer' }
 
-  const gelesen = await leseBlock(kontext, antwort.blob, 'background')
+  const gelesen = await leseBlock(kontext, antwort.blob, 'background', darfSchreiben)
   if ('art' in gelesen) {
     return {
       art: gelesen.art,
@@ -354,14 +363,25 @@ export async function aendereGruppenInfo(
 ): Promise<Infoschreibung | { art: 'nicht-lesbar'; lesung: InfoLesung }> {
   for (let versuch = 0; versuch < 2; versuch++) {
     const lesung = await ladeGruppenInfo(kontext, darfSchreiben)
-    if (lesung.art !== 'info' && lesung.art !== 'leer') {
+    // Ein Block, den niemand prüfen kann (alte Signatur, fremder Kontext),
+    // wird **überschrieben** statt blockiert: der Server hat das Schreibrecht
+    // geprüft, und der neue Block ersetzt den unlesbaren. Sonst bliebe eine
+    // Gruppe dauerhaft ohne Namen.
+    const unbrauchbar =
+      lesung.art === 'unbefugt' || lesung.art === 'unlesbar'
+    if (lesung.art !== 'info' && lesung.art !== 'leer' && !unbrauchbar) {
       return { art: 'nicht-lesbar', lesung }
     }
     const vorher: GruppenInfo =
       lesung.art === 'info'
         ? lesung.info
         : { v: INFO_FORMAT, name: null, beschreibung: null, logo: null }
-    const revision = lesung.art === 'info' ? lesung.revision : 0
+    const revision =
+      lesung.art === 'info'
+        ? lesung.revision
+        : unbrauchbar
+          ? lesung.revision
+          : 0
 
     const ergebnis = await schreibeGruppenInfo(kontext, aendere(vorher), revision)
     if (ergebnis.art !== 'konflikt') return ergebnis
@@ -377,14 +397,21 @@ export async function aendereGruppenHintergrund(
 ): Promise<Hintergrundschreibung | { art: 'nicht-lesbar'; lesung: HintergrundLesung }> {
   for (let versuch = 0; versuch < 2; versuch++) {
     const lesung = await ladeGruppenHintergrund(kontext, darfSchreiben)
-    if (lesung.art !== 'hintergrund' && lesung.art !== 'leer') {
+    const unbrauchbar =
+      lesung.art === 'unbefugt' || lesung.art === 'unlesbar'
+    if (lesung.art !== 'hintergrund' && lesung.art !== 'leer' && !unbrauchbar) {
       return { art: 'nicht-lesbar', lesung }
     }
     const vorher: GruppenHintergrund =
       lesung.art === 'hintergrund'
         ? lesung.hintergrund
         : { v: HINTERGRUND_FORMAT, preset: null, dim: 25, bild: null }
-    const revision = lesung.art === 'hintergrund' ? lesung.revision : 0
+    const revision =
+      lesung.art === 'hintergrund'
+        ? lesung.revision
+        : unbrauchbar
+          ? lesung.revision
+          : 0
 
     const ergebnis = await schreibeGruppenHintergrund(
       kontext,

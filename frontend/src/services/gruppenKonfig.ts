@@ -36,7 +36,11 @@ import {
   verschluesseleFuerGruppe,
   type GruppenKontext,
 } from './gruppenSchluessel'
-import { pruefeNutzlast, signiereNutzlast } from './nutzlastSignatur'
+import {
+  gruppenSignaturKontext,
+  pruefeGruppenSignatur,
+} from './gruppenSignatur'
+import { signiereNutzlast } from './nutzlastSignatur'
 
 /** Formatnummer des Blockinhalts. Siehe `liesGruppenzustand`. */
 export const KONFIG_FORMAT = 1
@@ -225,11 +229,11 @@ export async function ladeGruppenzustand(
   // und nicht etwa geduldet: anders als bei einer Nachricht ist „unsigniert"
   // hier genau der Angriff — jedes Mitglied hält den Gruppenschlüssel und
   // könnte sich sonst selbst jedes Recht eintragen.
-  const beleg = await pruefeNutzlast(kontext.blindMailboxId || `group:${kontext.groupId}`, roh)
-  if (beleg.art !== 'geprueft') {
+  const beleg = await pruefeGruppenSignatur(roh, gruppenSignaturKontext(kontext.groupId))
+  if (beleg.art === 'gefaelscht') {
     return {
       art: 'unbefugt',
-      behauptet: beleg.art === 'gefaelscht' ? beleg.behauptet : 0,
+      behauptet: beleg.vonKonto,
       revision: antwort.revision,
     }
   }
@@ -267,7 +271,7 @@ export async function schreibeGruppenzustand(
   // wandert, soll an dieser Stelle aufgezählt sein. Ein durchgereichtes Objekt
   // nähme irgendwann ein Feld mit, das niemand hier haben wollte — und es
   // stünde dann unterschrieben und verschlüsselt auf dem Server.
-  const nutzlast = await signiereNutzlast(kontext.blindMailboxId || `group:${kontext.groupId}`, kontext.eigeneId, {
+  const nutzlast = await signiereNutzlast(gruppenSignaturKontext(kontext.groupId), kontext.eigeneId, {
     v: KONFIG_FORMAT,
     name: zustand.name ?? null,
     beschreibung: zustand.beschreibung ?? null,

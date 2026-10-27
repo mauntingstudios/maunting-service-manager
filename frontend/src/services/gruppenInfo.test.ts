@@ -269,6 +269,23 @@ describe('Gruppeninfo', () => {
     expect((await ladeGruppenInfo(KONTEXT, DARF)).art).toBe('unbefugt')
   })
 
+  it('überschreibt einen Block, den niemand prüfen kann', async () => {
+    // Ein Block mit einer Signatur, die niemand nachprüfen kann, wäre sonst
+    // für alle Zeit vorhanden: die Gruppe behielte ihren alten Namen und
+    // liesse sich nicht mehr ändern.
+    legeInfoAb({ v: INFO_FORMAT, name: 'Alt', von_konto: 999, von_geraet: 'fremd', sig: 'kaputt' })
+
+    const ergebnis = await aendereGruppenInfo(KONTEXT, DARF, (vorher) => ({
+      ...vorher,
+      name: 'Neu',
+    }))
+
+    expect(ergebnis.art).toBe('gespeichert')
+    const gelesen = await ladeGruppenInfo(KONTEXT, DARF)
+    expect(gelesen.art).toBe('info')
+    if (gelesen.art === 'info') expect(gelesen.info.name).toBe('Neu')
+  })
+
   it('meldet einen fehlenden Schlüssel', async () => {
     await schreibeGruppenInfo(KONTEXT, info(), 0)
     schluesselFehlt = true

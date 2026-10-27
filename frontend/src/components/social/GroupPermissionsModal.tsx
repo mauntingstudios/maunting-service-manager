@@ -429,6 +429,8 @@ export function GroupPermissionsModal({
   const [infoSpeichert, setInfoSpeichert] = useState(false)
   const [infoSchmutzig, setInfoSchmutzig] = useState(false)
   const infoLogoInput = useRef<HTMLInputElement>(null)
+  /** Ob hier getippt wurde — dann überschreibt der Ladevorgang nichts. */
+  const infoGetippt = useRef(false)
   const [hintergrundKontext, setHintergrundKontext] = useState<GruppenKontext | null>(null)
 
   const rollenAuswahl: DropdownOption[] = ROLE_OPTION_IDS.map((id) => ({
@@ -571,6 +573,9 @@ export function GroupPermissionsModal({
         if (!kontext) return
         const lesung = await ladeGruppenInfo(kontext)
         if (abgebrochen || lesung.art !== 'info') return
+        // Wer schon getippt hat, behält seinen Text: das Laden des Blocks
+        // dauert beim ersten Mal gut zwei Sekunden.
+        if (infoGetippt.current) return
         setInfoName(lesung.info.name ?? '')
         setInfoBeschreibung(lesung.info.beschreibung ?? '')
         setInfoLogo(lesung.info.logo)
@@ -609,6 +614,7 @@ export function GroupPermissionsModal({
       toast.error(t('messenger.logoFailed'))
       return
     }
+    infoGetippt.current = true
     setInfoLogo(logo)
     setInfoSchmutzig(true)
   }
@@ -637,6 +643,7 @@ export function GroupPermissionsModal({
         description: infoBeschreibung.trim() || null,
         avatar_url: infoLogo,
       })
+      infoGetippt.current = false
       setInfoSchmutzig(false)
       toast.success(t('social.groupRoles.generalSaved'))
     } catch {
@@ -1003,7 +1010,8 @@ export function GroupPermissionsModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="w-[96vw] max-w-5xl xl:max-w-6xl p-0 overflow-hidden bg-surface border-outline-variant/30 flex flex-col max-h-[92vh] sm:max-h-[88vh] shadow-2xl rounded-2xl"
+        overlayClassName="!p-0"
+        className="msm-dialog-vollbild overflow-hidden bg-surface border-outline-variant/30 flex flex-col shadow-2xl"
       >
         {/* Header with generous vertical padding */}
         <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-outline-variant/20 bg-surface-container/70 flex items-center justify-between gap-2 shrink-0">
@@ -1157,7 +1165,7 @@ export function GroupPermissionsModal({
         </div>
 
         {/* Scrollable Tab Content with generous vertical spacing */}
-        <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6">
+        <div className="p-4 sm:p-8 flex-1 overflow-y-auto space-y-6">
           {activeTab === 'general' && (
             <div className="space-y-5">
               <div>
@@ -1169,6 +1177,11 @@ export function GroupPermissionsModal({
                     ? t('social.groupRoles.generalHint')
                     : t('social.groupRoles.generalNoRight')}
                 </p>
+                {infoLaedt && (
+                  <p className="text-xs text-on-surface-variant/70">
+                    {t('social.groupRoles.generalLoading')}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col sm:flex-row gap-5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-4 sm:p-5 shadow-sm">
@@ -1192,7 +1205,7 @@ export function GroupPermissionsModal({
                     type="button"
                     variant="secondary"
                     size="sm"
-                    disabled={!kannInfoSchreiben || infoLaedt}
+                    disabled={!kannInfoSchreiben}
                     onClick={() => infoLogoInput.current?.click()}
                     className="gap-1.5"
                   >
@@ -1204,8 +1217,9 @@ export function GroupPermissionsModal({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      disabled={!kannInfoSchreiben || infoLaedt}
+                      disabled={!kannInfoSchreiben}
                       onClick={() => {
+                        infoGetippt.current = true
                         setInfoLogo(null)
                         setInfoSchmutzig(true)
                       }}
@@ -1220,8 +1234,9 @@ export function GroupPermissionsModal({
                     label={t('social.groupRoles.generalName')}
                     value={infoName}
                     maxLength={64}
-                    disabled={!kannInfoSchreiben || infoLaedt}
+                    disabled={!kannInfoSchreiben}
                     onChange={(e) => {
+                      infoGetippt.current = true
                       setInfoName(e.target.value)
                       setInfoSchmutzig(true)
                     }}
@@ -1231,8 +1246,9 @@ export function GroupPermissionsModal({
                     value={infoBeschreibung}
                     maxLength={256}
                     rows={3}
-                    disabled={!kannInfoSchreiben || infoLaedt}
+                    disabled={!kannInfoSchreiben}
                     onChange={(e) => {
+                      infoGetippt.current = true
                       setInfoBeschreibung(e.target.value)
                       setInfoSchmutzig(true)
                     }}
@@ -1249,7 +1265,7 @@ export function GroupPermissionsModal({
                     type="button"
                     variant="primary"
                     size="sm"
-                    disabled={infoSpeichert || infoLaedt || !infoSchmutzig}
+                    disabled={infoSpeichert || !infoSchmutzig}
                     onClick={() => void handleInfoSpeichern()}
                     className="gap-2 rounded-xl px-4 py-2"
                   >

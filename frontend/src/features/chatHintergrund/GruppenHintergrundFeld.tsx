@@ -33,6 +33,10 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
   const [laedt, setLaedt] = useState(false)
   const [speichert, setSpeichert] = useState(false)
   const dateiFeld = useRef<HTMLInputElement>(null)
+  /** Ob schon jemand eine Vorlage gewählt hat — dann überschreibt der Ladevorgang nichts. */
+  const gewaehlt = useRef(false)
+  /** Ob der Mensch selbst etwas gewählt hat. */
+  const [geaendert, setGeaendert] = useState(false)
   const gruppeId = kontext?.groupId ?? 0
 
   useEffect(() => {
@@ -42,6 +46,10 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
     void ladeGruppenHintergrund(kontext)
       .then((lesung) => {
         if (abgebrochen) return
+        // Wer schon gewählt hat, behält seine Wahl: der Ladevorgang darf sie
+        // nicht überschreiben. Er dauert beim ersten Mal gut zwei Sekunden,
+        // weil der Gruppenschlüssel dann noch geholt werden muss.
+        if (gewaehlt.current) return
         if (lesung.art === 'hintergrund') {
           const roh = lesung.hintergrund
           const bekannt = HINTERGRUND_VORLAGEN.some((v) => v.id === roh.preset)
@@ -78,6 +86,8 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
       toast.error(t('social.wallpaper.tooLarge'))
       return
     }
+    gewaehlt.current = true
+    setGeaendert(true)
     setBild(dataUrl)
     setPreset('custom')
   }
@@ -122,12 +132,21 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
           ? t('social.groupRoles.backgroundHint')
           : t('social.groupRoles.backgroundNoRight')}
       </p>
+      {laedt && (
+        <p className="text-xs text-on-surface-variant/70">
+          {t('social.groupRoles.backgroundLoading')}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <button
           type="button"
-          disabled={!kannAendern || laedt}
-          onClick={zuruecksetzen}
+          disabled={!kannAendern}
+          onClick={() => {
+            gewaehlt.current = true
+            setGeaendert(true)
+            zuruecksetzen()
+          }}
           aria-pressed={preset === null}
           className={`relative p-3 rounded-xl border text-left min-h-20 overflow-hidden transition-all disabled:opacity-60 ${
             preset === null
@@ -151,8 +170,12 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
             <button
               key={vorlage.id}
               type="button"
-              disabled={!kannAendern || laedt}
-              onClick={() => setPreset(vorlage.id)}
+              disabled={!kannAendern}
+              onClick={() => {
+                gewaehlt.current = true
+                setGeaendert(true)
+                setPreset(vorlage.id)
+              }}
               aria-pressed={aktiv}
               className={`relative p-3 rounded-xl border text-left min-h-20 overflow-hidden transition-all disabled:opacity-60 ${
                 aktiv
@@ -194,6 +217,8 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
               size="sm"
               disabled={!kannAendern}
               onClick={() => {
+                gewaehlt.current = true
+                setGeaendert(true)
                 setBild(null)
                 setPreset(null)
               }}
@@ -217,7 +242,7 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
           type="button"
           variant={preset === 'custom' ? 'primary' : 'secondary'}
           size="sm"
-          disabled={!kannAendern || laedt}
+          disabled={!kannAendern}
           onClick={() => dateiFeld.current?.click()}
           className="gap-1.5"
         >
@@ -268,7 +293,7 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
               type="button"
               variant="primary"
               size="sm"
-              disabled={speichert || laedt}
+              disabled={speichert || !kannAendern || (!geaendert && laedt)}
               onClick={() => void speichern()}
               className="gap-2 rounded-xl px-4 py-2"
             >
