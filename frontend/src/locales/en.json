@@ -7315,6 +7315,12 @@
     "wallpaper": {
       "title": "Adjust chat background",
       "description": "Pick a background for your conversations. The cyber grid is the default and gives the best contrast.",
+      "loading": "Loading background …",
+      "applyAll": "Apply to all chats",
+      "applyAllHint": "Sets this background as the default and removes custom backgrounds from individual direct chats.",
+      "applyAllTitle": "Apply to all chats?",
+      "applyAllMessage": "Custom backgrounds of individual direct chats will be removed. The AI area stays unchanged.",
+      "applyAllConfirm": "Apply to all",
       "presets": "Design backgrounds",
       "default": "Default",
       "cyber": "Cyber Grid",
@@ -7337,7 +7343,7 @@
       "dimDark": "Very dark",
       "resetHint": "Reset to the default cyber grid",
       "badType": "Choose a valid image file: JPEG, PNG or WebP.",
-      "tooLarge": "The image is too large. 8 MB is the limit.",
+      "tooLarge": "The image is too large or could not be scaled down enough.",
       "loadFailed": "The image could not be loaded.",
       "saveFailed": "The background could not be saved. The browser's storage is full — usually an oversized custom image."
     },
@@ -7434,9 +7440,37 @@
     },
     "groupRoles": {
       "title": "Group roles & rights",
-      "subtitle_one": "{{group}} · {{count}} member · Role-based rights",
-      "subtitle_other": "{{group}} · {{count}} members · Role-based rights",
+      "subtitle_one": "{{group}} · {{count}} member",
+      "subtitle_other": "{{group}} · {{count}} members",
       "groupFallback": "Group",
+      "tabGeneral": "General",
+      "tabGeneralShort": "General",
+      "tabBackground": "Background",
+      "tabBackgroundShort": "Background",
+      "generalHeading": "Group info",
+      "generalHint": "Name, description and image apply to all members. Roles do not change with them.",
+      "generalNoRight": "You can read the group info, but not change it.",
+      "generalName": "Name",
+      "generalDescription": "Description",
+      "generalLogoChoose": "Choose image",
+      "generalLogoRemove": "Remove image",
+      "generalMembersHint": "{{count}} members. The list is under “Members”.",
+      "generalSave": "Save",
+      "generalSaved": "Group info saved.",
+      "generalSaveFailed": "The group info could not be saved.",
+      "backgroundHeading": "Shared background",
+      "backgroundHint": "This background applies to all members of the group. Custom images are downscaled before encryption.",
+      "backgroundNoRight": "You can see the group background. Only someone with the permission can change it.",
+      "backgroundNone": "None",
+      "backgroundNoneHint": "The global Messenger background applies.",
+      "backgroundOwn": "Custom image",
+      "backgroundChoose": "Choose image",
+      "backgroundReplace": "Different image",
+      "backgroundRemove": "Remove",
+      "backgroundShared": "Visible to all members, encrypted on the server.",
+      "backgroundSave": "Save background",
+      "backgroundSaved": "Group background saved.",
+      "backgroundSaveFailed": "The group background could not be saved.",
       "tabMembers": "Members ({{count}})",
       "tabMembersShort": "Members",
       "tabRoles": "Roles & templates ({{count}})",
@@ -7446,6 +7480,7 @@
       "membersHeading": "Manage group members",
       "membersHint": "Assign roles to members, or remove disruptive participants from the group.",
       "membersLoading": "Loading members …",
+      "inviteAction": "Copy invitation link",
       "participantCount_one": "{{count}} participant",
       "participantCount_other": "{{count}} participants",
       "you": "(You)",
@@ -7577,9 +7612,17 @@
           "title": "Set disappearing messages",
           "desc": "Sets, for the whole group, after how long new messages disappear, or turns this off. The server cannot read the change and therefore cannot check it: every device compares it with the member list it currently knows, and without this right the change has no effect. If that list is out of date, a permitted change can go unheeded there until the list is reloaded, and a right that was just revoked still counts there until then."
         },
+        "edit_group": {
+          "title": "Edit group info",
+          "desc": "Changes the group's name, description and image. Applies to all members. Roles stay with “Assign & manage roles”."
+        },
+        "set_group_background": {
+          "title": "Change group background",
+          "desc": "Sets the background that all members see in this group. Custom images are downscaled before encryption; the server only sees the ciphertext."
+        },
         "manage_roles": {
           "title": "Assign & manage roles",
-          "desc": "Assign roles to members and adjust the default group rights. Owners and administrators carry “Mention everyone at once”, “Pin a message” and “Set disappearing messages” anyway, because they could grant them to themselves in two clicks."
+          "desc": "Assign roles to members and adjust the default group rights. Owners and administrators carry “Mention everyone at once”, “Pin a message”, “Set disappearing messages”, “Edit group info” and “Change group background” anyway, because they could grant them to themselves in two clicks."
         }
       }
     },
@@ -7678,6 +7721,7 @@
     "changeGroupLogo": "Change group logo",
     "manageGroupRoles": "Manage group roles & rights",
     "copyInvite": "Copy invitation link",
+    "groupSettings": "Edit group",
     "inviteCopied": "The invitation link is on your clipboard.",
     "inviteNoRight": "You do not have the right to invite new members.",
     "sendNoRight": "You are not allowed to write in this group.",

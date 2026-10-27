@@ -1,26 +1,37 @@
+/**
+ * Wo ein Chat-Hintergrund steht: je Konto in der IndexedDB, versiegelt.
+ *
+ * **Was sich mit 27.10.2026 ändert.** Bis dahin lag eine Wahl für den ganzen
+ * Messenger (und eine für den KI-Bereich) offen im `localStorage`. Ein eigenes
+ * Bild pro Chat war nicht möglich, und ein zweites Konto im selben Browser sah
+ * die Wahl des ersten. Jetzt gibt es:
+ *
+ * * `global:messenger` — die Vorgabe für alle Direktchats,
+ * * `direkt:<peerId>` — der eigene Hintergrund eines Direktchats,
+ * * `global:ki` — der KI-Bereich, unverändert getrennt.
+ *
+ * Gruppen haben **keinen** persönlichen Schlüssel. Ihr Hintergrund gehört der
+ * Gruppe und liegt verschlüsselt beim Server (`gruppenInfo.ts`); alle
+ * Mitglieder sehen denselben.
+ *
+ * Die Ablage selbst steht in `ablage.ts`; hier liegen Auswahl, Prüfung,
+ * Rückfall und die einmalige Übernahme des Altbestands.
+ */
+
+import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
+import { istOffen } from '@/services/lokaleVersiegelung'
+import {
+  direkterSchluessel,
+  entferneDirekteHintergruende,
+  globalerSchluessel,
+  leseHintergrundAblage,
+  loescheHintergrundAblage,
+  schreibeHintergrundAblage,
+} from './ablage'
 import { HINTERGRUND_VORLAGEN, STANDARD_VORLAGE, type HintergrundId } from './vorlagen'
 
-/**
- * Wo ein Hintergrund steht. Ein Bereich ist eine **Unterhaltungsfläche**, nicht
- * eine Seite: der Messenger mit all seinen Chats ist einer, der KI-Bereich mit
- * Chat-, Guardian-, Worker- und Aufgabenfenster der andere.
- *
- * Zwei Bereiche und nicht einer, weil beides verschiedene Arbeit ist: wer mit
- * Menschen schreibt, will vielleicht ein Foto sehen, wer Logzeilen einer
- * Maschine liest, eher ein ruhiges Raster. Geteilt wird die Mechanik, nicht die
- * Wahl — dasselbe Fenster, dieselben Vorlagen, derselbe Regler, zwei Antworten.
- */
 export type ChatHintergrundBereich = 'messenger' | 'ki'
 
-/**
- * Die gespeicherte Form.
- *
- * Englische Feldnamen, obwohl das Modul deutsch heisst: das hier liegt seit
- * Monaten so in den Browsern der Benutzer. Ein Umbenennen wäre eine Migration,
- * deren einziger Gewinn ein hübscherer Schlüsselname im Entwicklerwerkzeug
- * wäre — und deren Preis ein verlorener Hintergrund für jeden, bei dem sie
- * schiefgeht.
- */
 export interface ChatHintergrundKonfiguration {
   preset: HintergrundId
   /** Das eigene Bild als Data-URL; nur bei `preset: 'custom'` gesetzt. */
@@ -29,43 +40,16 @@ export interface ChatHintergrundKonfiguration {
   dimLevel: number
 }
 
+/** Der Platz, dessen Hintergrund eine Fläche zeigt. */
+export type ChatHintergrundScope =
+  | { art: 'global'; bereich: ChatHintergrundBereich }
+  | { art: 'direkt'; peerId: number }
+
 export const STANDARD_HINTERGRUND: ChatHintergrundKonfiguration = {
   preset: STANDARD_VORLAGE,
   dimLevel: 25,
 }
 
-/**
- * Der Speicherschlüssel je Bereich.
- *
- * **Niemals mit `msm_chat_` beginnen.** `scrubPlaintextStorage()` in
- * `services/e2eeCrypto.ts` löscht jeden Schlüssel mit diesem Präfix, und der
- * Messenger ruft das bei jedem Öffnen auf (`Messenger.tsx`). Genau dort lag
- * der alte Schlüssel `msm_chat_wallpaper_config`: der gewählte Hintergrund
- * überlebte die eigene Sitzung, aber kein zweites Öffnen des Messengers. Die
- * Putzkolonne ist im Recht — sie räumt Klartextreste der Ende-zu-Ende-
- * Verschlüsselung weg —, nur gehört eine Hintergrundwahl nicht in deren
- * Namensraum.
- */
-const SCHLUESSEL: Record<ChatHintergrundBereich, string> = {
-  messenger: 'msm_hintergrund:messenger',
-  ki: 'msm_hintergrund:ki',
-}
-
-/** Der Schlüssel von vor dem Umbau; wird einmalig übernommen, siehe unten. */
-const ALTER_MESSENGER_SCHLUESSEL = 'msm_chat_wallpaper_config'
-
-export function hintergrundSchluessel(bereich: ChatHintergrundBereich): string {
-  return SCHLUESSEL[bereich]
-}
-
-/**
- * Das Ereignis, mit dem eine Änderung durchs Fenster läuft.
- *
- * Ohne es zeigte das Guardian-Fenster noch den alten Hintergrund, während der
- * Chat daneben schon den neuen trägt: beide lesen denselben Schlüssel, aber
- * `localStorage` sagt von sich aus nichts (das `storage`-Ereignis des Browsers
- * feuert nur in **anderen** Tabs, nie im eigenen).
- */
 export const CHAT_HINTERGRUND_EVENT = 'msm:chat-hintergrund'
 
 const GUELTIGE_IDS: readonly HintergrundId[] = [
@@ -73,112 +57,252 @@ const GUELTIGE_IDS: readonly HintergrundId[] = [
   'custom',
 ]
 
+/** Ein eigenes Bild darf so groß sein; die Dialoge verkleinern vorher. */
+const MAX_BILD_ZEICHEN = 3 * 1024 * 1024
+
+const ALTE_SCHLUESSEL = {
+  messenger: 'msm_hintergrund:messenger',
+  ki: 'msm_hintergrund:ki',
+} as const
+const ALTER_MESSENGER_SCHLUESSEL = 'msm_chat_wallpaper_config'
+
+export function scopeSchluessel(scope: ChatHintergrundScope): string {
+  return scope.art === 'direkt'
+    ? direkterSchluessel(scope.peerId)
+    : globalerSchluessel(scope.bereich)
+}
+
+/** Der Schlüssel des globalen Bereichs; bleibt für bestehende Aufrufer. */
+export function hintergrundSchluessel(bereich: ChatHintergrundBereich): string {
+  return globalerSchluessel(bereich)
+}
+
+function alsBild(wert: unknown): string | undefined {
+  if (typeof wert !== 'string') return undefined
+  if (wert.length > MAX_BILD_ZEICHEN) return undefined
+  return /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(wert)
+    ? wert
+    : undefined
+}
+
 /** Nachsichtig lesen: alles Unbekannte fällt auf den Standard zurück. */
-function ausRohdaten(roh: string | null): ChatHintergrundKonfiguration {
-  if (!roh) return STANDARD_HINTERGRUND
+function ausRohdaten(roh: unknown): ChatHintergrundKonfiguration {
+  let gelesen: Partial<ChatHintergrundKonfiguration> & Record<string, unknown>
   try {
-    const gelesen = JSON.parse(roh) as Partial<ChatHintergrundKonfiguration>
-    const preset = GUELTIGE_IDS.includes(gelesen.preset as HintergrundId)
-      ? (gelesen.preset as HintergrundId)
-      : STANDARD_VORLAGE
-    // Ein „eigenes Bild" ohne Bild ist kein Hintergrund, sondern ein Loch.
-    const customDataUrl =
-      typeof gelesen.customDataUrl === 'string' ? gelesen.customDataUrl : undefined
-    return {
-      preset: preset === 'custom' && !customDataUrl ? STANDARD_VORLAGE : preset,
-      customDataUrl,
-      dimLevel:
-        typeof gelesen.dimLevel === 'number' && Number.isFinite(gelesen.dimLevel)
-          ? Math.min(100, Math.max(0, gelesen.dimLevel))
-          : STANDARD_HINTERGRUND.dimLevel,
+    if (typeof roh === 'string') {
+      gelesen = JSON.parse(roh) as typeof gelesen
+    } else if (roh && typeof roh === 'object') {
+      gelesen = roh as typeof gelesen
+    } else {
+      return STANDARD_HINTERGRUND
     }
+  } catch {
+    return STANDARD_HINTERGRUND
+  }
+  if (!gelesen || typeof gelesen !== 'object') return STANDARD_HINTERGRUND
+
+  const preset = GUELTIGE_IDS.includes(gelesen.preset as HintergrundId)
+    ? (gelesen.preset as HintergrundId)
+    : STANDARD_VORLAGE
+  const customDataUrl = alsBild(gelesen.customDataUrl)
+  const dimWert =
+    typeof gelesen.dimLevel === 'number' && Number.isFinite(gelesen.dimLevel)
+      ? gelesen.dimLevel
+      : STANDARD_HINTERGRUND.dimLevel
+  return {
+    preset: preset === 'custom' && !customDataUrl ? STANDARD_VORLAGE : preset,
+    customDataUrl,
+    dimLevel: Math.min(75, Math.max(0, Math.round(dimWert))),
+  }
+}
+
+function istStandard(konfiguration: ChatHintergrundKonfiguration): boolean {
+  return (
+    konfiguration.preset === STANDARD_HINTERGRUND.preset &&
+    !konfiguration.customDataUrl &&
+    konfiguration.dimLevel === STANDARD_HINTERGRUND.dimLevel
+  )
+}
+
+function melde(schluessel: string): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(
+    new CustomEvent(CHAT_HINTERGRUND_EVENT, { detail: { schluessel } }),
+  )
+}
+
+/**
+ * Den alten, kontolosen Bestand einmalig übernehmen.
+ *
+ * Danach sind die alten Schlüssel weg. Ein Zustand ohne angemeldetes Konto
+ * oder ohne offenes Siegel wird **nicht** übernommen: die Wahl läge sonst im
+ * Klartext eines Kontos, das gerade gar nicht arbeitet. Stattdessen bleibt der
+ * Merker aus, und der nächste Aufruf versucht es erneut.
+ */
+let migrationLauf: Promise<void> | null = null
+
+async function migriereAltbestand(): Promise<void> {
+  const konto = angemeldetesKonto()
+  if (konto === null || !istOffen() || typeof localStorage === 'undefined') return
+  const marke = `msm:hintergrund_migriert:konto:${konto}`
+  const besitz = 'msm:hintergrund_altbesitz'
+  try {
+    if (localStorage.getItem(marke) === 'true') return
+    const bisherigerBesitzer = Number(localStorage.getItem(besitz) || 0)
+    if (bisherigerBesitzer && bisherigerBesitzer !== konto) {
+      // Die alte, kontolose Wahl gehört einem anderen Konto auf diesem Gerät.
+      // Sie wird nicht übernommen; sonst sähe das zweite Konto den Hintergrund
+      // des ersten.
+      localStorage.removeItem(ALTE_SCHLUESSEL.messenger)
+      localStorage.removeItem(ALTE_SCHLUESSEL.ki)
+      localStorage.removeItem(ALTER_MESSENGER_SCHLUESSEL)
+      localStorage.setItem(marke, 'true')
+      return
+    }
+    if (!bisherigerBesitzer) localStorage.setItem(besitz, String(konto))
+  } catch {
+    return
+  }
+  if (migrationLauf) return migrationLauf
+
+  migrationLauf = (async () => {
+    try {
+      const alt = {
+        messenger:
+          localStorage.getItem(ALTE_SCHLUESSEL.messenger) ??
+          localStorage.getItem(ALTER_MESSENGER_SCHLUESSEL),
+        ki: localStorage.getItem(ALTE_SCHLUESSEL.ki),
+      }
+      const vorhanden = await leseHintergrundAblage()
+      for (const bereich of ['messenger', 'ki'] as const) {
+        const roh = alt[bereich]
+        const ziel = globalerSchluessel(bereich)
+        if (!roh || vorhanden.has(ziel)) continue
+        await schreibeHintergrundAblage(ziel, ausRohdaten(roh) as unknown as Record<string, unknown>)
+      }
+      localStorage.removeItem(ALTE_SCHLUESSEL.messenger)
+      localStorage.removeItem(ALTE_SCHLUESSEL.ki)
+      localStorage.removeItem(ALTER_MESSENGER_SCHLUESSEL)
+      localStorage.setItem(marke, 'true')
+    } catch {
+      // Versiegelt oder Speicher voll: beim nächsten Aufruf erneut.
+    } finally {
+      migrationLauf = null
+    }
+  })()
+  return migrationLauf
+}
+
+async function lesePlatz(
+  scope: ChatHintergrundScope,
+): Promise<ChatHintergrundKonfiguration | null> {
+  await migriereAltbestand()
+  const karte = await leseHintergrundAblage()
+  const eigen = karte.get(scopeSchluessel(scope))
+  if (eigen) return ausRohdaten(eigen)
+  if (scope.art === 'direkt') {
+    const global = karte.get(globalerSchluessel('messenger'))
+    if (global) return ausRohdaten(global)
+  }
+  return null
+}
+
+/** Der Hintergrund dieses Platzes, mit Rückfall auf die Messenger-Vorgabe. */
+export async function ladeHintergrundFuerScope(
+  scope: ChatHintergrundScope,
+): Promise<ChatHintergrundKonfiguration> {
+  try {
+    return (await lesePlatz(scope)) ?? STANDARD_HINTERGRUND
   } catch {
     return STANDARD_HINTERGRUND
   }
 }
 
-/**
- * Den alten Messenger-Schlüssel einmalig übernehmen.
- *
- * Wer seinen Hintergrund gewählt und den Messenger seither nicht mehr geöffnet
- * hat, hat ihn noch; alle anderen hat die Putzkolonne längst darum gebracht.
- * Danach ist die alte Zeile weg — zwei Fassungen derselben Wahl wären eine zu
- * viel, und aufgeräumt hätte sie ohnehin der nächste Messenger-Start.
- */
-function uebernimmAltbestand(): void {
-  try {
-    const alt = localStorage.getItem(ALTER_MESSENGER_SCHLUESSEL)
-    if (alt === null) return
-    if (localStorage.getItem(SCHLUESSEL.messenger) === null) {
-      localStorage.setItem(SCHLUESSEL.messenger, alt)
-    }
-    localStorage.removeItem(ALTER_MESSENGER_SCHLUESSEL)
-  } catch {
-    /* Ohne Ablage gibt es auch keinen Altbestand. */
-  }
-}
-
-export function ladeChatHintergrund(
+/** Der globale Hintergrund eines Bereichs. */
+export async function ladeChatHintergrund(
   bereich: ChatHintergrundBereich,
-): ChatHintergrundKonfiguration {
+): Promise<ChatHintergrundKonfiguration> {
+  return ladeHintergrundFuerScope({ art: 'global', bereich })
+}
+
+async function schreibePlatz(
+  scope: ChatHintergrundScope,
+  konfiguration: ChatHintergrundKonfiguration,
+): Promise<boolean> {
+  const sauber = ausRohdaten(konfiguration)
   try {
-    if (bereich === 'messenger') uebernimmAltbestand()
-    return ausRohdaten(localStorage.getItem(SCHLUESSEL[bereich]))
+    await migriereAltbestand()
+    const schluessel = scopeSchluessel(scope)
+    if (istStandard(sauber)) {
+      await loescheHintergrundAblage(schluessel)
+    } else {
+      await schreibeHintergrundAblage(
+        schluessel,
+        sauber as unknown as Record<string, unknown>,
+      )
+    }
+    melde(schluessel)
+    return true
   } catch {
-    // Privater Modus, gesperrte Speicherung: der Standard steht trotzdem.
-    return STANDARD_HINTERGRUND
+    return false
   }
 }
 
-/**
- * Speichern und alle Mitleser wecken.
- *
- * Gibt `false` zurück, wenn der Browser die Ablage verweigert hat — fast immer
- * ein zu grosses eigenes Bild. Das Fenster sagt das dann; vorher verschwand ein
- * 8-MB-Bild wortlos und kam nach dem nächsten Neuladen nicht wieder.
- */
-export function speichereChatHintergrund(
+export async function speichereHintergrundFuerScope(
+  scope: ChatHintergrundScope,
+  konfiguration: ChatHintergrundKonfiguration,
+): Promise<boolean> {
+  return schreibePlatz(scope, konfiguration)
+}
+
+export async function speichereChatHintergrund(
   bereich: ChatHintergrundBereich,
   konfiguration: ChatHintergrundKonfiguration,
-): boolean {
-  let gespeichert = true
-  try {
-    localStorage.setItem(SCHLUESSEL[bereich], JSON.stringify(konfiguration))
-  } catch {
-    gespeichert = false
-  }
-  // Auch bei verweigerter Ablage: für diese Sitzung gilt die Wahl, und der
-  // Chat soll sie sofort zeigen. Verloren ist sie erst beim Neuladen.
-  melde(bereich)
-  return gespeichert
-}
-
-function melde(bereich: ChatHintergrundBereich): void {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent(CHAT_HINTERGRUND_EVENT, { detail: { bereich } }))
+): Promise<boolean> {
+  return schreibePlatz({ art: 'global', bereich }, konfiguration)
 }
 
 /**
- * Auf Änderungen dieses Bereichs hören — im eigenen Fenster über das Ereignis
- * oben, aus einem zweiten Tab über `storage`. Liefert die Abmeldung zurück.
+ * „Für alle Chats": die Vorgabe schreiben und die direkten Ausnahmen löschen.
+ *
+ * Ohne das Löschen bliebe ein Chat, den jemand früher anders eingestellt hat,
+ * bei seiner alten Wahl — „für alle" wäre dann nur „für alle, die noch nichts
+ * Eigenes haben". Die Rückfrage davor stellt der Dialog.
  */
-export function beobachteChatHintergrund(
-  bereich: ChatHintergrundBereich,
-  beiAenderung: (konfiguration: ChatHintergrundKonfiguration) => void,
-): () => void {
+export async function wendeAufAlleDirektchatsAn(
+  konfiguration: ChatHintergrundKonfiguration,
+): Promise<boolean> {
+  const ok = await schreibePlatz({ art: 'global', bereich: 'messenger' }, konfiguration)
+  if (!ok) return false
+  try {
+    await entferneDirekteHintergruende()
+    melde(globalerSchluessel('messenger'))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Ob es eigene Direktchat-Hintergründe gibt, die „für alle" ersetzen würde. */
+export async function hatDirekteHintergruende(): Promise<boolean> {
+  try {
+    const karte = await leseHintergrundAblage()
+    return [...karte.keys()].some((schluessel) => schluessel.startsWith('direkt:'))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Auf Änderungen hören — im eigenen Fenster über das Ereignis oben, aus einem
+ * zweiten Tab über `storage`.
+ */
+export function beobachteChatHintergrund(beiAenderung: () => void): () => void {
   if (typeof window === 'undefined') return () => undefined
-
-  const ausEigenemFenster = (ereignis: Event) => {
-    const gemeldet = (ereignis as CustomEvent<{ bereich?: ChatHintergrundBereich }>).detail?.bereich
-    if (gemeldet && gemeldet !== bereich) return
-    beiAenderung(ladeChatHintergrund(bereich))
-  }
-
+  const ausEigenemFenster = () => beiAenderung()
   const ausAnderemTab = (ereignis: StorageEvent) => {
-    if (ereignis.key && ereignis.key !== SCHLUESSEL[bereich]) return
-    beiAenderung(ladeChatHintergrund(bereich))
+    if (ereignis.key?.includes('hintergrund')) beiAenderung()
   }
-
   window.addEventListener(CHAT_HINTERGRUND_EVENT, ausEigenemFenster)
   window.addEventListener('storage', ausAnderemTab)
   return () => {

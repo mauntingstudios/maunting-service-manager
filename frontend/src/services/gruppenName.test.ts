@@ -34,11 +34,10 @@ const platte = new Map<string, string>()
 }
 
 /**
- * Der Gruppenblock als Attrappe.
+ * Der Info-Block als Attrappe.
  *
- * `gruppenName.ts` schreibt über `aendereGruppenzustand` — das ist der Punkt,
- * an dem die Rollen im selben Block nicht verloren gehen dürfen. Hier steht
- * deshalb ein Zustand, der sich merkt, was vorher drin war.
+ * `gruppenName.ts` schreibt über `aendereGruppenInfo` — das ist der Punkt, an
+ * dem ein bewusstes Leeren (`null`) den bisherigen Wert löschen muss.
  */
 const block = vi.hoisted(() => ({
   stand: null as Record<string, unknown> | null,
@@ -47,25 +46,23 @@ const block = vi.hoisted(() => ({
   lesbar: true,
 }))
 
-vi.mock('./gruppenKonfig', () => ({
-  leererGruppenzustand: () => ({ v: 1, name: null, beschreibung: null, logo: null, rollen: [], zuordnung: {} }),
-  ladeGruppenzustand: async () =>
+vi.mock('./gruppenInfo', () => ({
+  INFO_FORMAT: 1,
+  ladeGruppenInfo: async () =>
     block.lesbar && block.stand
-      ? { art: 'zustand', zustand: block.stand, revision: 1, vonKonto: 1 }
-      : { art: 'leer', revision: 0 },
-  aendereGruppenzustand: async (
+      ? { art: 'info', info: block.stand, revision: 1, vonKonto: 1, quelle: 'info' }
+      : { art: 'leer' },
+  aendereGruppenInfo: async (
     _kontext: unknown,
     _darfSchreiben: unknown,
     aendere: (vorher: Record<string, unknown>) => Record<string, unknown>,
   ) => {
-    if (!block.schreibbar) return { art: 'abgelehnt', grund: 'kein-schluessel' }
+    if (!block.schreibbar) return { art: 'nicht-unterschreibbar' }
     const vorher = block.stand ?? {
       v: 1,
       name: null,
       beschreibung: null,
       logo: null,
-      rollen: [],
-      zuordnung: {},
     }
     block.stand = aendere(vorher)
     return { art: 'gespeichert', revision: 2 }
@@ -360,29 +357,41 @@ describe('Der verschlüsselte Gruppenblock', () => {
     })
   })
 
-  it('lässt die Rollen im selben Block stehen', async () => {
-    /*
-     * Der Block ist **einer**. Wer ihn mit einem frisch gebauten Stand
-     * überschriebe, löschte die Rechtetabelle mit — und zwar für alle
-     * Mitglieder, nicht nur für sich. Deshalb läuft der Schreibweg über
-     * `aendereGruppenzustand` und nicht über `schreibeGruppenzustand`.
-     */
+  it('lässt Name und Beschreibung stehen, wenn nur das Logo gesetzt wird', async () => {
     block.stand = {
       v: 1,
-      name: null,
-      beschreibung: null,
+      name: 'Küchenplanung',
+      beschreibung: 'Wer bringt was',
       logo: null,
-      rollen: [{ id: 'r1', name: 'Küchenchef', rechte: ['send_messages'] }],
-      zuordnung: { '2': ['r1'] },
     }
     const { sichereGruppenAnsicht } = await frischImportieren()
 
-    await sichereGruppenAnsicht(kontext, { name: 'Küchenplanung' })
+    await sichereGruppenAnsicht(kontext, { logo: LOGO })
 
     expect(block.stand).toMatchObject({
       name: 'Küchenplanung',
-      rollen: [{ id: 'r1', name: 'Küchenchef', rechte: ['send_messages'] }],
-      zuordnung: { '2': ['r1'] },
+      beschreibung: 'Wer bringt was',
+      logo: LOGO,
+    })
+  })
+
+  it('leert einen Namen, der ausdrücklich null ist', async () => {
+    // Der frühere `??`-Merge nahm bei `null` den alten Wert. Ein geleerter
+    // Name wäre damit für immer stehen geblieben.
+    block.stand = {
+      v: 1,
+      name: 'Küchenplanung',
+      beschreibung: 'Wer bringt was',
+      logo: null,
+    }
+    const { sichereGruppenAnsicht } = await frischImportieren()
+
+    await sichereGruppenAnsicht(kontext, { name: null, beschreibung: '' })
+
+    expect(block.stand).toMatchObject({
+      name: null,
+      beschreibung: null,
+      logo: null,
     })
   })
 

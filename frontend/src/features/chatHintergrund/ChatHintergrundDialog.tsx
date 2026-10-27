@@ -1,9 +1,10 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, Image as ImageIcon, Layers, RotateCcw, Sliders, Upload } from 'lucide-react'
 
 import {
   Button,
+  Checkbox,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -12,12 +13,18 @@ import {
   DialogTitle,
   Kurzinfo,
 } from '@/Singra/UI'
+import { confirm } from '@/stores/confirmStore'
 
+import { bildAlsHintergrund } from './bild'
 import {
-  ladeChatHintergrund,
-  speichereChatHintergrund,
+  hatDirekteHintergruende,
+  ladeHintergrundFuerScope,
+  speichereHintergrundFuerScope,
   STANDARD_HINTERGRUND,
+  wendeAufAlleDirektchatsAn,
   type ChatHintergrundBereich,
+  type ChatHintergrundKonfiguration,
+  type ChatHintergrundScope,
 } from './speicher'
 import { HintergrundFlaeche } from './ChatHintergrund'
 import { HINTERGRUND_VORLAGEN, STANDARD_VORLAGE, type HintergrundId } from './vorlagen'
@@ -29,6 +36,8 @@ const GROESSTES_BILD = 8 * 1024 * 1024
 export interface ChatHintergrundDialogProps {
   /** Für welche Fläche gewählt wird — Messenger oder KI-Bereich. */
   bereich: ChatHintergrundBereich
+  /** Bei einem Direktchat: der Partner. Ohne ihn gilt die globale Vorgabe. */
+  peerId?: number | null
   offen: boolean
   onOffenChange: (offen: boolean) => void
 }
@@ -46,33 +55,69 @@ export interface ChatHintergrundDialogProps {
  * Elternteil könnte veralten, sobald eine zweite Fläche denselben Bereich
  * ändert.
  */
-export function ChatHintergrundDialog({ bereich, offen, onOffenChange }: ChatHintergrundDialogProps) {
+export function ChatHintergrundDialog({
+  bereich,
+  peerId,
+  offen,
+  onOffenChange,
+}: ChatHintergrundDialogProps) {
   return (
     <Dialog open={offen} onOpenChange={onOffenChange}>
-      <DialogInhalt bereich={bereich} onSchliessen={() => onOffenChange(false)} />
+      <DialogInhalt
+        bereich={bereich}
+        peerId={peerId}
+        onSchliessen={() => onOffenChange(false)}
+      />
     </Dialog>
   )
 }
 
 function DialogInhalt({
   bereich,
+  peerId,
   onSchliessen,
 }: {
   bereich: ChatHintergrundBereich
+  peerId?: number | null
   onSchliessen: () => void
 }) {
   const { t } = useTranslation()
-  const gespeichert = ladeChatHintergrund(bereich)
+  const scope = useMemo<ChatHintergrundScope>(
+    () =>
+      bereich === 'messenger' && Number.isInteger(peerId) && (peerId ?? 0) > 0
+        ? { art: 'direkt', peerId: Number(peerId) }
+        : { art: 'global', bereich },
+    [bereich, peerId],
+  )
 
-  const [gewaehlt, setzeGewaehlt] = useState<HintergrundId>(gespeichert.preset)
-  const [eigenesBild, setzeEigenesBild] = useState<string | undefined>(gespeichert.customDataUrl)
-  const [abdunkeln, setzeAbdunkeln] = useState<number>(gespeichert.dimLevel)
+  const [gespeichert, setzeGespeichert] = useState<ChatHintergrundKonfiguration | null>(null)
+  const [gewaehlt, setzeGewaehlt] = useState<HintergrundId>(STANDARD_HINTERGRUND.preset)
+  const [eigenesBild, setzeEigenesBild] = useState<string | undefined>(undefined)
+  const [abdunkeln, setzeAbdunkeln] = useState<number>(STANDARD_HINTERGRUND.dimLevel)
+  const [fuerAlle, setzeFuerAlle] = useState(false)
+  const [speichert, setzeSpeichert] = useState(false)
   // Schlüssel, kein fertiger Satz — sonst bliebe die Meldung nach einem
   // Sprachwechsel in der alten Sprache stehen.
   const [fehler, setzeFehler] = useState<string | null>(null)
   const dateiFeld = useRef<HTMLInputElement>(null)
 
-  const nimmDatei = (ereignis: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    let abgebrochen = false
+    setzeGespeichert(null)
+    void ladeHintergrundFuerScope(scope).then((konfiguration) => {
+      if (abgebrochen) return
+      setzeGespeichert(konfiguration)
+      setzeGewaehlt(konfiguration.preset)
+      setzeEigenesBild(konfiguration.customDataUrl)
+      setzeAbdunkeln(konfiguration.dimLevel)
+      setzeFuerAlle(false)
+    })
+    return () => {
+      abgebrochen = true
+    }
+  }, [scope])
+
+  const nimmDatei = async (ereignis: React.ChangeEvent<HTMLInputElement>) => {
     setzeFehler(null)
     const datei = ereignis.target.files?.[0]
     if (!datei) return
@@ -81,44 +126,77 @@ function DialogInhalt({
       setzeFehler('social.wallpaper.badType')
       return
     }
-
     if (datei.size > GROESSTES_BILD) {
       setzeFehler('social.wallpaper.tooLarge')
       return
     }
 
-    const leser = new FileReader()
-    leser.onload = () => {
-      setzeEigenesBild(leser.result as string)
-      setzeGewaehlt('custom')
+    const dataUrl = await bildAlsHintergrund(datei)
+    if (!dataUrl) {
+      setzeFehler('social.wallpaper.tooLarge')
+      return
     }
-    leser.onerror = () => {
-      setzeFehler('social.wallpaper.loadFailed')
-    }
-    leser.readAsDataURL(datei)
+    setzeEigenesBild(dataUrl)
+    setzeGewaehlt('custom')
   }
 
-  const uebernehmen = () => {
-    const konnte = speichereChatHintergrund(bereich, {
+  const uebernehmen = async () => {
+    const konfiguration: ChatHintergrundKonfiguration = {
       preset: gewaehlt,
       customDataUrl: gewaehlt === 'custom' ? eigenesBild : undefined,
       dimLevel: abdunkeln,
-    })
-    // Offen lassen und sagen, was ist: sonst sähe man den Hintergrund stehen
-    // und fände ihn nach dem nächsten Neuladen nicht wieder.
-    if (!konnte) {
+    }
+    setzeSpeichert(true)
+    try {
+      if (scope.art === 'direkt' && fuerAlle) {
+        if (await hatDirekteHintergruende()) {
+          const weiter = await confirm({
+            title: t('social.wallpaper.applyAllTitle'),
+            message: t('social.wallpaper.applyAllMessage'),
+            confirmText: t('social.wallpaper.applyAllConfirm'),
+          })
+          if (!weiter) return
+        }
+        if (!(await wendeAufAlleDirektchatsAn(konfiguration))) {
+          setzeFehler('social.wallpaper.saveFailed')
+          return
+        }
+      } else if (!(await speichereHintergrundFuerScope(scope, konfiguration))) {
+        setzeFehler('social.wallpaper.saveFailed')
+        return
+      }
+      onSchliessen()
+    } finally {
+      setzeSpeichert(false)
+    }
+  }
+
+  const zuruecksetzen = async () => {
+    setzeGewaehlt(STANDARD_HINTERGRUND.preset)
+    setzeEigenesBild(undefined)
+    setzeAbdunkeln(STANDARD_HINTERGRUND.dimLevel)
+    const ok = await speichereHintergrundFuerScope(scope, STANDARD_HINTERGRUND)
+    if (!ok) {
       setzeFehler('social.wallpaper.saveFailed')
       return
     }
     onSchliessen()
   }
 
-  const zuruecksetzen = () => {
-    setzeGewaehlt(STANDARD_HINTERGRUND.preset)
-    setzeEigenesBild(undefined)
-    setzeAbdunkeln(STANDARD_HINTERGRUND.dimLevel)
-    speichereChatHintergrund(bereich, STANDARD_HINTERGRUND)
-    onSchliessen()
+  if (!gespeichert) {
+    return (
+      <DialogContent className="max-w-md w-full">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ImageIcon className="w-5 h-5 shrink-0 text-primary" />
+            <span>{t('social.wallpaper.title')}</span>
+          </DialogTitle>
+        </DialogHeader>
+        <p className="px-5 py-8 text-sm text-on-surface-variant">
+          {t('social.wallpaper.loading')}
+        </p>
+      </DialogContent>
+    )
   }
 
   return (
@@ -282,6 +360,24 @@ function DialogInhalt({
             <span>{t('social.wallpaper.dimDark')}</span>
           </div>
         </div>
+
+        {scope.art === 'direkt' && (
+          <label className="flex items-start gap-2.5 rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 py-2.5 cursor-pointer">
+            <Checkbox
+              checked={fuerAlle}
+              onCheckedChange={setzeFuerAlle}
+              className="mt-0.5"
+            />
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold text-on-surface">
+                {t('social.wallpaper.applyAll')}
+              </span>
+              <span className="block text-label-sm text-on-surface-variant/80">
+                {t('social.wallpaper.applyAllHint')}
+              </span>
+            </span>
+          </label>
+        )}
       </div>
 
       {/* `flex-wrap`, damit die Fusszeile auf einem 375-px-Telefon umbricht,
@@ -292,7 +388,7 @@ function DialogInhalt({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={zuruecksetzen}
+            onClick={() => void zuruecksetzen()}
             className="text-xs h-8 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high gap-1 px-2.5"
             aria-description={t('social.wallpaper.resetHint')}
           >
@@ -313,10 +409,11 @@ function DialogInhalt({
             type="button"
             variant="primary"
             size="sm"
-            onClick={uebernehmen}
+            disabled={speichert}
+            onClick={() => void uebernehmen()}
             className="text-xs h-8 px-4 font-semibold"
           >
-            {t('common.apply')}
+            {speichert ? t('common.saving') : t('common.apply')}
           </Button>
         </div>
       </DialogFooter>

@@ -10,7 +10,7 @@ from dependencies import (
     get_current_user,
     verify_csrf,
 )
-from models import ChatGroup, ChatGroupConfig, User
+from models import ChatGroup, ChatGroupBackground, ChatGroupConfig, ChatGroupInfo, User
 from schemas.social import (
     ChatGroupCreate,
     ChatGroupResponse,
@@ -19,6 +19,10 @@ from schemas.social import (
     ChatGroupPermissionsUpdate,
     ChatGroupConfigWrite,
     ChatGroupConfigResponse,
+    ChatGroupInfoWrite,
+    ChatGroupInfoResponse,
+    ChatGroupBackgroundWrite,
+    ChatGroupBackgroundResponse,
     ChatGroupInviteCardUpdate,
     ChatGroupInvitePublicResponse,
 )
@@ -331,4 +335,73 @@ def put_group_config_endpoint(
         blob=req.blob,
         erwartete_revision=req.erwartete_revision,
         caller=user,
+    )
+
+
+@router.get(
+    "/groups/{group_id}/info",
+    response_model=ChatGroupInfoResponse | None,
+    dependencies=[Depends(_check_social_enabled)],
+)
+def get_group_info_endpoint(
+    group_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChatGroupInfo | None:
+    # `null` heißt: diese Gruppe hat noch keine getrennte Info. Der Client
+    # fällt dann auf die Allgemeinfelder des alten Rollenblocks zurück.
+    return SocialService.get_group_info(db, group_id=group_id, caller=user)
+
+
+@router.put(
+    "/groups/{group_id}/info",
+    response_model=ChatGroupInfoResponse,
+    dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)],
+)
+def put_group_info_endpoint(
+    group_id: int,
+    req: ChatGroupInfoWrite,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChatGroupInfo:
+    return SocialService.write_group_info(
+        db,
+        group_id=group_id,
+        blob=req.blob,
+        erwartete_revision=req.erwartete_revision,
+        caller=user,
+    )
+
+
+@router.get(
+    "/groups/{group_id}/background",
+    response_model=ChatGroupBackgroundResponse | None,
+    dependencies=[Depends(_check_social_enabled)],
+)
+def get_group_background_endpoint(
+    group_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChatGroupBackground | None:
+    return SocialService.get_group_background(db, group_id=group_id, caller=user)
+
+
+@router.put(
+    "/groups/{group_id}/background",
+    response_model=ChatGroupBackgroundResponse,
+    dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)],
+)
+def put_group_background_endpoint(
+    group_id: int,
+    req: ChatGroupBackgroundWrite,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChatGroupBackground:
+    return SocialService.write_group_background(
+        db,
+        group_id=group_id,
+        blob=req.blob,
+        erwartete_revision=req.erwartete_revision,
+        caller=user,
+        mime=req.mime,
     )

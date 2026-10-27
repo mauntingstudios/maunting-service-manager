@@ -48,6 +48,8 @@ interface Props {
 
   isGroupPermissionsOpen: boolean
   setIsGroupPermissionsOpen: (offen: boolean) => void
+  groupSettingsTab?: 'general' | 'background'
+  onGroupInvite?: () => void
   activeGroup: ChatGroupItem | null
   currentUserId: number
   onGroupUpdated: (gruppe: ChatGroupItem) => void
@@ -81,7 +83,7 @@ export function MessengerDialoge({
   funkenRettung, setFunkenRettung, onFunkenRettungBestaetigen, activeContact,
   isCameraModalOpen, setIsCameraModalOpen, augenblickModus, setAugenblickModus,
   onCameraCapture, isGroupPermissionsOpen, setIsGroupPermissionsOpen, activeGroup,
-  currentUserId, onGroupUpdated, groupToDelete, setGroupToDelete, isDeletingGroup,
+  groupSettingsTab, onGroupInvite, currentUserId, onGroupUpdated, groupToDelete, setGroupToDelete, isDeletingGroup,
   onConfirmDeleteGroup, isWallpaperModalOpen, setIsWallpaperModalOpen,
   isMuteModalOpen, setIsMuteModalOpen, blindMailboxId, chatName,
   sicherheitsnummern, isBlockConfirmOpen, setIsBlockConfirmOpen, blocked, onBlockConfirm,
@@ -123,6 +125,8 @@ export function MessengerDialoge({
         group={activeGroup}
         currentUserId={currentUserId || 0}
         onGroupUpdated={onGroupUpdated}
+        initialTab={groupSettingsTab}
+        onEinladung={onGroupInvite}
       />
 
       <DeleteGroupDialog
@@ -134,6 +138,7 @@ export function MessengerDialoge({
 
       <ChatHintergrundDialog
         bereich="messenger"
+        peerId={activeGroup ? null : activeContact?.userId ?? null}
         offen={isWallpaperModalOpen}
         onOffenChange={setIsWallpaperModalOpen}
       />

@@ -142,6 +142,8 @@ UNBEDENKLICH: dict[str, str] = {
     "user_e2ee_devices.approval_signature": "Unterschrift der Freigabe",
     "vault_user_settings.kdf_salt": "Salz der Tresor-Ableitung, ohne Master-Passwort wertlos",
     "chat_group_configs.blob": "Gruppenzustand, mit dem Gruppenschluessel verschluesselt",
+    "chat_group_infos.blob": "Gruppeninfo, mit dem Gruppenschluessel verschluesselt",
+    "chat_group_backgrounds.blob": "Gruppenhintergrund, mit dem Gruppenschluessel verschluesselt",
     "server_credential_bindings.credential_id": "Verweis auf user_credentials",
     "desktop_jobs.device_family": "Welches Geraet den Auftrag bekam",
     "ai_memory_entries.embedding_model": "Name des Modells",

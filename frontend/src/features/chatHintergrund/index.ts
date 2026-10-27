@@ -24,11 +24,17 @@ export {
   CHAT_HINTERGRUND_EVENT,
   STANDARD_HINTERGRUND,
   beobachteChatHintergrund,
+  hatDirekteHintergruende,
   hintergrundSchluessel,
   ladeChatHintergrund,
+  ladeHintergrundFuerScope,
+  scopeSchluessel,
   speichereChatHintergrund,
+  speichereHintergrundFuerScope,
+  wendeAufAlleDirektchatsAn,
   type ChatHintergrundBereich,
   type ChatHintergrundKonfiguration,
+  type ChatHintergrundScope,
 } from './speicher'
 
 export { ChatHintergrund, HintergrundFlaeche, useChatHintergrund } from './ChatHintergrund'

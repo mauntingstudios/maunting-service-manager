@@ -168,3 +168,24 @@ class GruppenRollenMixin:
         if member.role in ("owner", "admin"):
             return True
         return cls.has_group_permission(db, group_id, user_id, "manage_roles")
+
+    @classmethod
+    def darf_gruppeninfo_schreiben(cls, db: Session, group_id: int, user_id: int) -> bool:
+        """Name, Beschreibung und Bild — getrennt von den Rollen.
+
+        ``manage_roles`` öffnet diesen Weg nicht: wer Rollen umschreibt, ist
+        damit noch lange nicht der, der den Gruppennamen setzt. Umgekehrt
+        öffnet ``edit_group`` keine Rollen. Beide Rechte liegen in
+        getrennten Blöcken und Routen, damit die Trennung nicht nur eine
+        Überschrift im Dialog ist.
+        """
+        return cls.has_group_permission(db, group_id, user_id, "edit_group")
+
+    @classmethod
+    def darf_hintergrund_setzen(cls, db: Session, group_id: int, user_id: int) -> bool:
+        """Der geteilte Gruppenhintergrund gilt für alle Mitglieder.
+
+        Deshalb darf ihn nur setzen, wer das Recht dazu hat — nicht jedes
+        Mitglied, und nicht jede Rolle, die Gruppeninfo oder Rollen verwaltet.
+        """
+        return cls.has_group_permission(db, group_id, user_id, "set_group_background")

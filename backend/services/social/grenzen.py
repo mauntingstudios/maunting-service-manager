@@ -42,6 +42,8 @@ GROUP_PERMISSIONS: frozenset[str] = frozenset(
         "kick_members",
         "delete_messages",
         "manage_roles",
+        "edit_group",
+        "set_group_background",
         "mention_everyone",
         "pin_messages",
         "set_disappearing_messages",
@@ -75,6 +77,8 @@ GROUP_MODERATION_PERMISSIONS: frozenset[str] = frozenset(
         "mention_everyone",
         "pin_messages",
         "set_disappearing_messages",
+        "edit_group",
+        "set_group_background",
     }
 )
 
@@ -86,13 +90,20 @@ GROUP_MODERATION_PERMISSIONS: frozenset[str] = frozenset(
 #: Einstellung, sondern die Abschaffung der Rollen — jedes einfache Mitglied
 #: wäre dann Administrator.
 #:
-#: Der Dialog bietet es unter den Standardrechten schon länger nicht an
-#: (``NICHT_ALS_STANDARD`` in ``GroupPermissionsModal.tsx``). Das war aber nur
+#: ``edit_group`` und ``set_group_background`` stehen aus demselben Grund hier:
+#: Name, Beschreibung und Bild der Gruppe gehören einer Rolle, nicht der
+#: Vorgabe für alle. Wären sie Standardrecht, änderte jedes neue Mitglied den
+#: Namen und den geteilten Hintergrund, ohne dass es jemand vergeben hätte.
+#:
+#: Der Dialog bietet diese Rechte unter den Standardrechten schon länger nicht
+#: an (``NICHT_ALS_STANDARD`` in ``GroupPermissionsModal.tsx``). Das war aber nur
 #: ein ausgeblendeter Haken: ein einziger PATCH auf
 #: ``/groups/<id>/permissions`` mit ``manage_roles`` wurde bis 09/2026 klaglos
 #: angenommen und gespeichert. Eine Regel, die nur die Oberfläche kennt, ist
 #: keine Regel. Wer die Liste hier ändert, ändert sie auch dort.
-GROUP_ROLE_ONLY_PERMISSIONS: frozenset[str] = frozenset({"manage_roles"})
+GROUP_ROLE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
+    {"manage_roles", "edit_group", "set_group_background"}
+)
 
 #: Was der Rechte-Dialog vor dem 17.09.2026 geschrieben hat. Wird beim Lesen
 #: übersetzt, damit bereits gesetzte Haken nicht verloren gehen.

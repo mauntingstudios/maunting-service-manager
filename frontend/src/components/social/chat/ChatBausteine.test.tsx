@@ -31,8 +31,7 @@ function menue(teil: Partial<Parameters<typeof ChatActionsMenu>[0]> = {}) {
     onVideoanruf: vi.fn(),
     onHintergrund: vi.fn(),
     onEinladung: vi.fn(),
-    onLogo: vi.fn(),
-    onRollen: vi.fn(),
+    onEinstellungen: vi.fn(),
     onLoeschen: vi.fn(),
     onVerlassen: vi.fn(),
     onBlockieren: vi.fn(),
@@ -56,33 +55,31 @@ const gruppe = (teil: Partial<MenueGruppe>): MenueGruppe => ({
   hatEinladung: false,
   istEigentuemer: false,
   istAdmin: false,
-  logoLaedt: false,
   ...teil,
 })
 
 const zeigt = (schluessel: string) => screen.queryByText(i18n.t(schluessel)) !== null
 
 describe('ChatActionsMenu', () => {
-  it('bietet dem Eigentümer Logo, Rollen und Löschen, aber kein Verlassen', () => {
+  it('bietet dem Eigentümer die Einstellungen und Löschen, aber kein Verlassen', () => {
     menue({ gruppe: gruppe({ istEigentuemer: true }) })
-    expect(zeigt('messenger.changeGroupLogo')).toBe(true)
-    expect(zeigt('messenger.manageGroupRoles')).toBe(true)
+    expect(zeigt('messenger.groupSettings')).toBe(true)
     expect(zeigt('messenger.deleteGroup')).toBe(true)
     expect(zeigt('messenger.leaveGroup')).toBe(false)
   })
 
-  it('bietet einem Admin Logo und Rollen, aber Verlassen statt Löschen', () => {
+  it('bietet einem Admin die Einstellungen, aber Verlassen statt Löschen', () => {
     menue({ gruppe: gruppe({ istAdmin: true }) })
-    expect(zeigt('messenger.changeGroupLogo')).toBe(true)
-    expect(zeigt('messenger.manageGroupRoles')).toBe(true)
+    expect(zeigt('messenger.groupSettings')).toBe(true)
     expect(zeigt('messenger.deleteGroup')).toBe(false)
     expect(zeigt('messenger.leaveGroup')).toBe(true)
   })
 
-  it('zeigt einem einfachen Mitglied weder Logo noch Rollen', () => {
+  it('öffnet die Einstellungen auch einem einfachen Mitglied', () => {
+    // Was es nicht darf, ist im Dialog deaktiviert. Mitglieder, Rollen und der
+    // geteilte Hintergrund sind auch für sie lesbar.
     menue({ gruppe: gruppe({}) })
-    expect(zeigt('messenger.changeGroupLogo')).toBe(false)
-    expect(zeigt('messenger.manageGroupRoles')).toBe(false)
+    expect(zeigt('messenger.groupSettings')).toBe(true)
     expect(zeigt('messenger.copyInvite')).toBe(false)
     expect(zeigt('messenger.leaveGroup')).toBe(true)
   })

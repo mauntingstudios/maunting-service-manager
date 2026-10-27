@@ -102,6 +102,8 @@ from .hoster import (
 
 from .chat_group import ChatGroup, ChatGroupMember
 from .chat_group_config import ChatGroupConfig
+from .chat_group_info import ChatGroupInfo
+from .chat_group_background import ChatGroupBackground
 from .chat_story import ChatStory
 from .direct_chat import DirectChat
 from .chat_media import ChatMedia
@@ -133,6 +135,6 @@ __all__ = [
     "E2eeAccount", "E2eeAccountKeyVault", "E2eeChatKey", "E2eeChatState",
     "E2eeMessage", "E2eeMessageReaction", "DirectChatMember",
     "UserE2eeDevice", "PushSubscription",
-    "ChatGroup", "ChatGroupMember", "ChatGroupConfig", "ChatStory", "DirectChat", "ChatMedia",
+    "ChatGroup", "ChatGroupMember", "ChatGroupConfig", "ChatGroupInfo", "ChatGroupBackground", "ChatStory", "DirectChat", "ChatMedia",
 ]  # noqa: E501
 

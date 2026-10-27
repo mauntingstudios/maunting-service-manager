@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from models import (
     User,
     ChatGroup,
+    ChatGroupBackground,
     ChatGroupConfig,
+    ChatGroupInfo,
     ChatGroupMember,
 )
 from models.chat_group import generate_invite_code
@@ -116,6 +118,8 @@ class GruppenMixin:
                 "can_mention_everyone": "mention_everyone" in wirksam,
                 "can_pin_messages": "pin_messages" in wirksam,
                 "can_set_disappearing_messages": "set_disappearing_messages" in wirksam,
+                "can_edit_group": "edit_group" in wirksam,
+                "can_set_group_background": "set_group_background" in wirksam,
                 "joined_at": mem.joined_at,
             })
 
@@ -168,6 +172,14 @@ class GruppenMixin:
                 "can_mention_everyone": "mention_everyone" in darf,
                 "can_pin_messages": "pin_messages" in darf,
                 "can_set_disappearing_messages": "set_disappearing_messages" in darf,
+                # Wer die Gruppeninfo (Name, Beschreibung, Bild) schreiben darf,
+                # getrennt von den Rollen. ``manage_roles`` ist bei
+                # Eigentümern und Administratoren nicht Teil der wirksamen
+                # Rechte — dieselbe Ausnahme wie in
+                # ``darf_gruppenzustand_schreiben``.
+                "can_edit_group": "edit_group" in darf,
+                "can_set_group_background": "set_group_background" in darf,
+                "can_manage_roles": ich.role in ("owner", "admin") or "manage_roles" in darf,
                 "created_at": g.created_at,
                 "members": mems,
                 "room_token": offener_raum,
@@ -210,14 +222,17 @@ class GruppenMixin:
             db.commit()
             db.refresh(group)
 
-            SyncEventService.publish(
+            # Auch die übrigen Mitglieder sollen die Liste live sehen; der
+            # Beitretende bekommt das Ereignis über denselben Weg.
+            cls._melde_an_alle(
+                db,
+                group.id,
                 {
                     "type": "chat_group_joined",
                     "group_id": group.id,
                     "user_id": user.id,
                     "username": user.username,
                 },
-                user_id=user.id,
             )
 
         return group
@@ -227,6 +242,15 @@ class GruppenMixin:
         cls.assert_social_enabled(db)
         cls.trage_mitglied_aus(db, group_id, user.id)
         db.commit()
+        cls._melde_an_alle(
+            db,
+            group_id,
+            {
+                "type": "chat_group_member_left",
+                "group_id": group_id,
+                "user_id": user.id,
+            },
+        )
         cls._aus_gruppenanruf_nehmen(db, group_id, user.id)
 
     @classmethod
@@ -377,7 +401,9 @@ class GruppenMixin:
         db.commit()
         db.refresh(target_mem)
 
-        SyncEventService.publish(
+        cls._melde_an_alle(
+            db,
+            group_id,
             {
                 "type": "chat_group_member_updated",
                 "group_id": group_id,
@@ -385,7 +411,6 @@ class GruppenMixin:
                 "role": target_mem.role,
                 "permissions": target_mem.permissions,
             },
-            user_id=target_user_id,
         )
 
         target_user = db.query(User).filter(User.id == target_user_id).first()
@@ -467,6 +492,17 @@ class GruppenMixin:
             },
             user_id=target_user_id,
         )
+        # Die Verbliebenen sehen den Austritt ebenfalls, sonst bleibt die
+        # Mitgliederliste der Einstellungsseite stehen.
+        cls._melde_an_alle(
+            db,
+            group_id,
+            {
+                "type": "chat_group_member_left",
+                "group_id": group_id,
+                "user_id": target_user_id,
+            },
+        )
         cls._aus_gruppenanruf_nehmen(db, group_id, target_user_id)
         return group
 
@@ -510,38 +546,29 @@ class GruppenMixin:
         db.refresh(group)
 
         # Notify all group members
-        group_members = (
-            db.query(ChatGroupMember.user_id)
-            .filter(ChatGroupMember.group_id == group_id)
-            .all()
+        cls._melde_an_alle(
+            db,
+            group_id,
+            {
+                "type": "chat_group_permissions_updated",
+                "group_id": group.id,
+                "default_permissions": group.default_permissions,
+            },
         )
-        for gm in group_members:
-            SyncEventService.publish(
-                {
-                    "type": "chat_group_permissions_updated",
-                    "group_id": group.id,
-                    "default_permissions": group.default_permissions,
-                },
-                user_id=gm[0],
-            )
 
         return group
 
     @classmethod
     def get_group_config(cls, db: Session, group_id: int, caller: User) -> ChatGroupConfig | None:
-        """Liest den verschlüsselten Zustand. Jedes Mitglied darf das.
+        """Liest den verschlüsselten Rollenblock. Jedes Mitglied darf das.
 
-        Lesen heißt hier nur: den Block bekommen. Öffnen kann ihn allein, wer
-        den Gruppenschlüssel hat — und wer den hat, ist Mitglied. Eine engere
-        Schranke am Server wäre Schein: sie würde eine Zusage vortäuschen, die
-        nicht der Server, sondern die Verschlüsselung trägt.
-
-        Für ein Nichtmitglied ist die Antwort 404 und nicht 403: ein 403 wäre
-        die Auskunft „diese Gruppe gibt es".
+        Eine engere Schranke am Server wäre Schein: öffnen kann den Block nur,
+        wer den Gruppenschlüssel hat, und wer den hat, ist Mitglied. Für ein
+        Nichtmitglied ist die Antwort 404, nicht 403 — sonst verriete sie,
+        dass es diese Gruppe gibt.
         """
         cls.assert_social_enabled(db)
-        if not cls.get_group_member(db, group_id, caller.id):
-            raise HTTPException(status_code=404, detail="Gruppe nicht gefunden.")
+        cls._mitglied_oder_404(db, group_id, caller)
         return (
             db.query(ChatGroupConfig).filter(ChatGroupConfig.group_id == group_id).first()
         )
@@ -555,109 +582,217 @@ class GruppenMixin:
         erwartete_revision: int,
         caller: User,
     ) -> ChatGroupConfig:
-        """Schreibt den nächsten Stand — genau dann, wenn niemand dazwischenkam.
+        """Schreibt den nächsten Rollenstand — nur wenn niemand dazwischenkam.
 
-        Der Server liest den Block nie. Was er prüft, sind zwei Zahlen und eine
-        Mitgliedschaft:
-
-        * Die Revision muss **genau eins weiter** sein als der gespeicherte
-          Stand. Das ist der Rückspielschutz aus dem Passwort-Tresor: ohne ihn
-          könnte jemand mit Schreibzugang einen alten Block zurücklegen und
-          damit einen Rechteentzug rückgängig machen, ohne je etwas
-          entschlüsselt zu haben.
-        * Der Aufrufer muss Mitglied sein und verwalten dürfen. Diese Prüfung
-          ist das **zweite** Schloss, nicht das erste — das erste ist der
-          Gruppenschlüssel, ohne den niemand einen gültigen Block herstellt.
-          Sie stützt sich auf ``chat_group_members``, also auf Klartext-Metadaten,
-          und fällt mit Stufe 6 weg. Bis dahin kostet sie nichts und deckt den
-          Fall ab, dass ein ausgeschiedenes Mitglied einen alten Schlüssel
-          behalten hat.
-
-        Wer schreiben *durfte*, steht in der Unterschrift **innerhalb** des
-        Blocks; die prüfen die Mitglieder nach dem Entschlüsseln. Der Server
-        kann das nicht und soll es nicht können.
+        Der Server liest den Block nie. Er prüft Mitgliedschaft und
+        Schreibrecht; die Revision schützt davor, dass ein alter Stand einen
+        Rechteentzug rückgängig macht. Wer schreiben durfte, steht in der
+        Unterschrift **innerhalb** des Blocks — das prüfen die Mitglieder nach
+        dem Entschlüsseln.
         """
         cls.assert_social_enabled(db)
-        if not cls.get_group_member(db, group_id, caller.id):
-            raise HTTPException(status_code=404, detail="Gruppe nicht gefunden.")
+        cls._mitglied_oder_404(db, group_id, caller)
         if not cls.darf_gruppenzustand_schreiben(db, group_id, caller.id):
             raise HTTPException(
                 status_code=403, detail="Keine Berechtigung, die Rollen dieser Gruppe zu ändern."
             )
+        eintrag = cls._revisioniert_schreiben(
+            db, ChatGroupConfig, group_id, blob, erwartete_revision
+        )
+        cls._melde_an_alle(
+            db,
+            group_id,
+            {
+                "type": "chat_group_config_updated",
+                "group_id": group_id,
+                "revision": eintrag.revision,
+            },
+        )
+        return eintrag
 
+    @classmethod
+    def get_group_info(cls, db: Session, group_id: int, caller: User) -> ChatGroupInfo | None:
+        """Die verschlüsselte Gruppeninfo. Lesen darf jedes Mitglied."""
+        cls.assert_social_enabled(db)
+        cls._mitglied_oder_404(db, group_id, caller)
+        return db.query(ChatGroupInfo).filter(ChatGroupInfo.group_id == group_id).first()
+
+    @classmethod
+    def write_group_info(
+        cls,
+        db: Session,
+        group_id: int,
+        blob: str,
+        erwartete_revision: int,
+        caller: User,
+    ) -> ChatGroupInfo:
+        """Name, Beschreibung und Logo — nur mit ``edit_group``.
+
+        Der Rollenblock bleibt bei ``/config``: ``edit_group`` öffnet keine
+        Rollen, und ``manage_roles`` öffnet diese Route nicht. Der Server
+        liest den Block nie; er prüft Mitgliedschaft, Revision und Größe.
+        """
+        cls.assert_social_enabled(db)
+        cls._mitglied_oder_404(db, group_id, caller)
+        if not cls.darf_gruppeninfo_schreiben(db, group_id, caller.id):
+            raise HTTPException(
+                status_code=403, detail="Keine Berechtigung, die Gruppeninfo zu ändern."
+            )
+        eintrag = cls._revisioniert_schreiben(
+            db, ChatGroupInfo, group_id, blob, erwartete_revision
+        )
+        cls._melde_an_alle(
+            db,
+            group_id,
+            {
+                "type": "chat_group_info_updated",
+                "group_id": group_id,
+                "revision": eintrag.revision,
+            },
+        )
+        return eintrag
+
+    @classmethod
+    def get_group_background(
+        cls, db: Session, group_id: int, caller: User
+    ) -> ChatGroupBackground | None:
+        """Der geteilte Gruppenhintergrund. Lesen darf jedes Mitglied."""
+        cls.assert_social_enabled(db)
+        cls._mitglied_oder_404(db, group_id, caller)
+        return (
+            db.query(ChatGroupBackground)
+            .filter(ChatGroupBackground.group_id == group_id)
+            .first()
+        )
+
+    @classmethod
+    def write_group_background(
+        cls,
+        db: Session,
+        group_id: int,
+        blob: str,
+        erwartete_revision: int,
+        caller: User,
+        mime: str | None = None,
+    ) -> ChatGroupBackground:
+        """Der Hintergrund gehört der Gruppe, nicht dem Gerät.
+
+        Deshalb ein eigener Block, ein eigenes Recht und ein eigenes Ereignis:
+        wer ihn setzt, ändert die Ansicht **aller** Mitglieder.
+        """
+        cls.assert_social_enabled(db)
+        cls._mitglied_oder_404(db, group_id, caller)
+        if not cls.darf_hintergrund_setzen(db, group_id, caller.id):
+            raise HTTPException(
+                status_code=403, detail="Keine Berechtigung, den Gruppenhintergrund zu ändern."
+            )
+        eintrag = cls._revisioniert_schreiben(
+            db,
+            ChatGroupBackground,
+            group_id,
+            blob,
+            erwartete_revision,
+            zusatz={"mime": mime, "size_bytes": len(blob.encode("utf-8"))},
+        )
+        cls._melde_an_alle(
+            db,
+            group_id,
+            {
+                "type": "chat_group_background_updated",
+                "group_id": group_id,
+                "revision": eintrag.revision,
+                "mime": eintrag.mime,
+            },
+        )
+        return eintrag
+
+    @classmethod
+    def _mitglied_oder_404(cls, db: Session, group_id: int, caller: User) -> None:
+        if not cls.get_group_member(db, group_id, caller.id):
+            raise HTTPException(status_code=404, detail="Gruppe nicht gefunden.")
+
+    @classmethod
+    def _melde_an_alle(
+        cls, db: Session, group_id: int, ereignis: dict[str, Any]
+    ) -> None:
+        """Ein Ereignis an jedes Mitglied — nicht nur an das eigene Gerät.
+
+        Die Einstellungsseite soll live bleiben, auch wenn ein anderes
+        Mitglied schreibt. Der Server nennt dabei nur die Revision, nie den
+        Inhalt.
+        """
+        for (mitglied_id,) in (
+            db.query(ChatGroupMember.user_id)
+            .filter(ChatGroupMember.group_id == group_id)
+            .all()
+        ):
+            SyncEventService.publish(ereignis, user_id=mitglied_id)
+
+    @classmethod
+    def _revisioniert_schreiben(
+        cls,
+        db: Session,
+        modell: type,
+        group_id: int,
+        blob: str,
+        erwartete_revision: int,
+        zusatz: dict[str, Any] | None = None,
+    ):
+        """Schreibt den nächsten Stand, genau dann, wenn niemand dazwischenkam.
+
+        Gilt für Rollenblock, Gruppeninfo und geteilten Hintergrund. Der
+        bedingte UPDATE verhindert, dass zwei Geräte beide Erfolg für dieselbe
+        Revision melden; ``erwartete_revision == 0`` legt den ersten Stand an
+        und meldet die Primärschlüssel-Kollision als Konflikt, nicht als 500.
+        """
         jetzt = _now()
+        werte = dict(zusatz or {})
         if erwartete_revision == 0:
-            # Erster Zustand. Zwei Geräte, die gleichzeitig gründen, laufen in
-            # die Primärschlüssel-Kollision — die fangen wir ab und melden sie
-            # als Konflikt, nicht als Serverfehler.
-            eintrag = ChatGroupConfig(
-                group_id=group_id, blob=blob, revision=1, updated_at=jetzt
+            eintrag = modell(
+                group_id=group_id, blob=blob, revision=1, updated_at=jetzt, **werte
             )
             db.add(eintrag)
             try:
                 db.commit()
             except IntegrityError:
                 db.rollback()
-                raise cls._gruppenzustand_konflikt(db, group_id)
+                raise cls._revisionskonflikt(db, modell, group_id)
             db.refresh(eintrag)
         else:
-            # Bedingtes UPDATE statt „lesen, prüfen, schreiben": zwischen dem
-            # Lesen und dem Schreiben passt sonst ein zweiter Schreiber, und
-            # beide meldeten Erfolg für dieselbe Revision.
+            aenderungen = {getattr(modell, name): wert for name, wert in werte.items()}
+            aenderungen.update(
+                {
+                    modell.blob: blob,
+                    modell.revision: erwartete_revision + 1,
+                    modell.updated_at: jetzt,
+                }
+            )
             betroffen = (
-                db.query(ChatGroupConfig)
+                db.query(modell)
                 .filter(
-                    ChatGroupConfig.group_id == group_id,
-                    ChatGroupConfig.revision == erwartete_revision,
+                    modell.group_id == group_id,
+                    modell.revision == erwartete_revision,
                 )
-                .update(
-                    {
-                        ChatGroupConfig.blob: blob,
-                        ChatGroupConfig.revision: erwartete_revision + 1,
-                        ChatGroupConfig.updated_at: jetzt,
-                    },
-                    synchronize_session=False,
-                )
+                .update(aenderungen, synchronize_session=False)
             )
             if betroffen == 0:
                 db.rollback()
-                raise cls._gruppenzustand_konflikt(db, group_id)
+                raise cls._revisionskonflikt(db, modell, group_id)
             db.commit()
-            eintrag = (
-                db.query(ChatGroupConfig)
-                .filter(ChatGroupConfig.group_id == group_id)
-                .first()
-            )
-
-        # Die Mitglieder erfahren, dass es etwas Neues gibt — nicht was.
-        for (mitglied_id,) in (
-            db.query(ChatGroupMember.user_id)
-            .filter(ChatGroupMember.group_id == group_id)
-            .all()
-        ):
-            SyncEventService.publish(
-                {
-                    "type": "chat_group_config_updated",
-                    "group_id": group_id,
-                    "revision": eintrag.revision,
-                },
-                user_id=mitglied_id,
-            )
+            eintrag = db.query(modell).filter(modell.group_id == group_id).first()
         return eintrag
 
     @classmethod
-    def _gruppenzustand_konflikt(cls, db: Session, group_id: int) -> HTTPException:
+    def _revisionskonflikt(cls, db: Session, modell: type, group_id: int) -> HTTPException:
         """409 mit dem Stand, den der Client als nächstes lesen muss."""
-        aktuell = (
-            db.query(ChatGroupConfig).filter(ChatGroupConfig.group_id == group_id).first()
-        )
+        aktuell = db.query(modell).filter(modell.group_id == group_id).first()
         return HTTPException(
             status_code=409,
             detail={
                 "grund": "revision_veraltet",
                 "aktuelle_revision": aktuell.revision if aktuell else 0,
                 "nachricht": (
-                    "Der Gruppenzustand wurde inzwischen von einem anderen Gerät "
+                    "Der Gruppenblock wurde inzwischen von einem anderen Gerät "
                     "geändert. Bitte neu laden."
                 ),
             },

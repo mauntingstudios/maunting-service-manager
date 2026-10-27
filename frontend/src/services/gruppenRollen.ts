@@ -57,6 +57,11 @@ export const GRUPPEN_RECHTE = [
   // wie lange die Nachrichten aller leben, und der Empfänger fragt ohnehin die
   // Marke vom Server — die bekommt ein Moderator nur mit Eintrag.
   { key: 'set_disappearing_messages', category: 'moderation' },
+  // Seit 27.10.2026 getrennt vom Rollenrecht: wer die Gruppeninfo schreibt,
+  // ändert darum noch keine Rollen — und umgekehrt. Beide Rechte hängen nur an
+  // einer Rolle, nie an den Standardrechten für alle.
+  { key: 'edit_group', category: 'administration' },
+  { key: 'set_group_background', category: 'administration' },
   { key: 'manage_roles', category: 'administration' },
 ] as const
 

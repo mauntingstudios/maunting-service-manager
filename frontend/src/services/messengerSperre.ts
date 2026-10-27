@@ -70,6 +70,7 @@ import {
 import {
   schreibeEntwuerfeBestandNeu,
   schreibeFunkenBestandNeu,
+  schreibeHintergruendeBestandNeu,
   schreibeLoeschAuftraegeBestandNeu,
   schreibeMedienAuftraegeBestandNeu,
   schreibeMedienBestandNeu,
@@ -326,6 +327,7 @@ async function stelleBestandUm(kontoId: number): Promise<void> {
   await schreibeGeraetBestandNeu(kontoId)
   await schreibeEntwuerfeBestandNeu()
   await schreibeFunkenBestandNeu()
+  await schreibeHintergruendeBestandNeu()
   await schreibeMedienBestandNeu()
   await schreibeMedienTeileBestandNeu()
   await schreibeMedienAuftraegeBestandNeu()

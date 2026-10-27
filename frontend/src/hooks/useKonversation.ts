@@ -168,7 +168,7 @@ export interface Konversation {
   /** Versucht aufgeschobene Umschlaege erneut zu oeffnen. */
   verarbeiteOffene: () => Promise<number>
   liesUmschlaege: () => Promise<Lesung[] | null>
-  liesNachrichten: () => Promise<NachrichtenLesung | null>
+  liesNachrichten: (nachId?: number) => Promise<NachrichtenLesung | null>
   ladeAeltere: (beforeId: number) => Promise<{ messages: ChatMessage[]; hasMore: boolean }>
   uebernimmLesestand: (lesung: Lesung[]) => void
   /** Verarbeitet ein einzelnes Live-Ereignis aus dem Echtzeitkanal. */
@@ -421,54 +421,83 @@ export function useKonversation({
   const holeSeite = useCallback(async (
     chatZiel: { type: 'direct' | 'group'; id: number },
     beforeId?: number,
+    nachId?: number,
   ): Promise<{
     page: E2eeMessagePage
     messages: ChatMessage[]
     unlesbar: number
     offen: number
   }> => {
+    const afterId = beforeId
+      ? undefined
+      : nachId && nachId > 0
+        ? Math.max(nachId, cursorRef.current)
+        : cursorRef.current > 0
+          ? cursorRef.current
+          : undefined
     const page = await fetchChatMessages(chatZiel.type, chatZiel.id, {
-      limit: beforeId ? 50 : cursorRef.current > 0 ? 100 : 50,
-      ...(beforeId ? { beforeId } : cursorRef.current > 0 ? { afterId: cursorRef.current } : {}),
+      limit: beforeId ? 50 : afterId ? 100 : 50,
+      ...(beforeId ? { beforeId } : afterId ? { afterId } : {}),
     })
     const messages: ChatMessage[] = []
     let unlesbar = 0
     let offen = 0
-    for (const message of page.messages) {
-      try {
-        const fertig = await entschluessle(chatZiel, message, page)
-        if (fertig) messages.push(fertig)
-      } catch (fehler) {
-        if (fehler instanceof ChatNutzlastUngueltigError) {
-          unlesbar += 1
-          continue
+    const ergebnisse: (ChatMessage | null)[] = new Array(page.messages.length).fill(null)
+    let naechste = 0
+
+    /*
+     * Begrenzt parallel, nicht nacheinander. Fünfzig Umschlaege einzeln zu
+     * oeffnen kostete beim Oeffnen eines Chats Sekunden; jeder braucht nur den
+     * Chat-Schluessel und die Kontosignatur, keinen gemeinsamen Zustand. Vier
+     * gleichzeitig halten den Bildschirm frei und den Server ruhig.
+     */
+    const arbeiter = async () => {
+      for (;;) {
+        const index = naechste++
+        if (index >= page.messages.length) return
+        const message = page.messages[index]
+        try {
+          const fertig = await entschluessle(chatZiel, message, page)
+          if (fertig) ergebnisse[index] = fertig
+        } catch (fehler) {
+          if (fehler instanceof ChatNutzlastUngueltigError) {
+            unlesbar += 1
+            continue
+          }
+          if (!message.client_uuid || !message.encrypted_payload) {
+            unlesbar += 1
+            continue
+          }
+          // Kein Urteil, sondern ein Aufschub. Der Cursor darf weiterlaufen;
+          // der Umschlag bleibt fuer den naechsten Schluessel liegen.
+          await legeOffeneNachrichtAb({
+            id: `${chatZiel.type}:${chatZiel.id}:${message.client_uuid}`,
+            chatType: chatZiel.type,
+            chatId: chatZiel.id,
+            clientUuid: message.client_uuid,
+            senderId: Number(message.sender_user_id),
+            keyVersion: Number(message.key_version),
+            encryptedPayload: message.encrypted_payload,
+            createdAt: message.created_at,
+          })
+          offen += 1
         }
-        if (!message.client_uuid || !message.encrypted_payload) {
-          unlesbar += 1
-          continue
-        }
-        // Kein Urteil, sondern ein Aufschub. Der Cursor darf weiterlaufen;
-        // der Umschlag bleibt fuer den naechsten Schluessel liegen.
-        await legeOffeneNachrichtAb({
-          id: `${chatZiel.type}:${chatZiel.id}:${message.client_uuid}`,
-          chatType: chatZiel.type,
-          chatId: chatZiel.id,
-          clientUuid: message.client_uuid,
-          senderId: Number(message.sender_user_id),
-          keyVersion: Number(message.key_version),
-          encryptedPayload: message.encrypted_payload,
-          createdAt: message.created_at,
-        })
-        offen += 1
       }
+    }
+
+    await Promise.all(
+      Array.from({ length: Math.min(4, page.messages.length) }, () => arbeiter()),
+    )
+    for (const fertig of ergebnisse) {
+      if (fertig) messages.push(fertig)
     }
     return { page, messages, unlesbar, offen }
   }, [entschluessle])
 
-  const liesNachrichten = useCallback(async (): Promise<NachrichtenLesung | null> => {
+  const liesNachrichten = useCallback(async (nachId?: number): Promise<NachrichtenLesung | null> => {
     const chatZiel = await ensureChat()
     if (!chatZiel) return null
-    const { page, messages, unlesbar, offen } = await holeSeite(chatZiel)
+    const { page, messages, unlesbar, offen } = await holeSeite(chatZiel, undefined, nachId)
     const uebernimm = () => {
       const hoechste = page.messages.reduce((max, m) => Math.max(max, m.id), 0)
       if (hoechste > cursorRef.current) cursorRef.current = hoechste

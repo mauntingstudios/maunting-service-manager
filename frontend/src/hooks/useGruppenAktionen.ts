@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 
 import {
@@ -13,7 +13,6 @@ import type { ChatContact } from '@/components/social/sidebar/ConversationListIt
 import {
   baueEinladungsKarte,
   erzeugeEinladungsschluessel,
-  logoAlsDatenUrl,
   mitSchluessel,
 } from '@/services/einladungsKarte'
 import { deriveGroupBlindMailboxId } from '@/services/e2eeCrypto'
@@ -33,7 +32,6 @@ interface Optionen {
   activeGroup: ChatGroupItem | null
   setActiveGroup: Dispatch<SetStateAction<ChatGroupItem | null>>
   setActiveContact: Dispatch<SetStateAction<ChatContact | null>>
-  setGroups: Dispatch<SetStateAction<ChatGroupItem[]>>
   loadData: () => Promise<unknown>
   gruppenTitel: (gruppe: { name?: string | null } | null | undefined) => string
   handleZurueckZurListe: () => void
@@ -51,7 +49,6 @@ export function useGruppenAktionen({
   activeGroup,
   setActiveGroup,
   setActiveContact,
-  setGroups,
   loadData,
   gruppenTitel,
   handleZurueckZurListe,
@@ -59,8 +56,6 @@ export function useGruppenAktionen({
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false)
   const [groupToDelete, setGroupToDelete] = useState<ChatGroupItem | null>(null)
   const [isDeletingGroup, setIsDeletingGroup] = useState(false)
-  const [logoLaedt, setLogoLaedt] = useState(false)
-  const gruppenLogoInputRef = useRef<HTMLInputElement | null>(null)
 
   const groupCallPermissions = useMemo(() => {
     if (!activeGroup) {
@@ -118,57 +113,13 @@ export function useGruppenAktionen({
     )
   }
 
-  /** Gruppenlogo: Auswahl, Prüfung, Ablage im verschlüsselten Gruppenblock. */
-  const handleGruppenLogo = async (datei: File | undefined) => {
-    if (!datei || !activeGroup || !currentUserId) return
-    if (!/^image\/(jpeg|png|webp|gif)$/.test(datei.type)) {
-      toast.error(t('messenger.logoBadType'))
-      return
-    }
-    if (datei.size > 5 * 1024 * 1024) {
-      toast.error(t('messenger.logoTooLarge'))
-      return
-    }
-    setLogoLaedt(true)
-    try {
-      const logo = await logoAlsDatenUrl(datei)
-      if (!logo) {
-        toast.error(t('messenger.logoFailed'))
-        return
-      }
-      const gruppenId = activeGroup.id
-      const mailbox = await deriveGroupBlindMailboxId(gruppenId)
-      const gespeichert = await sichereGruppenAnsicht(
-        {
-          groupId: gruppenId,
-          blindMailboxId: mailbox,
-          eigeneId: currentUserId,
-          mitglieder: (activeGroup.members ?? []).map((m) => m.user_id),
-          istEigentuemer: activeGroup.role === 'owner',
-        },
-        { logo },
-      )
-      setActiveGroup((aktuell) =>
-        aktuell?.id === gruppenId ? { ...aktuell, avatar_url: logo } : aktuell,
-      )
-      setGroups((vorher) =>
-        vorher.map((g) => (g.id === gruppenId ? { ...g, avatar_url: logo } : g)),
-      )
-      toast.success(gespeichert ? t('messenger.logoUpdated') : t('messenger.logoLocalOnly'))
-    } catch {
-      toast.error(t('messenger.logoFailed'))
-    } finally {
-      setLogoLaedt(false)
-    }
-  }
-
   const handleCreateGroup = async (name: string, beschreibung: string | null): Promise<boolean> => {
     try {
       const roh = await createGroup()
       await merkeGruppenName(roh.id, { name, beschreibung }).catch(() => {})
       const mailbox = await deriveGroupBlindMailboxId(roh.id).catch(() => null)
       if (mailbox && currentUserId) {
-        void sichereGruppenAnsicht(
+        await sichereGruppenAnsicht(
           {
             groupId: roh.id,
             blindMailboxId: mailbox,
@@ -261,11 +212,8 @@ export function useGruppenAktionen({
     groupToDelete,
     setGroupToDelete,
     isDeletingGroup,
-    logoLaedt,
-    gruppenLogoInputRef,
     groupCallPermissions,
     handleStartGroupCall,
-    handleGruppenLogo,
     handleCreateGroup,
     handleCopyInviteLink,
     handleLeaveGroup,

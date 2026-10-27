@@ -139,16 +139,45 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
     const seq = ++currentLoadSeqRef.current
     if (isInitial) setLoadingMessages(true)
     try {
-      // Was beim letzten Mal keinen Schluessel hatte, bekommt hier die
-      // naechste Gelegenheit. Der Fehler haelt den frischen Abruf nicht auf.
-      await konversation.verarbeiteOffene?.().catch(() => 0)
-      const gelesen = await konversation.liesNachrichten()
+      /*
+       * Zuerst der örtliche Verlauf. Er ist schon entschlüsselt und geprüft,
+       * und ein Chat, den dieses Gerät kennt, soll beim Öffnen nicht auf das
+       * Netz warten. `useMessengerKern` zeigt ihn meist schon; hier wird er
+       * noch einmal gelesen, weil daraus die höchste **gespeicherte**
+       * Serverkennung für den inkrementellen Abruf kommt.
+       */
+      const lokal = await loadLocalMessages(currentMid)
+      if (!istAktuell(currentMid, seq) || activeMailboxIdRef.current !== currentMid) {
+        return
+      }
+      if (isInitial && lokal.length > 0 && !sessionChatCache.get(currentMid)?.length) {
+        setMessages(sortMessagesChronologically(lokal.slice(-500)))
+        setLoadingMessages(false)
+      }
+
+      const hoechsteLokal = lokal.reduce(
+        (max, m) => (m.id > 0 && m.id < 1e11 ? Math.max(max, m.id) : max),
+        0,
+      )
+
+      /*
+       * Aufgeschobene Umschlaege (fehlender Schluessel) laufen im Hintergrund.
+       * Früher stand das **vor** dem Netzabruf: ein einziger solcher Umschlag
+       * hielt das erste Bild auf, obwohl der Verlauf längst da war.
+       */
+      void konversation
+        .verarbeiteOffene?.()
+        .then((verarbeitet) => {
+          if (verarbeitet > 0 && istAktuell(currentMid, seq)) void loadMessages(false)
+        })
+        .catch(() => {})
+
+      const gelesen = await konversation.liesNachrichten(hoechsteLokal || undefined)
       if (!gelesen) return
       if (!istAktuell(currentMid, seq) || gelesen.speicherId !== currentMid) {
         return
       }
 
-      const lokal = await loadLocalMessages(currentMid)
       const lokalMitHaken = lokal.map((m) =>
         m.isSelf && m.id > 0 && m.id < 1e11
           ? {
@@ -225,7 +254,10 @@ export function useNachrichtenLaden(optionen: NachrichtenLadenOptionen) {
         .then(() => holeOffeneMedien())
         .catch(() => {})
       gelesen.uebernimm()
-      hatMehrRef.current = gelesen.hasMore
+      // Beim inkrementellen Abruf sagt `has_more` etwas über **neuere** Zeilen;
+      // ob ältere fehlen, entscheidet der örtliche Bestand. Erst der erste
+      // Abruf ohne lokalen Verlauf liefert die bekannte Seitengrenze.
+      hatMehrRef.current = hoechsteLokal > 0 ? lokal.length >= 50 : gelesen.hasMore
 
       maxPartnerReadIdRef.current = Math.max(
         maxPartnerReadIdRef.current,

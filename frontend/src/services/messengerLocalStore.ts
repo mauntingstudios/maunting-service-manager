@@ -170,7 +170,7 @@ export interface OffeneNachricht {
 }
 
 const DB_PRAEFIX = 'msm_messenger_local'
-const DB_VERSION = 10
+const DB_VERSION = 11
 
 /** Die Ablage dieses Kontos. Ein anderes Konto, eine andere Datenbank. */
 function dbName(kontoId: number): string {
@@ -195,6 +195,8 @@ const STORE_STEUER_AUFTRAEGE = 'steuer_auftraege'
 const STORE_LOESCH_AUFTRAEGE = 'loesch_auftraege'
 /** Umschlaege, deren Entschluesselung noch aussteht. */
 const STORE_OFFENE_NACHRICHTEN = 'offene_nachrichten'
+/** Chat-Hintergruende je Kontakt bzw. je Bereich (`global:messenger`, `global:ki`). */
+const STORE_HINTERGRUENDE = 'hintergruende'
 
 /**
  * So viele Grabsteine bleiben.
@@ -238,6 +240,11 @@ const OFFENE_KLARFELDER = ['id', 'chatType', 'chatId', 'clientUuid', 'angelegtAm
 
 function offeneAad(id: string): string {
   return `msm-offene-nachricht:${id}`
+}
+
+/** Bindet einen Hintergrund an seinen Platz (Peer, global oder KI). */
+function hintergrundAad(schluessel: string): string {
+  return `msm-hintergrund:${schluessel}`
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null
@@ -477,6 +484,18 @@ function openLocalDatabase(): Promise<IDBDatabase> {
         offene.createIndex('by_chat', 'chatType', { unique: false })
         offene.createIndex('by_faellig', 'naechsterVersuch', { unique: false })
         offene.createIndex('by_angelegt', 'angelegtAm', { unique: false })
+      }
+      /*
+       * Version 11: der Chat-Hintergrund je Kontakt und je Bereich.
+       *
+       * Bis 10/2026 lag die Wahl offen im localStorage und galt für den ganzen
+       * Messenger. Ein eigenes Bild pro Chat ist Nutzerinhalt wie der Verlauf
+       * daneben, und er gehört dem angemeldeten Konto. Deshalb dieselbe Ablage
+       * und dasselbe Siegel; nur der Platz (`direkt:<id>`, `global:messenger`,
+       * `global:ki`) bleibt als Schlüssel lesbar.
+       */
+      if (!db.objectStoreNames.contains(STORE_HINTERGRUENDE)) {
+        db.createObjectStore(STORE_HINTERGRUENDE, { keyPath: 'schluessel' })
       }
       // Die vorhandene Tabelle aus Version 6 bekommt ihren Index nach. In
       // einer frisch angelegten steht er schon oben.
@@ -749,6 +768,51 @@ export async function ladeFunkenAkten(): Promise<Record<string, unknown>[]> {
     req.onerror = () => reject(req.error)
   })
   return entsiegleZeilen<Record<string, unknown>>(rohe, (z) => funkenAad(Number(z.partnerId)))
+}
+
+/** Alle Hintergrundzeilen dieses Kontos, entsiegelt und ungeprüft. */
+export async function ladeHintergrundZeilen(): Promise<Record<string, unknown>[]> {
+  const db = await openLocalDatabase()
+  const rohe = await new Promise<Record<string, any>[]>((resolve, reject) => {
+    const tx = db.transaction(STORE_HINTERGRUENDE, 'readonly')
+    const req = tx.objectStore(STORE_HINTERGRUENDE).getAll()
+    req.onsuccess = () => resolve((req.result || []) as Record<string, any>[])
+    req.onerror = () => reject(req.error)
+  })
+  return entsiegleZeilen<Record<string, unknown>>(rohe, (z) =>
+    hintergrundAad(String(z.schluessel || '')),
+  )
+}
+
+export async function speichereHintergrundZeile(
+  schluessel: string,
+  wert: Record<string, unknown>,
+): Promise<void> {
+  if (!schluessel) return
+  const zeile = await versiegleZeile(
+    { ...wert, schluessel },
+    ['schluessel'],
+    hintergrundAad(schluessel),
+  )
+  const db = await openLocalDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_HINTERGRUENDE, 'readwrite')
+    tx.objectStore(STORE_HINTERGRUENDE).put(zeile)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
+export async function loescheHintergrundZeile(schluessel: string): Promise<void> {
+  const db = await openLocalDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_HINTERGRUENDE, 'readwrite')
+    tx.objectStore(STORE_HINTERGRUENDE).delete(schluessel)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
 }
 
 /**
@@ -2552,6 +2616,12 @@ export function schreibeEntwuerfeBestandNeu(): Promise<number> {
 export function schreibeFunkenBestandNeu(): Promise<number> {
   return bestandNeu(STORE_FUNKEN, ['partnerId'], (roh) =>
     funkenAad(Number(roh.partnerId || 0)),
+  )
+}
+
+export function schreibeHintergruendeBestandNeu(): Promise<number> {
+  return bestandNeu(STORE_HINTERGRUENDE, ['schluessel'], (roh) =>
+    hintergrundAad(String(roh.schluessel || '')),
   )
 }
 

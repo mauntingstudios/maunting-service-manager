@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field, StrictInt, field_serializer, field_validator
 from services.chat_media_validator import MAX_STORY_MEDIA_URL_CHARS
 from schemas.passkey import Zweitnachweis
 
@@ -795,6 +795,8 @@ class ChatGroupMemberResponse(BaseModel):
     can_mention_everyone: bool = False
     can_pin_messages: bool = False
     can_set_disappearing_messages: bool = False
+    can_edit_group: bool = False
+    can_set_group_background: bool = False
     joined_at: datetime
 
 
@@ -852,6 +854,87 @@ class ChatGroupConfigResponse(BaseModel):
         return dt.isoformat()
 
 
+#: Obergrenze für die verschlüsselte Gruppeninfo (Name, Beschreibung, Logo).
+#: 64 KiB sind für drei Textfelder samt Signatur reichlich; alles darüber wäre
+#: keine Info mehr, sondern eine zweite Ablage. Der geteilte Hintergrund liegt
+#: bewusst in einem eigenen Block mit eigener Grenze.
+MAX_GROUP_INFO_BYTES = 64 * 1024
+
+#: Obergrenze für den geteilten Gruppenhintergrund. Der Client verkleinert das
+#: Bild vor dem Verschlüsseln (Richtwert 512 KiB Klartext); Base64 und
+#: Chiffrat blähen das auf. 1 MiB Zeichen lassen diesen Spielraum und halten
+#: trotzdem jede Gruppe bei einer festen Obergrenze.
+MAX_GROUP_BACKGROUND_BYTES = 1024 * 1024
+
+
+def _validate_group_blob(blob: str) -> str:
+    # Dieselbe Prüfung wie für eine Nachricht: sie weist Klartext ab und
+    # begrenzt die Menge, die der Server nicht beurteilen kann.
+    validate_e2ee_envelope_format(blob)
+    return blob
+
+
+class ChatGroupInfoWrite(BaseModel):
+    """Name, Beschreibung und Logo — verschlüsselt, mit der abgelösten Revision.
+
+    Getrennt vom Rollenblock (``/config``), damit ``edit_group`` keine Rollen
+    umschreiben kann und ``manage_roles`` keine Gruppeninfo.
+    """
+
+    blob: str = Field(..., min_length=10, max_length=MAX_GROUP_INFO_BYTES)
+    erwartete_revision: StrictInt = Field(..., ge=0)
+
+    @field_validator("blob")
+    @classmethod
+    def validate_blob(cls, v: str) -> str:
+        return _validate_group_blob(v)
+
+
+class ChatGroupInfoResponse(BaseModel):
+    group_id: int
+    blob: str
+    revision: int
+    updated_at: datetime
+
+    @field_serializer("updated_at")
+    def serialize_updated_at(self, dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+
+
+class ChatGroupBackgroundWrite(BaseModel):
+    """Der geteilte Gruppenhintergrund, verschlüsselt, mit der Revision.
+
+    ``mime`` und ``size_bytes`` beschreiben das Klartextbild und werden vom
+    Client genannt; der Server sieht nur diese Angaben und das Chiffrat.
+    """
+
+    blob: str = Field(..., min_length=10, max_length=MAX_GROUP_BACKGROUND_BYTES)
+    erwartete_revision: StrictInt = Field(..., ge=0)
+    mime: str | None = Field(None, max_length=100, pattern=r"^image/[a-z0-9.+-]+$")
+
+    @field_validator("blob")
+    @classmethod
+    def validate_blob(cls, v: str) -> str:
+        return _validate_group_blob(v)
+
+
+class ChatGroupBackgroundResponse(BaseModel):
+    group_id: int
+    blob: str
+    revision: int
+    mime: str | None = None
+    size_bytes: int = 0
+    updated_at: datetime
+
+    @field_serializer("updated_at")
+    def serialize_updated_at(self, dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+
+
 class ChatGroupResponse(BaseModel):
     id: int
     #: Immer `None` seit Stufe 6 — der Server kennt den Namen nicht mehr. Das
@@ -880,6 +963,11 @@ class ChatGroupResponse(BaseModel):
     can_mention_everyone: bool = False
     can_pin_messages: bool = False
     can_set_disappearing_messages: bool = False
+    # Gruppeninfo und geteilter Hintergrund sind getrennte Wege; Rollen bleiben
+    # bei ``manage_roles``.
+    can_edit_group: bool = False
+    can_set_group_background: bool = False
+    can_manage_roles: bool = False
     created_at: datetime
     members: list[ChatGroupMemberResponse] = []
     room_token: str | None = None

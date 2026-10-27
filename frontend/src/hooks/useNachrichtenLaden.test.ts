@@ -148,6 +148,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
   vi.mocked(ablage.loadLocalMessages).mockResolvedValue([])
+  sessionChatCache.clear()
 })
 
 describe('Chat-Identitaet', () => {
@@ -174,6 +175,70 @@ describe('Chat-Identitaet', () => {
 
     expect(api.ackChatMessages).toHaveBeenCalledWith('direct', 77, 9)
     expect(api.readChatMessages).toHaveBeenCalledWith('direct', 77, 9)
+  })
+})
+
+describe('Örtlicher Verlauf zuerst', () => {
+  it('holt ab der höchsten gespeicherten Serverkennung', async () => {
+    ablage.loadLocalMessages.mockResolvedValue([zeile(42, false), zeile(43, true)])
+    const opts = optionen()
+
+    await useNachrichtenLaden(opts).loadMessages(true)
+
+    expect(opts.konversation.liesNachrichten).toHaveBeenCalledWith(43)
+  })
+
+  it('zeigt den lokalen Verlauf, bevor das Netz antwortet', async () => {
+    ablage.loadLocalMessages.mockResolvedValue([zeile(42, false)])
+    let antworten: (wert: Seite) => void = () => {}
+    const netz = new Promise<Seite>((fertig) => {
+      antworten = fertig
+    })
+    const opts = optionen()
+    vi.mocked(opts.konversation.liesNachrichten).mockReturnValue(netz as never)
+
+    const lauf = useNachrichtenLaden(opts).loadMessages(true)
+
+    await waitFor(() =>
+      expect(opts.setMessages).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 42 }),
+      ]),
+    )
+    expect(opts.setLoadingMessages).toHaveBeenCalledWith(false)
+
+    antworten(seite([zeile(44, false)]))
+    await lauf
+  })
+
+  it('wartet mit aufgeschobenen Umschlägen nicht auf das erste Bild', async () => {
+    const opts = optionen()
+    let abschliessen: (anzahl: number) => void = () => {}
+    const offen = new Promise<number>((fertig) => {
+      abschliessen = fertig
+    })
+    ;(opts.konversation as unknown as { verarbeiteOffene: () => Promise<number> }).verarbeiteOffene =
+      vi.fn(() => offen)
+
+    const lauf = useNachrichtenLaden(opts).loadMessages(true)
+
+    await waitFor(() => expect(opts.konversation.liesNachrichten).toHaveBeenCalled())
+    abschliessen(0)
+    await lauf
+  })
+
+  it('überschreibt den Serverstand nicht mit einem späteren lokalen Lesevorgang', async () => {
+    // Der Kern liest lokal und Netz gleichzeitig. Kommt das Siegel später,
+    // darf die ältere lokale Kopie den frischen Serverstand nicht ersetzen.
+    const opts = optionen()
+    const gelesen = seite([zeile(9, false)])
+    vi.mocked(opts.konversation.liesNachrichten).mockResolvedValue(gelesen)
+    sessionChatCache.set('direct:peer:2', [zeile(9, false)] as never)
+
+    await useNachrichtenLaden(opts).loadMessages(true)
+
+    expect(opts.setMessages).toHaveBeenLastCalledWith([
+      expect.objectContaining({ id: 9 }),
+    ])
   })
 })
 

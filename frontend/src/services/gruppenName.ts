@@ -30,10 +30,11 @@
 import type { ChatGroupItem } from '@/api/social'
 import { entsiegleZeile, istOffen, versiegleZeile } from './lokaleVersiegelung'
 import {
-  aendereGruppenzustand,
-  ladeGruppenzustand,
-  type Gruppenzustand,
-} from './gruppenKonfig'
+  aendereGruppenInfo,
+  INFO_FORMAT,
+  ladeGruppenInfo,
+  type GruppenInfo,
+} from './gruppenInfo'
 import type { GruppenKontext } from './gruppenSchluessel'
 
 const ABLAGE_SCHLUESSEL = 'msm:gruppennamen'
@@ -91,16 +92,19 @@ function sauber(wert: unknown, hoechstens: number): string | null {
   return text ? text.slice(0, hoechstens) : null
 }
 
+function alsLogo(wert: unknown): string | null {
+  return typeof wert === 'string' &&
+    /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(wert)
+    ? wert
+    : null
+}
+
 function alsAnsicht(roh: unknown): GruppenAnsicht | null {
   if (!roh || typeof roh !== 'object') return null
   const r = roh as Record<string, unknown>
   const name = sauber(r.name, 64)
   const beschreibung = sauber(r.beschreibung, 256)
-  const logo =
-    typeof r.logo === 'string' &&
-    /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(r.logo)
-      ? r.logo
-      : null
+  const logo = alsLogo(r.logo)
   if (!name && !beschreibung && !logo) return null
   return { name, beschreibung, logo }
 }
@@ -169,21 +173,32 @@ export async function schreibeGruppenNamenBestandNeu(): Promise<number> {
  * Überschreibt, statt den ersten Stand zu halten — anders als bei den
  * Geheimnissen. Ein Name ist kein Schlüssel: eine spätere Fassung ist die
  * richtigere, und ein falscher Name kostet eine Überschrift, keinen Zugang.
+ *
+ * Ein Feld, das ausdrücklich `null` oder leer ist, **löscht** den bisherigen
+ * Wert. Ein fehlendes Feld lässt ihn stehen. Ohne diese Unterscheidung würde
+ * ein geleerter Name für immer stehen bleiben: der frühere `??`-Merge nahm
+ * den alten Wert, sobald der neue `null` war.
  */
 export async function merkeGruppenName(
   groupId: number,
   ansicht: GruppenAnsicht,
 ): Promise<void> {
   if (!Number.isInteger(groupId) || groupId <= 0) return
-  const geprueft = alsAnsicht(ansicht)
-  if (!geprueft) return
   const karte = await ladeGruppenNamen()
   const bisher = karte.get(groupId)
-  karte.set(groupId, {
-    name: geprueft.name ?? bisher?.name ?? null,
-    beschreibung: geprueft.beschreibung ?? bisher?.beschreibung ?? null,
-    logo: geprueft.logo ?? bisher?.logo ?? null,
-  })
+  const naechste: GruppenAnsicht = {
+    name: ansicht.name !== undefined ? sauber(ansicht.name, 64) : bisher?.name ?? null,
+    beschreibung:
+      ansicht.beschreibung !== undefined
+        ? sauber(ansicht.beschreibung, 256)
+        : bisher?.beschreibung ?? null,
+    logo: ansicht.logo !== undefined ? alsLogo(ansicht.logo) : bisher?.logo ?? null,
+  }
+  if (!naechste.name && !naechste.beschreibung && !naechste.logo) {
+    if (!karte.delete(groupId)) return
+  } else {
+    karte.set(groupId, naechste)
+  }
   await schreibeStand()
 }
 
@@ -245,37 +260,41 @@ export async function benenneGruppen(gruppen: ChatGroupItem[]): Promise<ChatGrou
 }
 
 /**
- * Holt Name, Beschreibung und Logo aus dem verschlüsselten Block.
+ * Holt Name, Beschreibung und Logo aus dem verschlüsselten Info-Block.
  *
  * Der Weg für ein frisches Gerät: dort ist der örtliche Speicher leer, und der
- * Block ist die einzige Quelle. `null`, wenn der Block fehlt, nicht lesbar ist
- * oder nichts dazu sagt — in allen drei Fällen zeigt der Aufrufer dasselbe.
+ * Block ist die einzige Quelle. Fehlt der neue Info-Block, liest
+ * `ladeGruppenInfo` den Altbestand aus dem Rollenblock.
  *
  * Bewusst **ohne** `darfSchreiben`: wer den Namen gesetzt hat, ist hier egal.
  * Ein untergeschobener Name ist eine falsche Überschrift, kein Zugang — und
- * eine Befugnisprüfung bräuchte die Rollenlage, die selbst erst aus diesem
- * Block kommt.
+ * eine Befugnisprüfung bräuchte die Rollenlage, die selbst erst aus dem
+ * Rollenblock kommt.
  */
 export async function holeGruppenAnsicht(
   kontext: GruppenKontext,
 ): Promise<GruppenAnsicht | null> {
   try {
-    const lesung = await ladeGruppenzustand(kontext)
-    if (lesung.art !== 'zustand') return null
-    const ansicht = alsAnsicht(lesung.zustand)
-    if (ansicht) await merkeGruppenName(kontext.groupId, ansicht)
-    return ansicht
+    const lesung = await ladeGruppenInfo(kontext)
+    if (lesung.art !== 'info') return null
+    const ansicht: GruppenAnsicht = {
+      name: lesung.info.name,
+      beschreibung: lesung.info.beschreibung,
+      logo: lesung.info.logo,
+    }
+    // Auch ein bewusst geleerter Block räumt den örtlichen Namen weg.
+    await merkeGruppenName(kontext.groupId, ansicht)
+    return alsAnsicht(ansicht)
   } catch {
     return null
   }
 }
 
 /**
- * Schreibt Name, Beschreibung und Logo in den verschlüsselten Block.
+ * Schreibt Name, Beschreibung und Logo in den Info-Block.
  *
- * Über `aendereGruppenzustand`, damit die Rollen im selben Block nicht
- * verloren gehen: der Block ist **einer**, und wer ihn mit einem frisch
- * gebauten Stand überschriebe, löschte die Rechtetabelle mit.
+ * `undefined` heisst „nicht angefasst", `null` oder leer heisst „leeren". Ein
+ * Aufruf, der nur das Logo setzt, lässt Name und Beschreibung stehen.
  *
  * Gibt zurück, ob es geklappt hat. Ein `false` ist kein Grund, das Anlegen
  * einer Gruppe abzubrechen — der örtliche Speicher trägt den Namen, und der
@@ -287,14 +306,17 @@ export async function sichereGruppenAnsicht(
 ): Promise<boolean> {
   await merkeGruppenName(kontext.groupId, ansicht)
   try {
-    const ergebnis = await aendereGruppenzustand(
+    const ergebnis = await aendereGruppenInfo(
       kontext,
       () => true,
-      (vorher: Gruppenzustand): Gruppenzustand => ({
-        ...vorher,
-        name: ansicht.name ?? vorher.name ?? null,
-        beschreibung: ansicht.beschreibung ?? vorher.beschreibung ?? null,
-        logo: ansicht.logo ?? vorher.logo ?? null,
+      (vorher: GruppenInfo): GruppenInfo => ({
+        v: INFO_FORMAT,
+        name: ansicht.name !== undefined ? sauber(ansicht.name, 64) : vorher.name,
+        beschreibung:
+          ansicht.beschreibung !== undefined
+            ? sauber(ansicht.beschreibung, 256)
+            : vorher.beschreibung,
+        logo: ansicht.logo !== undefined ? alsLogo(ansicht.logo) : vorher.logo,
       }),
     )
     return ergebnis.art === 'gespeichert'

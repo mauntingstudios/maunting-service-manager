@@ -47,6 +47,8 @@ BRANCH_TABLES = (
     "team_invitations",
     "panel_popups",
     "user_popup_states",
+    "chat_group_infos",
+    "chat_group_backgrounds",
 )
 
 
@@ -216,7 +218,7 @@ def test_main_datenbank_erhaelt_die_messenger_brucke(pg_wegwerf) -> None:
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261025_01"
+        assert version == "20261027_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -250,7 +252,7 @@ def test_server_auf_messenger_revision_kommt_wieder_auf_den_head(pg_wegwerf) -> 
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261025_01"
+        assert version == "20261027_01"
     finally:
         engine.dispose()
         settings.database_url = previous

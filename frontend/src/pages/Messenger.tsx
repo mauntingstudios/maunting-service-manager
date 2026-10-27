@@ -102,6 +102,7 @@ import {
   versteckeGespraech,
 } from '@/services/gespraechsListe'
 import { ladeGruppenzustand, type Gruppenzustand } from '@/services/gruppenKonfig'
+import { ladeGruppenInfo } from '@/services/gruppenInfo'
 import { rechteAusGruppe } from '@/services/gruppenRollen'
 import {
   entferneLokaleNachricht,
@@ -135,6 +136,7 @@ import {
 } from '@/services/nachrichtVerfall'
 import { sessionChatCache } from '@/services/klartextSpeicher'
 import { ErwaehnungsWache } from '@/components/social/ErwaehnungsWache'
+import { GruppenMetaWache } from '@/components/social/GruppenMetaWache'
 import { FreundschaftsanfragenKarte } from '@/components/social/FreundschaftsanfragenKarte'
 import { FunkenWache } from '@/components/social/FunkenWache'
 import { FunkenAbzeichen } from '@/components/social/FunkenBadge'
@@ -290,6 +292,46 @@ function MessengerSeite() {
   } = useMessengerAuswahl({ kontakte: contactsList, gruppen: groups, kontakteGeladen, t })
 
   /**
+   * Eine frisch entschlüsselte Gruppeninfo in die Liste übernehmen.
+   *
+   * Der örtliche Namensspeicher bekommt denselben Stand; `null` leert ihn
+   * dort ausdrücklich. Die Liste ist die eine Stelle, aus der die Oberfläche
+   * liest; `activeGroup` zieht über den bestehenden Vergleichseffekt nach.
+   */
+  const uebernimmGruppenInfo = useCallback(
+    (groupId: number, info: { name: string | null; beschreibung: string | null; logo: string | null }) => {
+      void merkeGruppenName(groupId, {
+        name: info.name,
+        beschreibung: info.beschreibung,
+        logo: info.logo,
+      }).catch(() => {})
+      setGroups((vorher) =>
+        vorher.map((g) =>
+          g.id === groupId
+            ? {
+                ...g,
+                name: info.name,
+                description: info.beschreibung,
+                avatar_url: info.logo,
+              }
+            : g,
+        ),
+      )
+      setActiveGroup((vorher) =>
+        vorher?.id === groupId
+          ? {
+              ...vorher,
+              name: info.name,
+              description: info.beschreibung,
+              avatar_url: info.logo,
+            }
+          : vorher,
+      )
+    },
+    [setGroups, setActiveGroup],
+  )
+
+  /**
    * „Ansehen“ aus der Freundschaftsmeldung.
    *
    * Auf dem Handy liegt die Liste hinter dem offenen Chat. Der Knopf soll
@@ -314,11 +356,8 @@ function MessengerSeite() {
     groupToDelete,
     setGroupToDelete,
     isDeletingGroup,
-    logoLaedt,
-    gruppenLogoInputRef,
     groupCallPermissions,
     handleStartGroupCall,
-    handleGruppenLogo,
     handleCreateGroup,
     handleCopyInviteLink,
     handleLeaveGroup,
@@ -330,7 +369,6 @@ function MessengerSeite() {
     activeGroup,
     setActiveGroup,
     setActiveContact,
-    setGroups,
     loadData,
     gruppenTitel,
     handleZurueckZurListe,
@@ -370,6 +408,7 @@ function MessengerSeite() {
 
   // Group Permissions & Delete Modal State
   const [isGroupPermissionsOpen, setIsGroupPermissionsOpen] = useState(false)
+  const [groupSettingsTab, setGroupSettingsTab] = useState<'general' | 'background'>('general')
   const [chatEntfernenOffen, setChatEntfernenOffen] = useState(false)
   /**
    * Die `?userId=`, für die schon geprüft wurde.
@@ -991,32 +1030,6 @@ function MessengerSeite() {
       .then((lesung) => {
         if (abgebrochen) return
         setGruppenRollenZustand(lesung.art === 'zustand' ? lesung.zustand : null)
-        /*
-         * Derselbe Block trägt den Namen. Er hier mitzunehmen kostet keinen
-         * zweiten Abruf — und das ist der Weg, auf dem ein frisch
-         * eingerichtetes Gerät überhaupt erfährt, wie die Gruppe heisst: sein
-         * örtlicher Speicher ist leer, und der Server weiss es nicht mehr.
-         *
-         * Das Ergebnis wandert bewusst nicht direkt in `setGroups`: die Liste
-         * holt es beim nächsten `loadData` über `benenneGruppen`, und damit
-         * gibt es weiterhin genau eine Stelle, an der Gruppen benannt werden.
-         */
-        if (lesung.art === 'zustand') {
-          const ansicht = {
-            name: lesung.zustand.name,
-            beschreibung: lesung.zustand.beschreibung,
-            logo: lesung.zustand.logo,
-          }
-          // `loadData` nur, wenn der Block etwas weiss, das die Liste noch
-          // nicht zeigt. Sonst löste jedes Öffnen einer Gruppe einen vollen
-          // Abruf aus, und zwar genau auf den Geräten, die ihn nicht brauchen.
-          const neu = Boolean(ansicht.name) && ansicht.name !== (activeGroup.name ?? null)
-          void merkeGruppenName(activeGroup.id, ansicht)
-            .then(() => {
-              if (!abgebrochen && neu) void loadData()
-            })
-            .catch(() => {})
-        }
       })
       .catch(() => {
         if (!abgebrochen) setGruppenRollenZustand(null)
@@ -1026,6 +1039,55 @@ function MessengerSeite() {
       abgebrochen = true
     }
   }, [activeGroup?.id, activeGroup?.members, blindMailboxId, currentUserId])
+
+  /**
+   * Die Gruppeninfo der offenen Gruppe.
+   *
+   * Sie liegt seit 27.10.2026 in einem eigenen Block. Der Rollenblock daneben
+   * trägt sie nur noch für Altbestände. Deshalb wird hier **nicht** mehr aus
+   * dem Rollenblock gelesen: ein bewusst geleerter Name stünde sonst wieder
+   * da, sobald jemand die Rollen lädt.
+   */
+  useEffect(() => {
+    if (!activeGroup || !blindMailboxId || !currentUserId) return
+    let abgebrochen = false
+    const mitglieder = activeGroup.members ?? []
+    const darfSchreiben = (konto: number) => {
+      if (Number(activeGroup.owner_user_id) === Number(konto)) return true
+      const m = mitglieder.find((x) => Number(x.user_id) === Number(konto))
+      if (!m) return false
+      if (m.role === 'owner' || m.role === 'admin') return true
+      if (m.can_edit_group) return true
+      return (m.permissions || '')
+        .split(',')
+        .map((p) => p.trim())
+        .includes('edit_group')
+    }
+
+    void ladeGruppenInfo(
+      {
+        groupId: activeGroup.id,
+        blindMailboxId,
+        eigeneId: currentUserId,
+        mitglieder: mitglieder.map((m) => m.user_id),
+        istEigentuemer: activeGroup.role === 'owner',
+      },
+      darfSchreiben,
+    )
+      .then((lesung) => {
+        if (abgebrochen || lesung.art !== 'info') return
+        uebernimmGruppenInfo(activeGroup.id, {
+          name: lesung.info.name,
+          beschreibung: lesung.info.beschreibung,
+          logo: lesung.info.logo,
+        })
+      })
+      .catch(() => {})
+
+    return () => {
+      abgebrochen = true
+    }
+  }, [activeGroup?.id, blindMailboxId, currentUserId, uebernimmGruppenInfo])
 
   /**
    * Die offene Gruppe frisch halten.
@@ -2494,8 +2556,38 @@ function MessengerSeite() {
         >
           {isDragOver && <Ablageflaeche className="z-40" text={t('messenger.dropFile')} hinweis={t('messenger.dropHint')} />}
 
-          {/* Der Chat-Hintergrund — dieselbe Schicht wie im KI-Bereich. */}
-          <ChatHintergrund bereich="messenger" />
+          {/* Der Chat-Hintergrund — dieselbe Schicht wie im KI-Bereich.
+              Direktchats haben ihre eigene Wahl, Gruppen den geteilten
+              Hintergrund der Gruppe; ohne beides gilt die Vorgabe. */}
+          <ChatHintergrund
+            bereich="messenger"
+            peerId={activeGroup ? null : activeContact?.userId ?? null}
+            gruppe={
+              activeGroup
+                ? {
+                    groupId: activeGroup.id,
+                    blindMailboxId: blindMailboxId || undefined,
+                    eigeneId: currentUserId,
+                    mitglieder: (activeGroup.members ?? []).map((m) => m.user_id),
+                    istEigentuemer: activeGroup.role === 'owner',
+                  }
+                : null
+            }
+            gruppeDarfSetzen={(konto) => {
+              if (!activeGroup) return false
+              if (Number(activeGroup.owner_user_id) === Number(konto)) return true
+              const m = (activeGroup.members ?? []).find((x) => Number(x.user_id) === Number(konto))
+              if (!m) return false
+              if (m.role === 'owner' || m.role === 'admin') return true
+              return (
+                Boolean(m.can_set_group_background) ||
+                (m.permissions || '')
+                  .split(',')
+                  .map((p) => p.trim())
+                  .includes('set_group_background')
+              )
+            }}
+          />
 
           {isChatOpen ? (
             <>
@@ -2567,7 +2659,6 @@ function MessengerSeite() {
                             hatEinladung: Boolean(activeGroup.invite_code),
                             istEigentuemer: activeGroup.owner_user_id === currentUserId,
                             istAdmin: activeGroup.role === 'admin',
-                            logoLaedt,
                           }
                         : null
                     }
@@ -2578,10 +2669,19 @@ function MessengerSeite() {
                     onSicherheitsnummer={() => sicherheitsnummern.setOffen(true)}
                     onVerfall={() => setVerfallOffen(true)}
                     onVideoanruf={() => void starteAnruf('video')}
-                    onHintergrund={() => setIsWallpaperModalOpen(true)}
+                    onHintergrund={() => {
+                      if (activeGroup) {
+                        setGroupSettingsTab('background')
+                        setIsGroupPermissionsOpen(true)
+                      } else {
+                        setIsWallpaperModalOpen(true)
+                      }
+                    }}
                     onEinladung={() => activeGroup && handleCopyInviteLink(activeGroup)}
-                    onLogo={() => gruppenLogoInputRef.current?.click()}
-                    onRollen={() => setIsGroupPermissionsOpen(true)}
+                    onEinstellungen={() => {
+                      setGroupSettingsTab('general')
+                      setIsGroupPermissionsOpen(true)
+                    }}
                     onLoeschen={() => activeGroup && handleDeleteGroup(activeGroup)}
                     onVerlassen={() => activeGroup && handleLeaveGroup(activeGroup)}
                     onBlockieren={() => setIsBlockConfirmOpen(true)}
@@ -3001,6 +3101,16 @@ function MessengerSeite() {
         aktiv={!messengerGesperrt && !!currentUserId}
       />
 
+      {/* Name, Beschreibung, Bild und Rollen kommen über den Ereignisstrom.
+          Ohne diese Wache bliebe eine offene Gruppe stehen, bis jemand sie
+          schließt und wieder öffnet. */}
+      <GruppenMetaWache
+        groups={groups}
+        eigeneId={currentUserId}
+        onInfo={uebernimmGruppenInfo}
+        onStruktur={() => void loadData()}
+      />
+
 
       <NotePickerDialog
         open={isNotePickerOpen}
@@ -3157,6 +3267,8 @@ function MessengerSeite() {
         }}
         isGroupPermissionsOpen={isGroupPermissionsOpen}
         setIsGroupPermissionsOpen={setIsGroupPermissionsOpen}
+        groupSettingsTab={groupSettingsTab}
+        onGroupInvite={() => activeGroup && handleCopyInviteLink(activeGroup)}
         activeGroup={activeGroup}
         currentUserId={currentUserId}
         onGroupUpdated={(updatedGroup) => {
@@ -3178,18 +3290,6 @@ function MessengerSeite() {
         setIsBlockConfirmOpen={setIsBlockConfirmOpen}
         blocked={Boolean(activeContact && isBlocked(activeContact.userId))}
         onBlockConfirm={handleBlockConfirm}
-      />
-
-      {/* Dateiauswahl für das Gruppenlogo (der sichtbare Knopf steht im Kopf) */}
-      <input
-        ref={gruppenLogoInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
-        className="hidden"
-        onChange={(e) => {
-          void handleGruppenLogo(e.target.files?.[0])
-          e.target.value = ''
-        }}
       />
 
       {/* Circular Video Note Recorder (R2) */}

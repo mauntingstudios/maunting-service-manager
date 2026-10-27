@@ -1,17 +1,28 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import 'fake-indexeddb/auto'
+
+import { IDBFactory } from 'fake-indexeddb'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
 import { Blatteintrag, Blattknopf } from '@/Singra/UI'
+import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
+import { schliesseLokaleAblageFuerTest } from '@/services/messengerLocalStore'
+
+vi.mock('@/stores/confirmStore', () => ({ confirm: vi.fn(async () => true) }))
 
 import { ChatHintergrund } from './ChatHintergrund'
 import { ChatHintergrundDialog } from './ChatHintergrundDialog'
 import {
+  hatDirekteHintergruende,
   hintergrundSchluessel,
   ladeChatHintergrund,
+  ladeHintergrundFuerScope,
   speichereChatHintergrund,
+  speichereHintergrundFuerScope,
   STANDARD_HINTERGRUND,
+  wendeAufAlleDirektchatsAn,
 } from './speicher'
 import { HINTERGRUND_VORLAGEN } from './vorlagen'
 
@@ -20,64 +31,65 @@ beforeAll(async () => {
 })
 
 beforeEach(() => {
+  ;(globalThis as any).indexedDB = new IDBFactory()
   localStorage.clear()
+  setzeAngemeldetesKonto(1)
+  schliesseLokaleAblageFuerTest()
 })
 
 /** Ein Fenster mit Knopf, wie es eine Fläche einbaut. */
-function Probeflaeche({ bereich }: { bereich: 'messenger' | 'ki' }) {
+function Probeflaeche({ bereich, peerId }: { bereich: 'messenger' | 'ki'; peerId?: number }) {
   const [offen, setzeOffen] = useState(false)
   return (
     <div className="relative">
-      <ChatHintergrund bereich={bereich} />
+      <ChatHintergrund bereich={bereich} peerId={peerId} />
       <button type="button" onClick={() => setzeOffen(true)}>
         einstellen
       </button>
-      <ChatHintergrundDialog bereich={bereich} offen={offen} onOffenChange={setzeOffen} />
+      <ChatHintergrundDialog
+        bereich={bereich}
+        peerId={peerId}
+        offen={offen}
+        onOffenChange={setzeOffen}
+      />
     </div>
   )
 }
 
 describe('Speicher', () => {
-  it('hält die Bereiche auseinander', () => {
-    speichereChatHintergrund('messenger', { preset: 'midnight', dimLevel: 40 })
+  it('hält die Bereiche auseinander', async () => {
+    await speichereChatHintergrund('messenger', { preset: 'midnight', dimLevel: 40 })
 
-    expect(ladeChatHintergrund('messenger').preset).toBe('midnight')
-    expect(ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND)
-    expect(localStorage.getItem(hintergrundSchluessel('ki'))).toBeNull()
+    expect((await ladeChatHintergrund('messenger')).preset).toBe('midnight')
+    expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND)
   })
 
-  it('übernimmt den alten Messenger-Schlüssel einmalig', () => {
+  it('übernimmt den alten Messenger-Schlüssel einmalig', async () => {
     // Genau die Form, die vor dem Umbau im Browser lag.
     localStorage.setItem(
       'msm_chat_wallpaper_config',
       JSON.stringify({ preset: 'petrol', dimLevel: 10 }),
     )
 
-    expect(ladeChatHintergrund('messenger')).toEqual({
+    expect(await ladeChatHintergrund('messenger')).toEqual({
       preset: 'petrol',
       customDataUrl: undefined,
       dimLevel: 10,
     })
-    // Danach steht die Wahl unter dem neuen Namen, der alte ist geräumt.
     expect(localStorage.getItem('msm_chat_wallpaper_config')).toBeNull()
-    expect(ladeChatHintergrund('messenger').preset).toBe('petrol')
+    expect((await ladeChatHintergrund('messenger')).preset).toBe('petrol')
   })
 
-  /**
-   * Der Grund für die Schlüsselnamen, und kein theoretischer: der Messenger
-   * ruft `scrubPlaintextStorage()` bei jedem Öffnen, und das räumt alles unter
-   * `msm_chat_` weg. Unter dem alten Namen war der Hintergrund danach fort.
-   */
   it('überlebt die Klartext-Putzkolonne des Messengers', async () => {
     const { scrubPlaintextStorage } = await import('@/services/e2eeCrypto')
 
-    speichereChatHintergrund('messenger', { preset: 'midnight', dimLevel: 30 })
-    speichereChatHintergrund('ki', { preset: 'petrol', dimLevel: 5 })
+    await speichereChatHintergrund('messenger', { preset: 'midnight', dimLevel: 30 })
+    await speichereChatHintergrund('ki', { preset: 'petrol', dimLevel: 5 })
 
     scrubPlaintextStorage()
 
-    expect(ladeChatHintergrund('messenger').preset).toBe('midnight')
-    expect(ladeChatHintergrund('ki').preset).toBe('petrol')
+    expect((await ladeChatHintergrund('messenger')).preset).toBe('midnight')
+    expect((await ladeChatHintergrund('ki')).preset).toBe('petrol')
   })
 
   it('hält sich aus dem Namensraum der Putzkolonne heraus', () => {
@@ -86,56 +98,101 @@ describe('Speicher', () => {
     }
   })
 
-  it('fällt auf den Standard zurück, wo nichts Brauchbares steht', () => {
+  it('fällt auf den Standard zurück, wo nichts Brauchbares steht', async () => {
     localStorage.setItem(hintergrundSchluessel('ki'), '{kein json')
-    expect(ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND)
+    expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND)
 
     localStorage.setItem(hintergrundSchluessel('ki'), JSON.stringify({ preset: 'neon' }))
-    expect(ladeChatHintergrund('ki').preset).toBe(STANDARD_HINTERGRUND.preset)
+    expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND.preset)
 
     // Ein „eigenes Bild" ohne Bild ist kein Hintergrund, sondern ein Loch.
     localStorage.setItem(
       hintergrundSchluessel('ki'),
       JSON.stringify({ preset: 'custom', dimLevel: 25 }),
     )
-    expect(ladeChatHintergrund('ki').preset).toBe(STANDARD_HINTERGRUND.preset)
+    expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND.preset)
+  })
+
+  it('lässt einen Direktchat auf die globale Vorgabe zurückfallen', async () => {
+    await speichereChatHintergrund('messenger', { preset: 'midnight', dimLevel: 20 })
+    await speichereHintergrundFuerScope(
+      { art: 'direkt', peerId: 7 },
+      { preset: 'petrol', dimLevel: 30 },
+    )
+
+    expect((await ladeHintergrundFuerScope({ art: 'direkt', peerId: 7 })).preset).toBe('petrol')
+    expect((await ladeHintergrundFuerScope({ art: 'direkt', peerId: 8 })).preset).toBe('midnight')
+  })
+
+  it('„für alle" schreibt die Vorgabe und entfernt direkte Ausnahmen', async () => {
+    await speichereHintergrundFuerScope(
+      { art: 'direkt', peerId: 7 },
+      { preset: 'petrol', dimLevel: 30 },
+    )
+    expect(await hatDirekteHintergruende()).toBe(true)
+
+    await speichereChatHintergrund('ki', { preset: 'petrol', dimLevel: 5 })
+    await wendeAufAlleDirektchatsAn({ preset: 'minimal', dimLevel: 10 })
+
+    expect(await hatDirekteHintergruende()).toBe(false)
+    expect((await ladeChatHintergrund('ki')).preset).toBe('petrol')
+    expect((await ladeHintergrundFuerScope({ art: 'direkt', peerId: 7 })).preset).toBe('minimal')
+    expect((await ladeChatHintergrund('messenger')).preset).toBe('minimal')
+  })
+
+  it('gehört dem angemeldeten Konto, nicht dem Browser', async () => {
+    await speichereChatHintergrund('ki', { preset: 'midnight', dimLevel: 10 })
+
+    setzeAngemeldetesKonto(2)
+    schliesseLokaleAblageFuerTest()
+    expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND)
+
+    setzeAngemeldetesKonto(1)
+    schliesseLokaleAblageFuerTest()
+    expect((await ladeChatHintergrund('ki')).preset).toBe('midnight')
   })
 })
 
 describe('Schicht', () => {
-  it('zeigt die gespeicherte Vorlage samt Abdunkelung', () => {
-    speichereChatHintergrund('ki', { preset: 'petrol', dimLevel: 40 })
+  it('zeigt die gespeicherte Vorlage samt Abdunkelung', async () => {
+    await speichereChatHintergrund('ki', { preset: 'petrol', dimLevel: 40 })
     const { container } = render(<ChatHintergrund bereich="ki" />)
 
-    expect(container.querySelector('[data-chat-hintergrund="petrol"]')).not.toBeNull()
+    await waitFor(() =>
+      expect(container.querySelector('[data-chat-hintergrund="petrol"]')).not.toBeNull(),
+    )
     expect(container.querySelector('[data-chat-hintergrund-abdunkeln="40"]')).not.toBeNull()
   })
 
-  it('folgt einer Änderung, ohne neu aufgebaut zu werden', () => {
-    // Zwei Flächen desselben Bereichs — im KI-Bereich ist das der Chat und
-    // das Guardian-Fenster nebenan.
+  it('folgt einer Änderung, ohne neu aufgebaut zu werden', async () => {
     const { container } = render(
       <>
         <ChatHintergrund bereich="ki" />
         <ChatHintergrund bereich="ki" />
       </>,
     )
-    expect(container.querySelectorAll('[data-chat-hintergrund="cyber"]')).toHaveLength(2)
+    await waitFor(() =>
+      expect(container.querySelectorAll('[data-chat-hintergrund="cyber"]')).toHaveLength(2),
+    )
 
-    act(() => {
-      speichereChatHintergrund('ki', { preset: 'midnight', dimLevel: 0 })
+    await act(async () => {
+      await speichereChatHintergrund('ki', { preset: 'midnight', dimLevel: 0 })
     })
 
-    expect(container.querySelectorAll('[data-chat-hintergrund="midnight"]')).toHaveLength(2)
-    // Ohne Abdunkelung auch keine Schicht dafür.
+    await waitFor(() =>
+      expect(container.querySelectorAll('[data-chat-hintergrund="midnight"]')).toHaveLength(2),
+    )
     expect(container.querySelector('[data-chat-hintergrund-abdunkeln]')).toBeNull()
   })
 
-  it('lässt einen fremden Bereich in Ruhe', () => {
+  it('lässt einen fremden Bereich in Ruhe', async () => {
     const { container } = render(<ChatHintergrund bereich="messenger" />)
+    await waitFor(() =>
+      expect(container.querySelector('[data-chat-hintergrund="cyber"]')).not.toBeNull(),
+    )
 
-    act(() => {
-      speichereChatHintergrund('ki', { preset: 'midnight', dimLevel: 0 })
+    await act(async () => {
+      await speichereChatHintergrund('ki', { preset: 'midnight', dimLevel: 0 })
     })
 
     expect(container.querySelector('[data-chat-hintergrund="cyber"]')).not.toBeNull()
@@ -143,84 +200,110 @@ describe('Schicht', () => {
 })
 
 describe('Einstellungsfenster', () => {
-  it('bietet jede Vorlage des Katalogs an', () => {
+  it('bietet jede Vorlage des Katalogs an', async () => {
     render(<Probeflaeche bereich="ki" />)
     fireEvent.click(screen.getByText('einstellen'))
 
     for (const vorlage of HINTERGRUND_VORLAGEN) {
-      expect(screen.getByText(i18n.t(vorlage.nameKey))).toBeInTheDocument()
+      expect(await screen.findByText(i18n.t(vorlage.nameKey))).toBeInTheDocument()
     }
   })
 
-  it('schreibt nur in seinen eigenen Bereich', () => {
-    speichereChatHintergrund('messenger', { preset: 'petrol', dimLevel: 15 })
+  it('schreibt nur in seinen eigenen Bereich', async () => {
+    await speichereChatHintergrund('messenger', { preset: 'petrol', dimLevel: 15 })
 
     render(<Probeflaeche bereich="ki" />)
     fireEvent.click(screen.getByText('einstellen'))
-    fireEvent.click(screen.getByText(i18n.t('social.wallpaper.midnight')))
+    fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.midnight')))
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.apply') }))
 
-    expect(ladeChatHintergrund('ki').preset).toBe('midnight')
-    expect(ladeChatHintergrund('messenger').preset).toBe('petrol')
+    await waitFor(async () =>
+      expect((await ladeChatHintergrund('ki')).preset).toBe('midnight'),
+    )
+    expect((await ladeChatHintergrund('messenger')).preset).toBe('petrol')
   })
 
-  it('zeigt die neue Wahl sofort auf der Fläche', () => {
+  it('zeigt die neue Wahl sofort auf der Fläche', async () => {
     const { container } = render(<Probeflaeche bereich="messenger" />)
     fireEvent.click(screen.getByText('einstellen'))
-    fireEvent.click(screen.getByText(i18n.t('social.wallpaper.minimal')))
+    fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.minimal')))
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.apply') }))
 
+    await waitFor(() =>
+      expect(container.querySelector('[data-chat-hintergrund="minimal"]')).not.toBeNull(),
+    )
     expect(screen.queryByText(i18n.t('social.wallpaper.presets'))).not.toBeInTheDocument()
-    expect(container.querySelector('[data-chat-hintergrund="minimal"]')).not.toBeNull()
   })
 
-  it('beginnt jedes Mal bei dem, was gespeichert ist', () => {
+  it('beginnt jedes Mal bei dem, was gespeichert ist', async () => {
     render(<Probeflaeche bereich="ki" />)
 
     fireEvent.click(screen.getByText('einstellen'))
-    fireEvent.click(screen.getByText(i18n.t('social.wallpaper.petrol')))
-    // Abbrechen statt übernehmen — die Wahl darf nicht hängenbleiben.
+    fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.petrol')))
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.cancel') }))
     fireEvent.click(screen.getByText('einstellen'))
 
-    const kacheln = screen.getAllByRole('button', { pressed: true })
+    const kacheln = await screen.findAllByRole('button', { pressed: true })
     expect(kacheln).toHaveLength(1)
     expect(kacheln[0]).toHaveTextContent(i18n.t('social.wallpaper.cyber'))
   })
 
-  it('setzt auf den Standard zurück', () => {
-    speichereChatHintergrund('ki', { preset: 'midnight', dimLevel: 70 })
+  it('setzt auf den Standard zurück', async () => {
+    await speichereChatHintergrund('ki', { preset: 'midnight', dimLevel: 70 })
 
     render(<Probeflaeche bereich="ki" />)
     fireEvent.click(screen.getByText('einstellen'))
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.reset') }))
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('common.reset') }))
 
-    expect(ladeChatHintergrund('ki')).toEqual({
-      preset: STANDARD_HINTERGRUND.preset,
-      customDataUrl: undefined,
-      dimLevel: STANDARD_HINTERGRUND.dimLevel,
-    })
+    await waitFor(async () =>
+      expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND),
+    )
   })
 
-  it('weist eine Datei ab, die kein Bild ist', () => {
+  it('bietet „Für alle Chats" nur im Direktchat an', async () => {
+    const { unmount } = render(<Probeflaeche bereich="messenger" />)
+    fireEvent.click(screen.getByText('einstellen'))
+    await screen.findByText(i18n.t('social.wallpaper.description'))
+    expect(screen.queryByText(i18n.t('social.wallpaper.applyAll'))).toBeNull()
+    unmount()
+
+    render(<Probeflaeche bereich="messenger" peerId={7} />)
+    fireEvent.click(screen.getByText('einstellen'))
+    expect(await screen.findByText(i18n.t('social.wallpaper.applyAll'))).toBeInTheDocument()
+  })
+
+  it('wendet auf alle Chats an, wenn das Häkchen gesetzt ist', async () => {
+    await speichereHintergrundFuerScope(
+      { art: 'direkt', peerId: 7 },
+      { preset: 'petrol', dimLevel: 10 },
+    )
+    render(<Probeflaeche bereich="messenger" peerId={7} />)
+    fireEvent.click(screen.getByText('einstellen'))
+    await screen.findByText(i18n.t('social.wallpaper.applyAll'))
+
+    fireEvent.click(screen.getByText(i18n.t('social.wallpaper.applyAll')))
+    fireEvent.click(screen.getByText(i18n.t('social.wallpaper.minimal')))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.apply') }))
+
+    await waitFor(async () => expect(await hatDirekteHintergruende()).toBe(false))
+    expect((await ladeChatHintergrund('messenger')).preset).toBe('minimal')
+  })
+
+  it('weist eine Datei ab, die kein Bild ist', async () => {
     render(<Probeflaeche bereich="ki" />)
     fireEvent.click(screen.getByText('einstellen'))
+    await screen.findByText(i18n.t('social.wallpaper.own'))
 
     const feld = document.querySelector('input[type="file"]') as HTMLInputElement
     fireEvent.change(feld, {
       target: { files: [new File(['x'], 'notiz.txt', { type: 'text/plain' })] },
     })
 
-    expect(screen.getByText(i18n.t('social.wallpaper.badType'))).toBeInTheDocument()
-    expect(ladeChatHintergrund('ki').preset).toBe(STANDARD_HINTERGRUND.preset)
+    expect(await screen.findByText(i18n.t('social.wallpaper.badType'))).toBeInTheDocument()
+    expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND.preset)
   })
 })
 
-/**
- * So bauen beide Flächen den Einstieg ein: eine Zeile im Blattmenü, das
- * Fenster daneben. Stünde das Fenster **im** Menü, nähme das sich schliessende
- * Menü es mit — der Klick täte dann sichtbar nichts.
- */
 describe('Einstieg über das Blattmenü', () => {
   function Probemenue({ bereich }: { bereich: 'messenger' | 'ki' }) {
     const [offen, setzeOffen] = useState(false)
@@ -242,15 +325,12 @@ describe('Einstieg über das Blattmenü', () => {
     )
   }
 
-  it('öffnet das Fenster, und das Menü ist danach zu', () => {
+  it('öffnet das Fenster neben dem Menü, nicht darin', async () => {
     render(<Probemenue bereich="ki" />)
-    expect(screen.queryByText(i18n.t('social.wallpaper.presets'))).not.toBeInTheDocument()
-
     fireEvent.click(screen.getByRole('button', { name: 'Weitere Einstellungen' }))
     fireEvent.click(screen.getByText(i18n.t('social.wallpaper.title')))
 
-    expect(screen.getByText(i18n.t('social.wallpaper.presets'))).toBeInTheDocument()
-    // Die Zeile selbst ist weg — das Menü hat zugemacht, das Fenster blieb.
+    expect(await screen.findByText(i18n.t('social.wallpaper.presets'))).toBeInTheDocument()
     expect(screen.getAllByText(i18n.t('social.wallpaper.title'))).toHaveLength(1)
   })
 })

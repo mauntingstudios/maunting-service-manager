@@ -147,6 +147,21 @@ export async function holeChatSchluessel(
 }
 
 /**
+ * Die Rohbytes eines bereits geöffneten Chat-Schlüssels.
+ *
+ * Nur für die Kennung im Gruppenumschlag. Der Schlüssel selbst bleibt in
+ * `cache`; die Bytes werden nicht nach außen gegeben, sondern hier gehasht.
+ */
+export async function holeChatSchluesselRoh(
+  chatType: 'direct' | 'group',
+  chatId: number,
+  version: number,
+): Promise<Uint8Array | null> {
+  await holeChatSchluessel(chatType, chatId, version)
+  return rohCache.get(cacheId(chatType, chatId, version)) ?? null
+}
+
+/**
  * Liefert die aktuelle Version, die dieses Geraet oeffnen kann. Fehlt sie,
  * wird die naechste Version angelegt (Gruppe: nur Owner/Admin).
  */

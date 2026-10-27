@@ -7315,6 +7315,12 @@
     "wallpaper": {
       "title": "Chat-Hintergrund anpassen",
       "description": "Wähle einen Hintergrund für deine Unterhaltungen. Das Cyber-Grid-Raster ist voreingestellt und sorgt für den besten Kontrast.",
+      "loading": "Hintergrund wird geladen …",
+      "applyAll": "Für alle Chats anwenden",
+      "applyAllHint": "Setzt diesen Hintergrund als Vorgabe und entfernt eigene Hintergründe einzelner Direktchats.",
+      "applyAllTitle": "Für alle Chats anwenden?",
+      "applyAllMessage": "Eigene Hintergründe einzelner Direktchats werden entfernt. Der KI-Bereich bleibt unverändert.",
+      "applyAllConfirm": "Für alle anwenden",
       "presets": "Design-Hintergründe",
       "default": "Standard",
       "cyber": "Cyber Grid",
@@ -7337,7 +7343,7 @@
       "dimDark": "Sehr dunkel",
       "resetHint": "Auf das voreingestellte Cyber Grid zurücksetzen",
       "badType": "Wähle eine gültige Bilddatei: JPEG, PNG oder WebP.",
-      "tooLarge": "Das Bild ist zu groß. Erlaubt sind 8 MB.",
+      "tooLarge": "Das Bild ist zu groß oder ließ sich nicht weit genug verkleinern.",
       "loadFailed": "Das Bild konnte nicht geladen werden.",
       "saveFailed": "Der Hintergrund ließ sich nicht speichern. Der Speicher des Browsers ist voll — meist liegt es an einem zu großen eigenen Bild."
     },
@@ -7434,9 +7440,37 @@
     },
     "groupRoles": {
       "title": "Gruppen-Rollen & Rechte",
-      "subtitle_one": "{{group}} · {{count}} Mitglied · Rollenbasiertes Rechtesystem",
-      "subtitle_other": "{{group}} · {{count}} Mitglieder · Rollenbasiertes Rechtesystem",
+      "subtitle_one": "{{group}} · {{count}} Mitglied",
+      "subtitle_other": "{{group}} · {{count}} Mitglieder",
       "groupFallback": "Gruppe",
+      "tabGeneral": "Allgemein",
+      "tabGeneralShort": "Allgemein",
+      "tabBackground": "Hintergrund",
+      "tabBackgroundShort": "Hintergrund",
+      "generalHeading": "Gruppeninfo",
+      "generalHint": "Name, Beschreibung und Bild gelten für alle Mitglieder. Rollen ändern sich hier nicht mit.",
+      "generalNoRight": "Du kannst die Gruppeninfo lesen, aber nicht ändern.",
+      "generalName": "Name",
+      "generalDescription": "Beschreibung",
+      "generalLogoChoose": "Bild wählen",
+      "generalLogoRemove": "Bild entfernen",
+      "generalMembersHint": "{{count}} Mitglieder. Die Liste steht unter „Mitglieder“.",
+      "generalSave": "Speichern",
+      "generalSaved": "Gruppeninfo gespeichert.",
+      "generalSaveFailed": "Die Gruppeninfo konnte nicht gespeichert werden.",
+      "backgroundHeading": "Geteilter Hintergrund",
+      "backgroundHint": "Dieser Hintergrund gilt für alle Mitglieder der Gruppe. Eigene Bilder werden vor dem Verschlüsseln verkleinert.",
+      "backgroundNoRight": "Du siehst den Hintergrund der Gruppe. Ändern darf ihn nur, wer die Berechtigung dafür hat.",
+      "backgroundNone": "Kein eigener",
+      "backgroundNoneHint": "Es gilt der globale Messenger-Hintergrund.",
+      "backgroundOwn": "Eigenes Bild",
+      "backgroundChoose": "Bild wählen",
+      "backgroundReplace": "Anderes Bild",
+      "backgroundRemove": "Entfernen",
+      "backgroundShared": "Sichtbar für alle Mitglieder, verschlüsselt auf dem Server.",
+      "backgroundSave": "Hintergrund speichern",
+      "backgroundSaved": "Gruppenhintergrund gespeichert.",
+      "backgroundSaveFailed": "Der Gruppenhintergrund konnte nicht gespeichert werden.",
       "tabMembers": "Mitglieder ({{count}})",
       "tabMembersShort": "Mitglieder",
       "tabRoles": "Rollen & Vorlagen ({{count}})",
@@ -7446,6 +7480,7 @@
       "membersHeading": "Gruppenmitglieder verwalten",
       "membersHint": "Weise Mitgliedern Rollen zu oder entferne störende Teilnehmer aus der Gruppe.",
       "membersLoading": "Mitglieder werden geladen …",
+      "inviteAction": "Einladungslink kopieren",
       "participantCount_one": "{{count}} Teilnehmer",
       "participantCount_other": "{{count}} Teilnehmer",
       "you": "(Du)",
@@ -7577,9 +7612,17 @@
           "title": "Verschwindende Nachrichten einstellen",
           "desc": "Stellt für die ganze Gruppe ein, nach welcher Frist neue Nachrichten verschwinden, oder schaltet das ab. Der Server kann die Umstellung nicht lesen und deshalb nicht prüfen: jedes Gerät gleicht sie selbst mit der Mitgliederliste ab, die es gerade kennt, und ohne dieses Recht bleibt sie folgenlos. Ist diese Liste veraltet, kann eine berechtigte Umstellung dort bis zum Neuladen unbeachtet bleiben, und ein eben entzogenes Recht zählt dort bis dahin noch."
         },
+        "edit_group": {
+          "title": "Gruppeninfo bearbeiten",
+          "desc": "Ändert Name, Beschreibung und Bild der Gruppe. Gilt für alle Mitglieder. Rollen bleiben bei „Rollen zuweisen & verwalten“."
+        },
+        "set_group_background": {
+          "title": "Gruppenhintergrund ändern",
+          "desc": "Setzt den Hintergrund, den alle Mitglieder in dieser Gruppe sehen. Eigene Bilder werden vor dem Verschlüsseln verkleinert; der Server sieht nur das Chiffrat."
+        },
         "manage_roles": {
           "title": "Rollen zuweisen & verwalten",
-          "desc": "Mitgliedern Rollen zuweisen und die Standard-Gruppenrechte anpassen. Eigentümer und Administratoren tragen „Alle auf einmal erwähnen“, „Nachricht anheften“ und „Verschwindende Nachrichten einstellen“ ohnehin, weil sie sie sich mit zwei Klicks selbst geben könnten."
+          "desc": "Mitgliedern Rollen zuweisen und die Standard-Gruppenrechte anpassen. Eigentümer und Administratoren tragen „Alle auf einmal erwähnen“, „Nachricht anheften“, „Verschwindende Nachrichten einstellen“, „Gruppeninfo bearbeiten“ und „Gruppenhintergrund ändern“ ohnehin, weil sie sie sich mit zwei Klicks selbst geben könnten."
         }
       }
     },
@@ -7678,6 +7721,7 @@
     "changeGroupLogo": "Gruppenlogo ändern",
     "manageGroupRoles": "Gruppenrollen & Rechte verwalten",
     "copyInvite": "Einladungslink kopieren",
+    "groupSettings": "Gruppe bearbeiten",
     "inviteCopied": "Der Einladungslink liegt in der Zwischenablage.",
     "inviteNoRight": "Dafür fehlt dir das Recht, neue Mitglieder einzuladen.",
     "sendNoRight": "In dieser Gruppe darfst du nicht schreiben.",

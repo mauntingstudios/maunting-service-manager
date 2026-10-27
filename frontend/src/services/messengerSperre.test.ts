@@ -51,6 +51,7 @@ const umstellung = {
   steuerAuftraege: vi.fn(async () => 0),
   loeschAuftraege: vi.fn(async () => 0),
   offeneNachrichten: vi.fn(async () => 0),
+  hintergruende: vi.fn(async () => 0),
 }
 vi.mock('./messengerLocalStore', async (importOriginal) => ({
   ...await importOriginal<typeof import('./messengerLocalStore')>(),
@@ -63,6 +64,7 @@ vi.mock('./messengerLocalStore', async (importOriginal) => ({
   schreibeSteuerAuftraegeBestandNeu: umstellung.steuerAuftraege,
   schreibeLoeschAuftraegeBestandNeu: umstellung.loeschAuftraege,
   schreibeOffeneNachrichtenBestandNeu: umstellung.offeneNachrichten,
+  schreibeHintergruendeBestandNeu: umstellung.hintergruende,
 }))
 vi.mock('./gespraechsListe', () => ({
   schreibeGespraecheBestandNeu: vi.fn(async () => 0),

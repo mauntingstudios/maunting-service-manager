@@ -91,7 +91,7 @@ describe('ErwaehnungsWache', () => {
     expect(onErwaehnung).toHaveBeenCalledWith('group:3')
   })
 
-  it('speichert eine Nachricht ohne Erwähnung nicht', async () => {
+  it('legt auch eine Nachricht ohne Erwähnung lokal ab', async () => {
     konversation.liesUmschlaege.mockResolvedValue([lesung([])])
     const onErwaehnung = vi.fn()
     render(
@@ -105,9 +105,59 @@ describe('ErwaehnungsWache', () => {
       />,
     )
 
+    await waitFor(() =>
+      expect(ablage.saveLocalMessagesStrict).toHaveBeenCalledWith(
+        'group:3',
+        [expect.objectContaining({ id: 11 })],
+        'gruppe',
+      ),
+    )
+    expect(onErwaehnung).not.toHaveBeenCalled()
+  })
+
+  it('legt Steuerzeilen und gelöschte Zeilen nicht ab', async () => {
+    const steuer = lesung()
+    steuer.text = JSON.stringify({ type: 'delete_message', sender_id: 2 })
+    const geloescht = { art: 'still' as const, env: { id: 12 } }
+    konversation.liesUmschlaege.mockResolvedValue([steuer, geloescht])
+    render(
+      <ErwaehnungsWache
+        gruppen={[GRUPPE]}
+        aktiveMailboxId={null}
+        eigeneId={1}
+        identitaetRef={{ current: { state: 'ready' } } as never}
+        onErwaehnung={vi.fn()}
+        aktiv
+      />,
+    )
+
     await waitFor(() => expect(konversation.liesUmschlaege).toHaveBeenCalled())
     expect(ablage.saveLocalMessagesStrict).not.toHaveBeenCalled()
-    expect(onErwaehnung).not.toHaveBeenCalled()
+  })
+
+  it('legt auch die eigene Nachricht ab', async () => {
+    const eigene = lesung([])
+    eigene.nachricht = { ...eigene.nachricht, senderId: 1, isSelf: true }
+    eigene.text = JSON.stringify({ sender_id: 1, client_uuid: 'u-11' })
+    konversation.liesUmschlaege.mockResolvedValue([eigene])
+    render(
+      <ErwaehnungsWache
+        gruppen={[GRUPPE]}
+        aktiveMailboxId={null}
+        eigeneId={1}
+        identitaetRef={{ current: { state: 'ready' } } as never}
+        onErwaehnung={vi.fn()}
+        aktiv
+      />,
+    )
+
+    await waitFor(() =>
+      expect(ablage.saveLocalMessagesStrict).toHaveBeenCalledWith(
+        'group:3',
+        [expect.objectContaining({ isSelf: true })],
+        'gruppe',
+      ),
+    )
   })
 
   it('setzt das Abzeichen auch dann, wenn das lokale Ablegen scheitert', async () => {

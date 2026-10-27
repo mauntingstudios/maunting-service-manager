@@ -28,6 +28,7 @@
 import { useEffect, useRef, type MutableRefObject } from 'react'
 
 import type { ChatGroupItem } from '@/api/social'
+import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 import { useKonversation } from '@/hooks/useKonversation'
 import { binIchGemeint } from '@/services/erwaehnungen'
 import { saveLocalMessagesStrict } from '@/services/messengerLocalStore'
@@ -74,6 +75,7 @@ function GruppenWache({ gruppe, eigeneId, identitaetRef, onErwaehnung }: WachePr
       konversation.uebernimmLesestand(gelesen)
 
       let gefunden = false
+      const neueNachrichten: ChatMessage[] = []
       for (const lesung of gelesen) {
         if (lesung.art !== 'klartext' || !lesung.text) continue
         let paket: Record<string, unknown>
@@ -84,6 +86,12 @@ function GruppenWache({ gruppe, eigeneId, identitaetRef, onErwaehnung }: WachePr
         }
         if (!paket || typeof paket !== 'object') continue
         if (typeof paket.type === 'string' && STEUERTYPEN.has(paket.type)) continue
+
+        // Jede echte Gruppenzeile wandert in die lokale Ablage, nicht nur die
+        // Erwähnung. Beim nächsten Öffnen steht sie damit sofort da, auch wenn
+        // das Netz oder die Entschlüsselung noch braucht. Gelöschte Zeilen
+        // liefert `liesUmschlaege` als `still`; Steuerpakete fallen oben heraus.
+        if (lesung.nachricht) neueNachrichten.push(lesung.nachricht)
 
         const senderId = Number(paket.sender_id || 0)
         if (!senderId || senderId === eigeneId) continue
@@ -96,19 +104,13 @@ function GruppenWache({ gruppe, eigeneId, identitaetRef, onErwaehnung }: WachePr
           eigeneId,
           gruppeRef.current,
         )
-        if (gemeint) {
-          /*
-           * Der Filter „@ und Antworten an mich“ liest den lokalen Verlauf.
-           * Ohne diese Zeile hätte eine nie geöffnete Gruppe nur das Abzeichen,
-           * aber keinen Treffer. Fehler beim Ablegen dürfen das Abzeichen nicht
-           * verhindern; der nächste Lauf versucht es erneut.
-           */
-          if (lesung.nachricht) {
-            await saveLocalMessagesStrict(mid, [lesung.nachricht], 'gruppe').catch(() => {})
-            if (!lebt) return
-          }
-          gefunden = true
-        }
+        if (gemeint) gefunden = true
+      }
+      if (neueNachrichten.length > 0) {
+        // Fehler beim Ablegen dürfen das Abzeichen nicht verhindern; der
+        // nächste Lauf versucht es erneut.
+        await saveLocalMessagesStrict(mid, neueNachrichten, 'gruppe').catch(() => {})
+        if (!lebt) return
       }
       if (gefunden) onErwaehnung(mid)
     }

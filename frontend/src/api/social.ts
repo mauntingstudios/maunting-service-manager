@@ -434,6 +434,9 @@ export interface ChatGroupMemberItem {
   can_mention_everyone?: boolean
   can_pin_messages?: boolean
   can_set_disappearing_messages?: boolean
+  /** Ob dieses Mitglied die Gruppeninfo beziehungsweise den Hintergrund setzen darf. */
+  can_edit_group?: boolean
+  can_set_group_background?: boolean
   joined_at: string
 }
 
@@ -474,6 +477,10 @@ export interface ChatGroupItem {
   can_mention_everyone?: boolean
   can_pin_messages?: boolean
   can_set_disappearing_messages?: boolean
+  /** Gruppeninfo und geteilter Hintergrund sind getrennte Wege. */
+  can_edit_group?: boolean
+  can_set_group_background?: boolean
+  can_manage_roles?: boolean
   created_at: string
   members: ChatGroupMemberItem[]
   /** Ephemeral room token supplied by a live-call invitation, when present. */
@@ -814,6 +821,61 @@ export async function putGroupConfig(
   return api<GruppenKonfigAntwort>(`/social/groups/${groupId}/config`, {
     method: 'PUT',
     body: JSON.stringify({ blob, erwartete_revision: erwarteteRevision }),
+  })
+}
+
+/**
+ * Die getrennte Gruppeninfo (Name, Beschreibung, Logo) und der geteilte
+ * Gruppenhintergrund. Beide liegen verschlüsselt beim Server; hier steht nur
+ * der Transport. Ausgewertet werden sie in `services/gruppenInfo.ts`.
+ */
+export interface GruppenInfoAntwort {
+  group_id: number
+  blob: string
+  revision: number
+  updated_at: string
+}
+
+export interface GruppenHintergrundAntwort extends GruppenInfoAntwort {
+  mime: string | null
+  size_bytes: number
+}
+
+/** `null`, solange die Gruppe noch keine getrennte Info hat. */
+export async function getGroupInfo(groupId: number): Promise<GruppenInfoAntwort | null> {
+  return api<GruppenInfoAntwort | null>(`/social/groups/${groupId}/info`)
+}
+
+export async function putGroupInfo(
+  groupId: number,
+  blob: string,
+  erwarteteRevision: number,
+): Promise<GruppenInfoAntwort> {
+  return api<GruppenInfoAntwort>(`/social/groups/${groupId}/info`, {
+    method: 'PUT',
+    body: JSON.stringify({ blob, erwartete_revision: erwarteteRevision }),
+  })
+}
+
+export async function getGroupBackground(
+  groupId: number,
+): Promise<GruppenHintergrundAntwort | null> {
+  return api<GruppenHintergrundAntwort | null>(`/social/groups/${groupId}/background`)
+}
+
+export async function putGroupBackground(
+  groupId: number,
+  blob: string,
+  erwarteteRevision: number,
+  mime: string | null,
+): Promise<GruppenHintergrundAntwort> {
+  return api<GruppenHintergrundAntwort>(`/social/groups/${groupId}/background`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      blob,
+      erwartete_revision: erwarteteRevision,
+      mime,
+    }),
   })
 }
 
