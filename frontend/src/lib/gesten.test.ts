@@ -12,9 +12,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  erkenneRandgeste,
   erkenneWischen,
   hatSichBewegt,
   LANGDRUCK_TOLERANZ_PX,
+  RAND_WISCH_MS,
+  RAND_ZONE_PX,
   rueckmeldung,
   WISCH_HOECHSTWEG_PX,
   WISCH_SCHWELLE_PX,
@@ -59,6 +62,37 @@ describe('wischWeg', () => {
     expect(weit).toBeLessThanOrEqual(WISCH_HOECHSTWEG_PX)
     // Auch nach links, sonst wandert die Blase beim Archivieren aus dem Bild.
     expect(wischWeg(-400)).toBeGreaterThanOrEqual(-WISCH_HOECHSTWEG_PX)
+  })
+})
+
+describe('erkenneRandgeste', () => {
+  const BREITE = 380
+
+  it('geht vom linken Rand nach rechts zurück', () => {
+    expect(erkenneRandgeste(4, 90, 6, 220, BREITE)).toBe(true)
+    expect(erkenneRandgeste(RAND_ZONE_PX, WISCH_SCHWELLE_PX, 0, 100, BREITE)).toBe(true)
+  })
+
+  it('geht vom rechten Rand nach links zurück', () => {
+    // „Nach links wegwischen“ — die gespiegelte Richtung, wie sie auch Pontis
+    // an seinen Rändern kennt.
+    expect(erkenneRandgeste(BREITE - 4, -90, 8, 240, BREITE)).toBe(true)
+  })
+
+  it('lässt die Mitte dem Inhalt', () => {
+    // Dort antwortet die Blase; ein zweiter Empfänger nähme ihr die Geste weg.
+    expect(erkenneRandgeste(BREITE / 2, 120, 0, 200, BREITE)).toBe(false)
+  })
+
+  it('verlangt Richtung, Weg, Waagerechte und Kürze', () => {
+    // Vom linken Rand nach links ist kein Zurück.
+    expect(erkenneRandgeste(4, -90, 0, 200, BREITE)).toBe(false)
+    // Zu kurz.
+    expect(erkenneRandgeste(4, WISCH_SCHWELLE_PX - 1, 0, 200, BREITE)).toBe(false)
+    // Zu schräg — das war Scrollen.
+    expect(erkenneRandgeste(4, 70, 200, 200, BREITE)).toBe(false)
+    // Zu langsam — das war Ziehen.
+    expect(erkenneRandgeste(4, 120, 0, RAND_WISCH_MS, BREITE)).toBe(false)
   })
 })
 

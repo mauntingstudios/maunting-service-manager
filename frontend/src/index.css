@@ -251,18 +251,6 @@
            flex items-center justify-center p-4 z-50;
   }
 
-  /*
-   * Der Dialog der Gruppeneinstellungen nutzt den ganzen Bildschirm.
-   *
-   * Fünf Reiter, eine Mitgliederliste und ein Rollenformular passten in einen
-   * Kasten von der halben Breite nicht; die Karte wurde kleiner und die
-   * Bedienung unangenehm. Jetzt liegt der Dialog über der ganzen Fläche, und
-   * die Reiter stehen nebeneinander statt in zwei Reihen.
-   */
-  .msm-dialog-vollbild {
-    @apply w-screen max-w-none h-[100dvh] max-h-[100dvh] p-0 rounded-none border-0;
-  }
-
   /* Alert Patterns */
   .msm-alert-success {
     @apply bg-status-success/10 border border-status-success/30

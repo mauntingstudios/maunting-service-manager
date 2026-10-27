@@ -543,6 +543,24 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     expect(await ladeOffeneNachrichten()).toEqual([])
   })
 
+  it('behält die Serverfrist eines offenen Umschlags über einen Neustart', async () => {
+    // Ohne dieses Feld baute der Nachholpfad die Zeile mit `expires_at: null`
+    // neu, und sie blieb stehen, obwohl sie längst verschwunden sein sollte.
+    await legeOffeneNachrichtAb({
+      id: 'group:9:uuid-frist',
+      chatType: 'group',
+      chatId: 9,
+      clientUuid: 'uuid-frist',
+      senderId: 2,
+      keyVersion: 3,
+      encryptedPayload: 'chiffrat',
+      createdAt: '2026-10-26T10:00:00.000Z',
+      expiresAt: '2026-10-27T10:00:00.000Z',
+    })
+    const geladen = await ladeOffeneNachrichten()
+    expect(geladen[0].expiresAt).toBe('2026-10-27T10:00:00.000Z')
+  })
+
   it('parseMessageTimestamp normalisiert Zeitzonen und Datumsformate robust nach UTC', () => {
     // Ohne Z (wird defensiv als UTC gewertet)
     const t1 = parseMessageTimestamp('2026-09-16 18:00:00')

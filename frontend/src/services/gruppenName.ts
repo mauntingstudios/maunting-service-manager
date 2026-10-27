@@ -317,6 +317,9 @@ export async function sichereGruppenAnsicht(
             ? sauber(ansicht.beschreibung, 256)
             : vorher.beschreibung,
         logo: ansicht.logo !== undefined ? alsLogo(ansicht.logo) : vorher.logo,
+        // Nicht Teil dieser Ansicht, aber Teil desselben Blocks: ohne ihn
+        // verlöre das Speichern den Schlüssel der versendeten Einladung.
+        inviteKey: vorher.inviteKey,
       }),
     )
     return ergebnis.art === 'gespeichert'

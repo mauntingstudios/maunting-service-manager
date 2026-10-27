@@ -246,6 +246,25 @@ describe('Anruf aufbauen', () => {
     expect(useCallStore.getState().errorMessage).toMatch(/blockiert/i)
   })
 
+  it('läuft ohne Kamera weiter und behauptet kein Bild', async () => {
+    /*
+     * Bis 27.10.2026 stand Mikrofon und Kamera in einem `try`: scheiterte nur
+     * die Kamera (in Pontis war sie gar nicht freigegeben), meldete der Anruf
+     * „stumm“ — obwohl das Mikrofon lief — und `isCameraOff` stand danach auf
+     * `false`.
+     */
+    const fehler = Object.assign(new Error('keine Kamera'), { name: 'NotAllowedError' })
+    livekit.setzeKamera.mockRejectedValueOnce(fehler)
+
+    await useCallStore.getState().initiateCall(PARTNER, 'video')
+
+    const zustand = useCallStore.getState()
+    expect(zustand.state).toBe('active')
+    expect(zustand.isMuted).toBe(false)
+    expect(zustand.isCameraOff).toBe(true)
+    expect(zustand.errorMessage).toMatch(/blockiert/i)
+  })
+
   it('meldet fehlende E2EE-Unterstützung im Klartext statt still zu scheitern', async () => {
     livekit.verbinde.mockRejectedValueOnce(new E2eeNichtUnterstuetzt())
 

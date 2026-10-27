@@ -90,6 +90,19 @@ beforeEach(() => {
 })
 
 describe('Benutzerprofil', () => {
+  it('findet das Profil auch ohne Routenparameter (Pontis)', async () => {
+    // Pontis rendert die Oberfläche in einem MemoryRouter ohne `<Routes>`; dort
+    // ist `useParams()` leer, obwohl die Adresse `/user/7` lautet. Bis
+    // 27.10.2026 stand deshalb „Profil nicht verfügbar“.
+    render(
+      <MemoryRouter initialEntries={['/user/7']}>
+        <Benutzerprofil />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'mara' })).toBeInTheDocument()
+  })
+
   it('zeigt Nutzungszeit je Bereich und nur die freigeschalteten Errungenschaften zuerst', async () => {
     zeige()
     expect(await screen.findByRole('heading', { name: 'mara' })).toBeInTheDocument()

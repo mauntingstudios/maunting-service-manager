@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, Clock, EyeOff, MessageSquare, Phone, UserPlus, Video } from 'lucide-react'
 
 import { getFriends, getProfile, sendFriendRequest, type PublicProfileResponse } from '@/api/social'
@@ -35,11 +35,20 @@ export function Benutzerprofil() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { userId } = useParams()
+  const { pathname } = useLocation()
   const ich = useAuthStore((s) => s.user?.id)
   const [stand, setStand] = useState<Stand>({ art: 'laedt' })
   const [anfrageGesendet, setAnfrageGesendet] = useState(false)
 
-  const id = Number(userId)
+  /*
+   * Pontis rendert die Oberfläche in einem MemoryRouter ohne `<Routes>`: die
+   * Seite bekommt dort keinen Routenparameter, und `useParams()` ist leer. Bis
+   * 27.10.2026 hieß das „Profil nicht verfügbar“ — obwohl die Adresse
+   * `/user/7` längst dastand. Der Pfad trägt dieselbe Angabe, also wird sie
+   * dort gelesen, wo der Router sie nicht liefert.
+   */
+  const ausPfad = /^\/user\/(\d+)(?:\/|$)/.exec(pathname)?.[1] ?? null
+  const id = Number(userId ?? ausPfad)
   const gueltig = Number.isSafeInteger(id) && id > 0
 
   const lade = useCallback(async () => {

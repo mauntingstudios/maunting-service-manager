@@ -95,4 +95,35 @@ describe('Dialog', () => {
     expect(zwei).toHaveValue('a')
     expect(document.activeElement).toBe(zwei)
   })
+
+  it('füllt mit size="voll" die Fläche und trägt die Kennung für Pontis', async () => {
+    // Bis 27.10.2026 verlor `max-width: none` aus `@layer components` gegen
+    // `max-w-lg`; der Dialog der Gruppeneinstellungen war ein 32 rem breiter
+    // Streifen über die volle Höhe, im Web und in MSS.
+    await waitFor(() => expect(window.history.state?.msmTiefe ?? 0).toBe(0))
+    render(
+      <Dialog open onOpenChange={() => {}}>
+        <DialogContent size="voll">Voll</DialogContent>
+      </Dialog>,
+    )
+    const karte = screen.getByText('Voll') as HTMLElement
+    expect(karte).toHaveAttribute('data-dialog-voll')
+    expect(karte.className).not.toContain('max-w-lg')
+    expect(karte.className).toContain('max-w-none')
+    const overlay = karte.parentElement as HTMLElement
+    expect(overlay.className).toContain('items-stretch')
+    expect(overlay.className).toContain('p-0')
+  })
+
+  it('bleibt ohne size der gewohnte Dialog', async () => {
+    await waitFor(() => expect(window.history.state?.msmTiefe ?? 0).toBe(0))
+    render(
+      <Dialog open onOpenChange={() => {}}>
+        <DialogContent>Normal</DialogContent>
+      </Dialog>,
+    )
+    const karte = screen.getByText('Normal') as HTMLElement
+    expect(karte).not.toHaveAttribute('data-dialog-voll')
+    expect(karte.className).toContain('max-w-lg')
+  })
 })

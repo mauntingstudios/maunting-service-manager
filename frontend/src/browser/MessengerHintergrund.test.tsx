@@ -11,6 +11,7 @@ const socket = vi.hoisted(() => ({ connect: vi.fn() }))
 const melden = vi.hoisted(() => ({ meldeChat: vi.fn() }))
 const krypto = vi.hoisted(() => ({ entpackeChatNutzlast: vi.fn(async () => ({})) }))
 const quittung = vi.hoisted(() => ({ ackChatMessages: vi.fn(async () => ({})) }))
+const verfall = vi.hoisted(() => ({ raeumeAlleChats: vi.fn(async () => 0) }))
 
 vi.mock('@/services/e2eeIdentity', () => ({
   IDENTITY_LOADING: { state: 'loading' },
@@ -19,6 +20,10 @@ vi.mock('@/services/e2eeIdentity', () => ({
 vi.mock('@/services/e2eeGeraet', () => geraet)
 vi.mock('@/services/messengerSocket', () => ({ messengerSocket: socket }))
 vi.mock('@/services/benachrichtigung/chatMeldung', () => melden)
+vi.mock('@/services/nachrichtVerfall', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/nachrichtVerfall')>()),
+  ...verfall,
+}))
 vi.mock('@/services/chatKrypto', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/chatKrypto')>()),
   ...krypto,
@@ -102,6 +107,21 @@ describe('MessengerHintergrund', () => {
     })
 
     expect(melden.meldeChat).not.toHaveBeenCalled()
+  })
+
+  it('räumt abgelaufene Nachrichten auch bei geschlossenem Messenger', async () => {
+    // Bis 27.10.2026 lief `raeumeAlleChats` nur, solange die Messenger-Seite
+    // gemountet war. Wer in einem anderen Bereich arbeitete, behielt eine
+    // „nach 24 Stunden verschwundene“ Nachricht auf der Platte.
+    render(<MessengerHintergrund />)
+    await waitFor(() => expect(verfall.raeumeAlleChats).toHaveBeenCalled())
+  })
+
+  it('räumt nicht, solange der Messenger gesperrt ist', async () => {
+    useMessengerSperre.setState({ eingerichtet: true, entsperrt: false })
+    render(<MessengerHintergrund />)
+    await act(async () => {})
+    expect(verfall.raeumeAlleChats).not.toHaveBeenCalled()
   })
 
   it('quittiert ein Wecksignal nicht', async () => {

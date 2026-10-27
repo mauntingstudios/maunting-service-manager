@@ -61,7 +61,13 @@ import { erlaubteEinladungsUrsprunge } from '@/lib/einladungsUrsprung'
 import { sanitizeSvg, getSafeAttachmentUrl } from '@/lib/sanitizeSvg'
 import type { EinladungsInhalt } from '@/services/einladungsKarte'
 import { useLangdruck } from '@/hooks/useLangdruck'
-import { erkenneWischen, rueckmeldung, wischWeg, WISCH_SCHWELLE_PX } from '@/lib/gesten'
+import {
+  erkenneWischen,
+  rueckmeldung,
+  wischWeg,
+  RAND_ZONE_PX,
+  WISCH_SCHWELLE_PX,
+} from '@/lib/gesten'
 import { reaktionsknoepfe, type Reaktionen } from '@/services/reaktionen'
 import { hervorzuhebendeWorte, teileText, type Textstueck } from '@/services/erwaehnungen'
 import type { ChatGroupItem } from '@/api/social'
@@ -397,6 +403,10 @@ function ChatMessageBubbleContent({
     : {
         onPointerDown: (e: React.PointerEvent) => {
           if (e.pointerType === 'mouse') return
+          // Im Randbereich gehört die waagerechte Bewegung dem Zurückgehen —
+          // sonst antwortete die Blase und der Chat schlösse gleichzeitig.
+          const breite = typeof window === 'undefined' ? 0 : window.innerWidth
+          if (e.clientX <= RAND_ZONE_PX || (breite > 0 && e.clientX >= breite - RAND_ZONE_PX)) return
           wischStart.current = { x: e.clientX, y: e.clientY }
           hatGeruettelt.current = false
         },

@@ -164,6 +164,14 @@ export interface OffeneNachricht {
   keyVersion: number
   encryptedPayload: string
   createdAt: string
+  /**
+   * Die Serverfrist des Umschlags, roh mitgeschrieben.
+   *
+   * Ohne sie verlor eine Nachricht, die auf ihren Schlüssel wartet, ihren
+   * Verfall: der Nachholpfad baute die Zeile mit `expires_at: null` neu, und
+   * sie blieb für immer stehen, obwohl der Server sie längst gelöscht hatte.
+   */
+  expiresAt?: string
   versuche: number
   naechsterVersuch: number
   angelegtAm: number

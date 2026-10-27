@@ -137,6 +137,39 @@ describe('ChatMessageBubble Resilienz & Fehlerbehandlung', () => {
       expect(screen.getByRole('img', { name: i18n.t('messenger.stateQueued') })).toBeDefined()
     })
 
+    it('antwortet nicht, wenn der Wisch am Rand beginnt', () => {
+      // Dort gehört die waagerechte Bewegung dem Zurückgehen. Bis 27.10.2026
+      // antwortete die Blase mit und der Chat schloss gleichzeitig.
+      const onAntworten = vi.fn()
+      const msg: ChatMessage = {
+        id: 81,
+        senderId: 1,
+        text: 'Hallo',
+        createdAt: '2026-09-25T14:30:00.000Z',
+        isSelf: false,
+      }
+      render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={{ ...defaultAktionen, onAntworten }}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+
+      const text = screen.getByText('Hallo')
+      fireEvent.pointerDown(text, { pointerType: 'touch', clientX: 4, clientY: 300 })
+      fireEvent.pointerUp(text, { pointerType: 'touch', clientX: 160, clientY: 302 })
+      expect(onAntworten).not.toHaveBeenCalled()
+
+      // In der Mitte antwortet sie weiterhin.
+      fireEvent.pointerDown(text, { pointerType: 'touch', clientX: 400, clientY: 300 })
+      fireEvent.pointerUp(text, { pointerType: 'touch', clientX: 560, clientY: 302 })
+      expect(onAntworten).toHaveBeenCalledTimes(1)
+    })
+
     it('zeigt eine Einladung als Karte und blendet den rohen Link optional ein', async () => {
       einladungsApi.getGroupInviteInfo.mockResolvedValue({
         group_id: 7,

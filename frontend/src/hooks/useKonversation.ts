@@ -33,6 +33,7 @@ import {
   verschluessleReaktion,
 } from '@/services/chatKrypto'
 import { leseAugenblickMarke, leseRettungsMarke } from '@/services/funkenService'
+import { verfallAusUmschlag } from '@/services/nachrichtVerfall'
 import {
   legeOffeneNachrichtAb,
   ladeOffeneNachrichten,
@@ -408,7 +409,13 @@ export function useKonversation({
       weitergeleitet: Boolean(payload.weitergeleitet) || undefined,
       erwaehnungen: Array.isArray(payload.erwaehnungen) ? (payload.erwaehnungen as number[]) : undefined,
       erwaehntAlle: Boolean(payload.erwaehnt_alle) || undefined,
-      verfaelltAm: message.expires_at || undefined,
+      /*
+       * Der Serverstempel ist die Wahrheit; die signierte Nutzlast ist die
+       * zweite Quelle. Sie trägt die Frist auch dann, wenn der Umschlag ohne
+       * `expires_at` ankommt — etwa aus der offenen Ablage, die vor dem
+       * Nachtragen des Feldes geschrieben wurde.
+       */
+      verfaelltAm: verfallAusUmschlag(message.expires_at, payload.verfaellt_am),
       augenblick:
         chatZiel.type === 'direct' ? leseAugenblickMarke(payload.augenblick) : undefined,
       funkenRettung:
@@ -479,6 +486,7 @@ export function useKonversation({
             keyVersion: Number(message.key_version),
             encryptedPayload: message.encrypted_payload,
             createdAt: message.created_at,
+            expiresAt: message.expires_at || undefined,
           })
           offen += 1
         }
@@ -549,7 +557,7 @@ export function useKonversation({
         is_deleted: false,
         edited_at: null,
         deleted_at: null,
-        expires_at: null,
+        expires_at: auftrag.expiresAt ?? null,
         is_pinned: false,
         pinned_at: null,
         pinned_by_user_id: null,

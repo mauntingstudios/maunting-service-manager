@@ -35,6 +35,16 @@ export interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement>
   overlayClassName?: string
   showCloseButton?: boolean
   container?: HTMLElement | null
+  /**
+   * `md` ist der gewohnte Dialog. `voll` füllt den Bildschirm am Telefon und
+   * bleibt darüber ein großer, zentrierter Dialog.
+   *
+   * Die Breite steht hier und nicht als eigene Klasse in `@layer components`:
+   * dort verliert `max-width: none` gegen `max-w-lg` aus den Utilities, und der
+   * Dialog blieb ein 32 rem breiter Streifen über die volle Höhe (bis
+   * 27.10.2026).
+   */
+  size?: 'md' | 'voll'
 }
 
 const FOCUSSABLE =
@@ -68,6 +78,7 @@ export function DialogContent({
   overlayClassName = '',
   showCloseButton = true,
   container,
+  size = 'md',
   // Der Name gehört an das Element mit `role="dialog"`, nicht an die Karte darin.
   'aria-labelledby': labelledBy,
   'aria-describedby': describedBy,
@@ -128,9 +139,15 @@ export function DialogContent({
   const ziel = container ?? panelContainer ?? (typeof document !== 'undefined' ? document.body : null)
   if (!ziel) return null
 
+  const voll = size === 'voll'
+  const overlayBasis = voll ? 'items-stretch p-0 sm:items-center sm:p-4' : ''
+  const karteBasis = voll
+    ? 'msm-card relative flex w-full max-w-none flex-col overflow-hidden rounded-none border-0 h-full max-h-full'
+    : 'msm-card relative w-full max-w-lg overflow-hidden flex flex-col'
+
   return createPortal(
     <div
-      className={`msm-modal-overlay animate-fade-in ${overlayClassName}`}
+      className={`msm-modal-overlay animate-fade-in ${overlayBasis} ${overlayClassName}`}
       onClick={() => ctx.onOpenChange(false)}
       role="dialog"
       aria-modal="true"
@@ -140,7 +157,8 @@ export function DialogContent({
     >
       <div
         ref={dialogRef}
-        className={`msm-card relative w-full max-w-lg overflow-hidden flex flex-col ${className}`}
+        data-dialog-voll={voll ? '' : undefined}
+        className={`${karteBasis} ${className}`}
         onClick={(e) => e.stopPropagation()}
         {...props}
       >

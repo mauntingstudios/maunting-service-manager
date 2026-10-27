@@ -45,6 +45,7 @@ import { deriveGroupBlindMailboxId } from '@/services/e2eeCrypto'
 import type { GruppenKontext } from '@/services/gruppenSchluessel'
 import { logoAlsDatenUrl } from '@/services/einladungsKarte'
 import { ladeGruppenInfo } from '@/services/gruppenInfo'
+import { versiegleEinladungNeu } from '@/services/einladungsPflege'
 import { sichereGruppenAnsicht } from '@/services/gruppenName'
 import { GruppenHintergrundFeld } from '@/features/chatHintergrund/GruppenHintergrundFeld'
 import {
@@ -643,6 +644,13 @@ export function GroupPermissionsModal({
         description: infoBeschreibung.trim() || null,
         avatar_url: infoLogo,
       })
+      /*
+       * Eine bereits versendete Einladung zeigt jetzt noch den alten Namen.
+       * Mit dem Gruppenschlüssel im Info-Block lässt sie sich neu versiegeln —
+       * ungefragt, weil es dieselbe Änderung ist und niemand sie sonst
+       * nachziehen könnte.
+       */
+      void versiegleEinladungNeu(group, currentUserId)
       infoGetippt.current = false
       setInfoSchmutzig(false)
       toast.success(t('social.groupRoles.generalSaved'))
@@ -1010,8 +1018,8 @@ export function GroupPermissionsModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        overlayClassName="!p-0"
-        className="msm-dialog-vollbild overflow-hidden bg-surface border-outline-variant/30 flex flex-col shadow-2xl"
+        size="voll"
+        className="overflow-hidden bg-surface border-outline-variant/30 shadow-2xl pb-[var(--msm-unten-sicher)] sm:max-w-5xl sm:rounded-2xl sm:border sm:border-outline-variant/30 sm:pb-0"
       >
         {/* Header with generous vertical padding */}
         <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-outline-variant/20 bg-surface-container/70 flex items-center justify-between gap-2 shrink-0">
@@ -1165,7 +1173,7 @@ export function GroupPermissionsModal({
         </div>
 
         {/* Scrollable Tab Content with generous vertical spacing */}
-        <div className="p-4 sm:p-8 flex-1 overflow-y-auto space-y-6">
+        <div className="p-4 sm:p-8 flex-1 min-h-0 overflow-y-auto space-y-6">
           {activeTab === 'general' && (
             <div className="space-y-5">
               <div>

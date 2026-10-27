@@ -12,9 +12,9 @@ import { starteGruppenanruf } from '@/api/calls'
 import type { ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import {
   baueEinladungsKarte,
-  erzeugeEinladungsschluessel,
   mitSchluessel,
 } from '@/services/einladungsKarte'
+import { einladungsKontext, holeEinladungsschluessel } from '@/services/einladungsPflege'
 import { deriveGroupBlindMailboxId } from '@/services/e2eeCrypto'
 import { oeffentlicheBasisUrl } from '@/lib/einladungsUrsprung'
 import { verwirfGruppenSchluessel } from '@/services/gruppenSchluessel'
@@ -155,13 +155,17 @@ export function useGruppenAktionen({
     }
     const url = `${basis}/chat/join/${group.invite_code}`
     let fertig = url
+    const inhalt = {
+      name: group.name,
+      beschreibung: group.description ?? null,
+      logo: group.avatar_url?.startsWith('data:image/') ? group.avatar_url : null,
+    }
     try {
-      const einladungsschluessel = erzeugeEinladungsschluessel()
-      const karte = await baueEinladungsKarte(einladungsschluessel, group.invite_code, {
-        name: group.name,
-        beschreibung: group.description ?? null,
-        logo: group.avatar_url?.startsWith('data:image/') ? group.avatar_url : null,
-      })
+      // Ein Schlüssel je Gruppe, nicht je Kopie: nur so kann eine bereits
+      // versendete Karte später noch fortgeschrieben werden.
+      const kontext = await einladungsKontext(group, currentUserId)
+      const einladungsschluessel = await holeEinladungsschluessel(kontext, inhalt)
+      const karte = await baueEinladungsKarte(einladungsschluessel, group.invite_code, inhalt)
       await setzeEinladungsKarte(group.id, karte)
       fertig = mitSchluessel(url, einladungsschluessel)
     } catch {

@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { meldeChat } from '@/services/benachrichtigung/chatMeldung'
 import { resolveIdentity, type E2eeIdentity } from '@/services/e2eeIdentity'
 import { istGesperrt, useMessengerSperre } from '@/services/messengerSperre'
+import { raeumeAlleChats } from '@/services/nachrichtVerfall'
 import { useMessengerSync } from '@/hooks/useMessengerSync'
 import { useAuthStore } from '@/stores/authStore'
 import { eigenesGeraet } from '@/services/e2eeGeraet'
@@ -79,6 +80,47 @@ export function MessengerHintergrund() {
     window.addEventListener('msm:sync-event', handle)
     return () => window.removeEventListener('msm:sync-event', handle)
   }, [userId, gesperrt, t])
+
+  /**
+   * Abgelaufene Nachrichten wegräumen, auch ohne offenen Messenger.
+   *
+   * Der Durchgang auf der Messenger-Seite sieht nur die Chats, die jemand
+   * öffnet. Wer die App offen hat und in einem anderen Bereich arbeitet, ließe
+   * eine „nach 24 Stunden verschwundene“ Nachricht auf der Platte liegen. Diese
+   * Wache hängt in allen drei Hüllen genau dann, wenn der Messenger zu ist.
+   */
+  useEffect(() => {
+    if (!userId || gesperrt) return
+    let aktiv = true
+    let laeuft = false
+
+    const raeume = async () => {
+      if (!aktiv || laeuft) return
+      laeuft = true
+      try {
+        await raeumeAlleChats()
+      } catch {
+        // Ein gesperrter oder fehlender Bestand ist kein Fehler; der nächste
+        // Anlass versucht es erneut.
+      } finally {
+        laeuft = false
+      }
+    }
+    const beiSichtbarkeit = () => {
+      if (document.visibilityState === 'visible') void raeume()
+    }
+
+    void raeume()
+    const takt = window.setInterval(() => void raeume(), 300_000)
+    window.addEventListener('online', raeume)
+    document.addEventListener('visibilitychange', beiSichtbarkeit)
+    return () => {
+      aktiv = false
+      window.clearInterval(takt)
+      window.removeEventListener('online', raeume)
+      document.removeEventListener('visibilitychange', beiSichtbarkeit)
+    }
+  }, [userId, gesperrt])
 
   return null
 }

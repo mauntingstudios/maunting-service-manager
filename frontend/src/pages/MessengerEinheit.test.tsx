@@ -323,6 +323,22 @@ describe('Messenger im Einheits-Transport', () => {
     expect(await screen.findByText('Hallo von Alice')).toBeInTheDocument()
   })
 
+  it('geht mit Zurück aus dem Chat in die Liste, statt die App zu verlassen', async () => {
+    // Unter Android geht Zurück im WebView einen Verlaufsschritt zurück; ohne
+    // Eintrag beendet sie die App. Bis 27.10.2026 legte der offene Chat keinen
+    // an, und die Systemgeste warf den Nutzer aus der App.
+    await oeffneChat()
+    const feld = await screen.findByPlaceholderText('Nachricht schreiben …')
+    await waitFor(() => expect(window.history.state?.msmTiefe ?? 0).toBeGreaterThan(0))
+
+    act(() => window.history.back())
+
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('Nachricht schreiben …')).not.toBeInTheDocument(),
+    )
+    expect(feld).not.toBeInTheDocument()
+  })
+
   it('sendet einen Text genau einmal und zeigt die eigene Zeile', async () => {
     await oeffneChat()
     const feld = await screen.findByPlaceholderText('Nachricht schreiben …')

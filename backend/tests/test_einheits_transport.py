@@ -765,3 +765,7 @@ def test_verschwindende_nachrichten_in_gruppen_verschwinden_fuer_alle(
 
     assert messages_service.list_messages(db, owner_user, "group", gruppe.id)["messages"] == []
     assert messages_service.list_messages(db, regular_user, "group", gruppe.id)["messages"] == []
+
+    # Nicht nur unsichtbar: die Zeile und ihr Chiffrat sind weg. Ein blosses
+    # Ausblenden waere die Sorte Zusage, die dieses Produkt nicht macht.
+    assert db.query(E2eeMessage).filter_by(client_uuid="gruppe-kurz").count() == 0

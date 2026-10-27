@@ -198,6 +198,40 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
     await waitFor(() => expect(document.querySelector('img')).toHaveAttribute('src', LOGO))
   })
 
+  it('zeigt eine Kurzfassung der Beschreibung', async () => {
+    getGroupInviteInfo.mockResolvedValue(await mitKarte())
+
+    render(
+      <GruppenEinladungsKarte inviteCode={CODE} schluessel={KARTENSCHLUESSEL} onJoin={vi.fn()} />,
+    )
+
+    // Bis 27.10.2026 wurde die Beschreibung zwar entschlüsselt, aber nie
+    // gezeichnet: die Vorschau sagte nicht, worum es in der Gruppe geht.
+    expect(await screen.findByText('Wir bauen Dinge')).toBeInTheDocument()
+  })
+
+  it('frischt die Vorschau auf, wenn die Gruppe umbenannt wurde', async () => {
+    /*
+     * Der Eingeladene ist noch kein Mitglied und bekommt kein Sync-Ereignis.
+     * Er erfährt eine Änderung nur, wenn die Karte neu versiegelt wurde und er
+     * noch einmal nachfragt.
+     */
+    const alt = await mitKarte({ name: 'Alter Name' })
+    const neu = await mitKarte({ name: 'Neuer Name' })
+    getGroupInviteInfo.mockResolvedValueOnce(alt)
+    getGroupInviteInfo.mockResolvedValue(neu)
+
+    render(
+      <GruppenEinladungsKarte inviteCode={CODE} schluessel={KARTENSCHLUESSEL} onJoin={vi.fn()} />,
+    )
+    expect(await screen.findByText('Alter Name')).toBeInTheDocument()
+
+    fireEvent(document, new Event('visibilitychange'))
+
+    expect(await screen.findByText('Neuer Name')).toBeInTheDocument()
+    expect(screen.queryByText('Alter Name')).not.toBeInTheDocument()
+  })
+
   it('bleibt ohne Schlüssel zu und sagt das', async () => {
     /*
      * Der Link wurde ohne die Raute weitergereicht — oder jemand ruft den

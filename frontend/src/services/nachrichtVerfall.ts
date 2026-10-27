@@ -209,6 +209,26 @@ export function verfaelltAm(sekunden: number, ab: Date = new Date()): string | u
   return new Date(ab.getTime() + sekunden * 1000).toISOString()
 }
 
+/**
+ * Wann eine empfangene Zeile verfällt.
+ *
+ * Der Serverstempel ist die Wahrheit: er gilt auch, wenn der Absender die Frist
+ * gar nicht kannte. Die signierte Nutzlast ist die zweite Quelle für den Fall,
+ * dass ein Umschlag ohne `expires_at` ankommt — etwa aus einer offenen Ablage,
+ * die vor dem Nachtragen des Feldes geschrieben wurde, oder auf dem Nachholpfad
+ * für einen noch fehlenden Schlüssel. Ohne diese zweite Quelle blieb eine
+ * solche Zeile für immer stehen, obwohl der Server sie längst gelöscht hatte.
+ */
+export function verfallAusUmschlag(
+  serverWert: string | null | undefined,
+  nutzlastWert: unknown,
+): string | undefined {
+  for (const wert of [serverWert, nutzlastWert]) {
+    if (typeof wert === 'string' && Number.isFinite(Date.parse(wert))) return wert
+  }
+  return undefined
+}
+
 /** Ob diese Zeile ihre Zeit überschritten hat. */
 export function istVerfallen(msg: { verfaelltAm?: string; isDeleted?: boolean }, jetzt = Date.now()): boolean {
   if (!msg.verfaelltAm || msg.isDeleted) return false

@@ -71,26 +71,43 @@ export function ChatHeader({
           </button>
         </Kurzinfo>
 
-        <div className="flex items-center gap-2 min-w-0 px-3 py-1.5 rounded-full bg-surface-container-high/85 backdrop-blur-md border border-outline-variant/30 shadow-sm">
+        {/* Am Telefon steht neben dem Zurück-Pfeil kein Name: er wiederholt,
+            was die Liste eben gezeigt hat, und nimmt der Nachricht den Platz.
+            Was zählt, bleibt — Funke, Stummzeichen, Blockiert. */}
+        <div
+          className={`${
+            funke || stumm || blockiert ? 'flex' : 'hidden'
+          } md:flex items-center gap-2 min-w-0 py-1.5 rounded-full bg-surface-container-high/85 backdrop-blur-md border border-outline-variant/30 shadow-sm ${
+            funke || stumm || blockiert ? 'px-2 md:px-3' : 'px-3'
+          }`}
+        >
           {gruppenBild && (
-            <img src={gruppenBild} alt="" className="-ml-1.5 h-5 w-5 shrink-0 rounded-full object-cover" />
+            <img
+              src={gruppenBild}
+              alt=""
+              className="-ml-1.5 hidden h-5 w-5 shrink-0 rounded-full object-cover md:block"
+            />
           )}
           {/* Nur der Name ist der Knopf: das Funken-Abzeichen daneben ist selbst
               einer, und Knopf in Knopf gibt es nicht. */}
-          {onProfil ? (
-            <Kurzinfo text={t('social.profile.open', { name: titel })} seite="anfang" aussen="min-w-0">
-              <button
-                type="button"
-                onClick={onProfil}
-                className="text-xs font-bold text-on-surface truncate max-w-[130px] sm:max-w-xs hover:underline"
-                aria-description={t('social.profile.open', { name: titel })}
-              >
+          <div className="hidden min-w-0 md:block">
+            {onProfil ? (
+              <Kurzinfo text={t('social.profile.open', { name: titel })} seite="anfang" aussen="min-w-0">
+                <button
+                  type="button"
+                  onClick={onProfil}
+                  className="text-xs font-bold text-on-surface truncate max-w-[130px] sm:max-w-xs hover:underline"
+                  aria-description={t('social.profile.open', { name: titel })}
+                >
+                  {titel}
+                </button>
+              </Kurzinfo>
+            ) : (
+              <span className="text-xs font-bold text-on-surface truncate max-w-[130px] sm:max-w-xs">
                 {titel}
-              </button>
-            </Kurzinfo>
-          ) : (
-            <span className="text-xs font-bold text-on-surface truncate max-w-[130px] sm:max-w-xs">{titel}</span>
-          )}
+              </span>
+            )}
+          </div>
           {funke}
           {stumm && (
             <Kurzinfo text={t('messenger.chatMuted')}>
@@ -101,7 +118,7 @@ export function ChatHeader({
           )}
           {blockiert && (
             <span className="px-1.5 py-0.2 rounded-md bg-status-destructive/15 text-status-destructive text-label-sm font-semibold">
-              Blockiert
+              {t('social.contacts.blocked')}
             </span>
           )}
         </div>

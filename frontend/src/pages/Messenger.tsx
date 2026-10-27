@@ -14,6 +14,7 @@ import {
   useZurueckSchliesst,
   type ChatInputBarRef,
 } from '@/Singra/UI'
+import { useWischZurueck } from '@/hooks/useWischZurueck'
 import {
   MessageSquare,
   Send,
@@ -1183,13 +1184,24 @@ function MessengerSeite() {
   }, [konversation.chatType, konversation.chatId])
 
   const verfallVonAnderem = verfallVon !== null && verfallVon !== currentUserId
-  const darfVerfallStellen =
-    (!activeGroup || Boolean(activeGroup.can_set_disappearing_messages)) &&
-    (!verfallVonAnderem ||
-      Boolean(
-        activeGroup &&
-          (activeGroup.owner_user_id === currentUserId || activeGroup.role === 'admin'),
-      ))
+  /*
+   * Dieselbe Regel wie `set_ephemeral` im Server, nicht eine strengere.
+   *
+   * In der Gruppe darf das erste Einschalten, wer Owner oder Admin ist oder
+   * `set_disappearing_messages` hat; hat ein anderer sie gesetzt, bleibt der
+   * Owner und jeder mit dem Recht. Ein Admin ohne dieses Recht darf eine
+   * fremde Frist nicht umwerfen. Im Direktchat gibt es keine Rollen: dort
+   * ändert nur, wer sie gesetzt hat.
+   */
+  const gruppenVerfallsrecht = Boolean(activeGroup?.can_set_disappearing_messages)
+  const gruppenOwner =
+    Boolean(activeGroup) &&
+    (activeGroup?.owner_user_id === currentUserId || activeGroup?.role === 'owner')
+  const darfVerfallStellen = activeGroup
+    ? verfallVonAnderem
+      ? gruppenOwner || gruppenVerfallsrecht
+      : gruppenOwner || activeGroup.role === 'admin' || gruppenVerfallsrecht
+    : !verfallVonAnderem
 
   const verfallVonName =
     verfallVon === null
@@ -1300,6 +1312,22 @@ function MessengerSeite() {
   }
 
   const chatSuche = useChatSuche(blindMailboxId, springeZu)
+
+  /**
+   * Zwei Wege zurück, ein Ziel: der offene Chat geht zur Liste.
+   *
+   * Der Verlaufseintrag deckt die Systemgeste und die Zurück-Taste ab — unter
+   * Android beendet sie sonst die App, statt den Chat zu verlassen — und in
+   * Pontis schließt dieselbe Anfrage zuerst den Chat, dann das Panel. Die
+   * Wischgeste kommt für Web und MSS dazu; in Pontis schweigt sie, weil dort
+   * bereits am Fenster gewischt wird.
+   */
+  useZurueckSchliesst(Boolean(activeContact || activeGroup), handleZurueckZurListe)
+  useWischZurueck(
+    Boolean(activeContact || activeGroup) && !auswahlModus && !chatSuche.offen,
+    handleZurueckZurListe,
+  )
+
   const ueberall = useUeberallAnsicht(currentUserId, groups)
 
   /**

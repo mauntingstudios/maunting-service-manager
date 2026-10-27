@@ -30,6 +30,7 @@ import {
   setzeVerfallsfrist,
   uebernehmeVerfall,
   verfaelltAm,
+  verfallAusUmschlag,
   verfallsfrist,
   verfallStand,
 } from './nachrichtVerfall'
@@ -111,6 +112,24 @@ describe('Fälligkeit', () => {
       { id: 3 },
     ]
     expect(faelligeZeilen(zeilen, jetzt).map((z) => z.id)).toEqual([1])
+  })
+
+  it('nimmt den Serverstempel vor der Nutzlast', () => {
+    expect(
+      verfallAusUmschlag('2026-09-21T10:00:00.000Z', '2026-09-22T10:00:00.000Z'),
+    ).toBe('2026-09-21T10:00:00.000Z')
+  })
+
+  it('nimmt die Nutzlast, wenn der Umschlag keine Frist trägt', () => {
+    // Ein Umschlag aus der offenen Ablage kann ohne `expires_at` ankommen; die
+    // signierte Nutzlast weiß trotzdem, wann die Nachricht verfällt.
+    expect(verfallAusUmschlag(null, '2026-09-22T10:00:00.000Z')).toBe('2026-09-22T10:00:00.000Z')
+    expect(verfallAusUmschlag(undefined, '2026-09-22T10:00:00.000Z')).toBe('2026-09-22T10:00:00.000Z')
+  })
+
+  it('verwirft Unbrauchbares, statt eine Zeile ewig stehen zu lassen', () => {
+    expect(verfallAusUmschlag('kaputt', 'auch-kaputt')).toBeUndefined()
+    expect(verfallAusUmschlag(null, 42)).toBeUndefined()
   })
 })
 

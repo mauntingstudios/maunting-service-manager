@@ -307,18 +307,36 @@ export const useCallStore = create<UseCallState>((set, get) => {
     haengeEreignisseAn(verbindung.room, eigeneGeneration)
     set({ audioBlockiert: !(await lk().erlaubeWiedergabe(verbindung.room)) })
 
+    /*
+     * Mikrofon und Kamera getrennt freischalten.
+     *
+     * Bis 27.10.2026 stand beides in einem `try`: scheiterte nur die Kamera
+     * (etwa weil Pontis sie gar nicht freigab), meldete der Anruf „stumm“ —
+     * obwohl das Mikrofon lief — und `isCameraOff` stand danach trotzdem auf
+     * `false`. Die Oberfläche zeigte ein Bild, das es nicht gab.
+     */
+    let mikrofonAus = false
+    let kameraAus = mode !== 'video'
+    let geraeteFehler: unknown = null
     try {
       await lk().setzeMikrofon(verbindung.room, true)
-      if (mode === 'video') await lk().setzeKamera(verbindung.room, true)
     } catch (fehler) {
-      // Verbunden, aber ohne eigenes Mikrofon: hörbar bleibt der Anruf trotzdem.
-      // Der Benutzer soll wissen, warum ihn niemand hört.
-      meldeFehler(fehler, 'geraet')
-      set({ isMuted: true })
+      mikrofonAus = true
+      geraeteFehler = fehler
     }
+    if (mode === 'video') {
+      try {
+        await lk().setzeKamera(verbindung.room, true)
+      } catch (fehler) {
+        kameraAus = true
+        geraeteFehler ??= fehler
+      }
+    }
+    if (geraeteFehler) meldeFehler(geraeteFehler, 'geraet')
     set({
       state: 'active',
-      isCameraOff: mode !== 'video',
+      isMuted: mikrofonAus,
+      isCameraOff: kameraAus,
       crossDeviceCall: null,
     })
     starteHeartbeat(raum)

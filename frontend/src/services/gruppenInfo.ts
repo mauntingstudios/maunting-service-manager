@@ -47,6 +47,20 @@ export interface GruppenInfo {
   name: string | null
   beschreibung: string | null
   logo: string | null
+  /**
+   * Der stabile Schlüssel der Einladungskarte.
+   *
+   * Bis 27.10.2026 entstand bei jeder Kopie ein neuer Zufallsschlüssel, der nur
+   * im Link-Fragment lebte. Damit konnte niemand eine bereits versendete Karte
+   * später neu versiegeln: der Name in ihr blieb stehen, auch wenn die Gruppe
+   * längst anders hieß. Ein Schlüssel je Gruppe im Info-Block löst das — er
+   * reist mit dem Block zu allen Mitgliedern, und wer die Info schreiben darf,
+   * kann die Karte fortschreiben.
+   *
+   * Er ist **nicht** der Chat-Schlüssel: er öffnet nur die öffentliche
+   * Vorschau, und der Einladungscode bleibt im AAD.
+   */
+  inviteKey: string | null
 }
 
 export interface GruppenHintergrund {
@@ -113,7 +127,13 @@ function alsInfo(roh: Record<string, unknown>): GruppenInfo | null {
     name: alsText(roh.name, 64),
     beschreibung: alsText(roh.beschreibung, 256),
     logo: alsBild(roh.logo),
+    inviteKey: alsEinladungsschluessel(roh.inviteKey),
   }
+}
+
+/** Nur ein Schlüssel, wie er im Link steht; alles andere ist keiner. */
+function alsEinladungsschluessel(wert: unknown): string | null {
+  return typeof wert === 'string' && /^[0-9a-f]{64}$/.test(wert) ? wert : null
 }
 
 function alsHintergrund(roh: Record<string, unknown>): GruppenHintergrund | null {
@@ -208,6 +228,8 @@ export async function ladeGruppenInfo(
           name: alt.zustand.name ?? null,
           beschreibung: alt.zustand.beschreibung ?? null,
           logo: alt.zustand.logo ?? null,
+          // Einen Einladungsschlüssel gab es im Altbestand nicht.
+          inviteKey: null,
         },
         revision: 0,
         vonKonto: alt.vonKonto,
@@ -302,6 +324,7 @@ export async function schreibeGruppenInfo(
     name: info.name ?? null,
     beschreibung: info.beschreibung ?? null,
     logo: info.logo ?? null,
+    inviteKey: alsEinladungsschluessel(info.inviteKey),
   })
   if (!nutzlast) return { art: 'nicht-unterschreibbar' }
 
@@ -375,7 +398,7 @@ export async function aendereGruppenInfo(
     const vorher: GruppenInfo =
       lesung.art === 'info'
         ? lesung.info
-        : { v: INFO_FORMAT, name: null, beschreibung: null, logo: null }
+        : { v: INFO_FORMAT, name: null, beschreibung: null, logo: null, inviteKey: null }
     const revision =
       lesung.art === 'info'
         ? lesung.revision
@@ -383,7 +406,18 @@ export async function aendereGruppenInfo(
           ? lesung.revision
           : 0
 
-    const ergebnis = await schreibeGruppenInfo(kontext, aendere(vorher), revision)
+    /*
+     * Was der Aufrufer nicht nennt, bleibt stehen — auch der
+     * Einladungsschlüssel. Sonst verlöre jedes Speichern der Allgemeinangaben
+     * den Schlüssel der bereits versendeten Einladung, und deren Vorschau
+     * ließe sich nie wieder fortschreiben.
+     */
+    const neu = aendere(vorher)
+    const mitSchluessel: GruppenInfo = {
+      ...neu,
+      inviteKey: alsEinladungsschluessel(neu.inviteKey) ?? vorher.inviteKey,
+    }
+    const ergebnis = await schreibeGruppenInfo(kontext, mitSchluessel, revision)
     if (ergebnis.art !== 'konflikt') return ergebnis
   }
   return { art: 'konflikt' }

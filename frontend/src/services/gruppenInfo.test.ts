@@ -155,7 +155,14 @@ const KONTEXT: GruppenKontext = {
 const DARF = (konto: number) => konto === ANNA
 
 function info(overrides: Partial<GruppenInfo> = {}): GruppenInfo {
-  return { v: INFO_FORMAT, name: 'Küchenplanung', beschreibung: 'Wer bringt was', logo: null, ...overrides }
+  return {
+    v: INFO_FORMAT,
+    name: 'Küchenplanung',
+    beschreibung: 'Wer bringt was',
+    logo: null,
+    inviteKey: null,
+    ...overrides,
+  }
 }
 
 function legeInfoAb(nutzlast: Record<string, unknown>, revision = 1): void {
@@ -189,6 +196,49 @@ beforeEach(async () => {
 })
 
 describe('Gruppeninfo', () => {
+  it('behält den Einladungsschlüssel beim Speichern der Allgemeinangaben', async () => {
+    // Ohne dieses Feld verlöre jedes Speichern von Name, Beschreibung oder Logo
+    // den Schlüssel der bereits versendeten Einladung — und deren Vorschau
+    // bliebe für immer auf dem alten Stand.
+    const schluessel = 'a'.repeat(64)
+    await schreibeGruppenInfo(KONTEXT, info({ inviteKey: schluessel }), 0)
+
+    const geaendert = await aendereGruppenInfo(KONTEXT, DARF, (vorher) => ({
+      ...vorher,
+      name: 'Neuer Name',
+    }))
+    expect(geaendert).toMatchObject({ art: 'gespeichert' })
+
+    await expect(ladeGruppenInfo(KONTEXT, DARF)).resolves.toMatchObject({
+      art: 'info',
+      info: { name: 'Neuer Name', inviteKey: schluessel },
+    })
+  })
+
+  it('löscht den Schlüssel nicht, wenn ein Aufrufer ihn gar nicht kennt', async () => {
+    const schluessel = 'b'.repeat(64)
+    await schreibeGruppenInfo(KONTEXT, info({ inviteKey: schluessel }), 0)
+
+    await aendereGruppenInfo(KONTEXT, DARF, (vorher) => ({
+      ...vorher,
+      logo: 'data:image/webp;base64,AAAA',
+      inviteKey: null,
+    }))
+
+    await expect(ladeGruppenInfo(KONTEXT, DARF)).resolves.toMatchObject({
+      art: 'info',
+      info: { inviteKey: schluessel },
+    })
+  })
+
+  it('schreibt einen Schlüssel, der keiner ist, gar nicht erst hinein', async () => {
+    await schreibeGruppenInfo(KONTEXT, info({ inviteKey: 'A'.repeat(64) }), 0)
+    await expect(ladeGruppenInfo(KONTEXT, DARF)).resolves.toMatchObject({
+      art: 'info',
+      info: { inviteKey: null },
+    })
+  })
+
   it('schreibt und liest Name, Beschreibung und Logo', async () => {
     const geschrieben = await schreibeGruppenInfo(KONTEXT, info(), 0)
     expect(geschrieben).toEqual({ art: 'gespeichert', revision: 1 })
