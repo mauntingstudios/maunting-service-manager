@@ -5,6 +5,7 @@ import { Avatar, Kurzinfo } from '@/Singra/UI'
 import type { ChatGroupItem } from '@/api/social'
 import { ChatZeilenGeste } from '@/components/social/ChatZeilenGeste'
 import { DeviceBadge } from '@/components/social/DeviceBadge'
+import { aktivitaetText } from '@/services/praesenz/aktivitaeten'
 import { FunkenAbzeichen } from '@/components/social/FunkenBadge'
 import { StatusDot, type PresenceStatus } from '@/components/social/StatusIndicator'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
@@ -23,7 +24,9 @@ export interface ChatContact {
   avatarUrl?: string | null
   status: PresenceStatus
   deviceType?: string | null
-  activityLabel?: string | null
+  client?: string | null
+  /** Schluessel aus der Aktivitaetenliste; wird in der App-Sprache gezeigt. */
+  activityKey?: string | null
   isFriend: boolean
   teamName?: string | null
   isPublicUser?: boolean
@@ -179,7 +182,9 @@ export function ContactListItem({ kontakt: c, entwurf, ...zeile }: ZeileProps & 
               <span>{t('messenger.public')}</span>
             </span>
           )}
-          <DeviceBadge deviceType={c.deviceType} />
+          {(c.status === 'online' || c.status === 'away') && (
+            <DeviceBadge client={c.client} deviceType={c.deviceType} />
+          )}
         </div>
         <ZeilenVorschau entwurf={entwurf}>
           {c.teamName && (
@@ -188,9 +193,13 @@ export function ContactListItem({ kontakt: c, entwurf, ...zeile }: ZeileProps & 
               <span>{c.teamName}</span>
             </p>
           )}
-          {c.activityLabel && !c.teamName && (
-            <p className="text-label-sm text-on-surface-variant/80 truncate">{c.activityLabel}</p>
-          )}
+          {!c.teamName &&
+            (c.status === 'online' || c.status === 'away') &&
+            aktivitaetText(c.activityKey, t) && (
+              <p className="text-label-sm text-on-surface-variant/80 truncate">
+                {aktivitaetText(c.activityKey, t)}
+              </p>
+            )}
         </ZeilenVorschau>
       </div>
     </Zeile>

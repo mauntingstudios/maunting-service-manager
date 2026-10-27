@@ -352,37 +352,40 @@ def test_kein_serverseitiger_kanalschluessel_mehr_im_code():
 
 
 def test_presence_offline_timeout(db: Session, owner_user: User):
-    """Prüft, dass Präsenz nach 120s Inaktivität automatisch als offline gewertet wird."""
+    """Ohne Lebenszeichen gilt ein Gerät nach 120 s als geschlossen."""
     from datetime import datetime, timezone, timedelta
-    from models import UserPresence
+    from models import UserPresenceSession
 
-    # 1. Frische Präsenz -> online
-    SocialService.update_presence(db, owner_user.id, {"status": "online", "device_type": "desktop"})
+    # 1. Frische Sitzung -> online, mit Client und Plattform
+    SocialService.upsert_session(
+        db,
+        owner_user.id,
+        geraet="geraet-test-1",
+        client="mss",
+        plattform="desktop",
+        zustand="online",
+        activity_key="panel",
+        vorn=True,
+    )
     pres = SocialService.get_presence(db, owner_user.id)
     assert pres["status"] == "online"
     assert pres["device_type"] == "desktop"
+    assert pres["client"] == "mss"
+    assert pres["activity_key"] == "panel"
 
-    # 2. Veralteter Zeitstempel (200 Sekunden in der Vergangenheit) -> offline
-    db_pres = db.query(UserPresence).filter_by(user_id=owner_user.id).first()
-    db_pres.updated_at = datetime.now(timezone.utc) - timedelta(seconds=200)
+    # 2. Veraltetes Lebenszeichen (200 Sekunden her) -> offline, ohne Plattform
+    sitzung = db.query(UserPresenceSession).filter_by(user_id=owner_user.id).first()
+    sitzung.last_seen_at = datetime.now(timezone.utc) - timedelta(seconds=200)
     db.commit()
 
     pres_after = SocialService.get_presence(db, owner_user.id)
     assert pres_after["status"] == "offline"
-    # device_type bleibt erhalten
-    assert pres_after["device_type"] == "desktop"
+    # Wer offline ist, hat auch keine Plattform und keine Aktivität.
+    assert pres_after["client"] is None
+    assert pres_after["activity_key"] is None
+    assert pres_after["device_type"] == "web"
 
-    # 3. Fehlender Zeitstempel (updated_at = None) -> offline
-    from unittest.mock import MagicMock
-    mock_db = MagicMock()
-    mock_db.query.return_value.filter_by.return_value.first.return_value = UserPresence(
-        user_id=owner_user.id, status="online", device_type="desktop", updated_at=None
-    )
-    pres_none = SocialService.get_presence(mock_db, owner_user.id)
-    assert pres_none["status"] == "offline"
-    assert pres_none["device_type"] == "desktop"
-
-    # 4. Nicht existierender Benutzer -> offline
+    # 3. Nicht existierender Benutzer -> offline
     missing_pres = SocialService.get_presence(db, user_id=999999)
     assert missing_pres["status"] == "offline"
     assert missing_pres["updated_at"] is None

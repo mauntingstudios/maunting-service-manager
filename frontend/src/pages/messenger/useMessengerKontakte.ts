@@ -60,7 +60,8 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
       list.push({
         listKey: key(uid), id: f.id, userId: uid, username: f.username, avatarUrl: f.avatar_url,
         status: (f.presence?.status as PresenceStatus) || 'invisible',
-        deviceType: f.presence?.device_type, activityLabel: f.presence?.activity_label,
+        deviceType: f.presence?.device_type, client: f.presence?.client ?? null,
+        activityKey: f.presence?.activity_key,
         isFriend: true, teamName: null,
       })
     }
@@ -70,7 +71,7 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
         list.push({
           listKey: key(member.user_id), id: member.user_id, userId: member.user_id,
           username: member.username, avatarUrl: member.avatar_url, status: 'invisible',
-          deviceType: null, activityLabel: null, isFriend: false, teamName,
+          deviceType: null, client: null, activityKey: null, isFriend: false, teamName,
         })
       } else {
         const existing = list.find((c) => c.userId === member.user_id)
@@ -84,7 +85,8 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
         listKey: key(dc.other_user_id), id: dc.other_user_id, userId: dc.other_user_id,
         username: dc.other_username, avatarUrl: dc.other_avatar_url || null,
         status: (dc.presence?.status as PresenceStatus) || 'invisible',
-        deviceType: dc.presence?.device_type, activityLabel: dc.presence?.activity_label,
+        deviceType: dc.presence?.device_type, client: dc.presence?.client ?? null,
+        activityKey: dc.presence?.activity_key,
         isFriend: dc.is_friend, teamName: null, isPublicUser: dc.other_privacy === 'public',
       })
     }
@@ -95,7 +97,8 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
           listKey: key(p.user_id), id: p.user_id, userId: p.user_id, username: p.username,
           avatarUrl: p.avatar_url || null,
           status: (p.presence?.status as PresenceStatus) || 'invisible',
-          deviceType: p.presence?.device_type, activityLabel: p.presence?.activity_label,
+          deviceType: p.presence?.device_type, client: p.presence?.client ?? null,
+          activityKey: p.presence?.activity_key,
           isFriend: Boolean(p.is_friend), teamName: null, isPublicUser: true,
         })
       } else {
@@ -107,7 +110,7 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
       }
     }
     return list.sort((a, b) => {
-      const order: Record<string, number> = { online: 0, away: 1, invisible: 2 }
+      const order: Record<string, number> = { online: 0, away: 1, offline: 2, invisible: 2 }
       const diff = (order[a.status] ?? 3) - (order[b.status] ?? 3)
       return diff !== 0 ? diff : a.username.localeCompare(b.username)
     })

@@ -20,6 +20,7 @@ import {
   Clock,
 } from 'lucide-react'
 import { DeviceBadge } from '@/components/social/DeviceBadge'
+import { aktivitaetText } from '@/services/praesenz/aktivitaeten'
 import { FunkenAbzeichen } from '@/components/social/FunkenBadge'
 import { StatusDot } from '@/components/social/StatusIndicator'
 import { Meilensteine } from '@/components/social/Meilensteine'
@@ -437,11 +438,11 @@ export function SocialTab() {
                                 navigate(`/chat?userId=${f.user_id ?? f.id}&funke=retten`)
                               }
                             />
-                            <DeviceBadge deviceType={f.presence?.device_type} />
+                            <DeviceBadge client={f.presence?.client} deviceType={f.presence?.device_type} />
                           </div>
-                          {f.presence?.activity_label && (
+                          {aktivitaetText(f.presence?.activity_key, t) && (
                             <p className="text-label-sm text-on-surface-variant/80 truncate">
-                              {f.presence.activity_label}
+                              {aktivitaetText(f.presence?.activity_key, t)}
                             </p>
                           )}
                         </div>

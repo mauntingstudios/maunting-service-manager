@@ -32,6 +32,7 @@ import {
 } from '@/api/social'
 import { renderAchievementIcon } from '@/components/social/achievementIcons'
 import { StatusDot } from '@/components/social/StatusIndicator'
+import { aktivitaetText } from '@/services/praesenz/aktivitaeten'
 import { Nutzungszeit } from '@/components/social/Nutzungszeit'
 import { Avatar, Badge, Button, Dropdown, type DropdownOption, Input, Switch } from '@/Singra/UI'
 import { useAuthStore } from '@/stores/authStore'
@@ -434,9 +435,9 @@ export function SocialEinstellungen() {
                           <span className="text-xs font-semibold text-primary truncate block">
                             {f.username}
                           </span>
-                          {f.presence?.activity_label && (
+                          {aktivitaetText(f.presence?.activity_key, t) && (
                             <p className="text-label-sm text-on-surface-variant truncate">
-                              {f.presence.activity_label}
+                              {aktivitaetText(f.presence?.activity_key, t)}
                             </p>
                           )}
                         </div>

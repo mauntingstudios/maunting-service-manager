@@ -44,9 +44,10 @@ describe('SocialTab (Profile page)', () => {
         created_at: '2026-09-01T00:00:00Z',
         presence: {
           status: 'online',
+          manual_status: 'auto',
           device_type: 'desktop',
-          activity_label: 'Server-Administration',
-          activity_detail: null,
+          client: 'mss',
+          activity_key: 'server',
         },
       },
     ])
@@ -130,7 +131,7 @@ describe('SocialTab (Profile page)', () => {
     await waitFor(() => {
       expect(screen.getByText('alice')).toBeInTheDocument()
     })
-    expect(screen.getByText('Server-Administration')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('presence.aktivitaet.server'))).toBeInTheDocument()
 
     // Profil öffnen und Entfernen nennen sich per aria-label, nicht per nativem title.
     for (const knopf of [

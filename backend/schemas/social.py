@@ -51,11 +51,20 @@ class UserStatsResponse(BaseModel):
 
 
 class PresenceInfo(BaseModel):
+    """Was ein Betrachter vom Zustand eines Kontos sieht.
+
+    ``status`` ist das Ergebnis der Aggregation über alle Sitzungen und die
+    Wahl des Menschen; ``invisible`` erscheint nur beim eigenen Konto.
+    ``client`` sagt, welche Oberfläche gerade vorn ist; ``activity_key`` ist ein
+    Schlüssel aus der Aktivitätenliste der Oberfläche, damit die Anzeige in der
+    App-Sprache bleibt.
+    """
+
     status: str = "offline"
+    manual_status: str = "auto"
     device_type: str = "web"
-    custom_status: str | None = None
-    activity_label: str | None = None
-    activity_detail: str | None = None
+    client: str | None = None
+    activity_key: str | None = None
     updated_at: datetime | None = None
 
 
@@ -81,11 +90,32 @@ class FriendRequestCreate(BaseModel):
 
 
 class PresenceUpdateRequest(BaseModel):
+    """Altweg eines Clients, der noch die eine Zeile je Konto kennt.
+
+    Wird auf eine Sitzung und die manuelle Wahl abgebildet; freie Aktivitätstexte
+    werden ignoriert, weil die Anzeige nur Schlüssel aus der Liste übersetzt.
+    """
+
     status: str = Field("online", pattern="^(online|away|invisible)$")
     device_type: str | None = Field(None, pattern="^(web|desktop|mobile)$")
     custom_status: str | None = Field(None, max_length=128)
     activity_label: str | None = Field(None, max_length=128)
     activity_detail: str | None = Field(None, max_length=128)
+
+
+class PresenceSessionRequest(BaseModel):
+    """Das Lebenszeichen eines Geräts."""
+
+    geraet: str = Field(..., min_length=8, max_length=64, pattern="^[A-Za-z0-9_-]+$")
+    client: str = Field("web", pattern="^(web|pontis|mss)$")
+    plattform: str = Field("web", pattern="^(web|desktop|mobile)$")
+    zustand: str = Field("online", pattern="^(online|away)$")
+    activity_key: str | None = Field(None, pattern="^[a-z0-9_]{1,48}$")
+    vorn: bool = True
+
+
+class PresenceStatusRequest(BaseModel):
+    manual_status: str = Field(..., pattern="^(auto|online|away|invisible)$")
 
 
 class ActivityPingRequest(BaseModel):

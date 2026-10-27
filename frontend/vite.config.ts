@@ -6,6 +6,8 @@ import { panelCsp } from './vite.csp'
 import { fontsourceWoff2Only } from './vite.fontsource'
 
 export default defineConfig({
+  // Wer meldet: Web-Panel, Pontis oder MSS. Der Praesenz-Client liest das.
+  define: { __MSM_APP__: JSON.stringify('web') },
   plugins: [fontsourceWoff2Only(), react(), panelCsp()],
   resolve: {
     alias: {

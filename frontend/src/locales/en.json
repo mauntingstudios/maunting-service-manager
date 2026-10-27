@@ -7233,7 +7233,8 @@
       "away": "Away",
       "invisible": "Invisible",
       "titel": "Status",
-      "offline": "Offline"
+      "offline": "Offline",
+      "auto": "Automatic"
     },
     "device": {
       "desktop": "Desktop app",
@@ -10175,5 +10176,25 @@
     "googleCx": "Search engine ID (cx)",
     "googleCxPlaceholder": "e.g. a1b2c3d4e5f6g7h8i",
     "googleRemoveConfirm": "Do you really want to remove the stored Google search credentials?"
+  },
+  "presence": {
+    "aktivitaet": {
+      "ki": "In the AI chat",
+      "chat": "In chat",
+      "server": "On a server",
+      "kalender": "In the calendar",
+      "notizen": "In notes",
+      "tresor": "In the vault",
+      "einstellungen": "In settings",
+      "verlauf": "In history",
+      "lesezeichen": "In bookmarks",
+      "downloads": "In downloads",
+      "panel": "In the panel"
+    },
+    "client": {
+      "web": "Web panel",
+      "pontis": "Pontis",
+      "mss": "MSM app"
+    }
   }
 }

@@ -33,6 +33,20 @@ def _create_user(db: Session, username: str, privacy: str = "friends") -> User:
     return user
 
 
+def _online(db: Session, user_id: int, *, client: str = "mss", plattform: str = "desktop", activity_key: str | None = None, geraet: str = "geraet-test") -> dict:
+    """Ein offenes Geraet mit einem Lebenszeichen."""
+    return SocialService.upsert_session(
+        db,
+        user_id,
+        geraet=geraet,
+        client=client,
+        plattform=plattform,
+        zustand="online",
+        activity_key=activity_key,
+        vorn=True,
+    )
+
+
 # ============================================================================
 # 1. Tests für Dreistufige Sichtbarkeit & Status-Maskierung (Server-Ebene)
 # ============================================================================
@@ -42,14 +56,8 @@ def test_visibility_public_profile_and_presence(db: Session):
     public_user = _create_user(db, "alice_pub", privacy="public")
     stranger = _create_user(db, "bob_stranger", privacy="friends")
 
-    # Präsenz setzen mit Aktivitäten
-    SocialService.update_presence(db, public_user.id, {
-        "status": "online",
-        "device_type": "desktop",
-        "custom_status": "Am Zocken",
-        "activity_label": "Valheim",
-        "activity_detail": "Server Alpha",
-    })
+    # Ein offenes Geraet mit einer Aktivitaet aus der Liste
+    _online(db, public_user.id, plattform="desktop", activity_key="server")
 
     # Fremder (stranger) ruft Profil und Präsenz ab
     profile = SocialService.get_profile(db, viewer_user_id=stranger.id, target_user=public_user)
@@ -57,9 +65,8 @@ def test_visibility_public_profile_and_presence(db: Session):
     assert profile["privacy"] == "public"
     assert profile["presence"] is not None
     assert profile["presence"]["status"] == "online"
-    assert profile["presence"]["activity_label"] == "Valheim"
-    assert profile["presence"]["activity_detail"] == "Server Alpha"
-    assert profile["presence"]["custom_status"] == "Am Zocken"
+    assert profile["presence"]["activity_key"] == "server"
+    assert profile["presence"]["client"] == "mss"
     assert profile["presence"]["device_type"] == "desktop"
 
     # Stories prüfen: Öffentliche Stories müssen für Fremde sichtbar sein
@@ -79,14 +86,8 @@ def test_visibility_friends_profile_and_presence(db: Session):
     db.add(rel)
     db.commit()
 
-    # Präsenz von Charlie setzen
-    SocialService.update_presence(db, friends_user.id, {
-        "status": "online",
-        "device_type": "desktop",
-        "custom_status": "Programmieren",
-        "activity_label": "VS Code",
-        "activity_detail": "MSM Core",
-    })
+    # Ein offenes Geraet von Charlie
+    _online(db, friends_user.id, plattform="desktop", activity_key="panel")
 
     # Story von Charlie erstellen
     story = SocialService.create_story(db, friends_user, "Nur für Freunde!")
@@ -96,7 +97,7 @@ def test_visibility_friends_profile_and_presence(db: Session):
     assert profile_friend["restricted"] is False
     assert profile_friend["presence"] is not None
     assert profile_friend["presence"]["status"] == "online"
-    assert profile_friend["presence"]["activity_label"] == "VS Code"
+    assert profile_friend["presence"]["activity_key"] == "panel"
     friend_stories = SocialService.list_active_stories(db, friend.id)
     assert any(s["id"] == story.id for s in friend_stories)
 
@@ -127,14 +128,8 @@ def test_visibility_private_profile_and_presence(db: Session):
     db.add(rel)
     db.commit()
 
-    # Frank ist online mit Aktivitäten
-    SocialService.update_presence(db, private_user.id, {
-        "status": "online",
-        "device_type": "mobile",
-        "custom_status": "Geheim",
-        "activity_label": "Geheimes Projekt",
-        "activity_detail": "Streng vertraulich",
-    })
+    # Frank ist online mit einer Aktivitaet
+    _online(db, private_user.id, plattform="mobile", activity_key="notes")
 
     # Story von Frank
     story = SocialService.create_story(db, private_user, "Private Story für Freunde")
@@ -146,7 +141,7 @@ def test_visibility_private_profile_and_presence(db: Session):
     pres_friend = SocialService.get_presence_for_viewer(db, viewer_user_id=friend.id, target_user=private_user)
     assert pres_friend is not None
     assert pres_friend["status"] == "online"
-    assert pres_friend["activity_label"] == "Geheimes Projekt"
+    assert pres_friend["activity_key"] == "notes"
     # Privat heisst seit 10/2026: nur der Verfasser selbst. Auch ein Freund
     # sieht die Story nicht.
     friend_stories = SocialService.list_active_stories(db, friend.id)
@@ -164,9 +159,8 @@ def test_visibility_private_profile_and_presence(db: Session):
     # Reiner Online-Indikator:
     assert pres["status"] == "online"
     # Sensible Daten sind strikt maskiert/None:
-    assert pres["activity_label"] is None
-    assert pres["activity_detail"] is None
-    assert pres["custom_status"] is None
+    assert pres["activity_key"] is None
+    assert pres["client"] is None
     assert pres["updated_at"] is None
 
     # Stories für Fremden strikt verborgen
@@ -180,28 +174,22 @@ def test_visibility_invisible_mode_masking(db: Session):
     priv_inv = _create_user(db, "judy_priv_inv", privacy="private")
     stranger = _create_user(db, "kurt_stranger", privacy="friends")
 
-    # Beide aktivieren Unsichtbar-Modus
-    SocialService.update_presence(db, pub_inv.id, {
-        "status": "invisible",
-        "custom_status": "Bin eigentlich da",
-        "activity_label": "Geheimspiel",
-    })
-    SocialService.update_presence(db, priv_inv.id, {
-        "status": "invisible",
-        "custom_status": "Unsichtbar",
-        "activity_label": "Etwas",
-    })
+    # Beide sind online, dann unsichtbar
+    _online(db, pub_inv.id, activity_key="chat")
+    _online(db, priv_inv.id, activity_key="chat")
+    SocialService.set_manual_status(db, pub_inv.id, "invisible")
+    SocialService.set_manual_status(db, priv_inv.id, "invisible")
 
     # Fremder sieht beide als 'offline' ohne jegliche Aktivitätsdaten
     pres_pub = SocialService.get_presence_for_viewer(db, viewer_user_id=stranger.id, target_user=pub_inv)
     assert pres_pub["status"] == "offline"
-    assert pres_pub["activity_label"] is None
-    assert pres_pub["custom_status"] is None
+    assert pres_pub["activity_key"] is None
+    assert pres_pub["client"] is None
 
     pres_priv = SocialService.get_presence_for_viewer(db, viewer_user_id=stranger.id, target_user=priv_inv)
     assert pres_priv["status"] == "offline"
-    assert pres_priv["activity_label"] is None
-    assert pres_priv["custom_status"] is None
+    assert pres_priv["activity_key"] is None
+    assert pres_priv["client"] is None
 
     # Der Nutzer selbst sieht seinen echten Unsichtbar-Zustand
     self_pres = SocialService.get_presence_for_viewer(db, viewer_user_id=pub_inv.id, target_user=pub_inv)
@@ -382,14 +370,8 @@ async def test_server_presence_broadcast_filters_payload_per_recipient(db: Sessi
     conn_stranger, queue_stranger = SyncEventService.subscribe(user_id=stranger.id)
 
     try:
-        # Privater Nutzer aktualisiert seine Präsenz mit Aktivitäten
-        SocialService.update_presence(db, priv_user.id, {
-            "status": "online",
-            "device_type": "desktop",
-            "custom_status": "Geheimarbeit",
-            "activity_label": "Top Secret App",
-            "activity_detail": "Level 5",
-        })
+        # Privater Nutzer meldet ein offenes Geraet mit einer Aktivitaet
+        _online(db, priv_user.id, plattform="desktop", activity_key="server")
 
         # Freund prüft sein empfangenes Event
         assert not queue_friend.empty()
@@ -397,17 +379,15 @@ async def test_server_presence_broadcast_filters_payload_per_recipient(db: Sessi
         assert event_friend["type"] == "friend_presence_updated"
         pres_f = event_friend["presence"]
         assert pres_f["status"] == "online"
-        assert pres_f["activity_label"] == "Top Secret App"
-        assert pres_f["custom_status"] == "Geheimarbeit"
+        assert pres_f["activity_key"] == "server"
 
         # Fremder ruft seine gefilterte Präsenz ab
         pres_s = SocialService.get_presence_for_viewer(db, stranger.id, priv_user)
         assert pres_s is not None
         assert pres_s["status"] == "online"
-        # Strikte Maskierung: KEINE Aktivitäten im Payload!
-        assert pres_s["activity_label"] is None
-        assert pres_s["activity_detail"] is None
-        assert pres_s["custom_status"] is None
+        # Strikte Maskierung: KEINE Aktivitaeten im Payload!
+        assert pres_s["activity_key"] is None
+        assert pres_s["client"] is None
     finally:
         SyncEventService.unsubscribe(conn_friend)
         SyncEventService.unsubscribe(conn_stranger)
@@ -426,19 +406,20 @@ async def test_server_presence_broadcast_invisible_masks_as_offline(db: Session)
     conn_friend, queue_friend = SyncEventService.subscribe(user_id=friend.id)
 
     try:
-        SocialService.update_presence(db, user.id, {
-            "status": "invisible",
-            "custom_status": "Bin da",
-            "activity_label": "Aktives Spiel",
-        })
+        # Erst online: der Freund bekommt ein Ereignis mit Details.
+        _online(db, user.id, activity_key="chat")
+        assert not queue_friend.empty()
+        vorher = queue_friend.get_nowait()["presence"]
+        assert vorher["status"] == "online"
+
+        # Dann unsichtbar: der Freund sieht offline, ohne Details.
+        SocialService.set_manual_status(db, user.id, "invisible")
 
         assert not queue_friend.empty()
-        event = queue_friend.get_nowait()
-        pres = event["presence"]
-        # Freund sieht Nutzer als offline, keine Aktivitäten
+        pres = queue_friend.get_nowait()["presence"]
         assert pres["status"] == "offline"
-        assert pres["activity_label"] is None
-        assert pres["custom_status"] is None
+        assert pres["activity_key"] is None
+        assert pres["client"] is None
     finally:
         SyncEventService.unsubscribe(conn_friend)
 

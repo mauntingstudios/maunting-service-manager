@@ -1279,6 +1279,9 @@ async def _e2ee_envelope_cleanup_task() -> None:
                 ("E2EE-Nachricht", cleanup_expired),
                 ("Anhang", ChatMediaService.cleanup_expired_media),
                 ("Story", SocialService.cleanup_expired_stories),
+                # Praesenzsitzungen ohne Lebenszeichen; die Anzeige wartet nur
+                # die kurze Frist ab, das hier ist Hygiene.
+                ("Praesenzsitzung", SocialService.cleanup_stale_sessions),
                 ("Tresor-Datei", vault_blob_service.aufraeumen),
                 # Was die KI vergessen hat, bleibt 30 Tage zurueckholbar.
                 ("Vergessene-Erinnerung", ai_memory_service.vergessene_aufraeumen),

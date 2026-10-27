@@ -6,6 +6,7 @@ import { ArrowLeft, CalendarDays, Clock, EyeOff, MessageSquare, Phone, UserPlus,
 import { getFriends, getProfile, sendFriendRequest, type PublicProfileResponse } from '@/api/social'
 import { SanitizedApiError } from '@/api/client'
 import { DeviceBadge } from '@/components/social/DeviceBadge'
+import { aktivitaetText } from '@/services/praesenz/aktivitaeten'
 import { FunkenAbzeichen } from '@/components/social/FunkenBadge'
 import { Meilensteine } from '@/components/social/Meilensteine'
 import { Nutzungszeit } from '@/components/social/Nutzungszeit'
@@ -173,14 +174,13 @@ export function Benutzerprofil() {
               {profil.presence && (
                 <p className="flex items-center gap-1.5 text-sm text-on-surface-variant">
                   <span>{t(`social.status.${status}`)}</span>
-                  {status !== 'offline' && <DeviceBadge deviceType={profil.presence.device_type} />}
-                  {profil.presence.activity_label && (
-                    <span className="truncate">· {profil.presence.activity_label}</span>
+                  {status !== 'offline' && (
+                    <DeviceBadge client={profil.presence.client} deviceType={profil.presence.device_type} />
+                  )}
+                  {status !== 'offline' && aktivitaetText(profil.presence.activity_key, t) && (
+                    <span className="truncate">· {aktivitaetText(profil.presence.activity_key, t)}</span>
                   )}
                 </p>
-              )}
-              {profil.presence?.custom_status && (
-                <p className="text-sm text-on-surface truncate">{profil.presence.custom_status}</p>
               )}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-on-surface-variant">
                 {dabeiSeit && (

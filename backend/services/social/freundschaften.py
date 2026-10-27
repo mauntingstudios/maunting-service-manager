@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import timezone
 import logging
 from typing import Any
 
@@ -12,7 +11,6 @@ from sqlalchemy.orm import Session
 from models import (
     User,
     UserFriend,
-    UserPresence,
 )
 from services.panel_settings_service import PanelSettingsService
 from services.sync_event_service import SyncEventService
@@ -107,10 +105,8 @@ class FreundschaftenMixin:
             return []
 
         users = {u.id: u for u in db.query(User).filter(User.id.in_(friend_user_ids)).all()}
-        presences = {
-            p.user_id: p
-            for p in db.query(UserPresence).filter(UserPresence.user_id.in_(friend_user_ids)).all()
-        }
+        # Eine Abfrage für alle Sitzungen; die Aggregation maskiert Unsichtbare.
+        zustaende = cls.get_presence_bulk(db, friend_user_ids)
 
         results = []
         bereits_gelistet: set[int] = set()
@@ -122,34 +118,14 @@ class FreundschaftenMixin:
             if not u or not u.is_active:
                 continue
             bereits_gelistet.add(fid)
-            pres = presences.get(fid)
-            presence_dict = None
-            if pres and pres.status != "invisible":
-                st = pres.status
-                if st != "offline":
-                    if not pres.updated_at:
-                        st = "offline"
-                    else:
-                        updated_dt = pres.updated_at if pres.updated_at.tzinfo else pres.updated_at.replace(tzinfo=timezone.utc)
-                        if (_now() - updated_dt).total_seconds() > 120:
-                            st = "offline"
-                presence_dict = {
-                    "status": st,
-                    "device_type": pres.device_type,
-                    "custom_status": pres.custom_status,
-                    "activity_label": pres.activity_label,
-                    "activity_detail": pres.activity_detail,
-                    "updated_at": pres.updated_at,
-                }
-            else:
-                presence_dict = {
-                    "status": "offline",
-                    "device_type": pres.device_type if pres else "web",
-                    "custom_status": None,
-                    "activity_label": None,
-                    "activity_detail": None,
-                    "updated_at": None,
-                }
+            presence_dict = zustaende.get(fid) or {
+                "status": "offline",
+                "manual_status": "auto",
+                "device_type": "web",
+                "client": None,
+                "activity_key": None,
+                "updated_at": None,
+            }
 
             results.append({
                 "id": r.id,

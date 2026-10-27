@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 import logging
-from typing import Any
+from typing import Any, Iterable
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -11,92 +11,231 @@ from models import (
     User,
     UserFriend,
     UserPresence,
+    UserPresenceSession,
 )
 from services.sync_event_service import SyncEventService
 from services.social.basis import _now
 
 logger = logging.getLogger(__name__)
 
+#: So lange gilt ein Geraet ohne Lebenszeichen noch als offen.
+#:
+#: Der Client meldet alle 45 Sekunden; zwei verpasste Meldungen (Netz, Standby)
+#: sollen ihn nicht sofort als offline zeigen.
+SITZUNG_FRIST_SEKUNDEN = 120
+
+#: Sitzungen ohne Lebenszeichen werden nach dieser Zeit aus der Datenbank
+#: entfernt. Die Anzeige wartet nur die kurze Frist ab; das hier ist Hygiene.
+SITZUNG_AUFRAEUMEN_TAGE = 1
+
+MANUELLE_STATI = ("auto", "online", "away", "invisible")
+
+
+def _als_utc(zeit: datetime | None) -> datetime | None:
+    if zeit is None:
+        return None
+    return zeit if zeit.tzinfo else zeit.replace(tzinfo=timezone.utc)
+
+
+def _leer(manual: str = "auto", status: str = "offline") -> dict[str, Any]:
+    return {
+        "status": status,
+        "manual_status": manual,
+        "device_type": "web",
+        "client": None,
+        "activity_key": None,
+        "updated_at": None,
+    }
+
+
+def _kern(presence: dict[str, Any] | None) -> tuple:
+    """Was sich für andere sichtbar geändert hat. Für die Ereignis-Drosselung."""
+    if not presence:
+        return ()
+    return (
+        presence.get("status"),
+        presence.get("device_type"),
+        presence.get("client"),
+        presence.get("activity_key"),
+    )
+
+
+def _sitzungen(
+    db: Session, user_ids: Iterable[int], jetzt: datetime | None = None
+) -> dict[int, list[UserPresenceSession]]:
+    ids = [int(i) for i in user_ids]
+    if not ids:
+        return {}
+    frist = (jetzt or _now()) - timedelta(seconds=SITZUNG_FRIST_SEKUNDEN)
+    rows = (
+        db.query(UserPresenceSession)
+        .filter(
+            UserPresenceSession.user_id.in_(ids),
+            UserPresenceSession.last_seen_at >= frist,
+        )
+        .all()
+    )
+    gesammelt: dict[int, list[UserPresenceSession]] = {}
+    for row in rows:
+        gesammelt.setdefault(int(row.user_id), []).append(row)
+    return gesammelt
+
+
+def _vordere(sitzungen: list[UserPresenceSession]) -> UserPresenceSession | None:
+    if not sitzungen:
+        return None
+    vorne = [s for s in sitzungen if s.vorn]
+    kandidaten = vorne or sitzungen
+    return max(
+        kandidaten,
+        key=lambda s: _als_utc(s.last_seen_at) or datetime.min.replace(tzinfo=timezone.utc),
+    )
+
+
+def _aggregat(
+    sitzungen: list[UserPresenceSession],
+    manual: str,
+    *,
+    selbst: bool = False,
+) -> dict[str, Any]:
+    if not sitzungen:
+        # Ohne offenes Geraet ist niemand online — auch nicht, wenn die Wahl
+        # "online" lautet. Die Wahl sagt nur, wie es *mit* Geraet aussieht.
+        return _leer(manual, "invisible" if manual == "invisible" and selbst else "offline")
+
+    vordere = _vordere(sitzungen)
+    if manual == "invisible":
+        if not selbst:
+            return _leer(manual, "offline")
+        status = "invisible"
+    elif manual in ("online", "away"):
+        status = manual
+    else:
+        status = "online" if any(s.zustand == "online" for s in sitzungen) else "away"
+
+    return {
+        "status": status,
+        "manual_status": manual,
+        "device_type": vordere.plattform if vordere else "web",
+        "client": vordere.client if vordere else None,
+        "activity_key": vordere.activity_key if vordere else None,
+        "updated_at": max(
+            (_als_utc(s.last_seen_at) for s in sitzungen if s.last_seen_at),
+            default=None,
+        ),
+    }
+
+
+def _manual(db: Session, user_id: int) -> str:
+    pres = db.query(UserPresence).filter_by(user_id=user_id).first()
+    return pres.manual_status if pres and pres.manual_status else "auto"
+
+
+def _publiziere(
+    cls: type,
+    db: Session,
+    user_id: int,
+    vorher: dict[str, Any],
+    nachher: dict[str, Any],
+) -> None:
+    """Meldet den Freunden, was sich sichtbar geaendert hat — nicht jedes Lebenszeichen."""
+    if _kern(vorher) == _kern(nachher):
+        return
+
+    user_obj = db.query(User).filter_by(id=user_id).first()
+    if not user_obj:
+        return
+    privacy = getattr(user_obj, "social_privacy", "friends")
+
+    friend_rels = (
+        db.query(UserFriend)
+        .filter(
+            or_(UserFriend.user_id == user_id, UserFriend.friend_id == user_id),
+            UserFriend.status == "accepted",
+        )
+        .all()
+    )
+    empfaenger = {r.friend_id if r.user_id == user_id else r.user_id for r in friend_rels}
+    if privacy == "public" and nachher.get("manual_status") != "invisible":
+        # Ein oeffentliches Profil darf auch Abonnenten erreichen; die
+        # Chatpartner standen hier bis Stufe 6b und sind nicht mehr noetig.
+        empfaenger |= {sub.user_id for sub in SyncEventService._subscribers.values()}
+
+    for viewer_id in empfaenger:
+        if viewer_id == user_id:
+            continue
+        pres_for_viewer = cls.get_presence_for_viewer(db, viewer_id, user_obj)
+        if pres_for_viewer is None:
+            continue
+        payload = dict(pres_for_viewer)
+        if payload.get("updated_at") and hasattr(payload["updated_at"], "isoformat"):
+            payload["updated_at"] = payload["updated_at"].isoformat()
+        SyncEventService.publish(
+            {
+                "type": "friend_presence_updated",
+                "friend_id": user_id,
+                "user_id": user_id,
+                "presence": payload,
+            },
+            user_id=viewer_id,
+        )
+
 
 class PraesenzMixin:
     @classmethod
     def get_presence(cls, db: Session, user_id: int) -> dict[str, Any]:
-        pres = db.query(UserPresence).filter_by(user_id=user_id).first()
-        if not pres:
-            return {
-                "status": "offline",
-                "device_type": "web",
-                "custom_status": None,
-                "activity_label": None,
-                "activity_detail": None,
-                "updated_at": None,
-            }
+        """Der eigene Zustand: die Wahl und was die Geräte gerade tun."""
+        manual = _manual(db, user_id)
+        sitzungen = _sitzungen(db, [user_id]).get(int(user_id), [])
+        return _aggregat(sitzungen, manual, selbst=True)
 
-        raw_status = pres.status
-        if raw_status not in ("offline", "invisible"):
-            if not pres.updated_at:
-                raw_status = "offline"
-            else:
-                updated_dt = pres.updated_at if pres.updated_at.tzinfo else pres.updated_at.replace(tzinfo=timezone.utc)
-                if (_now() - updated_dt).total_seconds() > 120:
-                    raw_status = "offline"
+    @classmethod
+    def get_presence_bulk(
+        cls, db: Session, user_ids: Iterable[int]
+    ) -> dict[int, dict[str, Any]]:
+        """Zustände für eine Liste — eine Abfrage für alle Sitzungen.
 
-        return {
-            "status": raw_status,
-            "device_type": pres.device_type,
-            "custom_status": pres.custom_status,
-            "activity_label": pres.activity_label,
-            "activity_detail": pres.activity_detail,
-            "updated_at": pres.updated_at,
+        Unsichtbar ist auch hier offline; wer die Liste liest, ist Freund oder
+        Betrachter eines öffentlichen Profils.
+        """
+        ids = [int(i) for i in user_ids]
+        if not ids:
+            return {}
+        manuell = {
+            int(p.user_id): (p.manual_status or "auto")
+            for p in db.query(UserPresence).filter(UserPresence.user_id.in_(ids)).all()
         }
+        sitzungen = _sitzungen(db, ids)
+        ergebnis: dict[int, dict[str, Any]] = {}
+        for uid in ids:
+            ergebnis[uid] = _aggregat(sitzungen.get(uid, []), manuell.get(uid, "auto"))
+        return ergebnis
 
     @classmethod
     def get_presence_for_viewer(
         cls, db: Session, viewer_user_id: int | None, target_user: User | int
     ) -> dict[str, Any] | None:
-        """Ermittelt den Präsenzstatus unter strikter Einhaltung der 3-Stufen- und Maskierungsregeln:
-        - Unsichtbar: Unabhängig von Öffentlich/Freunde/Privat komplett als 'offline' maskiert (keine Aktivitäten).
-        - Öffentlich: Jeder sieht Online-Status und Aktivitäten.
-        - Freunde: Nur bestätigte Freunde sehen Details wie Stories und Aktivitäten. Für Fremde komplett verborgen.
-        - Privat: Nutzer wird als 'Online' angezeigt (falls nicht unsichtbar), aber Aktivitäten
-          und Profilinhalte sind für Nicht-Freunde strikt verborgen (nur reiner Online-Indikator).
+        """Ermittelt den Präsenzstatus unter strikter Einhaltung der 3-Stufen- und Maskierungsregeln.
+
+        - Unsichtbar: unabhängig von Öffentlich/Freunde/Privat als ``offline`` maskiert.
+        - Öffentlich: jeder sieht Status, Gerät und Aktivität.
+        - Freunde: nur bestätigte Freunde sehen Details; für Fremde verborgen.
+        - Privat: Nicht-Freunde sehen höchstens den reinen Online-Indikator.
         """
         if isinstance(target_user, int):
             user = db.query(User).filter_by(id=target_user).first()
             if not user:
-                return {
-                    "status": "offline",
-                    "device_type": "web",
-                    "custom_status": None,
-                    "activity_label": None,
-                    "activity_detail": None,
-                    "updated_at": None,
-                }
+                return _leer()
         else:
             user = target_user
 
-        pres = cls.get_presence(db, user.id)
         is_self = viewer_user_id is not None and viewer_user_id == user.id
-        raw_status = pres["status"]
-
-        # 1. Unsichtbar-Modus: Unabhängig von Öffentlich/Freunde/Privat komplett als Offline maskieren
-        if raw_status == "invisible":
-            if is_self:
-                return pres
-            return {
-                "status": "offline",
-                "device_type": "web",
-                "custom_status": None,
-                "activity_label": None,
-                "activity_detail": None,
-                "updated_at": None,
-            }
-
+        pres = cls.get_presence(db, user.id)
         if is_self:
             return pres
 
-        # Blockierte Benutzer sehen niemals Präsenz- oder Statusdaten
-        if viewer_user_id and viewer_user_id != user.id:
+        # Blockierte Benutzer sehen niemals Präsenz- oder Statusdaten.
+        if viewer_user_id:
             blocked = (
                 db.query(UserFriend)
                 .filter(
@@ -111,141 +250,149 @@ class PraesenzMixin:
             if blocked:
                 return None
 
+        if pres["manual_status"] == "invisible":
+            return _leer("invisible", "offline")
+
         privacy = getattr(user, "social_privacy", "friends")
         is_friend = cls.is_confirmed_friend(db, viewer_user_id, user.id) if viewer_user_id else False
 
-        # 2. Öffentlich: Jeder sieht den Online-Status und aktuelle Aktivitäten
-        if privacy == "public":
+        if privacy == "public" or is_friend:
             return pres
 
-        # 3. Freunde: Nur bestätigte Freunde sehen Details wie Stories und Aktivitäten.
-        # Für Fremde wird dies komplett ausgeblendet.
         if privacy == "friends":
-            if is_friend:
-                return pres
-            # Für Fremde komplett ausgeblendet
             return None
 
-        # 4. Privat: Der Nutzer wird zwar als "Online" angezeigt (sofern nicht unsichtbar),
-        # aber Details wie Stories, Profilinhalte und aktuelle Aktivitäten ("was der User macht")
-        # sind für alle Nicht-Freunde strikt verborgen. Man sieht lediglich den reinen Online-Indikator, mehr nicht.
         if privacy == "private":
-            if is_friend:
-                return pres
-            # Reiner Online-Indikator für Nicht-Freunde (keine Aktivitäten, kein custom_status)
-            return {
-                "status": raw_status,
-                "device_type": "web",
-                "custom_status": None,
-                "activity_label": None,
-                "activity_detail": None,
-                "updated_at": None,
-            }
+            # Reiner Online-Indikator: kein Gerät, keine Aktivität, kein Zeitpunkt.
+            return _leer(
+                "", "offline" if pres["status"] == "offline" else ("away" if pres["status"] == "away" else "online")
+            )
 
         return None
 
-    @classmethod
-    def update_presence(cls, db: Session, user_id: int, data: dict[str, Any]) -> dict[str, Any]:
-        """Aktualisiert Online-Status, Gerätetyp und Rich Presence des Nutzers."""
-        status = data.get("status", "online")
-        device_type = data.get("device_type")
-        custom_status = data.get("custom_status")
-        activity_label = data.get("activity_label")
-        activity_detail = data.get("activity_detail")
+    # ── Schreiben ─────────────────────────────────────────────────────────
 
+    @classmethod
+    def set_manual_status(cls, db: Session, user_id: int, manual_status: str) -> dict[str, Any]:
+        if manual_status not in MANUELLE_STATI:
+            raise ValueError("Unbekannter Status")
+        vorher = cls.get_presence(db, user_id)
         pres = db.query(UserPresence).filter_by(user_id=user_id).first()
         if not pres:
-            pres = UserPresence(
-                user_id=user_id,
-                status=status,
-                device_type=device_type or "web",
-                custom_status=custom_status,
-                activity_label=activity_label,
-                activity_detail=activity_detail,
-                updated_at=_now(),
-            )
+            pres = UserPresence(user_id=user_id, manual_status=manual_status, updated_at=_now())
             db.add(pres)
         else:
-            pres.status = status
-            if device_type:
-                pres.device_type = device_type
-            pres.custom_status = custom_status
-            pres.activity_label = activity_label
-            pres.activity_detail = activity_detail
+            pres.manual_status = manual_status
             pres.updated_at = _now()
-
         db.commit()
+        nachher = cls.get_presence(db, user_id)
+        _publiziere(cls, db, user_id, vorher, nachher)
+        return nachher
 
-        user_obj = db.query(User).filter_by(id=user_id).first()
-        privacy = getattr(user_obj, "social_privacy", "friends") if user_obj else "friends"
-
-        subscriber_user_ids = {sub.user_id for sub in SyncEventService._subscribers.values()}
-        friend_rels = (
-            db.query(UserFriend)
-            .filter(
-                or_(UserFriend.user_id == user_id, UserFriend.friend_id == user_id),
-                UserFriend.status == "accepted",
+    @classmethod
+    def upsert_session(
+        cls,
+        db: Session,
+        user_id: int,
+        *,
+        geraet: str,
+        client: str,
+        plattform: str,
+        zustand: str,
+        activity_key: str | None,
+        vorn: bool,
+    ) -> dict[str, Any]:
+        """Ein Lebenszeichen. Dieselbe Zeile für dasselbe Gerät, nie eine neue."""
+        vorher = cls.get_presence(db, user_id)
+        jetzt = _now()
+        sitzung = (
+            db.query(UserPresenceSession)
+            .filter_by(user_id=user_id, geraet=geraet)
+            .first()
+        )
+        if not sitzung:
+            sitzung = UserPresenceSession(
+                user_id=user_id,
+                geraet=geraet,
+                client=client,
+                plattform=plattform,
+                zustand=zustand,
+                activity_key=activity_key,
+                vorn=vorn,
+                last_seen_at=jetzt,
             )
-            .all()
+            db.add(sitzung)
+        else:
+            sitzung.client = client
+            sitzung.plattform = plattform
+            sitzung.zustand = zustand
+            sitzung.activity_key = activity_key
+            sitzung.vorn = vorn
+            sitzung.last_seen_at = jetzt
+        db.commit()
+        nachher = cls.get_presence(db, user_id)
+        _publiziere(cls, db, user_id, vorher, nachher)
+        return nachher
+
+    @classmethod
+    def delete_session(cls, db: Session, user_id: int, geraet: str) -> dict[str, Any]:
+        vorher = cls.get_presence(db, user_id)
+        db.query(UserPresenceSession).filter_by(user_id=user_id, geraet=geraet).delete()
+        db.commit()
+        nachher = cls.get_presence(db, user_id)
+        _publiziere(cls, db, user_id, vorher, nachher)
+        return nachher
+
+    @classmethod
+    def update_presence(cls, db: Session, user_id: int, data: dict[str, Any]) -> dict[str, Any]:
+        """Altweg eines Clients, der noch die eine Zeile je Konto kennt.
+
+        Bildet die Meldung auf eine Sitzung und die manuelle Wahl ab. Freie
+        Aktivitätstexte werden verworfen; die Anzeige übersetzt nur Schlüssel.
+        """
+        status = data.get("status", "online")
+        plattform = data.get("device_type") or "web"
+
+        if status == "invisible":
+            return cls.set_manual_status(db, user_id, "invisible")
+
+        # Früher hob jede „online“-Meldung ein Unsichtbar auf; für einen alten
+        # Client bleibt das so. Die Automatik greift danach wieder.
+        neu_manuell = "away" if status == "away" else "auto"
+        pres = db.query(UserPresence).filter_by(user_id=user_id).first()
+        if pres is None or pres.manual_status != neu_manuell:
+            cls.set_manual_status(db, user_id, neu_manuell)
+
+        return cls.upsert_session(
+            db,
+            user_id,
+            geraet=f"legacy-{plattform}",
+            client="web",
+            plattform=plattform,
+            zustand="away" if status == "away" else "online",
+            activity_key=None,
+            vorn=True,
         )
 
-        # Ghost-Mode & Privacy: Wenn status == 'invisible' oder privacy == 'private'/'friends',
-        # darf der Status NIEMALS an Nicht-Freunde (Fremde, passive Subscriber, fremde Chatpartner)
-        # durch Echtzeit-Events oder Joins geleakt werden.
-        if pres.status == "invisible" or privacy in ("private", "friends"):
-            # Nur bestätigte Freunde erhalten gefilterte Updates (bei invisible strikt als offline maskiert)
-            relevant_viewer_ids = {r.friend_id if r.user_id == user_id else r.user_id for r in friend_rels}
-        else:
-            # Öffentlich & nicht unsichtbar: Freunde und autorisierte Abonnenten.
-            #
-            # Die Chatpartner standen hier bis Stufe 6b — sie kamen aus
-            # `direct_chats.user_a_id`/`user_b_id`, und mit den Spalten geht
-            # dieser Zweig. Wer die Anwesenheit eines Gesprächspartners sehen
-            # will, wird Freund oder abonniert ein öffentliches Profil.
-            #
-            # Der Tausch ist bewusst: ein Anwesenheitsereignis, das der Server
-            # an „alle, mit denen dieses Konto schreibt" verteilt, setzt voraus,
-            # dass er diese Liste führt. Genau die soll es nicht mehr geben.
-            relevant_viewer_ids = {r.friend_id if r.user_id == user_id else r.user_id for r in friend_rels}
-            if user_obj and getattr(user_obj, "social_privacy", "friends") == "public":
-                relevant_viewer_ids |= subscriber_user_ids
-
-        # Für jeden relevanten Betrachter serverseitig gefiltertes Event publizieren
-        for viewer_id in relevant_viewer_ids:
-            if viewer_id == user_id:
-                continue
-            pres_for_viewer = cls.get_presence_for_viewer(db, viewer_id, user_obj or user_id)
-            if pres_for_viewer is not None:
-                pres_payload = dict(pres_for_viewer)
-                if pres_payload.get("updated_at") and hasattr(pres_payload["updated_at"], "isoformat"):
-                    pres_payload["updated_at"] = pres_payload["updated_at"].isoformat()
-                SyncEventService.publish(
-                    {
-                        "type": "friend_presence_updated",
-                        "friend_id": user_id,
-                        "user_id": user_id,
-                        "presence": pres_payload,
-                    },
-                    user_id=viewer_id,
-                )
-
-        return {
-            "status": pres.status,
-            "device_type": pres.device_type,
-            "custom_status": pres.custom_status,
-            "activity_label": pres.activity_label,
-            "activity_detail": pres.activity_detail,
-            "updated_at": pres.updated_at,
-        }
+    @classmethod
+    def cleanup_stale_sessions(cls, db: Session) -> int:
+        frist = _now() - timedelta(days=SITZUNG_AUFRAEUMEN_TAGE)
+        geloescht = (
+            db.query(UserPresenceSession)
+            .filter(UserPresenceSession.last_seen_at < frist)
+            .delete(synchronize_session=False)
+        )
+        if geloescht:
+            db.commit()
+        return int(geloescht or 0)
 
     @classmethod
     def broadcast_user_joined(cls, db: Session, user_id: int, user_username: str) -> None:
         """Broadcastet ein user_joined Event unter strikter Einhaltung des Ghost-Mode und der Privatsphäre."""
         pres = cls.get_presence(db, user_id)
-        is_invisible = pres.get("status") == "invisible"
 
         # Ghost-Mode: Wenn unsichtbar, niemals an irgendwen broadcasten!
-        if is_invisible:
+        if pres.get("manual_status") == "invisible":
             return
 
         rels = (
@@ -257,11 +404,6 @@ class PraesenzMixin:
             .all()
         )
         target_user_ids = {r.friend_id if r.user_id == user_id else r.user_id for r in rels}
-
-        # Die Chatpartner eines öffentlichen Profils standen hier bis Stufe 6b.
-        # Sie kamen aus `direct_chats.user_a_id`/`user_b_id`; mit den Spalten
-        # geht dieser Zweig. Benachrichtigt werden damit Freunde — und für ein
-        # öffentliches Profil die Abonnenten, die derselbe Weg schon kannte.
 
         # Blockierte Benutzer niemals benachrichtigen (Datenschutz-Invariante)
         blocked_rels = (

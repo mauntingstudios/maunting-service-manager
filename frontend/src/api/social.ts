@@ -13,36 +13,37 @@ export interface FriendItem {
   avatar_url?: string | null
   status: 'pending' | 'accepted' | 'blocked'
   is_requester: boolean
-  presence?: {
-    status: 'online' | 'away' | 'invisible'
-    device_type: 'web' | 'desktop' | 'mobile'
-    custom_status?: string | null
-    activity_label?: string | null
-    activity_detail?: string | null
-    last_seen_at?: string | null
-    updated_at?: string | null
-  } | null
+  presence?: PresenceItem | null
   created_at: string
 }
 
+/** Was der Server über den Zustand eines Kontos sagt. */
+export type PraesenzStatus = 'online' | 'away' | 'offline' | 'invisible'
+/** Die Wahl des Menschen; `auto` überlässt die Abwesenheit den Sitzungen. */
+export type PraesenzWahl = 'auto' | 'online' | 'away' | 'invisible'
+/** Welche Oberfläche offen ist. */
+export type PraesenzClient = 'web' | 'pontis' | 'mss'
+
 export interface PresenceItem {
-  user_id: number
-  username: string
-  status: 'online' | 'away' | 'invisible'
+  user_id?: number
+  username?: string
+  status: PraesenzStatus
+  manual_status?: PraesenzWahl
   device_type: 'web' | 'desktop' | 'mobile'
-  custom_status?: string | null
-  activity_label?: string | null
-  activity_detail?: string | null
+  client?: PraesenzClient | null
+  /** Schlüssel aus der Aktivitätenliste; die Oberfläche übersetzt ihn. */
+  activity_key?: string | null
   last_seen_at?: string | null
   updated_at?: string | null
 }
 
-export interface PresenceUpdatePayload {
-  status?: 'online' | 'away' | 'invisible'
-  device_type?: 'web' | 'desktop' | 'mobile'
-  custom_status?: string | null
-  activity_label?: string | null
-  activity_detail?: string | null
+export interface PresenceSessionPayload {
+  geraet: string
+  client: PraesenzClient
+  plattform: 'web' | 'desktop' | 'mobile'
+  zustand: 'online' | 'away'
+  activity_key?: string | null
+  vorn: boolean
 }
 
 export interface AchievementItem {
@@ -179,10 +180,31 @@ export async function getPresence(): Promise<PresenceItem[]> {
   return api<PresenceItem[]>('/social/presence')
 }
 
-export async function updatePresence(payload: PresenceUpdatePayload): Promise<PresenceItem> {
-  return api<PresenceItem>('/social/presence', {
+export async function getOwnPresence(): Promise<PresenceItem> {
+  return api<PresenceItem>('/social/presence/me')
+}
+
+export async function setPresenceStatus(manual_status: PraesenzWahl): Promise<PresenceItem> {
+  return api<PresenceItem>('/social/presence/status', {
+    method: 'PATCH',
+    body: JSON.stringify({ manual_status }),
+  })
+}
+
+export async function sendPresenceSession(payload: PresenceSessionPayload): Promise<PresenceItem> {
+  return api<PresenceItem>('/social/presence/session', {
     method: 'POST',
     body: JSON.stringify(payload),
+  })
+}
+
+export async function endPresenceSession(
+  geraet: string,
+  keepalive = false,
+): Promise<PresenceItem> {
+  return api<PresenceItem>(`/social/presence/session/${encodeURIComponent(geraet)}`, {
+    method: 'DELETE',
+    ...(keepalive ? { keepalive: true } : {}),
   })
 }
 

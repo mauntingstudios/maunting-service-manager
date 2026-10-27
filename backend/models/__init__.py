@@ -72,7 +72,7 @@ from .vault_sicherungszugang import VaultSicherungszugang
 from .user_achievement import UserAchievement
 from .user_activity_time import UserActivityTime
 from .user_friend import UserFriend
-from .user_presence import UserPresence
+from .user_presence import UserPresence, UserPresenceSession
 from .e2ee_message import (
     DirectChatMember,
     E2eeAccount,
@@ -131,7 +131,7 @@ __all__ = [
     "UserMailbox", "UserCalendar", "CalendarEvent", "Note",
     "PanelPopup", "UserPopupState",
     "VaultEntry", "VaultHint", "VaultUserSetting", "VaultBlindBucket", "VaultBlob", "VaultBucketFormat", "VaultBucketTombstone", "VaultEingang", "VaultSicherungszugang",
-    "UserAchievement", "UserActivityTime", "UserFriend", "UserPresence",
+    "UserAchievement", "UserActivityTime", "UserFriend", "UserPresence", "UserPresenceSession",
     "E2eeAccount", "E2eeAccountKeyVault", "E2eeChatKey", "E2eeChatState",
     "E2eeMessage", "E2eeMessageReaction", "DirectChatMember",
     "UserE2eeDevice", "PushSubscription",

@@ -18,6 +18,8 @@ from schemas.social import (
     AchievementsOverviewResponse,
     ActivityPingRequest,
     PresenceInfo,
+    PresenceSessionRequest,
+    PresenceStatusRequest,
     PresenceUpdateRequest,
     PrivacyUpdateRequest,
     SocialProfileResponse,
@@ -47,7 +49,63 @@ def update_presence(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    """Altweg: ein Client, der noch eine Zeile je Konto kennt.
+
+    Wird auf eine Sitzung und die manuelle Wahl abgebildet. Neue Clients nutzen
+    `/presence/session` und `/presence/status`.
+    """
     return SocialService.update_presence(db, user.id, req.model_dump(exclude_none=True))
+
+
+@router.patch(
+    "/presence/status",
+    response_model=PresenceInfo,
+    dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)],
+)
+def set_presence_status(
+    req: PresenceStatusRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Die Wahl des Menschen: automatisch, online, abwesend oder unsichtbar."""
+    return SocialService.set_manual_status(db, user.id, req.manual_status)
+
+
+@router.post(
+    "/presence/session",
+    response_model=PresenceInfo,
+    dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)],
+)
+def presence_session(
+    req: PresenceSessionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Das Lebenszeichen eines Geräts. Dieselbe Zeile je Gerät, alle 45 s."""
+    return SocialService.upsert_session(
+        db,
+        user.id,
+        geraet=req.geraet,
+        client=req.client,
+        plattform=req.plattform,
+        zustand=req.zustand,
+        activity_key=req.activity_key,
+        vorn=req.vorn,
+    )
+
+
+@router.delete(
+    "/presence/session/{geraet}",
+    response_model=PresenceInfo,
+    dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)],
+)
+def presence_session_beenden(
+    geraet: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Ein Gerät meldet sich ab; ohne das wartet die Anzeige nur die Frist ab."""
+    return SocialService.delete_session(db, user.id, geraet)
 
 
 @router.post("/activity/ping", dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)])
