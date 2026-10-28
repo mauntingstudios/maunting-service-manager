@@ -15,6 +15,7 @@ from models import (
 )
 from services.achievement_service import AchievementService
 from services.social.basis import _now
+from services.sync_event_service import SyncEventService
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,61 @@ INFO_MAX_ZEICHEN = 139
 #: Hoechste Frist: ein Jahr. 0 heisst „fuer immer“.
 INFO_DAUER_MAX_SEKUNDEN = 365 * 24 * 3600
 INFO_SICHTBARKEITEN = ("friends", "public", "nobody")
+
+
+def _iso(wert: Any) -> Any:
+    return wert.isoformat() if hasattr(wert, "isoformat") else wert
+
+
+def _publiziere_info(db: Session, user_id: int) -> None:
+    """Meldet Freunden (und Abonnenten oeffentlicher Profile) die neue Info.
+
+    Jeder bekommt nur, was er sehen darf: eine Freunde-Info geht nicht an
+    Fremde, ``nobody`` loescht sie bei allen. Blockierte bekommen nichts.
+    """
+    user_obj = db.query(User).filter_by(id=user_id).first()
+    if not user_obj:
+        return
+
+    rels = (
+        db.query(UserFriend)
+        .filter(
+            or_(UserFriend.user_id == user_id, UserFriend.friend_id == user_id),
+            UserFriend.status.in_(("accepted", "blocked")),
+        )
+        .all()
+    )
+    freunde = {r.friend_id if r.user_id == user_id else r.user_id for r in rels if r.status == "accepted"}
+    gesperrt = {r.friend_id if r.user_id == user_id else r.user_id for r in rels if r.status == "blocked"}
+
+    empfaenger = set(freunde)
+    if getattr(user_obj, "social_privacy", "friends") == "public":
+        empfaenger |= {sub.user_id for sub in SyncEventService._subscribers.values()}
+    empfaenger -= gesperrt
+    empfaenger.discard(user_id)
+
+    for viewer_id in empfaenger:
+        info = ProfilMixin.info_fuer_viewer(
+            db, viewer_id, user_obj, ist_freund=viewer_id in freunde
+        )
+        payload = (
+            {
+                "text": info["text"],
+                "expires_at": _iso(info.get("expires_at")),
+                "updated_at": _iso(info.get("updated_at")),
+            }
+            if info
+            else None
+        )
+        SyncEventService.publish(
+            {
+                "type": "friend_info_updated",
+                "friend_id": user_id,
+                "user_id": user_id,
+                "info": payload,
+            },
+            user_id=viewer_id,
+        )
 
 
 def _info_dict(zeile: UserInfo) -> dict[str, Any]:
@@ -87,6 +143,7 @@ class ProfilMixin:
             if zeile is not None:
                 db.delete(zeile)
                 db.commit()
+                _publiziere_info(db, user_id)
             return None
 
         if zeile is None:
@@ -100,7 +157,9 @@ class ProfilMixin:
         zeile.updated_at = _now()
         db.commit()
         db.refresh(zeile)
-        return _info_dict(zeile)
+        ergebnis = _info_dict(zeile)
+        _publiziere_info(db, user_id)
+        return ergebnis
 
     @classmethod
     def info_fuer_viewer(

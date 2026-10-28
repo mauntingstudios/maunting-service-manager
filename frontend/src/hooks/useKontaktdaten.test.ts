@@ -93,4 +93,16 @@ describe('useKontaktdaten', () => {
 
     await waitFor(() => expect(api.getFriends).toHaveBeenCalledTimes(2))
   })
+
+  it.each(['friend_info_updated', 'friend_presence_updated'])(
+    'lädt die Freundesliste sofort nach %s',
+    async (typ) => {
+      renderHook(() => useKontaktdaten(ICH, false))
+      await waitFor(() => expect(api.getFriends).toHaveBeenCalledTimes(1))
+
+      window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: { type: typ, friend_id: 5 } }))
+
+      await waitFor(() => expect(api.getFriends).toHaveBeenCalledTimes(2))
+    },
+  )
 })

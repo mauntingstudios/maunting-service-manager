@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, Clock, EyeOff, MessageSquare, Phone, UserPlus, Video } from 'lucide-react'
+import { ArrowLeft, Clock, EyeOff, MessageSquare, Phone, UserPlus, Video } from 'lucide-react'
 
 import { getFriends, getProfile, sendFriendRequest, type PublicProfileResponse } from '@/api/social'
 import { SanitizedApiError } from '@/api/client'
-import { DeviceBadge } from '@/components/social/DeviceBadge'
-import { aktivitaetText } from '@/services/praesenz/aktivitaeten'
 import { FunkenAbzeichen } from '@/components/social/FunkenBadge'
 import { Meilensteine } from '@/components/social/Meilensteine'
 import { Nutzungszeit } from '@/components/social/Nutzungszeit'
-import { StatusDot } from '@/components/social/StatusIndicator'
+import { ProfilKopf } from '@/components/social/ProfilKopf'
 import { Spinner } from '@/components/ui/Spinner'
-import { Avatar, Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@/Singra/UI'
 import { useAuthStore } from '@/stores/authStore'
 import { useCallStore } from '@/stores/useCallStore'
 import { useFunkenStore } from '@/stores/funkenStore'
@@ -69,6 +67,50 @@ export function Benutzerprofil() {
     setAnfrageGesendet(false)
     void lade()
   }, [lade])
+
+  // Info und Praesenz kommen als Ereignis, sobald sie sich fuer andere
+  // sichtbar aendern. Ohne diesen Zuhoerer blieb das offene Profil stehen,
+  // bis jemand die Seite neu lud.
+  useEffect(() => {
+    const beiEreignis = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          type?: string
+          friend_id?: number | string
+          info?: { text?: string; expires_at?: string | null; updated_at?: string | null } | null
+          presence?: PublicProfileResponse['presence']
+        }>
+      ).detail
+      if (!detail || Number(detail.friend_id) !== id) return
+
+      if (detail.type === 'friend_info_updated') {
+        setStand((alt) => {
+          if (alt.art !== 'da') return alt
+          if (detail.info === null) return { art: 'da', profil: { ...alt.profil, info: null } }
+          if (!detail.info) return alt
+          return {
+            art: 'da',
+            profil: {
+              ...alt.profil,
+              info: {
+                text: detail.info.text ?? '',
+                visibility: 'friends',
+                expires_at: detail.info.expires_at ?? null,
+                updated_at: detail.info.updated_at ?? null,
+              },
+            },
+          }
+        })
+      } else if (detail.type === 'friend_presence_updated' && detail.presence) {
+        setStand((alt) =>
+          alt.art === 'da' ? { art: 'da', profil: { ...alt.profil, presence: detail.presence } } : alt,
+        )
+      }
+    }
+
+    window.addEventListener('msm:sync-event', beiEreignis)
+    return () => window.removeEventListener('msm:sync-event', beiEreignis)
+  }, [id])
 
   // Der Funke braucht den Beginn der Freundschaft. Wer direkt über einen Link
   // kommt, war vielleicht weder im Messenger noch in der Freundesliste.
@@ -158,47 +200,19 @@ export function Benutzerprofil() {
       </Button>
 
       <section className="msm-card p-6" aria-labelledby="profil-name">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4 min-w-0">
-            <div className="relative shrink-0">
-              <Avatar src={profil.avatar_url} name={profil.username} size="2xl" />
-              {status && <StatusDot status={status} size="lg" className="absolute bottom-1 right-1" />}
-            </div>
-            <div className="min-w-0 space-y-1">
-              <div className="flex items-center gap-2 min-w-0">
-                <h1 id="profil-name" className="font-headline text-2xl font-bold text-on-surface truncate">
-                  {profil.username}
-                </h1>
-                {istFreund && <FunkenAbzeichen partnerId={profil.user_id} name={profil.username} />}
-              </div>
-              {profil.info?.text && (
-                <p className="text-sm text-on-surface truncate">{profil.info.text}</p>
-              )}
-              {profil.presence && (
-                <p className="flex items-center gap-1.5 text-sm text-on-surface-variant">
-                  <span>{t(`social.status.${status}`)}</span>
-                  {status !== 'offline' && (
-                    <DeviceBadge client={profil.presence.client} deviceType={profil.presence.device_type} />
-                  )}
-                  {status !== 'offline' && aktivitaetText(profil.presence.activity_key, t) && (
-                    <span className="truncate">· {aktivitaetText(profil.presence.activity_key, t)}</span>
-                  )}
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-on-surface-variant">
-                {dabeiSeit && (
-                  <span className="inline-flex items-center gap-1">
-                    <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-                    {t('social.profile.memberSince', { date: dabeiSeit })}
-                  </span>
-                )}
-                {istFreund && !selbst && <span className="text-primary">{t('social.profile.friend')}</span>}
-              </div>
-            </div>
-          </div>
-
-          {!selbst && (
-            <div className="flex flex-wrap gap-2 sm:justify-end">
+        <ProfilKopf
+          username={profil.username}
+          avatarUrl={profil.avatar_url}
+          status={status}
+          presence={profil.presence}
+          infoText={profil.info?.text}
+          memberSince={dabeiSeit}
+          istFreund={istFreund}
+          selbst={selbst}
+          funke={istFreund ? <FunkenAbzeichen partnerId={profil.user_id} name={profil.username} /> : null}
+          titleId="profil-name"
+          actions={!selbst ? (
+            <>
               <Button size="sm" onClick={() => navigate(`/chat?userId=${profil.user_id}`)} className="gap-1.5">
                 <MessageSquare className="h-4 w-4" />
                 <span>{t('social.profile.chat')}</span>
@@ -233,9 +247,9 @@ export function Benutzerprofil() {
                   <span>{anfrageGesendet ? t('social.profile.requestSent') : t('messenger.sendFriendRequest')}</span>
                 </Button>
               )}
-            </div>
-          )}
-        </div>
+            </>
+          ) : null}
+        />
       </section>
 
       <section className="msm-card p-6" aria-labelledby="profil-zeit">

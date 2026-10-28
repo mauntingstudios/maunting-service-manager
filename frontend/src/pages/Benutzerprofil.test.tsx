@@ -157,6 +157,41 @@ describe('Benutzerprofil', () => {
     expect(await screen.findByRole('heading', { name: 'mara' })).toBeInTheDocument()
   })
 
+  it('übernimmt Info und Präsenz aus dem Echtzeitereignis', async () => {
+    zeige()
+    expect(await screen.findByText('Im Feierabend')).toBeInTheDocument()
+
+    window.dispatchEvent(
+      new CustomEvent('msm:sync-event', {
+        detail: {
+          type: 'friend_info_updated',
+          friend_id: 7,
+          info: { text: '🌙 Pause', expires_at: null, updated_at: null },
+        },
+      }),
+    )
+    expect(await screen.findByText('🌙 Pause')).toBeInTheDocument()
+
+    window.dispatchEvent(
+      new CustomEvent('msm:sync-event', {
+        detail: {
+          type: 'friend_presence_updated',
+          friend_id: 7,
+          presence: { status: 'away', device_type: 'desktop', client: 'mss', activity_key: null },
+        },
+      }),
+    )
+    expect(await screen.findByText(i18n.t('social.status.away'))).toBeInTheDocument()
+
+    // Ein Ereignis zu einem anderen Konto lässt das offene Profil stehen.
+    window.dispatchEvent(
+      new CustomEvent('msm:sync-event', {
+        detail: { type: 'friend_info_updated', friend_id: 8, info: { text: 'Fremd' } },
+      }),
+    )
+    expect(screen.queryByText('Fremd')).not.toBeInTheDocument()
+  })
+
   it('zeigt auf dem eigenen Profil weder Chat noch Anruf', async () => {
     antwort.profil = profil({ user_id: 1, username: 'ich', is_friend: true })
     zeige('/user/1')

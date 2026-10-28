@@ -203,13 +203,30 @@ export function useKontaktdaten(currentUserId: number, messengerGesperrt: boolea
     document.addEventListener('visibilitychange', beiSichtbar)
     // Annahme und Entfernen sollen nicht bis zum naechsten Takt warten.
     // Abgelehnt/Zurueckgezogen betrifft nur die Anfrageliste, nicht die Freunde.
+    // Info und Praesenz aendern sich ohne Zutun dieses Geraets; der Server
+    // meldet sie, sobald sie fuer andere sichtbar anders sind.
+    // Info und Praesenz koennen in kurzer Folge kommen (Aktivitaet je Route).
+    // Gebuendelt bleibt es bei einem Abruf; Freundschaften wirken sofort.
+    let buendel: number | null = null
+    const spaeter = () => {
+      if (buendel !== null) return
+      buendel = window.setTimeout(() => {
+        buendel = null
+        laden()
+      }, 400)
+    }
     const beiFreundschaft = (event: Event) => {
       const typ = (event as CustomEvent<{ type?: string }>).detail?.type
-      if (typ === 'friend_request_accepted' || typ === 'friend_removed') laden()
+      if (typ === 'friend_request_accepted' || typ === 'friend_removed') {
+        laden()
+      } else if (typ === 'friend_info_updated' || typ === 'friend_presence_updated') {
+        spaeter()
+      }
     }
     window.addEventListener('msm:sync-event', beiFreundschaft)
     return () => {
       clearInterval(interval)
+      if (buendel !== null) window.clearTimeout(buendel)
       document.removeEventListener('visibilitychange', beiSichtbar)
       window.removeEventListener('msm:sync-event', beiFreundschaft)
     }

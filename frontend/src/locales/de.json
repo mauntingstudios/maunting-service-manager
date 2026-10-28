@@ -7670,7 +7670,12 @@
         "available": "Verfügbar",
         "busy": "Beschäftigt",
         "meeting": "Im Meeting",
-        "away": "Unterwegs"
+        "away": "Unterwegs",
+        "night": "Abwesend, hinterlasse eine Nachricht",
+        "sleep": "Schlafen",
+        "work": "Bei der Arbeit",
+        "travel": "Auf Reisen",
+        "sport": "Im Fitnessstudio"
       },
       "visibility": {
         "label": "Wer sieht die Info",
@@ -7690,6 +7695,8 @@
         "forever": "Für immer"
       },
       "preview": "Vorschau",
+      "previewHint": "So sehen dich Freunde",
+      "previewHidden": "Deine Info sieht gerade niemand.",
       "previewEmpty": "Noch keine Info",
       "save": "Info speichern",
       "saved": "Info gespeichert.",

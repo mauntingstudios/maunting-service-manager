@@ -7670,7 +7670,12 @@
         "available": "Available",
         "busy": "Busy",
         "meeting": "In a meeting",
-        "away": "On the go"
+        "away": "On the go",
+        "night": "Away, leave a message",
+        "sleep": "Sleeping",
+        "work": "At work",
+        "travel": "Travelling",
+        "sport": "At the gym"
       },
       "visibility": {
         "label": "Who can see the info",
@@ -7690,6 +7695,8 @@
         "forever": "Forever"
       },
       "preview": "Preview",
+      "previewHint": "How friends see you",
+      "previewHidden": "Nobody can see your info right now.",
       "previewEmpty": "No info yet",
       "save": "Save info",
       "saved": "Info saved.",

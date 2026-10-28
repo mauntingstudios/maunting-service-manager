@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
+import { useAuthStore } from '@/stores/authStore'
 
 const api = vi.hoisted(() => ({
   getOwnInfo: vi.fn(),
@@ -18,6 +19,25 @@ beforeEach(() => {
   vi.clearAllMocks()
   api.setOwnInfo.mockResolvedValue({ text: 'x', visibility: 'friends', expires_at: null })
   api.getOwnInfo.mockResolvedValue(null)
+  useAuthStore.setState({
+    user: {
+      id: 7,
+      username: 'probe-alpha',
+      email: 'alpha@example.invalid',
+      is_owner: false,
+      is_active: true,
+      email_verified: true,
+      two_factor_enabled: false,
+      email_notifications: false,
+      ai_notifications: false,
+      role_id: null,
+      created_at: '2026-03-14T10:00:00Z',
+    },
+  })
+})
+
+afterEach(async () => {
+  await i18n.changeLanguage('de')
 })
 
 describe('InfoKarte', () => {
@@ -96,5 +116,47 @@ describe('InfoKarte', () => {
     api.getOwnInfo.mockResolvedValue({} as never)
     render(<InfoKarte />)
     expect(await screen.findByLabelText(i18n.t('social.info.fieldLabel'))).toBeInTheDocument()
+  })
+
+  it('setzt einen Vorschlag mit Emoji in das Feld', async () => {
+    render(<InfoKarte />)
+    const feld = await screen.findByLabelText(i18n.t('social.info.fieldLabel'))
+
+    fireEvent.click(screen.getByRole('button', { name: /Abwesend, hinterlasse eine Nachricht/ }))
+
+    expect(feld).toHaveValue(`🌙 ${i18n.t('social.info.suggestion.night')}`)
+  })
+
+  it('löst jeden Vorschlag in beiden Sprachen auf', async () => {
+    await i18n.changeLanguage('de')
+    render(<InfoKarte />)
+    await screen.findByLabelText(i18n.t('social.info.fieldLabel'))
+    for (const key of ['available', 'busy', 'meeting', 'away', 'night', 'sleep', 'work', 'travel', 'sport']) {
+      expect(i18n.exists(`social.info.suggestion.${key}`)).toBe(true)
+    }
+    await i18n.changeLanguage('en')
+    for (const key of ['available', 'busy', 'meeting', 'away', 'night', 'sleep', 'work', 'travel', 'sport']) {
+      expect(i18n.exists(`social.info.suggestion.${key}`)).toBe(true)
+    }
+    await i18n.changeLanguage('de')
+  })
+
+  it('zeigt die Vorschau als Profilkarte mit echten Namen und Mockdaten', async () => {
+    render(<InfoKarte />)
+    await screen.findByLabelText(i18n.t('social.info.fieldLabel'))
+
+    expect(screen.getByText('probe-alpha')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('social.profile.friend'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('social.profile.chat'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('social.profile.call'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('social.info.previewHint'))).toBeInTheDocument()
+  })
+
+  it('sagt in der Vorschau, wenn niemand die Info sieht', async () => {
+    api.getOwnInfo.mockResolvedValue({ text: 'Geheim', visibility: 'nobody', expires_at: null })
+    render(<InfoKarte />)
+    await screen.findByDisplayValue('Geheim')
+
+    expect(screen.getByText(i18n.t('social.info.previewHidden'))).toBeInTheDocument()
   })
 })

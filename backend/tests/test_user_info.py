@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from models import User, UserFriend, UserInfo
 from services.dis_client import DisClient
 from services.social_service import SocialService
+from services.sync_event_service import SyncEventService
 
 
 def _befreunden(db: Session, a: User, b: User) -> None:
@@ -152,3 +153,74 @@ def test_oeffentliche_liste_zeigt_nur_oeffentliche_infos(db: Session, owner_user
     nach_name = {eintrag["username"]: eintrag for eintrag in liste}
     assert nach_name["info_oeff"]["info"]["text"] == "Für alle"
     assert nach_name["info_freunde"]["info"] is None
+
+
+def test_info_aenderung_erreicht_freunde_sofort(db: Session, owner_user: User, regular_user: User):
+    """Ohne Ereignis sahen Freunde die neue Info erst beim naechsten Abgleich."""
+    _befreunden(db, owner_user, regular_user)
+    conn, queue = SyncEventService.subscribe(user_id=regular_user.id)
+    try:
+        _info(db, owner_user, text_wert="Neue Info")
+        assert not queue.empty()
+        ereignis = queue.get_nowait()
+        assert ereignis["type"] == "friend_info_updated"
+        assert ereignis["friend_id"] == owner_user.id
+        assert ereignis["info"]["text"] == "Neue Info"
+        # Die Sichtbarkeit bleibt eine Angabe des Servers.
+        assert "visibility" not in ereignis["info"]
+
+        _info(db, owner_user, text_wert="   ")
+        geloescht = queue.get_nowait()
+        assert geloescht["type"] == "friend_info_updated"
+        assert geloescht["info"] is None
+    finally:
+        SyncEventService.unsubscribe(conn)
+
+
+def test_info_ereignis_bleibt_bei_fremden_aus(db: Session, owner_user: User):
+    fremder = User(username="fremd_ereignis", password_hash="x", is_owner=False, is_active=True)
+    db.add(fremder)
+    db.commit()
+    conn, queue = SyncEventService.subscribe(user_id=fremder.id)
+    try:
+        _info(db, owner_user, visibility="friends")
+        assert queue.empty()
+    finally:
+        SyncEventService.unsubscribe(conn)
+
+
+def test_oeffentliche_info_erreicht_abonnenten(db: Session, owner_user: User):
+    owner_user.social_privacy = "public"
+    db.commit()
+    fremder = User(username="abonnent_info", password_hash="x", is_owner=False, is_active=True)
+    db.add(fremder)
+    db.commit()
+    conn, queue = SyncEventService.subscribe(user_id=fremder.id)
+    try:
+        _info(db, owner_user, visibility="public", text_wert="Fuer alle")
+        assert not queue.empty()
+        ereignis = queue.get_nowait()
+        assert ereignis["info"]["text"] == "Fuer alle"
+    finally:
+        SyncEventService.unsubscribe(conn)
+
+
+def test_blockierte_bekommen_kein_info_ereignis(db: Session, owner_user: User):
+    gesperrt = User(username="gesperrt_info", password_hash="x", is_owner=False, is_active=True)
+    db.add(gesperrt)
+    db.commit()
+    db.add(UserFriend(user_id=owner_user.id, friend_id=gesperrt.id, status="blocked"))
+    db.commit()
+    conn, queue = SyncEventService.subscribe(user_id=gesperrt.id)
+    try:
+        _info(db, owner_user, text_wert="Nicht fuer dich")
+        assert queue.empty()
+    finally:
+        SyncEventService.unsubscribe(conn)
+
+
+def test_emoji_am_limit_ueberlebt_speichern_und_lesen(db: Session, owner_user: User):
+    text_wert = "🌙" * 139
+    gesetzt = _info(db, owner_user, text_wert=text_wert)
+    assert gesetzt["text"] == text_wert
+    assert SocialService.get_own_info(db, owner_user.id)["text"] == text_wert

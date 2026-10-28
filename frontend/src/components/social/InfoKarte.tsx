@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Info, Save, Trash2 } from 'lucide-react'
+import { Info, MessageSquare, Phone, Save, Trash2, Video } from 'lucide-react'
 
 import { getOwnInfo, setOwnInfo, type UserInfoSichtbarkeit } from '@/api/social'
-import { Button, Dropdown, Input, Textarea, type DropdownOption } from '@/Singra/UI'
+import { ProfilKopf } from '@/components/social/ProfilKopf'
+import { Button, Dropdown, Input, Textarea, buttonClasses, type DropdownOption } from '@/Singra/UI'
+import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 
 /**
@@ -14,7 +16,8 @@ import { toast } from '@/stores/toastStore'
  * Server setzt Sichtbarkeit und Ablauf durch; hier steht nur die Auswahl.
  *
  * Bewusst ohne eigenen Zustand im Aufrufer: wer die Karte einbaut, muss nichts
- * über die Info wissen. Nach dem Speichern zeigt die Vorschau den neuen Stand.
+ * über die Info wissen. Die Vorschau zeigt denselben Profilkopf, den andere
+ * sehen — mit dem echten Namen und Bild, aber mit erfundenen Aktionen.
  */
 
 const SICHTBARKEITEN: UserInfoSichtbarkeit[] = ['friends', 'public', 'nobody']
@@ -27,12 +30,24 @@ const DAUER_WERTE: Record<string, number> = {
   w1: 7 * 86_400,
 }
 
-const VORSCHLAEGE = ['available', 'busy', 'meeting', 'away'] as const
+/** Vorschläge mit Emoji; der Text kommt aus i18n und landet so im Feld. */
+const VORSCHLAEGE = [
+  { key: 'available', emoji: '☕' },
+  { key: 'busy', emoji: '🔴' },
+  { key: 'meeting', emoji: '📅' },
+  { key: 'away', emoji: '🚶' },
+  { key: 'night', emoji: '🌙' },
+  { key: 'sleep', emoji: '😴' },
+  { key: 'work', emoji: '💼' },
+  { key: 'travel', emoji: '✈️' },
+  { key: 'sport', emoji: '🏋️' },
+] as const
 
 export const INFO_MAX_ZEICHEN = 139
 
 export function InfoKarte({ className = '' }: { className?: string }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const ich = useAuthStore((s) => s.user)
 
   const [laedt, setLaedt] = useState(true)
   const [speichert, setSpeichert] = useState(false)
@@ -164,9 +179,29 @@ export function InfoKarte({ className = '' }: { className?: string }) {
   }
 
   const restText = ablauf ? ablaufText(ablauf, t) : t('social.info.forever')
+  const seit = ich?.created_at ? new Date(ich.created_at) : null
+  const vorschauSeit = seit && !Number.isNaN(seit.getTime())
+    ? seit.toLocaleDateString(i18n.language, { month: 'long', year: 'numeric' })
+    : null
+
+  const vorschauAktionen = (
+    <>
+      <span className={buttonClasses('primary', 'sm', 'pointer-events-none')} aria-hidden="true">
+        <MessageSquare className="h-4 w-4" />
+        <span>{t('social.profile.chat')}</span>
+      </span>
+      <span className={buttonClasses('secondary', 'sm', 'pointer-events-none')} aria-hidden="true">
+        <Phone className="h-4 w-4" />
+        <span>{t('social.profile.call')}</span>
+      </span>
+      <span className={buttonClasses('secondary', 'icon', 'pointer-events-none')} aria-hidden="true">
+        <Video className="h-4 w-4" />
+      </span>
+    </>
+  )
 
   return (
-    <section className={`msm-card p-5 ${className}`} aria-labelledby="info-karte-titel">
+    <section className={`msm-card p-4 sm:p-5 ${className}`} aria-labelledby="info-karte-titel">
       <div className="flex items-center gap-2">
         <Info className="h-5 w-5 text-primary" aria-hidden="true" />
         <h2 id="info-karte-titel" className="font-headline text-title-lg font-semibold text-on-surface">
@@ -178,8 +213,8 @@ export function InfoKarte({ className = '' }: { className?: string }) {
       {laedt ? (
         <p className="mt-4 text-sm text-on-surface-variant">{t('common.loading')}</p>
       ) : (
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="space-y-3">
+        <div className="mt-4 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr))]">
+          <div className="min-w-0 space-y-3">
             <Textarea
               value={text}
               maxLength={INFO_MAX_ZEICHEN}
@@ -189,16 +224,19 @@ export function InfoKarte({ className = '' }: { className?: string }) {
               aria-label={t('social.info.fieldLabel')}
             />
             <div className="flex flex-wrap items-center gap-1.5">
-              {VORSCHLAEGE.map((vorschlag) => (
-                <button
-                  key={vorschlag}
-                  type="button"
-                  onClick={() => setText(t(`social.info.suggestion.${vorschlag}`))}
-                  className="rounded-full border border-outline-variant/40 bg-surface-container-high/60 px-2.5 py-1 text-label-sm text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
-                >
-                  {t(`social.info.suggestion.${vorschlag}`)}
-                </button>
-              ))}
+              {VORSCHLAEGE.map(({ key, emoji }) => {
+                const vorschlag = `${emoji} ${t(`social.info.suggestion.${key}`)}`
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setText(vorschlag.slice(0, INFO_MAX_ZEICHEN))}
+                    className="rounded-full border border-outline-variant/40 bg-surface-container-high/60 px-2.5 py-1 text-label-sm text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
+                  >
+                    {vorschlag}
+                  </button>
+                )
+              })}
               <span className="ml-auto text-label-sm tabular-nums text-on-surface-variant/70">
                 {text.length}/{INFO_MAX_ZEICHEN}
               </span>
@@ -262,14 +300,34 @@ export function InfoKarte({ className = '' }: { className?: string }) {
             </div>
           </div>
 
-          <div className="rounded-xl border border-outline-variant/30 bg-surface-container-high/40 p-3">
-            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant/70">
-              {t('social.info.preview')}
-            </p>
-            <p className="mt-2 truncate text-sm font-semibold text-on-surface">
-              {text.trim() || t('social.info.previewEmpty')}
-            </p>
-            <p className="mt-1 text-label-sm text-on-surface-variant">{restText}</p>
+          <div className="min-w-0">
+            <div className="rounded-xl border border-outline-variant/30 bg-surface-container-high/40 p-3">
+              <p className="text-label-sm uppercase tracking-wider text-on-surface-variant/70">
+                {t('social.info.preview')}
+              </p>
+              <p className="mt-1 text-xs text-on-surface-variant">{t('social.info.previewHint')}</p>
+              <div
+                className="pointer-events-none mt-3 select-none rounded-xl border border-outline-variant/30 bg-surface-container-low p-3"
+                aria-hidden="true"
+              >
+                <ProfilKopf
+                  username={ich?.username ?? ''}
+                  avatarUrl={ich?.avatar_url}
+                  status="online"
+                  presence={{ client: 'web', device_type: 'web', activity_key: null }}
+                  infoText={text.trim() || t('social.info.previewEmpty')}
+                  infoVerborgen={sichtbarkeit === 'nobody'}
+                  memberSince={vorschauSeit}
+                  istFreund
+                  funke={null}
+                  actions={vorschauAktionen}
+                  titleId="info-vorschau-name"
+                  titleTag="h2"
+                  kompakt
+                />
+              </div>
+              <p className="mt-2 text-label-sm text-on-surface-variant">{restText}</p>
+            </div>
           </div>
         </div>
       )}
