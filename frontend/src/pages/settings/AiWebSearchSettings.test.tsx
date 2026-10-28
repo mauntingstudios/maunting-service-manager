@@ -24,7 +24,6 @@ describe('AiWebSearchSettings', () => {
       search_engine_configured: true,
       ai_enabled: true,
       has_api_key: true,
-      has_google_cse: false,
       sidecar_running: true,
     })
 
@@ -47,7 +46,6 @@ describe('AiWebSearchSettings', () => {
       search_engine_configured: true,
       ai_enabled: true,
       has_api_key: false,
-      has_google_cse: false,
       sidecar_running: true,
     })
 
@@ -56,7 +54,6 @@ describe('AiWebSearchSettings', () => {
       search_engine_configured: true,
       ai_enabled: false,
       has_api_key: false,
-      has_google_cse: false,
       sidecar_running: true,
     })
 
@@ -84,7 +81,6 @@ describe('AiWebSearchSettings', () => {
       search_engine_configured: true,
       ai_enabled: true,
       has_api_key: false,
-      has_google_cse: false,
       sidecar_running: false,
     })
 

@@ -28,7 +28,6 @@ export function AiWebSearchSettings({
   const [searchEngineConfigured, setSearchEngineConfigured] = useState(false)
   const [sidecarRunning, setSidecarRunning] = useState(false)
   const [hasBrave, setHasBrave] = useState(false)
-  const [hasGoogle, setHasGoogle] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
@@ -42,7 +41,6 @@ export function AiWebSearchSettings({
           setSearchEngineConfigured(Boolean(status.search_engine_configured ?? status.configured))
           setSidecarRunning(Boolean(status.sidecar_running))
           setHasBrave(Boolean(status.has_api_key))
-          setHasGoogle(Boolean(status.has_google_cse))
         }
       })
       .catch(() => {
@@ -118,7 +116,6 @@ export function AiWebSearchSettings({
               sources: [
                 sidecarRunning ? 'SearXNG' : null,
                 hasBrave ? 'Brave API' : null,
-                hasGoogle ? 'Google CSE' : null,
               ]
                 .filter(Boolean)
                 .join(' · ') || 'Maunting Search',

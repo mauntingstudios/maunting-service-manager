@@ -466,8 +466,6 @@ export interface AiWebSearchStatus {
   search_engine_configured?: boolean
   ai_enabled?: boolean
   has_api_key?: boolean
-  has_google_cse?: boolean
-  google_cse_cx?: string | null
   external_apis_on_custom?: boolean
   searxng_url?: string | null
   default_searxng_url?: string | null
@@ -1587,8 +1585,6 @@ export const aiApi = {
   setWebSearchConfig: (payload: {
     apiKey?: string | null
     searxngUrl?: string | null
-    googleCseApiKey?: string | null
-    googleCseCx?: string | null
     aiEnabled?: boolean
     externalApisOnCustom?: boolean
   }) =>
@@ -1597,8 +1593,6 @@ export const aiApi = {
       body: JSON.stringify({
         api_key: payload.apiKey !== undefined ? (payload.apiKey || null) : undefined,
         searxng_url: payload.searxngUrl !== undefined ? (payload.searxngUrl || null) : undefined,
-        google_cse_api_key: payload.googleCseApiKey !== undefined ? (payload.googleCseApiKey || null) : undefined,
-        google_cse_cx: payload.googleCseCx !== undefined ? (payload.googleCseCx || null) : undefined,
         ai_enabled: payload.aiEnabled,
         external_apis_on_custom: payload.externalApisOnCustom,
       }),

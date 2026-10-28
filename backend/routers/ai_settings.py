@@ -164,8 +164,6 @@ def get_web_search_status(
         search_engine_configured=ai_web_search_service.is_search_engine_configured(),
         ai_enabled=ai_web_search_service.ai_web_search_enabled(),
         has_api_key=ai_web_search_service.api_key() is not None,
-        has_google_cse=ai_web_search_service.has_google_cse(),
-        google_cse_cx=ai_web_search_service.google_cse_cx(),
         external_apis_on_custom=ai_web_search_service.external_apis_on_custom_searxng(),
         searxng_url=ai_web_search_service.searxng_url(),
         default_searxng_url=ai_web_search_service.default_searxng_url(),
@@ -181,7 +179,7 @@ def set_web_search_key(
     actor: User = Depends(require_global("panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> AiWebSearchStatus:
-    """Hinterlegt oder entfernt die Such-API-Schluessel, die SearXNG-URL und den KI-Schalter."""
+    """Hinterlegt oder entfernt den Such-API-Schluessel (Brave), die SearXNG-URL und den KI-Schalter."""
     from services import ai_web_search_service
 
     feldfreigabe = payload.model_fields_set
@@ -193,15 +191,6 @@ def set_web_search_key(
         except DisSidecarError as exc:
             raise HTTPException(
                 status_code=503, detail="Suchschluessel konnte nicht sicher gespeichert werden"
-            ) from exc
-
-    if "google_cse_api_key" in feldfreigabe or "google_cse_cx" in feldfreigabe:
-        g_key = payload.google_cse_api_key.get_secret_value() if payload.google_cse_api_key is not None else None
-        try:
-            ai_web_search_service.store_google_cse_credentials(g_key, payload.google_cse_cx)
-        except DisSidecarError as exc:
-            raise HTTPException(
-                status_code=503, detail="Google-Suchschluessel konnte nicht sicher gespeichert werden"
             ) from exc
 
     if "searxng_url" in feldfreigabe:
@@ -217,7 +206,6 @@ def set_web_search_key(
     search_engine_configured = ai_web_search_service.is_search_engine_configured()
     ai_enabled = ai_web_search_service.ai_web_search_enabled()
     has_api_key = ai_web_search_service.api_key() is not None
-    has_google_cse = ai_web_search_service.has_google_cse()
     s_url = ai_web_search_service.searxng_url()
 
     with SessionLocal() as audit_db:
@@ -232,7 +220,6 @@ def set_web_search_key(
                 "search_engine_configured": search_engine_configured,
                 "ai_enabled": ai_enabled,
                 "has_api_key": has_api_key,
-                "has_google_cse": has_google_cse,
                 "has_searxng": bool(s_url),
             },
         )
@@ -242,8 +229,6 @@ def set_web_search_key(
         search_engine_configured=search_engine_configured,
         ai_enabled=ai_enabled,
         has_api_key=has_api_key,
-        has_google_cse=has_google_cse,
-        google_cse_cx=ai_web_search_service.google_cse_cx(),
         external_apis_on_custom=ai_web_search_service.external_apis_on_custom_searxng(),
         searxng_url=s_url,
         default_searxng_url=ai_web_search_service.default_searxng_url(),

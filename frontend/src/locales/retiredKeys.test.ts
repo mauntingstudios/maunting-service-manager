@@ -169,6 +169,15 @@ const ABGELOESTE_SCHLUESSEL = [
   // gewichen (`auth.zweitfaktor.wegPasskey`/`wegTotp`, wie beim Login).
   'auth.zweitfaktor.usePasskey',
   'auth.zweitfaktor.useCode',
+  // Google Programmable Search (CSE JSON API) entfernt: Dienst wird von Google
+  // zum 01.01.2027 abgeschaltet; Maunting Search nutzt SearXNG und Brave Search.
+  'searchEngineSettings.googleTitle',
+  'searchEngineSettings.googleDescription',
+  'searchEngineSettings.googleApiKey',
+  'searchEngineSettings.googleApiKeyPlaceholder',
+  'searchEngineSettings.googleCx',
+  'searchEngineSettings.googleCxPlaceholder',
+  'searchEngineSettings.googleRemoveConfirm',
 ]
 
 /** Die Nachfolger muss es geben — sonst wäre das Löschen ein Verlust. */
