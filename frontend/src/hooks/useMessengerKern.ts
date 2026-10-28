@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react'
 
 import type { ChatGroupItem } from '@/api/social'
 import { getE2eeChatKeys } from '@/api/social'
+import { brauchtNeueGruppenVersion } from '@/services/gruppenSchluessel'
 import type { ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 import { useKonversation, type GespraechsZiel } from '@/hooks/useKonversation'
@@ -272,7 +273,17 @@ export function useMessengerKern({
       const jetzt = JSON.stringify(mitglieder)
       if (vorher === jetzt) continue
       void (async () => {
-        const { latest_key_version } = await getE2eeChatKeys('group', gruppe.id)
+        const { keys, latest_key_version } = await getE2eeChatKeys('group', gruppe.id)
+        const hatAktuelle =
+          latest_key_version > 0 && keys.some((k) => k.key_version === latest_key_version)
+        // Ein frisches Geraet kennt den Merker nicht, hat aber die aktuelle
+        // Version ueber den Konto-Schluessel. Es uebernimmt sie, statt eine
+        // neue anzulegen; sonst waere der verschlüsselte Gruppenblock
+        // ploetzlich eine Version alt.
+        if (!brauchtNeueGruppenVersion(vorher, jetzt, hatAktuelle)) {
+          setStorageItem(merkmal, jetzt)
+          return
+        }
         const { erzeugeChatSchluessel } = await import('@/services/chatKrypto')
         await erzeugeChatSchluessel(
           'group',
