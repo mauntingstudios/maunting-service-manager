@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 
+import { ThirdPartyPrivacyDialog } from '@/Singra/UI'
 import { BrowserBestaetigungDialog } from '@/components/BrowserBestaetigungDialog'
 import { AnrufEbene } from '@/components/calling/AnrufEbene'
 import { PanelPopupModal } from '@/components/popups/PanelPopupModal'
@@ -43,6 +44,7 @@ import { FormularLeiste } from './seite/FormularLeiste'
 import { Meldungsleiste } from './seite/Meldungsleiste'
 import { Seitenflaeche } from './seite/Seitenflaeche'
 import { useAktualisierung } from './services/aktualisierung'
+import { useDrittanbieterHinweisStore } from './services/drittanbieterHinweisStore'
 import { useEinstellungenStore } from './services/einstellungenStore'
 import { useDownloadHinweis } from './services/useDownloadHinweis'
 import { useGeraetKonfig } from './services/geraetKonfig'
@@ -128,6 +130,8 @@ function Wurzel() {
   const messengerOffen =
     panelAusPfad(pathname) === 'chat' && !pathname.startsWith('/user/')
   const [imVollbild, setImVollbild] = useState(false)
+  const ausstehenderDrittanbieter = useDrittanbieterHinweisStore((s) => s.ausstehend)
+  const schliesseDrittanbieter = useDrittanbieterHinweisStore((s) => s.schliessen)
 
   useSitzungsLauf()
   useDownloadHinweis()
@@ -307,6 +311,15 @@ function Wurzel() {
       <ConfirmDialog />
       <PromptDialog />
       <BrowserBestaetigungDialog />
+      <ThirdPartyPrivacyDialog
+        open={!!ausstehenderDrittanbieter}
+        onConfirm={() => {
+          const ziel = ausstehenderDrittanbieter
+          schliesseDrittanbieter()
+          if (ziel) navigate(`/${ziel}`)
+        }}
+        onCancel={schliesseDrittanbieter}
+      />
     </div>
   )
 }

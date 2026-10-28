@@ -1,7 +1,7 @@
 name: Release deployment artifacts
 
 # Baut alle Deployment-Artefakte für einen Release (Panel, Frontend, Agent),
-# Smart System (MSS) und Secure Browser (MSB, `browser-build.yml`) für Windows
+# Smart System (MSS) und Maunting Pontis (`browser-build.yml`) für Windows
 # und Android und veröffentlicht alle Dateien gemeinsam in einem einzigen
 # GitHub-Release.
 
@@ -421,7 +421,7 @@ jobs:
           retention-days: 7
 
   build-browser:
-    name: Secure Browser
+    name: Maunting Pontis
     uses: ./.github/workflows/browser-build.yml
     with:
       version: ${{ inputs.version }}
@@ -491,7 +491,7 @@ jobs:
             fi
           else
             notes="$RUNNER_TEMP/release-notes.md"
-            echo "Einheitlicher Release: Panel, Frontend, Node-Agent, Maunting Smart System und Maunting Secure Browser für Windows und Android." > "$notes"
+            echo "Einheitlicher Release: Panel, Frontend, Node-Agent, Maunting Smart System und Maunting Pontis für Windows und Android." > "$notes"
           fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --verify-tag --draft --title "$title" --notes-file "$notes"

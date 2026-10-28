@@ -88,21 +88,33 @@ SEITEN: dict[str, Seite] = {
         titel="Blueprints",
         route="/docs/blueprints",
         quelle="markdown",
-        datei=WURZEL / "docs" / "blueprints.md",
+        datei=(
+            WURZEL / "docs" / "de-docs" / "blueprints.md"
+            if (WURZEL / "docs" / "de-docs" / "blueprints.md").is_file()
+            else WURZEL / "docs" / "blueprints.md"
+        ),
     ),
     "hoster-api": Seite(
         schluessel="hoster-api",
         titel="Hoster-API (Shop-Anbindung)",
         route="/docs/hoster-api",
         quelle="markdown",
-        datei=WURZEL / "docs" / "hoster-api.md",
+        datei=(
+            WURZEL / "docs" / "de-docs" / "hoster-api.md"
+            if (WURZEL / "docs" / "de-docs" / "hoster-api.md").is_file()
+            else WURZEL / "docs" / "hoster-api.md"
+        ),
     ),
     "self-hosting": Seite(
         schluessel="self-hosting",
         titel="Self-Hosting und Betrieb",
         route="/docs/self-hosting",
         quelle="markdown",
-        datei=WURZEL / "docs" / "self-hosting.md",
+        datei=(
+            WURZEL / "docs" / "de-docs" / "self-hosting.md"
+            if (WURZEL / "docs" / "de-docs" / "self-hosting.md").is_file()
+            else WURZEL / "docs" / "self-hosting.md"
+        ),
     ),
     "oauth": Seite(
         schluessel="oauth",

@@ -1,4 +1,4 @@
-"""Nachrichten für die Startseite des Secure Browsers.
+"""Nachrichten für die Startseite von Maunting Pontis.
 
 Die Schlagzeilen kommen über die SearXNG-Instanz des Servers (Kategorie
 ``news``, letzter Tag), je Thema ein fester Suchbegriff. Welche Quellen dahinter

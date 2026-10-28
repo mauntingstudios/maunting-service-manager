@@ -49,12 +49,12 @@ export const MSM_EINTRAEGE: Leisteneintrag[] = [
 
 export const BROWSER_EINTRAEGE: Leisteneintrag[] = [
   { id: 'lesezeichen', symbol: Bookmark, name: 'browser.leiste.lesezeichen' },
-  { id: 'verlauf', symbol: History, name: 'browser.leiste.verlauf' },
-  { id: 'downloads', symbol: Download, name: 'browser.leiste.downloads' },
   { id: 'whatsapp', symbol: WhatsAppSymbol, name: 'browser.leiste.whatsapp', extern: 'https://web.whatsapp.com' },
   { id: 'discord', symbol: DiscordSymbol, name: 'browser.leiste.discord', extern: 'https://discord.com/app' },
   { id: 'telegram', symbol: TelegramSymbol, name: 'browser.leiste.telegram', extern: 'https://web.telegram.org' },
   { id: 'instagram', symbol: InstagramSymbol, name: 'browser.leiste.instagram', extern: 'https://www.instagram.com' },
+  { id: 'verlauf', symbol: History, name: 'browser.leiste.verlauf' },
+  { id: 'downloads', symbol: Download, name: 'browser.leiste.downloads' },
 ]
 
 /** Kein Panel: die Einstellungen sind eine eigene Seite im Tab (`msb://einstellungen`). */

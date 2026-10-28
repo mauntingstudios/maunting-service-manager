@@ -3539,6 +3539,7 @@
       "ai": "AI",
       "danger": "Danger zone"
     },
+    "devicesTitle": "Devices",
     "dataExport": {
       "title": "Export my data",
       "description": "Everything stored for your account in one ZIP file: AI chats, notes, events, settings, friends, connections and this device's messenger history. The data inside is in plain text.",
@@ -9012,7 +9013,7 @@
       "leerenText": "Every visited page disappears from the list. Cookies and site data stay; you can delete those in the settings."
     },
     "downloads": {
-      "leer": "Nothing downloaded in this session.",
+      "leer": "No downloads yet.",
       "listeLeeren": "Clear list",
       "ordner": "Open folder",
       "ordnerOeffnen": "Open downloads folder",
@@ -9042,7 +9043,25 @@
       "wartet": "Waiting for {{zeit}} — the transfer is stalled but still running",
       "abbrechen": "Cancel download",
       "abbrechenName": "Cancel {{name}}",
-      "fortschrittName": "Progress of {{name}}"
+      "fortschrittName": "Progress of {{name}}",
+      "titel": "Downloads",
+      "keineTreffer": "No downloads found.",
+      "suchen": "Search downloads",
+      "kategorieFilter": "Filter file category",
+      "dateiFehlt": "File no longer exists",
+      "leerenTitel": "Clear download list?",
+      "leerenBeschreibung": "Do you want to clear these entries from browser history?",
+      "auchDateienLoeschen": "Also delete files from disk",
+      "auchDateienLoeschenHinweis": "{{anzahl}} downloaded files will be permanently removed from disk.",
+      "allesEndgueltigLoeschen": "Delete files & clear list",
+      "kategorien": {
+        "alle": "All downloads",
+        "dokumente": "Documents (PDF, Office, Text)",
+        "bilder": "Images & graphics",
+        "programme": "Applications & scripts",
+        "archive": "Archives & disk images (ZIP, ISO)",
+        "andere": "Other file types"
+      }
     },
     "hintergrund": {
       "schlicht": "Plain",
@@ -9055,6 +9074,11 @@
       "bergwald": "Mountain forest",
       "ozean": "Ocean",
       "feld": "Summer field",
+      "balkon": "Evening balcony",
+      "bergsee": "Mountain lake",
+      "bahnhof": "Old railway station",
+      "mars": "Mars landscape",
+      "wasserfaelle": "Sky waterfalls",
       "eigen": "Your image"
     },
     "update": {
@@ -10199,6 +10223,19 @@
       "linksHervorgehoben": "Highlighted",
       "linksAus": "Off",
       "kopieren": "Copy text"
+    },
+    "drittanbieterHinweis": {
+      "eyebrow": "Privacy notice",
+      "titel": "Third-party data privacy notice",
+      "beschreibung": "You are about to open an integrated third-party messenger. This integration is provided for convenience. Please note the privacy differences compared to our own ecosystem:",
+      "telegram": "Telegram: Cloud chats and groups are not end-to-end encrypted by default (only optional 1:1 secret chats on mobile devices).",
+      "discord": "Discord: Only voice and video calls use end-to-end encryption. Text messages and channels are processed on Discord servers.",
+      "instagram": "Instagram: Direct web messages are not end-to-end encrypted by default and are stored on Meta servers.",
+      "whatsapp": "WhatsApp: End-to-end encrypted by default with the Signal protocol, but a proprietary closed-source application on Meta infrastructure.",
+      "fazit": "Handle your data with care. For sensitive communication, we recommend using end-to-end encrypted messengers on verifiable infrastructure.",
+      "nichtMehrAnzeigen": "Do not show this notice again",
+      "fortfahren": "Understood & proceed",
+      "abbrechen": "Cancel"
     }
   },
   "searchEngineSettings": {

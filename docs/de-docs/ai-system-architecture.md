@@ -1,0 +1,450 @@
+# MSM AI-System: technische Architektur und Datenflüsse
+
+Stand: 28. August 2026  
+Grundlage: Quellcode im MSM-Repository. Dieses Dokument beschreibt den Ist-Zustand, nicht nur die gewünschte Zielarchitektur. Es enthält weder Zugangsdaten noch Inhalte konkreter Nutzer, Erinnerungen oder Server.
+
+## Kurzantworten
+
+### Hat MSM ein eigenes Agentic Framework?
+
+Ja. MSM verwendet kein externes Agenten-Framework wie LangGraph. Die eigene Ausführungsbasis besteht aus:
+
+- persistierten Läufen in `AiRun`;
+- einem Live-Vermittler `ai_run_broker` für Ereignisse und Wiederanbindung;
+- dem modularen Paket `services/ai_stream` für Laufstart, Kontext, Streaming, Lese- und Schreibphasen;
+- dem zentralen Werkzeugkatalog `ai_tool_registry`;
+- serverseitigen Ausführern in `ai_action_service`;
+- Vorschlägen, Bestätigungen, Autonomie, Guardian- und Worker-Flows.
+
+Der Begriff „Agentic Framework“ ist daher berechtigt: Es gibt Rollen, Zustände, Werkzeugkataloge, Laufgrenzen, Folge-Runden, persistierte Wartezustände, Hintergrund-Worker und einen Ereignisstrom. Die Ausführung bleibt aber eine MSM-eigene Orchestrierung, keine Frame-Pipeline wie Pipecat.
+
+Die Datei `docs/agentic-framework.md` beschreibt das Gehirn-/Worker-Modell. Sie trägt selbst den Status „Konzept, nicht umgesetzt“. Der Code implementiert bereits Teile davon, insbesondere die Rollen `voll`, `gehirn` und `worker`; der vollständige Anspruch des Konzeptdokuments darf jedoch nicht automatisch als vollständig ausgeliefert gelten.
+
+### Wie ruft die KI Werkzeuge auf?
+
+Das Modell erhält eine feste, serverseitig erzeugte OpenAI-kompatible Function-Calling-Liste. Es kann weder Shell-Befehle noch beliebige URLs oder Python-Funktionen aufrufen. Es gibt nur benannte Werkzeuge mit JSON-Schema. Der Ablauf lautet:
+
+1. Das Modell streamt einen `tool_call` mit Name und JSON-Argumenten.
+2. Der Provider-Adapter sammelt die Argumentteile und validiert sie am Ende der Provider-Runde als JSON-Objekt.
+3. Der Streaming-Engine prüft Namen, Rolle, Herkunft, Rundenlimit und den Werkzeugtyp.
+4. Der Read- oder Write-Pfad führt das Werkzeug serverseitig aus bzw. erzeugt einen Vorschlag.
+5. Das Ergebnis wird redigiert, als Tool-Ergebnis an die nächste Modellrunde übergeben und als Live-Ereignis an Chat/Voice publiziert.
+
+Die tatsächliche Berechtigung wird nicht durch den Modellprompt und nicht im Frontend entschieden. Sie wird beim konkreten Werkzeug im Backend geprüft und bei Prefetch-Cache-Hits erneut geprüft.
+
+### Was ist „Realtime“ in MSM?
+
+MSM besitzt einen Chat-Rand und zwei wählbare Voice-Transporte:
+
+- Chat: HTTP-Endpunkt startet einen Run und liefert Server-Sent Events (SSE).
+- Legacy Voice: WebSocket überträgt PCM-Audio und Statusrahmen; das Backend transkribiert, startet denselben Run und gibt Audio-/Text-/Werkzeugereignisse zurück.
+- OpenAI Realtime: WebRTC überträgt Audio direkt zwischen Client und OpenAI. Der authentifizierte Panel-WebSocket signalisiert SDP und überträgt nur MSM-Zustände sowie bereinigte Anzeigen. Das Backend führt Werkzeuge über den Sideband-Kanal aus.
+
+Chat und Legacy Voice teilen `AiRun` plus `ai_run_broker`. Eine Realtime-Verbindung führt dagegen einen flüchtigen Gesprächskontext beim Anbieter und legt keine gesprochenen Nachrichten im Chat ab. Gemeinsam bleiben der serverseitige Werkzeugkatalog, die Rechteprüfung, der Vorschlagsfluss, Worker, Schwärzung und Kontingente.
+
+Die Kontingente rechnen in rollenden Fenstern (`ai_usage_service.FENSTER_TAG`, `_WOCHE`, `_MONAT`: 24 Stunden, 7 und 30 Tage), nicht nach Kalendertag oder -monat; die Feldnamen `daily_…`/`monthly_…` sind geblieben. Angerechnet wird je Anfrage `angerechnete_tokens`: aus dem Cache gelesene Eingabetokens zählen zu `CACHE_ANRECHNUNG_PROZENT` (10 %), alles andere voll. Die Verbrauchsansicht zeigt dieselbe Zahl, die die Sperre prüft.
+
+## Systemübersicht
+
+```text
+                           ┌───────────────────────────────────────────┐
+                           │                Frontend                   │
+                           │ Chat SSE · Voice WebSocket · Globus/UI    │
+                           └──────────────┬───────────────┬────────────┘
+                                          │               │
+                           Chat-Nachricht │               │ PCM / Steuerrahmen
+                                          ▼               ▼
+                  ┌───────────────────────┐   ┌────────────────────────┐
+                  │ routers/ai_chat.py    │   │ routers/ai_voice.py    │
+                  └───────────┬───────────┘   └───────────┬────────────┘
+                              │                           │
+                              │                    VAD → STT
+                              └──────────┬────────────────┘
+                                         ▼
+                          ┌────────────────────────────┐
+                          │ AiRun + ai_stream launcher │
+                          │ Kontext · Modell · Zustand │
+                          └──────────────┬─────────────┘
+                                         ▼
+                ┌──────────────────────────────────────────┐
+                │ ai_stream.engine.segment_ausfuehren       │
+                │ Providerstream · Tool-Runden · Finalize   │
+                └───────┬───────────────────┬──────────────┘
+                        │                   │
+                        ▼                   ▼
+            ┌──────────────────┐  ┌─────────────────────────┐
+            │ ai_run_broker    │  │ ai_tool_registry        │
+            │ Snapshot + Events│  │ Kategorien + Rechte     │
+            └───────┬──────────┘  └───────────┬─────────────┘
+                    │                         ▼
+                    │              ┌─────────────────────────┐
+                    │              │ ai_action_service       │
+                    │              │ Read-Tools / Vorschläge │
+                    │              └─────┬─────────┬─────────┘
+                    │                    │         │
+                    ▼                    ▼         ▼
+             Chat-SSE / Voice-TTS   Geo/Web/...  Server/Calendar/Mail/...
+```
+
+## 1. Eingang und Identität
+
+### Chat
+
+`backend/routers/ai_chat.py` nimmt eine Nachricht entgegen, authentifiziert den Benutzer über die normale Session, prüft die Chat-Berechtigung und wählt einen zulässigen Provider. Der Router legt nicht selbst die Fachlogik fest. Er:
+
+1. redigiert die Nachricht (`redact_sensitive_text`),
+2. ermittelt Denkstufe und Kontextfenster (nutzbar höchstens
+   `ai_context_window.ANFRAGE_DECKEL_TOKENS` = 44.000 Token je Anfrage, auch
+   bei Modellen mit größerem Fenster; was darüber hinausgeht, fasst die
+   Zusammenfassung ab der Faltmarke dieses Deckels zusammen),
+3. übergibt nur IDs und freigegebene Eingabewerte an `lauf_beginnen_nebenher`,
+4. eröffnet und abonniert den Broker vor dem Start des Runs,
+5. liefert den Broker als SSE-Stream zurück.
+
+Das Abonnieren vor `lauf_starten` schließt ein Rennen: Der erste Text-Delta kann nicht verloren gehen, weil der Kanal bereits existiert.
+
+### Voice
+
+`backend/routers/ai_voice.py` schützt den WebSocket mit Origin-Prüfung, Session-Authentifizierung und Berechtigung. Der Socket liegt bewusst unter `/api`, damit die sichere Cookie-/Desktop-Authentifizierung greift und kein Token in einer URL nötig ist.
+
+`backend/services/ai_voice_bridge.py` ist die kompatible Fassade.
+`backend/services/ai_voice/pipecat_pipeline.py` ist der verpflichtende interne
+Frame-Rand; die Sitzungs-, Text-, STT-, Prefetch-, Interaktions- und
+Broker-Ausgabe-Bausteine liegen darunter in `backend/services/ai_voice/`. Sie
+eröffnen keinen zweiten Run- oder Tool-Pfad.
+
+Ist ein gültiger OpenAI-Zugang panelweit als Realtime-Standard markiert, hat er
+Vorrang vor der persönlichen Chat-Providerwahl. `realtime_session.py` erstellt
+die WebRTC-Sitzung serverseitig und verbindet anschließend einen Sideband-
+WebSocket mit derselben Call-ID. Call-ID und API-Schlüssel bleiben im Backend.
+Der Browser erhält nur die SDP-Antwort; Audio läuft danach nicht durch das
+Panel. Realtime lädt Erinnerungen und den aktuellen Systemprompt, jedoch keinen
+Chatverlauf. Eine Eingabetranskription läuft nur bei eingeschaltetem Gedächtnis
+(Recht `ai.memory.use` und Zustimmung) und nur, wenn der Zugang ein
+Transkriptionsmodell hat; sie dient allein der Mitschrift für den
+Gedächtnisschreiber (siehe Erinnerungen). Ohne aktive Auswahl bleibt der
+Legacy-Weg unverändert. Die Betreiberkonfiguration nutzt Modell, Stimme,
+Antwortsprache und Semantic-VAD. Bei einem Realtime-2-Modell kommt zusätzlich
+die feste Denkstufe hinzu; für Realtime-1.5 wird sie nicht gesendet.
+
+```text
+Browser-Mikrofon (PCM16)
+  → Pipecat-Audio-/Steuerframes
+  → Pausenerkennung (`ai_voice_vad`)
+  → Transkription (`ai_stt`)
+  → derselbe AiRun wie im Chat
+  → Broker-Ereignisse
+  → Satzpuffer / ElevenLabs-TTS / Pipecat-Ausgabeframes
+  → Browser-Lautsprecher und Bildschirmtext
+```
+
+Die Voice-Brücke entscheidet nicht über Rechte oder Aktionen. Sie übersetzt Ein- und Ausgabe. Der typisierte Broker→Voice-Vertrag projiziert nur sichere Tool-Anzeigedaten: Tool-Plan, Tool-Name, Gruppen- und Statusdaten sowie Geo-, Kamera- und Web-Ergebnisse. Tool-Argumente, Rohresultate und Abschriften verlassen den Broker nicht. Sie kann Beleg-Codeblöcke auf dem Bildschirm anzeigen, statt sie vorzulesen, und kann eine gesprochene Zustimmung an den bestehenden Vorschlagsfluss weitergeben.
+
+### Teiltranskripte und Intent-Prefetch
+
+Der Browser kann zusätzlich `teil_transkript`-Rahmen senden. `Sprachbruecke._verarbeite_teil_transkript` ruft den lokalen `StreamingIntentClassifier` auf. Nach mindestens drei Wörtern vergleicht er lokale Embeddings gegen mehrsprachige Intent-Prototypen. Das Warmup läuft getrennt vom Chunk-Pfad; die Klassifikation soll nicht auf Netzwerk warten.
+
+Aktuell ist die spekulative Allowlist bewusst klein:
+
+- `analyze_region`
+- `control_region_camera`
+- `web_search`
+- `calendar_read`
+- `read_server_status`
+- `search_memory`
+
+Nur ein Intent mit ausreichender Konfidenz und vollständigen Argumenten startet einen Prefetch. Der Cache ist pro Voice-Sitzung und Benutzer getrennt, hat zehn Sekunden TTL und wird bei Intent-/Entitätswechsel invalidiert. Beim Regionswerkzeug gilt der im Schema definierte Standard `camera: "focus"` für den Cache als gleichwertig zu einem ausgelassenen Kamerawert. Sobald die vorab autorisierte Regionsanalyse fertig ist, erhält die Voice-Oberfläche ihre bereinigte `geo_analysis`-Nutzlast sofort; die sprachliche Antwort bleibt beim normalen Gehirn-Lauf. Ein späterer normaler Tool-Aufruf prüft Berechtigungen erneut, bevor ein Treffer zurückgegeben wird.
+
+Wichtig: Diese spekulative Schicht ist ein Zusatzpfad. Sie ist nicht die zentrale Tool-Orchestrierung aller Werkzeuge.
+
+## 2. Laufmodell: AiRun, Zustand und Broker
+
+### Persistierter Lauf
+
+`AiRun` repräsentiert eine konkrete Bearbeitung einer Nachricht. Beim Start entstehen:
+
+- die persistierte Nutzernachricht;
+- eine zunächst leere Assistant-Nachricht mit Status `streaming`;
+- eine Nutzungsreservierung für Tokens/Kosten;
+- ein Laufzustand (`state_json`) mit z. B. Provider-Nachrichten, Rolle, Herkunft, Gerätefamilie, Runden- und Toolsignaturen.
+
+Der Zustand enthält zeitweise Kontext, der nicht dauerhaft liegen bleiben soll. `ai_run_service.arbeitsspeicher_leeren` entfernt Arbeitsgedächtnis an den vorgesehenen Endpunkten. Die persistierten Nachrichten und Tool-Resultate bleiben der prüfbare Verlauf.
+
+### Broker
+
+`backend/services/ai_run_broker.py` ist der prozesslokale Fan-out für Live-Ereignisse. Ein Run publiziert; Chat und Voice abonnieren. Der Broker hält einen begrenzten Snapshot mit geordneten Abschnitten:
+
+- `delta`: sichtbarer Antworttext;
+- `reasoning`: optionaler Denktext;
+- `tool`: ein Werkzeugstatus/-ergebnis;
+- `proposal` oder `action`: Vorschlag bzw. autonome Aktion;
+- `question`: Rückfrage;
+- `run`: Laufstatus.
+
+Die Abschnitte bewahren die Reihenfolge von Text und Tool-Ereignissen. Bei einem Reconnect sendet `lauf_verfolgen` zuerst einen Snapshot und dann neue Ereignisse. Der Broker ist bewusst prozesslokal; er ist kein verteilter Eventbus und nicht prozessübergreifend wiederherstellbar.
+
+### Lifecycle
+
+`ai_run_service` plant die asyncio-Aufgabe, hält Nebenläufigkeitsplätze, kann wartende Läufe wecken und räumt abgebrochene Prozessläufe auf. Ein neuer Run derselben Unterhaltung löst den Vorgänger kontrolliert ab; das verhindert, dass ein alter Lauf später noch in eine inzwischen andere Unterhaltung schreibt.
+
+## 3. Kontext und Modellrollen
+
+### Kontextaufbau
+
+`services/ai_stream/launcher.py` erzeugt den Provider-Kontext über `ai_context_service.build_provider_messages`. Darin liegen abhängig von Rolle und Berechtigung unter anderem:
+
+- Systemprompt aus `ai_prompt.py`;
+- gekürzte Gesprächshistorie;
+- aktivierte persönliche bzw. zulässige Erinnerungen;
+- situative Lageinformationen;
+- gegebenenfalls Skill-Index und Serverbezug;
+- der für diese Rolle gefilterte Werkzeugkatalog.
+
+Der Kontext hat ein Budget. Vor jeder Provider-Runde verkürzt die Engine ältere Inhalte, bevor ein Provider wegen Kontextüberschreitung ablehnt. Werkzeugergebnisse werden dabei strukturerhaltend gekürzt, damit Tool-Call und Tool-Resultat weiter zueinander passen.
+
+### Rollen
+
+`ai_stream.context._rolle_ableiten` kennt drei Betriebsrollen:
+
+| Rolle | Wann | Werkzeugraum |
+|---|---|---|
+| `voll` | Standard oder kein konfiguriertes Worker-Modell | herkömmlicher vollständiger, berechtigungsgefilterter Katalog |
+| `gehirn` | primärer Chat, Worker-Modell konfiguriert, Recht `ai.background.use` vorhanden | Erinnerungen nachschlagen, Worker-Steuerung und eng begrenzte Desktop-Funktionen |
+| `worker` | Unterhaltung vom Typ Worker | Arbeitswerkzeuge, aber kein Start weiterer Worker |
+
+Guardian- und Aufgabenläufe erhalten zusätzlich engere Werkzeugmengen. Die Rolle wird im Run-Zustand eingefroren. Eine Modellantwort kann ihre Rolle, Herkunft oder Gerätefamilie nicht über Tool-Argumente erweitern.
+
+### Erinnerungen
+
+`ai_memory_service.py` trennt persönliche, serverbezogene, geteilte Server-, Team- und Panel-Scopes. Die Scope-Kennung wird zentral aus Benutzer, Server und Team gebildet. Erinnerungen sind standardmäßig deaktiviert. Gespeicherte Inhalte und Embeddings werden verschlüsselt bzw. über die dafür vorgesehenen Schutzpfade behandelt; AAD bindet Einträge an ihren Scope, sodass ein Datenbank-Umhängen sie nicht lesbar macht.
+
+Seit Gedächtnis v2 ist eine Erinnerung ein bis fünf Sätze mit Titel, Thema, Art und Wichtigkeit. Jede Änderung legt den Stand davor als Fassung ab, Vergessenes lässt sich 30 Tage zurückholen. Einträge aus der Zeit davor tragen noch einen Schlüssel, bis `ai_gedaechtnis_altbestand.py` sie im Takt des Schreibers umschreibt: je Bereich 25 Einträge in einem Modellaufruf, höchstens zwei Bereiche zugleich. Die Aussage und ihre Herkunft bleiben; der Stand davor bleibt als Fassung (Grund `umgeschrieben`, der alte Name als Titel), auch wenn der Text gleich bleibt. Einen Titel, den ein Mensch schon gesetzt hat, behält der Eintrag. Was in der Antwort fehlt, wird mechanisch umgestellt (Wert bleibt Text, Name wird Titel), ebenso ein Stapel nach drei unbrauchbaren Antworten; ein Ausfall des Anbieters stellt nichts mechanisch um. Es zahlt beim eigenen Bereich der Besitzer, nur mit Zustimmung und `ai.memory.use`, bei Teamwissen der Gründer, bei Anlagen- und Panelwissen das Betreiberkonto (`zweck='gedaechtnis'`). Ohne Zahler wartet der Bereich.
+
+Das Chatmodell schreibt nicht ins Gedächtnis. Es bekommt das Gedächtnis in zwei Teilen im Kontext und schlägt mit `search_memory` nach. Ausgewählt wird in `ai_gedaechtnis_abruf.py`, ohne den Bestand zu laden:
+
+- **Im Kopf** (vor dem Verlauf, bytegleich zwischen zwei Fragen und damit zwischengespeichert): passt alles ins Budget, alles; sonst auf der Hälfte des Budgets das Angeheftete, dann nach `kopf_rang` (Wichtigkeit × Präsenz), dann das Neueste, per Index aus der Datenbank, mit einem Hinweis auf die Zahl der ausgelassenen Einträge. Anheften kann nur ein Mensch, ohne neue Fassung.
+- **Passend zur Frage** (nach dem Verlauf, vor der Lage): nur wenn etwas ausgelassen ist, und nur, was die Frage trifft. Kandidaten kommen aus einem Vektorspeicher im Prozess (je Bereich eine Matrix, frisch gehalten über Anzahl, `updated_at` und `indiziert_am`, höchstens 250.000 Vektoren) und aus dem Wortindex `ai_memory_begriffe` (je Wort ein HMAC über Bereich und Wort mit einem aus dem Panel-Secret abgeleiteten Schlüssel, ohne Füllwörter), je höchstens 60. Geöffnet werden nur Kopf und Kandidaten, egal wie groß der Bestand ist.
+- **Gebraucht** ist, wen die Frage trifft, im Kopf wie hinten; gezeigt zu werden zählt nicht. Die Stimme bekommt zu Beginn nur den Kopf. Die Suche der Verwaltung (`suche`) geht denselben Weg über den ganzen Bestand und zählt nicht.
+- **Stärke:** Präsenz = e^(−Tage seit Gebrauch / Haltbarkeit). Die Haltbarkeit beginnt bei der Wichtigkeit (1 → 7 Tage, 3 → 30, 5 → 365) und wächst mit jedem Gebrauch um das 1,2- bis 2,2-Fache, je länger die Pause war (höchstens zehn Jahre). `kopf_rang` rechnet die Pflege einmal am Tag in einer Abfrage neu (`ai_gedaechtnis_pflege.rang_takt`, ab 03:00 UTC), nicht je Anfrage: sonst bräche der Zwischenspeicher. Gelöscht oder gekürzt wird nichts; was den Kopf verlässt, kommt auf einen Treffer hinten wieder.
+- **Nachziehen:** Vektor und Wortindex entstehen beim Schreiben. Zeilen ohne `indiziert_am`, ohne Vektor des geladenen Modells oder mit einem Vektor anderer Länge (unverpackt oder aus einem früheren Modell) rechnet der Takt nach, 1.000 je Lauf; ohne Sidecar bleibt alles offen. Das lokale Modell ist seit 07.10.2026 `paraphrase-multilingual-MiniLM-L12-v2` (ONNX-Runtime, 384 Zahlen, rund 6 ms je Frage); ein Modellwechsel heilt sich über diesen Takt, ohne Migration.
+
+Geschrieben wird im Hintergrund (`ai_gedaechtnis_schreiber.py`):
+
+- **Wann:** fünf Minuten, nachdem das Gespräch ruht, spätestens dreißig Minuten nach der ältesten ungelesenen Nachricht; nach „merk dir“ oder „vergiss“ sofort. Gelesen wird nur der Dauerchat, kein Worker- oder Auftragsfenster. Ein Sprachgespräch kommt an seinem Ende als Mitschrift (`ai_voice/mitschrift.py`), aus allen drei Sprachwegen (OpenAI Realtime, GPT-Live, Gemini Live). Die Mitschrift entsteht nur mit Recht und Zustimmung und wird nirgends gespeichert; war die Zustimmung am Ende aus oder zwischendurch aus, liest sie niemand. Der Lageblock der Sprachsitzung sagt, ob mitgeschrieben wird (Realtime ohne Transkriptionsmodell: nein).
+- **Was:** Nachrichten des Menschen, Singras Antworten und Berichte der Worker, redigiert und ohne Werkzeugergebnisse; dazu der passende Bestand der Bereiche, in die geschrieben werden darf.
+- **Wie:** ein erzwungener Werkzeugaufruf mit Änderungen (neu, ändern, zusammenführen, vergessen), jede mit einer Nachricht als Beleg. Bereiche und Einträge heißen dabei nur B1…/E1…: was nicht angeboten wurde, ist nicht erreichbar. Teamwissen, Vergessen und jede Änderung an einer Aussage des Menschen brauchen eine Nachricht des Menschen als Beleg.
+- **Grenzen:** Persönliches nur mit Zustimmung, und nur aus dem, was danach gesagt wurde: `ai_memory_preferences.eingeschaltet_am` begrenzt auch den Zusammenhang vor der Marke, und ein Ausschnitt, der vor dem Einschalten gelesen wurde, schreibt nichts Persönliches. Server- und Teamwissen hängen am Schreibrecht (`server.config.write`, Team-Schalter `can_manage_memory`), nicht am Schalter. Das Kontingent der Rolle gilt: 0 heißt kein Aufruf, ohne Grenze unbegrenzt.
+- **Modell:** der Platz „Gedächtnis“ am Zugang (`memory_model`, Schalter `memory_enabled`, eigene Rollenpreise aus dem Katalog), gewählt von `gedaechtnis_anbieter`: das Gedächtnismodell des Zugangs, über den gesprochen wurde (letzte Antwort im Ausschnitt, sonst Kontowahl, sonst `anbieter_ohne_auswahl`); sonst das eines anderen aktiven Zugangs, der einen Betreiberschlüssel hat oder keinen braucht, der älteste zuerst; sonst das Standardmodell. Bis 07.10.2026 stand hier das Worker-Modell. Schreiber, Altbestand und Import nehmen denselben Weg.
+- **Kosten:** ein Modellaufruf je Durchgang, beim Benutzer gebucht mit `zweck='gedaechtnis'`. Bei OpenAI Realtime kommt die Eingabetranskription derselben Sitzung dazu.
+- **Fehlschlag:** die Marke bleibt stehen, der Durchgang kommt mit Rückstellung wieder (5 Minuten bis 6 Stunden); ein neuer Chatlauf zieht sie nicht vor. Nach fünf Fehlschlägen am selben Ausschnitt wird er übersprungen. Scheitert schon das Lesen, wird nur bei einer Nachricht übersprungen, die sich nicht entschlüsseln lässt; ein stummer Sidecar wird abgewartet.
+- **Lesen:** in einem Thread, gebündelt entschlüsselt, nie im Ereignisloop. Ohne `ai.memory.use` wird nichts entschlüsselt, das Ungelesene gilt als gelesen.
+
+Die Pflege (`ai_gedaechtnis_pflege.py`) liest nachts (02–06 Uhr in der Zone des Zahlers, nach 36 Stunden ohne Pflege auch tagsüber) je Bereich, was seit der letzten Pflege neu oder geändert ist (20 je Lauf, Stand in `ai_memory_pflege`), dazu Pläne, deren Tag vorbei ist (`faellig_am`, vom Schreiber über das Feld `bis` gesetzt). Ähnliche Einträge (Vektor ≥ 0,5, aus dem Vektorspeicher, ohne Modellaufruf) kommen mit. Gibt es weder Ähnliches noch Fälliges, fragt sie nicht. Das Gedächtnismodell darf zusammenführen (das Ergebnis übernimmt höchste Wichtigkeit, Haltbarkeit, Anheftung und die Summe der Abrufe) und Abgelaufenes in die Vergangenheit setzen, ohne einen Ausgang zu behaupten. Einträge des Menschen gehen nirgends auf und behalten ihren Text, außer bei einem abgelaufenen Plan; der Stand davor bleibt als Fassung. Fällige, die das Modell nicht umschreibt, verlieren ihr Datum, damit sie nicht jede Nacht wiederkommen. Bereiche mit Altbestand warten, bis er umgeschrieben ist. Zahler, Kontingent und Buchung wie beim Altbestand.
+
+**Schlüsse.** Als Drittes darf das Modell Schlüsse ziehen: was aus zwei oder mehr Einträgen zusammen zwingend folgt, wird ein eigener Eintrag (`art = 'schluss'`, `quelle = 'pflege'`), gebunden an seine Belege (`ai_memory_belege`). Erfinden darf es dabei nichts, und dafür sorgen drei Stufen: der Code verwirft vorab, was an der Form scheitert (weniger als zwei Belege, ein Schluss als Beleg, eine Zahl, die in keinem Beleg steht, Vermutungswörter wie „vermutlich“/„probably“, bloße Wiederholung, über 400 Zeichen, mehr als drei je Lauf); ein zweiter, getrennter Aufruf (`_schluesse_pruefen`) sieht je Schluss nur dessen Belege und muss ihn ausdrücklich bestätigen, sonst wird nichts gespeichert; und ein Schluss gilt nur, solange seine Belege gelten — ändert sich der Text eines Belegs, wird er vergessen, gelöscht oder aufgenommen, vergisst das Gedächtnis den Schluss mit (`ai_memory_service._schluesse_entkraeften`, 30 Tage zurückholbar). Ein Schluss geht in keiner Zusammenführung auf und ist nie wichtiger als sein wichtigster Beleg; wer seinen Text ändert, macht ihn zu einer eigenen Aussage ohne Belege. Im Kontext steht er als `geschlossen`, in der Ansicht mit „Folgt aus“ und den Belegen.
+
+Der Import (`ai_memory_import_service.py`) liest ebenfalls mit dem Gedächtnismodell, nicht mehr mit einem Parser. Der Text (bis 100.000 Zeichen, eine Antwort auf den Auszugs-Prompt oder ein eigener) wird redigiert und an Absätzen in Teile von höchstens 16.000 Zeichen geschnitten; jeder Teil trägt die Überschrift, unter der er steht, und die ersten 1.500 Zeichen des Textes als Zusammenhang, dazu die Themennamen des Zielbereichs. Je Teil ein erzwungener Werkzeugaufruf, höchstens vier zugleich, mit dem passenden Bestand des Zielbereichs (E1…): das Modell schlägt Sätze mit Titel, Thema, Art und Wichtigkeit vor und darf Bestand ersetzen. Überschriften werden keine Erinnerung. Die Vorschau schreibt nichts. Was schon dasteht (gleich oder Ähnlichkeit ab 0,95), fällt heraus und wird gezählt, ebenso Gesperrtes mit Zugangsdaten und ungelesene Teile; liest der Anbieter keinen Teil, gibt es eine Absage. Geschrieben wird erst nach der Auswahl: Ersetzen legt eine Fassung an (Fassungsprüfung, Konflikt statt stillem Überschreiben), weitere ersetzte Einträge werden vergessen. Neues zählt gegen das Kontingent wie von Hand: eine Zahl, unbegrenzt, 0 sperrt Vorschau und Übernahme. Gebucht wird beim importierenden Benutzer mit `zweck='gedaechtnis'`; Reservieren und Abrechnen der Teile laufen hintereinander, nur die Aufrufe beim Anbieter nebeneinander. Je Benutzer liest ein Import zugleich (sonst 429); die Sitzung der Anfrage gibt ihre Verbindung vor dem Lesen zurück.
+
+Preferences sollen die Auswahl und Priorisierung beeinflussen. Sie dürfen Sicherheits-, Wetter- oder andere allgemein wichtige Informationen nicht durch eine bloße Modellbehauptung unterdrücken.
+
+## 4. Provider-Streaming
+
+### Provider-Auswahl
+
+`ai_provider_service.py` und `ai_provider_registry/` kapseln Provider-Konfiguration, Modellwahl, verschlüsselte Operator-Schlüssel und zulässige Fähigkeiten. Der Sprachmodus wählt getrennt:
+
+- einen STT-fähigen Zugang;
+- einen Chat-/LLM-fähigen Zugang;
+- einen TTS-fähigen Zugang mit konfigurierter Stimme.
+
+Provider-Schlüssel werden serverseitig aufgelöst. Sie werden weder an das Frontend geliefert noch in URLs abgelegt.
+
+### Streaming-Adapter
+
+`openai_compatible_adapter.stream_chat_completion` liest einen OpenAI-kompatiblen SSE-Stream. Es liefert interne `StreamChunk`-Objekte für:
+
+- Antworttext (`content`);
+- optionalen Denktext (`reasoning`);
+- den erkannten Tool-Namen (`tool_start`).
+
+Tool-Argumente werden fragmentweise gesammelt. Bei einem expliziten
+Provider-Abschluss für den Tool-Call erzeugen die Adapter `tool_ready`; der
+Read-Dispatcher kann die eng erlaubten, erneut autorisierten Read-Tools noch
+während des restlichen Providerstreams starten. Anthropic und OpenAI-Responses
+besitzen entsprechende Adapter, damit die Engine ein einheitliches internes
+Format erhält.
+
+### Was heute tatsächlich parallel läuft
+
+Während ein Modell Text streamt, veröffentlicht die Engine jeden Text-Delta
+sofort im Broker. Der Pipecat-Voice-Rand gibt vollständige Sätze ohne Warten auf
+die Gesamtantwort an TTS weiter. Sichere Read-Tools starten nach `tool_ready`
+mit begrenzter Nebenläufigkeit; Write-Tools bleiben außerhalb dieses Pfads.
+
+`tool_start` wird weiterhin sofort als UI-Ereignis veröffentlicht. Nach
+`tool_ready` folgt bei erlaubten Read-Tools die tatsächliche, serverseitig
+erneut autorisierte Ausführung. Das Ereignis ersetzt keine Berechtigungsprüfung
+und erlaubt keine spekulativen Schreibaktionen.
+
+## 5. Werkzeugkatalog und Ausführung
+
+### Der Katalog ist die zentrale Wahrheit
+
+`backend/services/ai_tool_registry.py` beschreibt für jedes Werkzeug mindestens seine Art:
+
+- `server_read` oder `global_read`;
+- `server_write` oder `global_write`;
+- weitere Gruppen für Rückfragen, Delegation, Guardian, Aufgaben oder Desktop.
+
+Zusätzlich enthält der Katalog Angebotsrechte. Aus ihm entstehen `READ_TOOLS`, `WRITE_TOOLS`, Rollen- und Herkunftsschnitte. `ai_action_service.provider_tool_definitions()` baut daraus die Funktionsschemas, die an das Modell gehen.
+
+Das Modell bekommt damit nur Werkzeuge, die grundsätzlich passend erscheinen. Das ist Führung, nicht die Sicherheitsentscheidung: jede Ausführung prüft erneut.
+
+### Read-Tools
+
+Nach einer Provider-Runde führt `ai_stream.read_tools._tool_followup_messages` zulässige Read-Calls aus. Die Funktion:
+
+1. prüft Rolle, Herkunft, Guardian-/Aufgabenbindung und Unterhaltung erneut;
+2. begrenzt die parallele Breite passend zur Datenbank;
+3. führt einzelne Calls über `asyncio.to_thread` aus;
+4. begrenzt jeden Call durch eine Zeitgrenze;
+5. publiziert ein Tool-Ereignis, sobald genau dieser Call fertig ist;
+6. erzeugt Tool-Resultate für die nächste Modellrunde.
+
+`ai_action_service.execute_read_tool` ist der Dispatcher. Er prüft, dass der Name ein Read-Tool ist, löst gegebenenfalls den Server auf, prüft Rechte und delegiert an den passenden Ausführer. Beispiele:
+
+- Serverstatus, Logs, Dateien und Backups;
+- Erinnerungen nachschlagen (`search_memory`, nur lesend);
+- Dokumentation und Skills;
+- Websuche;
+- Kalender-Lesezugriffe;
+- `analyze_region` für Geo, Wetter, Satellit und regionale Signale;
+- `control_region_camera` für relative Bewegungen einer bereits sichtbaren Karte. `focus_location` geocodiert nur den neuen Zielpunkt; Wetter, Satellit und Nachrichten werden nicht erneut geladen.
+
+Ein Read-Tool kann intern selbst mehrere Datenquellen kombinieren. `ai_geo_service.analyze_region` geocodiert beispielsweise WGS84-Koordinaten, lädt Wetterdaten und verbindet sie mit Sentinel-/regionalen Daten. Diese Fachparallelität gehört in den Geo-Service, nicht in das Frontend.
+
+### Write-Tools
+
+Schreibende und destruktive Werkzeuge laufen nicht durch den spekulativen Prefetch. Die Engine trennt sie von Read-Runden. `ai_stream.write_tools._schreibrunde_ausfuehren` erstellt Vorschläge oder führt nur dann autonom aus, wenn die serverseitige Autonomie-Policy dies erlaubt.
+
+Vor einer tatsächlichen Aktion greifen, je nach Tool und Konfiguration:
+
+- Toolname-/Argumentsvalidierung;
+- RBAC und serverbezogene Rechte;
+- Guardian-/Aufgabenbegrenzungen;
+- Autonomie-Policy;
+- Bestätigungskarte oder gesprochene Zustimmung;
+- optionaler Ethics-Advisor;
+- Audit- und Ergebnisprotokoll.
+
+E-Mail-Versand ist kein spekulativer Vorgang. Der Outbox-Fluss meldet eingereiht, gesendet oder fehlgeschlagen statt einen Erfolg vorwegzunehmen.
+
+### Wie Tools „untereinander“ funktionieren
+
+Tools rufen sich nicht frei gegenseitig auf. Sie sind Einheiten hinter dem zentralen Dispatcher. Die Orchestrierung entsteht in der Streaming-Engine:
+
+```text
+Modell fordert z. B. list_my_servers und read_server_status an
+  → Engine prüft beide Calls
+  → Read-Pfad startet sie innerhalb der erlaubten Breite parallel
+  → jedes Resultat wird einzeln an UI/Broker gemeldet
+  → die komplette, geordnete Ergebnismenge geht als Tool-Nachrichten
+    an die nächste Modellrunde
+  → Modell formuliert daraus die Antwort oder fordert weitere Tools an
+```
+
+Abhängige Aktionen bleiben sequenziell: Eine Konfigurationsänderung soll nicht parallel zu einem vorher nötigen Backup laufen. Diese Reihenfolge ist eine Sicherheitszusage und kein Optimierungsfehler.
+
+## 6. Geo-, Satelliten- und regionale Daten
+
+`ai_geo_service.py` ist die Fachfassade der Regionsanalyse. Sie arbeitet mit WGS84-Koordinaten und Bounding-Boxes. Die primären Schritte sind Geocoding, Wetter und Regionalanalyse; sie setzt langlebige, begrenzte HTTP-Verbindungen, TLS und kurze Caches ein.
+
+`ai_satellite_service.py` kapselt Copernicus Data Space Ecosystem / Sentinel. Zugangsdaten liegen verschlüsselt in den Panel-Einstellungen; Token und STAC-Suchen haben In-Memory-Caches und Single-Flight-Schutz gegen parallele identische Kaltstarts. Externe Metadaten werden vor der Modellübergabe redigiert.
+
+Gesucht wird im STAC-Katalog unter `https://stac.dataspace.copernicus.eu/v1/search`. Der alte unter `catalogue.dataspace.copernicus.eu/stac` ist seit dem 17.11.2025 abgelöst; er kennt die Sammlung `SENTINEL-2` nicht mehr und beantwortete jede Suche danach mit 400. Die Suche fragt die Sammlung `sentinel-2-l2a` am Punkt des Ortes (`intersects`), nicht in der Box des Geocoders. Die reicht oft weit über den Ort hinaus: Für Berlin enthielt keiner der beiden neuesten Treffer der Box die Stadt. Weitere Bedingungen sind höchstens 30 % Bewölkung (`eo:cloud_cover`, CQL2-JSON), die neueste Aufnahme zuerst und nur die letzten 90 Tage. Ohne dieses Zeitfenster sortiert der Katalog das ganze Archiv und brauchte 3 bis 21 s, mit Fenster im Median 1,5 s und höchstens 3,6 s. Die Feldauswahl (`fields`) fordert nur ID, Zeitpunkt, Bewölkung, Umriss und die Vorschau (`assets.thumbnail`) an. Ohne sie trüge jeder Treffer 47 Assets und wöge rund 70 statt 1,5 KB. Die Suche selbst ist öffentlich, sie läuft trotzdem nur mit hinterlegtem und gültigem Zugang (Token-Endpunkt); ohne ihn bleibt es beim Kartenbild.
+
+Jede Regionsanalyse hat ein Bild, die Ebene `satellite.layers.latest_imagery` mit ihrer Art: `kind: "scene"` ist die neueste Sentinel-2-Szene mit `scene_id`, Aufnahmezeitpunkt (`captured_at`), Bewölkung und der Nennung „Copernicus Sentinel data <Jahr>". Ohne Copernicus-Zugang ist es `kind: "map"`, das schlüsselfreie Kartenbild aus ArcGIS World Imagery — ein Mosaik aus vielen Aufnahmen, kein Überflug und ohne Zeitpunkt, mit dem Ausschnitt (`bbox`, in Web Mercator exportiert, auf Kontinentgröße begrenzt) und der Esri-Nennung aus dem `copyrightText` des Dienstes. Neben einer Szene steht das Kartenbild als zweite Ebene `map_imagery`: Ohne MapTiler ist es das Bild, auf das die Kamera zoomt — eine Szenenvorschau hat nur ihren einen Ausschnitt. `scenes` enthält nur echte Szenen. Deshalb stehen `analyze_region` und `control_region_camera` immer im Werkzeugkatalog; Modell und Sprachmodus sind angewiesen, ein Kartenbild nie als aktuelle Aufnahme oder Überflug zu bezeichnen.
+
+Das Bild holt `ai_geo_image_service.py` über `GET /api/ai/geo/image` (Recht `ai.satellite.use`): `kind=map&bbox=…` baut die ArcGIS-Adresse selbst, in einer von drei Formen (`shape=landscape|portrait|square`, 1280 × 720, 720 × 1280, 1024 × 1024); `kind=scene&scene_id=…` nimmt die Vorschau-Adresse nur aus der letzten Copernicus-Suche und nur von Copernicus- oder CREODIAS-Hosts über HTTPS. Eine Adresse vom Aufrufer gibt es nicht. Die Adresse aus dem Katalog (`datahub.creodias.eu`) leitet auf den Server weiter, der die Datei hat (`zipper.creodias.eu`). Weiterleitungen folgt das Panel nur hier, höchstens zweimal, und jedes Ziel muss dieselbe Hostprüfung bestehen; das Kartenbild folgt keiner. Durch kommt nur ein echtes JPEG oder PNG bis 4 MB: Der Bildtyp im Kopf muss zu den Magic Bytes passen. Nennt der Kopf keinen (`application/octet-stream`, so liefert CREODIAS die Vorschau aus), entscheiden die Magic Bytes allein, und hinaus geht der Typ, den sie belegen. 15 Minuten bleibt das Bild im Speicher, je Ausschnitt und Form. Das CDSE-Token geht nur an Copernicus-Hosts, an jeder Station neu entschieden, also auch nicht über eine Weiterleitung zu CREODIAS. Der Browser spricht so nie mit ArcGIS, Copernicus oder CREODIAS; einen Link zum Anbieter gibt es weder beim Kartenbild noch bei einer Szene. Die Katalogadresse einer Szene lüde ohnehin nur dieselbe kleine Vorschau als Datei herunter. Die Oberfläche zeigt das Bild nur, wenn keine MapTiler-Karte da ist — sonst bleibt die Karte die einzige Bildfläche.
+
+Ohne MapTiler (nicht eingerichtet oder abgewiesen) steht in der Mitte der Regionsansicht das Kartenbild selbst (`Kartenbildbuehne.tsx`), in der Form, die die Fläche am wenigsten beschneidet, und mit Quelle. Die Kamera bewegt dann seinen Ausschnitt (`kartenbildKamera.ts`): Sie beginnt bei der Box des Ortes wie das Bild im Reiter; `zoom_in` zeigt gut ein Drittel des vorigen, `zoom_out` das Umgekehrte, `overview` so viel, wie ein Kartenbild reicht (60° × 40°) — alle drei um den Ort, nicht um die Mitte seiner Box, die bei Hamburg gut 50 km nordwestlich im Wattenmeer und bei Tokio im Pazifik liegt; `focus_location` die Box der Sehenswürdigkeit, mindestens 0,02° × 0,02° (in Berlin gut 1,4 × 2,2 km). Für jeden neuen Ausschnitt holt das Panel ein neues Kartenbild; das vorige bleibt stehen, bis das neue geladen ist. Scheitert ein Bild im Web, fragt die Oberfläche einmal über den API-Client nach — der frischt ein abgelaufenes Sitzungscookie auf — und lädt erneut. Ein vorübergehender MapTiler-Fehler wird beim nächsten Ort erneut versucht, ein fehlender Schlüssel nicht.
+
+`ai_regional_connectors_service.py` bündelt ergänzende regionale Quellen, etwa Nachrichten, öffentliche soziale Signale oder Verkehr, soweit ein Anbieter konfiguriert bzw. öffentlich verfügbar ist. Der TomTom-Schlüssel wird über die KI-Funktionen im Betreiberbereich eingerichtet, verschlüsselt gespeichert und nie an den Browser zurückgegeben. Reddit nutzt zuerst den öffentlichen JSON-Endpunkt und weicht bei blockiertem anonymem Zugriff auf den öffentlichen Atom-Feed aus. Ein leerer Bereich bedeutet nicht automatisch „normal und stabil“, sondern kann auch fehlende Quelle, fehlende Regionabdeckung oder einen Fehler bedeuten. Die UI sollte diese Zustände getrennt darstellen.
+
+Die Karten-/Globusdarstellung ist Frontend-Logik. Geo-Daten und bereinigte, einmalige Kamerabefehle aus Tool- und Voice-Events müssen über die bestehenden WebSocket-/SSE-Nutzlasten ankommen; sonst kann der Sprachmodus die korrekten Satelliten- und Rechercheergebnisse nicht rendern. Orts- und Kamerakommandos verwenden dieselbe MapLibre-Instanz. Nur ein neuer expliziter Kamerabefehl bewegt sie; manuelle Maus- oder Touch-Eingriffe stoppen eine laufende automatische Fahrt. Eine Sehenswürdigkeit in der bereits sichtbaren Region wird mit `focus_location` geocodiert und parallel über `web_search` erklärt, ohne eine zweite vollständige Regionsanalyse oder einen Worker zu starten. Einen Ort zu `zoom_in`, `zoom_out` oder `overview` übergeht `control_region_camera`, statt den Aufruf abzuweisen: In der Sprachprobe wiederholte GPT-Live abgewiesene Kameraaufrufe dreizehnmal, bis das Tokenlimit griff, und wich danach auf `focus_location` mit dem Ort aus.
+
+## 7. Voice-Ausgabe und Unterbrechung
+
+Die Voice-Brücke erhält Broker-Ereignisse und verarbeitet sie so:
+
+- Text-Deltas werden durch `Belegfilter` geführt.
+- Fertige Sätze gehen unmittelbar an die offene TTS-Sitzung.
+- Code-/Logbelege gehen als Bildschirmereignis heraus und werden nicht vorgelesen.
+- Tool-Start und Tool-Resultate werden als UI-Ereignisse weitergereicht; bei Tool-Plänen bleiben alle Aufrufe in Reihenfolge erhalten. `geo_analysis` und `web_results` werden additiv übertragen.
+- Vorschläge werden gesprochen und warten dann auf dieselbe serverseitige Bestätigung wie im Chat.
+
+Bei Barge-In schließt ausschließlich die aktuelle TTS-Ausgabe; der zugrunde liegende Run und sein read-only Prefetch arbeiten kontrolliert weiter. Ein expliziter `abbrechen`-/`abort`-Rahmen invalidiert den Prefetch und beendet nur die serverseitig dieser Sitzung zugeordneten, besitzgeprüften Runs. Der letzte an die Stimme gegebene Text wird nur flüchtig für den nächsten Voice-Zug verwendet, damit bereits gesprochene Inhalte nicht automatisch wiederholt werden.
+
+Der Frontend-Hook `frontend/src/components/ai/voice/useSprachsitzung.ts` verwaltet WebSocket, Mikrofon und Wiedergabe, aber keine Berechtigungslogik. Er reagiert auf Status, Audio, Text, Tool-, Vorschlags-, Intent- und Geo-Ereignisse.
+
+## 8. Sicherheitsgrenzen
+
+| Grenze | Durchsetzung |
+|---|---|
+| Identität | Authentifizierte HTTP-/WebSocket-Sitzung, Origin-Prüfung im Voice-Rand |
+| Werkzeugmenge | zentraler Registry-Katalog, Rollen-, Herkunfts-, Guardian- und Aufgabenschnitt |
+| Rechte | Backend-Prüfung beim konkreten Server/Tool, nicht nur im Prompt oder UI |
+| Schreibaktionen | Vorschlag/Bestätigung oder serverseitig aktivierte Autonomie-Policy |
+| Provider-Schlüssel | verschlüsselt gespeichert, serverseitig via DIS-/Auth-Pfad aufgelöst |
+| Satelliten-Credentials | verschlüsselt mit festem AAD, nur serverseitig genutzt |
+| Externe Ergebnisse | Größenlimits und Redaction vor Kontext/Anzeige |
+| Prefetch | Read-only-Allowlist, Sitzungsbindung, TTL, erneute Rechteprüfung |
+| Desktop-Aktionen | Herkunft und Gerätefamilie kommen aus der authentifizierten Sitzung, nicht aus Modellargumenten |
+| Abbruch | Statusänderung und Task-Abbruch; keine freie Nachausführung eines alten Runs |
+
+## 9. Latenzmessung und Caches
+
+`ai_latency_metrics.py` sammelt im Prozess aggregierte Dauerwerte. Relevante Punkte sind unter anderem Provider-Vorbereitung, erster Provider-Chunk, Tool-Start, Tool-Laufzeit und Prefetch-Hit/Miss. Es werden keine Transkripte, Suchbegriffe, Orte, Empfänger, Ergebnisse oder Schlüssel als Messwert gespeichert.
+
+Leistungsrelevante Caches sind absichtlich unterschiedlich geschnitten:
+
+- Provider-/HTTP-Verbindungen: pro Service wiederverwendet und begrenzt;
+- Geo: kurzer Geocoding-Cache plus In-Flight-Deduplizierung;
+- Sentinel: Token-Cache, Single-Flight und kurzer STAC-Cache;
+- Web-/Regionalsignale: fachbezogene Kurzzeitcaches;
+- Voice-Prefetch: zehn Sekunden, nur Sitzung plus Benutzer plus kanonische Argumente;
+- Erinnerung: persistiert und zugriffsgeschützt, keine globale Ergebnisweitergabe.
+
+## 10. Bekannte Architekturgrenzen
+
+Diese Punkte sind wichtig, damit „vorhanden“ nicht mit „Ziel erreicht“ verwechselt wird.
+
+1. **Voice hat einen Pipecat-Frame-Rand, Chat nicht:** Der Browservertrag bleibt getrennt, weil SSE und Audio unterschiedliche Transporte sind. AiRun und Broker sind der gemeinsame Kern.
+2. **STT ist pro abgeschlossener Äußerung:** VAD trennt erst eine Äußerung, danach erfolgt die Transkription. Die Teiltranskript-Schnittstelle versorgt Classifier/UI, ersetzt aber keine vollständig streamingfähige STT-Pipeline.
+3. **Intent-Prefetch ist bewusst begrenzt:** Nur sechs sichere Read-Tools sind zugelassen. Das ist sicher, aber keine generische Beschleunigung aller Tools.
+4. **Natürliche Informationsdosierung ist vor allem Prompt-Verhalten:** Der Sprachprompt fordert kurze, direkte Antworten. Es gibt noch keinen technischen Antwortplan, der Nachrichten, Wetter, Verkehr, Social-Signale und Sehenswürdigkeiten als priorisierte Datenereignisse einzeln in die Sprechreihenfolge einsortiert.
+5. **Konzept und Code können auseinanderlaufen:** `docs/agentic-framework.md` enthält Architekturziele, die über den heute nachweisbaren Code hinausgehen. Bei einer Refactor-Entscheidung ist Code plus Tests die operative Wahrheit.
+
+## 11. Pipecat-Grenze
+
+Pipecat ordnet ausschließlich Voice-Audio und die bereits bereinigten
+Steuer-/Ausgabeframes. Es besitzt keinen eigenen Providerzugang, keinen
+Tool-Dispatcher und keinen Netzlistener. Chat bleibt beim bestehenden
+SSE-Vertrag. Diese Grenze verhindert, dass eine zweite Sicherheits- oder
+Autonomiepolitik entsteht.
+
+## Quellindex
+
+| Bereich | Primäre Quelldateien |
+|---|---|
+| Chat-Eingang/SSE | `backend/routers/ai_chat.py`, `backend/services/ai_run_broker.py` |
+| Voice/WebSocket | `backend/routers/ai_voice.py`, `backend/services/ai_voice_bridge.py`, `backend/services/ai_voice/`, `backend/services/ai_voice_vad.py`, `backend/services/ai_stt.py`, `backend/services/ai_tts.py`, `backend/services/ai_tts_elevenlabs.py` |
+| Run-Start und Lebenszyklus | `backend/services/ai_stream/launcher.py`, `backend/services/ai_run_service.py`, `backend/services/ai_stream/lifecycle.py` |
+| Modellstream | `backend/services/ai_stream/engine.py`, `backend/services/openai_compatible_adapter.py`, `backend/services/openai_responses_adapter.py`, `backend/services/anthropic_messages_adapter.py` |
+| Tools | `backend/services/ai_tool_registry.py`, `backend/services/ai_action_service.py`, `backend/services/ai_stream/read_tools.py`, `backend/services/ai_stream/write_tools.py` |
+| Kontext/Rollen | `backend/services/ai_context_service.py`, `backend/services/ai_stream/context.py`, `backend/services/ai_prompt.py` |
+| Erinnerungen | `backend/services/ai_memory_service.py`, `backend/services/ai_gedaechtnis_abruf.py`, `backend/services/ai_gedaechtnis_pflege.py`, `backend/services/ai_gedaechtnis_schreiber.py`, `backend/services/ai_gedaechtnis_altbestand.py`, `backend/services/ai_voice/mitschrift.py` |
+| Intent und Prefetch | `backend/services/ai_intent_classifier.py` |
+| Geo/Satellit/Region | `backend/services/ai_geo_service.py`, `backend/services/ai_satellite_service.py`, `backend/services/ai_regional_connectors_service.py` |
+| Frontend Voice | `frontend/src/components/ai/voice/useSprachsitzung.ts` |
+| Konzeptstand | `docs/agentic-framework.md` |

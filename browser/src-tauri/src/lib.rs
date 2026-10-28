@@ -1,4 +1,4 @@
-//! Maunting Secure Browser: Tabs, Schild, Downloads und die Anbindung an MSM.
+//! Maunting Pontis: Tabs, Schild, Downloads und die Anbindung an MSM.
 //!
 //! Die Oberfläche (`frontend/src/browser`) ist eine eigene Webview `main`.
 //! Jede Seite läuft in einer eigenen Tab-Webview ohne Zugriff auf die Befehle
@@ -178,6 +178,7 @@ pub fn run() {
             schild::listen::starten(handle);
             schild::gesamt::starten(handle);
             downloads::quarantaene::beim_start(handle);
+            downloads::historie::beim_start(handle);
             #[cfg(windows)]
             erweiterungen::beim_start(handle);
             schild::schutz_dienst::starten(handle);
@@ -280,6 +281,7 @@ pub fn run() {
             downloads::download_oeffnen,
             downloads::download_loeschen,
             downloads::download_ordner_oeffnen,
+            downloads::download_pruefen,
             fenster::fenster_aktion,
             fenster::fenster_start_info,
             kurzinfo::kurzinfo,
@@ -344,7 +346,7 @@ pub fn run() {
             }
         })
         .run(kontext)
-        .expect("Fehler beim Starten des Maunting Secure Browsers");
+        .expect("Fehler beim Starten von Maunting Pontis");
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -62,7 +63,7 @@ class WetterWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
         // Abgelaufen oder widerrufen: Das Token ist wertlos. Die App stellt
         // beim nächsten Start ein neues aus.
         runCatching { Schluesselfach.loesche(applicationContext, "widget_wetter_token") }
-        ablage.edit().remove("temp").remove("lage").apply()
+        ablage.edit().remove("temp").remove("lage").remove("stunden").remove("warnung_titel").apply()
         WetterWidget.zeichnenAlle(applicationContext)
         return@withContext Result.success()
       }
@@ -73,11 +74,41 @@ class WetterWorker(appContext: Context, params: WorkerParameters) : CoroutineWor
       val celsius = jetzt.getDouble("temp")
       val einheit = ablage.getString("einheit", "celsius")
       val anzeige = if (einheit == "fahrenheit") "${Math.round(celsius * 1.8 + 32)}°F" else "${Math.round(celsius)}°C"
-      ablage.edit()
+
+      val stundenArray = antwort.optJSONArray("stunden")
+      val stundenJson = if (stundenArray != null && stundenArray.length() > 0) {
+        val liste = JSONArray()
+        val anzahl = minOf(3, stundenArray.length())
+        for (i in 0 until anzahl) {
+          val s = stundenArray.getJSONObject(i)
+          val sTemp = s.getDouble("temp")
+          val sAnzeige = if (einheit == "fahrenheit") "${Math.round(sTemp * 1.8 + 32)}°" else "${Math.round(sTemp)}°"
+          liste.put(JSONObject().apply {
+            put("zeit", s.optString("zeit", ""))
+            put("temp", sAnzeige)
+            put("lage", s.optString("lage", "klar"))
+          })
+        }
+        liste.toString()
+      } else {
+        null
+      }
+
+      val warnungenArray = antwort.optJSONArray("warnungen")
+      val warnungTitel = if (warnungenArray != null && warnungenArray.length() > 0) {
+        warnungenArray.getJSONObject(0).optString("titel", "").trim().takeIf { it.isNotBlank() }
+      } else {
+        null
+      }
+
+      val editor = ablage.edit()
         .putString("temp", anzeige)
         .putString("lage", jetzt.optString("lage", ""))
         .putLong("geholt", System.currentTimeMillis())
-        .apply()
+      if (stundenJson != null) editor.putString("stunden", stundenJson) else editor.remove("stunden")
+      if (warnungTitel != null) editor.putString("warnung_titel", warnungTitel) else editor.remove("warnung_titel")
+      editor.apply()
+
       WetterWidget.zeichnenAlle(applicationContext)
       Result.success()
     } catch (_: Exception) {

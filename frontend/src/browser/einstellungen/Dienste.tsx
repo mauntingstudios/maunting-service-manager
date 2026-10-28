@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/api/client'
 import { Button, confirm } from '@/Singra/UI'
 import { abmelden } from '@/desktop/auth'
+import { DevicesTab } from '@/pages/profile/DevicesTab'
 
 import { istGekoppelt, useSitzung } from '../services/sitzung'
 import { Abschnitt, Aktionszeile } from './bausteine'
@@ -86,11 +87,19 @@ function Wetterdienst() {
 
 export function Dienste() {
   const { t } = useTranslation()
+  const stand = useSitzung((s) => s.stand)
+  const gekoppelt = stand === 'an'
+
   return (
     <>
       <Abschnitt titel={t('browser.einstellungen.kopplung')}>
         <Kopplung />
       </Abschnitt>
+      {gekoppelt && (
+        <Abschnitt titel={t('profile.devicesTitle')}>
+          <DevicesTab />
+        </Abschnitt>
+      )}
       <Wetterdienst />
     </>
   )

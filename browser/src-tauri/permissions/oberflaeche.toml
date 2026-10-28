@@ -75,6 +75,7 @@ permissions = [
   "allow-download-oeffnen",
   "allow-download-loeschen",
   "allow-download-ordner-oeffnen",
+  "allow-download-pruefen",
   "allow-fenster-aktion",
   "allow-fenster-start-info",
   "allow-kurzinfo",

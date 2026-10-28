@@ -35,6 +35,7 @@ import { Kurzinfo, UpdateBadge } from '@/Singra/UI'
 import { useEinstellungenStore } from '../services/einstellungenStore'
 import { useUpdateStore } from '../services/updateStore'
 import { interneSeite, msmSucheBegriff } from '../services/intern'
+import { decodePunycodeHost, formatiereAdresseZurAnzeige } from '../services/urlFormat'
 import { nativ } from '../services/nativ'
 import { istAndroid } from '../services/plattform'
 import {
@@ -79,9 +80,12 @@ export function tabTitel(tab: Tab, namen: { neu: string; einstellungen: string }
   if (tab.titel) return tab.titel
   if (!tab.url) return namen.neu
   try {
-    return new URL(tab.url).host || tab.url
+    const u = new URL(tab.url)
+    const host = decodePunycodeHost(u.hostname)
+    const port = u.port ? `:${u.port}` : ''
+    return (host ? `${host}${port}` : '') || tab.url
   } catch {
-    return tab.url
+    return formatiereAdresseZurAnzeige(tab.url)
   }
 }
 

@@ -50,3 +50,30 @@ body,
   max-width: 100% !important;
   max-height: 100% !important;
 }
+
+/*
+ * Eleganter, abgerundeter Scrollbalken für Dialoge (Modern Web Guidance),
+ * der die Kartenabrundung nicht schneidet.
+ */
+.msb-dialog-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--dna-focus) / 0.35) transparent;
+}
+
+.msb-dialog-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.msb-dialog-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.msb-dialog-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--dna-focus) / 0.35);
+  border-radius: 9999px;
+}
+
+.msb-dialog-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--dna-focus) / 0.6);
+}
+

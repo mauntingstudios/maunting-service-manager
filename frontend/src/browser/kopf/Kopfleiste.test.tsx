@@ -12,7 +12,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 const { useTabsStore } = await import('../services/tabsStore')
 const { useEinstellungenStore } = await import('../services/einstellungenStore')
-const { Kopfleiste } = await import('./Kopfleiste')
+const { Kopfleiste, tabTitel } = await import('./Kopfleiste')
 
 const warten = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
 const UA = navigator.userAgent
@@ -641,5 +641,20 @@ describe('Kopfleiste Tab-Auslagern (Tear-off)', () => {
     expect(logoKnopf).toBeDefined()
     fireEvent.click(logoKnopf)
     expect(startseiteSpy).toHaveBeenCalled()
+  })
+
+  it('formatiert tabTitel mit Punycode- und Umlaut-Dekodierung wenn kein Titel existiert', () => {
+    const namen = { neu: 'Neuer Tab', einstellungen: 'Einstellungen' }
+    const tabPunycode: any = { id: 't1', url: 'https://xn--mnchen-3ya.de/pfad', titel: '' }
+    expect(tabTitel(tabPunycode, namen)).toBe('münchen.de')
+
+    const tabPort: any = { id: 't1p', url: 'https://xn--mnchen-3ya.de:8080/pfad', titel: '' }
+    expect(tabTitel(tabPort, namen)).toBe('münchen.de:8080')
+
+    const tabPercentFallback: any = { id: 't2', url: '%C3%BCber-uns', titel: '' }
+    expect(tabTitel(tabPercentFallback, namen)).toBe('über-uns')
+
+    const tabMitTitel: any = { id: 't3', url: 'https://xn--mnchen-3ya.de', titel: 'Echter Titel' }
+    expect(tabTitel(tabMitTitel, namen)).toBe('Echter Titel')
   })
 })

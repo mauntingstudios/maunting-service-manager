@@ -3539,6 +3539,7 @@
       "ai": "KI",
       "danger": "Gefahrenzone"
     },
+    "devicesTitle": "Geräte",
     "dataExport": {
       "title": "Meine Daten exportieren",
       "description": "Alles, was zu deinem Konto gespeichert ist, als eine ZIP-Datei: KI-Chats, Notizen, Termine, Einstellungen, Freunde, Verbindungen und der Messenger-Verlauf dieses Geräts. Die Daten stehen darin im Klartext.",
@@ -9012,7 +9013,7 @@
       "leerenText": "Alle besuchten Seiten verschwinden aus der Liste. Cookies und Website-Daten bleiben; die löscht man in den Einstellungen."
     },
     "downloads": {
-      "leer": "In dieser Sitzung wurde nichts heruntergeladen.",
+      "leer": "Noch keine Downloads vorhanden.",
       "listeLeeren": "Liste leeren",
       "ordner": "Ordner öffnen",
       "ordnerOeffnen": "Download-Ordner öffnen",
@@ -9042,7 +9043,25 @@
       "wartet": "Wartet seit {{zeit}} — der Transfer steht, läuft aber weiter",
       "abbrechen": "Download abbrechen",
       "abbrechenName": "{{name}} abbrechen",
-      "fortschrittName": "Fortschritt von {{name}}"
+      "fortschrittName": "Fortschritt von {{name}}",
+      "titel": "Downloads",
+      "keineTreffer": "Keine Downloads gefunden.",
+      "suchen": "Downloads durchsuchen",
+      "kategorieFilter": "Dateikategorie filtern",
+      "dateiFehlt": "Datei nicht mehr vorhanden",
+      "leerenTitel": "Download-Liste leeren?",
+      "leerenBeschreibung": "Möchtest du die Einträge aus der Chronik des Browsers entfernen?",
+      "auchDateienLoeschen": "Zugehörige Dateien auch von der Festplatte löschen",
+      "auchDateienLoeschenHinweis": "{{anzahl}} heruntergeladene Dateien werden endgültig vom Datenträger entfernt.",
+      "allesEndgueltigLoeschen": "Dateien & Liste löschen",
+      "kategorien": {
+        "alle": "Alle Downloads",
+        "dokumente": "Dokumente (PDF, Office, Text)",
+        "bilder": "Bilder & Grafiken",
+        "programme": "Programme & Skripte",
+        "archive": "Archive & Abbilder (ZIP, ISO)",
+        "andere": "Andere Dateitypen"
+      }
     },
     "hintergrund": {
       "schlicht": "Schlicht",
@@ -9055,6 +9074,11 @@
       "bergwald": "Bergwald",
       "ozean": "Ozean",
       "feld": "Sommerfeld",
+      "balkon": "Abendbalkon",
+      "bergsee": "Bergsee",
+      "bahnhof": "Alter Bahnhof",
+      "mars": "Marslandschaft",
+      "wasserfaelle": "Himmelswasserfälle",
       "eigen": "Eigenes Bild"
     },
     "update": {
@@ -10199,6 +10223,19 @@
       "linksHervorgehoben": "Hervorgehoben",
       "linksAus": "Aus",
       "kopieren": "Text kopieren"
+    },
+    "drittanbieterHinweis": {
+      "eyebrow": "Datenschutz-Hinweis",
+      "titel": "Hinweis zur Datensicherheit bei Drittanbietern",
+      "beschreibung": "Du bist dabei, einen integrierten Drittanbieter-Messenger zu öffnen. Diese Einbindung dient deiner Bequemlichkeit. Beachte bitte die Unterschiede beim Datenschutz gegenüber unserem eigenen Ökosystem:",
+      "telegram": "Telegram: Standard-Chats und Gruppen sind nicht Ende-zu-Ende verschlüsselt (nur optionale geheime 1:1-Chats auf Mobilgeräten).",
+      "discord": "Discord: Nur Audio- und Videoanrufe sind Ende-zu-Ende verschlüsselt. Textnachrichten und Kanäle werden auf Servern von Discord verarbeitet.",
+      "instagram": "Instagram: Direktnachrichten im Web sind standardmäßig nicht Ende-zu-Ende verschlüsselt und liegen auf Meta-Servern.",
+      "whatsapp": "WhatsApp: Zwar standardmäßig mit dem Signal-Protokoll Ende-zu-Ende verschlüsselt, aber eine proprietäre Closed-Source-Anwendung auf der Infrastruktur von Meta.",
+      "fazit": "Gehe bewusst mit deinen Daten um. Für sensible Kommunikation empfehlen wir Messenger mit durchgehender Verschlüsselung auf überprüfbarer Infrastruktur.",
+      "nichtMehrAnzeigen": "Diesen Hinweis nicht mehr anzeigen",
+      "fortfahren": "Verstanden & fortfahren",
+      "abbrechen": "Abbrechen"
     }
   },
   "searchEngineSettings": {

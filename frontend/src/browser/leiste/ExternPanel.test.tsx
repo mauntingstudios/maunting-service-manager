@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useDrittanbieterHinweisStore } from '../services/drittanbieterHinweisStore'
+
 const nativ = vi.hoisted(() => ({
   tabLaden: vi.fn(async () => null),
   panelRahmen: vi.fn(async () => null),
@@ -55,6 +57,22 @@ describe('ExternPanel', () => {
     listener.callback = null
     standbild.bilder = {}
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rechteck as DOMRect)
+    window.localStorage.setItem('msb:drittanbieter_datenschutz', JSON.stringify({ dismissed: true }))
+  })
+
+  it('schließt das Panel bei unbestätigtem Datenschutzhinweis, öffnet den zentralen Dialog und lädt keine WebView', () => {
+    window.localStorage.removeItem('msb:drittanbieter_datenschutz')
+    useDrittanbieterHinweisStore.getState().schliessen()
+    render(
+      <MemoryRouter initialEntries={['/whatsapp']}>
+        <ExternPanel id="whatsapp" voll={false} />
+        <Ort />
+      </MemoryRouter>,
+    )
+    expect(useDrittanbieterHinweisStore.getState().ausstehend).toBe('whatsapp')
+    expect(screen.getByTestId('ort')).toHaveTextContent('/')
+    expect(nativ.tabLaden).not.toHaveBeenCalled()
+    expect(registrieren).not.toHaveBeenCalled()
   })
 
   it('lädt die externe WebView, registriert sie und meldet ihre Geometrie', async () => {

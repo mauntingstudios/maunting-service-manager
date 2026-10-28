@@ -12,5 +12,11 @@
     <string name="widget_wetter_beschreibung">Vorhersage von deiner eigenen MSM-Instanz</string>
     <string name="widget_wetter_nicht_konfiguriert">Ort in Pontis wählen</string>
     <string name="widget_wetter_quelle">Quelle: MSM</string>
+    <string name="widget_wetter_lage_klar">Klar</string>
+    <string name="widget_wetter_lage_teils">Teils bewölkt</string>
+    <string name="widget_wetter_lage_bewoelkt">Bewölkt</string>
+    <string name="widget_wetter_lage_regen">Regen</string>
+    <string name="widget_wetter_lage_schnee">Schnee</string>
+    <string name="widget_wetter_warnung">Warnung</string>
     <string name="vollbild_hinweis">%1$s ist jetzt im Vollbild. Zurück beendet es.</string>
 </resources>

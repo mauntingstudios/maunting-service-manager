@@ -10,10 +10,12 @@ import { useMessengerNotificationStore } from '@/stores/messengerNotificationSto
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 import { useDownloadsStore } from '../services/downloadsStore'
+import { useDrittanbieterHinweisStore } from '../services/drittanbieterHinweisStore'
 import { useEinstellungenStore, type Leistenziel } from '../services/einstellungenStore'
 import { interneSeite } from '../services/intern'
 import { istGekoppelt, useSitzung } from '../services/sitzung'
 import { useTabsStore } from '../services/tabsStore'
+import { istDrittanbieterHinweisBestaetigt } from '@/Singra/UI'
 import { BROWSER_EINTRAEGE, MSM_EINTRAEGE, panelAusPfad, type Leisteneintrag, type PanelId } from './module'
 
 /** Unter diesem Namen steht ein Eintrag in `anordnung` und `ausgeblendet`. */
@@ -84,8 +86,19 @@ export function useLeistenZiele() {
   return {
     offen,
     einstellungenOffen,
-    /** Öffnet das Panel; ist es schon offen, schließt es. */
-    panel: (id: PanelId) => navigate(offen === id ? '/' : `/${id}`),
+    /** Öffnet das Panel; ist es schon offen, schließt es. Drittanbieter öffnen erst nach Datenschutzbestätigung. */
+    panel: (id: PanelId) => {
+      if (offen === id) {
+        navigate('/')
+        return
+      }
+      const istExtern = id === 'whatsapp' || id === 'discord' || id === 'telegram' || id === 'instagram'
+      if (istExtern && !istDrittanbieterHinweisBestaetigt()) {
+        useDrittanbieterHinweisStore.getState().oeffnen(id)
+        return
+      }
+      navigate(`/${id}`)
+    },
     einstellungen: () => einstellungen(),
   }
 }

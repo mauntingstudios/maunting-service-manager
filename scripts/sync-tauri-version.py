@@ -64,7 +64,7 @@ if rec_cargo.exists():
     rec_content = re.sub(r'(^\[package\][\s\S]*?^version\s*=\s*)"[^"]+"', rf'\g<1>"{tag}"', rec_content, flags=re.MULTILINE)
     rec_cargo.write_text(rec_content, encoding="utf-8")
 
-# Maunting Secure Browser: dieselbe Version wie MSM und MSS (gemeinsamer v*-Tag)
+# Maunting Pontis: dieselbe Version wie MSM und MSS (gemeinsamer v*-Tag)
 browser_conf = Path("browser/src-tauri/tauri.conf.json")
 if browser_conf.exists():
     browser_data = json.loads(browser_conf.read_text(encoding="utf-8"))
