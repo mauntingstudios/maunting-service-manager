@@ -1,6 +1,6 @@
 [package]
 name = "maunting-smart-system"
-version = "5.7.8"
+version = "5.7.9"
 description = "MSS - Maunting Smart System, Desktop Companion fuer das MSM-Panel"
 edition = "2021"
 # Die Zahl muss stimmen, sonst ist sie schaedlich: hier stand 1.77, und ein
@@ -158,6 +158,8 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
     # Windows Hello (Biometrie / PIN) Abfrage und Verifikation
     "Security_Credentials_UI",
+    # Registry-Bereinigung fuer die Velopack-Migration (veraltete NSIS-Autostarteintraege)
+    "Win32_System_Registry",
 ] }
 # Keine neue Kiste im Baum: exakt die Version, die wry/tauri ohnehin
 # mitbringen (Cargo.lock). Direkt gebraucht nur fuer den

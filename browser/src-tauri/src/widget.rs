@@ -119,6 +119,10 @@ pub fn standardbrowser_einstellungen(app: AppHandle) -> Result<bool, String> {
 /// aus den Velopack-Installations-Hooks (`main.rs`), nicht aus der Oberfläche:
 /// ein Knopf, der die Registry schreibt, wäre eine stille Systemänderung.
 #[cfg(windows)]
+pub fn alte_nsis_reste_bereinigen() {
+    plattform::alte_nsis_reste_bereinigen();
+}
+
 pub fn standardbrowser_registrieren() -> Result<(), String> {
     plattform::standardbrowser_registrieren()
 }

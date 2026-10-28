@@ -40,6 +40,7 @@ mod geheimnisse;
 mod kamera_krypto;
 mod konfig;
 mod medien;
+mod nsis_migration;
 mod sandbox;
 pub mod sandbox_container;
 mod sichtfeld;
@@ -996,6 +997,7 @@ pub fn run() {
         ])
         .setup(|app| {
             tray::erstellen(app.handle())?;
+            nsis_migration::bereinige_nsis_reste();
             // Halbe Klartextdateien, die ein früherer Lauf beim Speichern
             // liegen ließ (App mitten im Schreiben beendet).
             datei_speichern::waisen_beim_start(app.handle());
