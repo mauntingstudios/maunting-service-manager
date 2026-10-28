@@ -7660,6 +7660,49 @@
         "public": "Alle Konten in diesem Panel sehen dein Profil und deinen Status.",
         "private": "Niemand sieht dein Profil, auch deine Freunde nicht. Freunde sehen weiter deinen Status, alle anderen nur, ob du online bist."
       }
+    },
+    "info": {
+      "title": "Info",
+      "description": "Ein kurzer Satz über dich. Sichtbar je nach Einstellung, mit Ablauf.",
+      "placeholder": "Woran denkst du gerade?",
+      "suggestion": {
+        "available": "Verfügbar",
+        "busy": "Beschäftigt",
+        "meeting": "Im Meeting",
+        "away": "Unterwegs"
+      },
+      "visibility": {
+        "label": "Wer sieht die Info",
+        "friends": "Meine Freunde",
+        "public": "Öffentlich",
+        "nobody": "Niemand"
+      },
+      "duration": {
+        "label": "Wie lange gilt sie",
+        "h1": "1 Stunde",
+        "h8": "8 Stunden",
+        "d1": "1 Tag",
+        "d2": "2 Tage",
+        "w1": "1 Woche",
+        "custom": "Eigene Dauer",
+        "customLabel": "Stunden",
+        "forever": "Für immer"
+      },
+      "preview": "Vorschau",
+      "previewEmpty": "Noch keine Info",
+      "save": "Info speichern",
+      "saved": "Info gespeichert.",
+      "removed": "Info entfernt.",
+      "failed": "Die Info konnte nicht gespeichert werden.",
+      "remove": "Info entfernen",
+      "forever": "Gilt für immer",
+      "expiresMinutes_one": "Läuft in {{count}} Minute ab",
+      "expiresMinutes_other": "Läuft in {{count}} Minuten ab",
+      "expiresHours_one": "Läuft in {{count}} Stunde ab",
+      "expiresHours_other": "Läuft in {{count}} Stunden ab",
+      "expiresDays_one": "Läuft in {{count}} Tag ab",
+      "expiresDays_other": "Läuft in {{count}} Tagen ab",
+      "fieldLabel": "Deine Info"
     }
   },
   "messenger": {

@@ -6,6 +6,7 @@ import { Avatar, Button, Dropdown, type DropdownOption } from '@/Singra/UI'
 import { api } from '@/api/client'
 import { updatePrivacy } from '@/api/social'
 import { toast } from '@/stores/toastStore'
+import { InfoKarte } from '@/components/social/InfoKarte'
 import { BenutzernameInline } from '@/components/BenutzernameInline'
 
 import { getAvailableTimezones } from '@/utils/timeFormat'
@@ -198,6 +199,10 @@ export function AccountTab() {
 
   return (
     <div className="space-y-6">
+      {/* Die freiwillige Info steht ganz oben: sie ist der Satz, den andere
+          unter dem Namen sehen. */}
+      <InfoKarte />
+
       {/* Account Info & Profilbild */}
       <div className="msm-card p-6">
         <div className="flex items-center gap-2 mb-6">

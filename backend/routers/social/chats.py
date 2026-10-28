@@ -59,6 +59,9 @@ def start_direct_chat(
         "is_friend": is_friend,
         "other_privacy": getattr(other, "social_privacy", "friends"),
         "presence": pres,
+        "info": SocialService.info_fuer_viewer(
+            db, current_user.id, other, ist_freund=is_friend
+        ),
         "created_at": chat.created_at,
         "updated_at": chat.updated_at,
     }

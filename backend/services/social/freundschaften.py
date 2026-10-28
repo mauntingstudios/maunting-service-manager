@@ -107,6 +107,7 @@ class FreundschaftenMixin:
         users = {u.id: u for u in db.query(User).filter(User.id.in_(friend_user_ids)).all()}
         # Eine Abfrage für alle Sitzungen; die Aggregation maskiert Unsichtbare.
         zustaende = cls.get_presence_bulk(db, friend_user_ids)
+        infos = cls.infos_fuer(db, user_id, {fid: True for fid in friend_user_ids})
 
         results = []
         bereits_gelistet: set[int] = set()
@@ -136,6 +137,7 @@ class FreundschaftenMixin:
                 "is_requester": r.user_id == user_id,
                 "created_at": r.created_at,
                 "presence": presence_dict,
+                "info": infos.get(fid),
             })
         return results
 

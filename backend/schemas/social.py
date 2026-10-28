@@ -77,6 +77,7 @@ class FriendResponse(BaseModel):
     is_requester: bool = False
     created_at: datetime
     presence: PresenceInfo | None = None
+    info: UserInfoResponse | None = None
 
 
 class FriendRequestCreate(BaseModel):
@@ -116,6 +117,24 @@ class PresenceSessionRequest(BaseModel):
 
 class PresenceStatusRequest(BaseModel):
     manual_status: str = Field(..., pattern="^(auto|online|away|invisible)$")
+
+
+class UserInfoResponse(BaseModel):
+    """Der freiwillige Info-Text, wie ihn der Betrachter sehen darf."""
+
+    text: str
+    visibility: str
+    expires_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class UserInfoUpdateRequest(BaseModel):
+    """Setzt oder loescht die Info. Leerer Text loescht sie."""
+
+    text: str = Field("", max_length=139)
+    visibility: str = Field("friends", pattern="^(friends|public|nobody)$")
+    #: 0 heisst „fuer immer“; hoechstens ein Jahr.
+    dauer_sekunden: int = Field(0, ge=0, le=365 * 24 * 3600)
 
 
 class ActivityPingRequest(BaseModel):
@@ -584,6 +603,7 @@ class DirectChatResponse(BaseModel):
     is_blocked: bool = False
     other_privacy: str = "friends"
     presence: PresenceInfo | None = None
+    info: UserInfoResponse | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -792,6 +812,7 @@ class SocialProfileResponse(BaseModel):
     is_friend: bool = False
     member_since: date | None = None
     presence: PresenceInfo | None = None
+    info: UserInfoResponse | None = None
     stats: UserStatsResponse | None = None
     achievements: list[AchievementResponse] | None = None
 

@@ -7660,6 +7660,49 @@
         "public": "Every account on this panel can see your profile and your status.",
         "private": "Nobody can see your profile, not even your friends. Friends still see your status; everyone else only sees whether you are online."
       }
+    },
+    "info": {
+      "title": "Info",
+      "description": "A short line about you. Visible depending on your setting, with an expiry.",
+      "placeholder": "What's on your mind?",
+      "suggestion": {
+        "available": "Available",
+        "busy": "Busy",
+        "meeting": "In a meeting",
+        "away": "On the go"
+      },
+      "visibility": {
+        "label": "Who can see the info",
+        "friends": "My friends",
+        "public": "Public",
+        "nobody": "Nobody"
+      },
+      "duration": {
+        "label": "How long it applies",
+        "h1": "1 hour",
+        "h8": "8 hours",
+        "d1": "1 day",
+        "d2": "2 days",
+        "w1": "1 week",
+        "custom": "Custom duration",
+        "customLabel": "Hours",
+        "forever": "Forever"
+      },
+      "preview": "Preview",
+      "previewEmpty": "No info yet",
+      "save": "Save info",
+      "saved": "Info saved.",
+      "removed": "Info removed.",
+      "failed": "The info could not be saved.",
+      "remove": "Remove info",
+      "forever": "Stays forever",
+      "expiresMinutes_one": "Expires in {{count}} minute",
+      "expiresMinutes_other": "Expires in {{count}} minutes",
+      "expiresHours_one": "Expires in {{count}} hour",
+      "expiresHours_other": "Expires in {{count}} hours",
+      "expiresDays_one": "Expires in {{count}} day",
+      "expiresDays_other": "Expires in {{count}} days",
+      "fieldLabel": "Your info"
     }
   },
   "messenger": {

@@ -8,7 +8,8 @@
  * verworfen. Der Chat öffnete nie.
  */
 
-import { renderHook, waitFor } from '@testing-library/react'
+import { useState } from 'react'
+import { render, renderHook, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChatContact } from '@/components/social/sidebar/ConversationListItem'
@@ -29,7 +30,7 @@ const ZIEL: ChatContact = {
   avatarUrl: null,
   status: 'online',
   deviceType: null,
-  activityLabel: null,
+  activityKey: null,
   isFriend: false,
   teamName: null,
   isPublicUser: true,
@@ -120,5 +121,23 @@ describe('useKontaktAusUrl', () => {
     rerender(optionen(setzeKontakt, { kontakte: [ANDERE] }))
     await new Promise((r) => setTimeout(r, 0))
     expect(vi.mocked(getProfile).mock.calls.length).toBe(1)
+  })
+
+  it('übernimmt eine geänderte Info aus der Kontaktliste', async () => {
+    // Der Zweig für bekannte Kontakte verglich bis 28.10.2026 nur Kennung,
+    // Name und Bild. Eine neue Info kam im offenen Chat deshalb nie an.
+    const ohneInfo = { ...ZIEL, listKey: 'q-42', isPublicUser: true, info: null }
+
+    function Aufbau({ kontakte }: { kontakte: ChatContact[] }) {
+      const [aktiv, setAktiv] = useState<ChatContact | null>(null)
+      useKontaktAusUrl({ ...optionen(setAktiv), kontakte, activeContact: aktiv })
+      return <div data-testid="info">{aktiv?.info?.text ?? ''}</div>
+    }
+
+    const { rerender } = render(<Aufbau kontakte={[ohneInfo]} />)
+    await waitFor(() => expect(screen.getByTestId('info')).toHaveTextContent(/^$/))
+
+    rerender(<Aufbau kontakte={[{ ...ohneInfo, info: { text: 'Im Feierabend' } }]} />)
+    await waitFor(() => expect(screen.getByTestId('info')).toHaveTextContent('Im Feierabend'))
   })
 })

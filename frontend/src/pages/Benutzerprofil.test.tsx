@@ -47,6 +47,7 @@ function profil(teil: Partial<PublicProfileResponse> = {}): PublicProfileRespons
     privacy: 'public',
     is_friend: false,
     member_since: '2026-03-01',
+    info: { text: 'Im Feierabend', visibility: 'friends', expires_at: null },
     presence: { status: 'online', device_type: 'web', activity_label: null },
     stats: {
       total_achievements: 2,
@@ -111,6 +112,11 @@ describe('Benutzerprofil', () => {
     expect(screen.getByText('Erster Server')).toBeInTheDocument()
     expect(screen.queryByText('Tausend Befehle')).not.toBeInTheDocument()
     expect(screen.getByText(i18n.t('social.profile.memberSince', { date: 'März 2026' }))).toBeInTheDocument()
+  })
+
+  it('zeigt die Info unter dem Namen', async () => {
+    zeige()
+    expect(await screen.findByText('Im Feierabend')).toBeInTheDocument()
   })
 
   it('bietet Fremden keinen Anruf, aber Chat und Freundschaftsanfrage', async () => {

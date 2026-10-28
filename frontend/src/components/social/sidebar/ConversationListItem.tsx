@@ -27,6 +27,8 @@ export interface ChatContact {
   client?: string | null
   /** Schluessel aus der Aktivitaetenliste; wird in der App-Sprache gezeigt. */
   activityKey?: string | null
+  /** Der freiwillige Info-Text; im Chat-Kopf und Profil sichtbar. */
+  info?: { text: string; expires_at?: string | null } | null
   isFriend: boolean
   teamName?: string | null
   isPublicUser?: boolean

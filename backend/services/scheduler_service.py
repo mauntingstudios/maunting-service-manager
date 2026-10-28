@@ -1282,6 +1282,8 @@ async def _e2ee_envelope_cleanup_task() -> None:
                 # Praesenzsitzungen ohne Lebenszeichen; die Anzeige wartet nur
                 # die kurze Frist ab, das hier ist Hygiene.
                 ("Praesenzsitzung", SocialService.cleanup_stale_sessions),
+                # Abgelaufene Info-Texte; die Anzeige blendet sie ohnehin aus.
+                ("Info", SocialService.cleanup_expired_infos),
                 ("Tresor-Datei", vault_blob_service.aufraeumen),
                 # Was die KI vergessen hat, bleibt 30 Tage zurueckholbar.
                 ("Vergessene-Erinnerung", ai_memory_service.vergessene_aufraeumen),

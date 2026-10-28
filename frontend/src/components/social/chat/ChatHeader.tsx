@@ -6,6 +6,8 @@ import { Avatar, Blattknopf, Kurzinfo } from '@/Singra/UI'
 interface ChatHeaderProps {
   /** Der Name des Gesprächs: Kontoname oder Gruppentitel. */
   titel: string
+  /** Die freiwillige Info des Gegenübers; nur im Direktchat. */
+  info?: string | null
   /** Profil- oder Gruppenbild; `null` zeigt die Initialen. */
   bild?: string | null
   stumm: boolean
@@ -44,6 +46,7 @@ const rundknopf =
  */
 export function ChatHeader({
   titel,
+  info,
   bild,
   stumm,
   blockiert,
@@ -72,7 +75,8 @@ export function ChatHeader({
 
       <Avatar src={bild} name={titel} size="md" className="shrink-0" />
 
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <div className="flex min-w-0 flex-1 flex-col justify-center">
+        <div className="flex min-w-0 items-center gap-1.5">
         {onProfil ? (
           <Kurzinfo text={t('social.profile.open', { name: titel })} seite="anfang" aussen="min-w-0">
             <button
@@ -103,6 +107,10 @@ export function ChatHeader({
           <span className="shrink-0 rounded-md bg-status-destructive/15 px-1.5 py-0.2 text-label-sm font-semibold text-status-destructive">
             {t('social.contacts.blocked')}
           </span>
+        )}
+        </div>
+        {info && (
+          <p className="truncate text-label-sm text-on-surface-variant/80">{info}</p>
         )}
       </div>
 

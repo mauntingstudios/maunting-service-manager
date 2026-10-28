@@ -171,6 +171,9 @@ export function Benutzerprofil() {
                 </h1>
                 {istFreund && <FunkenAbzeichen partnerId={profil.user_id} name={profil.username} />}
               </div>
+              {profil.info?.text && (
+                <p className="text-sm text-on-surface truncate">{profil.info.text}</p>
+              )}
               {profil.presence && (
                 <p className="flex items-center gap-1.5 text-sm text-on-surface-variant">
                   <span>{t(`social.status.${status}`)}</span>

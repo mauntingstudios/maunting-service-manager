@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import logging
-from typing import Any
+from typing import Any, Iterable
 
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
@@ -10,10 +11,37 @@ from sqlalchemy.orm import Session
 from models import (
     User,
     UserFriend,
+    UserInfo,
 )
 from services.achievement_service import AchievementService
+from services.social.basis import _now
 
 logger = logging.getLogger(__name__)
+
+
+#: So lang darf eine Info sein (WhatsApp: 139 Zeichen).
+INFO_MAX_ZEICHEN = 139
+#: Hoechste Frist: ein Jahr. 0 heisst „fuer immer“.
+INFO_DAUER_MAX_SEKUNDEN = 365 * 24 * 3600
+INFO_SICHTBARKEITEN = ("friends", "public", "nobody")
+
+
+def _info_dict(zeile: UserInfo) -> dict[str, Any]:
+    return {
+        "text": zeile.text,
+        "visibility": zeile.visibility,
+        "expires_at": zeile.expires_at,
+        "updated_at": zeile.updated_at,
+    }
+
+
+def _info_gueltig(zeile: UserInfo | None, jetzt: datetime | None = None) -> bool:
+    if zeile is None:
+        return False
+    if zeile.expires_at is None:
+        return True
+    ablauf = zeile.expires_at if zeile.expires_at.tzinfo else zeile.expires_at.replace(tzinfo=timezone.utc)
+    return ablauf > (jetzt or _now())
 
 
 class ProfilMixin:
@@ -28,6 +56,119 @@ class ProfilMixin:
         user.social_privacy = privacy
         db.commit()
         return user.social_privacy
+
+    # ── Info (freiwilliger Text) ─────────────────────────────────────────
+
+    @classmethod
+    def get_own_info(cls, db: Session, user_id: int) -> dict[str, Any] | None:
+        zeile = db.query(UserInfo).filter_by(user_id=user_id).first()
+        return _info_dict(zeile) if _info_gueltig(zeile) else None
+
+    @classmethod
+    def set_info(
+        cls,
+        db: Session,
+        user_id: int,
+        *,
+        text: str,
+        visibility: str,
+        dauer_sekunden: int,
+    ) -> dict[str, Any] | None:
+        """Setzt oder loescht die Info. Leerer Text loescht die Zeile."""
+        if visibility not in INFO_SICHTBARKEITEN:
+            raise HTTPException(status_code=400, detail="Ungueltige Sichtbarkeit.")
+        if dauer_sekunden < 0 or dauer_sekunden > INFO_DAUER_MAX_SEKUNDEN:
+            raise HTTPException(status_code=400, detail="Ungueltige Dauer.")
+
+        sauber = (text or "").strip()[:INFO_MAX_ZEICHEN]
+        zeile = db.query(UserInfo).filter_by(user_id=user_id).first()
+
+        if not sauber:
+            if zeile is not None:
+                db.delete(zeile)
+                db.commit()
+            return None
+
+        if zeile is None:
+            zeile = UserInfo(user_id=user_id, text=sauber)
+            db.add(zeile)
+        zeile.text = sauber
+        zeile.visibility = visibility
+        zeile.expires_at = (
+            _now() + timedelta(seconds=dauer_sekunden) if dauer_sekunden > 0 else None
+        )
+        zeile.updated_at = _now()
+        db.commit()
+        db.refresh(zeile)
+        return _info_dict(zeile)
+
+    @classmethod
+    def info_fuer_viewer(
+        cls,
+        db: Session,
+        viewer_user_id: int | None,
+        target_user: User | int,
+        *,
+        ist_freund: bool | None = None,
+    ) -> dict[str, Any] | None:
+        """Die Info, wie sie dieser Betrachter sehen darf.
+
+        ``nobody`` nur fuer das eigene Konto, ``friends`` nur fuer bestaetigte
+        Freunde, ``public`` fuer jeden, der das Profil sehen darf. Abgelaufene
+        Zeilen zaehlen nicht. Blockierte prueft der Aufrufer.
+        """
+        ziel_id = target_user if isinstance(target_user, int) else target_user.id
+        if viewer_user_id is not None and viewer_user_id == ziel_id:
+            return cls.get_own_info(db, ziel_id)
+
+        zeile = db.query(UserInfo).filter_by(user_id=ziel_id).first()
+        if not _info_gueltig(zeile):
+            return None
+        if zeile.visibility == "nobody":
+            return None
+        if zeile.visibility == "friends":
+            if ist_freund is None:
+                ist_freund = bool(viewer_user_id) and cls.is_confirmed_friend(
+                    db, viewer_user_id, ziel_id
+                )
+            if not ist_freund:
+                return None
+        return _info_dict(zeile)
+
+    @classmethod
+    def infos_fuer(
+        cls, db: Session, viewer_user_id: int | None, ziele: dict[int, bool]
+    ) -> dict[int, dict[str, Any]]:
+        """Infos fuer eine Liste — eine Abfrage, je Ziel mit Freund-Marke.
+
+        ``ziele`` bildet Konto auf „ist mit dem Betrachter befreundet“ ab.
+        """
+        ids = [int(i) for i in ziele]
+        if not ids:
+            return {}
+        jetzt = _now()
+        ergebnis: dict[int, dict[str, Any]] = {}
+        for zeile in db.query(UserInfo).filter(UserInfo.user_id.in_(ids)).all():
+            if not _info_gueltig(zeile, jetzt):
+                continue
+            if zeile.visibility == "nobody":
+                continue
+            if zeile.visibility == "friends" and not ziele.get(int(zeile.user_id), False):
+                continue
+            ergebnis[int(zeile.user_id)] = _info_dict(zeile)
+        return ergebnis
+
+    @classmethod
+    def cleanup_expired_infos(cls, db: Session) -> int:
+        jetzt = _now()
+        geloescht = (
+            db.query(UserInfo)
+            .filter(UserInfo.expires_at.is_not(None), UserInfo.expires_at <= jetzt)
+            .delete(synchronize_session=False)
+        )
+        if geloescht:
+            db.commit()
+        return int(geloescht or 0)
 
     @classmethod
     def get_profile(
@@ -70,6 +211,7 @@ class ProfilMixin:
                     "restricted": True,
                     "is_friend": False,
                     "presence": None,
+                    "info": None,
                     "stats": None,
                     "achievements": None,
                 }
@@ -89,6 +231,7 @@ class ProfilMixin:
                 "restricted": True,
                 "is_friend": is_friend,
                 "presence": None,
+                "info": None,
                 "stats": None,
                 "achievements": None,
             }
@@ -112,6 +255,9 @@ class ProfilMixin:
             # Nur der Tag: die Uhrzeit der Registrierung sagt niemandem etwas.
             "member_since": target_user.created_at.date() if target_user.created_at else None,
             "presence": pres_data,
+            "info": cls.info_fuer_viewer(
+                db, viewer_user_id, target_user, ist_freund=is_friend
+            ),
             "stats": stats,
             "achievements": achievements,
         }

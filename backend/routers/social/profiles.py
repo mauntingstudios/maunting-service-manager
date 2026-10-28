@@ -21,6 +21,8 @@ from schemas.social import (
     PresenceSessionRequest,
     PresenceStatusRequest,
     PresenceUpdateRequest,
+    UserInfoResponse,
+    UserInfoUpdateRequest,
     PrivacyUpdateRequest,
     SocialProfileResponse,
     UserStatsResponse,
@@ -106,6 +108,39 @@ def presence_session_beenden(
 ) -> dict:
     """Ein Gerät meldet sich ab; ohne das wartet die Anzeige nur die Frist ab."""
     return SocialService.delete_session(db, user.id, geraet)
+
+
+@router.get(
+    "/info",
+    response_model=UserInfoResponse | None,
+    dependencies=[Depends(_check_social_enabled)],
+)
+def get_own_info(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict | None:
+    """Der eigene Info-Text; abgelaufene zaehlen nicht."""
+    return SocialService.get_own_info(db, user.id)
+
+
+@router.put(
+    "/info",
+    response_model=UserInfoResponse | None,
+    dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)],
+)
+def set_own_info(
+    req: UserInfoUpdateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict | None:
+    """Setzt oder loescht die Info. Leerer Text loescht sie."""
+    return SocialService.set_info(
+        db,
+        user.id,
+        text=req.text,
+        visibility=req.visibility,
+        dauer_sekunden=req.dauer_sekunden,
+    )
 
 
 @router.post("/activity/ping", dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)])

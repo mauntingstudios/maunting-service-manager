@@ -14,6 +14,7 @@ export interface FriendItem {
   status: 'pending' | 'accepted' | 'blocked'
   is_requester: boolean
   presence?: PresenceItem | null
+  info?: UserInfo | null
   created_at: string
 }
 
@@ -35,6 +36,23 @@ export interface PresenceItem {
   activity_key?: string | null
   last_seen_at?: string | null
   updated_at?: string | null
+}
+
+/** Der freiwillige Info-Text eines Kontos. */
+export interface UserInfo {
+  text: string
+  visibility: UserInfoSichtbarkeit
+  expires_at?: string | null
+  updated_at?: string | null
+}
+
+export type UserInfoSichtbarkeit = 'friends' | 'public' | 'nobody'
+
+export interface UserInfoPayload {
+  text: string
+  visibility: UserInfoSichtbarkeit
+  /** 0 heisst „fuer immer“; hoechstens ein Jahr. */
+  dauer_sekunden: number
 }
 
 export interface PresenceSessionPayload {
@@ -101,6 +119,7 @@ export interface PublicProfileResponse {
   /** Tag der Registrierung (`YYYY-MM-DD`), ohne Uhrzeit. */
   member_since?: string | null
   presence?: Omit<PresenceItem, 'user_id' | 'username'> | null
+  info?: UserInfo | null
   achievements?: AchievementItem[] | null
   stats?: UserStatsResponse | null
   restricted?: boolean
@@ -194,6 +213,17 @@ export async function setPresenceStatus(manual_status: PraesenzWahl): Promise<Pr
 export async function sendPresenceSession(payload: PresenceSessionPayload): Promise<PresenceItem> {
   return api<PresenceItem>('/social/presence/session', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function getOwnInfo(): Promise<UserInfo | null> {
+  return api<UserInfo | null>('/social/info')
+}
+
+export async function setOwnInfo(payload: UserInfoPayload): Promise<UserInfo | null> {
+  return api<UserInfo | null>('/social/info', {
+    method: 'PUT',
     body: JSON.stringify(payload),
   })
 }
@@ -539,6 +569,7 @@ export interface DirectChatItem {
   is_blocked?: boolean
   other_privacy: 'private' | 'friends' | 'public'
   presence?: PresenceItem | null
+  info?: UserInfo | null
   created_at: string
   updated_at: string
 }

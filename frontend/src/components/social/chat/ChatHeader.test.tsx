@@ -77,4 +77,15 @@ describe('ChatHeader', () => {
       screen.getByRole('button', { name: i18n.t('messenger.moreChatSettings') }),
     ).toBeInTheDocument()
   })
+
+  it('zeigt die Info unter dem Namen', () => {
+    zeige({ bild: BILD, info: 'Im Feierabend' })
+    expect(screen.getByText('Im Feierabend')).toBeInTheDocument()
+  })
+
+  it('zeigt ohne Info keine zweite Zeile', () => {
+    zeige({ bild: BILD })
+    // Der Name bleibt die einzige Zeile im Kopf.
+    expect(screen.getByText('Team')).toBeInTheDocument()
+  })
 })

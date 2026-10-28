@@ -2686,6 +2686,7 @@ function MessengerSeite() {
               ) : (
                 <ChatHeader
                   titel={(activeGroup ? gruppenTitel(activeGroup) : activeContact?.username) ?? ''}
+                  info={activeGroup ? null : activeContact?.info?.text ?? null}
                   bild={activeGroup ? activeGroup.avatar_url ?? null : activeContact?.avatarUrl ?? null}
                   stumm={Boolean(blindMailboxId && isChatMuted(blindMailboxId))}
                   blockiert={Boolean(activeContact && isBlocked(activeContact.userId))}

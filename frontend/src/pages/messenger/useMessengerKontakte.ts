@@ -61,7 +61,7 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
         listKey: key(uid), id: f.id, userId: uid, username: f.username, avatarUrl: f.avatar_url,
         status: (f.presence?.status as PresenceStatus) || 'invisible',
         deviceType: f.presence?.device_type, client: f.presence?.client ?? null,
-        activityKey: f.presence?.activity_key,
+        activityKey: f.presence?.activity_key, info: f.info ?? null,
         isFriend: true, teamName: null,
       })
     }
@@ -71,7 +71,7 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
         list.push({
           listKey: key(member.user_id), id: member.user_id, userId: member.user_id,
           username: member.username, avatarUrl: member.avatar_url, status: 'invisible',
-          deviceType: null, client: null, activityKey: null, isFriend: false, teamName,
+          deviceType: null, client: null, activityKey: null, info: null, isFriend: false, teamName,
         })
       } else {
         const existing = list.find((c) => c.userId === member.user_id)
@@ -86,7 +86,7 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
         username: dc.other_username, avatarUrl: dc.other_avatar_url || null,
         status: (dc.presence?.status as PresenceStatus) || 'invisible',
         deviceType: dc.presence?.device_type, client: dc.presence?.client ?? null,
-        activityKey: dc.presence?.activity_key,
+        activityKey: dc.presence?.activity_key, info: dc.info ?? null,
         isFriend: dc.is_friend, teamName: null, isPublicUser: dc.other_privacy === 'public',
       })
     }
@@ -98,7 +98,7 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
           avatarUrl: p.avatar_url || null,
           status: (p.presence?.status as PresenceStatus) || 'invisible',
           deviceType: p.presence?.device_type, client: p.presence?.client ?? null,
-          activityKey: p.presence?.activity_key,
+          activityKey: p.presence?.activity_key, info: p.info ?? null,
           isFriend: Boolean(p.is_friend), teamName: null, isPublicUser: true,
         })
       } else {

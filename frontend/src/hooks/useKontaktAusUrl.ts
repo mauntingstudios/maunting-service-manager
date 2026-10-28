@@ -122,16 +122,14 @@ export function useKontaktAusUrl(optionen: KontaktAusUrlOptionen): KontaktAusUrl
     // **unbekannten** Kennung; sonst wäre der Chat nach jedem Öffnen kurz tot.
     const match = kontakte.find((c) => c.userId === targetId)
     if (match) {
-      setActiveContact((prev) => {
-        if (
-          prev?.userId === match.userId &&
-          prev.username === match.username &&
-          prev.avatarUrl === match.avatarUrl
-        ) {
-          return prev
-        }
-        return match
-      })
+      /*
+       * Die Liste ist die Wahrheit, auch wenn sich nur ein Nebenfeld ändert.
+       * Bis 28.10.2026 verglich dieser Zweig nur Kennung, Name und Bild: eine
+       * neue Info (oder ein neuer Status) kam im offenen Chat nie an, weil der
+       * alte Kontakt stehen blieb. Dasselbe Objekt bleibt dasselbe — der
+       * Vergleich per Referenz spart das Neuzeichnen.
+       */
+      setActiveContact((prev) => (prev === match ? prev : match))
       setActiveGroup(null)
       return
     }
@@ -172,7 +170,8 @@ export function useKontaktAusUrl(optionen: KontaktAusUrlOptionen): KontaktAusUrl
         status: (profil?.presence?.status as PresenceStatus) || 'invisible',
         deviceType: profil?.presence?.device_type ?? null,
         activityKey: profil?.presence?.activity_key ?? null,
-            client: profil?.presence?.client ?? null,
+        client: profil?.presence?.client ?? null,
+        info: profil?.info ?? null,
         isFriend: Boolean(profil?.is_friend),
         teamName: null,
         isPublicUser: profil?.privacy === 'public',

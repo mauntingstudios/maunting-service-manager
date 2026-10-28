@@ -44,7 +44,16 @@ DOMAENEN = {
     ),
     "profile": (
         "ProfilMixin",
-        {"update_privacy", "get_profile", "get_public_profiles"},
+        {
+            "update_privacy",
+            "get_profile",
+            "get_public_profiles",
+            "get_own_info",
+            "set_info",
+            "info_fuer_viewer",
+            "infos_fuer",
+            "cleanup_expired_infos",
+        },
     ),
     "direktchat": (
         "DirektchatMixin",
@@ -111,7 +120,7 @@ def test_social_service_setzt_alle_domaenen_zusammen() -> None:
         for name in vars(klasse)
         if not name.startswith("__") and callable(getattr(klasse, name, None))
     }
-    assert len(methoden) == 72, f"Erwartet 72 Domänenmethoden, gefunden {len(methoden)}"
+    assert len(methoden) == 77, f"Erwartet 77 Domänenmethoden, gefunden {len(methoden)}"
     fehlend = sorted(name for name in methoden if not callable(getattr(SocialService, name, None)))
     assert not fehlend, f"SocialService erreicht nicht: {fehlend}"
 
@@ -126,7 +135,7 @@ def test_sozialrouter_behaelt_allen_vertraegen() -> None:
         else:
             vertraege.append(("WEBSOCKET", route.path))
 
-    assert len(vertraege) == 81, f"Erwartet 81 Social-Routen, gefunden {len(vertraege)}"
+    assert len(vertraege) == 83, f"Erwartet 83 Social-Routen, gefunden {len(vertraege)}"
     doppelt = sorted({v for v in vertraege if vertraege.count(v) > 1})
     assert not doppelt, f"Doppelte Route-Verträge: {doppelt}"
 

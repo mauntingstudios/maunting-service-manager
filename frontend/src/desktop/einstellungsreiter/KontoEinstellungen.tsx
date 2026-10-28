@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { api } from '@/api/client'
 import { BenutzernameInline } from '@/components/BenutzernameInline'
+import { InfoKarte } from '@/components/social/InfoKarte'
 import { Avatar, Badge, Button, Dropdown, type DropdownOption, Switch } from '@/Singra/UI'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
@@ -155,6 +156,9 @@ export function KontoEinstellungen() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Die freiwillige Info — derselbe Baustein wie im Web. */}
+      <InfoKarte />
+
       {/* 1. Konto & Profilbild */}
       <div className="msm-card p-5 space-y-4">
         <div className="flex items-center gap-3">
