@@ -123,6 +123,7 @@ pub fn alte_nsis_reste_bereinigen() {
     plattform::alte_nsis_reste_bereinigen();
 }
 
+#[cfg(windows)]
 pub fn standardbrowser_registrieren() -> Result<(), String> {
     plattform::standardbrowser_registrieren()
 }
