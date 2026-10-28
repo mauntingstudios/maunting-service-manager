@@ -76,7 +76,11 @@ pub fn entpacken(zip: &[u8], ziel: &Path) -> Result<(), String> {
         if eintrag.is_symlink() {
             return Err("paket_ungueltig".into());
         }
-        let name = eintrag.name().trim_end_matches('/').to_string();
+        let name = eintrag
+            .name()
+            .map_err(|_| "paket_ungueltig".to_string())?
+            .trim_end_matches('/')
+            .to_string();
         let pfad = im_ordner(ziel, &name).ok_or("paket_ungueltig")?;
         if eintrag.is_dir() {
             fs::create_dir_all(&pfad).map_err(|e| e.to_string())?;

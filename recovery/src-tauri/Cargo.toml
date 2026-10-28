@@ -24,7 +24,7 @@ tar = "0.4.46"
 flate2 = "1.1.9"
 
 # ZIP archive creation (save extracted files as .zip)
-zip = "2"
+zip = "9"
 
 [features]
 # This feature is used for production builds or when a dev server is not

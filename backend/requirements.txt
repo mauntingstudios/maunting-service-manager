@@ -4,7 +4,10 @@ sqlalchemy==2.0.31
 alembic==1.18.5
 pydantic==2.10.6
 pydantic-settings==2.3.4
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.4.0
+# Dependabot #20 (algorithm confusion via DER-encoded public keys) has no fixed
+# release as of 2026-10-29; tracked for replacement with PyJWT. Do not remove
+# this note without updating the alert.
 # Temporaer fuer Passwort-Migration (passlib -> DIS Argon2id).
 # Wird entfernt sobald alle User-Hashes im msm-pw-v1: Format vorliegen.
 passlib[argon2]==1.7.4

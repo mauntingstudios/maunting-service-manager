@@ -74,6 +74,11 @@ zeroize = "1.9"
 # gebautes Referenz-Wakeword komplett offline (Apache-2.0, kein Netzwerk).
 # cpal ist der Standard fuer plattformuebergreifendes Audio-I/O in Rust,
 # hound schreibt die Kalibrierungs-WAVs. Keiner der drei beruehrt Secrets.
+#
+# Dependabot #150 (zip 0.6.6 via rustpotter 3.0.2 -> candle-core 0.2.2) bleibt
+# offen: 3.0.2 ist die neueste rustpotter-Fassung. Das ZIP wird nur fuer
+# mitgelieferte Wake-Word-Modelle gelesen, nicht fuer Nutzereingaben. Ein
+# Ersatz der Engine ist ein eigenes Vorhaben.
 rustpotter = "3.0.2"
 cpal = "0.18"
 hound = "3.5"
