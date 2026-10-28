@@ -9,14 +9,6 @@ vi.mock('@/pages/profile/MessengerSicherheitTab', () => ({
   MessengerSicherheitTab: () => <div data-testid="mock-messenger-tab">Messenger-Karten</div>,
 }))
 
-vi.mock('@/pages/profile/DevicesTab', () => ({
-  GeraeteKarten: ({ social }: { social?: boolean }) => (
-    <div data-testid="mock-geraete" data-social={social === false ? 'false' : 'true'}>
-      Geräte-Karten
-    </div>
-  ),
-}))
-
 vi.mock('../vault/TresorSicherheitTab', () => ({
   TresorSicherheitTab: ({ offline }: { offline?: boolean }) => (
     <div data-testid="mock-tresor-tab" data-offline={offline ? 'true' : 'false'}>
@@ -48,8 +40,7 @@ describe('SicherheitEinstellungen', () => {
     expect(screen.getByText('Tresor')).toBeInTheDocument()
     // Geräte gehören hierher und nicht nur ins Profil: in der App und im
     // Pondys Browser sucht man sie unter Sicherheit.
-    expect(screen.getByText('Geräte')).toBeInTheDocument()
-    expect(screen.getByTestId('mock-geraete')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Geräte' })).toBeInTheDocument()
   })
 
   it('blendet Messenger aus, wenn social inaktiv ist', () => {
@@ -60,8 +51,9 @@ describe('SicherheitEinstellungen', () => {
     )
     expect(screen.queryByTestId('mock-messenger-tab')).not.toBeInTheDocument()
     expect(screen.getByTestId('mock-tresor-tab')).toBeInTheDocument()
-    // Ohne Messenger gibt es auch keine Messenger-Geräte.
-    expect(screen.queryByTestId('mock-geraete')).not.toBeInTheDocument()
+    // Kopplung ist eine Kontofunktion und bleibt sichtbar; die
+    // Messenger-Geräteliste entscheidet die Karte selbst.
+    expect(screen.getByTestId('mock-devices-tab')).toBeInTheDocument()
   })
 
   it('blendet Tresor aus, wenn vault_enabled inaktiv ist', () => {

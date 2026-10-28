@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import { AiDevicePairingCard } from '@/components/ai/AiDevicePairingCard'
 import { E2eeGeraeteCard } from '@/components/social/E2eeGeraeteCard'
-import { useHasPermission } from '@/hooks/useHasPermission'
 
 /**
  * Die beiden Gerätekarten: Kopplung und Nachrichtenzugriff.
@@ -14,14 +13,12 @@ import { useHasPermission } from '@/hooks/useHasPermission'
  * seinen Geräten suchte, fand sie nirgends. Seit 10/2026 steht der Reiter
  * „Geräte" in Sicherheit, weil dort entschieden wird, wer Zugriff hat.
  *
- * Die Schranke sitzt an der Karte und nicht am Tab: Kopplung ist eine
- * Smart-System-Sache und bleibt an `ai.chat.use`, die Liste der Geräte mit
- * Nachrichtenzugriff gehört zum Messenger. Solange der Tab selbst an der
- * KI-Berechtigung hing, sah ein Benutzer ohne sie seine eigenen
- * Geräteschlüssel nirgends und konnte keinen davon entfernen.
+ * Die Kopplung ist eine Kontofunktion, keine KI-Funktion: sie hängt nicht mehr
+ * an `ai.chat.use`. Bis 10/2026 sah ein frisches Konto (Rolle „user" ohne
+ * globale Rechte) zwar seine Geräte, aber keinen Weg, eines zu koppeln; die
+ * KI-Routen bleiben trotzdem an ihrem Recht.
  */
 export function GeraeteKarten({ social }: { social?: boolean } = {}) {
-  const canUseAi = useHasPermission('ai.chat.use')
   const [socialEnabled, setSocialEnabled] = useState(social ?? true)
 
   useEffect(() => {
@@ -36,7 +33,7 @@ export function GeraeteKarten({ social }: { social?: boolean } = {}) {
 
   return (
     <div className="space-y-6">
-      {canUseAi && <AiDevicePairingCard />}
+      <AiDevicePairingCard />
       {socialEnabled && <E2eeGeraeteCard />}
     </div>
   )

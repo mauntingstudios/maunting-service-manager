@@ -85,16 +85,17 @@ class TestCodeErzeugen:
         assert daten.get("qr_data_uri", "").startswith("data:image/svg+xml")
         assert "%3Csvg" in daten["qr_data_uri"] or "<svg" in daten["qr_data_uri"]
 
-    def test_ohne_chatrecht_kein_code(
+    def test_ohne_chatrecht_darf_koppeln(
         self, client: TestClient, db: Session, regular_user: User, user_cookies: dict
     ):
-        antwort = client.post(
-            "/api/auth/devices/pairing",
-            json={"label": "x"},
-            cookies=user_cookies,
-            headers=_kopf(user_cookies),
-        )
-        assert antwort.status_code == 403
+        """Kopplung ist Kontozugang, keine KI-Funktion.
+
+        Bis 10/2026 hing die Karte (und diese Route) an `ai.chat.use`; ein
+        frisches Konto mit der Rolle „user“ ohne globale Rechte sah seine
+        Geraete, konnte aber keines anbinden.
+        """
+        daten = _code_erzeugen(client, user_cookies)
+        assert len(daten["code"]) == 14
 
 
 class TestNachweis:

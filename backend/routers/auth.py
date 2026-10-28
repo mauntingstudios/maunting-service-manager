@@ -612,14 +612,15 @@ async def login(
 )
 def create_device_pairing(
     req: PairingCreateRequest,
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     _: None = Depends(verify_csrf),
 ) -> dict:
     """Erzeugt einen Kopplungscode. Er steht **nur** in dieser Antwort.
 
-    `ai.chat.use` als Schranke: ohne dieses Recht kann die App nichts, was sie
-    ausmacht. Wer es nicht hat, soll erst gar keinen Zugang erzeugen koennen.
+    Die Kopplung ist eine Kontofunktion, keine KI-Funktion: jedes Konto darf
+    sein eigenes Geraet anbinden. Die KI-Routen der App bleiben weiterhin an
+    `ai.chat.use`.
 
     Dazu ein frischer Nachweis: bei 2FA der eingerichtete Faktor (Code oder
     Passkey), sonst das Passwort.
@@ -650,7 +651,7 @@ def create_device_pairing(
 @router.get("/devices/pairing/{code}/status")
 def get_device_pairing_status(
     code: str,
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """Prueft den Einloesestatus eines erzeugten Kopplungscodes fuer das Panel."""
@@ -661,7 +662,7 @@ def get_device_pairing_status(
 def put_device_pairing_verlauf(
     code: str,
     req: VerlaufAblegen,
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     _: None = Depends(verify_csrf),
 ) -> dict:
@@ -689,7 +690,7 @@ def put_device_pairing_verlauf(
 @router.get("/devices/pairing/{code}/verlauf", response_model=VerlaufAntwort)
 def get_device_pairing_verlauf(
     code: str,
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """Holt den Verlauf **einmal** ab; danach ist er hier weg.
