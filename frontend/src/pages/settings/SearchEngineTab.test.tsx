@@ -31,7 +31,6 @@ describe('SearchEngineTab', () => {
     vi.mocked(aiApi.getWebSearchStatus).mockResolvedValue({
       configured: true,
       has_api_key: false,
-      has_google_cse: false,
       searxng_url: 'http://127.0.0.1:8888',
       default_searxng_url: 'http://127.0.0.1:8888',
       is_default_searxng: true,
@@ -60,7 +59,6 @@ describe('SearchEngineTab', () => {
     vi.mocked(aiApi.getWebSearchStatus).mockResolvedValue({
       configured: true,
       has_api_key: false,
-      has_google_cse: false,
       searxng_url: 'http://custom-searxng.lan:8080',
       default_searxng_url: 'http://127.0.0.1:8888',
       is_default_searxng: false,
@@ -72,7 +70,6 @@ describe('SearchEngineTab', () => {
     vi.mocked(aiApi.setWebSearchConfig).mockResolvedValue({
       configured: true,
       has_api_key: false,
-      has_google_cse: false,
       searxng_url: 'http://127.0.0.1:8888',
       default_searxng_url: 'http://127.0.0.1:8888',
       is_default_searxng: true,
@@ -110,7 +107,6 @@ describe('SearchEngineTab', () => {
     vi.mocked(aiApi.getWebSearchStatus).mockResolvedValue({
       configured: false,
       has_api_key: false,
-      has_google_cse: false,
       searxng_url: null,
       default_searxng_url: 'http://127.0.0.1:8888',
       is_default_searxng: true,
@@ -122,7 +118,6 @@ describe('SearchEngineTab', () => {
     vi.mocked(aiApi.setWebSearchConfig).mockResolvedValue({
       configured: true,
       has_api_key: true,
-      has_google_cse: false,
       searxng_url: null,
       default_searxng_url: 'http://127.0.0.1:8888',
       is_default_searxng: true,
@@ -145,55 +140,6 @@ describe('SearchEngineTab', () => {
 
     await waitFor(() => {
       expect(aiApi.setWebSearchConfig).toHaveBeenCalledWith({ apiKey: 'BSA_test_key_12345' })
-    })
-  })
-
-  it('saves and deletes Google CSE credentials', async () => {
-    vi.mocked(aiApi.getWebSearchStatus).mockResolvedValue({
-      configured: false,
-      has_api_key: false,
-      has_google_cse: false,
-      searxng_url: null,
-      default_searxng_url: 'http://127.0.0.1:8888',
-      is_default_searxng: true,
-      custom_searxng_url: null,
-      sidecar_running: false,
-      external_apis_on_custom: false,
-    })
-
-    vi.mocked(aiApi.setWebSearchConfig).mockResolvedValue({
-      configured: true,
-      has_api_key: false,
-      has_google_cse: true,
-      google_cse_cx: 'test-cx-123',
-      searxng_url: null,
-      default_searxng_url: 'http://127.0.0.1:8888',
-      is_default_searxng: true,
-      custom_searxng_url: null,
-      sidecar_running: false,
-      external_apis_on_custom: false,
-    })
-
-    render(<SearchEngineTab />)
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Google API-Schlüssel')).toBeInTheDocument()
-    })
-
-    const gKeyInput = screen.getByLabelText('Google API-Schlüssel')
-    const gCxInput = screen.getByLabelText('Suchmaschinen-ID (cx)')
-
-    fireEvent.change(gKeyInput, { target: { value: 'AIzaSyGoogleKey123' } })
-    fireEvent.change(gCxInput, { target: { value: 'test-cx-123' } })
-
-    const saveButtons = screen.getAllByRole('button', { name: /speichern/i })
-    fireEvent.click(saveButtons[2]) // Save Google CSE
-
-    await waitFor(() => {
-      expect(aiApi.setWebSearchConfig).toHaveBeenCalledWith({
-        googleCseApiKey: 'AIzaSyGoogleKey123',
-        googleCseCx: 'test-cx-123',
-      })
     })
   })
 })

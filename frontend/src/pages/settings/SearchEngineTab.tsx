@@ -32,11 +32,6 @@ export function SearchEngineTab() {
   const [hasBraveKey, setHasBraveKey] = useState(false)
   const [braveKey, setBraveKey] = useState('')
 
-  const [hasGoogleCse, setHasGoogleCse] = useState(false)
-  const [googleApiKey, setGoogleApiKey] = useState('')
-  const [googleCx, setGoogleCx] = useState('')
-  const [savedGoogleCx, setSavedGoogleCx] = useState('')
-
   const [currentSearxngUrl, setCurrentSearxngUrl] = useState('')
   const [defaultSearxngUrl, setDefaultSearxngUrl] = useState('http://127.0.0.1:8888')
   const [isDefaultSearxng, setIsDefaultSearxng] = useState(true)
@@ -46,10 +41,6 @@ export function SearchEngineTab() {
 
   const applyStatus = (status: AiWebSearchStatus) => {
     setHasBraveKey(Boolean(status.has_api_key))
-    setHasGoogleCse(Boolean(status.has_google_cse))
-    const cx = status.google_cse_cx || ''
-    setSavedGoogleCx(cx)
-    setGoogleCx(cx)
     const customUrl = status.custom_searxng_url || ''
     setCurrentSearxngUrl(customUrl)
     setSearxngUrl(customUrl)
@@ -150,54 +141,6 @@ export function SearchEngineTab() {
     try {
       const status = await aiApi.setWebSearchConfig({ apiKey: '' })
       applyStatus(status)
-      toast.success(t('ai.webSearch.removed'))
-    } catch (error: unknown) {
-      toast.error(error instanceof SanitizedApiError ? error.message : t('ai.webSearch.errors.save'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const saveGoogleCse = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!canWrite || busy) return
-    const keyTrimmed = googleApiKey.trim()
-    const cxTrimmed = googleCx.trim()
-    if (!cxTrimmed || (!keyTrimmed && !hasGoogleCse)) return
-    setBusy(true)
-    try {
-      const status = await aiApi.setWebSearchConfig({
-        googleCseApiKey: keyTrimmed || undefined,
-        googleCseCx: cxTrimmed,
-      })
-      applyStatus(status)
-      setGoogleApiKey('')
-      toast.success(t('ai.webSearch.saved'))
-    } catch (error: unknown) {
-      toast.error(error instanceof SanitizedApiError ? error.message : t('ai.webSearch.errors.save'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const removeGoogleCse = async () => {
-    if (!canWrite || busy) return
-    if (
-      !(await confirm({
-        message: t('searchEngineSettings.googleRemoveConfirm'),
-        confirmText: t('common.delete'),
-        danger: true,
-      }))
-    )
-      return
-    setBusy(true)
-    try {
-      const status = await aiApi.setWebSearchConfig({
-        googleCseApiKey: '',
-        googleCseCx: '',
-      })
-      applyStatus(status)
-      setGoogleApiKey('')
       toast.success(t('ai.webSearch.removed'))
     } catch (error: unknown) {
       toast.error(error instanceof SanitizedApiError ? error.message : t('ai.webSearch.errors.save'))
@@ -418,67 +361,6 @@ export function SearchEngineTab() {
                   </Button>
                 )}
               </>
-            )}
-          </form>
-        </div>
-
-        {/* 2b. Google Programmable Search Engine (CSE JSON API) */}
-        <div className="space-y-3 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h4 className="text-sm font-semibold text-on-surface">{t('searchEngineSettings.googleTitle')}</h4>
-              <p className="text-xs text-on-surface-variant">{t('searchEngineSettings.googleDescription')}</p>
-            </div>
-            <Badge variant={hasGoogleCse ? 'success' : 'default'}>
-              {hasGoogleCse ? t('searchEngineSettings.statusConfigured') : t('searchEngineSettings.statusOptional')}
-            </Badge>
-          </div>
-
-          <form className="grid grid-cols-1 gap-3 md:grid-cols-12 md:items-end" onSubmit={saveGoogleCse}>
-            <div className="md:col-span-5">
-              <PasswordInput
-                label={t('searchEngineSettings.googleApiKey')}
-                autoComplete="new-password"
-                maxLength={512}
-                value={googleApiKey}
-                disabled={!canWrite || busy}
-                placeholder={hasGoogleCse ? t('ai.webSearch.configured') : t('searchEngineSettings.googleApiKeyPlaceholder')}
-                onChange={(event) => setGoogleApiKey(event.target.value)}
-                aria-label={t('searchEngineSettings.googleApiKey')}
-              />
-            </div>
-            <div className="md:col-span-4">
-              <Input
-                label={t('searchEngineSettings.googleCx')}
-                type="text"
-                maxLength={256}
-                value={googleCx}
-                disabled={!canWrite || busy}
-                placeholder={t('searchEngineSettings.googleCxPlaceholder')}
-                onChange={(event) => setGoogleCx(event.target.value)}
-                aria-label={t('searchEngineSettings.googleCx')}
-              />
-            </div>
-            {canWrite && (
-              <div className="flex items-center gap-2 md:col-span-3 md:justify-end">
-                <Button
-                  type="submit"
-                  disabled={
-                    busy ||
-                    !googleCx.trim() ||
-                    (!googleApiKey.trim() && (!hasGoogleCse || googleCx.trim() === savedGoogleCx))
-                  }
-                >
-                  <Save className="h-4 w-4" aria-hidden="true" />
-                  {t('settings.save')}
-                </Button>
-                {hasGoogleCse && (
-                  <Button type="button" variant="destructive" disabled={busy} onClick={() => void removeGoogleCse()}>
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    {t('common.delete')}
-                  </Button>
-                )}
-              </div>
             )}
           </form>
         </div>

@@ -534,7 +534,6 @@ def test_additive_multi_engine_fusion(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ai_web_search_service, "_http_client", lambda: FakeClient())
     monkeypatch.setattr(ai_web_search_service, "api_key", lambda: "brave-key")
     monkeypatch.setattr(ai_web_search_service, "searxng_url", lambda: "http://127.0.0.1:8888")
-    monkeypatch.setattr(ai_web_search_service, "google_cse_credentials", lambda: None)
     monkeypatch.setattr(ai_web_search_service, "ai_web_search_enabled", lambda: True)
 
     # In searxng_ergebnis

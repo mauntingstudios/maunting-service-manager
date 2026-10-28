@@ -6,11 +6,10 @@ und das Werkzeug `web_search` der KI:
 1. **Lokaler SearXNG-Sidecar oder eigener SearXNG-Endpunkt** als private
    Metasuche (Web, Bilder, Videos, News, Autocomplete, Infoboxen und
    Direktantworten `answers`).
-2. **Optionale offizielle Such-APIs** (Brave Search API, Google Custom Search
-   JSON API), verschlüsselt im Panel hinterlegt (`AuthService.encrypt_secret`
-   mit gebundener AAD). Ist ein Schlüssel hinterlegt und die API-Nutzung nicht
-   bei externer Instanz abgeschaltet, bereichert er **sowohl Maunting Search
-   im Browser als auch die KI-Websuche**.
+2. **Optionale offizielle Such-API** (Brave Search API), verschlüsselt im Panel
+   hinterlegt (`AuthService.encrypt_secret` mit gebundener AAD). Ist ein Schlüssel
+   hinterlegt und die API-Nutzung nicht bei externer Instanz abgeschaltet,
+   bereichert er **sowohl Maunting Search im Browser als auch die KI-Websuche**.
 3. **Schalter fuer die KI (`ai_web_search_enabled`)**: Unter den KI-Einstellungen
    wird kein eigener Schlüssel und keine zweite SearXNG-Adresse mehr gepflegt,
    sondern nur noch festgelegt, ob Singra auf Maunting Search zugreifen darf
@@ -47,17 +46,14 @@ SETTINGS_KEY = "ai_web_search_api_key_encrypted"
 SEARXNG_SETTINGS_KEY = "ai_searxng_url"
 AI_WEB_SEARCH_ENABLED_KEY = "ai_web_search_enabled"
 EXTERNAL_APIS_ON_CUSTOM_KEY = "search_external_apis_on_custom"
-GOOGLE_CSE_SETTINGS_KEY = "search_google_cse_credentials_encrypted"
 
 DEFAULT_SEARXNG_URL = "http://127.0.0.1:8888"
 _AAD = "msm:settings:ai_web_search_api_key"
-_GOOGLE_CSE_AAD = "msm:settings:search_google_cse_credentials"
 
 _ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 _BRAVE_IMAGES_ENDPOINT = "https://api.search.brave.com/res/v1/images/search"
 _BRAVE_VIDEOS_ENDPOINT = "https://api.search.brave.com/res/v1/videos/search"
 _BRAVE_NEWS_ENDPOINT = "https://api.search.brave.com/res/v1/news/search"
-_GOOGLE_CSE_ENDPOINT = "https://customsearch.googleapis.com/customsearch/v1"
 
 MAX_RESULTS = 15
 DEFAULT_SEARCH_COUNT = 10
@@ -812,77 +808,6 @@ def api_key() -> str | None:
     return _panel_api_key() or _env_api_key()
 
 
-def google_cse_credentials() -> tuple[str, str] | None:
-    """Liest den hinterlegten Google Custom Search API-Key samt Search Engine ID (cx)."""
-    from services.auth_service import AuthService
-    from services.panel_settings_service import PanelSettingsService
-
-    stored = PanelSettingsService.get(GOOGLE_CSE_SETTINGS_KEY, "")
-    if stored:
-        try:
-            dec = AuthService.decrypt_secret(stored, aad=_GOOGLE_CSE_AAD)
-            if dec:
-                daten = json.loads(dec)
-                if isinstance(daten, dict):
-                    g_key = str(daten.get("api_key") or "").strip()
-                    g_cx = str(daten.get("cx") or "").strip()
-                    if g_key and g_cx:
-                        return g_key, g_cx
-        except Exception as exc:
-            logger.warning("Google-CSE-Zugangsdaten nicht lesbar error=%s", type(exc).__name__)
-
-    env_key = (
-        os.getenv("MSM_GOOGLE_CSE_API_KEY", "").strip()
-        or os.getenv("GOOGLE_CSE_API_KEY", "").strip()
-    )
-    env_cx = (
-        os.getenv("MSM_GOOGLE_CSE_CX", "").strip()
-        or os.getenv("GOOGLE_CSE_CX", "").strip()
-    )
-    if env_key and env_cx:
-        return env_key, env_cx
-    return None
-
-
-def has_google_cse() -> bool:
-    """Ist Google Programmable Search (API-Key + CX) hinterlegt?"""
-    try:
-        return google_cse_credentials() is not None
-    except Exception:
-        return False
-
-
-def google_cse_cx() -> str | None:
-    """Gibt die hinterlegte Search Engine ID (cx) zurück (kein Geheimnis, hilft im Formular)."""
-    creds = google_cse_credentials()
-    return creds[1] if creds else None
-
-
-def store_google_cse_credentials(api_key_val: str | None, cx_val: str | None) -> None:
-    """Speichert oder entfernt Google CSE API-Key und CX verschlüsselt."""
-    from services.auth_service import AuthService
-    from services.panel_settings_service import PanelSettingsService
-
-    k = (api_key_val or "").strip()
-    c = (cx_val or "").strip()
-    if not k and not c:
-        PanelSettingsService.set(GOOGLE_CSE_SETTINGS_KEY, "")
-        return
-    # Falls nur CX geändert wird und schon ein Key existiert, alten Key behalten
-    if not k and c:
-        vorhanden = google_cse_credentials()
-        if vorhanden:
-            k = vorhanden[0]
-    if not k or not c:
-        PanelSettingsService.set(GOOGLE_CSE_SETTINGS_KEY, "")
-        return
-    payload = json.dumps({"api_key": k, "cx": c})
-    PanelSettingsService.set(
-        GOOGLE_CSE_SETTINGS_KEY,
-        AuthService.encrypt_secret(payload, aad=_GOOGLE_CSE_AAD),
-    )
-
-
 def ai_web_search_enabled() -> bool:
     """Darf Singra (die KI) das Werkzeug `web_search` über Maunting Search nutzen?"""
     from services.panel_settings_service import PanelSettingsService
@@ -899,7 +824,7 @@ def store_ai_web_search_enabled(enabled: bool) -> None:
 
 
 def external_apis_on_custom_searxng() -> bool:
-    """Sollen hinterlegte API-Schlüssel (Brave/Google) auch dann zusätzlich abgefragt
+    """Soll der hinterlegte API-Schlüssel (Brave) auch dann zusätzlich abgefragt
     werden, wenn eine fremde/externe SearXNG-URL eingetragen ist? Standard: False,
     damit bei fremder Instanz nicht ungewollt eigenes API-Guthaben verbraucht wird."""
     from services.panel_settings_service import PanelSettingsService
@@ -915,11 +840,11 @@ def store_external_apis_on_custom_searxng(enabled: bool) -> None:
 
 
 def _apis_aktiv_fuer_instanz(s_url: str | None = None) -> bool:
-    """Entscheidet, ob die Panel-API-Keys (Brave/Google) bei dieser Suche aktiv sind.
+    """Entscheidet, ob der Panel-Brave-Key bei dieser Suche aktiv ist.
 
-    Bei lokalem Sidecar (oder wenn gar kein SearXNG läuft) sind sie immer aktiv.
-    Bei einer fremden SearXNG-Adresse kann die fremde Instanz mit den Panel-Keys
-    nichts anfangen — deshalb werden sie dort standardmäßig nicht verbraucht,
+    Bei lokalem Sidecar (oder wenn gar kein SearXNG läuft) ist er immer aktiv.
+    Bei einer fremden SearXNG-Adresse kann die fremde Instanz mit dem Panel-Key
+    nichts anfangen — deshalb wird er dort standardmäßig nicht verbraucht,
     außer der Betreiber schaltet `external_apis_on_custom_searxng` explizit ein.
     """
     eff = s_url or searxng_url()
@@ -1051,7 +976,6 @@ def is_search_engine_configured() -> bool:
         return (
             api_key() is not None
             or searxng_url() is not None
-            or has_google_cse()
         )
     except Exception as exc:
         logger.warning("Suchmaschinen-Konfiguration nicht lesbar error=%s", type(exc).__name__)
@@ -1066,7 +990,6 @@ def is_configured() -> bool:
         return (
             api_key() is not None
             or searxng_url() is not None
-            or has_google_cse()
         )
     except Exception as exc:
         logger.warning("Websuch-Konfiguration nicht lesbar error=%s", type(exc).__name__)
@@ -1627,89 +1550,6 @@ def _brave_kategorie_treffer(
     return hits
 
 
-def _google_cse_treffer(
-    query: str,
-    *,
-    api_key_val: str,
-    cx_val: str,
-    limit: int = 10,
-    seite: int = 1,
-    sicher: bool = False,
-    sprache: str | None = None,
-    kategorie: str | None = None,
-) -> list[dict]:
-    """Fragt die offizielle Google Programmable Search Engine (CSE JSON API) ab."""
-    kat = (kategorie or "general").lower()
-    if kat in ("videos", "news"):
-        # Google CSE unterstützt Web und Image Search direkt
-        return []
-    start_index = max(1, min(((seite - 1) * 10) + 1, 91))
-    params: dict[str, str | int] = {
-        "key": api_key_val,
-        "cx": cx_val,
-        "q": query,
-        "num": max(1, min(limit, 10)),
-        "start": start_index,
-        "safe": "active" if sicher else "off",
-    }
-    if sprache:
-        params["lr"] = f"lang_{sprache[:2].lower()}"
-    if kat == "images":
-        params["searchType"] = "image"
-
-    try:
-        resp = _http_client().get(
-            _GOOGLE_CSE_ENDPOINT,
-            params=params,
-            headers={"Accept": "application/json"},
-        )
-        if resp.status_code != 200:
-            return []
-        payload = resp.json()
-    except Exception as exc:
-        logger.debug("Google CSE nicht erreichbar error=%s", type(exc).__name__)
-        return []
-
-    items = payload.get("items") if isinstance(payload, dict) else None
-    hits: list[dict] = []
-    for item in items if isinstance(items, list) else []:
-        if len(hits) >= limit or not isinstance(item, dict):
-            continue
-        if kat == "images":
-            img_info = item.get("image") if isinstance(item.get("image"), dict) else {}
-            page_url = str(img_info.get("contextLink") or item.get("link") or "").strip()
-            img_src = str(item.get("link") or img_info.get("thumbnailLink") or "").strip()
-            if not page_url or len(page_url) > MAX_URL_CHARS or not _is_safe_public_url(page_url):
-                continue
-            hit: dict = {
-                "title": redact_sensitive_text(str(item.get("title") or ""))[:MAX_TITLE_CHARS],
-                "url": page_url,
-                "snippet": redact_sensitive_text(str(item.get("snippet") or ""))[:MAX_SNIPPET_CHARS],
-            }
-            if img_src and len(img_src) <= MAX_URL_CHARS and _is_safe_public_url(img_src):
-                hit["bild"] = img_src
-                _merke_bild_url(img_src)
-            hits.append(hit)
-        else:
-            url = str(item.get("link") or "").strip()
-            if not url or len(url) > MAX_URL_CHARS or not _is_safe_public_url(url):
-                continue
-            hit = {
-                "title": redact_sensitive_text(str(item.get("title") or ""))[:MAX_TITLE_CHARS],
-                "url": url,
-                "snippet": redact_sensitive_text(str(item.get("snippet") or ""))[:MAX_SNIPPET_CHARS],
-            }
-            pagemap = item.get("pagemap") if isinstance(item.get("pagemap"), dict) else {}
-            thumbs = pagemap.get("cse_thumbnail") or pagemap.get("cse_image")
-            if isinstance(thumbs, list) and thumbs and isinstance(thumbs[0], dict):
-                src = str(thumbs[0].get("src") or "").strip()
-                if src and len(src) <= MAX_URL_CHARS and _is_safe_public_url(src):
-                    hit["bild"] = src
-                    _merke_bild_url(src)
-            hits.append(hit)
-    return hits
-
-
 def _normalisiere_url(url: str) -> str:
     """Normalisiert eine Web-Adresse fuer die Deduplizierung.
 
@@ -1742,7 +1582,7 @@ def _mische_treffer(
     """Vereint und dedupliziert Treffer aus SearXNG und offiziellen Such-APIs.
 
     Nutzt gewichtetes Round-Robin-Interleaving, damit Treffer aus allen aktiven
-    Suchquellen (Brave, SearXNG, Google CSE) im Ergebnis vertreten sind und keine
+    Suchquellen (Brave, SearXNG) im Ergebnis vertreten sind und keine
     Quelle verhungert. Brave erhält dabei hohe Priorität für erstklassige Trefferqualität.
     Finden mehrere Quellen dieselbe URL, wird ein fehlendes Vorschaubild,
     Snippet oder Datum ergänzt, ohne dass ein doppelter Eintrag entsteht.
@@ -1811,16 +1651,15 @@ def searxng_ergebnis(
     """Treffer, Vorschläge, Infobox und Direktantworten von Maunting Search.
 
     Fragt die konfigurierte SearXNG-Instanz ab und fusioniert additiv
-    parallel die hinterlegten offiziellen Such-APIs (Brave, Google CSE),
-    sofern konfiguriert und erlaubt. Treffer werden dedupliziert und
-    nach Qualität gemischt.
+    parallel die hinterlegte offizielle Brave Search API, sofern
+    konfiguriert und erlaubt. Treffer werden dedupliziert und nach
+    Qualität gemischt.
     """
     target_url = s_url or searxng_url()
     apis_erlaubt = _apis_aktiv_fuer_instanz(target_url)
     brave_key = api_key() if apis_erlaubt else None
-    google_creds = google_cse_credentials() if apis_erlaubt else None
 
-    if not target_url and not brave_key and not google_creds:
+    if not target_url and not brave_key:
         raise WebSearchUnavailable("AI_WEB_SEARCH_NOT_CONFIGURED")
 
     searxng_hits: list[dict] = []
@@ -1831,8 +1670,6 @@ def searxng_ergebnis(
 
     brave_hits: list[dict] = []
     brave_fehler: WebSearchUnavailable | None = None
-
-    google_hits: list[dict] = []
 
     def _abfrage_searxng() -> None:
         nonlocal searxng_hits, suggestions, infobox, antworten, searxng_fehler
@@ -1915,31 +1752,10 @@ def searxng_ergebnis(
             logger.debug("Brave Zusatzabfrage fehlgeschlagen: %s", type(exc).__name__)
             brave_fehler = WebSearchUnavailable("AI_WEB_SEARCH_UNAVAILABLE")
 
-    def _abfrage_google() -> None:
-        nonlocal google_hits
-        if not google_creds:
-            return
-        try:
-            google_hits = _google_cse_treffer(
-                query,
-                api_key_val=google_creds[0],
-                cx_val=google_creds[1],
-                limit=min(10, limit),
-                seite=seite,
-                sicher=sicher,
-                sprache=sprache,
-                kategorie=kategorie,
-            )
-        except WebSearchUnavailable as exc:
-            logger.debug("Google Zusatzabfrage nicht erreichbar: %s", type(exc).__name__)
-        except Exception as exc:
-            logger.debug("Google Zusatzabfrage fehlgeschlagen: %s", type(exc).__name__)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         f_s = executor.submit(_abfrage_searxng) if target_url else None
         f_b = executor.submit(_abfrage_brave) if (brave_key and seite == 1) else None
-        f_g = executor.submit(_abfrage_google) if google_creds else None
-        for f in (f_s, f_b, f_g):
+        for f in (f_s, f_b):
             if f:
                 try:
                     f.result(timeout=10.0)
@@ -1948,8 +1764,8 @@ def searxng_ergebnis(
                 except Exception as exc:
                     logger.warning("Suchmaschinen-Abfrage fehlgeschlagen: %s", type(exc).__name__)
 
-    if not searxng_hits and not brave_hits and not google_hits:
-        if not target_url and not google_creds and brave_fehler is not None:
+    if not searxng_hits and not brave_hits:
+        if not target_url and brave_fehler is not None:
             raise brave_fehler
         if searxng_fehler is not None:
             raise searxng_fehler
@@ -1959,8 +1775,6 @@ def searxng_ergebnis(
         listen.append(brave_hits)
     if searxng_hits:
         listen.append(searxng_hits)
-    if google_hits:
-        listen.append(google_hits)
 
     hits = _mische_treffer(listen, limit=limit) if listen else []
 
@@ -2054,7 +1868,7 @@ def _search_duckduckgo(query: str, limit: int = MAX_RESULTS) -> list[dict]:
 
 
 def search(query: str, count: int = DEFAULT_SEARCH_COUNT, *, cache_scope: str | None = None) -> list[dict]:
-    """Fuehrt eine Websuche ueber Maunting Search (SearXNG + Brave + Google CSE additiv) fuer Singra aus."""
+    """Fuehrt eine Websuche ueber Maunting Search (SearXNG + Brave additiv) fuer Singra aus."""
     safe_query = (query or "").strip()[:MAX_QUERY_CHARS]
     if not safe_query:
         raise WebSearchUnavailable("AI_WEB_SEARCH_QUERY_EMPTY")
@@ -2065,9 +1879,8 @@ def search(query: str, count: int = DEFAULT_SEARCH_COUNT, *, cache_scope: str | 
 
     key = api_key()
     s_url = searxng_url()
-    g_creds = google_cse_credentials()
 
-    if key is None and s_url is None and g_creds is None:
+    if key is None and s_url is None:
         url_match = re.search(r"^https?://[^\s]+$", safe_query)
         if url_match and _is_safe_public_url(url_match.group(0)):
             scraped = scrape_url(url_match.group(0))
@@ -2101,7 +1914,6 @@ def search(query: str, count: int = DEFAULT_SEARCH_COUNT, *, cache_scope: str | 
     searxng_res: list[dict] = []
     brave_res: list[dict] = []
     brave_err: WebSearchUnavailable | None = None
-    google_res: list[dict] = []
 
     def _search_searxng_thread() -> None:
         nonlocal searxng_res
@@ -2155,26 +1967,15 @@ def search(query: str, count: int = DEFAULT_SEARCH_COUNT, *, cache_scope: str | 
             logger.info("Brave API nicht erreichbar error=%s", type(exc).__name__)
             brave_err = WebSearchUnavailable("AI_WEB_SEARCH_UNAVAILABLE")
 
-    def _search_google_thread() -> None:
-        nonlocal google_res
-        if g_creds and _apis_aktiv_fuer_instanz(s_url):
-            google_res = _google_cse_treffer(
-                safe_query,
-                api_key_val=g_creds[0],
-                cx_val=g_creds[1],
-                limit=limit,
-            )
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         f_s = executor.submit(_search_searxng_thread) if s_url else None
         f_b = executor.submit(_search_brave_thread) if (key and _apis_aktiv_fuer_instanz(s_url)) else None
-        f_g = executor.submit(_search_google_thread) if (g_creds and _apis_aktiv_fuer_instanz(s_url)) else None
-        for f in (f_s, f_b, f_g):
+        for f in (f_s, f_b):
             if f:
                 f.result()
 
-    if not searxng_res and not brave_res and not google_res:
-        if not key and not g_creds and s_url:
+    if not searxng_res and not brave_res:
+        if not key and s_url:
             searxng_res = _search_duckduckgo(safe_query, limit)
         if not searxng_res and brave_err is not None:
             _finish_inflight(cache_key, pending)
@@ -2185,8 +1986,6 @@ def search(query: str, count: int = DEFAULT_SEARCH_COUNT, *, cache_scope: str | 
         quellen.append(brave_res)
     if searxng_res:
         quellen.append(searxng_res)
-    if google_res:
-        quellen.append(google_res)
 
     results = _mische_treffer(quellen, limit=limit) if quellen else []
 
