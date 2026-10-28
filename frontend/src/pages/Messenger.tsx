@@ -178,7 +178,6 @@ import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { useMessengerNotificationStore, PINS_MAX } from '@/stores/messengerNotificationStore'
 import { MessengerBetaBanner } from '@/components/social/MessengerBetaBanner'
-import { DisBadge } from '@/components/DisBadge'
 
 /**
  * Was gesendet werden soll.
@@ -2369,7 +2368,6 @@ function MessengerSeite() {
               <MessageSquare className="w-4 h-4" />
             </div>
             <span className="font-headline text-body-md font-bold text-primary">Messenger</span>
-            <DisBadge size={14} className="py-0.5 px-0.5 sm:px-2" textClassName="hidden sm:inline" />
             <span className="text-label-sm text-on-surface-variant/60 hidden md:inline">{t('messenger.headerSubtitle')}</span>
           </div>
 
