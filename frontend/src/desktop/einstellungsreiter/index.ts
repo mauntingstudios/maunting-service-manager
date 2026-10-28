@@ -1,6 +1,4 @@
 export { AudioEinstellungen } from './AudioEinstellungen'
 export { DesktopIntegration } from './DesktopIntegration'
-export { KontoEinstellungen } from './KontoEinstellungen'
 export { RechtlichesEinstellungen } from './RechtlichesEinstellungen'
 export { SicherheitEinstellungen } from './SicherheitEinstellungen'
-export { SocialEinstellungen } from './SocialEinstellungen'

@@ -8,10 +8,11 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 /**
  * Die beiden Gerätekarten: Kopplung und Nachrichtenzugriff.
  *
- * **Eine Zusammensetzung für zwei Orte.** Profil → Geräte und die Sektion
- * „Geräte" unter Sicherheit (MSS und Pondys Browser) zeigen dieselben Karten;
- * bis 10/2026 gab es nur den Profil-Tab, und wer in der App nach seinen
- * Geräten suchte, fand sie nirgends.
+ * **Eine Zusammensetzung für zwei Orte.** Profil → Sicherheit → Geräte und die
+ * Sektion „Geräte" unter Sicherheit in MSS und Pontis zeigen dieselben Karten;
+ * bis 10/2026 gab es nur einen eigenen Profil-Reiter, und wer in der App nach
+ * seinen Geräten suchte, fand sie nirgends. Seit 10/2026 steht der Reiter
+ * „Geräte" in Sicherheit, weil dort entschieden wird, wer Zugriff hat.
  *
  * Die Schranke sitzt an der Karte und nicht am Tab: Kopplung ist eine
  * Smart-System-Sache und bleibt an `ai.chat.use`, die Liste der Geräte mit

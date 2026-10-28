@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/Singra/UI'
 import { TabBar } from '@/components/ui/TabBar'
 import { Spinner } from '@/components/ui/Spinner'
+import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 import { istGekoppelt, useSitzung } from '../services/sitzung'
 import { useTabsStore } from '../services/tabsStore'
@@ -36,8 +37,13 @@ const SicherheitEinstellungen = lazy(() =>
     default: m.SicherheitEinstellungen,
   })),
 )
+const ProfilTab = lazy(() => import('@/pages/profile/ProfilTab').then((m) => ({ default: m.ProfilTab })))
+const KontoTab = lazy(() => import('@/pages/profile/KontoTab').then((m) => ({ default: m.KontoTab })))
+const SocialTab = lazy(() => import('@/pages/profile/SocialTab').then((m) => ({ default: m.SocialTab })))
 
-const INHALT: Record<Exclude<Kategorie, 'sicherheit'>, () => JSX.Element | null> = {
+type GekoppelteKategorie = 'profil' | 'konto' | 'soziales'
+
+const INHALT: Record<Exclude<Kategorie, 'sicherheit' | GekoppelteKategorie>, () => JSX.Element | null> = {
   allgemein: Allgemein,
   suche: Suche,
   schutz: Schutz,
@@ -50,6 +56,48 @@ const INHALT: Record<Exclude<Kategorie, 'sicherheit'>, () => JSX.Element | null>
   leistung: Leistung,
   dienste: Dienste,
   ueber: Ueber,
+}
+
+/** Profil, Konto und Soziales liegen auf dem Server und brauchen die Kopplung. */
+function GekoppelteSeite({ teil }: { teil: GekoppelteKategorie }) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const stand = useSitzung((s) => s.stand)
+  const social = usePublicSettingsStore((s) => s.social_enabled)
+
+  if (stand === 'pruefen') {
+    return (
+      <div className="flex h-40 items-center justify-center">
+        <Spinner />
+      </div>
+    )
+  }
+
+  if (!istGekoppelt(stand)) {
+    return (
+      <Abschnitt titel={t(`browser.einstellungen.kategorie.${teil}`)}>
+        <Aktionszeile name={t('browser.einstellungen.nichtGekoppelt')}>
+          <Button variant="secondary" size="sm" onClick={() => navigate('/koppeln')}>
+            {t('browser.leiste.koppeln')}
+          </Button>
+        </Aktionszeile>
+      </Abschnitt>
+    )
+  }
+
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-40 items-center justify-center">
+          <Spinner />
+        </div>
+      }
+    >
+      {teil === 'profil' && <ProfilTab social={social} />}
+      {teil === 'konto' && <KontoTab />}
+      {teil === 'soziales' && <SocialTab />}
+    </Suspense>
+  )
 }
 
 function SicherheitSeite({ offline }: { offline: boolean }) {
@@ -94,6 +142,7 @@ export function EinstellungenSeite({ teil }: { teil: string | null }) {
   const { t } = useTranslation()
   const oeffnen = useTabsStore((s) => s.einstellungen)
   const stand = useSitzung((s) => s.stand)
+  const social = usePublicSettingsStore((s) => s.social_enabled)
   const gekoppelt = istGekoppelt(stand)
 
   if (teil === DATENSCHUTZ_TEIL) {
@@ -106,8 +155,17 @@ export function EinstellungenSeite({ teil }: { teil: string | null }) {
     )
   }
 
-  const kategorien = sichtbareKategorien(istAndroid(), gekoppelt)
-  const kategorie = (teil === 'sicherheit' ? 'sicherheit' : null) ?? kategorien.find((k) => k.id === teil)?.id ?? 'allgemein'
+  const kategorien = sichtbareKategorien(istAndroid(), gekoppelt, social)
+  // Profil und Konto zeigen auch ungekoppelt den Kopplungshinweis, statt still
+  // auf „Allgemein" zu springen; Soziales gibt es ohne Messenger nicht.
+  const angefordert: Kategorie | null = teil === 'sicherheit'
+    ? 'sicherheit'
+    : teil === 'profil' || teil === 'konto'
+      ? teil
+      : teil === 'soziales' && social
+        ? 'soziales'
+        : null
+  const kategorie = angefordert ?? kategorien.find((k) => k.id === teil)?.id ?? 'allgemein'
   const titel = t('browser.einstellungen.titel')
 
   return (
@@ -146,6 +204,8 @@ export function EinstellungenSeite({ teil }: { teil: string | null }) {
           <div className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-4 md:px-8 md:py-6">
             {kategorie === 'sicherheit' ? (
               <SicherheitSeite offline={stand === 'offline'} />
+            ) : kategorie === 'profil' || kategorie === 'konto' || kategorie === 'soziales' ? (
+              <GekoppelteSeite teil={kategorie} />
             ) : (
               (() => {
                 const Inhalt = INHALT[kategorie]

@@ -129,7 +129,7 @@ describe('NotizschluesselHinweis', () => {
     expect(await screen.findByText(i18n.t('notes.schluesselLage.freigabe.titel'))).toBeInTheDocument()
     expect(screen.getByRole('link', { name: i18n.t('notes.schluesselLage.freigabe.link') })).toHaveAttribute(
       'href',
-      '/profile?tab=devices',
+      '/profile?tab=security',
     )
 
     // Freigegeben auf dem anderen Geraet, der Schluessel kommt an.

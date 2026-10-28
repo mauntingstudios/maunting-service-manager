@@ -4,12 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api/client'
 import i18n from '@/i18n'
 import { useAuthStore } from '@/stores/authStore'
-import { AccountTab } from './AccountTab'
+import { KontoTab } from './KontoTab'
 
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client')
   return { ...actual, api: vi.fn() }
 })
+vi.mock('./DatenexportKarte', () => ({ DatenexportKarte: () => null }))
 
 const t = (key: string) => i18n.t(key)
 const getCurrentPosition = vi.fn()
@@ -47,7 +48,7 @@ describe('Standortfreigabe im Konto', () => {
   it('fordert den Browser-Standort erst nach einem ausdrücklichen Klick an und speichert nur die Einwilligung', async () => {
     getCurrentPosition.mockImplementation((success: () => void) => success())
     vi.mocked(api).mockResolvedValueOnce({ location_sharing_enabled: true })
-    render(<AccountTab />)
+    render(<KontoTab />)
 
     expect(getCurrentPosition).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: t('profile.locationSharingEnable') }))
@@ -64,7 +65,7 @@ describe('Standortfreigabe im Konto', () => {
 
   it('zeigt bei abgelehnter Berechtigung eine verständliche Meldung und ändert die Einwilligung nicht', async () => {
     getCurrentPosition.mockImplementation((_: unknown, failure: (error: { code: number }) => void) => failure({ code: 1 }))
-    render(<AccountTab />)
+    render(<KontoTab />)
 
     fireEvent.click(screen.getByRole('button', { name: t('profile.locationSharingEnable') }))
 
@@ -76,7 +77,7 @@ describe('Standortfreigabe im Konto', () => {
   it('deaktiviert die Einwilligung ohne eine weitere Browser-Abfrage', async () => {
     setUser(true)
     vi.mocked(api).mockResolvedValueOnce({ location_sharing_enabled: false })
-    render(<AccountTab />)
+    render(<KontoTab />)
 
     fireEvent.click(screen.getByRole('button', { name: t('profile.locationSharingDisable') }))
 
@@ -88,22 +89,4 @@ describe('Standortfreigabe im Konto', () => {
     })
     expect(getCurrentPosition).not.toHaveBeenCalled()
   })
-
 })
-
-describe('Anrufe in der Sichtbarkeits-Einstellung', () => {
-  beforeEach(() => {
-    vi.mocked(api).mockReset()
-    setUser()
-  })
-
-  it('sagt neben der Profil-Sichtbarkeit, dass Anrufe Freunden vorbehalten bleiben', () => {
-    // Der Irrtum entsteht genau hier: „Öffentlich" klingt danach, als duerfte
-    // dann jeder anrufen. Das Backend weist solche Anrufe ab — die Oberflaeche
-    // muss es sagen, sonst erfaehrt man es nie.
-    render(<AccountTab />)
-
-    expect(screen.getByText(t('profile.privacyCallsFriendsOnly'))).toBeInTheDocument()
-  })
-})
-

@@ -33,6 +33,16 @@ vi.mock('@/desktop/einstellungsreiter/SicherheitEinstellungen', () => ({
   ),
 }))
 
+vi.mock('@/pages/profile/ProfilTab', () => ({
+  ProfilTab: () => <div data-testid="profil-tab">Profil-Inhalt</div>,
+}))
+vi.mock('@/pages/profile/KontoTab', () => ({
+  KontoTab: () => <div data-testid="konto-tab">Konto-Inhalt</div>,
+}))
+vi.mock('@/pages/profile/SocialTab', () => ({
+  SocialTab: () => <div data-testid="soziales-tab">Soziales-Inhalt</div>,
+}))
+
 function Seite() {
   const url = useTabsStore((s) => s.tabs.find((t) => t.id === s.aktivId)?.url ?? '')
   return <EinstellungenSeite teil={url.split('/')[3] ?? null} />
@@ -55,18 +65,32 @@ describe('Sicherheit in den Browsereinstellungen', () => {
     })
   })
 
-  it('Metadaten: Sicherheit ist unterpunkt und folgt auf dienste', () => {
+  it('Metadaten: Profil, Konto, Sicherheit und Soziales sind Unterpunkte von MSM-Dienste', () => {
     const diensteIndex = KATEGORIEN.findIndex((k) => k.id === 'dienste')
-    const sicherheitIndex = KATEGORIEN.findIndex((k) => k.id === 'sicherheit')
-    expect(sicherheitIndex).toBe(diensteIndex + 1)
-    expect(KATEGORIEN[sicherheitIndex].unterpunkt).toBe(true)
+    expect(KATEGORIEN.findIndex((k) => k.id === 'profil')).toBe(diensteIndex + 1)
+    expect(KATEGORIEN.findIndex((k) => k.id === 'konto')).toBe(diensteIndex + 2)
+    expect(KATEGORIEN.findIndex((k) => k.id === 'sicherheit')).toBe(diensteIndex + 3)
+    expect(KATEGORIEN.findIndex((k) => k.id === 'soziales')).toBe(diensteIndex + 4)
+    for (const id of ['profil', 'konto', 'sicherheit', 'soziales'] as const) {
+      expect(KATEGORIEN.find((k) => k.id === id)?.unterpunkt).toBe(true)
+    }
   })
 
-  it('sichtbareKategorien filtert Sicherheit heraus, wenn nicht gekoppelt', () => {
+  it('sichtbareKategorien filtert die MSM-Unterpunkte heraus, wenn nicht gekoppelt', () => {
     expect(sichtbareKategorien(false, false).some((k) => k.id === 'sicherheit')).toBe(false)
     expect(sichtbareKategorien(true, false).some((k) => k.id === 'sicherheit')).toBe(false)
     expect(sichtbareKategorien(false, true).some((k) => k.id === 'sicherheit')).toBe(true)
     expect(sichtbareKategorien(true, true).some((k) => k.id === 'sicherheit')).toBe(true)
+    expect(sichtbareKategorien(true, true).some((k) => k.id === 'profil')).toBe(true)
+    expect(sichtbareKategorien(true, true).some((k) => k.id === 'konto')).toBe(true)
+    expect(sichtbareKategorien(true, false).some((k) => k.id === 'profil')).toBe(false)
+    expect(sichtbareKategorien(true, false).some((k) => k.id === 'konto')).toBe(false)
+  })
+
+  it('Soziales erscheint nur mit Kopplung und eingeschaltetem Messenger', () => {
+    expect(sichtbareKategorien(false, true, true).some((k) => k.id === 'soziales')).toBe(true)
+    expect(sichtbareKategorien(false, true, false).some((k) => k.id === 'soziales')).toBe(false)
+    expect(sichtbareKategorien(false, false, true).some((k) => k.id === 'soziales')).toBe(false)
   })
 
   it('Navigation: ungekoppelt zeigt weder Desktop noch Mobile die Sicherheitskategorie', () => {
@@ -95,6 +119,44 @@ describe('Sicherheit in den Browsereinstellungen', () => {
       fireEvent.click(tab)
     })
     expect(useTabsStore.getState().tabs[0].url).toBe('pontis://einstellungen/sicherheit')
+  })
+
+  it('Inhalt: Profil, Konto und Soziales stehen gekoppelt unter MSM-Dienste', async () => {
+    useSitzung.setState({ stand: 'an' })
+    useTabsStore.getState().einstellungen('konto')
+    renderSeite()
+    await waitFor(() => {
+      expect(screen.getByTestId('konto-tab')).toBeInTheDocument()
+    })
+
+    act(() => useTabsStore.getState().einstellungen('profil'))
+    await waitFor(() => {
+      expect(screen.getByTestId('profil-tab')).toBeInTheDocument()
+    })
+
+    act(() => useTabsStore.getState().einstellungen('soziales'))
+    await waitFor(() => {
+      expect(screen.getByTestId('soziales-tab')).toBeInTheDocument()
+    })
+  })
+
+  it('Inhalt: Soziales fehlt ohne Messenger, auch als direkte Adresse', () => {
+    usePublicSettingsStore.setState({ social_enabled: false, vault_enabled: true })
+    useSitzung.setState({ stand: 'an' })
+    useTabsStore.getState().einstellungen('soziales')
+    renderSeite()
+
+    expect(screen.queryByTestId('soziales-tab')).not.toBeInTheDocument()
+    expect(screen.getByTestId('mock-allgemein')).toBeInTheDocument()
+  })
+
+  it('Gating: direkte Adresse Profil ohne Kopplung zeigt den Kopplungshinweis', () => {
+    useSitzung.setState({ stand: 'aus' })
+    useTabsStore.getState().einstellungen('profil')
+    renderSeite()
+
+    expect(screen.queryByTestId('profil-tab')).not.toBeInTheDocument()
+    expect(screen.getByText('Nicht mit MSM gekoppelt')).toBeInTheDocument()
   })
 
   it('Inhalt: gekoppelt-online lädt Sicherheitskarten', async () => {

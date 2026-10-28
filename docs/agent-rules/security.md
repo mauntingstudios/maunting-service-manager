@@ -285,7 +285,7 @@ Harte Invarianten:
   angemeldetes Gerät ist nicht erreichbar: `verlangeGeraeteVon` wirft, und der
   Absender bekommt „Für diesen Empfänger ist kein Gerät angemeldet" statt seine
   Nachricht loszuwerden. Das Entfernen bleibt deshalb eine bewusste Handlung in
-  der Liste unter `/profile?tab=devices`. Wer ein Gerät dauerhaft aussperren
+  der Liste unter `/profile?tab=security`. Wer ein Gerät dauerhaft aussperren
   will, braucht beides: die Zustelladresse entfernen **und** den Zugang
   entziehen. `DELETE /auth/devices/{family}` rührt `user_e2ee_devices` nicht an,
   und eine Verbindung zwischen Kopplungsfamilie und Gerätekennung gibt es nicht
@@ -352,7 +352,7 @@ Harte Invarianten:
   dem verdrängten änderte sich nichts sichtbar — der Verlauf blieb stehen, die
   Oberfläche wirkte heil, und es kam nur nie wieder eine Nachricht an. Jetzt
   antwortet `PUT /e2ee/devices/self` mit 409 und nennt den Weg
-  (`/profile?tab=devices`). Ein Messenger, der stumm wird und dabei heil
+  (`/profile?tab=security`). Ein Messenger, der stumm wird und dabei heil
   aussieht, ist schlimmer als einer, der sagt was los ist.
 - **Ein Steuerumschlag wird genau einmal beantwortet.** Die Mailbox gibt die
   letzten hundert Umschläge zurück, und der Lesepfad holt dieses Fenster alle

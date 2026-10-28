@@ -141,7 +141,7 @@ export function NotizschluesselHinweis() {
           </Link>
         )}
         {lage === 'freigabe' && imPanel && (
-          <Link to="/profile?tab=devices" className="inline-block font-medium text-primary hover:underline">
+          <Link to="/profile?tab=security" className="inline-block font-medium text-primary hover:underline">
             {t('notes.schluesselLage.freigabe.link')}
           </Link>
         )}

@@ -6,6 +6,7 @@ import {
   History,
   Info,
   KeyRound,
+  Mail,
   Palette,
   Puzzle,
   Search,
@@ -13,6 +14,8 @@ import {
   ShieldBan,
   ShieldCheck,
   SlidersHorizontal,
+  User,
+  Users,
 } from 'lucide-react'
 
 export type Kategorie =
@@ -27,7 +30,10 @@ export type Kategorie =
   | 'design'
   | 'leistung'
   | 'dienste'
+  | 'profil'
+  | 'konto'
   | 'sicherheit'
+  | 'soziales'
   | 'ueber'
 
 export const KATEGORIEN: { id: Kategorie; symbol: LucideIcon; unterpunkt?: boolean }[] = [
@@ -42,15 +48,23 @@ export const KATEGORIEN: { id: Kategorie; symbol: LucideIcon; unterpunkt?: boole
   { id: 'design', symbol: Palette },
   { id: 'leistung', symbol: Gauge },
   { id: 'dienste', symbol: Blocks },
+  { id: 'profil', symbol: User, unterpunkt: true },
+  { id: 'konto', symbol: Mail, unterpunkt: true },
   { id: 'sicherheit', symbol: Shield, unterpunkt: true },
+  { id: 'soziales', symbol: Users, unterpunkt: true },
   { id: 'ueber', symbol: Info },
 ]
 
-/** Was das Gerät kann: auf Android schlafen Tabs nicht nach Regeln des Browsers, und Erweiterungen kennt die WebView nicht. */
-export function sichtbareKategorien(android: boolean, gekoppelt = false) {
+/**
+ * Was das Gerät kann: auf Android schlafen Tabs nicht nach Regeln des Browsers,
+ * und Erweiterungen kennt die WebView nicht. Profil, Konto, Sicherheit und
+ * Soziales gehören zum MSM-Konto und brauchen die Kopplung.
+ */
+export function sichtbareKategorien(android: boolean, gekoppelt = false, social = true) {
   return KATEGORIEN.filter((k) => {
     if (android && (k.id === 'leistung' || k.id === 'erweiterungen')) return false
-    if (k.id === 'sicherheit' && !gekoppelt) return false
+    if ((k.id === 'sicherheit' || k.id === 'profil' || k.id === 'konto') && !gekoppelt) return false
+    if (k.id === 'soziales' && (!gekoppelt || !social)) return false
     return true
   })
 }

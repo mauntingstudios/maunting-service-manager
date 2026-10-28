@@ -3530,13 +3530,13 @@
     "title": "Profil",
     "subtitle": "Dein Konto",
     "tabs": {
+      "profile": "Profil",
       "account": "Konto",
-      "social": "Freunde & Meilensteine",
+      "social": "Soziales",
       "audio": "Audio & Video",
       "security": "Sicherheit",
       "connections": "Verbindungen",
       "ai": "KI",
-      "devices": "Geräte",
       "danger": "Gefahrenzone"
     },
     "dataExport": {
@@ -9129,7 +9129,10 @@
         "downloads": "Downloads",
         "design": "Design",
         "dienste": "MSM-Dienste",
+        "profil": "Profil",
+        "konto": "Konto",
         "sicherheit": "Sicherheit",
+        "soziales": "Soziales",
         "ueber": "Über",
         "leistung": "Leistung",
         "jugendschutz": "Jugend- und Suchtschutz",

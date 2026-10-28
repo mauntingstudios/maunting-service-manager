@@ -191,7 +191,7 @@ Was die App zum Betrieb braucht:
   nicht hinterlegt und muss bei Bedarf über `MSM_CORS_ALLOWED_ORIGINS` dazu.
 
 **Anmelden geht nur über Kopplung.** Die App kennt weder Passwort noch
-2FA-Code. Wer angemeldet ist, öffnet im Panel **Profil → Geräte → Geräte koppeln**,
+2FA-Code. Wer angemeldet ist, öffnet im Panel **Profil → Sicherheit → Geräte → Geräte koppeln**,
 bestätigt dort mit dem Passwort (bei aktiver 2FA mit dem aktuellen 2FA-Code),
 erzeugt einen Code (zwölf Zeichen, zehn Minuten, genau einmal einlösbar)
 und trägt ihn in der App ein. Die Bestätigung ist nötig, weil ein gekoppeltes
@@ -229,7 +229,7 @@ beginnt das neue Gerät mit einem leeren Verlauf — die Kopplung selbst steht
 davon unberührt.
 
 **Danach wird das Gerät freigegeben.** Nach dem Koppeln erscheint es sofort,
-ohne Neuladen, im Panel unter **Profil → Geräte → Freigegebene Geräte**, mit dem
+ohne Neuladen, im Panel unter **Profil → Sicherheit → Geräte → Freigegebene Geräte**, mit dem
 Namen aus der Einladung und seiner Sicherheitsnummer. Erst nach der Freigabe
 auf einem schon freigegebenen Gerät bekommt es Nachrichten und den
 gemeinsamen Schlüssel für Notizen und Termine. Ist in der App ein

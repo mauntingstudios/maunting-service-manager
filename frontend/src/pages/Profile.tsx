@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
-import { User, Users, Shield, Link2, AlertTriangle, Bot, MonitorSmartphone, Volume2 } from 'lucide-react'
+import { User, Users, Shield, Link2, AlertTriangle, Bot, Mail, Volume2 } from 'lucide-react'
 import { TabBar, type TabDef } from '@/components/ui/TabBar'
-import { AccountTab } from './profile/AccountTab'
+import { ProfilTab } from './profile/ProfilTab'
+import { KontoTab } from './profile/KontoTab'
 import { SocialTab } from './profile/SocialTab'
 import { AudioTab } from './profile/AudioTab'
 import { PasswordTab } from './profile/PasswordTab'
@@ -13,21 +14,22 @@ import { AiTab } from './profile/AiTab'
 import { DevicesTab } from './profile/DevicesTab'
 import { CredentialsTab } from './profile/CredentialsTab'
 import { MessengerSicherheitTab } from './profile/MessengerSicherheitTab'
-import { DatenexportKarte } from './profile/DatenexportKarte'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { PageHeader } from '@/Singra/UI/PageHeader'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
-type TabId = 'account' | 'security' | 'devices' | 'social' | 'connections' | 'audio' | 'ai' | 'danger'
+type TabId = 'profile' | 'account' | 'security' | 'social' | 'connections' | 'audio' | 'ai' | 'danger'
 
 /**
  * Frühere Reiter, die in einem anderen aufgegangen sind. Alte Links und
- * Lesezeichen (`?tab=2fa`) landen so am richtigen Ort statt auf „Konto".
+ * Lesezeichen (`?tab=2fa`, `?tab=devices`) landen so am richtigen Ort statt
+ * auf „Profil".
  */
 const FRUEHERE_REITER: Record<string, TabId> = {
   password: 'security',
   '2fa': 'security',
   messenger: 'security',
+  devices: 'security',
   linked: 'connections',
   credentials: 'connections',
 }
@@ -38,6 +40,11 @@ const FRUEHERE_REITER: Record<string, TabId> = {
  * Nur eine dünne Hülle: TabBar oben, Tab-Content unten. Die schwere Logik
  * (Forms, API-Calls) liegt in den einzelnen Tab-Komponenten; zusammengelegte
  * Reiter zeigen ihre Teile als Karten untereinander.
+ *
+ * Die Reiter trennen zwei Fragen: „Profil" ist, was andere sehen (Bild, Name,
+ * Info, Sichtbarkeit); „Konto" ist, was nur dieses Konto betrifft (E-Mail,
+ * Zeitzone, Standortfreigabe, Datenexport). Geräte gehören zu „Sicherheit":
+ * dort entscheidet man, wer Zugriff hat.
  *
  * Der aktive Reiter steht nur in `?tab=`. So führen Links, Zurück-Knopf und
  * Weiterleitungen (OAuth-Verknüpfung) an denselben Ort.
@@ -50,9 +57,9 @@ export function Profile() {
   const social = publicSettings.social_enabled
 
   const tabs: TabDef<TabId>[] = [
-    { id: 'account', labelKey: 'profile.tabs.account', icon: User },
+    { id: 'profile', labelKey: 'profile.tabs.profile', icon: User },
+    { id: 'account', labelKey: 'profile.tabs.account', icon: Mail },
     { id: 'security', labelKey: 'profile.tabs.security', icon: Shield },
-    { id: 'devices', labelKey: 'profile.tabs.devices', icon: MonitorSmartphone },
     ...(social ? [{ id: 'social' as const, labelKey: 'profile.tabs.social', icon: Users }] : []),
     { id: 'connections', labelKey: 'profile.tabs.connections', icon: Link2 },
     { id: 'audio', labelKey: 'profile.tabs.audio', icon: Volume2 },
@@ -62,7 +69,7 @@ export function Profile() {
 
   const wunsch = searchParams.get('tab') ?? ''
   const aufgeloest = FRUEHERE_REITER[wunsch] ?? wunsch
-  const activeTab: TabId = tabs.some((tab) => tab.id === aufgeloest) ? (aufgeloest as TabId) : 'account'
+  const activeTab: TabId = tabs.some((tab) => tab.id === aufgeloest) ? (aufgeloest as TabId) : 'profile'
 
   const waehle = (tab: TabId) => {
     setSearchParams({ tab }, { replace: true })
@@ -79,20 +86,16 @@ export function Profile() {
         ariaLabel={t('profile.title')}
       />
 
-      {activeTab === 'account' && (
-        <div className="space-y-6">
-          <AccountTab />
-          <DatenexportKarte />
-        </div>
-      )}
+      {activeTab === 'profile' && <ProfilTab social={social} />}
+      {activeTab === 'account' && <KontoTab />}
       {activeTab === 'security' && (
         <div className="space-y-6">
           <PasswordTab />
           <TwoFactorTab />
           {social && <MessengerSicherheitTab />}
+          <DevicesTab />
         </div>
       )}
-      {activeTab === 'devices' && <DevicesTab />}
       {activeTab === 'social' && <SocialTab />}
       {activeTab === 'connections' && (
         <div className="space-y-6">

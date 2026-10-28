@@ -4,10 +4,11 @@
  * wie `/settings` und `/profile` im Panel), darunter Karten. Eigene Inhalte:
  * was dieser **Rechner** tut, nicht was das Panel tut.
  *
- * Zusammengehöriges steht in einem Reiter: Messenger-PIN und Tresor unter
- * Sicherheit, Geräte und Wake-Word unter Audio. `?tab=` wählt einen Reiter
- * vor; frühere Reiter (`wakeword`, `messenger`, `tresor`) führen zu ihrem
- * neuen Ort.
+ * Zusammengehöriges steht in einem Reiter: Profil (was andere sehen) und
+ * Konto (E-Mail, Zeitzone, Standortfreigabe, Export) sind getrennt wie im
+ * Panel; Messenger-PIN, Tresor und Geräte stehen unter Sicherheit, Wake-Word
+ * unter Audio. `?tab=` wählt einen Reiter vor; frühere Reiter (`wakeword`,
+ * `messenger`, `tresor`, `account`) führen zu ihrem neuen Ort.
  *
  * Diese Datei wählt nur den Reiter; die Inhalte liegen je Reiter in
  * `einstellungsreiter/`.
@@ -22,6 +23,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
   FileSignature,
+  Mail,
   MonitorCog,
   Shield,
   User,
@@ -33,7 +35,9 @@ import { useTranslation } from 'react-i18next'
 
 import { TabBar, type TabDef } from '@/components/ui/TabBar'
 import { Zustandsflaeche } from '@/Singra/UI'
-import { DatenexportKarte } from '@/pages/profile/DatenexportKarte'
+import { KontoTab } from '@/pages/profile/KontoTab'
+import { ProfilTab } from '@/pages/profile/ProfilTab'
+import { SocialTab } from '@/pages/profile/SocialTab'
 import { SYSTEM_KATEGORIE } from './vault/vaultEintrag'
 import { useVaultStore } from './vault/vaultStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
@@ -42,19 +46,16 @@ import { WakewordEinrichtung } from './WakewordEinrichtung'
 import {
   AudioEinstellungen,
   DesktopIntegration,
-  KontoEinstellungen,
   RechtlichesEinstellungen,
   SicherheitEinstellungen,
-  SocialEinstellungen,
 } from './einstellungsreiter'
 
-type EinstellungsTab = 'konto' | 'sicherheit' | 'social' | 'desktop' | 'audio' | 'rechtliches' | 'gefahr'
+type EinstellungsTab = 'profil' | 'konto' | 'sicherheit' | 'social' | 'desktop' | 'audio' | 'rechtliches' | 'gefahr'
 
 /** Reiter, deren Inhalt nur aus dem Panel kommt. */
-const BRAUCHT_SERVER: ReadonlySet<EinstellungsTab> = new Set(['konto', 'social'])
+const BRAUCHT_SERVER: ReadonlySet<EinstellungsTab> = new Set(['profil', 'konto', 'social'])
 
 const FRUEHERE_REITER: Record<string, EinstellungsTab> = {
-  profil: 'konto',
   account: 'konto',
   messenger: 'sicherheit',
   tresor: 'sicherheit',
@@ -79,7 +80,8 @@ export function Einstellungen({
   const tresorEntsperrt = useVaultStore((s) => s.isUnlocked)
 
   const tabs: TabDef<EinstellungsTab>[] = useMemo(() => [
-    { id: 'konto', labelKey: 'profile.tabs.account', icon: offline ? WifiOff : User },
+    { id: 'profil', labelKey: 'profile.tabs.profile', icon: offline ? WifiOff : User },
+    { id: 'konto', labelKey: 'profile.tabs.account', icon: offline ? WifiOff : Mail },
     ...(social || tresorAn
       ? [{ id: 'sicherheit' as const, labelKey: 'profile.tabs.security', icon: Shield }]
       : []),
@@ -127,23 +129,21 @@ export function Einstellungen({
           />
         </section>
       )}
+      {tab === 'profil' && !offline && <ProfilTab social={social} />}
       {tab === 'konto' && !offline && (
-        <>
-          <KontoEinstellungen />
-          <DatenexportKarte
-            tresor={tresorAn ? {
-              entsperrt: tresorEntsperrt,
-              // Schlüssel der Kamera-Sicherung sind keine Daten des Nutzers und gehören in keine Datei.
-              eintraege: () => useVaultStore.getState().items.filter((i) => i.category !== SYSTEM_KATEGORIE),
-              entsperren: () => navigate('/tresor'),
-            } : undefined}
-          />
-        </>
+        <KontoTab
+          tresor={tresorAn ? {
+            entsperrt: tresorEntsperrt,
+            // Schlüssel der Kamera-Sicherung sind keine Daten des Nutzers und gehören in keine Datei.
+            eintraege: () => useVaultStore.getState().items.filter((i) => i.category !== SYSTEM_KATEGORIE),
+            entsperren: () => navigate('/tresor'),
+          } : undefined}
+        />
       )}
       {tab === 'sicherheit' && (
         <SicherheitEinstellungen offline={offline} social={social} tresorAn={tresorAn} />
       )}
-      {tab === 'social' && !offline && <SocialEinstellungen />}
+      {tab === 'social' && !offline && <SocialTab />}
       {tab === 'desktop' && <DesktopIntegration onKonfigAenderung={onKonfigAenderung} offline={offline} />}
       {tab === 'audio' && (
         <>

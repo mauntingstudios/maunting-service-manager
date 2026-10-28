@@ -384,7 +384,7 @@ def _deckel_einhalten(db: Session, user: User) -> None:
     Nachricht an. Ein Messenger, der stumm wird und so tut als sei er in
     Ordnung, ist schlimmer als einer, der sagt was los ist.
 
-    Jetzt entscheidet der Mensch. Die Liste steht unter `/profile?tab=devices`,
+    Jetzt entscheidet der Mensch. Die Liste steht unter `/profile?tab=security`,
     und dort ist auch zu sehen, welches Geraet am laengsten nichts mehr getan
     hat.
     """

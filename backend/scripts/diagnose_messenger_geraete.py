@@ -8,7 +8,7 @@ Server als freigegeben führt, für das aber keine Unterschrift vorliegt?
 
 Genau daraus entsteht die Warnung aus `AGENTS.md`-Punkt A der Diagnose:
 
-* `is_approved` ist ein Wort des Servers, und die Liste unter *Profil → Geräte*
+* `is_approved` ist ein Wort des Servers, und die Liste unter *Profil → Sicherheit → Geräte*
   zeigt es unverändert an.
 * Die Warnung im Messenger hängt an der **Signaturkette** im Client
   (`vertrauteGeraete` in `frontend/src/services/e2eeGeraet.ts`). Fehlt die

@@ -2355,7 +2355,7 @@ function MessengerSeite() {
       {geraetWartet && (
         <button
           type="button"
-          onClick={() => navigate('/profile?tab=devices')}
+          onClick={() => navigate('/profile?tab=security')}
           className="shrink-0 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-left text-sm text-on-surface"
         >
           {t('messenger.thisDevicePending')}
