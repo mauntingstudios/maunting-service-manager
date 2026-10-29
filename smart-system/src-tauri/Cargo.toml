@@ -178,7 +178,7 @@ webview2-com = "0.38"
 # windows-strings 0.4). Unser `windows = 0.62` (WASAPI-Ducking) traegt einen
 # gleichnamigen, aber inkompatiblen Typ — dieselbe Kiste steht schon als
 # wry-Abhaengigkeit im Lock, hier wird sie nur direkt ansprechbar.
-windows-strings = "0.4"
+windows-strings = "0.5"
 
 [features]
 # This feature is used for production builds or when a dev server is not
