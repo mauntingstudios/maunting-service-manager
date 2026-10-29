@@ -2023,8 +2023,8 @@ EOF
     cat > /etc/systemd/system/msm-panel.service <<EOF
 [Unit]
 Description=Maunting Service Manager Panel
-After=network.target redis-server.service msm-dis-sidecar.service
-Wants=redis-server.service
+After=network.target redis-server.service msm-dis-sidecar.service msm-docs-sidecar.service
+Wants=redis-server.service msm-docs-sidecar.service
 Requires=msm-dis-sidecar.service
 
 [Service]

@@ -156,6 +156,7 @@ cleanup_on_failure() {
             # Sidecar zuerst: der Code ist womoeglich schon neu, und das neue
             # Panel verweigert den Dienst mit einem alten Sidecar.
             systemctl restart msm-dis-sidecar.service 2>/dev/null || true
+            [[ -f /etc/systemd/system/msm-docs-sidecar.service ]]                 && systemctl restart msm-docs-sidecar.service 2>/dev/null || true
             systemctl restart msm-panel.service 2>/dev/null || true
         fi
     fi
@@ -720,6 +721,10 @@ if ! grep -q '^MSM_DOCS_SIDECAR_TOKEN=' "$ENV_FILE"; then
     } >> "$ENV_FILE"
     chmod 600 "$ENV_FILE"
     chown "$MSM_USER:$MSM_USER" "$ENV_FILE"
+elif ! grep -q '^MSM_DOCS_COLLAB_PUBLIC_URL=' "$ENV_FILE" && [[ -n "$DOMAIN" ]]; then
+    echo "MSM_DOCS_COLLAB_PUBLIC_URL=\"wss://$DOMAIN/api/docs/collab\"" >> "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    chown "$MSM_USER:$MSM_USER" "$ENV_FILE"
 fi
 
 # SearXNG-Sidecar Environment (zufälliger Secret-Key für CSRF & Sessions)
@@ -1052,6 +1057,9 @@ EOF
 
     systemctl daemon-reload
     systemctl enable msm-dis-sidecar.service
+    if [[ -d "$MSM_DIR/docs-sidecar" ]]; then
+        systemctl enable msm-docs-sidecar.service 2>/dev/null || true
+    fi
     if [[ -d "$MSM_DIR/searxng-sidecar" ]]; then
         systemctl enable msm-searxng.service 2>/dev/null || true
     fi
