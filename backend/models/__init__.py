@@ -23,6 +23,7 @@ from .ai_mail_outbox import AiMailOutbox
 from .ai_meldung import AiMeldung
 from .desktop_job import DesktopJob
 from .device_pairing import DevicePairing
+from .notification_channel import NotificationChannel
 from .server import Server
 from .node import Node
 from .node_enrollment import NodeEnrollment
@@ -72,10 +73,17 @@ from .vault_sicherungszugang import VaultSicherungszugang
 from .user_achievement import UserAchievement
 from .user_activity_time import UserActivityTime
 from .user_friend import UserFriend
-from .user_presence import UserPresence
-from .e2ee_blind_envelope import E2eeBlindEnvelope
-from .e2ee_blind_mailbox import E2eeBlindMailbox
-from .e2ee_mailbox_push import E2eeMailboxPush
+from .user_info import UserInfo
+from .user_presence import UserPresence, UserPresenceSession
+from .e2ee_message import (
+    DirectChatMember,
+    E2eeAccount,
+    E2eeAccountKeyVault,
+    E2eeChatKey,
+    E2eeChatState,
+    E2eeMessage,
+    E2eeMessageReaction,
+)
 from .user_e2ee_device import UserE2eeDevice
 from .push_subscription import PushSubscription
 from .credential import (
@@ -96,6 +104,8 @@ from .hoster import (
 
 from .chat_group import ChatGroup, ChatGroupMember
 from .chat_group_config import ChatGroupConfig
+from .chat_group_info import ChatGroupInfo
+from .chat_group_background import ChatGroupBackground
 from .chat_story import ChatStory
 from .direct_chat import DirectChat
 from .chat_media import ChatMedia
@@ -123,9 +133,10 @@ __all__ = [
     "UserMailbox", "UserCalendar", "CalendarEvent", "Note",
     "PanelPopup", "UserPopupState",
     "VaultEntry", "VaultHint", "VaultUserSetting", "VaultBlindBucket", "VaultBlob", "VaultBucketFormat", "VaultBucketTombstone", "VaultEingang", "VaultSicherungszugang",
-    "UserAchievement", "UserActivityTime", "UserFriend", "UserPresence", "E2eeBlindEnvelope",
-    "E2eeBlindMailbox", "E2eeMailboxPush",
+    "UserAchievement", "UserActivityTime", "UserFriend", "UserInfo", "UserPresence", "UserPresenceSession",
+    "E2eeAccount", "E2eeAccountKeyVault", "E2eeChatKey", "E2eeChatState",
+    "E2eeMessage", "E2eeMessageReaction", "DirectChatMember",
     "UserE2eeDevice", "PushSubscription",
-    "ChatGroup", "ChatGroupMember", "ChatGroupConfig", "ChatStory", "DirectChat", "ChatMedia",
+    "ChatGroup", "ChatGroupMember", "ChatGroupConfig", "ChatGroupInfo", "ChatGroupBackground", "ChatStory", "DirectChat", "ChatMedia",
 ]  # noqa: E501
 

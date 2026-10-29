@@ -343,7 +343,12 @@ def ausstehende_anrufe(
     # Namensspeicher.
     for group_id in [row[0] for row in user_groups]:
         room_token = GroupCallRoomRegistry.find_for_group(group_id)
-        if room_token:
+        if room_token and SocialService.has_group_permission(
+            db, group_id, user.id, "join_group_calls"
+        ):
+            # Wer nicht beitreten darf, erfaehrt auch hier nichts vom Anruf.
+            # Der Token-Endpunkt prueft dasselbe Recht; ohne diesen Filter
+            # zeigte die Oberflaeche einen Beitrittsknopf, der nur 403 kennt.
             group_calls.append({
                 "group_id": group_id,
                 "room_token": room_token,
@@ -793,6 +798,21 @@ def teilnehmer_entfernen(
     except livekit_service.LivekitNichtErreichbar as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    # Die Verbliebenen rotieren den Raumschluessel; der Entfernte verlaesst
+    # den Anruf. Ohne dieses Ereignis bliebe sein Client im Raum.
+    empfaenger = set(_gruppenmitglieder_mit_zutritt(db, group_id, user.id))
+    empfaenger.add(target_user_id)
+    SyncEventService.publish(
+        {
+            "type": "group_call_member_removed",
+            "group_id": group_id,
+            "room_token": raum,
+            "user_id": target_user_id,
+            "removed_by": user.id,
+        },
+        user_ids=empfaenger,
+    )
+
     audit_service.record_privileged_action(
         db,
         user_id=user.id,
@@ -876,6 +896,9 @@ def gruppenanruf_beenden(
             status_code=404, detail="Gruppenanruf nicht gefunden oder abgelaufen."
         )
     GroupCallRoomRegistry.discard(req.room_token)
+    # Ohne DeleteRoom liefe der Medienraum weiter, auch wenn das Panel ihn
+    # bereits vergessen hat.
+    livekit_service.loesche_raum(req.room_token, db)
     betroffene = UserActiveCallRegistry.remove_room(req.room_token)
     ereignis = {
         "type": "group_call_ended",

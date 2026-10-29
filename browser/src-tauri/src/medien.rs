@@ -2,9 +2,12 @@
 //!
 //! WebView2 beantwortet `getUserMedia` auf `tauri.localhost` nicht von selbst:
 //! Die Anfrage bleibt offen, und die lokale Sprachsuche meldet „Mikrofon
-//! verweigert“. Wie im Smart System erlaubt dieser Handler ausschließlich
-//! Mikrofon und ausschließlich der eigenen Oberfläche; Seiten-Tabs haben ihren
+//! verweigert“. Wie im Smart System erlaubt dieser Handler Mikrofon **und
+//! Kamera** — ausschließlich der eigenen Oberfläche; Seiten-Tabs haben ihren
 //! eigenen Dialog (`tabs/desktop/rueckfragen.rs`).
+//!
+//! Die Kamera fehlte bis 27.10.2026. Ein Videoanruf verband sich dann ohne
+//! Bild, und die Oberfläche behauptete trotzdem, die Kamera sei an.
 
 use tauri::{AppHandle, Manager};
 
@@ -21,9 +24,22 @@ pub(crate) fn eigene_oberflaeche(uri: &str) -> bool {
         .any(|basis| uri == *basis || uri.starts_with(&format!("{basis}/")))
 }
 
+/// Was die eigene Oberfläche vom Gerät bekommen darf.
+///
+/// Standort, Zwischenablage, Benachrichtigungen und alles Weitere bleiben
+/// außen vor: was hier steht, wird ohne Rückfrage erlaubt.
+fn art_erlaubt(
+    art: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PERMISSION_KIND,
+) -> bool {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+    };
+    art == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE || art == COREWEBVIEW2_PERMISSION_KIND_CAMERA
+}
+
 pub fn freigeben(app: &AppHandle) {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+        COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
     };
     use webview2_com::{take_pwstr, PermissionRequestedEventHandler};
     use windows::core::PWSTR;
@@ -37,7 +53,7 @@ pub fn freigeben(app: &AppHandle) {
                 let Some(args) = args else { return Ok(()) };
                 let mut art = COREWEBVIEW2_PERMISSION_KIND::default();
                 args.PermissionKind(&mut art)?;
-                if art != COREWEBVIEW2_PERMISSION_KIND_MICROPHONE {
+                if !art_erlaubt(art) {
                     return Ok(());
                 }
                 let mut uri = PWSTR::null();
@@ -55,6 +71,22 @@ pub fn freigeben(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mikrofon_und_kamera_sind_erlaubt_sonst_nichts() {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ,
+            COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+            COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS,
+        };
+        // Der Videoanruf braucht beides; ohne die Kamera verband er sich stumm
+        // und die Oberfläche behauptete trotzdem ein Bild.
+        assert!(art_erlaubt(COREWEBVIEW2_PERMISSION_KIND_MICROPHONE));
+        assert!(art_erlaubt(COREWEBVIEW2_PERMISSION_KIND_CAMERA));
+        assert!(!art_erlaubt(COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION));
+        assert!(!art_erlaubt(COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS));
+        assert!(!art_erlaubt(COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ));
+    }
 
     #[test]
     fn nur_die_eigene_oberflaeche_und_der_dev_server() {

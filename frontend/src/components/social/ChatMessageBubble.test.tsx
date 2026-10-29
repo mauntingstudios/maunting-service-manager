@@ -1,7 +1,13 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import i18n from '@/i18n'
+
+const einladungsApi = vi.hoisted(() => ({ getGroupInviteInfo: vi.fn() }))
+vi.mock('@/api/social', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/social')>()),
+  getGroupInviteInfo: einladungsApi.getGroupInviteInfo,
+}))
 import {
   ChatMessageBubble,
   MessageErrorBoundary,
@@ -74,6 +80,7 @@ describe('ChatMessageBubble Resilienz & Fehlerbehandlung', () => {
       onViewImage: vi.fn(),
       onImportNote: vi.fn(),
       onImportCalendar: vi.fn(),
+      onJoinByInviteCode: vi.fn(),
     }
 
     const defaultTon = {
@@ -128,6 +135,110 @@ describe('ChatMessageBubble Resilienz & Fehlerbehandlung', () => {
       // Die Uhr für „wartet noch“ bleibt auch in der Gruppe.
       zeige(gruppe, { ...eigene, isRead: false, status: 'queued' })
       expect(screen.getByRole('img', { name: i18n.t('messenger.stateQueued') })).toBeDefined()
+    })
+
+    it('antwortet nicht, wenn der Wisch am Rand beginnt', () => {
+      // Dort gehört die waagerechte Bewegung dem Zurückgehen. Bis 27.10.2026
+      // antwortete die Blase mit und der Chat schloss gleichzeitig.
+      const onAntworten = vi.fn()
+      const msg: ChatMessage = {
+        id: 81,
+        senderId: 1,
+        text: 'Hallo',
+        createdAt: '2026-09-25T14:30:00.000Z',
+        isSelf: false,
+      }
+      render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={{ ...defaultAktionen, onAntworten }}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+
+      const text = screen.getByText('Hallo')
+      fireEvent.pointerDown(text, { pointerType: 'touch', clientX: 4, clientY: 300 })
+      fireEvent.pointerUp(text, { pointerType: 'touch', clientX: 160, clientY: 302 })
+      expect(onAntworten).not.toHaveBeenCalled()
+
+      // In der Mitte antwortet sie weiterhin.
+      fireEvent.pointerDown(text, { pointerType: 'touch', clientX: 400, clientY: 300 })
+      fireEvent.pointerUp(text, { pointerType: 'touch', clientX: 560, clientY: 302 })
+      expect(onAntworten).toHaveBeenCalledTimes(1)
+    })
+
+    it('zeigt eine Einladung als Karte und blendet den rohen Link optional ein', async () => {
+      einladungsApi.getGroupInviteInfo.mockResolvedValue({
+        group_id: 7,
+        name: 'Serverteam',
+        description: null,
+        avatar_url: null,
+        member_count: 4,
+        live_call: false,
+        live_participants: 0,
+      })
+      const link = `${window.location.origin}/chat/join/AbCd1234efGH#k=${'a'.repeat(64)}`
+      const msg: ChatMessage = {
+        id: 80,
+        senderId: 2,
+        text: link,
+        createdAt: '2026-09-25T14:30:00.000Z',
+        isSelf: false,
+      }
+
+      render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={defaultAktionen}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+
+      expect(await screen.findByText('Serverteam')).toBeInTheDocument()
+      expect(screen.queryByText(link)).toBeNull()
+
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('messenger.showInviteLink') }))
+      expect(screen.getByText(link)).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('messenger.hideInviteLink') }))
+      expect(screen.queryByText(link)).toBeNull()
+    })
+
+    it('macht aus einer gescheiterten Nachricht einen Knopf zum erneuten Senden', () => {
+      const onErneutSenden = vi.fn()
+      const msg: ChatMessage = {
+        id: 77,
+        senderId: 1,
+        text: 'Kam nie an',
+        createdAt: '2026-09-25T14:30:00.000Z',
+        isSelf: true,
+        status: 'failed',
+      }
+
+      render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={{ ...defaultAktionen, onErneutSenden }}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+
+      // Der Text bleibt stehen — das ist der Unterschied zwischen „nicht
+      // angekommen" und „verloren".
+      expect(screen.getByText('Kam nie an')).toBeInTheDocument()
+      fireEvent.click(
+        screen.getByRole('button', { name: i18n.t('messenger.stateFailedRetry') }),
+      )
+      expect(onErneutSenden).toHaveBeenCalledWith(msg)
     })
 
     it('setzt kein natives title, die Hinweise stehen als Kurzinfo da', () => {

@@ -28,7 +28,7 @@ vi.mock('@/api/social', () => ({
     return antwort.profil
   }),
   getFriends: vi.fn(async () => []),
-  sendFriendRequest: vi.fn(async () => ({ success: true, message: '' })),
+  sendFriendRequest: vi.fn(async () => ({ id: 1, request_id: 1, status: 'pending', message: '' })),
 }))
 
 vi.mock('@/stores/useCallStore', () => ({
@@ -47,6 +47,7 @@ function profil(teil: Partial<PublicProfileResponse> = {}): PublicProfileRespons
     privacy: 'public',
     is_friend: false,
     member_since: '2026-03-01',
+    info: { text: 'Im Feierabend', visibility: 'friends', expires_at: null },
     presence: { status: 'online', device_type: 'web', activity_label: null },
     stats: {
       total_achievements: 2,
@@ -90,6 +91,19 @@ beforeEach(() => {
 })
 
 describe('Benutzerprofil', () => {
+  it('findet das Profil auch ohne Routenparameter (Pontis)', async () => {
+    // Pontis rendert die Oberfläche in einem MemoryRouter ohne `<Routes>`; dort
+    // ist `useParams()` leer, obwohl die Adresse `/user/7` lautet. Bis
+    // 27.10.2026 stand deshalb „Profil nicht verfügbar“.
+    render(
+      <MemoryRouter initialEntries={['/user/7']}>
+        <Benutzerprofil />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'mara' })).toBeInTheDocument()
+  })
+
   it('zeigt Nutzungszeit je Bereich und nur die freigeschalteten Errungenschaften zuerst', async () => {
     zeige()
     expect(await screen.findByRole('heading', { name: 'mara' })).toBeInTheDocument()
@@ -98,6 +112,11 @@ describe('Benutzerprofil', () => {
     expect(screen.getByText('Erster Server')).toBeInTheDocument()
     expect(screen.queryByText('Tausend Befehle')).not.toBeInTheDocument()
     expect(screen.getByText(i18n.t('social.profile.memberSince', { date: 'März 2026' }))).toBeInTheDocument()
+  })
+
+  it('zeigt die Info unter dem Namen', async () => {
+    zeige()
+    expect(await screen.findByText('Im Feierabend')).toBeInTheDocument()
   })
 
   it('bietet Fremden keinen Anruf, aber Chat und Freundschaftsanfrage', async () => {
@@ -136,6 +155,41 @@ describe('Benutzerprofil', () => {
     antwort.fehler = null
     fireEvent.click(screen.getByText(i18n.t('common.retry')))
     expect(await screen.findByRole('heading', { name: 'mara' })).toBeInTheDocument()
+  })
+
+  it('übernimmt Info und Präsenz aus dem Echtzeitereignis', async () => {
+    zeige()
+    expect(await screen.findByText('Im Feierabend')).toBeInTheDocument()
+
+    window.dispatchEvent(
+      new CustomEvent('msm:sync-event', {
+        detail: {
+          type: 'friend_info_updated',
+          friend_id: 7,
+          info: { text: '🌙 Pause', expires_at: null, updated_at: null },
+        },
+      }),
+    )
+    expect(await screen.findByText('🌙 Pause')).toBeInTheDocument()
+
+    window.dispatchEvent(
+      new CustomEvent('msm:sync-event', {
+        detail: {
+          type: 'friend_presence_updated',
+          friend_id: 7,
+          presence: { status: 'away', device_type: 'desktop', client: 'mss', activity_key: null },
+        },
+      }),
+    )
+    expect(await screen.findByText(i18n.t('social.status.away'))).toBeInTheDocument()
+
+    // Ein Ereignis zu einem anderen Konto lässt das offene Profil stehen.
+    window.dispatchEvent(
+      new CustomEvent('msm:sync-event', {
+        detail: { type: 'friend_info_updated', friend_id: 8, info: { text: 'Fremd' } },
+      }),
+    )
+    expect(screen.queryByText('Fremd')).not.toBeInTheDocument()
   })
 
   it('zeigt auf dem eigenen Profil weder Chat noch Anruf', async () => {

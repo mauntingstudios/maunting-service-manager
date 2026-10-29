@@ -23,10 +23,39 @@ describe('publicSettingsStore', () => {
 
   it('verwendet standardmäßig DEFAULT_PUBLIC_SETTINGS bei leerem Cache', () => {
     const state = usePublicSettingsStore.getState()
+    expect(state.panel_url).toBe('')
     expect(state.calendar_enabled).toBe(true)
     expect(state.notes_enabled).toBe(true)
     expect(state.vault_enabled).toBe(true)
     expect(state.social_enabled).toBe(true)
+  })
+
+  it('übernimmt die Panel-Adresse und entfernt den Schrägstrich', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ panel_url: 'https://panel.example/' })
+
+    await usePublicSettingsStore.getState().refresh()
+
+    expect(usePublicSettingsStore.getState().panel_url).toBe('https://panel.example')
+  })
+
+  it('behält die bisherige Panel-Adresse bei einer ungültigen Angabe', async () => {
+    usePublicSettingsStore.setState({ ...DEFAULT_PUBLIC_SETTINGS, panel_url: 'https://alt.example' })
+    vi.mocked(api).mockResolvedValueOnce({ panel_url: 'javascript:alert(1)' })
+
+    await usePublicSettingsStore.getState().refresh()
+
+    expect(usePublicSettingsStore.getState().panel_url).toBe('https://alt.example')
+  })
+
+  it('verwirft eine ungültige Panel-Adresse aus dem Cache', () => {
+    localStorage.setItem(
+      'msm_cached_public_settings',
+      JSON.stringify({ ...DEFAULT_PUBLIC_SETTINGS, panel_url: 'tauri.localhost' }),
+    )
+
+    usePublicSettingsStore.getState().initFromCache()
+
+    expect(usePublicSettingsStore.getState().panel_url).toBe('')
   })
 
   it('lädt zuvor gespeicherte Einstellungen aus dem localStorage', () => {

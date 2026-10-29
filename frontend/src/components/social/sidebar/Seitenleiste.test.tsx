@@ -134,4 +134,27 @@ describe('ContactFilterTabs', () => {
     expect(onFilter).toHaveBeenCalledWith('teams')
     expect(document.querySelectorAll('[title]')).toHaveLength(0)
   })
+
+  it('zeigt Aktivität und Plattform nur, solange jemand online ist', () => {
+    const { rerender } = render(
+      <ContactListItem
+        kontakt={kontakt({ status: 'online', client: 'mss', deviceType: 'desktop', activityKey: 'chat' })}
+        mid="m1"
+        {...zeile}
+      />,
+    )
+    expect(screen.getByText(i18n.t('presence.aktivitaet.chat'))).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: i18n.t('presence.client.mss') })).toBeInTheDocument()
+
+    // Offline: die letzte Meldung bleibt im Speicher, gilt aber nicht mehr.
+    rerender(
+      <ContactListItem
+        kontakt={kontakt({ status: 'offline', client: 'mss', deviceType: 'desktop', activityKey: 'chat' })}
+        mid="m1"
+        {...zeile}
+      />,
+    )
+    expect(screen.queryByText(i18n.t('presence.aktivitaet.chat'))).toBeNull()
+    expect(screen.queryByRole('img', { name: i18n.t('presence.client.mss') })).toBeNull()
+  })
 })

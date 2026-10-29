@@ -13,23 +13,43 @@ vi.mock('@/lib/benachrichtigung', () => ({
 }))
 vi.mock('@/services/pushAbo', () => ({ abonniere: vi.fn(), kuendige: vi.fn() }))
 vi.mock('@/services/mailboxPush', () => ({ kuendigeMailboxPush: vi.fn().mockResolvedValue(undefined) }))
-vi.mock('@/services/deliveryReceiptService', () => ({
-  sendE2eeDeliveryReceipt: vi.fn(),
-  checkAndDispatchPendingDeliveryReceipts: vi.fn(),
+// Ein Wecksignal darf keinen Umschlag erzeugen. Der Stellvertreter zählt nur;
+// eine Quittung entsteht erst nach dem Öffnen und Prüfen des Chiffretexts.
+const relais = vi.hoisted(() => ({ relayE2eeEnvelope: vi.fn() }))
+const krypto = vi.hoisted(() => ({ entpackeChatNutzlast: vi.fn(async () => ({})) }))
+const quittung = vi.hoisted(() => ({ ackChatMessages: vi.fn(async () => ({ ok: true })) }))
+vi.mock('@/api/social', async (importOriginal) => {
+  const echt = await importOriginal<typeof import('@/api/social')>()
+  return { ...echt, relayE2eeEnvelope: relais.relayE2eeEnvelope, ...quittung }
+})
+vi.mock('@/services/chatKrypto', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/chatKrypto')>()),
+  ...krypto,
 }))
 vi.mock('@/lib/offlineSync', () => ({ loadCalendarEventsOfflineFirst: vi.fn().mockResolvedValue([]) }))
-vi.mock('@/stores/messengerNotificationStore', () => ({
-  useMessengerNotificationStore: {
-    getState: () => ({
-      syncBlockedFromBackend: vi.fn().mockResolvedValue(undefined),
-      syncMailboxDirectoryFromBackend: vi.fn().mockResolvedValue(undefined),
-    }),
+const nachrichtenStore = vi.hoisted(() => ({
+  chime: vi.fn(),
+  zustand: {
+    syncBlockedFromBackend: vi.fn().mockResolvedValue(undefined),
+    syncMailboxDirectoryFromBackend: vi.fn().mockResolvedValue(undefined),
+    mailboxDirectory: {} as Record<string, { name: string; isGroup?: boolean; userId?: number }>,
+    activeMailboxId: null as string | null,
+    isMuted: (_mid: string) => false,
+    isBlocked: (_userId: number) => false,
+    incrementUnread: vi.fn(),
   },
-  playNotificationChime: vi.fn(),
+}))
+
+vi.mock('@/stores/messengerNotificationStore', () => ({
+  useMessengerNotificationStore: { getState: () => nachrichtenStore.zustand },
+  playNotificationChime: nachrichtenStore.chime,
+  chimeEntsperren: vi.fn(),
 }))
 
 import { api } from '@/api/client'
 import { ServerIncidentNotifier } from './ServerIncidentNotifier'
+import { sendeGeraeteBenachrichtigung } from '@/lib/benachrichtigung'
+import { useMessengerSperre } from '@/services/messengerSperre'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 
@@ -170,3 +190,219 @@ describe('ServerIncidentNotifier — Vorfälle & Persistenz', () => {
   })
 })
 
+
+/**
+ * Der Weg einer Chat-Nachricht — über den Hub, nicht mehr über einen eigenen
+ * `if`-Zweig in dieser Datei. Was hier geprüft wird, ist genau das, was am
+ * 22.10.2026 kaputt war: ein Ton je Nachricht, kein Ton im stummen Chat, keine
+ * zweite Meldung für die Kopie desselben Umschlags.
+ */
+describe('ServerIncidentNotifier — Chat über den Hub', () => {
+  const zustand = nachrichtenStore.zustand
+
+  const nachricht = (teile: Record<string, unknown> = {}) => ({
+    type: 'message_created',
+    chat_type: 'direct',
+    chat_id: 1,
+    sender_user_id: 6,
+    client_uuid: 'uuid-4711',
+    ...teile,
+  })
+
+  const schicke = async (teile: Record<string, unknown> = {}) => {
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: nachricht(teile) }))
+    })
+  }
+
+  const geprueft = (teile: Record<string, unknown> = {}) => ({
+    type: 'message_created',
+    message: {
+      id: 4711,
+      chat_type: 'direct',
+      chat_id: 55,
+      sender_user_id: 6,
+      client_uuid: 'uuid-geprueft',
+      key_version: 1,
+      encrypted_payload: 'chiffrat',
+      ...teile,
+    },
+  })
+
+  const schickeGeprueft = async (teile: Record<string, unknown> = {}) => {
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: geprueft(teile) }))
+    })
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+    useToastStore.getState().clearAll()
+    nachrichtenStore.chime.mockClear()
+    vi.mocked(sendeGeraeteBenachrichtigung).mockReset()
+    vi.mocked(sendeGeraeteBenachrichtigung).mockResolvedValue({ weg: 'tauri', ok: true })
+    zustand.mailboxDirectory = { 'direct:peer:6': { name: 'owner', isGroup: false, userId: 6 } }
+    zustand.activeMailboxId = null
+    zustand.isMuted = () => false
+    zustand.isBlocked = () => false
+    zustand.incrementUnread.mockClear()
+    relais.relayE2eeEnvelope.mockClear()
+    krypto.entpackeChatNutzlast.mockReset()
+    krypto.entpackeChatNutzlast.mockResolvedValue({})
+    quittung.ackChatMessages.mockReset()
+    quittung.ackChatMessages.mockResolvedValue({ ok: true })
+    useMessengerSperre.setState({ eingerichtet: false, entsperrt: false })
+    useAuthStore.setState({
+      isAuthenticated: true,
+      user: { id: 5, username: 'anna', device_notifications: true } as never,
+    })
+  })
+
+  afterEach(() => {
+    useAuthStore.setState({ isAuthenticated: false, user: null })
+    localStorage.clear()
+  })
+
+  it('klingelt und zählt die Nachricht des Gegenübers', async () => {
+    render(<ServerIncidentNotifier />)
+    await schicke()
+    await waitFor(() => expect(nachrichtenStore.chime).toHaveBeenCalledTimes(1))
+    expect(zustand.incrementUnread).toHaveBeenCalledWith('direct:peer:6')
+    expect(sendeGeraeteBenachrichtigung).toHaveBeenCalledTimes(1)
+  })
+
+  it('quittiert eine geprüfte Direktnachricht', async () => {
+    render(<ServerIncidentNotifier />)
+    await schickeGeprueft({ client_uuid: 'uuid-zustellung' })
+
+    await waitFor(() =>
+      expect(quittung.ackChatMessages).toHaveBeenCalledWith('direct', 55, 4711),
+    )
+    expect(krypto.entpackeChatNutzlast).toHaveBeenCalledWith(
+      'direct',
+      55,
+      'uuid-zustellung',
+      6,
+      1,
+      'chiffrat',
+    )
+  })
+
+  it('quittiert ein Wecksignal nicht', async () => {
+    // Ein Wecksignal sagt nur, dass Arbeit da ist: nicht, ob der Umschlag für
+    // dieses Gerät war, ob er sich öffnen ließ oder ob er überhaupt eine
+    // Nachricht ist. Bis 10/2026 schickte diese Stelle trotzdem eine
+    // Zustellquittung und markierte damit Ungeprüftes als zugestellt.
+    render(<ServerIncidentNotifier />)
+    await schicke()
+    await waitFor(() => expect(nachrichtenStore.chime).toHaveBeenCalled())
+    expect(relais.relayE2eeEnvelope).not.toHaveBeenCalled()
+    expect(krypto.entpackeChatNutzlast).not.toHaveBeenCalled()
+    expect(quittung.ackChatMessages).not.toHaveBeenCalled()
+  })
+
+  it('quittiert nicht, was sich nicht öffnen lässt', async () => {
+    krypto.entpackeChatNutzlast.mockRejectedValueOnce(new Error('kein Schluessel'))
+    render(<ServerIncidentNotifier />)
+    await schickeGeprueft({ client_uuid: 'uuid-unlesbar' })
+
+    await waitFor(() => expect(krypto.entpackeChatNutzlast).toHaveBeenCalled())
+    await act(async () => {})
+    expect(quittung.ackChatMessages).not.toHaveBeenCalled()
+  })
+
+  it('quittiert weder Gruppe noch gelöschte Nachricht', async () => {
+    render(<ServerIncidentNotifier />)
+    await schickeGeprueft({ chat_type: 'group', chat_id: 3, client_uuid: 'uuid-gruppe' })
+    await schickeGeprueft({
+      is_deleted: true,
+      encrypted_payload: '',
+      client_uuid: 'uuid-geloescht',
+    })
+    await act(async () => {})
+
+    expect(krypto.entpackeChatNutzlast).not.toHaveBeenCalled()
+    expect(quittung.ackChatMessages).not.toHaveBeenCalled()
+  })
+
+  it('quittiert nicht bei einem blockierten Absender', async () => {
+    zustand.isBlocked = (id) => id === 6
+    render(<ServerIncidentNotifier />)
+    await schickeGeprueft({ client_uuid: 'uuid-blockiert' })
+    await act(async () => {})
+
+    expect(krypto.entpackeChatNutzlast).not.toHaveBeenCalled()
+    expect(quittung.ackChatMessages).not.toHaveBeenCalled()
+  })
+
+  it('quittiert nicht bei gesperrtem Messenger', async () => {
+    useMessengerSperre.setState({ eingerichtet: true, entsperrt: false })
+    render(<ServerIncidentNotifier />)
+    await schickeGeprueft({ client_uuid: 'uuid-gesperrt' })
+    await act(async () => {})
+
+    expect(krypto.entpackeChatNutzlast).not.toHaveBeenCalled()
+    expect(quittung.ackChatMessages).not.toHaveBeenCalled()
+  })
+
+  it('quittiert nicht im offenen Chat, dort tut es der Lesepfad', async () => {
+    zustand.activeMailboxId = 'direct:peer:6'
+    render(<ServerIncidentNotifier />)
+    await schickeGeprueft({ client_uuid: 'uuid-offen' })
+    await act(async () => {})
+
+    expect(krypto.entpackeChatNutzlast).not.toHaveBeenCalled()
+    expect(quittung.ackChatMessages).not.toHaveBeenCalled()
+  })
+
+  it('klingelt für dieselbe Nachricht nicht zweimal', async () => {
+    // Der Umschlag geht je Gerät einmal raus; beide Kopien tragen dieselbe
+    // `client_uuid`. Bis 22.10.2026 waren das zwei Töne.
+    render(<ServerIncidentNotifier />)
+    await schicke({ id: 4711 })
+    await schicke({ id: 4712 })
+    await waitFor(() => expect(nachrichtenStore.chime).toHaveBeenCalledTimes(1))
+  })
+
+  it('schweigt in einem stummen Chat, meldet die Mailbox aber weiter', async () => {
+    // Kein Ton, aber die Erwähnungswache muss von der neuen Post erfahren —
+    // sonst erschiene in einer stummen Gruppe nicht einmal das @-Abzeichen.
+    zustand.isMuted = () => true
+    const gehoert: string[] = []
+    const horcher = (e: Event) => gehoert.push(String((e as CustomEvent).detail?.mid))
+    window.addEventListener('msm:mailbox-neu', horcher)
+    try {
+      render(<ServerIncidentNotifier />)
+      await schicke()
+      expect(nachrichtenStore.chime).not.toHaveBeenCalled()
+      expect(sendeGeraeteBenachrichtigung).not.toHaveBeenCalled()
+      expect(gehoert).toContain('direct:peer:6')
+    } finally {
+      window.removeEventListener('msm:mailbox-neu', horcher)
+    }
+  })
+
+  it('schweigt im offenen Chat und zählt nicht', async () => {
+    zustand.activeMailboxId = 'direct:peer:6'
+    // jsdom hat keinen echten Fokus; ohne diese Vorgabe wäre „offen" hier nie
+    // erreicht und der Test prüfte den falschen Zweig.
+    const fokus = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    try {
+      render(<ServerIncidentNotifier />)
+      await schicke()
+      expect(nachrichtenStore.chime).not.toHaveBeenCalled()
+      expect(sendeGeraeteBenachrichtigung).not.toHaveBeenCalled()
+      expect(zustand.incrementUnread).not.toHaveBeenCalled()
+    } finally {
+      fokus.mockRestore()
+    }
+  })
+
+  it('meldet die eigene Nachricht nicht', async () => {
+    render(<ServerIncidentNotifier />)
+    await schicke({ sender_user_id: 5 })
+    expect(nachrichtenStore.chime).not.toHaveBeenCalled()
+    expect(sendeGeraeteBenachrichtigung).not.toHaveBeenCalled()
+  })
+})

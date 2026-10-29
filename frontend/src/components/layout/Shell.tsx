@@ -5,12 +5,15 @@ import { Topbar } from './Topbar'
 import { VersionFooter } from '@/components/VersionFooter'
 import { AiRunNotice } from '@/components/ai/AiRunNotice'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
+import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
 import { PanelPopupModal } from '@/components/popups/PanelPopupModal'
 import { AnrufEbene } from '@/components/calling/AnrufEbene'
 import { CrossDeviceCallBanner } from '@/components/calling/CrossDeviceCallBanner'
 import { api } from '@/api/client'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
+import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
+import { chatIstOffen } from '@/lib/chatVollbild'
 
 export function Shell() {
   useMessengerSperreBereitschaft()
@@ -72,6 +75,12 @@ export function Shell() {
   const isChatPage = location.pathname === '/chat' || location.pathname.startsWith('/chat')
   const isDocsPage = location.pathname === '/dokumente' || location.pathname.startsWith('/dokumente/')
   const isFullHeightPage = isAiPage || isChatPage || isDocsPage
+  /*
+   * Der offene Chat beginnt am Handy ganz oben: die eigene Kopfzeile der Hülle
+   * fällt weg, der Chat-Kopf trägt den Zurück-Pfeil. Zurück führt in die Liste,
+   * dort ist die Leiste wieder da.
+   */
+  const chatVollbild = isChatPage && chatIstOffen(location.search)
 
   return (
     // `overflow-x-clip` statt `overflow-x-hidden`: `hidden` auf einer Achse
@@ -116,8 +125,10 @@ export function Shell() {
       )}
 
       {/* Main Content Area */}
-      <div className={`flex-1 ${sidebarHidden ? 'ml-0' : 'lg:ml-64'} flex flex-col min-w-0 relative z-10 transition-all duration-300 ${isFullHeightPage ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : ''}`}>
-        <Topbar menuButtonRef={mobileNavigationTriggerRef} onOpenNavigation={() => setMobileNavigationOpen(true)} />
+      <div className={`flex-1 ${sidebarHidden ? 'ml-0' : 'lg:ml-64'} flex flex-col min-w-0 relative z-10 transition-all duration-300 ${isFullHeightPage ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : ''} ${chatVollbild ? 'pt-[env(safe-area-inset-top,0px)]' : ''}`}>
+        {!chatVollbild && (
+          <Topbar menuButtonRef={mobileNavigationTriggerRef} onOpenNavigation={() => setMobileNavigationOpen(true)} />
+        )}
         <CrossDeviceCallBanner />
         {/* Ohne `overflow-auto`: `main` hat als `flex-1` in einer Spalte ohne
             feste Höhe immer genau seine Inhaltshöhe, lief also nie über. Die
@@ -125,7 +136,7 @@ export function Shell() {
             Klebeelemente der Seiten (Reiterleiste, Inhaltsverzeichnisse)
             vergeblich ausgerichtet haben. Breite Inhalte bringen ihr eigenes
             `overflow-x-auto` mit. */}
-        <main className={`flex-1 relative flex flex-col min-h-0 ${isFullHeightPage ? 'p-0 overflow-hidden h-[calc(100dvh-3rem)] max-h-[calc(100dvh-3rem)] lg:h-[100dvh] lg:max-h-[100dvh]' : 'p-margin-mobile md:p-margin-desktop'}`}>
+        <main className={`flex-1 relative flex flex-col min-h-0 ${isFullHeightPage ? `p-0 overflow-hidden ${chatVollbild ? '' : 'h-[calc(100dvh-3rem)] max-h-[calc(100dvh-3rem)] lg:h-[100dvh] lg:max-h-[100dvh]'}` : 'p-margin-mobile md:p-margin-desktop'}`}>
           <div className={`relative z-10 flex-1 w-full flex flex-col min-h-0 ${isFullHeightPage ? 'h-full overflow-hidden' : ''}`}>
             <Outlet />
           </div>
@@ -142,6 +153,8 @@ export function Shell() {
 
       {/* Push- & Pop-up-Benachrichtigungen bei Server-Vorfällen & Kalender-Erinnerungen */}
       <ServerIncidentNotifier />
+      <FreundschaftsWache />
+      {socialEnabled && !isChatPage && <MessengerHintergrund />}
 
       {/* Aktive Pop-ups / Ankündigungen des Panels */}
       <PanelPopupModal />

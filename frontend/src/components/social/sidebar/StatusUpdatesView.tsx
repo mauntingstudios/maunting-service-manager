@@ -3,6 +3,7 @@ import { Clock, Plus, Sparkles } from 'lucide-react'
 import { Avatar, Button } from '@/Singra/UI'
 import type { ChatStoryItem } from '@/api/social'
 import { DeviceBadge } from '@/components/social/DeviceBadge'
+import { aktivitaetText } from '@/services/praesenz/aktivitaeten'
 import { StatusDot } from '@/components/social/StatusIndicator'
 import type { ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import type { StoryGruppe, StoryIch } from './StoriesCarouselBar'
@@ -164,10 +165,14 @@ export function StatusUpdatesView({
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-semibold text-primary truncate flex items-center gap-1.5">
                     <span>{c.username}</span>
-                    <DeviceBadge deviceType={c.deviceType} />
+                    {(c.status === 'online' || c.status === 'away') && (
+                      <DeviceBadge client={c.client} deviceType={c.deviceType} />
+                    )}
                   </div>
                   <div className="text-label-sm text-on-surface-variant/80 truncate">
-                    {c.activityLabel || t(`social.status.${c.status === 'online' || c.status === 'away' ? c.status : 'offline'}`)}
+                    {((c.status === 'online' || c.status === 'away') &&
+                      aktivitaetText(c.activityKey, t)) ||
+                      t(`social.status.${c.status === 'online' || c.status === 'away' ? c.status : 'offline'}`)}
                   </div>
                 </div>
               </div>

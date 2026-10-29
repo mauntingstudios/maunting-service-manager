@@ -78,6 +78,7 @@ from routers import (
     livekit_admin_router,
     browser_suche_router,
     browser_wetter_router,
+    notification_channels_router,
 )
 from middleware.rate_limit import limiter, auth_rate_limit
 from services.steam_service import close_steam_service
@@ -196,6 +197,13 @@ async def lifespan(app: FastAPI):
                 exc,
             )
             raise
+
+    # Erst **nach** den Migrationen: `migrations/env.py` ruft `fileConfig` mit
+    # `alembic.ini` auf, und dort steht `[logger_root] level = WARN`. Ein
+    # früh gesetzter Level wird davon wieder überschrieben — die Stufe bleibt
+    # sonst bei WARNING hängen, und jede `logger.info`-Zeile der Dienste fällt
+    # aus dem Log.
+    _protokoll_einrichten()
 
     # The web process synchronizes runtime registration and checks that
     # the schema contains the required tables/columns.
@@ -667,18 +675,18 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning("KI-Freigaben-Cleanup fehlgeschlagen: %s", exc)
-    # E2EE: Abgelaufene blinde Umschläge (> 30 Tage) auf dem Relais-Server aufräumen
+    # E2EE: nur Nachrichten mit ausdruecklicher Frist (verschwindende Nachrichten)
     try:
         from database import SessionLocal as _SessionLocalEnv
-        from services.social_service import SocialService
+        from services.social.messages_service import cleanup_expired as _cleanup_messages
         _env_db = _SessionLocalEnv()
         try:
-            SocialService.cleanup_expired_envelopes(_env_db)
+            _cleanup_messages(_env_db)
         finally:
             _env_db.close()
     except Exception as exc:
         import logging
-        logging.getLogger(__name__).warning("E2EE-Envelope-Cleanup fehlgeschlagen: %s", exc)
+        logging.getLogger(__name__).warning("E2EE-Nachrichten-Cleanup fehlgeschlagen: %s", exc)
 
 
     from services.ai_proposal_service import reconcile_interrupted_actions
@@ -788,6 +796,47 @@ async def lifespan(app: FastAPI):
     await close_steam_service()
 
 
+def _protokoll_einrichten() -> None:
+    """Bringt die Protokolle der Anwendung in die Standardausgabe.
+
+    uvicorn richtet nur seine eigenen Protokolle ein (`uvicorn`,
+    `uvicorn.access`); die Wurzel bekommt keinen Handler und bleibt auf
+    `WARNING`. Alles, was die Dienste mit `logger.info` schreiben — der Weg
+    einer Nachricht, Zustellungen, Aufräumläufe —, war damit **unsichtbar**:
+    im Log stand nur `POST /api/social/e2ee/relay 200`, und niemand konnte
+    sagen, ob der Umschlag ankam, ins Konto ging oder in einer abonnierten
+    Mailbox landete (bis 22.10.2026).
+
+    Stufe aus `MSM_LOG_LEVEL` (CRITICAL/ERROR/WARNING/INFO/DEBUG), sonst
+    `WARNING`. Der Dev-Stack setzt `INFO` (`docker-compose.dev.yml`,
+    `start-dev.bat`), damit ein Nachrichtenweg nachvollziehbar ist; der
+    Betrieb bleibt damit nicht von sich aus gesprächig.
+    """
+    import logging
+
+    stufen = {
+        "CRITICAL": logging.CRITICAL,
+        "ERROR": logging.ERROR,
+        "WARNING": logging.WARNING,
+        "INFO": logging.INFO,
+        "DEBUG": logging.DEBUG,
+    }
+    gewaehlt = (os.getenv("MSM_LOG_LEVEL") or "").strip().upper()
+    stufe = stufen.get(gewaehlt, logging.WARNING)
+
+    wurzel = logging.getLogger()
+    if not wurzel.handlers:
+        handler = logging.StreamHandler()
+        # Wie uvicorn: knapp, mit Ursprung. `disable_existing_loggers` bleibt
+        # unberührt — hier kommt nur ein Handler dazu, kein eigenes dictConfig.
+        handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
+        wurzel.addHandler(handler)
+    # Nie strenger machen als gewünscht: uvicorn hat hier nichts gesetzt, und
+    # eine Test-/Debug-Stufe soll sich nicht an einer fremden 30 festhalten.
+    if wurzel.level > stufe:
+        wurzel.setLevel(stufe)
+
+
 # Die automatischen Doku-Routen sind bewusst abgeschaltet und werden weiter
 # unten unter /api/* neu registriert. Zwei Gruende:
 #
@@ -819,6 +868,7 @@ app.add_middleware(
         "Content-Type",
         "Authorization",
         "X-CSRF-Token",
+        "X-Device-Id",
         "Idempotency-Key",
         "X-Task-Retry-Of",
         "X-Provider-Api-Key",
@@ -1019,6 +1069,8 @@ app.include_router(docs_internal_router)
 app.include_router(vault_router)
 app.include_router(sync_events_router)
 app.include_router(sync_alias_router)
+# Dauerhafte Ausweise fuer den Hintergrundkanal eines Geraets.
+app.include_router(notification_channels_router)
 app.include_router(social_router)
 app.include_router(social_calls_router)
 app.include_router(livekit_admin_router)
@@ -1058,7 +1110,7 @@ def redoc_ui(_: object = Depends(require_global("panel.settings.read"))):
 
 @app.get("/api/version")
 def app_version():
-    return {"name": settings.app_name, "version": "5.7.7"}
+    return {"name": settings.app_name, "version": "5.8.0"}
 
 
 @app.get("/api/health")

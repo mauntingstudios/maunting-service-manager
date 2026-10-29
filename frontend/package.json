@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "5.7.7",
+  "version": "5.8.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -39,7 +39,7 @@
     "@hocuspocus/provider": "4.7.1",
     "@huggingface/transformers": "^4.3.1",
     "@maunting/design-dna": "file:packages/design-dna",
-    "@msdis/shield": "file:packages/dis",
+    "@msdis/shield": "0.4.0",
     "@msm/docs-schema": "file:packages/docs-schema",
     "@noble/post-quantum": "0.5.4",
     "@tauri-apps/api": "^2.11.1",
@@ -74,7 +74,7 @@
     "hash-wasm": "^4.12.0",
     "i18next": "^23.11.5",
     "i18next-browser-languagedetector": "^8.2.1",
-    "i18next-http-backend": "^4.0.0",
+    "i18next-http-backend": "^4.0.4",
     "jsqr": "^1.4.0",
     "livekit-client": "^2.22.3",
     "lowlight": "3.3.0",
@@ -87,7 +87,7 @@
     "react-dom": "^18.3.1",
     "react-i18next": "^14.1.2",
     "react-markdown": "^9.1.0",
-    "react-router-dom": "^6.24.0",
+    "react-router-dom": "^6.30.6",
     "remark-gfm": "^4.0.1",
     "y-indexeddb": "9.0.12",
     "yjs": "13.6.27",
@@ -103,10 +103,10 @@
     "fake-indexeddb": "6.2.5",
     "happy-dom": "^20.9.0",
     "jsdom": "^29.1.1",
-    "postcss": "^8.4.39",
+    "postcss": "^8.5.32",
     "tailwindcss": "^3.4.6",
     "typescript": "^5.5.3",
-    "vite": "^8.0.14",
-    "vitest": "^4.1.7"
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
   }
 }

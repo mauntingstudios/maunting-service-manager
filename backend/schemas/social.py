@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, Field, StrictInt, field_serializer, field_validator
 from services.chat_media_validator import MAX_STORY_MEDIA_URL_CHARS
 from schemas.passkey import Zweitnachweis
 
@@ -49,11 +51,20 @@ class UserStatsResponse(BaseModel):
 
 
 class PresenceInfo(BaseModel):
+    """Was ein Betrachter vom Zustand eines Kontos sieht.
+
+    ``status`` ist das Ergebnis der Aggregation über alle Sitzungen und die
+    Wahl des Menschen; ``invisible`` erscheint nur beim eigenen Konto.
+    ``client`` sagt, welche Oberfläche gerade vorn ist; ``activity_key`` ist ein
+    Schlüssel aus der Aktivitätenliste der Oberfläche, damit die Anzeige in der
+    App-Sprache bleibt.
+    """
+
     status: str = "offline"
+    manual_status: str = "auto"
     device_type: str = "web"
-    custom_status: str | None = None
-    activity_label: str | None = None
-    activity_detail: str | None = None
+    client: str | None = None
+    activity_key: str | None = None
     updated_at: datetime | None = None
 
 
@@ -66,6 +77,7 @@ class FriendResponse(BaseModel):
     is_requester: bool = False
     created_at: datetime
     presence: PresenceInfo | None = None
+    info: UserInfoResponse | None = None
 
 
 class FriendRequestCreate(BaseModel):
@@ -79,11 +91,50 @@ class FriendRequestCreate(BaseModel):
 
 
 class PresenceUpdateRequest(BaseModel):
+    """Altweg eines Clients, der noch die eine Zeile je Konto kennt.
+
+    Wird auf eine Sitzung und die manuelle Wahl abgebildet; freie Aktivitätstexte
+    werden ignoriert, weil die Anzeige nur Schlüssel aus der Liste übersetzt.
+    """
+
     status: str = Field("online", pattern="^(online|away|invisible)$")
     device_type: str | None = Field(None, pattern="^(web|desktop|mobile)$")
     custom_status: str | None = Field(None, max_length=128)
     activity_label: str | None = Field(None, max_length=128)
     activity_detail: str | None = Field(None, max_length=128)
+
+
+class PresenceSessionRequest(BaseModel):
+    """Das Lebenszeichen eines Geräts."""
+
+    geraet: str = Field(..., min_length=8, max_length=64, pattern="^[A-Za-z0-9_-]+$")
+    client: str = Field("web", pattern="^(web|pontis|mss)$")
+    plattform: str = Field("web", pattern="^(web|desktop|mobile)$")
+    zustand: str = Field("online", pattern="^(online|away)$")
+    activity_key: str | None = Field(None, pattern="^[a-z0-9_]{1,48}$")
+    vorn: bool = True
+
+
+class PresenceStatusRequest(BaseModel):
+    manual_status: str = Field(..., pattern="^(auto|online|away|invisible)$")
+
+
+class UserInfoResponse(BaseModel):
+    """Der freiwillige Info-Text, wie ihn der Betrachter sehen darf."""
+
+    text: str
+    visibility: str
+    expires_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class UserInfoUpdateRequest(BaseModel):
+    """Setzt oder loescht die Info. Leerer Text loescht sie."""
+
+    text: str = Field("", max_length=139)
+    visibility: str = Field("friends", pattern="^(friends|public|nobody)$")
+    #: 0 heisst „fuer immer“; hoechstens ein Jahr.
+    dauer_sekunden: int = Field(0, ge=0, le=365 * 24 * 3600)
 
 
 class ActivityPingRequest(BaseModel):
@@ -478,6 +529,20 @@ class StreamMailboxAbos(BaseModel):
     eintraege: list[MailboxAbo] = Field(default_factory=list, max_length=200)
 
 
+class StreamPraesenz(BaseModel):
+    """Ob ein laufender Stream gerade vorne oder hinten steht.
+
+    Zwei Werte, mehr nicht: der Client sagt über sich selbst, was er zeigen
+    kann. Wer vorne steht, sieht die Nachricht ohnehin; ein Hintergrunddienst
+    zeigt sie selbst; erst wenn keiner das kann, geht ein Push hinaus. Damit
+    kommt dieselbe Meldung **einmal** an, auch wenn zwei Fenster oder MSS und
+    Pontis auf demselben Gerät offen sind.
+    """
+
+    conn_id: str = Field(..., min_length=4, max_length=64)
+    zustand: Literal["vordergrund", "hintergrund"]
+
+
 class E2eeMailboxSyncItem(BaseModel):
     blind_mailbox_id: str
     max_envelope_id: int
@@ -538,6 +603,7 @@ class DirectChatResponse(BaseModel):
     is_blocked: bool = False
     other_privacy: str = "friends"
     presence: PresenceInfo | None = None
+    info: UserInfoResponse | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -561,6 +627,17 @@ class E2eeDeviceUpdate(BaseModel):
     # sich so, bis er einmal neu gestartet ist.
     signing_public_key: str = Field(default="", max_length=2048)
     label: str = Field(default="", max_length=64)
+    # Die eigene Unterschrift ueber die eigene Freigabe. Nur das erste Geraet
+    # eines Kontos reicht sie mit: es gibt niemanden, der es freigeben koennte,
+    # und ohne sie stand in der Liste „freigegeben", waehrend die Signaturkette
+    # „ohne gueltige Freigabe" sagte. Ein freigegebenes Geraet ersetzt sie
+    # jederzeit durch seine Unterschrift (`e2ee_device_service.bestaetigen`).
+    approval_signature: str = Field(default="", max_length=256)
+    # Die opake Zustelladresse dieses Geraets (64 Hex-Zeichen). Sie entsteht
+    # aus einem Geheimnis, das **nur** das Geraet kennt — der Server kann sie
+    # nicht nachrechnen. Leer heisst: dieses Geraet benutzt den alten Weg
+    # (geteilte Mailbox) und kennt die Zustellung mit Quittung nicht.
+    inbox_hash: str = Field(default="", max_length=64)
 
     @field_validator("device_id")
     @classmethod
@@ -589,6 +666,7 @@ class E2eeDeviceUpdate(BaseModel):
 
 
 class E2eeDeviceItem(BaseModel):
+    id: int | None = None
     device_id: str
     public_key: str
     signing_public_key: str = ""
@@ -598,6 +676,62 @@ class E2eeDeviceItem(BaseModel):
     # selbst (`vertrauteGeraete`), statt `is_approved` zu glauben.
     approved_by: str = ""
     approval_signature: str = ""
+    # Die opake Zustelladresse des Geraets, falls es den neuen Weg kennt.
+    #
+    # Sie wird wie der oeffentliche Schluessel im Verzeichnis ausgegeben: ein
+    # angemeldetes Konto darf sie sehen. Sie allein bringt nichts — zum Abholen
+    # braucht es zusaetzlich die Unterschrift des Geraets.
+    inbox_hash: str = ""
+    # Die Transportfaehigkeit des Geraets. "geraet-v1" heisst: es kennt die
+    # Zustellung mit Quittung. Leer heisst: der alte Weg.
+    transport: str = ""
+
+
+# ==========================================
+# Die gerätebezogene Zustellung
+# ==========================================
+
+
+class E2eeZustellPayload(BaseModel):
+    """Ein Chiffretextobjekt — ohne Ziel, ohne Absender."""
+
+    id: str = Field(..., min_length=36, max_length=36)
+    ciphertext: str = Field(..., min_length=1, max_length=MAX_E2EE_ENVELOPE_CHARS)
+    ciphertext_sha256: str = Field(..., min_length=64, max_length=64)
+
+
+class E2eeZustellEintrag(BaseModel):
+    """Ein Zustellauftrag: ein Chiffretextobjekt fuer eine Zustelladresse."""
+
+    delivery_id: str = Field(..., min_length=36, max_length=36)
+    payload_id: str = Field(..., min_length=36, max_length=36)
+    inbox_hash: str = Field(..., min_length=64, max_length=64)
+
+
+class E2eeZustellCreate(BaseModel):
+    """Ein Stapel Zustellungen fuer eine Gespraechsmailbox.
+
+    `mailbox_id` ist der **Kontext**, nicht das Ziel: er sagt, in welche
+    Mailbox geschrieben wird, und der Server prueft daraus die Berechtigung
+    (dieselbe Pruefung wie beim Relais). Gespeichert wird er nicht — der
+    Zustellbestand fuehrt keinen Kontaktgraph.
+    """
+
+    mailbox_id: str = Field(..., min_length=16, max_length=64)
+    geraet_id: str = Field(..., min_length=8, max_length=64)
+    payloads: list[E2eeZustellPayload] = Field(default_factory=list, max_length=50)
+    eintraege: list[E2eeZustellEintrag] = Field(default_factory=list, max_length=50)
+    # Die Unterschrift des sendenden Geraets ueber den ganzen Stapel.
+    signatur: str = Field(..., min_length=16, max_length=512)
+
+
+class E2eeZustellQuittung(BaseModel):
+    """Die Quittung einer Inbox: genau diese Zustellkennungen."""
+
+    inbox_hash: str = Field(..., min_length=64, max_length=64)
+    geraet_id: str = Field(..., min_length=8, max_length=64)
+    delivery_ids: list[str] = Field(default_factory=list, max_length=100)
+    signatur: str = Field(..., min_length=16, max_length=512)
 
 
 class E2eeDeviceApproveRequest(BaseModel):
@@ -606,12 +740,51 @@ class E2eeDeviceApproveRequest(BaseModel):
     signature: str = Field(..., min_length=16, max_length=256)
 
 
+class E2eeDeviceSelfApproveRequest(BaseModel):
+    """Ein wartendes Geraet holt sich zurueck, weil es das einzige ist.
+
+    Nur wenn kein freigegebenes Geraet mehr existiert, sonst gaebe es einen Weg
+    an der Unterschrift vorbei. Der Nachweis ist derselbe wie beim Neustart des
+    Verzeichnisses:
+
+    - Bei aktivem 2FA: der eingerichtete Faktor — otp_code (TOTP) oder passkey.
+    - Ohne 2FA: das Passwort, bei Konten ohne Passwort das Wort RESET.
+
+    Reicht der Client seine eigene Unterschrift ueber die Freigabe mit
+    (`signature`), steht sie danach in `approval_signature`: der Server gibt die
+    Zustellung frei, und das Geraet belegt, dass es den eigenen Schluessel
+    kennt. Eine Unterschrift eines anderen freigegebenen Geraets ersetzt sie
+    (`e2ee_device_service.bestaetigen`).
+    """
+
+    device_id: str = Field(..., min_length=8, max_length=64)
+    password: str | None = Field(default=None, max_length=512)
+    confirmation: str | None = Field(default=None, max_length=64)
+    otp_code: str | None = Field(default=None, max_length=32)
+    passkey: Zweitnachweis | None = None
+    signature: str = Field(default="", max_length=256)
+
+
 class E2eeDeviceRemoveRequest(BaseModel):
-    """Entfernen eines Geraets. Unterschrift ist Pflicht, wenn es freigegeben ist."""
+    """Entfernen eines Geraets — mit Unterschrift und frischem Nachweis.
+
+    Die Unterschrift eines freigegebenen Geraets (`entfernen_daten`) ist
+    Pflicht, wenn das Ziel freigegeben ist. Dazu kommt die Nachweispflicht aus
+    der Sicherheitskaskade: der eingerichtete zweite Faktor (Passkey oder Code),
+    sonst das Passwort. Nur ein Konto ohne beides — Social Login ohne Passwort —
+    kommt mit der Sitzung allein aus; das prueft der Server an den
+    eingerichteten Faktoren, nie an einem Feld des Clients.
+
+    Ein **wartendes** Geraet braucht keinen Nachweis: es hat nie etwas bekommen,
+    und die Kopplung mit falscher Sicherheitsnummer muss sofort abbrechbar sein.
+    """
 
     device_id: str = Field(..., min_length=8, max_length=64)
     approver_device_id: str = Field(default="", max_length=64)
     signature: str = Field(default="", max_length=256)
+    password: str | None = Field(default=None, max_length=512)
+    otp_code: str | None = Field(default=None, max_length=32)
+    passkey: Zweitnachweis | None = None
 
 
 class E2eeDeviceResetRequest(BaseModel):
@@ -639,6 +812,7 @@ class SocialProfileResponse(BaseModel):
     is_friend: bool = False
     member_since: date | None = None
     presence: PresenceInfo | None = None
+    info: UserInfoResponse | None = None
     stats: UserStatsResponse | None = None
     achievements: list[AchievementResponse] | None = None
 
@@ -672,6 +846,8 @@ class ChatGroupMemberResponse(BaseModel):
     can_mention_everyone: bool = False
     can_pin_messages: bool = False
     can_set_disappearing_messages: bool = False
+    can_edit_group: bool = False
+    can_set_group_background: bool = False
     joined_at: datetime
 
 
@@ -729,6 +905,87 @@ class ChatGroupConfigResponse(BaseModel):
         return dt.isoformat()
 
 
+#: Obergrenze für die verschlüsselte Gruppeninfo (Name, Beschreibung, Logo).
+#: 64 KiB sind für drei Textfelder samt Signatur reichlich; alles darüber wäre
+#: keine Info mehr, sondern eine zweite Ablage. Der geteilte Hintergrund liegt
+#: bewusst in einem eigenen Block mit eigener Grenze.
+MAX_GROUP_INFO_BYTES = 64 * 1024
+
+#: Obergrenze für den geteilten Gruppenhintergrund. Der Client verkleinert das
+#: Bild vor dem Verschlüsseln (Richtwert 512 KiB Klartext); Base64 und
+#: Chiffrat blähen das auf. 1 MiB Zeichen lassen diesen Spielraum und halten
+#: trotzdem jede Gruppe bei einer festen Obergrenze.
+MAX_GROUP_BACKGROUND_BYTES = 1024 * 1024
+
+
+def _validate_group_blob(blob: str) -> str:
+    # Dieselbe Prüfung wie für eine Nachricht: sie weist Klartext ab und
+    # begrenzt die Menge, die der Server nicht beurteilen kann.
+    validate_e2ee_envelope_format(blob)
+    return blob
+
+
+class ChatGroupInfoWrite(BaseModel):
+    """Name, Beschreibung und Logo — verschlüsselt, mit der abgelösten Revision.
+
+    Getrennt vom Rollenblock (``/config``), damit ``edit_group`` keine Rollen
+    umschreiben kann und ``manage_roles`` keine Gruppeninfo.
+    """
+
+    blob: str = Field(..., min_length=10, max_length=MAX_GROUP_INFO_BYTES)
+    erwartete_revision: StrictInt = Field(..., ge=0)
+
+    @field_validator("blob")
+    @classmethod
+    def validate_blob(cls, v: str) -> str:
+        return _validate_group_blob(v)
+
+
+class ChatGroupInfoResponse(BaseModel):
+    group_id: int
+    blob: str
+    revision: int
+    updated_at: datetime
+
+    @field_serializer("updated_at")
+    def serialize_updated_at(self, dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+
+
+class ChatGroupBackgroundWrite(BaseModel):
+    """Der geteilte Gruppenhintergrund, verschlüsselt, mit der Revision.
+
+    ``mime`` und ``size_bytes`` beschreiben das Klartextbild und werden vom
+    Client genannt; der Server sieht nur diese Angaben und das Chiffrat.
+    """
+
+    blob: str = Field(..., min_length=10, max_length=MAX_GROUP_BACKGROUND_BYTES)
+    erwartete_revision: StrictInt = Field(..., ge=0)
+    mime: str | None = Field(None, max_length=100, pattern=r"^image/[a-z0-9.+-]+$")
+
+    @field_validator("blob")
+    @classmethod
+    def validate_blob(cls, v: str) -> str:
+        return _validate_group_blob(v)
+
+
+class ChatGroupBackgroundResponse(BaseModel):
+    group_id: int
+    blob: str
+    revision: int
+    mime: str | None = None
+    size_bytes: int = 0
+    updated_at: datetime
+
+    @field_serializer("updated_at")
+    def serialize_updated_at(self, dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
+
+
 class ChatGroupResponse(BaseModel):
     id: int
     #: Immer `None` seit Stufe 6 — der Server kennt den Namen nicht mehr. Das
@@ -757,6 +1014,11 @@ class ChatGroupResponse(BaseModel):
     can_mention_everyone: bool = False
     can_pin_messages: bool = False
     can_set_disappearing_messages: bool = False
+    # Gruppeninfo und geteilter Hintergrund sind getrennte Wege; Rollen bleiben
+    # bei ``manage_roles``.
+    can_edit_group: bool = False
+    can_set_group_background: bool = False
+    can_manage_roles: bool = False
     created_at: datetime
     members: list[ChatGroupMemberResponse] = []
     room_token: str | None = None

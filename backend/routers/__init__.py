@@ -48,6 +48,7 @@ from .docs import router as docs_router
 from .docs_internal import router as docs_internal_router
 from .vault import router as vault_router
 from .sync_events import router as sync_events_router, sync_alias_router
+from .notification_channels import router as notification_channels_router
 from .social import router as social_router
 from .social_calls import router as social_calls_router, admin_router as livekit_admin_router
 from .browser_suche import router as browser_suche_router
@@ -105,6 +106,7 @@ __all__ = [
     "docs_internal_router",
     "vault_router",
     "sync_events_router",
+    "notification_channels_router",
     "sync_alias_router",
     "social_router",
     "social_calls_router",

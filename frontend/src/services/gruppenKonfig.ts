@@ -36,7 +36,11 @@ import {
   verschluesseleFuerGruppe,
   type GruppenKontext,
 } from './gruppenSchluessel'
-import { pruefeNutzlast, signiereNutzlast } from './nutzlastSignatur'
+import {
+  gruppenSignaturKontext,
+  pruefeGruppenSignatur,
+} from './gruppenSignatur'
+import { signiereNutzlast } from './nutzlastSignatur'
 
 /** Formatnummer des Blockinhalts. Siehe `liesGruppenzustand`. */
 export const KONFIG_FORMAT = 1
@@ -203,18 +207,16 @@ export async function ladeGruppenzustand(
   const antwort = await getGroupConfig(kontext.groupId)
   if (!antwort || !antwort.blob) return { art: 'leer' }
 
-  const lesung = await entschluesseleGruppenUmschlag(kontext.groupId, antwort.blob)
-  if (lesung.art === 'kein-schluessel') {
-    return { art: 'kein-schluessel', keyId: lesung.keyId, revision: antwort.revision }
-  }
-  if (lesung.art !== 'klartext') {
-    const grund = lesung.art === 'bruch' ? lesung.grund : 'unbekanntes-format'
-    return { art: 'unlesbar', grund, revision: antwort.revision }
+  let text: string
+  try {
+    text = await entschluesseleGruppenUmschlag(kontext.groupId, antwort.blob)
+  } catch {
+    return { art: 'kein-schluessel', keyId: '', revision: antwort.revision }
   }
 
   let roh: Record<string, unknown>
   try {
-    const geparst = JSON.parse(lesung.text)
+    const geparst = JSON.parse(text)
     if (!geparst || typeof geparst !== 'object' || Array.isArray(geparst)) {
       return { art: 'unlesbar', grund: 'kein-objekt', revision: antwort.revision }
     }
@@ -227,11 +229,11 @@ export async function ladeGruppenzustand(
   // und nicht etwa geduldet: anders als bei einer Nachricht ist „unsigniert"
   // hier genau der Angriff — jedes Mitglied hält den Gruppenschlüssel und
   // könnte sich sonst selbst jedes Recht eintragen.
-  const beleg = await pruefeNutzlast(kontext.blindMailboxId, roh)
-  if (beleg.art !== 'geprueft') {
+  const beleg = await pruefeGruppenSignatur(roh, gruppenSignaturKontext(kontext.groupId))
+  if (beleg.art === 'gefaelscht') {
     return {
       art: 'unbefugt',
-      behauptet: beleg.art === 'gefaelscht' ? beleg.behauptet : 0,
+      behauptet: beleg.vonKonto,
       revision: antwort.revision,
     }
   }
@@ -269,7 +271,7 @@ export async function schreibeGruppenzustand(
   // wandert, soll an dieser Stelle aufgezählt sein. Ein durchgereichtes Objekt
   // nähme irgendwann ein Feld mit, das niemand hier haben wollte — und es
   // stünde dann unterschrieben und verschlüsselt auf dem Server.
-  const nutzlast = await signiereNutzlast(kontext.blindMailboxId, kontext.eigeneId, {
+  const nutzlast = await signiereNutzlast(gruppenSignaturKontext(kontext.groupId), kontext.eigeneId, {
     v: KONFIG_FORMAT,
     name: zustand.name ?? null,
     beschreibung: zustand.beschreibung ?? null,

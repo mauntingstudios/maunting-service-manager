@@ -542,6 +542,7 @@
       "devicePairHandOver": "Hand over history",
       "devicePairDecline": "Do not hand over",
       "devicePairHandedOver": "Device paired, history handed over.",
+      "devicePairKeyPending": "Device paired. The account key will be sent with the next sync.",
       "devicePairHandOverFailed": "The history could not be handed over. The device is paired anyway.",
       "devicePairDeclined": "History not handed over. The device stays paired and receives new messages and the key for notes and calendar – just not the past history.",
       "devicePairTooMany": "Several devices registered after the code was redeemed, so the history will not be handed over. Check the devices on this page: revoke access for any you do not recognise and remove it from delivery.",
@@ -3156,6 +3157,8 @@
       "purpose": {
         "data_export": "Export data",
         "e2ee_reset": "Reset messenger devices",
+        "e2ee_reapprove": "Allow this messenger device again",
+        "e2ee_remove": "Remove a messenger device",
         "device_pairing": "Pair a device",
         "password_change": "Change password",
         "email_change": "Change email address",
@@ -3164,7 +3167,8 @@
         "oauth_link": "Link a social account",
         "2fa_change": "Change two-factor sign-in",
         "vault_reset": "Reset vault",
-        "kamera_sicherung": "Turn on camera backup"
+        "kamera_sicherung": "Turn on camera backup",
+        "notification_channel": "Allow background notifications"
       }
     },
     "zweitfaktor": {
@@ -3802,15 +3806,16 @@
     "title": "Profile",
     "subtitle": "Your account",
     "tabs": {
+      "profile": "Profile",
       "account": "Account",
-      "social": "Friends & milestones",
+      "social": "Social",
       "audio": "Audio & video",
       "security": "Security",
       "connections": "Connections",
       "ai": "AI",
-      "devices": "Devices",
       "danger": "Danger zone"
     },
+    "devicesTitle": "Devices",
     "dataExport": {
       "title": "Export my data",
       "description": "Everything stored for your account in one ZIP file: AI chats, notes, events, settings, friends, connections and this device's messenger history. The data inside is in plain text.",
@@ -3833,7 +3838,7 @@
       "readme": {
         "title": "Data export from Maunting Server Manager",
         "intro": "This archive contains your account data in plain text. Keep it as safe as a password.",
-        "structure": "server/ holds one JSON file per table with everything the server stores for your account. geraet/ holds what only this device can read (messenger history, conversations, drafts). tresor/ holds the vault if it was unlocked in the app. dateien/ holds your profile picture and AI attachments. manifest.json lists every table with its row count.",
+        "structure": "server/ holds one JSON file per table with everything the server stores for your account. geraet/ holds what only this device can read (messenger history, conversations, drafts and the attachments this device keeps). tresor/ holds the vault if it was unlocked in the app. dateien/ holds your profile picture and AI attachments. manifest.json lists every table with its row count.",
         "secretsIncluded": "Stored credentials (GitHub, Steam, mailboxes, calendars) are in plain text in server/user_credentials.json, server/user_mailboxes.json and server/user_calendars.json.",
         "secretsMissing": "Stored credentials are missing because your account has neither a password nor 2FA.",
         "notesLocked_one": "{{count}} field from personal notes or events stayed encrypted because the exporting device did not have the key.",
@@ -4023,10 +4028,22 @@
       "remove": "Remove",
       "removeTitle": "Remove this device from delivery?",
       "removeMessage": "The device is signed out immediately and receives no new messages. If it signs in again with your password, it has to be approved on one of your devices first.",
+      "removeStepUpHelp": "To remove it, confirm that it is you — with the proof your account requires.",
+      "removePendingHelp": "This device is still awaiting approval and has never received messages. It is removed immediately.",
+      "removeTotp": "6-digit Authenticator code",
+      "removePassword": "Password",
+      "removeSessionHelp": "Your account has neither a password nor a second factor. This sign-in confirms the removal.",
       "removed": "Device removed.",
       "pending": "Awaiting approval",
+      "reapprove": "Allow this device again",
+      "reapproveHelp": "Nobody can approve this device because it is the only one. Confirm with the proof your account requires — afterwards you receive messages again. That does not make it verified: compare the safety number with your contact.",
+      "reapproveDone": "Device allowed again.",
+      "reapproveOtherDevice": "An approved device can approve this one. You can also approve it yourself with your password or second factor if you no longer have the other device. Afterwards contacts must compare the safety number before they can message you.",
+      "notCovered": "No valid approval",
+      "notCoveredHelp": "This device is listed as approved, but none of your devices signed its approval — that is why it receives no messages (the warning in the chat refers to exactly this entry). Check the safety number, remove the device and pair it again.",
       "approve": "Approve",
       "approved": "Device approved.",
+      "keyPending": "Device approved. The account key will be sent with the next sync.",
       "safetyNumber": "Safety number",
       "approvalHelp": "Approve a new device on one that is already approved. First compare the safety number with the one on the new device.",
       "thisDevicePending": "This device is waiting for approval. On one of your other devices, open Profile → Devices, compare the safety number and tap “Approve”.",
@@ -4264,6 +4281,9 @@
     "aiHint": "A note when a task finishes or is waiting. No emails.",
     "deviceLabel": "Device notifications",
     "deviceHint": "Pop-up alerts on Windows and Android devices for server events, appointments, and AI tasks.",
+    "backgroundLabel": "Even with the app closed",
+    "backgroundHint": "Keeps the connection itself — without Google. Android shows a permanent notice for this.",
+    "backgroundFailed": "The background service could not be switched on.",
     "incidentTitle": "Server incident: {{server}}",
     "incidentText": "{{titel}} ({{art}})",
     "incidentToast": "⚠️ Incident on {{server}}: {{titel}}",
@@ -4273,6 +4293,10 @@
     "someUser": "A user",
     "friendRequestTitle": "New friend request",
     "friendRequestText": "{{name}} sent you a friend request.",
+    "friendRequestUnknown": "Someone",
+    "friendRequestAction": "View",
+    "friendRequestAcceptedTitle": "Friend request accepted",
+    "friendRequestAccepted": "{{name}} accepted your friend request.",
     "achievementUnlockedToast": "🏆 Achievement unlocked: {{title}} (+{{points}})",
     "friendRequestToast": "👋 Friend request from {{name}}",
     "messageTitle": "New message: {{name}}",
@@ -4840,6 +4864,34 @@
       },
       "permissionsPolicy": "The reverse proxy must allow camera=(self), microphone=(self) and display-capture=(self). Older installations still carry camera=(): the browser then never even asks for permission, and camera and screen sharing stay off. Change the line in the Caddy site and reload Caddy."
     },
+    "e2eeState": {
+      "title": "E2EE delivery state",
+      "intro": "Messages reach the server only as ciphertext. In a one-to-one chat every device can have its own delivery address; groups keep using the shared mailbox, and the initial history transfer uses the device mailbox. This store is a buffer with an expiry, not a backup and not a history.",
+      "stores": {
+        "title": "What is stored where",
+        "body": "One delivery address per device (e2ee_device_inboxes), one delivery job per message (e2ee_deliveries), and a ciphertext object (e2ee_delivery_payloads). After the acknowledgement, an idempotency rest of identifier, request hash and result remains for at most 30 days (e2ee_delivery_receipts); it contains no content. The old relay store (e2ee_blind_envelopes) and encrypted attachments (chat_media) sit next to it."
+      },
+      "ttl": {
+        "title": "Expiry",
+        "body": "Deliveries and envelopes: 30 days. Attachments: 30 days from upload for new rows. Older uploads keep their stored expiry of up to 90 days and run out without a migration. The server copy only serves the first download; the local expiry in the chat (up to 90 days) is a separate rule. An acknowledgement deletes the delivery job immediately; the expiry is the upper bound, not the rule. The hourly run removes what has expired. A fetch returns nothing whose expiry has passed, even if that run is still pending."
+      },
+      "transfer": {
+        "title": "Initial history transfer",
+        "body": "A newly paired device receives the history as a sealed block in device_pairings.verlauf_blob, at most 25 MiB. It fetches that once; otherwise the next call clears it ten minutes after redemption. Between already approved devices, history and attachments travel as envelopes through the device mailbox; attachment packets are valid for 24 hours, while the envelope follows the 30-day expiry."
+      },
+      "backup": {
+        "title": "What the panel backup omits",
+        "body": "The panel backup is a full pg_dump, but without the rows of e2ee_device_inboxes, e2ee_delivery_payloads, e2ee_deliveries, e2ee_delivery_receipts, e2ee_blind_envelopes, chat_media and device_pairings. The schema remains so that a restore creates the tables and foreign keys; the tables are empty afterwards. Open pairings and the sealed initial history transfer are then gone; a pairing starts over. Attachments not saved locally are gone as well. Old backups, WAL archives and snapshots are not rewritten."
+      },
+      "deletion": {
+        "title": "Deletion",
+        "body": "Acknowledgement and expiry run as DELETE. Afterwards the service no longer returns the row. PostgreSQL keeps the old row version until VACUUM, and backups, replicas or provider snapshots have their own retention. This installation therefore does not promise that data is physically gone everywhere after 30 days."
+      },
+      "limits": {
+        "title": "Limits",
+        "body": "A device gets exactly one delivery address; changing it means a new device and a new approval. Open deliveries per inbox: 50, at most 10 MiB in total. A backup taken after this change brings no open delivery back; the history stays on the devices."
+      }
+    },
     "push": {
       "title": "Notifications while the application is closed",
       "intro": "As long as a window is open, the panel notifies you itself. Once the application is closed, the browser vendor's push service is the only route left: the browser registers a delivery address and the panel sends there.",
@@ -4918,7 +4970,7 @@
       },
       "backup": {
         "title": "Backup",
-        "body": "The panel backup contains the database, not /opt/msm/vault-blobs. Without that directory, vault entries point to missing files after a restore. Include it in the server backup; its content is encrypted. Database and directory must be from the same point in time: the hourly cleanup removes every file directory the database has had no row for during 24 hours."
+        "body": "The panel backup contains the database, not /opt/msm/vault-blobs. Without that directory, vault entries point to missing files after a restore. Include it in the server backup; its content is encrypted. Database and directory must be from the same point in time: the hourly cleanup removes every file directory the database has had no row for during 24 hours. For the messenger, the dump also omits the buffers of its E2EE delivery state (see E2EE delivery state)."
       },
       "reset": {
         "title": "Resetting the vault",
@@ -5119,19 +5171,20 @@
         "heading": "Messenger and end-to-end encryption",
         "body": "Messenger messages are encrypted on your device and only opened again on the other side. The instance relays ciphertext and nothing else.",
         "items": {
-          "envelopes": "What is stored is the encrypted envelope, the time it arrived, and a mailbox identifier derived from the participants. Message plaintext never resides on the server. The server retains envelopes for a maximum of 30 days; older envelopes are purged irrevocably.",
-          "deviceKey": "The key belongs to this device and is created on it the first time you open the messenger. Its private half never leaves the device. The instance only holds the public half, so that others can write to you.",
-          "deviceFanout": "When you write to someone, your device encrypts the message separately for each of their devices and for your own other devices. The instance sees that an account has several devices, and nothing beyond that.",
-          "deviceHistory": "Each device keeps its own history. An additional device receives nothing until one of your approved devices approves it: in doing so it signs the new device's keys, and your contacts' devices check that signature themselves. A device that only the server reports as approved gets nothing from them, and they see a warning. So someone who only has your password does not read along. When you pair a new device, the panel shows the name and safety number of the device that registered. Confirming that the number matches the one shown in the app approves it, and it receives the existing history encrypted from the device you already set up, together with the key for your notes and calendar entries, which it only accepts with the signature of the handing-over device; if several devices registered, nothing is handed over. If you decline, the device stays paired but unapproved. Only an approved device can remove an approved device. Removal takes effect immediately: the device is signed out, its access stops working with its next request, and if it signs in again it waits for approval once more. It may already have the key for notes and calendar entries by then; removing it does not replace that key. A new device fetches nothing retroactively from the server. In a browser the history lives in the site's storage: MSM asks the browser to keep that storage permanently, but clearing the site data clears this device's history with it. If you lose all your approved devices, you can start over with your password: all other devices are signed out and removed, the current one becomes your first, and your contacts see a warning. The old history is gone then, and the operator cannot restore it, because the operator was never able to read it. One limit remains: in the web version the program code itself comes from the server. Only the desktop and Android apps protect against an operator who changes it.",
-          "devicePin": "On the device itself this history is initially readable so it survives a reload. If you set up a messenger PIN under Profile, the history, device key, session states and group keys on that device are encrypted and opened only after the PIN is entered; in the desktop app Windows Hello can hold the PIN for you, in the Android app your fingerprint. The PIN is optional, off by default and can be removed at any time. Without it, anyone with access to this device can read the history. The PIN is stored nowhere and is unknown to the operator: forget it and this device's history is lost.",
-          "ratchet": "Every message gets its own key, destroyed once the message has been read and impossible to derive from the keys before it. Someone who later gains access to your device can no longer open anything that came earlier. A new security session carries the signature of the device that sets it up, and your device only accepts it if that signature matches the device the instance lists for that account; a rejected one is stated in the conversation. If a security session had to be rebuilt — because the other side reinstalled, for instance — that is stated in the conversation too, not hidden away.",
-          "groups": "In a group, all members share one key. It is created on the device that writes the first message and delivered encrypted separately to every device of every member; the instance relays that too and nothing more. Any change in membership produces a new one, so nobody keeps reading after leaving. When a device asks for the key, another one only answers if whoever asks belongs to the members it was created for: someone who joins reads from the moment they joined. When someone is removed, the instance renews the invite link; links shared before no longer lead in. Two differences from a one-to-one chat remain: a former member can still open older messages, and a group key covers every message of its generation rather than a single one.",
+          "envelopes": "Chat messages are stored as one row per message: conversation type and identifier, sender, time, key version, ciphertext size and an expiry. The instance cannot read the content. Normal messages and attachments remain until they are deleted; only explicitly time-limited messages are removed by the server after they expire. Copies in backups may last longer. Rows encrypted with the earlier scheme remain in the database as a frozen archive after the switch; no function exposes them and they are not delivered.",
+          "deviceDelivery": "A message is stored exactly once. The instance sees which conversation it belongs to, who sent it, when, how large it is and which key version it carries. There is no per-device delivery identifier and no idempotency rest any more.",
+          "deviceKey": "Your account has an identity key pair: RSA-OAEP for wrapping keys and ECDSA for signing. The private half never leaves an approved device in plaintext; it is stored encrypted in a key vault that every approved device opens with its own device key. The instance only holds the public halves.",
+          "deviceFanout": "Each conversation has a symmetric chat key. A message is encrypted once with it and signed by the sender; the instance stores exactly that one ciphertext and does not learn how many devices read it. The chat key is stored for each member, wrapped against that member's account key. When membership changes, a new version is created.",
+          "deviceHistory": "The history is stored encrypted on the instance. When a device is approved, it receives the account key vault and can read older messages with it; no history is transferred from device to device. An approved device signs the approval, and your contacts' devices verify that signature. Someone who only has your password does not read along. If you remove a device, it is signed out and loses access. If you lose all approved devices, you can start over with your password; the old history stays unreadable because the key is gone. In the web version the program code comes from the server; only the desktop and Android apps protect against an operator who changes it.",
+          "devicePin": "On the device itself the history is readable at first so that it survives a reload. If you set a messenger PIN under Profile, the history, device key, chat keys and drafts on this device are sealed and only opened after entering the PIN; the desktop app can store the PIN behind Windows Hello, the Android app behind a fingerprint. The PIN is optional, off by default and can be switched off again at any time. Without it, anyone with access to this device can read the history. The PIN is stored nowhere and is not known to the operator: if you forget it, the history on this device is lost.",
+          "ratchet": "There is no longer a key per message. All messages of one chat key version share that key, and anyone who obtains it can open the messages of that version. A membership change creates a new version; older messages remain readable under their old version. This is a deliberate trade of the automatic forward secrecy of a ratchet for a smaller, auditable path.",
+          "groups": "In a group, all members share the chat key of the same version. Every change in membership creates a new version, so a member who has left no longer reads new messages; messages from their old version remain readable to them. New members read from the point they join. When someone is removed, the instance replaces the invite link.",
           "mentions": "Whether an @everyone becomes a notification is decided by the receiving device, not the sending one: it checks the group permissions to see whether the sender was allowed to alert everyone, and otherwise leaves the text as ordinary text. The instance cannot check this, because it does not read the content. In a muted group only a badge appears in the chat list, with no sound. The same check applies to a group's pinned message: which message that is, each device remembers for itself.",
-          "attachments": "Images, voice messages, video notes and files each get their own random key before upload. It travels only inside the encrypted message text, so it differs per attachment and the instance never learns it. What the instance receives is the encrypted block, its size and its timestamp; the file name and file type stay inside the encrypted part. Copy such a block into another conversation and it will not open there. The server deletes the block after 90 days.",
+          "attachments": "Images, voice messages, video notes and files receive their own random key before upload. It travels only inside the encrypted message text; the instance receives the encrypted block, its size and its timestamp, but neither file name nor file type. If a block is copied into another conversation, it cannot be opened there. Attachments remain like the message; only for disappearing messages does the client set an expiry, and the server deletes the block after it.",
           "stories": "Stories are not end-to-end encrypted. Their text and image are stored encrypted in the database, but the instance itself can read them: it shows them to your friends, or to every signed-in account if your profile is public. They disappear from view after 24 hours, and the server deletes them within the following hour.",
-          "deletion": "Deleting a message for everyone does more than hide it: the envelope is removed from the mailbox, an uploaded attachment is deleted with it, and both devices drop the text and the attachment from their local history. What stays behind is a placeholder saying a message was here. Anything a device saved or photographed beforehand is beyond the reach of this deletion.",
-          "retention": "Disappearing messages are set per chat, and the time limit applies to everyone in it: in a one-to-one chat both sides may change it, in a group only those with the right to do so. Whether the sender had that right is checked by each receiving device itself; the instance cannot read the change. The other devices adopt the time limit, show the change in the conversation, and from then on their messages expire too. Once the time is up, every device drops the entry from its history, and each side removes its own envelopes and attachments from the server. Independently, the server automatically purges all encrypted envelopes after 30 days. If a device was offline for more than 30 days, it misses older envelopes; existing history on synced devices remains intact.",
-          "receipts": "Delivery and read receipts travel as encrypted control messages over the same path. If a receipt cannot be encrypted, it is not sent rather than sent unprotected.",
+          "deletion": "If you delete a message for everyone, the server marks its row as deleted and clears the content; an uploaded attachment is removed, and both devices remove text and attachment from their local history. A placeholder remains. Anything a device saved or photographed beforehand is not reached by this deletion.",
+          "retention": "You set disappearing messages per chat. In a one-to-one chat, only the side that turned it on may change or switch off the time limit; in a group, additionally the owner or an admin with the matching permission. The instance enforces this rule and remembers who turned it on. When the time is up, the server deletes the message and each device removes it from its history. Without a time limit, a message remains until it is deleted.",
+          "receipts": "Delivery and read receipts are sent by your device over the same encrypted chat. They carry only the message identifier. Your device sends read receipts only if you enabled them in the settings and the chat is visible.",
           "push": "If you have notifications switched on and the application closed, your browser registers a delivery address with its vendor's push service — Google, Mozilla or Apple, depending on the browser. The instance stores that address so it can reach you. What it sends there is encrypted for your browser and carries no content anyway: no text, no sender, only “New message”.",
           "pushMetadata": "The push service does see that your delivery address received something at that moment. There is no way around this on this route, which is why it is stated here. Turn notifications off in your profile or sign out and the address is deleted, after which nothing leaves the instance. The same happens when you remove a device: for that, the instance remembers which sign-in registered the address. While a window is open nothing is sent at all: the application notifies you itself.",
           "calls": "Voice, video and group calls run through a media server. Audio and video are encrypted on your device and only opened again on the other end; the media server forwards what it cannot open. By default it runs on this instance. If the operator configures an external provider, the encrypted streams travel over that provider's servers.",
@@ -6630,6 +6683,7 @@
         "locked": "Vault is locked",
         "emptyPassword": "Master password cannot be empty.",
         "invalidSalt": "Invalid KDF salt: At least 16 bytes required.",
+        "cryptoUnavailable": "No secure random source is available. Encryption is not possible.",
         "decryptionFailed": "Vault entry could not be decrypted (authentication error or incorrect key)",
         "invalidBase32Char": "Invalid Base32 character '{{char}}' at position {{pos}}",
         "invalidTotpSecret": "Invalid Base32 TOTP secret",
@@ -7179,7 +7233,8 @@
       },
       "sicherheit": {
         "messenger": "Messenger",
-        "tresor": "Vault"
+        "tresor": "Vault",
+        "geraete": "Devices"
       },
       "tab": {
         "desktop": "Desktop integration",
@@ -7442,7 +7497,14 @@
     "wrongKeyLength": "Room key has incorrect length",
     "participantUnmuted": "{{username}} can speak again.",
     "participantMuted": "{{username}} is muted.",
-    "unauthorizedKeyExchange": "An unauthorised key change for this call was rejected."
+    "unauthorizedKeyExchange": "An unauthorised key change for this call was rejected.",
+    "errors": {
+      "joinForbidden": "You do not have permission to join this group call.",
+      "callGone": "This call is no longer active.",
+      "callEnded": "This call has already ended.",
+      "serverUnavailable": "The call server is not configured or currently unreachable.",
+      "unreachable": "Could not connect to the call server. Please check your network."
+    }
   },
   "social": {
     "status": {
@@ -7450,7 +7512,8 @@
       "away": "Away",
       "invisible": "Invisible",
       "titel": "Status",
-      "offline": "Offline"
+      "offline": "Offline",
+      "auto": "Automatic"
     },
     "device": {
       "desktop": "Desktop app",
@@ -7532,6 +7595,12 @@
     "wallpaper": {
       "title": "Adjust chat background",
       "description": "Pick a background for your conversations. The cyber grid is the default and gives the best contrast.",
+      "loading": "Loading background …",
+      "applyAll": "Apply to all chats",
+      "applyAllHint": "Sets this background as the default and removes custom backgrounds from individual direct chats.",
+      "applyAllTitle": "Apply to all chats?",
+      "applyAllMessage": "Custom backgrounds of individual direct chats will be removed. The AI area stays unchanged.",
+      "applyAllConfirm": "Apply to all",
       "presets": "Design backgrounds",
       "default": "Default",
       "cyber": "Cyber Grid",
@@ -7554,7 +7623,7 @@
       "dimDark": "Very dark",
       "resetHint": "Reset to the default cyber grid",
       "badType": "Choose a valid image file: JPEG, PNG or WebP.",
-      "tooLarge": "The image is too large. 8 MB is the limit.",
+      "tooLarge": "The image is too large or could not be scaled down enough.",
       "loadFailed": "The image could not be loaded.",
       "saveFailed": "The background could not be saved. The browser's storage is full — usually an oversized custom image."
     },
@@ -7651,9 +7720,39 @@
     },
     "groupRoles": {
       "title": "Group roles & rights",
-      "subtitle_one": "{{group}} · {{count}} member · Role-based rights",
-      "subtitle_other": "{{group}} · {{count}} members · Role-based rights",
+      "subtitle_one": "{{group}} · {{count}} member",
+      "subtitle_other": "{{group}} · {{count}} members",
       "groupFallback": "Group",
+      "tabGeneral": "General",
+      "tabGeneralShort": "General",
+      "tabBackground": "Background",
+      "tabBackgroundShort": "Background",
+      "generalHeading": "Group info",
+      "generalHint": "Name, description and image apply to all members. Roles do not change with them.",
+      "generalNoRight": "You can read the group info, but not change it.",
+      "generalName": "Name",
+      "generalDescription": "Description",
+      "generalLogoChoose": "Choose image",
+      "generalLogoRemove": "Remove image",
+      "generalMembersHint": "{{count}} members. The list is under “Members”.",
+      "generalLoading": "The group info is being loaded …",
+      "generalSave": "Save",
+      "generalSaved": "Group info saved.",
+      "generalSaveFailed": "The group info could not be saved.",
+      "backgroundHeading": "Shared background",
+      "backgroundHint": "This background applies to all members of the group. Custom images are downscaled before encryption.",
+      "backgroundNoRight": "You can see the group background. Only someone with the permission can change it.",
+      "backgroundNone": "None",
+      "backgroundNoneHint": "The global Messenger background applies.",
+      "backgroundOwn": "Custom image",
+      "backgroundChoose": "Choose image",
+      "backgroundReplace": "Different image",
+      "backgroundRemove": "Remove",
+      "backgroundShared": "Visible to all members, encrypted on the server.",
+      "backgroundLoading": "The existing background is being loaded …",
+      "backgroundSave": "Save background",
+      "backgroundSaved": "Group background saved.",
+      "backgroundSaveFailed": "The group background could not be saved.",
       "tabMembers": "Members ({{count}})",
       "tabMembersShort": "Members",
       "tabRoles": "Roles & templates ({{count}})",
@@ -7663,6 +7762,7 @@
       "membersHeading": "Manage group members",
       "membersHint": "Assign roles to members, or remove disruptive participants from the group.",
       "membersLoading": "Loading members …",
+      "inviteAction": "Copy invitation link",
       "participantCount_one": "{{count}} participant",
       "participantCount_other": "{{count}} participants",
       "you": "(You)",
@@ -7794,9 +7894,17 @@
           "title": "Set disappearing messages",
           "desc": "Sets, for the whole group, after how long new messages disappear, or turns this off. The server cannot read the change and therefore cannot check it: every device compares it with the member list it currently knows, and without this right the change has no effect. If that list is out of date, a permitted change can go unheeded there until the list is reloaded, and a right that was just revoked still counts there until then."
         },
+        "edit_group": {
+          "title": "Edit group info",
+          "desc": "Changes the group's name, description and image. Applies to all members. Roles stay with “Assign & manage roles”."
+        },
+        "set_group_background": {
+          "title": "Change group background",
+          "desc": "Sets the background that all members see in this group. Custom images are downscaled before encryption; the server only sees the ciphertext."
+        },
         "manage_roles": {
           "title": "Assign & manage roles",
-          "desc": "Assign roles to members and adjust the default group rights. Owners and administrators carry “Mention everyone at once”, “Pin a message” and “Set disappearing messages” anyway, because they could grant them to themselves in two clicks."
+          "desc": "Assign roles to members and adjust the default group rights. Owners and administrators carry “Mention everyone at once”, “Pin a message”, “Set disappearing messages”, “Edit group info” and “Change group background” anyway, because they could grant them to themselves in two clicks."
         }
       }
     },
@@ -7831,6 +7939,56 @@
         "public": "Every account on this panel can see your profile and your status.",
         "private": "Nobody can see your profile, not even your friends. Friends still see your status; everyone else only sees whether you are online."
       }
+    },
+    "info": {
+      "title": "Info",
+      "description": "A short line about you. Visible depending on your setting, with an expiry.",
+      "placeholder": "What's on your mind?",
+      "suggestion": {
+        "available": "Available",
+        "busy": "Busy",
+        "meeting": "In a meeting",
+        "away": "On the go",
+        "night": "Away, leave a message",
+        "sleep": "Sleeping",
+        "work": "At work",
+        "travel": "Travelling",
+        "sport": "At the gym"
+      },
+      "visibility": {
+        "label": "Who can see the info",
+        "friends": "My friends",
+        "public": "Public",
+        "nobody": "Nobody"
+      },
+      "duration": {
+        "label": "How long it applies",
+        "h1": "1 hour",
+        "h8": "8 hours",
+        "d1": "1 day",
+        "d2": "2 days",
+        "w1": "1 week",
+        "custom": "Custom duration",
+        "customLabel": "Hours",
+        "forever": "Forever"
+      },
+      "preview": "Preview",
+      "previewHint": "How friends see you",
+      "previewHidden": "Nobody can see your info right now.",
+      "previewEmpty": "No info yet",
+      "save": "Save info",
+      "saved": "Info saved.",
+      "removed": "Info removed.",
+      "failed": "The info could not be saved.",
+      "remove": "Remove info",
+      "forever": "Stays forever",
+      "expiresMinutes_one": "Expires in {{count}} minute",
+      "expiresMinutes_other": "Expires in {{count}} minutes",
+      "expiresHours_one": "Expires in {{count}} hour",
+      "expiresHours_other": "Expires in {{count}} hours",
+      "expiresDays_one": "Expires in {{count}} day",
+      "expiresDays_other": "Expires in {{count}} days",
+      "fieldLabel": "Your info"
     }
   },
   "messenger": {
@@ -7895,6 +8053,7 @@
     "changeGroupLogo": "Change group logo",
     "manageGroupRoles": "Manage group roles & rights",
     "copyInvite": "Copy invitation link",
+    "groupSettings": "Edit group",
     "inviteCopied": "The invitation link is on your clipboard.",
     "inviteNoRight": "You do not have the right to invite new members.",
     "sendNoRight": "You are not allowed to write in this group.",
@@ -7907,11 +8066,9 @@
     "logoLocalOnly": "Group logo set — on this device only so far.",
     "logoFailed": "The group logo could not be set.",
     "groupNotReady": "The group is not ready yet.",
-    "e2eeReady": "E2EE chat ready",
     "e2eeBanner": "Messages in this chat are end-to-end encrypted.",
     "encryptedMessage": "Encrypted message",
-    "sessionRebuilt": "The security session with this device was rebuilt. Older messages from this device stay unreadable.",
-    "sessionSetupRejected": "A session setup was rejected: it is not verifiably from the device it names. The existing session stays as it is; nothing sent through the rejected setup will be shown.",
+    "unreadableOlderMessages": "Older messages from this device can no longer be read.",
     "newDeviceDetected": "{{name}} registered a new device.",
     "accountResetWarning": "Security warning: All devices of {{name}} were replaced. Please verify the safety number.",
     "verifySafetyNumber": "Verify safety number",
@@ -7926,6 +8083,7 @@
     "deviceNotListed": "This device is no longer in your device list. The message was not sent – after a reload it registers itself again.",
     "thisContact": "This contact",
     "sendFailed": "The message was not sent.",
+    "keyNotSharedRetry": "At least one group member is missing the current key. An admin must renew the group key; after that you can send the message again.",
     "writePlaceholder": "Write a message …",
     "editPlaceholder": "Edit message …",
     "editMessage": "Edit message",
@@ -7938,6 +8096,16 @@
     "messageWasDeleted": "This message was deleted.",
     "pendingDiscarded": "Pending message discarded.",
     "stateQueued": "In the queue — sending",
+    "stateFailed": "Not sent",
+    "devicePublishFailed": "This device could not register with the account. Messages to you will only arrive once it is registered again.",
+    "stateFailedRetry": "Not sent – send again",
+    "retryNotPossible": "This message cannot be sent again.",
+    "removeChatFromList": "Remove chat from list",
+    "removeChatTitle": "Remove this chat from the list?",
+    "removeChatMessage": "The history with {{name}} will be deleted from this device. The friendship stays.",
+    "removeChatConfirm": "Remove from list",
+    "chatRemoved": "Chat removed from the list",
+    "chatRemoveFailed": "The chat could not be removed. Please try again.",
     "stateRead": "Read by the other party",
     "stateDelivered": "Delivered",
     "stateUndelivered": "Not delivered yet",
@@ -8119,8 +8287,18 @@
     "retentionChangeFailed": "The change could not be sent.",
     "retentionNoRight": "You are not allowed to change the time limit in this group.",
     "disappearingMessages": "Disappearing messages",
+    "disappearingEnabledBy": "Turned on by {{name}}.",
+    "disappearingLocked": "Only {{name}} can change or turn it off.",
     "disappearingHint": "Applies to both sides. New messages are deleted everywhere once the time is up, on the server too. A device that stays offline clears its part later.",
     "reactionFailed": "The reaction could not be sent.",
+    "actionRejected": "The change was not accepted and has been undone.",
+    "actionUndelivered": "The change could not be delivered. It has been undone.",
+    "deleteRejected": "The deletion was not accepted. Other devices keep the message.",
+    "deleteUndelivered": "The deletion could not be delivered. Other devices keep the message.",
+    "messageServerCopyRemains": "The message is deleted on this device. The copy on the server could not be removed; it remains there until its time limit is up.",
+    "serverCleanupRejected": "The server refused the cleanup. The copy remains until its time limit is up.",
+    "serverCleanupAbandoned": "The server copy could not be removed. It was given up after several attempts; it remains until its time limit is up.",
+    "serverCleanupMediaRemains": "An attachment could not be removed from the server. It remains until its time limit is up.",
     "replyImpossible": "This message cannot be replied to.",
     "textCopied": "Text copied.",
     "copyRefused": "The browser refused to copy.",
@@ -8170,9 +8348,11 @@
     "you": "You",
     "unverifiedDeviceWarning": "Security warning: {{name}} has a device that was not approved on a known device. It receives nothing from you.",
     "ownUnverifiedDeviceWarning": "Security warning: a device is registered for your account that none of your devices approved. It receives nothing. Check Profile → Devices.",
+    "bridgedDeviceWarning": "Security notice: a device of {{name}} was approved by a device that is not verified on this client yet. Compare the safety number.",
+    "ownBridgedDeviceWarning": "Security notice: a device on your account was approved by a device that is not verified on this client yet. Compare the safety number.",
     "ownNewDevice": "A new device was approved for your account.",
     "ownAccountResetWarning": "Security warning: all devices of your account that you knew were replaced. If this wasn't you, change your password now.",
-    "thisDevicePending": "This device is waiting for approval. Confirm it on one of your other devices under Profile → Devices. Until then it receives no messages.",
+    "thisDevicePending": "This device is waiting for approval. Confirm it on one of your other devices under Profile → Devices, or approve it there yourself with your password or second factor. Until then it receives no messages.",
     "streak": {
       "active_one": "{{count}}-day streak with {{name}}",
       "active_other": "{{count}}-day streak with {{name}}",
@@ -8222,7 +8402,12 @@
     },
     "send": "Send",
     "chatMuted": "Muted",
-    "searchInMessages": "Search messages for “{{query}}”"
+    "searchInMessages": "Search messages for “{{query}}”",
+    "inviteNoPanelUrl": "The panel address is not configured, so the invitation link cannot be created.",
+    "showInviteLink": "Show link",
+    "hideInviteLink": "Hide link",
+    "pinnedLabel": "Pinned",
+    "newMessages": "New messages"
   },
   "databaseManager": {
     "subtitle": "Manage and edit this server’s PostgreSQL databases.",
@@ -9175,6 +9360,11 @@
       "bergwald": "Mountain forest",
       "ozean": "Ocean",
       "feld": "Summer field",
+      "balkon": "Evening balcony",
+      "bergsee": "Mountain lake",
+      "bahnhof": "Old railway station",
+      "mars": "Mars landscape",
+      "wasserfaelle": "Sky waterfalls",
       "eigen": "Your image"
     },
     "update": {
@@ -9249,7 +9439,10 @@
         "downloads": "Downloads",
         "design": "Design",
         "dienste": "MSM services",
+        "profil": "Profile",
+        "konto": "Account",
         "sicherheit": "Security",
+        "soziales": "Social",
         "ueber": "About",
         "leistung": "Performance",
         "jugendschutz": "Youth and habit protection",
@@ -10352,5 +10545,25 @@
     "googleCx": "Search engine ID (cx)",
     "googleCxPlaceholder": "e.g. a1b2c3d4e5f6g7h8i",
     "googleRemoveConfirm": "Do you really want to remove the stored Google search credentials?"
+  },
+  "presence": {
+    "aktivitaet": {
+      "ki": "In the AI chat",
+      "chat": "In chat",
+      "server": "On a server",
+      "kalender": "In the calendar",
+      "notizen": "In notes",
+      "tresor": "In the vault",
+      "einstellungen": "In settings",
+      "verlauf": "In history",
+      "lesezeichen": "In bookmarks",
+      "downloads": "In downloads",
+      "panel": "In the panel"
+    },
+    "client": {
+      "web": "Web panel",
+      "pontis": "Pontis",
+      "mss": "MSM app"
+    }
   }
 }

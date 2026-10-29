@@ -3,8 +3,6 @@
  */
 
 import { api, apiStream } from './client'
-import { nachweisKopf } from '@/services/mailboxNachweis'
-import { eigenerPushAbdruck } from '@/services/mailboxPush'
 import i18n from '@/i18n'
 import type { Zweitnachweis } from '@/services/passkeyService'
 
@@ -15,36 +13,55 @@ export interface FriendItem {
   avatar_url?: string | null
   status: 'pending' | 'accepted' | 'blocked'
   is_requester: boolean
-  presence?: {
-    status: 'online' | 'away' | 'invisible'
-    device_type: 'web' | 'desktop' | 'mobile'
-    custom_status?: string | null
-    activity_label?: string | null
-    activity_detail?: string | null
-    last_seen_at?: string | null
-    updated_at?: string | null
-  } | null
+  presence?: PresenceItem | null
+  info?: UserInfo | null
   created_at: string
 }
 
+/** Was der Server über den Zustand eines Kontos sagt. */
+export type PraesenzStatus = 'online' | 'away' | 'offline' | 'invisible'
+/** Die Wahl des Menschen; `auto` überlässt die Abwesenheit den Sitzungen. */
+export type PraesenzWahl = 'auto' | 'online' | 'away' | 'invisible'
+/** Welche Oberfläche offen ist. */
+export type PraesenzClient = 'web' | 'pontis' | 'mss'
+
 export interface PresenceItem {
-  user_id: number
-  username: string
-  status: 'online' | 'away' | 'invisible'
+  user_id?: number
+  username?: string
+  status: PraesenzStatus
+  manual_status?: PraesenzWahl
   device_type: 'web' | 'desktop' | 'mobile'
-  custom_status?: string | null
-  activity_label?: string | null
-  activity_detail?: string | null
+  client?: PraesenzClient | null
+  /** Schlüssel aus der Aktivitätenliste; die Oberfläche übersetzt ihn. */
+  activity_key?: string | null
   last_seen_at?: string | null
   updated_at?: string | null
 }
 
-export interface PresenceUpdatePayload {
-  status?: 'online' | 'away' | 'invisible'
-  device_type?: 'web' | 'desktop' | 'mobile'
-  custom_status?: string | null
-  activity_label?: string | null
-  activity_detail?: string | null
+/** Der freiwillige Info-Text eines Kontos. */
+export interface UserInfo {
+  text: string
+  visibility: UserInfoSichtbarkeit
+  expires_at?: string | null
+  updated_at?: string | null
+}
+
+export type UserInfoSichtbarkeit = 'friends' | 'public' | 'nobody'
+
+export interface UserInfoPayload {
+  text: string
+  visibility: UserInfoSichtbarkeit
+  /** 0 heisst „fuer immer“; hoechstens ein Jahr. */
+  dauer_sekunden: number
+}
+
+export interface PresenceSessionPayload {
+  geraet: string
+  client: PraesenzClient
+  plattform: 'web' | 'desktop' | 'mobile'
+  zustand: 'online' | 'away'
+  activity_key?: string | null
+  vorn: boolean
 }
 
 export interface AchievementItem {
@@ -102,40 +119,44 @@ export interface PublicProfileResponse {
   /** Tag der Registrierung (`YYYY-MM-DD`), ohne Uhrzeit. */
   member_since?: string | null
   presence?: Omit<PresenceItem, 'user_id' | 'username'> | null
+  info?: UserInfo | null
   achievements?: AchievementItem[] | null
   stats?: UserStatsResponse | null
   restricted?: boolean
-}
-
-export interface BlindEnvelopeItem {
-  id: number
-  blind_mailbox_id: string
-  ciphertext_envelope: string
-  client_uuid?: string | null
-  created_at: string
 }
 
 export async function getFriends(): Promise<FriendItem[]> {
   return api<FriendItem[]>('/social/friends')
 }
 
-export async function sendFriendRequest(targetUsername: string): Promise<{ success: boolean; message: string }> {
-  return api<{ success: boolean; message: string }>('/social/friends/request', {
-    method: 'POST',
-    body: JSON.stringify({ username: targetUsername, target_username: targetUsername }),
-  })
+export async function sendFriendRequest(
+  targetUsername: string,
+): Promise<{ id: number; request_id: number; status: 'pending'; message: string }> {
+  return api<{ id: number; request_id: number; status: 'pending'; message: string }>(
+    '/social/friends/request',
+    {
+      method: 'POST',
+      body: JSON.stringify({ username: targetUsername, target_username: targetUsername }),
+    },
+  )
 }
 
-export async function acceptFriendRequest(requestId: number): Promise<{ success: boolean; message: string }> {
-  return api<{ success: boolean; message: string }>(`/social/friends/${requestId}/accept`, {
-    method: 'POST',
-  })
+export async function acceptFriendRequest(
+  requestId: number,
+): Promise<{ ok: boolean; status?: string; message: string }> {
+  return api<{ ok: boolean; status?: string; message: string }>(
+    `/social/friends/${requestId}/accept`,
+    { method: 'POST' },
+  )
 }
 
-export async function declineFriendRequest(requestId: number): Promise<{ success: boolean; message: string }> {
-  return api<{ success: boolean; message: string }>(`/social/friends/${requestId}/decline`, {
-    method: 'POST',
-  })
+export async function declineFriendRequest(
+  requestId: number,
+): Promise<{ ok: boolean; message: string }> {
+  return api<{ ok: boolean; message: string }>(
+    `/social/friends/${requestId}/decline`,
+    { method: 'POST' },
+  )
 }
 
 /**
@@ -178,10 +199,42 @@ export async function getPresence(): Promise<PresenceItem[]> {
   return api<PresenceItem[]>('/social/presence')
 }
 
-export async function updatePresence(payload: PresenceUpdatePayload): Promise<PresenceItem> {
-  return api<PresenceItem>('/social/presence', {
+export async function getOwnPresence(): Promise<PresenceItem> {
+  return api<PresenceItem>('/social/presence/me')
+}
+
+export async function setPresenceStatus(manual_status: PraesenzWahl): Promise<PresenceItem> {
+  return api<PresenceItem>('/social/presence/status', {
+    method: 'PATCH',
+    body: JSON.stringify({ manual_status }),
+  })
+}
+
+export async function sendPresenceSession(payload: PresenceSessionPayload): Promise<PresenceItem> {
+  return api<PresenceItem>('/social/presence/session', {
     method: 'POST',
     body: JSON.stringify(payload),
+  })
+}
+
+export async function getOwnInfo(): Promise<UserInfo | null> {
+  return api<UserInfo | null>('/social/info')
+}
+
+export async function setOwnInfo(payload: UserInfoPayload): Promise<UserInfo | null> {
+  return api<UserInfo | null>('/social/info', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function endPresenceSession(
+  geraet: string,
+  keepalive = false,
+): Promise<PresenceItem> {
+  return api<PresenceItem>(`/social/presence/session/${encodeURIComponent(geraet)}`, {
+    method: 'DELETE',
+    ...(keepalive ? { keepalive: true } : {}),
   })
 }
 
@@ -223,6 +276,7 @@ export async function updatePrivacy(payload: {
 }
 
 export interface E2eeGeraetItem {
+  id?: number
   device_id: string
   public_key: string
   /**
@@ -236,6 +290,15 @@ export interface E2eeGeraetItem {
   /** Das Gerät, das dieses freigegeben hat, und seine Unterschrift (`vertrauteGeraete`). */
   approved_by?: string
   approval_signature?: string
+  /**
+   * Die opake Zustelladresse des Geräts, falls es den neuen Weg kennt.
+   *
+   * Sie entsteht aus einem Geheimnis, das nur das Gerät kennt; allein bringt
+   * sie nichts, zum Abholen gehört der Gerätebeleg dazu.
+   */
+  inbox_hash?: string
+  /** Die Transportfähigkeit des Geräts. Leer heißt: der alte Weg. */
+  transport?: string
 }
 
 /**
@@ -249,6 +312,16 @@ export async function putEigenesGeraet(payload: {
   publicKey: string
   signingPublicKey?: string
   label?: string
+  /** Selbst-Signatur des Erstgeräts über seine eigene Freigabe. */
+  approvalSignature?: string
+  /**
+   * Die opake Zustelladresse dieses Geräts.
+   *
+   * Sie entsteht aus dem geheimen Schlüsselpaar des Geräts und ist damit
+   * nur für dieses Gerät berechenbar. Fehlt sie, benutzt das Gerät den alten
+   * Weg (geteilte Mailbox) und kennt die Zustellung mit Quittung nicht.
+   */
+  inboxHash?: string
 }): Promise<E2eeGeraetItem> {
   return api<E2eeGeraetItem>('/social/e2ee/devices/self', {
     method: 'PUT',
@@ -257,6 +330,8 @@ export async function putEigenesGeraet(payload: {
       public_key: payload.publicKey,
       signing_public_key: payload.signingPublicKey ?? '',
       label: payload.label ?? '',
+      approval_signature: payload.approvalSignature ?? '',
+      inbox_hash: payload.inboxHash ?? '',
     }),
   })
 }
@@ -283,18 +358,59 @@ export async function approveEigenesGeraet(
   })
 }
 
+export interface ReapproveEigenesGeraetInput {
+  password?: string | null
+  confirmation?: string | null
+  otp_code?: string | null
+  /** Unterschriebene Passkey-Antwort (`passkeyNachweis('e2ee_reapprove')`). */
+  passkey?: Zweitnachweis | null
+  /** Eigene Unterschrift über die Freigabe — belegt nur den eigenen Schlüssel. */
+  signature?: string | null
+}
+
+/**
+ * Holt das eigene Geraet zurueck, wenn es das einzige ist (`gibMichSelbstFrei`).
+ *
+ * Nur ohne ein anderes freigegebenes Geraet — sonst antwortet der Server 403,
+ * weil die Unterschrift der vorgesehene Weg ist. Der Nachweis ist Pflicht.
+ */
+export async function reapproveEigenesGeraet(
+  deviceId: string,
+  input: ReapproveEigenesGeraetInput = {},
+): Promise<{ ok: boolean; is_approved: boolean }> {
+  return api<{ ok: boolean; is_approved: boolean }>('/social/e2ee/devices/self/reapprove', {
+    method: 'POST',
+    body: JSON.stringify({ device_id: deviceId, ...input }),
+  })
+}
+
 export async function getPendingE2eeGeraete(): Promise<E2eeGeraetItem[]> {
   return api<E2eeGeraetItem[]>('/social/e2ee/devices/self/pending')
 }
 
 /**
+ * Der gestaffelte Nachweis vor dem Entfernen eines Geräts.
+ *
+ * Genau das, was das Konto hergibt: der eingerichtete zweite Faktor (Passkey
+ * oder Code), sonst das Passwort. Ein Konto ohne beides — Social Login ohne
+ * Passwort — braucht nichts, dort ist die Sitzung der Nachweis.
+ */
+export interface EntfernenNachweis {
+  password?: string | null
+  otp_code?: string | null
+  passkey?: Zweitnachweis | null
+}
+
+/**
  * Entfernt ein Gerät und sperrt seine Sitzung sofort. Ein freigegebenes
- * verlangt die Unterschrift eines freigegebenen (`entferneGeraet`).
+ * verlangt die Unterschrift eines freigegebenen (`entferneGeraet`), dazu den
+ * Nachweis aus `EntfernenNachweis`.
  */
 export async function removeEigenesGeraet(
   deviceId: string,
   approverDeviceId?: string,
   signature?: string,
+  nachweis: EntfernenNachweis = {},
 ): Promise<{ ok: boolean }> {
   return api<{ ok: boolean }>('/social/e2ee/devices/self/remove', {
     method: 'POST',
@@ -302,6 +418,9 @@ export async function removeEigenesGeraet(
       device_id: deviceId,
       approver_device_id: approverDeviceId ?? '',
       signature: signature ?? '',
+      password: nachweis.password ?? null,
+      otp_code: nachweis.otp_code ?? null,
+      passkey: nachweis.passkey ?? null,
     }),
   })
 }
@@ -367,6 +486,9 @@ export interface ChatGroupMemberItem {
   can_mention_everyone?: boolean
   can_pin_messages?: boolean
   can_set_disappearing_messages?: boolean
+  /** Ob dieses Mitglied die Gruppeninfo beziehungsweise den Hintergrund setzen darf. */
+  can_edit_group?: boolean
+  can_set_group_background?: boolean
   joined_at: string
 }
 
@@ -407,6 +529,10 @@ export interface ChatGroupItem {
   can_mention_everyone?: boolean
   can_pin_messages?: boolean
   can_set_disappearing_messages?: boolean
+  /** Gruppeninfo und geteilter Hintergrund sind getrennte Wege. */
+  can_edit_group?: boolean
+  can_set_group_background?: boolean
+  can_manage_roles?: boolean
   created_at: string
   members: ChatGroupMemberItem[]
   /** Ephemeral room token supplied by a live-call invitation, when present. */
@@ -443,6 +569,7 @@ export interface DirectChatItem {
   is_blocked?: boolean
   other_privacy: 'private' | 'friends' | 'public'
   presence?: PresenceItem | null
+  info?: UserInfo | null
   created_at: string
   updated_at: string
 }
@@ -483,46 +610,10 @@ export async function startDirectChat(targetUserId: number): Promise<DirectChatI
  * bei jedem Zugriff den Nachweis — zusätzlich zur bisherigen Prüfung, nicht an
  * ihrer Stelle.
  */
-export async function registriereMailbox(mailboxId: string, authToken: string): Promise<void> {
-  await api<{ ok: boolean }>('/social/e2ee/mailbox/register', {
-    method: 'POST',
-    body: JSON.stringify({ mailbox_id: mailboxId, auth_token: authToken }),
-  })
-}
-
-/**
- * Ein blinder Umschlag — ohne Empfängerkennung.
- *
- * Bis 09/2026 reiste ein `recipient_id` mit. Für eine Mailbox, die der Server
- * ohnehin ausrechnen kann, verriet es nichts Neues; für eine aus einem
- * Geheimnis verriet es alles. Der Server nimmt es nicht mehr entgegen, und
- * dieses Feld gibt es hier deshalb gar nicht mehr — ein durchgereichtes
- * `recipient_id` wäre stiller Ballast, der irgendwann wieder jemand liest.
- */
-export async function relayE2eeEnvelope(payload: {
-  blind_mailbox_id: string
-  ciphertext_envelope: string
-  client_uuid?: string | null
-  is_control?: boolean
-  control_type?: string | null
-
-}): Promise<BlindEnvelopeItem> {
-  // Der eigene Push-Abdruck hängt an jedem Umschlag und hält diesen Browser aus
-  // der Zustellung heraus. Auf dem kontogebundenen Weg braucht es ihn nicht —
-  // dort erkennt der Server den Absender an seiner Kennung. Auf dem
-  // Mailbox-Weg gibt es keine Kennung mehr, und ohne ihn bekäme man die
-  // Meldung über die eigene Nachricht.
-  const abdruck = eigenerPushAbdruck()
-  return api<BlindEnvelopeItem>('/social/e2ee/relay', {
-    method: 'POST',
-    body: JSON.stringify(abdruck ? { ...payload, push_ausnahme: abdruck } : payload),
-    headers: nachweisKopf(payload.blind_mailbox_id),
-  })
-}
-
 export interface ChatMediaItem {
   id: string
-  blind_mailbox_id: string
+  chat_type: 'direct' | 'group'
+  chat_id: number
   file_name: string
   media_type: string
   size_bytes: number
@@ -531,16 +622,16 @@ export interface ChatMediaItem {
 }
 
 export async function uploadChatMedia(payload: {
-  blind_mailbox_id: string
+  chat_type: 'direct' | 'group'
+  chat_id: number
   ciphertext_blob: string
   file_name: string
   media_type?: string
-  group_id?: number | null
+  expires_at?: string | null
 }): Promise<ChatMediaItem> {
   return api<ChatMediaItem>('/social/media/upload', {
     method: 'POST',
     body: JSON.stringify(payload),
-    headers: nachweisKopf(payload.blind_mailbox_id),
   })
 }
 
@@ -549,9 +640,9 @@ export async function getChatMediaSignedUrl(
   ttl: number = 900,
   blindMailboxId?: string,
 ): Promise<{ media_id: string; signed_url: string; expires_at: string }> {
+  void blindMailboxId
   return api<{ media_id: string; signed_url: string; expires_at: string }>(
     `/social/media/${mediaId}/signed-url?ttl=${ttl}`,
-    { headers: blindMailboxId ? nachweisKopf(blindMailboxId) : undefined },
   )
 }
 
@@ -576,20 +667,11 @@ export async function loescheChatMedium(
  * Adressiert wird über die logische Nachrichtenkennung: dieselbe Nachricht
  * liegt dort als eine Kopie je Zielgerät (`<kennung>#<geraet>`).
  */
-export async function loescheBlindeUmschlaege(
-  blindMailboxId: string,
-  clientUuid: string
-): Promise<{ ok: boolean; deleted: number }> {
-  return api<{ ok: boolean; deleted: number }>(
-    `/social/e2ee/envelopes/${encodeURIComponent(blindMailboxId)}?client_uuid=${encodeURIComponent(clientUuid)}`,
-    { method: 'DELETE', headers: nachweisKopf(blindMailboxId) }
-  )
-}
-
 export async function downloadChatMedia(signedUrl: string, blindMailboxId?: string): Promise<string> {
+  void blindMailboxId
   const res = await apiStream(signedUrl, {
     method: 'GET',
-    headers: { Accept: '*/*', ...(blindMailboxId ? nachweisKopf(blindMailboxId) : {}) },
+    headers: { Accept: '*/*' },
   })
   if (!res.ok) {
     throw new Error(i18n.t('chat.errors.mediaDownloadFailed', { status: res.status }))
@@ -617,8 +699,10 @@ export async function ladeAnhangHoch(eingabe: {
   dateiname: string
   mimeType: string
   blindMailboxId: string
+  chatType: 'direct' | 'group'
+  chatId: number
   absenderId: number
-  groupId?: number | null
+  expiresAt?: string | null
 }): Promise<import('@/services/medienKrypto').MedienZeiger> {
   const { neueFileId, verschluesselePaket } = await import('@/services/medienKrypto')
   const fileId = neueFileId()
@@ -632,11 +716,12 @@ export async function ladeAnhangHoch(eingabe: {
     { name: eingabe.dateiname, mimeType: eingabe.mimeType || null },
   )
   const hochgeladen = await uploadChatMedia({
-    blind_mailbox_id: eingabe.blindMailboxId,
+    chat_type: eingabe.chatType,
+    chat_id: eingabe.chatId,
     ciphertext_blob: blob,
     file_name: 'anhang.bin',
     media_type: 'application/octet-stream',
-    group_id: eingabe.groupId,
+    expires_at: eingabe.expiresAt || null,
   })
   return { mediaId: hochgeladen.id, paketSchluessel, fileId }
 }
@@ -653,42 +738,6 @@ export async function ladeAnhangHerunter(
     absenderId: bindung.absenderId,
     blindMailboxId: bindung.blindMailboxId,
     fileId: zeiger.fileId,
-  })
-}
-
-export interface E2eeMailboxSyncItem {
-  blind_mailbox_id: string
-  max_envelope_id: number
-  unread_count: number
-}
-
-export interface E2eeMailboxSyncResponse {
-  mailboxes: E2eeMailboxSyncItem[]
-}
-
-export async function syncE2eeMailboxes(sinceId = 0): Promise<E2eeMailboxSyncResponse> {
-  const query = sinceId ? `?since_id=${sinceId}` : ''
-  return api<E2eeMailboxSyncResponse>(`/social/e2ee/sync${query}`)
-}
-
-export async function fetchE2eeEnvelopes(
-  blindMailboxId: string,
-  sinceId?: number
-): Promise<BlindEnvelopeItem[]> {
-  const query = sinceId ? `?since_id=${sinceId}` : ''
-  return api<BlindEnvelopeItem[]>(`/social/e2ee/mailbox/${blindMailboxId}${query}`, {
-    headers: nachweisKopf(blindMailboxId),
-  })
-}
-
-export async function sendTypingSignal(payload: {
-  blind_mailbox_id: string
-  status: 'typing' | 'recording' | 'idle'
-}): Promise<{ ok: boolean }> {
-  return api<{ ok: boolean }>('/social/e2ee/typing', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-    headers: nachweisKopf(payload.blind_mailbox_id),
   })
 }
 
@@ -828,6 +877,61 @@ export async function putGroupConfig(
   })
 }
 
+/**
+ * Die getrennte Gruppeninfo (Name, Beschreibung, Logo) und der geteilte
+ * Gruppenhintergrund. Beide liegen verschlüsselt beim Server; hier steht nur
+ * der Transport. Ausgewertet werden sie in `services/gruppenInfo.ts`.
+ */
+export interface GruppenInfoAntwort {
+  group_id: number
+  blob: string
+  revision: number
+  updated_at: string
+}
+
+export interface GruppenHintergrundAntwort extends GruppenInfoAntwort {
+  mime: string | null
+  size_bytes: number
+}
+
+/** `null`, solange die Gruppe noch keine getrennte Info hat. */
+export async function getGroupInfo(groupId: number): Promise<GruppenInfoAntwort | null> {
+  return api<GruppenInfoAntwort | null>(`/social/groups/${groupId}/info`)
+}
+
+export async function putGroupInfo(
+  groupId: number,
+  blob: string,
+  erwarteteRevision: number,
+): Promise<GruppenInfoAntwort> {
+  return api<GruppenInfoAntwort>(`/social/groups/${groupId}/info`, {
+    method: 'PUT',
+    body: JSON.stringify({ blob, erwartete_revision: erwarteteRevision }),
+  })
+}
+
+export async function getGroupBackground(
+  groupId: number,
+): Promise<GruppenHintergrundAntwort | null> {
+  return api<GruppenHintergrundAntwort | null>(`/social/groups/${groupId}/background`)
+}
+
+export async function putGroupBackground(
+  groupId: number,
+  blob: string,
+  erwarteteRevision: number,
+  mime: string | null,
+): Promise<GruppenHintergrundAntwort> {
+  return api<GruppenHintergrundAntwort>(`/social/groups/${groupId}/background`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      blob,
+      erwartete_revision: erwarteteRevision,
+      mime,
+    }),
+  })
+}
+
 /*
  * `uploadGroupAvatar` und `deleteGroupAvatar` gibt es seit Stufe 6 nicht mehr.
  *
@@ -851,8 +955,12 @@ export interface ChatStoryItem {
   is_self: boolean
 }
 
-export async function getStories(): Promise<ChatStoryItem[]> {
-  return api<ChatStoryItem[]>('/social/stories')
+export async function getStories(options: { limit?: number; beforeId?: number } = {}): Promise<ChatStoryItem[]> {
+  const params = new URLSearchParams()
+  if (options.limit) params.set('limit', String(options.limit))
+  if (options.beforeId) params.set('before_id', String(options.beforeId))
+  const query = params.toString()
+  return api<ChatStoryItem[]>(`/social/stories${query ? `?${query}` : ''}`)
 }
 
 export async function createStory(payload: {
@@ -878,3 +986,226 @@ export async function recordActivityTime(category: string, seconds: number): Pro
     body: JSON.stringify({ category, seconds }),
   })
 }
+
+// ── Ein einziger E2EE-Nachrichtenweg ─────────────────────────────────────────
+
+export interface E2eeAccountItem {
+  user_id: number
+  public_key: string
+  signing_public_key: string
+}
+
+export interface E2eeChatKeyItem {
+  chat_type: 'direct' | 'group'
+  chat_id: number
+  key_version: number
+  encrypted_chat_key: string
+  created_at: string
+}
+
+export interface E2eeReactionItem {
+  user_id: number
+  encrypted_reaction: string
+  created_at: string
+}
+
+export interface E2eeMessageItem {
+  id: number
+  client_uuid: string
+  chat_type: 'direct' | 'group'
+  chat_id: number
+  sender_user_id: number
+  key_version: number
+  encrypted_payload: string
+  is_deleted: boolean
+  edited_at: string | null
+  deleted_at: string | null
+  expires_at: string | null
+  is_pinned: boolean
+  pinned_at: string | null
+  pinned_by_user_id: number | null
+  created_at: string
+  reactions: E2eeReactionItem[]
+}
+
+export interface E2eeMessagePage {
+  messages: E2eeMessageItem[]
+  /** Die neueste Anheftung des Chats, unabhaengig von der geladenen Seite. */
+  pinned_message?: E2eeMessageItem | null
+  has_more: boolean
+  my_last_delivered_id: number
+  my_last_read_id: number
+  partner_last_delivered_id: number
+  partner_last_read_id: number
+  ephemeral_ttl_seconds: number
+  ephemeral_enabled_by_user_id: number | null
+}
+
+export async function publishE2eeAccount(payload: {
+  device_id: string
+  public_key: string
+  signing_public_key: string
+  encrypted_bundle: string
+}): Promise<E2eeAccountItem & { device_id: string }> {
+  return api('/social/e2ee/account', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function getE2eeAccount(userId: number): Promise<E2eeAccountItem> {
+  return api(`/social/e2ee/account/${userId}`)
+}
+
+export async function lookupE2eeAccounts(userIds: number[]): Promise<{ accounts: E2eeAccountItem[] }> {
+  return api('/social/e2ee/account/lookup', {
+    method: 'POST',
+    body: JSON.stringify({ user_ids: userIds }),
+  })
+}
+
+export async function getOwnE2eeAccountBundle(deviceId: string): Promise<{
+  user_id: number
+  device_id: string
+  encrypted_bundle: string
+}> {
+  return api(`/social/e2ee/account/self/bundle?device_id=${encodeURIComponent(deviceId)}`)
+}
+
+export async function transferE2eeAccountBundle(
+  targetDeviceId: string,
+  encryptedBundle: string,
+  ownDeviceId: string,
+): Promise<{ ok: boolean }> {
+  return api(`/social/e2ee/account/bundle/${encodeURIComponent(targetDeviceId)}`, {
+    method: 'POST',
+    body: JSON.stringify({ encrypted_bundle: encryptedBundle }),
+    headers: { 'X-Device-Id': ownDeviceId },
+  })
+}
+
+export async function getE2eeChatKeys(
+  chatType: 'direct' | 'group',
+  chatId: number,
+): Promise<{ keys: E2eeChatKeyItem[]; latest_key_version: number }> {
+  return api(`/social/e2ee/chat-keys?chat_type=${chatType}&chat_id=${chatId}`)
+}
+
+export async function putE2eeChatKeys(payload: {
+  chat_type: 'direct' | 'group'
+  chat_id: number
+  key_version: number
+  keys: { user_id: number; encrypted_chat_key: string }[]
+}): Promise<{ keys: E2eeChatKeyItem[] }> {
+  return api('/social/e2ee/chat-keys', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function sendChatMessage(payload: {
+  chat_type: 'direct' | 'group'
+  chat_id: number
+  client_uuid: string
+  key_version: number
+  encrypted_payload: string
+}): Promise<E2eeMessageItem> {
+  return api('/social/messages/send', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function fetchChatMessages(
+  chatType: 'direct' | 'group',
+  chatId: number,
+  options: { limit?: number; beforeId?: number; afterId?: number } = {},
+): Promise<E2eeMessagePage> {
+  const params = new URLSearchParams({ chat_type: chatType, chat_id: String(chatId) })
+  if (options.limit) params.set('limit', String(options.limit))
+  if (options.beforeId) params.set('before_id', String(options.beforeId))
+  if (options.afterId) params.set('after_id', String(options.afterId))
+  return api(`/social/messages?${params.toString()}`)
+}
+
+export async function updateChatMessage(
+  clientUuid: string,
+  payload: { encrypted_payload: string; key_version?: number },
+): Promise<E2eeMessageItem> {
+  return api(`/social/messages/${encodeURIComponent(clientUuid)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteChatMessage(clientUuid: string): Promise<E2eeMessageItem> {
+  return api(`/social/messages/${encodeURIComponent(clientUuid)}`, { method: 'DELETE' })
+}
+
+export async function reactToChatMessage(
+  clientUuid: string,
+  encryptedReaction: string | null,
+): Promise<E2eeMessageItem> {
+  return api(`/social/messages/${encodeURIComponent(clientUuid)}/reaction`, {
+    method: 'POST',
+    body: JSON.stringify({ encrypted_reaction: encryptedReaction }),
+  })
+}
+
+export async function pinChatMessage(
+  clientUuid: string,
+  pinned: boolean,
+): Promise<E2eeMessageItem> {
+  return api(`/social/messages/${encodeURIComponent(clientUuid)}/pin`, {
+    method: 'POST',
+    body: JSON.stringify({ pinned }),
+  })
+}
+
+export async function ackChatMessages(
+  chatType: 'direct' | 'group',
+  chatId: number,
+  upToId: number,
+): Promise<{ ok: boolean; last_delivered_message_id: number }> {
+  return api('/social/messages/ack', {
+    method: 'POST',
+    body: JSON.stringify({ chat_type: chatType, chat_id: chatId, up_to_id: upToId }),
+  })
+}
+
+export async function readChatMessages(
+  chatType: 'direct' | 'group',
+  chatId: number,
+  upToId: number,
+): Promise<{ ok: boolean; last_read_message_id: number }> {
+  return api('/social/messages/read', {
+    method: 'POST',
+    body: JSON.stringify({ chat_type: chatType, chat_id: chatId, up_to_id: upToId }),
+  })
+}
+
+export async function getChatEphemeral(
+  chatType: 'direct' | 'group',
+  chatId: number,
+): Promise<{
+  chat_type: 'direct' | 'group'
+  chat_id: number
+  ephemeral_ttl_seconds: number
+  ephemeral_enabled_by_user_id: number | null
+}> {
+  return api(`/social/messages/ephemeral?chat_type=${chatType}&chat_id=${chatId}`)
+}
+
+export async function setChatEphemeral(
+  chatType: 'direct' | 'group',
+  chatId: number,
+  ttlSeconds: number,
+): Promise<{
+  chat_type: 'direct' | 'group'
+  chat_id: number
+  ephemeral_ttl_seconds: number
+  ephemeral_enabled_by_user_id: number | null
+}> {
+  return api('/social/messages/ephemeral', {
+    method: 'PUT',
+    body: JSON.stringify({ chat_type: chatType, chat_id: chatId, ttl_seconds: ttlSeconds }),
+  })
+}
+

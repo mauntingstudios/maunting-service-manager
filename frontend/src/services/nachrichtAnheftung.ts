@@ -24,6 +24,7 @@
  */
 
 import type { ChatGroupItem } from '@/api/social'
+import { getStorageItem, setStorageItem } from '@/lib/offlineAblage'
 import { zeitAlsZahl } from './nachrichtBezug'
 
 const SCHLUESSEL = 'msm:chat_pinned_message'
@@ -37,7 +38,7 @@ export interface Anheftung {
 
 function lies(): Record<string, Anheftung> {
   try {
-    const roh = localStorage.getItem(SCHLUESSEL)
+    const roh = getStorageItem(SCHLUESSEL)
     const gelesen = roh ? JSON.parse(roh) : {}
     return gelesen && typeof gelesen === 'object' ? gelesen : {}
   } catch {
@@ -68,11 +69,7 @@ export function setzeAnheftung(
   if (!blindMailboxId) return
   const alle = lies()
   alle[blindMailboxId] = { clientUuid, stand }
-  try {
-    localStorage.setItem(SCHLUESSEL, JSON.stringify(alle))
-  } catch {
-    // Ohne localStorage gilt die Anheftung eben nur für diese Sitzung.
-  }
+  setStorageItem(SCHLUESSEL, JSON.stringify(alle))
 }
 
 /**

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api/client'
-import { DisBadge } from '@/components/DisBadge'
 
 declare global {
   interface Window {
@@ -366,9 +365,6 @@ export function CaptchaWidget({ onVerify, onStatusChange, resetKey }: CaptchaWid
   return (
     <div className="flex flex-col items-center justify-center my-4 gap-2">
       <div ref={containerRef} />
-      {config.provider === 'altcha' && (
-        <DisBadge size={14} className="py-0.5 px-2" />
-      )}
     </div>
   )
 }

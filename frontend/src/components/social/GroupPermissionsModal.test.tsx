@@ -24,6 +24,10 @@ vi.mock('@/api/social', () => ({
   updateGroupMemberRole: vi.fn(),
   kickGroupMember: rauswurf,
   updateGroupPermissions: vi.fn(),
+  getGroupInfo: vi.fn(async () => null),
+  putGroupInfo: vi.fn(),
+  getGroupBackground: vi.fn(async () => null),
+  putGroupBackground: vi.fn(),
 }))
 
 vi.mock('@/services/e2eeCrypto', () => ({
@@ -35,6 +39,32 @@ vi.mock('@/services/gruppenKonfig', () => ({
   ladeGruppenzustand: vi.fn(async () => ({ art: 'leer' })),
   leererGruppenzustand: vi.fn(() => ({ rollen: [], zuordnung: {} })),
 }))
+
+const infoDienste = vi.hoisted(() => ({
+  ladeGruppenInfo: vi.fn(async () => ({
+    art: 'info' as const,
+    info: {
+      v: 1,
+      name: 'Testgruppe',
+      beschreibung: 'Beschreibung',
+      logo: null,
+    },
+    revision: 1,
+    vonKonto: 1,
+    quelle: 'info' as const,
+  })),
+  aendereGruppenInfo: vi.fn(),
+  ladeGruppenHintergrund: vi.fn(async () => ({ art: 'leer' as const })),
+}))
+
+vi.mock('@/services/gruppenInfo', () => infoDienste)
+
+const ansichtDienst = vi.hoisted(() => ({
+  sichereGruppenAnsicht: vi.fn(async () => true),
+  merkeGruppenName: vi.fn(async () => {}),
+}))
+
+vi.mock('@/services/gruppenName', () => ansichtDienst)
 
 vi.mock('@/stores/confirmStore', () => ({ confirm: vi.fn(async () => true) }))
 
@@ -58,6 +88,14 @@ function gruppe(): ChatGroupItem {
   }
 }
 
+function oeffneMitglieder() {
+  const tab = screen
+    .getAllByText(i18n.t('social.groupRoles.tabMembersShort'))
+    .map((el) => el.closest('button'))
+    .find(Boolean)
+  if (tab) fireEvent.click(tab)
+}
+
 describe('GroupPermissionsModal — Rauswurf', () => {
   beforeEach(() => {
     rauswurf.mockClear()
@@ -74,6 +112,7 @@ describe('GroupPermissionsModal — Rauswurf', () => {
         onGroupUpdated={onGroupUpdated}
       />,
     )
+    oeffneMitglieder()
     const knopf = await screen.findByLabelText(
       i18n.t('social.groupRoles.kickAria', { name: 'bert' }),
     )
@@ -95,6 +134,7 @@ describe('GroupPermissionsModal — Rauswurf', () => {
     render(
       <GroupPermissionsModal open onOpenChange={() => {}} group={gruppe()} currentUserId={1} onGroupUpdated={vi.fn()} />,
     )
+    oeffneMitglieder()
     await screen.findByLabelText(i18n.t('social.groupRoles.kickAria', { name: 'bert' }))
     expect(document.querySelectorAll('[title]')).toHaveLength(0)
     expect(document.querySelector(`[data-kurzinfo="${i18n.t('social.groupRoles.kickTitle')}"]`)).not.toBeNull()
@@ -109,5 +149,80 @@ describe('GroupPermissionsModal — Rauswurf', () => {
     const neu = await werfeBertHinaus()
 
     expect(neu.invite_code).toBeNull()
+  })
+})
+
+describe('GroupPermissionsModal — Allgemein', () => {
+  beforeEach(() => {
+    ansichtDienst.sichereGruppenAnsicht.mockClear()
+  })
+
+  it('lädt Name und Beschreibung aus der Info und speichert Änderungen', async () => {
+    render(
+      <GroupPermissionsModal
+        open
+        onOpenChange={() => {}}
+        group={gruppe()}
+        currentUserId={1}
+        onGroupUpdated={vi.fn()}
+      />,
+    )
+
+    const name = await screen.findByDisplayValue('Testgruppe')
+    fireEvent.change(name, { target: { value: 'Neue Küche' } })
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('social.groupRoles.generalSave') }))
+
+    await waitFor(() =>
+      expect(ansichtDienst.sichereGruppenAnsicht).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ name: 'Neue Küche' }),
+      ),
+    )
+  })
+
+  it('lässt das Speichern zu, während die Gruppeninfo noch geladen wird', async () => {
+    // Der erste Abruf holt den Gruppenschluessel und dauert dadurch einige
+    // Sekunden. Wer in dieser Zeit tippt, muss nicht warten, bis der Ladevorgang
+    // fertig ist — sonst waere der Knopf grundlos gesperrt.
+    infoDienste.ladeGruppenInfo.mockReturnValueOnce(new Promise(() => {}) as never)
+    render(
+      <GroupPermissionsModal
+        open
+        onOpenChange={() => {}}
+        group={gruppe()}
+        currentUserId={1}
+        onGroupUpdated={vi.fn()}
+      />,
+    )
+
+    const feld = await screen.findByLabelText(i18n.t('social.groupRoles.generalName'))
+    fireEvent.change(feld, { target: { value: 'Während des Ladens' } })
+
+    const knopf = await screen.findByRole('button', {
+      name: i18n.t('social.groupRoles.generalSave'),
+    })
+    expect(knopf).not.toBeDisabled()
+  })
+
+  it('sperrt die Felder ohne edit_group', async () => {
+    const ohneRecht = {
+      ...gruppe(),
+      role: 'member',
+      owner_user_id: 1,
+      members: [{ user_id: 2, username: 'bert', role: 'member' } as any],
+      can_edit_group: false,
+    }
+    render(
+      <GroupPermissionsModal
+        open
+        onOpenChange={() => {}}
+        group={ohneRecht}
+        currentUserId={2}
+        onGroupUpdated={vi.fn()}
+      />,
+    )
+
+    expect(await screen.findByDisplayValue('Testgruppe')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: i18n.t('social.groupRoles.generalSave') })).toBeNull()
   })
 })

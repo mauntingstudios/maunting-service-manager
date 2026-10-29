@@ -42,6 +42,12 @@ export function SicherheitEinstellungen({
           <MessengerSicherheitTab />
         </section>
       )}
+      {/*
+        Geräte gehören hierher, nicht nur ins Profil: wer in MSS oder im
+        Pondys Browser nachsieht, welches Gerät seine Nachrichten bekommt und
+        wie es entfernt wird, sucht unter Sicherheit. Die Karte bringt Kopplung
+        und Geräteliste mit; ohne Messenger bleibt die Kopplung sichtbar.
+      */}
       {tresorAn && (
         <section aria-labelledby="sicherheit-tresor" className="flex flex-col gap-3 pt-2">
           <h2 id="sicherheit-tresor" className={GRUPPENTITEL}>
@@ -53,7 +59,7 @@ export function SicherheitEinstellungen({
       {!offline && (
         <section aria-labelledby="sicherheit-geraete" className="flex flex-col gap-3 pt-2">
           <h2 id="sicherheit-geraete" className={GRUPPENTITEL}>
-            {t('profile.tabs.devices')}
+            {t('profile.devicesTitle')}
           </h2>
           <DevicesTab />
         </section>

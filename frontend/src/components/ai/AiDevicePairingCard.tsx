@@ -18,7 +18,7 @@ import {
   uebergebeVerlauf,
   type KopplungsStatus,
   type UebergabeZiel,
-} from '@/services/verlaufsUebergabe'
+} from '@/services/geraet/kopplung'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 
@@ -207,11 +207,18 @@ export function AiDevicePairingCard() {
       // Die Nummern stimmen: das ist die Freigabe. Ohne sie bekäme das neue
       // Gerät keine Nachrichten, sondern nur den Verlauf.
       const eintrag = await verzeichnisEintrag(rueckfrage.ziel)
-      if (eintrag && eintrag.is_approved === false) await gebeGeraetFrei(eintrag)
+      let schluesselOffen = false
+      if (eintrag && eintrag.is_approved === false) {
+        ;({ schluesselOffen } = await gebeGeraetFrei(eintrag))
+      }
       const abgelegt = await uebergebeVerlauf(rueckfrage.code, [rueckfrage.ziel])
-      toast.success(
-        t(abgelegt ? 'ai.profile.devicePairHandedOver' : 'ai.profile.devicePairSuccess'),
-      )
+      if (schluesselOffen) {
+        toast.info(t('ai.profile.devicePairKeyPending'))
+      } else {
+        toast.success(
+          t(abgelegt ? 'ai.profile.devicePairHandedOver' : 'ai.profile.devicePairSuccess'),
+        )
+      }
     } catch {
       // Der Verlauf bleibt beim alten Gerät. Die Kopplung selbst steht.
       toast.error(t('ai.profile.devicePairHandOverFailed'))

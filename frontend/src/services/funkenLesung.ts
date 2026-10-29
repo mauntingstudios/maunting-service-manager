@@ -23,7 +23,7 @@ import {
 } from './funkenService'
 import { istSteuerpaket } from './nachrichtBezug'
 import { pruefeNutzlast } from './nutzlastSignatur'
-import { logischeUuid } from './ratchetSitzung'
+import { logischeUuid } from './wirkungTypen'
 
 export interface AugenblickLesart {
   /** Die Mailbox, an die die Unterschrift gebunden ist. */

@@ -21,9 +21,14 @@
  * trotzdem als gelöscht und der nächste Versuch räumt den Rest.
  */
 
-import { loescheBlindeUmschlaege, loescheChatMedium } from '@/api/social'
-import { umgezogeneMailbox } from './gruppenSchluessel'
-import { leereUmschlagKlartext, updateMessageInLocalStore } from './messengerLocalStore'
+import { loescheChatMedium } from '@/api/social'
+import { chatMediaBlobCache } from './klartextSpeicher'
+import {
+  leereUmschlagKlartext,
+  loescheMedium,
+  loescheSteuerAuftraegeFuerZiel,
+  updateMessageInLocalStore,
+} from './messengerLocalStore'
 
 /** Ein Anhang, der auf einen hochgeladenen Blob zeigt. */
 interface Medienanhang {
@@ -37,6 +42,7 @@ interface Medienanhang {
 export interface TilgbareNachricht {
   id: number
   clientUuid?: string
+  senderId?: number
   text: string
   isDeleted?: boolean
   deletedAt?: string
@@ -65,6 +71,61 @@ export function medienKennungen(msg: TilgbareNachricht): string[] {
     if (z?.mediaId) kennungen.add(z.mediaId)
   }
   return [...kennungen]
+}
+
+/**
+ * Baut den dauerhaften Auftrag für das Server-Aufräumen dieser Nachricht.
+ *
+ * Die Medienkennungen und ihre Bindung werden **jetzt** abgelesen. Nach dem
+ * lokalen Löschen ist die Zeile nur noch ein Grabstein; die Zeiger auf die
+ * Blobs stehen dann ausschließlich hier. Die logische Kennung bleibt der
+ * Adressat der Umschläge — eine später neu angelegte Fassung derselben
+ * Nachricht trägt eine andere und wird von diesem Auftrag nicht berührt.
+ *
+ * Gibt `null` zurück, wenn es nichts zu räumen gibt: ohne logische Kennung und
+ * ohne Anhang hat der Server keine Kopie, die dieser Auftrag ansprechen könnte.
+ */
+/**
+ * Baut den dauerhaften Auftrag für die Serverkopie und die Blobs.
+ *
+ * Die Medienzeiger werden vor dem lokalen Löschen abgelesen; danach ist die
+ * Zeile ein Grabstein. Ein Auftrag ohne Serverkennung und ohne Blob hat nichts
+ * zu tun.
+ */
+export function baueLoeschauftrag(
+  msg: TilgbareNachricht,
+  mailbox: string,
+  chatType: 'direct' | 'group',
+  chatId: number,
+  fremd: boolean,
+): import('./messengerLocalStore').LoeschAuftrag | null {
+  const medien = [
+    msg.imageAttachment,
+    msg.audioAttachment,
+    msg.fileAttachment,
+    msg.videoNoteAttachment,
+  ]
+    .filter((a): a is Medienanhang & { mediaId: string } => Boolean(a?.mediaId))
+    .map((a) => ({
+      mediaId: a.mediaId,
+      mailbox,
+      absenderId: Number(msg.senderId) || 0,
+    }))
+  if (!msg.clientUuid && medien.length === 0) return null
+  const jetzt = Date.now()
+  return {
+    id: `${mailbox}:${msg.clientUuid ?? msg.id}`,
+    mailbox,
+    chatType,
+    chatId,
+    clientUuid: msg.clientUuid ?? null,
+    nachrichtId: msg.id,
+    medien,
+    fremd,
+    versuche: 0,
+    naechsterVersuch: jetzt,
+    angelegtAm: jetzt,
+  }
 }
 
 /**
@@ -131,48 +192,44 @@ export async function tilgeNachrichtLokal(
   if (msg.id > 0) {
     await leereUmschlagKlartext(blindMailboxId, msg.id)
   }
-}
 
-/**
- * Nimmt Umschläge und Anhänge vom Server.
- *
- * Nur der Absender kommt hier durch: das Löschen eines Blobs ist dem
- * Hochladenden vorbehalten, und den Knopf „für alle löschen" gibt es ohnehin
- * nur an der eigenen Nachricht.
- *
- * Fehlschläge werden gemeldet, nicht verschluckt. Wer „gelöscht" liest,
- * während der Chiffretext noch in der Mailbox liegt, glaubt etwas Falsches über
- * seine eigenen Daten.
- */
-export async function tilgeNachrichtBeimServer(
-  blindMailboxId: string,
-  msg: TilgbareNachricht
-): Promise<void> {
+  /*
+   * Und die ausstehenden Wirkungen zu dieser Nachricht.
+   *
+   * Eine Bearbeitung oder Reaktion, die noch in der Outbox steht, trägt die
+   * Kennung dieser Nachricht. Ginge sie nach der Löschung hinaus, lebte die
+   * Nachricht bei der Gegenseite wieder auf — genau das, was eine Löschung
+   * verhindern soll. Die Löschung selbst bleibt in der Warteschlange; sie muss
+   * weitergehen, auch wenn sie noch nicht draußen ist.
+   *
+   * Ein Fehler dabei ist keiner: die Nachricht ist lokal weg, und ein
+   * liegengebliebener Auftrag scheitert später an ihr.
+   */
+  await loescheSteuerAuftraegeFuerZiel(blindMailboxId, {
+    clientUuid: msg.clientUuid,
+    id: msg.id,
+  })
+
+  /*
+   * Und der Anhang selbst.
+   *
+   * Seit 10/2026 liegt ein geholter Anhang dauerhaft in der Ablage dieses
+   * Geräts (`medienSicherung.ts`). Bliebe er dort stehen, wäre die gelöschte
+   * Nachricht nur im Text verschwunden, ihr Bild aber weiterhin auf diesem
+   * Gerät — und die Zusage „für alle gelöscht" wäre falsch.
+   *
+   * `loescheMedium` nimmt in einer Transaktion den Klartext, angefangene
+   * Stuecke eines Historientransfers, einen offenen Nachholauftrag und setzt
+   * den Grabstein. Der Arbeitsspeicher faellt hier mit: er ist nur die
+   * Optimierung ueber der Ablage.
+   *
+   * Der Serverteil ist eine eigene Angelegenheit: dort darf nur der Absender
+   * löschen, und das läuft als dauerhafter Auftrag (`baueLoeschauftrag`).
+   */
   for (const mediaId of medienKennungen(msg)) {
-    await loescheChatMedium(mediaId)
+    await loescheMedium(mediaId).catch(() => {})
+    chatMediaBlobCache.delete(mediaId)
   }
-
-  if (blindMailboxId && msg.clientUuid) {
-    for (const kennung of loeschZiele(blindMailboxId)) {
-      await loescheBlindeUmschlaege(kennung, msg.clientUuid)
-    }
-  }
-}
-
-/**
- * Alle Mailboxen, in denen diese Nachricht liegen könnte.
- *
- * Eine Gruppe zieht in eine Kennung aus ihrem Geheimnis um, und während des
- * Umzugs liegen Nachrichten in beiden. Nur die eine zu räumen hiesse: „gelöscht"
- * anzeigen, während der Chiffretext in der anderen liegenbleibt — genau die
- * falsche Zusage, gegen die der Rest dieser Datei geschrieben ist.
- *
- * Ein Löschen in der falschen Mailbox kostet nichts: es findet die Kennung
- * nicht und meldet `deleted: 0`.
- */
-function loeschZiele(blindMailboxId: string): string[] {
-  const neu = umgezogeneMailbox(blindMailboxId)
-  return neu ? [neu, blindMailboxId] : [blindMailboxId]
 }
 
 /**
@@ -194,7 +251,6 @@ function loeschZiele(blindMailboxId: string): string[] {
  * wegging.
  */
 export async function tilgeFremdeNachrichtBeimServer(
-  blindMailboxId: string,
   msg: TilgbareNachricht
 ): Promise<{ medienGeblieben: number }> {
   let medienGeblieben = 0
@@ -206,10 +262,18 @@ export async function tilgeFremdeNachrichtBeimServer(
     }
   }
 
-  if (blindMailboxId && msg.clientUuid) {
-    for (const kennung of loeschZiele(blindMailboxId)) {
-      await loescheBlindeUmschlaege(kennung, msg.clientUuid)
-    }
-  }
   return { medienGeblieben }
 }
+
+/**
+ * Führt das Server-Aufräumen eines dauerhaften Auftrags aus.
+ *
+ * Nur der Server ist hier im Spiel: kein lokaler Schreibzugriff. Ein Auftrag zu
+ * einer bereits gelöschten Nachricht löscht also lediglich die Serverkopie und
+ * legt nichts wieder an — weder die Zeile noch einen Grabstein.
+ *
+ * Ein endgültig abgelehnter Blob (403: ein fremder Anhang gehört dem
+ * Hochladenden) wird gezählt und hält den Rest nicht auf: der Text soll
+ * verschwinden, auch wenn ein Bild bleibt. Ein flüchtiger Fehler wird
+ * weitergereicht; dann bleibt der ganze Auftrag offen und wird erneut versucht.
+ */

@@ -20,7 +20,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    const target = location.pathname + location.search
+    // Der Hash trägt bei Einladungen den Schlüssel (`#k=`); ohne ihn käme die
+    // Karte nach der Anmeldung verschlossen an.
+    const target = location.pathname + location.search + location.hash
     return (
       <Navigate
         to={`/login?redirect=${encodeURIComponent(target)}`}

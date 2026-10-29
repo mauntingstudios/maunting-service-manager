@@ -19,28 +19,45 @@ export interface GefundeneEinladung {
    * und beim Aufruf des Links lässt der Browser alles hinter der Raute weg.
    */
   schluessel: string | null
+  /** Der vollständig erkannte Link, damit die Anzeige den Rohtext ersetzen kann. */
+  link: string
 }
 
 /**
  * Findet den ersten Gruppen-Einladungslink in einem Nachrichtentext.
  *
- * Bewusst auf den eigenen Ursprung beschränkt: ein Link auf ein fremdes Panel
- * gehört nicht als Vorschaukarte hierher, weil die Karte dann Daten von dort
- * nachladen müsste.
+ * Akzeptiert die eigene Origin und die kanonische Panel-Adresse. Fremde Panels
+ * gehören nicht als Vorschaukarte hierher; die Karte lädt ihre Daten ohnehin
+ * über die eigene API, nicht über den Link-Host.
  */
-export function findeEinladung(text: string, origin: string): GefundeneEinladung | null {
+export function findeEinladung(
+  text: string,
+  ursprunge: string | readonly string[],
+): GefundeneEinladung | null {
   if (!text) return null
+  const liste = (Array.isArray(ursprunge) ? ursprunge : [ursprunge])
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  if (!liste.length) return null
   const muster = new RegExp(
-    `${origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/chat/join/([A-Za-z0-9_-]{8,64})(#k=([0-9a-f]{64}))?`,
+    `(${liste.join('|')})/chat/join/([A-Za-z0-9_-]{8,64})(#k=([0-9a-f]{64}))?`,
   )
   const treffer = muster.exec(text)
   if (!treffer) return null
-  return { code: treffer[1], schluessel: treffer[3] ?? null }
+  return {
+    code: treffer[2],
+    schluessel: treffer[4] ?? null,
+    link: treffer[0],
+  }
 }
 
 /** Nur der Code — für Aufrufer, die den Schlüssel nicht brauchen. */
-export function findeEinladungsCode(text: string, origin: string): string | null {
-  return findeEinladung(text, origin)?.code ?? null
+export function findeEinladungsCode(
+  text: string,
+  ursprunge: string | readonly string[],
+): string | null {
+  return findeEinladung(text, ursprunge)?.code ?? null
 }
 
 export interface GruppenEinladungsKarteProps {
@@ -82,28 +99,61 @@ export const GruppenEinladungsKarte: React.FC<GruppenEinladungsKarteProps> = ({
 
   useEffect(() => {
     let aktiv = true
-    setLaedt(true)
-    setFehlt(false)
-    setKarte(null)
-    getGroupInviteInfo(inviteCode)
-      .then(async (daten) => {
+    let takt: number | null = null
+
+    /*
+     * `still` ist die Auffrischung im Hintergrund. Sie darf die Karte nicht
+     * leeren: sonst blitzte bei jeder Runde „lädt“ auf, obwohl die alte
+     * Vorschau längst dasteht. Ein Fehler beim Auffrischen lässt den letzten
+     * guten Stand stehen — die Karte ist eine Vorschau, kein Live-Bild.
+     */
+    const laden = async (still: boolean) => {
+      if (!still) {
+        setLaedt(true)
+        setFehlt(false)
+        setKarte(null)
+      }
+      try {
+        const daten = await getGroupInviteInfo(inviteCode)
         if (!aktiv) return
         setInfo(daten)
+        setFehlt(false)
         // Erst nach dem Abruf: vorher steht nicht fest, ob es überhaupt eine
         // verschlüsselte Karte gibt. Scheitert das Öffnen, bleibt `karte` leer
         // und die Anzeige fällt auf den Klartext zurück — den es nur gibt,
         // solange die Gruppe keine Karte hat.
         const inhalt = await lieseEinladungsKarte(daten.invite_card, schluessel, inviteCode)
-        if (aktiv) setKarte(inhalt)
-      })
-      .catch(() => {
-        if (aktiv) setFehlt(true)
-      })
-      .finally(() => {
-        if (aktiv) setLaedt(false)
-      })
+        if (!aktiv) return
+        setLogoKaputt(false)
+        setKarte(inhalt)
+      } catch {
+        if (aktiv && !still) setFehlt(true)
+      } finally {
+        if (aktiv && !still) setLaedt(false)
+      }
+    }
+
+    void laden(false)
+
+    /*
+     * Eine Einladung ist ein Schnappschuss — bis jemand die Gruppe umbenennt.
+     * Die Karte liegt verschlüsselt auf dem Server, und der Eingeladene ist
+     * noch kein Mitglied: er erfährt eine Änderung nur durch Nachfragen.
+     * Deshalb eine ruhige Runde je Minute, und nur solange die Karte sichtbar
+     * ist.
+     */
+    const beiSichtbarkeit = () => {
+      if (document.visibilityState === 'visible') void laden(true)
+    }
+    document.addEventListener('visibilitychange', beiSichtbarkeit)
+    takt = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void laden(true)
+    }, 60_000)
+
     return () => {
       aktiv = false
+      document.removeEventListener('visibilitychange', beiSichtbarkeit)
+      if (takt !== null) window.clearInterval(takt)
     }
   }, [inviteCode, schluessel])
 
@@ -142,6 +192,7 @@ export const GruppenEinladungsKarte: React.FC<GruppenEinladungsKarteProps> = ({
    * sich eine Einladung gerade ansieht.
    */
   const name = karte?.name ?? info.name ?? null
+  const beschreibung = karte?.beschreibung ?? info.description ?? null
   const rohesLogo = karte?.logo ?? (info.avatar_url ? apiUrl(info.avatar_url) : null)
   const logo = getSafeAttachmentUrl(rohesLogo)
 
@@ -170,6 +221,11 @@ export const GruppenEinladungsKarte: React.FC<GruppenEinladungsKarteProps> = ({
           <div className="truncate text-sm font-semibold">
             {name ?? t('social.invite.sealed')}
           </div>
+          {/* Eine Kurzfassung, keine Vorlesung: zwei Zeilen sagen, worum es
+              geht, ohne die Karte im Chat zu sprengen. */}
+          {beschreibung && (
+            <p className="mt-0.5 line-clamp-2 text-label-sm opacity-80 break-words">{beschreibung}</p>
+          )}
           <div className="mt-0.5 flex items-center gap-2 text-label-sm opacity-75">
             <span>
               {t('social.invite.memberCount', { count: info.member_count })}

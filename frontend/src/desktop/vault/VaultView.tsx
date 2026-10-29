@@ -59,7 +59,6 @@ import { setzeTresorSchutz } from '../tauri'
 import { useShallow } from 'zustand/react/shallow'
 import { getLocalVaultSalt, useVaultStore } from './vaultStore'
 import { PAPIERKORB_TAGE, istBekannteKategorie, istPasswortKategorie, type VaultItem } from './vaultEintrag'
-import { DisBadge } from '@/components/DisBadge'
 import { fehlerText } from './tresorFehler'
 
 type Ansicht = 'tresor' | 'fotos' | 'dateien' | 'zahlung' | 'archiv' | 'papierkorb'
@@ -548,9 +547,6 @@ export function VaultView() {
             <h2 className="text-base font-bold text-on-surface">
               {t('mss.vault.einrichtenTitel')}
             </h2>
-            <div className="flex justify-center pt-0.5">
-              <DisBadge size={16} />
-            </div>
           </div>
 
           <form
@@ -696,9 +692,6 @@ export function VaultView() {
             <h2 className="text-base font-bold text-on-surface">
               {t('mss.vault.titelManager')}
             </h2>
-            <div className="flex justify-center pt-0.5">
-              <DisBadge size={16} />
-            </div>
           </div>
 
           <form
@@ -1075,7 +1068,6 @@ export function VaultView() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xs font-bold text-on-surface">{t('mss.vault.titelManager')}</h1>
-              <DisBadge size={14} className="hidden sm:inline-flex py-0.5 px-2" />
             </div>
           </div>
         </div>

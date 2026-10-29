@@ -16,13 +16,12 @@ import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { sendeGeraeteBenachrichtigung, pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
 import { abonniere, kuendige } from '@/services/pushAbo'
-import { kuendigeMailboxPush } from '@/services/mailboxPush'
-import { useMessengerNotificationStore, playNotificationChime } from '@/stores/messengerNotificationStore'
-import { NotificationService } from '@/services/notificationService'
+import { useMessengerNotificationStore, chimeEntsperren } from '@/stores/messengerNotificationStore'
+import { istGesperrt, useMessengerSperre } from '@/services/messengerSperre'
+import { meldeChat } from '@/services/benachrichtigung/chatMeldung'
 import { loadCalendarEventsOfflineFirst } from '@/lib/offlineSync'
 import { erinnerungenAus, PLAN_TAGE, type GeplanteErinnerung } from '@/lib/erinnerungsplan'
 import { CALENDAR_CIPHERTEXT_PREFIX } from '@/services/notesCalendarCrypto'
-import { sendE2eeDeliveryReceipt, checkAndDispatchPendingDeliveryReceipts } from '@/services/deliveryReceiptService'
 
 interface IncidentAlert {
   id: number
@@ -122,6 +121,47 @@ async function erinnerungenUebergeben(liste: GeplanteErinnerung[]): Promise<void
   await erinnerungenPlanen(liste)
 }
 
+/**
+ * Quittiert eine eingehende Direktnachricht erst, nachdem dieser Client den
+ * Chiffretext geöffnet und die Absendersignatur geprüft hat.
+ *
+ * Der Server sieht dabei keinen Klartext: `ackChatMessages` trägt nur die
+ * Kennungen. Ein bloßes Ereignis, ein gesperrter Messenger, ein blockierter
+ * Absender, eine Gruppe, eine gelöschte Nachricht oder ein offenes Gespräch
+ * (dort quittiert `useNachrichtenLaden` nach dem lokalen Ablegen) löst
+ * keinen Ack aus.
+ */
+async function quittiereGeprueftenEingang(
+  msg: Record<string, unknown>,
+  senderId: number,
+): Promise<void> {
+  if (String(msg.chat_type ?? '') !== 'direct' || msg.is_deleted === true) return
+
+  const id = Number(msg.id ?? 0)
+  const chatId = Number(msg.chat_id ?? 0)
+  const keyVersion = Number(msg.key_version ?? 0)
+  const clientUuid = typeof msg.client_uuid === 'string' ? msg.client_uuid : ''
+  const chiffrat = typeof msg.encrypted_payload === 'string' ? msg.encrypted_payload : ''
+  if (id <= 0 || chatId <= 0 || keyVersion <= 0 || !clientUuid || !chiffrat) return
+  if (istGesperrt(useMessengerSperre.getState())) return
+
+  const store = useMessengerNotificationStore.getState()
+  if (store.isBlocked(senderId)) return
+  if (store.activeMailboxId === `direct:peer:${senderId}`) return
+
+  try {
+    // Nachgeladen: der Notifier hängt auf jeder Seite, die Krypto gehört
+    // nicht in den Startbestand.
+    const { entpackeChatNutzlast } = await import('@/services/chatKrypto')
+    await entpackeChatNutzlast('direct', chatId, clientUuid, senderId, keyVersion, chiffrat)
+    const { ackChatMessages } = await import('@/api/social')
+    await ackChatMessages('direct', chatId, id)
+  } catch {
+    // Kein Schlüssel, falsche Signatur oder Netz: kein Ack. Der Lesepfad
+    // holt es beim Öffnen des Gesprächs nach.
+  }
+}
+
 const POLL_INTERVAL_MS = 20_000
 const BASE_INCIDENTS_KEY = 'msm_alerted_incidents'
 const BASE_REMINDERS_KEY = 'msm_alerted_reminders'
@@ -167,6 +207,12 @@ export function ServerIncidentNotifier() {
   const planRef = useRef<string | null>(null)
   const currentUserIdRef = useRef<number | undefined>(user?.id)
 
+  // Ein Browser hebt die Autoplay-Sperre nur in einer echten Geste auf.
+  // Pontis, Web und MSS mounten diesen Baustein; damit gilt es überall.
+  useEffect(() => {
+    chimeEntsperren()
+  }, [])
+
   useEffect(() => {
     if (currentUserIdRef.current !== user?.id) {
       currentUserIdRef.current = user?.id
@@ -208,7 +254,7 @@ export function ServerIncidentNotifier() {
       // auszutragen. Dass der Schalter auch für den Mailbox-Weg gilt, kann nur
       // hier entschieden werden — dort steht kein Konto mehr, an dem der
       // Server ihn nachschlagen könnte.
-      void kuendigeMailboxPush().then(() => kuendige())
+      void kuendige()
       if (aufAndroid() && planRef.current !== '[]') {
         planRef.current = '[]'
         void erinnerungenUebergeben([]).catch(() => {})
@@ -319,9 +365,11 @@ export function ServerIncidentNotifier() {
     // Hintergrund-Synchronisierung für Blockierungen und bekannte Mailboxen
     void useMessengerNotificationStore.getState().syncBlockedFromBackend()
     if (user?.id) {
-      void useMessengerNotificationStore.getState().syncMailboxDirectoryFromBackend(user.id).then(() => {
-        void checkAndDispatchPendingDeliveryReceipts(user.id)
-      })
+      // Nur die Liste der Mailboxen auffrischen. **Keine Quittung aus dieser
+      // Liste**: sie sagt nicht, ob der Umschlag für dieses Gerät war oder
+      // sich öffnen ließ. Eine Zustellquittung entsteht erst nach dem Öffnen
+      // und Prüfen des Chiffretexts im Chat-Zweig unten.
+      void useMessengerNotificationStore.getState().syncMailboxDirectoryFromBackend(user.id)
     }
 
     // Sofortiger initialer Check nach Login
@@ -335,173 +383,39 @@ export function ServerIncidentNotifier() {
       }
     }, POLL_INTERVAL_MS)
 
-    // Sofortige Echtzeit-Push-Benachrichtigung für Freundschaftsanfragen & Messenger-Nachrichten
+    // Sofortige Echtzeitmeldungen fuer Messenger-Nachrichten. Freundschafts-
+    // anfragen meldet `FreundschaftsWache` – mit Aktion und `melden`-Regel.
     const handleSyncEvent = (e: Event) => {
       const ce = e as CustomEvent<any>
       const detail = ce.detail
-      if (detail?.type === 'friend_request_received') {
-        const senderName = detail.from_username || t('notifications.someUser')
-        if (user.device_notifications !== false) {
-          void sendeGeraeteBenachrichtigung({
-            titel: t('notifications.friendRequestTitle'),
-            text: t('notifications.friendRequestText', { name: senderName }),
-          })
-          toast.success(t('notifications.friendRequestToast', { name: senderName }))
-        }
-      } else if (detail?.type === 'achievement_unlocked') {
+      if (detail?.type === 'achievement_unlocked') {
         // Bis 09/2026 verschickte das Backend dieses Ereignis, und niemand
         // hörte zu: neue Abzeichen sah nur, wer die Liste selbst öffnete.
         const ach = detail.achievement
         if (ach?.title) {
           toast.success(t('notifications.achievementUnlockedToast', { title: ach.title, points: ach.points ?? 0 }))
         }
-      } else if (detail?.type === 'e2ee_blind_message') {
-        const mid = detail.blind_mailbox_id
-        if (!mid) return
-
-        const store = useMessengerNotificationStore.getState()
-
-        // 1. Multi-Device Read Receipt Sync:
-        // Wenn der Benutzer den Chat auf einem anderen Gerät gelesen hat,
-        // wird der Zähler auf diesem Gerät unmittelbar zurückgesetzt
-        const senderId = detail.sender_user_id ?? detail.sender_id
-        if (
-          detail.control_type === 'read_receipt' &&
-          NotificationService.isOutgoingEcho(senderId, user?.id)
-        ) {
-          store.markAsRead(mid)
-          return
-        }
-
-        // 2. Outgoing Echo Prevention:
-        // Der Sender darf NIEMALS eine Notification oder einen Unread-Count für seine eigenen
-        // Aktionen erhalten (auch nicht bei Aktionen via KI/Worker im Namen des Nutzers).
-        if (NotificationService.isOutgoingEcho(senderId, user?.id)) {
-          return
-        }
-
-        // 3. Interne Steuernachrichten (Read Receipts, Delivery Receipts, Edits) ausschließen
-        const isControl = Boolean(
-          detail.is_control ||
-          (detail.control_type && detail.control_type !== 'message' && detail.control_type !== 'normal')
-        )
-        if (isControl) {
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(
-              new CustomEvent('msm:messages-updated', {
-                detail: { blind_mailbox_id: mid, is_control: true, control_type: detail.control_type },
-              })
-            )
-          }
-          return
-        }
-
-        // Automatische Zustellbestätigung (2 graue Häkchen beim Absender):
-        // Sobald das Gerät des Empfängers die Nachricht via SSE erhalten hat (Empfänger hat Internet/Online-Status),
-        // wird unmittelbar eine Zustellquittung (delivery_receipt) an die Mailbox übermittelt — auch wenn der
-        // Chat noch nicht geöffnet wurde!
-        const incomingSenderId = Number(senderId)
-        const recipientUserId = Number(user?.id)
-        const isGroup = Boolean(detail.is_group || store.mailboxDirectory[mid]?.isGroup)
-        if (
-          !isGroup &&
-          incomingSenderId &&
-          recipientUserId &&
-          incomingSenderId !== recipientUserId &&
-          detail.id &&
-          !store.isBlocked(incomingSenderId)
-        ) {
-          void sendE2eeDeliveryReceipt({
-            blindMailboxId: mid,
-            envelopeId: Number(detail.id),
-            senderUserId: incomingSenderId,
-            currentUserId: recipientUserId,
-          })
-        }
-
-        // 4. Mailbox-Metadaten abrufen oder bei Bedarf nachsynchronisieren
-        let meta = store.mailboxDirectory[mid]
-        if (!meta) {
-          if (user?.id) {
-            void store.syncMailboxDirectoryFromBackend(user.id)
-          }
-          meta = {
-            name: 'Neue Nachricht',
-            isGroup: Boolean(detail.is_group),
-          }
-        }
-
-
-        // Chat-Fokus und Vordergrund-Erkennung
-        const isCurrentActive = store.activeMailboxId === mid
-        const isDocVisible = typeof document !== 'undefined' && document.visibilityState === 'visible'
-        const isWindowFocused = typeof document !== 'undefined' && (typeof document.hasFocus !== 'function' || document.hasFocus())
-        const isChatFocused = isCurrentActive && isDocVisible && isWindowFocused
-        const isForeground = isDocVisible && isWindowFocused
-
-        // Strikte Outgoing Echo Prevention & Empfänger-Filterung (recipient_id == current_user && !is_read)
-        const shouldNotify = NotificationService.shouldNotify({
-          recipientId: detail.recipient_id,
-          currentUserId: user?.id,
-          isRead: isChatFocused,
-          senderUserId: detail.sender_user_id,
-          isGroup: Boolean(meta.isGroup),
-          isControl,
-          controlType: detail.control_type,
-        })
-        if (!shouldNotify) {
-          return
-        }
-
-        /**
-         * „Hier liegt etwas Neues" — und zwar **vor** der Stummschaltung.
-         *
-         * Die Erwähnungswache hing bis 20.09.2026 am Ungelesen-Zähler, und den
-         * überspringt der stumme Pfad gleich darunter. In einer stummen Gruppe
-         * erschien deshalb nicht einmal das @-Abzeichen, obwohl genau das der
-         * Sinn der Sache ist: kein Ton, aber sehen, dass man gemeint war.
-         *
-         * Das Ereignis nennt nur die Mailbox. Es trägt keinen Inhalt und löst
-         * keine Meldung aus; wer daran hängt, entscheidet selbst, ob er
-         * hinsieht.
+      } else if (detail?.type === 'message_created' || detail?.type === 'new_message') {
+        const msg = (detail.message ?? detail) as Record<string, unknown>
+        const senderId = Number(msg.sender_user_id ?? msg.sender_id ?? 0)
+        if (!senderId || senderId === Number(user.id)) return
+        const istGruppe = String(msg.chat_type ?? '') === 'group'
+        /*
+         * Die Meldestelle prueft Stumm, Blockiert und den offenen Chat. Hier
+         * bleibt nur die Uebersetzung des Ereignisses in ein Gespraech.
          */
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('msm:mailbox-neu', { detail: { mid } }))
-        }
+        meldeChat({
+          mailbox: istGruppe
+            ? `group:${Number(msg.chat_id ?? 0)}`
+            : `direct:peer:${senderId}`,
+          senderId,
+          clientUuid: (msg.client_uuid as string | null) ?? null,
+          istGruppe,
+          meldenErlaubt: detail.melden !== false,
+          t,
+        })
 
-        // 5. Stummschaltung und Blockierung prüfen
-        if (store.isMuted(mid)) return
-        if (meta.userId && store.isBlocked(meta.userId)) {
-          return
-        }
-
-        const senderOrChat = meta.name
-        const title = t('notifications.messageTitle', { name: senderOrChat })
-        const text = meta.isGroup
-          ? t('notifications.messageInGroup', { name: meta.name })
-          : t('notifications.messageFrom', { name: senderOrChat })
-
-        // Ungelesen-Zähler im Store erhöhen
-        store.incrementUnread(mid)
-
-        // Nur akustisch signalisieren und benachrichtigen, wenn Gerätebenachrichtigung aktiv ist
-        if (user?.device_notifications !== false) {
-          playNotificationChime()
-          toast.success(
-            meta.isGroup
-              ? t('notifications.messageToastGroup', { name: meta.name })
-              : t('notifications.messageToastDirect', { name: senderOrChat }),
-          )
-
-          // Background vs. Foreground Push: Bei aktiver WebSocket-Verbindung im Vordergrund
-          // dürfen keine doppelten OS-Pushes getriggert werden!
-          if (!isForeground) {
-            void sendeGeraeteBenachrichtigung({
-              titel: title,
-              text: text,
-            })
-          }
-        }
+        void quittiereGeprueftenEingang(msg, senderId)
       }
     }
 

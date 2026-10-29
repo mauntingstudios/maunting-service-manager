@@ -49,7 +49,7 @@ MARKE = "dis.klartext_bereinigt"
 #: 20261001: die Tresortabellen tragen keine `user_id` mehr; alte
 #: Zeilenversionen und die entfernte Spalte in `vault_blobs` liegen noch in
 #: der Datei.
-MARKE_WERT = "20261001"
+MARKE_WERT = "20261028"
 
 #: Ohne Frist wartete VACUUM FULL auf jede laufende Anfrage, und alles, was
 #: danach kommt, wartete auf VACUUM FULL. So scheitert es nach 10 s und wird

@@ -1,6 +1,6 @@
 [package]
 name = "maunting-secure-browser"
-version = "5.7.7"
+version = "5.8.0"
 description = "Maunting Pontis auf Tauri v2"
 edition = "2021"
 rust-version = "1.88"
@@ -85,7 +85,7 @@ windows-core = "0.62"
 # Signaturen des CRX3-Pakets, zip entpackt es. Beide liegen über rustls und
 # den Updater schon im Baum.
 ring = "0.17"
-zip = { version = "4", default-features = false, features = ["deflate-flate2"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-biometric = "2"

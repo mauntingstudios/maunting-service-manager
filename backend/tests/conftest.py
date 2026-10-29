@@ -75,6 +75,7 @@ os.environ["AWS_ACCESS_KEY_ID"] = "AKIAIOSFODNN7EXAMPLE"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
 os.environ["MSM_PANEL_URL"] = "http://localhost:3000"
+os.environ["MSM_API_URL"] = "http://localhost:8000"
 os.environ["MSM_ACCESS_TOKEN_EXPIRE_MINUTES"] = "15"
 
 from datetime import datetime, timedelta, timezone

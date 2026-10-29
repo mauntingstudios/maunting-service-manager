@@ -96,7 +96,7 @@ export function Dienste() {
         <Kopplung />
       </Abschnitt>
       {gekoppelt && (
-        <Abschnitt titel={t('profile.tabs.devices')}>
+        <Abschnitt titel={t('profile.devicesTitle')}>
           <DevicesTab />
         </Abschnitt>
       )}

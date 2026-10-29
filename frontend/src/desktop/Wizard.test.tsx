@@ -30,9 +30,8 @@ vi.mock('./WakewordEinrichtung', () => ({
   WakewordEinrichtung: () => null,
 }))
 
-const { veroeffentlichen, abholen } = vi.hoisted(() => ({
+const { veroeffentlichen } = vi.hoisted(() => ({
   veroeffentlichen: vi.fn(),
-  abholen: vi.fn(async () => 0),
 }))
 // Das Geraet und sein Schluessel sind erfunden — ein RSA-Paar zu erzeugen
 // kostete hier Sekunden und pruefte nichts, was `e2eeGeraet.test.ts` nicht
@@ -41,7 +40,6 @@ vi.mock('@/services/e2eeGeraet', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/e2eeGeraet')>()),
   geraetVeroeffentlichen: veroeffentlichen,
 }))
-vi.mock('@/services/verlaufsUebergabe', () => ({ holeVerlaufAb: abholen }))
 
 import { sicherheitsnummer } from '@/services/e2eeGeraet'
 import { MessengerVerschlossenError } from '@/services/lokaleVersiegelung'
@@ -92,7 +90,6 @@ describe('Wizard: Kopplung', () => {
       kennung: 'dieses-geraet',
       paar: { publicKeyJwk: OEFFENTLICH, privateKeyJwk: '{}' },
     })
-    abholen.mockClear()
   })
 
   /** Der Server nimmt den Code an und kennt den Benutzer. */
@@ -144,7 +141,6 @@ describe('Wizard: Kopplung', () => {
 
     await screen.findByText(await sicherheitsnummer(OEFFENTLICH))
     expect(veroeffentlichen).toHaveBeenCalledWith('Arbeitsrechner')
-    expect(abholen).toHaveBeenCalledWith('abcd efgh jklm', '{}')
     expect(fertig).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.wizard.weiter') }))
@@ -185,7 +181,6 @@ describe('Wizard: Kopplung', () => {
     expect(await screen.findByText(i18n.t('mss.wizard.pinTitel'))).toBeInTheDocument()
     expect(screen.getByPlaceholderText(i18n.t('profile.messengerLock.pinPlaceholder'))).toBeInTheDocument()
     expect(fertig).not.toHaveBeenCalled()
-    expect(abholen).not.toHaveBeenCalled()
 
     // Entsperrt — wie nach einem richtigen PIN im Sperrschirm.
     act(() => {
@@ -193,7 +188,6 @@ describe('Wizard: Kopplung', () => {
     })
     await screen.findByText(await sicherheitsnummer(OEFFENTLICH))
     expect(veroeffentlichen).toHaveBeenLastCalledWith('Arbeitsrechner')
-    expect(abholen).toHaveBeenCalledWith('abcd efgh jklm', '{}')
     expect(fertig).not.toHaveBeenCalled()
   })
 
@@ -208,11 +202,9 @@ describe('Wizard: Kopplung', () => {
     expect(await screen.findByText(i18n.t('mss.wizard.meldenFehlerTitel'))).toBeInTheDocument()
     expect(screen.getByText('kein Netz')).toBeInTheDocument()
     expect(fertig).not.toHaveBeenCalled()
-    expect(abholen).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.wizard.nochmal') }))
     await screen.findByText(await sicherheitsnummer(OEFFENTLICH))
-    expect(abholen).toHaveBeenCalledWith('abcd efgh jklm', '{}')
   })
 
   it('laesst nach einem gescheiterten Melden trotzdem weiter, wenn man will', async () => {

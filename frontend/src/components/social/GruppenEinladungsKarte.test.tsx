@@ -17,9 +17,10 @@ vi.mock('@/config/api', () => ({ apiUrl: (pfad: string) => `https://panel.test${
 const { GruppenEinladungsKarte, findeEinladung, findeEinladungsCode } = await import(
   './GruppenEinladungsKarte'
 )
-const { baueEinladungsKarte, einladungsschluesselAus } = await import(
+const { baueEinladungsKarte, erzeugeEinladungsschluessel } = await import(
   '@/services/einladungsKarte'
 )
+const KARTENSCHLUESSEL = erzeugeEinladungsschluessel()
 
 const ORIGIN = 'https://panel.test'
 
@@ -64,14 +65,26 @@ describe('findeEinladungsCode', () => {
     // einer Chatnachricht gezeichnet, und dort steht der ganze Link.
     const k = 'a'.repeat(64)
     const text = `Komm rein: ${ORIGIN}/chat/join/AbCd1234efGH#k=${k}`
-    expect(findeEinladung(text, ORIGIN)).toEqual({ code: 'AbCd1234efGH', schluessel: k })
+    expect(findeEinladung(text, ORIGIN)).toEqual({
+      code: 'AbCd1234efGH',
+      schluessel: k,
+      link: `${ORIGIN}/chat/join/AbCd1234efGH#k=${k}`,
+    })
   })
 
   it('kommt ohne Schluessel aus', () => {
     expect(findeEinladung(`${ORIGIN}/chat/join/AbCd1234efGH`, ORIGIN)).toEqual({
       code: 'AbCd1234efGH',
       schluessel: null,
+      link: `${ORIGIN}/chat/join/AbCd1234efGH`,
     })
+  })
+
+  it('akzeptiert die kanonische Panel-Adresse neben der eigenen Origin', () => {
+    const panel = 'https://panel.example'
+    const text = `Komm rein: ${panel}/chat/join/AbCd1234efGH`
+    expect(findeEinladung(text, [ORIGIN, panel])?.code).toBe('AbCd1234efGH')
+    expect(findeEinladung(text, [ORIGIN])).toBeNull()
   })
 
   it('ignoriert einen krummen Schluessel, behaelt aber den Code', () => {
@@ -80,6 +93,7 @@ describe('findeEinladungsCode', () => {
     expect(findeEinladung(`${ORIGIN}/chat/join/AbCd1234efGH#k=zukurz`, ORIGIN)).toEqual({
       code: 'AbCd1234efGH',
       schluessel: null,
+      link: `${ORIGIN}/chat/join/AbCd1234efGH`,
     })
   })
 })
@@ -150,7 +164,6 @@ describe('GruppenEinladungsKarte', () => {
 })
 
 describe('GruppenEinladungsKarte, verschlüsselt', () => {
-  const GEHEIMNIS = 'A'.repeat(43) + '='
   const CODE = 'AbCd1234efGH'
   const LOGO = 'data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA=='
 
@@ -163,7 +176,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
       name: null,
       description: null,
       avatar_url: null,
-      invite_card: await baueEinladungsKarte(GEHEIMNIS, CODE, {
+      invite_card: await baueEinladungsKarte(KARTENSCHLUESSEL, CODE, {
         name: 'Serverteam',
         beschreibung: 'Wir bauen Dinge',
         ...inhalt,
@@ -173,7 +186,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
 
   it('zeigt Name und Logo aus der entschlüsselten Karte', async () => {
     getGroupInviteInfo.mockResolvedValue(await mitKarte({ logo: LOGO }))
-    const schluessel = await einladungsschluesselAus(GEHEIMNIS)
+    const schluessel = KARTENSCHLUESSEL
 
     render(
       <GruppenEinladungsKarte inviteCode={CODE} schluessel={schluessel} onJoin={vi.fn()} />,
@@ -183,6 +196,40 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
     // Als Data-URL, nicht als Adresse: eine Adresse müsste der Server
     // ausliefern und wüsste dabei, wer die Einladung gerade ansieht.
     await waitFor(() => expect(document.querySelector('img')).toHaveAttribute('src', LOGO))
+  })
+
+  it('zeigt eine Kurzfassung der Beschreibung', async () => {
+    getGroupInviteInfo.mockResolvedValue(await mitKarte())
+
+    render(
+      <GruppenEinladungsKarte inviteCode={CODE} schluessel={KARTENSCHLUESSEL} onJoin={vi.fn()} />,
+    )
+
+    // Bis 27.10.2026 wurde die Beschreibung zwar entschlüsselt, aber nie
+    // gezeichnet: die Vorschau sagte nicht, worum es in der Gruppe geht.
+    expect(await screen.findByText('Wir bauen Dinge')).toBeInTheDocument()
+  })
+
+  it('frischt die Vorschau auf, wenn die Gruppe umbenannt wurde', async () => {
+    /*
+     * Der Eingeladene ist noch kein Mitglied und bekommt kein Sync-Ereignis.
+     * Er erfährt eine Änderung nur, wenn die Karte neu versiegelt wurde und er
+     * noch einmal nachfragt.
+     */
+    const alt = await mitKarte({ name: 'Alter Name' })
+    const neu = await mitKarte({ name: 'Neuer Name' })
+    getGroupInviteInfo.mockResolvedValueOnce(alt)
+    getGroupInviteInfo.mockResolvedValue(neu)
+
+    render(
+      <GruppenEinladungsKarte inviteCode={CODE} schluessel={KARTENSCHLUESSEL} onJoin={vi.fn()} />,
+    )
+    expect(await screen.findByText('Alter Name')).toBeInTheDocument()
+
+    fireEvent(document, new Event('visibilitychange'))
+
+    expect(await screen.findByText('Neuer Name')).toBeInTheDocument()
+    expect(screen.queryByText('Alter Name')).not.toBeInTheDocument()
   })
 
   it('bleibt ohne Schlüssel zu und sagt das', async () => {
@@ -204,7 +251,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
 
   it('bleibt mit dem falschen Schlüssel zu', async () => {
     getGroupInviteInfo.mockResolvedValue(await mitKarte())
-    const fremd = await einladungsschluesselAus('B'.repeat(43) + '=')
+    const fremd = erzeugeEinladungsschluessel()
 
     render(<GruppenEinladungsKarte inviteCode={CODE} schluessel={fremd} onJoin={vi.fn()} />)
 
@@ -222,7 +269,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
       name: 'Name vom Server',
       avatar_url: '/api/social/groups/avatar/group_7_abc.png',
     })
-    const schluessel = await einladungsschluesselAus(GEHEIMNIS)
+    const schluessel = KARTENSCHLUESSEL
 
     render(
       <GruppenEinladungsKarte inviteCode={CODE} schluessel={schluessel} onJoin={vi.fn()} />,
@@ -254,7 +301,7 @@ describe('GruppenEinladungsKarte, verschlüsselt', () => {
      * „Verschlüsselte Gruppe".
      */
     getGroupInviteInfo.mockResolvedValue(await mitKarte({ logo: LOGO }))
-    const schluessel = await einladungsschluesselAus(GEHEIMNIS)
+    const schluessel = KARTENSCHLUESSEL
     const onJoin = vi.fn().mockResolvedValue(undefined)
 
     render(<GruppenEinladungsKarte inviteCode={CODE} schluessel={schluessel} onJoin={onJoin} />)

@@ -11,6 +11,11 @@
 import { blobHerunterladen } from '@/lib/herunterladen'
 import { api } from '@/api/client'
 import i18n from '@/i18n'
+import {
+  GRUPPEN_MERKER_PREFIX,
+  MESSENGER_KEYS,
+  getStorageItem,
+} from '@/lib/offlineAblage'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { blobTeile, inDerAppSpeichern } from '@/lib/geraetSpeichern'
 import { zipSchreiben, type ZipEintrag } from '@/lib/zipSchreiben'
@@ -29,6 +34,7 @@ import {
   ladeAlleEntwuerfe,
   ladeFunkenAkten,
   listeLokaleMailboxen,
+  listeMedien,
   loadLocalMessages,
 } from '@/services/messengerLocalStore'
 import { ladeGespraeche } from '@/services/gespraechsListe'
@@ -65,15 +71,7 @@ export interface ExportErgebnis {
 }
 
 /** Chat-Einstellungen, die nur auf diesem Gerät liegen. */
-const LOKALE_CHAT_SCHLUESSEL = [
-  'msm:chat_pins',
-  'msm:chat_archive',
-  'msm:chat_mutes',
-  'msm:chat_blocks',
-  'msm:chat_blocked_profiles',
-  'msm:chat_pinned_message',
-  'msm:chat_retention',
-]
+const LOKALE_CHAT_SCHLUESSEL = Object.values(MESSENGER_KEYS)
 
 const NOTIZ_FELDER = ['title', 'content'] as const
 const TERMIN_FELDER = ['title', 'description', 'location', 'recurrence'] as const
@@ -145,10 +143,32 @@ async function messengerEintraege(): Promise<ZipEintrag[] | null> {
     verlauf[mailbox] = await loadLocalMessages(mailbox)
   }
   const einstellungen: Record<string, unknown> = {}
-  for (const schluessel of LOKALE_CHAT_SCHLUESSEL) {
-    const wert = localStorage.getItem(schluessel)
+  const schluesselListe: string[] = [...LOKALE_CHAT_SCHLUESSEL]
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(GRUPPEN_MERKER_PREFIX)) schluesselListe.push(key)
+    }
+  } catch {
+    // Ohne Ablage bleibt der Export bei den festen Schlüsseln.
+  }
+  for (const schluessel of schluesselListe) {
+    const wert = getStorageItem(schluessel)
     if (wert !== null) einstellungen[schluessel] = wert
   }
+  /*
+   * Die Anhänge, die dieses Gerät dauerhaft hält.
+   *
+   * Seit 10/2026 liegt ein geholter Anhang nicht mehr nur im Arbeitsspeicher,
+   * sondern in der Ablage des Kontos. Er gehört dem Nutzer und gehört in
+   * seinen Export — sonst nähme der Export den Verlauf mit und ließe die
+   * Bilder und Sprachnachrichten weg, ohne es zu sagen.
+   */
+  const medien = await listeMedien()
+  const medienEintraege: ZipEintrag[] = medien.map((medium) => ({
+    pfad: `geraet/messenger/medien/${medium.mediaId}`,
+    inhalt: ausDataUrl(medium.klartext),
+  }))
   return [
     json('geraet/messenger/verlauf.json', verlauf),
     json('geraet/messenger/gespraeche.json', [...(await ladeGespraeche()).values()]),
@@ -156,7 +176,22 @@ async function messengerEintraege(): Promise<ZipEintrag[] | null> {
     json('geraet/messenger/entwuerfe.json', await ladeAlleEntwuerfe()),
     json('geraet/messenger/funken.json', await ladeFunkenAkten()),
     json('geraet/messenger/einstellungen.json', einstellungen),
+    json(
+      'geraet/messenger/medien.json',
+      medien.map((m) => ({ mediaId: m.mediaId, name: m.name })),
+    ),
+    ...medienEintraege,
   ]
+}
+
+/** Die Bytes einer data-URL. Was keine data-URL ist, wird als Text genommen. */
+function ausDataUrl(wert: string): Uint8Array {
+  if (!wert.startsWith('data:')) return new TextEncoder().encode(wert)
+  const komma = wert.indexOf(',')
+  if (komma === -1) return new Uint8Array()
+  const teil = wert.slice(komma + 1)
+  if (!wert.slice(0, komma).includes(';base64')) return new TextEncoder().encode(teil)
+  return ausBase64(teil)
 }
 
 function json(pfad: string, daten: unknown): ZipEintrag {

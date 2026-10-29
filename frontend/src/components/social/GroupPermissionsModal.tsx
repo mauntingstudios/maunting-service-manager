@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Dialog,
@@ -8,6 +8,7 @@ import {
   Avatar,
   Dropdown,
   Input,
+  Textarea,
   Kurzinfo,
   type DropdownOption,
   RechteAbschnitte,
@@ -23,11 +24,13 @@ import {
   Plus,
   Pencil,
   Trash2,
-  ShieldCheck,
   Sliders,
   Phone,
   ChevronDown,
   ChevronUp,
+  ImagePlus,
+  Settings2,
+  Share2,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -40,6 +43,11 @@ import {
 } from '@/api/social'
 import { deriveGroupBlindMailboxId } from '@/services/e2eeCrypto'
 import type { GruppenKontext } from '@/services/gruppenSchluessel'
+import { logoAlsDatenUrl } from '@/services/einladungsKarte'
+import { ladeGruppenInfo } from '@/services/gruppenInfo'
+import { versiegleEinladungNeu } from '@/services/einladungsPflege'
+import { sichereGruppenAnsicht } from '@/services/gruppenName'
+import { GruppenHintergrundFeld } from '@/features/chatHintergrund/GruppenHintergrundFeld'
 import {
   aendereGruppenzustand,
   ladeGruppenzustand,
@@ -66,6 +74,10 @@ interface GroupPermissionsModalProps {
   group: ChatGroupItem | null
   currentUserId: number
   onGroupUpdated?: (group: ChatGroupItem) => void
+  /** Womit der Dialog öffnet; „Hintergrund" aus dem Chatmenü. */
+  initialTab?: 'general' | 'background'
+  /** Kopiert den Einladungslink; der Dialog kennt den Messenger-Pfad nicht. */
+  onEinladung?: () => void
 }
 
 /*
@@ -108,7 +120,11 @@ function rollentext(
  * Standardrechten ein, ohne dass jemand widersprach. Beide Listen gehören
  * zusammen — wer eine ändert, ändert die andere mit.
  */
-const NICHT_ALS_STANDARD: ReadonlySet<string> = new Set(['manage_roles'])
+const NICHT_ALS_STANDARD: ReadonlySet<string> = new Set([
+  'manage_roles',
+  'edit_group',
+  'set_group_background',
+])
 
 /** Was eine frische Gruppe mitbringt, solange der Server nichts anderes sagt. */
 const STANDARD_VORGABE = ['send_messages', 'attach_media', 'invite_members'] as const
@@ -358,10 +374,19 @@ export function GroupPermissionsModal({
   group,
   currentUserId,
   onGroupUpdated,
+  initialTab = 'general',
+  onEinladung,
 }: GroupPermissionsModalProps) {
   const { t } = useTranslation()
 
-  const [activeTab, setActiveTab] = useState<'members' | 'roles' | 'permissions'>('members')
+  const [activeTab, setActiveTab] = useState<
+    'general' | 'members' | 'roles' | 'permissions' | 'background'
+  >(initialTab)
+
+  useEffect(() => {
+    if (open) setActiveTab(initialTab)
+  }, [open, initialTab])
+
   const [members, setMembers] = useState<ChatGroupMemberItem[]>([])
   const [loading, setLoading] = useState(false)
   const [savingPermissions, setSavingPermissions] = useState(false)
@@ -393,6 +418,21 @@ export function GroupPermissionsModal({
    * `GROUP_PERMISSION_DEFINITIONS` und nirgendwo sonst.
    */
   const [standardrechte, setStandardrechte] = useState<Set<string>>(new Set(STANDARD_VORGABE))
+
+  /**
+   * Die Gruppeninfo im Reiter „Allgemein". Sie liegt seit 27.10.2026 in einem
+   * eigenen verschlüsselten Block; Rollen und Info haben getrennte Rechte.
+   */
+  const [infoName, setInfoName] = useState('')
+  const [infoBeschreibung, setInfoBeschreibung] = useState('')
+  const [infoLogo, setInfoLogo] = useState<string | null>(null)
+  const [infoLaedt, setInfoLaedt] = useState(false)
+  const [infoSpeichert, setInfoSpeichert] = useState(false)
+  const [infoSchmutzig, setInfoSchmutzig] = useState(false)
+  const infoLogoInput = useRef<HTMLInputElement>(null)
+  /** Ob hier getippt wurde — dann überschreibt der Ladevorgang nichts. */
+  const infoGetippt = useRef(false)
+  const [hintergrundKontext, setHintergrundKontext] = useState<GruppenKontext | null>(null)
 
   const rollenAuswahl: DropdownOption[] = ROLE_OPTION_IDS.map((id) => ({
     value: id,
@@ -469,6 +509,157 @@ export function GroupPermissionsModal({
       istEigentuemer: group.role === 'owner',
     }
   }, [group, currentUserId, members])
+
+  /**
+   * Wer Name, Beschreibung und Bild ändern darf — getrennt von Rollen.
+   *
+   * Die Marke vom Server deckt die Mitgliederzeile; eigene Rollen aus dem
+   * verschlüsselten Block kennt er nicht. Deshalb wird hier zusätzlich in der
+   * zusammengeführten Rollenliste nachgesehen.
+   */
+  const kannInfoSchreiben = useMemo(() => {
+    if (!group) return false
+    if (isOwner || currentUserRole === 'admin') return true
+    if (group.can_edit_group) return true
+    return roles.some(
+      (rolle) =>
+        (rollenZuordnung[rolle.id] ?? []).includes(currentUserId) &&
+        rolle.permissions.includes('edit_group'),
+    )
+  }, [group, isOwner, currentUserRole, roles, rollenZuordnung, currentUserId])
+
+  const kannHintergrundAendern = useMemo(() => {
+    if (!group) return false
+    if (isOwner || currentUserRole === 'admin') return true
+    if (group.can_set_group_background) return true
+    return roles.some(
+      (rolle) =>
+        (rollenZuordnung[rolle.id] ?? []).includes(currentUserId) &&
+        rolle.permissions.includes('set_group_background'),
+    )
+  }, [group, isOwner, currentUserRole, roles, rollenZuordnung, currentUserId])
+
+  /**
+   * Der Kontext für den Hintergrund. Er braucht die Mitgliederliste; die lädt
+   * der Dialog ohnehin für die Rollen.
+   */
+  useEffect(() => {
+    if (!open || !group) {
+      setHintergrundKontext(null)
+      return
+    }
+    let abgebrochen = false
+    void gruppenKontext().then((kontext) => {
+      if (!abgebrochen) setHintergrundKontext(kontext)
+    })
+    return () => {
+      abgebrochen = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, group?.id, currentUserId, members.length])
+
+  /** Beim Öffnen die Felder aus dem verschlüsselten Info-Block füllen. */
+  useEffect(() => {
+    if (!open || !group) return
+    let abgebrochen = false
+    setInfoName(group.name ?? '')
+    setInfoBeschreibung(group.description ?? '')
+    setInfoLogo(group.avatar_url ?? null)
+    setInfoSchmutzig(false)
+    setInfoLaedt(true)
+
+    void (async () => {
+      try {
+        const kontext = await gruppenKontext()
+        if (!kontext) return
+        const lesung = await ladeGruppenInfo(kontext)
+        if (abgebrochen || lesung.art !== 'info') return
+        // Wer schon getippt hat, behält seinen Text: das Laden des Blocks
+        // dauert beim ersten Mal gut zwei Sekunden.
+        if (infoGetippt.current) return
+        setInfoName(lesung.info.name ?? '')
+        setInfoBeschreibung(lesung.info.beschreibung ?? '')
+        setInfoLogo(lesung.info.logo)
+      } catch {
+        // Der Reiter bleibt bei dem, was die Liste zeigt.
+      } finally {
+        if (!abgebrochen) setInfoLaedt(false)
+      }
+    })()
+
+    return () => {
+      abgebrochen = true
+    }
+  }, [open, group?.id])
+
+  /** Änderungen von außen übernehmen, solange hier niemand tippt. */
+  useEffect(() => {
+    if (!open || !group || infoSchmutzig) return
+    setInfoName(group.name ?? '')
+    setInfoBeschreibung(group.description ?? '')
+    setInfoLogo(group.avatar_url ?? null)
+  }, [open, group?.name, group?.description, group?.avatar_url, infoSchmutzig])
+
+  const handleInfoLogo = async (datei: File | undefined) => {
+    if (!datei || !group || !kannInfoSchreiben) return
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(datei.type)) {
+      toast.error(t('messenger.logoBadType'))
+      return
+    }
+    if (datei.size > 5 * 1024 * 1024) {
+      toast.error(t('messenger.logoTooLarge'))
+      return
+    }
+    const logo = await logoAlsDatenUrl(datei)
+    if (!logo) {
+      toast.error(t('messenger.logoFailed'))
+      return
+    }
+    infoGetippt.current = true
+    setInfoLogo(logo)
+    setInfoSchmutzig(true)
+  }
+
+  const handleInfoSpeichern = async () => {
+    if (!group || !kannInfoSchreiben || infoSpeichert) return
+    setInfoSpeichert(true)
+    try {
+      const kontext = await gruppenKontext()
+      if (!kontext) {
+        toast.error(t('social.groupRoles.generalSaveFailed'))
+        return
+      }
+      const gespeichert = await sichereGruppenAnsicht(kontext, {
+        name: infoName.trim() || null,
+        beschreibung: infoBeschreibung.trim() || null,
+        logo: infoLogo,
+      })
+      if (!gespeichert) {
+        toast.error(t('social.groupRoles.generalSaveFailed'))
+        return
+      }
+      onGroupUpdated?.({
+        ...group,
+        name: infoName.trim() || null,
+        description: infoBeschreibung.trim() || null,
+        avatar_url: infoLogo,
+      })
+      /*
+       * Eine bereits versendete Einladung zeigt jetzt noch den alten Namen.
+       * Mit dem Gruppenschlüssel im Info-Block lässt sie sich neu versiegeln —
+       * ungefragt, weil es dieselbe Änderung ist und niemand sie sonst
+       * nachziehen könnte.
+       */
+      void versiegleEinladungNeu(group, currentUserId)
+      infoGetippt.current = false
+      setInfoSchmutzig(false)
+      toast.success(t('social.groupRoles.generalSaved'))
+    } catch {
+      toast.error(t('social.groupRoles.generalSaveFailed'))
+    } finally {
+      setInfoSpeichert(false)
+    }
+  }
 
   useEffect(() => {
     if (open && group) {
@@ -775,7 +966,13 @@ export function GroupPermissionsModal({
     rolle: GruppenRolle,
     an: boolean,
   ) => {
-    await speichereRollen(
+    const neueZuordnung = {
+      ...rollenZuordnung,
+      [rolle.id]: an
+        ? [...new Set([...(rollenZuordnung[rolle.id] ?? []), member.user_id])]
+        : (rollenZuordnung[rolle.id] ?? []).filter((k) => k !== member.user_id),
+    }
+    const gespeichert = await speichereRollen(
       (vorher) => {
         const bisher = vorher.zuordnung[rolle.id] ?? []
         const neu = an
@@ -787,13 +984,42 @@ export function GroupPermissionsModal({
         ? t('social.groupRoles.memberRoleGiven', { name: member.username, role: rolle.name })
         : t('social.groupRoles.memberRoleTaken', { name: member.username, role: rolle.name }),
     )
+    if (!gespeichert || !group || member.role === 'owner') return
+
+    /*
+     * Die Rechte eigener Rollen müssen den Server erreichen, wo er sie prüft.
+     * Er sieht den verschlüsselten Block nicht und kennt keine Rollennamen;
+     * die **wirkende Rechteliste** in der Mitgliederzeile ist der einzige Ort,
+     * an dem `edit_group` und `set_group_background` für ihn existieren.
+     * Übertragen wird die Vereinigung, nie ein Abzug — dieselbe Regel wie in
+     * `rechteAusGruppe`.
+     */
+    const rechte = new Set<string>(STANDARD_VORGABE)
+    for (const eigene of eigeneRollen) {
+      if (!(neueZuordnung[eigene.id] ?? []).includes(member.user_id)) continue
+      for (const recht of eigene.rechte) rechte.add(recht)
+    }
+    try {
+      const aktualisiert = await updateGroupMemberRole(
+        group.id,
+        member.user_id,
+        member.role as 'admin' | 'moderator' | 'member',
+        [...rechte].sort().join(','),
+      )
+      setMembers((vorher) =>
+        vorher.map((m) => (m.user_id === member.user_id ? { ...m, ...aktualisiert } : m)),
+      )
+    } catch {
+      toast.error(t('social.groupRoles.memberRoleFailed'))
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="w-[96vw] max-w-5xl xl:max-w-6xl p-0 overflow-hidden bg-surface border-outline-variant/30 flex flex-col max-h-[92vh] sm:max-h-[88vh] shadow-2xl rounded-2xl"
+        size="voll"
+        className="overflow-hidden bg-surface border-outline-variant/30 shadow-2xl pb-[var(--msm-unten-sicher)] sm:max-w-5xl sm:rounded-2xl sm:border sm:border-outline-variant/30 sm:pb-0"
       >
         {/* Header with generous vertical padding */}
         <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-outline-variant/20 bg-surface-container/70 flex items-center justify-between gap-2 shrink-0">
@@ -817,11 +1043,11 @@ export function GroupPermissionsModal({
            */}
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-sm shrink-0">
-              <ShieldCheck className="w-5 h-5" />
+              <Settings2 className="w-5 h-5" />
             </div>
             <div className="min-w-0">
               <h2 className="font-headline text-body-lg font-bold text-primary truncate">
-                {t('social.groupRoles.title')}
+                {t('messenger.groupSettings')}
               </h2>
               <p className="text-xs text-on-surface-variant truncate">
                 {t('social.groupRoles.subtitle', {
@@ -843,7 +1069,27 @@ export function GroupPermissionsModal({
 
         {/* Tab Switcher - Responsive Segmented Controls on Mobile, Classic Tabs on Desktop */}
         <div className="border-b border-outline-variant/15 px-2.5 sm:px-6 pt-2 sm:pt-3.5 pb-2 sm:pb-0 bg-surface-container-low/60 shrink-0">
-          <div className="grid grid-cols-3 sm:flex gap-1 sm:gap-6 w-full p-1 sm:p-0 rounded-xl sm:rounded-none bg-surface-container-high/40 sm:bg-transparent">
+          <div className="grid grid-cols-5 sm:flex gap-1 sm:gap-6 w-full p-1 sm:p-0 rounded-xl sm:rounded-none bg-surface-container-high/40 sm:bg-transparent">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('general')
+                setIsCreatingRole(false)
+                setEditingRole(null)
+              }}
+              className={`py-2 sm:pb-3.5 px-1 sm:px-3 text-label-sm sm:text-sm font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-all rounded-lg sm:rounded-none sm:border-b-2 text-center select-none ${
+                activeTab === 'general'
+                  ? 'bg-primary/15 sm:bg-transparent text-primary sm:border-primary shadow-sm sm:shadow-none'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 sm:hover:bg-transparent sm:border-transparent'
+              }`}
+            >
+              <Settings2 className="w-4 h-4 shrink-0" />
+              <span className="leading-tight">
+                <span className="sm:hidden">{t('social.groupRoles.tabGeneralShort')}</span>
+                <span className="hidden sm:inline">{t('social.groupRoles.tabGeneral')}</span>
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={() => {
@@ -903,11 +1149,144 @@ export function GroupPermissionsModal({
                 <span className="hidden sm:inline">{t('social.groupRoles.tabDefaults')}</span>
               </span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('background')
+                setIsCreatingRole(false)
+                setEditingRole(null)
+              }}
+              className={`py-2 sm:pb-3.5 px-1 sm:px-3 text-label-sm sm:text-sm font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-all rounded-lg sm:rounded-none sm:border-b-2 text-center select-none ${
+                activeTab === 'background'
+                  ? 'bg-primary/15 sm:bg-transparent text-primary sm:border-primary shadow-sm sm:shadow-none'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 sm:hover:bg-transparent sm:border-transparent'
+              }`}
+            >
+              <ImagePlus className="w-4 h-4 shrink-0" />
+              <span className="leading-tight">
+                <span className="sm:hidden">{t('social.groupRoles.tabBackgroundShort')}</span>
+                <span className="hidden sm:inline">{t('social.groupRoles.tabBackground')}</span>
+              </span>
+            </button>
           </div>
         </div>
 
         {/* Scrollable Tab Content with generous vertical spacing */}
-        <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-6">
+        <div className="p-4 sm:p-8 flex-1 min-h-0 overflow-y-auto space-y-6">
+          {activeTab === 'general' && (
+            <div className="space-y-5">
+              <div>
+                <h3 className="font-headline text-body-sm font-bold text-primary">
+                  {t('social.groupRoles.generalHeading')}
+                </h3>
+                <p className="text-xs text-on-surface-variant/80">
+                  {kannInfoSchreiben
+                    ? t('social.groupRoles.generalHint')
+                    : t('social.groupRoles.generalNoRight')}
+                </p>
+                {infoLaedt && (
+                  <p className="text-xs text-on-surface-variant/70">
+                    {t('social.groupRoles.generalLoading')}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-4 sm:p-5 shadow-sm">
+                <div className="flex flex-col items-center gap-2 sm:w-40 shrink-0">
+                  <Avatar
+                    src={infoLogo}
+                    name={infoName || group?.name || t('social.groupRoles.groupFallback')}
+                    size="xl"
+                  />
+                  <input
+                    ref={infoLogoInput}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      void handleInfoLogo(e.target.files?.[0])
+                      e.currentTarget.value = ''
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={!kannInfoSchreiben}
+                    onClick={() => infoLogoInput.current?.click()}
+                    className="gap-1.5"
+                  >
+                    <ImagePlus className="w-4 h-4" />
+                    {t('social.groupRoles.generalLogoChoose')}
+                  </Button>
+                  {infoLogo && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={!kannInfoSchreiben}
+                      onClick={() => {
+                        infoGetippt.current = true
+                        setInfoLogo(null)
+                        setInfoSchmutzig(true)
+                      }}
+                    >
+                      {t('social.groupRoles.generalLogoRemove')}
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex-1 space-y-3 min-w-0">
+                  <Input
+                    label={t('social.groupRoles.generalName')}
+                    value={infoName}
+                    maxLength={64}
+                    disabled={!kannInfoSchreiben}
+                    onChange={(e) => {
+                      infoGetippt.current = true
+                      setInfoName(e.target.value)
+                      setInfoSchmutzig(true)
+                    }}
+                  />
+                  <Textarea
+                    label={t('social.groupRoles.generalDescription')}
+                    value={infoBeschreibung}
+                    maxLength={256}
+                    rows={3}
+                    disabled={!kannInfoSchreiben}
+                    onChange={(e) => {
+                      infoGetippt.current = true
+                      setInfoBeschreibung(e.target.value)
+                      setInfoSchmutzig(true)
+                    }}
+                  />
+                  <p className="text-xs text-on-surface-variant/70">
+                    {t('social.groupRoles.generalMembersHint', { count: members.length })}
+                  </p>
+                </div>
+              </div>
+
+              {kannInfoSchreiben && (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={infoSpeichert || !infoSchmutzig}
+                    onClick={() => void handleInfoSpeichern()}
+                    className="gap-2 rounded-xl px-4 py-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>
+                      {infoSpeichert ? t('common.saving') : t('social.groupRoles.generalSave')}
+                    </span>
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB 1: MEMBERS */}
           {activeTab === 'members' && (
             <div className="space-y-4">
@@ -920,9 +1299,23 @@ export function GroupPermissionsModal({
                     {t('social.groupRoles.membersHint')}
                   </p>
                 </div>
-                <Badge variant="default" className="text-xs px-2.5 py-0.5 font-medium">
-                  {t('social.groupRoles.participantCount', { count: members.length })}
-                </Badge>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {group?.invite_code && onEinladung && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={onEinladung}
+                      className="gap-1.5"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      {t('social.groupRoles.inviteAction')}
+                    </Button>
+                  )}
+                  <Badge variant="default" className="text-xs px-2.5 py-0.5 font-medium">
+                    {t('social.groupRoles.participantCount', { count: members.length })}
+                  </Badge>
+                </div>
               </div>
 
               {loading ? (
@@ -1338,6 +1731,21 @@ export function GroupPermissionsModal({
                   </Button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB 5: BACKGROUND */}
+          {activeTab === 'background' && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-headline text-body-sm font-bold text-primary">
+                  {t('social.groupRoles.backgroundHeading')}
+                </h3>
+              </div>
+              <GruppenHintergrundFeld
+                kontext={hintergrundKontext}
+                kannAendern={kannHintergrundAendern}
+              />
             </div>
           )}
         </div>

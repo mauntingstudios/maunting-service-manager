@@ -2,13 +2,15 @@ import { generateAesGcmKey } from '@msdis/shield/aead'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { setzeInhaltsSchluessel, setzeSiegelAktiv } from './lokaleVersiegelung'
+import i18n from '@/i18n'
 import {
   entferneLokaleNachricht,
+  entfernePlatzhalterUndDubletten,
+  istVerschluesselterPlatzhalter,
   loadLocalMessages,
   saveLocalMessages,
   schreibeNachrichtenBestandNeu,
   updateMessageInLocalStore,
-  getLocalMailboxLastSyncedId,
   clearLocalMessengerStore,
   parseMessageTimestamp,
   sortMessagesChronologically,
@@ -21,6 +23,15 @@ import {
   speichereEntwurf,
   ladeEntwurf,
   ladeAlleEntwuerfe,
+  speichereMedium,
+  leseMedium,
+  loescheMedium,
+  legeOffeneNachrichtAb,
+  ladeOffeneNachrichten,
+  schreibeOffeneNachricht,
+  loescheOffeneNachricht,
+  deleteMessageFromLocalStore,
+  editMessageInLocalStore,
   type LocalStoredMessage,
 } from './messengerLocalStore'
 
@@ -91,6 +102,11 @@ function installMockIndexedDb() {
         } else if (storeName === 'envelope_plaintexts') {
           // Zusammengesetzter Schlüssel wie im Schema: `[blindMailboxId, envelopeId]`.
           key = `${item.blindMailboxId}:${item.envelopeId}`
+        } else if (storeName === 'medien') {
+          // Eigener Schlüssel wie im Schema: die Medienkennung.
+          key = String(item.mediaId)
+        } else if (storeName === 'offene_nachrichten') {
+          key = String(item.id)
         } else {
           key = String(item.blindMailboxId)
         }
@@ -138,16 +154,31 @@ function installMockIndexedDb() {
       },
       index: (indexName: string) => ({
         getAll: (range?: any) => {
-          const targetMid = range?.lower || range
+          const target = range?.lower || range
           const allItems = Array.from(map!.values())
-          const matched = allItems.filter((i) => !targetMid || i.blindMailboxId === targetMid)
+          let matched: any[]
+          if (indexName === 'by_client_uuid') {
+            matched = allItems.filter((i) => {
+              if (!target) return true
+              const uuid = i.clientUuid || ''
+              return uuid === target || (typeof uuid === 'string' && uuid.startsWith(target + '#'))
+            })
+          } else {
+            matched = allItems.filter((i) => !target || i.blindMailboxId === target)
+          }
           const req: any = { onsuccess: null, onerror: null, result: matched }
           queueMicrotask(() => req.onsuccess?.())
           return req
         },
         get: (val: any) => {
           const allItems = Array.from(map!.values())
-          const found = allItems.find((i) => i.clientUuid === val)
+          const found = allItems.find((i) => {
+            if (indexName === 'by_client_uuid') {
+              const uuid = i.clientUuid || ''
+              return uuid === val || (typeof uuid === 'string' && uuid.startsWith(val + '#'))
+            }
+            return i.clientUuid === val
+          })
           const req: any = { onsuccess: null, onerror: null, result: found || null }
           queueMicrotask(() => req.onsuccess?.())
           return req
@@ -170,6 +201,9 @@ function installMockIndexedDb() {
         return {
           createIndex: () => {},
         }
+      },
+      deleteObjectStore: (n: string) => {
+        stores.delete(n)
       },
       transaction: (_storeNames: any) => {
         const tx: any = {
@@ -371,6 +405,24 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     expect((await ladeUmschlagKlartexte('box-klartext')).get(42)).toBe('Hallo')
   })
 
+  it('hält einen Anhang dauerhaft fest und gibt ihn wieder her', async () => {
+    /*
+     * Bis 10/2026 lag ein empfangenes Bild nur im Arbeitsspeicher. Nach dem
+     * Neuladen war es weg, und der Server behält den Blob nur 30 Tage — die
+     * Nachricht trägt keinen Inhalt, sondern einen Zeiger darauf.
+     */
+    const inhalt = 'data:image/png;base64,iVBORw0KGgo='
+    await speichereMedium('media-1', inhalt, 'bild.png')
+
+    expect(await leseMedium('media-1')).toBe(inhalt)
+    expect(await leseMedium('media-2')).toBeNull()
+
+    // Und weg mit ihm: das Löschen einer Nachricht muss auch ihren Anhang
+    // aus der Ablage nehmen.
+    await loescheMedium('media-1')
+    expect(await leseMedium('media-1')).toBeNull()
+  })
+
   it('übersteht simulierten F5-Reload und stellt Verlauf ohne Keys neu einzugeben wieder her', async () => {
     const mid = 'box-offline-recovery-999'
     const history: LocalStoredMessage[] = [
@@ -407,10 +459,6 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     expect(reloaded[1].text).toBe('Bestätigt!')
     expect(reloaded[1].isRead).toBe(true)
     expect(reloaded[1].status).toBe('read')
-
-    // 3. Mailbox-Meta verifiziert
-    const lastId = await getLocalMailboxLastSyncedId(mid)
-    expect(lastId).toBe(401)
   })
 
   it('aktualisiert optimistische Nachrichten nach Server-Quittung (Upgrade ID & Status)', async () => {
@@ -464,8 +512,53 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     await clearLocalMessengerStore()
     const result = await loadLocalMessages(mid)
     expect(result).toHaveLength(0)
-    const lastId = await getLocalMailboxLastSyncedId(mid)
-    expect(lastId).toBe(0)
+  })
+
+  it('legt offene Umschläge ab, lässt die erste Fassung stehen und löscht sie wieder', async () => {
+    const eingabe = {
+      id: 'direct:7:uuid-offen',
+      chatType: 'direct' as const,
+      chatId: 7,
+      clientUuid: 'uuid-offen',
+      senderId: 2,
+      keyVersion: 3,
+      encryptedPayload: 'alt',
+      createdAt: '2026-10-26T10:00:00.000Z',
+    }
+    await legeOffeneNachrichtAb(eingabe)
+    // Ein zweiter Fehlversuch derselben Nachricht darf den Auftrag nicht
+    // zurücksetzen.
+    await legeOffeneNachrichtAb({ ...eingabe, encryptedPayload: 'neu' })
+
+    const geladen = await ladeOffeneNachrichten()
+    expect(geladen).toHaveLength(1)
+    expect(geladen[0].encryptedPayload).toBe('alt')
+
+    await schreibeOffeneNachricht({ ...geladen[0], versuche: 2, naechsterVersuch: 123 })
+    const fortgeschrieben = await ladeOffeneNachrichten()
+    expect(fortgeschrieben[0].versuche).toBe(2)
+    expect(fortgeschrieben[0].naechsterVersuch).toBe(123)
+
+    await loescheOffeneNachricht(eingabe.id)
+    expect(await ladeOffeneNachrichten()).toEqual([])
+  })
+
+  it('behält die Serverfrist eines offenen Umschlags über einen Neustart', async () => {
+    // Ohne dieses Feld baute der Nachholpfad die Zeile mit `expires_at: null`
+    // neu, und sie blieb stehen, obwohl sie längst verschwunden sein sollte.
+    await legeOffeneNachrichtAb({
+      id: 'group:9:uuid-frist',
+      chatType: 'group',
+      chatId: 9,
+      clientUuid: 'uuid-frist',
+      senderId: 2,
+      keyVersion: 3,
+      encryptedPayload: 'chiffrat',
+      createdAt: '2026-10-26T10:00:00.000Z',
+      expiresAt: '2026-10-27T10:00:00.000Z',
+    })
+    const geladen = await ladeOffeneNachrichten()
+    expect(geladen[0].expiresAt).toBe('2026-10-27T10:00:00.000Z')
   })
 
   it('parseMessageTimestamp normalisiert Zeitzonen und Datumsformate robust nach UTC', () => {
@@ -511,9 +604,34 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     expect(sorted.map((m) => m.id)).toEqual([10, 11, 1773680000000])
   })
 
-  it('verhindert das Überschreiben von lastSyncedEnvelopeId durch temporäre Date.now() IDs', async () => {
+  it('ordnet Queue-, Bestands- und wartende Zeilen ausschließlich nach UTC-Zeit und UUID', () => {
+    const zeilen = [
+      { id: -12, createdAt: '2026-10-24T10:00:02Z', clientUuid: 'c', status: 'sent' },
+      { id: 1, createdAt: '2026-10-24T12:00:01+02:00', clientUuid: 'b', status: 'sent' },
+      { id: 900, createdAt: '2026-10-24 10:00:00', clientUuid: 'a', status: 'sent' },
+      { id: 999999999999, createdAt: '2026-10-24T09:59:59Z', clientUuid: 'queued', status: 'queued' },
+    ]
+    expect(sortMessagesChronologically(zeilen).map((m) => m.clientUuid)).toEqual(['queued', 'a', 'b', 'c'])
+    const gleicheZeit = zeilen.map((m) => ({ ...m, createdAt: '2026-10-24T10:00:00Z' }))
+    expect(sortMessagesChronologically(gleicheZeit).map((m) => m.clientUuid)).toEqual(['a', 'b', 'c', 'queued'])
+    expect(zeilen[0].clientUuid).toBe('c')
+  })
+
+  it('stuft eine bestätigte Queue-Zeile mit erhaltener lokaler ID nicht als wartend ein', () => {
+    expect(isOptimisticMessage({ id: 999999999999, status: 'sent', viaInbox: true })).toBe(false)
+  })
+
+  it('entfernt beim Upgrade den alten Mailbox-Cursor und lässt die Nachrichten liegen', async () => {
+    // Frisches Modul: die geöffnete Datenbank aus den vorigen Tests kennt das
+    // Upgrade nicht mehr.
+    vi.resetModules()
+    const { setzeAngemeldetesKonto: setzeFrisch } = await import('@/lib/angemeldetesKonto')
+    setzeFrisch(TEST_KONTO)
+    const frisch = await import('./messengerLocalStore')
     const mid = 'box-opt-id-guard'
-    await saveLocalMessages(mid, [
+    // Eine Ablage aus Version 9: der Cursor lag in einem eigenen Store.
+    mockStores.set('mailboxes', new Map([[mid, { blindMailboxId: mid, lastSyncedEnvelopeId: 105 }]]))
+    await frisch.saveLocalMessages(mid, [
       {
         blindMailboxId: mid,
         id: 105,
@@ -522,20 +640,12 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
         createdAt: new Date().toISOString(),
         isSelf: false,
       },
-      {
-        blindMailboxId: mid,
-        id: Date.now(), // z. B. 1773680000000
-        clientUuid: 'opt-temp',
-        senderId: 2,
-        text: 'In Warteschlange',
-        createdAt: new Date().toISOString(),
-        isSelf: true,
-        status: 'queued',
-      },
     ])
 
-    const lastId = await getLocalMailboxLastSyncedId(mid)
-    expect(lastId).toBe(105)
+    expect(mockStores.has('mailboxes')).toBe(false)
+    const geladen = await frisch.loadLocalMessages(mid)
+    expect(geladen).toHaveLength(1)
+    expect(geladen[0].text).toBe('Bestätigt')
   })
 
   it('dedupliziert optimistische Nachrichten beim Laden sobald die Server-Bestätigung existiert', async () => {
@@ -904,6 +1014,91 @@ describe('Entwürfe je Chat', () => {
   })
 })
 
+describe('Platzhalter und Doppelungen in der Ablage', () => {
+  beforeEach(() => {
+    setzeAngemeldetesKonto(TEST_KONTO)
+    installMockIndexedDb()
+  })
+
+  const base = (ueber: Partial<LocalStoredMessage> & { id: number }): LocalStoredMessage => ({
+    senderId: 1,
+    text: '',
+    createdAt: '2026-10-01T12:00:00.000Z',
+    isSelf: false,
+    ...ueber,
+  })
+  const platzhalter = (id: number, uuid: string, senderId = 2) =>
+    base({ id, clientUuid: uuid, senderId, text: i18n.t('messenger.encryptedMessage') })
+
+  it('erkennt nur den Platzhalter, nicht eine echte Nachricht mit demselben Wortlaut', () => {
+    expect(istVerschluesselterPlatzhalter(platzhalter(1, 'a'))).toBe(true)
+    expect(istVerschluesselterPlatzhalter(platzhalter(2, 'b', 1))).toBe(true)
+    // Von mir, bearbeitet oder mit Anhang: eine echte Nachricht.
+    expect(istVerschluesselterPlatzhalter(platzhalter(3, 'c', 1))).toBe(true)
+    expect(
+      istVerschluesselterPlatzhalter({ ...platzhalter(4, 'd'), isSelf: true }),
+    ).toBe(false)
+    expect(
+      istVerschluesselterPlatzhalter({ ...platzhalter(5, 'e'), isEdited: true }),
+    ).toBe(false)
+    expect(
+      istVerschluesselterPlatzhalter({ ...platzhalter(6, 'f'), imageAttachment: { mediaId: 1 } }),
+    ).toBe(false)
+  })
+
+  it('zeigt einen Platzhalter nicht an', async () => {
+    const mid = 'box-platzhalter'
+    await saveLocalMessages(mid, [
+      platzhalter(1, 'a'),
+      base({ id: 2, clientUuid: 'b', text: 'echt' }),
+    ])
+    expect((await loadLocalMessages(mid)).map((m) => m.text)).toEqual(['echt'])
+  })
+
+  it('löscht einen Platzhalter nur, wenn die echte Zeile danebenliegt', async () => {
+    const mid = 'box-bereinigen'
+    // Mit der Gruppenart geschrieben: beide Absender bleiben als eigene Zeile
+    // stehen, genau wie es die alte Ablage getan hat.
+    await saveLocalMessages(
+      mid,
+      [platzhalter(1, 'gleiche-uuid', 2), base({ id: 2, clientUuid: 'gleiche-uuid', text: 'echt' })],
+      'gruppe',
+    )
+    expect(mockStores.get('messages')!.size).toBe(2)
+
+    expect(await entfernePlatzhalterUndDubletten(mid, 'direkt')).toEqual({
+      platzhalter: 1,
+      dubletten: 0,
+    })
+    expect(mockStores.get('messages')!.size).toBe(1)
+    expect((await loadLocalMessages(mid)).map((m) => m.text)).toEqual(['echt'])
+  })
+
+  it('lässt einen alleinstehenden Platzhalter liegen und blendet ihn nur aus', async () => {
+    const mid = 'box-einzeln'
+    await saveLocalMessages(mid, [platzhalter(1, 'allein')])
+
+    expect(await loadLocalMessages(mid)).toEqual([])
+    expect(await entfernePlatzhalterUndDubletten(mid, 'direkt')).toEqual({
+      platzhalter: 0,
+      dubletten: 0,
+    })
+    expect(mockStores.get('messages')!.size).toBe(1)
+  })
+
+  it('legt bestätigte Doppelungen auf eine Zeile zusammen', async () => {
+    const mid = 'box-dublette'
+    await saveLocalMessages(mid, [
+      base({ id: 10, clientUuid: 'doppelt', text: 'erste Fassung' }),
+      base({ id: 11, clientUuid: 'doppelt', text: 'zweite Fassung' }),
+    ])
+
+    const geladen = await loadLocalMessages(mid)
+    expect(geladen).toHaveLength(1)
+    expect(geladen[0].text).toBe('zweite Fassung')
+  })
+})
+
 describe('mischeVerlauf', () => {
   const nachricht = (
     ueber: Partial<LocalStoredMessage> & { id: number }
@@ -970,7 +1165,31 @@ describe('mischeVerlauf', () => {
     expect(zusammen[0].text).toBe('neu')
   })
 
-  it('überschreibt keine Nachricht eines anderen Absenders mit gleicher clientUuid', () => {
+  it('legt im Direktchat die Kopie beider Absender auf eine Zeile zusammen', () => {
+    // Dieselbe Nachricht liegt einmal als eigene Kopie und einmal als die des
+    // Gegenübers vor — gleicher `clientUuid`, anderer `senderId`. Mit dem
+    // Absender im Schlüssel blieben beide stehen, und genau so überlebte der
+    // Platzhalter (Absender = Gegenüber oder 0) neben der echten Zeile.
+    const lokal = [
+      nachricht({
+        id: 10,
+        senderId: 2,
+        clientUuid: 'gleiche-uuid',
+        text: 'Nachricht von mir',
+        isSelf: true,
+      }),
+    ]
+    const frisch = [
+      nachricht({ id: 11, senderId: 1, clientUuid: 'gleiche-uuid', text: 'Nachricht von mir' }),
+    ]
+
+    const zusammen = mischeVerlauf(lokal, frisch, 'direkt')
+    expect(zusammen).toHaveLength(1)
+  })
+
+  it('trennt in einer Gruppe weiterhin nach Absender', () => {
+    // In einer Gruppe trägt jede Nachricht ihre eigene logische Kennung; zwei
+    // Menschen mit derselben dürfen trotzdem nicht auf eine Zeile fallen.
     const lokal = [
       nachricht({
         id: 10,
@@ -990,10 +1209,32 @@ describe('mischeVerlauf', () => {
       }),
     ]
 
-    const zusammen = mischeVerlauf(lokal, frisch)
+    const zusammen = mischeVerlauf(lokal, frisch, 'gruppe')
     expect(zusammen).toHaveLength(2)
     expect(zusammen.find((m) => m.senderId === 1)?.text).toBe('Nachricht von Opfer')
     expect(zusammen.find((m) => m.senderId === 2)?.text).toBe('Nachricht von Angreifer')
+  })
+
+  it('lässt die echte Zeile den Platzhalter verdrängen', () => {
+    const platzhalter = nachricht({
+      id: 20,
+      senderId: 2,
+      clientUuid: 'gleiche-uuid',
+      text: 'Verschlüsselte Nachricht',
+    })
+    const echt = nachricht({
+      id: 21,
+      senderId: 1,
+      clientUuid: 'gleiche-uuid',
+      text: 'der echte Text',
+      isRead: true,
+    })
+
+    const zusammen = mischeVerlauf([platzhalter], [echt], 'direkt')
+    expect(zusammen).toHaveLength(1)
+    expect(zusammen[0].text).toBe('der echte Text')
+    // Was nur der Verlierer kennt, kommt mit.
+    expect(zusammen[0].isRead).toBe(true)
   })
 })
 
@@ -1124,7 +1365,6 @@ describe('Ablage je Konto', () => {
     // Ablage: der Aufruf tut schlicht nichts.
     await saveLocalMessages(mid, [zeile])
     expect(await loadLocalMessages(mid)).toEqual([])
-    expect(await getLocalMailboxLastSyncedId(mid)).toBe(0)
     expect(geoeffneteDatenbanken).toEqual([])
 
     // Nach der Anmeldung ist die eigene Ablage da — und leer, denn abgelegt
@@ -1145,4 +1385,54 @@ describe('Ablage je Konto', () => {
 
     expect(geloeschteDatenbanken).toContain('msm_messenger_local')
   })
+
+  describe('Signal Refactor: deleteMessageFromLocalStore & editMessageInLocalStore', () => {
+    const testMid = 'box-signal-refactor-tests'
+    const msgUuid = 'uuid-signal-test-123'
+
+    beforeEach(async () => {
+      setzeAngemeldetesKonto(TEST_KONTO)
+      installMockIndexedDb()
+      await saveLocalMessages(testMid, [
+        {
+          blindMailboxId: testMid,
+          id: 501,
+          clientUuid: msgUuid,
+          senderId: 1,
+          text: 'Ursprünglicher Nachrichtentext',
+          createdAt: '2026-10-24T12:00:00.000Z',
+          isSelf: true,
+          status: 'sent',
+          isDelivered: false,
+          isRead: false,
+          imageAttachment: { mediaId: 'img-1' },
+        },
+      ])
+    })
+
+    it('bearbeitet eine Nachricht in IndexedDB (editMessageInLocalStore)', async () => {
+      await editMessageInLocalStore(testMid, msgUuid, 'Geänderter Nachrichtentext')
+
+      const msgs = await loadLocalMessages(testMid)
+      expect(msgs).toHaveLength(1)
+      expect(msgs[0].text).toBe('Geänderter Nachrichtentext')
+      expect(msgs[0].isEdited).toBe(true)
+      expect(msgs[0].editedAt).toBeDefined()
+    })
+
+    it('löscht eine Nachricht als Grabstein in IndexedDB (deleteMessageFromLocalStore)', async () => {
+      await deleteMessageFromLocalStore(testMid, msgUuid)
+
+      // Direkt aus IndexedDB abrufen:
+      const db = await (await import('./messengerLocalStore')).schreibeNachrichtenBestandNeu()
+      expect(db).toBeGreaterThanOrEqual(1)
+
+      // Prüfe, dass sie als gelöscht markiert ist
+      const raw = await loadLocalMessages(testMid)
+      // loadLocalMessages filtert gelöschte Grabsteine aus oder liefert tilgeInhalt
+      expect(raw.find((m) => m.clientUuid === msgUuid)?.text ?? '').toBe('')
+    })
+
+  })
 })
+

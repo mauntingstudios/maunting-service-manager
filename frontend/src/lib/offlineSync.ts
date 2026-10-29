@@ -13,13 +13,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api, apiStream } from '@/api/client'
-import { nachweisKopf } from '@/services/mailboxNachweis'
-import { merkeStromKennung, vergissStromKennung } from '@/services/mailboxAbo'
+import { sendChatMessage } from '@/api/social'
+import { merkePraesenzKennung, vergissPraesenzKennung } from '@/services/praesenz'
 import type { NoteItem } from '@/pages/Notes'
 import type { CalendarEventItem, KalenderVorkommen } from '@/pages/Calendar'
 import { LEERES_DOKUMENT, ausbreiten, serieLesen } from '@/services/kalenderSerie'
 import { useAuthStore } from '@/stores/authStore'
 import { angemeldetesKonto, beiKontowechsel } from '@/lib/angemeldetesKonto'
+import { updateMessageInLocalStore } from '@/services/messengerLocalStore'
 import { STORAGE_KEYS, getStorageItem, leereOfflineAblage, setStorageItem } from '@/lib/offlineAblage'
 import {
   NOTE_CIPHERTEXT_PREFIX,
@@ -48,7 +49,7 @@ export { STORAGE_KEYS }
 export interface OutboxMutation {
   id: string
   entity: 'note' | 'calendar' | 'message'
-  action: 'create' | 'update' | 'delete' | 'toggle_pin' | 'toggle_archive' | 'relay' | 'neu_verschluesseln'
+  action: 'create' | 'update' | 'delete' | 'toggle_pin' | 'toggle_archive' | 'relay' | 'neu_verschluesseln' | 'send'
   entityId: string
   payload?: any
   timestamp: string
@@ -195,22 +196,16 @@ export function enqueueMutation(
  */
 export function enqueueMessageMutation(payload: {
   blind_mailbox_id: string
-  ciphertext_envelope: string
+  chat_type: 'direct' | 'group'
+  chat_id: number | string
+  key_version: number
+  encrypted_payload: string
   client_uuid: string
-  /**
-   * Steuerumschläge müssen ihre Kennzeichnung auch über die Outbox behalten.
-   * Ein Sitzungsaufbau (`dr-init`), der sie unterwegs verliert, landet beim
-   * Empfänger als unlesbare Nachricht im Verlauf statt als das, was er ist.
-   * Die FIFO-Zusage der Outbox sorgt dafür, dass er vor der Nachricht ankommt,
-   * für die er gebraucht wird.
-   */
-  is_control?: boolean
-  control_type?: string
 }): OutboxMutation {
   return enqueueMutation({
     id: payload.client_uuid,
     entity: 'message',
-    action: 'relay',
+    action: 'send',
     entityId: payload.blind_mailbox_id,
     payload,
   })
@@ -310,6 +305,45 @@ async function neuVerschluesseltSenden(pfad: string, payload: any): Promise<void
   await api(pfad, { method: 'POST', body: JSON.stringify(payload) })
 }
 
+/**
+ * Die logische Kennung einer Nachricht ohne Gerätezusatz.
+ *
+ * Ein Auftrag steht je Zielgerät in der Warteschlange (`<uuid>#<geraet>`), die
+ * Zeile im Verlauf trägt nur die Kennung davor. Ohne diesen Schnitt fände das
+ * Statusupdate die Nachricht nie — genau der Fehler, der die Uhr verewigte.
+ */
+function logischeNachrichtUuid(kennung: string): string {
+  const raute = kennung.indexOf('#')
+  return raute === -1 ? kennung : kennung.slice(0, raute)
+}
+
+/**
+ * Sagt der Oberfläche, dass dieser Auftrag endgültig gescheitert ist.
+ *
+ * Vorher verschwand ein 400/404 ohne jedes Signal: der Umschlag war weg, die
+ * Nachricht stand weiter auf „wird gesendet", und niemand erfuhr, dass sie nie
+ * ankommen würde. Der Status gehört **vor** das Ereignis geschrieben, damit ein
+ * gleichzeitiges Neuladen nicht den alten Stand zurückholt (Regel 45).
+ */
+async function meldeEndgueltigGescheitert(
+  mutation: OutboxMutation,
+  grund: string,
+): Promise<void> {
+  if (mutation.entity !== 'message') return
+  const mid = mutation.payload?.blind_mailbox_id
+  const kennung = mutation.payload?.client_uuid || mutation.id
+  if (!mid || !kennung) return
+  const clientUuid = logischeNachrichtUuid(kennung)
+  await updateMessageInLocalStore(mid, clientUuid, { status: 'failed' }).catch(() => {})
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('msm:message-failed', {
+        detail: { client_uuid: clientUuid, blind_mailbox_id: mid, grund },
+      }),
+    )
+  }
+}
+
 export async function replayOutbox(): Promise<{ processed: number; failed: number; remaining: number }> {
   if (isReplaying) {
     return { processed: 0, failed: 0, remaining: getOutbox().length }
@@ -326,6 +360,16 @@ export async function replayOutbox(): Promise<{ processed: number; failed: numbe
   // Die Warteschlange gehört dem Konto, für das sie angelegt wurde. Wechselt
   // die Anmeldung während eines Aufrufs, geht kein weiterer Auftrag hinaus.
   const konto = angemeldetesKonto()
+  /**
+   * Was in **diesem** Lauf schon einmal versucht wurde.
+   *
+   * Ohne diese Menge bliebe ein abgelehnter Auftrag vorn liegen und blockierte
+   * alles dahinter, bis er nach fünf Läufen verschwunden war — ein einzelnes
+   * kaputtes Paket hielt die Nachrichten aller anderen Geräte an. Jeder
+   * Auftrag bekommt hier genau einen Versuch je Lauf; scheitert er, ist das
+   * nächste dran, und der nächste Takt versucht es erneut.
+   */
+  const versucht = new Set<string>()
 
   try {
     while (true) {
@@ -333,7 +377,9 @@ export async function replayOutbox(): Promise<{ processed: number; failed: numbe
       const currentOutbox = getOutbox()
       if (currentOutbox.length === 0) break
 
-      const mutation = currentOutbox[0]
+      const mutation = currentOutbox.find((m) => !versucht.has(m.id))
+      if (!mutation) break
+      versucht.add(mutation.id)
       try {
         if (mutation.entity === 'note') {
           if (mutation.action === 'create') {
@@ -420,27 +466,35 @@ export async function replayOutbox(): Promise<{ processed: number; failed: numbe
             await neuVerschluesseltSenden('/calendar/events/neu-verschluesseln', mutation.payload)
           }
         } else if (mutation.entity === 'message') {
-          if (mutation.action === 'relay' || mutation.action === 'create') {
-            const res = await api<any>('/social/e2ee/relay', {
-              method: 'POST',
-              body: JSON.stringify(mutation.payload),
-              // Auch hier: die Warteschlange ruft `/e2ee/relay` direkt auf und
-              // geht an `relayE2eeEnvelope` vorbei. Ohne den Nachweis waere
-              // sie der eine Sendeweg, den die Mailbox abweist.
-              headers: nachweisKopf(mutation.payload?.blind_mailbox_id),
+          if (mutation.action === 'send' || mutation.action === 'relay') {
+            const chatType = mutation.payload?.chat_type || 'direct'
+            const chatId = Number(mutation.payload?.chat_id || 0)
+            if (!chatId) throw { status: 400, message: 'chat_id fehlt' }
+            const res = await sendChatMessage({
+              chat_type: chatType,
+              chat_id: chatId,
+              client_uuid: mutation.payload?.client_uuid || mutation.id,
+              key_version: Number(mutation.payload?.key_version || 1),
+              encrypted_payload: String(mutation.payload?.encrypted_payload || ''),
             })
-            if (res && res.id) {
-              if (typeof window !== 'undefined') {
-                window.dispatchEvent(
-                  new CustomEvent('msm:message-confirmed', {
-                    detail: {
-                      client_uuid: mutation.payload?.client_uuid || mutation.id,
-                      envelope_id: res.id,
-                      blind_mailbox_id: res.blind_mailbox_id,
-                    },
-                  })
-                )
-              }
+            const messageId = Number(res?.id || 0)
+            if (mutation.payload?.blind_mailbox_id && messageId > 0) {
+              await updateMessageInLocalStore(
+                mutation.payload.blind_mailbox_id,
+                logischeNachrichtUuid(mutation.payload?.client_uuid || mutation.id),
+                { id: messageId, status: 'sent' },
+              ).catch(() => {})
+            }
+            if (typeof window !== 'undefined' && messageId > 0) {
+              window.dispatchEvent(
+                new CustomEvent('msm:message-confirmed', {
+                  detail: {
+                    client_uuid: mutation.payload?.client_uuid || mutation.id,
+                    envelope_id: messageId,
+                    blind_mailbox_id: mutation.payload?.blind_mailbox_id,
+                  },
+                }),
+              )
             }
           }
         }
@@ -472,6 +526,8 @@ export async function replayOutbox(): Promise<{ processed: number; failed: numbe
         if (isNetworkErr || err?.status === 429 || (err?.status >= 500 && err?.status < 600)) {
           break
         } else if (err?.status === 404 || err?.status === 400) {
+          // Endgültig abgewiesen: nicht still verschwinden lassen.
+          await meldeEndgueltigGescheitert(mutation, `http-${err.status}`)
           const afterErrOutbox = getOutbox()
           setOutbox(afterErrOutbox.filter((m) => m.id !== mutation.id))
           failed++
@@ -481,14 +537,28 @@ export async function replayOutbox(): Promise<{ processed: number; failed: numbe
           if (idx >= 0) {
             const retryCount = (afterErrOutbox[idx].retryCount || 0) + 1
             if (retryCount > 5) {
-              afterErrOutbox.splice(idx, 1)
+              await meldeEndgueltigGescheitert(mutation, 'versuche-erschoepft')
+              // **Nach** dem Warten lesen, dann nur die erschöpfte Zeile
+              // entfernen. Die Meldung schreibt in die Ablage und öffnet damit
+              // ein Fenster: wer in ihm eine Nachricht sendet, hängt sie an die
+              // Warteschlange. Der vorher gelesene Stand kennt sie nicht — ihn
+              // zurückzuschreiben löschte die neue Nachricht still (Regel 45).
+              setOutbox(getOutbox().filter((m) => m.id !== mutation.id))
               failed++
             } else {
-              afterErrOutbox[idx].retryCount = retryCount
+              // Der Zähler ist ein kurzer Weg ohne Warten dazwischen; gelesen
+              // wird trotzdem frisch, damit die Zeile noch existiert.
+              const frisch = getOutbox()
+              const i = frisch.findIndex((m) => m.id === mutation.id)
+              if (i >= 0) {
+                frisch[i].retryCount = retryCount
+                setOutbox(frisch)
+              }
             }
-            setOutbox(afterErrOutbox)
           }
-          break
+          // Weiter mit dem nächsten Auftrag: dieser hier hat seinen Versuch für
+          // diesen Lauf gehabt. `versucht` verhindert die Endlosschleife.
+          continue
         }
       }
     }
@@ -1808,7 +1878,10 @@ export function startLiveSync(): () => void {
                 // ihn angehen. Nötig für Kennungen, die der Server nicht
                 // ausrechnen kann — dort gibt es keinen Empfänger
                 // nachzuschlagen.
-                merkeStromKennung((data as { conn_id?: string }).conn_id ?? null)
+                // Derselbe Rückweg, zweiter Zweck: vorne oder hinten. Der
+                // Server wählt daraus **einen** Zusteller je Konto, statt
+                // jedem offenen Fenster eine eigene Meldung zu schicken.
+                merkePraesenzKennung((data as { conn_id?: string }).conn_id ?? null)
               }
               handleIncomingSyncEvent(currentEvent, data)
             } catch {
@@ -1830,7 +1903,7 @@ export function startLiveSync(): () => void {
       // Die Kennung gehoert zu diesem Strom und stirbt mit ihm. Ohne das
       // meldete der Client nach dem Neuverbinden an eine Verbindung, die es
       // nicht mehr gibt — und bliebe stumm.
-      vergissStromKennung()
+      vergissPraesenzKennung()
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('msm:sync-status', { detail: { connected: false } }))
       }
@@ -1850,32 +1923,6 @@ export function startLiveSync(): () => void {
  */
 export function handleIncomingSyncEvent(eventName: string, data: SyncEventPayload): void {
   if (typeof window === 'undefined') return
-
-  if ((data as any)?.type === 'e2ee_blind_message' && (data as any)?.control_type?.startsWith('notes_key_')) {
-    const cType = (data as any).control_type
-    // Der Notizschlüssel wandert nur zwischen Geräten des angemeldeten Kontos,
-    // gleich wer das Ereignis ausgelöst hat. Auf dem Mailbox-Weg steht in
-    // `recipient_id` nichts, und `sender_user_id` ist, wer den Umschlag
-    // eingeworfen hat — das darf jeder Freund. Bis 09/2026 wurde unter dessen
-    // Kennung gelesen und abgelegt.
-    const targetUid = useAuthStore.getState().user?.id
-    if (typeof targetUid !== 'number' || targetUid <= 0) return
-    if (cType === 'notes_key_sync') {
-      // Auch mit Schlüssel: die Übergabe kann der des Kontos sein, der den
-      // eigenen ablöst (`kontoschluesselAbgleichen`).
-      void (hasUserNotesKey(targetUid)
-        ? checkAndRespondToDeviceKeyRequests(targetUid)
-        : checkAndReceiveDeviceNotesKey(targetUid))
-    } else if (cType === 'notes_key_request') {
-      // Gefragt hat ein Gerät, und seine Anfrage liegt in der Mailbox: die wird
-      // beantwortet, einmal. Bis 09/2026 ging bei jeder solchen Meldung der
-      // Schlüssel an jedes eigene Gerät — auch an alle, die ihn längst hatten.
-      if (hasUserNotesKey(targetUid)) {
-        void checkAndRespondToDeviceKeyRequests(targetUid)
-      }
-    }
-    return
-  }
 
   if (eventName === 'sync' || data.entity) {
     const entity = data.entity

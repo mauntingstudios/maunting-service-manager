@@ -246,6 +246,25 @@ describe('Anruf aufbauen', () => {
     expect(useCallStore.getState().errorMessage).toMatch(/blockiert/i)
   })
 
+  it('läuft ohne Kamera weiter und behauptet kein Bild', async () => {
+    /*
+     * Bis 27.10.2026 stand Mikrofon und Kamera in einem `try`: scheiterte nur
+     * die Kamera (in Pontis war sie gar nicht freigegeben), meldete der Anruf
+     * „stumm“ — obwohl das Mikrofon lief — und `isCameraOff` stand danach auf
+     * `false`.
+     */
+    const fehler = Object.assign(new Error('keine Kamera'), { name: 'NotAllowedError' })
+    livekit.setzeKamera.mockRejectedValueOnce(fehler)
+
+    await useCallStore.getState().initiateCall(PARTNER, 'video')
+
+    const zustand = useCallStore.getState()
+    expect(zustand.state).toBe('active')
+    expect(zustand.isMuted).toBe(false)
+    expect(zustand.isCameraOff).toBe(true)
+    expect(zustand.errorMessage).toMatch(/blockiert/i)
+  })
+
   it('meldet fehlende E2EE-Unterstützung im Klartext statt still zu scheitern', async () => {
     livekit.verbinde.mockRejectedValueOnce(new E2eeNichtUnterstuetzt())
 
@@ -530,6 +549,20 @@ describe('Gruppenanruf', () => {
     )
     expect(useCallStore.getState().kind).toBe('gruppe')
     expect(useCallStore.getState().group).toEqual(GRUPPE)
+  })
+
+  it.each([
+    [403, 'calls.errors.joinForbidden'],
+    [404, 'calls.errors.callGone'],
+    [410, 'calls.errors.callEnded'],
+    [503, 'calls.errors.serverUnavailable'],
+  ])('nennt bei HTTP %i die passende Meldung statt „Server nicht erreichbar“', async (status, key) => {
+    api.holeZugang.mockRejectedValueOnce(Object.assign(new Error('abgelehnt'), { status }))
+
+    await useCallStore.getState().joinGroupCall(GRUPPE, 'grp_abc')
+
+    expect(useCallStore.getState().errorMessage).toBe(i18n.t(key))
+    expect(useCallStore.getState().state).toBe('idle')
   })
 
   it('verteilt beim Beitreten zu einem laufenden Anruf nichts', async () => {

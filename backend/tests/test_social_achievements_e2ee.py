@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from uuid import uuid4
-from models import User, UserAchievement, UserActivityTime, UserFriend, UserPresence, E2eeBlindEnvelope, AiConversation, DirectChat, ChatGroup, ChatGroupMember
+from models import User, UserAchievement, UserActivityTime, UserFriend, UserPresence, E2eeMessage, AiConversation, DirectChat, ChatGroup, ChatGroupMember
 from services.achievement_service import AchievementService, ACHIEVEMENTS_CATALOG
 from services.social_service import SocialService
 from services.panel_settings_service import PanelSettingsService
@@ -83,6 +83,9 @@ def test_friends_workflow_and_handshake(db: Session):
     # Alice sendet Anfrage an Bob
     req_res = SocialService.send_friend_request(db, u1.id, "bob")
     assert req_res["status"] == "pending"
+    # Senden ist kein Einverstaendnis: erst Bobs Annahme macht sie zu Freunden.
+    assert SocialService.is_confirmed_friend(db, u1.id, u2.id) is False
+    assert SocialService.get_friends(db, u1.id) == []
 
     # Bob sieht eingehende Anfrage
     requests = SocialService.get_requests(db, u2.id)
@@ -290,28 +293,6 @@ def test_operator_master_toggle_disables_social(db: Session, client: TestClient,
     assert SocialService.is_social_enabled(db) is True
 
 
-def test_e2ee_zero_knowledge_blind_relay(db: Session):
-    """Prüft, dass der Server als blinde Relais-Mailbox ohne Nutzerverknüpfung fungiert."""
-    blind_mailbox = "a" * 64
-    import base64
-    b64_ct = base64.b64encode(b"N" * 12 + b"test-ciphertext-blob" + b"T" * 16).decode("ascii")
-    envelope = f"sv-e2ee-group-v1:{_GRUPPEN_KEY}{b64_ct}"
-
-    relayed = SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=blind_mailbox,
-        ciphertext_envelope=envelope,
-    )
-    assert relayed.id is not None
-    assert relayed.blind_mailbox_id == blind_mailbox
-    assert relayed.ciphertext_envelope == envelope
-
-    # Abruf aus der blinden Mailbox
-    messages = SocialService.get_blind_envelopes(db, blind_mailbox_id=blind_mailbox)
-    assert len(messages) == 1
-    assert messages[0].ciphertext_envelope == envelope
-
-
 def test_die_ki_kann_keine_nachricht_mehr_senden(db: Session, owner_user: User):
     """Der Server erzeugt kein Chiffretext mehr — auch nicht im Auftrag der KI.
 
@@ -348,7 +329,7 @@ def test_die_ki_kann_keine_nachricht_mehr_senden(db: Session, owner_user: User):
         )
 
     # Und nichts davon hat eine Mailbox berührt.
-    assert db.query(E2eeBlindEnvelope).count() == 0
+    assert db.query(E2eeMessage).count() == 0
 
 
 def test_kein_serverseitiger_kanalschluessel_mehr_im_code():
@@ -371,37 +352,40 @@ def test_kein_serverseitiger_kanalschluessel_mehr_im_code():
 
 
 def test_presence_offline_timeout(db: Session, owner_user: User):
-    """Prüft, dass Präsenz nach 120s Inaktivität automatisch als offline gewertet wird."""
+    """Ohne Lebenszeichen gilt ein Gerät nach 120 s als geschlossen."""
     from datetime import datetime, timezone, timedelta
-    from models import UserPresence
+    from models import UserPresenceSession
 
-    # 1. Frische Präsenz -> online
-    SocialService.update_presence(db, owner_user.id, {"status": "online", "device_type": "desktop"})
+    # 1. Frische Sitzung -> online, mit Client und Plattform
+    SocialService.upsert_session(
+        db,
+        owner_user.id,
+        geraet="geraet-test-1",
+        client="mss",
+        plattform="desktop",
+        zustand="online",
+        activity_key="panel",
+        vorn=True,
+    )
     pres = SocialService.get_presence(db, owner_user.id)
     assert pres["status"] == "online"
     assert pres["device_type"] == "desktop"
+    assert pres["client"] == "mss"
+    assert pres["activity_key"] == "panel"
 
-    # 2. Veralteter Zeitstempel (200 Sekunden in der Vergangenheit) -> offline
-    db_pres = db.query(UserPresence).filter_by(user_id=owner_user.id).first()
-    db_pres.updated_at = datetime.now(timezone.utc) - timedelta(seconds=200)
+    # 2. Veraltetes Lebenszeichen (200 Sekunden her) -> offline, ohne Plattform
+    sitzung = db.query(UserPresenceSession).filter_by(user_id=owner_user.id).first()
+    sitzung.last_seen_at = datetime.now(timezone.utc) - timedelta(seconds=200)
     db.commit()
 
     pres_after = SocialService.get_presence(db, owner_user.id)
     assert pres_after["status"] == "offline"
-    # device_type bleibt erhalten
-    assert pres_after["device_type"] == "desktop"
+    # Wer offline ist, hat auch keine Plattform und keine Aktivität.
+    assert pres_after["client"] is None
+    assert pres_after["activity_key"] is None
+    assert pres_after["device_type"] == "web"
 
-    # 3. Fehlender Zeitstempel (updated_at = None) -> offline
-    from unittest.mock import MagicMock
-    mock_db = MagicMock()
-    mock_db.query.return_value.filter_by.return_value.first.return_value = UserPresence(
-        user_id=owner_user.id, status="online", device_type="desktop", updated_at=None
-    )
-    pres_none = SocialService.get_presence(mock_db, owner_user.id)
-    assert pres_none["status"] == "offline"
-    assert pres_none["device_type"] == "desktop"
-
-    # 4. Nicht existierender Benutzer -> offline
+    # 3. Nicht existierender Benutzer -> offline
     missing_pres = SocialService.get_presence(db, user_id=999999)
     assert missing_pres["status"] == "offline"
     assert missing_pres["updated_at"] is None
@@ -441,18 +425,7 @@ def test_chat_group_create_join_invite(db: Session, owner_user: User, regular_us
     assert len(regular_groups) == 1
     assert regular_groups[0]["role"] == "member"
 
-    # 4. Blinder E2EE Relay
-    blind_mailbox = "b" * 64
-    b64_team = base64.b64encode(b"N" * 12 + b"team-ciphertext-payload" + b"T" * 16).decode("ascii")
-    env = SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=blind_mailbox,
-        ciphertext_envelope=f"sv-e2ee-group-v1:{_GRUPPEN_KEY}{b64_team}",
-    )
-    assert env.id is not None
-    assert env.blind_mailbox_id == blind_mailbox
-
-    # 5. Zweite Gruppe erstellen (unbegrenzt)
+    # 4. Zweite Gruppe erstellen (unbegrenzt)
     group2 = SocialService.create_group(db, user=owner_user)
     all_groups = SocialService.list_user_groups(db, owner_user.id)
     assert len(all_groups) == 2
@@ -592,23 +565,6 @@ def test_public_profiles_discovery(db: Session, owner_user: User, regular_user: 
     assert filtered[0]["username"] == "public_sam"
 
 
-def test_e2ee_typing_signal(owner_user: User) -> None:
-    """Prueft das fluechtige Senden von Typing- und Recording-Signalen ohne DB-Persistenz."""
-    mailbox_id = "test-blind-mailbox-123"
-    SocialService.broadcast_typing_signal(
-        blind_mailbox_id=mailbox_id,
-        status="typing",
-        sender_id=owner_user.id,
-        sender_username=owner_user.username,
-    )
-    SocialService.broadcast_typing_signal(
-        blind_mailbox_id=mailbox_id,
-        status="recording",
-        sender_id=owner_user.id,
-        sender_username=owner_user.username,
-    )
-
-
 def test_die_ki_hat_keinen_zugang_zum_messenger(db: Session, owner_user: User) -> None:
     """Die KI kommt an den Messenger nicht heran — nicht per Prompt, sondern gar nicht.
 
@@ -681,157 +637,7 @@ def test_die_ki_hat_keinen_zugang_zum_messenger(db: Session, owner_user: User) -
         __import__("services.social_matching_service")
 
     # Und nichts davon hat einen Umschlag erzeugt.
-    assert db.query(E2eeBlindEnvelope).count() == 0
-
-
-def test_e2ee_security_replay_attack_prevention(db: Session, owner_user: User):
-    """Prüft die Replay-Attack-Erkennung: identische Ciphertexte dürfen weder in derselben noch in fremden Mailboxen wiederholt werden."""
-    import base64
-    import os
-    from fastapi import HTTPException
-
-    valid_ct = base64.b64encode(os.urandom(12) + b"ciphertext-bytes-here" + os.urandom(16)).decode("ascii")
-    envelope = f"sv-e2ee-group-v1:{_GRUPPEN_KEY}{valid_ct}"
-    box_a = "1" * 64
-    box_b = "2" * 64
-
-    # 1. Erster Versand ist frisch und erfolgreich
-    relayed = SocialService.relay_blind_envelope(db, blind_mailbox_id=box_a, ciphertext_envelope=envelope)
-    assert relayed.id is not None
-    assert relayed.ciphertext_sha256 is not None
-
-    # 2. Replay-Versuch in derselben Mailbox -> 409 Conflict
-    with pytest.raises(HTTPException) as exc_same:
-        SocialService.relay_blind_envelope(db, blind_mailbox_id=box_a, ciphertext_envelope=envelope)
-    assert exc_same.value.status_code == 409
-    assert "Replay-Angriff" in exc_same.value.detail
-
-    # 3. Cross-Mailbox Replay-Versuch in fremder Mailbox -> ebenfalls 409 Conflict
-    with pytest.raises(HTTPException) as exc_cross:
-        SocialService.relay_blind_envelope(db, blind_mailbox_id=box_b, ciphertext_envelope=envelope)
-    assert exc_cross.value.status_code == 409
-    assert "Replay-Angriff" in exc_cross.value.detail
-
-
-def test_e2ee_security_envelope_format_and_tampering(db: Session):
-    """Prüft die Validierung von Umschlägen: Plaintext-Leaks, Null-IVs und manipulierte Formate werden abgewiesen."""
-    import base64
-    import json
-    from fastapi import HTTPException
-    from schemas.social import validate_e2ee_envelope_format
-
-    # 1. Plaintext-Payload-Leak
-    leaked_payload = json.dumps({"text": "Klartext-Geheimnis", "sender_id": 1})
-    with pytest.raises(ValueError) as exc_leak:
-        validate_e2ee_envelope_format(f"sv-e2ee-group-v1:{leaked_payload}")
-    assert "Sicherheitsverletzung" in str(exc_leak.value)
-
-    # 2. Unbekanntes oder fehlendes Prefix
-    with pytest.raises(ValueError) as exc_prefix:
-        validate_e2ee_envelope_format("plain-message-without-dis-prefix")
-    assert "Ungültiges E2EE-Umschlagformat" in str(exc_prefix.value)
-
-    # 3. Schwacher / ungültiger Null-IV (12 Null-Bytes)
-    zero_iv_raw = b"\x00" * 12 + b"ciphertext-bytes-here" + b"\x01" * 16
-    zero_iv_b64 = base64.b64encode(zero_iv_raw).decode("ascii")
-    with pytest.raises(ValueError) as exc_iv:
-        validate_e2ee_envelope_format(f"sv-e2ee-group-v1:{_GRUPPEN_KEY}{zero_iv_b64}")
-    assert "Null-IV" in str(exc_iv.value)
-
-    # 4. Steuerzeichen im Umschlag
-    with pytest.raises(ValueError) as exc_ctrl:
-        validate_e2ee_envelope_format("sv-e2ee-group-v1:payload\nwith\rnewlines")
-    assert "Steuerzeichen" in str(exc_ctrl.value)
-
-    # 5. Zu kurzer Ciphertext (< 38 Zeichen / 28 Bytes)
-    short_ct = base64.b64encode(b"\x01" * 10).decode("ascii")
-    with pytest.raises(ValueError) as exc_short:
-        validate_e2ee_envelope_format(f"sv-e2ee-group-v1:{_GRUPPEN_KEY}{short_ct}")
-    assert "zu kurz" in str(exc_short.value).lower()
-
-    # 6. Die abgeschafften Formate werden beim Schreiben nicht mehr angenommen.
-    #    Ihr Schlüssel ließ sich aus den Benutzerkennungen ableiten, die in der
-    #    Datenbank stehen — der Server konnte mitlesen. Abgelegte Altumschläge
-    #    bleiben liegen, neue dürfen nicht mehr entstehen.
-    valid_bytes = b"\x01" * 12 + b"ciphertext-bytes-here-ok" + b"\x02" * 16
-    valid_b64 = base64.b64encode(valid_bytes).decode("ascii")
-    for veraltet in ("sv-e2ee-v1:", "sv-e2ee-team-v1:"):
-        with pytest.raises(ValueError) as exc_alt:
-            validate_e2ee_envelope_format(f"{veraltet}{valid_b64}")
-        assert "Ungültiges E2EE-Umschlagformat" in str(exc_alt.value)
-    with pytest.raises(ValueError):
-        validate_e2ee_envelope_format(f"sv-e2ee-ratchet-v1:0.{valid_b64}")
-
-
-def test_gruppenumschlag_braucht_eine_schluesselkennung():
-    """`sv-e2ee-group-v1:<keyId>.<chiffre>` — ohne Kennung ist es der Altbestand.
-
-    Der alte Gruppenumschlag trug hier nur Base64. Sein Schlüssel war
-    `sha256("msm:group:key:" + groupId)`, und die Gruppenkennung steht in der
-    Datenbank — der Server konnte jede Gruppennachricht öffnen. Die Kennung im
-    Kopf ist deshalb nicht bloß Formsache: sie ist das Merkmal, an dem das
-    Backend neue von alten Umschlägen unterscheidet.
-    """
-    import base64
-    from schemas.social import validate_e2ee_envelope_format
-
-    chiffre = base64.b64encode(b"N" * 12 + b"gruppen-chiffretext" + b"T" * 16).decode("ascii")
-
-    validate_e2ee_envelope_format(f"sv-e2ee-group-v1:{_GRUPPEN_KEY}{chiffre}")
-
-    for kaputt, erwartet in (
-        # Der Altbestand: reines Base64 ohne Kennung.
-        (f"sv-e2ee-group-v1:{chiffre}", "Schlüsselkennung"),
-        # Kennungen, die keine sind: zu kurz, zu lang, keine Hexzeichen.
-        (f"sv-e2ee-group-v1:00ff.{chiffre}", "Schlüsselkennung"),
-        (f"sv-e2ee-group-v1:{'a' * 32}.{chiffre}", "Schlüsselkennung"),
-        (f"sv-e2ee-group-v1:00112233445566FF.{chiffre}", "Schlüsselkennung"),
-        (f"sv-e2ee-group-v1:00112233445566gg.{chiffre}", "Schlüsselkennung"),
-        # Kennung in Ordnung, Chiffretext nicht. Lang genug, damit nicht schon
-        # die Längenprüfung davor greift.
-        (f"sv-e2ee-group-v1:{_GRUPPEN_KEY}{'!' * 44}", "Base64"),
-        (f"sv-e2ee-group-v1:{_GRUPPEN_KEY}kurz", "zu kurz"),
-    ):
-        with pytest.raises(ValueError) as exc:
-            validate_e2ee_envelope_format(kaputt)
-        assert erwartet in str(exc.value), kaputt
-
-
-def test_double_ratchet_umschlag_wird_geprueft():
-    """Der Kopf eines `sv-e2ee-dr-v1:` trägt das Routing und muss stimmen."""
-    import base64
-    from schemas.social import validate_e2ee_envelope_format
-
-    rumpf = base64.b64encode(
-        b'sv-dr-msg-v1:{"header":{"v":"sv-dr-msg-v1","dh":"AA","pn":0,"n":0}}'
-    ).decode("ascii")
-    von = "a" * 32
-    fuer = "b" * 32
-
-    # Gültig: vier Felder, beide Kennungen wohlgeformt, Rumpf ist eine DIS-Nachricht.
-    validate_e2ee_envelope_format(f"sv-e2ee-dr-v1:7.{von}.{fuer}.{rumpf}")
-
-    # Der Zweig kehrt eigenständig zurück: ein Double-Ratchet-Umschlag trägt
-    # keinen IV, die gemeinsame Null-IV-Prüfung darf ihn nicht treffen. Ein
-    # Rumpf, dessen erste zwölf Bytes null wären, muss trotzdem durchgehen.
-    null_rumpf = base64.b64encode(b"sv-dr-msg-v1:" + b"\x00" * 40).decode("ascii")
-    validate_e2ee_envelope_format(f"sv-e2ee-dr-v1:7.{von}.{fuer}.{null_rumpf}")
-
-    for kaputt, erwartet in (
-        (f"sv-e2ee-dr-v1:7.{von}.{rumpf}", "Konto"),
-        (f"sv-e2ee-dr-v1:x.{von}.{fuer}.{rumpf}", "Absenderkennung"),
-        (f"sv-e2ee-dr-v1:0.{von}.{fuer}.{rumpf}", "Absenderkennung"),
-        (f"sv-e2ee-dr-v1:7.kurz.{fuer}.{rumpf}", "Gerätekennung"),
-        (f"sv-e2ee-dr-v1:7.{von}.{fuer}.keinbase64!", "Base64"),
-        (
-            f"sv-e2ee-dr-v1:7.{von}.{fuer}."
-            + base64.b64encode(b"irgendwas anderes").decode("ascii"),
-            "DIS-Nachrichtenformat",
-        ),
-    ):
-        with pytest.raises(ValueError) as exc:
-            validate_e2ee_envelope_format(kaputt)
-        assert erwartet in str(exc.value), kaputt
+    assert db.query(E2eeMessage).count() == 0
 
 
 def test_e2ee_security_public_key_validation(db: Session, owner_user: User):
@@ -912,170 +718,3 @@ def test_e2ee_security_public_key_validation(db: Session, owner_user: User):
         e2ee_device_service.veroeffentlichen(
             db, owner_user, device_id="a1b2c3d4e5f60718", public_key_jwk=leak_d
         )
-
-
-def test_user_device_mailbox_e2ee_key_sync_and_privacy(
-    db: Session, owner_user: User, regular_user: User, client: TestClient, owner_cookies: dict, user_cookies: dict
-):
-    """Prüft die blinde Geräte-Mailbox für Mehrgeräte-Schlüsselsynchronisation und deren Zugriffsschutz."""
-    from fastapi import HTTPException
-    from services.panel_settings_service import PanelSettingsService
-    PanelSettingsService.set("social_enabled", "true", db)
-
-    device_mailbox_owner = SocialService.derive_user_device_mailbox_id(owner_user.id)
-    assert device_mailbox_owner is not None
-    assert len(device_mailbox_owner) == 64
-
-    # Formal gültiger verschlüsselter Hybrid-Umschlag
-    import base64
-    wk = base64.b64encode(b"K" * 256).decode("ascii")
-    ct = base64.b64encode(b"\x01" * 12 + b"test-secret-payload" + b"\x02" * 16).decode("ascii")
-    envelope = f"sv-e2ee-hybrid-v1:{wk}.{ct}"
-
-    # 1. Owner synchronisiert Notizenschlüssel an die eigene Geräte-Mailbox
-    relayed = SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=device_mailbox_owner,
-        ciphertext_envelope=envelope,
-        sender_user_id=owner_user.id,
-        client_uuid="noteskey:devA:devB:12345",
-        is_control=True,
-        control_type="notes_key_sync",
-    )
-    assert relayed.id is not None
-    assert relayed.blind_mailbox_id == device_mailbox_owner
-
-    # 2. sync_mailboxes für den Owner enthält die Geräte-Mailbox
-    synced = SocialService.sync_mailboxes(db, current_user=owner_user)
-    mids = [m["blind_mailbox_id"] for m in synced]
-    assert device_mailbox_owner in mids
-
-    # 3. Fremder Nutzer darf NICHT in die Geräte-Mailbox des Owners einliefern.
-    #
-    # Bis 09/2026 standen hier zwei Fälle: mit genanntem `recipient_id` gab es
-    # 400 („stimmt nicht mit dem angegebenen Empfänger überein"), ohne 403.
-    # Das Feld gibt es nicht mehr, also bleibt der eine ehrliche Fall — und er
-    # antwortet mit derselben 403 wie jede andere verschlossene Mailbox.
-    ct2 = base64.b64encode(b"\x03" * 12 + b"attack-secret-payload" + b"\x04" * 16).decode("ascii")
-    with pytest.raises(HTTPException) as exc:
-        SocialService.relay_blind_envelope(
-            db,
-            blind_mailbox_id=device_mailbox_owner,
-            ciphertext_envelope=f"sv-e2ee-hybrid-v1:{wk}.{ct2}",
-            sender_user_id=regular_user.id,
-            client_uuid="attack:123",
-        )
-    assert exc.value.status_code == 403
-
-    # 3b. Auch als Steuerumschlag nicht: `_steuerziel_geraetemailbox` verlangt
-    # eine bestehende Beziehung, und diese beiden haben keine.
-    with pytest.raises(HTTPException) as exc_steuerung:
-        SocialService.relay_blind_envelope(
-            db,
-            blind_mailbox_id=device_mailbox_owner,
-            ciphertext_envelope=f"sv-e2ee-hybrid-v1:{wk}.{ct2}",
-            sender_user_id=regular_user.id,
-            client_uuid="attack:124",
-            is_control=True,
-            control_type="notes_key_sync",
-        )
-    assert exc_steuerung.value.status_code == 403
-
-    # 4. Owner kann seine Geräte-Mailbox abfragen
-    resp_owner = client.get(f"/api/social/e2ee/mailbox/{device_mailbox_owner}", cookies=owner_cookies)
-    assert resp_owner.status_code == 200
-    assert len(resp_owner.json()) >= 1
-    assert resp_owner.json()[0]["blind_mailbox_id"] == device_mailbox_owner
-
-    # 5. Fremder Nutzer wird beim Abruf der fremden Geräte-Mailbox mit 403 abgewiesen
-    resp_stranger = client.get(f"/api/social/e2ee/mailbox/{device_mailbox_owner}", cookies=user_cookies)
-    assert resp_stranger.status_code == 403
-
-    # 6. Auch bei deaktiviertem Benutzer darf ein Fremder dessen Geräte-Mailbox nicht abrufen (403)
-    owner_user.is_active = False
-    db.commit()
-    resp_stranger_inactive = client.get(f"/api/social/e2ee/mailbox/{device_mailbox_owner}", cookies=user_cookies)
-    assert resp_stranger_inactive.status_code == 403
-    owner_user.is_active = True
-    db.commit()
-
-
-def test_mailbox_participant_access_control_dm_and_group(
-    db: Session, owner_user: User, regular_user: User, client: TestClient, owner_cookies: dict, user_cookies: dict
-):
-    """H-3: Prüft, dass Nicht-Teilnehmer (Fremde) keinen Zugriff auf DM- und Gruppen-Mailboxen erhalten (403)."""
-    PanelSettingsService.set("social_enabled", "true", db)
-
-    # 1. Gruppen-Mailbox: Owner ist Mitglied, regular_user ist Fremder
-    # Ohne Namen: seit Stufe 6c gibt es die Spalte nicht mehr. Fuer diesen
-    # Test aendert das nichts — er fragt nach dem Zugang, nicht nach dem Namen.
-    group = ChatGroup(
-        owner_user_id=owner_user.id,
-        created_at=datetime.now(timezone.utc),
-    )
-    db.add(group)
-    db.flush()
-    db.add(ChatGroupMember(group_id=group.id, user_id=owner_user.id, role="owner"))
-    db.commit()
-
-    group_mid = SocialService.derive_group_blind_mailbox_id(group.id)
-
-    # Einlieferung eines Umschlags in die Gruppe
-    group_ct = base64.b64encode(b"\x05" * 12 + b"geheime-nachricht-fuer-gruppe" + b"\x06" * 16).decode("ascii")
-    envelope = f"sv-e2ee-group-v1:{_GRUPPEN_KEY}{group_ct}"
-    SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=group_mid,
-        ciphertext_envelope=envelope,
-        sender_user_id=owner_user.id,
-        client_uuid=str(uuid4()),
-    )
-
-    # Owner (Mitglied) darf abrufen -> 200
-    resp_owner_group = client.get(f"/api/social/e2ee/mailbox/{group_mid}", cookies=owner_cookies)
-    assert resp_owner_group.status_code == 200
-    assert len(resp_owner_group.json()) >= 1
-
-    # regular_user (Nicht-Mitglied / Fremder) wird abgewiesen -> 403
-    resp_stranger_group = client.get(f"/api/social/e2ee/mailbox/{group_mid}", cookies=user_cookies)
-    assert resp_stranger_group.status_code == 403
-
-    # 2. Direktchat-Mailbox: Zwischen Owner und einem dritten Nutzer
-    from services.auth_service import AuthService
-    third_user = AuthService.create_user(
-        db, f"third_{uuid4().hex[:6]}", f"third_{uuid4().hex[:6]}@test.de", "ThirdPass123!"
-    )
-    third_user.email_verified = True
-    db.commit()
-
-    dm_mid = SocialService.derive_blind_mailbox_id(owner_user.id, third_user.id)
-    chat = DirectChat(
-        blind_mailbox_id=dm_mid,
-        created_at=datetime.now(timezone.utc),
-    )
-    db.add(chat)
-    db.add(UserFriend(user_id=owner_user.id, friend_id=third_user.id, status="accepted"))
-    db.commit()
-
-    # Einlieferung eines Umschlags in die DM-Mailbox
-    wk = base64.b64encode(b"K" * 256).decode("ascii")
-    ct = base64.b64encode(b"\x01" * 12 + b"dm-secret-payload" + b"\x02" * 16).decode("ascii")
-    dm_envelope = f"sv-e2ee-hybrid-v1:{wk}.{ct}"
-    SocialService.relay_blind_envelope(
-        db,
-        blind_mailbox_id=dm_mid,
-        ciphertext_envelope=dm_envelope,
-        sender_user_id=owner_user.id,
-        client_uuid=str(uuid4()),
-    )
-
-    # Owner (Teilnehmer A) darf abrufen -> 200
-    resp_owner_dm = client.get(f"/api/social/e2ee/mailbox/{dm_mid}", cookies=owner_cookies)
-    assert resp_owner_dm.status_code == 200
-    assert len(resp_owner_dm.json()) >= 1
-
-    # regular_user (Fremder) wird abgewiesen -> 403
-    resp_stranger_dm = client.get(f"/api/social/e2ee/mailbox/{dm_mid}", cookies=user_cookies)
-    assert resp_stranger_dm.status_code == 403
-
-

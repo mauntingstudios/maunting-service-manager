@@ -88,6 +88,11 @@ export async function verifyPasskey(title = i18n.t('auth.confirmIdentity')): Pro
   }
 
   try {
+    if (typeof window.focus === 'function') {
+      try {
+        window.focus()
+      } catch {}
+    }
     const challenge = new Uint8Array(32)
     window.crypto.getRandomValues(challenge)
 
@@ -179,6 +184,8 @@ export type PasskeyZweck =
   | '2fa_disable'
   | 'device_pairing'
   | 'e2ee_reset'
+  | 'e2ee_reapprove'
+  | 'e2ee_remove'
   | 'password_change'
   | 'email_change'
   | 'account_delete'
@@ -187,6 +194,7 @@ export type PasskeyZweck =
   | '2fa_change'
   | 'vault_reset'
   | 'kamera_sicherung'
+  | 'notification_channel'
 
 function nachB64url(puffer: ArrayBuffer): string {
   const bytes = new Uint8Array(puffer)
@@ -225,6 +233,11 @@ function abbruchFehler(err: unknown): Error {
 /** Legt einen Passkey an; die Antwort geht an `/auth/2fa/passkey/enable`. */
 export async function passkeyAnlegen(optionen: PasskeyAnlageOptionen): Promise<PasskeyAnlage> {
   if (!webauthnVerfuegbar()) throw new Error(i18n.t('auth.passkeyErrors.unsupported'))
+  if (typeof window !== 'undefined' && typeof window.focus === 'function') {
+    try {
+      window.focus()
+    } catch {}
+  }
   let credential: PublicKeyCredential | null
   try {
     credential = (await navigator.credentials.create({
@@ -268,6 +281,11 @@ export async function passkeyAnlegen(optionen: PasskeyAnlageOptionen): Promise<P
 /** Lässt die Server-Challenge unterschreiben. */
 export async function passkeyBestaetigen(optionen: PasskeyBestaetigungsOptionen): Promise<PasskeyNachweis> {
   if (!webauthnVerfuegbar()) throw new Error(i18n.t('auth.passkeyErrors.unsupported'))
+  if (typeof window !== 'undefined' && typeof window.focus === 'function') {
+    try {
+      window.focus()
+    } catch {}
+  }
   let credential: PublicKeyCredential | null
   try {
     credential = (await navigator.credentials.get({

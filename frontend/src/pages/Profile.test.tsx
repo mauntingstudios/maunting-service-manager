@@ -11,8 +11,8 @@ vi.mock('@/hooks/useHasPermission', async () => {
   // Ein Hook-Ersatz muss selbst ein Hook sein (AGENTS.md, Punkt 26).
   return { useHasPermission: () => useState(true)[0] }
 })
-vi.mock('./profile/AccountTab', () => ({ AccountTab: () => <div>inhalt:konto</div> }))
-vi.mock('./profile/DatenexportKarte', () => ({ DatenexportKarte: () => <div>inhalt:export</div> }))
+vi.mock('./profile/ProfilTab', () => ({ ProfilTab: () => <div>inhalt:profil</div> }))
+vi.mock('./profile/KontoTab', () => ({ KontoTab: () => <div>inhalt:konto</div> }))
 vi.mock('./profile/PasswordTab', () => ({ PasswordTab: () => <div>inhalt:passwort</div> }))
 vi.mock('./profile/TwoFactorTab', () => ({ TwoFactorTab: () => <div>inhalt:2fa</div> }))
 vi.mock('./profile/MessengerSicherheitTab', () => ({ MessengerSicherheitTab: () => <div>inhalt:messenger</div> }))
@@ -60,23 +60,31 @@ describe('Profile', () => {
   it('zeigt den aktiven Tab als Status-Badge im Kopf', () => {
     renderProfile()
 
-    const badge = within(screen.getByRole('banner')).getByText('Account')
+    const badge = within(screen.getByRole('banner')).getByText('Profile', { selector: '.msm-badge-info' })
     expect(badge).toHaveClass('msm-badge-info')
   })
 
-  it('hat acht Reiter und den Export unter Konto', () => {
+  it('hat acht Reiter in der neuen Reihenfolge und startet im Profil', () => {
     renderProfile()
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Account', 'Security', 'Devices', 'Friends & milestones', 'Connections', 'Audio & video', 'AI', 'Danger zone',
+      'Profile', 'Account', 'Security', 'Social', 'Connections', 'Audio & video', 'AI', 'Danger zone',
     ])
-    expect(screen.getByText('inhalt:konto')).toBeInTheDocument()
-    expect(screen.getByText('inhalt:export')).toBeInTheDocument()
+    expect(screen.getByText('inhalt:profil')).toBeInTheDocument()
+  })
+
+  it('Geräte stehen unter Sicherheit, nicht mehr als eigener Reiter', () => {
+    renderProfile('/profile?tab=security')
+
+    expect(screen.getByText('inhalt:geraete')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Security' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it.each([
-    ['2fa', 'Security', ['inhalt:passwort', 'inhalt:2fa', 'inhalt:messenger']],
+    ['2fa', 'Security', ['inhalt:passwort', 'inhalt:2fa', 'inhalt:messenger', 'inhalt:geraete']],
     ['password', 'Security', ['inhalt:passwort']],
     ['messenger', 'Security', ['inhalt:messenger']],
+    ['devices', 'Security', ['inhalt:geraete']],
+    ['account', 'Account', ['inhalt:konto']],
     ['linked', 'Connections', ['inhalt:verknuepft', 'inhalt:zugangsdaten']],
     ['credentials', 'Connections', ['inhalt:zugangsdaten']],
   ])('alter Link ?tab=%s landet unter %s', (alt, reiter, inhalte) => {
@@ -85,13 +93,15 @@ describe('Profile', () => {
     for (const inhalt of inhalte) expect(screen.getByText(inhalt)).toBeInTheDocument()
   })
 
-  it('ohne Social kein Freunde-Reiter und kein Messenger-PIN; der Link fällt auf Konto', () => {
+  it('ohne Social kein Soziales-Reiter und kein Messenger-PIN; der Link fällt auf Profil', () => {
     usePublicSettingsStore.setState({ social_enabled: false })
     renderProfile('/profile?tab=social')
-    expect(screen.queryByRole('tab', { name: 'Friends & milestones' })).toBeNull()
-    expect(screen.getByRole('tab', { name: 'Account' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: 'Social' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true')
     fireEvent.click(screen.getByRole('tab', { name: 'Security' }))
     expect(screen.queryByText('inhalt:messenger')).toBeNull()
+    // Geräte hängen an keinem Messenger: die Karten entscheiden selbst.
+    expect(screen.getByText('inhalt:geraete')).toBeInTheDocument()
   })
 
   it('ein Klick auf einen Reiter schreibt ihn in die Adresse', () => {

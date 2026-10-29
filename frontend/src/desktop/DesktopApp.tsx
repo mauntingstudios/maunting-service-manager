@@ -22,6 +22,8 @@ import { api, isNetworkOrOfflineError } from '@/api/client'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiRunNotice } from '@/components/ai/AiRunNotice'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
+import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
+import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
 import { BrowserBestaetigungDialog } from '@/components/BrowserBestaetigungDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { PromptDialog } from '@/components/ui/PromptDialog'
@@ -34,6 +36,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { KI_NAME } from '@/lib/kiName'
 import { Ai } from '@/pages/Ai'
 import { Messenger } from '@/pages/Messenger'
+import { chatIstOffen } from '@/lib/chatVollbild'
 import { Benutzerprofil } from '@/pages/Benutzerprofil'
 import { Calendar } from '@/pages/Calendar'
 import { DocsEmbedded } from '@/docs/DocsEmbedded'
@@ -576,6 +579,7 @@ export function DesktopApp() {
             <KalibrierungsHinweis />
             <AiRunNotice />
             <ServerIncidentNotifier />
+            <FreundschaftsWache />
             <PanelPopupModal />
             {publicSettings.social_enabled && <AnrufEbene />}
             {isAndroid && <OverlayFenster inApp={true} />}
@@ -633,7 +637,9 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
       void unlisten.then((u) => u())
     }
   }, [navigate, isOffline, publicSettings])
-  return null
+  return !isOffline && publicSettings.social_enabled && !location.pathname.startsWith('/chat')
+    ? <MessengerHintergrund />
+    : null
 }
 
 function Startbild({ text, progress }: { text?: string | null; progress?: number | null }) {
@@ -821,6 +827,9 @@ function Hauptseite({
   // Am Handy fehlt die Reiterleiste; die Kopfzeile nennt deshalb den offenen Bereich.
   const kopfTitel = bereich === 'ki' ? KI_NAME : t(BEREICH_TITEL[bereich])
   const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+  /* Am Handy beginnt der offene Chat ganz oben: die MSM-Leiste faellt weg,
+     der Chat-Kopf traegt den Zurueck-Pfeil. Zurueck fuehrt in die Liste. */
+  const chatVollbild = isAndroid && bereich === 'chat' && chatIstOffen(location.search)
   const { status: presenceStatus, changeStatus: handlePresenceChange } = usePresenceAndActivity(
     !isOffline && darfMessenger,
     !isOffline && darfMessenger,
@@ -920,66 +929,67 @@ function Hauptseite({
 
   return (
     <>
-      <header className="msm-topbar flex pt-[env(safe-area-inset-top,0px)] h-[calc(3.5rem+env(safe-area-inset-top,0px))] sm:h-[calc(4rem+env(safe-area-inset-top,0px))] items-center justify-between px-3 sm:px-4 md:px-6">
-        {/* Linke Seite: Agent-Name & Aktivitätsanzeige */}
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <div className="min-w-0">
-            <h1 className="truncate font-headline text-base sm:text-title-lg font-bold text-on-surface">{kopfTitel}</h1>
+      {!chatVollbild && (
+        <header className="msm-topbar flex pt-[env(safe-area-inset-top,0px)] h-[calc(3.5rem+env(safe-area-inset-top,0px))] sm:h-[calc(4rem+env(safe-area-inset-top,0px))] items-center justify-between px-3 sm:px-4 md:px-6">
+          {/* Linke Seite: Agent-Name & Aktivitätsanzeige */}
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <div className="min-w-0">
+              <h1 className="truncate font-headline text-base sm:text-title-lg font-bold text-on-surface">{kopfTitel}</h1>
+            </div>
+            {isOffline && (
+              <div className="flex items-center gap-1 rounded-full border border-outline-variant/50 bg-surface-container-high/60 px-2 py-0.5 text-label-sm font-medium text-on-surface-variant">
+                <WifiOff className="h-3 w-3" aria-hidden="true" />
+                <span>{t('common.offline')}</span>
+              </div>
+            )}
+            {offeneUebernahme && !isOffline && (
+              <div className="flex items-center gap-1 rounded-full border border-status-warning/40 bg-status-warning/10 px-2 py-0.5 text-label-sm font-medium text-status-warning animate-pulse">
+                <Eye className="h-3 w-3" aria-hidden="true" />
+                <span>{t('mss.einstellungen.banner.aktivitaetLaeuft')}</span>
+              </div>
+            )}
           </div>
-          {isOffline && (
-            <div className="flex items-center gap-1 rounded-full border border-outline-variant/50 bg-surface-container-high/60 px-2 py-0.5 text-label-sm font-medium text-on-surface-variant">
-              <WifiOff className="h-3 w-3" aria-hidden="true" />
-              <span>{t('common.offline')}</span>
-            </div>
-          )}
-          {offeneUebernahme && !isOffline && (
-            <div className="flex items-center gap-1 rounded-full border border-status-warning/40 bg-status-warning/10 px-2 py-0.5 text-label-sm font-medium text-status-warning animate-pulse">
-              <Eye className="h-3 w-3" aria-hidden="true" />
-              <span>{t('mss.einstellungen.banner.aktivitaetLaeuft')}</span>
-            </div>
-          )}
-        </div>
 
-        {/* Desktop-Navigation mit ruhiger, zusammenhängender Segment-Leiste */}
-        <nav
-          className="hidden md:flex items-center rounded-xl border border-outline-variant/30 bg-surface-container-low/60 p-1 backdrop-blur-sm"
-          aria-label={t('mss.app.bereiche')}
-        >
-          {!isOffline && (
-            <Reiter
-              aktiv={bereich === 'ki'}
-              onClick={() => navigate('/ai')}
-              icon={<Bot className="h-4 w-4 shrink-0" />}
-              label={t('mss.app.ki', t('nav.ai'))}
-            />
-          )}
-          {!isOffline && darfMessenger && (
-            <Reiter
-              aktiv={bereich === 'chat'}
-              onClick={() => navigate('/chat')}
-              icon={<MessageSquare className="h-4 w-4 shrink-0" />}
-              label={t('mss.app.messenger', t('nav.chat'))}
-              badge={totalMessengerUnread}
-              pulse={totalMessengerUnread > 0}
-            />
-          )}
-          {darfKalender && (
-            <Reiter
-              aktiv={bereich === 'kalender'}
-              onClick={() => navigate('/kalender')}
-              icon={<CalendarIcon className="h-4 w-4 shrink-0" />}
-              label={t('mss.app.kalender')}
-            />
-          )}
-          {darfNotizen && (
-            <Reiter
-              aktiv={bereich === 'notizen'}
-              onClick={() => navigate('/notizen')}
-              icon={<StickyNote className="h-4 w-4 shrink-0" />}
-              label={t('mss.app.notizen')}
-            />
-          )}
-          {darfDokumente && (
+          {/* Desktop-Navigation mit ruhiger, zusammenhängender Segment-Leiste */}
+          <nav
+            className="hidden md:flex items-center rounded-xl border border-outline-variant/30 bg-surface-container-low/60 p-1 backdrop-blur-sm"
+            aria-label={t('mss.app.bereiche')}
+          >
+            {!isOffline && (
+              <Reiter
+                aktiv={bereich === 'ki'}
+                onClick={() => navigate('/ai')}
+                icon={<Bot className="h-4 w-4 shrink-0" />}
+                label={t('mss.app.ki', t('nav.ai'))}
+              />
+            )}
+            {!isOffline && darfMessenger && (
+              <Reiter
+                aktiv={bereich === 'chat'}
+                onClick={() => navigate('/chat')}
+                icon={<MessageSquare className="h-4 w-4 shrink-0" />}
+                label={t('mss.app.messenger', t('nav.chat'))}
+                badge={totalMessengerUnread}
+                pulse={totalMessengerUnread > 0}
+              />
+            )}
+            {darfKalender && (
+              <Reiter
+                aktiv={bereich === 'kalender'}
+                onClick={() => navigate('/kalender')}
+                icon={<CalendarIcon className="h-4 w-4 shrink-0" />}
+                label={t('mss.app.kalender')}
+              />
+            )}
+            {darfNotizen && (
+              <Reiter
+                aktiv={bereich === 'notizen'}
+                onClick={() => navigate('/notizen')}
+                icon={<StickyNote className="h-4 w-4 shrink-0" />}
+                label={t('mss.app.notizen')}
+              />
+            )}
+            {darfDokumente && (
             <Reiter
               aktiv={bereich === 'dokumente'}
               onClick={() => navigate('/dokumente')}
@@ -988,58 +998,59 @@ function Hauptseite({
             />
           )}
           {!isOffline && darfGedaechtnis && (
-            <Reiter
-              aktiv={bereich === 'gedaechtnis'}
-              onClick={() => navigate('/gedaechtnis')}
-              icon={<BrainCircuit className="h-4 w-4 shrink-0" />}
-              label={t('mss.app.gedaechtnis')}
+              <Reiter
+                aktiv={bereich === 'gedaechtnis'}
+                onClick={() => navigate('/gedaechtnis')}
+                icon={<BrainCircuit className="h-4 w-4 shrink-0" />}
+                label={t('mss.app.gedaechtnis')}
+              />
+            )}
+            {darfTresor && (
+              <Reiter
+                aktiv={bereich === 'tresor'}
+                onClick={() => navigate('/tresor')}
+                icon={<KeyRound className="h-4 w-4 shrink-0" />}
+                label={t('mss.app.tresor')}
+              />
+            )}
+          </nav>
+
+          {/* Rechte Seite: UpdateBadge + Glocke + Profil-Avatar mit Dropdown-Menü */}
+          <div className="flex items-center gap-2">
+            {updateInfo && (isAndroid || updatePhase === 'bereit') && (
+              <UpdateBadge
+                neueVersion={updateInfo.version}
+                phase={updatePhase}
+                prozent={updateProzent}
+                fehlerText={updateFehler}
+                onInstallieren={() => void handleUpdateClick()}
+              />
+            )}
+
+            <BenachrichtigungsGlocke placement="bottom" align="right" />
+
+            {/* Profil-Avatar Dropdown */}
+            <ProfileDropdown
+              user={user}
+              items={profileItems}
+              placement="bottom-right"
+              status={!isOffline ? presenceStatus : undefined}
+              onStatusChange={!isOffline ? handlePresenceChange : undefined}
             />
-          )}
-          {darfTresor && (
-            <Reiter
-              aktiv={bereich === 'tresor'}
-              onClick={() => navigate('/tresor')}
-              icon={<KeyRound className="h-4 w-4 shrink-0" />}
-              label={t('mss.app.tresor')}
-            />
-          )}
-        </nav>
 
-        {/* Rechte Seite: UpdateBadge + Glocke + Profil-Avatar mit Dropdown-Menü */}
-        <div className="flex items-center gap-2">
-          {updateInfo && (isAndroid || updatePhase === 'bereit') && (
-            <UpdateBadge
-              neueVersion={updateInfo.version}
-              phase={updatePhase}
-              prozent={updateProzent}
-              fehlerText={updateFehler}
-              onInstallieren={() => void handleUpdateClick()}
-            />
-          )}
-
-          <BenachrichtigungsGlocke placement="bottom" align="right" />
-
-          {/* Profil-Avatar Dropdown */}
-          <ProfileDropdown
-            user={user}
-            items={profileItems}
-            placement="bottom-right"
-            status={!isOffline ? presenceStatus : undefined}
-            onStatusChange={!isOffline ? handlePresenceChange : undefined}
-          />
-
-          {/* Mobile Menü-Knopf */}
-          <button
-            type="button"
-            onClick={() => setMobileMenuOffen(!mobileMenuOffen)}
-            className="p-2 rounded-xl border border-outline-variant/40 bg-surface-container-low text-on-surface hover:bg-surface-container md:hidden transition-colors"
-            aria-label={t('mss.app.menueOeffnen')}
-            aria-expanded={mobileMenuOffen}
-          >
-            {mobileMenuOffen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-        </div>
-      </header>
+            {/* Mobile Menü-Knopf */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOffen(!mobileMenuOffen)}
+              className="p-2 rounded-xl border border-outline-variant/40 bg-surface-container-low text-on-surface hover:bg-surface-container md:hidden transition-colors"
+              aria-label={t('mss.app.menueOeffnen')}
+              aria-expanded={mobileMenuOffen}
+            >
+              {mobileMenuOffen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* Mobile Drawer / Overlay */}
       {mobileMenuOffen && (

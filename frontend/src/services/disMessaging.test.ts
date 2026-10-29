@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Wächter über den eingecheckten DIS-Abzug unter `frontend/packages/dis/`.
+ * Wächter über das DIS-Paket aus der Registry (`@msdis/shield`).
  *
  * **Node-Umgebung, nicht jsdom.** DIS prüft Eingaben mit `instanceof Uint8Array`.
  * Unter jsdom liefert `TextEncoder` ein `Uint8Array` aus der Node-Realm, während
@@ -8,15 +8,9 @@
  * Konstruktorkette, und die Prüfung schlägt fehl. Im Browser und im Tauri-WebView
  * gibt es nur eine Realm; das Problem existiert ausschließlich im Test.
  *
- * Das Paket liegt nicht als Quelltext im Repo, sondern als Abzug des
- * veröffentlichten Artefakts — und seine `package.json` wird beim Vendern
- * bewusst getrimmt (ohne `dependencies`, `scripts`, `devDependencies`, weil
- * `hash-wasm` und `otpauth` direkt in `frontend/package.json` stehen). Ein
- * unvollständiger oder falsch getrimmter Abzug fällt sonst erst im Betrieb auf.
- *
- * Geprüft wird deshalb nicht die Krypto von DIS — die hat ihre eigenen Tests —
- * sondern dass `@msdis/shield/messaging` auflösbar ist und ein Hin und Her
- * trägt.
+ * Geprüft wird nicht die Krypto von DIS — die hat ihre eigenen Tests — sondern
+ * dass `@msdis/shield/messaging` aus dem veröffentlichten Paket auflösbar ist
+ * und ein Hin und Her trägt.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -34,7 +28,7 @@ import { randomBytes } from '@msdis/shield/random'
 const text = new TextEncoder()
 const zurueck = new TextDecoder()
 
-describe('vendorter DIS-Abzug: @msdis/shield/messaging', () => {
+describe('DIS-Paket aus der Registry: @msdis/shield/messaging', () => {
   it('trägt ein Hin und Her und lässt sich persistieren', async () => {
     const paar = await generateRatchetKeyPair()
     const geheimnis = randomBytes(32)

@@ -176,7 +176,10 @@ start "MSM - Dokumente Sidecar" /D "%~dp0docs-sidecar" cmd /k "set NODE_ENV=deve
 
 :: Start Backend in a new window
 echo Starte Python Backend (Port 8000)...
-start "MSM - FastAPI Backend" /D "%~dp0backend" cmd /k "set NODE_ENV=development&& set MSM_SECRET_KEY=test-secret-key-for-dev-only-32-bytes-long&& set MSM_DIS_SALT=qhCLKLPChabuAqcCOqqxRw==&& set MSM_DOCS_SIDECAR_URL=http://127.0.0.1:8101&& set MSM_DOCS_SIDECAR_TOKEN=dev-docs-token&& set MSM_DOCS_COLLAB_SECRET=dev-docs-collab-secret-32-characters&& set MSM_LOCAL_AGENT_ENV_FILE=../msm-agent/.env&& .\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000"
+:: --timeout-graceful-shutdown: Ohne Frist wartet --reload unbegrenzt auf offene
+:: SSE-/WebSocket-Verbindungen des Browsers. Der alte Prozess endet dann nie,
+:: der neue startet nie, und alle Anfragen laufen in den Timeout.
+start "MSM - FastAPI Backend" /D "%~dp0backend" cmd /k "set NODE_ENV=development&& set MSM_SECRET_KEY=test-secret-key-for-dev-only-32-bytes-long&& set MSM_DIS_SALT=qhCLKLPChabuAqcCOqqxRw==&& set MSM_DOCS_SIDECAR_URL=http://127.0.0.1:8101&& set MSM_DOCS_SIDECAR_TOKEN=dev-docs-token&& set MSM_DOCS_COLLAB_SECRET=dev-docs-collab-secret-32-characters&& set MSM_LOCAL_AGENT_ENV_FILE=../msm-agent/.env&& set MSM_LOG_LEVEL=INFO&& .\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000 --timeout-graceful-shutdown 3"
 
 :: Start MSM Agent in a new window
 echo Starte MSM Agent (Port 9000)...

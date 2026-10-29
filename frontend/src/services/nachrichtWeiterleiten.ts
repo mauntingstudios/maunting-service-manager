@@ -94,13 +94,23 @@ async function hängeAnhangUm(
     fileId: anhang.fileId!,
   }
   const klartext = await ladeAnhangHerunter(zeiger, herkunft)
+  const chatZiel = ziel.groupId
+    ? { chatType: 'group' as const, chatId: Number(ziel.groupId) }
+    : {
+        chatType: 'direct' as const,
+        chatId: Number(ziel.recipientId)
+          ? (await (await import('@/api/social')).startDirectChat(Number(ziel.recipientId))).id
+          : 0,
+      }
+  if (!chatZiel.chatId) throw new Error('Zielgespräch fehlt.')
   const neu = await ladeAnhangHoch({
     klartext,
     dateiname: String(anhang.name || 'anhang'),
     mimeType: String(anhang.mimeType || 'application/octet-stream'),
-    blindMailboxId: ziel.blindMailboxId,
+    blindMailboxId: `${chatZiel.chatType}:${chatZiel.chatId}`,
+    chatType: chatZiel.chatType,
+    chatId: chatZiel.chatId,
     absenderId: eigeneId,
-    groupId: ziel.groupId ?? null,
   })
   return {
     ...anhang,

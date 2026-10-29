@@ -41,6 +41,17 @@ body,
 }
 
 /*
+ * Ein Dialog, der die Fläche füllen soll (`size="voll"`), bekommt keinen Rand
+ * von einem Zentimeter. Ohne diese Ausnahme gewinnt die Regel darüber und aus
+ * dem Vollbild wird wieder ein Kasten — genau der Fehler, den die Variante
+ * behebt.
+ */
+.msb-bereich .msm-modal-overlay > .msm-card[data-dialog-voll] {
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
+/*
  * Eleganter, abgerundeter Scrollbalken für Dialoge (Modern Web Guidance),
  * der die Kartenabrundung nicht schneidet.
  */

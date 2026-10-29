@@ -16,12 +16,19 @@
 //! [`speicher_fragt_selbst`].
 
 use tauri::AppHandle;
-#[cfg(target_os = "android")]
+#[cfg(any(windows, target_os = "android"))]
 use tauri::Manager;
 
 #[cfg(windows)]
-use windows::Security::Credentials::UI::{
-    UserConsentVerificationResult, UserConsentVerifier, UserConsentVerifierAvailability,
+use windows::{
+    core::{factory, HSTRING},
+    Security::Credentials::UI::{
+        UserConsentVerificationResult, UserConsentVerifier, UserConsentVerifierAvailability,
+    },
+    Win32::{
+        Foundation::HWND,
+        System::WinRT::IUserConsentVerifierInterop,
+    },
 };
 
 #[cfg(not(target_os = "android"))]
@@ -159,18 +166,46 @@ pub async fn pruefe_verfuegbarkeit(app: &AppHandle) -> bool {
     }
 }
 
+#[cfg(windows)]
+fn aktives_fenster_hwnd(app: &AppHandle) -> Option<HWND> {
+    app.webview_windows()
+        .into_values()
+        .find(|w| w.is_focused().unwrap_or(false))
+        .or_else(|| app.get_webview_window("main"))
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| HWND(h.0))
+}
+
+#[cfg(windows)]
+async fn verifiziere_windows(
+    app: &AppHandle,
+    nachricht: &str,
+) -> Result<UserConsentVerificationResult, String> {
+    let msg = HSTRING::from(nachricht);
+    let hwnd = aktives_fenster_hwnd(app);
+
+    let op = if let Some(h) = hwnd {
+        if let Ok(interop) = factory::<UserConsentVerifier, IUserConsentVerifierInterop>() {
+            unsafe { interop.RequestVerificationForWindowAsync(h, &msg) }
+                .map_err(|e| format!("Windows Hello Interop Fehler: {e}"))?
+        } else {
+            UserConsentVerifier::RequestVerificationAsync(&msg)
+                .map_err(|e| format!("Windows Hello konnte nicht gestartet werden: {e}"))?
+        }
+    } else {
+        UserConsentVerifier::RequestVerificationAsync(&msg)
+            .map_err(|e| format!("Windows Hello konnte nicht gestartet werden: {e}"))?
+    };
+
+    op.await.map_err(|e| format!("Windows Hello Fehler: {e}"))
+}
 /// Fragt nach einer Bestätigung, ohne dabei ein Geheimnis anzufassen.
 pub async fn verifiziere_benutzer(app: &AppHandle, nachricht: &str) -> Result<bool, String> {
     #[cfg(windows)]
     {
-        let _ = app;
-        let msg = windows::core::HSTRING::from(nachricht);
-        match UserConsentVerifier::RequestVerificationAsync(&msg) {
-            Ok(op) => match op.await {
-                Ok(result) => Ok(result == UserConsentVerificationResult::Verified),
-                Err(e) => Err(format!("Windows Hello Fehler: {e}")),
-            },
-            Err(e) => Err(format!("Windows Hello konnte nicht gestartet werden: {e}")),
+        match verifiziere_windows(app, nachricht).await {
+            Ok(result) => Ok(result == UserConsentVerificationResult::Verified),
+            Err(e) => Err(e),
         }
     }
     #[cfg(target_os = "android")]
@@ -315,12 +350,8 @@ pub async fn entsperre_mit_biometrie(
 
     #[cfg(windows)]
     {
-        let _ = app;
-        // 1. ZUERST Windows Hello Biometrie / PIN abfragen
-        let msg = windows::core::HSTRING::from(nachricht);
-        let op = UserConsentVerifier::RequestVerificationAsync(&msg)
-            .map_err(|e| format!("Windows Hello konnte nicht initialisiert werden: {e}"))?;
-        let verif_result = op.await.map_err(|e| format!("Windows Hello Fehler: {e}"))?;
+        // 1. ZUERST Windows Hello Biometrie / PIN abfragen (im Vordergrund verankert)
+        let verif_result = verifiziere_windows(app, nachricht).await?;
 
         if verif_result != UserConsentVerificationResult::Verified {
             return Err("Biometrische Authentifizierung verweigert oder abgebrochen.".to_string());

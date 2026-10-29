@@ -134,7 +134,8 @@ describe('Einstellungen Component', () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByRole('tab', { name: txt('profile.tabs.account') })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: txt('profile.tabs.profile') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: txt('profile.tabs.account') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: txt('profile.tabs.social') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: txt('mss.einstellungen.tab.desktop') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: txt('profile.tabs.security') })).toBeInTheDocument()
@@ -276,7 +277,8 @@ describe('Einstellungen Component', () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByRole('tab', { name: txt('profile.tabs.account') })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: txt('profile.tabs.profile') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: txt('profile.tabs.account') })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: txt('profile.tabs.social') })).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: txt('profile.tabs.security') })).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: txt('mss.einstellungen.tab.desktop') })).toBeInTheDocument()
@@ -304,7 +306,7 @@ describe('Einstellungen Component', () => {
     ['wakeword', 'mss.einstellungen.tab.audio'],
     ['messenger', 'profile.tabs.security'],
     ['tresor', 'profile.tabs.security'],
-    ['profil', 'profile.tabs.account'],
+    ['account', 'profile.tabs.account'],
   ])('ein alter Link ?tab=%s führt zum neuen Reiter', async (alt, reiter) => {
     render(
       <MemoryRouter initialEntries={[`/einstellungen?tab=${alt}`]}>
@@ -327,13 +329,13 @@ describe('Einstellungen Component', () => {
       exportTresor = undefined
     })
 
-    it.each(['konto', 'social'])('?tab=%s zeigt den Serverhinweis statt der Karten und fragt nichts an', async (reiter) => {
+    it.each(['profil', 'konto', 'social'])('?tab=%s zeigt den Serverhinweis statt der Karten und fragt nichts an', async (reiter) => {
       zeichne(`/einstellungen?tab=${reiter}`)
 
       expect(await screen.findByText(txt('mss.einstellungen.offline.titel'))).toBeInTheDocument()
       expect(screen.getByRole('status')).toHaveTextContent(txt('mss.einstellungen.offline.text'))
       // Der Reiter selbst bleibt gewählt: niemand wird stumm woandershin geschoben.
-      const name = reiter === 'konto' ? 'profile.tabs.account' : 'profile.tabs.social'
+      const name = reiter === 'profil' ? 'profile.tabs.profile' : reiter === 'konto' ? 'profile.tabs.account' : 'profile.tabs.social'
       expect(screen.getByRole('tab', { name: txt(name), selected: true })).toBeInTheDocument()
       expect(screen.queryByRole('heading', { name: txt('profile.timezoneTitle') })).not.toBeInTheDocument()
       expect(exportTresor).toBeUndefined()
@@ -343,8 +345,9 @@ describe('Einstellungen Component', () => {
     it('alle Reiter bleiben offline sichtbar', async () => {
       zeichne('/einstellungen')
       for (const name of [
-        'profile.tabs.account', 'profile.tabs.security', 'profile.tabs.social', 'mss.einstellungen.tab.desktop',
-        'mss.einstellungen.tab.audio', 'mss.einstellungen.tab.rechtliches', 'mss.einstellungen.tab.gefahr',
+        'profile.tabs.profile', 'profile.tabs.account', 'profile.tabs.security', 'profile.tabs.social',
+        'mss.einstellungen.tab.desktop', 'mss.einstellungen.tab.audio', 'mss.einstellungen.tab.rechtliches',
+        'mss.einstellungen.tab.gefahr',
       ]) {
         expect(await screen.findByRole('tab', { name: txt(name) })).toBeInTheDocument()
       }

@@ -35,6 +35,43 @@ export const WISCH_SCHWELLE_PX = 64
 export const WISCH_HOECHSTWEG_PX = 96
 
 /**
+ * So nah am Rand muss ein Wisch beginnen, um als „zurück“ zu gelten.
+ *
+ * Außerhalb dieser Zone gehört die waagerechte Bewegung dem Inhalt: die Blase
+ * antwortet, die Galerie blättert. Am Rand ist sie frei, und genau dort
+ * erwarten Daumen und Betriebssystem den Schritt zurück.
+ */
+export const RAND_ZONE_PX = 24
+
+/** Länger als das ist es ein Ziehen, kein Wisch. */
+export const RAND_WISCH_MS = 500
+
+/**
+ * Ob aus einer Bewegung am Rand ein „zurück“ wird.
+ *
+ * Geprüft wird der **Beginn** der Berührung: links am Rand und nach rechts,
+ * rechts am Rand und nach links — dieselbe Spiegelung, die Pontis an seinen
+ * Rändern benutzt. In der Mitte passiert nichts, sonst ginge jede Antwortgeste
+ * verloren.
+ */
+export function erkenneRandgeste(
+  startX: number,
+  deltaX: number,
+  deltaY: number,
+  dauerMs: number,
+  breite: number,
+): boolean {
+  if (!Number.isFinite(startX) || !Number.isFinite(breite) || breite <= 2 * RAND_ZONE_PX) return false
+  if (dauerMs < 0 || dauerMs >= RAND_WISCH_MS) return false
+  if (Math.abs(deltaX) < WISCH_SCHWELLE_PX) return false
+  if (Math.abs(deltaX) < Math.abs(deltaY) * WISCH_WAAGERECHT_FAKTOR) return false
+
+  const vomLinkenRand = startX <= RAND_ZONE_PX && deltaX > 0
+  const vomRechtenRand = startX >= breite - RAND_ZONE_PX && deltaX < 0
+  return vomLinkenRand || vomRechtenRand
+}
+
+/**
  * Um so viel muss die waagerechte Bewegung die senkrechte übertreffen.
  *
  * Sonst löst jeder schräge Daumenzug beim Scrollen eine Antwort aus.

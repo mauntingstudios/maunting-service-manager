@@ -31,26 +31,10 @@ import {
   base64ToBytes,
   bytesToBase64,
 } from '@msdis/shield/core'
-import {
-  deriveUserDeviceMailboxId,
-  encryptE2eeHybrid,
-  decryptE2eeHybrid,
-} from './e2eeCrypto'
 import { signiere } from './absenderSignatur'
-import {
-  eigenesGeraet,
-  freigabeBelegt,
-  geraeteVon,
-  pruefeGeraeteBeleg,
-  verzeichnisVon,
-  type EigenesGeraet,
-} from './e2eeGeraet'
-import {
-  relayE2eeEnvelope,
-  fetchE2eeEnvelopes,
-  getE2eeGeraete,
-  type E2eeGeraetItem,
-} from '@/api/social'
+import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
+import { eigenesGeraet, pruefeGeraeteBeleg, type EigenesGeraet } from './e2eeGeraet'
+import { getE2eeGeraete } from '@/api/social'
 import {
   holeKontoschluessel,
   setzeKontoschluessel,
@@ -90,12 +74,6 @@ const STORAGE_KEY_PREFIX = 'msm_e2ee_notes_key_'
 const keyCache = new Map<number, CryptoKey>()
 const rawKeyMemoryStore = new Map<number, string>()
 const syncedInSession = new Set<number>()
-/** Der Abgleich unter eigenen Geräten, wo es keine Ablage gibt — siehe `leseAbgleich`. */
-const abgleichOhneAblage = new Map<number, Abgleich>()
-/** Wann dieses Gerät zuletzt nach dem Schlüssel gefragt hat — siehe `requestNotesKeyFromPairedDevices`. */
-const letzteAnfrage = new Map<number, number>()
-/** Wann dieses Gerät einem fragenden zuletzt geantwortet hat, je `konto:gerät` — siehe `verarbeiteSteuerumschlag`. */
-const letzteAntwort = new Map<string, number>()
 
 /**
  * Die Kennung, unter der bis zum 22.09.2026 **jeder** Schlüssel landete.
@@ -148,11 +126,6 @@ export function clearNotesKeyCache(): void {
   keyCache.clear()
   rawKeyMemoryStore.clear()
   syncedInSession.clear()
-  abgleichOhneAblage.clear()
-  letzteAnfrage.clear()
-  letzteAntwort.clear()
-  laufendeVerteilung.clear()
-  laufenderDurchgang.clear()
   bestaetigteGeraeteFuerNotizen.clear()
   nebenOhneAblage.clear()
   nebenImRam.clear()
@@ -727,13 +700,10 @@ async function abgleichen(userId: number): Promise<Abgleichstand> {
     }
   }
 
-  // Eine Übergabe, die schon in der Geräte-Mailbox liegt.
-  try {
-    await geraeteMailboxDurchgehen(userId, false)
-  } catch {}
+  // Der Notizenschluessel steckt im Konto-Schluesselbund; ein Abruf holt ihn,
+  // wenn ein anderes Geraet ihn dort hinterlegt hat.
+  void requestNotesKeyFromPairedDevices(userId).catch(() => false)
   if ((await eigenerAbdruck(userId)) === marke) return 'uebernommen'
-
-  void frageNachSchluessel(userId).catch(() => false)
   return 'wartet'
 }
 
@@ -749,215 +719,13 @@ async function abgleichen(userId: number): Promise<Abgleichstand> {
  */
 async function aufKontoschluesselWarten(userId: number): Promise<string | null> {
   if (!kontoAbdruck.has(userId)) return null
-  void frageNachSchluessel(userId).catch(() => false)
-  for (const pause of KONTOSCHLUESSEL_WARTEN_MS) {
-    await new Promise((weiter) => setTimeout(weiter, pause))
-    try {
-      await geraeteMailboxDurchgehen(userId, true)
-    } catch {}
-    const roh = exportUserNotesKey(userId)
-    if (roh) return roh
-  }
-  return null
+  return exportUserNotesKey(userId)
 }
 
-const KONTOSCHLUESSEL_WARTEN_MS = [1500, 1500, 2000]
 
 /**
- * Die Zeichenkette, über die eine Übergabe des Notizschlüssels unterschrieben wird.
- *
- * Konto, sendendes und empfangendes Gerät und der Schlüssel selbst. Das
- * Zielgerät gehört hinein, sonst ließe sich eine Übergabe, die einem Gerät
- * galt, einem anderen vorlegen. Der Vorsatz hält diese Unterschrift von denen
- * über Nutzlasten und Sitzungsaufbauten fern, die mit demselben Schlüssel
- * entstehen.
- */
-function uebergabeDaten(userId: number, vonGeraet: string, anGeraet: string, notesKey: string): string {
-  return JSON.stringify(['msm:notes-key-sync:v1', userId, vonGeraet, anGeraet, notesKey])
-}
-
-/**
- * Die Unterschrift dieses Geräts unter die Übergabe an `anGeraet`, oder `null`,
- * wenn es nicht unterschreiben kann.
- *
- * Für beide Wege, auf denen der Schlüssel wandert: den Steuerumschlag in der
- * Geräte-Mailbox und das Paket beim Koppeln (`verlaufsUebergabe`). Dieselbe
- * Aussage auf beiden — „dieses Gerät gibt jenem den Schlüssel dieses Kontos" —,
- * deshalb dieselbe Zeichenkette.
- */
-export async function unterschreibeNotizUebergabe(
-  self: EigenesGeraet,
-  userId: number,
-  anGeraet: string,
-  notesKey: string,
-): Promise<string | null> {
-  try {
-    return await signiere(
-      uebergabeDaten(userId, self.kennung, anGeraet, notesKey),
-      self.signaturPaar.privateKeyJwk,
-    )
-  } catch {
-    return null
-  }
-}
-
-/**
- * Belegt `sig`, dass `vonGeraet` — laut Verzeichnis ein Gerät dieses Kontos —
- * den Schlüssel an `anGeraet` übergeben hat?
- *
- * `offen` und `unbekannt` zählen hier als Nein. Wer später noch einmal fragen
- * kann, wie der Lesepfad der Geräte-Mailbox, prüft mit `pruefeGeraeteBeleg`
- * selbst.
- */
-export async function pruefeNotizUebergabe(
-  userId: number,
-  vonGeraet: string,
-  anGeraet: string,
-  notesKey: string,
-  sig: unknown,
-): Promise<boolean> {
-  const beleg = await pruefeGeraeteBeleg(
-    userId,
-    vonGeraet,
-    uebergabeDaten(userId, vonGeraet, anGeraet, notesKey),
-    sig,
-  )
-  return beleg === 'echt' || beleg === 'altbestand'
-}
-
-/**
- * Die unterschriebene Übergabe an ein eigenes Gerät, oder `null`.
- *
- * `null`, wenn dieses Gerät nicht unterschreiben kann. Dann wird gar nicht erst
- * gesendet: das Zielgerät nähme eine Übergabe ohne Unterschrift nicht an.
- */
-async function unterschriebeneUebergabe(
-  self: EigenesGeraet,
-  userId: number,
-  anGeraet: string,
-  notesKey: string,
-): Promise<string | null> {
-  const sig = await unterschreibeNotizUebergabe(self, userId, anGeraet, notesKey)
-  if (!sig) return null
-  return JSON.stringify({
-    type: 'notes_key_sync',
-    version: 1,
-    userId,
-    notesKey,
-    targetDeviceId: anGeraet,
-    senderDeviceId: self.kennung,
-    timestamp: Date.now(),
-    sig,
-  })
-}
-
-/**
- * Die Umschlagkennung eines Steuerumschlags zwischen zwei eigenen Geräten.
- *
- * Das Relais nimmt höchstens 64 Zeichen (`client_uuid` in
- * `backend/schemas/social.py`). Bis 09/2026 standen hier beide
- * Gerätekennungen in voller Länge, zusammen 91 Zeichen: jede Anfrage und jede
- * Übergabe scheiterte mit 422, und der Schlüssel wanderte nie zwischen den
- * Geräten. Zwölf Zeichen je Gerät unterscheiden sie genauso gut — derselbe
- * Schnitt wie beim Auffächern im Ratchet (`KENNUNG_KURZ`).
- */
-function umschlagKennung(art: 'noteskeyreq' | 'noteskeysync', von: string, an: string): string {
-  return `${art}:${von.slice(0, 12)}:${an.slice(0, 12)}:${Date.now()}`
-}
-
-// ── Abgleich unter eigenen Geräten ──
-//
-// Die Geräte-Mailbox teilen sich alle Geräte eines Kontos, und jeder Abruf
-// liefert die neuesten hundert Umschläge — auch die, mit denen dieses Gerät
-// längst fertig ist. Bis 09/2026 beantwortete jeder Abruf jede Anfrage darin
-// aufs Neue, und jedes Laden von Notizen oder Kalender schickte den Schlüssel
-// noch einmal an jedes eigene Gerät. Aufgefallen ist das erst, als die
-// Umschläge das Relais überhaupt erreichten (`umschlagKennung`): in der
-// Laufzeitprobe über sechzig in der Minute, und weil das Relais je Adresse
-// zählt, bekamen danach auch echte Nachrichten ein 429.
-//
-// Deshalb merkt sich jedes Gerät zweierlei, über das Neuladen hinaus: mit
-// welchen Umschlägen es fertig ist, und welchen Geräten es welchen Schlüssel
-// gegeben hat. Vom Schlüssel steht dort nur ein Fingerabdruck.
-
-const ABGLEICH_PREFIX = 'msm_notes_abgleich_'
-/** Ein Abruf liefert höchstens 100 Umschläge; mehr muss sich kein Gerät merken. */
-const ERLEDIGT_HOECHSTENS = 300
-/** So lange fragt ein Gerät ohne Schlüssel nicht noch einmal nach. */
-const ANFRAGE_PAUSE_MS = 10 * 60 * 1000
-
-type Abgleich = {
-  /** Das Gerät, für das der Rest gilt. Mit einer neuen Kennung beginnt es von vorn. */
-  geraet: string
-  /** Fingerabdruck des Schlüssels, den die Geräte in `an` von hier bekommen haben. */
-  abdruck: string
-  an: string[]
-  /** Umschläge der Geräte-Mailbox, mit denen dieses Gerät fertig ist. */
-  erledigt: number[]
-}
-
-function leseAbgleich(userId: number, geraet: string): Abgleich {
-  let stand: Partial<Abgleich> | undefined = abgleichOhneAblage.get(userId)
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const roh = window.localStorage.getItem(`${ABGLEICH_PREFIX}${userId}`)
-      if (roh) stand = JSON.parse(roh)
-    }
-  } catch {}
-  if (!stand || stand.geraet !== geraet) return { geraet, abdruck: '', an: [], erledigt: [] }
-  return {
-    geraet,
-    abdruck: typeof stand.abdruck === 'string' ? stand.abdruck : '',
-    an: Array.isArray(stand.an) ? stand.an.filter((x): x is string => typeof x === 'string') : [],
-    erledigt: Array.isArray(stand.erledigt)
-      ? stand.erledigt.filter((x): x is number => typeof x === 'number')
-      : [],
-  }
-}
-
-function schreibeAbgleich(userId: number, stand: Abgleich): void {
-  const knapp = { ...stand, erledigt: stand.erledigt.slice(-ERLEDIGT_HOECHSTENS) }
-  abgleichOhneAblage.set(userId, knapp)
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem(`${ABGLEICH_PREFIX}${userId}`, JSON.stringify(knapp))
-    }
-  } catch {}
-}
-
-// Lesen und Schreiben jeweils ohne `await` dazwischen: zwei Abrufe, die sich
-// überlappen, überschreiben so keinen Eintrag des anderen.
-
-function istErledigt(userId: number, geraet: string, umschlag: number): boolean {
-  return leseAbgleich(userId, geraet).erledigt.includes(umschlag)
-}
-
-function merkeErledigt(userId: number, geraet: string, umschlag: number): void {
-  const stand = leseAbgleich(userId, geraet)
-  if (stand.erledigt.includes(umschlag)) return
-  stand.erledigt.push(umschlag)
-  schreibeAbgleich(userId, stand)
-}
-
-function schonGegeben(userId: number, geraet: string, abdruck: string, an: string): boolean {
-  const stand = leseAbgleich(userId, geraet)
-  return stand.abdruck === abdruck && stand.an.includes(an)
-}
-
-function merkeGegeben(userId: number, geraet: string, abdruck: string, an: string): void {
-  const stand = leseAbgleich(userId, geraet)
-  if (stand.abdruck !== abdruck) {
-    stand.abdruck = abdruck
-    stand.an = []
-  }
-  if (stand.an.includes(an)) return
-  stand.an.push(an)
-  schreibeAbgleich(userId, stand)
-}
-
-/**
- * Ein Fingerabdruck des Schlüssels: genug, um einen neuen zu erkennen, und zu
- * wenig, um auf den alten zu schließen.
+ * Ein Fingerabdruck des Schluessels: genug, um einen neuen zu erkennen, und zu
+ * wenig, um auf den alten zu schliessen.
  */
 async function abdruckVon(rawKey: string): Promise<string> {
   const hash = await globalThis.crypto.subtle.digest(
@@ -968,525 +736,59 @@ async function abdruckVon(rawKey: string): Promise<string> {
 }
 
 /**
- * Was aus einem Steuerumschlag der Geräte-Mailbox wurde.
+ * Der Notizenschluessel reist im Konto-Schluesselbund.
  *
- * - `erledigt`: angenommen, beantwortet oder schon bekannt.
- * - `verworfen`: nicht für dieses Gerät, oder ein endgültiges Nein.
- * - `offen`: noch nicht zu entscheiden — auch, wenn das andere Gerät nicht im
- *   Verzeichnis steht; der nächste Abruf versucht es wieder.
- *
- * Gemerkt werden nur die ersten beiden — ein Nein, das nur „jetzt nicht"
- * hieß, darf nicht hängen bleiben.
+ * Jedes freigegebene Geraet oeffnet denselben Bund mit seinem Geraeteschluessel
+ * und bekommt damit auch den Notizenschluessel. Es gibt keine eigene
+ * Geraete-Mailbox und keinen zweiten Uebergabeweg mehr.
  */
-type Ausgang = 'erledigt' | 'verworfen' | 'offen'
-
-/**
- * Das Gerät dieses Kontos mit dieser Kennung aus dem Verzeichnis, oder `null`.
- *
- * Ein Gerät, das sich eben erst gemeldet hat, steht in der zehn Minuten alten
- * Liste noch nicht — deshalb vor dem Nein einmal frisch nachsehen. Antwortet
- * das Verzeichnis nicht, wirft sie: das ist kein Nein, sondern noch keine
- * Antwort, und die Anfrage wird beim nächsten Abruf wieder gelesen.
- */
-async function eigenesVerzeichnisGeraet(
-  userId: number,
-  deviceId: string,
-): Promise<E2eeGeraetItem | null> {
-  const treffer = (await verzeichnisVon(userId)).find((g) => g.device_id === deviceId)
-  if (treffer?.public_key) return treffer
-  const frisch = (await verzeichnisVon(userId, { frisch: true })).find(
-    (g) => g.device_id === deviceId,
-  )
-  return frisch?.public_key ? frisch : null
-}
-
-/**
- * Ein Lauf, der für dieses Konto schon unterwegs ist, oder ein neuer.
- *
- * Erinnerungen, Notizen und Messenger laden gemeinsam, und jeder Ladevorgang
- * gleicht ab. Zwei Läufe zugleich sähen dieselben Geräte als „noch nicht
- * gegeben" — vermerkt wird erst nach dem Senden — und schickten doppelt; in der
- * Laufzeitprobe vom 23.09. bekam jedes Gerät den Schlüssel zweimal in derselben
- * Sekunde. Der zweite Aufruf wartet deshalb auf den ersten.
- */
-function einLaufZugleich<K>(
-  laufend: Map<K, Lauf>,
-  schluessel: K,
-  lauf: () => Promise<number>,
-): Promise<number> {
-  const schon = laufend.get(schluessel)
-  if (schon) {
-    // Wer dazukommt, bekommt einen Nachlauf: sein Anlass — eine neue Anfrage,
-    // ein neues Gerät — kam womöglich erst nach dem Abruf des laufenden an.
-    // Ein Nachlauf genügt für alle, die bis dahin dazukommen.
-    schon.nochmal = true
-    return schon.ergebnis
-  }
-  const eintrag: Lauf = { ergebnis: Promise.resolve(0), nochmal: false }
-  eintrag.ergebnis = (async () => {
-    let summe = 0
-    try {
-      do {
-        eintrag.nochmal = false
-        summe += await lauf()
-      } while (eintrag.nochmal)
-    } finally {
-      laufend.delete(schluessel)
-    }
-    return summe
-  })()
-  laufend.set(schluessel, eintrag)
-  return eintrag.ergebnis
-}
-
-type Lauf = { ergebnis: Promise<number>; nochmal: boolean }
-
-const laufendeVerteilung = new Map<number, Lauf>()
-const laufenderDurchgang = new Map<string, Lauf>()
-
-/**
- * Synchronisiert den Notizen-/Kalenderschlüssel automatisch an alle anderen gekoppelten
- * Geräte desselben Benutzers über die blinde Geräte-Mailbox.
- */
-export function syncNotesKeyToPairedDevices(userId: number = 1): Promise<number> {
-  return einLaufZugleich(laufendeVerteilung, userId, () => verteileSchluessel(userId))
-}
-
-async function verteileSchluessel(userId: number): Promise<number> {
-  const rawKey = exportUserNotesKey(userId)
-  if (!rawKey) return 0
-  // Nur den Schlüssel des Kontos — siehe „Ein Schlüssel je Konto".
-  if ((await eigenerIstKontoschluessel(userId)) === false) return 0
-
-  let self: EigenesGeraet | null = null
+export async function syncNotesKeyToPairedDevices(userId: number = 1): Promise<number> {
+  const roh = exportUserNotesKey(userId)
+  if (!roh || !angemeldetesKonto()) return 0
   try {
-    self = await eigenesGeraet()
+    const { ensureAccountKeys } = await import('./accountKeys')
+    await ensureAccountKeys()
+    return 1
   } catch {
     return 0
   }
-  if (!self) return 0
-  const ich = self
-
-  let pairedDevices: any[] = []
-  try {
-    pairedDevices = await geraeteVon(userId)
-  } catch {
-    return 0
-  }
-
-  // Jedem Gerät einmal je Schlüssel — siehe „Abgleich unter eigenen Geräten".
-  // Wer ihn verloren hat, fragt; beantwortet wird jede Anfrage.
-  const abdruck = await abdruckVon(rawKey)
-  const kandidaten = pairedDevices
-    .map((d) => ({
-      deviceId: d.device_id || (d as any).deviceId,
-      publicKey: d.public_key || (d as any).publicKey,
-      isApproved: d.is_approved,
-      approvedBy: d.approved_by,
-      eintrag: d,
-    }))
-    .filter((d) => d.deviceId && d.deviceId !== ich.kennung && d.publicKey)
-    .filter((d) => d.isApproved !== false)
-    .filter((d) => !schonGegeben(userId, ich.kennung, abdruck, d.deviceId))
-  const targetDevices: typeof kandidaten = []
-  for (const d of kandidaten) {
-    if (
-      d.isApproved !== true ||
-      d.approvedBy === ich.kennung ||
-      istGeraetBestaetigtFuerNotizenSchluessel(userId, d.deviceId) ||
-      (await freigabeBelegt(userId, d.eintrag, pairedDevices))
-    ) {
-      targetDevices.push(d)
-    }
-  }
-
-  if (targetDevices.length === 0) return 0
-
-  const mailboxId = await deriveUserDeviceMailboxId(userId)
-  let sentCount = 0
-
-  for (const target of targetDevices) {
-    try {
-      const payload = await unterschriebeneUebergabe(ich, userId, target.deviceId, rawKey)
-      if (!payload) continue
-      const ciphertextEnvelope = await encryptE2eeHybrid(payload, target.publicKey)
-      await relayE2eeEnvelope({
-        blind_mailbox_id: mailboxId,
-        ciphertext_envelope: ciphertextEnvelope,
-        client_uuid: umschlagKennung('noteskeysync', ich.kennung, target.deviceId),
-        is_control: true,
-        control_type: 'notes_key_sync',
-      })
-      merkeGegeben(userId, ich.kennung, abdruck, target.deviceId)
-      sentCount++
-    } catch {
-      // Best-Effort für das jeweilige Zielgerät
-    }
-  }
-
-  return sentCount
 }
 
-/**
- * Fordert den Notizenschlüssel von anderen gekoppelten Geräten des Benutzers an,
- * falls dieses Gerät noch keinen Schlüssel besitzt.
- */
+/** Holt den Bund, wenn dieses Geraet noch keinen Notizenschluessel hat. */
 export async function requestNotesKeyFromPairedDevices(userId: number = 1): Promise<boolean> {
-  if (hasUserNotesKey(userId)) {
+  if (hasUserNotesKey(userId)) return false
+  if (!angemeldetesKonto()) return false
+  try {
+    const { ensureAccountKeys } = await import('./accountKeys')
+    await ensureAccountKeys()
+  } catch {
     return false
   }
-  return frageNachSchluessel(userId)
-}
-
-/**
- * Fragt die anderen eigenen Geräte nach dem Schlüssel — auch, wenn dieses
- * schon einen hat, der aber nicht der des Kontos ist (`abgleichen`).
- */
-async function frageNachSchluessel(userId: number): Promise<boolean> {
-  // Höchstens eine Runde je Pause. Die Marke steht, bevor das erste `await`
-  // fällt: Notizen, Kalender und Erinnerungen laden gleichzeitig, und jeder
-  // Aufruf sähe sonst noch keine Runde. Öfter zu fragen bringt nichts — eine
-  // gestellte Anfrage bleibt in der Mailbox, und ein Gerät, das gerade nicht
-  // läuft, beantwortet sie beim nächsten Start. Solange noch nichts gesendet
-  // ist, fällt die Marke wieder.
-  const jetzt = Date.now()
-  const zuletzt = letzteAnfrage.get(userId)
-  if (zuletzt !== undefined && jetzt - zuletzt < ANFRAGE_PAUSE_MS) return false
-  letzteAnfrage.set(userId, jetzt)
-
-  let self: any = null
-  try {
-    self = await eigenesGeraet()
-  } catch {
-    letzteAnfrage.delete(userId)
-    return false
-  }
-  if (!self) {
-    letzteAnfrage.delete(userId)
-    return false
-  }
-
-  let pairedDevices: any[] = []
-  try {
-    pairedDevices = await geraeteVon(userId)
-  } catch {
-    letzteAnfrage.delete(userId)
-    return false
-  }
-
-  const targetDevices = pairedDevices
-    .map((d) => ({
-      deviceId: d.device_id || (d as any).deviceId,
-      publicKey: d.public_key || (d as any).publicKey,
-    }))
-    .filter((d) => d.deviceId && d.deviceId !== self.kennung && d.publicKey)
-
-  if (targetDevices.length === 0) {
-    letzteAnfrage.delete(userId)
-    return false
-  }
-
-  let mailboxId: string
-  try {
-    mailboxId = await deriveUserDeviceMailboxId(userId)
-  } catch {
-    letzteAnfrage.delete(userId)
-    return false
-  }
-  let sentCount = 0
-
-  for (const target of targetDevices) {
-    try {
-      const payload = JSON.stringify({
-        type: 'notes_key_request',
-        version: 1,
-        userId,
-        requesterDeviceId: self.kennung,
-        // Kein eigener öffentlicher Schlüssel mehr: versiegelt wird gegen den
-        // aus dem Verzeichnis. Gegenstellen von vor 09/2026, die noch den aus
-        // der Anfrage nahmen, antworten unsigniert — und das nimmt dieses
-        // Gerät ohnehin nicht mehr an.
-        timestamp: Date.now(),
-      })
-      const ciphertextEnvelope = await encryptE2eeHybrid(payload, target.publicKey)
-      await relayE2eeEnvelope({
-        blind_mailbox_id: mailboxId,
-        ciphertext_envelope: ciphertextEnvelope,
-        client_uuid: umschlagKennung('noteskeyreq', self.kennung, target.deviceId),
-        is_control: true,
-        control_type: 'notes_key_request',
-      })
-      sentCount++
-    } catch {
-      // Best-Effort
-    }
-  }
-
-  // Ging nichts hinaus — jede Anfrage etwa am 429 des Relais gescheitert —,
-  // hält die Pause nichts auf, was gefragt wurde.
-  if (sentCount === 0) letzteAnfrage.delete(userId)
-  return sentCount > 0
-}
-
-/**
- * Verarbeitet einen verschlüsselten Steuerumschlag aus der Geräte-Mailbox.
- * Erkennt 'notes_key_sync' (Schlüsselimport) und 'notes_key_request' (Beantwortung mit Schlüssel).
- */
-export async function processNotesKeyControlEnvelope(
-  ciphertextEnvelope: string,
-  userId: number = 1
-): Promise<boolean> {
-  return (await verarbeiteSteuerumschlag(ciphertextEnvelope, userId)) === 'erledigt'
-}
-
-/** Wie `processNotesKeyControlEnvelope`, sagt aber auch, ob ein neuer Versuch lohnt. */
-async function verarbeiteSteuerumschlag(
-  ciphertextEnvelope: string,
-  userId: number,
-): Promise<Ausgang> {
-  let self: EigenesGeraet | null = null
-  try {
-    self = await eigenesGeraet()
-  } catch {
-    return 'offen'
-  }
-  if (!self?.paar?.privateKeyJwk) return 'offen'
-
-  let decrypted: string
-  try {
-    decrypted = await decryptE2eeHybrid(ciphertextEnvelope, self.paar.privateKeyJwk)
-  } catch {
-    // Umschlag ist für ein anderes Gerät bestimmt oder ungültig
-    return 'verworfen'
-  }
-
-  let data: any
-  try {
-    data = JSON.parse(decrypted)
-  } catch {
-    return 'verworfen'
-  }
-
-  if (data?.type === 'notes_key_sync') {
-    if (typeof data.notesKey !== 'string' || !data.notesKey) return 'verworfen'
-    // Nur für das eigene Konto und nur für dieses Gerät. Bis 09/2026 nahm
-    // dieses Gerät jeden Schlüssel an, der sich öffnen ließ, und legte ihn unter
-    // dem Konto ab, das der Umschlag nannte. Ein untergeschobener Schlüssel
-    // hätte jede Notiz, die dieses Gerät danach schreibt, für den lesbar
-    // gemacht, der ihn geschickt hat.
-    if (data.userId !== userId || data.targetDeviceId !== self.kennung) return 'verworfen'
-    const vonGeraet = typeof data.senderDeviceId === 'string' ? data.senderDeviceId : ''
-    if (!vonGeraet || vonGeraet === self.kennung) return 'verworfen'
-    const beleg = await pruefeGeraeteBeleg(
-      userId,
-      vonGeraet,
-      uebergabeDaten(userId, vonGeraet, self.kennung, data.notesKey),
-      data.sig,
-    )
-    // 'offen' und 'unbekannt' sind kein Nein: der Umschlag bleibt in der
-    // Mailbox, und der nächste Abruf prüft ihn wieder.
-    if (beleg === 'offen' || beleg === 'unbekannt') return 'offen'
-    if (beleg !== 'echt' && beleg !== 'altbestand') return 'verworfen'
-
-    if (!hasUserNotesKey(userId)) {
-      await setUserNotesKey(userId, data.notesKey)
-      return 'erledigt'
-    }
-    const existing = exportUserNotesKey(userId)
-    if (existing && existing !== data.notesKey) {
-      const marke = kontoAbdruck.get(userId)
-      if (marke && (await abdruckVon(data.notesKey)) === marke) {
-        // Der des Kontos: er löst den eigenen ab, der Nebenschlüssel wird.
-        await kontoschluesselUebernehmen(userId, data.notesKey)
-        return 'erledigt'
-      }
-      // Ein anderer eines eigenen Geräts: zum Lesen behalten. Was jenes Gerät
-      // geschrieben hat, öffnet sich damit auch hier und wird beim nächsten
-      // Laden mit dem Kontoschlüssel neu verschlüsselt.
-      if (merkeNebenschluessel(userId, data.notesKey) && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('msm:notes-key-updated', { detail: { userId } }))
-      }
-      // Den eigenen verteidigen — jedem Gerät einmal, und nur, wenn er der des
-      // Kontos ist oder das niemand weiß. Bis 09/2026 ging er bei jedem solchen
-      // Umschlag an alle, und das andere Gerät hielt es genauso: ein Pingpong
-      // ohne Ende.
-      if (!marke || (await abdruckVon(existing)) === marke) {
-        await syncNotesKeyToPairedDevices(userId).catch(() => 0)
-      }
-    }
-    return 'erledigt'
-  } else if (data?.type === 'notes_key_request') {
-    // Nur für das eigene Konto: auf einem geteilten Gerät liegt womöglich auch
-    // der Schlüssel eines anderen, und die Anfrage bestimmt nicht, welcher.
-    if (data.userId !== userId) return 'verworfen'
-    const anGeraet = typeof data.requesterDeviceId === 'string' ? data.requesterDeviceId : ''
-    if (!anGeraet || anGeraet === self.kennung) return 'verworfen'
-    const existingRawKey = exportUserNotesKey(userId)
-    // Ohne Schlüssel ist nichts zu geben — noch nicht. Kommt er später, wird
-    // dieselbe Anfrage dann beantwortet.
-    if (!existingRawKey) return 'offen'
-    // Nur den Schlüssel des Kontos. Hat dieses Gerät noch einen anderen, bleibt
-    // die Anfrage liegen, bis es den richtigen hat.
-    if ((await eigenerIstKontoschluessel(userId)) === false) return 'offen'
-
-    // Jedem fragenden Gerät höchstens eine Antwort je Pause. In die eigene
-    // Geräte-Mailbox darf jeder Freund und jedes Gruppenmitglied einwerfen, und
-    // eine Anfrage, die ein echtes eigenes Gerät nennt, bekam bis zur
-    // Durchsicht vom 23.09. jedes Mal ihre Antwort: hundert gefälschte in der
-    // Minute, und das Relais wies danach auch die echten Nachrichten dieses
-    // Kontos mit 429 ab. Verraten hat die Antwort nie etwas — sie ist gegen
-    // das Verzeichnis versiegelt —, es ging um die Last. Kam die letzte Antwort
-    // nicht an, fragt das Gerät nach seiner eigenen Pause wieder.
-    const beantwortet = letzteAntwort.get(`${userId}:${anGeraet}`)
-    if (beantwortet !== undefined && Date.now() - beantwortet < ANFRAGE_PAUSE_MS) {
-      return 'verworfen'
-    }
-
-    // Versiegelt wird gegen den Schlüssel, den das Verzeichnis für dieses Gerät
-    // unter **diesem** Konto führt — nie gegen den aus der Anfrage. Bis 09/2026
-    // stand hier `data.requesterPublicKey`: wer einen Umschlag in die eigene
-    // Geräte-Mailbox legen durfte, bekam den Notizschlüssel gegen seinen
-    // eigenen Schlüssel versiegelt zurück.
-    let ziel: E2eeGeraetItem | null
-    try {
-      ziel = await eigenesVerzeichnisGeraet(userId, anGeraet)
-    } catch {
-      return 'offen'
-    }
-    // Auch „nicht im Verzeichnis" bleibt offen, genau wie `unbekannt` bei der
-    // Unterschrift: ein Gerät, das sich eben angemeldet hat, fehlt in einer
-    // Liste, die jünger als `FRISCH_MS` ist, auch nach dem frischen Abruf.
-    // Endgültig vermerkt, bekäme es nie eine Antwort — so geschehen in der
-    // Laufzeitprobe vom 23.09. Gesendet wird ohne Eintrag ohnehin nichts.
-    if (!ziel) return 'offen'
-
-    // Schutz gegen unterschobene Geräte (Vorfall 7):
-    // Ein Gerät, das der Server als freigegeben meldet (`is_approved === true`),
-    // darf den Notizenschlüssel nur erhalten, wenn dieses Gerät die Freigabe
-    // selbst unterschrieben hat (`approved_by === self.kennung`) oder der Benutzer
-    // das Gerät interaktiv für den Notizenschlüssel bestätigt hat.
-    // Ein nicht freigegebenes Gerät (`is_approved === false`) erhält den Schlüssel nicht.
-    if (ziel.is_approved === false) {
-      return 'offen'
-    }
-    // Freigegeben von einem anderen eigenen Gerät zählt, wenn dessen
-    // Unterschrift stimmt (`freigabeBelegt`). Bis 30.09.2026 zählte nur die
-    // eigene; für alle anderen wartete die Anfrage auf eine Bestätigung, nach
-    // der die Oberfläche nie fragte — der Schlüssel kam dort nie an.
-    let belegt = false
-    try {
-      belegt = await freigabeBelegt(userId, ziel, await verzeichnisVon(userId))
-    } catch {}
-    if (
-      ziel.is_approved === true &&
-      ziel.approved_by !== self.kennung &&
-      !istGeraetBestaetigtFuerNotizenSchluessel(userId, anGeraet) &&
-      !belegt
-    ) {
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('msm:notes-key-request-pending', {
-            detail: { userId, deviceId: anGeraet, label: ziel.label },
-          }),
-        )
-      }
-      return 'offen'
-    }
-
-    try {
-      const payload = await unterschriebeneUebergabe(self, userId, anGeraet, existingRawKey)
-      if (!payload) return 'offen'
-      const replyEnv = await encryptE2eeHybrid(payload, ziel.public_key)
-      const mailboxId = await deriveUserDeviceMailboxId(userId)
-      const abdruck = await abdruckVon(existingRawKey)
-      await relayE2eeEnvelope({
-        blind_mailbox_id: mailboxId,
-        ciphertext_envelope: replyEnv,
-        client_uuid: umschlagKennung('noteskeysync', self.kennung, anGeraet),
-        is_control: true,
-        control_type: 'notes_key_sync',
-      })
-      merkeGegeben(userId, self.kennung, abdruck, anGeraet)
-      letzteAntwort.set(`${userId}:${anGeraet}`, Date.now())
-      return 'erledigt'
-    } catch {
-      // Etwa ein 429 des Relais: die Anfrage bleibt offen.
-      return 'offen'
-    }
-  }
-
-  return 'verworfen'
-}
-
-/**
- * Geht die Geräte-Mailbox durch, neueste zuerst, und lässt aus, womit dieses
- * Gerät schon fertig ist. Liefert, wie viele Umschläge jetzt erledigt wurden.
- *
- * `bisSchluessel`: aufhören, sobald ein Schlüssel da ist — der Weg eines
- * Geräts, das noch keinen hat.
- */
-function geraeteMailboxDurchgehen(userId: number, bisSchluessel: boolean): Promise<number> {
-  return einLaufZugleich(laufenderDurchgang, `${userId}:${bisSchluessel}`, () =>
-    mailboxDurchgang(userId, bisSchluessel),
-  )
-}
-
-async function mailboxDurchgang(userId: number, bisSchluessel: boolean): Promise<number> {
-  const mailboxId = await deriveUserDeviceMailboxId(userId)
-  const envelopes = await fetchE2eeEnvelopes(mailboxId, 0)
-  if (!Array.isArray(envelopes) || envelopes.length === 0) return 0
-  const ich = await eigenesGeraet()
-  if (!ich) return 0
-
-  let erledigt = 0
-  for (let i = envelopes.length - 1; i >= 0; i--) {
-    const item = envelopes[i]
-    if (!item?.ciphertext_envelope) continue
-    const nummer = typeof item.id === 'number' ? item.id : null
-    if (nummer !== null && istErledigt(userId, ich.kennung, nummer)) continue
-    const ausgang = await verarbeiteSteuerumschlag(item.ciphertext_envelope, userId)
-    if (ausgang !== 'offen' && nummer !== null) merkeErledigt(userId, ich.kennung, nummer)
-    if (ausgang === 'erledigt') erledigt++
-    if (bisSchluessel && hasUserNotesKey(userId)) break
-  }
-  return erledigt
-}
-
-/**
- * Prüft die blinde Geräte-Mailbox auf bereitliegende Schlüsselumschläge.
- * Falls noch kein Schlüssel vorhanden ist, wird nach dem Scan ggf. eine Anforderung gesendet.
- */
-export async function checkAndReceiveDeviceNotesKey(userId: number = 1): Promise<boolean> {
-  if (hasUserNotesKey(userId)) {
-    return true
-  }
-
-  try {
-    await geraeteMailboxDurchgehen(userId, true)
-  } catch {
-    // Mailbox-Abruf nicht möglich oder leer
-  }
-
-  if (!hasUserNotesKey(userId)) {
-    void requestNotesKeyFromPairedDevices(userId).catch(() => {})
-  }
-
   return hasUserNotesKey(userId)
 }
 
+/** Steuerumschlaege der alten Geraete-Mailbox gibt es nicht mehr. */
+export async function processNotesKeyControlEnvelope(
+  _ciphertextEnvelope: string,
+  _userId: number = 1,
+): Promise<boolean> {
+  return false
+}
+
 /**
- * Prüft die Geräte-Mailbox auf anstehende 'notes_key_request'-Anfragen anderer gekoppelter Geräte,
- * wenn dieses Gerät bereits über den Notizenschlüssel verfügt.
+ * Prueft, ob der Bund den Notizenschluessel mitbringt. Der frueher noetige
+ * Mailbox-Scan entfaellt; der Bund wird beim Laden des Kontos geholt.
  */
-export async function checkAndRespondToDeviceKeyRequests(userId: number = 1): Promise<number> {
-  if (!hasUserNotesKey(userId)) {
-    return 0
-  }
-  try {
-    return await geraeteMailboxDurchgehen(userId, false)
-  } catch {
-    return 0
-  }
+export async function checkAndReceiveDeviceNotesKey(userId: number = 1): Promise<boolean> {
+  // Der Bund kommt beim Anmelden und bei der Geraetefreigabe. Ein Abruf im
+  // Lesepfad wuerde nur blockieren, wenn der Server gerade nicht antwortet.
+  void userId
+  return hasUserNotesKey(userId)
+}
+
+/** Anfragen anderer Geraete werden nicht mehr ueber eine Mailbox beantwortet. */
+export async function checkAndRespondToDeviceKeyRequests(_userId: number = 1): Promise<number> {
+  return 0
 }
 
 // ── Notizen Verschlüsselung & Entschlüsselung ──

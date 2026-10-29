@@ -83,6 +83,26 @@ _DEFAULT_RETENTION = 7
 # Timeout fuer pg_dump (Sekunden).
 _DUMP_TIMEOUT = 300
 
+# Tabellen, deren Zeilen nur ein Zustellpuffer sind. Sie bleiben als **Schema**
+# im Dump (Tabellen, Spalten, Fremdschluessel, Indizes), ihre Daten fehlen. Ein
+# Panel-Backup ist kein Archiv dieser Puffer, und nach einer Wiederherstellung
+# darf kein abgelaufener Chiffretext wieder ausgeliefert werden.
+#
+# `--exclude-table` waere hier falsch: es liesse die Tabelle ganz aus dem Dump,
+# und ein Restore braeche an jedem Fremdschluessel, der auf sie zeigt. Genau
+# deshalb steht `--exclude-table-data` in der Kommandozeile
+# (`_pg_dump_postgres`).
+PANEL_BACKUP_OHNE_DATEN: tuple[str, ...] = (
+    # Der alte Relaisbestand und die verschluesselten Chat-Anhaenge. Beides
+    # sind Serverkopien, die nach ihrer Frist ohnehin geloescht werden.
+    "chat_media",
+    # Kopplungscodes und der versiegelte Konto-Schluessel fuer ein neues
+    # Geraet. Eine offene Kopplung ist ein kurzer Vorgang (Code zehn Minuten),
+    # kein Bestand, den ein Restore weiterfuehren soll. Nach einer
+    # Wiederherstellung beginnt eine Kopplung neu.
+    "device_pairings",
+)
+
 
 # ── Oeffentliche API ─────────────────────────────────────────────────────
 
@@ -1004,6 +1024,12 @@ def _pg_dump_postgres() -> bytes:
     Parst die database_url fuer Verbindungsparameter. Setzt PGPASSWORD env,
     damit das Passwort nicht in der Kommandozeile erscheint (Process-Listing-
     Leak). Keine Secrets in Logs/Exceptions.
+
+    Die Zustellpuffer aus `PANEL_BACKUP_OHNE_DATEN` gehen **ohne Zeilen** in
+    den Dump. `--exclude-table-data` laesst ihre Definition, ihre
+    Fremdschluessel und Indizes stehen; nur der COPY-Block fehlt. So bleibt ein
+    Restore moeglich, ohne alte Chiffrate oder abgelaufene Umschlaege
+    zurueckzubringen.
     """
     url = settings.database_url
     parsed = urlparse(url)
@@ -1025,8 +1051,11 @@ def _pg_dump_postgres() -> bytes:
         "--format", "plain",
         "--no-owner",
         "--no-privileges",
-        db_name,
     ]
+    # Nur die Daten fallen, nie das Schema: sonst fehlten die Tabellen nach
+    # einem Restore samt allen Fremdschluesseln, die auf sie zeigen.
+    cmd.extend(f"--exclude-table-data={name}" for name in PANEL_BACKUP_OHNE_DATEN)
+    cmd.append(db_name)
 
     try:
         result = subprocess.run(

@@ -18,6 +18,7 @@ const api = vi.hoisted(() => ({
   teamsList: vi.fn(),
   teamsGet: vi.fn(),
   gespraechsListe: vi.fn(),
+  versteckteGespraeche: vi.fn(),
   benenneGruppen: vi.fn(),
 }))
 vi.mock('@/api/social', () => ({
@@ -27,7 +28,10 @@ vi.mock('@/api/social', () => ({
   getPublicProfiles: api.getPublicProfiles,
 }))
 vi.mock('@/api/teams', () => ({ teamsApi: { list: api.teamsList, get: api.teamsGet } }))
-vi.mock('@/services/gespraechsListe', () => ({ gespraechsListe: api.gespraechsListe }))
+vi.mock('@/services/gespraechsListe', () => ({
+  gespraechsListe: api.gespraechsListe,
+  versteckteGespraeche: api.versteckteGespraeche,
+}))
 vi.mock('@/services/gruppenName', () => ({ benenneGruppen: api.benenneGruppen }))
 
 import { useKontaktdaten } from './useKontaktdaten'
@@ -44,6 +48,7 @@ beforeEach(() => {
   api.teamsList.mockReset().mockResolvedValue([{ id: 9, name: 'Ops' }])
   api.teamsGet.mockReset().mockResolvedValue({ members: [{ user_id: ICH }, { user_id: 2 }] })
   api.gespraechsListe.mockReset().mockResolvedValue([{ other_user_id: 1 }])
+  api.versteckteGespraeche.mockReset().mockResolvedValue(new Set<number>())
   api.benenneGruppen.mockReset().mockImplementation(async (g: object[]) => g.map((x) => ({ ...x, name: 'Geheim' })))
 })
 
@@ -77,4 +82,27 @@ describe('useKontaktdaten', () => {
     rerender({ gesperrt: false })
     await waitFor(() => expect(api.getGroups).toHaveBeenCalledTimes(2))
   })
+
+  it('holt die Freundesliste sofort, wenn eine Anfrage angenommen wurde', async () => {
+    renderHook(() => useKontaktdaten(ICH, false))
+    await waitFor(() => expect(api.getFriends).toHaveBeenCalledTimes(1))
+
+    window.dispatchEvent(
+      new CustomEvent('msm:sync-event', { detail: { type: 'friend_request_accepted', friend_id: 5 } }),
+    )
+
+    await waitFor(() => expect(api.getFriends).toHaveBeenCalledTimes(2))
+  })
+
+  it.each(['friend_info_updated', 'friend_presence_updated'])(
+    'lädt die Freundesliste sofort nach %s',
+    async (typ) => {
+      renderHook(() => useKontaktdaten(ICH, false))
+      await waitFor(() => expect(api.getFriends).toHaveBeenCalledTimes(1))
+
+      window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: { type: typ, friend_id: 5 } }))
+
+      await waitFor(() => expect(api.getFriends).toHaveBeenCalledTimes(2))
+    },
+  )
 })

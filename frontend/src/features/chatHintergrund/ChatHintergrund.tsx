@@ -1,31 +1,137 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
+import type { GruppenKontext } from '@/services/gruppenSchluessel'
+import { ladeGruppenHintergrund } from '@/services/gruppenInfo'
 import {
   beobachteChatHintergrund,
-  ladeChatHintergrund,
+  ladeHintergrundFuerScope,
+  STANDARD_HINTERGRUND,
   type ChatHintergrundBereich,
   type ChatHintergrundKonfiguration,
+  type ChatHintergrundScope,
 } from './speicher'
-import { vorlageMitId, type HintergrundId } from './vorlagen'
+import { vorlageMitId, STANDARD_VORLAGE, type HintergrundId } from './vorlagen'
+
+function alsKonfiguration(roh: {
+  preset?: string | null
+  bild?: string | null
+  dim: number
+}): ChatHintergrundKonfiguration | null {
+  const bild =
+    typeof roh.bild === 'string' &&
+    /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(roh.bild)
+      ? roh.bild
+      : undefined
+  const presetRoh = typeof roh.preset === 'string' ? roh.preset : null
+  if (!presetRoh && !bild) return null
+  const preset: HintergrundId =
+    presetRoh === 'custom' || (bild && !presetRoh)
+      ? 'custom'
+      : presetRoh && vorlageMitId(presetRoh as HintergrundId)
+        ? (presetRoh as HintergrundId)
+        : STANDARD_VORLAGE
+  if (preset === 'custom' && !bild) return null
+  return {
+    preset,
+    customDataUrl: preset === 'custom' ? bild : undefined,
+    dimLevel: Math.min(75, Math.max(0, Math.round(roh.dim))),
+  }
+}
 
 /**
- * Der gewählte Hintergrund dieses Bereichs, lebend.
+ * Der persönliche Hintergrund eines Platzes, lebend.
  *
- * Lebend heisst: wer im Chat die Vorlage wechselt, ändert damit auch das
- * Guardian-Fenster nebenan und den zweiten Tab — ohne Neuladen, ohne dass eine
- * Seite die andere kennen müsste.
+ * Lebend heisst: wer im Chat die Vorlage wechselt, ändert damit auch den
+ * zweiten Tab und — bei „für alle" — die übrigen Direktchats, ohne Neuladen.
  */
 export function useChatHintergrund(
   bereich: ChatHintergrundBereich,
+  peerId?: number | null,
 ): ChatHintergrundKonfiguration {
-  const [konfiguration, setzeKonfiguration] = useState(() => ladeChatHintergrund(bereich))
+  const scope = useMemo<ChatHintergrundScope>(
+    () =>
+      bereich === 'messenger' && Number.isInteger(peerId) && (peerId ?? 0) > 0
+        ? { art: 'direkt', peerId: Number(peerId) }
+        : { art: 'global', bereich },
+    [bereich, peerId],
+  )
+  const [konfiguration, setzeKonfiguration] = useState<ChatHintergrundKonfiguration>(
+    STANDARD_HINTERGRUND,
+  )
 
   useEffect(() => {
-    // Beim Bereichswechsel zuerst neu lesen: sonst zeigte die Fläche bis zur
-    // ersten Änderung den Hintergrund des vorherigen Bereichs.
-    setzeKonfiguration(ladeChatHintergrund(bereich))
-    return beobachteChatHintergrund(bereich, setzeKonfiguration)
-  }, [bereich])
+    let abgebrochen = false
+    const laden = async () => {
+      const frisch = await ladeHintergrundFuerScope(scope)
+      if (!abgebrochen) setzeKonfiguration(frisch)
+    }
+    void laden()
+    const abbestellen = beobachteChatHintergrund(() => {
+      void laden()
+    })
+    return () => {
+      abgebrochen = true
+      abbestellen()
+    }
+  }, [scope])
+
+  return konfiguration
+}
+
+/**
+ * Der geteilte Hintergrund einer Gruppe.
+ *
+ * Er liegt verschlüsselt beim Server und gehört der Gruppe, nicht dem Gerät.
+ * Fehlt er, ist das Ergebnis `null`; der Aufrufer fällt dann auf die globale
+ * Messenger-Vorgabe zurück. Ein `chat_group_background_updated` lädt neu, ohne
+ * dass jemand den Chat schließen muss.
+ */
+export function useGruppenHintergrund(
+  kontext: GruppenKontext | null | undefined,
+  darfSetzen?: (konto: number) => boolean,
+): ChatHintergrundKonfiguration | null {
+  const [konfiguration, setzeKonfiguration] = useState<ChatHintergrundKonfiguration | null>(null)
+  const darfRef = useRef(darfSetzen)
+  darfRef.current = darfSetzen
+  const gruppeId = kontext?.groupId ?? 0
+  const mailbox = kontext?.blindMailboxId ?? ''
+  const eigeneId = kontext?.eigeneId ?? 0
+
+  useEffect(() => {
+    if (!kontext || !gruppeId) {
+      setzeKonfiguration(null)
+      return
+    }
+    let abgebrochen = false
+    const laden = async () => {
+      const lesung = await ladeGruppenHintergrund(kontext, (konto) =>
+        darfRef.current ? darfRef.current(konto) : true,
+      )
+      if (abgebrochen) return
+      setzeKonfiguration(
+        lesung.art === 'hintergrund' ? alsKonfiguration(lesung.hintergrund) : null,
+      )
+    }
+    void laden()
+
+    const beiSync = (ereignis: Event) => {
+      const detail = (ereignis as CustomEvent<Record<string, unknown>>).detail
+      if (detail?.type !== 'chat_group_background_updated') return
+      if (Number(detail.group_id) !== gruppeId) return
+      void laden()
+    }
+    window.addEventListener('msm:sync-event', beiSync)
+    return () => {
+      abgebrochen = true
+      window.removeEventListener('msm:sync-event', beiSync)
+    }
+    // Der Kontext wird bei jedem Rendern neu gebaut; die drei Werte, aus denen
+    // er wirklich besteht, wechseln dagegen selten.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `darfSetzen` wird nur beim Lesen geprüft; die Funktion wechselt mit der
+    // Mitgliederliste und soll keinen zweiten Ladevorgang auslösen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gruppeId, mailbox, eigeneId])
 
   return konfiguration
 }
@@ -74,12 +180,23 @@ export function HintergrundFlaeche({
  */
 export function ChatHintergrund({
   bereich,
+  peerId,
+  gruppe,
+  gruppeDarfSetzen,
   className = '',
 }: {
   bereich: ChatHintergrundBereich
+  /** Der Direktchat-Partner. Ohne ihn gilt die globale Messenger-Vorgabe. */
+  peerId?: number | null
+  /** Die offene Gruppe. Ihr geteilter Hintergrund hat Vorrang. */
+  gruppe?: GruppenKontext | null
+  /** Wer den geteilten Hintergrund schreiben durfte (Signaturprüfung). */
+  gruppeDarfSetzen?: (konto: number) => boolean
   className?: string
 }) {
-  const konfiguration = useChatHintergrund(bereich)
+  const persoenlich = useChatHintergrund(bereich, peerId)
+  const geteilt = useGruppenHintergrund(gruppe, gruppeDarfSetzen)
+  const konfiguration = geteilt ?? persoenlich
 
   return (
     <div

@@ -5,12 +5,22 @@ Das Default-Limit pro IP kommt dynamisch aus panel_settings
 liegen separat in main.auth_rate_limit. Enrollment- und Webhook-Limits
 bleiben fest in den jeweiligen Routern.
 """
+from __future__ import annotations
+
+import os
+
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from config import settings
 from services.rate_limit_settings import dynamic_global_limit_provider
+
+# Im Testlauf zaehlt jeder Prozess fuer sich. Ein gemeinsamer Redis-Zaehler
+# teilte sich sonst zwischen xdist-Workern, und `limiter.reset()` des einen
+# loeschte die Zaehler, waehrend der andere gerade ein Limit prueft — die
+# Grenze griff dann scheinbar nicht. In Produktion bleibt Redis der Speicher.
+_storage_uri = None if os.getenv("MSM_TESTING") else (settings.redis_url or None)
 
 # default_limits als Callable: slowapi wertet den String pro Request neu aus,
 # sodass gespeicherte Admin-Werte ohne Restart greifen. Bei Lesefehler/ungültig
@@ -21,7 +31,7 @@ from services.rate_limit_settings import dynamic_global_limit_provider
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=[dynamic_global_limit_provider],
-    storage_uri=settings.redis_url or None,
+    storage_uri=_storage_uri,
     in_memory_fallback_enabled=True,
     key_style="endpoint",
 )

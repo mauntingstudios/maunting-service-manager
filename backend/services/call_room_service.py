@@ -37,6 +37,7 @@ GRUPPE_MAX_TEILNEHMER = 16
 @dataclass
 class _Anrufraum:
     ersteller_id: int
+    ziel_id: int
     berechtigte: set[int]
     erstellt_am: float
     laeuft_ab: float = 0.0
@@ -68,6 +69,7 @@ class CallRoomService:
             cls._aufraeumen(jetzt)
             cls._raeume[token] = _Anrufraum(
                 ersteller_id=caller_id,
+                ziel_id=recipient_id,
                 berechtigte={caller_id, recipient_id},
                 erstellt_am=jetzt,
                 laeuft_ab=jetzt + EINLADUNG_TTL_SEKUNDEN,
@@ -219,6 +221,10 @@ class CallRoomService:
                 )
             else:
                 if user_id not in raum.berechtigte or user_id == raum.ersteller_id:
+                    return None
+                # Nur der urspruengliche Angerufene darf den Direktraum
+                # ablehnen/beenden. Ein nachgeholter Dritter nicht.
+                if user_id != raum.ziel_id:
                     return None
                 gegenstelle = raum.ersteller_id
             cls._raeume.pop(token, None)

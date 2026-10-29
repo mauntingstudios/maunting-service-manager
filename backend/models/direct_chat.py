@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -51,4 +51,12 @@ class DirectChat(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now, nullable=False
+    )
+    #: Verschwindende Nachrichten: 0/NULL heisst aus. Nur wer sie eingeschaltet
+    #: hat, darf sie wieder ausschalten oder aendern.
+    ephemeral_ttl_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ephemeral_enabled_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
     )

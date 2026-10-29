@@ -8,10 +8,9 @@
  * - In einer Gruppe verschlüsselt ein *geteilter* Schlüssel. Er beweist
  *   „von jemandem aus dieser Gruppe", nie „von Anna". Jedes Mitglied konnte
  *   sich damit als jedes andere ausgeben.
- * - Im Direktchat laufen Steuerpakete bewusst über den Hybridumschlag und
- *   nicht durch den Ratchet (Begründung in `useKonversation.baueSteuerversand`).
- *   Ein Hybridumschlag hat keinen Absenderkopf — `edit_message` mit fremdem
- *   `actor_id` schrieb deshalb die Nachricht der Gegenseite um.
+ * - Auch im Direktchat trägt ein Steuerpaket keinen Absenderkopf im
+ *   Umschlag. `edit_message` mit fremdem `actor_id` schrieb deshalb die
+ *   Nachricht der Gegenseite um.
  *
  * Beide Fälle sind dasselbe Loch, und es gehört an eine Stelle geschlossen.
  * Deshalb sitzt die Beglaubigung hier an der Nutzlast und nicht in einem

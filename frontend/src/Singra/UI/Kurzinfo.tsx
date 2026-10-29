@@ -1,4 +1,7 @@
-import type { ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+
+import { SCHICHT, useAnkerLage } from './Ankerlage'
 
 export interface KurzinfoProps {
   /** Der Name oder Hinweis, der an dem Element erscheint. */
@@ -19,6 +22,12 @@ export interface KurzinfoProps {
   lage?: 'unten' | 'oben' | 'rechts' | 'links'
   /** Lage und Abstand des Ganzen (etwa `ml-auto`); am Knopf darin wirkten sie nicht mehr. */
   aussen?: string
+  /**
+   * Rendert die Blase an `body` statt im nächsten Überlauf-Container. Nötig in
+   * Zeilen mit `overflow-hidden` (Wischgeste) und in Bannern, die sonst den
+   * unteren Rand abschneiden. Standard: aus.
+   */
+  portal?: boolean
 }
 
 const SEITE = {
@@ -51,20 +60,81 @@ const LAGE = {
  *
  * Sie prüft keine Fensterränder; dafür gibt es `seite` und `lage`.
  */
-export function Kurzinfo({ text, children, className = '', seite = 'mitte', lage = 'unten', aussen = '' }: KurzinfoProps) {
+export function Kurzinfo({
+  text,
+  children,
+  className = '',
+  seite = 'mitte',
+  lage = 'unten',
+  aussen = '',
+  portal = false,
+}: KurzinfoProps) {
   // Bringt `aussen` eine eigene Position mit (`absolute top-2 right-2`), gilt sie;
   // daneben ein `relative` gewönne im gebauten CSS und hielte die Hülle im Fluss.
   const position = /(^|\s)(absolute|fixed|sticky)(?=\s|$)/.test(aussen) ? '' : 'relative'
   const lageKlasse = LAGE[lage]
   const seiteKlasse = lage === 'rechts' || lage === 'links' ? '' : SEITE[seite]
+  const ankerRef = useRef<HTMLSpanElement>(null)
+  const blaseRef = useRef<HTMLSpanElement>(null)
+  const [portalOffen, setPortalOffen] = useState(false)
+  const portalLage = useAnkerLage(portal && portalOffen, ankerRef, blaseRef, {
+    seite: lage === 'oben' ? 'oben' : 'unten',
+    ausrichtung: seite === 'anfang' ? 'start' : 'ende',
+    abstand: 6,
+  })
+
+  const zeigePortal = portal && portalOffen
+  const blaseKlasse = `pointer-events-none w-max max-w-64 rounded-md border border-outline-variant bg-surface-container-highest px-2 py-1 text-label-sm font-medium text-on-surface shadow-lg ${className}`
+
   return (
-    <span className={`group/kurzinfo ${position} inline-flex ${aussen}`}>
-      {children}
+    <>
       <span
-        aria-hidden="true"
-        data-kurzinfo={text}
-        className={`pointer-events-none before:content-[attr(data-kurzinfo)] absolute z-50 ${lageKlasse} ${seiteKlasse} w-max max-w-64 rounded-md border border-outline-variant bg-surface-container-highest px-2 py-1 text-label-sm font-medium text-on-surface shadow-lg hidden [@media(hover:hover)]:group-hover/kurzinfo:block group-has-[:focus-visible]/kurzinfo:block ${className}`}
-      />
-    </span>
+        ref={ankerRef}
+        className={`group/kurzinfo ${position} inline-flex ${aussen}`}
+        onPointerEnter={(e) => {
+          if (portal && e.pointerType !== 'touch') setPortalOffen(true)
+        }}
+        onPointerLeave={() => {
+          if (portal) setPortalOffen(false)
+        }}
+        onFocus={(e) => {
+          if (!portal) return
+          try {
+            if (e.target.matches(':focus-visible')) setPortalOffen(true)
+          } catch {
+            setPortalOffen(true)
+          }
+        }}
+        onBlur={() => {
+          if (portal) setPortalOffen(false)
+        }}
+      >
+        {children}
+        {!portal && (
+          <span
+            aria-hidden="true"
+            data-kurzinfo={text}
+            className={`pointer-events-none before:content-[attr(data-kurzinfo)] absolute z-50 ${lageKlasse} ${seiteKlasse} ${blaseKlasse} hidden [@media(hover:hover)]:group-hover/kurzinfo:block group-has-[:focus-visible]/kurzinfo:block`}
+          />
+        )}
+      </span>
+      {zeigePortal &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <span
+            ref={blaseRef}
+            aria-hidden="true"
+            data-kurzinfo={text}
+            className={`fixed ${blaseKlasse}`}
+            style={{
+              ...(portalLage ?? { left: 0, top: 0, visibility: 'hidden' }),
+              zIndex: SCHICHT.popover,
+            }}
+          >
+            {text}
+          </span>,
+          document.body,
+        )}
+    </>
   )
 }

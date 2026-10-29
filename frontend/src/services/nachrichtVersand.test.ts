@@ -11,23 +11,35 @@ import type { Versandauftrag } from '@/hooks/useKonversation'
 
 vi.mock('@/api/social', () => ({
   ladeAnhangHoch: vi.fn(),
-  relayE2eeEnvelope: vi.fn(),
+}))
+
+vi.mock('@/services/messengerSocket', () => ({
+  messengerSocket: { sendChatMessage: vi.fn() },
 }))
 
 vi.mock('@/lib/offlineSync', () => ({
   enqueueMessageMutation: vi.fn(),
 }))
 
-import { ladeAnhangHoch, relayE2eeEnvelope } from '@/api/social'
+import { ladeAnhangHoch } from '@/api/social'
 import { enqueueMessageMutation } from '@/lib/offlineSync'
+import { messengerSocket } from '@/services/messengerSocket'
 import { chatMediaBlobCache } from './klartextSpeicher'
-import { baueNutzlast, ladeAnhaengeHoch, stelleZu, type Nutzlastangaben } from './nachrichtVersand'
+import {
+  baueNutzlast,
+  ChatSchluesselNichtGeteiltError,
+  ladeAnhaengeHoch,
+  NachrichtAbgewiesenError,
+  stelleZu,
+  type Nutzlastangaben,
+} from './nachrichtVersand'
+
+const sendChatMessage = vi.mocked(messengerSocket.sendChatMessage)
 
 const hochladen = vi.mocked(ladeAnhangHoch)
-const relais = vi.mocked(relayE2eeEnvelope)
 const einreihen = vi.mocked(enqueueMessageMutation)
 
-const BINDUNG = { blindMailboxId: 'mb-gespraech', absenderId: 7, groupId: 3 }
+const BINDUNG = { blindMailboxId: 'mb-gespraech', chatType: 'group' as const, chatId: 3, absenderId: 7 }
 
 let naechsterZeiger = 1
 function zeiger() {
@@ -150,7 +162,9 @@ describe('ladeAnhaengeHoch', () => {
       mimeType: 'image/jpeg',
       blindMailboxId: 'mb-gespraech',
       absenderId: 7,
-      groupId: 3,
+      chatType: 'group',
+      chatId: 3,
+      expiresAt: null,
     })
   })
 
@@ -238,83 +252,103 @@ describe('ladeAnhaengeHoch', () => {
 })
 
 describe('stelleZu', () => {
-  function auftrag(clientUuid: string, extra: Partial<Versandauftrag> = {}): Versandauftrag {
-    return { blind_mailbox_id: 'mb', ciphertext_envelope: `inhalt:${clientUuid}`, client_uuid: clientUuid, ...extra }
+  function auftrag(extra: Partial<Versandauftrag> = {}): Versandauftrag {
+    return {
+      blind_mailbox_id: 'direct:peer:5',
+      ciphertext_envelope: 'chiffrat',
+      client_uuid: 'u-1',
+      chat_type: 'direct',
+      chat_id: '5',
+      key_version: 1,
+      ...extra,
+    }
   }
-  const aufbau = (geraet: string) => auftrag(`u#i${geraet}`, { is_control: true, control_type: 'dr-init' })
-  const nachricht = (geraet: string) => auftrag(`u#${geraet}`)
-  const gesendet = () => relais.mock.calls.map(([a]) => a.client_uuid)
-  const eingereiht = () => einreihen.mock.calls.map(([a]) => a.client_uuid)
 
-  it('nennt die niedrigste Kennung der Nachricht, nicht die eines Steuerumschlags', async () => {
-    const ids: Record<string, number> = { 'u#iA': 1, 'u#A': 12, 'u#B': 10 }
-    relais.mockImplementation(async (a) => ({ id: ids[a.client_uuid as string] }) as never)
-    const ergebnis = await stelleZu([aufbau('A'), nachricht('A'), nachricht('B')])
-    expect(ergebnis).toEqual({ niedrigsteId: 10, verbindungsfehler: false })
+  beforeEach(() => {
+    sendChatMessage.mockReset()
+    sendChatMessage.mockResolvedValue({ id: 42 } as never)
+  })
+
+  it('schickt die Nachricht genau einmal und nennt die echte Serverkennung', async () => {
+    const ergebnis = await stelleZu([auftrag()])
+    expect(sendChatMessage).toHaveBeenCalledTimes(1)
+    expect(sendChatMessage).toHaveBeenCalledWith({
+      chat_type: 'direct',
+      chat_id: 5,
+      client_uuid: 'u-1',
+      key_version: 1,
+      encrypted_payload: 'chiffrat',
+    })
+    expect(ergebnis).toEqual({ niedrigsteId: 42, verbindungsfehler: false })
     expect(einreihen).not.toHaveBeenCalled()
   })
 
-  it('zählt eine Antwort ohne Kennung nicht mit', async () => {
-    relais.mockResolvedValue({} as never)
-    expect(await stelleZu([nachricht('A')])).toEqual({ niedrigsteId: 0, verbindungsfehler: false })
+  it('verlangt genau einen Versandauftrag', async () => {
+    await expect(stelleZu([auftrag(), auftrag({ client_uuid: 'u-2' })])).rejects.toThrow(
+      'genau einen Versandauftrag',
+    )
+    expect(sendChatMessage).not.toHaveBeenCalled()
   })
 
-  it('schickt die Nachricht nicht ohne ihren Sitzungsaufbau, sondern reiht beide ein', async () => {
-    // Ohne den Aufbau findet das Zielgerät keine Sitzung und läuft in den
-    // Sitzungsbruch. Beide kommen später in dieser Reihenfolge aus der Outbox.
-    relais.mockImplementation(async (a) => {
-      if (a.client_uuid === 'u#iA') throw new Error('offline')
-      return { id: 5 } as never
+  it('schickt nichts ohne Chat, Version und Kennung', async () => {
+    expect(await stelleZu([auftrag({ chat_id: undefined })])).toEqual({
+      niedrigsteId: 0,
+      verbindungsfehler: false,
     })
-    const ergebnis = await stelleZu([aufbau('A'), nachricht('A'), aufbau('B'), nachricht('B')])
-    expect(gesendet()).toEqual(['u#iA', 'u#iB', 'u#B'])
-    expect(eingereiht()).toEqual(['u#iA', 'u#A'])
-    expect(ergebnis).toEqual({ niedrigsteId: 5, verbindungsfehler: true })
+    expect(sendChatMessage).not.toHaveBeenCalled()
   })
 
-  it('hält die Nachricht auch zurück, wenn ihr Aufbau keine Gerätemarke trägt', async () => {
-    // Heute tragen Aufbau und Nachricht dieselbe Marke (`#i<geraet>` und
-    // `#<geraet>`), und die Geräteliste fängt den Fall schon ab. Die Paarung
-    // darf aber nicht an diesem Format hängen.
-    relais.mockImplementation(async (a) => {
-      if (a.client_uuid === 'aufbau') throw new Error('offline')
-      return { id: 5 } as never
-    })
-    await stelleZu([
-      auftrag('aufbau', { is_control: true, control_type: 'dr-init' }),
-      auftrag('nachricht'),
-      auftrag('danach'),
-    ])
-    expect(gesendet()).toEqual(['aufbau', 'danach'])
-    expect(eingereiht()).toEqual(['aufbau', 'nachricht'])
-  })
-
-  it('schickt einem Gerät nichts mehr, sobald ein Umschlag an es gescheitert ist', async () => {
-    relais.mockImplementation(async (a) => {
-      if (a.client_uuid === 'u#A') throw new Error('offline')
-      return { id: 5 } as never
-    })
-    await stelleZu([nachricht('A'), auftrag('v#A'), nachricht('B')])
-    expect(gesendet()).toEqual(['u#A', 'u#B'])
-    expect(eingereiht()).toEqual(['u#A', 'v#A'])
-  })
-
-  it('reiht alles in der Reihenfolge ein, wenn nichts durchgeht', async () => {
-    relais.mockRejectedValue(new Error('offline'))
-    const ergebnis = await stelleZu([aufbau('A'), nachricht('A'), aufbau('B'), nachricht('B')])
-    expect(eingereiht()).toEqual(['u#iA', 'u#A', 'u#iB', 'u#B'])
+  it('reiht bei einem Netzwerkfehler mit allen Angaben in die Outbox ein', async () => {
+    sendChatMessage.mockRejectedValue(new Error('offline'))
+    const ergebnis = await stelleZu([auftrag()])
     expect(ergebnis).toEqual({ niedrigsteId: 0, verbindungsfehler: true })
+    expect(einreihen).toHaveBeenCalledWith({
+      blind_mailbox_id: 'direct:peer:5',
+      chat_type: 'direct',
+      chat_id: '5',
+      key_version: 1,
+      encrypted_payload: 'chiffrat',
+      client_uuid: 'u-1',
+    })
   })
 
-  it('lässt einen Steuerumschlag nach einem gescheiterten Aufbau durch', async () => {
-    // Nur die Nachricht gehört zum Aufbau; ein Gruppenschlüssel an ein
-    // anderes Gerät hat damit nichts zu tun.
-    relais.mockImplementation(async (a) => {
-      if (a.client_uuid === 'u#iA') throw new Error('offline')
-      return { id: 5 } as never
+  it('reiht auch bei einem Serverfehler ein', async () => {
+    sendChatMessage.mockRejectedValue(Object.assign(new Error('kaputt'), { status: 503 }))
+    expect((await stelleZu([auftrag()])).verbindungsfehler).toBe(true)
+    expect(einreihen).toHaveBeenCalledTimes(1)
+  })
+
+  it('reiht ein Ratenlimit ein, statt es als Urteil zu behandeln', async () => {
+    sendChatMessage.mockRejectedValue(Object.assign(new Error('spaeter'), { status: 429 }))
+    expect(await stelleZu([auftrag()])).toEqual({
+      niedrigsteId: 0,
+      verbindungsfehler: true,
     })
-    await stelleZu([aufbau('A'), auftrag('g#1', { is_control: true, control_type: 'gruppenschluessel' })])
-    expect(gesendet()).toEqual(['u#iA', 'g#1'])
-    expect(eingereiht()).toEqual(['u#iA'])
+    expect(einreihen).toHaveBeenCalledTimes(1)
+  })
+
+  it('wirft bei einer endgueltigen Ablehnung und reiht nicht ein', async () => {
+    sendChatMessage.mockRejectedValue(Object.assign(new Error('abgelehnt'), { status: 400 }))
+    await expect(stelleZu([auftrag()])).rejects.toBeInstanceOf(NachrichtAbgewiesenError)
+    expect(einreihen).not.toHaveBeenCalled()
+  })
+
+  it('wirft bei fehlender Schluesselabdeckung einen eigenen Fehler', async () => {
+    sendChatMessage.mockRejectedValue(
+      Object.assign(new Error('kein schluessel'), {
+        status: 409,
+        code: 'key_version_not_shared',
+      }),
+    )
+    await expect(stelleZu([auftrag()])).rejects.toBeInstanceOf(
+      ChatSchluesselNichtGeteiltError,
+    )
+    expect(einreihen).not.toHaveBeenCalled()
+  })
+
+  it('behandelt ein anderes 409 als endgueltig', async () => {
+    sendChatMessage.mockRejectedValue(Object.assign(new Error('konflikt'), { status: 409 }))
+    await expect(stelleZu([auftrag()])).rejects.toBeInstanceOf(NachrichtAbgewiesenError)
+    expect(einreihen).not.toHaveBeenCalled()
   })
 })

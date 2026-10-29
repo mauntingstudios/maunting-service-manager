@@ -149,11 +149,11 @@ describe('Privacy page', () => {
    * ist praktisch eine stille Aenderung — deshalb haengt die Zusage hier an den
    * konkreten Werten und nicht an "irgendeiner" Version.
    */
-  it('weist die Fassung 3.42 vom 2026-10-15 aus (Maunting Search)', () => {
+  it('weist die Fassung 3.46 vom 2026-10-25 aus (ein Transportweg)', () => {
     const { container } = renderPrivacy();
 
     expect(
-      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.42`)),
+      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.46`)),
     ).toBeInTheDocument();
     expect(
       i18n.t('privacyPolicy.sections.browser.items.mauntingSearch'),
@@ -304,6 +304,21 @@ describe('Privacy page', () => {
     expect(i18n.t('privacyPolicy.sections.browser.items.erweiterungen')).toMatch(/kontrolliert der Browser\s+nicht/);
     expect(i18n.t('privacyPolicy.sections.browser.items.erweiterungen')).toMatch(/nicht in privaten Tabs und nicht, solange der Jugend- und Suchtschutz an ist/);
     expect(i18n.t('privacyPolicy.sections.browser.items.verbindungen')).toMatch(/Erweiterungen lädt er nur auf Ihren Wunsch von Google/);
+    // 3.43: die gerätebezogene Zustellung. Sie speichert eine Zustellkennung,
+    // Prüfsumme und Größe des Chiffretexts und einen Idempotenzrest ohne
+    // Inhalt; das geteilte Postfach bleibt daneben bestehen.
+    expect(screen.getByText(i18n.t('privacyPolicy.sections.messenger.items.deviceDelivery'))).toBeInTheDocument();
+    expect(i18n.t('privacyPolicy.sections.messenger.items.deviceDelivery')).toMatch(/Gespräch/);
+    expect(i18n.t('privacyPolicy.sections.messenger.items.deviceDelivery')).toMatch(/Schlüsselversion/);
+    // 3.45: Anhänge bleiben wie die Nachricht; nur eine ausdrückliche Frist
+    // lässt den Server sie löschen.
+    expect(i18n.t('privacyPolicy.sections.messenger.items.attachments')).toMatch(/Anhänge bleiben/);
+    expect(i18n.t('privacyPolicy.sections.messenger.items.attachments')).not.toMatch(/30 Tage/);
+    expect(i18n.t('privacyPolicy.sections.messenger.items.retention')).toMatch(/nur die Seite/);
+    expect(i18n.t('privacyPolicy.sections.messenger.items.retention')).toMatch(/wer eingeschaltet hat/);
+    expect(i18n.t('privacyPolicy.sections.messenger.items.attachments')).not.toMatch(/restlos/);
+    expect(i18n.t('privacyPolicy.sections.messenger.items.envelopes')).not.toMatch(/unwiderruflich bereinigt/);
+    expect(i18n.t('privacyPolicy.sections.messenger.items.deviceFanout')).not.toMatch(/und sonst nichts/);
 
     const stand = container.querySelector('time');
     expect(stand).not.toBeNull();
@@ -336,11 +351,11 @@ describe('Privacy page', () => {
    */
   it('sagt, was nach dem Ablehnen beim Koppeln weiterläuft und wie man ein Gerät loswird', () => {
     const de = i18n.t('privacyPolicy.sections.messenger.items.deviceHistory', { lng: 'de' })
-    expect(de).toMatch(/nur mit der Unterschrift des übergebenden Geräts/)
-    expect(de).toMatch(/bleibt das Gerät gekoppelt, aber ohne Freigabe/)
+    expect(de).toMatch(/Konto-Schlüsselbund/)
+    expect(de).toMatch(/nicht von Gerät zu Gerät/)
     const en = i18n.t('privacyPolicy.sections.messenger.items.deviceHistory', { lng: 'en' })
-    expect(en).toMatch(/only accepts with the signature of the handing-over device/)
-    expect(en).toMatch(/the device stays paired but unapproved/)
+    expect(en).toMatch(/account key vault/)
+    expect(en).toMatch(/no history is transferred/)
   });
 
   /**
@@ -351,13 +366,13 @@ describe('Privacy page', () => {
    */
   it('verspricht vom Entfernen nicht mehr, als es hält', () => {
     const de = i18n.t('privacyPolicy.sections.messenger.items.deviceHistory', { lng: 'de' })
-    expect(de).toMatch(/gilt ab der nächsten Anfrage nicht mehr/)
-    expect(de).toMatch(/beim Entfernen wird er nicht erneuert/)
-    expect(de).toMatch(/Gegen einen Betreiber, der ihn verändert/)
+    expect(de).toMatch(/verliert den Zugang/)
+    expect(de).toMatch(/weil der Schlüssel fort ist/)
+    expect(de).toMatch(/gegen einen Betreiber, der ihn ändert/)
     expect(de).not.toMatch(/15 Minuten/)
     const en = i18n.t('privacyPolicy.sections.messenger.items.deviceHistory', { lng: 'en' })
-    expect(en).toMatch(/stops working with its next request/)
-    expect(en).toMatch(/removing it does not replace that key/)
+    expect(en).toMatch(/loses access/)
+    expect(en).toMatch(/because the key is gone/)
     expect(en).toMatch(/an operator who changes it/)
     expect(en).not.toMatch(/15 minutes/)
     for (const lng of ['de', 'en']) {

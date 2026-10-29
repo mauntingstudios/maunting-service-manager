@@ -17,7 +17,6 @@ import { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import { useKonversation } from '@/hooks/useKonversation'
 import type { E2eeIdentity } from '@/services/e2eeIdentity'
 import { werteAugenblickeAus } from '@/services/funkenLesung'
-import { dmZiele } from '@/services/gruppenSchluessel'
 import { istOffen, siegelAktiv } from '@/services/lokaleVersiegelung'
 import { useFunkenStore } from '@/stores/funkenStore'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
@@ -34,10 +33,6 @@ function DirektWache({ partnerId, eigeneId, identitaetRef }: WacheProps) {
     ziel,
     eigeneId,
     identitaetRef,
-    // Ein Sitzungsbruch gehört in das Gespräch, in dem er auftritt; die Wache
-    // schweigt, wie die Erwähnungswache.
-    meldeSitzungsbruch: () => {},
-    meldeAufbauAbgelehnt: () => {},
   })
   const mid = konversation.blindMailboxId
   const liesRef = useRef(konversation.liesUmschlaege)
@@ -52,11 +47,7 @@ function DirektWache({ partnerId, eigeneId, identitaetRef }: WacheProps) {
     // Die Post kommt nicht unter `mid` an: seit dem Chatgeheimnis liegt ein
     // Direktchat in einer Mailbox aus dem Geheimnis, `mid` ist nur noch die
     // Gesprächskennung. Gehört wird auf alle, aus denen auch gelesen wird.
-    let kennungen = new Set([mid])
-    const frageKennungen = async () => {
-      const ziele = await dmZiele(eigeneId, partnerId, mid).catch(() => null)
-      if (lebt && ziele) kennungen = new Set([mid, ...ziele.lesen])
-    }
+    const kennungen = new Set([mid])
     const ungelesen = (zaehler: Record<string, number>) => {
       let summe = 0
       for (const k of kennungen) summe += zaehler[k] || 0
@@ -79,8 +70,11 @@ function DirektWache({ partnerId, eigeneId, identitaetRef }: WacheProps) {
         }
         versuche = 0
         const ereignisse = await werteAugenblickeAus(gelesen, { mid, ich: eigeneId, partner: partnerId })
+        // Diese Wache liest nur mit; der Stand gehört ihr allein (eigener
+        // `useKonversation`). Erst nach dem Auswerten übernehmen, sonst gingen
+        // Augenblicke verloren, falls `nimmAuf` wirft.
+        konversation.uebernimmLesestand(gelesen)
         if (lebt && ereignisse.length) await useFunkenStore.getState().nimmAuf(partnerId, ereignisse)
-        await frageKennungen()
       } finally {
         laeuft = false
       }
@@ -101,11 +95,8 @@ function DirektWache({ partnerId, eigeneId, identitaetRef }: WacheProps) {
 
     // Liegt beim Anhängen schon Ungelesenes da, kam es, während die Seite zu
     // war. Sonst nicht lesen: jede Wache fragte sonst beim Start ihre Mailbox ab.
-    void frageKennungen().then(() => {
-      if (!lebt) return
-      letzterStand = ungelesen(useMessengerNotificationStore.getState().unreadCounts)
-      if (letzterStand > 0) void pruefe()
-    })
+    letzterStand = ungelesen(useMessengerNotificationStore.getState().unreadCounts)
+    if (letzterStand > 0) void pruefe()
 
     return () => {
       lebt = false

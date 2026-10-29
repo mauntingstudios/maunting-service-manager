@@ -8,7 +8,7 @@ import type { FileAttachment, ImageAttachment } from '@/components/social/ChatMe
 export function StagedImageBar({ bild, onEntfernen }: { bild: ImageAttachment; onEntfernen: () => void }) {
   const { t } = useTranslation()
   return (
-    <div className="px-4 py-2 border-t border-outline-variant/20 bg-surface-container flex items-center gap-3">
+    <div className="relative px-4 py-2 border-t border-outline-variant/20 bg-surface-container flex items-center gap-3">
       <div className="relative">
         <img
           src={bild.dataUrl}
@@ -35,7 +35,7 @@ export function StagedImageBar({ bild, onEntfernen }: { bild: ImageAttachment; o
 export function StagedFileBar({ datei, onEntfernen }: { datei: FileAttachment; onEntfernen: () => void }) {
   const { t } = useTranslation()
   return (
-    <div className="px-4 py-2 border-t border-outline-variant/20 bg-surface-container flex items-center justify-between gap-3">
+    <div className="relative px-4 py-2 border-t border-outline-variant/20 bg-surface-container flex items-center justify-between gap-3">
       <div className="flex items-center gap-2 min-w-0">
         <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
           <FileText className="w-4 h-4" />
@@ -61,7 +61,7 @@ export function StagedFileBar({ datei, onEntfernen }: { datei: FileAttachment; o
 export function EditingBanner({ text, onAbbrechen }: { text: string; onAbbrechen: () => void }) {
   const { t } = useTranslation()
   return (
-    <div className="px-4 py-2 border-t border-outline-variant/20 bg-primary/10 flex items-center justify-between gap-3">
+    <div className="relative px-4 py-2 border-t border-outline-variant/20 bg-primary/10 flex items-center justify-between gap-3">
       <div className="flex items-center gap-2 min-w-0">
         <div className="p-1.5 rounded-lg bg-primary/20 text-primary shrink-0">
           <Pencil className="w-3.5 h-3.5" />

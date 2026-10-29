@@ -11,7 +11,8 @@
  * geblieben; die Namen im Inneren sind die der Seite.
  */
 
-import { ladeAnhangHoch, relayE2eeEnvelope } from '@/api/social'
+import { ladeAnhangHoch } from '@/api/social'
+import { messengerSocket } from '@/services/messengerSocket'
 import type {
   AntwortBezug,
   CalendarAttachment,
@@ -30,6 +31,29 @@ import type { Versandauftrag } from '@/hooks/useKonversation'
 import type { AugenblickMarke, RettungsMarke } from './funkenService'
 import { enqueueMessageMutation } from '@/lib/offlineSync'
 import { chatMediaBlobCache } from './klartextSpeicher'
+import { speichereMedium } from './messengerLocalStore'
+/**
+ * Legt den Anhang zusätzlich dauerhaft ab.
+ *
+ * Der Arbeitsspeicher allein reicht nicht: bis 10/2026 lag ein gesendetes Bild
+ * nur im RAM und war nach dem Neuladen weg, obwohl der Server es noch 30 Tage
+ * hält. Der lokale Bestand ist die Zusage, und der Arbeitsspeicher ist nur die
+ * Optimierung darüber.
+ *
+ * Scheitert das Ablegen, geht die Nachricht trotzdem raus: der Anhang liegt
+ * beim Server, und der Empfänger holt ihn sich von dort.
+ */
+async function sichereLokal(
+  mediaId: string,
+  klartext: string,
+  name?: string,
+): Promise<void> {
+  try {
+    await speichereMedium(mediaId, klartext, name ?? null)
+  } catch {
+    // Kein Grund, das Senden abzubrechen.
+  }
+}
 
 /** Macht aus einer Aufnahme die Zeichenkette, die `medienKrypto` verschlüsselt. */
 function blobAlsDataUrl(blob: Blob): Promise<string> {
@@ -52,8 +76,11 @@ export interface RoheAnhaenge {
 /** Woran die Anhänge gebunden werden: Gespräch und Absender. */
 export interface AnhangBindung {
   blindMailboxId: string
+  chatType: 'direct' | 'group'
+  chatId: number
   absenderId: number
-  groupId?: number | null
+  /** Die Frist der Nachricht. Ohne sie bleibt der Block dauerhaft. */
+  expiresAt?: string | null
 }
 
 /** Was nach dem Hochladen in die Nutzlast geht. */
@@ -76,8 +103,10 @@ export async function ladeAnhaengeHoch(
 ): Promise<HochgeladeneAnhaenge> {
   const {
     blindMailboxId: targetBlindMailboxId,
+    chatType,
+    chatId,
     absenderId: currentUserId,
-    groupId: currentGroupId,
+    expiresAt,
   } = bindung
 
   let finalImg: ImageAttachment | undefined = undefined
@@ -99,8 +128,10 @@ export async function ladeAnhaengeHoch(
       dateiname,
       mimeType,
       blindMailboxId: targetBlindMailboxId,
+      chatType,
+      chatId,
       absenderId: currentUserId,
-      groupId: currentGroupId,
+      expiresAt: expiresAt ?? null,
     })
 
   if (img) {
@@ -116,6 +147,7 @@ export async function ladeAnhaengeHoch(
         const mimeType = img.dataUrl.split(';')[0]?.replace('data:', '') || 'image/png'
         const zeiger = await anhangHochladen(img.dataUrl, img.name || 'bild.png', mimeType)
         chatMediaBlobCache.set(zeiger.mediaId, img.dataUrl)
+        await sichereLokal(zeiger.mediaId, img.dataUrl, img.name)
         finalImg = { ...zeiger, name: img.name }
       } catch {
         finalImg = { name: img.name }
@@ -141,6 +173,7 @@ export async function ladeAnhaengeHoch(
           file.mimeType || 'application/octet-stream'
         )
         chatMediaBlobCache.set(zeiger.mediaId, file.dataUrl)
+        await sichereLokal(zeiger.mediaId, file.dataUrl, file.name)
         finalFile = {
           ...zeiger,
           name: file.name,
@@ -163,6 +196,7 @@ export async function ladeAnhaengeHoch(
       audio.mimeType || 'audio/webm'
     )
     chatMediaBlobCache.set(zeiger.mediaId, audio.dataUrl)
+    await sichereLokal(zeiger.mediaId, audio.dataUrl, 'sprachnachricht.webm')
     finalAudio = {
       ...zeiger,
       durationSeconds: audio.durationSeconds,
@@ -174,6 +208,7 @@ export async function ladeAnhaengeHoch(
     const dataUrl = await blobAlsDataUrl(videoNote.blob)
     const zeiger = await anhangHochladen(dataUrl, 'videonotiz.webm', videoNote.mimeType)
     chatMediaBlobCache.set(zeiger.mediaId, dataUrl)
+    await sichereLokal(zeiger.mediaId, dataUrl, 'videonotiz.webm')
     finalVideoNote = {
       ...zeiger,
       durationSeconds: videoNote.durationSeconds,
@@ -264,57 +299,92 @@ export function baueNutzlast(angaben: Nutzlastangaben): Record<string, unknown> 
   return payloadObj
 }
 
+/** Der HTTP-Status eines Fehlers, sofern er einen trägt. */
+function statusVon(fehler: unknown): number | null {
+  const status = (fehler as { status?: unknown } | null)?.status
+  return typeof status === 'number' ? status : null
+}
+
+function codeVon(fehler: unknown): string | null {
+  const code = (fehler as { code?: unknown } | null)?.code
+  return typeof code === 'string' ? code : null
+}
+
+/** Der Server hat die Nachricht endgültig abgelehnt; Warten hilft nicht. */
+export class NachrichtAbgewiesenError extends Error {
+  readonly status: number
+  readonly code: string | null
+
+  constructor(status: number, code: string | null = null) {
+    super('Die Nachricht wurde abgelehnt.')
+    this.name = 'NachrichtAbgewiesenError'
+    this.status = status
+    this.code = code
+  }
+}
+
+/** Die Schlüsselversion deckt nicht alle aktuellen Mitglieder ab. */
+export class ChatSchluesselNichtGeteiltError extends Error {
+  readonly status = 409
+  readonly code = 'key_version_not_shared'
+
+  constructor() {
+    super('Die Schlüsselversion fehlt mindestens einem Mitglied.')
+    this.name = 'ChatSchluesselNichtGeteiltError'
+  }
+}
+
+const TRANSIENT = new Set([0, 408, 425, 429])
+
 /**
- * Stellt die Umschläge einer Nachricht zu, oder reiht sie für später ein.
+ * Stellt die eine verschluesselte Nachricht zu, oder reiht sie fuer spaeter ein.
+ *
+ * Es gibt keine Umschlaege je Geraet und keine blinde Mailbox mehr: eine
+ * Nachricht, ein Chiffrat, ein Server-Insert.
  */
 export async function stelleZu(
   auftraege: Versandauftrag[],
 ): Promise<{ niedrigsteId: number; verbindungsfehler: boolean }> {
-  /**
-   * Die niedrigste Umschlagkennung der Auffächerung gilt als Kennung dieser
-   * Nachricht. Quittungen der Gegenstelle nennen die Kennung der Kopie, die
-   * *sie* gesehen hat — also eine aus derselben Auffächerung und damit nie
-   * kleinere. Der Vergleich `quittiert >= meine` trägt deshalb weiter.
-   */
-  let niedrigsteId = 0
-  let verbindungsfehler = false
-  const gescheiterteGeraete = new Set<string>()
-  let ueberspringeNaechsteNachricht = false
-
-  for (const auftrag of auftraege) {
-    // H-6: Paarbildung im Sendepfad. Scheitert ein Auftrag (z. B. dr-init),
-    // darf die zugehörige Ratchet-Nachricht desselben Zielgeräts nicht gesendet
-    // werden, sondern muss ebenfalls eingereiht werden, um Sitzungsbrüche zu verhindern.
-    const raute = auftrag.client_uuid ? auftrag.client_uuid.indexOf('#') : -1
-    const rawSuffix = raute !== -1 ? auftrag.client_uuid.slice(raute + 1) : ''
-    const geraetKey = rawSuffix.startsWith('i') ? rawSuffix.slice(1) : rawSuffix
-
-    const mussUeberspringen =
-      (ueberspringeNaechsteNachricht && !auftrag.is_control) ||
-      Boolean(geraetKey && gescheiterteGeraete.has(geraetKey))
-
-    if (mussUeberspringen) {
-      enqueueMessageMutation(auftrag)
-      ueberspringeNaechsteNachricht = false
-      continue
-    }
-
-    try {
-      const r = await relayE2eeEnvelope(auftrag)
-      if (!auftrag.is_control && r && typeof r.id === 'number') {
-        if (niedrigsteId === 0 || r.id < niedrigsteId) niedrigsteId = r.id
-      }
-    } catch {
-      if (geraetKey) {
-        gescheiterteGeraete.add(geraetKey)
-      }
-      if (auftrag.is_control && auftrag.control_type === 'dr-init') {
-        ueberspringeNaechsteNachricht = true
-      }
-      enqueueMessageMutation(auftrag)
-      verbindungsfehler = true
-    }
+  if (auftraege.length > 1) {
+    throw new Error('Der Einheitstransport erwartet genau einen Versandauftrag.')
   }
-
-  return { niedrigsteId, verbindungsfehler }
+  const erster = auftraege[0]
+  if (!erster || !erster.chat_type || !erster.chat_id || !erster.key_version) {
+    return { niedrigsteId: 0, verbindungsfehler: false }
+  }
+  try {
+    const nachricht = await messengerSocket.sendChatMessage({
+      chat_type: erster.chat_type,
+      chat_id: Number(erster.chat_id),
+      client_uuid: erster.client_uuid,
+      key_version: erster.key_version,
+      encrypted_payload: erster.ciphertext_envelope,
+    })
+    return {
+      niedrigsteId: Number(nachricht.id || 0),
+      verbindungsfehler: false,
+    }
+  } catch (fehler) {
+    const status = statusVon(fehler)
+    const code = codeVon(fehler)
+    if (code === 'key_version_not_shared') {
+      throw new ChatSchluesselNichtGeteiltError()
+    }
+    if (
+      status === null ||
+      TRANSIENT.has(status) ||
+      (status >= 500 && status < 600)
+    ) {
+      enqueueMessageMutation({
+        blind_mailbox_id: erster.blind_mailbox_id,
+        chat_type: erster.chat_type,
+        chat_id: erster.chat_id,
+        key_version: erster.key_version,
+        encrypted_payload: erster.ciphertext_envelope,
+        client_uuid: erster.client_uuid,
+      })
+      return { niedrigsteId: 0, verbindungsfehler: true }
+    }
+    throw new NachrichtAbgewiesenError(status, code)
+  }
 }

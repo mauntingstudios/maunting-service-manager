@@ -3,11 +3,12 @@ import {
   Ban,
   Bell,
   BellOff,
+  Camera,
   Image as ImageIcon,
-  ImagePlus,
   LogOut,
+  Phone,
   Share2,
-  Shield,
+  Settings2,
   ShieldCheck,
   Timer,
   Trash2,
@@ -27,7 +28,6 @@ export interface MenueGruppe {
   hatEinladung: boolean
   istEigentuemer: boolean
   istAdmin: boolean
-  logoLaedt: boolean
 }
 
 interface ChatActionsMenuProps {
@@ -45,13 +45,21 @@ interface ChatActionsMenuProps {
   onSicherheitsnummer: () => void
   onVerfall: () => void
   onVideoanruf: () => void
+  /** Fehlt außerhalb einer Freundschaft; dann gibt es keinen Sprachanruf. */
+  onSprachanruf?: () => void
+  /** Nur in Gruppen; ohne Recht erscheint der Eintrag gesperrt. */
+  onGruppenanruf?: { erlaubt: boolean; onStarten: () => void }
+  /** Kamera für einen Augenblick; nur bei Freunden. */
+  onAugenblick?: () => void
   onHintergrund: () => void
   onEinladung: () => void
-  onLogo: () => void
-  onRollen: () => void
+  /** Öffnet die Gruppen-Einstellungen: Allgemein, Mitglieder, Rollen, Hintergrund. */
+  onEinstellungen: () => void
   onLoeschen: () => void
   onVerlassen: () => void
   onBlockieren: () => void
+  /** Nimmt den Direktchat aus der Liste, samt örtlichem Verlauf. */
+  onChatEntfernen: () => void
 }
 
 /**
@@ -115,9 +123,38 @@ export function ChatActionsMenu({
           onClick={tu(aktion.onVideoanruf)}
         />
       )}
+      {/* Anruf und Augenblick standen bis 27.10.2026 als eigene Knöpfe im Kopf.
+          Dort nahmen sie dem Namen den Platz; hier bleiben sie erreichbar. */}
+      {aktion.onSprachanruf && (
+        <Blatteintrag
+          icon={<Phone className="w-4 h-4" />}
+          label={t('messenger.startVoiceCall')}
+          onClick={tu(aktion.onSprachanruf)}
+        />
+      )}
+      {aktion.onGruppenanruf && (
+        <Blatteintrag
+          icon={<Phone className="w-4 h-4" />}
+          label={t('messenger.startGroupCall')}
+          hinweis={aktion.onGruppenanruf.erlaubt ? undefined : t('messenger.noStartCallRight')}
+          disabled={!aktion.onGruppenanruf.erlaubt}
+          onClick={tu(aktion.onGruppenanruf.onStarten)}
+        />
+      )}
+      {aktion.onAugenblick && (
+        <Blatteintrag
+          icon={<Camera className="w-4 h-4" />}
+          label={t('messenger.moment.take')}
+          onClick={tu(aktion.onAugenblick)}
+        />
+      )}
       <Blatteintrag
         icon={<ImageIcon className="w-4 h-4" />}
-        label={t('social.wallpaper.title')}
+        label={
+          gruppe
+            ? t('social.groupRoles.backgroundHeading')
+            : t('social.wallpaper.title')
+        }
         onClick={tu(aktion.onHintergrund)}
       />
 
@@ -130,21 +167,14 @@ export function ChatActionsMenu({
               onClick={tu(aktion.onEinladung)}
             />
           )}
-          {(gruppe.istEigentuemer || gruppe.istAdmin) && (
-            <>
-              <Blatteintrag
-                icon={<ImagePlus className="w-4 h-4" />}
-                label={t('messenger.changeGroupLogo')}
-                disabled={gruppe.logoLaedt}
-                onClick={tu(aktion.onLogo)}
-              />
-              <Blatteintrag
-                icon={<Shield className="w-4 h-4" />}
-                label={t('messenger.manageGroupRoles')}
-                onClick={tu(aktion.onRollen)}
-              />
-            </>
-          )}
+          {/* Für alle Mitglieder: was sie nicht ändern dürfen, ist im Dialog
+              deaktiviert. Wer nichts darf, sieht trotzdem Mitglieder, Rollen
+              und den geteilten Hintergrund. */}
+          <Blatteintrag
+            icon={<Settings2 className="w-4 h-4" />}
+            label={t('messenger.groupSettings')}
+            onClick={tu(aktion.onEinstellungen)}
+          />
           {gruppe.istEigentuemer ? (
             <Blatteintrag
               icon={<Trash2 className="w-4 h-4" />}
@@ -161,6 +191,15 @@ export function ChatActionsMenu({
             />
           )}
         </>
+      )}
+
+      {kontakt && (
+        <Blatteintrag
+          icon={<Trash2 className="w-4 h-4" />}
+          label={t('messenger.removeChatFromList')}
+          gefahr
+          onClick={tu(aktion.onChatEntfernen)}
+        />
       )}
 
       {kontakt && (

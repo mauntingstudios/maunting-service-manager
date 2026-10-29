@@ -26,8 +26,9 @@ export interface ProfileDropdownProps {
   triggerAriaLabel?: string
   avatarSize?: 'xs' | 'sm' | 'md'
   triggerVariant?: 'avatar' | 'full'
-  status?: 'online' | 'away' | 'invisible'
-  onStatusChange?: (status: 'online' | 'away' | 'invisible') => void
+  /** Die Wahl: automatisch, online, abwesend oder unsichtbar. */
+  status?: 'auto' | 'online' | 'away' | 'invisible'
+  onStatusChange?: (status: 'auto' | 'online' | 'away' | 'invisible') => void
 }
 
 /**
@@ -202,7 +203,23 @@ export function ProfileDropdown({
                     {statusText}
                   </span>
                 </div>
-                <div className="grid grid-cols-3 gap-1 bg-surface-container-high p-1 rounded-xl border border-outline-variant/30">
+                <div className="grid grid-cols-2 gap-1 bg-surface-container-high p-1 rounded-xl border border-outline-variant/30">
+                  {/* Automatisch: abwesend nach fünf Minuten Ruhe, zurück bei
+                      Eingabe. Die anderen drei bleiben stehen, bis der Mensch
+                      sie ändert. */}
+                  <button
+                    type="button"
+                    onClick={() => onStatusChange('auto')}
+                    aria-pressed={status === 'auto'}
+                    className={`py-1 px-1.5 rounded-lg text-label-sm font-semibold flex items-center justify-center gap-1 transition-all ${
+                      status === 'auto'
+                        ? 'bg-primary/15 text-primary border border-primary/40 shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                    {t('social.status.auto')}
+                  </button>
                   <button
                     type="button"
                     onClick={() => onStatusChange('online')}

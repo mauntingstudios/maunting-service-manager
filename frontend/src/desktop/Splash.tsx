@@ -1,6 +1,6 @@
 /**
- * Boot-Sequenz wie beim Start eines Spiels: erst wovon es geschützt wird
- * (DIS), dann von wem es ist (MauntingStudios), dann das Produkt (MSS).
+ * Boot-Sequenz wie beim Start eines Spiels: erst von wem es ist
+ * (MauntingStudios), dann das Produkt (MSS).
  *
  * Jede Stufe ist ein Bild mit Ein-/Ausblendung; ein Klick oder eine Taste
  * überspringt die ganze Sequenz. Die App lädt währenddessen im Hintergrund
@@ -14,7 +14,6 @@
  */
 import { useEffect, useRef, useState } from 'react'
 
-import disLogo from './assets/dis-logo.png'
 import firmenLogo from './assets/firmen-logo.png'
 import msmLogo from './assets/msm-logo.png'
 
@@ -25,7 +24,6 @@ interface Stufe {
 }
 
 const STUFEN: Stufe[] = [
-  { bild: disLogo, alt: 'DIS', untertitel: 'Geschützt durch DIS' },
   { bild: firmenLogo, alt: 'MauntingStudios', untertitel: 'Ein Produkt von MauntingStudios' },
   { bild: msmLogo, alt: 'Maunting Server Manager', untertitel: 'Maunting Smart System' },
 ]

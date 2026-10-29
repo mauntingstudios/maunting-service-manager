@@ -8,6 +8,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
 import type { ChatGroupItem } from '@/api/social'
 import {
   anheftung,
@@ -31,6 +32,8 @@ function gruppe(marken: Record<number, boolean>): Pick<ChatGroupItem, 'members'>
 
 beforeEach(() => {
   localStorage.clear()
+  localStorage.setItem('msm_offline_konto', '1')
+  setzeAngemeldetesKonto(1)
 })
 
 describe('Anheftung übernehmen', () => {

@@ -104,6 +104,10 @@ pub fn standardbrowser(_: &AppHandle) -> Result<bool, String> {
 /// der Knopf „Standardbrowser werden“. Ohne Anmeldung listet Windows den
 /// Browser nicht.
 #[cfg(windows)]
+pub fn alte_nsis_reste_bereinigen() {
+    windows_standard::alte_nsis_reste_bereinigen();
+}
+
 pub fn standardbrowser_registrieren() -> Result<(), String> {
     // Ein Debug-Bau fässt die installierte App nicht an (AGENTS.md, Punkt 67):
     // er liefe sonst als Standardbrowser und jede besuchte Adresse öffnete

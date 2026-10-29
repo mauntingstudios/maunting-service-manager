@@ -69,6 +69,10 @@ def test_a_missing_key_is_reported_honestly_not_as_no_results(
     """Eine leere Trefferliste waere eine falsche Aussage ueber das Web."""
     _allow_search(db, regular_user)
     monkeypatch.setattr(ai_web_search_service, "api_key", lambda: None)
+    # Ohne weitere Quelle bleibt nur der fehlende Brave-Schluessel. Sonst
+    # traegt eine SearXNG-Seitenwagen-Instanz oder Google CSE die Suche.
+    monkeypatch.setattr(ai_web_search_service, "searxng_url", lambda: None)
+    monkeypatch.setattr(ai_web_search_service, "google_cse_credentials", lambda: None)
 
     result = ai_action_service.execute_read_tool(
         db, user=regular_user, tool_name="web_search",
@@ -194,6 +198,10 @@ def test_session_scoped_cache_reuses_only_the_same_voice_session(
     ai_web_search_service.shutdown_http_client()
     monkeypatch.setattr(ai_web_search_service, "api_key", lambda: "test-schluessel")
     monkeypatch.setattr(ai_web_search_service, "_http_client", lambda: FakeClient())
+    # Nur Brave: eine Seitenwagen-SearXNG oder Google CSE wuerde je Suche
+    # einen zweiten Aufruf ausloesen und die Zaehlung verwischen.
+    monkeypatch.setattr(ai_web_search_service, "searxng_url", lambda: None)
+    monkeypatch.setattr(ai_web_search_service, "google_cse_credentials", lambda: None)
 
     assert ai_web_search_service.search("MSM update", cache_scope="voice:1:a") == []
     assert ai_web_search_service.search("MSM update", cache_scope="voice:1:a") == []
@@ -445,6 +453,12 @@ def test_the_server_list_no_longer_carries_a_search_verdict(
 
 def test_searxng_defaults_to_local_sidecar_when_running(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ai_web_search_service, "_panel_searxng_url", lambda: None)
+    # Die Umgebung des Testlaufs darf die Vorgabe nicht ueberschreiben.
+    monkeypatch.delenv("MSM_SEARXNG_URL", raising=False)
+    monkeypatch.delenv("SEARXNG_URL", raising=False)
+    import config
+
+    monkeypatch.setattr(config.settings, "searxng_url", "")
     monkeypatch.setattr(ai_web_search_service, "is_sidecar_running", lambda *_: True)
 
     assert ai_web_search_service.default_searxng_url() == "http://127.0.0.1:8888"

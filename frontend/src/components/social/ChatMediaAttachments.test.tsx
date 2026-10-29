@@ -7,7 +7,7 @@ import {
   triggerDownload,
 } from './ChatMediaAttachments'
 import { chatMediaBlobCache } from '@/services/klartextSpeicher'
-import * as socialApi from '@/api/social'
+import { ladeUndSichereMedium } from '@/services/medienSicherung'
 
 // Die Sprache festlegen: die Behauptungen unten prüfen deutsche Texte, und
 // ohne diese Zeile entscheidet navigator.language der Testumgebung.
@@ -15,9 +15,8 @@ beforeAll(async () => {
   await i18n.changeLanguage('de')
 })
 
-vi.mock('@/api/social', () => ({
-  getChatMediaSignedUrl: vi.fn(),
-  ladeAnhangHerunter: vi.fn(),
+vi.mock('@/services/medienSicherung', () => ({
+  ladeUndSichereMedium: vi.fn(),
 }))
 
 /** Absender und Mailbox: die Bindung, gegen die DIS den Anhang geprueft hat. */
@@ -88,7 +87,7 @@ describe('ChatMediaImage Component', () => {
 
     fireEvent.click(img)
     expect(onViewImage).toHaveBeenCalledWith(safeDataUrl)
-    expect(socialApi.getChatMediaSignedUrl).not.toHaveBeenCalled()
+    expect(ladeUndSichereMedium).not.toHaveBeenCalled()
   })
 
   it('renders instantly from in-memory cache if mediaId was previously cached', () => {
@@ -107,14 +106,17 @@ describe('ChatMediaImage Component', () => {
     const img = screen.getByAltText('cached.jpg') as HTMLImageElement
     expect(img).toBeInTheDocument()
     expect(img.src).toBe(cachedUrl)
-    expect(socialApi.getChatMediaSignedUrl).not.toHaveBeenCalled()
+    expect(ladeUndSichereMedium).not.toHaveBeenCalled()
   })
 
   it('downloads and decrypts remote attachment if only mediaId is present', async () => {
     const onViewImage = vi.fn()
     const decryptedData = 'data:image/png;base64,decrypted-content'
 
-    vi.mocked(socialApi.ladeAnhangHerunter).mockResolvedValue(decryptedData)
+    vi.mocked(ladeUndSichereMedium).mockResolvedValue({
+      url: decryptedData,
+      grund: 'gesichert',
+    })
 
     render(
       <ChatMediaImage
@@ -127,7 +129,10 @@ describe('ChatMediaImage Component', () => {
     expect(screen.getByText(i18n.t('social.attachment.imageLoading'))).toBeInTheDocument()
 
     await waitFor(() => {
-      expect(socialApi.ladeAnhangHerunter).toHaveBeenCalledWith(zeiger('media-remote-1'), BINDUNG)
+      expect(ladeUndSichereMedium).toHaveBeenCalledWith(
+        zeiger('media-remote-1'),
+        BINDUNG,
+      )
     })
 
     await waitFor(() => {
@@ -136,13 +141,13 @@ describe('ChatMediaImage Component', () => {
       expect(img.src).toBe(decryptedData)
     })
 
-    // Blob cache should be populated
-    expect(chatMediaBlobCache.get('media-remote-1')).toBe(decryptedData)
+    // Der Cache wird vom echten `ladeUndSichereMedium` gefüllt; hier ist die
+    // Anzeige der Gegenstand, nicht die Ablage.
   })
 
   it('displays error state on failure and retries on click', async () => {
     const onViewImage = vi.fn()
-    vi.mocked(socialApi.ladeAnhangHerunter).mockRejectedValueOnce(new Error('Network error'))
+    vi.mocked(ladeUndSichereMedium).mockResolvedValueOnce({ url: null, grund: 'offen' })
 
     render(
       <ChatMediaImage
@@ -160,7 +165,10 @@ describe('ChatMediaImage Component', () => {
     expect(retryBtn).toBeInTheDocument()
 
     // Setup success for retry
-    vi.mocked(socialApi.ladeAnhangHerunter).mockResolvedValueOnce('data:image/png;base64,retry-success')
+    vi.mocked(ladeUndSichereMedium).mockResolvedValueOnce({
+      url: 'data:image/png;base64,retry-success',
+      grund: 'gesichert',
+    })
 
     fireEvent.click(retryBtn)
 
@@ -176,7 +184,10 @@ describe('ChatMediaImage Component', () => {
     // zweite Benutzerkennung, aus der sich der Schluessel ableitete. Heute fehlt
     // der Schluessel selbst, und ohne ihn wird gar nicht erst geladen.
     const onViewImage = vi.fn()
-    vi.mocked(socialApi.ladeAnhangHerunter).mockResolvedValue('data:image/png;base64,context-success')
+    vi.mocked(ladeUndSichereMedium).mockResolvedValue({
+      url: 'data:image/png;base64,context-success',
+      grund: 'gesichert',
+    })
 
     const { rerender } = render(
       <ChatMediaImage
@@ -189,7 +200,7 @@ describe('ChatMediaImage Component', () => {
     await waitFor(() => {
       expect(screen.getByText(i18n.t('social.attachment.imageFailed'))).toBeInTheDocument()
     })
-    expect(socialApi.ladeAnhangHerunter).not.toHaveBeenCalled()
+    expect(ladeUndSichereMedium).not.toHaveBeenCalled()
 
     rerender(
       <ChatMediaImage
@@ -200,9 +211,9 @@ describe('ChatMediaImage Component', () => {
     )
 
     await waitFor(() => {
-      expect(socialApi.ladeAnhangHerunter).toHaveBeenCalledWith(
+      expect(ladeUndSichereMedium).toHaveBeenCalledWith(
         zeiger('media-context-update'),
-        BINDUNG
+        BINDUNG,
       )
     })
   })
@@ -263,7 +274,10 @@ describe('ChatMediaFile Component', () => {
 
   it('downloads and decrypts file when only mediaId is present', async () => {
     const decryptedData = 'data:application/pdf;base64,JVBERi0xLjQK'
-    vi.mocked(socialApi.ladeAnhangHerunter).mockResolvedValue(decryptedData)
+    vi.mocked(ladeUndSichereMedium).mockResolvedValue({
+      url: decryptedData,
+      grund: 'gesichert',
+    })
 
     render(
       <ChatMediaFile
@@ -283,7 +297,11 @@ describe('ChatMediaFile Component', () => {
     fireEvent.click(card!)
 
     await waitFor(() => {
-      expect(socialApi.ladeAnhangHerunter).toHaveBeenCalledWith(zeiger('file-media-999'), BINDUNG)
+      expect(ladeUndSichereMedium).toHaveBeenCalledWith(
+        zeiger('file-media-999'),
+        BINDUNG,
+        'contract.pdf',
+      )
     })
   })
 
@@ -303,7 +321,7 @@ describe('ChatMediaFile Component', () => {
     fireEvent.click(screen.getByText('alt.pdf').closest('a')!)
 
     await waitFor(() => {
-      expect(socialApi.ladeAnhangHerunter).not.toHaveBeenCalled()
+      expect(ladeUndSichereMedium).not.toHaveBeenCalled()
     })
   })
 })

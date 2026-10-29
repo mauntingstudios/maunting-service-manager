@@ -6,11 +6,11 @@ import i18n from '@/i18n'
 import { api } from '@/api/client'
 import { DevicesTab } from './DevicesTab'
 
-// Die Kopplungskarte haengt seit 09/2026 selbst an `ai.chat.use`, nicht mehr
-// der ganze Tab: die Liste der Geraete mit Nachrichtenzugriff gehoert zum
-// Messenger und muss auch ohne KI-Berechtigung erreichbar sein.
+// Kopplung ist eine Kontofunktion: auch ein frisches Konto ohne globale
+// Rechte (Rolle „user“, `ai.chat.use` fehlt) muss ein Geraet anbinden koennen.
+// Der Ersatz liefert deshalb bewusst `false`; die Karte muss trotzdem stehen.
 vi.mock('@/hooks/useHasPermission', () => ({
-  useHasPermission: () => true,
+  useHasPermission: () => false,
 }))
 
 vi.mock('@/services/e2eeGeraet', () => ({
@@ -19,7 +19,7 @@ vi.mock('@/services/e2eeGeraet', () => ({
     paar: { publicKeyJwk: 'pub', privateKeyJwk: 'priv' },
   })),
   entferneGeraet: vi.fn(async () => undefined),
-  gebeGeraetFrei: vi.fn(async () => undefined),
+  gebeGeraetFrei: vi.fn(async () => ({ schluesselOffen: false })),
 }))
 
 vi.mock('@/api/social', () => ({

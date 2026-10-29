@@ -31,11 +31,11 @@ function menue(teil: Partial<Parameters<typeof ChatActionsMenu>[0]> = {}) {
     onVideoanruf: vi.fn(),
     onHintergrund: vi.fn(),
     onEinladung: vi.fn(),
-    onLogo: vi.fn(),
-    onRollen: vi.fn(),
+    onEinstellungen: vi.fn(),
     onLoeschen: vi.fn(),
     onVerlassen: vi.fn(),
     onBlockieren: vi.fn(),
+    onChatEntfernen: vi.fn(),
   }
   render(
     <ChatActionsMenu
@@ -55,33 +55,31 @@ const gruppe = (teil: Partial<MenueGruppe>): MenueGruppe => ({
   hatEinladung: false,
   istEigentuemer: false,
   istAdmin: false,
-  logoLaedt: false,
   ...teil,
 })
 
 const zeigt = (schluessel: string) => screen.queryByText(i18n.t(schluessel)) !== null
 
 describe('ChatActionsMenu', () => {
-  it('bietet dem Eigentümer Logo, Rollen und Löschen, aber kein Verlassen', () => {
+  it('bietet dem Eigentümer die Einstellungen und Löschen, aber kein Verlassen', () => {
     menue({ gruppe: gruppe({ istEigentuemer: true }) })
-    expect(zeigt('messenger.changeGroupLogo')).toBe(true)
-    expect(zeigt('messenger.manageGroupRoles')).toBe(true)
+    expect(zeigt('messenger.groupSettings')).toBe(true)
     expect(zeigt('messenger.deleteGroup')).toBe(true)
     expect(zeigt('messenger.leaveGroup')).toBe(false)
   })
 
-  it('bietet einem Admin Logo und Rollen, aber Verlassen statt Löschen', () => {
+  it('bietet einem Admin die Einstellungen, aber Verlassen statt Löschen', () => {
     menue({ gruppe: gruppe({ istAdmin: true }) })
-    expect(zeigt('messenger.changeGroupLogo')).toBe(true)
-    expect(zeigt('messenger.manageGroupRoles')).toBe(true)
+    expect(zeigt('messenger.groupSettings')).toBe(true)
     expect(zeigt('messenger.deleteGroup')).toBe(false)
     expect(zeigt('messenger.leaveGroup')).toBe(true)
   })
 
-  it('zeigt einem einfachen Mitglied weder Logo noch Rollen', () => {
+  it('öffnet die Einstellungen auch einem einfachen Mitglied', () => {
+    // Was es nicht darf, ist im Dialog deaktiviert. Mitglieder, Rollen und der
+    // geteilte Hintergrund sind auch für sie lesbar.
     menue({ gruppe: gruppe({}) })
-    expect(zeigt('messenger.changeGroupLogo')).toBe(false)
-    expect(zeigt('messenger.manageGroupRoles')).toBe(false)
+    expect(zeigt('messenger.groupSettings')).toBe(true)
     expect(zeigt('messenger.copyInvite')).toBe(false)
     expect(zeigt('messenger.leaveGroup')).toBe(true)
   })
@@ -100,6 +98,15 @@ describe('ChatActionsMenu', () => {
     cleanup()
     menue({ gruppe: gruppe({}) })
     expect(zeigt('social.profile.show')).toBe(false)
+  })
+
+  it('bietet im Direktchat das Entfernen aus der Liste, in der Gruppe nicht', () => {
+    const aktionen = menue({ kontakt: { istFreund: true, blockiert: false } })
+    fireEvent.click(screen.getByText(i18n.t('messenger.removeChatFromList')))
+    expect(aktionen.onChatEntfernen).toHaveBeenCalledTimes(1)
+    cleanup()
+    menue({ gruppe: gruppe({}) })
+    expect(zeigt('messenger.removeChatFromList')).toBe(false)
   })
 
   it('zeigt bei einem Blockierten „Blockierung aufheben"', () => {
@@ -131,6 +138,26 @@ describe('ChatActionsMenu', () => {
     fireEvent.click(screen.getByText(i18n.t('messenger.deleteGroup')))
     expect(reihenfolge).toEqual(['schliessen', 'loeschen'])
   })
+
+  it('hält Sprach- und Videoanruf sowie den Augenblick erreichbar', () => {
+    // Sie standen bis 27.10.2026 als eigene Knöpfe im Kopf und nahmen dort dem
+    // Namen den Platz. Erreichbar bleiben sie im Menü.
+    menue({
+      kontakt: { istFreund: true, blockiert: false },
+      onSprachanruf: vi.fn(),
+      onAugenblick: vi.fn(),
+    })
+    expect(zeigt('messenger.videoCall')).toBe(true)
+    expect(zeigt('messenger.startVoiceCall')).toBe(true)
+    expect(zeigt('messenger.moment.take')).toBe(true)
+  })
+
+  it('sperrt den Gruppenanruf ohne Recht und nennt den Grund', () => {
+    menue({ gruppe: gruppe({}), onGruppenanruf: { erlaubt: false, onStarten: vi.fn() } })
+    const eintrag = screen.getByText(i18n.t('messenger.startGroupCall')).closest('button')!
+    expect(eintrag).toBeDisabled()
+    expect(eintrag).toHaveTextContent(i18n.t('messenger.noStartCallRight'))
+  })
 })
 
 describe('ChatPinnedBar', () => {
@@ -150,8 +177,15 @@ describe('ChatPinnedBar', () => {
 })
 
 describe('ChatTimeline', () => {
-  const heute = new Date()
-  const gestern = new Date(heute.getTime() - 24 * 3600 * 1000)
+  /** Ein fester Vormittag: DST-fest, egal wann der Test läuft. */
+  const mittag = (tageZurueck: number): Date => {
+    const d = new Date()
+    d.setHours(12, 0, 0, 0)
+    d.setDate(d.getDate() - tageZurueck)
+    return d
+  }
+  const heute = mittag(0)
+  const gestern = mittag(1)
   const nachricht = (id: number, datum: Date, teil: Partial<ChatMessage> = {}): ChatMessage => ({
     id,
     senderId: 2,
@@ -182,10 +216,28 @@ describe('ChatTimeline', () => {
     zeichne([nachricht(1, gestern), nachricht(2, gestern), nachricht(3, heute)], 3)
     expect(screen.getAllByText(i18n.t('messenger.yesterday'))).toHaveLength(1)
     expect(screen.getAllByText(i18n.t('messenger.today'))).toHaveLength(1)
-    const neu = screen.getByText('Neue Nachrichten')
+    const neu = screen.getByText(i18n.t('messenger.newMessages'))
     // Der Trenner steht vor Nachricht 3, nicht vor 2.
     expect(neu.compareDocumentPosition(screen.getByText('Nachricht 3')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(neu.compareDocumentPosition(screen.getByText('Nachricht 2')) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+
+  it('zeigt den Tag auch dann, wenn er mit einer Systemzeile beginnt', () => {
+    // Bis 27.10.2026 verbrauchte die Systemzeile den Tagesvergleich, ohne
+    // selbst ein Datum zu tragen: der ganze Tag stand ohne Trenner da.
+    zeichne([
+      nachricht(1, gestern),
+      nachricht(2, heute, { isSystem: true, text: 'Schlüssel geändert' }),
+      nachricht(3, heute),
+    ])
+    expect(screen.getAllByText(i18n.t('messenger.today'))).toHaveLength(1)
+    expect(screen.getAllByText(i18n.t('messenger.yesterday'))).toHaveLength(1)
+  })
+
+  it('lässt eine Zeile ohne brauchbares Datum ohne Trenner', () => {
+    zeichne([nachricht(1, heute, { createdAt: 'kein-datum' }), nachricht(2, heute)])
+    // Die zweite Zeile bekommt den Trenner, weil der Tag davor unbekannt war.
+    expect(screen.getAllByText(i18n.t('messenger.today'))).toHaveLength(1)
   })
 
   it('zeichnet eine Systemzeile nie als Sprechblase', () => {
@@ -197,5 +249,24 @@ describe('ChatTimeline', () => {
   it('zeigt ohne Nachrichten den Leerhinweis', () => {
     zeichne([])
     expect(screen.getByText(i18n.t('messenger.noMessagesYet'))).toBeInTheDocument()
+  })
+
+  it('zeigt beim ersten Laden ein Skelett statt einer leeren Fläche', () => {
+    const { container } = render(
+      <ChatTimeline
+        scrollRef={createRef()}
+        endeRef={createRef()}
+        nachrichten={[]}
+        laedt
+        trennerId={null}
+        aktivitaet={null}
+        istGruppe={false}
+        zeichneNachricht={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(i18n.t('common.loading'))
+    expect(container.querySelectorAll('.animate-pulse')).toHaveLength(3)
+    expect(screen.queryByText(i18n.t('messenger.noMessagesYet'))).toBeNull()
   })
 })

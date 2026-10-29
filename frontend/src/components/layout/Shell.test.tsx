@@ -24,7 +24,20 @@ vi.mock('@/api/legal', () => ({
     Promise.resolve({ imprint_enabled: false, imprint_url: '' }),
 }))
 
+vi.mock('@/browser/MessengerHintergrund', () => ({
+  MessengerHintergrund: () => <span data-testid="queue-background" />,
+}))
+
 describe('Shell', () => {
+  it('hält das Gerätepostfach auch außerhalb des Messengers offen', () => {
+    render(
+      <MemoryRouter initialEntries={['/servers']}>
+        <Routes><Route path="/servers" element={<Shell />} /></Routes>
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('queue-background')).toBeInTheDocument()
+  })
+
   const renderShell = () => render(
     <MemoryRouter>
       <Routes>
@@ -70,6 +83,28 @@ describe('Shell', () => {
 
     const inhalt = screen.getByRole('main')
     expect(inhalt.className).not.toMatch(/\boverflow-(auto|scroll|hidden|x-auto|y-auto)\b/)
+  })
+
+  it('blendet die Kopfzeile im offenen Chat aus', () => {
+    // Am Handy beginnt der Chat damit ganz oben; der Chat-Kopf trägt den
+    // Zurück-Pfeil. In der Liste ist die Leiste wieder da.
+    const zeige = (pfad: string) =>
+      render(
+        <MemoryRouter initialEntries={[pfad]}>
+          <Routes>
+            <Route path="/chat" element={<Shell />}>
+              <Route index element={<div>Chat</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>,
+      )
+
+    const mitChat = zeige('/chat?userId=7')
+    expect(screen.queryByRole('button', { name: i18n.t('shell.openNavigation') })).toBeNull()
+    mitChat.unmount()
+
+    zeige('/chat')
+    expect(screen.getByRole('button', { name: i18n.t('shell.openNavigation') })).toBeInTheDocument()
   })
 
   it('opens the mobile drawer, closes with Escape and returns focus', async () => {

@@ -467,7 +467,7 @@ describe('useVaultStore - Security & Operations', () => {
     // Canary should be created since it was missing
     const canary = localStorage.getItem(`mss:vault_canary_${bucketId}`)
     expect(canary).not.toBeNull()
-    expect(canary?.startsWith('sv-vault-v1:')).toBe(true)
+    expect(canary?.startsWith('sv-vault-v2:')).toBe(true)
   })
 
   it('syncWithServer sets syncStatus to error on 401 response', async () => {

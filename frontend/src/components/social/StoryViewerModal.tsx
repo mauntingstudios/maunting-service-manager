@@ -26,6 +26,18 @@ export interface StoryReplyContext {
   storyUsername?: string
 }
 
+/**
+ * Eine Antwort traegt nur eine kleine Vorschau. Die volle Data-URL einer
+ * Story (bis 4 MB) gehoert nicht in den Nachrichten-Payload; sie wuerde jede
+ * Uebertragung und jede lokale Zeile aufblaehen.
+ */
+export function storyReplyMedium(url?: string | null): string | null {
+  if (!url) return null
+  if (url.startsWith('/api/')) return url
+  if (url.startsWith('data:')) return url.length <= 32_000 ? url : null
+  return null
+}
+
 interface StoryViewerModalProps {
   stories: ChatStoryItem[]
   initialIndex?: number
@@ -283,7 +295,7 @@ export function StoryViewerModal({
                 onReply(currentStory.user_id, currentStory.username, replyText.trim(), {
                   storyId: currentStory.id,
                   storyContent: currentStory.content,
-                  storyMediaUrl: currentStory.media_url,
+                  storyMediaUrl: storyReplyMedium(currentStory.media_url),
                   storyBackground: currentStory.background,
                   storyUsername: currentStory.username,
                 })

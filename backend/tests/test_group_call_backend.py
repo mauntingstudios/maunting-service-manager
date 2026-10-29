@@ -407,3 +407,40 @@ def test_einladungskarte_zeigt_den_laufenden_anruf(
     assert daten["name"] is None
     assert daten["description"] is None
     assert daten["avatar_url"] is None
+
+
+def test_pending_zeigt_den_gruppenanruf_nur_mit_beitrittsrecht(
+    client: TestClient,
+    db: Session,
+    owner_user: User,
+    regular_user: User,
+    owner_cookies: dict,
+    user_cookies: dict,
+) -> None:
+    gruppe = SocialService.create_group(db, owner_user)
+    SocialService.join_group_by_invite_code(db, regular_user, gruppe.invite_code)
+
+    raum = client.post(
+        f"/api/social/calls/groups/{gruppe.id}/start",
+        cookies=owner_cookies,
+        headers=_header(owner_cookies),
+    ).json()["room_token"]
+
+    # Ein normales Mitglied ohne join_group_calls erfaehrt nichts vom Anruf.
+    ohne = client.get("/api/social/calls/pending", cookies=user_cookies)
+    assert ohne.status_code == 200
+    assert all(call["group_id"] != gruppe.id for call in ohne.json()["group_calls"])
+
+    # Der Owner darf den Raum sehen.
+    mit = client.get("/api/social/calls/pending", cookies=owner_cookies)
+    assert mit.status_code == 200
+    assert any(call["group_id"] == gruppe.id for call in mit.json()["group_calls"])
+
+    # Nach der Vergabe sieht ihn auch das Mitglied.
+    SocialService.update_member_role_permissions(
+        db, gruppe.id, regular_user.id, "member", "join_group_calls", owner_user
+    )
+    nachher = client.get("/api/social/calls/pending", cookies=user_cookies)
+    assert nachher.status_code == 200
+    assert any(call["group_id"] == gruppe.id for call in nachher.json()["group_calls"])
+    assert any(call["room_token"] == raum for call in nachher.json()["group_calls"])

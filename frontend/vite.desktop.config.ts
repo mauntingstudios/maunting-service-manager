@@ -23,6 +23,8 @@ import { fontsourceWoff2Only } from './vite.fontsource'
  * (Origin `tauri.localhost` steht in `TAURI_ORIGINS`).
  */
 export default defineConfig({
+  // Wer meldet: Web-Panel, Pontis oder MSS. Der Praesenz-Client liest das.
+  define: { __MSM_APP__: JSON.stringify('mss') },
   plugins: [fontsourceWoff2Only(), react()],
   resolve: {
     alias: {

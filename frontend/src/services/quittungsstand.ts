@@ -1,37 +1,23 @@
 /**
  * Bis wohin für einen Chat schon quittiert wurde.
  *
- * ## Warum das überhaupt gemerkt wird
+ * Die Quittungen sind kumulativ: sie nennen eine Obergrenze, keine einzelne
+ * Nachricht. Ein verlorener Eintrag kostet deshalb nichts, sobald eine neue
+ * Nachricht eintrifft. Der Stand wird großzügig gemerkt, auch wenn der Versand
+ * hinterher scheitert; andersherum würde ein gescheiterter Versuch bei jedem
+ * Takt erneut senden und die Mailbox fluten.
  *
- * Die Mailbox gibt bei jedem Abruf dieselben hundert Umschläge heraus. Die
- * höchste fremde Umschlagkennung darin ändert sich nicht, solange niemand
- * schreibt — eine Quittung darüber ist beim zweiten Mal also nur noch Lärm.
- *
- * Gemerkt wurde das bisher in zwei `useRef` im Messenger, und die beginnen bei
- * jedem Chatwechsel wieder bei null. Wer zwischen zwei Gesprächen hin- und
- * herklickt, schickt für dieselbe letzte Nachricht jedes Mal eine neue
- * Zustellquittung. Die landet im selben Hundert-Umschläge-Fenster wie die
- * Nachrichten und verdrängt sie: gemessen waren 64 % aller Umschläge in der
- * Mailbox Zustellquittungen, und was hinten herausfällt, ist unwiederbringlich
- * weg — eine Bearbeitung, eine Reaktion, eine Anheftung.
- *
- * ## Warum ein verlorener Eintrag nichts kostet
- *
- * Beide Quittungen sind kumulativ: sie nennen eine Obergrenze, keine einzelne
- * Nachricht. Geht eine verloren, deckt die nächste denselben Bereich mit ab,
- * sobald eine neue Nachricht eintrifft. Deshalb darf hier großzügig gemerkt
- * werden — auch dann, wenn der Versand hinterher scheitert. Andersherum wäre
- * es teuer: ein Stand, der erst nach erfolgreichem Versand steigt, schickt bei
- * jedem gescheiterten Versuch erneut, und genau das hat die Mailbox geflutet,
- * sobald der Server mit 429 bremste.
- *
- * Der Schlüssel trägt bewusst einen Doppelpunkt: alles mit dem Präfix
- * `msm_chat_` räumt der Messenger beim Öffnen weg.
+ * Die Schlüssel tragen bewusst einen Doppelpunkt: `msm_chat_` mit Unterstrich
+ * räumt `scrubPlaintextStorage` beim Öffnen weg. Sie gehören stattdessen in die
+ * kontogebundene Ablage (`MESSENGER_KEYS`) und fallen beim Abmelden mit ihr.
  */
 
-const SCHLUESSEL = 'msm:chat_quittungsstand'
+import { getStorageItem, setStorageItem } from '@/lib/offlineAblage'
 
-/** Bis zu welcher fremden Umschlagkennung schon quittiert wurde. */
+const SCHLUESSEL = 'msm:chat_quittungsstand'
+const SCHLUESSEL_PARTNER = 'msm:chat_partnerstand'
+
+/** Bis zu welcher fremden Kennung schon quittiert wurde. */
 export interface Quittungsstand {
   /** Höchste Kennung, für die eine Zustellquittung raus ist. */
   zugestellt: number
@@ -41,9 +27,9 @@ export interface Quittungsstand {
 
 const LEER: Quittungsstand = { zugestellt: 0, gelesen: 0 }
 
-function lies(): Record<string, Quittungsstand> {
+function lies(schluessel: string = SCHLUESSEL): Record<string, Quittungsstand> {
   try {
-    const roh = localStorage.getItem(SCHLUESSEL)
+    const roh = getStorageItem(schluessel)
     const gelesen = roh ? JSON.parse(roh) : {}
     return gelesen && typeof gelesen === 'object' ? gelesen : {}
   } catch {
@@ -51,26 +37,52 @@ function lies(): Record<string, Quittungsstand> {
   }
 }
 
+function eintragAus(schluessel: string, blindMailboxId: string): Quittungsstand | null {
+  if (!blindMailboxId) return null
+  const eintrag = lies(schluessel)[blindMailboxId]
+  return eintrag && typeof eintrag === 'object' ? eintrag : null
+}
+
+function standAus(schluessel: string, blindMailboxId: string): Quittungsstand {
+  const eintrag = eintragAus(schluessel, blindMailboxId)
+  if (!eintrag) return { ...LEER }
+  return { zugestellt: zahl(eintrag.zugestellt), gelesen: zahl(eintrag.gelesen) }
+}
+
 /**
- * Eine Umschlagkennung oder null.
+ * Eine Kennung oder null.
  *
  * `Number.isFinite` reicht hier nicht: `1e308` ist endlich, und ein einziger
- * solcher Wert in der Ablage riegelt die Mailbox dauerhaft ab — jede echte
- * Kennung liegt darunter, also ginge nie wieder eine Quittung raus. Gefunden
- * am 21.09.2026 beim Beschiessen der Ablage mit Müll. Eine Kennung kommt aus
- * einer Datenbankspalte, ist also eine ganze Zahl in sicherer Reichweite; alles
- * andere ist kaputt und zählt als „nichts gemerkt".
+ * solcher Wert in der Ablage riegelt die Mailbox dauerhaft ab. Eine Kennung
+ * kommt aus einer Datenbankspalte, ist also eine ganze Zahl in sicherer
+ * Reichweite; alles andere zählt als „nichts gemerkt".
  */
 function zahl(wert: unknown): number {
   const n = Number(wert)
   return Number.isSafeInteger(n) && n > 0 ? n : 0
 }
 
+function merke(
+  schluessel: string,
+  blindMailboxId: string,
+  art: keyof Quittungsstand,
+  bisId: number,
+): void {
+  if (!blindMailboxId || zahl(bisId) === 0) return
+  const alle = lies(schluessel)
+  const bisher = eintragAus(schluessel, blindMailboxId)
+  const stand: Quittungsstand = {
+    zugestellt: zahl(bisher?.zugestellt),
+    gelesen: zahl(bisher?.gelesen),
+  }
+  if (bisId <= stand[art]) return
+  stand[art] = bisId
+  alle[blindMailboxId] = stand
+  setStorageItem(schluessel, JSON.stringify(alle))
+}
+
 export function quittungsstand(blindMailboxId: string): Quittungsstand {
-  if (!blindMailboxId) return { ...LEER }
-  const eintrag = lies()[blindMailboxId]
-  if (!eintrag || typeof eintrag !== 'object') return { ...LEER }
-  return { zugestellt: zahl(eintrag.zugestellt), gelesen: zahl(eintrag.gelesen) }
+  return standAus(SCHLUESSEL, blindMailboxId)
 }
 
 /**
@@ -85,19 +97,19 @@ export function merkeQuittung(
   art: keyof Quittungsstand,
   bisId: number,
 ): void {
-  if (!blindMailboxId || zahl(bisId) === 0) return
-  const alle = lies()
-  const bisher = alle[blindMailboxId]
-  const stand: Quittungsstand = {
-    zugestellt: zahl(bisher?.zugestellt),
-    gelesen: zahl(bisher?.gelesen),
-  }
-  if (bisId <= stand[art]) return
-  stand[art] = bisId
-  alle[blindMailboxId] = stand
-  try {
-    localStorage.setItem(SCHLUESSEL, JSON.stringify(alle))
-  } catch {
-    // Ohne localStorage gilt der Stand eben nur für diese Sitzung.
-  }
+  merke(SCHLUESSEL, blindMailboxId, art, bisId)
+}
+
+/** Bis wohin der **Gesprächspartner** gelesen und zugestellt hat. */
+export function partnerstand(blindMailboxId: string): Quittungsstand {
+  return standAus(SCHLUESSEL_PARTNER, blindMailboxId)
+}
+
+/** Was der Partner gelesen bzw. zugestellt hat, festhalten. */
+export function merkePartnerQuittung(
+  blindMailboxId: string,
+  art: keyof Quittungsstand,
+  bisId: number,
+): void {
+  merke(SCHLUESSEL_PARTNER, blindMailboxId, art, bisId)
 }

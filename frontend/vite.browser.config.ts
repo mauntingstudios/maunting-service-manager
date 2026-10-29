@@ -18,6 +18,8 @@ import { fontsourceWoff2Only } from './vite.fontsource'
  * Port 1450: recovery belegt 1420, smart-system belegt 1430.
  */
 export default defineConfig({
+  // Wer meldet: Web-Panel, Pontis oder MSS. Der Praesenz-Client liest das.
+  define: { __MSM_APP__: JSON.stringify('pontis') },
   plugins: [fontsourceWoff2Only(), react()],
   resolve: {
     alias: {

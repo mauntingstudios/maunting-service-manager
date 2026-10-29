@@ -151,6 +151,17 @@ describe('Markiert und an mich', () => {
     expect(chats[0].treffer.map((t) => t.id)).toEqual([1])
   })
 
+  it('findet eine Erwähnung in einer Gruppenmailbox', async () => {
+    ablage({
+      'group:3': [zeile({ id: 1, text: '@ich', erwaehnungen: [42] })],
+    })
+    const { chats } = await sammleAnMich(42, (m) => {
+      const erwaehnungen = (m as { erwaehnungen?: number[] }).erwaehnungen
+      return Array.isArray(erwaehnungen) && erwaehnungen.includes(42)
+    })
+    expect(chats.map((chat) => chat.blindMailboxId)).toEqual(['group:3'])
+  })
+
   it('übergeht eigene Nachrichten', async () => {
     ablage({ [A]: [zeile({ id: 1, text: 'von mir', isSelf: true })] })
     expect((await sammleAnMich(42, () => true)).chats).toEqual([])

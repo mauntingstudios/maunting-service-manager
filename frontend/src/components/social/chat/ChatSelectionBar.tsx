@@ -14,9 +14,12 @@ interface ChatSelectionBarProps {
 }
 
 /**
- * Die Auswahlleiste ersetzt die schwebenden Bedienelemente: Zähler und
- * Abbrechen oben, am Telefon die Aktionen unten in Daumenreichweite, ab `md`
- * oben neben dem Zähler (`Auswahlleiste`).
+ * Die Auswahlleiste ersetzt die Kopfleiste: Zähler und Abbrechen oben, am
+ * Telefon die Aktionen unten in Daumenreichweite, ab `md` oben neben dem
+ * Zähler (`Auswahlleiste`).
+ *
+ * Oben liegt sie im Fluss und trägt dieselbe Höhe wie der Chat-Kopf, damit der
+ * Verlauf beim Auswählen nicht springt.
  */
 export function ChatSelectionBar({
   anzahl,
@@ -45,7 +48,7 @@ export function ChatSelectionBar({
 
   return (
     <>
-      <div className="absolute top-2.5 left-3 right-3 z-40 flex items-center rounded-full border border-outline-variant/30 bg-surface-container-high/95 px-2 py-1 shadow-sm backdrop-blur-md">
+      <div className="relative z-40 flex min-h-14 shrink-0 items-center border-b border-outline-variant/40 bg-surface-container-high/95 px-2 backdrop-blur-md sm:px-3">
         <Auswahlleiste variante="kopf" anzahlLabel={anzahlLabel} aktionen={aktionen} abbrechenLabel={t('messenger.endSelection')} onAbbrechen={onBeenden} />
       </div>
       <Auswahlleiste

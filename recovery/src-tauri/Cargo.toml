@@ -1,6 +1,6 @@
 [package]
 name = "msm-backup-recovery"
-version = "5.7.7"
+version = "5.8.0"
 description = "MSM Backup Recovery - Standalone Tauri Desktop-App"
 edition = "2021"
 rust-version = "1.77"
@@ -24,7 +24,7 @@ tar = "0.4.46"
 flate2 = "1.1.9"
 
 # ZIP archive creation (save extracted files as .zip)
-zip = "2"
+zip = "9"
 
 [features]
 # This feature is used for production builds or when a dev server is not

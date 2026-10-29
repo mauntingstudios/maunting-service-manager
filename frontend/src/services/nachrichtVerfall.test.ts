@@ -9,18 +9,19 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
+
 vi.mock('./messengerLocalStore', () => ({
   listeLokaleMailboxen: vi.fn(async () => []),
   loadLocalMessages: vi.fn(async () => []),
 }))
 vi.mock('./nachrichtLoeschen', () => ({
-  tilgeNachrichtBeimServer: vi.fn(async () => {}),
   tilgeNachrichtLokal: vi.fn(async () => {}),
 }))
 
 import type { ChatGroupItem } from '@/api/social'
 import { listeLokaleMailboxen, loadLocalMessages } from './messengerLocalStore'
-import { tilgeNachrichtBeimServer, tilgeNachrichtLokal } from './nachrichtLoeschen'
+import { tilgeNachrichtLokal } from './nachrichtLoeschen'
 import {
   durfteVerfallStellen,
   faelligeZeilen,
@@ -29,6 +30,7 @@ import {
   setzeVerfallsfrist,
   uebernehmeVerfall,
   verfaelltAm,
+  verfallAusUmschlag,
   verfallsfrist,
   verfallStand,
 } from './nachrichtVerfall'
@@ -37,7 +39,9 @@ const MID = 'mb-1'
 
 beforeEach(() => {
   localStorage.clear()
+  localStorage.setItem('msm_offline_konto', '1')
   vi.clearAllMocks()
+  setzeAngemeldetesKonto(1)
 })
 
 describe('Frist übernehmen', () => {
@@ -109,6 +113,24 @@ describe('Fälligkeit', () => {
     ]
     expect(faelligeZeilen(zeilen, jetzt).map((z) => z.id)).toEqual([1])
   })
+
+  it('nimmt den Serverstempel vor der Nutzlast', () => {
+    expect(
+      verfallAusUmschlag('2026-09-21T10:00:00.000Z', '2026-09-22T10:00:00.000Z'),
+    ).toBe('2026-09-21T10:00:00.000Z')
+  })
+
+  it('nimmt die Nutzlast, wenn der Umschlag keine Frist trägt', () => {
+    // Ein Umschlag aus der offenen Ablage kann ohne `expires_at` ankommen; die
+    // signierte Nutzlast weiß trotzdem, wann die Nachricht verfällt.
+    expect(verfallAusUmschlag(null, '2026-09-22T10:00:00.000Z')).toBe('2026-09-22T10:00:00.000Z')
+    expect(verfallAusUmschlag(undefined, '2026-09-22T10:00:00.000Z')).toBe('2026-09-22T10:00:00.000Z')
+  })
+
+  it('verwirft Unbrauchbares, statt eine Zeile ewig stehen zu lassen', () => {
+    expect(verfallAusUmschlag('kaputt', 'auch-kaputt')).toBeUndefined()
+    expect(verfallAusUmschlag(null, 42)).toBeUndefined()
+  })
 })
 
 describe('Durchgang über alle Chats', () => {
@@ -134,13 +156,9 @@ describe('Durchgang über alle Chats', () => {
     )
 
     expect(await raeumeAlleChats()).toBe(4)
-    // Lokal geht alles Fällige weg, beim Server nur das eigene: mehr darf
-    // keine der beiden Seiten, und zusammen ist danach nichts mehr da.
+    // Lokal geht alles Fällige weg. Die Serverkopie traegt ihr eigenes
+    // expires_at; den Rest raeumt der Scheduler dort.
     expect(vi.mocked(tilgeNachrichtLokal)).toHaveBeenCalledTimes(4)
-    expect(vi.mocked(tilgeNachrichtBeimServer)).toHaveBeenCalledTimes(2)
-    for (const [, msg] of vi.mocked(tilgeNachrichtBeimServer).mock.calls) {
-      expect((msg as { isSelf: boolean }).isSelf).toBe(true)
-    }
   })
 
   it('macht mit dem nächsten Chat weiter, wenn einer nicht lesbar ist', async () => {

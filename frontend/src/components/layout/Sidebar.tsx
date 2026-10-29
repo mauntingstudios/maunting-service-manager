@@ -10,7 +10,7 @@ import { buildNavigation, type NavGroupName } from './navigation'
 import { DesktopAppDownloadBadge } from './DesktopAppDownloadBadge'
 import { BrowserDownloadBadge } from './BrowserDownloadBadge'
 import { BenachrichtigungsGlocke, ProfileDropdown, type ProfileDropdownItem, buttonClasses } from '@/Singra/UI'
-import { usePresenceAndActivity, type PresenceStatus } from '@/hooks/usePresenceAndActivity'
+import type { PresenceStatus } from '@/hooks/usePresenceAndActivity'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
@@ -71,9 +71,10 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
   const notesEnabled = publicSettings.notes_enabled
   const docsEnabled = publicSettings.docs_enabled
   const socialEnabled = publicSettings.social_enabled
-  const localPresence = usePresenceAndActivity(socialEnabled, !propPresenceStatus && !mobile)
-  const presenceStatus = propPresenceStatus ?? localPresence.status
-  const handlePresenceChange = onPresenceChange ?? localPresence.changeStatus
+  // Die Hülle meldet die Präsenz; eine zweite Meldung aus der Seitenleiste
+  // schrieb bis 27.10.2026 bei jedem Routenwechsel doppelt.
+  const presenceStatus = propPresenceStatus ?? 'auto'
+  const handlePresenceChange = onPresenceChange ?? (() => {})
 
   useEffect(() => {
     void usePublicSettingsStore.getState().refresh()

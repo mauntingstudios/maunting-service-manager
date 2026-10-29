@@ -28,6 +28,7 @@
  * einen Beleg gibt.
  */
 
+import type { ChatGroupItem } from '@/api/social'
 import type { Gruppenzustand } from './gruppenKonfig'
 
 /**
@@ -56,6 +57,11 @@ export const GRUPPEN_RECHTE = [
   // wie lange die Nachrichten aller leben, und der Empfänger fragt ohnehin die
   // Marke vom Server — die bekommt ein Moderator nur mit Eintrag.
   { key: 'set_disappearing_messages', category: 'moderation' },
+  // Seit 27.10.2026 getrennt vom Rollenrecht: wer die Gruppeninfo schreibt,
+  // ändert darum noch keine Rollen — und umgekehrt. Beide Rechte hängen nur an
+  // einer Rolle, nie an den Standardrechten für alle.
+  { key: 'edit_group', category: 'administration' },
+  { key: 'set_group_background', category: 'administration' },
   { key: 'manage_roles', category: 'administration' },
 ] as const
 
@@ -239,6 +245,31 @@ export function wirksameGruppenrechte(frage: RechteFrage): Set<string> {
 }
 
 /** Kurzform für die eine Frage, die der Verlauf stellt. */
+
+/**
+ * Die Rechte eines Kontos in **dieser** Gruppe — aus der Mitgliederzeile und
+ * dem entschluesselten Rollenblock.
+ *
+ * Der Messenger rechnet fuer die offene Gruppe schon so; der Hintergrundlauf
+ * braucht dieselbe Antwort fuer **jedes** Gespraech, nicht nur fuer das
+ * sichtbare. Eine Funktion fuer beide, damit die Rechte nicht auseinander
+ * laufen.
+ */
+export function rechteAusGruppe(
+  group: ChatGroupItem,
+  konto: number,
+  zustand: Gruppenzustand | null = null,
+): Set<string> {
+  const mitglied = group.members?.find((m) => Number(m.user_id) === Number(konto))
+  return wirksameGruppenrechte({
+    konto,
+    systemRolle: mitglied?.role,
+    istEigentuemer: Number(group.owner_user_id) === Number(konto),
+    eigeneRechte: mitglied?.permissions,
+    standardrechte: group.default_permissions,
+    zustand,
+  })
+}
 export function hatGruppenrecht(frage: RechteFrage, recht: GruppenRechtKennung): boolean {
   return wirksameGruppenrechte(frage).has(recht)
 }

@@ -38,6 +38,9 @@ describe('SicherheitEinstellungen', () => {
     expect(screen.getByTestId('mock-devices-tab')).toBeInTheDocument()
     expect(screen.getByText('Messenger')).toBeInTheDocument()
     expect(screen.getByText('Tresor')).toBeInTheDocument()
+    // Geräte gehören hierher und nicht nur ins Profil: in der App und im
+    // Pondys Browser sucht man sie unter Sicherheit.
+    expect(screen.getByRole('heading', { name: 'Geräte' })).toBeInTheDocument()
   })
 
   it('blendet Messenger aus, wenn social inaktiv ist', () => {
@@ -48,6 +51,9 @@ describe('SicherheitEinstellungen', () => {
     )
     expect(screen.queryByTestId('mock-messenger-tab')).not.toBeInTheDocument()
     expect(screen.getByTestId('mock-tresor-tab')).toBeInTheDocument()
+    // Kopplung ist eine Kontofunktion und bleibt sichtbar; die
+    // Messenger-Geräteliste entscheidet die Karte selbst.
+    expect(screen.getByTestId('mock-devices-tab')).toBeInTheDocument()
   })
 
   it('blendet Tresor aus, wenn vault_enabled inaktiv ist', () => {

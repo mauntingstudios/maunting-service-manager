@@ -143,12 +143,22 @@ browser/AUDIT_REPORT_PONTIS.md
 test_updater_server/
 Releases/
 
+_messenger_audit_export/export_messenger_audit.py
+_messenger_audit_export/MESSENGER_DATEIEN.md
+/_messenger_audit_export
+docs/messenger-audit-2026-10-21.md
+/.qoder
+docs/messenger-e2ee-umsetzungsplan.md
 
 # Wetter-Sidecar: Modell- und Ortsdaten bleiben lokal
 wetter-sidecar/daten/*
 !wetter-sidecar/daten/.gitkeep
-
 # Qoder-Sitzungsdaten (Pläne, Indizes) gehören nicht ins Repository.
 .qoder/
 /docs-sidecar/node_modules
 /docs-sidecar/.env
+
+/.idea
+
+# Laufzeit-Logdumps gehoeren nicht ins Repository.
+logdump.txt

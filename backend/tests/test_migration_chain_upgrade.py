@@ -47,6 +47,8 @@ BRANCH_TABLES = (
     "team_invitations",
     "panel_popups",
     "user_popup_states",
+    "chat_group_infos",
+    "chat_group_backgrounds",
 )
 
 
@@ -244,12 +246,12 @@ def test_main_datenbank_erhaelt_die_messenger_brucke(pg_wegwerf) -> None:
 
         assert initialize_or_upgrade_schema(engine) == "upgraded"
         tables = set(inspect(engine).get_table_names())
-        assert {"notification_channels", "e2ee_device_inboxes"} <= tables
+        assert {"notification_channels", "e2ee_messages", "direct_chat_members"} <= tables
         with engine.connect() as conn:
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261028_01"
+        assert version == "20261029_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -272,19 +274,19 @@ def test_server_auf_messenger_revision_kommt_wieder_auf_den_head(pg_wegwerf) -> 
         _ohne_dokumente(engine)
         command.stamp(config, "20261011_01")
         # Genau der Stand des Messenger-Branches: 20261012_01 ist nicht in
-        # seiner Ahnenreihe, die beiden Zustellungstabellen sind es.
+        # seiner Ahnenreihe, die Zustellungstabellen sind es.
         command.upgrade(config, "20261023_02")
 
         from services.schema_manager import initialize_or_upgrade_schema
 
         assert initialize_or_upgrade_schema(engine) == "upgraded"
         tables = set(inspect(engine).get_table_names())
-        assert {"browser_widget_tokens", "notification_channels", "e2ee_device_inboxes"} <= tables
+        assert {"browser_widget_tokens", "notification_channels", "e2ee_messages"} <= tables
         with engine.connect() as conn:
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261028_01"
+        assert version == "20261029_01"
     finally:
         engine.dispose()
         settings.database_url = previous

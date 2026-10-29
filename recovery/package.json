@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@msdis/shield": "0.2.0",
+    "@msdis/shield": "0.4.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.4.0",
     "@tauri-apps/plugin-fs": "^2.5.1",
@@ -36,7 +36,7 @@
     "tailwindcss": "^4.3.2",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.62.1",
-    "vite": "^8.1.0",
-    "vitest": "^4.1.7"
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
   }
 }

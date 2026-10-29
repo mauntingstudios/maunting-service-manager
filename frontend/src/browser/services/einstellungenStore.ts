@@ -23,6 +23,11 @@ export type Hintergrund =
   | 'bergwald'
   | 'ozean'
   | 'feld'
+  | 'balkon'
+  | 'bergsee'
+  | 'bahnhof'
+  | 'mars'
+  | 'wasserfaelle'
   | 'eigen'
 
 /** Ein eigenes Bild liegt als data:-URI im localStorage; größer passt dort nicht sicher hinein. */

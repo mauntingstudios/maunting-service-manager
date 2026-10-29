@@ -78,15 +78,22 @@ async def test_cleanup_thread_schliesst_session_auch_bei_fehlern(monkeypatch, ro
     monkeypatch.setattr(scheduler_service, "SessionLocal", session)
     first = MagicMock(side_effect=RuntimeError("synthetic cleanup failure"))
     following = MagicMock()
-    monkeypatch.setattr(SocialService, "cleanup_expired_envelopes", first)
+    from services import ai_memory_service, vault_blob_service
+    from services.social import messages_service
+
+    monkeypatch.setattr(messages_service, "cleanup_expired", first)
     monkeypatch.setattr(ChatMediaService, "cleanup_expired_media", following)
     monkeypatch.setattr(SocialService, "cleanup_expired_stories", following)
+    monkeypatch.setattr(vault_blob_service, "aufraeumen", following)
+    monkeypatch.setattr(ai_memory_service, "vergessene_aufraeumen", following)
     if rollback_fails:
         with pytest.raises(RuntimeError, match="rollback failure"):
             await scheduler_service._e2ee_envelope_cleanup_task()
     else:
         await scheduler_service._e2ee_envelope_cleanup_task()
-        assert following.call_count == 2
+        # Nachricht, Anhang, Story, Tresor-Datei, Erinnerung — der erste Lauf
+        # scheitert und wird uebersprungen, die uebrigen laufen weiter.
+        assert following.call_count == 4
     assert worker_threads and worker_threads[0] != main_thread
     db.close.assert_called_once()
 
