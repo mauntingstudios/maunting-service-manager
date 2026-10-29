@@ -1690,6 +1690,17 @@ $DOMAIN {
         Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://singrabot.mauntingstudios.de https://client.crisp.chat https://embed.tawk.to; style-src 'self' 'unsafe-inline' https://hcaptcha.com https://*.hcaptcha.com https://singrabot.mauntingstudios.de; img-src 'self' data: blob: https:; media-src 'self' blob: data: mediastream:; worker-src 'self' blob:; connect-src 'self' https: http: ws: wss: blob: data:; font-src 'self' data: https://singrabot.mauntingstudios.de; frame-src 'self' https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/ https://singrabot.mauntingstudios.de; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     }
 
+    # Dokumente: Hocuspocus-WebSocket. Muss **vor** /api/* stehen, sonst
+    # landet der Upgrade am FastAPI-Router. handle_path schneidet das Praefix
+    # ab; der Sidecar hoert nur auf 127.0.0.1:8100.
+    handle_path /api/docs/collab/* {
+        reverse_proxy localhost:8100
+    }
+    # Der Provider verbindet ohne abschliessenden Slash.
+    handle /api/docs/collab {
+        reverse_proxy localhost:8100
+    }
+
     handle /api/* {
         reverse_proxy localhost:8000
     }
@@ -1728,6 +1739,17 @@ $DOMAIN {
         # eigenen Herkunft. Mit =() fragt der Browser nicht einmal nach.
         Permissions-Policy "accelerometer=(), camera=(self), display-capture=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(self), payment=(), usb=()"
         Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://singrabot.mauntingstudios.de https://client.crisp.chat https://embed.tawk.to; style-src 'self' 'unsafe-inline' https://hcaptcha.com https://*.hcaptcha.com https://singrabot.mauntingstudios.de; img-src 'self' data: blob: https:; media-src 'self' blob: data: mediastream:; worker-src 'self' blob:; connect-src 'self' https: http: ws: wss: blob: data:; font-src 'self' data: https://singrabot.mauntingstudios.de; frame-src 'self' https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/ https://singrabot.mauntingstudios.de; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    }
+
+    # Dokumente: Hocuspocus-WebSocket. Muss **vor** /api/* stehen, sonst
+    # landet der Upgrade am FastAPI-Router. handle_path schneidet das Praefix
+    # ab; der Sidecar hoert nur auf 127.0.0.1:8100.
+    handle_path /api/docs/collab/* {
+        reverse_proxy localhost:8100
+    }
+    # Der Provider verbindet ohne abschliessenden Slash.
+    handle /api/docs/collab {
+        reverse_proxy localhost:8100
     }
 
     handle /api/* {
@@ -1791,6 +1813,17 @@ EOF
         Referrer-Policy strict-origin-when-cross-origin
         Permissions-Policy "accelerometer=(), camera=(self), display-capture=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(self), payment=(), usb=()"
         Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://singrabot.mauntingstudios.de https://client.crisp.chat https://embed.tawk.to; style-src 'self' 'unsafe-inline' https://hcaptcha.com https://*.hcaptcha.com https://singrabot.mauntingstudios.de; img-src 'self' data: blob: https:; media-src 'self' blob: data: mediastream:; worker-src 'self' blob:; connect-src 'self' https: http: ws: wss: blob: data:; font-src 'self' data: https://singrabot.mauntingstudios.de; frame-src 'self' https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/ https://singrabot.mauntingstudios.de; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    }
+
+    # Dokumente: Hocuspocus-WebSocket. Muss **vor** /api/* stehen, sonst
+    # landet der Upgrade am FastAPI-Router. handle_path schneidet das Praefix
+    # ab; der Sidecar hoert nur auf 127.0.0.1:8100.
+    handle_path /api/docs/collab/* {
+        reverse_proxy localhost:8100
+    }
+    # Der Provider verbindet ohne abschliessenden Slash.
+    handle /api/docs/collab {
+        reverse_proxy localhost:8100
     }
 
     handle /api/* {

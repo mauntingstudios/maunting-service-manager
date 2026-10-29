@@ -809,6 +809,13 @@ fi
 # index.html — die Oberflaeche bleibt leer, bis der Cache verfaellt.
 for _kandidat in /etc/caddy/conf.d/msm.caddy /etc/caddy/conf.d/msm.conf; do
     [[ -f "$_kandidat" ]] || continue
+    if ! grep -q "handle /api/docs/collab" "$_kandidat" 2>/dev/null; then
+        warn "Caddy reicht /api/docs/collab noch nicht an den Dokumente-Sidecar durch — der Editor bleibt bei 'Warte auf den Dokumentserver'."
+        warn "  $MSM_DIR/install.sh erneut ausfuehren (behaelt die vorhandenen Werte und schreibt die Site neu)"
+        warn "  oder in $_kandidat vor 'handle /api/*' ergaenzen:"
+        warn "      handle_path /api/docs/collab/* { reverse_proxy localhost:8100 }"
+        warn "      handle /api/docs/collab { reverse_proxy localhost:8100 }"
+    fi
     if grep -q "root \* /opt/msm/frontend/dist" "$_kandidat" 2>/dev/null \
             && ! grep -q "handle /assets/\*" "$_kandidat" 2>/dev/null; then
         warn "Caddy liefert die Oberflaeche noch ohne Cache-Regeln aus — ein Browser kann nach diesem Update eine alte, leere Seite festhalten."

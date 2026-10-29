@@ -2269,6 +2269,7 @@
       "archiveEmpty": "No archived documents.",
       "empty": "No documents here yet.",
       "actions": "Actions",
+      "actionsFor": "Actions for {{name}}",
       "restore": "Restore",
       "restored": "Document restored.",
       "trashAction": "Move to trash",

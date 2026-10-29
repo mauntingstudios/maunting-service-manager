@@ -29,6 +29,11 @@ interface ActionMenuProps {
   disabled?: boolean
   align?: 'start' | 'end'
   compact?: boolean
+  /** Auslöser-Stil der DNA; Standard bleibt der sekundäre Knopf. */
+  variant?: 'secondary' | 'ghost'
+  /** Nur Icon zeigen; `label` wird dann zur zugänglichen Beschriftung. */
+  iconOnly?: boolean
+  ariaLabel?: string
 }
 
 /** Compact action menu for dense operational toolbars. */
@@ -39,6 +44,9 @@ export function ActionMenu({
   disabled = false,
   align = 'start',
   compact = false,
+  variant = 'secondary',
+  iconOnly = false,
+  ariaLabel,
 }: ActionMenuProps) {
   const [open, setOpen] = useState(false)
   useZurueckSchliesst(open, () => setOpen(false))
@@ -111,6 +119,7 @@ export function ActionMenu({
         aria-haspopup="menu"
         aria-controls={menuId}
         aria-expanded={open}
+        aria-label={iconOnly ? (ariaLabel ?? label) : undefined}
         onClick={() => {
           initialFocusRef.current = 'first'
           setOpen((value) => !value)
@@ -122,15 +131,18 @@ export function ActionMenu({
           setOpen(true)
         }}
         className={cx(
-          buttonClasses('secondary', compact ? 'sm' : 'md', 'gap-1.5 disabled:cursor-not-allowed disabled:opacity-45'),
+          buttonClasses(variant, compact ? 'sm' : 'md', 'gap-1.5 disabled:cursor-not-allowed disabled:opacity-45'),
           // Auf dem Telefon bleibt der Auslöser ein Daumenziel; ab sm gilt die
           // Höhe des Knopfs daneben.
           compact ? 'h-11 sm:h-8' : 'h-11 sm:h-10',
+          iconOnly && 'w-11 justify-center px-0 sm:w-8',
         )}
       >
         {icon}
-        <span>{label}</span>
-        <ChevronDown className={cx('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
+        {!iconOnly && <span>{label}</span>}
+        {!iconOnly && (
+          <ChevronDown className={cx('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
+        )}
       </button>
       {open
         ? createPortal(

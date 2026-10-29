@@ -1,17 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Archive,
-  ArchiveRestore,
-  FileText,
-  Folder,
-  FolderInput,
-  FolderPlus,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-} from 'lucide-react'
+import { Archive, ArchiveRestore, FileText, Folder, FolderInput, FolderPlus, Pencil, Plus, Search, Trash2, MoreHorizontal } from 'lucide-react'
 import { ActionMenu, Button, Dropdown, Input, Kurzinfo } from '@/Singra/UI'
 import type { DocFolder, DocSummary } from '@/api/docs'
 import type { Team } from '@/api/teams'
@@ -210,6 +199,10 @@ export function DocTree({
                 {canManageFolders && (
                   <ActionMenu
                     label={t('docs.tree.actions')}
+                    ariaLabel={t('docs.tree.actionsFor', { name: ordner.name })}
+                    icon={<MoreHorizontal className="h-4 w-4" />}
+                    iconOnly
+                    variant="ghost"
                     compact
                     align="end"
                     items={[
@@ -271,9 +264,13 @@ export function DocTree({
             {(doc.can_edit || doc.can_manage) && (
               <ActionMenu
                 label={t('docs.tree.actions')}
+                ariaLabel={t('docs.tree.actionsFor', { name: doc.title })}
+                icon={<MoreHorizontal className="h-4 w-4" />}
+                iconOnly
+                variant="ghost"
                 compact
                 align="end"
-              items={
+                items={
                 trash
                   ? [
                       {

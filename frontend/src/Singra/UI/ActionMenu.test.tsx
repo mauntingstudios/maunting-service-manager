@@ -35,6 +35,27 @@ describe('ActionMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+
+  it('kann als Ghost-Icon mit eigener Beschriftung erscheinen', async () => {
+    render(
+      <ActionMenu
+        label="Aktionen"
+        ariaLabel="Aktionen für Protokoll"
+        icon={<span data-testid="menu-icon" />}
+        iconOnly
+        variant="ghost"
+        items={[{ key: 'a', label: 'Archivieren', onSelect: vi.fn() }]}
+      />,
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Aktionen für Protokoll' })
+    expect(trigger).not.toHaveTextContent('Aktionen')
+    expect(screen.getByTestId('menu-icon')).toBeInTheDocument()
+
+    fireEvent.click(trigger)
+    expect(await screen.findByRole('menuitem', { name: 'Archivieren' })).toBeInTheDocument()
+  })
+
   it('schließt mit der Zurück-Taste', async () => {
     await waitFor(() => expect(window.history.state?.msmTiefe ?? 0).toBe(0))
     render(<ActionMenu label="Mehr" items={[{ key: 'a', label: 'Umbenennen', onSelect: vi.fn() }]} />)

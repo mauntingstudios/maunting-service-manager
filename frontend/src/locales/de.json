@@ -2269,6 +2269,7 @@
       "archiveEmpty": "Keine archivierten Dokumente.",
       "empty": "Noch keine Dokumente in diesem Bereich.",
       "actions": "Aktionen",
+      "actionsFor": "Aktionen für {{name}}",
       "restore": "Wiederherstellen",
       "restored": "Dokument wiederhergestellt.",
       "trashAction": "In den Papierkorb",

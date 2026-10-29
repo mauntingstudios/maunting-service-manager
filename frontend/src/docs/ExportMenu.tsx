@@ -63,6 +63,7 @@ export function ExportMenu({ uid, rev, disabled }: ExportMenuProps) {
       disabled={disabled}
       align="end"
       compact
+      variant="ghost"
       items={[
         { key: 'html', label: t('docs.export.html'), icon: <FileCode2 className="h-4 w-4" />, onSelect: () => void laden('html') },
         { key: 'md', label: t('docs.export.markdown'), icon: <FileText className="h-4 w-4" />, onSelect: () => void laden('md') },
