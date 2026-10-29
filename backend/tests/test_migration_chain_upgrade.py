@@ -363,3 +363,42 @@ def test_alte_docs_revision_wird_ohne_datenverlust_repariert(pg_wegwerf) -> None
         engine.dispose()
         settings.database_url = previous
 
+def test_vorhandene_queue_indizes_blockieren_die_reparatur_nicht(pg_wegwerf) -> None:
+    """Auch ein halb ausgefuehrter main-Lauf darf die Reparatur nicht stoppen.
+
+    Bricht ein Update mitten in der main-Kette ab, koennen Tabelle und Indizes
+    der E2EE-Queue bereits existieren, waehrend die Revision davor steht. Die
+    Migrationen muessen ihre Indizes dann ueberspringen statt sie erneut
+    anzulegen.
+    """
+    db_url = pg_wegwerf("docs-bruecke-indizes")
+    previous = settings.database_url
+    settings.database_url = db_url
+    config = _config(Path(__file__).resolve().parent.parent)
+    engine = create_engine(db_url)
+    try:
+        Base.metadata.create_all(engine)
+        command.stamp(config, "20261024_01")
+        command.upgrade(config, "20261024_02")
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE alembic_version SET version_num = '20261024_01'"))
+
+        from services.schema_manager import initialize_or_upgrade_schema
+
+        assert initialize_or_upgrade_schema(engine) == "upgraded"
+        with engine.connect() as conn:
+            version = conn.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar()
+            indizes = conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_indexes "
+                    "WHERE indexname = 'ix_e2ee_queue_target_device'"
+                )
+            ).scalar()
+        assert version == "20261029_01"
+        assert indizes == 1
+    finally:
+        engine.dispose()
+        settings.database_url = previous
+

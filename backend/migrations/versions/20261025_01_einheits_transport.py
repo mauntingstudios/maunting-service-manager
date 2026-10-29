@@ -47,6 +47,24 @@ OLD_TABLES = (
 )
 
 
+def _index(name, table, columns, unique=False, **kw) -> None:
+    """CREATE INDEX IF NOT EXISTS — auch fuer Indizes aus einem frueheren Lauf.
+
+    Nach einem abgebrochenen Update koennen Tabellen und Indizes bereits
+    existieren, waehrend Alembic die Revision noch nachholt. Der Name ist in
+    PostgreSQL schemaweit eindeutig; IF NOT EXISTS deckt auch Indizes ab, die
+    zu einer UNIQUE-Bedingung gehoeren und deshalb nicht in get_indexes stehen.
+    """
+    teile = []
+    for spalte in columns:
+        teile.append(spalte.text if hasattr(spalte, "text") else str(spalte))
+    sql = f'CREATE {"UNIQUE " if unique else ""}INDEX IF NOT EXISTS "{name}" ON "{table}" ({", ".join(teile)})'
+    where = kw.get("postgresql_where")
+    if where is not None:
+        sql += f" WHERE {where.text if hasattr(where, 'text') else where}"
+    op.execute(sa.text(sql))
+
+
 def _tables(bind) -> set[str]:
     return set(sa.inspect(bind).get_table_names())
 
@@ -177,7 +195,7 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("user_id", "device_id", name="uq_e2ee_account_key_device"),
         )
-        op.create_index("ix_e2ee_account_key_user", "e2ee_account_key_vault", ["user_id"])
+        _index("ix_e2ee_account_key_user", "e2ee_account_key_vault", ["user_id"])
 
     if "direct_chat_members" not in tables:
         op.create_table(
@@ -191,7 +209,7 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("chat_id", "user_id", name="uq_direct_chat_member"),
         )
-        op.create_index("ix_direct_chat_member_user", "direct_chat_members", ["user_id"])
+        _index("ix_direct_chat_member_user", "direct_chat_members", ["user_id"])
 
     if "e2ee_chat_keys" not in tables:
         op.create_table(
@@ -209,10 +227,10 @@ def upgrade() -> None:
                 "chat_type", "chat_id", "user_id", "key_version", name="uq_e2ee_chat_key"
             ),
         )
-        op.create_index(
+        _index(
             "ix_e2ee_chat_key_chat", "e2ee_chat_keys", ["chat_type", "chat_id", "key_version"]
         )
-        op.create_index("ix_e2ee_chat_key_user", "e2ee_chat_keys", ["user_id"])
+        _index("ix_e2ee_chat_key_user", "e2ee_chat_keys", ["user_id"])
 
     if "e2ee_messages" not in tables:
         op.create_table(
@@ -237,11 +255,11 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("client_uuid", name="uq_e2ee_message_client_uuid"),
         )
-        op.create_index(
+        _index(
             "ix_e2ee_messages_chat_cursor", "e2ee_messages", ["chat_type", "chat_id", "id"]
         )
-        op.create_index("ix_e2ee_messages_expires", "e2ee_messages", ["expires_at"])
-        op.create_index("ix_e2ee_messages_sender", "e2ee_messages", ["sender_user_id"])
+        _index("ix_e2ee_messages_expires", "e2ee_messages", ["expires_at"])
+        _index("ix_e2ee_messages_sender", "e2ee_messages", ["sender_user_id"])
 
     if "e2ee_message_reactions" not in tables:
         op.create_table(
@@ -256,7 +274,7 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("message_id", "user_id", name="uq_e2ee_message_reaction"),
         )
-        op.create_index(
+        _index(
             "ix_e2ee_message_reaction_message", "e2ee_message_reactions", ["message_id"]
         )
 
@@ -276,7 +294,7 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("chat_type", "chat_id", "user_id", name="uq_e2ee_chat_state"),
         )
-        op.create_index("ix_e2ee_chat_state_user", "e2ee_chat_states", ["user_id"])
+        _index("ix_e2ee_chat_state_user", "e2ee_chat_states", ["user_id"])
 
     # Alte Wege aus dem Betrieb nehmen, aber ihre Zeilen nicht vernichten.
     for table in OLD_TABLES:
@@ -329,11 +347,11 @@ def downgrade() -> None:
                 "blind_mailbox_id", "client_uuid", name="uq_e2ee_envelope_mailbox_client_uuid"
             ),
         )
-        op.create_index("ix_e2ee_blind_envelopes_blind_mailbox_id", "e2ee_blind_envelopes", ["blind_mailbox_id"])
-        op.create_index("ix_e2ee_blind_envelopes_ciphertext_sha256", "e2ee_blind_envelopes", ["ciphertext_sha256"])
-        op.create_index("ix_e2ee_blind_envelopes_client_uuid", "e2ee_blind_envelopes", ["client_uuid"])
-        op.create_index("ix_e2ee_blind_envelopes_created_at", "e2ee_blind_envelopes", ["created_at"])
-        op.create_index("ix_e2ee_envelope_mailbox_uuid", "e2ee_blind_envelopes", ["blind_mailbox_id", "client_uuid"])
+        _index("ix_e2ee_blind_envelopes_blind_mailbox_id", "e2ee_blind_envelopes", ["blind_mailbox_id"])
+        _index("ix_e2ee_blind_envelopes_ciphertext_sha256", "e2ee_blind_envelopes", ["ciphertext_sha256"])
+        _index("ix_e2ee_blind_envelopes_client_uuid", "e2ee_blind_envelopes", ["client_uuid"])
+        _index("ix_e2ee_blind_envelopes_created_at", "e2ee_blind_envelopes", ["created_at"])
+        _index("ix_e2ee_envelope_mailbox_uuid", "e2ee_blind_envelopes", ["blind_mailbox_id", "client_uuid"])
 
     if "e2ee_mailbox_push" not in tables:
         op.create_table(
@@ -348,8 +366,8 @@ def downgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("mailbox_id", "endpoint_hash", name="uq_mailbox_push_ziel"),
         )
-        op.create_index("ix_e2ee_mailbox_push_mailbox", "e2ee_mailbox_push", ["mailbox_id"])
-        op.create_index("ix_e2ee_mailbox_push_endpoint", "e2ee_mailbox_push", ["endpoint_hash"])
+        _index("ix_e2ee_mailbox_push_mailbox", "e2ee_mailbox_push", ["mailbox_id"])
+        _index("ix_e2ee_mailbox_push_endpoint", "e2ee_mailbox_push", ["endpoint_hash"])
 
     if "e2ee_device_queue" not in tables:
         op.create_table(
@@ -367,9 +385,9 @@ def downgrade() -> None:
             sa.ForeignKeyConstraint(["target_device_id"], ["user_e2ee_devices.id"], ondelete="CASCADE"),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index("ix_e2ee_queue_target_device", "e2ee_device_queue", ["target_device_id"])
-        op.create_index("ix_e2ee_queue_client_uuid", "e2ee_device_queue", ["client_uuid"])
-        op.create_index("ix_e2ee_queue_chat", "e2ee_device_queue", ["chat_id"])
+        _index("ix_e2ee_queue_target_device", "e2ee_device_queue", ["target_device_id"])
+        _index("ix_e2ee_queue_client_uuid", "e2ee_device_queue", ["client_uuid"])
+        _index("ix_e2ee_queue_chat", "e2ee_device_queue", ["chat_id"])
 
     if "e2ee_device_inboxes" not in tables:
         op.create_table(
@@ -384,7 +402,7 @@ def downgrade() -> None:
             sa.UniqueConstraint("device_id", name="uq_e2ee_device_inbox_device"),
             sa.UniqueConstraint("inbox_hash", name="uq_e2ee_device_inbox_hash"),
         )
-        op.create_index("ix_e2ee_device_inbox_device", "e2ee_device_inboxes", ["device_id"])
+        _index("ix_e2ee_device_inbox_device", "e2ee_device_inboxes", ["device_id"])
 
     if "e2ee_delivery_payloads" not in tables:
         op.create_table(
@@ -397,8 +415,8 @@ def downgrade() -> None:
             sa.Column("ablauf_am", sa.DateTime(timezone=True), nullable=False),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index("ix_e2ee_delivery_payload_ablauf", "e2ee_delivery_payloads", ["ablauf_am"])
-        op.create_index(
+        _index("ix_e2ee_delivery_payload_ablauf", "e2ee_delivery_payloads", ["ablauf_am"])
+        _index(
             "ix_e2ee_delivery_payloads_ciphertext_sha256",
             "e2ee_delivery_payloads",
             ["ciphertext_sha256"],
@@ -430,10 +448,10 @@ def downgrade() -> None:
             sa.UniqueConstraint("inbox_hash", "id", name="uq_e2ee_delivery_inbox_id"),
             sa.UniqueConstraint("laufende_seq", name="uq_e2ee_delivery_seq"),
         )
-        op.create_index(
+        _index(
             "ix_e2ee_delivery_inbox_seq", "e2ee_deliveries", ["inbox_hash", "laufende_seq"]
         )
-        op.create_index("ix_e2ee_delivery_ablauf", "e2ee_deliveries", ["ablauf_am"])
+        _index("ix_e2ee_delivery_ablauf", "e2ee_deliveries", ["ablauf_am"])
 
     if "e2ee_delivery_receipts" not in tables:
         op.create_table(
@@ -448,6 +466,6 @@ def downgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("inbox_hash", "delivery_id", name="uq_e2ee_delivery_receipt"),
         )
-        op.create_index(
+        _index(
             "ix_e2ee_delivery_receipt_ablauf", "e2ee_delivery_receipts", ["ablauf_am"]
         )

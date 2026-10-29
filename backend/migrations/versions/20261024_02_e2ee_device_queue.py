@@ -19,17 +19,35 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _index(name, table, columns, unique=False, **kw) -> None:
+    """CREATE INDEX IF NOT EXISTS — auch fuer Indizes aus einem frueheren Lauf.
+
+    Nach einem abgebrochenen Update koennen Tabellen und Indizes bereits
+    existieren, waehrend Alembic die Revision noch nachholt. Der Name ist in
+    PostgreSQL schemaweit eindeutig; IF NOT EXISTS deckt auch Indizes ab, die
+    zu einer UNIQUE-Bedingung gehoeren und deshalb nicht in get_indexes stehen.
+    """
+    teile = []
+    for spalte in columns:
+        teile.append(spalte.text if hasattr(spalte, "text") else str(spalte))
+    sql = f'CREATE {"UNIQUE " if unique else ""}INDEX IF NOT EXISTS "{name}" ON "{table}" ({", ".join(teile)})'
+    where = kw.get("postgresql_where")
+    if where is not None:
+        sql += f" WHERE {where.text if hasattr(where, 'text') else where}"
+    op.execute(sa.text(sql))
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     tables = set(sa.inspect(bind).get_table_names())
     if "e2ee_device_queue" in tables:
         existing_indexes = {idx["name"] for idx in sa.inspect(bind).get_indexes("e2ee_device_queue")}
         if "ix_e2ee_queue_target_device" not in existing_indexes:
-            op.create_index("ix_e2ee_queue_target_device", "e2ee_device_queue", ["target_device_id"])
+            _index("ix_e2ee_queue_target_device", "e2ee_device_queue", ["target_device_id"])
         if "ix_e2ee_queue_client_uuid" not in existing_indexes:
-            op.create_index("ix_e2ee_queue_client_uuid", "e2ee_device_queue", ["client_uuid"])
+            _index("ix_e2ee_queue_client_uuid", "e2ee_device_queue", ["client_uuid"])
         if "ix_e2ee_queue_chat" not in existing_indexes:
-            op.create_index("ix_e2ee_queue_chat", "e2ee_device_queue", ["chat_id"])
+            _index("ix_e2ee_queue_chat", "e2ee_device_queue", ["chat_id"])
         return
 
     op.create_table(
@@ -47,9 +65,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["target_device_id"], ["user_e2ee_devices.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_e2ee_queue_target_device", "e2ee_device_queue", ["target_device_id"])
-    op.create_index("ix_e2ee_queue_client_uuid", "e2ee_device_queue", ["client_uuid"])
-    op.create_index("ix_e2ee_queue_chat", "e2ee_device_queue", ["chat_id"])
+    _index("ix_e2ee_queue_target_device", "e2ee_device_queue", ["target_device_id"])
+    _index("ix_e2ee_queue_client_uuid", "e2ee_device_queue", ["client_uuid"])
+    _index("ix_e2ee_queue_chat", "e2ee_device_queue", ["chat_id"])
 
 
 def downgrade() -> None:
