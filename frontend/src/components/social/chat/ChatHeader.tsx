@@ -61,7 +61,7 @@ export function ChatHeader({
   const { t } = useTranslation()
 
   return (
-    <header className="relative z-30 flex min-h-14 shrink-0 items-center gap-2 border-b border-outline-variant/40 bg-surface-container/75 px-2 backdrop-blur-md sm:gap-2.5 sm:px-3">
+    <header className="relative z-30 flex min-h-14 shrink-0 items-center gap-2 border-b border-outline-variant/40 bg-surface-container/75 px-2 pt-[var(--msm-oben-sicher)] backdrop-blur-md sm:gap-2.5 sm:px-3">
       <Kurzinfo text={t('messenger.backToContacts')} seite="anfang" aussen="shrink-0 md:hidden">
         <button
           type="button"

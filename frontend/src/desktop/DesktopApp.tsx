@@ -904,7 +904,7 @@ function Hauptseite({
   return (
     <>
       {!chatVollbild && (
-        <header className="msm-topbar flex pt-[env(safe-area-inset-top,0px)] h-[calc(3.5rem+env(safe-area-inset-top,0px))] sm:h-[calc(4rem+env(safe-area-inset-top,0px))] items-center justify-between px-3 sm:px-4 md:px-6">
+        <header className="msm-topbar flex pt-[var(--msm-oben-sicher)] h-[calc(3.5rem+var(--msm-oben-sicher))] sm:h-[calc(4rem+var(--msm-oben-sicher))] items-center justify-between px-3 sm:px-4 md:px-6">
           {/* Linke Seite: Agent-Name & Aktivitätsanzeige */}
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <div className="min-w-0">

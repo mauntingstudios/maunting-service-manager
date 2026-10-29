@@ -35,6 +35,13 @@ describe('ChatHeader', () => {
     expect(screen.getByText('TE')).toBeInTheDocument()
   })
 
+  it('hält den Inhalt unter der Statusleiste und lässt den Hintergrund bis oben', () => {
+    // Die Notch liegt am Telefon über dem Kopf. Der Abstand gehört in den
+    // Header, damit dessen Hintergrund die Fläche dahinter ausfüllt.
+    zeige()
+    expect(document.querySelector('header')).toHaveClass('pt-[var(--msm-oben-sicher)]')
+  })
+
   it('hält den Zurück-Pfeil am Telefon und blendet ihn am Rechner aus', () => {
     zeige()
     const zurueck = screen.getByRole('button', { name: i18n.t('messenger.backToContacts') })

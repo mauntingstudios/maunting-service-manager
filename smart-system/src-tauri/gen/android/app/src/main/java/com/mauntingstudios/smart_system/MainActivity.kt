@@ -22,14 +22,12 @@ import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
   /**
-   * Höhe der Gesten- bzw. Navigationsleiste in CSS-Pixeln.
-   *
-   * Die App zeichnet randlos. Ältere Android-WebViews (im Emulator 124) melden
-   * die Leiste unten aber nicht als env(safe-area-inset-bottom): Fußleisten
-   * lagen unter ihr. Die Oberfläche nimmt das Größere von beiden
-   * (--msm-unten-sicher in index.css, lib/gestenleiste.ts).
+   * Ränder in CSS-Pixeln, die ältere WebViews nicht als env(safe-area-inset-*)
+   * melden: unten die Gesten- bzw. Navigationsleiste, oben Statusleiste und
+   * Kamera-Ausschnitt, seitlich die Ränder im Querformat. Die Oberfläche nimmt
+   * das Größere von beiden (`--msm-*-sicher`, lib/gestenleiste.ts).
    */
-  @Volatile private var gestenleiste = 0f
+  @Volatile private var rand = mapOf("oben" to 0f, "links" to 0f, "rechts" to 0f, "unten" to 0f)
 
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
@@ -42,18 +40,30 @@ class MainActivity : TauriActivity() {
     }
     // Gelesen beim Start der Seite; Änderungen schiebt das Layout nach.
     webView.addJavascriptInterface(object {
-      @JavascriptInterface fun unten(): Float = gestenleiste
+      @JavascriptInterface fun unten(): Float = rand.getValue("unten")
+      @JavascriptInterface fun oben(): Float = rand.getValue("oben")
+      @JavascriptInterface fun links(): Float = rand.getValue("links")
+      @JavascriptInterface fun rechts(): Float = rand.getValue("rechts")
     }, "MsmRand")
     // Nur lesen, kein eigener OnApplyWindowInsetsListener: der ersetzt den des
     // WebViews, und env(safe-area-inset-top) fiel auf 0, die Statusleiste lag
     // über der Kopfzeile.
     webView.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
       val insets = ViewCompat.getRootWindowInsets(view) ?: return@addOnLayoutChangeListener
-      val neu = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom / view.resources.displayMetrics.density
-      if (neu != gestenleiste) {
-        gestenleiste = neu
-        view.post { webView.evaluateJavascript("window.__msmGestenleiste?.($neu)", null) }
+      val d = view.resources.displayMetrics.density
+      val leisten = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+      val neu = mapOf(
+        "oben" to leisten.top / d,
+        "links" to leisten.left / d,
+        "rechts" to leisten.right / d,
+        "unten" to insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom / d,
+      )
+      if (neu == rand) return@addOnLayoutChangeListener
+      rand = neu
+      val skript = neu.entries.joinToString(";") { (seite, px) ->
+        if (seite == "unten") "window.__msmGestenleiste?.($px)" else "window.__msmRand?.('$seite',$px)"
       }
+      view.post { webView.evaluateJavascript(skript, null) }
     }
   }
 
