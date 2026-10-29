@@ -7,7 +7,7 @@ import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { Switch } from '@/components/ui/Switch'
 import { pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
-import { ausschalten, dienstVerfuegbar, einschalten, stand, type DienstStand } from '@/services/hintergrunddienst'
+import { ausschalten, dienstVerfuegbar, einschalten, einstellungenOeffnen, stand, type DienstStand } from '@/services/hintergrunddienst'
 import { useAnkerLage } from './Ankerlage'
 
 /**
@@ -57,18 +57,6 @@ export function BenachrichtigungenMenue() {
       window.removeEventListener('focus', aktualisieren)
     }
   }, [])
-
-  const berechtigungErneutAnfragen = async () => {
-    const erlaubt = await pruefeUndFrageGeraeteBerechtigung()
-    if (erlaubt) {
-      setDienstStand(await stand())
-      return
-    }
-    // Der Systemdialog kann noch offen sein; nach dem Schließen neu lesen.
-    window.setTimeout(() => {
-      void stand().then(setDienstStand).catch(() => {})
-    }, 3000)
-  }
 
   const schalte = async (feld: 'email' | 'ai' | 'device', naechster: boolean) => {
     if (!user) return
@@ -194,7 +182,7 @@ export function BenachrichtigungenMenue() {
           aria-label={t('notifications.deviceLabel')}
         />
       </label>
-      {dienstVerfuegbar() && dienstStand && (
+      {deviceNotificationsEnabled && dienstVerfuegbar() && dienstStand && (
         <div className="px-3 pb-2.5">
           {!dienstStand.benachrichtigungenErlaubt ? (
             <div className="flex items-start gap-1.5 text-xs text-status-warning">
@@ -203,10 +191,10 @@ export function BenachrichtigungenMenue() {
                 {t('notifications.devicePermissionDenied')}{' '}
                 <button
                   type="button"
-                  onClick={() => void berechtigungErneutAnfragen()}
+                  onClick={() => void einstellungenOeffnen()}
                   className="font-medium text-primary underline underline-offset-2"
                 >
-                  {t('notifications.devicePermissionAction')}
+                  {t('notifications.deviceSettingsAction')}
                 </button>
               </span>
             </div>

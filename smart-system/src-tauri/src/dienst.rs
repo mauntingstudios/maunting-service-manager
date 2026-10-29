@@ -150,6 +150,16 @@ pub async fn dienst_stand(_app: AppHandle, fenster: WebviewWindow) -> Result<Val
     Ok(json!({ "aktiv": false, "akkuBefreit": false }))
 }
 
+/// Öffnet die Benachrichtigungseinstellungen genau dieser App.
+#[tauri::command(async)]
+pub async fn dienst_einstellungen_oeffnen(
+    app: AppHandle,
+    fenster: WebviewWindow,
+) -> Result<(), String> {
+    nur_hauptfenster(&fenster)?;
+    ruf(&app, "einstellungenOeffnen", json!({})).map(|_| ())
+}
+
 /// Fragt die Akku-Ausnahme an. Ohne sie beenden Samsung und Xiaomi den Dienst
 /// nach Stunden still — das ist der Unterschied zwischen „kommt an" und
 /// „kommt manchmal an".

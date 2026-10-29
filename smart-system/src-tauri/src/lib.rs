@@ -1009,6 +1009,7 @@ pub fn run() {
             dienst::dienst_stoppen,
             dienst::dienst_stand,
             dienst::dienst_akku_befreien,
+            dienst::dienst_einstellungen_oeffnen,
             updater::update_pruefen,
             updater::update_herunterladen,
             updater::update_installieren,

@@ -240,6 +240,7 @@ pub fn run() {
             dienst::dienst_stoppen,
             dienst::dienst_stand,
             dienst::dienst_akku_befreien,
+            dienst::dienst_einstellungen_oeffnen,
             schluesselfach::befehle::refresh_token_speichern,
             schluesselfach::befehle::refresh_token_laden,
             schluesselfach::befehle::refresh_token_loeschen,

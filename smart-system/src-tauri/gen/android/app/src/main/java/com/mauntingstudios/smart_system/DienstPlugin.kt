@@ -83,6 +83,20 @@ class DienstPlugin(private val activity: Activity) : Plugin(activity) {
         )
     }
 
+    /** Öffnet die Benachrichtigungseinstellungen genau dieser App. */
+    @Command
+    fun einstellungenOeffnen(invoke: Invoke) {
+        try {
+            val absicht = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+            }
+            activity.startActivity(absicht)
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "Einstellungen nicht erreichbar")
+        }
+    }
+
     /**
      * Fragt die Akku-Ausnahme an.
      *

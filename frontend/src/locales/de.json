@@ -4011,7 +4011,7 @@
     "deviceHint": "Pop-up-Meldungen auf diesem Gerät, auch wenn die App geschlossen ist. Auf Android hält die App die Verbindung selbst offen, ohne Google.",
     "deviceActive": "Hintergrunddienst läuft auf diesem Gerät.",
     "devicePermissionDenied": "Benachrichtigungen sind in Android blockiert. Bitte in den App-Einstellungen erlauben.",
-    "devicePermissionAction": "Berechtigung erlauben",
+    "deviceSettingsAction": "App-Einstellungen öffnen",
     "backgroundFailed": "Gerätebenachrichtigungen ließen sich nicht einschalten.",
     "incidentTitle": "Server-Vorfall: {{server}}",
     "incidentText": "{{titel}} ({{art}})",

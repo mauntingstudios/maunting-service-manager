@@ -23,6 +23,7 @@ vi.mock('@/services/hintergrunddienst', () => ({
   stand: vi.fn(async () => ({ aktiv: false, akkuBefreit: false, benachrichtigungenErlaubt: true })),
   einschalten: vi.fn(async () => true),
   ausschalten: vi.fn(async () => {}),
+  einstellungenOeffnen: vi.fn(async () => {}),
 }))
 
 function setUser(email = true, ai = true, device = true) {

@@ -115,6 +115,12 @@ export async function einschalten(label?: string): Promise<boolean> {
   return true
 }
 
+/** Öffnet die Android-Benachrichtigungseinstellungen dieser App. */
+export async function einstellungenOeffnen(): Promise<void> {
+  if (!dienstVerfuegbar()) return
+  await invoke('dienst_einstellungen_oeffnen').catch(() => {})
+}
+
 /**
  * Nach dem Start den Dienst an den Kontoschalter angleichen.
  *
