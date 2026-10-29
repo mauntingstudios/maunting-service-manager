@@ -149,6 +149,7 @@ pub fn run() {
             // laufende Pfad ist immer der richtige, deshalb hier erneuern.
             #[cfg(all(windows, not(debug_assertions)))]
             std::thread::spawn(|| {
+                widget::alte_nsis_reste_bereinigen();
                 let _ = widget::standardbrowser_registrieren();
             });
             let konfig = konfig::laden(handle);

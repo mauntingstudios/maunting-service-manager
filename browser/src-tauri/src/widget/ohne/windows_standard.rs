@@ -158,6 +158,45 @@ fn zuordnungen_neu_lesen() {
 /// Meldet den Browser unter HKCU als `StartMenuInternet`-Client an. Windows
 /// zeigt ihn dann unter „Standard-Apps“ zur Wahl; festlegen kann ihn nur der
 /// Nutzer selbst.
+/// Entfernt verwaiste NSIS-Installationsordner und veraltete Verknüpfungen von früher.
+pub fn alte_nsis_reste_bereinigen() {
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        for ordner_name in ["Maunting Pontis", "Maunting Secure Browser"] {
+            let alt = std::path::PathBuf::from(&local_app_data).join(ordner_name);
+            if alt.is_dir() {
+                let uninstall = alt.join("uninstall.exe");
+                let old_exe = alt.join("MauntingSecureBrowser.exe");
+                if uninstall.exists() || old_exe.exists() {
+                    let _ = std::fs::remove_file(&uninstall);
+                    let _ = std::fs::remove_file(&old_exe);
+                    let _ = std::fs::remove_dir_all(&alt);
+                }
+            }
+        }
+    }
+    if let Some(user_profile) = std::env::var_os("USERPROFILE") {
+        for name in ["Maunting Pontis.lnk", "Maunting Secure Browser.lnk"] {
+            let lnk = std::path::PathBuf::from(&user_profile).join("Desktop").join(name);
+            if lnk.is_file() {
+                let _ = std::fs::remove_file(lnk);
+            }
+        }
+    }
+    if let Some(app_data) = std::env::var_os("APPDATA") {
+        let programs = std::path::PathBuf::from(&app_data).join(r"Microsoft\Windows\Start Menu\Programs");
+        for name in [
+            "Maunting Pontis.lnk",
+            "Maunting Secure Browser.lnk",
+            r"Maunting Studios\Maunting Pontis.lnk",
+        ] {
+            let lnk = programs.join(name);
+            if lnk.is_file() {
+                let _ = std::fs::remove_file(lnk);
+            }
+        }
+    }
+}
+
 pub fn registrieren(exe: &Path) -> Result<(), String> {
     registrieren_fuer(&exe.display().to_string())
 }
