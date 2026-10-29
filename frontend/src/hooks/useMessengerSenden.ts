@@ -129,6 +129,14 @@ class E2eeIdentityLockedError extends Error {
   }
 }
 
+/** Der Chat ließ sich nicht öffnen; die Nachricht ist nicht hinausgegangen. */
+class ChatNichtGeoeffnetError extends Error {
+  constructor() {
+    super('Der Chat konnte nicht geöffnet werden.')
+    this.name = 'ChatNichtGeoeffnetError'
+  }
+}
+
 /**
  * Das Foto eines Augenblicks kam nicht auf den Server — nicht gesendet.
  *
@@ -764,7 +772,7 @@ export function useMessengerSenden(optionen: Optionen) {
       const erwaehnt = erwaehnungsFelder(rawText, zielGruppe)
       const zeitpunkt = new Date().toISOString()
       const chatZiel = await konversation.ensureChat()
-      if (!chatZiel) throw new Error(t('messenger.noDeviceOnline', { name: activeContact?.username || '' }))
+      if (!chatZiel) throw new ChatNichtGeoeffnetError()
 
       const { finalImg, finalFile, finalAudio, finalVideoNote } = await ladeAnhaengeHoch(
         { img, file, audio, videoNote },
@@ -954,6 +962,7 @@ export function useMessengerSenden(optionen: Optionen) {
         err instanceof E2eeIdentityLockedError ||
         err instanceof ChatSchluesselFehltError ||
         err instanceof KontoSchluesselNichtUebertragenError ||
+        err instanceof ChatNichtGeoeffnetError ||
         err instanceof AugenblickNichtHochgeladenError
       const istDauerhaft =
         err instanceof NachrichtAbgewiesenError ||
@@ -1032,12 +1041,18 @@ export function useMessengerSenden(optionen: Optionen) {
           toast.error(t('messenger.moment.uploadFailed'))
         } else if (err instanceof E2eeIdentityLockedError) {
           toast.error(t('messenger.deviceKeyNotReadyRetry'))
-        } else {
+        } else if (err instanceof ChatNichtGeoeffnetError) {
+          toast.error(t('messenger.chatOpenFailed'))
+        } else if (err instanceof KontoSchluesselNichtUebertragenError) {
+          toast.error(t('messenger.accountKeyMissing'))
+        } else if (err instanceof E2eeRecipientKeyMissingError || err instanceof ChatSchluesselFehltError) {
           toast.error(
-            t('messenger.noDeviceOnline', {
+            t('messenger.chatKeyMissing', {
               name: activeContact?.username ?? t('messenger.thisContact'),
             }),
           )
+        } else {
+          toast.error(t('messenger.sendFailed'))
         }
       } else {
         // Ein unerwarteter Fehler vor dem Serverurteil: nichts ist draußen,

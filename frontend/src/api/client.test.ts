@@ -38,6 +38,22 @@ describe('api client', () => {
     } as Response)
   }
 
+  describe('Offline-Erkennung', () => {
+    it('meldet einen abgebrochenen Request nicht als Offline', async () => {
+      const abbruch = new Error('The operation was aborted.')
+      abbruch.name = 'AbortError'
+      fetchSpy.mockRejectedValueOnce(abbruch)
+      const meldung = vi.fn()
+      window.addEventListener('msm:network-offline', meldung)
+      try {
+        await expect(api('/test')).rejects.toThrow()
+        expect(meldung).not.toHaveBeenCalled()
+      } finally {
+        window.removeEventListener('msm:network-offline', meldung)
+      }
+    })
+  })
+
   describe('CSRF header', () => {
     it('sends CSRF and keeps the SSE response body unread', async () => {
       document.cookie = '__Secure-csrf_token=stream_csrf;path=/;secure'
