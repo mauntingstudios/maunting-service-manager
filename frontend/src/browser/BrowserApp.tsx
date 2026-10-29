@@ -338,7 +338,11 @@ function Wurzel() {
       <ConfirmDialog />
       <PromptDialog />
       <BrowserBestaetigungDialog />
-      <PasskeyFernBestaetigung />
+      <PasskeyFernBestaetigung
+        onOeffnen={(url) => {
+          useTabsStore.getState().neuerTab(url)
+        }}
+      />
       <ThirdPartyPrivacyDialog
         open={!!ausstehenderDrittanbieter}
         onConfirm={() => {

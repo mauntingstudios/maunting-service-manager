@@ -6,7 +6,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { api } from '@/api/client'
 import i18n from '@/i18n'
 import { fakeLayout } from '@/test/fakeLayout'
-import { ausschalten, dienstVerfuegbar, einschalten, stand } from '@/services/hintergrunddienst'
+import { ausschalten, dienstVerfuegbar, einschalten, einstellungenOeffnen, stand } from '@/services/hintergrunddienst'
 import { pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
 
 vi.mock('@/api/client', () => ({
@@ -61,6 +61,7 @@ describe('BenachrichtigungsGlocke', () => {
     vi.mocked(ausschalten).mockClear()
     vi.mocked(pruefeUndFrageGeraeteBerechtigung).mockReset()
     vi.mocked(pruefeUndFrageGeraeteBerechtigung).mockResolvedValue(true)
+    vi.mocked(einstellungenOeffnen).mockClear()
   })
 
   it('öffnet das Menü per Portal an body, außerhalb des Stapelkontexts der Shell', () => {
@@ -131,6 +132,19 @@ describe('BenachrichtigungsGlocke', () => {
     fireEvent.click(schalter)
     await waitFor(() => expect(ausschalten).toHaveBeenCalled())
     await waitFor(() => expect(schalter).not.toBeChecked())
+  })
+
+  it('zeigt den Einstellungsweg auch bei ausgeschaltetem Geräte-Schalter', async () => {
+    setUser(true, true, false)
+    vi.mocked(dienstVerfuegbar).mockReturnValue(true)
+    vi.mocked(stand).mockResolvedValue({ aktiv: false, akkuBefreit: false, benachrichtigungenErlaubt: false })
+    render(<BenachrichtigungsGlocke placement="bottom" align="right" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /benachrichtigungen/i }))
+    await waitFor(() => expect(stand).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'App-Einstellungen öffnen' }))
+
+    expect(einstellungenOeffnen).toHaveBeenCalled()
   })
 
   it('sagt es, wenn der Dienst nicht startet', async () => {

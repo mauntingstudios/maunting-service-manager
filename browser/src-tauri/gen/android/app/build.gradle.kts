@@ -79,9 +79,10 @@ dependencies {
     // Passkeys im WebView: die Seite delegiert an den Credential Manager der
     // App. Die Zuordnung zur Panel-Domain steht in
     // frontend/public/.well-known/assetlinks.json (Release-Zertifikat 5.8.0).
-    // Nach einer Schlüsselrotation dort aktualisieren.
-    implementation("androidx.credentials:credentials:1.6.0-beta02")
-    implementation("androidx.credentials:credentials-play-services-auth:1.6.0-beta02")
+    // Nach einer Schlüsselrotation dort aktualisieren; der Fingerabdruck ist
+    // die einzige Verbindung zwischen Panel-Domain und diesem Paket.
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     // BiometricPrompt vor dem Android-Keystore (Schluesselfach.kt), dieselbe
     // Fassung wie tauri-plugin-biometric.

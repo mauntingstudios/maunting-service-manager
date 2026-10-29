@@ -2,6 +2,7 @@ package com.mauntingstudios.smart_system
 
 import android.Manifest
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -74,11 +75,17 @@ class DienstPlugin(private val activity: Activity) : Plugin(activity) {
     fun laeuft(invoke: Invoke) {
         val ctx = activity.applicationContext
         val energie = activity.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val manager = NotificationManagerCompat.from(activity)
+        // Die App-Berechtigung allein genügt nicht: der Kanal „Nachrichten“
+        // kann zusätzlich stummgestellt sein. Dann bleibt die Warnung sichtbar.
+        val meldungskanal = manager.getNotificationChannel(Hintergrunddienst.KANAL_MELDUNG)
+        val erlaubt = manager.areNotificationsEnabled() &&
+            meldungskanal?.importance != NotificationManager.IMPORTANCE_NONE
         invoke.resolve(
             JSObject().apply {
                 put("aktiv", Hintergrunddienst.istEingeschaltet(ctx))
                 put("akkuBefreit", energie.isIgnoringBatteryOptimizations(activity.packageName))
-                put("benachrichtigungenErlaubt", NotificationManagerCompat.from(activity).areNotificationsEnabled())
+                put("benachrichtigungenErlaubt", erlaubt)
             },
         )
     }

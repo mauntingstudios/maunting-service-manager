@@ -18,7 +18,12 @@ interface Einladung {
  * Zahlenwahl und Passkey. Das anfragende Fenster erkennt sein eigenes
  * Ereignis an der Client-Kennung und zeigt den Hinweis nicht.
  */
-export function PasskeyFernBestaetigung() {
+interface PasskeyFernBestaetigungProps {
+  /** Pontis öffnet die Seite in einem eigenen Tab; sonst Browser/Standardweg. */
+  onOeffnen?: (url: string) => void | Promise<void>
+}
+
+export function PasskeyFernBestaetigung({ onOeffnen }: PasskeyFernBestaetigungProps = {}) {
   const { t } = useTranslation()
   const [einladung, setEinladung] = useState<Einladung | null>(null)
   const offen = useBrowserBestaetigung((s) => s.offen)
@@ -44,13 +49,17 @@ export function PasskeyFernBestaetigung() {
   const oeffnen = async () => {
     const url = einladung.url
     setEinladung(null)
+    if (onOeffnen) {
+      await onOeffnen(url)
+      return
+    }
     try {
       if (typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)) {
         await oeffneBrowser(url)
         return
       }
     } catch {
-      // Pontis/Web ohne den Tauri-Befehl: der Browser öffnet den Link.
+      // Web ohne den Tauri-Befehl: der Browser öffnet den Link.
     }
     window.open(url, '_blank', 'noopener,noreferrer')
   }

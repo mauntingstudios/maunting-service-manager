@@ -182,7 +182,7 @@ export function BenachrichtigungenMenue() {
           aria-label={t('notifications.deviceLabel')}
         />
       </label>
-      {deviceNotificationsEnabled && dienstVerfuegbar() && dienstStand && (
+      {dienstVerfuegbar() && dienstStand && (
         <div className="px-3 pb-2.5">
           {!dienstStand.benachrichtigungenErlaubt ? (
             <div className="flex items-start gap-1.5 text-xs text-status-warning">

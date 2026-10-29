@@ -333,10 +333,10 @@ const STAND_TAKT_MS = 2000
  * eigenes Ereignis und zeigt den Hinweis nicht doppelt; andere angemeldete
  * Fenster desselben Kontos sehen ihn.
  */
-let eigenerClient: string | null = null
+const eigeneClients = new Set<string>()
 
 export function istEigenerBestaetigungsClient(client: unknown): boolean {
-  return typeof client === 'string' && client === eigenerClient
+  return typeof client === 'string' && eigeneClients.has(client)
 }
 
 function neuerClient(): string {
@@ -358,11 +358,18 @@ function neuerClient(): string {
  */
 async function imBrowserBestaetigen(zweck: PasskeyZweck): Promise<BrowserNachweis> {
   const client = neuerClient()
-  eigenerClient = client
-  const { vorgang, zahl, url } = await api<{ vorgang: string; zahl: number; url: string }>('/auth/passkey/browser', {
-    method: 'POST',
-    body: JSON.stringify({ zweck, client }),
-  })
+  eigeneClients.add(client)
+  let antwort: { vorgang: string; zahl: number; url: string }
+  try {
+    antwort = await api<{ vorgang: string; zahl: number; url: string }>('/auth/passkey/browser', {
+      method: 'POST',
+      body: JSON.stringify({ zweck, client }),
+    })
+  } catch (fehler) {
+    eigeneClients.delete(client)
+    throw fehler
+  }
+  const { vorgang, zahl, url } = antwort
   await oeffneBrowser(url)
 
   return new Promise<BrowserNachweis>((resolve, reject) => {
@@ -372,6 +379,7 @@ async function imBrowserBestaetigen(zweck: PasskeyZweck): Promise<BrowserNachwei
       if (fertig) return
       fertig = true
       clearTimeout(takt)
+      eigeneClients.delete(client)
       useBrowserBestaetigung.getState().setzen(null)
       if (fehler) reject(fehler)
       else resolve({ type: 'browser', vorgang })
