@@ -154,8 +154,10 @@ function Wurzel() {
   useEffect(() => {
     if (!angemeldet || !istAndroid() || !navigator.onLine) return
     const user = useAuthStore.getState().user
-    if (!user || user.device_notifications === false) return
-    void import('@/services/hintergrunddienst').then((m) => m.sicherstellen()).catch(() => {})
+    if (!user) return
+    void import('@/services/hintergrunddienst')
+      .then((m) => m.sicherstellen(user.device_notifications !== false))
+      .catch(() => {})
   }, [angemeldet])
   // Offen einmal eingerichtet, kann der Browser auch bei gesperrtem Tresor
   // speichern. Erst nach dem Abgleich: sonst fehlte das Schlüsselpaar des

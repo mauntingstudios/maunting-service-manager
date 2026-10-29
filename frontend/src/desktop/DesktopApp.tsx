@@ -370,8 +370,10 @@ export function DesktopApp() {
   useEffect(() => {
     if (!isAndroid || !angemeldet || isOffline) return
     const user = useAuthStore.getState().user
-    if (!user || user.device_notifications === false) return
-    void import('@/services/hintergrunddienst').then((m) => m.sicherstellen()).catch(() => {})
+    if (!user) return
+    void import('@/services/hintergrunddienst')
+      .then((m) => m.sicherstellen(user.device_notifications !== false))
+      .catch(() => {})
   }, [angemeldet, isOffline])
 
   useEffect(() => {

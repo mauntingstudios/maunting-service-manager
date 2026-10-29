@@ -116,12 +116,19 @@ export async function einschalten(label?: string): Promise<boolean> {
 }
 
 /**
- * Nach dem Start sicherstellen, dass der Dienst läuft, wenn Geräte­
- * benachrichtigungen am Konto an sind. Legt bei Bedarf einen Kanal an.
+ * Nach dem Start den Dienst an den Kontoschalter angleichen.
+ *
+ * An: läuft er nicht, wird er gestartet; aus: ein noch laufender Dienst wird
+ * gestoppt. So wirkt ein Ausschalten auf einem anderen Gerät spätestens beim
+ * nächsten Start auch hier.
  */
-export async function sicherstellen(): Promise<void> {
+export async function sicherstellen(erlaubt: boolean): Promise<void> {
   if (!dienstVerfuegbar()) return
   const lage = await stand()
+  if (!erlaubt) {
+    if (lage.aktiv) await ausschalten()
+    return
+  }
   if (lage.aktiv) return
   await einschalten('Android')
 }
