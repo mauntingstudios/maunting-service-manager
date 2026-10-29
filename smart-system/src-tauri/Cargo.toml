@@ -173,7 +173,7 @@ windows = { version = "0.62", features = [
 # PermissionRequested-Handler der Mikrofonfreigabe — WebView2 zeigt fuer
 # getUserMedia auf tauri.localhost keinen eigenen Prompt, ohne Handler
 # bliebe das Mikrofon in der App stumm.
-webview2-com = "0.38"
+webview2-com = "0.39"
 # Der PWSTR-Typ, den webview2-com erwartet (windows-0.61-Familie nutzt
 # windows-strings 0.4). Unser `windows = 0.62` (WASAPI-Ducking) traegt einen
 # gleichnamigen, aber inkompatiblen Typ — dieselbe Kiste steht schon als
