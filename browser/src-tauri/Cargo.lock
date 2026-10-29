@@ -2461,7 +2461,7 @@ name = "maunting-secure-browser"
 version = "5.8.0"
 dependencies = [
  "adblock",
- "base64 0.22.1",
+ "base64 0.23.1",
  "image",
  "jni 0.21.1",
  "keyring",
