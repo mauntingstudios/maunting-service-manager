@@ -7,9 +7,14 @@ import { api } from '@/api/client'
 import i18n from '@/i18n'
 import { fakeLayout } from '@/test/fakeLayout'
 import { ausschalten, dienstVerfuegbar, einschalten, stand } from '@/services/hintergrunddienst'
+import { pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
 
 vi.mock('@/api/client', () => ({
   api: vi.fn(),
+}))
+
+vi.mock('@/lib/benachrichtigung', () => ({
+  pruefeUndFrageGeraeteBerechtigung: vi.fn(async () => true),
 }))
 
 // Der Dauerdienst gibt es nur auf Android; auf dem Rechner ist er unsichtbar.
@@ -53,6 +58,8 @@ describe('BenachrichtigungsGlocke', () => {
     vi.mocked(einschalten).mockClear()
     vi.mocked(einschalten).mockResolvedValue(true)
     vi.mocked(ausschalten).mockClear()
+    vi.mocked(pruefeUndFrageGeraeteBerechtigung).mockReset()
+    vi.mocked(pruefeUndFrageGeraeteBerechtigung).mockResolvedValue(true)
   })
 
   it('öffnet das Menü per Portal an body, außerhalb des Stapelkontexts der Shell', () => {
@@ -123,6 +130,26 @@ describe('BenachrichtigungsGlocke', () => {
     fireEvent.click(schalter)
     await waitFor(() => expect(ausschalten).toHaveBeenCalled())
     await waitFor(() => expect(schalter).not.toBeChecked())
+  })
+
+  it('fragt die Berechtigung vor dem Einschalten und bleibt sonst aus', async () => {
+    setUser(true, true, false)
+    vi.mocked(pruefeUndFrageGeraeteBerechtigung).mockResolvedValueOnce(false)
+    render(<BenachrichtigungsGlocke placement="bottom" align="right" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /benachrichtigungen/i }))
+    const schalter = screen.getByRole('switch', { name: 'Geräte-Benachrichtigungen' })
+    fireEvent.click(schalter)
+
+    await waitFor(() =>
+      expect(
+        useToastStore.getState().toasts.some(
+          (t) => t.message === 'Benachrichtigungen sind in Android blockiert. Bitte in den App-Einstellungen erlauben.',
+        ),
+      ).toBe(true),
+    )
+    expect(schalter).not.toBeChecked()
+    expect(api).not.toHaveBeenCalledWith('/auth/me/notifications?device=true', { method: 'PATCH' })
   })
 
   it('sagt es, wenn der Dienst nicht startet', async () => {

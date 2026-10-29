@@ -159,6 +159,17 @@ function Wurzel() {
       .then((m) => m.sicherstellen(user.device_notifications !== false))
       .catch(() => {})
   }, [angemeldet])
+
+  // Die Android-Berechtigung gehört an den Anfang, nicht an eine Testmeldung:
+  // ohne sie läuft der Dienst, aber keine Meldung erscheint.
+  useEffect(() => {
+    if (!angemeldet || !istAndroid()) return
+    const user = useAuthStore.getState().user
+    if (!user || user.device_notifications === false) return
+    void import('@/lib/benachrichtigung')
+      .then((m) => m.pruefeUndFrageGeraeteBerechtigung())
+      .catch(() => {})
+  }, [angemeldet])
   // Offen einmal eingerichtet, kann der Browser auch bei gesperrtem Tresor
   // speichern. Erst nach dem Abgleich: sonst fehlte das Schlüsselpaar des
   // Tresors noch, und es entstünde ein zweites.

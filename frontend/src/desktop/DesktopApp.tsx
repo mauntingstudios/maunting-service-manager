@@ -376,6 +376,17 @@ export function DesktopApp() {
       .catch(() => {})
   }, [angemeldet, isOffline])
 
+  // Die Android-Berechtigung gehört an den Anfang, nicht an eine Testmeldung:
+  // ohne sie läuft der Dienst, aber keine Meldung erscheint.
+  useEffect(() => {
+    if (!isAndroid || !angemeldet) return
+    const user = useAuthStore.getState().user
+    if (!user || user.device_notifications === false) return
+    void import('@/lib/benachrichtigung')
+      .then((m) => m.pruefeUndFrageGeraeteBerechtigung())
+      .catch(() => {})
+  }, [angemeldet])
+
   useEffect(() => {
     if (!sitzungSteht) return
     return sprachzustandVerdrahten()

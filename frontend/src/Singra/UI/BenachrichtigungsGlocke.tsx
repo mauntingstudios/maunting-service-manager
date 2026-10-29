@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, Bell, Bot, Mail, Send, Smartphone } from 'lucide-react'
+import { AlertTriangle, Bell, Bot, Mail, Smartphone } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { Switch } from '@/components/ui/Switch'
-import { pruefeUndFrageGeraeteBerechtigung, sendeGeraeteBenachrichtigung } from '@/lib/benachrichtigung'
+import { pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
 import { ausschalten, dienstVerfuegbar, einschalten, stand, type DienstStand } from '@/services/hintergrunddienst'
 import { useAnkerLage } from './Ankerlage'
 
@@ -64,6 +64,16 @@ export function BenachrichtigungenMenue() {
     else setDeviceNotificationsEnabled(naechster)
 
     if (feld === 'device') {
+      if (naechster) {
+        // Die Berechtigung gehört vor den Dienst, nicht erst zur Testmeldung:
+        // ohne sie startet der Dienst, aber Android zeigt nichts.
+        const erlaubt = await pruefeUndFrageGeraeteBerechtigung()
+        if (!erlaubt) {
+          setDeviceNotificationsEnabled(vorher)
+          toast.error(t('notifications.devicePermissionDenied'))
+          return
+        }
+      }
       if (dienstVerfuegbar()) {
         // Der Dienst ist die Fortsetzung desselben Schalters: an startet ihn,
         // aus stoppt und widerruft ihn. Ein eigener Nachweis wäre für einen
@@ -87,13 +97,6 @@ export function BenachrichtigungenMenue() {
           return
         } finally {
           setGeraetSchaltet(false)
-        }
-      } else if (naechster) {
-        const erlaubt = await pruefeUndFrageGeraeteBerechtigung()
-        if (!erlaubt) {
-          setDeviceNotificationsEnabled(vorher)
-          toast.error(t('notifications.devicePermissionDenied'))
-          return
         }
       }
     }
@@ -120,15 +123,6 @@ export function BenachrichtigungenMenue() {
       else setDeviceNotificationsEnabled(vorher)
       toast.error(t('notifications.updateFailed'))
     }
-  }
-
-  const testeMeldung = async () => {
-    const ergebnis = await sendeGeraeteBenachrichtigung({
-      titel: t('notifications.testTitle'),
-      text: t('notifications.testText'),
-      erzwingen: true,
-    })
-    if (!ergebnis.ok) toast.error(t('notifications.testFailed'))
   }
 
   return (
@@ -198,16 +192,6 @@ export function BenachrichtigungenMenue() {
             <p className="text-xs text-on-surface-variant">{t('notifications.deviceActive')}</p>
           ) : null}
         </div>
-      )}
-      {deviceNotificationsEnabled && (
-        <button
-          type="button"
-          onClick={() => void testeMeldung()}
-          className="flex w-full items-center gap-2 border-t border-outline-variant/20 px-3 py-2.5 text-left text-sm text-on-surface hover:bg-surface-container-highest transition-colors"
-        >
-          <Send className="h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
-          {t('notifications.testLabel')}
-        </button>
       )}
     </div>
   )
