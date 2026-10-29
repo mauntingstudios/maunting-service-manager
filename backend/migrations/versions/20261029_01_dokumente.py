@@ -1,7 +1,7 @@
 """Dokumente-Modul: Tabellen, Indizes und Docs-Gespraeche.
 
 Revision ID: 20261029_01
-Revises: 20261024_01
+Revises: 20261028_01
 Create Date: 2026-10-28
 """
 
@@ -19,8 +19,53 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _tabellen(bind) -> set[str]:
+    return set(sa.inspect(bind).get_table_names())
+
+
+def _spalten(bind, tabelle: str) -> set[str]:
+    try:
+        return {spalte["name"] for spalte in sa.inspect(bind).get_columns(tabelle)}
+    except sa.exc.NoSuchTableError:
+        return set()
+
+
+def _indizes(bind, tabelle: str) -> set[str]:
+    versuch = getattr(_indizes, "cache", None)
+    if versuch is None:
+        versuch = _indizes.cache = {}
+    if tabelle not in versuch:
+        try:
+            versuch[tabelle] = {i["name"] for i in sa.inspect(bind).get_indexes(tabelle)}
+        except sa.exc.NoSuchTableError:
+            versuch[tabelle] = set()
+    return versuch[tabelle]
+
+
 def upgrade() -> None:
-    op.create_table(
+    """Legt das Docs-Schema an — auch auf Staenden, die es schon teilweise haben.
+
+    Der Branch wurde vor dem Merge unter einer anderen Revisions-ID installiert.
+    Ein Betreiber kann deshalb bereits Docs-Tabellen besitzen, waehrend Alembic
+    die Revision noch nicht kennt. Jede Anweisung prueft darum zuerst, ob ihr
+    Objekt schon da ist; vorhandene Dokumente bleiben unangetastet.
+    """
+    bind = op.get_bind()
+    vorhandene_tabellen = _tabellen(bind)
+    _indizes.cache = {}
+
+    def tabelle(name, *spalten, **kw):
+        if name in vorhandene_tabellen:
+            return
+        op.create_table(name, *spalten, **kw)
+        vorhandene_tabellen.add(name)
+
+    def index(name, tabelle_name, spalten, **kw):
+        if name in _indizes(bind, tabelle_name):
+            return
+        op.create_index(name, tabelle_name, spalten, **kw)
+
+    tabelle(
         "doc_folders",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column("folder_uid", sa.String(length=36), nullable=False, unique=True),
@@ -46,11 +91,11 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.create_index(
+    index(
         "ix_doc_folders_team_parent", "doc_folders", ["team_id", "parent_id"]
     )
 
-    op.create_table(
+    tabelle(
         "documents",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column("doc_uid", sa.String(length=36), nullable=False, unique=True),
@@ -121,29 +166,29 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("rev >= 0", name="ck_documents_rev"),
     )
-    op.create_index("ix_documents_team_id", "documents", ["team_id"])
-    op.create_index("ix_documents_team_folder", "documents", ["team_id", "folder_id"])
-    op.create_index(
+    index("ix_documents_team_id", "documents", ["team_id"])
+    index("ix_documents_team_folder", "documents", ["team_id", "folder_id"])
+    index(
         "ix_documents_team_updated",
         "documents",
         ["team_id", sa.text("updated_at DESC")],
     )
-    op.create_index("ix_documents_owner", "documents", ["owner_user_id"])
-    op.create_index(
+    index("ix_documents_owner", "documents", ["owner_user_id"])
+    index(
         "uq_documents_share_token",
         "documents",
         ["share_token_hash"],
         unique=True,
         postgresql_where=sa.text("share_token_hash IS NOT NULL"),
     )
-    op.create_index(
+    index(
         "ix_documents_purge",
         "documents",
         ["purge_after"],
         postgresql_where=sa.text("purge_after IS NOT NULL"),
     )
 
-    op.create_table(
+    tabelle(
         "doc_members",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column(
@@ -179,7 +224,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("document_id", "user_id", name="uq_doc_members_doc_user"),
     )
 
-    op.create_table(
+    tabelle(
         "doc_comments",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column("comment_uid", sa.String(length=36), nullable=False, unique=True),
@@ -218,11 +263,11 @@ def upgrade() -> None:
             "status IN ('open', 'resolved')", name="ck_doc_comments_status"
         ),
     )
-    op.create_index(
+    index(
         "ix_doc_comments_document", "doc_comments", ["document_id", "status"]
     )
 
-    op.create_table(
+    tabelle(
         "doc_revisions",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column(
@@ -259,16 +304,16 @@ def upgrade() -> None:
             name="ck_doc_revisions_author_kind",
         ),
     )
-    op.create_index(
+    index(
         "uq_doc_revisions_doc_rev", "doc_revisions", ["document_id", "rev"], unique=True
     )
-    op.create_index(
+    index(
         "ix_doc_revisions_created",
         "doc_revisions",
         ["document_id", sa.text("created_at DESC")],
     )
 
-    op.create_table(
+    tabelle(
         "doc_assets",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column("asset_uid", sa.String(length=36), nullable=False, unique=True),
@@ -292,18 +337,19 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
     )
-    op.create_index("ix_doc_assets_document", "doc_assets", ["document_id"])
+    index("ix_doc_assets_document", "doc_assets", ["document_id"])
 
-    op.add_column(
-        "ai_conversations",
-        sa.Column(
-            "document_id",
-            sa.BigInteger(),
-            sa.ForeignKey("documents.id", ondelete="CASCADE"),
-            nullable=True,
-        ),
-    )
-    op.create_index(
+    if "document_id" not in _spalten(bind, "ai_conversations"):
+        op.add_column(
+            "ai_conversations",
+            sa.Column(
+                "document_id",
+                sa.BigInteger(),
+                sa.ForeignKey("documents.id", ondelete="CASCADE"),
+                nullable=True,
+            ),
+        )
+    index(
         "ix_ai_conversations_document_id", "ai_conversations", ["document_id"]
     )
     op.execute(
@@ -314,7 +360,7 @@ def upgrade() -> None:
         "ai_conversations",
         "kind IN ('primary', 'guardian', 'worker', 'docs')",
     )
-    op.create_index(
+    index(
         "uq_ai_conversations_user_document",
         "ai_conversations",
         ["user_id", "document_id"],
@@ -324,8 +370,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    _indizes.cache = {}
     op.execute("DELETE FROM ai_conversations WHERE kind = 'docs'")
-    op.drop_index("uq_ai_conversations_user_document", table_name="ai_conversations")
+    if "uq_ai_conversations_user_document" in _indizes(bind, "ai_conversations"):
+        op.drop_index("uq_ai_conversations_user_document", table_name="ai_conversations")
     op.execute(
         "ALTER TABLE ai_conversations DROP CONSTRAINT IF EXISTS ck_ai_conversations_kind"
     )
@@ -334,23 +383,17 @@ def downgrade() -> None:
         "ai_conversations",
         "kind IN ('primary', 'guardian', 'worker')",
     )
-    op.drop_index("ix_ai_conversations_document_id", table_name="ai_conversations")
-    op.drop_column("ai_conversations", "document_id")
+    if "document_id" in _spalten(bind, "ai_conversations"):
+        if "ix_ai_conversations_document_id" in _indizes(bind, "ai_conversations"):
+            op.drop_index("ix_ai_conversations_document_id", table_name="ai_conversations")
+        op.drop_column("ai_conversations", "document_id")
 
-    op.drop_index("ix_doc_assets_document", table_name="doc_assets")
-    op.drop_table("doc_assets")
-    op.drop_index("ix_doc_revisions_created", table_name="doc_revisions")
-    op.drop_index("uq_doc_revisions_doc_rev", table_name="doc_revisions")
-    op.drop_table("doc_revisions")
-    op.drop_index("ix_doc_comments_document", table_name="doc_comments")
-    op.drop_table("doc_comments")
-    op.drop_table("doc_members")
-    op.drop_index("ix_documents_purge", table_name="documents")
-    op.drop_index("uq_documents_share_token", table_name="documents")
-    op.drop_index("ix_documents_owner", table_name="documents")
-    op.drop_index("ix_documents_team_updated", table_name="documents")
-    op.drop_index("ix_documents_team_folder", table_name="documents")
-    op.drop_index("ix_documents_team_id", table_name="documents")
-    op.drop_table("documents")
-    op.drop_index("ix_doc_folders_team_parent", table_name="doc_folders")
-    op.drop_table("doc_folders")
+    for tabelle_name in (
+        "doc_assets",
+        "doc_revisions",
+        "doc_comments",
+        "doc_members",
+        "documents",
+        "doc_folders",
+    ):
+        op.execute(f'DROP TABLE IF EXISTS "{tabelle_name}" CASCADE')

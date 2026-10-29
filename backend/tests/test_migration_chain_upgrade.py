@@ -290,3 +290,76 @@ def test_server_auf_messenger_revision_kommt_wieder_auf_den_head(pg_wegwerf) -> 
     finally:
         engine.dispose()
         settings.database_url = previous
+
+def test_alte_docs_revision_wird_ohne_datenverlust_repariert(pg_wegwerf) -> None:
+    """Ein vor dem Merge installierter Docs-Branch bleibt updatefaehig.
+
+    Dort stand die Docs-Migration unter ``20261028_01`` — derselben ID, die
+    seit dem Merge zu ``user_info`` gehoert. Ohne Reparatur ueberspringt
+    Alembic die main-Migrationen und laeuft beim Anlegen von ``doc_folders``
+    in ein DuplicateTable. Der Test bildet den Zustand nach einem bereits
+    fehlgeschlagenen Update nach: Modelle und Docs-Tabellen sind da, die
+    Revision steht aber noch auf ``20261028_01``. Die Reparatur setzt zurueck,
+    laesst die main-Kette nachlaufen und behaelt vorhandene Dokumente.
+    """
+    db_url = pg_wegwerf("docs-bruecke")
+    previous = settings.database_url
+    settings.database_url = db_url
+    config = _config(Path(__file__).resolve().parent.parent)
+    engine = create_engine(db_url)
+    try:
+        Base.metadata.create_all(engine)
+        command.stamp(config, "20261024_01")
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE alembic_version SET version_num = '20261028_01'")
+            )
+
+        from models import Team, User
+        from models.doc import Document
+        from sqlalchemy.orm import Session
+
+        with Session(engine) as session:
+            user = User(
+                username="bruecke",
+                email_encrypted="x",
+                email_hash="bruecke",
+                password_hash="x",
+                is_active=True,
+            )
+            session.add(user)
+            session.flush()
+            team = Team(name="Bruecke", owner_user_id=user.id)
+            session.add(team)
+            session.flush()
+            session.add(
+                Document(
+                    doc_uid="11111111-1111-1111-1111-111111111111",
+                    team_id=team.id,
+                    title_encrypted="x",
+                    rev=1,
+                )
+            )
+            session.commit()
+
+        from services.schema_manager import initialize_or_upgrade_schema
+
+        assert initialize_or_upgrade_schema(engine) == "upgraded"
+
+        inspector = inspect(engine)
+        with engine.connect() as conn:
+            version = conn.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar()
+            dokumente = conn.execute(text("SELECT count(*) FROM documents")).scalar()
+        assert version == "20261029_01"
+        assert "user_infos" in inspector.get_table_names()
+        assert dokumente == 1
+        assert any(
+            index["name"] == "ix_documents_team_updated"
+            for index in inspector.get_indexes("documents")
+        )
+    finally:
+        engine.dispose()
+        settings.database_url = previous
+

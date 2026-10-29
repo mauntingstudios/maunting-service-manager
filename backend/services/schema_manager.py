@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 from database import Base
 import models  # noqa: F401 - ensure complete metadata
+
+logger = logging.getLogger(__name__)
 
 
 def _alembic_config() -> Config:
@@ -33,6 +36,39 @@ def _missing_model_schema(engine: Engine) -> list[str]:
             if column.name not in existing_columns:
                 missing.append(f"{table.name}.{column.name}")
     return missing
+
+
+def _alte_docs_revision_zuruecksetzen(engine: Engine) -> None:
+    """Stellt den Stand vor dem Merge wieder her, wenn die Docs-Revision kollidiert.
+
+    Der Dokumente-Branch lief vor dem Merge unter ``20261028_01``. Diese ID
+    gehoert seit dem Merge zu ``user_info``. Eine Installation, die den Branch
+    schon ausprobiert hat, steht daher auf einer Revision, deren Inhalt sie
+    nicht hat: die Docs-Tabellen sind da, die main-Migrationen dazwischen aber
+    nicht gelaufen. Ohne Korrektur ueberspringt Alembic sie und laeuft beim
+    Docs-Schema in ein DuplicateTable.
+
+    Die Erkennung haengt bewusst nur an ``documents``: auf einer regulaeren
+    main-Datenbank entsteht diese Tabelle erst mit ``20261029_01``; steht die
+    Revision noch auf ``20261028_01``, kann sie nur aus dem alten Branch
+    stammen. Die main-Migrationen sind idempotent und laufen danach nach.
+
+    Die Revision wird auf den Stand davor gesetzt; die Docs-Migration ist
+    idempotent und laesst vorhandene Dokumente stehen.
+    """
+    tabelle = set(inspect(engine).get_table_names())
+    if "alembic_version" not in tabelle or "documents" not in tabelle:
+        return
+    with engine.begin() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        if version != "20261028_01":
+            return
+        conn.execute(text("UPDATE alembic_version SET version_num = '20261024_01'"))
+    logger.warning(
+        "Alte Dokumente-Revision erkannt (20261028_01 mit vorhandenen Docs-Tabellen). "
+        "Setze auf 20261024_01 zurueck und spiele main-Migrationen plus "
+        "idempotente Docs-Migration nach."
+    )
 
 
 def initialize_or_upgrade_schema(engine: Engine) -> str:
@@ -60,6 +96,8 @@ def initialize_or_upgrade_schema(engine: Engine) -> str:
             )
         command.stamp(config, "head")
         return "initialized"
+
+    _alte_docs_revision_zuruecksetzen(engine)
 
     command.upgrade(config, "head")
     missing = _missing_model_schema(engine)

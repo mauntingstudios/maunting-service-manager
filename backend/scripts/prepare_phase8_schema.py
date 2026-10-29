@@ -10,6 +10,8 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from sqlalchemy import inspect
+
 from database import Base, engine
 import models  # noqa: F401
 from services.multi_node_migration_service import ensure_multi_node_schema
@@ -21,7 +23,12 @@ def main() -> int:
         # create_all only creates new tables (not columns). This adds the Nodes
         # table to a current legacy PostgreSQL installation; the two legacy
         # columns are added explicitly without requiring DIS or an agent token.
-        Base.metadata.create_all(bind=engine)
+        # Auf einer bereits von Alembic verwalteten Datenbank darf create_all
+        # nicht laufen: Es legt Tabellen an, die spaetere Migrationen noch
+        # erzeugen wollen (z. B. das Dokumente-Modul), und die Migration
+        # scheitert dann an DuplicateTable.
+        if "alembic_version" not in inspect(engine).get_table_names():
+            Base.metadata.create_all(bind=engine)
         ensure_multi_node_schema(engine)
         result = initialize_or_upgrade_schema(engine)
     except Exception as exc:
