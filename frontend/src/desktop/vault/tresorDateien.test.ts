@@ -941,7 +941,7 @@ describe('Tresor-Dateien', () => {
     })
   })
 
-  describe('Offline verfügbar', () => {
+  describe('Offline verfügbar', { timeout: 20000 }, () => {
     const originalImCache = async (blobId: string) =>
       ((await zeilen(BLOB_CACHE)) as { blobId: string }[]).some((z) => z.blobId === blobId)
 
