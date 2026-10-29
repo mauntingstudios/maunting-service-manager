@@ -167,7 +167,7 @@ describe('Tresor-Integrität gegenüber dem Server', () => {
     const queue = JSON.parse(localStorage.getItem(`mss:vault_pending_${BUCKET}`) || '[]')
     const grabstein = queue.find((q: { id: string }) => q.id === EINTRAG)
     expect(grabstein.is_deleted).toBe(true)
-    expect(grabstein.ciphertext).toMatch(/^sv-vault-v1:/)
+    expect(grabstein.ciphertext).toMatch(/^sv-vault-v2:/)
   })
 
   it('verwirft einen Rücksprung auf eine ältere Revision', async () => {

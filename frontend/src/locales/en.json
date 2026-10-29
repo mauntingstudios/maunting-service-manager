@@ -6406,6 +6406,7 @@
         "locked": "Vault is locked",
         "emptyPassword": "Master password cannot be empty.",
         "invalidSalt": "Invalid KDF salt: At least 16 bytes required.",
+        "cryptoUnavailable": "No secure random source is available. Encryption is not possible.",
         "decryptionFailed": "Vault entry could not be decrypted (authentication error or incorrect key)",
         "invalidBase32Char": "Invalid Base32 character '{{char}}' at position {{pos}}",
         "invalidTotpSecret": "Invalid Base32 TOTP secret",

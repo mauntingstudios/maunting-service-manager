@@ -18,9 +18,7 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@msdis/shield": ["packages/dis/dist/index.d.ts"],
-      "@msdis/shield/*": ["packages/dis/dist/*/index.d.ts"]
+      "@/*": ["src/*"]
     }
   },
   "include": ["src"],

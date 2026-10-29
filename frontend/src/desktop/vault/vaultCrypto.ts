@@ -5,16 +5,23 @@
  * - KDF: Speicherhartes Argon2id via `@msdis/shield` (hash-wasm).
  * - Memory Hygiene: `SecureBuffer` mit kontrolliertem Zugriff und automatischem Nullen.
  * - Primitiv: AES-256-GCM via WebCrypto.
- * - Envelope: `sv-vault-v1:<base64(IV || ciphertext || authTag)>`.
- * - AAD: Kryptographisch an die `entryId` gebunden (Schutz vor Ciphertext-Swap).
+ * - Envelope: `sv-vault-v2:<base64(IV || ciphertext || authTag)>` (v1 read).
+ * - AAD: an `sv-vault-v2:<entryId>` gebunden (Schutz vor Ciphertext-Swap).
  * - Blindes Bucket: SHA-256 Ableitung für `bucket_id` (64-char Hex).
  * - Biometrie: Echte hardware-gestützte OS-Schlüssel / Keyrings (kein reversibles Master-Passwort in localStorage).
  */
 
 import i18n from '@/i18n'
-import { argon2idRaw } from '@msdis/shield/kdf'
+import { argon2idRaw, importAesGcmKey } from '@msdis/shield/kdf'
 import { SecureBuffer } from '@msdis/shield/secure-memory'
 import { sha256Hex } from '@msdis/shield/integrity'
+import { fillRandom, randomInt } from '@msdis/shield/random'
+import {
+  openVaultEntryString,
+  sealVaultEntryString,
+  VAULT_ITEM_ENVELOPE_V1_PREFIX,
+  VAULT_ITEM_ENVELOPE_V2_PREFIX,
+} from '@msdis/shield/vault-encryption'
 import {
   biometrieSpeicherVerfuegbar,
   pruefeBiometrieVerfuegbar,
@@ -23,8 +30,8 @@ import { verifyPasskey } from '@/services/passkeyService'
 
 export { SecureBuffer }
 
-export const VAULT_ENVELOPE_V1_PREFIX = 'sv-vault-v1:'
-const AES_GCM_IV_LENGTH = 12 // 96-Bit IV
+export const VAULT_ENVELOPE_V1_PREFIX = VAULT_ITEM_ENVELOPE_V1_PREFIX
+export const VAULT_ENVELOPE_V2_PREFIX = VAULT_ITEM_ENVELOPE_V2_PREFIX
 
 /**
  * Mindestlänge des Master-Passworts.
@@ -99,14 +106,10 @@ export function padPayload(payload: string, targetBlockSize = 4096): string {
   }
 
   const randomBytes = new Uint8Array(paddingNeeded)
-  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
-    window.crypto.getRandomValues(randomBytes)
-  } else if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(randomBytes)
-  } else {
-    for (let i = 0; i < paddingNeeded; i++) {
-      randomBytes[i] = Math.floor(Math.random() * 256)
-    }
+  try {
+    fillRandom(randomBytes)
+  } catch {
+    throw new Error(i18n.t('mss.vault.errors.cryptoUnavailable'))
   }
 
   let padding = ''
@@ -169,13 +172,7 @@ export async function deriveVaultKeys(
       const bucketSeed = bytes.slice(32, 64)
 
       // 2. UserKey als nicht-extrahierbaren AES-GCM CryptoKey importieren
-      const userKey = await window.crypto.subtle.importKey(
-        'raw',
-        keyBytes as BufferSource,
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt'],
-      )
+      const userKey = await importAesGcmKey(keyBytes)
 
       // 3. Blinde Bucket-ID: SHA-256 Hash der zweiten 256 Bits
       const bucketId = await sha256Hex(bucketSeed)
@@ -209,35 +206,8 @@ export async function encryptVaultEntry(
     throw new Error('entryId is required to bind vault entry ciphertext')
   }
 
-  const encoder = new TextEncoder()
-  const rawJson = JSON.stringify(data)
-  const padded = padPayload(rawJson)
-  const plaintext = encoder.encode(padded)
-  const aad = encoder.encode(entryId)
-
-  const iv = new Uint8Array(AES_GCM_IV_LENGTH)
-  window.crypto.getRandomValues(iv)
-
-  const encryptedBuffer = await window.crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv,
-      additionalData: aad,
-      tagLength: 128,
-    },
-    userKey,
-    plaintext,
-  )
-
-  const encryptedBytes = new Uint8Array(encryptedBuffer)
-  const combined = new Uint8Array(iv.length + encryptedBytes.byteLength)
-  combined.set(iv, 0)
-  combined.set(encryptedBytes, iv.length)
-
-  // Plaintext im Speicher nullen
-  plaintext.fill(0)
-
-  return `${VAULT_ENVELOPE_V1_PREFIX}${bytesToBase64(combined)}`
+  const padded = padPayload(JSON.stringify(data))
+  return sealVaultEntryString(padded, userKey, entryId)
 }
 
 /**
@@ -249,36 +219,18 @@ export async function decryptVaultEntry(
   userKey: CryptoKey,
   entryId: string,
 ): Promise<Record<string, unknown>> {
-  if (!envelope.startsWith(VAULT_ENVELOPE_V1_PREFIX)) {
-    throw new Error(i18n.t('mss.vault.errors.invalidEnvelopeFormat', { prefix: VAULT_ENVELOPE_V1_PREFIX }))
+  if (
+    !envelope.startsWith(VAULT_ENVELOPE_V1_PREFIX) &&
+    !envelope.startsWith(VAULT_ENVELOPE_V2_PREFIX)
+  ) {
+    throw new Error(
+      i18n.t('mss.vault.errors.invalidEnvelopeFormat', { prefix: VAULT_ENVELOPE_V2_PREFIX }),
+    )
   }
-
-  const b64 = envelope.slice(VAULT_ENVELOPE_V1_PREFIX.length)
-  const combined = base64ToBytes(b64)
-  if (combined.byteLength < AES_GCM_IV_LENGTH + 16) {
-    throw new Error('Ciphertext zu kurz')
-  }
-
-  const iv = combined.slice(0, AES_GCM_IV_LENGTH)
-  const ciphertextAndTag = combined.slice(AES_GCM_IV_LENGTH)
-  const aad = new TextEncoder().encode(entryId)
 
   try {
-    const decryptedBuffer = await window.crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv,
-        additionalData: aad,
-        tagLength: 128,
-      },
-      userKey,
-      ciphertextAndTag,
-    )
-
-    const decoder = new TextDecoder()
-    const rawStr = decoder.decode(decryptedBuffer)
-    const jsonStr = unpadPayload(rawStr)
-    return JSON.parse(jsonStr) as Record<string, unknown>
+    const { plaintext } = await openVaultEntryString(envelope, userKey, entryId)
+    return JSON.parse(unpadPayload(plaintext)) as Record<string, unknown>
   } catch {
     throw new Error(i18n.t('mss.vault.errors.decryptionFailed'))
   }
@@ -332,23 +284,6 @@ export async function promptBiometricVerification(title?: string): Promise<boole
 }
 
 /**
- * Zieht eine gleichverteilte Zahl aus [0, obergrenze) — ohne Modulo-Schiefe.
- *
- * `zufall % n` bevorzugt die niedrigen Werte, wann immer n kein Teiler von 2^32
- * ist. Verworfen wird deshalb alles oberhalb des größten durch n teilbaren
- * Vielfachen; erwartet kostet das weniger als einen zusätzlichen Zug.
- */
-function zufallsZahl(obergrenze: number): number {
-  if (obergrenze <= 0) throw new Error('obergrenze muss positiv sein')
-  const grenze = Math.floor(0x100000000 / obergrenze) * obergrenze
-  const puffer = new Uint32Array(1)
-  for (;;) {
-    window.crypto.getRandomValues(puffer)
-    if (puffer[0] < grenze) return puffer[0] % obergrenze
-  }
-}
-
-/**
  * Kryptographischer Zufalls-Passwortgenerator (stark & vorkonfiguriert).
  *
  * Zwei Dinge waren hier bis zum Audit vom 22.09.2026 falsch:
@@ -360,7 +295,7 @@ function zufallsZahl(obergrenze: number): number {
  * 2. Bei `length < 4` und Symbolen war `array[3]` undefined; `symbols[NaN]`
  *    ergibt `undefined`, das als Zeichenkette „undefined" im Passwort landete.
  *
- * Beides ist hier beseitigt: jeder Zug kommt frisch aus `zufallsZahl`, und die
+ * Beides ist hier beseitigt: jeder Zug kommt frisch aus DIS `randomInt`, und die
  * Länge wird auf das erzwungen, was die Kategorien überhaupt zulassen.
  */
 export function generateSecurePassword(length = 20, useSymbols = true): string {
@@ -379,14 +314,14 @@ export function generateSecurePassword(length = 20, useSymbols = true): string {
   const laenge = Math.max(kategorien.length, Math.floor(length) || 0)
 
   // Garantiere mindestens 1 Zeichen jeder Kategorie
-  const chars = kategorien.map((satz) => satz[zufallsZahl(satz.length)])
+  const chars = kategorien.map((satz) => satz[randomInt(0, satz.length - 1)])
   for (let i = kategorien.length; i < laenge; i++) {
-    chars.push(charset[zufallsZahl(charset.length)])
+    chars.push(charset[randomInt(0, charset.length - 1)])
   }
 
   // Fisher-Yates mit unabhängigem Zufall
   for (let i = chars.length - 1; i > 0; i--) {
-    const j = zufallsZahl(i + 1)
+    const j = randomInt(0, i)
     const tmp = chars[i]
     chars[i] = chars[j]
     chars[j] = tmp

@@ -9,6 +9,7 @@ import {
   decryptVaultEntry,
   generateSecurePassword,
   VAULT_ENVELOPE_V1_PREFIX,
+  VAULT_ENVELOPE_V2_PREFIX,
   isBiometricsAvailable,
   promptBiometricVerification,
   padPayload,
@@ -73,7 +74,7 @@ describe('vaultCrypto', () => {
     }
 
     const envelope = await encryptVaultEntry(payload, userKey, entryId)
-    expect(envelope.startsWith(VAULT_ENVELOPE_V1_PREFIX)).toBe(true)
+    expect(envelope.startsWith(VAULT_ENVELOPE_V2_PREFIX)).toBe(true)
 
     const decrypted = await decryptVaultEntry(envelope, userKey, entryId)
     expect(decrypted.service).toBe('Discord')
@@ -82,6 +83,12 @@ describe('vaultCrypto', () => {
 
     // Tampered entryId (AAD-Mismatch) must fail
     await expect(decryptVaultEntry(envelope, userKey, 'wrong-entry-id')).rejects.toThrow()
+
+    // Unprefixed and relabeled prefixes are rejected before decryption.
+    const stripped = envelope.slice(VAULT_ENVELOPE_V2_PREFIX.length)
+    await expect(decryptVaultEntry(stripped, userKey, entryId)).rejects.toThrow()
+    const relabeled = envelope.replace(VAULT_ENVELOPE_V2_PREFIX, VAULT_ENVELOPE_V1_PREFIX)
+    await expect(decryptVaultEntry(relabeled, userKey, entryId)).rejects.toThrow()
   })
 
   it('fails closed in promptBiometricVerification when credentials are missing or unauthenticated (SEC-CRIT-01)', async () => {

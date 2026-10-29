@@ -6406,6 +6406,7 @@
         "locked": "Tresor ist gesperrt",
         "emptyPassword": "Master-Passwort darf nicht leer sein.",
         "invalidSalt": "Ungültiger KDF-Salt: Mindestens 16 Bytes erforderlich.",
+        "cryptoUnavailable": "Keine sichere Zufallsquelle verfügbar. Verschlüsselung ist nicht möglich.",
         "decryptionFailed": "Tresor-Eintrag konnte nicht entschlüsselt werden (Authentifizierungsfehler oder falscher Schlüssel)",
         "invalidBase32Char": "Ungültiges Base32-Zeichen '{{char}}' an Position {{pos}}",
         "invalidTotpSecret": "Ungültiges Base32 TOTP-Secret",
