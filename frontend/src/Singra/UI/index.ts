@@ -27,7 +27,7 @@ export { ResourceMetricCard } from './ResourceMetricCard'
 export { MultiSelect, type MultiSelectOption } from './MultiSelect'
 export { Pagination } from './Pagination'
 export { Checkbox, type CheckboxProps } from '@/components/ui/Checkbox'
-export { BenachrichtigungsGlocke } from './BenachrichtigungsGlocke'
+export { BenachrichtigungenMenue, BenachrichtigungsGlocke } from './BenachrichtigungsGlocke'
 export { Avatar, type AvatarProps } from './Avatar'
 export {
   ProfileDropdown,

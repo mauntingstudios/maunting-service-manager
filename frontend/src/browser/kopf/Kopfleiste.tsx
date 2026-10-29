@@ -30,9 +30,10 @@ import { farbwahl } from '@/config/farbpalette'
 import { useAnkerLage } from '@/Singra/UI/Ankerlage'
 import { createPortal } from 'react-dom'
 
-import { Kurzinfo, UpdateBadge } from '@/Singra/UI'
+import { BenachrichtigungsGlocke, Kurzinfo, UpdateBadge } from '@/Singra/UI'
 
 import { useEinstellungenStore } from '../services/einstellungenStore'
+import { istGekoppelt, useSitzung } from '../services/sitzung'
 import { useUpdateStore } from '../services/updateStore'
 import { interneSeite, msmSucheBegriff } from '../services/intern'
 import { decodePunycodeHost, formatiereAdresseZurAnzeige } from '../services/urlFormat'
@@ -732,6 +733,8 @@ export function Kopfleiste() {
   const startseite = useTabsStore((s) => s.startseite)
   const privatAus = useEinstellungenStore((s) => s.ausgeblendet.includes('privaterTab'))
   const tabAusrichtung = useEinstellungenStore((s) => s.tabAusrichtung)
+  const sitzung = useSitzung((s) => s.stand)
+  const angemeldet = istGekoppelt(sitzung)
   const updateSichtbar = useUpdateStore((s) => s.sichtbar)
   const updateVersion = useUpdateStore((s) => s.neueVersion)
   const updatePhase = useUpdateStore((s) => s.phase)
@@ -1103,6 +1106,11 @@ export function Kopfleiste() {
           behandleDrop(e, tabs.length)
         }}
       />
+      {angemeldet && (
+        <div className="flex items-center px-1">
+          <BenachrichtigungsGlocke placement="bottom" align="right" />
+        </div>
+      )}
       {updateSichtbar && (
         <div className="flex items-center px-2">
           <UpdateBadge

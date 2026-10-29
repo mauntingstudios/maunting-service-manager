@@ -10,13 +10,13 @@ import { pruefeUndFrageGeraeteBerechtigung, sendeGeraeteBenachrichtigung } from 
 import { ausschalten, dienstVerfuegbar, einschalten, stand, type DienstStand } from '@/services/hintergrunddienst'
 import { useAnkerLage } from './Ankerlage'
 
-interface BenachrichtigungsGlockeProps {
-  className?: string
-  align?: 'left' | 'right' | 'sidebar'
-  placement?: 'top' | 'bottom'
-}
-
-export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', placement = 'top' }: BenachrichtigungsGlockeProps) {
+/**
+ * Die drei Benachrichtigungs-Schalter, ohne eigenen Rahmen.
+ *
+ * Steht im Popover der Glocke und inline im Android-Menü von Pontis. Eine
+ * Logik für Web-Panel, MSS und Pontis; nur der Android-Dienst ist lokal.
+ */
+export function BenachrichtigungenMenue() {
   const { t } = useTranslation()
   const { user, updateUser } = useAuthStore()
 
@@ -25,16 +25,6 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
   const [deviceNotificationsEnabled, setDeviceNotificationsEnabled] = useState<boolean>(user?.device_notifications ?? true)
   const [dienstStand, setDienstStand] = useState<DienstStand | null>(null)
   const [geraetSchaltet, setGeraetSchaltet] = useState(false)
-  const [bellOpen, setBellOpen] = useState(false)
-  const bellRef = useRef<HTMLDivElement>(null)
-  const menueRef = useRef<HTMLDivElement>(null)
-  // `sidebar` hieß früher: links bündig, am Telefon rechts. Das entscheidet jetzt die Messung.
-  const lage = useAnkerLage(bellOpen, bellRef, menueRef, {
-    seite: placement === 'top' ? 'oben' : 'unten',
-    ausrichtung: align === 'right' ? 'ende' : 'start',
-  })
-
-  const irgendwasAn = notificationsEnabled || aiNotificationsEnabled || deviceNotificationsEnabled
 
   useEffect(() => {
     if (user) {
@@ -47,7 +37,7 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
   // Der Dienst läuft außerhalb der App; sein Stand kommt aus Android, nicht
   // aus diesem Fenster.
   useEffect(() => {
-    if (!bellOpen || !dienstVerfuegbar()) {
+    if (!dienstVerfuegbar()) {
       setDienstStand(null)
       return
     }
@@ -58,29 +48,7 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
     return () => {
       aktiv = false
     }
-  }, [bellOpen])
-
-  useEffect(() => {
-    if (!bellOpen) return
-    function handleClickOutside(e: MouseEvent) {
-      const ziel = e.target as Node
-      // Das Menü hängt per Portal an body, also außerhalb von bellRef.
-      if (!bellRef.current?.contains(ziel) && !menueRef.current?.contains(ziel)) {
-        setBellOpen(false)
-      }
-    }
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setBellOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [bellOpen])
+  }, [])
 
   const schalte = async (feld: 'email' | 'ai' | 'device', naechster: boolean) => {
     if (!user) return
@@ -164,6 +132,133 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
   }
 
   return (
+    <div>
+      <div className="p-3 border-b border-outline-variant/30">
+        <p className="font-label-md text-sm text-on-surface font-medium">
+          {t('notifications.title')}
+        </p>
+      </div>
+      <label className="flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-highest transition-colors cursor-pointer">
+        <Mail className="mt-0.5 h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm text-on-surface">
+            {t('notifications.emailLabel')}
+          </span>
+          <span className="block text-xs text-on-surface-variant">
+            {t('notifications.emailHint')}
+          </span>
+        </span>
+        <Switch
+          checked={notificationsEnabled}
+          onCheckedChange={(wert) => void schalte('email', wert)}
+          aria-label={t('notifications.emailLabel')}
+        />
+      </label>
+      <label className="flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-highest transition-colors cursor-pointer border-t border-outline-variant/20">
+        <Bot className="mt-0.5 h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm text-on-surface">
+            {t('notifications.aiLabel')}
+          </span>
+          <span className="block text-xs text-on-surface-variant">
+            {t('notifications.aiHint')}
+          </span>
+        </span>
+        <Switch
+          checked={aiNotificationsEnabled}
+          onCheckedChange={(wert) => void schalte('ai', wert)}
+          aria-label={t('notifications.aiLabel')}
+        />
+      </label>
+      <label className="flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-highest transition-colors cursor-pointer border-t border-outline-variant/20">
+        <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm text-on-surface">
+            {t('notifications.deviceLabel')}
+          </span>
+          <span className="block text-xs text-on-surface-variant">
+            {t('notifications.deviceHint')}
+          </span>
+        </span>
+        <Switch
+          checked={deviceNotificationsEnabled}
+          disabled={geraetSchaltet}
+          onCheckedChange={(wert) => void schalte('device', wert)}
+          aria-label={t('notifications.deviceLabel')}
+        />
+      </label>
+      {dienstVerfuegbar() && dienstStand && (
+        <div className="px-3 pb-2.5">
+          {!dienstStand.benachrichtigungenErlaubt ? (
+            <p className="flex items-start gap-1.5 text-xs text-status-warning">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{t('notifications.devicePermissionDenied')}</span>
+            </p>
+          ) : dienstStand.aktiv ? (
+            <p className="text-xs text-on-surface-variant">{t('notifications.deviceActive')}</p>
+          ) : null}
+        </div>
+      )}
+      {deviceNotificationsEnabled && (
+        <button
+          type="button"
+          onClick={() => void testeMeldung()}
+          className="flex w-full items-center gap-2 border-t border-outline-variant/20 px-3 py-2.5 text-left text-sm text-on-surface hover:bg-surface-container-highest transition-colors"
+        >
+          <Send className="h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
+          {t('notifications.testLabel')}
+        </button>
+      )}
+    </div>
+  )
+}
+
+interface BenachrichtigungsGlockeProps {
+  className?: string
+  align?: 'left' | 'right' | 'sidebar'
+  placement?: 'top' | 'bottom'
+}
+
+export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', placement = 'top' }: BenachrichtigungsGlockeProps) {
+  const { t } = useTranslation()
+  const user = useAuthStore((s) => s.user)
+  const [bellOpen, setBellOpen] = useState(false)
+  const bellRef = useRef<HTMLDivElement>(null)
+  const menueRef = useRef<HTMLDivElement>(null)
+  // `sidebar` hieß früher: links bündig, am Telefon rechts. Das entscheidet jetzt die Messung.
+  const lage = useAnkerLage(bellOpen, bellRef, menueRef, {
+    seite: placement === 'top' ? 'oben' : 'unten',
+    ausrichtung: align === 'right' ? 'ende' : 'start',
+  })
+
+  const irgendwasAn =
+    user?.email_notifications !== false ||
+    user?.ai_notifications !== false ||
+    user?.device_notifications !== false
+
+  useEffect(() => {
+    if (!bellOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      const ziel = e.target as Node
+      // Das Menü hängt per Portal an body, also außerhalb von bellRef.
+      if (!bellRef.current?.contains(ziel) && !menueRef.current?.contains(ziel)) {
+        setBellOpen(false)
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setBellOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [bellOpen])
+
+  return (
     <div className={`relative ${className}`} ref={bellRef}>
       <button
         onClick={() => setBellOpen((offen) => !offen)}
@@ -190,82 +285,7 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
           style={lage}
           className="w-72 sm:w-80 max-w-[calc(100vw-1rem)] bg-surface-container-high border border-outline-variant rounded-lg shadow-xl max-h-[calc(100dvh-1rem)] overflow-y-auto"
         >
-          <div className="p-3 border-b border-outline-variant/30">
-            <p className="font-label-md text-sm text-on-surface font-medium">
-              {t('notifications.title')}
-            </p>
-          </div>
-          <label className="flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-highest transition-colors cursor-pointer">
-            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm text-on-surface">
-                {t('notifications.emailLabel')}
-              </span>
-              <span className="block text-xs text-on-surface-variant">
-                {t('notifications.emailHint')}
-              </span>
-            </span>
-            <Switch
-              checked={notificationsEnabled}
-              onCheckedChange={(wert) => void schalte('email', wert)}
-              aria-label={t('notifications.emailLabel')}
-            />
-          </label>
-          <label className="flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-highest transition-colors cursor-pointer border-t border-outline-variant/20">
-            <Bot className="mt-0.5 h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm text-on-surface">
-                {t('notifications.aiLabel')}
-              </span>
-              <span className="block text-xs text-on-surface-variant">
-                {t('notifications.aiHint')}
-              </span>
-            </span>
-            <Switch
-              checked={aiNotificationsEnabled}
-              onCheckedChange={(wert) => void schalte('ai', wert)}
-              aria-label={t('notifications.aiLabel')}
-            />
-          </label>
-          <label className="flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-highest transition-colors cursor-pointer border-t border-outline-variant/20">
-            <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm text-on-surface">
-                {t('notifications.deviceLabel')}
-              </span>
-              <span className="block text-xs text-on-surface-variant">
-                {t('notifications.deviceHint')}
-              </span>
-            </span>
-            <Switch
-              checked={deviceNotificationsEnabled}
-              disabled={geraetSchaltet}
-              onCheckedChange={(wert) => void schalte('device', wert)}
-              aria-label={t('notifications.deviceLabel')}
-            />
-          </label>
-          {dienstVerfuegbar() && dienstStand && (
-            <div className="px-3 pb-2.5">
-              {!dienstStand.benachrichtigungenErlaubt ? (
-                <p className="flex items-start gap-1.5 text-xs text-status-warning">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span>{t('notifications.devicePermissionDenied')}</span>
-                </p>
-              ) : dienstStand.aktiv ? (
-                <p className="text-xs text-on-surface-variant">{t('notifications.deviceActive')}</p>
-              ) : null}
-            </div>
-          )}
-          {deviceNotificationsEnabled && (
-            <button
-              type="button"
-              onClick={() => void testeMeldung()}
-              className="flex w-full items-center gap-2 border-t border-outline-variant/20 px-3 py-2.5 text-left text-sm text-on-surface hover:bg-surface-container-highest transition-colors"
-            >
-              <Send className="h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
-              {t('notifications.testLabel')}
-            </button>
-          )}
+          <BenachrichtigungenMenue />
         </div>,
         document.body,
       )}
