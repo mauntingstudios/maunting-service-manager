@@ -91,7 +91,7 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 tauri-plugin-biometric = "2"
 # JNI für die Tab-WebViews (`tabs/android/bruecke.rs`), dieselbe Fassung wie
 # die Kamera-Krypto des Smart Systems.
-jni = "0.21"
+jni = "0.22"
 # reqwest prüft Zertifikate per rustls-platform-verifier; unter Android braucht
 # der eine Initialisierung samt Kotlin-Teil und wirft ohne sie bei jeder
 # Anfrage. Wie das Smart System (`erstelle_android_client`): rustls mit den
