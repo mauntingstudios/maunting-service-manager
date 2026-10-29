@@ -15,6 +15,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 
 import { ThirdPartyPrivacyDialog } from '@/Singra/UI'
 import { BrowserBestaetigungDialog } from '@/components/BrowserBestaetigungDialog'
+import { PasskeyFernBestaetigung } from '@/components/PasskeyFernBestaetigung'
 import { AnrufEbene } from '@/components/calling/AnrufEbene'
 import { PanelPopupModal } from '@/components/popups/PanelPopupModal'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
@@ -321,6 +322,7 @@ function Wurzel() {
       <ConfirmDialog />
       <PromptDialog />
       <BrowserBestaetigungDialog />
+      <PasskeyFernBestaetigung />
       <ThirdPartyPrivacyDialog
         open={!!ausstehenderDrittanbieter}
         onConfirm={() => {

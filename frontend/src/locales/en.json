@@ -2880,6 +2880,10 @@
       "appText": "Your browser opened the panel. Tap this number there and confirm with your passkey:",
       "appWaiting": "Waiting for the browser …",
       "reopen": "Open browser again",
+      "remoteTitle": "Confirmation requested",
+      "remoteText": "A confirmation was requested in another window. Open it in your browser and tap the number shown in the app.",
+      "remoteOpen": "Confirm in browser",
+      "remoteLater": "Later",
       "purpose": {
         "data_export": "Export data",
         "e2ee_reset": "Reset messenger devices",

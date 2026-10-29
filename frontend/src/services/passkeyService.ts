@@ -327,6 +327,27 @@ export function inDerApp(): boolean {
 const STAND_TAKT_MS = 2000
 
 /**
+ * Kennung dieses Fensters für den laufenden Browser-Vorgang.
+ *
+ * Der Server schickt sie im Bestätigungsereignis mit. So erkennt die App ihr
+ * eigenes Ereignis und zeigt den Hinweis nicht doppelt; andere angemeldete
+ * Fenster desselben Kontos sehen ihn.
+ */
+let eigenerClient: string | null = null
+
+export function istEigenerBestaetigungsClient(client: unknown): boolean {
+  return typeof client === 'string' && client === eigenerClient
+}
+
+function neuerClient(): string {
+  try {
+    return window.crypto.randomUUID()
+  } catch {
+    return `c-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  }
+}
+
+/**
  * Passkey-Bestätigung für die App über den Standardbrowser.
  *
  * Ein Passkey gilt nur für die Adresse des Panels, die App läuft unter
@@ -336,9 +357,11 @@ const STAND_TAKT_MS = 2000
  * er erst mit der eigentlichen Aktion, einmal und nur für `zweck`.
  */
 async function imBrowserBestaetigen(zweck: PasskeyZweck): Promise<BrowserNachweis> {
+  const client = neuerClient()
+  eigenerClient = client
   const { vorgang, zahl, url } = await api<{ vorgang: string; zahl: number; url: string }>('/auth/passkey/browser', {
     method: 'POST',
-    body: JSON.stringify({ zweck }),
+    body: JSON.stringify({ zweck, client }),
   })
   await oeffneBrowser(url)
 
@@ -368,6 +391,7 @@ async function imBrowserBestaetigen(zweck: PasskeyZweck): Promise<BrowserNachwei
       if (!fertig) takt = setTimeout(fragen, STAND_TAKT_MS)
     }
     useBrowserBestaetigung.getState().setzen({
+      vorgang,
       zahl,
       adresse: url,
       abbrechen: () => ende(new Error(i18n.t('auth.passkeyErrors.cancelled'))),

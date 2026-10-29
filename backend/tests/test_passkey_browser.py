@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from models import AuditLog, User
 from services import passkey_service
+from services.sync_event_service import SyncEventService
 from tests.test_passkey_2fa import HERKUNFT, _kopf, _passkey_einrichten
 
 
@@ -55,6 +56,33 @@ def _export(client: TestClient, cookies: dict, vorgang: str):
         "/api/auth/data-export", headers=_kopf(cookies), cookies=cookies,
         json={"passkey": {"type": "browser", "vorgang": vorgang}},
     )
+
+
+def test_anlegen_meldet_den_vorgang_an_bereits_angemeldete_fenster(
+    client: TestClient, owner_user: User, owner_cookies: dict
+):
+    _passkey_einrichten(client, owner_cookies)
+    SyncEventService.clear_all_for_testing()
+    conn_id, queue = SyncEventService.subscribe(user_id=owner_user.id, team_ids=[], is_admin=False)
+    try:
+        antwort = client.post(
+            "/api/auth/passkey/browser",
+            headers=_kopf(owner_cookies),
+            cookies=owner_cookies,
+            json={"zweck": "data_export", "client": "fenster-1"},
+        )
+        assert antwort.status_code == 200, antwort.text
+
+        ereignis = queue.get_nowait()
+        assert ereignis["type"] == "passkey_bestaetigung"
+        assert ereignis["vorgang"] == antwort.json()["vorgang"]
+        assert ereignis["client"] == "fenster-1"
+        assert ereignis["url"].endswith(f"/bestaetigen#{antwort.json()['vorgang']}")
+        # Die Zahl bleibt in der anfragenden App.
+        assert "zahl" not in ereignis
+    finally:
+        SyncEventService.unsubscribe(conn_id)
+        SyncEventService.clear_all_for_testing()
 
 
 def test_export_aus_der_app_mit_bestaetigung_im_browser(

@@ -26,6 +26,7 @@ import { ServerIncidentNotifier } from '@/components/notifications/ServerInciden
 import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
 import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
 import { BrowserBestaetigungDialog } from '@/components/BrowserBestaetigungDialog'
+import { PasskeyFernBestaetigung } from '@/components/PasskeyFernBestaetigung'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { PromptDialog } from '@/components/ui/PromptDialog'
 import { ToastContainer } from '@/components/ui/ToastContainer'
@@ -590,6 +591,7 @@ export function DesktopApp() {
         <ToastContainer />
         <ConfirmDialog />
         <BrowserBestaetigungDialog />
+        <PasskeyFernBestaetigung />
         <PromptDialog />
         {splash && <Splash onFertig={splashBeenden} />}
       </div>

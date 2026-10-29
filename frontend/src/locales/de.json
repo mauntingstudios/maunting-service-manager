@@ -2880,6 +2880,10 @@
       "appText": "Dein Browser hat das Panel geöffnet. Tippe dort diese Zahl an und bestätige mit deinem Passkey:",
       "appWaiting": "Warte auf den Browser …",
       "reopen": "Browser erneut öffnen",
+      "remoteTitle": "Bestätigung angefordert",
+      "remoteText": "In einem anderen Fenster wurde eine Bestätigung angefordert. Öffne sie im Browser und tippe dort die Zahl aus der App an.",
+      "remoteOpen": "Im Browser bestätigen",
+      "remoteLater": "Später",
       "purpose": {
         "data_export": "Daten exportieren",
         "e2ee_reset": "Messenger-Geräte zurücksetzen",
