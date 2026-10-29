@@ -42,13 +42,33 @@ export function BenachrichtigungenMenue() {
       return
     }
     let aktiv = true
-    void stand().then((lage) => {
-      if (aktiv) setDienstStand(lage)
-    }).catch(() => {})
+    const aktualisieren = () => {
+      if (document.visibilityState !== 'visible') return
+      void stand().then((lage) => {
+        if (aktiv) setDienstStand(lage)
+      }).catch(() => {})
+    }
+    aktualisieren()
+    document.addEventListener('visibilitychange', aktualisieren)
+    window.addEventListener('focus', aktualisieren)
     return () => {
       aktiv = false
+      document.removeEventListener('visibilitychange', aktualisieren)
+      window.removeEventListener('focus', aktualisieren)
     }
   }, [])
+
+  const berechtigungErneutAnfragen = async () => {
+    const erlaubt = await pruefeUndFrageGeraeteBerechtigung()
+    if (erlaubt) {
+      setDienstStand(await stand())
+      return
+    }
+    // Der Systemdialog kann noch offen sein; nach dem Schließen neu lesen.
+    window.setTimeout(() => {
+      void stand().then(setDienstStand).catch(() => {})
+    }, 3000)
+  }
 
   const schalte = async (feld: 'email' | 'ai' | 'device', naechster: boolean) => {
     if (!user) return
@@ -64,16 +84,6 @@ export function BenachrichtigungenMenue() {
     else setDeviceNotificationsEnabled(naechster)
 
     if (feld === 'device') {
-      if (naechster) {
-        // Die Berechtigung gehört vor den Dienst, nicht erst zur Testmeldung:
-        // ohne sie startet der Dienst, aber Android zeigt nichts.
-        const erlaubt = await pruefeUndFrageGeraeteBerechtigung()
-        if (!erlaubt) {
-          setDeviceNotificationsEnabled(vorher)
-          toast.error(t('notifications.devicePermissionDenied'))
-          return
-        }
-      }
       if (dienstVerfuegbar()) {
         // Der Dienst ist die Fortsetzung desselben Schalters: an startet ihn,
         // aus stoppt und widerruft ihn. Ein eigener Nachweis wäre für einen
@@ -98,6 +108,9 @@ export function BenachrichtigungenMenue() {
         } finally {
           setGeraetSchaltet(false)
         }
+      } else if (naechster) {
+        // Auf Rechnern und im Browser fragt der Schalter selbst.
+        void pruefeUndFrageGeraeteBerechtigung()
       }
     }
 
@@ -184,10 +197,19 @@ export function BenachrichtigungenMenue() {
       {dienstVerfuegbar() && dienstStand && (
         <div className="px-3 pb-2.5">
           {!dienstStand.benachrichtigungenErlaubt ? (
-            <p className="flex items-start gap-1.5 text-xs text-status-warning">
+            <div className="flex items-start gap-1.5 text-xs text-status-warning">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>{t('notifications.devicePermissionDenied')}</span>
-            </p>
+              <span>
+                {t('notifications.devicePermissionDenied')}{' '}
+                <button
+                  type="button"
+                  onClick={() => void berechtigungErneutAnfragen()}
+                  className="font-medium text-primary underline underline-offset-2"
+                >
+                  {t('notifications.devicePermissionAction')}
+                </button>
+              </span>
+            </div>
           ) : dienstStand.aktiv ? (
             <p className="text-xs text-on-surface-variant">{t('notifications.deviceActive')}</p>
           ) : null}

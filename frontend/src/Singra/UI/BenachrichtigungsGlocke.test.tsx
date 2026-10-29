@@ -132,26 +132,6 @@ describe('BenachrichtigungsGlocke', () => {
     await waitFor(() => expect(schalter).not.toBeChecked())
   })
 
-  it('fragt die Berechtigung vor dem Einschalten und bleibt sonst aus', async () => {
-    setUser(true, true, false)
-    vi.mocked(pruefeUndFrageGeraeteBerechtigung).mockResolvedValueOnce(false)
-    render(<BenachrichtigungsGlocke placement="bottom" align="right" />)
-
-    fireEvent.click(screen.getByRole('button', { name: /benachrichtigungen/i }))
-    const schalter = screen.getByRole('switch', { name: 'Geräte-Benachrichtigungen' })
-    fireEvent.click(schalter)
-
-    await waitFor(() =>
-      expect(
-        useToastStore.getState().toasts.some(
-          (t) => t.message === 'Benachrichtigungen sind in Android blockiert. Bitte in den App-Einstellungen erlauben.',
-        ),
-      ).toBe(true),
-    )
-    expect(schalter).not.toBeChecked()
-    expect(api).not.toHaveBeenCalledWith('/auth/me/notifications?device=true', { method: 'PATCH' })
-  })
-
   it('sagt es, wenn der Dienst nicht startet', async () => {
     setUser(true, true, false)
     vi.mocked(dienstVerfuegbar).mockReturnValue(true)

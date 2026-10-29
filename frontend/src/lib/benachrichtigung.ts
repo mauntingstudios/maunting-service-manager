@@ -44,6 +44,13 @@ export async function pruefeUndFrageGeraeteBerechtigung(): Promise<boolean> {
   if (typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)) {
     try {
       const { invoke } = await import('@tauri-apps/api/core')
+      // Der native Weg fragt die Activity direkt; der Plugin-Weg darunter ist
+      // der Rückfall für ältere Hüllen ohne diesen Befehl.
+      try {
+        return await invoke<boolean>('benachrichtigung_berechtigung_anfragen')
+      } catch {
+        // Befehl fehlt: Plugin-Weg unten.
+      }
       let isGranted = false
       try {
         isGranted = await invoke<boolean>('plugin:notification|isPermissionGranted')

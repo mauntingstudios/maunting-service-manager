@@ -4011,6 +4011,7 @@
     "deviceHint": "Pop-up alerts on this device, even when the app is closed. On Android the app keeps the connection itself, without Google.",
     "deviceActive": "Background service is running on this device.",
     "devicePermissionDenied": "Notifications are blocked in Android. Allow them in the app settings.",
+    "devicePermissionAction": "Allow permission",
     "backgroundFailed": "Device notifications could not be switched on.",
     "incidentTitle": "Server incident: {{server}}",
     "incidentText": "{{titel}} ({{art}})",

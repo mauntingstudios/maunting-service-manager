@@ -166,9 +166,12 @@ function Wurzel() {
     if (!angemeldet || !istAndroid()) return
     const user = useAuthStore.getState().user
     if (!user || user.device_notifications === false) return
-    void import('@/lib/benachrichtigung')
-      .then((m) => m.pruefeUndFrageGeraeteBerechtigung())
-      .catch(() => {})
+    const timer = window.setTimeout(() => {
+      void import('@/lib/benachrichtigung')
+        .then((m) => m.pruefeUndFrageGeraeteBerechtigung())
+        .catch(() => {})
+    }, 1500)
+    return () => window.clearTimeout(timer)
   }, [angemeldet])
   // Offen einmal eingerichtet, kann der Browser auch bei gesperrtem Tresor
   // speichern. Erst nach dem Abgleich: sonst fehlte das Schlüsselpaar des

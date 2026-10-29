@@ -75,6 +75,16 @@ async fn benachrichtigung_senden(
         .map_err(|e| e.to_string())
 }
 
+/// Fragt die Systemberechtigung für Benachrichtigungen an, ohne eine Meldung
+/// zu zeigen. Der Aufruf beim Start ist der Unterschied zwischen „Dienst
+/// läuft“ und „Dienst darf auch etwas zeigen“.
+#[tauri::command]
+async fn benachrichtigung_berechtigung_anfragen(app: tauri::AppHandle) -> Result<bool, String> {
+    let notif = app.notification();
+    let zustand = notif.request_permission().map_err(|e| e.to_string())?;
+    Ok(zustand == tauri_plugin_notification::PermissionState::Granted)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     schluesselfach::einrichten(schluesselfach::Dienst {
@@ -225,6 +235,7 @@ pub fn run() {
             konfig::konfig_laden,
             konfig::konfig_aendern,
             benachrichtigung_senden,
+            benachrichtigung_berechtigung_anfragen,
             dienst::dienst_starten,
             dienst::dienst_stoppen,
             dienst::dienst_stand,

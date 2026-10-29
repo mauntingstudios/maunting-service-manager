@@ -382,9 +382,14 @@ export function DesktopApp() {
     if (!isAndroid || !angemeldet) return
     const user = useAuthStore.getState().user
     if (!user || user.device_notifications === false) return
-    void import('@/lib/benachrichtigung')
-      .then((m) => m.pruefeUndFrageGeraeteBerechtigung())
-      .catch(() => {})
+    // Nach dem Start, nicht während des Aufbaus: die Activity muss für den
+    // Systemdialog bereits vorne stehen.
+    const timer = window.setTimeout(() => {
+      void import('@/lib/benachrichtigung')
+        .then((m) => m.pruefeUndFrageGeraeteBerechtigung())
+        .catch(() => {})
+    }, 1500)
+    return () => window.clearTimeout(timer)
   }, [angemeldet])
 
   useEffect(() => {
