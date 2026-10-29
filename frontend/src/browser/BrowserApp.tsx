@@ -26,6 +26,7 @@ import { tresorAutoSperrQuelle, useVaultStore } from '@/desktop/vault/vaultStore
 import { useAutoSperre } from '@/hooks/useAutoSperre'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
+import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { useCallStore } from '@/stores/useCallStore'
 
@@ -146,6 +147,15 @@ function Wurzel() {
   useTabWechselSperre()
   usePresenceAndActivity(angemeldet && social, angemeldet && social)
   useEffect(() => (gekoppelt ? eingangBeobachten() : undefined), [gekoppelt])
+
+  // Gerätebenachrichtigungen sind am Konto an: den Android-Dienst nach dem
+  // Start sicherstellen. Er überlebt danach Neustart und Update.
+  useEffect(() => {
+    if (!angemeldet || !istAndroid() || !navigator.onLine) return
+    const user = useAuthStore.getState().user
+    if (!user || user.device_notifications === false) return
+    void import('@/services/hintergrunddienst').then((m) => m.sicherstellen()).catch(() => {})
+  }, [angemeldet])
   // Offen einmal eingerichtet, kann der Browser auch bei gesperrtem Tresor
   // speichern. Erst nach dem Abgleich: sonst fehlte das Schlüsselpaar des
   // Tresors noch, und es entstünde ein zweites.

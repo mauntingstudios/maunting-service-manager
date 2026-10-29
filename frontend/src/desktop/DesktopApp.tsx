@@ -364,6 +364,15 @@ export function DesktopApp() {
     }
   }, [phase, angemeldet, isOffline])
 
+  // Gerätebenachrichtigungen sind am Konto an: den Android-Dienst nach dem
+  // Start sicherstellen. Er überlebt danach Neustart und Update.
+  useEffect(() => {
+    if (!isAndroid || !angemeldet || isOffline) return
+    const user = useAuthStore.getState().user
+    if (!user || user.device_notifications === false) return
+    void import('@/services/hintergrunddienst').then((m) => m.sicherstellen()).catch(() => {})
+  }, [angemeldet, isOffline])
+
   useEffect(() => {
     if (!sitzungSteht) return
     return sprachzustandVerdrahten()

@@ -15,7 +15,7 @@ vi.mock('@/api/client', () => ({
 // Der Dauerdienst gibt es nur auf Android; auf dem Rechner ist er unsichtbar.
 vi.mock('@/services/hintergrunddienst', () => ({
   dienstVerfuegbar: vi.fn(() => false),
-  stand: vi.fn(async () => ({ aktiv: false, akkuBefreit: false })),
+  stand: vi.fn(async () => ({ aktiv: false, akkuBefreit: false, benachrichtigungenErlaubt: true })),
   einschalten: vi.fn(async () => true),
   ausschalten: vi.fn(async () => {}),
 }))
@@ -49,8 +49,9 @@ describe('BenachrichtigungsGlocke', () => {
     useToastStore.setState({ toasts: [] })
     setUser(true, true, true)
     vi.mocked(dienstVerfuegbar).mockReturnValue(false)
-    vi.mocked(stand).mockResolvedValue({ aktiv: false, akkuBefreit: false })
+    vi.mocked(stand).mockResolvedValue({ aktiv: false, akkuBefreit: false, benachrichtigungenErlaubt: true })
     vi.mocked(einschalten).mockClear()
+    vi.mocked(einschalten).mockResolvedValue(true)
     vi.mocked(ausschalten).mockClear()
   })
 
@@ -91,45 +92,53 @@ describe('BenachrichtigungsGlocke', () => {
     })
   })
 
-  it('zeigt den Dauerdienst nicht auf einem Rechner', () => {
+  it('bietet auf dem Rechner keinen eigenen Dienst-Schalter', () => {
     render(<BenachrichtigungsGlocke placement="bottom" align="right" />)
 
     fireEvent.click(screen.getByRole('button', { name: /benachrichtigungen/i }))
 
     expect(screen.queryByRole('switch', { name: 'Auch bei geschlossener App' })).toBeNull()
+    expect(screen.getByRole('switch', { name: 'Geräte-Benachrichtigungen' })).toBeInTheDocument()
   })
 
-  it('schaltet den Dauerdienst auf Android ein und wieder aus', async () => {
+  it('der Geräte-Schalter startet und stoppt den Dienst auf Android', async () => {
+    setUser(true, true, false)
     vi.mocked(dienstVerfuegbar).mockReturnValue(true)
-    vi.mocked(stand).mockResolvedValue({ aktiv: false, akkuBefreit: true })
+    vi.mocked(stand).mockResolvedValue({ aktiv: false, akkuBefreit: true, benachrichtigungenErlaubt: true })
     render(<BenachrichtigungsGlocke placement="bottom" align="right" />)
 
     fireEvent.click(screen.getByRole('button', { name: /benachrichtigungen/i }))
     // Der Stand kommt aus Android, nicht aus dem Fenster.
     await waitFor(() => expect(stand).toHaveBeenCalled())
-    const schalter = screen.getByRole('switch', { name: 'Auch bei geschlossener App' })
+    const schalter = screen.getByRole('switch', { name: 'Geräte-Benachrichtigungen' })
     expect(schalter).not.toBeChecked()
 
     fireEvent.click(schalter)
-    await waitFor(() => expect(einschalten).toHaveBeenCalledWith('Auch bei geschlossener App'))
+    await waitFor(() => expect(einschalten).toHaveBeenCalledWith('Geräte-Benachrichtigungen'))
     await waitFor(() => expect(schalter).toBeChecked())
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith('/auth/me/notifications?device=true', { method: 'PATCH' }),
+    )
 
     fireEvent.click(schalter)
     await waitFor(() => expect(ausschalten).toHaveBeenCalled())
     await waitFor(() => expect(schalter).not.toBeChecked())
   })
 
-  it('sagt es, wenn der Nachweis abgebrochen wurde', async () => {
+  it('sagt es, wenn der Dienst nicht startet', async () => {
+    setUser(true, true, false)
     vi.mocked(dienstVerfuegbar).mockReturnValue(true)
     vi.mocked(einschalten).mockResolvedValue(false)
     render(<BenachrichtigungsGlocke placement="bottom" align="right" />)
 
     fireEvent.click(screen.getByRole('button', { name: /benachrichtigungen/i }))
-    fireEvent.click(screen.getByRole('switch', { name: 'Auch bei geschlossener App' }))
+    const schalter = screen.getByRole('switch', { name: 'Geräte-Benachrichtigungen' })
+    fireEvent.click(schalter)
 
     await waitFor(() =>
-      expect(useToastStore.getState().toasts.some((t) => t.message === 'Der Hintergrunddienst ließ sich nicht einschalten.')).toBe(true),
+      expect(useToastStore.getState().toasts.some((t) => t.message === 'Gerätebenachrichtigungen ließen sich nicht einschalten.')).toBe(true),
     )
+    expect(schalter).not.toBeChecked()
   })
 
   it('klappt am unteren Rand nach oben, auch wenn unten gewünscht ist', () => {

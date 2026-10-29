@@ -412,7 +412,7 @@ class Hintergrunddienst : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val meldung = NotificationCompat.Builder(this, KANAL_MELDUNG)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(titel)
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -434,7 +434,7 @@ class Hintergrunddienst : Service() {
         // IMPORTANCE_LOW: keine Tonfolge für eine Dauerzeile, die ohnehin
         // immer da ist.
         return NotificationCompat.Builder(this, KANAL_STATUS)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Benachrichtigungen aktiv")
             .setContentText("Die App hält die Verbindung offen.")
             .setPriority(NotificationCompat.PRIORITY_LOW)

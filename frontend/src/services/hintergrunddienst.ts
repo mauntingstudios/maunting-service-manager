@@ -24,7 +24,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { api } from '@/api/client'
 import { getEffectiveApiUrl } from '@/config/api'
 import { getStorageItem, removeStorageItem, setStorageItem } from '@/lib/offlineAblage'
-import { passkeyNachweis } from '@/services/passkeyService'
 
 const KANAL_ABLAGE = 'msm:hintergrundkanal'
 
@@ -59,14 +58,16 @@ export interface DienstStand {
   aktiv: boolean
   /** Ist die App von der Akku-Optimierung ausgenommen? */
   akkuBefreit: boolean
+  /** Darf Android die Meldungen des Dienstes überhaupt zeigen? */
+  benachrichtigungenErlaubt: boolean
 }
 
 export async function stand(): Promise<DienstStand> {
-  if (!dienstVerfuegbar()) return { aktiv: false, akkuBefreit: false }
+  if (!dienstVerfuegbar()) return { aktiv: false, akkuBefreit: false, benachrichtigungenErlaubt: false }
   try {
     return await invoke<DienstStand>('dienst_stand')
   } catch {
-    return { aktiv: false, akkuBefreit: false }
+    return { aktiv: false, akkuBefreit: false, benachrichtigungenErlaubt: false }
   }
 }
 
@@ -84,30 +85,24 @@ function gemerkterKanal(): number | null {
 /**
  * Einschalten: Ausweis anlegen, Dienst starten, Akku-Ausnahme anbieten.
  *
- * Der Nachweis ist Pflicht — ein dauerhafter Zugang entsteht nie aus einem
- * bloß vorhandenen Token. `passkeyNachweis` fragt in der App über den Browser
- * (dort liegt der Passkey), im Browser direkt.
+ * Der Ausweis ist ein reiner Lese-Zugang für den Ereignisstrom. Die gültige
+ * Sitzung genügt; er wird beim Abmelden widerrufen und ist je Gerät widerrufbar.
  *
- * Gibt `false` zurück, wenn der Dienst hier nicht verfügbar ist oder der
- * Nachweis abgebrochen wurde — der Aufrufer zeigt dann den Grund.
+ * Gibt `false` zurück, wenn der Dienst hier nicht verfügbar ist oder das
+ * Anlegen scheitert — der Aufrufer zeigt dann den Grund.
  */
 export async function einschalten(label?: string): Promise<boolean> {
   if (!dienstVerfuegbar()) return false
 
-  let nachweis
+  let kanal: { id: number; token: string }
   try {
-    nachweis = await passkeyNachweis('notification_channel')
+    kanal = await api<{ id: number; token: string }>('/notifications/channels', {
+      method: 'POST',
+      body: JSON.stringify({ label: (label || 'Android').slice(0, 64) }),
+    })
   } catch {
     return false
   }
-
-  const kanal = await api<{ id: number; token: string }>('/notifications/channels', {
-    method: 'POST',
-    body: JSON.stringify({
-      label: (label || 'Android').slice(0, 64),
-      passkey: nachweis,
-    }),
-  })
   merkeKanal(kanal.id)
 
   await invoke('dienst_starten', {
@@ -118,6 +113,17 @@ export async function einschalten(label?: string): Promise<boolean> {
   // manchmal an": ohne sie beendet Samsung/Xiaomi den Dienst nach Stunden.
   await invoke('dienst_akku_befreien').catch(() => {})
   return true
+}
+
+/**
+ * Nach dem Start sicherstellen, dass der Dienst läuft, wenn Geräte­
+ * benachrichtigungen am Konto an sind. Legt bei Bedarf einen Kanal an.
+ */
+export async function sicherstellen(): Promise<void> {
+  if (!dienstVerfuegbar()) return
+  const lage = await stand()
+  if (lage.aktiv) return
+  await einschalten('Android')
 }
 
 /**

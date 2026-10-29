@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -22,8 +23,8 @@ import app.tauri.plugin.Plugin
  * Die Oberfläche ruft `dienst_starten`, `dienst_stoppen`, `dienst_stand` und
  * `dienst_akku_befreien`; `dienst.rs` reicht sie hier als `starten`,
  * `stoppen`, `laeuft` und `akkuBefreien` durch. Geprüft
- * wird hier nur die Form — den Ausweis prüft der Server, und ob der Mensch ihn
- * anlegen durfte, hat er vorher mit einem frischen Nachweis belegt.
+ * wird hier nur die Form — den Ausweis prüft der Server. Er darf nur zuhören,
+ * wird beim Abmelden widerrufen und ist je Gerät abschaltbar.
  */
 @InvokeArg
 class DienstStartArgs {
@@ -77,6 +78,7 @@ class DienstPlugin(private val activity: Activity) : Plugin(activity) {
             JSObject().apply {
                 put("aktiv", Hintergrunddienst.istEingeschaltet(ctx))
                 put("akkuBefreit", energie.isIgnoringBatteryOptimizations(activity.packageName))
+                put("benachrichtigungenErlaubt", NotificationManagerCompat.from(activity).areNotificationsEnabled())
             },
         )
     }

@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Bell, Bot, Mail, Radio, Smartphone } from 'lucide-react'
+import { AlertTriangle, Bell, Bot, Mail, Send, Smartphone } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { Switch } from '@/components/ui/Switch'
-import { ausschalten, dienstVerfuegbar, einschalten, stand } from '@/services/hintergrunddienst'
+import { pruefeUndFrageGeraeteBerechtigung, sendeGeraeteBenachrichtigung } from '@/lib/benachrichtigung'
+import { ausschalten, dienstVerfuegbar, einschalten, stand, type DienstStand } from '@/services/hintergrunddienst'
 import { useAnkerLage } from './Ankerlage'
 
 interface BenachrichtigungsGlockeProps {
@@ -22,8 +23,8 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(user?.email_notifications ?? true)
   const [aiNotificationsEnabled, setAiNotificationsEnabled] = useState<boolean>(user?.ai_notifications ?? true)
   const [deviceNotificationsEnabled, setDeviceNotificationsEnabled] = useState<boolean>(user?.device_notifications ?? true)
-  const [hintergrundAn, setHintergrundAn] = useState(false)
-  const [hintergrundLaeuft, setHintergrundLaeuft] = useState(false)
+  const [dienstStand, setDienstStand] = useState<DienstStand | null>(null)
+  const [geraetSchaltet, setGeraetSchaltet] = useState(false)
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
   const menueRef = useRef<HTMLDivElement>(null)
@@ -46,38 +47,18 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
   // Der Dienst läuft außerhalb der App; sein Stand kommt aus Android, nicht
   // aus diesem Fenster.
   useEffect(() => {
-    if (!bellOpen || !dienstVerfuegbar()) return
+    if (!bellOpen || !dienstVerfuegbar()) {
+      setDienstStand(null)
+      return
+    }
     let aktiv = true
     void stand().then((lage) => {
-      if (aktiv) setHintergrundAn(lage.aktiv)
-    })
+      if (aktiv) setDienstStand(lage)
+    }).catch(() => {})
     return () => {
       aktiv = false
     }
   }, [bellOpen])
-
-  const schalteHintergrund = async (an: boolean) => {
-    setHintergrundLaeuft(true)
-    try {
-      if (an) {
-        // Der Nachweis entsteht hier, mit Absicht: ein dauerhafter Ausweis
-        // wird nicht im Hintergrund angelegt.
-        const eingeschaltet = await einschalten(t('notifications.backgroundLabel'))
-        if (!eingeschaltet) {
-          toast.error(t('notifications.backgroundFailed'))
-          return
-        }
-        setHintergrundAn(true)
-      } else {
-        await ausschalten()
-        setHintergrundAn(false)
-      }
-    } catch {
-      toast.error(t('notifications.backgroundFailed'))
-    } finally {
-      setHintergrundLaeuft(false)
-    }
-  }
 
   useEffect(() => {
     if (!bellOpen) return
@@ -114,6 +95,41 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
     else if (feld === 'ai') setAiNotificationsEnabled(naechster)
     else setDeviceNotificationsEnabled(naechster)
 
+    if (feld === 'device') {
+      if (dienstVerfuegbar()) {
+        // Der Dienst ist die Fortsetzung desselben Schalters: an startet ihn,
+        // aus stoppt und widerruft ihn. Ein eigener Nachweis wäre für einen
+        // reinen Lese-Zugang zu viel Reibung.
+        setGeraetSchaltet(true)
+        try {
+          if (naechster) {
+            const eingeschaltet = await einschalten(t('notifications.deviceLabel'))
+            if (!eingeschaltet) {
+              setDeviceNotificationsEnabled(vorher)
+              toast.error(t('notifications.backgroundFailed'))
+              return
+            }
+          } else {
+            await ausschalten()
+          }
+          setDienstStand(await stand())
+        } catch {
+          setDeviceNotificationsEnabled(vorher)
+          toast.error(t('notifications.backgroundFailed'))
+          return
+        } finally {
+          setGeraetSchaltet(false)
+        }
+      } else if (naechster) {
+        const erlaubt = await pruefeUndFrageGeraeteBerechtigung()
+        if (!erlaubt) {
+          setDeviceNotificationsEnabled(vorher)
+          toast.error(t('notifications.devicePermissionDenied'))
+          return
+        }
+      }
+    }
+
     try {
       const param = feld === 'email' ? 'enabled' : feld === 'ai' ? 'ai' : 'device'
       await api(`/auth/me/notifications?${param}=${naechster}`, { method: 'PATCH' })
@@ -125,11 +141,26 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
           : { device_notifications: naechster },
       )
     } catch {
+      // Der Dienst darf nicht weiterlaufen, wenn die Kontoeinstellung nicht
+      // gespeichert wurde.
+      if (feld === 'device' && naechster && dienstVerfuegbar()) {
+        await ausschalten().catch(() => {})
+        setDienstStand(await stand().catch(() => null))
+      }
       if (feld === 'email') setNotificationsEnabled(vorher)
       else if (feld === 'ai') setAiNotificationsEnabled(vorher)
       else setDeviceNotificationsEnabled(vorher)
       toast.error(t('notifications.updateFailed'))
     }
+  }
+
+  const testeMeldung = async () => {
+    const ergebnis = await sendeGeraeteBenachrichtigung({
+      titel: t('notifications.testTitle'),
+      text: t('notifications.testText'),
+      erzwingen: true,
+    })
+    if (!ergebnis.ok) toast.error(t('notifications.testFailed'))
   }
 
   return (
@@ -208,28 +239,32 @@ export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', pla
             </span>
             <Switch
               checked={deviceNotificationsEnabled}
+              disabled={geraetSchaltet}
               onCheckedChange={(wert) => void schalte('device', wert)}
               aria-label={t('notifications.deviceLabel')}
             />
           </label>
-          {dienstVerfuegbar() && (
-            <label className="flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-highest transition-colors cursor-pointer border-t border-outline-variant/20">
-              <Radio className="mt-0.5 h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm text-on-surface">
-                  {t('notifications.backgroundLabel')}
-                </span>
-                <span className="block text-xs text-on-surface-variant">
-                  {t('notifications.backgroundHint')}
-                </span>
-              </span>
-              <Switch
-                checked={hintergrundAn}
-                disabled={hintergrundLaeuft}
-                onCheckedChange={(wert) => void schalteHintergrund(wert)}
-                aria-label={t('notifications.backgroundLabel')}
-              />
-            </label>
+          {dienstVerfuegbar() && dienstStand && (
+            <div className="px-3 pb-2.5">
+              {!dienstStand.benachrichtigungenErlaubt ? (
+                <p className="flex items-start gap-1.5 text-xs text-status-warning">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>{t('notifications.devicePermissionDenied')}</span>
+                </p>
+              ) : dienstStand.aktiv ? (
+                <p className="text-xs text-on-surface-variant">{t('notifications.deviceActive')}</p>
+              ) : null}
+            </div>
+          )}
+          {deviceNotificationsEnabled && (
+            <button
+              type="button"
+              onClick={() => void testeMeldung()}
+              className="flex w-full items-center gap-2 border-t border-outline-variant/20 px-3 py-2.5 text-left text-sm text-on-surface hover:bg-surface-container-highest transition-colors"
+            >
+              <Send className="h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
+              {t('notifications.testLabel')}
+            </button>
           )}
         </div>,
         document.body,
