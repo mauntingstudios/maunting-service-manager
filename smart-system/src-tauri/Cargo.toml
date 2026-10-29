@@ -128,7 +128,7 @@ features = ["png", "jpeg"]
 [target.'cfg(target_os = "android")'.dependencies]
 # Aufrufe aus dem Hintergrund-Job (`KameraKrypto.kt`). Dieselbe Fassung, die
 # tao auf Android ohnehin mitbringt.
-jni = "0.21"
+jni = "0.22"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
