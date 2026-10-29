@@ -1926,7 +1926,7 @@ dependencies = [
 
 [[package]]
 name = "msm-backup-recovery"
-version = "5.7.10"
+version = "5.8.0"
 dependencies = [
  "flate2",
  "serde",
