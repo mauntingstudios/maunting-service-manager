@@ -42,6 +42,13 @@ export function PasskeyFernBestaetigung({ onOeffnen }: PasskeyFernBestaetigungPr
     return () => window.removeEventListener('msm:sync-event', handle)
   }, [])
 
+  useEffect(() => {
+    if (!einladung) return
+    // Ein Vorgang verfällt nach fünf Minuten; der Hinweis verschwindet mit ihm.
+    const timer = window.setTimeout(() => setEinladung(null), 5 * 60 * 1000)
+    return () => window.clearTimeout(timer)
+  }, [einladung])
+
   if (!einladung) return null
   // Die App hat denselben Vorgang schon selbst offen: kein zweiter Hinweis.
   if (offen?.vorgang === einladung.vorgang) return null
