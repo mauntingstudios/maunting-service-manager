@@ -39,7 +39,13 @@ fn folge(art: COREWEBVIEW2_PROCESS_FAILED_KIND) -> Folge {
     }
 }
 
-pub(super) unsafe fn verarbeiten(app: &tauri::AppHandle, id: &str, args: &ICoreWebView2ProcessFailedEventArgs) {
+pub(super) unsafe fn verarbeiten(app: &tauri::AppHandle, id: &str, args: &ICoreWebView2ProcessFailedEventArgs, generation: u64) {
+    // Eine späte Meldung aus einer verworfenen Umgebung betrifft die Webview
+    // dieses Tabs nicht mehr (etwa nach einem Neuaufbau).
+    if !super::ist_aktuelle_generation(id, generation) {
+        eprintln!("[MSB] Prozessmeldung einer verworfenen Webview übergangen");
+        return;
+    }
     let mut art = COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED;
     let gelesen = args.ProcessFailedKind(&mut art);
     let mut grund = COREWEBVIEW2_PROCESS_FAILED_REASON_UNEXPECTED;
@@ -50,10 +56,10 @@ pub(super) unsafe fn verarbeiten(app: &tauri::AppHandle, id: &str, args: &ICoreW
     }
     match if gelesen.is_err() { Folge::Tab } else { folge(art) } {
         Folge::Browserprozess => {
-            if super::browserprozess_beendet(app, id) {
+            // Die übrigen Webviews desselben Absturzes melden dasselbe; nur
+            // der erste Bericht räumt auf.
+            if super::browserprozess_beendet(app) {
                 eprintln!("[MSB] Browserprozess der Seiten beendet (Grund {}, Code {code:#x}); die Tabs werden neu aufgebaut", grund.0);
-            } else {
-                eprintln!("[MSB] Browserprozess der Seiten beendet; Meldung eines weiteren Tabs");
             }
         }
         Folge::Tab => {

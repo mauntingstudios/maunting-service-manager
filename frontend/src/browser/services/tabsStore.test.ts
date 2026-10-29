@@ -532,6 +532,19 @@ describe('Nach dem Ende des Browserprozesses', () => {
     expect(useTabsStore.getState().tabs.find((t) => t.id === 'tab-b')).toMatchObject({ nativDa: false, laedt: false })
   })
 
+  it('zeigt den Schutzfehler statt einer Absturzseite, wenn die Sperre noch nicht steht', async () => {
+    abweisen.tab_laden = 'schutz'
+    act(() => useTabsStore.getState().ereignis({ art: 'umgebung_neu' }))
+    await warten()
+    delete abweisen.tab_laden
+
+    expect(useTabsStore.getState().tabs.find((t) => t.id === 'tab-a')).toMatchObject({
+      fehler: 'schutz',
+      abgestuerzt: false,
+      laedt: false,
+    })
+  })
+
   it('zeigt die Absturzseite nur, wenn der Neuaufbau scheitert', async () => {
     abweisen.tab_laden = 'kaputt'
     act(() => useTabsStore.getState().ereignis({ art: 'umgebung_neu' }))

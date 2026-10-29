@@ -251,10 +251,13 @@ pub(super) unsafe fn einrichten(
 
     {
         let (app, id) = (app.clone(), id.to_string());
+        // Der Stand, unter dem diese Webview entstand. Meldungen tragen ihn
+        // mit, damit eine verworfene Umgebung nicht die neue abräumt.
+        let generation = super::generation();
         core.add_ProcessFailed(
             &ProcessFailedEventHandler::create(Box::new(move |_, args| {
                 if let Some(args) = args {
-                    super::absturz::verarbeiten(&app, &id, &args);
+                    super::absturz::verarbeiten(&app, &id, &args, generation);
                 }
                 Ok(())
             })),

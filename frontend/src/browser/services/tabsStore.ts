@@ -187,7 +187,15 @@ export const useTabsStore = create<TabsZustand>()(
           void nativ
             .tabLaden(tab.id, tab.url, tab.privat, tab.workspaceId)
             .then(() => zeigen(tab.id))
-            .catch(() => aendern(tab.id, { laedt: false, abgestuerzt: true }))
+            // Steht der Jugendschutz noch nicht, ist das kein Absturz.
+            .catch((e) =>
+              aendern(
+                tab.id,
+                e === SCHUTZ_NICHT_BEREIT
+                  ? { laedt: false, abgestuerzt: false, fehler: e }
+                  : { laedt: false, abgestuerzt: true },
+              ),
+            )
         }
         useDownloadsStore.getState().unterbrochen()
       }
