@@ -127,6 +127,11 @@ pub(crate) fn mit_tab<T: Send + 'static>(
     })
 }
 
+/// Der Browserprozess der Seiten ist beendet: die gemerkte Umgebung und alle
+/// Controller sind tot. Gesetzt, bis [`umgebung`] eine neue aufgebaut hat;
+/// spätere Meldungen desselben Absturzes fallen so weg.
+static UMGEBUNG_WEG: AtomicBool = AtomicBool::new(false);
+
 /// Die Umgebung aller Tabs: ein eigenes Profil (`seitenprofil`), getrennt von
 /// dem der Oberfläche. Nur auf dem UI-Faden.
 fn umgebung(app: &AppHandle) -> Result<ICoreWebView2Environment, String> {
@@ -164,7 +169,52 @@ fn umgebung(app: &AppHandle) -> Result<ICoreWebView2Environment, String> {
     }
     let u = webview2_com::wait_with_pump(rx).map_err(fehler)?.map_err(fehler)?;
     UMGEBUNG.with(|slot| *slot.borrow_mut() = Some(u.clone()));
+    // Erst mit der neuen Umgebung gelten Meldungen des alten Browserprozesses
+    // wieder als veraltet; bis dahin sind sie schon abgeräumt.
+    UMGEBUNG_WEG.store(false, Ordering::SeqCst);
     Ok(u)
+}
+
+/// Der Browserprozess der Seiten ist beendet (`BROWSER_PROCESS_EXITED`).
+/// `true`, wenn dieses Ereignis der Aufräumer war; die Meldungen der übrigen
+/// Webviews desselben Absturzes ergeben dann `false`.
+///
+/// Aufgeräumt wird nach dem Rückruf auf dem UI-Faden: Controller zu verwerfen,
+/// während ihre eigene Meldung läuft, verschachtelt WebView2 (Regel 161).
+/// Danach meldet `UmgebungNeu`, und die Oberfläche lädt jede Seite neu;
+/// [`umgebung`] baut dabei eine frische auf.
+pub(super) fn browserprozess_beendet(app: &AppHandle, id: &str) -> bool {
+    // Eine späte Meldung einer längst verworfenen Webview betrifft nichts mehr.
+    if !NATIV.with(|n| n.borrow().contains_key(id)) {
+        return false;
+    }
+    if UMGEBUNG_WEG.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        let innen = app2.clone();
+        let _ = app2.run_on_main_thread(move || abbauen(innen));
+    });
+    true
+}
+
+/// UI-Faden: alles, was am alten Browserprozess hing, fällt weg.
+fn abbauen(app: AppHandle) {
+    let ids: Vec<String> = NATIV.with(|n| n.borrow().keys().cloned().collect());
+    for id in &ids {
+        rueckfragen::vergessen(id);
+        cookies::vergessen(id);
+        crate::tabs::seite_vergessen(id);
+        crate::schild::tab_vergessen(id);
+    }
+    grundereignisse::verwerfen();
+    herunterladen::verwerfen();
+    NATIV.with(|n| n.borrow_mut().clear());
+    HELFER.with(|h| h.borrow_mut().take());
+    HELFER_NAMED.with(|h| h.borrow_mut().clear());
+    UMGEBUNG.with(|u| u.borrow_mut().take());
+    melden(&app, TabEreignis::UmgebungNeu);
 }
 
 /// Die WebView2-Profile eigener Workspaces, für die Rechteverwaltung. Beim

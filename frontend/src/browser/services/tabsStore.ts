@@ -14,6 +14,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+import { useDownloadsStore } from './downloadsStore'
 import { useEinstellungenStore, wirksameSucheJetzt } from './einstellungenStore'
 import { useFormulare } from './formulare'
 import { interneAdresse, interneSeite, istIntern, istWebseite } from './intern'
@@ -167,6 +168,28 @@ export const useTabsStore = create<TabsZustand>()(
           .then(() => zeigen(id))
           // Steht der Jugendschutz noch nicht, lädt Rust nichts und sagt es.
           .catch((e) => aendern(id, { laedt: false, ...(e === SCHUTZ_NICHT_BEREIT ? { fehler: e } : {}) }))
+      }
+
+      /**
+       * Der Browserprozess der Seiten ist beendet: Rust hat Umgebung und
+       * Webviews verworfen (`absturz.rs`). Jede offene Seite bekommt eine
+       * neue Webview mit ihrer Adresse; erst wenn das scheitert, bleibt die
+       * Absturzseite mit „Neu laden“.
+       */
+      const wiederaufsetzen = () => {
+        for (const tab of get().tabs) {
+          if (!tab.nativDa) continue
+          if (!istWebseite(tab.url)) {
+            aendern(tab.id, { nativDa: false, laedt: false, abgestuerzt: false })
+            continue
+          }
+          aendern(tab.id, { abgestuerzt: false, laedt: true, fehler: null, ruhe: null })
+          void nativ
+            .tabLaden(tab.id, tab.url, tab.privat, tab.workspaceId)
+            .then(() => zeigen(tab.id))
+            .catch(() => aendern(tab.id, { laedt: false, abgestuerzt: true }))
+        }
+        useDownloadsStore.getState().unterbrochen()
       }
 
       return {
@@ -647,14 +670,20 @@ export const useTabsStore = create<TabsZustand>()(
           }
         },
 
-        ereignis: (e) =>
+        ereignis: (e) => {
+          // Kein Tabereignis: es betrifft alle Seiten zugleich.
+          if (e.art === 'umgebung_neu') {
+            wiederaufsetzen()
+            return
+          }
           ereignisAnwenden(e, {
             finden,
             aendern,
             zeigen,
             neuerTab: get().neuerTab,
             schliessen: get().schliessen,
-          }),
+          })
+        },
 
         hochfahren: async () => {
           const startInfo = await nativ.fensterStartInfo().catch(() => null)

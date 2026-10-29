@@ -127,6 +127,16 @@ describe('ExternPanel', () => {
     expect(screen.getByText('Diese Seite ist abgestürzt')).toBeInTheDocument()
   })
 
+  it('lädt nach dem Ende des Browserprozesses neu auf', async () => {
+    render(<MemoryRouter><ExternPanel id="whatsapp" voll={false} /></MemoryRouter>)
+    await waitFor(() => expect(listener.callback).not.toBeNull())
+    nativ.tabLaden.mockClear()
+    act(() => {
+      listener.callback!({ art: 'umgebung_neu' })
+    })
+    expect(nativ.tabLaden).toHaveBeenCalledWith('tab-panel-whatsapp', 'https://web.whatsapp.com', false, undefined)
+  })
+
   it('lädt nach Verwerfen neu auf', async () => {
     render(<MemoryRouter><ExternPanel id="whatsapp" voll={false} /></MemoryRouter>)
     await waitFor(() => expect(listener.callback).not.toBeNull())

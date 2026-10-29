@@ -54,6 +54,8 @@ export interface DownloadsZustand {
   /** Neue Downloads seit dem letzten Blick in die Liste. */
   neu: number
   ereignis: (e: DownloadEreignis) => void
+  /** Der Browserprozess ist abgestürzt: was noch lädt, lädt nicht mehr. */
+  unterbrochen: () => void
   gesehen: () => void
   leeren: () => void
   loeschen: (kennung: number | string) => void
@@ -131,6 +133,13 @@ export const useDownloadsStore = create<DownloadsZustand>()(
           }
           return { downloads }
         }),
+
+      unterbrochen: () =>
+        set((s) => ({
+          // Wie beim Einlesen nach einem Neustart: ohne Browserprozess lädt
+          // nichts weiter, und ein Spinner ohne Ende sagt nichts.
+          downloads: s.downloads.map((d) => (ABSCHLUSS.has(d.stand) ? d : { ...d, stand: 'abgebrochen' as const })),
+        })),
 
       gesehen: () => set({ neu: 0 }),
 

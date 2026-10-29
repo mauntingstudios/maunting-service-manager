@@ -16,6 +16,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }))
 
 const { useTabsStore } = await import('./tabsStore')
+const { leererTab } = await import('./tab')
 const { useEinstellungenStore } = await import('./einstellungenStore')
 const { useVerlaufFrist, useVerlaufStore } = await import('./verlaufStore')
 const { kuerzelAusTaste } = await import('./kuerzel')
@@ -499,3 +500,45 @@ describe('zurueckGehen und Verlauf', () => {
   })
 })
 
+
+describe('Nach dem Ende des Browserprozesses', () => {
+  beforeEach(() => {
+    ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
+    useTabsStore.setState({
+      tabs: [
+        { ...leererTab('tab-start'), url: '', nativDa: false },
+        { ...leererTab('tab-a'), url: 'https://a.example/', nativDa: true, abgestuerzt: true },
+        { ...leererTab('tab-b'), url: 'pontis://einstellungen', nativDa: false },
+        { ...leererTab('tab-c', true, 'arbeit'), url: 'https://c.example/', nativDa: true },
+      ],
+      aktivId: 'tab-a',
+      split: null,
+      geschlossen: [],
+    })
+    gerufen.length = 0
+  })
+
+  it('baut jede offene Seite mit Adresse, Profil und Arbeitsbereich neu auf', async () => {
+    act(() => useTabsStore.getState().ereignis({ art: 'umgebung_neu' }))
+    await warten()
+
+    const geladen = gerufen.filter((g) => g.befehl === 'tab_laden').map((g) => g.args)
+    expect(geladen).toEqual([
+      { id: 'tab-a', url: 'https://a.example/', privat: false, workspace: 'standard' },
+      { id: 'tab-c', url: 'https://c.example/', privat: true, workspace: 'arbeit' },
+    ])
+    expect(useTabsStore.getState().tabs.find((t) => t.id === 'tab-a')).toMatchObject({ abgestuerzt: false, laedt: true })
+    // Eigene Seiten haben keine Webview und bleiben, wie sie sind.
+    expect(useTabsStore.getState().tabs.find((t) => t.id === 'tab-b')).toMatchObject({ nativDa: false, laedt: false })
+  })
+
+  it('zeigt die Absturzseite nur, wenn der Neuaufbau scheitert', async () => {
+    abweisen.tab_laden = 'kaputt'
+    act(() => useTabsStore.getState().ereignis({ art: 'umgebung_neu' }))
+    await warten()
+    delete abweisen.tab_laden
+
+    expect(useTabsStore.getState().tabs.find((t) => t.id === 'tab-a')).toMatchObject({ abgestuerzt: true, laedt: false })
+    expect(useTabsStore.getState().tabs.find((t) => t.id === 'tab-c')).toMatchObject({ abgestuerzt: true, laedt: false })
+  })
+})

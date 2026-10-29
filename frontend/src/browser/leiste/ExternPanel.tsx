@@ -105,6 +105,12 @@ export function ExternPanel({ id, voll }: { id: ExterneId; voll: boolean }) {
     let abmelden: (() => void) | null = null
     let aktiv = true
     void tabEreignisse((e) => {
+      // Kein Tabereignis: nach dem Ende des Browserprozesses bekommt auch das
+      // Panel eine neue Webview.
+      if (e.art === 'umgebung_neu') {
+        laden()
+        return
+      }
       if (e.id !== tabId || e.art === 'download' || e.art === 'download_fortschritt') return
       if (e.art === 'verworfen') {
         laden()
