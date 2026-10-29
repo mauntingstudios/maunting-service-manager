@@ -34,7 +34,7 @@ from dataclasses import dataclass
 #                    MSM-interne Orchestrierung (Gehirn↔Worker), keine
 #                    Aussenwirkung auf einen Server (docs/agentic-framework.md)
 # - `voice_control` — steuert nur Zustand der aktuellen Sprachsitzung
-ARTEN = ("server_read", "global_read", "server_write", "global_write", "ask", "delegation", "voice_control")
+ARTEN = ("server_read", "global_read", "docs_write", "server_write", "global_write", "ask", "delegation", "voice_control")
 
 
 @dataclass(frozen=True)
@@ -254,6 +254,43 @@ WERKZEUGE: dict[str, Werkzeug] = {
     ),
     "notes_read": Werkzeug(
         "global_read", gruppe="notes", angebot=("ai.notes.use",)
+    ),
+    # ── Dokumente ─────────────────────────────────────────────────────
+    # Gruppe `dokumente`, nicht `docs`: `docs` gehoert seit jeher den
+    # statischen Hilfeseiten (`search_docs`, `read_docs`). Die Handler pruefen
+    # `docs.use` + `ai.docs.use` und die Dokumentrolle bei jedem Aufruf erneut.
+    # Schreibende Dokumentwerkzeuge laufen direkt (Art `docs_write`), nicht
+    # ueber den Vorschlagspfad: der Mensch sieht die Aenderung live, die
+    # Version und `ai-undo` bleiben der Rueckweg.
+    "list_documents": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
+    "read_document": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
+    "read_document_selection": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
+    "get_document_outline": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
+    "list_document_comments": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
+    "read_document_skill": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
+    "edit_document": Werkzeug(
+        "docs_write", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
+    "add_document_comment": Werkzeug(
+        "docs_write", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
+    "undo_ai_edit": Werkzeug(
+        "docs_write", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
+    "update_document_title": Werkzeug(
+        "docs_write", gruppe="dokumente", angebot=("ai.docs.use",)
     ),
     # Ohne dieses Werkzeug konnte die KI nur neue Ankuendigungen anlegen. Ein
     # "nimm den Hinweis auf Mac und Linux aus dem Pop-up raus" war damit nicht
@@ -959,7 +996,13 @@ SERVER_READ_TOOLS = _mit_art("server_read")
 # bleibt davon getrennt: Es ist ausschließlich ein Realtime-Sitzungsbefehl und
 # hat keinen Handler im allgemeinen Chatlauf.
 GLOBAL_READ_TOOLS = _mit_art("global_read", "ask", "delegation")
-READ_TOOLS = SERVER_READ_TOOLS | GLOBAL_READ_TOOLS
+DOCUMENTS_TOOLS = _mit_gruppe("dokumente")
+DOCUMENTS_WRITE_TOOLS = _mit_art("docs_write")
+DOCUMENTS_READ_TOOLS = DOCUMENTS_TOOLS - DOCUMENTS_WRITE_TOOLS
+# Dokument-Schreibwerkzeuge laufen im Sofortpfad, nicht ueber eine
+# Vorschlagskarte. Der Grund ist die Zusage an den Nutzer: Singra schreibt
+# direkt, und der Rueckweg ist die Version plus `undo_ai_edit`.
+READ_TOOLS = SERVER_READ_TOOLS | GLOBAL_READ_TOOLS | DOCUMENTS_WRITE_TOOLS
 SERVER_WRITE_TOOLS = _mit_art("server_write")
 GLOBAL_WRITE_TOOLS = _mit_art("global_write")
 WRITE_TOOLS = SERVER_WRITE_TOOLS | GLOBAL_WRITE_TOOLS
@@ -1076,10 +1119,30 @@ GEHIRN_TOOLS = (
     | frozenset(_mit_art("global_read"))
     | frozenset(MEMORY_TOOLS)
     | frozenset(SKILL_TOOLS)
+    | frozenset(DOCUMENTS_READ_TOOLS)
     | WORKER_STEUERUNG
     | GEHIRN_DESKTOP
     | CHAT_INTERACTION_TOOLS
 ) - NUR_WORKER - {"ask_user"}
+
+
+def docs_kontext_schnitt(rolle: str = "voll") -> set[str]:
+    """Werkzeuge, die in einem Dokument-Lauf uebrig bleiben.
+
+    Ein Dokumenttext ist Daten, keine Anweisung. Deshalb darf ein praeparierter
+    Text in einem Dokument-Lauf keine Server-, Mail-, Kalender-, Web- oder
+    Desktop-Aktion ausloesen. Es bleiben die Dokumentwerkzeuge und die
+    Worker-Steuerung: das Gehirn delegiert Schreibarbeit, der Worker fuehrt
+    sie aus, `voll` kann beides.
+    """
+    erlaubt = set(DOCUMENTS_TOOLS)
+    if rolle == "gehirn":
+        erlaubt |= WORKER_STEUERUNG
+    elif rolle == "worker":
+        erlaubt |= NUR_WORKER
+    else:
+        erlaubt |= WORKER_STEUERUNG | NUR_WORKER
+    return erlaubt
 
 
 def worker_ausschluss() -> frozenset[str]:

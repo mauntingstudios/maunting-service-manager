@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -40,7 +41,7 @@ from models.dis_text import ai_text
 #: Diese Aufzaehlung ist die Wahrheitsquelle: der CheckConstraint unten wird
 #: daraus **erzeugt**, `ai_chat_service` nimmt sie entgegen. Wer eine weitere Art
 #: braucht, traegt sie hier ein — und bekommt die Schranke geschenkt.
-ARTEN = ("primary", "guardian", "worker")
+ARTEN = ("primary", "guardian", "worker", "docs")
 
 #: Die Arten, von denen es je Benutzer hoechstens **eine** Unterhaltung gibt.
 #: Der eindeutige Index unten wird aus dieser Aufzaehlung erzeugt; ``worker``
@@ -97,6 +98,16 @@ class AiConversation(Base):
                 "kind IN (" + ", ".join(f"'{art}'" for art in EINZELFENSTER) + ")"
             ),
         ),
+        # Ein Dokument-Chat je (Benutzer, Dokument). Die Art `docs` faellt
+        # bewusst nicht unter `EINZELFENSTER`: ihre Eindeutigkeit haengt am
+        # Dokument, nicht am Benutzer allein.
+        Index(
+            "uq_ai_conversations_user_document",
+            "user_id",
+            "document_id",
+            unique=True,
+            postgresql_where=text("kind = 'docs' AND document_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -109,6 +120,11 @@ class AiConversation(Base):
     )
     server_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("servers.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # Docs-Gespraech: ein Fenster je (Benutzer, Dokument). Der Titel bleibt
+    # generisch, damit kein Dokumenttitel im Klartext in dieser Tabelle steht.
+    document_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True
     )
     title: Mapped[str] = mapped_column(ai_text("ai_conversations.title"), nullable=False)
     # Nur eine spaetere, explizit minimierte Zusammenfassung; nie Provider-Interna.

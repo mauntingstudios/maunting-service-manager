@@ -76,6 +76,32 @@ services:
       timeout: 3s
       retries: 30
 
+  docs:
+    build:
+      context: .
+      dockerfile: docs-sidecar/Dockerfile.dev
+    container_name: msm-docs-dev
+    restart: unless-stopped
+    working_dir: /app/docs-sidecar
+    ports:
+      - "127.0.0.1:8100:8100"
+      - "127.0.0.1:8101:8101"
+    environment:
+      NODE_ENV: development
+      MSM_DOCS_WS_ADDRESS: 0.0.0.0
+      MSM_DOCS_HTTP_ADDRESS: 0.0.0.0
+      MSM_BACKEND_URL: http://backend:8000
+      MSM_DOCS_SIDECAR_TOKEN: ${MSM_DOCS_SIDECAR_TOKEN:-dev-docs-token}
+      MSM_DOCS_COLLAB_SECRET: ${MSM_DOCS_COLLAB_SECRET:-dev-docs-collab-secret-change-me}
+    depends_on:
+      backend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8101/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
   backend:
     build:
       context: ./backend
@@ -94,6 +120,11 @@ services:
       - ./backend/.env
     environment:
       MSM_DEBUG: "true"
+      MSM_DOCS_SIDECAR_URL: http://docs:8101
+      MSM_DOCS_SIDECAR_TOKEN: ${MSM_DOCS_SIDECAR_TOKEN:-dev-docs-token}
+      MSM_DOCS_COLLAB_SECRET: ${MSM_DOCS_COLLAB_SECRET:-dev-docs-collab-secret-change-me}
+      MSM_DOCS_SIGNING_SECRET: ${MSM_DOCS_SIGNING_SECRET:-dev-docs-signing-secret-change-me}
+      MSM_DOCS_COLLAB_PUBLIC_URL: ws://localhost:8100
     depends_on:
       panel-db:
         condition: service_healthy

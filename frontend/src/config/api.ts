@@ -103,3 +103,15 @@ function resolveDefaultWsOrigin(): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${window.location.host}`
 }
+
+/**
+ * Hocuspocus-Endpunkt fuer Dokumente.
+ *
+ * Produktion: Caddy reicht `/api/docs/collab/*` an den Sidecar weiter (Port
+ * 8100). Entwicklung: `VITE_DOCS_WS_URL` zeigt direkt auf 127.0.0.1:8100.
+ */
+export function docsCollabUrl(): string {
+  const env = (import.meta.env.VITE_DOCS_WS_URL as string | undefined)?.trim()
+  if (env) return env.replace(/\/+$/, '')
+  return wsUrl('/api/docs/collab')
+}

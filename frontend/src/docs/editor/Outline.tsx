@@ -1,0 +1,46 @@
+import { useMemo } from 'react'
+import type { Editor } from '@tiptap/react'
+import { useTranslation } from 'react-i18next'
+
+interface OutlineProps {
+  editor: Editor | null
+}
+
+export function Outline({ editor }: OutlineProps) {
+  const { t } = useTranslation()
+  const ueberschriften = useMemo(() => {
+    if (!editor) return []
+    const eintraege: { pos: number; level: number; text: string }[] = []
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name !== 'heading') return
+      eintraege.push({
+        pos,
+        level: Number(node.attrs.level) || 1,
+        text: node.textContent || t('docs.tree.untitled'),
+      })
+    })
+    return eintraege
+  }, [editor, editor?.state.doc])
+
+  if (!ueberschriften.length) {
+    return <p className="px-3 py-2 text-xs text-on-surface-variant">{t('docs.outline.empty')}</p>
+  }
+
+  return (
+    <nav aria-label={t('docs.outline.label')} className="flex flex-col gap-0.5 px-2 py-1">
+      {ueberschriften.map((eintrag, index) => (
+        <button
+          key={`${eintrag.pos}-${index}`}
+          type="button"
+          onClick={() => {
+            editor?.chain().focus().setTextSelection(eintrag.pos + 1).scrollIntoView().run()
+          }}
+          className="truncate rounded-md px-2 py-1.5 text-left text-xs text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+          style={{ paddingLeft: `${8 + (eintrag.level - 1) * 12}px` }}
+        >
+          {eintrag.text}
+        </button>
+      ))}
+    </nav>
+  )
+}

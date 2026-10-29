@@ -52,6 +52,7 @@ class PanelSettingsResponse(BaseModel):
     story_fable_download_enabled: bool = False
     calendar_enabled: bool = True
     notes_enabled: bool = True
+    docs_enabled: bool = True
     vault_enabled: bool = True
     social_enabled: bool = True
     captcha_enabled: bool = True
@@ -75,6 +76,7 @@ class PanelSettingsUpdate(BaseModel):
     imprint_url: str | None = None
     calendar_enabled: bool | None = None
     notes_enabled: bool | None = None
+    docs_enabled: bool | None = None
     vault_enabled: bool | None = None
     social_enabled: bool | None = None
     smtp_host: str | None = None

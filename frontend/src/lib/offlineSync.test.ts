@@ -1693,3 +1693,25 @@ describe('Offline Storage & Unified Real-Time SSE Sync Engine', () => {
   })
 })
 
+
+describe('docs sync events', () => {
+  it('meldet Dokumentereignisse als msm:docs-updated', () => {
+    const listener = vi.fn()
+    window.addEventListener('msm:docs-updated', listener)
+    handleIncomingSyncEvent('sync', {
+      entity: 'docs',
+      action: 'stored',
+      id: 'doc-1',
+      rev: 3,
+      team_id: 1,
+    } as never)
+    window.removeEventListener('msm:docs-updated', listener)
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect((listener.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+      entity: 'docs',
+      action: 'stored',
+      id: 'doc-1',
+      rev: 3,
+    })
+  })
+})

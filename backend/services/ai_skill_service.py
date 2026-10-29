@@ -261,7 +261,9 @@ def _overlay(by_key: dict[str, SkillView], rows: list[AiSkill]) -> None:
         )
 
 
-def visible_skills(db: Session, user: User) -> list[SkillView]:
+def visible_skills(
+    db: Session, user: User, *, nur_team_id: int | None = None
+) -> list[SkillView]:
     """Das vollstaendige Skill-Verzeichnis fuer diesen Benutzer.
 
     Reihenfolge der Ueberlagerung: mitgeliefert zuerst, danach die Datenbank.
@@ -289,6 +291,21 @@ def visible_skills(db: Session, user: User) -> list[SkillView]:
     nicht die Datenbank; die Begruendung steht dort.
     """
     by_key: dict[str, SkillView] = {}
+    if nur_team_id is not None:
+        # Dokument-Lauf: ausschliesslich Skills des Dokumentteams. Keine
+        # mitgelieferten, keine globalen, keine anderen Teams.
+        rows = (
+            db.query(AiSkill)
+            .filter(
+                AiSkill.scope_identity == f"team:{nur_team_id}",
+                AiSkill.status == "active",
+                AiSkill.enabled.is_(True),
+            )
+            .all()
+        )
+        _overlay(by_key, rows)
+        return sorted(by_key.values(), key=lambda item: item.skill_key)
+
     for skill in shipped_skills().values():
         by_key[skill.skill_key] = SkillView(
             skill_key=skill.skill_key, name=skill.name, description=skill.description,
@@ -306,10 +323,19 @@ def visible_skills(db: Session, user: User) -> list[SkillView]:
     return sorted(by_key.values(), key=lambda item: item.skill_key)
 
 
-def read_body(db: Session, user: User, skill_key: str) -> tuple[SkillView, str]:
+def read_body(
+    db: Session, user: User, skill_key: str, *, nur_team_id: int | None = None
+) -> tuple[SkillView, str]:
     """Laedt den Text eines Skills — Stufe zwei des schrittweisen Ladens."""
     key = (skill_key or "").strip().lower()
-    view = next((item for item in visible_skills(db, user) if item.skill_key == key), None)
+    view = next(
+        (
+            item
+            for item in visible_skills(db, user, nur_team_id=nur_team_id)
+            if item.skill_key == key
+        ),
+        None,
+    )
     if view is None:
         raise HTTPException(status_code=404, detail="Skill nicht gefunden")
     if view.id is not None:
@@ -481,7 +507,9 @@ def _neueste_zuerst(views: list[SkillView]) -> list[SkillView]:
     return sorted(gewaehlt, key=lambda item: item.skill_key)
 
 
-def skill_index(db: Session, user: User, query: str = "") -> list[SkillView]:
+def skill_index(
+    db: Session, user: User, query: str = "", *, nur_team_id: int | None = None
+) -> list[SkillView]:
     """Die Skills, die in das Skill-Verzeichnis kommen — eine eigene, als Daten
     gekennzeichnete Nachricht direkt hinter dem Systemprompt
     (`ai_context_service._skill_index_message`).
@@ -520,7 +548,7 @@ def skill_index(db: Session, user: User, query: str = "") -> list[SkillView]:
     Die Reservierung wäre selbst wieder eine Auswahl, sobald mehr als
     `MAX_INDEXED_SKILLS` Dateien mitgeliefert werden; bei neun ist das weit weg.
     """
-    views = visible_skills(db, user)
+    views = visible_skills(db, user, nur_team_id=nur_team_id)
     if len(views) <= MAX_INDEXED_SKILLS or not query.strip():
         return _neueste_zuerst(views)
 

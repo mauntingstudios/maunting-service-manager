@@ -44,6 +44,8 @@ from .user_integrations import router as user_integrations_router
 from .popups import router as popups_router
 from .calendar import router as calendar_router
 from .notes import router as notes_router
+from .docs import router as docs_router
+from .docs_internal import router as docs_internal_router
 from .vault import router as vault_router
 from .sync_events import router as sync_events_router, sync_alias_router
 from .social import router as social_router
@@ -99,6 +101,8 @@ __all__ = [
     "popups_router",
     "calendar_router",
     "notes_router",
+    "docs_router",
+    "docs_internal_router",
     "vault_router",
     "sync_events_router",
     "sync_alias_router",

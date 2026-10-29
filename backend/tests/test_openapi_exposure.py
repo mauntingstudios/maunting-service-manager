@@ -73,10 +73,10 @@ def test_swagger_ui_is_gated_and_gets_its_own_csp(
     owner_cookies: dict,
 ) -> None:
     """Ohne die CSP-Ausnahme waere die Seite leer statt nutzbar."""
-    anonymous = client.get("/api/docs")
+    anonymous = client.get("/api/swagger")
     assert anonymous.status_code in (401, 403)
 
-    response = client.get("/api/docs", cookies=owner_cookies)
+    response = client.get("/api/swagger", cookies=owner_cookies)
     assert response.status_code == 200
     assert "swagger-ui" in response.text
     csp = response.headers["Content-Security-Policy"]

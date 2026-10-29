@@ -143,6 +143,15 @@ class Settings(BaseSettings):
     # Das Gerät fragt nur MSM; MSM liest die Vorhersage hier.
     wetter_url: str = "http://127.0.0.1:8890"
 
+    # Dokumente: Hocuspocus-Sidecar. Der oeffentliche WebSocket laeuft ueber
+    # Caddy auf derselben URL (/api/docs/collab); die interne API liegt auf
+    # 8101 und ist nur ueber Loopback erreichbar.
+    docs_sidecar_url: str = "http://127.0.0.1:8101"
+    docs_sidecar_token: str = ""
+    docs_collab_secret: str = ""
+    docs_collab_public_url: str = ""
+    docs_signing_secret: str = ""
+
     # Verwaltetes PostgreSQL fuer Game-Server-Datenbanken.
     # Der Host-Port ist absichtlich nur an Loopback gebunden. Game-Container
     # erreichen PostgreSQL ueber das interne Docker-Netz und msm-postgres:5432.

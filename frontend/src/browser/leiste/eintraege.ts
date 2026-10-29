@@ -44,6 +44,7 @@ export function useSichtbareModule(): Set<PanelId> {
   const chat = useHasPermission('ai.chat.use')
   const kalender = useHasPermission('ai.calendar.use')
   const notizen = useHasPermission('ai.notes.use')
+  const dokumente = useHasPermission('docs.use')
 
   const sichtbar = new Set<PanelId>()
   for (const e of MSM_EINTRAEGE) {
@@ -53,6 +54,7 @@ export function useSichtbareModule(): Set<PanelId> {
       if (e.id === 'chat' && !einstellungen.social_enabled) continue
       if (e.id === 'kalender' && !(einstellungen.calendar_enabled && kalender)) continue
       if (e.id === 'notizen' && !(einstellungen.notes_enabled && notizen)) continue
+      if (e.id === 'dokumente' && !(einstellungen.docs_enabled && dokumente)) continue
       if (e.id === 'tresor' && !einstellungen.vault_enabled) continue
     }
     sichtbar.add(e.id)

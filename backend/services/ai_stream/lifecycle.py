@@ -82,6 +82,8 @@ from services.ai_tool_registry import (
     ASK_TOOLS,
     CHAT_INTERACTION_TOOLS,
     DESKTOP_TOOLS,
+    DOCUMENTS_TOOLS,
+    DOCUMENTS_WRITE_TOOLS,
     GEHIRN_TOOLS,
     GUARDIAN_HEILUNG_TOOLS,
     NUR_WORKER,
@@ -93,6 +95,7 @@ from services.ai_tool_registry import (
     WORKER_STEUERUNG,
     WRITE_TOOLS,
     aufgaben_tools,
+    docs_kontext_schnitt,
     herkunft_schnitt,
     worker_ausschluss,
 )
@@ -842,6 +845,18 @@ async def _werkzeuge_und_grenze(
         erlaubt = erlaubt - worker_ausschluss()
     else:
         erlaubt = erlaubt - (WORKER_STEUERUNG | NUR_WORKER)
+    # Dokumentkontext schneidet alles andere weg. Ein Dokumenttext ist Daten;
+    # ein praeparierter Text darf keine Server-, Mail-, Desktop- oder Webaktion
+    # ausloesen. Ausserhalb eines Dokument-Laufs bleiben die Dokumentwerkzeuge
+    # draussen, damit sie im normalen Chat nicht als Option erscheinen.
+    docs_kontext = zustand.get("docs") if isinstance(zustand, dict) else None
+    if isinstance(docs_kontext, dict) and docs_kontext.get("document_uid"):
+        erlaubt = erlaubt - {"search_memory", "read_skill", "search_docs", "read_docs"}
+        erlaubt = erlaubt & docs_kontext_schnitt(rolle)
+    else:
+        erlaubt = erlaubt - DOCUMENTS_TOOLS
+    if rolle == "gehirn":
+        erlaubt = erlaubt - DOCUMENTS_WRITE_TOOLS
     # Danach die Herkunft: aus dem Panel kein Zugriff auf den Rechner des
     # Benutzers (siehe `herkunft_schnitt`; die Gegenrichtung schneidet nichts,
     # die App bekommt alles). Der Schnitt steht **vor** Guardian und Aufgaben,

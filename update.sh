@@ -65,7 +65,7 @@ restore_panel_ownership() {
     # aber manuelle "Sauberkeit" Befehle sind riskant. Immer --dry-run zuerst.
     # Es gibt helper-scripts/recover-docker-storage.sh als Recovery (für den Docker-Store-Corruption-Fall).
     mkdir -p "$MSM_DIR/blueprints/community" 2>/dev/null || true
-    for sub in backend frontend docs dis-sidecar searxng-sidecar livekit-sidecar wetter-sidecar msm-agent scripts helper-scripts blueprints; do
+    for sub in backend frontend docs dis-sidecar docs-sidecar searxng-sidecar livekit-sidecar wetter-sidecar msm-agent scripts helper-scripts blueprints; do
         if [[ -d "$MSM_DIR/$sub" ]]; then
             # Hard fail for code trees used by venv setup — silent || true left
             # root-owned msm-agent after git pull and caused PEP 668 cascades.
@@ -656,6 +656,53 @@ EOF
 chmod 600 "$DIS_ENV_FILE"
 chown "$MSM_USER:$MSM_USER" "$DIS_ENV_FILE"
 
+# Dokumente-Sidecar: Token und Collab-Schluessel bleiben ueber Updates stabil.
+DOCS_ENV_FILE="$MSM_DIR/docs-sidecar/.env"
+DOCS_TOKEN=""
+DOCS_COLLAB_SECRET=""
+DOCS_SIGNING_SECRET=""
+if [[ -f "$DOCS_ENV_FILE" ]]; then
+    DOCS_TOKEN=$(grep -E '^MSM_DOCS_SIDECAR_TOKEN=' "$DOCS_ENV_FILE" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+    DOCS_COLLAB_SECRET=$(grep -E '^MSM_DOCS_COLLAB_SECRET=' "$DOCS_ENV_FILE" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+    DOCS_SIGNING_SECRET=$(grep -E '^MSM_DOCS_SIGNING_SECRET=' "$DOCS_ENV_FILE" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+fi
+# Fehlt die Sidecar-Datei, gilt das Token aus dem Backend weiter. Sonst
+# erzeugte ein Update ein neues Paar, waehrend das Backend das alte behielte.
+if [[ -z "$DOCS_TOKEN" && -f "$ENV_FILE" ]]; then
+    DOCS_TOKEN=$(grep -E '^MSM_DOCS_SIDECAR_TOKEN=' "$ENV_FILE" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+    DOCS_COLLAB_SECRET=$(grep -E '^MSM_DOCS_COLLAB_SECRET=' "$ENV_FILE" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+    DOCS_SIGNING_SECRET=$(grep -E '^MSM_DOCS_SIGNING_SECRET=' "$ENV_FILE" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+fi
+[[ -n "$DOCS_TOKEN" ]] || DOCS_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+[[ -n "$DOCS_COLLAB_SECRET" ]] || DOCS_COLLAB_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+[[ -n "$DOCS_SIGNING_SECRET" ]] || DOCS_SIGNING_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+cat > "$DOCS_ENV_FILE" <<EOF
+# Automatisch generiert. Dokumentation: $MSM_DIR/docs-sidecar/.env.example
+MSM_DOCS_WS_PORT=8100
+MSM_DOCS_WS_ADDRESS=127.0.0.1
+MSM_DOCS_HTTP_PORT=8101
+MSM_DOCS_HTTP_ADDRESS=127.0.0.1
+MSM_BACKEND_URL=http://127.0.0.1:8000
+MSM_DOCS_SIDECAR_TOKEN="$DOCS_TOKEN"
+MSM_DOCS_COLLAB_SECRET="$DOCS_COLLAB_SECRET"
+MSM_DOCS_SIGNING_SECRET="$DOCS_SIGNING_SECRET"
+NODE_ENV=production
+EOF
+chmod 600 "$DOCS_ENV_FILE"
+chown "$MSM_USER:$MSM_USER" "$DOCS_ENV_FILE"
+
+if ! grep -q '^MSM_DOCS_SIDECAR_TOKEN=' "$ENV_FILE"; then
+    {
+        echo "MSM_DOCS_SIDECAR_URL=\"http://127.0.0.1:8101\""
+        echo "MSM_DOCS_SIDECAR_TOKEN=\"$DOCS_TOKEN\""
+        echo "MSM_DOCS_COLLAB_SECRET=\"$DOCS_COLLAB_SECRET\""
+        echo "MSM_DOCS_SIGNING_SECRET=\"$DOCS_SIGNING_SECRET\""
+        echo "MSM_DOCS_COLLAB_PUBLIC_URL=\"${DOMAIN:+wss://$DOMAIN/api/docs/collab}\""
+    } >> "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    chown "$MSM_USER:$MSM_USER" "$ENV_FILE"
+fi
+
 # SearXNG-Sidecar Environment (zufälliger Secret-Key für CSRF & Sessions)
 if [[ -d "$MSM_DIR/searxng-sidecar" ]]; then
     SEARXNG_ENV_FILE="$MSM_DIR/searxng-sidecar/.env"
@@ -758,11 +805,54 @@ if ! su - "$MSM_USER" -c "
 fi
 ok "DIS Sidecar Abhängigkeiten installiert."
 
+# ── Dokumente-Sidecar Abhängigkeiten ──
+if [[ "$(node -v | cut -d'v' -f2 | cut -d'.' -f1)" -lt 22 ]]; then
+    err "Node >=22 wird fuer den Dokumente-Sidecar benoetigt (gefunden: $(node -v))."
+fi
+log "Installiere Dokumente-Sidecar-Abhaengigkeiten..."
+if ! su - "$MSM_USER" -c "
+    set -e
+    cd $MSM_DIR/docs-sidecar
+    npm ci -q --omit=dev --install-links
+" 2>&1 | tee -a "$LOG_FILE"; then
+    err "Dokumente-Sidecar npm ci fehlgeschlagen. Pruefe docs-sidecar/package.json und package-lock.json."
+fi
+ok "Dokumente-Sidecar Abhaengigkeiten installiert."
+
 # ── systemd Services registrieren ──
 if $SYSTEMD_AVAILABLE; then
     log "Aktualisiere systemd Services..."
     MSM_UID=$(id -u "$MSM_USER")
     MSM_DOCKER_HOST="unix:///run/user/${MSM_UID}/docker.sock"
+
+    # Dokumente-Sidecar Service
+    cat > /etc/systemd/system/msm-docs-sidecar.service <<EOF
+[Unit]
+Description=MSM Dokumente Sidecar (Hocuspocus/Yjs)
+After=network.target msm-dis-sidecar.service
+Wants=msm-dis-sidecar.service
+
+[Service]
+Type=simple
+User=$MSM_USER
+Group=$MSM_USER
+WorkingDirectory=$MSM_DIR/docs-sidecar
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+EnvironmentFile=$MSM_DIR/docs-sidecar/.env
+ExecStart=/usr/bin/node --max-old-space-size=768 server.mjs
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$MSM_DIR
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
     # DIS Sidecar Service
     cat > /etc/systemd/system/msm-dis-sidecar.service <<EOF
@@ -883,8 +973,8 @@ EOF
     cat > /etc/systemd/system/msm-panel.service <<EOF
 [Unit]
 Description=Maunting Service Manager Panel
-After=network.target redis-server.service msm-dis-sidecar.service
-Wants=redis-server.service
+After=network.target redis-server.service msm-dis-sidecar.service msm-docs-sidecar.service
+Wants=redis-server.service msm-docs-sidecar.service
 Requires=msm-dis-sidecar.service
 
 [Service]
@@ -1078,6 +1168,14 @@ if $SYSTEMD_AVAILABLE; then
         || err "DIS Sidecar konnte nicht gestartet werden."
     if ! systemctl is-active --quiet msm-dis-sidecar.service; then
         err "DIS Sidecar ist nicht aktiv. Prüfe: journalctl -u msm-dis-sidecar -n 50"
+    fi
+
+    if [[ -f /etc/systemd/system/msm-docs-sidecar.service ]]; then
+        log "Starte Dokumente-Sidecar..."
+        systemctl restart msm-docs-sidecar.service 2>/dev/null \
+            || systemctl start msm-docs-sidecar.service 2>/dev/null || true
+        systemctl is-active --quiet msm-docs-sidecar.service \
+            || warn "Dokumente-Sidecar ist nicht aktiv. Pruefe: journalctl -u msm-docs-sidecar -n 50"
     fi
 
     if [[ -f /etc/systemd/system/msm-searxng.service ]]; then

@@ -68,6 +68,18 @@ if not exist "dis-sidecar\node_modules" (
 )
 echo.
 
+:: 2b. Dokumente Sidecar Installation check
+echo [2b/6] Checking Dokumente Sidecar...
+if not exist "docs-sidecar\node_modules" (
+    echo Installiere Node-Dependencies fuer Dokumente Sidecar...
+    cd docs-sidecar
+    call npm install --install-links
+    cd ..
+) else (
+    echo Dokumente Sidecar Dependencies sind bereits installiert.
+)
+echo.
+
 :: 3. Frontend Installation check
 echo [3/5] Checking Frontend...
 if not exist "frontend\node_modules" (
@@ -158,9 +170,13 @@ echo.
 echo Starte DIS Sidecar...
 start "MSM - DIS Sidecar" /D "%~dp0dis-sidecar" cmd /k "set NODE_ENV=development&& set MSM_SECRET_KEY=test-secret-key-for-dev-only-32-bytes-long&& set MSM_DIS_SALT=qhCLKLPChabuAqcCOqqxRw==&& node server.mjs"
 
+:: Start Dokumente Sidecar in a new window (WS 8100, intern 8101)
+echo Starte Dokumente Sidecar...
+start "MSM - Dokumente Sidecar" /D "%~dp0docs-sidecar" cmd /k "set NODE_ENV=development&& set MSM_BACKEND_URL=http://127.0.0.1:8000&& set MSM_DOCS_SIDECAR_TOKEN=dev-docs-token&& set MSM_DOCS_COLLAB_SECRET=dev-docs-collab-secret-32-characters&& node server.mjs"
+
 :: Start Backend in a new window
 echo Starte Python Backend (Port 8000)...
-start "MSM - FastAPI Backend" /D "%~dp0backend" cmd /k "set NODE_ENV=development&& set MSM_SECRET_KEY=test-secret-key-for-dev-only-32-bytes-long&& set MSM_DIS_SALT=qhCLKLPChabuAqcCOqqxRw==&& set MSM_LOCAL_AGENT_ENV_FILE=../msm-agent/.env&& .\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000"
+start "MSM - FastAPI Backend" /D "%~dp0backend" cmd /k "set NODE_ENV=development&& set MSM_SECRET_KEY=test-secret-key-for-dev-only-32-bytes-long&& set MSM_DIS_SALT=qhCLKLPChabuAqcCOqqxRw==&& set MSM_DOCS_SIDECAR_URL=http://127.0.0.1:8101&& set MSM_DOCS_SIDECAR_TOKEN=dev-docs-token&& set MSM_DOCS_COLLAB_SECRET=dev-docs-collab-secret-32-characters&& set MSM_LOCAL_AGENT_ENV_FILE=../msm-agent/.env&& .\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000"
 
 :: Start MSM Agent in a new window
 echo Starte MSM Agent (Port 9000)...

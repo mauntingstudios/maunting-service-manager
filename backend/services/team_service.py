@@ -218,6 +218,17 @@ def delete_team(db: Session, *, team: Team, user: User) -> None:
         db, user_id=user.id, action="team.deleted", target_type="team",
         target_id=team.id, details={"name": team.name}, origin="direct",
     )
+    # Offene Dokumente best effort trennen, bevor die Kaskade den Zustand
+    # loescht. Der Sidecar haelt nur im RAM; ein Store nach dem Loeschen
+    # scheitert am Backend und wuerde die Verbindung ohnehin beenden.
+    try:
+        from models.doc import Document
+        from services.docs_collab_service import DocsCollabService
+
+        for (doc_uid,) in db.query(Document.doc_uid).filter(Document.team_id == team.id):
+            DocsCollabService.disconnect_doc(doc_uid)
+    except Exception:
+        pass
     db.delete(team)
     db.commit()
 
@@ -503,7 +514,28 @@ def remove_member(db: Session, *, team: Team, user: User, member_user_id: int) -
         origin="direct",
     )
     db.delete(member)
+    # Dokument-Freigaben dieses Teams verlieren mit der Mitgliedschaft ihre
+    # Grundlage. Die Rollenauflösung verweigert ohnehin schon; die Zeilen
+    # werden trotzdem entfernt, damit ein Wiedereintritt nicht stillschweigend
+    # eine alte manuelle Rolle wiederbelebt.
+    from models.doc import DocMember, Document
+
+    db.query(DocMember).filter(
+        DocMember.user_id == member_user_id,
+        DocMember.document_id.in_(
+            db.query(Document.id).filter(Document.team_id == team.id)
+        ),
+    ).delete(synchronize_session=False)
     db.commit()
+    # Offene Verbindungen dieses Benutzers best effort trennen. Der Collab-Token
+    # lebt 30 Minuten; ohne diesen Schritt tippte ein Entlassenes weiter.
+    try:
+        from services.docs_collab_service import DocsCollabService
+
+        for (doc_uid,) in db.query(Document.doc_uid).filter(Document.team_id == team.id):
+            DocsCollabService.disconnect_user(doc_uid, member_user_id)
+    except Exception:
+        pass
 
 
 def set_server_grants(

@@ -40,6 +40,8 @@ const Ai = lazy(() => import('./pages/Ai').then(module => ({ default: module.Ai 
 const Calendar = lazy(() => import('./pages/Calendar').then(module => ({ default: module.Calendar })))
 const Notes = lazy(() => import('./pages/Notes').then(module => ({ default: module.Notes })))
 const Messenger = lazy(() => import('./pages/Messenger').then(module => ({ default: module.Messenger })))
+const Documents = lazy(() => import('./pages/Documents').then(module => ({ default: module.Documents })))
+const DocumentShareClaim = lazy(() => import('./pages/DocumentShareClaim').then(module => ({ default: module.DocumentShareClaim })))
 const Benutzerprofil = lazy(() => import('./pages/Benutzerprofil').then(module => ({ default: module.Benutzerprofil })))
 import { apiUrl } from '@/config/api'
 import { useAuthStore } from '@/stores/authStore'
@@ -58,6 +60,7 @@ function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const calendarEnabled = usePublicSettingsStore((s) => s.calendar_enabled)
   const notesEnabled = usePublicSettingsStore((s) => s.notes_enabled)
+  const docsEnabled = usePublicSettingsStore((s) => s.docs_enabled)
   const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
 
   useEffect(() => {
@@ -155,6 +158,34 @@ function App() {
           <Route path="profile" element={<Profile />} />
           <Route path="calendar" element={calendarEnabled ? <Calendar /> : <Navigate to="/" replace />} />
           <Route path="notes" element={notesEnabled ? <Notes /> : <Navigate to="/" replace />} />
+          <Route
+            path="dokumente"
+            element={
+              docsEnabled ? (
+                <RequirePermission routeKey="dokumente">
+                  <Documents />
+                </RequirePermission>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="dokumente/freigabe/:token"
+            element={docsEnabled ? <DocumentShareClaim /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="dokumente/:uid"
+            element={
+              docsEnabled ? (
+                <RequirePermission routeKey="dokumente">
+                  <Documents />
+                </RequirePermission>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
           <Route path="social" element={<Navigate to="/profile" replace />} />
           <Route path="chat" element={socialEnabled ? <Messenger /> : <Navigate to="/" replace />} />
           <Route path="chat/join/:inviteCode" element={socialEnabled ? <Messenger /> : <Navigate to="/" replace />} />

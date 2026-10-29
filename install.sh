@@ -582,9 +582,9 @@ apt-get install -y -qq \
     2>&1 | tee -a "$LOG_FILE"
 
 # ── Node.js 20 (nicht das veraltete aus apt) ──
-if ! command -v node &>/dev/null || [[ "$(node -v | cut -d'v' -f2 | cut -d'.' -f1)" -lt 20 ]]; then
+if ! command -v node &>/dev/null || [[ "$(node -v | cut -d'v' -f2 | cut -d'.' -f1)" -lt 22 ]]; then
     log "Installiere Node.js 20..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>&1 | tee -a "$LOG_FILE"
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - 2>&1 | tee -a "$LOG_FILE"
     apt-get install -y -qq nodejs 2>&1 | tee -a "$LOG_FILE"
 fi
 
@@ -769,6 +769,11 @@ if $SHOULD_COPY_FILES; then
         rsync -a --chown="$MSM_USER:$MSM_USER" --delete \
             --exclude 'node_modules/' --exclude 'dist/' \
             "$SCRIPT_DIR/frontend/" "$MSM_DIR/frontend/"
+        if [[ -d "$SCRIPT_DIR/docs-sidecar" ]]; then
+            rsync -a --chown="$MSM_USER:$MSM_USER" --delete --exclude '.env' --exclude 'node_modules/' \
+                --exclude 'test/' \
+                "$SCRIPT_DIR/docs-sidecar/" "$MSM_DIR/docs-sidecar/"
+        fi
         if [[ -d "$SCRIPT_DIR/dis-sidecar" ]]; then
             rsync -a --chown="$MSM_USER:$MSM_USER" --delete --exclude '.env' --exclude 'node_modules/' \
                 "$SCRIPT_DIR/dis-sidecar/" "$MSM_DIR/dis-sidecar/"
@@ -816,7 +821,7 @@ if $SHOULD_COPY_FILES; then
         2>/dev/null || true
     # In-place Install (git checkout as root) leaves trees root-owned. Backend +
     # agent venvs are created as $MSM_USER and need write access to their dirs.
-    for _msm_tree in backend frontend dis-sidecar searxng-sidecar livekit-sidecar wetter-sidecar msm-agent docs scripts helper-scripts blueprints; do
+    for _msm_tree in backend frontend dis-sidecar docs-sidecar searxng-sidecar livekit-sidecar wetter-sidecar msm-agent docs scripts helper-scripts blueprints; do
         if [[ -d "$MSM_DIR/$_msm_tree" ]]; then
             chown -R "$MSM_USER:$MSM_USER" "$MSM_DIR/$_msm_tree" 2>/dev/null || true
         fi
@@ -833,7 +838,7 @@ fi
 # Always re-own code trees before Python venv work — even when SHOULD_COPY_FILES
 # is false (e.g. git checkout as root left msm-agent root:root).
 if id "$MSM_USER" &>/dev/null; then
-    for _msm_tree in backend frontend dis-sidecar searxng-sidecar livekit-sidecar wetter-sidecar msm-agent docs scripts helper-scripts blueprints; do
+    for _msm_tree in backend frontend dis-sidecar docs-sidecar searxng-sidecar livekit-sidecar wetter-sidecar msm-agent docs scripts helper-scripts blueprints; do
         if [[ -d "$MSM_DIR/$_msm_tree" ]]; then
             chown -R "$MSM_USER:$MSM_USER" "$MSM_DIR/$_msm_tree" \
                 || err "chown $MSM_USER:$MSM_USER auf $MSM_DIR/$_msm_tree fehlgeschlagen"
@@ -1165,6 +1170,23 @@ fi
 # definiert sein, bevor sie auf Leerwerte geprueft werden.
 DIS_SALT=""
 DIS_TOKEN=""
+DOCS_TOKEN=""
+DOCS_COLLAB_SECRET=""
+DOCS_SIGNING_SECRET=""
+if [[ -f "$MSM_DIR/docs-sidecar/.env" ]]; then
+    DOCS_TOKEN=$(grep -E '^MSM_DOCS_SIDECAR_TOKEN=' "$MSM_DIR/docs-sidecar/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+    DOCS_COLLAB_SECRET=$(grep -E '^MSM_DOCS_COLLAB_SECRET=' "$MSM_DIR/docs-sidecar/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+    DOCS_SIGNING_SECRET=$(grep -E '^MSM_DOCS_SIGNING_SECRET=' "$MSM_DIR/docs-sidecar/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+fi
+if [[ -z "$DOCS_TOKEN" ]]; then
+    DOCS_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+fi
+if [[ -z "$DOCS_COLLAB_SECRET" ]]; then
+    DOCS_COLLAB_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+fi
+if [[ -z "$DOCS_SIGNING_SECRET" ]]; then
+    DOCS_SIGNING_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+fi
 if $REINSTALL_MODE && [[ -f "$MSM_DIR/backend/.env" ]]; then
     DIS_SALT=$(grep -E '^MSM_DIS_SALT=' "$MSM_DIR/backend/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
     DIS_TOKEN=$(grep -E '^MSM_DIS_SIDECAR_TOKEN=' "$MSM_DIR/backend/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
@@ -1280,6 +1302,11 @@ MSM_CSRF_TOKEN_EXPIRE_MINUTES=1440
 MSM_DIS_SIDECAR_URL="http://127.0.0.1:9100"
 MSM_DIS_SIDECAR_TOKEN="$DIS_TOKEN"
 MSM_DIS_SALT="$DIS_SALT"
+MSM_DOCS_SIDECAR_URL="http://127.0.0.1:8101"
+MSM_DOCS_SIDECAR_TOKEN="$DOCS_TOKEN"
+MSM_DOCS_COLLAB_SECRET="$DOCS_COLLAB_SECRET"
+MSM_DOCS_SIGNING_SECRET="$DOCS_SIGNING_SECRET"
+MSM_DOCS_COLLAB_PUBLIC_URL="${DOMAIN:+wss://$DOMAIN/api/docs/collab}"
 MSM_EMAIL_PROVIDER="$EMAIL_PROVIDER"
 MSM_SMTP_HOST="$SMTP_HOST"
 MSM_SMTP_PORT=$SMTP_PORT
@@ -1345,6 +1372,23 @@ NODE_ENV=production
 EOF
 chmod 600 "$DIS_ENV_FILE"
 chown "$MSM_USER:$MSM_USER" "$DIS_ENV_FILE"
+
+# Dokumente-Sidecar: eigenes Token-Paar, eigener Collab-Schluessel.
+DOCS_ENV_FILE="$MSM_DIR/docs-sidecar/.env"
+cat > "$DOCS_ENV_FILE" <<EOF
+# Automatisch generiert. Dokumentation: $MSM_DIR/docs-sidecar/.env.example
+MSM_DOCS_WS_PORT=8100
+MSM_DOCS_WS_ADDRESS=127.0.0.1
+MSM_DOCS_HTTP_PORT=8101
+MSM_DOCS_HTTP_ADDRESS=127.0.0.1
+MSM_BACKEND_URL=http://127.0.0.1:8000
+MSM_DOCS_SIDECAR_TOKEN="$DOCS_TOKEN"
+MSM_DOCS_COLLAB_SECRET="$DOCS_COLLAB_SECRET"
+MSM_DOCS_SIGNING_SECRET="$DOCS_SIGNING_SECRET"
+NODE_ENV=production
+EOF
+chmod 600 "$DOCS_ENV_FILE"
+chown "$MSM_USER:$MSM_USER" "$DOCS_ENV_FILE"
 
 # SearXNG-Sidecar Environment (zufälliger Secret-Key für CSRF & Sessions)
 if [[ -d "$MSM_DIR/searxng-sidecar" ]]; then
@@ -1521,6 +1565,33 @@ if $RUN_SIDECAR_SETUP; then
         err "DIS Sidecar npm ci fehlgeschlagen. Prüfe dis-sidecar/package.json und package-lock.json."
     fi
     ok "DIS Sidecar bereit"
+fi
+
+# ── Dokumente-Sidecar: npm ci (Hocuspocus 4, Node >=22) ──
+DOCS_NODE_MAJOR=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+if [[ "$DOCS_NODE_MAJOR" -lt 22 ]]; then
+    err "Node >=22 wird fuer den Dokumente-Sidecar benoetigt (gefunden: $(node -v))."
+fi
+DOCS_RUN_SETUP=false
+if [[ ! -d "$MSM_DIR/docs-sidecar/node_modules" ]]; then
+    DOCS_RUN_SETUP=true
+elif ! $REINSTALL_MODE; then
+    DOCS_RUN_SETUP=true
+elif $KEEP_SETTINGS; then
+    DOCS_RUN_SETUP=true
+elif $REINSTALL_MODE && ! $KEEP_SETTINGS && $CODE_CHANGED; then
+    DOCS_RUN_SETUP=true
+fi
+if $DOCS_RUN_SETUP; then
+    log "Installiere Dokumente-Sidecar-Abhaengigkeiten..."
+    if ! su - "$MSM_USER" -c "
+        set -e
+        cd $MSM_DIR/docs-sidecar
+        npm ci -q --omit=dev --install-links
+    " 2>&1 | tee -a "$LOG_FILE"; then
+        err "Dokumente-Sidecar npm ci fehlgeschlagen. Pruefe docs-sidecar/package.json und package-lock.json."
+    fi
+    ok "Dokumente-Sidecar bereit"
 fi
 
 # ═══════════════════════════════════════════════════════════════
@@ -1812,6 +1883,35 @@ fi
 if $RUN_SYSTEMD_SETUP; then
     log "Registriere systemd Service..."
 
+    # ── Dokumente-Sidecar (Hocuspocus 4, nur Loopback) ──
+    cat > /etc/systemd/system/msm-docs-sidecar.service <<EOF
+[Unit]
+Description=MSM Dokumente Sidecar (Hocuspocus/Yjs)
+After=network.target msm-dis-sidecar.service
+Wants=msm-dis-sidecar.service
+
+[Service]
+Type=simple
+User=$MSM_USER
+Group=$MSM_USER
+WorkingDirectory=$MSM_DIR/docs-sidecar
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+EnvironmentFile=$MSM_DIR/docs-sidecar/.env
+ExecStart=/usr/bin/node --max-old-space-size=768 server.mjs
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$MSM_DIR
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
     # ── DIS Sidecar Service (vor dem Panel starten) ──
     cat > /etc/systemd/system/msm-dis-sidecar.service <<EOF
 [Unit]
@@ -1994,6 +2094,7 @@ EOF
     if $SYSTEMD_AVAILABLE; then
         systemctl daemon-reload
         systemctl enable msm-dis-sidecar.service
+        systemctl enable msm-docs-sidecar.service
         if [[ -d "$MSM_DIR/searxng-sidecar" ]]; then
             systemctl enable msm-searxng.service 2>/dev/null || true
         fi
@@ -2223,6 +2324,23 @@ if $SYSTEMD_AVAILABLE; then
         sleep 1
     done
     $DIS_READY || err "DIS Sidecar ist nicht bereit. Prüfe: journalctl -u msm-dis-sidecar -n 50"
+
+    # Dokumente-Sidecar: eigener Dienst, non-fatal. Ein Panels ohne Docs ist
+    # besser als ein Panel, das wegen eines fehlenden Dokumentservers nicht startet.
+    systemctl restart msm-docs-sidecar.service 2>/dev/null \
+        || systemctl start msm-docs-sidecar.service 2>/dev/null \
+        || warn "Dokumente-Sidecar konnte nicht gestartet werden."
+    DOCS_READY=false
+    for _attempt in $(seq 1 20); do
+        if printf 'Authorization: Bearer %s\n' "$DOCS_TOKEN" \
+            | curl -fsS --max-time 2 --header @- http://127.0.0.1:8101/internal/docs/health \
+                >/dev/null 2>&1; then
+            DOCS_READY=true
+            break
+        fi
+        sleep 1
+    done
+    $DOCS_READY || warn "Dokumente-Sidecar antwortet nicht. Prüfe: journalctl -u msm-docs-sidecar -n 50"
 
     # SearXNG Sidecar starten
     if [[ -f /etc/systemd/system/msm-searxng.service ]]; then

@@ -135,6 +135,36 @@ jobs:
         working-directory: smart-system/src-tauri
         run: cargo test
 
+  docs-sidecar:
+    name: Dokumente-Sidecar (Node 22 + node --test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs-sidecar/package-lock.json
+
+      - name: Install sidecar dependencies
+        working-directory: docs-sidecar
+        run: npm ci --install-links
+
+      - name: Sidecar tests
+        working-directory: docs-sidecar
+        run: node --test
+
+      - name: Two-client collaboration smoke
+        working-directory: docs-sidecar
+        run: npm run e2e
+
+      - name: Schema contract
+        working-directory: docs-sidecar
+        run: |
+          node -e "import('@msm/docs-schema/schema').then(m => { const k = m.schemaContract(); if (k.schemaVersion !== 1) process.exit(1); if (!k.nodes.includes('table') || !k.marks.includes('comment')) process.exit(1); console.log('schema ok', k.schemaVersion); })"
+
   browser:
     name: Secure Browser (UI build + cargo test)
     # Windows wie die App: Tabs, Schild und Downloads stehen unter

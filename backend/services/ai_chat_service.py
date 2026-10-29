@@ -39,6 +39,8 @@ DEFAULT_TITLE = "Singra"
 TITEL = {
     "primary": DEFAULT_TITLE,
     "guardian": "Guardian-Reparaturen",
+    # Absichtlich generisch: kein Dokumenttitel im Klartext in dieser Tabelle.
+    "docs": "Dokument",
 }
 
 
@@ -125,6 +127,46 @@ def get_or_create_conversation(
         conversation = (
             db.query(AiConversation)
             .filter(AiConversation.user_id == user.id, AiConversation.kind == kind)
+            .one()
+        )
+    return conversation
+
+
+def get_or_create_docs_conversation(
+    db: Session, user: User, document_id: int
+) -> AiConversation:
+    """Ein Fenster je (Benutzer, Dokument). Der Titel bleibt generisch."""
+    existing = (
+        db.query(AiConversation)
+        .filter(
+            AiConversation.user_id == user.id,
+            AiConversation.kind == "docs",
+            AiConversation.document_id == document_id,
+        )
+        .first()
+    )
+    if existing is not None:
+        return existing
+    conversation = AiConversation(
+        id=str(uuid4()),
+        user_id=user.id,
+        server_id=None,
+        document_id=document_id,
+        kind="docs",
+        title=TITEL["docs"],
+    )
+    try:
+        with db.begin_nested():
+            db.add(conversation)
+            db.flush()
+    except IntegrityError:
+        conversation = (
+            db.query(AiConversation)
+            .filter(
+                AiConversation.user_id == user.id,
+                AiConversation.kind == "docs",
+                AiConversation.document_id == document_id,
+            )
             .one()
         )
     return conversation

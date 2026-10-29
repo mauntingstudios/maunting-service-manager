@@ -49,6 +49,11 @@ def test_the_sets_are_derived_not_maintained() -> None:
         name for name, art in aus_tabelle.items()
         if art in {"server_read", "global_read", "ask", "delegation"}
     }
+    # Dokument-Schreibwerkzeuge laufen absichtlich im Sofortpfad: kein
+    # Vorschlag, direkte Yjs-Transaktion, Rueckweg ueber Version und ai-undo.
+    erwartet_lesend |= {
+        name for name, art in aus_tabelle.items() if art == "docs_write"
+    }
     erwartet_schreibend = {
         name for name, art in aus_tabelle.items()
         if art in {"server_write", "global_write"}

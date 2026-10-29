@@ -1,0 +1,87 @@
+{
+  "name": "@msm/docs-schema",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "main": "index.mjs",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.mjs"
+    },
+    "./schema": {
+      "types": "./schema.d.ts",
+      "default": "./schema.mjs"
+    }
+  },
+  "peerDependencies": {
+    "@tiptap/core": "3.32.0",
+    "@tiptap/extension-character-count": "3.32.0",
+    "@tiptap/extension-code-block-lowlight": "3.32.0",
+    "@tiptap/extension-color": "3.32.0",
+    "@tiptap/extension-highlight": "3.32.0",
+    "@tiptap/extension-image": "3.32.0",
+    "@tiptap/extension-link": "3.32.0",
+    "@tiptap/extension-placeholder": "3.32.0",
+    "@tiptap/extension-table": "3.32.0",
+    "@tiptap/extension-task-item": "3.32.0",
+    "@tiptap/extension-task-list": "3.32.0",
+    "@tiptap/extension-text-align": "3.32.0",
+    "@tiptap/extension-text-style": "3.32.0",
+    "@tiptap/extension-typography": "3.32.0",
+    "@tiptap/extension-underline": "3.32.0",
+    "@tiptap/starter-kit": "3.32.0"
+  },
+  "peerDependenciesMeta": {
+    "@tiptap/core": {
+      "optional": true
+    },
+    "@tiptap/extension-character-count": {
+      "optional": true
+    },
+    "@tiptap/extension-code-block-lowlight": {
+      "optional": true
+    },
+    "@tiptap/extension-color": {
+      "optional": true
+    },
+    "@tiptap/extension-highlight": {
+      "optional": true
+    },
+    "@tiptap/extension-image": {
+      "optional": true
+    },
+    "@tiptap/extension-link": {
+      "optional": true
+    },
+    "@tiptap/extension-placeholder": {
+      "optional": true
+    },
+    "@tiptap/extension-table": {
+      "optional": true
+    },
+    "@tiptap/extension-task-item": {
+      "optional": true
+    },
+    "@tiptap/extension-task-list": {
+      "optional": true
+    },
+    "@tiptap/extension-text-align": {
+      "optional": true
+    },
+    "@tiptap/extension-text-style": {
+      "optional": true
+    },
+    "@tiptap/extension-typography": {
+      "optional": true
+    },
+    "@tiptap/extension-underline": {
+      "optional": true
+    },
+    "@tiptap/starter-kit": {
+      "optional": true
+    }
+  }
+}

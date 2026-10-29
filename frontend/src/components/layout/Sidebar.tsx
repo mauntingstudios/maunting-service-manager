@@ -42,6 +42,7 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
   const canChatWithAi = useHasPermission('ai.chat.use')
   const canManageAiSkills = useHasPermission('ai.skills.manage')
   const canUseSkills = useHasPermission('ai.skills.use')
+  const canUseDocs = useHasPermission('docs.use')
   const canUseAi = canChatWithAi || canManageAiSkills
   const isOnline = useIsOnline()
   const totalMessengerUnread = useMessengerNotificationStore((s) => s.totalUnreadCount)
@@ -68,6 +69,7 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
   const publicSettings = usePublicSettingsStore()
   const calendarEnabled = publicSettings.calendar_enabled
   const notesEnabled = publicSettings.notes_enabled
+  const docsEnabled = publicSettings.docs_enabled
   const socialEnabled = publicSettings.social_enabled
   const localPresence = usePresenceAndActivity(socialEnabled, !propPresenceStatus && !mobile)
   const presenceStatus = propPresenceStatus ?? localPresence.status
@@ -106,6 +108,7 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
 
   const navItems = buildNavigation({
     dashboard: t('nav.dashboard'), calendar: t('nav.calendar'), notes: t('nav.notes'),
+    documents: t('nav.documents'),
     chat: t('nav.chat'),
     servers: t('nav.servers'), users: t('nav.users'), roles: t('nav.roles'),
     teams: t('nav.teams'),
@@ -115,7 +118,7 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
   }, {
     owner: Boolean(user?.is_owner), canManageUsers, canManageRoles, canViewAudit, canViewSettings,
     canManagePanelBackups, canReadPanelDatabase, canViewNodes: canReadNodes || canManageNodes, canUseAi, canUseSkills,
-    calendarEnabled, notesEnabled, socialEnabled, isOnline,
+    calendarEnabled, notesEnabled, docsEnabled, canUseDocs, socialEnabled, isOnline,
   })
   const groupLabels: Record<NavGroupName, string> = {
     Overview: t('navGroups.overview'), Infrastructure: t('navGroups.infrastructure'),

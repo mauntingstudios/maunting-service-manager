@@ -42,6 +42,7 @@ export interface PanelSettings {
   story_fable_download_enabled: boolean
   calendar_enabled: boolean
   notes_enabled: boolean
+  docs_enabled: boolean
   vault_enabled: boolean
   social_enabled: boolean
   captcha_enabled: boolean
@@ -110,6 +111,7 @@ export const EMPTY_PANEL_SETTINGS: PanelSettings = {
   story_fable_download_enabled: false,
   calendar_enabled: true,
   notes_enabled: true,
+  docs_enabled: true,
   vault_enabled: true,
   social_enabled: true,
   captcha_enabled: true,

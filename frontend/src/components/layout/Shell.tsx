@@ -70,7 +70,8 @@ export function Shell() {
   const location = useLocation()
   const isAiPage = location.pathname === '/ai' || location.pathname.startsWith('/ai')
   const isChatPage = location.pathname === '/chat' || location.pathname.startsWith('/chat')
-  const isFullHeightPage = isAiPage || isChatPage
+  const isDocsPage = location.pathname === '/dokumente' || location.pathname.startsWith('/dokumente/')
+  const isFullHeightPage = isAiPage || isChatPage || isDocsPage
 
   return (
     // `overflow-x-clip` statt `overflow-x-hidden`: `hidden` auf einer Achse

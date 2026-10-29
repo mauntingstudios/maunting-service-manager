@@ -1930,6 +1930,9 @@ export async function streamAiMessage(
     reasoning: boolean
     /** Die gewuenschte Denkstufe. Der Server klemmt sie auf Modell und Rolle. */
     reasoning_effort?: string | null
+    /** Dokument-Chat: bindet den Lauf an ein Dokument, nie an Modelltext. */
+    document_uid?: string
+    selection?: { quote: string; hash?: string }
   },
   onEvent: (event: AiStreamEvent) => void,
   signal?: AbortSignal,

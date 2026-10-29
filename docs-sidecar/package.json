@@ -1,0 +1,25 @@
+{
+  "name": "msm-docs-sidecar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test",
+    "e2e": "node e2e/collab.mjs"
+  },
+  "dependencies": {
+    "@hocuspocus/server": "4.7.1",
+    "@msm/docs-schema": "file:../frontend/packages/docs-schema",
+    "jsonwebtoken": "9.0.2",
+    "yjs": "13.6.27"
+  },
+  "devDependencies": {
+    "@hocuspocus/provider": "^4.7.1"
+  }
+}

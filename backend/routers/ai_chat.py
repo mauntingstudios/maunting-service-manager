@@ -183,6 +183,7 @@ def _message_response(message: AiMessage) -> AiMessageResponse:
 @router.get("", response_model=AiConversationDetail)
 def get_conversation(
     kind: str = Query("primary"),
+    document_uid: str | None = Query(None, max_length=36),
     before: str | None = Query(
         None,
         description=(
@@ -210,6 +211,24 @@ def get_conversation(
         # existiert nicht, und diese Fabrik legte sonst eines an. Gelesen
         # werden sie ueber ihre Kennung (`GET /conversation/worker/{id}`).
         raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
+    if kind == "docs":
+        if not document_uid:
+            raise HTTPException(status_code=404, detail="Dokument fehlt")
+        from services.docs_collab_service import DocsCollabService
+        from services.docs_service import DocsService
+        from services.permission_service import has_global_permission
+
+        if not DocsCollabService.module_enabled() or not has_global_permission(
+            db, user, "docs.use"
+        ) or not has_global_permission(db, user, "ai.docs.use"):
+            raise HTTPException(status_code=403, detail="Dokumente sind nicht freigegeben")
+        zugriff = DocsService.access(db, user, document_uid)
+        conversation = ai_chat_service.get_or_create_docs_conversation(
+            db, user, zugriff.document.id
+        )
+        db.commit()
+        db.refresh(conversation)
+        return _verlauf_seite(db, conversation, before)
     conversation = ai_chat_service.get_or_create_conversation(db, user, _art(kind))
     db.commit()
     db.refresh(conversation)
@@ -633,6 +652,28 @@ async def stream_message(
     _: None = Depends(verify_csrf),
 ) -> StreamingResponse:
     conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
+    docs_document_uid: str | None = None
+    docs_team_id: int | None = None
+    if payload.document_uid:
+        from services.docs_collab_service import DocsCollabService
+        from services.docs_service import DocsService
+        from services.permission_service import has_global_permission
+
+        if not DocsCollabService.module_enabled():
+            raise HTTPException(status_code=403, detail="Das Dokumente-Modul ist deaktiviert")
+        if not has_global_permission(db, user, "docs.use") or not has_global_permission(
+            db, user, "ai.docs.use"
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Dokumente sind fuer Singra nicht freigegeben",
+            )
+        zugriff = DocsService.access(db, user, payload.document_uid)
+        conversation = ai_chat_service.get_or_create_docs_conversation(
+            db, user, zugriff.document.id
+        )
+        docs_document_uid = zugriff.document.doc_uid
+        docs_team_id = zugriff.document.team_id
     db.commit()
     provider = db.get(AiProvider, payload.provider_id)
     if provider is None or not provider.enabled or not _fuer_chat(provider):
@@ -707,11 +748,23 @@ async def stream_message(
             # die Familie holt sich einen Auftrag der, der zuerst fragt, und
             # ein Blick auf "meinen Bildschirm" zeigte den des anderen.
             familie=familie,
+            docs_document_uid=docs_document_uid,
+            docs_team_id=docs_team_id,
         )
         if run_id is None:
             code, message_key = fehler or ("AI_PREPARATION_FAILED", "ai.chat.errors.unavailable")
             stream = _fehlerstrom(code, message_key)
         else:
+            if docs_document_uid and isinstance(payload.selection, dict):
+                from services import ai_docs_selection
+
+                quote = str(payload.selection.get("quote") or "").strip()
+                if quote:
+                    ai_docs_selection.setzen(
+                        run_id,
+                        {"quote": quote[:4_000]},
+                        hash_wert=str(payload.selection.get("hash") or "")[:64] or None,
+                    )
             # Reihenfolge ist hier alles: Kanal auf, **abonnieren**, dann erst
             # die Arbeit starten.
             #

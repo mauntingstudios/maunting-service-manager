@@ -210,7 +210,12 @@ def gesamtgrenze(
 
 
 def _skill_index_block(
-    db: Session, user: User | None, query: str, unbeaufsichtigt: bool = False
+    db: Session,
+    user: User | None,
+    query: str,
+    unbeaufsichtigt: bool = False,
+    *,
+    nur_team_id: int | None = None,
 ) -> str:
     if user is None or unbeaufsichtigt:
         return ""
@@ -220,7 +225,7 @@ def _skill_index_block(
         return ""
     from services import ai_skill_service
 
-    views = ai_skill_service.skill_index(db, user, query)
+    views = ai_skill_service.skill_index(db, user, query, nur_team_id=nur_team_id)
     if not views:
         return ""
     lines = [
@@ -243,9 +248,16 @@ def _skill_index_block(
 
 
 def _skill_index_message(
-    db: Session, user: User | None, query: str, unbeaufsichtigt: bool = False
+    db: Session,
+    user: User | None,
+    query: str,
+    unbeaufsichtigt: bool = False,
+    *,
+    nur_team_id: int | None = None,
 ) -> dict[str, Any] | None:
-    block = _skill_index_block(db, user, query, unbeaufsichtigt)
+    block = _skill_index_block(
+        db, user, query, unbeaufsichtigt, nur_team_id=nur_team_id
+    )
     if not block:
         return None
     return {"role": "user", "content": block}
@@ -503,6 +515,8 @@ def build_provider_messages(
     gesprochen: bool = False,
     rolle: str = "voll",
     herkunft: str = "panel",
+    docs: bool = False,
+    docs_team_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Baut eine neueste, begrenzte Historie unter einer Zeichenobergrenze.
 
@@ -555,10 +569,15 @@ def build_provider_messages(
     result: list[dict[str, Any]] = [
         {"role": "system", "content": ai_prompt.build(
             gesprochen=gesprochen, rolle=rolle, desktop=herkunft == "desktop", db=db,
+            docs=docs,
         )}
     ]
     skill_verzeichnis = _skill_index_message(
-        db, user, query, unbeaufsichtigt and rolle != "worker"
+        db,
+        user,
+        query,
+        unbeaufsichtigt and rolle != "worker",
+        nur_team_id=docs_team_id if docs else None,
     )
     if skill_verzeichnis is not None:
         result.append(skill_verzeichnis)
@@ -568,7 +587,12 @@ def build_provider_messages(
 
         if permission_service.has_global_permission(db, user, "ai.memory.use"):
             abruf = ai_gedaechtnis_abruf.abrufen(
-                db, user, query, server_id, budget=grenzen.gedaechtnis_zeichen
+                db,
+                user,
+                query,
+                server_id,
+                budget=grenzen.gedaechtnis_zeichen,
+                nur_team_id=docs_team_id if docs else None,
             )
             if abruf.kopf:
                 result.append(_memory_message(abruf.kopf))

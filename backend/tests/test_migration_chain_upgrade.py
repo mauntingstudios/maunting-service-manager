@@ -56,6 +56,38 @@ def _config(backend_dir: Path) -> Config:
     return config
 
 
+DOCS_TABELLEN = (
+    "doc_assets",
+    "doc_comments",
+    "doc_folders",
+    "doc_members",
+    "doc_revisions",
+    "documents",
+)
+
+
+def _ohne_dokumente(engine) -> None:
+    """Den Stand vor dem Dokumente-Modul nachstellen.
+
+    ``create_all`` kennt alle Modelle inklusive Docs. Eine reale main-Datenbank
+    hat diese Tabellen nicht; der Test soll den Upgrade-Pfad eines Betreibers
+    pruefen, nicht ein bereits vollstaendiges Schema.
+    """
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE ai_conversations DROP COLUMN IF EXISTS document_id"))
+        conn.execute(
+            text("ALTER TABLE ai_conversations DROP CONSTRAINT IF EXISTS ck_ai_conversations_kind")
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE ai_conversations ADD CONSTRAINT ck_ai_conversations_kind "
+                "CHECK (kind IN ('primary', 'guardian', 'worker'))"
+            )
+        )
+        for tabelle in DOCS_TABELLEN:
+            conn.execute(text(f'DROP TABLE IF EXISTS "{tabelle}" CASCADE'))
+
+
 def test_every_branch_migration_runs_both_ways(tmp_path: Path, pg_wegwerf) -> None:
     """Downgrade auf den Stand von main und wieder hoch — echte DDL, kein Stempel."""
     db_url = pg_wegwerf("chain")
@@ -205,6 +237,7 @@ def test_main_datenbank_erhaelt_die_messenger_brucke(pg_wegwerf) -> None:
     engine = create_engine(db_url)
     try:
         Base.metadata.create_all(engine)
+        _ohne_dokumente(engine)
         command.stamp(config, "20261012_01")
 
         from services.schema_manager import initialize_or_upgrade_schema
@@ -216,7 +249,7 @@ def test_main_datenbank_erhaelt_die_messenger_brucke(pg_wegwerf) -> None:
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261024_01"
+        assert version == "20261028_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -236,6 +269,7 @@ def test_server_auf_messenger_revision_kommt_wieder_auf_den_head(pg_wegwerf) -> 
     engine = create_engine(db_url)
     try:
         Base.metadata.create_all(engine)
+        _ohne_dokumente(engine)
         command.stamp(config, "20261011_01")
         # Genau der Stand des Messenger-Branches: 20261012_01 ist nicht in
         # seiner Ahnenreihe, die beiden Zustellungstabellen sind es.
@@ -250,7 +284,7 @@ def test_server_auf_messenger_revision_kommt_wieder_auf_den_head(pg_wegwerf) -> 
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261024_01"
+        assert version == "20261028_01"
     finally:
         engine.dispose()
         settings.database_url = previous

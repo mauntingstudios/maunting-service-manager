@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { listen } from '@tauri-apps/api/event'
-import { Bot, BrainCircuit, Calendar as CalendarIcon, Eye, Globe, KeyRound, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, WifiOff, X } from 'lucide-react'
+import { Bot, BrainCircuit, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, WifiOff, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
@@ -36,6 +36,7 @@ import { Ai } from '@/pages/Ai'
 import { Messenger } from '@/pages/Messenger'
 import { Benutzerprofil } from '@/pages/Benutzerprofil'
 import { Calendar } from '@/pages/Calendar'
+import { DocsEmbedded } from '@/docs/DocsEmbedded'
 import { Notes } from '@/pages/Notes'
 import { Privacy } from '@/pages/Privacy'
 import { useAuthStore } from '@/stores/authStore'
@@ -83,7 +84,7 @@ type Phase = 'laedt' | 'einrichtung' | 'kopplung' | 'sandbox' | 'bereit'
 const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
 const SPLASH_GESEHEN_KEY = 'mss:splash_gesehen'
 const LETZTE_ROUTE_KEY = 'mss:letzte_route'
-const ERLAUBTE_ROUTEN = ['/ai', '/chat', '/kalender', '/notizen', '/gedaechtnis', '/tresor', '/einstellungen']
+const ERLAUBTE_ROUTEN = ['/ai', '/chat', '/kalender', '/notizen', '/dokumente', '/gedaechtnis', '/tresor', '/einstellungen']
 
 /**
  * Bereiche, die ohne Panel arbeiten. Die Einstellungen stehen immer darin:
@@ -96,6 +97,7 @@ export function getErlaubteOfflineRouten(settings = usePublicSettingsStore.getSt
   if (settings.vault_enabled) routen.push('/tresor')
   if (settings.calendar_enabled) routen.push('/kalender')
   if (settings.notes_enabled) routen.push('/notizen')
+  if (settings.docs_enabled) routen.push('/dokumente')
   routen.push('/einstellungen')
   return routen
 }
@@ -117,6 +119,7 @@ function getInitialRoute(offline = false): string {
       if (gespeichert === '/chat' && !settings.social_enabled) return '/ai'
       if (gespeichert === '/kalender' && !settings.calendar_enabled) return '/ai'
       if (gespeichert === '/notizen' && !settings.notes_enabled) return '/ai'
+      if (gespeichert === '/dokumente' && !settings.docs_enabled) return '/ai'
       if (gespeichert === '/tresor' && !settings.vault_enabled) return '/ai'
       return gespeichert
     }
@@ -485,6 +488,22 @@ export function DesktopApp() {
         />
         <Route path="/notes" element={<Navigate to={publicSettings.notes_enabled ? '/notizen' : fallbackRoute} replace />} />
         <Route
+          path="/dokumente"
+          element={
+            publicSettings.docs_enabled ? (
+              <Hauptseite
+                bereich="dokumente"
+                konfig={konfig}
+                offeneUebernahme={offeneUebernahme}
+                onKonfigAenderung={ladeKonfigNeu}
+                isOffline={isOffline}
+              />
+            ) : (
+              <Navigate to={fallbackRoute} replace />
+            )
+          }
+        />
+        <Route
           path="/gedaechtnis"
           element={
             <Hauptseite
@@ -582,7 +601,7 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
   const publicSettings = usePublicSettingsStore()
 
   useEffect(() => {
-    if (ERLAUBTE_ROUTEN.includes(location.pathname)) {
+    if (ERLAUBTE_ROUTEN.includes(location.pathname) || location.pathname.startsWith('/dokumente/')) {
       try {
         localStorage.setItem(LETZTE_ROUTE_KEY, location.pathname)
       } catch {}
@@ -596,6 +615,7 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
         if (ziel.startsWith('/chat') && !publicSettings.social_enabled) return
         if (ziel.startsWith('/kalender') && !publicSettings.calendar_enabled) return
         if (ziel.startsWith('/notizen') && !publicSettings.notes_enabled) return
+        if (ziel.startsWith('/dokumente') && !publicSettings.docs_enabled) return
         if (ziel.startsWith('/tresor') && !publicSettings.vault_enabled) return
 
         if (isOffline) {
@@ -730,7 +750,7 @@ function Hauptseite({
   onKonfigAenderung,
   isOffline = false,
 }: {
-  bereich: 'ki' | 'chat' | 'profil' | 'kalender' | 'notizen' | 'gedaechtnis' | 'tresor' | 'einstellungen'
+  bereich: 'ki' | 'chat' | 'profil' | 'kalender' | 'notizen' | 'dokumente' | 'gedaechtnis' | 'tresor' | 'einstellungen'
   konfig: AppKonfig | null
   offeneUebernahme: string | null
   onKonfigAenderung?: () => void
@@ -747,10 +767,12 @@ function Hauptseite({
   const hasPermissionChat = useHasPermission('ai.chat.use')
   const hasPermissionKalender = useHasPermission('ai.calendar.use')
   const hasPermissionNotizen = useHasPermission('ai.notes.use')
+  const hasPermissionDokumente = useHasPermission('docs.use')
   const hasPermissionGedaechtnis = useHasPermission('ai.memory.use')
   const darfChatten = !isOffline && hasPermissionChat
   const darfKalender = publicSettings.calendar_enabled && (isOffline || hasPermissionKalender)
   const darfNotizen = publicSettings.notes_enabled && (isOffline || hasPermissionNotizen)
+  const darfDokumente = publicSettings.docs_enabled && (isOffline || hasPermissionDokumente)
   const darfGedaechtnis = !isOffline && hasPermissionGedaechtnis
   const darfTresor = publicSettings.vault_enabled
   const darfMessenger = publicSettings.social_enabled
@@ -762,9 +784,10 @@ function Hauptseite({
     if (darfTresor) routen.push('/tresor')
     if (darfKalender) routen.push('/kalender')
     if (darfNotizen) routen.push('/notizen')
+    if (darfDokumente) routen.push('/dokumente')
     routen.push('/einstellungen')
     return routen
-  }, [darfTresor, darfKalender, darfNotizen])
+  }, [darfTresor, darfKalender, darfNotizen, darfDokumente])
 
   const fallbackRoute = isOffline
     ? (offlineRouten[0] || '/einstellungen')
@@ -783,7 +806,10 @@ function Hauptseite({
     if (!darfNotizen && bereich === 'notizen') {
       navigate(fallbackRoute, { replace: true })
     }
-  }, [darfTresor, darfMessenger, darfKalender, darfNotizen, bereich, navigate, fallbackRoute])
+    if (!darfDokumente && bereich === 'dokumente') {
+      navigate(fallbackRoute, { replace: true })
+    }
+  }, [darfTresor, darfMessenger, darfKalender, darfNotizen, darfDokumente, bereich, navigate, fallbackRoute])
 
   // Offline: Nur aktivierte Offline-Routen erlauben
   useEffect(() => {
@@ -953,6 +979,14 @@ function Hauptseite({
               label={t('mss.app.notizen')}
             />
           )}
+          {darfDokumente && (
+            <Reiter
+              aktiv={bereich === 'dokumente'}
+              onClick={() => navigate('/dokumente')}
+              icon={<FileText className="h-4 w-4 shrink-0" />}
+              label={t('mss.app.dokumente')}
+            />
+          )}
           {!isOffline && darfGedaechtnis && (
             <Reiter
               aktiv={bereich === 'gedaechtnis'}
@@ -1099,6 +1133,21 @@ function Hauptseite({
                 </button>
               )}
 
+              {darfDokumente && (
+                <button
+                  type="button"
+                  onClick={() => { navigate('/dokumente'); setMobileMenuOffen(false); }}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                    bereich === 'dokumente'
+                      ? 'bg-primary/15 text-primary border border-primary/30'
+                      : 'text-on-surface hover:bg-surface-container-high'
+                  }`}
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>{t('mss.app.dokumente')}</span>
+                </button>
+              )}
+
               {!isOffline && darfGedaechtnis && (
                 <button
                   type="button"
@@ -1213,6 +1262,10 @@ function Hauptseite({
             <div className="mx-auto w-full max-w-6xl flex-1 min-h-0 overflow-y-auto pb-8">
               <Notes />
             </div>
+          ) : bereich === 'dokumente' ? (
+            <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
+              <DocsEmbedded />
+            </div>
           ) : bereich === 'gedaechtnis' ? (
             <div className="mx-auto w-full max-w-3xl flex-1 min-h-0 overflow-y-auto pb-8">
               <AiMemoryManager />
@@ -1237,6 +1290,7 @@ const BEREICH_TITEL = {
   profil: 'mss.app.messenger',
   kalender: 'mss.app.kalender',
   notizen: 'mss.app.notizen',
+  dokumente: 'mss.app.dokumente',
   gedaechtnis: 'mss.app.gedaechtnis',
   tresor: 'mss.app.tresor',
   einstellungen: 'mss.app.einstellungen',

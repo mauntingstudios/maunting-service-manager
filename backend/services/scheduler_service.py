@@ -569,6 +569,39 @@ async def _disk_soft_limit_task() -> None:
         db.close()
 
 
+async def _docs_purge_task() -> None:
+    """Entfernt Dokumente, deren Papierkorb-Frist abgelaufen ist."""
+    from services.docs_service import DocsService
+
+    db = SessionLocal()
+    try:
+        anzahl = await asyncio.to_thread(DocsService.purge_deleted, db)
+        if anzahl:
+            logger.info("docs purge removed %s documents", anzahl)
+    except Exception as e:
+        logger.warning("docs purge task crashed: %s", e)
+    finally:
+        db.close()
+
+
+def _ensure_docs_purge_job() -> None:
+    scheduler = get_scheduler()
+    job_id = "global_docs_purge"
+    try:
+        scheduler.remove_job(job_id)
+    except Exception:
+        pass
+    scheduler.add_job(
+        func=_docs_purge_task,
+        trigger=IntervalTrigger(hours=1),
+        id=job_id,
+        name="Docs Trash Purge",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+
 def _ensure_disk_check_job() -> None:
     scheduler = get_scheduler()
     job_id = "global_disk_soft_limit_check"

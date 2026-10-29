@@ -9,6 +9,7 @@ export interface PublicSettings {
   imprint_url: string
   calendar_enabled: boolean
   notes_enabled: boolean
+  docs_enabled: boolean
   vault_enabled: boolean
   social_enabled: boolean
 }
@@ -21,6 +22,7 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   imprint_url: '',
   calendar_enabled: true,
   notes_enabled: true,
+  docs_enabled: true,
   vault_enabled: true,
   social_enabled: true,
 }
@@ -63,6 +65,10 @@ function loadCachedSettings(): PublicSettings {
           typeof parsed.notes_enabled === 'boolean'
             ? parsed.notes_enabled
             : DEFAULT_PUBLIC_SETTINGS.notes_enabled,
+        docs_enabled:
+          typeof parsed.docs_enabled === 'boolean'
+            ? parsed.docs_enabled
+            : DEFAULT_PUBLIC_SETTINGS.docs_enabled,
         vault_enabled:
           typeof parsed.vault_enabled === 'boolean'
             ? parsed.vault_enabled
@@ -140,6 +146,10 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
             typeof remote.notes_enabled === 'boolean'
               ? remote.notes_enabled
               : get().notes_enabled,
+          docs_enabled:
+            typeof remote.docs_enabled === 'boolean'
+              ? remote.docs_enabled
+              : get().docs_enabled,
           vault_enabled:
             typeof remote.vault_enabled === 'boolean'
               ? remote.vault_enabled
@@ -175,6 +185,7 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
         imprint_url: partial.imprint_url ?? get().imprint_url,
         calendar_enabled: partial.calendar_enabled ?? get().calendar_enabled,
         notes_enabled: partial.notes_enabled ?? get().notes_enabled,
+        docs_enabled: partial.docs_enabled ?? get().docs_enabled,
         vault_enabled: partial.vault_enabled ?? get().vault_enabled,
         social_enabled: partial.social_enabled ?? get().social_enabled,
       }

@@ -56,7 +56,7 @@ export interface OutboxMutation {
 }
 
 export interface SyncEventPayload {
-  entity: 'notes' | 'note' | 'calendar'
+  entity: 'notes' | 'note' | 'calendar' | 'docs'
   action: 'created' | 'updated' | 'deleted' | string
   id: string
   timestamp?: string
@@ -1883,6 +1883,12 @@ export function handleIncomingSyncEvent(eventName: string, data: SyncEventPayloa
     const outbox = getOutbox()
     const hasPendingLocal = id ? outbox.some((m) => m.entityId === id) : false
 
+    if (entity === 'docs') {
+      // Nur Metadaten: die Liste laedt Titel und Inhalte ueber REST nach.
+      window.dispatchEvent(new CustomEvent('msm:docs-updated', { detail: data }))
+      return
+    }
+
     if (entity === 'notes' || entity === 'note') {
       if (data.action === 'kontoschluessel') {
         // Ein anderes Gerät hat den Kontoschlüssel gesetzt: beim Neuladen, das
@@ -2045,6 +2051,9 @@ export function initOfflineSync(): () => void {
   startLiveSync()
   const kontowechselAbmelden = beiKontowechsel((konto) => {
     abortLiveSync?.()
+    // y-indexeddb haelt Dokumente im Klartext. Beim Kontowechsel und beim
+    // Logout verschwinden die lokalen Kopien des vorigen Kontos.
+    void import('@/docs/docsOffline').then((modul) => modul.clearLocalDocuments(konto))
     if (konto !== null) startLiveSync()
   })
 

@@ -97,7 +97,12 @@ def _jetzt() -> datetime:
 
 
 def sichtbare_bereiche(
-    db: Session, user: User, *, persoenlich: bool, anlage: int | bool | None
+    db: Session,
+    user: User,
+    *,
+    persoenlich: bool,
+    anlage: int | bool | None,
+    nur_team_id: int | None = None,
 ) -> list[str]:
     """Die Bereiche, aus denen dieser Benutzer gerade etwas wissen darf.
 
@@ -113,6 +118,11 @@ def sichtbare_bereiche(
     Kontext, sondern Rauschen.
     """
     from services import team_service
+
+    if nur_team_id is not None:
+        # Dokument-Lauf: ausschliesslich das Gedaechtnis des Dokumentteams.
+        # Kein panel, kein user, kein server, keine anderen Teams.
+        return [f"team:{nur_team_id}"]
 
     kennungen = {"panel"}
     if persoenlich:
@@ -610,6 +620,8 @@ def abrufen(
     query: str = "",
     server_id: int | None = None,
     budget: int | None = None,
+    *,
+    nur_team_id: int | None = None,
 ) -> Abruf:
     """Das Gedächtnis für eine Anfrage: was im Kopf steht und was zur Frage passt.
 
@@ -624,7 +636,11 @@ def abrufen(
     """
     zeichen = budget if budget is not None else ai_memory_service.MAX_CONTEXT_CHARS
     kennungen = sichtbare_bereiche(
-        db, user, persoenlich=ai_memory_service.preference(db, user.id), anlage=server_id,
+        db,
+        user,
+        persoenlich=ai_memory_service.preference(db, user.id),
+        anlage=server_id,
+        nur_team_id=nur_team_id,
     )
     kopf, kopf_zeichen, ausgelassen = _kopf(db, kennungen, zeichen)
     frage = query.strip()

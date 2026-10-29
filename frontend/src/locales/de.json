@@ -29,7 +29,8 @@
     "audit": "Audit",
     "ai": "Singra",
     "teams": "Teams",
-    "chat": "Messenger"
+    "chat": "Messenger",
+    "documents": "Dokumente"
   },
   "navGroups": {
     "overview": "Überblick",
@@ -1190,7 +1191,17 @@
       "propose_role_set": "Rolle vorbereitet",
       "propose_user_roles": "Rollenzuweisung vorbereitet",
       "propose_role_delete": "Rollenlöschung vorbereitet",
-      "read_database": "Datenbank gelesen"
+      "read_database": "Datenbank gelesen",
+      "list_documents": "Dokumente aufgelistet",
+      "read_document": "Dokument gelesen",
+      "read_document_selection": "Textstelle gelesen",
+      "get_document_outline": "Überschriften gelesen",
+      "list_document_comments": "Kommentare gelesen",
+      "read_document_skill": "Team-Skill gelesen",
+      "edit_document": "Dokument bearbeitet",
+      "add_document_comment": "Kommentar geschrieben",
+      "undo_ai_edit": "KI-Änderung zurückgenommen",
+      "update_document_title": "Titel geändert"
     },
     "toolsRunning": {
       "ask_user": "Ich frage kurz nach",
@@ -1296,7 +1307,17 @@
       "propose_user_roles": "Ich bereite die Rollenzuweisung vor",
       "propose_role_delete": "Ich bereite das Löschen der Rolle vor",
       "read_database": "Ich sehe mir die Datenbank an",
-      "propose_database_change": "Ich bereite die Datenbankänderung vor"
+      "propose_database_change": "Ich bereite die Datenbankänderung vor",
+      "list_documents": "Ich sehe die Dokumente durch",
+      "read_document": "Ich lese das Dokument",
+      "read_document_selection": "Ich lese die markierte Stelle",
+      "get_document_outline": "Ich sehe die Überschriften durch",
+      "list_document_comments": "Ich lese die Kommentare",
+      "read_document_skill": "Ich lese den Team-Skill",
+      "edit_document": "Ich bearbeite das Dokument",
+      "add_document_comment": "Ich schreibe einen Kommentar",
+      "undo_ai_edit": "Ich nehme die KI-Änderung zurück",
+      "update_document_title": "Ich ändere den Titel"
     },
     "errors": {
       "codes": {
@@ -2174,6 +2195,250 @@
       "useStep2": "Klicke auf den Tab \"Exec\" (neben \"Konsole\").",
       "useStep3": "Tippe einen Befehl ein, z. B. ls -la /data oder npm run build:api.",
       "useStep4": "Klicke \"Ausführen\". Output erscheint im Stream darunter."
+    },
+    "toolbar": {
+      "label": "Formatierung",
+      "block": "Absatzformat",
+      "paragraph": "Absatz",
+      "heading1": "Überschrift 1",
+      "heading2": "Überschrift 2",
+      "heading3": "Überschrift 3",
+      "undo": "Rückgängig",
+      "redo": "Wiederholen",
+      "bold": "Fett",
+      "italic": "Kursiv",
+      "underline": "Unterstrichen",
+      "strike": "Durchgestrichen",
+      "code": "Code",
+      "highlight": "Markieren",
+      "link": "Link",
+      "linkPrompt": "Adresse des Links. Leer lassen entfernt ihn.",
+      "bulletList": "Aufzählung",
+      "orderedList": "Nummerierte Liste",
+      "taskList": "Aufgabenliste",
+      "blockquote": "Zitat",
+      "codeBlock": "Codeblock",
+      "horizontalRule": "Trennlinie",
+      "table": "Tabelle einfügen",
+      "image": "Bild einfügen",
+      "comment": "Kommentar",
+      "more": "Weitere Formatierung"
+    },
+    "slash": {
+      "label": "Einfügen"
+    },
+    "editor": {
+      "titleLabel": "Dokumenttitel",
+      "contentLabel": "Dokumentinhalt",
+      "peers": "{{count}} Personen im Dokument",
+      "readOnly": "Nur Lesen. Kommentieren ist weiterhin möglich, Tippen nicht.",
+      "downgraded": "Nur Lesen. Deine lokalen Änderungen wurden nicht übernommen.",
+      "copyLocal": "Lokale Fassung kopieren",
+      "localCopied": "Lokale Fassung kopiert.",
+      "copyFailed": "Kopieren war nicht möglich.",
+      "imageUnavailable": "Bild nicht verfügbar"
+    },
+    "status": {
+      "connected": "Verbunden",
+      "disconnected": "Getrennt",
+      "failed": "Verbindung fehlgeschlagen",
+      "connecting": "Verbinde …",
+      "waitingSync": "Warte auf den Dokumentserver. Lokale Änderungen bleiben erhalten.",
+      "words": "{{count}} Wörter",
+      "characters": "{{count}} Zeichen",
+      "sidecarDown": "Der Dokumentserver ist nicht erreichbar. Lesen und Schreiben sind gesperrt, bis er wieder läuft."
+    },
+    "offline": {
+      "banner": "Offline. Änderungen bleiben lokal und werden beim nächsten Verbinden übertragen.",
+      "localChanges": "Keine Verbindung. Die lokale Kopie ist die einzige Quelle, bis der Server wieder antwortet.",
+      "noCopyTitle": "Keine lokale Kopie",
+      "noCopyText": "Dieses Dokument wurde auf diesem Gerät noch nicht geöffnet. Öffne es online, bevor du offline weiterarbeitest."
+    },
+    "tree": {
+      "team": "Team",
+      "personal": "Persönlich",
+      "search": "Dokumente durchsuchen",
+      "newFolder": "Neuer Ordner",
+      "all": "Alle",
+      "archive": "Archiv",
+      "trash": "Papierkorb",
+      "root": "Alle Dokumente",
+      "loading": "Lade Dokumente …",
+      "trashEmpty": "Der Papierkorb ist leer.",
+      "archiveEmpty": "Keine archivierten Dokumente.",
+      "empty": "Noch keine Dokumente in diesem Bereich.",
+      "actions": "Aktionen",
+      "restore": "Wiederherstellen",
+      "restored": "Dokument wiederhergestellt.",
+      "trashAction": "In den Papierkorb",
+      "trashConfirm": "Das Dokument wandert in den Papierkorb und wird nach 30 Tagen endgültig entfernt.",
+      "deletePermanent": "Endgültig löschen",
+      "deletePermanentConfirm": "Das Dokument wird sofort und endgültig gelöscht, samt Anhängen und Versionen.",
+      "untitled": "Ohne Titel",
+      "folderName": "Name des Ordners",
+      "folderNamePlaceholder": "Etwa Projekte",
+      "open": "Bereiche öffnen",
+      "archiveAction": "Archivieren",
+      "unarchiveAction": "Aus dem Archiv holen",
+      "archived": "Dokument archiviert.",
+      "renameFolder": "Ordner umbenennen",
+      "deleteFolder": "Ordner löschen",
+      "deleteFolderConfirm": "„{{name}}“ wird gelöscht. Enthaltene Dokumente wandern eine Ebene nach oben."
+    },
+    "list": {
+      "errorTitle": "Dokumente konnten nicht geladen werden",
+      "emptyTitle": "Noch kein Dokument",
+      "emptyText": "Lege ein Dokument an. Es gehört zunächst deinem Team."
+    },
+    "comments": {
+      "title": "Kommentare",
+      "open": "Kommentare öffnen",
+      "empty": "Noch keine Kommentare.",
+      "resolved": "Erledigt",
+      "reply": "Antworten",
+      "reopen": "Wieder öffnen",
+      "resolve": "Erledigt",
+      "delete": "Löschen",
+      "send": "Senden",
+      "new": "Neuer Kommentar",
+      "placeholder": "Was ist an dieser Stelle unklar?",
+      "promptMessage": "Der Kommentar wird an die ausgewählte Textstelle gebunden.",
+      "selectionRequired": "Wähle zuerst eine Textstelle aus.",
+      "unknownAuthor": "Unbekannt"
+    },
+    "history": {
+      "title": "Verlauf",
+      "open": "Verlauf öffnen",
+      "empty": "Noch keine Versionen.",
+      "checkpoint": "Version sichern",
+      "checkpointPrompt": "Die aktuelle Fassung wird als Version gespeichert. Eine Bezeichnung hilft beim Wiederfinden.",
+      "labelPlaceholder": "Etwa Vor der Überarbeitung",
+      "checkpointCreated": "Version gesichert.",
+      "restore": "Wiederherstellen",
+      "restoreConfirm": "Der aktuelle Stand wird durch Rev {{rev}} ersetzt. Vorher legt der Server eine Sicherung an.",
+      "restored": "Version wiederhergestellt.",
+      "systemAuthor": "Server",
+      "reasons": {
+        "initial": "Erste Fassung",
+        "autosave": "Automatisch",
+        "checkpoint": "Manuell",
+        "aiPreEdit": "Vor KI-Änderung",
+        "aiEdit": "KI-Änderung",
+        "aiUndo": "KI rückgängig",
+        "beforeRestore": "Vor Wiederherstellung",
+        "restore": "Wiederhergestellt",
+        "import": "Import"
+      }
+    },
+    "share": {
+      "title": "Freigabe per Link",
+      "description": "Der Link gilt nur für angemeldete Personen und erlaubt höchstens Lesen oder Kommentieren.",
+      "role": "Rolle im Link",
+      "expires": "Gültig für Tage",
+      "boundary": "Zum Bearbeiten braucht es eine Teammitgliedschaft. Editor-Rechte vergibt nur das Team.",
+      "active": "Link aktiv: {{role}}, gültig bis {{date}}",
+      "link": "Freigabelink",
+      "copy": "Kopieren",
+      "copied": "Link kopiert.",
+      "copyFailed": "Kopieren war nicht möglich.",
+      "create": "Link anlegen",
+      "replace": "Link ersetzen",
+      "disable": "Link abschalten",
+      "created": "Freigabe angelegt.",
+      "disabled": "Freigabe abgeschaltet.",
+      "claimFailedTitle": "Freigabe nicht verfügbar",
+      "claimFailed": "Der Link ist ungültig, abgelaufen oder wurde abgeschaltet.",
+      "claiming": "Freigabe wird geprüft …",
+      "open": "Freigabe"
+    },
+    "members": {
+      "title": "Mitglieder",
+      "description": "Die Rolle gilt für dieses Dokument. Ohne Eintrag gilt die Standardrolle des Dokuments.",
+      "loading": "Lade Mitglieder …",
+      "empty": "Keine Teammitglieder gefunden.",
+      "teamOwner": "Teamverwaltung",
+      "docOwner": "Ersteller",
+      "roleFor": "Rolle für {{name}}",
+      "teamDefault": "Standard ({{role}})",
+      "boundary": "Nur Teammitglieder lassen sich hier eintragen. Externe kommen über einen Freigabelink herein.",
+      "open": "Mitglieder",
+      "defaultRole": "Standardrolle für Teammitglieder"
+    },
+    "outline": {
+      "label": "Gliederung",
+      "short": "Gliederung",
+      "empty": "Noch keine Überschriften."
+    },
+    "export": {
+      "label": "Export",
+      "html": "HTML",
+      "markdown": "Markdown",
+      "text": "Nur Text",
+      "print": "Drucken",
+      "downloaded": "Datei gespeichert. Drucken ist im Systembrowser möglich."
+    },
+    "singra": {
+      "title": "Singra",
+      "open": "Singra öffnen",
+      "notAllowedTitle": "KI ist für Dokumente nicht freigegeben",
+      "notAllowedText": "Der Betreiber muss zusätzlich zu den Dokument- und Chat-Rechten die KI-Freigabe für Dokumente erteilen.",
+      "pendingEdit": "Der Dokument-Chat wird gerade angeschlossen. Bis dahin läuft er über den KI-Bereich.",
+      "pendingRead": "Der Dokument-Chat wird gerade angeschlossen. Lesen und Kommentieren sind bereits möglich.",
+      "openChat": "Zum KI-Bereich",
+      "privacy": "Dokumentinhalt wird an den gewählten KI-Anbieter übertragen.",
+      "undo": "Letzte KI-Änderung rückgängig",
+      "undoTitle": "KI-Änderung rückgängig",
+      "undoConfirm": "Singras letzte Änderung wird zurückgenommen. Die Versionen davor bleiben erhalten.",
+      "undone": "KI-Änderung zurückgenommen.",
+      "provider": "KI-Anbieter",
+      "noProvider": "Kein Anbieter verfügbar",
+      "empty": "Noch kein Gespräch. Frag Singra zu diesem Dokument.",
+      "toolRunning": "Singra nutzt {{name}} …",
+      "running": "Läuft …",
+      "send": "Senden",
+      "error": "Der Dokument-Chat ist gerade nicht erreichbar.",
+      "readOnlyHint": "Du darfst lesen und kommentieren. Änderungen am Text brauchen die Editor-Rolle.",
+      "placeholder": "Frag Singra zu diesem Dokument"
+    },
+    "moduleOff": {
+      "title": "Dokumente sind deaktiviert",
+      "text": "Der Betreiber hat das Modul abgeschaltet."
+    },
+    "errors": {
+      "DOCS_DISABLED": "Das Dokumente-Modul ist deaktiviert.",
+      "DOCS_FORBIDDEN": "Dafür fehlt das Recht.",
+      "DOCS_READ_ONLY": "Das Dokument ist nur lesbar.",
+      "DOCUMENT_NOT_FOUND": "Dokument nicht gefunden.",
+      "FOLDER_NOT_FOUND": "Ordner nicht gefunden.",
+      "COMMENT_NOT_FOUND": "Kommentar nicht gefunden.",
+      "REVISION_NOT_FOUND": "Version nicht gefunden.",
+      "DOC_NAME_CONFLICT": "Diesen Namen gibt es an dieser Stelle schon.",
+      "DOC_REV_CONFLICT": "Der Stand hat sich geändert. Bitte neu laden.",
+      "DOC_RESTORE_CONFLICT": "Diese Version lässt sich nicht wiederherstellen.",
+      "AI_EDIT_STALE_SELECTION": "Die Textstelle ist nicht mehr eindeutig. Bitte neu auswählen.",
+      "AI_UNDO_EMPTY": "Es gibt keine KI-Änderung zum Rückgängigmachen.",
+      "DOC_TOO_LARGE": "Das Dokument ist zu groß.",
+      "DOC_ASSET_TOO_LARGE": "Die Datei ist zu groß. Erlaubt sind 4 MiB je Anhang.",
+      "DOC_QUOTA_EXCEEDED": "Das Kontingent ist erschöpft.",
+      "DOC_INVALID_TARGET": "Das Ziel ist ungültig.",
+      "DOCS_SIDECAR_UNAVAILABLE": "Der Dokumentserver ist nicht erreichbar.",
+      "DOCS_STORE_FAILED": "Speichern fehlgeschlagen.",
+      "DOCS_TOKEN_EXPIRED": "Die Sitzung ist abgelaufen. Bitte neu verbinden.",
+      "DOC_SCHEMA_UNSUPPORTED": "Das Dokumentformat ist neuer als diese App."
+    },
+    "title": "Dokumente",
+    "new": "Neues Dokument",
+    "roles": {
+      "viewer": "Lesen",
+      "commenter": "Kommentieren",
+      "editor": "Bearbeiten"
+    },
+    "move": {
+      "title": "Dokument verschieben",
+      "description": "Wähle den Zielordner für „{{title}}“.",
+      "target": "Zielordner",
+      "action": "Verschieben",
+      "moved": "Dokument verschoben."
     }
   },
   "servers": {
@@ -2467,7 +2732,8 @@
       "server_console": "Server-Konsole",
       "server_files": "Dateien & Backups",
       "server_features": "Server-Erweiterungen (Mods & DBs)",
-      "other": "Andere Berechtigungen"
+      "other": "Andere Berechtigungen",
+      "dokumente": "Dokumente"
     }
   },
   "permissionDetails": {
@@ -2766,6 +3032,14 @@
     "servers_create_database": {
       "title": "Datenbankserver erstellen",
       "desc": "Eigene PostgreSQL-Instanzen als Datenbankserver anlegen, auch mit Zugriff von außen. Braucht zusätzlich „Server erstellen“."
+    },
+    "docs_use": {
+      "title": "Dokumente verwenden",
+      "desc": "Dokumente öffnen, lesen und bearbeiten, soweit die Dokumentrolle es erlaubt."
+    },
+    "ai_docs_use": {
+      "title": "Singra in Dokumenten verwenden",
+      "desc": "Singra darf Dokumente lesen, kommentieren und bearbeiten, nie mehr als die eigene Dokumentrolle."
     }
   },
   "serverPermissions": {
@@ -3520,7 +3794,9 @@
     },
     "loadFailed": "Laden fehlgeschlagen",
     "browserPromo": "Maunting-Pontis-Hinweis anzeigen",
-    "browserPromoHint": "Blendet in der Seitenleiste über dem MSS-Download einen Hinweis auf Maunting Pontis ein."
+    "browserPromoHint": "Blendet in der Seitenleiste über dem MSS-Download einen Hinweis auf Maunting Pontis ein.",
+    "docsEnabled": "Dokumente",
+    "docsEnabledHint": "Rich-Text-Dokumente für Teams mit Echtzeit-Bearbeitung."
   },
   "profile": {
     "title": "Profil",
@@ -6189,7 +6465,8 @@
       "browserInstallieren": "Maunting Pontis installieren",
       "browserLadenAndroid": "Maunting Pontis laden",
       "browserDownloadSubtext": "Gehärteter, privater Webbrowser für Windows",
-      "browserDownloadSubtextAndroid": "Gehärteter, privater Webbrowser für Android"
+      "browserDownloadSubtextAndroid": "Gehärteter, privater Webbrowser für Android",
+      "dokumente": "Dokumente"
     },
     "vault": {
       "titel": "Tresor-Sicherheit",
@@ -8805,7 +9082,8 @@
       "einstellungen": "Einstellungen",
       "koppeln": "Koppeln",
       "mitZahl": "{{name}}, {{zahl}} neu",
-      "menue": "Menü"
+      "menue": "Menü",
+      "dokumente": "Dokumente"
     },
     "panel": {
       "schliessen": "Panel schließen",

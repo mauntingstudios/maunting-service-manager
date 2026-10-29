@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Archive, BookOpen, Bot, Boxes, Calendar as CalendarIcon, Database, History, LayoutDashboard, MessageSquare, Network, Server, Settings, Shield, StickyNote, Users, UsersRound } from 'lucide-react'
+import { Archive, BookOpen, Bot, Boxes, Calendar as CalendarIcon, Database, FileText, History, LayoutDashboard, MessageSquare, Network, Server, Settings, Shield, StickyNote, Users, UsersRound } from 'lucide-react'
 
 export type NavGroupName = 'Overview' | 'Infrastructure' | 'Administration' | 'Panel' | 'Help'
 export interface NavigationItem { to: string; icon: LucideIcon; label: string; group: NavGroupName }
@@ -25,6 +25,9 @@ interface NavigationAccess {
   canUseSkills: boolean
   calendarEnabled?: boolean
   notesEnabled?: boolean
+  /** Modulschalter `docs_enabled`; unabhaengig davon braucht es `docs.use`. */
+  docsEnabled?: boolean
+  canUseDocs?: boolean
   socialEnabled?: boolean
   /**
    * Ist das Gerät offline, werden nur offline-fähige Bereiche angezeigt:
@@ -45,6 +48,11 @@ export function buildNavigation(labels: Record<string, string>, access: Navigati
     { to: '/', icon: LayoutDashboard, label: labels.dashboard, group: 'Overview' },
     ...(access.calendarEnabled !== false ? [{ to: '/calendar', icon: CalendarIcon, label: labels.calendar, group: 'Overview' as const }] : []),
     ...(access.notesEnabled !== false ? [{ to: '/notes', icon: StickyNote, label: labels.notes, group: 'Overview' as const }] : []),
+    // Dokumente sind offline-faehig: kein `online &&`. Wer eine lokale Kopie
+    // hat, oeffnet sie auch ohne Netz.
+    ...(access.docsEnabled !== false && (access.owner || access.canUseDocs)
+      ? [{ to: '/dokumente', icon: FileText, label: labels.documents, group: 'Overview' as const }]
+      : []),
     ...(online && access.socialEnabled !== false ? [{ to: '/chat', icon: MessageSquare, label: labels.chat, group: 'Overview' as const }] : []),
     ...(online ? [{ to: '/servers', icon: Server, label: labels.servers, group: 'Infrastructure' as const }] : []),
     ...(online && (access.owner || access.canViewNodes) ? [{ to: '/admin/nodes', icon: Network, label: labels.nodes, group: 'Infrastructure' as const }] : []),

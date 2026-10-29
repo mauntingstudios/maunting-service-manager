@@ -120,6 +120,10 @@ class AiChatRequest(BaseModel):
     content: str = Field(min_length=1, max_length=16_000)
     provider_id: int = Field(ge=1)
     request_id: UUID
+    # Dokument-Chat: das Dokument kommt aus der Oberflaeche, nicht aus dem
+    # Modelltext. Die Auswahl ist fluechtig und landet nie im Laufzustand.
+    document_uid: str | None = Field(default=None, max_length=36)
+    selection: dict | None = None
     # Ob das Modell nachdenken soll. Bei 145 der 272 denkenden Modelle bei
     # OpenRouter ist das die einzige Wahl, die es gibt — sie kennen keine Stufen.
     reasoning: bool = False

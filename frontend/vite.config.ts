@@ -18,7 +18,9 @@ export default defineConfig({
     // set VITE_API_URL=http://127.0.0.1:8000 and skip the proxy.
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // VITE_PROXY_TARGET erlaubt einen zweiten lokalen Backend-Port, ohne
+        // die .env oder den geteilten Dev-Stack umzubauen.
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,
         // Console WebSocket upgrades
         ws: true,

@@ -642,7 +642,7 @@ def test_je_benutzer_und_art_genau_eine_unterhaltung(db: Session) -> None:
     db.rollback()
 
 
-def test_die_datenbank_kennt_genau_drei_unterhaltungsarten(db: Session) -> None:
+def test_die_datenbank_kennt_die_unterhaltungsarten(db: Session) -> None:
     """``kind`` ist eine Aufzaehlung, und die Datenbank haelt sie.
 
     Dieselbe Ueberlegung wie beim Gedaechtnisbereich darunter: eine Art, die nur
@@ -650,11 +650,15 @@ def test_die_datenbank_kennt_genau_drei_unterhaltungsarten(db: Session) -> None:
     einen direkten Datenbankzugriff wehrlos. ``kind='gardian'`` waere ein
     Fenster, das keine Route je findet — und ein Reparaturlauf, der hineinredet,
     schriebe an einen Ort, den niemand aufmachen kann.
+
+    ``docs`` kam mit dem Dokumente-Modul dazu: ein Fenster je (Benutzer,
+    Dokument). Es gehoert bewusst nicht zu den Einzelfenstern, weil seine
+    Eindeutigkeit am Dokument haengt und nicht am Benutzer allein.
     """
     from models import User
     from models.ai_conversation import ARTEN, EINZELFENSTER
 
-    assert ARTEN == ("primary", "guardian", "worker")
+    assert ARTEN == ("primary", "guardian", "worker", "docs")
     # Die Eindeutigkeit gilt nur fuer die Einzelfenster — `worker` steht
     # bewusst nicht darin (mehrere Auftraege gleichzeitig sind der Zweck).
     assert EINZELFENSTER == ("primary", "guardian")

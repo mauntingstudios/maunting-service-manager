@@ -28,7 +28,7 @@ export type Hintergrund =
 /** Ein eigenes Bild liegt als data:-URI im localStorage; größer passt dort nicht sicher hinein. */
 export const EIGENES_BILD_MAX_BYTES = 3 * 1024 * 1024
 
-export type Modul = 'singra' | 'messenger' | 'notizen' | 'kalender' | 'tresor'
+export type Modul = 'singra' | 'messenger' | 'notizen' | 'kalender' | 'dokumente' | 'tresor'
 
 /** Was in Leiste oder Menü steht und sich ordnen lässt: die Module und die Listen des Browsers. */
 export type Leistenziel = Modul | 'lesezeichen' | 'verlauf' | 'downloads' | 'whatsapp' | 'discord' | 'telegram' | 'instagram'

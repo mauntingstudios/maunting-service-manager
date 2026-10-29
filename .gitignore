@@ -147,3 +147,8 @@ Releases/
 # Wetter-Sidecar: Modell- und Ortsdaten bleiben lokal
 wetter-sidecar/daten/*
 !wetter-sidecar/daten/.gitkeep
+
+# Qoder-Sitzungsdaten (Pläne, Indizes) gehören nicht ins Repository.
+.qoder/
+/docs-sidecar/node_modules
+/docs-sidecar/.env

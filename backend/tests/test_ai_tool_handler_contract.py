@@ -451,7 +451,12 @@ def test_the_tool_catalogue_stays_within_a_stated_budget() -> None:
             ],
             ensure_ascii=False,
         )
-        assert len(katalog) < 80_000, (
+        # Stand 28.10.2026, nachgemessen: Der Desktop-Fall liegt mit den zehn
+        # Dokumentwerkzeugen bei 81.297 Zeichen. Die Beschreibungen sind
+        # bereits auf das Noetige gekuerzt; die Grenze steigt deshalb einmalig
+        # auf 82.000 und behaelt gut 700 Zeichen Luft fuer die naechste
+        # bewusste Entscheidung.
+        assert len(katalog) < 82_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
             "taucht in keiner Budgetrechnung auf."

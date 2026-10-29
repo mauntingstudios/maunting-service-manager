@@ -123,6 +123,22 @@ AUSGESCHLOSSEN: dict[str, str] = {
     "hoster_handoffs.token_hash": "Hash eines Uebergabetokens",
     "hoster_webhook_deliveries.payload_hash": "Interner Hash",
     "browser_widget_tokens.token_hash": "Hash des Widget-Zugangs",
+    # Dokumente haben einen eigenen Export (/api/docs/{uid}/export). Der
+    # Kontoexport uebernimmt den Yjs-Zustand nicht: er ist ohne die
+    # Zusammenarbeits-Historie nicht sinnvoll lesbar und wuerde das Paket
+    # vervielfachen.
+    "documents.title_encrypted": "Dokumenttitel; eigener Dokumentexport",
+    "documents.share_token_hash": "Hash des Freigabetokens",
+    "documents.state_encrypted": "Yjs-Zustand; eigener Dokumentexport",
+    "documents.content_text_encrypted": "Dokumenttext; eigener Dokumentexport",
+    "doc_folders.name_encrypted": "Ordnername; eigener Dokumentexport",
+    "doc_assets.file_name_encrypted": "Dateiname eines Anhangs; eigener Dokumentexport",
+    "doc_assets.ciphertext_blob": "Anhang; eigener Dokumentexport",
+    "doc_comments.body_encrypted": "Kommentar; eigener Dokumentexport",
+    "doc_comments.anchor_encrypted": "Kommentaranker; eigener Dokumentexport",
+    "doc_revisions.label_encrypted": "Versionsname; eigener Dokumentexport",
+    "doc_revisions.state_encrypted": "Versionszustand; eigener Dokumentexport",
+    "doc_revisions.preview_text_encrypted": "Vorschau einer Version; eigener Dokumentexport",
 }
 
 #: Spalten, deren Name nach Geheimnis klingt, die aber keins sind.

@@ -18,6 +18,10 @@ HOTSET = frozenset({
     "read_docs",
     "calendar_read",
     "notes_read",
+    # Dokumente: lesen und die eine Aenderung, die den Lauf ausmacht.
+    "read_document",
+    "read_document_selection",
+    "edit_document",
     "propose_calendar_event_create",
     "propose_note_create",
     "search_memory",

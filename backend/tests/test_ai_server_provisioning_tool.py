@@ -70,10 +70,15 @@ def test_the_single_tool_catalog_covers_panel_and_server_work(db: Session) -> No
 
     # Jedes serverbezogene Werkzeug verlangt die ID ausdruecklich. Ohne diese
     # Zusicherung koennte ein Modell sie weglassen und `_resolve_server`
-    # muesste raten — genau das darf es nie.
+    # muesste raten — genau das darf es nie. Dokument-Werkzeuge haengen am
+    # Dokument, nicht an einem Server, und bleiben deshalb global.
     for item in tools:
         function = item["function"]
-        if function["name"] in ai_tool_registry.GLOBAL_READ_TOOLS | ai_tool_registry.GLOBAL_WRITE_TOOLS:
+        if function["name"] in (
+            ai_tool_registry.GLOBAL_READ_TOOLS
+            | ai_tool_registry.GLOBAL_WRITE_TOOLS
+            | ai_tool_registry.DOCUMENTS_TOOLS
+        ):
             continue
         assert "server_id" in function["parameters"]["properties"], function["name"]
         assert "server_id" in function["parameters"]["required"], function["name"]

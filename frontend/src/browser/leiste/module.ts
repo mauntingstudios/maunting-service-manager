@@ -5,7 +5,7 @@
  * richtigen Panel.
  */
 import type { ElementType } from 'react'
-import { Bookmark, Bot, Calendar, Code, Download, History, KeyRound, Link2, MessageSquare, Settings, StickyNote } from 'lucide-react'
+import { Bookmark, Bot, Calendar, Code, Download, FileText, History, KeyRound, Link2, MessageSquare, Settings, StickyNote } from 'lucide-react'
 
 import { DiscordSymbol, InstagramSymbol, TelegramSymbol, WhatsAppSymbol } from '../marken'
 import type { Modul } from '../services/einstellungenStore'
@@ -14,6 +14,7 @@ export type PanelId =
   | 'ai'
   | 'chat'
   | 'notizen'
+  | 'dokumente'
   | 'kalender'
   | 'tresor'
   | 'lesezeichen'
@@ -43,6 +44,7 @@ export const MSM_EINTRAEGE: Leisteneintrag[] = [
   { id: 'ai', symbol: Bot, name: 'browser.leiste.singra', modul: 'singra' },
   { id: 'chat', symbol: MessageSquare, name: 'browser.leiste.messenger', modul: 'messenger' },
   { id: 'notizen', symbol: StickyNote, name: 'browser.leiste.notizen', modul: 'notizen', offline: true },
+  { id: 'dokumente', symbol: FileText, name: 'browser.leiste.dokumente', modul: 'dokumente', offline: true },
   { id: 'kalender', symbol: Calendar, name: 'browser.leiste.kalender', modul: 'kalender', offline: true },
   { id: 'tresor', symbol: KeyRound, name: 'browser.leiste.tresor', modul: 'tresor', offline: true },
 ]

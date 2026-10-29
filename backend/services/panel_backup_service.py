@@ -51,6 +51,10 @@ logger = logging.getLogger(__name__)
 # Fehlende Dateien werden mit Warning skipped (Backup laeuft weiter).
 _CONFIG_FILES: tuple[str, ...] = (
     ".env",
+    # Ohne diese beiden sind Dokumente nach einem Restore unlesbar (DIS) bzw.
+    # passen die Tokens nicht mehr (Docs).
+    "dis-sidecar/.env",
+    "docs-sidecar/.env",
     "install.sh",
     "Caddyfile.template",
     "msm.service.template",
@@ -115,6 +119,15 @@ def create_panel_backup(db: Session, *, name: str | None = None) -> "PanelBackup
     enc_tmp_dir: str | None = None
 
     try:
+        # 0. Offene Dokumente flushen, bevor der Dump entsteht. Best effort:
+        # ein nicht erreichbarer Sidecar darf das Panel-Backup nicht verhindern.
+        try:
+            from services.docs_collab_service import DocsCollabService
+
+            DocsCollabService.flush()
+        except Exception:
+            logger.warning("Panel-Backup: Dokumente-Flush fehlgeschlagen (best effort)")
+
         # 1. PostgreSQL-Dump erstellen.
         # Bei Fehlern wird kein Backup angelegt (atomic — kein partieller State).
         db_dump_bytes = _dump_database(db_type)

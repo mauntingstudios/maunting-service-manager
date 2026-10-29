@@ -23,6 +23,7 @@ from services.ai_action_errors import (
 from services.ai_redaction import redact_sensitive_text
 from services.server_file_access_service import read_server_text
 from services.ai_tool_registry import (
+    DOCUMENTS_TOOLS,
     GLOBAL_READ_TOOLS,
     SERVER_READ_TOOLS,
     READ_TOOLS,
@@ -96,6 +97,7 @@ from services.ai_tools.personal_tools import (
     _notes_tool_definitions,
     _execute_send_test_email,
 )
+from services.ai_tools.document_tools import _dokument_tool_definitions
 from services.ai_tools.geo_tools import (
     _voice_tool_definitions,
     voice_control_tool_definitions,
@@ -720,6 +722,7 @@ def _global_tool_definitions() -> list[dict]:
         *_worker_tool_definitions(),
         *_mailbox_and_calendar_tool_definitions(),
         *_notes_tool_definitions(),
+        *_dokument_tool_definitions(),
         *_user_tool_definitions(),
     ]
 
@@ -1307,6 +1310,19 @@ def angebotene_werkzeuge(db: Session, user: User) -> frozenset[str]:
     )
     if not is_guardian_ai_enabled():
         verfuegbar -= GUARDIAN_TOOLS
+
+    # Dokumentwerkzeuge brauchen drei Dinge gleichzeitig: das Modul, `docs.use`
+    # und `ai.docs.use`. Das Angebotsrecht allein (`ai.docs.use`) wuerde sie
+    # einem Benutzer zeigen, der das Modul gar nicht betreten darf.
+    from services.docs_collab_service import DocsCollabService
+
+    docs_ok = (
+        DocsCollabService.module_enabled()
+        and permission_service.has_global_permission(db, user, "docs.use")
+        and permission_service.has_global_permission(db, user, "ai.docs.use")
+    )
+    if not docs_ok:
+        verfuegbar -= DOCUMENTS_TOOLS
     return frozenset(verfuegbar)
 
 
@@ -1411,6 +1427,8 @@ def _execute_global_read_tool(
     herkunft: str = "panel", familie: str | None = None,
     prefetch_session_id: str | None = None,
     fast_region: bool = False,
+    docs_document_uid: str | None = None,
+    docs_team_id: int | None = None,
 ) -> dict:
     """Werkzeuge ohne Serverbezug.
 
@@ -1423,6 +1441,22 @@ def _execute_global_read_tool(
     Servererstellung. Wer keine Server anlegen darf, hat auch keinen Grund, die
     Kapazitaetsplanung des Betreibers zu sehen.
     """
+    # Dokumentwerkzeuge werden im Dokumentlauf vor diesem Zweig verteilt.
+    # Der Zweig hier haelt sie fuer direkte Aufrufer namentlich erreichbar und
+    # beantwortet einen Aufruf ohne Dokumentkontext mit einer klaren Meldung.
+    if tool_name in {
+        "list_documents", "read_document", "read_document_selection",
+        "get_document_outline", "list_document_comments", "read_document_skill",
+        "edit_document", "add_document_comment", "undo_ai_edit",
+        "update_document_title",
+    }:
+        from services.ai_tools.document_tools import execute_document_tool
+
+        return execute_document_tool(
+            db, user=user, tool_name=tool_name, arguments=arguments,
+            kontext=None,
+        )
+
     if tool_name == "search_docs":
         return _execute_search_docs(arguments)
 
@@ -1461,7 +1495,8 @@ def _execute_global_read_tool(
         # zuerst nach Arbeit fragt (`desktop_job_service.naechster`).
         return ai_worker_service.worker_start(
             db, user=user, arguments=arguments, herkunft=herkunft,
-            familie=familie,
+            familie=familie, docs_document_uid=docs_document_uid,
+            docs_team_id=docs_team_id,
         )
 
     if tool_name == "worker_cancel":
@@ -2473,6 +2508,7 @@ def execute_read_tool(
     familie: str | None = None,
     prefetch_session_id: str | None = None,
     fast_region: bool = False,
+    kontext: Any = None,
 ) -> dict:
     """Fuehrt ein Lesewerkzeug im Namen des Benutzers aus.
 
@@ -2525,10 +2561,30 @@ def execute_read_tool(
         return cached_result
 
     if tool_name in GLOBAL_READ_TOOLS:
+        if tool_name == "worker_start":
+            # Private Schluessel kommen nie aus dem Modelltext. Sie werden
+            # immer entfernt und nur als eigener Server-Parameter uebergeben.
+            arguments = {
+                key: value
+                for key, value in arguments.items()
+                if key not in ("_docs_document_uid", "_docs_team_id")
+            }
         return _execute_global_read_tool(
             db, user=user, tool_name=tool_name, arguments=arguments,
             herkunft=herkunft, familie=familie, prefetch_session_id=prefetch_session_id,
             fast_region=fast_region,
+            docs_document_uid=(
+                getattr(kontext, "document_uid", None) if tool_name == "worker_start" else None
+            ),
+            docs_team_id=(
+                getattr(kontext, "team_id", None) if tool_name == "worker_start" else None
+            ),
+        )
+    if tool_name in DOCUMENTS_TOOLS:
+        from services.ai_tools.document_tools import execute_document_tool
+
+        return execute_document_tool(
+            db, user=user, tool_name=tool_name, arguments=arguments, kontext=kontext
         )
     server, arguments = _resolve_server(db, user, arguments)
     context = _execute_server_context_tool(

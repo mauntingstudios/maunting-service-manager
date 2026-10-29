@@ -82,9 +82,14 @@ const SUBGROUPS = [
       'ai.mailbox.use',
       'ai.calendar.use',
       'ai.notes.use',
+      'ai.docs.use',
       'ai.popups.manage',
       'ai.usage.read.all',
     ],
+  },
+  {
+    id: 'dokumente',
+    keys: ['docs.use'],
   },
   {
     id: 'infrastructure',

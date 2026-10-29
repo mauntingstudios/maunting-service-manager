@@ -29,7 +29,8 @@
     "audit": "Audit",
     "ai": "Singra",
     "teams": "Teams",
-    "chat": "Messenger"
+    "chat": "Messenger",
+    "documents": "Documents"
   },
   "navGroups": {
     "overview": "Overview",
@@ -1190,7 +1191,17 @@
       "propose_role_set": "Role prepared",
       "propose_user_roles": "Role assignment prepared",
       "propose_role_delete": "Role deletion prepared",
-      "read_database": "Read database"
+      "read_database": "Read database",
+      "list_documents": "Documents listed",
+      "read_document": "Document read",
+      "read_document_selection": "Passage read",
+      "get_document_outline": "Headings read",
+      "list_document_comments": "Comments read",
+      "read_document_skill": "Team skill read",
+      "edit_document": "Document edited",
+      "add_document_comment": "Comment written",
+      "undo_ai_edit": "AI change undone",
+      "update_document_title": "Title changed"
     },
     "toolsRunning": {
       "ask_user": "Asking a quick question",
@@ -1296,7 +1307,17 @@
       "propose_user_roles": "Preparing the role assignment",
       "propose_role_delete": "Preparing to delete the role",
       "read_database": "Looking at the database",
-      "propose_database_change": "Preparing the database change"
+      "propose_database_change": "Preparing the database change",
+      "list_documents": "Looking through the documents",
+      "read_document": "Reading the document",
+      "read_document_selection": "Reading the selected passage",
+      "get_document_outline": "Looking through the headings",
+      "list_document_comments": "Reading the comments",
+      "read_document_skill": "Reading the team skill",
+      "edit_document": "Editing the document",
+      "add_document_comment": "Writing a comment",
+      "undo_ai_edit": "Undoing the AI change",
+      "update_document_title": "Changing the title"
     },
     "errors": {
       "codes": {
@@ -2174,6 +2195,250 @@
       "useStep2": "Click the \"Exec\" tab (next to \"Console\").",
       "useStep3": "Type a command, e.g. ls -la /data or npm run build:api.",
       "useStep4": "Click \"Run\". Output appears in the stream below."
+    },
+    "toolbar": {
+      "label": "Formatting",
+      "block": "Paragraph style",
+      "paragraph": "Paragraph",
+      "heading1": "Heading 1",
+      "heading2": "Heading 2",
+      "heading3": "Heading 3",
+      "undo": "Undo",
+      "redo": "Redo",
+      "bold": "Bold",
+      "italic": "Italic",
+      "underline": "Underline",
+      "strike": "Strikethrough",
+      "code": "Code",
+      "highlight": "Highlight",
+      "link": "Link",
+      "linkPrompt": "Address of the link. Leave empty to remove it.",
+      "bulletList": "Bulleted list",
+      "orderedList": "Numbered list",
+      "taskList": "Task list",
+      "blockquote": "Quote",
+      "codeBlock": "Code block",
+      "horizontalRule": "Divider",
+      "table": "Insert table",
+      "image": "Insert image",
+      "comment": "Comment",
+      "more": "More formatting"
+    },
+    "slash": {
+      "label": "Insert"
+    },
+    "editor": {
+      "titleLabel": "Document title",
+      "contentLabel": "Document content",
+      "peers": "{{count}} people in this document",
+      "readOnly": "Read only. You can still comment, but not type.",
+      "downgraded": "Read only. Your local changes were not accepted.",
+      "copyLocal": "Copy local version",
+      "localCopied": "Local version copied.",
+      "copyFailed": "Could not copy.",
+      "imageUnavailable": "Image unavailable"
+    },
+    "status": {
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "failed": "Connection failed",
+      "connecting": "Connecting …",
+      "waitingSync": "Waiting for the document server. Local changes are kept.",
+      "words": "{{count}} words",
+      "characters": "{{count}} characters",
+      "sidecarDown": "The document server is unreachable. Reading and writing are blocked until it is back."
+    },
+    "offline": {
+      "banner": "Offline. Changes stay local and sync on the next connection.",
+      "localChanges": "No connection. The local copy is authoritative until the server answers again.",
+      "noCopyTitle": "No local copy",
+      "noCopyText": "This document has not been opened on this device. Open it online before working offline."
+    },
+    "tree": {
+      "team": "Team",
+      "personal": "Personal",
+      "search": "Search documents",
+      "newFolder": "New folder",
+      "all": "All",
+      "archive": "Archive",
+      "trash": "Trash",
+      "root": "All documents",
+      "loading": "Loading documents …",
+      "trashEmpty": "The trash is empty.",
+      "archiveEmpty": "No archived documents.",
+      "empty": "No documents here yet.",
+      "actions": "Actions",
+      "restore": "Restore",
+      "restored": "Document restored.",
+      "trashAction": "Move to trash",
+      "trashConfirm": "The document moves to the trash and is removed permanently after 30 days.",
+      "deletePermanent": "Delete permanently",
+      "deletePermanentConfirm": "The document is deleted immediately and permanently, including attachments and versions.",
+      "untitled": "Untitled",
+      "folderName": "Folder name",
+      "folderNamePlaceholder": "e.g. Projects",
+      "open": "Open sections",
+      "archiveAction": "Archive",
+      "unarchiveAction": "Restore from archive",
+      "archived": "Document archived.",
+      "renameFolder": "Rename folder",
+      "deleteFolder": "Delete folder",
+      "deleteFolderConfirm": "“{{name}}” is deleted. Documents inside move up one level."
+    },
+    "list": {
+      "errorTitle": "Documents could not be loaded",
+      "emptyTitle": "No document yet",
+      "emptyText": "Create a document. It belongs to your team from the start."
+    },
+    "comments": {
+      "title": "Comments",
+      "open": "Open comments",
+      "empty": "No comments yet.",
+      "resolved": "Resolved",
+      "reply": "Reply",
+      "reopen": "Reopen",
+      "resolve": "Resolve",
+      "delete": "Delete",
+      "send": "Send",
+      "new": "New comment",
+      "placeholder": "What is unclear here?",
+      "promptMessage": "The comment is tied to the selected text.",
+      "selectionRequired": "Select a passage first.",
+      "unknownAuthor": "Unknown"
+    },
+    "history": {
+      "title": "History",
+      "open": "Open history",
+      "empty": "No versions yet.",
+      "checkpoint": "Save version",
+      "checkpointPrompt": "The current state is saved as a version. A label helps you find it later.",
+      "labelPlaceholder": "e.g. Before the rewrite",
+      "checkpointCreated": "Version saved.",
+      "restore": "Restore",
+      "restoreConfirm": "The current state is replaced by rev {{rev}}. The server keeps a backup first.",
+      "restored": "Version restored.",
+      "systemAuthor": "Server",
+      "reasons": {
+        "initial": "First version",
+        "autosave": "Automatic",
+        "checkpoint": "Manual",
+        "aiPreEdit": "Before AI edit",
+        "aiEdit": "AI edit",
+        "aiUndo": "AI undone",
+        "beforeRestore": "Before restore",
+        "restore": "Restored",
+        "import": "Import"
+      }
+    },
+    "share": {
+      "title": "Share by link",
+      "description": "The link works only for signed-in people and allows at most viewing or commenting.",
+      "role": "Role in the link",
+      "expires": "Valid for days",
+      "boundary": "Editing requires team membership. Only the team grants editor rights.",
+      "active": "Link active: {{role}}, valid until {{date}}",
+      "link": "Share link",
+      "copy": "Copy",
+      "copied": "Link copied.",
+      "copyFailed": "Could not copy.",
+      "create": "Create link",
+      "replace": "Replace link",
+      "disable": "Disable link",
+      "created": "Share created.",
+      "disabled": "Share disabled.",
+      "claimFailedTitle": "Share unavailable",
+      "claimFailed": "The link is invalid, expired or has been disabled.",
+      "claiming": "Checking the share …",
+      "open": "Share"
+    },
+    "members": {
+      "title": "Members",
+      "description": "The role applies to this document. Without an entry the document default applies.",
+      "loading": "Loading members …",
+      "empty": "No team members found.",
+      "teamOwner": "Team admin",
+      "docOwner": "Creator",
+      "roleFor": "Role for {{name}}",
+      "teamDefault": "Default ({{role}})",
+      "boundary": "Only team members can be added here. External people join through a share link.",
+      "open": "Members",
+      "defaultRole": "Default role for team members"
+    },
+    "outline": {
+      "label": "Outline",
+      "short": "Outline",
+      "empty": "No headings yet."
+    },
+    "export": {
+      "label": "Export",
+      "html": "HTML",
+      "markdown": "Markdown",
+      "text": "Plain text",
+      "print": "Print",
+      "downloaded": "File saved. You can print it from the system browser."
+    },
+    "singra": {
+      "title": "Singra",
+      "open": "Open Singra",
+      "notAllowedTitle": "AI is not enabled for documents",
+      "notAllowedText": "The operator must grant the document AI permission in addition to the document and chat rights.",
+      "pendingEdit": "The document chat is being connected. Until then it runs through the AI area.",
+      "pendingRead": "The document chat is being connected. Reading and commenting already work.",
+      "openChat": "Go to the AI area",
+      "privacy": "Document content is sent to the selected AI provider.",
+      "undo": "Undo last AI change",
+      "undoTitle": "Undo AI change",
+      "undoConfirm": "Singra's last change is reverted. Earlier versions stay available.",
+      "undone": "AI change undone.",
+      "provider": "AI provider",
+      "noProvider": "No provider available",
+      "empty": "No conversation yet. Ask Singra about this document.",
+      "toolRunning": "Singra is using {{name}} …",
+      "running": "Running …",
+      "send": "Send",
+      "error": "The document chat is not reachable right now.",
+      "readOnlyHint": "You can read and comment. Editing the text needs the editor role.",
+      "placeholder": "Ask Singra about this document"
+    },
+    "moduleOff": {
+      "title": "Documents are disabled",
+      "text": "The operator has turned the module off."
+    },
+    "errors": {
+      "DOCS_DISABLED": "The documents module is disabled.",
+      "DOCS_FORBIDDEN": "You lack the required right.",
+      "DOCS_READ_ONLY": "The document is read only.",
+      "DOCUMENT_NOT_FOUND": "Document not found.",
+      "FOLDER_NOT_FOUND": "Folder not found.",
+      "COMMENT_NOT_FOUND": "Comment not found.",
+      "REVISION_NOT_FOUND": "Version not found.",
+      "DOC_NAME_CONFLICT": "That name already exists here.",
+      "DOC_REV_CONFLICT": "The document changed. Please reload.",
+      "DOC_RESTORE_CONFLICT": "This version cannot be restored.",
+      "AI_EDIT_STALE_SELECTION": "The passage is no longer unambiguous. Please select it again.",
+      "AI_UNDO_EMPTY": "There is no AI change to undo.",
+      "DOC_TOO_LARGE": "The document is too large.",
+      "DOC_ASSET_TOO_LARGE": "The file is too large. The limit is 4 MiB per attachment.",
+      "DOC_QUOTA_EXCEEDED": "The quota is exhausted.",
+      "DOC_INVALID_TARGET": "That target is invalid.",
+      "DOCS_SIDECAR_UNAVAILABLE": "The document server is unreachable.",
+      "DOCS_STORE_FAILED": "Saving failed.",
+      "DOCS_TOKEN_EXPIRED": "The session expired. Please reconnect.",
+      "DOC_SCHEMA_UNSUPPORTED": "This document format is newer than this app."
+    },
+    "title": "Documents",
+    "new": "New document",
+    "roles": {
+      "viewer": "View",
+      "commenter": "Comment",
+      "editor": "Edit"
+    },
+    "move": {
+      "title": "Move document",
+      "description": "Choose the target folder for “{{title}}”.",
+      "target": "Target folder",
+      "action": "Move",
+      "moved": "Document moved."
     }
   },
   "servers": {
@@ -2467,7 +2732,8 @@
       "server_console": "Server console",
       "server_files": "Files & backups",
       "server_features": "Server extensions (mods & databases)",
-      "other": "Other permissions"
+      "other": "Other permissions",
+      "dokumente": "Documents"
     }
   },
   "permissionDetails": {
@@ -2766,6 +3032,14 @@
     "servers_create_database": {
       "title": "Create database servers",
       "desc": "Create dedicated PostgreSQL instances as database servers, including external access. Also requires \"Create servers\"."
+    },
+    "docs_use": {
+      "title": "Use documents",
+      "desc": "Open, read and edit documents as far as the document role allows."
+    },
+    "ai_docs_use": {
+      "title": "Use Singra in documents",
+      "desc": "Singra may read, comment on and edit documents, never beyond your own document role."
     }
   },
   "serverPermissions": {
@@ -3520,7 +3794,9 @@
     },
     "loadFailed": "Loading failed",
     "browserPromo": "Show Maunting Pontis notice",
-    "browserPromoHint": "Displays a notice about Maunting Pontis above the MSS download in the sidebar."
+    "browserPromoHint": "Displays a notice about Maunting Pontis above the MSS download in the sidebar.",
+    "docsEnabled": "Documents",
+    "docsEnabledHint": "Rich-text documents for teams with live editing."
   },
   "profile": {
     "title": "Profile",
@@ -6189,7 +6465,8 @@
       "browserInstallieren": "Install Maunting Pontis",
       "browserLadenAndroid": "Download Maunting Pontis",
       "browserDownloadSubtext": "Hardened, private web browser for Windows",
-      "browserDownloadSubtextAndroid": "Hardened, private web browser for Android"
+      "browserDownloadSubtextAndroid": "Hardened, private web browser for Android",
+      "dokumente": "Documents"
     },
     "vault": {
       "titel": "Vault security",
@@ -8805,7 +9082,8 @@
       "einstellungen": "Settings",
       "koppeln": "Pair",
       "mitZahl": "{{name}}, {{zahl}} new",
-      "menue": "Menu"
+      "menue": "Menu",
+      "dokumente": "Documents"
     },
     "panel": {
       "schliessen": "Close panel",

@@ -151,6 +151,7 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
         "story_fable_download_enabled": all_db.get("story_fable_download_enabled", "false") == "true",
         "calendar_enabled": all_db.get("calendar_enabled", "true") != "false",
         "notes_enabled": all_db.get("notes_enabled", "true") != "false",
+        "docs_enabled": all_db.get("docs_enabled", "true") != "false",
         "vault_enabled": all_db.get("vault_enabled", "true") != "false",
         "social_enabled": all_db.get("social_enabled", "true") != "false",
         "captcha_enabled": all_db.get("captcha_enabled", "true") == "true",
@@ -187,6 +188,7 @@ def get_public_settings() -> dict:
         "imprint_url": all_db.get("imprint_url", ""),
         "calendar_enabled": all_db.get("calendar_enabled", "true") != "false",
         "notes_enabled": all_db.get("notes_enabled", "true") != "false",
+        "docs_enabled": all_db.get("docs_enabled", "true") != "false",
         "vault_enabled": all_db.get("vault_enabled", "true") != "false",
         "social_enabled": all_db.get("social_enabled", "true") != "false",
     }
@@ -247,6 +249,8 @@ def update_settings(
         if key == "calendar_enabled":
             value = "true" if bool(value) else "false"
         if key == "notes_enabled":
+            value = "true" if bool(value) else "false"
+        if key == "docs_enabled":
             value = "true" if bool(value) else "false"
         if key == "vault_enabled":
             value = "true" if bool(value) else "false"
@@ -333,6 +337,11 @@ def update_settings(
         details={"keys": sorted(data.keys())},
         commit=True,
     )
+    if "docs_enabled" in data and not bool(data["docs_enabled"]):
+        # Offene Dokumente flushen, bevor der Sidecar keine Tokens mehr bekommt.
+        from services.docs_collab_service import DocsCollabService
+
+        DocsCollabService.flush_and_disconnect_all()
     return {"message": "Einstellungen gespeichert"}
 
 

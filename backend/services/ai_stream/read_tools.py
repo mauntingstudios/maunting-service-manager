@@ -277,6 +277,7 @@ def _anzeigeeintrag(call, wert, fehlgeschlagen: str | None) -> dict:
 def _werkzeug_ausfuehren(
     user_id: int, call, herkunft: str = "panel", familie: str | None = None,
     prefetch_session_id: str | None = None, fast_region: bool = False,
+    kontext=None,
 ) -> tuple[object, str | None]:
     """Genau **ein** Lesewerkzeug, in eigener Sitzung und eigenem Thread.
 
@@ -316,14 +317,14 @@ def _werkzeug_ausfuehren(
             wert = ai_stream.execute_read_tool(
                 db, user=user, tool_name=call.name, arguments=call.arguments,
                 herkunft=herkunft, familie=familie, prefetch_session_id=prefetch_session_id,
-                fast_region=fast_region,
+                fast_region=fast_region, kontext=kontext,
             )
             if call.name == "analyze_region" and isinstance(wert, dict) and wert.get("news_status") == "pending" and wert.get("status") == "success":
                 try:
                     enriched = ai_stream.execute_read_tool(
                         db, user=user, tool_name=call.name, arguments=call.arguments,
                         herkunft=herkunft, familie=familie, prefetch_session_id=prefetch_session_id,
-                        fast_region=False,
+                        fast_region=False, kontext=kontext,
                     )
                     if isinstance(enriched, dict) and enriched.get("status") == "success":
                         wert = enriched
@@ -597,12 +598,16 @@ def _fruehstart_lesewerkzeug_erlaubt(
 async def _lesewerkzeug_ausfuehren(
     *, user_id: int, call, herkunft: str, familie: str | None,
     prefetch_session_id: str | None, schloss: asyncio.Semaphore,
+    docs_kontext=None,
 ) -> tuple[object, object, dict]:
     def _ausfuehren():
         import sys
         fn = getattr(sys.modules.get("services.ai_stream_service"), "_werkzeug_ausfuehren", None) or ai_stream._werkzeug_ausfuehren
         try:
-            return fn(user_id, call, herkunft, familie, prefetch_session_id, True)
+            return fn(
+                user_id, call, herkunft, familie, prefetch_session_id, True,
+                kontext=docs_kontext,
+            )
         except TypeError:
             try:
                 return fn(user_id, call, herkunft, familie)
@@ -787,6 +792,7 @@ async def _tool_followup_messages(
     schloss: asyncio.Semaphore | None = None,
     call_reihenfolge=None,
     ethik_anbieter_id: int | None = None,
+    docs_kontext=None,
 ) -> tuple[list[dict], list[dict], dict | None]:
     """Fuehrt Lesewerkzeuge aus und baut daraus die Folge-Nachrichten.
 
@@ -1036,6 +1042,7 @@ async def _tool_followup_messages(
                     familie=familie,
                     prefetch_session_id=prefetch_session_id,
                     schloss=schloss,
+                    docs_kontext=docs_kontext,
                 )
         else:
             ergebnis = await _lesewerkzeug_ausfuehren(
@@ -1045,6 +1052,7 @@ async def _tool_followup_messages(
                 familie=familie,
                 prefetch_session_id=prefetch_session_id,
                 schloss=schloss,
+                docs_kontext=docs_kontext,
             )
         _, wert, anzeige = ergebnis
         # **Sofort melden.** Hier stand nichts — die Chips gingen erst raus,
@@ -1368,6 +1376,20 @@ async def _leserunde_ausfuehren(
     kommt nur die `denknaht`: der bestellte Absatz fuer den ersten
     Gedanken der naechsten Runde.
     """
+    docs_state = zustand.get("docs") if isinstance(zustand, dict) else None
+    docs_kontext = None
+    if isinstance(docs_state, dict) and docs_state.get("document_uid"):
+        from services import ai_docs_selection
+        from services.ai_tools.document_tools import ToolKontext
+
+        docs_kontext = ToolKontext(
+            run_id=run_id,
+            document_uid=str(docs_state["document_uid"]),
+            team_id=docs_state.get("team_id"),
+            selection=ai_docs_selection.lesen(run_id),
+            rolle=rolle,
+        )
+
     followup, used_tools, nachtrag = await ai_stream._tool_followup_messages(
         user_id=user_id,
         conversation_id=conversation_id,
@@ -1411,7 +1433,12 @@ async def _leserunde_ausfuehren(
         schloss=schloss,
         call_reihenfolge=call_reihenfolge,
         ethik_anbieter_id=getattr(vorbereitung.provider, "id", None),
+        docs_kontext=docs_kontext,
     )
+    if docs_kontext is not None:
+        from services import ai_docs_selection
+
+        ai_docs_selection.verwerfen(run_id)
     provider_messages.extend(followup)
     # Das Betriebswissen der Anlage, sobald feststeht welche. Genau
     # einmal je Lauf: `zustand` ueberlebt die Unterbrechung, und nach

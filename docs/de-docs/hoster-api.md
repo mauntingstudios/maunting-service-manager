@@ -535,7 +535,7 @@ der Integration selbst nicht hat, antwortet der Endpunkt mit `422`. Eine Integra
 vergeben, als ihr Dienstbenutzer hält — sonst wäre das Feld ein Weg, sich über einen Shop-Kauf
 Rechte zu verschaffen.
 
-Das vollständige OpenAPI-Schema ist im Panel unter `/api/docs` verfügbar (erfordert Anmeldung und
+Das vollständige OpenAPI-Schema ist im Panel unter `/api/swagger` verfügbar (erfordert Anmeldung und
 `panel.settings.read`).
 
 ---

@@ -57,6 +57,8 @@ def lauf_beginnen(
     familie: str | None = None,
     voice_output_checkpoint: str | None = None,
     intern: bool = False,
+    docs_document_uid: str | None = None,
+    docs_team_id: int | None = None,
 ) -> tuple[AiRun | None, tuple[str, str] | None]:
     """Legt einen Lauf an: Benutzernachricht, Kontingent, Antwortnachricht.
 
@@ -139,6 +141,8 @@ def lauf_beginnen(
             db, conversation, query=safe_content, server_id=serverbezug,
             context_chars=context_chars, unbeaufsichtigt=unbeaufsichtigt,
             gesprochen=gesprochen, rolle=rolle, herkunft=herkunft,
+            docs=bool(docs_document_uid),
+            docs_team_id=docs_team_id,
         )
         # Eine Unterbrechung ist keine neue Information des Benutzers und darf
         # deshalb weder als Chatzeile gespeichert noch in die Erinnerung
@@ -210,6 +214,12 @@ def lauf_beginnen(
         # `provider_messages` ist bereits nach ihr geschnitten, und jede
         # Fortsetzung muss denselben Katalogschnitt sehen wie der erste Zug.
         zustand["rolle"] = rolle
+        # Nur Kennungen, kein Dokumenttext: `state_json` ist eine Klartextspalte.
+        if docs_document_uid:
+            zustand["docs"] = {
+                "document_uid": str(docs_document_uid),
+                "team_id": int(docs_team_id) if docs_team_id is not None else None,
+            }
         # Und die Herkunft, aus demselben Grund: der Katalog ist danach
         # geschnitten (`herkunft_schnitt`), und eine Fortsetzung darf nicht in
         # einer anderen Welt aufwachen als der erste Zug.
@@ -340,6 +350,8 @@ def _anlauf_im_thread(
     herkunft: str = "panel",
     familie: str | None = None,
     voice_output_checkpoint: str | None = None,
+    docs_document_uid: str | None = None,
+    docs_team_id: int | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """Der Anlauf mit **eigener** Sitzung — das ist der ganze Zweck.
 
@@ -380,6 +392,8 @@ def _anlauf_im_thread(
             herkunft=herkunft,
             familie=familie,
             voice_output_checkpoint=voice_output_checkpoint,
+            docs_document_uid=docs_document_uid,
+            docs_team_id=docs_team_id,
         )
         # Nur die Kennung verlaesst den Thread. Ein ORM-Objekt aus einer gleich
         # geschlossenen Sitzung ist eine Falle: nach dem Commit sind seine
@@ -402,6 +416,8 @@ async def lauf_beginnen_nebenher(
     herkunft: str = "panel",
     familie: str | None = None,
     voice_output_checkpoint: str | None = None,
+    docs_document_uid: str | None = None,
+    docs_team_id: int | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """`lauf_beginnen`, aber **neben** der Ereignisschleife statt auf ihr.
 
@@ -428,5 +444,7 @@ async def lauf_beginnen_nebenher(
             herkunft=herkunft,
             familie=familie,
             voice_output_checkpoint=voice_output_checkpoint,
+            docs_document_uid=docs_document_uid,
+            docs_team_id=docs_team_id,
         )
 

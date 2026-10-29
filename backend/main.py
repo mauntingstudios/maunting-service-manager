@@ -68,6 +68,8 @@ from routers import (
     popups_router,
     calendar_router,
     notes_router,
+    docs_router,
+    docs_internal_router,
     vault_router,
     sync_events_router,
     sync_alias_router,
@@ -880,7 +882,7 @@ def _csp_connect_src() -> str:
 # Freigabe gilt ausschliesslich fuer diese beiden Pfade — jede andere Antwort
 # behaelt die enge Standard-CSP. Ohne diese Ausnahme waere die Seite leer, und
 # eine leere Seite haette man leicht fuer einen Serverfehler gehalten.
-_API_DOCS_PATHS = frozenset({"/api/docs", "/api/redoc"})
+_API_DOCS_PATHS = frozenset({"/api/swagger", "/api/redoc"})
 _DOCS_CDN = "https://cdn.jsdelivr.net"
 
 
@@ -1010,6 +1012,9 @@ app.include_router(user_integrations_router)
 app.include_router(popups_router)
 app.include_router(calendar_router)
 app.include_router(notes_router)
+# Dokumente: REST fuer Nutzer, /internal/docs nur fuer den Hocuspocus-Sidecar.
+app.include_router(docs_router)
+app.include_router(docs_internal_router)
 # Zero-Knowledge-Tresor & Authenticator (strikt isoliert von KI-Endpunkten).
 app.include_router(vault_router)
 app.include_router(sync_events_router)
@@ -1035,7 +1040,7 @@ def openapi_schema(_: object = Depends(require_global("panel.settings.read"))):
     return JSONResponse(app.openapi())
 
 
-@app.get("/api/docs", include_in_schema=False)
+@app.get("/api/swagger", include_in_schema=False)
 def swagger_ui(_: object = Depends(require_global("panel.settings.read"))):
     return get_swagger_ui_html(
         openapi_url="/api/openapi.json",

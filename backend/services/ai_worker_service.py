@@ -91,7 +91,8 @@ def _text(arguments: dict, feld: str, maximum: int) -> str | None:
 
 def worker_start(
     db: Session, *, user: User, arguments: dict, herkunft: str = "panel",
-    familie: str | None = None,
+    familie: str | None = None, docs_document_uid: str | None = None,
+    docs_team_id: int | None = None,
 ) -> dict:
     """Deklariert einen Auftrag: eigenes Fenster, eigener Lauf, sofort zurueck.
 
@@ -195,6 +196,21 @@ def worker_start(
     fenster = ai_chat_service.worker_unterhaltung_anlegen(db, user, titel)
     db.flush()
 
+    # Dokumentkontext: die UID kommt aus dem Laufkontext (Server-Injektion),
+    # nicht aus einem Modellargument. Rechte werden hier erneut geprueft.
+    docs_document_uid = str(docs_document_uid or "") or None
+    if docs_document_uid:
+        from services.docs_service import DocsService
+        from services.docs_collab_service import DocsCollabService
+
+        if not DocsCollabService.module_enabled():
+            raise AiActionValidationError("Das Dokumente-Modul ist deaktiviert")
+        if not permission_service.has_global_permission(db, user, "docs.use") or not permission_service.has_global_permission(db, user, "ai.docs.use"):
+            raise AiActionValidationError("Dokumente sind fuer Singra nicht freigegeben")
+        zugriff = DocsService.access(db, user, docs_document_uid)
+        fenster.document_id = zugriff.document.id
+        docs_team_id = zugriff.document.team_id
+
     # Spaeter Import: `ai_stream_service` importiert `ai_action_service`, und
     # der Dispatch dort ruft dieses Modul — ein Import am Dateikopf waere der
     # naechste Zyklus.
@@ -225,6 +241,8 @@ def worker_start(
         # jemand sie gesehen hat (dasselbe Argument wie bei den Aufgaben).
         guardian_briefing_unterdruecken=True,
         unbeaufsichtigt=True,
+        docs_document_uid=docs_document_uid,
+        docs_team_id=docs_team_id,
     )
     if run is None:
         # Das eben angelegte Fenster wieder wegraeumen: ohne Lauf ist es in

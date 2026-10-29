@@ -141,6 +141,11 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("ai.mailbox.use",            "ai",      "Eigenes Postfach über die KI verwenden (Mails lesen/entwerfen)"),
     PermissionDef("ai.calendar.use",           "ai",      "Eigenen Kalender über die KI verwenden (Termine lesen/erstellen)"),
     PermissionDef("ai.notes.use",              "ai",      "Eigene Notizen über die KI verwenden (Notizen lesen/erstellen/bearbeiten)"),
+    # Dokumente: Modulzugang und KI-Freigabe sind getrennte Entscheidungen.
+    # `docs.use` oeffnet das Modul; `ai.docs.use` erlaubt Singra zusaetzlich,
+    # im Rahmen der Dokumentrolle zu lesen und zu schreiben. Beide werden bei
+    # jedem Tool-Aufruf erneut geprueft.
+    PermissionDef("ai.docs.use",               "ai",      "Singra in Dokumenten verwenden"),
     PermissionDef("ai.popups.manage",          "ai",      "Pop-ups und Ankündigungen über die KI lesen, erstellen und ändern"),
     # OAuth-Provider-Konfiguration (Phase 4 — Social Login).
     # `secret_update` ist bewusst separat: erfordert zusaetzliche Audit-Bestaetigung.
@@ -159,6 +164,9 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("panel.hoster.read",          "panel",   "Hoster-Integrationen und Verträge einsehen"),
     PermissionDef("panel.hoster.write",         "panel",   "Hoster-Integrationen, Produkte und Schlüssel verwalten"),
     PermissionDef("cloudflare.manage",          "system",  "Cloudflare DNS verwalten"),
+    # Dokumente-Modul (Rich-Text, Kollaboration). Die Feinrechte je Dokument
+    # stehen nicht hier: die Dokumentrolle ist die einzige Wahrheit.
+    PermissionDef("docs.use",                  "dokumente", "Dokumente verwenden"),
 )
 
 
