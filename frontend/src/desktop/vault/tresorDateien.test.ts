@@ -1233,7 +1233,7 @@ function encryptAnhalten(aad: string) {
   vi.spyOn(subtle, 'encrypt').mockImplementation(async (algo, key, data) => {
     const roh = (algo as AesGcmParams).additionalData
     const text = roh ? new TextDecoder().decode(roh as Uint8Array) : ''
-    if (!erwischt && text === aad) {
+    if (!erwischt && (text === aad || text === `sv-vault-v2:${aad}`)) {
       erwischt = true
       gestartet()
       await freigabe
