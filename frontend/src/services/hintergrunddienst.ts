@@ -88,8 +88,10 @@ function gemerkterKanal(): number | null {
  * Der Ausweis ist ein reiner Lese-Zugang für den Ereignisstrom. Die gültige
  * Sitzung genügt; er wird beim Abmelden widerrufen und ist je Gerät widerrufbar.
  *
- * Gibt `false` zurück, wenn der Dienst hier nicht verfügbar ist oder das
- * Anlegen scheitert — der Aufrufer zeigt dann den Grund.
+ * Gibt `false` zurück, wenn der Dienst hier nicht verfügbar ist, das Anlegen
+ * scheitert oder der native Start abgelehnt wird. Ein dann bereits angelegter
+ * Kanal wird wieder widerrufen: sonst sammeln sich nutzlose Ausweise an und
+ * verdrängen nach dem Deckel den aktiven.
  */
 export async function einschalten(label?: string): Promise<boolean> {
   if (!dienstVerfuegbar()) return false
@@ -105,10 +107,18 @@ export async function einschalten(label?: string): Promise<boolean> {
   }
   merkeKanal(kanal.id)
 
-  await invoke('dienst_starten', {
-    ausweis: kanal.token,
-    basis: panelBasis(),
-  })
+  try {
+    await invoke('dienst_starten', {
+      ausweis: kanal.token,
+      basis: panelBasis(),
+    })
+  } catch {
+    // Der Dienst hat den Ausweis nie bekommen. Der Kanal wäre nur Ballast
+    // und würde beim nächsten erfolgreichen Start einen anderen verdrängen.
+    merkeKanal(null)
+    await api(`/notifications/channels/${kanal.id}`, { method: 'DELETE' }).catch(() => {})
+    return false
+  }
   // Die Akku-Ausnahme ist der Unterschied zwischen „kommt an" und „kommt
   // manchmal an": ohne sie beendet Samsung/Xiaomi den Dienst nach Stunden.
   await invoke('dienst_akku_befreien').catch(() => {})

@@ -11,11 +11,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const aufrufe = vi.hoisted(() => ({
   invoke: [] as { befehl: string; args?: Record<string, unknown> }[],
   api: [] as { pfad: string; methode: string; koerper: unknown }[],
+  startScheitert: false,
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (befehl: string, args?: Record<string, unknown>) => {
     aufrufe.invoke.push({ befehl, args })
+    if (befehl === 'dienst_starten' && aufrufe.startScheitert) throw new Error('Dienst startet nicht')
     if (befehl === 'dienst_stand') return { aktiv: true, akkuBefreit: false, benachrichtigungenErlaubt: true }
     return undefined
   },
@@ -44,6 +46,7 @@ describe('hintergrunddienst', () => {
   beforeEach(() => {
     aufrufe.invoke.length = 0
     aufrufe.api.length = 0
+    aufrufe.startScheitert = false
     localStorage.clear()
     setzeAngemeldetesKonto(1)
     Object.defineProperty(navigator, 'userAgent', {
@@ -68,6 +71,17 @@ describe('hintergrunddienst', () => {
       basis: 'https://panel.test',
     })
     expect(localStorage.getItem('msm:hintergrundkanal')).toBe('7')
+  })
+
+  it('widerruft den Kanal, wenn der Dienst nicht startet', async () => {
+    aufrufe.startScheitert = true
+    const ok = await einschalten('Telefon')
+
+    expect(ok).toBe(false)
+    expect(localStorage.getItem('msm:hintergrundkanal')).toBeNull()
+    expect(
+      aufrufe.api.some((a) => a.pfad === '/notifications/channels/7' && a.methode === 'DELETE'),
+    ).toBe(true)
   })
 
   it('schaltet den Dienst ab und widerruft den Ausweis', async () => {
