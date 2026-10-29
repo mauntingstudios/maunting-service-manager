@@ -15,6 +15,9 @@ import { istSeiteLesbarPruefen } from './lesemodusService'
 import { protokollEreignis } from '../entwickler/werkzeuge'
 import { useUebersetzung } from '../uebersetzung/ablauf'
 
+/** Alles außer dem Ereignis, das alle Tabs zugleich betrifft (`umgebung_neu`). */
+export type TabEinzelEreignis = Exclude<TabEreignis, { art: 'umgebung_neu' }>
+
 /** Was `tabsStore` dafür hergibt. */
 export interface TabZugriff {
   finden: (id: string) => Tab | undefined
@@ -25,7 +28,7 @@ export interface TabZugriff {
   schliessen: (id: string) => void
 }
 
-export function ereignisAnwenden(e: TabEreignis, z: TabZugriff): void {
+export function ereignisAnwenden(e: TabEinzelEreignis, z: TabZugriff): void {
   // Downloads gehören keinem Tab: auch das Popup einer Erweiterung lädt
   // herunter, und ein geschlossener Tab lädt zu Ende. Fortschritt zählt nie
   // als neuer Download.

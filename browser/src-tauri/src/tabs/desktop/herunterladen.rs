@@ -91,6 +91,18 @@ pub(super) fn laeuft(tab: &str) -> bool {
     anzahl(tab) > 0
 }
 
+/// Der Browserprozess ist beendet: laufende Downloads sind es auch. Zähler
+/// und Register fallen mit, sonst nimmt ein Tab nach dem Neuaufbau keinen
+/// Download mehr an (`JE_TAB`). Halbe Dateien in der Quarantäne räumt der
+/// nächste Start (`quarantaene::beim_start`). UI-Faden.
+pub(super) fn verwerfen() {
+    OFFEN.with(|o| o.borrow_mut().clear());
+    LAUFEND.with(|l| l.borrow_mut().clear());
+    VORGAENGE.with(|v| v.borrow_mut().clear());
+    VERBORGEN.with(|v| v.borrow_mut().clear());
+    NUTZER_ABBRUCH.with(|n| n.borrow_mut().clear());
+}
+
 fn zu_viele(tab: &str) -> bool {
     anzahl(tab) >= JE_TAB
 }

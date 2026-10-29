@@ -118,6 +118,17 @@ describe('Download-Fortschritt', () => {
     expect(eintrag.empfangen).toBe(400)
   })
 
+  it('unterbricht beim Ende des Browserprozesses nur, was noch läuft', () => {
+    melden(1, 'start')
+    melden(2, 'pruefung')
+    melden(3, 'fertig', 'a')
+    useDownloadsStore.getState().unterbrochen()
+    const { downloads } = useDownloadsStore.getState()
+    expect(downloads.find((d) => d.nr === 1)?.stand).toBe('abgebrochen')
+    expect(downloads.find((d) => d.nr === 2)?.stand).toBe('abgebrochen')
+    expect(downloads.find((d) => d.nr === 3)?.stand).toBe('fertig')
+  })
+
   it('kennt den Abbruch als Abschluss und leert ihn mit', () => {
     melden(1, 'start')
     melden(1, 'abgebrochen')

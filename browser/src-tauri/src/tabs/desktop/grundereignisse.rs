@@ -56,6 +56,16 @@ fn popup_scheitern(schluessel: u64, grund: String) {
     }
 }
 
+/// Der Browserprozess ist beendet: offene Popup-Anfragen fallen mit ihm.
+/// Ihre Deferrals werden geschlossen und die reservierten Kennungen
+/// ausgetragen, sonst bliebe die Seite hängen (UI-Faden).
+pub(super) fn verwerfen() {
+    let schluessel: Vec<u64> = ANSTEHEND.with(|a| a.borrow().keys().copied().collect());
+    for k in schluessel {
+        popup_scheitern(k, "Browserprozess beendet".to_string());
+    }
+}
+
 /// Erste Stufe, noch im Rückruf: reserviert die Kennung und stößt den
 /// Controller an. Nur Aufrufe, die sofort zurückkehren — der Rückruf kehrt
 /// danach zurück, und die Fortsetzung läuft als Abschlussrückruf.
