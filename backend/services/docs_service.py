@@ -32,7 +32,7 @@ from models.doc import (
 )
 from models.team import TeamMember
 from models.user import User
-from services import docs_access, team_service
+from services import audit_service, docs_access, team_service
 from services.docs_access import ROLE_RANG, DocAccess
 from services.dis_client import DisSidecarError
 from services.docs_crypto import (
@@ -423,11 +423,77 @@ class DocsService:
         doc = _doc(db, doc_uid)
         zugriff = docs_access.access_or_404(db, user, doc)
 
-        verwaltung = {"folder_uid", "default_role"}
+        verwaltung = {"folder_uid", "default_role", "team_id"}
         if verwaltung & set(daten) and not zugriff.can_manage:
             raise fehler(403, "DOCS_FORBIDDEN", "Nur die Verwaltung darf das")
         if not zugriff.can_edit:
             raise fehler(403, "DOCS_READ_ONLY", "Nur Editoren duerfen das Dokument aendern")
+
+        altes_team: int | None = None
+        ziel_team_id = doc.team_id
+        ziel_ordner_id: int | None = None
+        umzug = (
+            "team_id" in daten
+            and daten["team_id"] is not None
+            and int(daten["team_id"]) != doc.team_id
+        )
+        if umzug:
+            ziel_team = team_service.get_team_for_member(db, int(daten["team_id"]), user)
+            ziel_team_id = ziel_team.id
+            anzahl = (
+                db.query(func.count(Document.id))
+                .filter(Document.team_id == ziel_team.id, Document.id != doc.id)
+                .scalar()
+                or 0
+            )
+            if anzahl >= MAX_DOCUMENTS_PER_TEAM:
+                raise fehler(413, "DOC_QUOTA_EXCEEDED", "Team hat die Dokumentgrenze erreicht")
+            ziel_ordner_id = (
+                DocsService._folder(db, ziel_team.id, daten["folder_uid"]).id
+                if daten.get("folder_uid")
+                else None
+            )
+            altes_team = doc.team_id
+
+            # Der Besitzer muss im Zielteam Mitglied sein, sonst verloere er
+            # mit dem Umzug jedes Verwaltungsrecht an seinem Dokument.
+            if doc.owner_user_id is None or team_service.membership(
+                db, ziel_team.id, doc.owner_user_id
+            ) is None:
+                doc.owner_user_id = user.id
+
+            # Ein Freigabelink gilt fuer das alte Team. Nach dem Umzug wird er
+            # deaktiviert; Mitglieder ohne Zielteam-Zugang fallen heraus.
+            doc.share_token_hash = None
+            doc.share_role = None
+            doc.share_expires_at = None
+            doc.share_created_by = None
+            ziel_mitglieder = {
+                row[0]
+                for row in db.query(TeamMember.user_id)
+                .filter(TeamMember.team_id == ziel_team.id)
+                .all()
+            }
+            db.query(DocMember).filter(
+                DocMember.document_id == doc.id,
+                or_(
+                    DocMember.source == "link",
+                    DocMember.user_id.notin_(ziel_mitglieder),
+                ),
+            ).delete(synchronize_session=False)
+
+            doc.team_id = ziel_team_id
+            doc.folder_id = ziel_ordner_id
+            audit_service.record_privileged_action(
+                db,
+                user_id=user.id,
+                action="docs.document.moved",
+                target_type="document",
+                target_id=doc.doc_uid,
+                details={"from_team": altes_team, "to_team": ziel_team_id},
+                origin="direct",
+                commit=False,
+            )
 
         if "title" in daten and daten["title"] is not None:
             titel = daten["title"].strip()[:MAX_TITLE]
@@ -438,7 +504,7 @@ class DocsService:
             doc.icon = (daten["icon"] or None) and daten["icon"][:16]
         if "archived" in daten and daten["archived"] is not None:
             doc.archived_at = _now() if daten["archived"] else None
-        if "folder_uid" in daten:
+        if "folder_uid" in daten and not umzug:
             doc.folder_id = (
                 DocsService._folder(db, doc.team_id, daten["folder_uid"]).id
                 if daten["folder_uid"]
@@ -452,12 +518,26 @@ class DocsService:
         doc.updated_at = _now()
         db.commit()
         db.refresh(doc)
-        if "default_role" in daten:
-            # Die neue Standardrolle gilt fuer alle, die keinen eigenen Eintrag
-            # haben. Bestehende Verbindungen holen beim Reconnect einen Token
-            # mit der frisch aufgeloesten Rolle.
+        if "default_role" in daten or umzug:
+            # Die neue Standardrolle bzw. das neue Team gilt fuer alle, die
+            # keinen eigenen Eintrag haben. Bestehende Verbindungen holen beim
+            # Reconnect einen Token mit der frisch aufgeloesten Rolle.
             DocsService._disconnect(doc.doc_uid)
-        _publish("updated", doc, user_id=user.id)
+        if umzug and altes_team is not None:
+            try:
+                SyncEventService.publish(
+                    {
+                        "entity": "docs",
+                        "action": "removed",
+                        "id": doc.doc_uid,
+                        "team_id": altes_team,
+                        "rev": doc.rev,
+                    },
+                    team_id=altes_team,
+                )
+            except Exception:
+                pass
+        _publish("moved" if umzug else "updated", doc, user_id=user.id)
         return DocsService._detail(db, doc, docs_access.access_or_404(db, user, doc))
 
     @staticmethod

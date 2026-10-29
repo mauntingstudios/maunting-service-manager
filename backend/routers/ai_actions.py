@@ -92,6 +92,7 @@ def _art(kind: str) -> str:
 @router.get("/conversation/actions", response_model=list[AiActionProposalResponse])
 def list_conversation_actions(
     kind: str = Query("primary"),
+    document_uid: str | None = Query(None, max_length=36),
     conversation_id: str | None = Query(
         None,
         description=(
@@ -149,6 +150,12 @@ def list_conversation_actions(
     Bestaetigungsmerkmal bindet an die Vorschlagskennung, nicht an ein
     Fenster.
     """
+    if document_uid:
+        # Dokument-Laeufe schreiben direkt; es gibt dort keine Vorschlagskarten.
+        from services.ai_docs_chat_scope import resolve as docs_scope
+
+        docs_scope(db, user, document_uid)
+        return []
     if conversation_id is not None:
         conversation = db.get(AiConversation, conversation_id)
         if (

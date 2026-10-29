@@ -227,11 +227,16 @@ export function DialogDescription({
 export function DialogFooter({
   className = '',
   children,
+  variant = 'default',
   ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+}: React.HTMLAttributes<HTMLDivElement> & { variant?: 'default' | 'plain' }) {
   return (
     <div
-      className={`p-4 border-t border-outline-variant/30 bg-surface-container-lowest flex items-center justify-end gap-2 ${className}`}
+      className={`flex items-center justify-end gap-2 ${
+        variant === 'plain'
+          ? 'mt-6 px-6 pb-6'
+          : 'p-4 border-t border-outline-variant/30 bg-surface-container-lowest'
+      } ${className}`}
       {...props}
     >
       {children}

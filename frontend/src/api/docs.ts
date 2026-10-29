@@ -145,6 +145,7 @@ export function updateDocument(
     icon?: string | null
     folder_uid?: string | null
     default_role?: DocRole
+    team_id?: number
   },
 ): Promise<DocDetail> {
   return api<DocDetail>(`/docs/${encodeURIComponent(uid)}`, {

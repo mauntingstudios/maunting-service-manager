@@ -247,12 +247,16 @@ async function handshakeErklaeren(): Promise<string> {
   }
 }
 
-function adresse(providerId?: number | null): string {
+function adresse(providerId?: number | null, documentUid?: string): string {
   // `wsUrl` statt eigener Ableitung: es kennt als Einziges auch den
   // Laufzeit-Override der Desktop-App (`config/api.ts`) — die eigene Lesart
   // von VITE_API_URL hier hätte in der App stumm auf `tauri.localhost` gezeigt.
   const base = wsUrl('/api/ai/voice/ws')
-  return providerId ? `${base}?provider_id=${providerId}` : base
+  const suche = new URLSearchParams()
+  if (providerId) suche.set('provider_id', String(providerId))
+  if (documentUid) suche.set('document_uid', documentUid)
+  const text = suche.toString()
+  return text ? `${base}?${text}` : base
 }
 
 export type Sprachmodus = 'legacy' | 'openai_realtime' | 'openai_live' | 'gemini_live'
@@ -297,6 +301,7 @@ function iceAbwarten(peer: RTCPeerConnection): Promise<void> {
 export function useSprachsitzung(
   providerId?: number | null,
   modus: Sprachmodus = 'legacy',
+  documentUid?: string,
 ): Ergebnis {
   const [zustand, setZustand] = useState<Sprachzustand>('aus')
   const [zeilen, setZeilen] = useState<Sprachzeile[]>([])
@@ -435,7 +440,7 @@ export function useSprachsitzung(
 
     let verbindung: WebSocket
     try {
-      verbindung = new WebSocket(adresse(providerId), protokolle)
+      verbindung = new WebSocket(adresse(providerId, documentUid), protokolle)
       verbindung.binaryType = 'arraybuffer'
       ws.current = verbindung
      } catch (e) {
@@ -925,7 +930,7 @@ export function useSprachsitzung(
       setAbgelaufen(false)
       setZustand('aus')
     }
-  }, [beenden, modus, providerId, zeileAnhaengen])
+  }, [beenden, documentUid, modus, providerId, zeileAnhaengen])
 
   // Wer die Seite verlässt, lässt kein offenes Mikrofon zurück.
   useEffect(() => () => {

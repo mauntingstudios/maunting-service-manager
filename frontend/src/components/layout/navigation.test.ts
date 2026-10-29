@@ -114,6 +114,33 @@ describe('buildNavigation', () => {
     ).toBe(false)
   })
 
+  it('zeigt Teams dem, der Teams gruenden darf oder eine Einladung hat', () => {
+    const access = {
+      owner: false,
+      canManageUsers: false,
+      canManageRoles: false,
+      canViewAudit: false,
+      canViewSettings: false,
+      canManagePanelBackups: false,
+      canReadPanelDatabase: false,
+      canViewNodes: false,
+      canUseAi: false,
+      canUseSkills: false,
+      canCreateTeams: true,
+    }
+    expect(buildNavigation(labels, access).some((item) => item.to === '/teams')).toBe(true)
+    expect(
+      buildNavigation(labels, { ...access, canCreateTeams: false, teamInvitationCount: 1 }).some(
+        (item) => item.to === '/teams',
+      ),
+    ).toBe(true)
+    expect(
+      buildNavigation(labels, { ...access, canCreateTeams: false, teamInvitationCount: 0 }).some(
+        (item) => item.to === '/teams',
+      ),
+    ).toBe(false)
+  })
+
   it('hides calendar from sidebar when calendarEnabled is false', () => {
     const access = {
       owner: false,

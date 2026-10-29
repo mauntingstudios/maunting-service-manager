@@ -62,7 +62,9 @@ from services.ai_voice.realtime_session import (
     ESKALATION,
     MAX_SDP_ZEICHEN,
     REGION_ANWEISUNGEN,
+    VOICE_CONTROL_TOOLS,
     WERKZEUG_REGELN,
+    _dokument_abschnitt,
     RealtimeSitzung,
     RealtimeSitzungsfehler,
     RealtimeVorbereitung,
@@ -232,6 +234,9 @@ def vorbereiten(
     provider: AiProvider,
     user: User,
     herkunft: str,
+    docs_conversation_id: str | None = None,
+    docs_document_uid: str | None = None,
+    docs_team_id: int | None = None,
 ) -> LiveVorbereitung:
     """Friert den Sitzungsvertrag ein — Stimme, Backend und Werkzeuge."""
     ai_provider_service._assert_realtime_werte(provider)
@@ -243,11 +248,17 @@ def vorbereiten(
         raise RealtimeSitzungsfehler("REALTIME_NOT_CONFIGURED")
 
     tools = angebotene_werkzeuge(db, provider=provider, user=user, herkunft=herkunft)
+    if docs_document_uid:
+        from services.ai_tool_registry import DOCUMENTS_TOOLS
+
+        erlaubt = set(DOCUMENTS_TOOLS) | VOICE_CONTROL_TOOLS
+        tools = [tool for tool in tools if tool.get("name") in erlaubt]
     sprache = provider.realtime_language or "auto"
-    memory = gedaechtnis(db, user)
+    memory = gedaechtnis(db, user, nur_team_id=docs_team_id)
     # GPT-Live schreibt beide Seiten selbst ab: mit der Einwilligung hört der
-    # Schreiber mit, ohne Abschriftmodell.
-    schreibt_mit = mitschreiben(db, user)
+    # Schreiber mit, ohne Abschriftmodell. Ein Dokumentgespraech schreibt
+    # kein persoenliches Gedaechtnis mit.
+    schreibt_mit = False if docs_document_uid else mitschreiben(db, user)
     # Einmal gebaut, an Stimme **und** Backend: beide sollen dieselbe Uhr
     # lesen (`realtime_session.lage_abschnitt`).
     lage = lage_abschnitt(db, user, mitschrift=schreibt_mit)
@@ -257,7 +268,16 @@ def vorbereiten(
         desktop=herkunft == "desktop",
         db=db,
     )
-    conversation_id, usage_event_id = reservieren(db, provider=provider, user=user)
+    if docs_document_uid:
+        dokument = _dokument_abschnitt(db, docs_document_uid)
+        instructions = live_anweisungen(tools, sprache, memory, lage) + dokument
+        backend_instructions = backend_anweisungen(basis_prompt, memory, lage) + dokument
+    else:
+        instructions = live_anweisungen(tools, sprache, memory, lage)
+        backend_instructions = backend_anweisungen(basis_prompt, memory, lage)
+    conversation_id, usage_event_id = reservieren(
+        db, provider=provider, user=user, conversation_id=docs_conversation_id
+    )
     return LiveVorbereitung(
         provider_id=provider.id,
         provider_kind=provider.provider_kind,
@@ -267,13 +287,15 @@ def vorbereiten(
         reasoning_effort=provider.realtime_reasoning_effort,
         language=sprache,
         api_key=api_key,
-        instructions=live_anweisungen(tools, sprache, memory, lage),
+        instructions=instructions,
         tools=tools,
         conversation_id=conversation_id,
+        docs_document_uid=docs_document_uid,
+        docs_team_id=docs_team_id,
         usage_event_id=usage_event_id,
         disable_safety=bool(getattr(provider, "disable_safety", False)),
         backend_model=backend,
-        backend_instructions=backend_anweisungen(basis_prompt, memory, lage),
+        backend_instructions=backend_instructions,
         mitschreiben=schreibt_mit,
         hoechstdauer=hoechstdauer(db, user),
     )

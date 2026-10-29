@@ -24,6 +24,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { useAuthStore } from '@/stores/authStore'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
+import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
 
 import { Spinner } from '@/components/ui/Spinner'
 interface UserOption {
@@ -255,6 +256,7 @@ export function Teams() {
       await reloadTeams()
       setSelectedId(invitation.team_id)
       setDetail(aktualisiert)
+      void useTeamInvitationStore.getState().laden()
     }, anhebung ? 'teams.upgradeAccepted' : 'teams.invitationAccepted')
   }
 
@@ -262,6 +264,7 @@ export function Teams() {
     await run(async () => {
       await teamsApi.declineInvitation(invitation.team_id)
       setEinladungen((rows) => rows.filter((row) => row.team_id !== invitation.team_id))
+      void useTeamInvitationStore.getState().laden()
     }, anhebung ? 'teams.upgradeDeclined' : 'teams.invitationDeclined')
   }
 

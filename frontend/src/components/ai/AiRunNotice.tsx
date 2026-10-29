@@ -79,6 +79,7 @@ const ZIEL: Record<AiConversationKind, string> = {
   primary: '/ai',
   guardian: '/ai?ansicht=guardian',
   worker: '/ai',
+  docs: '/ai',
 }
 
 /**

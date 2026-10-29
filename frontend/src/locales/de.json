@@ -2437,10 +2437,15 @@
     },
     "move": {
       "title": "Dokument verschieben",
-      "description": "Wähle den Zielordner für „{{title}}“.",
+      "description": "Wähle Zielteam und Zielordner für „{{title}}“.",
       "target": "Zielordner",
       "action": "Verschieben",
-      "moved": "Dokument verschoben."
+      "moved": "Dokument verschoben.",
+      "team": "Zielteam",
+      "teamWarning": "Beim Teamwechsel wird der Freigabelink deaktiviert und Mitglieder ohne Zugang zum Zielteam verlieren ihren Zugriff."
+    },
+    "chat": {
+      "resize": "Chatbreite ändern"
     }
   },
   "servers": {

@@ -126,10 +126,14 @@ class Sprachbruecke:
         hoechstdauer: float = MAX_SITZUNGSSEKUNDEN,
         herkunft: str = "panel",
         familie: str | None = None,
+        docs_document_uid: str | None = None,
+        docs_team_id: int | None = None,
     ) -> None:
         self._browser = browser
         self._user_id = user_id
         self._gespraech_id = conversation_id
+        self._docs_document_uid = docs_document_uid
+        self._docs_team_id = docs_team_id
         self._chat_provider_id = chat_provider_id
         self._stt_provider_id = stt_provider_id if stt_provider_id is not None else chat_provider_id
         #: Wer vorliest. Einmal nachgeschlagen und nicht je Zug: welcher
@@ -480,6 +484,8 @@ class Sprachbruecke:
             # Prompt — sonst veralten zwei Texte gegeneinander, und zwar
             # lautlos.
             gesprochen=True,
+            docs_document_uid=self._docs_document_uid,
+            docs_team_id=self._docs_team_id,
             # Seit dem 21.08.2026 kommt die App auch hier an: ihr Token liegt
             # als Subprotokoll im Handshake, und die Herkunft daraus gilt fuer
             # jeden Lauf dieser Sitzung. Ein Browser bleibt "panel".

@@ -37,6 +37,7 @@ class DocUpdate(BaseModel):
     archived: bool | None = None
     folder_uid: str | None = None
     default_role: DocRole | None = None
+    team_id: int | None = None
 
 
 class MemberPut(BaseModel):

@@ -3,9 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import {
   AI_RUHENDE_LAUFZUSTAENDE,
-  aiApi,
   attachAiRun,
-  streamAiMessage,
   type AiActionProposal,
   type AiAttachment,
   type AiMessage,
@@ -19,6 +17,7 @@ import { toast } from '@/stores/toastStore'
 import { KI_NAME } from '@/lib/kiName'
 import { sendeGeraeteBenachrichtigung } from '@/lib/benachrichtigung'
 import { zustellungMelden } from '@/lib/aiZustellung'
+import { primaryChatApi, type ChatScopeApi } from './chatScope'
 
 /** Ein Eintrag im sichtbaren Verlauf — chronologisch, nicht nach Typ sortiert. */
 export type Entry =
@@ -84,7 +83,8 @@ function mitWerkzeug(
  * räumt ab). Eine Zwischenschicht dafür wäre die nächste Abstraktion ohne
  * Nutzen.
  */
-export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments }: {
+export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, api = primaryChatApi }: {
+  api?: ChatScopeApi
   providerId: number | null
   canAttach: boolean
   /**
@@ -331,7 +331,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
           // Jetzt tragen die Anhänge eine Nachricht — nachladen, damit sie aus
           // der Chipleiste in ihre Blase wandern.
           if (canAttach) {
-            void aiApi.listAttachments()
+            void api.listAttachments()
               .then((rows) => { if (mountedRef.current) setAttachments(rows) })
               .catch(() => undefined)
           }
@@ -548,7 +548,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
     streamingRef.current = true
     try {
       await verfolge(
-        (verarbeite, signal) => streamAiMessage({
+        (verarbeite, signal) => api.stream({
           content,
           provider_id: providerId,
           request_id: crypto.randomUUID(),
@@ -576,7 +576,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
         : entry
     )))
     try {
-      await aiApi.stopRun('primary')
+      await api.stopRun()
     } catch {
       // Stoppen schlägt fehl, wenn der Lauf bereits ruht — harmlos
     }

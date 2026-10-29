@@ -214,20 +214,9 @@ def get_conversation(
     if kind == "docs":
         if not document_uid:
             raise HTTPException(status_code=404, detail="Dokument fehlt")
-        from services.docs_collab_service import DocsCollabService
-        from services.docs_service import DocsService
-        from services.permission_service import has_global_permission
+        from services.ai_docs_chat_scope import resolve as docs_scope
 
-        if not DocsCollabService.module_enabled() or not has_global_permission(
-            db, user, "docs.use"
-        ) or not has_global_permission(db, user, "ai.docs.use"):
-            raise HTTPException(status_code=403, detail="Dokumente sind nicht freigegeben")
-        zugriff = DocsService.access(db, user, document_uid)
-        conversation = ai_chat_service.get_or_create_docs_conversation(
-            db, user, zugriff.document.id
-        )
-        db.commit()
-        db.refresh(conversation)
+        conversation, _, _ = docs_scope(db, user, document_uid)
         return _verlauf_seite(db, conversation, before)
     conversation = ai_chat_service.get_or_create_conversation(db, user, _art(kind))
     db.commit()
@@ -384,6 +373,7 @@ def typing_signal(
 async def get_context_status(
     request: Request,
     provider_id: int,
+    document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
 ) -> AiContextStatus:
@@ -402,8 +392,13 @@ async def get_context_status(
     provider = db.get(AiProvider, provider_id)
     if provider is None or not provider.enabled or not _fuer_chat(provider):
         raise HTTPException(status_code=404, detail="Provider nicht gefunden")
-    conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
-    db.commit()
+    if document_uid:
+        from services.ai_docs_chat_scope import resolve as docs_scope
+
+        conversation, _, _ = docs_scope(db, user, document_uid)
+    else:
+        conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
+        db.commit()
 
     fenster = await ai_context_window.ermitteln(
         request.app.state.ai_http_client, provider, db=db, user_id=user.id
@@ -424,6 +419,7 @@ async def get_context_status(
 
 @router.delete("/messages", status_code=status.HTTP_204_NO_CONTENT)
 def clear_conversation_history(
+    document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
     _: None = Depends(verify_csrf),
@@ -448,9 +444,18 @@ def clear_conversation_history(
     Erst ablösen, dann löschen: so ist im Moment, in dem die Zeilen
     verschwinden, kein Lauf mehr da, der sie noch für seine gehalten hätte.
     """
-    conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
-    ai_run_service.vorgaenger_abloesen(db, conversation_id=conversation.id)
-    ai_chat_service.clear_history(db, conversation)
+    if document_uid:
+        from services.ai_docs_chat_scope import resolve as docs_scope
+
+        conversation, _, _ = docs_scope(db, user, document_uid)
+        ai_run_service.vorgaenger_abloesen(db, conversation_id=conversation.id)
+        ai_chat_service.clear_history(
+            db, conversation, user_weit=False, worker_weit=False
+        )
+    else:
+        conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
+        ai_run_service.vorgaenger_abloesen(db, conversation_id=conversation.id)
+        ai_chat_service.clear_history(db, conversation)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -459,6 +464,7 @@ def clear_conversation_history(
 def edit_message(
     message_id: str,
     payload: AiMessageEdit,
+    document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
     _: None = Depends(verify_csrf),
@@ -479,7 +485,12 @@ def edit_message(
     if not safe_content:
         raise HTTPException(status_code=422, detail="Nachricht ist leer")
 
-    conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
+    if document_uid:
+        from services.ai_docs_chat_scope import resolve as docs_scope
+
+        conversation, _, _ = docs_scope(db, user, document_uid)
+    else:
+        conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
     message = ai_chat_service.owned_message(db, conversation, message_id)
     removed = ai_chat_service.truncate_from(db, conversation, message)
     db.commit()
@@ -607,13 +618,19 @@ def guardian_uebernehmen(
 @router.post("/stop")
 def stop_active_run(
     kind: str = Query("primary"),
+    document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
     _: None = Depends(verify_csrf),
 ) -> dict:
     """Bricht den derzeit aktiven Lauf dieser Unterhaltung kontrolliert ab."""
-    fenster_art = _art(kind)
-    conversation = ai_chat_service.get_or_create_conversation(db, user, fenster_art)
+    if document_uid:
+        from services.ai_docs_chat_scope import resolve as docs_scope
+
+        conversation, _, _ = docs_scope(db, user, document_uid)
+    else:
+        fenster_art = _art(kind)
+        conversation = ai_chat_service.get_or_create_conversation(db, user, fenster_art)
     ai_run_service.vorgaenger_abloesen(db, conversation_id=conversation.id)
     db.commit()
     return {"ok": True, "stopped": True}
@@ -655,25 +672,11 @@ async def stream_message(
     docs_document_uid: str | None = None
     docs_team_id: int | None = None
     if payload.document_uid:
-        from services.docs_collab_service import DocsCollabService
-        from services.docs_service import DocsService
-        from services.permission_service import has_global_permission
+        from services.ai_docs_chat_scope import resolve as docs_scope
 
-        if not DocsCollabService.module_enabled():
-            raise HTTPException(status_code=403, detail="Das Dokumente-Modul ist deaktiviert")
-        if not has_global_permission(db, user, "docs.use") or not has_global_permission(
-            db, user, "ai.docs.use"
-        ):
-            raise HTTPException(
-                status_code=403,
-                detail="Dokumente sind fuer Singra nicht freigegeben",
-            )
-        zugriff = DocsService.access(db, user, payload.document_uid)
-        conversation = ai_chat_service.get_or_create_docs_conversation(
-            db, user, zugriff.document.id
-        )
-        docs_document_uid = zugriff.document.doc_uid
-        docs_team_id = zugriff.document.team_id
+        conversation, dokument, team_id = docs_scope(db, user, payload.document_uid)
+        docs_document_uid = dokument.doc_uid
+        docs_team_id = team_id
     db.commit()
     provider = db.get(AiProvider, payload.provider_id)
     if provider is None or not provider.enabled or not _fuer_chat(provider):

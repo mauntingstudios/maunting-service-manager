@@ -12,6 +12,8 @@ import { BrowserDownloadBadge } from './BrowserDownloadBadge'
 import { BenachrichtigungsGlocke, ProfileDropdown, type ProfileDropdownItem, buttonClasses } from '@/Singra/UI'
 import type { PresenceStatus } from '@/hooks/usePresenceAndActivity'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
+import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
+import { NavBadge } from './NavBadge'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 interface SidebarProps {
@@ -43,11 +45,29 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
   const canManageAiSkills = useHasPermission('ai.skills.manage')
   const canUseSkills = useHasPermission('ai.skills.use')
   const canUseDocs = useHasPermission('docs.use')
+  const canCreateTeams = useHasPermission('teams.create')
   const canUseAi = canChatWithAi || canManageAiSkills
   const isOnline = useIsOnline()
   const totalMessengerUnread = useMessengerNotificationStore((s) => s.totalUnreadCount)
+  const teamInvitationCount = useTeamInvitationStore((s) => s.count)
+  const teamInvitationenLaden = useTeamInvitationStore((s) => s.laden)
   
   const asideRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (!isOnline) return
+    void teamInvitationenLaden()
+    const beimFokus = () => void teamInvitationenLaden()
+    const beimSichtbarwerden = () => {
+      if (document.visibilityState === 'visible') void teamInvitationenLaden()
+    }
+    window.addEventListener('focus', beimFokus)
+    document.addEventListener('visibilitychange', beimSichtbarwerden)
+    return () => {
+      window.removeEventListener('focus', beimFokus)
+      document.removeEventListener('visibilitychange', beimSichtbarwerden)
+    }
+  }, [isOnline, teamInvitationenLaden])
 
   useEffect(() => {
     if (!mobile) return
@@ -119,6 +139,7 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
   }, {
     owner: Boolean(user?.is_owner), canManageUsers, canManageRoles, canViewAudit, canViewSettings,
     canManagePanelBackups, canReadPanelDatabase, canViewNodes: canReadNodes || canManageNodes, canUseAi, canUseSkills,
+    canCreateTeams, teamInvitationCount,
     calendarEnabled, notesEnabled, docsEnabled, canUseDocs, socialEnabled, isOnline,
   })
   const groupLabels: Record<NavGroupName, string> = {
@@ -197,6 +218,7 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
                       {totalMessengerUnread > 99 ? '99+' : totalMessengerUnread}
                     </span>
                   )}
+                  {item.to === '/teams' && <NavBadge count={teamInvitationCount} />}
                 </NavLink>
               )
             })}

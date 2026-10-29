@@ -455,6 +455,8 @@ class GeminiLiveSitzung:
                         conversation_id=self.v.conversation_id,
                         herkunft=self.herkunft,
                         familie=self.familie,
+                        docs_document_uid=self.v.docs_document_uid,
+                        docs_team_id=self.v.docs_team_id,
                     ),
                     timeout=GEMINI_TOOL_TIMEOUT_SECONDS,
                 )

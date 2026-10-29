@@ -50,6 +50,7 @@ import { AI_ENTWURF_EVENT, entwurfNehmen } from '@/lib/aiEntwurf'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { starteAufnahme, type Aufnahme } from './voice/audioAufnahme'
 import { AI_IS_BETA } from './AiBetaBanner'
+import { chatScopeApi, PRIMARY_CHAT_SCOPE, type AiChatScope } from './chatScope'
 
 import { Spinner } from '@/components/ui/Spinner'
 interface ServerOption {
@@ -126,9 +127,27 @@ export interface AiChatProps {
   onSwitchMode?: (mode: 'sprache' | 'guardian' | 'aufgaben') => void
   canTasks?: boolean
   hasVoice?: boolean
+  /** Primärchat (Default) oder ein Dokumentfenster. Der Primärchat bleibt unverändert. */
+  scope?: AiChatScope
+  eingebettet?: boolean
+  showTasks?: boolean
+  showGuardian?: boolean
+  showWorkers?: boolean
+  /** Meldet die Modellwahl nach aussen, damit der eingebettete Sprachmodus sie nutzt. */
+  onProviderChange?: (providerId: number | null) => void
 }
 
-export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiChatProps = {}) {
+export function AiChat({
+  onSwitchMode,
+  canTasks = false,
+  hasVoice = false,
+  scope = PRIMARY_CHAT_SCOPE,
+  eingebettet = false,
+  showTasks = true,
+  showGuardian = true,
+  showWorkers = true,
+  onProviderChange,
+}: AiChatProps = {}) {
   const { t } = useTranslation()
   const canAttach = useHasPermission('ai.attachments.use')
   const canUseAutonomy = useHasPermission('ai.autonomous.use')
@@ -140,11 +159,20 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
   const currentUser = useAuthStore((state) => state.user)
   const userId = currentUser?.id ?? 'anonym'
   const merkSchluessel = useMemo(() => aiChatPreferenceKeys(userId), [userId])
-
+  const scopeRef = useRef(scope)
+  scopeRef.current = scope
+  const chatApi = useMemo(
+    () => chatScopeApi(scopeRef.current, () => scopeRef.current.kind === 'docs' ? scopeRef.current.selection : undefined),
+    [scope.kind, scope.kind === 'docs' ? scope.documentUid : ''],
+  )
   const [skillsModalOpen, setSkillsModalOpen] = useState(false)
   const [hintergrundOffen, setzeHintergrundOffen] = useState(false)
   const [providers, setProviders] = useState<AiProviderAvailable[]>([])
   const [providerId, setProviderId] = useState<number | null>(null)
+  useEffect(() => {
+    onProviderChange?.(providerId)
+  }, [onProviderChange, providerId])
+
   const [attachments, setAttachments] = useState<AiAttachment[]>([])
   const [servers, setServers] = useState<ServerOption[]>([])
   // Zwei Felder, genau wie auf der Leitung und in `ai_runs`: **ob** nachgedacht
@@ -405,9 +433,9 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
     let active = true
     Promise.all([
       aiApi.listProviders(),
-      aiApi.getConversation(),
-      aiApi.listActions(),
-      canAttach ? aiApi.listAttachments() : Promise.resolve([] as AiAttachment[]),
+      chatApi.getConversation(),
+      chatApi.listActions(),
+      canAttach ? chatApi.listAttachments() : Promise.resolve([] as AiAttachment[]),
       // Nur für den Autonomie-Knopf, und nur dort wird die Liste gebraucht.
       // Ohne das Recht holte jedes Öffnen der Seite alle sichtbaren Server
       // samt Bind-IP, Spiel-, Query- und RCON-Port in den Browser — für eine
@@ -422,7 +450,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
         : Promise.resolve(null),
       // Laeuft da noch etwas von vorhin? Scheitert die Frage, wird eben nicht
       // angehaengt — der Verlauf steht ohnehin.
-      aiApi.getActiveRun().catch(() => null),
+      chatApi.getActiveRun().catch(() => null),
     ])
       .then(([providerRows, conversation, actions, attachmentRows, serverRows, memoryPreference, aktiverLauf]) => {
         if (!active) return
@@ -450,6 +478,16 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
         setEntries(mergeEntries(conversation.messages, actions))
         setAttachments(attachmentRows)
         setServers(serverRows.map((row) => ({ id: row.id, name: row.name })))
+        if (scope.kind === 'docs') {
+          // Beim Primaerchat steht der Lauf schon im Promise.all; im
+          // Dokumentfenster braucht die Frage die Kennung dieses Fensters.
+          void chatApi
+            .getActiveRun(conversation.id)
+            .then((lauf) => {
+              if (active) setLaufBeimOeffnen(lauf)
+            })
+            .catch(() => undefined)
+        }
       })
       .catch((error: unknown) => {
         if (active) toast.error(error instanceof SanitizedApiError ? error.message : t('ai.chat.errors.load'))
@@ -460,7 +498,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
     return () => {
       active = false
     }
-  }, [canAttach, canUseAutonomy, canUseMemory, merkSchluessel.provider, t])
+  }, [canAttach, canUseAutonomy, canUseMemory, merkSchluessel.provider, t, chatApi, scope.kind])
 
 
 
@@ -477,7 +515,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
       return
     }
     try {
-      const status = await aiApi.getContextStatus(providerId)
+      const status = await chatApi.getContextStatus(providerId)
       // Nur übernehmen, wenn die Wahl seither dieselbe geblieben ist. Zwei
       // Modellwechsel kurz hintereinander können sich überholen — die Auskunft
       // ist bei kaltem Modellkatalog ein externer Abruf. Der Ring zeigte dann
@@ -835,7 +873,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
     if (!file || streaming || uploading) return
     setUploading(true)
     try {
-      const created = await aiApi.uploadAttachment(file)
+      const created = await chatApi.uploadAttachment(file)
       // Nach Kennung einsetzen statt anhaengen: das Nachladen nach dem Absenden
       // (siehe `message`-Ereignis) kann eine Antwort ueberholen, die noch
       // unterwegs war. Beim blossen Anhaengen stuende die Datei dann zweimal in
@@ -873,7 +911,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
     })
     if (!accepted) return
     try {
-      await aiApi.clearHistory()
+      await chatApi.clearHistory()
       initialScrollDoneRef.current = false
       userScrolledUpRef.current = false
       setEntries([])
@@ -946,7 +984,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
     const content = editDraft.trim()
     if (!content || !providerId || streaming) return
     try {
-      await aiApi.editMessage(messageId, content)
+      await chatApi.editMessage(messageId, content)
     } catch (error: unknown) {
       toast.error(error instanceof SanitizedApiError ? error.message : t('ai.chat.errors.edit'))
       return
@@ -1008,7 +1046,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
     if (streaming) return
     let veraltet = false
     const nachladen = () => {
-      void Promise.all([aiApi.getConversation(), aiApi.listActions()])
+      void Promise.all([chatApi.getConversation(), chatApi.listActions()])
         .then(([conversation, actions]) => {
           if (veraltet || !mountedRef.current) return
           setEntries(mergeEntries(conversation.messages, actions))
@@ -1037,8 +1075,8 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
     setReloading(true)
     try {
       const [conversation, actions] = await Promise.all([
-        aiApi.getConversation(),
-        aiApi.listActions(),
+        chatApi.getConversation(),
+        chatApi.listActions(),
         ladeKontext(),
       ])
       if (mountedRef.current && !streaming) {
@@ -1065,7 +1103,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
     window.dispatchEvent(new CustomEvent('msm:ai-user-typing'))
     if (jetzt - letztesTippSignalRef.current < TIPP_TAKT_MS) return
     letztesTippSignalRef.current = jetzt
-    void aiApi.typing().catch(() => undefined)
+    void chatApi.typing().catch(() => undefined)
   }, [])
 
   if (loading) {
@@ -1103,7 +1141,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
       <section
         // `relative` trägt die Hintergrundschicht weiter unten; ohne das
         // spannte sie sich über den nächsten positionierten Vorfahren auf.
-        className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+        className={`relative flex min-h-0 flex-1 flex-col overflow-hidden ${eingebettet ? 'h-full' : ''}`}
         aria-label={t('ai.chat.title')}
       onDragEnter={(event) => {
         if (!canAttach || busy) return
@@ -1181,9 +1219,9 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
             </Kurzinfo>
           )}
 
-          {(canTasks || onSwitchMode) && (
+          {((showTasks && canTasks) || (showGuardian && onSwitchMode)) && (
             <div className="flex items-center rounded-lg border border-outline-variant/30 bg-surface-container/50 p-0.5 shrink-0">
-              {canTasks && onSwitchMode && (
+              {showTasks && canTasks && onSwitchMode && (
                 <Kurzinfo text={t('ai.tasks.toTasks')} className="xl:!hidden">
                   <button
                     type="button"
@@ -1197,7 +1235,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
                 </Kurzinfo>
               )}
 
-              {onSwitchMode && (
+              {showGuardian && onSwitchMode && (
                 <Kurzinfo text={t('ai.guardian.toGuardianMode')} className="xl:!hidden">
                   <button
                     type="button"
@@ -1214,7 +1252,11 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
           )}
 
           {hasVoice && onSwitchMode && (
-            <Kurzinfo text={t('ai.voice.toVoiceMode')} className="sm:!hidden" aussen="shrink-0">
+            <Kurzinfo
+              text={t('ai.voice.toVoiceMode')}
+              className={eingebettet ? undefined : 'sm:!hidden'}
+              aussen="shrink-0"
+            >
               <button
                 type="button"
                 onClick={() => onSwitchMode('sprache')}
@@ -1279,7 +1321,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
       </header>
 
       {/* ── Die Worker-Leiste: lebende Hintergrund-Aufträge, einsehbar ── */}
-      <WorkerLeiste />
+      {showWorkers && <WorkerLeiste />}
 
       {/* ── Aktive Prozesse im 3-Spalten-Kommandozentrum ── */}
       {geoOpen && (

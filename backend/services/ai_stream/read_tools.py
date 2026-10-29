@@ -392,6 +392,8 @@ def voice_werkzeug_ausfuehren(
     conversation_id: str | None = None,
     herkunft: str = "panel",
     familie: str | None = None,
+    docs_document_uid: str | None = None,
+    docs_team_id: int | None = None,
 ) -> tuple[object, str | None, dict, list[dict]]:
     """Gemeinsamer, autoritativer Werkzeugpfad für Voice-Transporte.
 
@@ -495,8 +497,20 @@ def voice_werkzeug_ausfuehren(
         karten_wert, fehler, anzeige, vorschlaege = karte
         ethik = voice_interactions.ethik_abholen(beratung, call)
         return voice_interactions.mit_ethik(karten_wert, ethik), fehler, anzeige, vorschlaege
+    docs_kontext = None
+    if docs_document_uid:
+        from services.ai_tools.document_tools import ToolKontext
+
+        docs_kontext = ToolKontext(
+            document_uid=docs_document_uid,
+            team_id=docs_team_id,
+        )
     wert, fehler = _werkzeug_ausfuehren(
-        user_id, call, herkunft=herkunft, familie=familie
+        user_id,
+        call,
+        herkunft=herkunft,
+        familie=familie,
+        kontext=docs_kontext,
     )
     return (
         voice_interactions.mit_ethik(wert, voice_interactions.ethik_abholen(beratung, call)),

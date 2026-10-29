@@ -1,6 +1,6 @@
 """Upload-Rand fuer begrenzte, isoliert validierte AI-Anhaenge."""
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -36,13 +36,19 @@ def _require_chat(db: Session, user: User) -> None:
 )
 async def upload_attachment(
     file: UploadFile = File(...),
+    document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.attachments.use")),
     _: None = Depends(verify_csrf),
 ) -> AiAttachmentResponse:
     _require_chat(db, user)
-    conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
-    db.commit()
+    if document_uid:
+        from services.ai_docs_chat_scope import resolve as docs_scope
+
+        conversation, _, _ = docs_scope(db, user, document_uid)
+    else:
+        conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
+        db.commit()
     data = await file.read(ai_attachment_service.MAX_ATTACHMENT_BYTES + 1)
     try:
         return _response(ai_attachment_service.create_attachment(
@@ -61,12 +67,18 @@ async def upload_attachment(
 
 @router.get("/conversation/attachments", response_model=list[AiAttachmentResponse])
 def list_attachments(
+    document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.attachments.use")),
 ) -> list[AiAttachmentResponse]:
     _require_chat(db, user)
-    conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
-    db.commit()
+    if document_uid:
+        from services.ai_docs_chat_scope import resolve as docs_scope
+
+        conversation, _, _ = docs_scope(db, user, document_uid)
+    else:
+        conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
+        db.commit()
     return [_response(row) for row in ai_attachment_service.list_owned(
         db, user, conversation.id
     )]

@@ -2437,10 +2437,15 @@
     },
     "move": {
       "title": "Move document",
-      "description": "Choose the target folder for “{{title}}”.",
+      "description": "Choose the target team and folder for “{{title}}”.",
       "target": "Target folder",
       "action": "Move",
-      "moved": "Document moved."
+      "moved": "Document moved.",
+      "team": "Target team",
+      "teamWarning": "Moving to another team disables the share link and removes members without access to the target team."
+    },
+    "chat": {
+      "resize": "Resize chat"
     }
   },
   "servers": {

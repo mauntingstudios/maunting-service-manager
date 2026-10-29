@@ -302,7 +302,7 @@ export interface AiCatalogModel {
  * deshalb nie über die Art geladen, sondern über ihre Kennung
  * (`getWorkerConversation`, `listWorkers`).
  */
-export type AiConversationKind = 'primary' | 'guardian' | 'worker'
+export type AiConversationKind = 'primary' | 'guardian' | 'worker' | 'docs'
 
 export interface AiConversation {
   id: string
@@ -1628,26 +1628,43 @@ export const aiApi = {
    * gefragt. `before` ist die Kennung der ältesten bereits geladenen
    * Nachricht und liefert die Seite davor.
    */
-  getConversation: (kind: AiConversationKind = 'primary', before?: string) => {
+  getConversation: (
+    kind: AiConversationKind = 'primary',
+    before?: string,
+    documentUid?: string,
+  ) => {
     const suche = new URLSearchParams({ kind })
     if (before) suche.set('before', before)
+    if (documentUid) suche.set('document_uid', documentUid)
     return api<AiConversationDetail>(`/ai/conversation?${suche.toString()}`)
   },
   /** Bricht den aktiven Lauf der Unterhaltung serverseitig kontrolliert ab. */
-  stopRun: (kind: AiConversationKind = 'primary') =>
-    api<{ ok: boolean; stopped: boolean }>(`/ai/conversation/stop?kind=${encodeURIComponent(kind)}`, {
+  stopRun: (kind: AiConversationKind = 'primary', documentUid?: string) => {
+    const suche = new URLSearchParams({ kind })
+    if (documentUid) suche.set('document_uid', documentUid)
+    return api<{ ok: boolean; stopped: boolean }>(`/ai/conversation/stop?${suche.toString()}`, {
       method: 'POST',
-    }),
-  clearHistory: () => api('/ai/conversation/messages', { method: 'DELETE' }),
+    })
+  },
+  clearHistory: (documentUid?: string) =>
+    api(
+      `/ai/conversation/messages${
+        documentUid ? `?document_uid=${encodeURIComponent(documentUid)}` : ''
+      }`,
+      { method: 'DELETE' },
+    ),
   /**
    * Nimmt eine eigene Nachricht zurück: sie und alles Spätere verschwinden.
    * Gesendet wird **nicht** — das übernimmt danach der gewohnte Streamweg.
    * Zwei Schritte, weil das Senden Kontingent, Anbieterwahl und Stream braucht.
    */
-  editMessage: (messageId: string, content: string) => api<{ removed: number }>(
-    `/ai/conversation/messages/${messageId}`,
-    { method: 'PUT', body: JSON.stringify({ content }) },
-  ),
+  editMessage: (messageId: string, content: string, documentUid?: string) =>
+    api<{ removed: number }>(
+      `/ai/conversation/messages/${messageId}${
+        documentUid ? `?document_uid=${encodeURIComponent(documentUid)}` : ''
+      }`,
+      { method: 'PUT', body: JSON.stringify({ content }) },
+    ),
   /**
    * Die Vorschläge eines Fensters. Ohne `kind` die des Dauerchats.
    *
@@ -1656,8 +1673,11 @@ export const aiApi = {
    * sehen, und die Karte, auf deren Klick der Lauf wartet, wäre im ganzen
    * Panel nirgends.
    */
-  listActions: (kind: AiConversationKind = 'primary') =>
-    api<AiActionProposal[]>(`/ai/conversation/actions?kind=${kind}`),
+  listActions: (kind: AiConversationKind = 'primary', documentUid?: string) => {
+    const suche = new URLSearchParams({ kind })
+    if (documentUid) suche.set('document_uid', documentUid)
+    return api<AiActionProposal[]>(`/ai/conversation/actions?${suche.toString()}`)
+  },
   /**
    * Nur die Karten, auf deren Klick gerade jemand wartet — eigene und die
    * lebender Worker. Die Liste der Sprachansicht: bestätigt wird seit dem
@@ -1891,14 +1911,26 @@ export const aiApi = {
    * beantwortet sein muss — und weil ein Modellwechsel die Antwort sofort
    * ändert, ohne dass jemand etwas gesendet hätte.
    */
-  getContextStatus: (providerId: number) => api<AiContextStatus>(
-    `/ai/conversation/context?provider_id=${providerId}`,
+  getContextStatus: (providerId: number, documentUid?: string) => api<AiContextStatus>(
+    `/ai/conversation/context?provider_id=${providerId}${
+      documentUid ? `&document_uid=${encodeURIComponent(documentUid)}` : ''
+    }`,
   ),
-  listAttachments: () => api<AiAttachment[]>('/ai/conversation/attachments'),
-  uploadAttachment: (file: File) => {
+  listAttachments: (documentUid?: string) =>
+    api<AiAttachment[]>(
+      `/ai/conversation/attachments${
+        documentUid ? `?document_uid=${encodeURIComponent(documentUid)}` : ''
+      }`,
+    ),
+  uploadAttachment: (file: File, documentUid?: string) => {
     const body = new FormData()
     body.append('file', file)
-    return api<AiAttachment>('/ai/conversation/attachments', { method: 'POST', body })
+    return api<AiAttachment>(
+      `/ai/conversation/attachments${
+        documentUid ? `?document_uid=${encodeURIComponent(documentUid)}` : ''
+      }`,
+      { method: 'POST', body },
+    )
   },
   deleteAttachment: (id: string) => api(`/ai/attachments/${id}`, { method: 'DELETE' }),
   /**
@@ -1908,8 +1940,17 @@ export const aiApi = {
    * Glocke, die nur wissen will, ob überhaupt etwas läuft, und danach über
    * `AiRunInfo.kind` entscheidet, wohin sie zeigt.
    */
-  getActiveRun: (kind: AiConversationKind | null = 'primary') =>
-    api<AiRunInfo | null>(`/ai/conversation/run?kind=${kind ?? ''}`),
+  getActiveRun: (
+    kind: AiConversationKind | null = 'primary',
+    conversationId?: string,
+  ) => {
+    if (conversationId) {
+      return api<AiRunInfo | null>(
+        `/ai/conversation/run?conversation_id=${encodeURIComponent(conversationId)}`,
+      )
+    }
+    return api<AiRunInfo | null>(`/ai/conversation/run?kind=${kind ?? ''}`)
+  },
   /**
    * Ein Mensch übernimmt: die laufenden Reparaturen dieses Menschen enden.
    *

@@ -1261,3 +1261,54 @@ async def test_wirklich_stumme_antwort_wird_weiter_gemeldet(monkeypatch) -> None
         {"type": "response.done", "response": {"status": "completed", "output": []}},
     ])
     assert _leer_gemeldet(gesendet)
+
+
+def test_realtime_im_dokument_bleibt_auf_dokumentwerkzeugen_und_teamwissen(
+    db: Session, regular_user, monkeypatch
+) -> None:
+    """Ein Dokumentgespraech darf keine Serverwerkzeuge und kein persoenliches
+    Gedaechtnis bekommen — nur Dokumentwerkzeuge und das Teamgedaechtnis."""
+    from services.docs_service import DocsService
+
+    provider = _realtime(db, "Realtime Dokument")
+    doc = DocsService.create_document(db, regular_user, title="Sprachdokument")
+    monkeypatch.setattr(
+        realtime_session.ai_action_service,
+        "angebotene_werkzeuge",
+        lambda *_args: {"read_document", "edit_document", "read_server_status", "voice_leave_region_view"},
+    )
+    monkeypatch.setattr(realtime_session.ai_provider_service, "resolve_api_key", lambda *_args: "test-key")
+    monkeypatch.setattr(realtime_session.ai_prompt, "build", lambda **_kwargs: "Prompt")
+    team_ids: list[int | None] = []
+    monkeypatch.setattr(
+        realtime_session,
+        "gedaechtnis",
+        lambda _db, _user, *, nur_team_id=None: team_ids.append(nur_team_id) or "Teamwissen",
+    )
+    gespraeche: list[str | None] = []
+    monkeypatch.setattr(
+        realtime_session,
+        "reservieren",
+        lambda _db, *, provider, user, conversation_id=None: (
+            gespraeche.append(conversation_id) or "docs-conv",
+            1,
+        ),
+    )
+
+    vorbereitung = realtime_session.vorbereiten(
+        db,
+        provider=provider,
+        user=regular_user,
+        herkunft="panel",
+        docs_conversation_id="docs-conv",
+        docs_document_uid=doc["uid"],
+        docs_team_id=42,
+    )
+
+    namen = {tool["name"] for tool in vorbereitung.tools}
+    assert "read_document" in namen
+    assert "read_server_status" not in namen
+    assert team_ids == [42]
+    assert gespraeche == ["docs-conv"]
+    assert "Dokumentkontext" in vorbereitung.instructions
+    assert vorbereitung.mitschreiben is False

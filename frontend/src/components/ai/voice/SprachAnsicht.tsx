@@ -22,10 +22,12 @@ export function SprachAnsicht({
   konfiguration,
   aufChat,
   providerId,
+  documentUid,
 }: {
   konfiguration: AiVoiceConfig | null
   aufChat: () => void
   providerId?: number | null
+  documentUid?: string
 }) {
   const { t } = useTranslation()
   const {
@@ -50,7 +52,7 @@ export function SprachAnsicht({
     pegel,
     starten,
     beenden,
-  } = useSprachsitzung(providerId, konfiguration?.mode ?? 'legacy')
+  } = useSprachsitzung(providerId, konfiguration?.mode ?? 'legacy', documentUid)
   const [einstellungenOffen, setEinstellungenOffen] = useState(false)
   // Wartet eine Karte, rückt der Schwarm zusammen. In voller Größe liess er
   // ihr auf einem gewöhnlichen Bildschirm gut 100 Pixel, und der Knopf lag

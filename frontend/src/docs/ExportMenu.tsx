@@ -1,6 +1,7 @@
-import { Download, FileCode2, FileText, Printer } from 'lucide-react'
+import { useState } from 'react'
+import { FileCode2, FileText, Printer } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { ActionMenu } from '@/Singra/UI'
+import { Dropdown } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import { downloadExport } from '@/api/docs'
 
@@ -23,6 +24,7 @@ function speichern(blob: Blob, filename: string) {
 
 export function ExportMenu({ uid, rev, disabled }: ExportMenuProps) {
   const { t } = useTranslation()
+  const [auswahl, setAuswahl] = useState<string | null>(null)
 
   const laden = async (format: 'html' | 'md' | 'txt') => {
     try {
@@ -57,18 +59,23 @@ export function ExportMenu({ uid, rev, disabled }: ExportMenuProps) {
   }
 
   return (
-    <ActionMenu
-      label={t('docs.export.label')}
-      icon={<Download className="h-4 w-4" />}
+    <Dropdown
+      aria-label={t('docs.export.label')}
+      value={auswahl}
+      onChange={(wert) => {
+        setAuswahl(null)
+        if (wert === 'html' || wert === 'md' || wert === 'txt') void laden(wert)
+        if (wert === 'print') void drucken()
+      }}
+      placeholder={t('docs.export.label')}
       disabled={disabled}
       align="end"
-      compact
-      variant="ghost"
-      items={[
-        { key: 'html', label: t('docs.export.html'), icon: <FileCode2 className="h-4 w-4" />, onSelect: () => void laden('html') },
-        { key: 'md', label: t('docs.export.markdown'), icon: <FileText className="h-4 w-4" />, onSelect: () => void laden('md') },
-        { key: 'txt', label: t('docs.export.text'), icon: <FileText className="h-4 w-4" />, onSelect: () => void laden('txt') },
-        { key: 'print', label: t('docs.export.print'), icon: <Printer className="h-4 w-4" />, separatorBefore: true, onSelect: () => void drucken() },
+      buttonClassName="h-8 text-xs"
+      options={[
+        { value: 'html', label: t('docs.export.html'), icon: <FileCode2 className="h-4 w-4" /> },
+        { value: 'md', label: t('docs.export.markdown'), icon: <FileText className="h-4 w-4" /> },
+        { value: 'txt', label: t('docs.export.text'), icon: <FileText className="h-4 w-4" /> },
+        { value: 'print', label: t('docs.export.print'), icon: <Printer className="h-4 w-4" /> },
       ]}
     />
   )

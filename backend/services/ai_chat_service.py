@@ -210,7 +210,13 @@ def get_or_create_primary_conversation(db: Session, user: User) -> AiConversatio
     return get_or_create_conversation(db, user, "primary")
 
 
-def clear_history(db: Session, conversation: AiConversation) -> int:
+def clear_history(
+    db: Session,
+    conversation: AiConversation,
+    *,
+    user_weit: bool = True,
+    worker_weit: bool = True,
+) -> int:
     """Loescht den Verlauf, behaelt aber die Unterhaltung selbst.
 
     Die Unterhaltung bleibt, weil sie die Identitaet des Chats ist.
@@ -230,23 +236,28 @@ def clear_history(db: Session, conversation: AiConversation) -> int:
     )
     from services import ai_run_service
 
-    worker_conv_ids = [
-        row[0]
-        for row in db.query(AiConversation.id)
-        .filter(
-            AiConversation.user_id == conversation.user_id,
-            AiConversation.kind == "worker",
-        )
-        .all()
-    ]
+    worker_conv_ids = (
+        [
+            row[0]
+            for row in db.query(AiConversation.id)
+            .filter(
+                AiConversation.user_id == conversation.user_id,
+                AiConversation.kind == "worker",
+            )
+            .all()
+        ]
+        if worker_weit
+        else []
+    )
     alle_conv_ids = [conversation.id, *worker_conv_ids]
 
     for cid in alle_conv_ids:
         ai_run_service.vorgaenger_abloesen(db, conversation_id=cid)
 
-    db.query(AiMeldung).filter(AiMeldung.user_id == conversation.user_id).delete(
-        synchronize_session=False
-    )
+    if user_weit:
+        db.query(AiMeldung).filter(AiMeldung.user_id == conversation.user_id).delete(
+            synchronize_session=False
+        )
 
     removed = (
         db.query(AiMessage)
@@ -259,10 +270,10 @@ def clear_history(db: Session, conversation: AiConversation) -> int:
     db.query(AiAttachment).filter(
         AiAttachment.conversation_id.in_(alle_conv_ids)
     ).delete(synchronize_session=False)
-    db.query(AiActionProposal).filter(
-        (AiActionProposal.conversation_id.in_(alle_conv_ids))
-        | (AiActionProposal.user_id == conversation.user_id)
-    ).delete(synchronize_session=False)
+    vorschlaege = AiActionProposal.conversation_id.in_(alle_conv_ids)
+    if user_weit:
+        vorschlaege = vorschlaege | (AiActionProposal.user_id == conversation.user_id)
+    db.query(AiActionProposal).filter(vorschlaege).delete(synchronize_session=False)
 
     if worker_conv_ids:
         db.query(AiConversation).filter(

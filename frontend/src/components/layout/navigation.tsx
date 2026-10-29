@@ -23,6 +23,8 @@ interface NavigationAccess {
    * lesen darf, aber nicht chatten.
    */
   canUseSkills: boolean
+  canCreateTeams?: boolean
+  teamInvitationCount?: number
   calendarEnabled?: boolean
   notesEnabled?: boolean
   /** Modulschalter `docs_enabled`; unabhaengig davon braucht es `docs.use`. */
@@ -57,7 +59,7 @@ export function buildNavigation(labels: Record<string, string>, access: Navigati
     ...(online ? [{ to: '/servers', icon: Server, label: labels.servers, group: 'Infrastructure' as const }] : []),
     ...(online && (access.owner || access.canViewNodes) ? [{ to: '/admin/nodes', icon: Network, label: labels.nodes, group: 'Infrastructure' as const }] : []),
     ...(online && (access.owner || access.canUseAi) ? [{ to: '/ai', icon: Bot, label: labels.ai, group: 'Infrastructure' as const }] : []),
-    ...(online && (access.owner || access.canUseAi || access.canUseSkills) ? [{ to: '/teams', icon: UsersRound, label: labels.teams, group: 'Infrastructure' as const }] : []),
+    ...(online && (access.owner || access.canUseAi || access.canUseSkills || access.canCreateTeams || (access.teamInvitationCount ?? 0) > 0) ? [{ to: '/teams', icon: UsersRound, label: labels.teams, group: 'Infrastructure' as const }] : []),
     ...(online && (access.owner || access.canManageUsers) ? [{ to: '/users', icon: Users, label: labels.users, group: 'Administration' as const }] : []),
     ...(online && (access.owner || access.canManageRoles) ? [{ to: '/roles', icon: Shield, label: labels.roles, group: 'Administration' as const }] : []),
     ...(online && (access.owner || access.canViewAudit) ? [{ to: '/admin/audit', icon: History, label: labels.audit, group: 'Administration' as const }] : []),

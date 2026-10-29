@@ -38,7 +38,8 @@ import { HistoryPanel } from './HistoryPanel'
 import { ShareDialog } from './ShareDialog'
 import { MembersDialog } from './MembersDialog'
 import { MoveDialog } from './MoveDialog'
-import { SingraPanel } from './SingraPanel'
+import { DocsChatPanel } from './DocsChatPanel'
+import { useBreiteZiehen } from '@/hooks/useBreiteZiehen'
 import {
   cacheDocument,
   forgetDocument,
@@ -79,6 +80,14 @@ export function DocsApp() {
   const [selection, setSelection] = useState<{ quote: string } | null>(null)
   const [moveDoc, setMoveDoc] = useState<DocSummary | null>(null)
   const [treeOffen, setTreeOffen] = useState(false)
+  const [panelBreite, setPanelBreite] = useState(() => {
+    try {
+      const gespeichert = Number(localStorage.getItem(`docs.chat.breite:${user?.id ?? 'anonym'}`))
+      return Number.isFinite(gespeichert) && gespeichert > 0 ? Math.max(320, Math.min(720, gespeichert)) : 380
+    } catch {
+      return 380
+    }
+  })
   const searchRef = useRef<number | null>(null)
 
   const meldung = useCallback(
@@ -215,6 +224,31 @@ export function DocsApp() {
     window.addEventListener('msm:docs-updated', handler)
     return () => window.removeEventListener('msm:docs-updated', handler)
   }, [detailLaden, listeLaden, panelDatenLaden, uid])
+
+  const panelZiehen = useBreiteZiehen({
+    breite: panelBreite,
+    min: 320,
+    max: 720,
+    setzen: (breite) => {
+      setPanelBreite(breite)
+      try {
+        localStorage.setItem(`docs.chat.breite:${user?.id ?? 'anonym'}`, String(breite))
+      } catch {
+        /* Lokaler Speicher gesperrt — die Breite gilt nur für diese Sitzung. */
+      }
+    },
+  })
+
+  const verschiebePerDrop = async (doc: DocSummary, folderUid: string | null) => {
+    if (!doc.can_manage) return
+    try {
+      await updateDocument(doc.uid, { folder_uid: folderUid })
+      await listeLaden()
+      toast.success(t('docs.move.moved'))
+    } catch (error) {
+      toast.error(meldung(error, t('docs.errors.DOCS_FORBIDDEN')))
+    }
+  }
 
   const neueDokument = async () => {
     try {
@@ -419,6 +453,7 @@ export function DocsApp() {
                 setTreeOffen(false)
               }}
               selectedUid={uid ?? null}
+              onMoveDocumentToFolder={(doc, folderUid) => void verschiebePerDrop(doc, folderUid)}
               onSelect={(docUid) => {
                 navigate(`/dokumente/${docUid}`)
                 setTreeOffen(false)
@@ -494,7 +529,23 @@ export function DocsApp() {
 
         {uid && detail && panel && (
           <div className="fixed inset-0 z-40 flex justify-end bg-background/70 lg:static lg:z-auto lg:bg-transparent">
-            <aside className="flex h-full w-80 max-w-[92vw] shrink-0 flex-col overflow-hidden border-l border-outline-variant/40 bg-surface-container">
+            <aside
+              className="relative flex h-full max-w-[92vw] shrink-0 flex-col overflow-hidden border-l border-outline-variant/40 bg-surface-container"
+              style={{ width: `min(${panelBreite}px, 92vw)` }}
+            >
+              <div
+                role="separator"
+                tabIndex={0}
+                aria-orientation="vertical"
+                aria-valuenow={panelBreite}
+                aria-valuemin={320}
+                aria-valuemax={720}
+                aria-label={t('docs.chat.resize')}
+                className="group/griff absolute inset-y-0 left-0 z-10 flex w-2 cursor-col-resize touch-none items-center justify-center outline-none hover:bg-primary/10 focus-visible:bg-primary/10 active:bg-primary/15"
+                {...panelZiehen}
+              >
+                <span aria-hidden="true" className="h-10 w-1 rounded-full bg-outline transition-colors group-hover/griff:bg-primary group-focus-visible/griff:bg-primary group-active/griff:bg-primary" />
+              </div>
               <div className="flex items-center justify-between border-b border-outline-variant/40 px-3 py-2">
                 <span className="text-sm font-semibold text-on-surface">{panelTitel}</span>
                 <Kurzinfo text={t('common.close')}>
@@ -526,7 +577,7 @@ export function DocsApp() {
                   />
                 )}
                 {panel === 'singra' && (
-                  <SingraPanel uid={detail.uid} canEdit={detail.can_edit && !detail.deleted} selection={selection} onChanged={() => void detailLaden(detail.uid)} />
+                  <DocsChatPanel uid={detail.uid} selection={selection} onChanged={() => void detailLaden(detail.uid)} />
                 )}
               </div>
             </aside>
@@ -551,13 +602,21 @@ export function DocsApp() {
           <MoveDialog
             document={moveDoc}
             folders={folders}
+            teams={teams}
             open={moveDoc !== null}
             onOpenChange={(offen) => {
               if (!offen) setMoveDoc(null)
             }}
             onMoved={() => {
               void listeLaden()
-              if (uid) void detailLaden(uid)
+              const gleichesTeam = moveDoc?.team_id === teamId
+              if (uid) {
+                if (gleichesTeam) void detailLaden(uid)
+                else {
+                  setDetail(null)
+                  navigate('/dokumente')
+                }
+              }
             }}
           />
         </>

@@ -358,7 +358,11 @@ async def transcribe_voice_input(
 
 
 @router.websocket("/ws")
-async def voice_ws(websocket: WebSocket, provider_id: int | None = None) -> None:
+async def voice_ws(
+    websocket: WebSocket,
+    provider_id: int | None = None,
+    document_uid: str | None = None,
+) -> None:
     """Die Sprachsitzung.
 
     Reihenfolge der Abweisungen: Origin, dann Anmeldung, dann Recht, dann
@@ -382,6 +386,21 @@ async def voice_ws(websocket: WebSocket, provider_id: int | None = None) -> None
             await _ws_ablehnen(websocket, grund="permission")
             return
 
+        docs_conversation_id = None
+        docs_document_uid = None
+        docs_team_id = None
+        if document_uid:
+            from services.ai_docs_chat_scope import resolve as docs_scope
+
+            try:
+                conversation, dokument, team_id = docs_scope(db, user, document_uid)
+            except HTTPException:
+                await _ws_ablehnen(websocket, grund="permission")
+                return
+            docs_conversation_id = conversation.id
+            docs_document_uid = dokument.doc_uid
+            docs_team_id = team_id
+
         realtime = ai_provider_service.realtime_zugang(db)
         if realtime is not None:
             herkunft = ws_session_herkunft(websocket)
@@ -394,6 +413,9 @@ async def voice_ws(websocket: WebSocket, provider_id: int | None = None) -> None
                     provider=realtime,
                     user=user,
                     herkunft=herkunft,
+                    docs_conversation_id=docs_conversation_id,
+                    docs_document_uid=docs_document_uid,
+                    docs_team_id=docs_team_id,
                 )
             except ai_usage_service.AiQuotaExceeded as exc:
                 # Kein Fehler, sondern eine Auskunft, und der Benutzer ist
@@ -451,7 +473,9 @@ async def voice_ws(websocket: WebSocket, provider_id: int | None = None) -> None
                 await _ws_ablehnen(websocket, grund="tts_key")
                 return
 
-            gespraech = await run_in_threadpool(_gespraech_holen, db, user)
+            gespraech = await run_in_threadpool(
+                _gespraech_holen, db, user, docs_conversation_id
+            )
             stimm_kind = sprechen.provider_kind
             stimm_adresse = ai_tts.stimmweg(stimm_kind).verbindungsadresse(
                 ai_provider_service.base_url(sprechen),
@@ -526,6 +550,8 @@ async def voice_ws(websocket: WebSocket, provider_id: int | None = None) -> None
         hoechstdauer=sprach_hoechstdauer,
         herkunft=herkunft,
         familie=familie,
+        docs_document_uid=docs_document_uid,
+        docs_team_id=docs_team_id,
     )
     try:
         lage = await bruecke.fuehren()
@@ -585,13 +611,17 @@ async def _kontingent_melden(websocket: WebSocket, exc: Exception) -> None:
     await websocket.close()
 
 
-def _gespraech_holen(db: Session, user: User) -> str:
+def _gespraech_holen(
+    db: Session, user: User, conversation_id: str | None = None
+) -> str:
     """Die Unterhaltung, in die gesprochen wird — dieselbe wie beim Tippen.
 
     Nur die Kennung, nicht das Objekt: die Sitzung der Anfrage wird gleich
     geschlossen, und ein danach gehaltenes ORM-Objekt wäre abgelaufen. Die
     Brücke öffnet für jeden Zug ihre eigene, kurzlebige.
     """
+    if conversation_id:
+        return conversation_id
     conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
     db.commit()
     return conversation.id
