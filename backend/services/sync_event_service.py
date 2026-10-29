@@ -176,7 +176,7 @@ class SyncEventService:
         if sub is None or sub.user_id != user_id:
             return False
         sauber = (zustand or "").strip().lower()
-        if sauber not in ("vordergrund", "hintergrund"):
+        if sauber not in ("vordergrund", "hintergrund", "dienst"):
             return False
         sub.zustand = sauber
         # Nanosekunden: zwei Fenster melden sich im selben Millisekundentakt,
@@ -185,13 +185,35 @@ class SyncEventService:
         sub.zuletzt_gesehen = time.monotonic_ns()
         return True
 
+    @staticmethod
+    def _waehle(gruppe: list[_Subscriber]) -> set[str]:
+        """Die Zusteller eines Kontos: ein Vordergrund- und ein Dienst-Client.
+
+        Der eigene Dienst bekommt seine Meldung auch dann, wenn ein anderes
+        Gerät vorne steht. Gibt es keinen Dienst, bleibt es beim bisherigen
+        einen Hintergrund-Client. So meldet das Handy mit, ohne dass zwei
+        Fenster oder zwei Apps auf demselben Gerät doppelt zeigen.
+        """
+        ziele: set[str] = set()
+        vorne = [sub for sub in gruppe if sub.zustand == "vordergrund"]
+        if vorne:
+            ziele.add(max(vorne, key=lambda sub: sub.zuletzt_gesehen).conn_id)
+        dienste = [sub for sub in gruppe if sub.zustand == "dienst"]
+        if dienste:
+            ziele.add(max(dienste, key=lambda sub: sub.zuletzt_gesehen).conn_id)
+        else:
+            hinten = [sub for sub in gruppe if sub.zustand == "hintergrund"]
+            if hinten:
+                ziele.add(max(hinten, key=lambda sub: sub.zuletzt_gesehen).conn_id)
+        return ziele
+
     @classmethod
     def zusteller_je_mailbox(cls, mailbox_id: str) -> tuple[set[str], bool]:
-        """Dasselbe fuer eine Mailbox — **ein** Zusteller je Konto, nicht je Mailbox.
+        """Dasselbe fuer eine Mailbox — je Konto Vordergrund plus Dienst.
 
         Der Unterschied ist wichtig: an einer Gruppenmailbox haengen mehrere
         Menschen. Wuerde hier einer fuer alle gewaehlt, schwiege der Rest der
-        Gruppe. Gewaehlt wird deshalb je Konto einer, und die anderen Clients
+        Gruppe. Gewaehlt wird deshalb je Konto, und die übrigen Clients
         desselben Kontos bleiben still.
 
         Gibt ``(Menge der conn_ids, praesenz_bekannt)`` zurueck.
@@ -213,11 +235,7 @@ class SyncEventService:
         )
         gewaehlt: set[str] = set()
         for gruppe in nach_konto.values():
-            for stufe in ("vordergrund", "hintergrund"):
-                passend = [sub for sub in gruppe if sub.zustand == stufe]
-                if passend:
-                    gewaehlt.add(max(passend, key=lambda sub: sub.zuletzt_gesehen).conn_id)
-                    break
+            gewaehlt |= cls._waehle(gruppe)
         return gewaehlt, bekannt
 
     @classmethod
@@ -226,15 +244,15 @@ class SyncEventService:
         *,
         user_id: int | None = None,
         mailbox_id: str | None = None,
-    ) -> tuple[str | None, bool]:
+    ) -> tuple[set[str], bool]:
         """Wer zeigt die Meldung — und weiß überhaupt jemand, wo er steht?
 
-        Gibt ``(conn_id des Zustellers, praesenz_bekannt)`` zurück.
+        Gibt ``(Menge der conn_ids, praesenz_bekannt)`` zurück.
 
-        Der Zusteller ist **einer**: erst der zuletzt aktive Vordergrund-Client,
-        sonst der zuletzt aktive Hintergrund-Client, sonst niemand. Zwei offene
-        Fenster oder zwei Apps auf demselben Gerät melden dieselbe Nachricht
-        damit nicht doppelt.
+        Je Konto sind es höchstens zwei: der zuletzt aktive Vordergrund-Client
+        und der zuletzt aktive Dienst. Gibt es keinen Dienst, tritt der zuletzt
+        aktive Hintergrund-Client an seine Stelle. Damit meldet das Handy auch,
+        wenn der PC vorne steht, ohne dass Fenster doppelt zeigen.
 
         `praesenz_bekannt` ist der Schalter für das Altverhalten: solange kein
         Client etwas gemeldet hat (ältere Fassung), gilt weiter „jede offene
@@ -248,14 +266,16 @@ class SyncEventService:
             or (kennung is not None and kennung in sub.mailboxes)
         ]
         if not kandidaten:
-            return None, False
+            return set(), False
 
         bekannt = any(sub.zustand != "unbekannt" for sub in kandidaten)
-        for stufe in ("vordergrund", "hintergrund"):
-            passend = [sub for sub in kandidaten if sub.zustand == stufe]
-            if passend:
-                return max(passend, key=lambda sub: sub.zuletzt_gesehen).conn_id, True
-        return None, bekannt
+        nach_konto: dict[int, list[_Subscriber]] = {}
+        for sub in kandidaten:
+            nach_konto.setdefault(sub.user_id, []).append(sub)
+        ziele: set[str] = set()
+        for gruppe in nach_konto.values():
+            ziele |= cls._waehle(gruppe)
+        return ziele, bekannt
 
     @classmethod
     def trenne(cls, user_id: int, familie: str | None = None) -> int:
@@ -374,10 +394,10 @@ class SyncEventService:
 
         Gibt die Anzahl der erreichten Empfänger zurück.
 
-        `melden_markieren` setzt an **genau einem** Empfänger `melden: true` —
-        dem, den `zustelllage` gewählt hat. Alle anderen bekommen `melden:
-        false` und zeigen nichts von sich aus; der Server weiß dann, dass der
-        Push draußen bleiben darf, weil die Meldung schon jemand zeigt.
+        `melden_markieren` setzt an den von `zustelllage` gewählten Empfängern
+        `melden: true` (Vordergrund und Dienst). Alle anderen bekommen
+        `melden: false` und zeigen nichts von sich aus; der Server weiß dann,
+        dass die Meldung schon jemand zeigt.
         """
         ziel_mailbox = mailbox_id.strip().lower() if mailbox_id else None
         payload = dict(event_data)

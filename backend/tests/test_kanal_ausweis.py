@@ -56,14 +56,14 @@ def test_ausweis_oeffnet_den_strom(db: Session, owner_user: User, client: TestCl
 
     antwort = client.post(
         "/api/events/presence",
-        json={"conn_id": conn_id, "zustand": "hintergrund"},
+        json={"conn_id": conn_id, "zustand": "dienst"},
         headers={"Authorization": f"Bearer {ausweis}"},
     )
 
     assert antwort.status_code == 200
     assert antwort.json() == {"ok": True}
     # Und der Zusteller ist jetzt der Dienst dieses Geräts.
-    assert SyncEventService.zustelllage(user_id=owner_user.id)[0] == conn_id
+    assert conn_id in SyncEventService.zustelllage(user_id=owner_user.id)[0]
 
 
 def test_ein_erfundener_ausweis_oeffnet_nichts(db: Session, owner_user: User, client: TestClient) -> None:

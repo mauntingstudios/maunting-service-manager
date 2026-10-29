@@ -165,10 +165,11 @@ def set_stream_presence(
     Aufruf billig und ohne Datenbank.
 
     Wozu: eine Meldung des Betriebssystems soll **einmal** kommen. Der Server
-    wählt dafür genau einen Zusteller (`SyncEventService.zustelllage`) und
-    schickt den Push nur, wenn keiner die Meldung selbst zeigen kann. Ohne
-    diese Angabe gälte weiter „irgendeine offene Verbindung unterdrückt den
-    Push" — und ein Fenster im Hintergrund verschluckte die Meldung.
+    wählt dafür je Konto einen Vordergrund- und einen Dienst-Zusteller
+    (`SyncEventService.zustelllage`) und schickt den Push nur, wenn keiner die
+    Meldung selbst zeigen kann. Ohne diese Angabe gälte weiter „irgendeine
+    offene Verbindung unterdrückt den Push" — und ein Fenster im Hintergrund
+    verschluckte die Meldung.
     """
     gesetzt = SyncEventService.set_praesenz(
         req.conn_id, req.zustand, user_id=teilnehmer.user.id

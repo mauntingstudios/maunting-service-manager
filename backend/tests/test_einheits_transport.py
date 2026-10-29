@@ -121,7 +121,7 @@ def test_der_absender_bekommt_keine_meldung_fuer_seine_eigene_nachricht(
         SyncEventService,
         "zustelllage",
         classmethod(
-            lambda cls, *, user_id=None, mailbox_id=None: (f"conn-{user_id}", True)
+            lambda cls, *, user_id=None, mailbox_id=None: ({f"conn-{user_id}"}, True)
         ),
     )
     messages_service.send_message(db, owner_user, "direct", chat.id, "event-2", 1, CHIFFRAT)

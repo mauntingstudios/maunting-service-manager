@@ -1,6 +1,8 @@
 package com.mauntingstudios.smart_system
 
-import android.app.Notification
+import android.app.ActivityManager
+import android.app.Notification
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -297,7 +299,7 @@ class Hintergrunddienst : Service() {
         if (connId.isEmpty()) return
         post(basis, ausweis, "/api/events/presence", JSONObject().apply {
             put("conn_id", connId)
-            put("zustand", "hintergrund")
+            put("zustand", "dienst")
         }.toString())
     }
 
@@ -387,7 +389,22 @@ class Hintergrunddienst : Service() {
         return false
     }
 
-    private fun melden(titel: String, text: String) {
+    /**
+     * Läuft die Oberfläche dieser App gerade sichtbar? Dann zeigt sie die
+     * Nachricht selbst; der Dienst bleibt still. Der Dienst läuft in einem
+     * eigenen Prozess und fragt deshalb das System statt einer geteilten Ablage.
+     */
+    private fun appSichtbar(): Boolean {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val prozesse = am.runningAppProcesses ?: return false
+        return prozesse.any {
+            it.processName == packageName &&
+                it.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
+        }
+    }
+
+    private fun melden(titel: String, text: String, erzwingen: Boolean = false) {
+        if (!erzwingen && appSichtbar()) return
         val absicht = Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val click = PendingIntent.getActivity(
@@ -469,6 +486,7 @@ class Hintergrunddienst : Service() {
         melden(
             "Benachrichtigungen angehalten",
             "Bitte im Profil neu einschalten — die Anmeldung wurde beendet.",
+            erzwingen = true,
         )
         stopSelf()
     }

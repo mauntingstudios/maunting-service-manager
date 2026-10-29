@@ -180,17 +180,24 @@ def _publish_message(db: Session, message: E2eeMessage, typ: str = "message_crea
         ),
     }
     if typ == "message_created":
-        # Genau ein Client je Konto zeigt die Meldung. Alle anderen bekommen
-        # `melden: false`; der Push geht nur hinaus, wenn niemand offen ist.
-        # Der Absender steht nicht darunter: seine eigene Nachricht meldet kein
-        # Gerät, auch nicht das, auf dem gerade kein Fenster offen ist.
+        # Je Konto höchstens zwei Zusteller: ein Vordergrund-Client und der
+        # eigene Dienst. Alle anderen bekommen `melden: false`; der Push geht
+        # nur hinaus, wenn niemand die Meldung selbst zeigen kann. Der Absender
+        # steht nicht darunter: seine eigene Nachricht meldet kein Gerät, auch
+        # nicht das, auf dem gerade kein Fenster offen ist.
+        empfaenger = [uid for uid in mitglieder if uid != message.sender_user_id]
+        erlaubt = {
+            uid
+            for (uid,) in db.query(User.id)
+            .filter(User.id.in_(empfaenger), User.device_notifications.is_(True))
+            .all()
+        } if empfaenger else set()
         zusteller: set[str] = set()
-        for uid in mitglieder:
-            if uid == message.sender_user_id:
+        for uid in empfaenger:
+            if uid not in erlaubt:
                 continue
-            conn_id = SyncEventService.zustelllage(user_id=uid)[0]
-            if conn_id:
-                zusteller.add(conn_id)
+            ziele, _ = SyncEventService.zustelllage(user_id=uid)
+            zusteller |= ziele
         SyncEventService.publish(
             payload,
             user_ids=mitglieder,
