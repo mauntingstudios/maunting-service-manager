@@ -2416,6 +2416,7 @@
       "open": "Singra öffnen",
       "notAllowedTitle": "KI ist für Dokumente nicht freigegeben",
       "notAllowedText": "Der Betreiber muss zusätzlich zu den Dokument- und Chat-Rechten die KI-Freigabe für Dokumente erteilen.",
+      "voiceUnavailable": "Der Sprachmodus ist für dieses Panel nicht eingerichtet.",
       "pendingEdit": "Der Dokument-Chat wird gerade angeschlossen. Bis dahin läuft er über den KI-Bereich.",
       "pendingRead": "Der Dokument-Chat wird gerade angeschlossen. Lesen und Kommentieren sind bereits möglich.",
       "openChat": "Zum KI-Bereich",

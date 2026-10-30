@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  aiApi,
   attachAiRun,
   streamAiMessage,
   type AiRunSnapshot,
@@ -13,6 +14,7 @@ import { SanitizedApiError } from '@/api/client'
 import i18n from '@/i18n'
 import { useToastStore } from '@/stores/toastStore'
 import { useAiLauf, type Entry } from './useAiLauf'
+import type { ChatScopeApi } from './chatScope'
 
 vi.mock('@/api/ai', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/api/ai')>()
@@ -66,6 +68,23 @@ function antworten(entries: Entry[]) {
   ))
 }
 
+function fremdeApi(): ChatScopeApi {
+  return {
+    scopeKey: 'docs:doc-1',
+    getConversation: vi.fn(),
+    listActions: vi.fn(),
+    getActiveRun: vi.fn(),
+    getContextStatus: vi.fn(),
+    listAttachments: vi.fn().mockResolvedValue([]),
+    uploadAttachment: vi.fn(),
+    clearHistory: vi.fn(),
+    editMessage: vi.fn(),
+    stopRun: vi.fn().mockResolvedValue({ ok: true, stopped: true }),
+    typing: vi.fn(),
+    stream: vi.fn().mockResolvedValue(undefined),
+  }
+}
+
 describe('useAiLauf', () => {
   beforeEach(() => {
     vi.mocked(streamAiMessage).mockReset().mockResolvedValue(undefined)
@@ -73,6 +92,26 @@ describe('useAiLauf', () => {
     // Der Toast-Stapel ist hier eine Zusicherung und kein Beiwerk: zweimal
     // wird geprüft, was darin steht, und einmal, dass er leer bleibt.
     useToastStore.setState({ toasts: [] })
+  })
+
+  it('sendet und stoppt über die injizierte Fenster-API', async () => {
+    const api = fremdeApi()
+    const { result } = renderHook(() => useAiLauf({
+      providerId: 1,
+      canAttach: true,
+      denken: { an: false, stufe: null },
+      ladeKontext: async () => {},
+      setAttachments: () => {},
+      api,
+    }))
+
+    await act(async () => { await result.current.sendContent('Nur ins Dokument') })
+    expect(api.stream).toHaveBeenCalledOnce()
+    expect(streamAiMessage).not.toHaveBeenCalled()
+
+    await act(async () => { await result.current.stoppeLauf() })
+    expect(api.stopRun).toHaveBeenCalledOnce()
+    expect(aiApi.stopRun).not.toHaveBeenCalled()
   })
 
   it('setzt die Abschnitte aus dem Abzug, statt sie anzuhängen', async () => {

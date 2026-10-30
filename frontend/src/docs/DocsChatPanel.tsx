@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Sparkles } from 'lucide-react'
+import { Loader2, MicOff, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-import { buttonClasses } from '@/Singra/UI'
+import { Button, buttonClasses } from '@/Singra/UI'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
 import { AiChat } from '@/components/ai/AiChat'
@@ -32,6 +32,9 @@ export function DocsChatPanel({ uid, selection, onChanged }: DocsChatPanelProps)
   const [modus, setModus] = useState<'chat' | 'sprache'>('chat')
   const [providerId, setProviderId] = useState<number | null>(null)
   const [voiceKonfiguration, setVoiceKonfiguration] = useState<AiVoiceConfig | null>(null)
+  const [voiceLaedt, setVoiceLaedt] = useState(false)
+  const [voiceFehler, setVoiceFehler] = useState<'unavailable' | 'connection' | null>(null)
+  const [voiceVersuch, setVoiceVersuch] = useState(0)
 
   const scope = useMemo(
     () => ({
@@ -43,20 +46,44 @@ export function DocsChatPanel({ uid, selection, onChanged }: DocsChatPanelProps)
   )
 
   useEffect(() => {
-    if (modus !== 'sprache' || !canVoice) return
+    if (!canVoice) {
+      setVoiceKonfiguration(null)
+      setVoiceLaedt(false)
+      setVoiceFehler(null)
+      return
+    }
     let aktiv = true
+    // Keine alte Konfiguration weiterreichen: Provider- oder Retry-Wechsel
+    // sollen keine Sitzung mit dem vorherigen Modus starten.
+    setVoiceKonfiguration(null)
+    setVoiceLaedt(true)
+    setVoiceFehler(null)
+    // Wie im normalen KI-Bereich: Konfiguration vor dem ersten Start laden.
+    // Sonst mountet `SprachAnsicht` mit `legacy`, bevor der echte Modus
+    // bekannt ist; ein späterer Moduswechsel baut den Socket nicht neu auf.
     void aiApi
-      .getVoiceConfig(providerId)
+      .getVoiceConfig(providerId ?? undefined)
       .then((config) => {
-        if (aktiv) setVoiceKonfiguration(config)
+        if (!aktiv) return
+        if (config.available) {
+          setVoiceKonfiguration(config)
+          return
+        }
+        setVoiceKonfiguration(null)
+        setVoiceFehler('unavailable')
       })
       .catch(() => {
-        if (aktiv) setVoiceKonfiguration(null)
+        if (!aktiv) return
+        setVoiceKonfiguration(null)
+        setVoiceFehler('connection')
+      })
+      .finally(() => {
+        if (aktiv) setVoiceLaedt(false)
       })
     return () => {
       aktiv = false
     }
-  }, [canVoice, modus, providerId])
+  }, [canVoice, providerId, voiceVersuch])
 
   useEffect(() => {
     if (!onChanged) return
@@ -79,8 +106,35 @@ export function DocsChatPanel({ uid, selection, onChanged }: DocsChatPanelProps)
   }
 
   if (modus === 'sprache') {
+    if (voiceLaedt) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden="true" />
+          <p className="text-xs text-on-surface-variant">{t('common.loading')}</p>
+        </div>
+      )
+    }
+    if (!voiceKonfiguration) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+          <MicOff className="h-8 w-8 text-on-surface-variant" aria-hidden="true" />
+          <p className="text-sm font-semibold text-on-surface">
+            {t(voiceFehler === 'unavailable' ? 'docs.singra.voiceUnavailable' : 'ai.voice.errors.connection')}
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button type="button" size="sm" onClick={() => setVoiceVersuch((wert) => wert + 1)}>
+              {t('common.retry')}
+            </Button>
+            <Button type="button" size="sm" variant="secondary" onClick={() => setModus('chat')}>
+              {t('ai.voice.toTextMode')}
+            </Button>
+          </div>
+        </div>
+      )
+    }
     return (
       <SprachAnsicht
+        key={`${providerId ?? 'auto'}:${voiceKonfiguration.mode}:${uid}`}
         konfiguration={voiceKonfiguration}
         providerId={providerId}
         documentUid={uid}
@@ -98,11 +152,11 @@ export function DocsChatPanel({ uid, selection, onChanged }: DocsChatPanelProps)
       showGuardian={false}
       showWorkers={false}
       canTasks={false}
-      hasVoice={canVoice}
+      hasVoice={canVoice && Boolean(voiceKonfiguration)}
       beispielSchluessel={DOCS_BEISPIELE}
       onProviderChange={setProviderId}
       onSwitchMode={(naechster) => {
-        if (naechster === 'sprache' && canVoice) setModus('sprache')
+        if (naechster === 'sprache' && canVoice && voiceKonfiguration) setModus('sprache')
       }}
     />
   )

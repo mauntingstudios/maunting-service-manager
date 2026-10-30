@@ -34,6 +34,12 @@ interface ActionMenuProps {
   /** Nur Icon zeigen; `label` wird dann zur zugänglichen Beschriftung. */
   iconOnly?: boolean
   ariaLabel?: string
+  /**
+   * `dna` gleicht die Fläche dem DNA-`Dropdown` an: gleiche Kante, gleicher
+   * Schatten, kein Backdrop-Blur, festere Mindestbreite. Nur dort einsetzen,
+   * wo die Oberfläche bewusst wie eine DNA-Auswahl aussehen soll.
+   */
+  surface?: 'default' | 'dna'
 }
 
 /** Compact action menu for dense operational toolbars. */
@@ -47,6 +53,7 @@ export function ActionMenu({
   variant = 'secondary',
   iconOnly = false,
   ariaLabel,
+  surface = 'default',
 }: ActionMenuProps) {
   const [open, setOpen] = useState(false)
   useZurueckSchliesst(open, () => setOpen(false))
@@ -134,8 +141,10 @@ export function ActionMenu({
           buttonClasses(variant, compact ? 'sm' : 'md', 'gap-1.5 disabled:cursor-not-allowed disabled:opacity-45'),
           // Auf dem Telefon bleibt der Auslöser ein Daumenziel; ab sm gilt die
           // Höhe des Knopfs daneben.
-          compact ? 'h-11 sm:h-8' : 'h-11 sm:h-10',
-          iconOnly && 'w-11 justify-center px-0 sm:w-8',
+          compact
+            ? surface === 'dna' ? 'h-11 sm:h-9' : 'h-11 sm:h-8'
+            : 'h-11 sm:h-10',
+          iconOnly && `w-11 justify-center px-0 ${surface === 'dna' ? 'sm:w-9' : 'sm:w-8'}`,
         )}
       >
         {icon}
@@ -151,7 +160,11 @@ export function ActionMenu({
               id={menuId}
               role="menu"
               style={lage}
-              className="min-w-[190px] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-high/98 p-1.5 shadow-panel backdrop-blur-xl"
+              className={
+                surface === 'dna'
+                  ? 'min-w-[200px] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-high p-1 shadow-panel'
+                  : 'min-w-[190px] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-high/98 p-1.5 shadow-panel backdrop-blur-xl'
+              }
             >
               {items.map((item) => (
                 <div key={item.key} className={item.separatorBefore ? 'mt-1 border-t border-outline-variant pt-1' : ''}>
@@ -170,7 +183,12 @@ export function ActionMenu({
                         : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
                     )}
                   >
-                    <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden>
+                    <span
+                      className={`flex shrink-0 items-center justify-center ${
+                        surface === 'dna' ? 'h-5 w-5' : 'h-4 w-4'
+                      }`}
+                      aria-hidden
+                    >
                       {item.icon}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>

@@ -60,10 +60,11 @@ export function ExportMenu({ uid, rev, disabled }: ExportMenuProps) {
     <ActionMenu
       label={t('docs.export.label')}
       ariaLabel={t('docs.export.label')}
-      icon={<Download className="h-4 w-4" />}
+      icon={<Download className="h-5 w-5" />}
       iconOnly
       variant="ghost"
       compact
+      surface="dna"
       disabled={disabled}
       align="end"
       items={[

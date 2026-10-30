@@ -2416,6 +2416,7 @@
       "open": "Open Singra",
       "notAllowedTitle": "AI is not enabled for documents",
       "notAllowedText": "The operator must grant the document AI permission in addition to the document and chat rights.",
+      "voiceUnavailable": "Voice mode is not configured for this panel.",
       "pendingEdit": "The document chat is being connected. Until then it runs through the AI area.",
       "pendingRead": "The document chat is being connected. Reading and commenting already work.",
       "openChat": "Go to the AI area",

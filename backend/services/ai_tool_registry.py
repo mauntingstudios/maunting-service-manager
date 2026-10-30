@@ -1191,7 +1191,15 @@ def docs_kontext_schnitt(team_mitglied: bool = False) -> set[str]:
     vorher nach `ai.notes.use`, `ai.calendar.use`, `ai.memory.use`,
     `ai.skills.use` und `ai.docs.use`. Diese Menge ersetzt kein Recht.
     """
-    erlaubt = (set(DOCUMENTS_TOOLS) - set(DOCS_TEAM_TOOLS)) | set(DOCS_ECOSYSTEM_READ)
+    # `list_documents` bleibt draußen: Der Lauf haengt an genau einem Dokument,
+    # und ohne Teambezug (persoenliches Dokument) wuerde die Liste sogar
+    # Dokumente anderer Teams nennen. `read_document` ist an die UID des Laufs
+    # gebunden und bleibt.
+    erlaubt = (
+        set(DOCUMENTS_TOOLS)
+        - set(DOCS_TEAM_TOOLS)
+        - {"list_documents"}
+    ) | set(DOCS_ECOSYSTEM_READ)
     if team_mitglied:
         erlaubt |= set(DOCS_TEAM_TOOLS)
     return erlaubt

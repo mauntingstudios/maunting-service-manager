@@ -88,7 +88,10 @@ vi.mock('./editor/MobileToolbar', () => ({
   ),
 }))
 
-vi.mock('./editor/Outline', () => ({ Outline: () => null }))
+vi.mock('./editor/Outline', () => ({
+  useOutlineEntries: () => [],
+  OutlineList: () => null,
+}))
 vi.mock('./editor/SlashMenu', () => ({ SlashMenu: () => null }))
 
 vi.mock('@/api/docs', async (importOriginal) => {

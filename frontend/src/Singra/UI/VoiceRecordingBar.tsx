@@ -17,6 +17,8 @@ export interface VoiceRecordingBarProps {
   confirmIcon?: React.ReactNode
   className?: string
   variant?: 'danger' | 'primary' | 'neutral'
+  /** Schmale Fläche: zwei Zeilen statt einer, alle Bedienelemente sichtbar. */
+  kompakt?: boolean
 }
 
 function defaultFormatDuration(sec: number): string {
@@ -49,6 +51,7 @@ export function VoiceRecordingBar({
   confirmIcon,
   className = '',
   variant = 'danger',
+  kompakt = false,
 }: VoiceRecordingBarProps) {
   const formattedTime =
     durationLabel ??
@@ -138,12 +141,18 @@ export function VoiceRecordingBar({
 
   return (
     <div
-      className={`relative flex items-center justify-between gap-3 px-3.5 py-2 rounded-2xl border backdrop-blur-md transition-all select-none ${glowBorder} ${className}`}
+      className={`relative flex ${
+        kompakt ? 'flex-col items-stretch gap-2 p-2' : 'items-center justify-between gap-3 px-3.5 py-2'
+      } rounded-2xl border backdrop-blur-md transition-all select-none ${glowBorder} ${className}`}
       role="status"
       aria-live="polite"
     >
-      {/* Left: Indicator + Timer */}
-      <div className="flex items-center gap-2.5 shrink-0 min-w-0">
+      {/* Oben: Indikator, Timer, Status und Kontingent. */}
+      <div
+        className={`flex items-center gap-2.5 min-w-0 ${
+          kompakt ? 'flex-wrap justify-between' : 'shrink-0'
+        }`}
+      >
         <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 backdrop-blur-sm">
           <span className="relative flex h-2 w-2 items-center justify-center">
             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${dotColor}`} />
@@ -155,7 +164,11 @@ export function VoiceRecordingBar({
         </div>
 
         {statusLabel && (
-          <span className="text-xs text-white/60 font-medium truncate hidden md:inline">
+          <span
+            className={`text-xs text-white/60 font-medium truncate ${
+              kompakt ? 'inline' : 'hidden md:inline'
+            }`}
+          >
             {statusLabel}
           </span>
         )}
@@ -163,61 +176,65 @@ export function VoiceRecordingBar({
         {extraInfo}
       </div>
 
-      {/* Center: Elegant Animated Voice Bars */}
-      <div
-        className="flex items-center justify-center gap-[3px] flex-1 max-w-[180px] h-6 px-2 mx-auto overflow-hidden opacity-90"
-        aria-hidden="true"
-      >
-        {Array.from({ length: barCount }).map((_, i) => {
-          const centerDist = Math.abs(i - (barCount - 1) / 2) / ((barCount - 1) / 2)
-          const bellCurve = Math.max(0.25, 1 - centerDist * 0.65)
-          const scale =
-            activeLevel > 0.02
-              ? Math.min(1, Math.max(0.15, (activeLevel * 2.8 + Math.sin(i * 1.3) * 0.15) * bellCurve))
-              : 0.18 + Math.sin(i * 0.8) * 0.08
+      <div className={kompakt ? 'flex items-center gap-2' : 'contents'}>
+        {/* Mitte: animierte Pegel. */}
+        <div
+          className={`flex items-center justify-center gap-[3px] h-6 px-2 mx-auto overflow-hidden opacity-90 ${
+            kompakt ? 'flex-1 max-w-none' : 'flex-1 max-w-[180px]'
+          }`}
+          aria-hidden="true"
+        >
+          {Array.from({ length: barCount }).map((_, i) => {
+            const centerDist = Math.abs(i - (barCount - 1) / 2) / ((barCount - 1) / 2)
+            const bellCurve = Math.max(0.25, 1 - centerDist * 0.65)
+            const scale =
+              activeLevel > 0.02
+                ? Math.min(1, Math.max(0.15, (activeLevel * 2.8 + Math.sin(i * 1.3) * 0.15) * bellCurve))
+                : 0.18 + Math.sin(i * 0.8) * 0.08
 
-          return (
-            <span
-              key={i}
-              className={`w-[3px] rounded-full transition-all duration-75 ${barColor}`}
-              style={{
-                height: `${Math.max(4, Math.round(scale * 22))}px`,
-                opacity: 0.4 + scale * 0.6,
-              }}
-            />
-          )
-        })}
-      </div>
+            return (
+              <span
+                key={i}
+                className={`w-[3px] rounded-full transition-all duration-75 ${barColor}`}
+                style={{
+                  height: `${Math.max(4, Math.round(scale * 22))}px`,
+                  opacity: 0.4 + scale * 0.6,
+                }}
+              />
+            )
+          })}
+        </div>
 
-      {/* Right: Actions */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="h-8 px-3 text-xs rounded-xl font-medium text-white/60 hover:text-status-destructive hover:bg-status-destructive/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
-            aria-label={cancelLabel}
-          >
-            {cancelIcon}
-            <span className="hidden sm:inline">{cancelLabel}</span>
-          </button>
-        )}
+        {/* Rechts: Abbrechen und Senden. */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="h-8 px-3 text-xs rounded-xl font-medium text-white/60 hover:text-status-destructive hover:bg-status-destructive/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+              aria-label={cancelLabel}
+            >
+              {cancelIcon}
+              <span className={kompakt ? '' : 'hidden sm:inline'}>{cancelLabel}</span>
+            </button>
+          )}
 
-        {onConfirm && (
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`h-8 px-3.5 text-xs rounded-xl font-medium text-white active:scale-95 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer ${
-              isDanger
-                ? 'bg-status-destructive hover:bg-status-destructive/90 text-white shadow-status-destructive/20'
-                : 'bg-primary hover:bg-primary/90 text-on-primary shadow-primary/20'
-            }`}
-            aria-label={confirmLabel}
-          >
-            {confirmIcon}
-            <span>{confirmLabel}</span>
-          </button>
-        )}
+          {onConfirm && (
+            <button
+              type="button"
+              onClick={onConfirm}
+              className={`h-8 px-3.5 text-xs rounded-xl font-medium text-white active:scale-95 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                isDanger
+                  ? 'bg-status-destructive hover:bg-status-destructive/90 text-white shadow-status-destructive/20'
+                  : 'bg-primary hover:bg-primary/90 text-on-primary shadow-primary/20'
+              }`}
+              aria-label={confirmLabel}
+            >
+              {confirmIcon}
+              <span>{confirmLabel}</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

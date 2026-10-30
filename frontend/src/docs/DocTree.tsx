@@ -234,10 +234,11 @@ export function DocTree({
                   <ActionMenu
                     label={t('docs.tree.actionsFor', { name: ordner.name })}
                     ariaLabel={t('docs.tree.actionsFor', { name: ordner.name })}
-                    icon={<Settings2 className="h-4 w-4" />}
+                    icon={<Settings2 className="h-5 w-5" />}
                     iconOnly
                     variant="ghost"
                     compact
+                    surface="dna"
                     align="end"
                     items={[
                       {
@@ -308,10 +309,11 @@ export function DocTree({
               <ActionMenu
                 label={t('docs.tree.actionsFor', { name: doc.title })}
                 ariaLabel={t('docs.tree.actionsFor', { name: doc.title })}
-                icon={<Settings2 className="h-4 w-4" />}
+                icon={<Settings2 className="h-5 w-5" />}
                 iconOnly
                 variant="ghost"
                 compact
+                surface="dna"
                 align="end"
                 items={
                   trash

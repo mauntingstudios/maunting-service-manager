@@ -234,6 +234,10 @@ export function AiChat({
   // Wann zuletzt „der Mensch tippt" gemeldet wurde — die Drossel des
   // Tipp-Signals. Ein Ref und kein State: der Wert soll nichts neu zeichnen.
   const letztesTippSignalRef = useRef(0)
+  // Die tatsächliche Breite der Eingabezeile, nicht der Viewport: Ein 380px-
+  // Dokumentpanel auf einem 1920px-Bildschirm erfüllt `sm:` trotzdem.
+  const eingabeRef = useRef<HTMLDivElement | null>(null)
+  const [eingabeSchmal, setEingabeSchmal] = useState(false)
   // Welches Modell **jetzt** gewählt ist. `ladeKontext` braucht das, um eine
   // Antwort zu erkennen, die zu einer älteren Wahl gehört. Zuweisung beim
   // Render, dasselbe Muster wie `autoscrollRef` in ServerConsolePanel.
@@ -392,6 +396,16 @@ export function AiChat({
   useEffect(() => () => dictationRef.current?.beenden(), [])
 
   useEffect(() => {
+    const el = eingabeRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const beobachten = () => setEingabeSchmal(el.clientWidth < 460)
+    beobachten()
+    const beobachter = new ResizeObserver(beobachten)
+    beobachter.observe(el)
+    return () => beobachter.disconnect()
+  }, [])
+
+  useEffect(() => {
     const handlePrefChange = () => {
       const savedProvider = readAiProviderChoice(merkSchluessel.provider)
       if (savedProvider !== null && savedProvider !== providerId) {
@@ -532,7 +546,7 @@ export function AiChat({
       // ein Fehlertoast fuer eine Anzeige waere laestiger als die fehlende Zahl.
       if (mountedRef.current) setContextStatus(null)
     }
-  }, [providerId])
+  }, [chatApi, providerId])
 
   useEffect(() => { void ladeKontext() }, [ladeKontext])
 
@@ -547,7 +561,7 @@ export function AiChat({
   const {
     entries, setEntries, streaming, laufendeWerkzeuge, runId, setRunId,
     merkeVorschlag, sendContent, haengeAn, stoppeLauf,
-  } = useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments })
+  } = useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, api: chatApi })
 
   const manuallyClosedGeoRef = useRef(false)
   const closedGeoIdRef = useRef(readClosedGeoAnalysis(merkSchluessel.closedGeoAnalysis))
@@ -895,7 +909,7 @@ export function AiChat({
     } finally {
       if (mountedRef.current) setUploading(false)
     }
-  }, [streaming, t, uploading])
+  }, [chatApi, streaming, t, uploading])
 
   const removeAttachment = async (attachment: AiAttachment) => {
     try {
@@ -1072,7 +1086,7 @@ export function AiChat({
       window.removeEventListener(AI_ZUSTELLUNG_EVENT, nachladen)
       document.removeEventListener('visibilitychange', sichtbar)
     }
-  }, [setEntries, streaming])
+  }, [chatApi, setEntries, streaming])
 
   const [reloading, setReloading] = useState(false)
   const manuellNachladen = useCallback(async () => {
@@ -1094,7 +1108,7 @@ export function AiChat({
         setReloading(false)
       }
     }
-  }, [streaming, reloading, ladeKontext, setEntries])
+  }, [chatApi, streaming, reloading, ladeKontext, setEntries])
 
   /**
    * Das Tipp-Signal: gedrosselt, ohne Inhalt, ohne Fehlerbehandlung nach aussen.
@@ -1109,7 +1123,7 @@ export function AiChat({
     if (jetzt - letztesTippSignalRef.current < TIPP_TAKT_MS) return
     letztesTippSignalRef.current = jetzt
     void chatApi.typing().catch(() => undefined)
-  }, [])
+  }, [chatApi])
 
   if (loading) {
     return (
@@ -1553,7 +1567,7 @@ export function AiChat({
         {memoryNoticeDue && scope.kind !== 'docs' && (
           <AiMemoryNotice onAnswered={() => setMemoryNoticeDue(false)} />
         )}
-        <div className="mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl">
+        <div ref={eingabeRef} className="mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl">
           {/* Nur Ungesendetes: alles Uebrige steht in seiner Nachricht. Vorher
               blieb jeder Anhang hier stehen und ging bei jeder Folgefrage
               erneut an den Anbieter. */}
@@ -1613,13 +1627,20 @@ export function AiChat({
             </div>
           )}
 
-          <div className="flex items-end gap-2 rounded-2xl border border-outline-variant/50 bg-surface-container-low/50 p-2 focus-within:border-primary/50">
+          <div
+            className={
+              dictating
+                ? 'w-full rounded-2xl border border-outline-variant/50 bg-surface-container-low/50 p-2'
+                : 'flex items-end gap-2 rounded-2xl border border-outline-variant/50 bg-surface-container-low/50 p-2 focus-within:border-primary/50'
+            }
+          >
             {dictating ? (
               <VoiceRecordingBar
                 durationSeconds={dictationElapsed}
                 statusLabel="Jetzt sprechen …"
                 variant="danger"
-                className="flex-1 border-0 bg-transparent p-0"
+                kompakt={eingabeSchmal}
+                className="w-full border-0 bg-transparent"
                 extraInfo={
                   <Kurzinfo
                     text={
@@ -1628,7 +1649,7 @@ export function AiChat({
                         : t('ai.chat.dictationUnlimitedHint')
                     }
                     lage="oben"
-                    aussen="hidden sm:inline-flex shrink-0"
+                    aussen={eingabeSchmal ? 'inline-flex shrink-0' : 'hidden sm:inline-flex shrink-0'}
                   >
                   <div className="flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low/60 px-2 py-0.5 text-xs text-on-surface-variant">
                     <span className="tabular-nums font-medium text-on-surface">
@@ -1722,12 +1743,14 @@ export function AiChat({
                 )}
               </>
             )}
-            {/* Direkt neben dem Absenden, weil dort die Entscheidung faellt:
-                wer sieht, dass der Kontext gleich zusammengefasst wird, formuliert
-                die naechste Frage anders. In einer Einstellungsseite haette
-                dieselbe Zahl niemanden erreicht. */}
-            <AiContextMeter status={contextStatus} />
-            {streaming ? (
+            {!dictating && (
+              <>
+                {/* Direkt neben dem Absenden, weil dort die Entscheidung faellt:
+                    wer sieht, dass der Kontext gleich zusammengefasst wird, formuliert
+                    die naechste Frage anders. In einer Einstellungsseite haette
+                    dieselbe Zahl niemanden erreicht. */}
+                <AiContextMeter status={contextStatus} />
+                {streaming ? (
               !input.trim() ? (
                 <Kurzinfo text={t('ai.chat.stopRun')} lage="oben" seite="ende" aussen="shrink-0">
                   <Button
@@ -1781,6 +1804,8 @@ export function AiChat({
               >
                 <Send className="h-4 w-4" aria-hidden="true" />
               </Button>
+            )}
+              </>
             )}
           </div>
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { createMappablePosition } from '@tiptap/extension-collaboration'
 import { HocuspocusProvider } from '@hocuspocus/provider'
@@ -16,7 +16,7 @@ import {
   Users,
   WifiOff,
 } from 'lucide-react'
-import { Badge, Blattmenue, Button, Kurzinfo, confirm, prompt } from '@/Singra/UI'
+import { Badge, Button, Kurzinfo, confirm, prompt } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import {
   assetUrl,
@@ -37,11 +37,11 @@ import {
 import { Toolbar } from './editor/Toolbar'
 import { MobileToolbar } from './editor/MobileToolbar'
 import { SlashMenu } from './editor/SlashMenu'
-import { Outline } from './editor/Outline'
+import { useOutlineEntries, type OutlineEntry } from './editor/Outline'
 import { ExportMenu } from './ExportMenu'
 import { docDatabaseName } from './docsOffline'
 
-type Panel = 'comments' | 'history' | 'singra' | null
+type Panel = 'comments' | 'history' | 'outline' | 'singra' | null
 
 interface DocEditorProps {
   detail: DocDetail
@@ -55,6 +55,8 @@ interface DocEditorProps {
   onCommentsChanged: () => void
   onTitleChanged: (title: string) => Promise<void>
   onSelectionChange?: (selection: { quote: string } | null) => void
+  onOutlineChange?: (entries: OutlineEntry[]) => void
+  outlineJumpRef?: MutableRefObject<((pos: number) => void) | null>
   vorschlag?: DocPendingView | null
   vorschlagBusy?: boolean
   onApplyVorschlag?: () => void
@@ -75,6 +77,8 @@ export function DocEditor({
   onCommentsChanged,
   onTitleChanged,
   onSelectionChange,
+  onOutlineChange,
+  outlineJumpRef,
   vorschlag = null,
   vorschlagBusy = false,
   onApplyVorschlag,
@@ -88,11 +92,7 @@ export function DocEditor({
   const [verbindung, setVerbindung] = useState<Verbindung>('verbinden')
   const [peers, setPeers] = useState(0)
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
-  const [outlineOffen, setOutlineOffen] = useState(false)
   const [lokalGeaendert, setLokalGeaendert] = useState(false)
-  const [mobil, setMobil] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
-  )
   const bildRef = useRef<HTMLInputElement>(null)
 
   const ydoc = useMemo(() => new Y.Doc(), [detail.uid])
@@ -101,13 +101,6 @@ export function DocEditor({
   useEffect(() => {
     setTitel(detail.title)
   }, [detail.uid, detail.title])
-
-  useEffect(() => {
-    const media = window.matchMedia('(max-width: 767px)')
-    const melden = () => setMobil(media.matches)
-    media.addEventListener('change', melden)
-    return () => media.removeEventListener('change', melden)
-  }, [])
 
   useEffect(() => {
     let abgebrochen = false
@@ -205,6 +198,24 @@ export function DocEditor({
     },
     [provider],
   )
+
+  const outlineEntries = useOutlineEntries(editor)
+
+  useEffect(() => {
+    onOutlineChange?.(outlineEntries)
+  }, [onOutlineChange, outlineEntries])
+
+  useEffect(() => {
+    if (!outlineJumpRef) return
+    outlineJumpRef.current = editor
+      ? (pos) => {
+          editor.chain().focus().setTextSelection(pos + 1).scrollIntoView().run()
+        }
+      : null
+    return () => {
+      outlineJumpRef.current = null
+    }
+  }, [editor, outlineJumpRef])
 
   useEffect(() => {
     editor?.setEditable(editable)
@@ -400,7 +411,13 @@ export function DocEditor({
           </>
         )}
         <Kurzinfo text={t('docs.outline.label')}>
-          <Button variant="ghost" size="sm" onClick={() => setOutlineOffen((alt) => !alt)} aria-label={t('docs.outline.label')}>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={activePanel === 'outline'}
+            onClick={() => onOpenPanel(activePanel === 'outline' ? null : 'outline')}
+            aria-label={t('docs.outline.label')}
+          >
             {t('docs.outline.short')}
           </Button>
         </Kurzinfo>
@@ -531,11 +548,6 @@ export function DocEditor({
             <p className="px-6 pb-4 text-xs text-on-surface-variant">{t('docs.offline.localChanges')}</p>
           )}
         </div>
-        {outlineOffen && !mobil && (
-          <aside className="hidden w-56 shrink-0 overflow-y-auto border-l border-outline-variant/40 bg-surface-container md:block">
-            <Outline editor={editor} />
-          </aside>
-        )}
       </div>
 
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/40 px-4 py-1.5 text-xs text-on-surface-variant">
@@ -547,18 +559,6 @@ export function DocEditor({
           <span>Rev {detail.rev}</span>
         </span>
       </footer>
-
-      {outlineOffen && mobil && (
-        <Blattmenue
-          offen
-          onSchliessen={() => setOutlineOffen(false)}
-          titel={t('docs.outline.label')}
-        >
-          <div className="max-h-[60vh] overflow-y-auto">
-            <Outline editor={editor} />
-          </div>
-        </Blattmenue>
-      )}
 
       {slashQuery !== null && editor && (
         <SlashMenu

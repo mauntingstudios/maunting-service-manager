@@ -41,6 +41,7 @@ import { DocTree } from './DocTree'
 import { DocEditor } from './DocEditor'
 import { CommentsPanel } from './CommentsPanel'
 import { HistoryPanel } from './HistoryPanel'
+import { OutlineList, type OutlineEntry } from './editor/Outline'
 import { ShareDialog } from './ShareDialog'
 import { MembersDialog } from './MembersDialog'
 import { MoveDialog } from './MoveDialog'
@@ -54,7 +55,7 @@ import {
   saveCachedDocuments,
 } from './docsOffline'
 
-type Panel = 'comments' | 'history' | 'singra' | null
+type Panel = 'comments' | 'history' | 'outline' | 'singra' | null
 
 export function DocsApp() {
   const { t } = useTranslation()
@@ -81,6 +82,8 @@ export function DocsApp() {
   const [panel, setPanel] = useState<Panel>(null)
   const [comments, setComments] = useState<DocComment[]>([])
   const [revisions, setRevisions] = useState<DocRevision[]>([])
+  const [outlineEntries, setOutlineEntries] = useState<OutlineEntry[]>([])
+  const outlineJumpRef = useRef<((pos: number) => void) | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [membersOpen, setMembersOpen] = useState(false)
   const [selection, setSelection] = useState<{ quote: string } | null>(null)
@@ -231,6 +234,7 @@ export function DocsApp() {
 
   useEffect(() => {
     setSelection(null)
+    setOutlineEntries([])
     if (uid) {
       void detailLaden(uid)
       void vorschlagLaden(uid)
@@ -477,6 +481,7 @@ export function DocsApp() {
   const panelTitel = useMemo(() => {
     if (panel === 'comments') return t('docs.comments.title')
     if (panel === 'history') return t('docs.history.title')
+    if (panel === 'outline') return t('docs.outline.label')
     if (panel === 'singra') return t('docs.singra.title')
     return ''
   }, [panel, t])
@@ -612,6 +617,8 @@ export function DocsApp() {
               onCommentsChanged={() => void panelDatenLaden()}
               onTitleChanged={titelAendern}
               onSelectionChange={setSelection}
+              onOutlineChange={setOutlineEntries}
+              outlineJumpRef={outlineJumpRef}
               vorschlag={vorschlag}
               vorschlagBusy={vorschlagBusy}
               onApplyVorschlag={() => void vorschlagAnwenden()}
@@ -668,6 +675,14 @@ export function DocsApp() {
                       void detailLaden(detail.uid)
                     }}
                   />
+                )}
+                {panel === 'outline' && (
+                  <div className="h-full overflow-y-auto">
+                    <OutlineList
+                      entries={outlineEntries}
+                      onJump={(pos) => outlineJumpRef.current?.(pos)}
+                    />
+                  </div>
                 )}
                 {panel === 'singra' && (
                   <DocsChatPanel

@@ -453,7 +453,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
       }
     }
     return { verarbeite, spuele, istGescheitert: () => gescheitert }
-  }, [aendere, canAttach, ladeKontext, merkeVorschlag, providerId, setAttachments, t])
+  }, [aendere, api, canAttach, ladeKontext, merkeVorschlag, providerId, setAttachments, t])
 
   /**
    * Verfolgt einen Lauf, bis er ruht — oder bis der Benutzer weggeht.
@@ -561,7 +561,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
     } finally {
       streamingRef.current = false
     }
-  }, [denken.an, denken.stufe, providerId, streaming, verfolge])
+  }, [api, denken.an, denken.stufe, providerId, streaming, verfolge])
 
   /** Bricht den laufenden Strom und den serverseitigen Lauf kontrolliert ab. */
   const stoppeLauf = useCallback(async () => {
@@ -580,7 +580,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
     } catch {
       // Stoppen schlägt fehl, wenn der Lauf bereits ruht — harmlos
     }
-  }, [])
+  }, [api])
 
   return {
     entries, setEntries, streaming, laufendeWerkzeuge, runId, setRunId,

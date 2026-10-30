@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   aiApi,
   attachAiRun,
+  streamAiMessage,
   type AiActionProposal,
   type AiAttachment,
   type AiContextStatus,
@@ -236,6 +237,32 @@ describe('AiChat', () => {
     vi.mocked(aiApi.transcribeVoice).mockReset().mockResolvedValue({ text: '' })
     vi.mocked(aiApi.typing).mockReset().mockResolvedValue(undefined)
     vi.mocked(attachAiRun).mockReset().mockResolvedValue(undefined)
+    vi.mocked(streamAiMessage).mockReset().mockResolvedValue(undefined)
+  })
+
+  it('sendet im Dokument-Scope über die Dokument-API', async () => {
+    vi.mocked(aiApi.getConversation).mockResolvedValue({ ...CONVERSATION, messages: [] })
+    vi.mocked(streamAiMessage).mockReset().mockResolvedValue(undefined)
+
+    render(
+      <MemoryRouter>
+        <AiChat scope={{ kind: 'docs', documentUid: 'doc-1' }} />
+      </MemoryRouter>,
+    )
+    await waitFor(() =>
+      expect(aiApi.getConversation).toHaveBeenCalledWith('docs', undefined, 'doc-1'),
+    )
+
+    const feld = await screen.findByLabelText(i18n.t('ai.chat.message'))
+    fireEvent.change(feld, { target: { value: 'Bitte dieses Dokument bearbeiten' } })
+    fireEvent.submit(feld.closest('form') as HTMLFormElement)
+
+    await waitFor(() => expect(streamAiMessage).toHaveBeenCalled())
+    const nutzlast = vi.mocked(streamAiMessage).mock.calls[0][0]
+    expect(nutzlast).toMatchObject({
+      document_uid: 'doc-1',
+      content: 'Bitte dieses Dokument bearbeiten',
+    })
   })
 
   it('offers exactly one conversation and no way to create another', async () => {

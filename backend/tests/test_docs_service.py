@@ -257,6 +257,9 @@ def test_dokument_schnitt_ist_geschlossen_und_kennt_keinen_worker():
     assert "read_server_status" in erlaubt
     assert "read_team_notes" in erlaubt
     assert "read_team_notes" not in docs_kontext_schnitt(False)
+    # Der Lauf haengt an genau einem Dokument; eine Dokumentliste wuerde bei
+    # einem persoenlichen Dokument sogar fremde Teams nennen.
+    assert "list_documents" not in erlaubt
     for verboten in (
         "web_search",
         "send_mail",
