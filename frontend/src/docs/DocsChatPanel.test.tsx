@@ -42,6 +42,11 @@ describe('DocsChatPanel', () => {
     expect(chatProps.aktuell?.showGuardian).toBe(false)
     expect(chatProps.aktuell?.showWorkers).toBe(false)
     expect(chatProps.aktuell?.eingebettet).toBe(true)
+    expect(chatProps.aktuell?.beispielSchluessel).toEqual([
+      'zusammenfassen',
+      'pruefen',
+      'gliedern',
+    ])
   })
 
   it('zeigt ohne ai.docs.use den Rechtehinweis statt des Chats', () => {

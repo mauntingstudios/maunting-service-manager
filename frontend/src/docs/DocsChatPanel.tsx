@@ -10,6 +10,8 @@ import { AiChat } from '@/components/ai/AiChat'
 import { SprachAnsicht } from '@/components/ai/voice/SprachAnsicht'
 import { aiApi, type AiVoiceConfig } from '@/api/ai'
 
+const DOCS_BEISPIELE = ['zusammenfassen', 'pruefen', 'gliedern'] as const
+
 interface DocsChatPanelProps {
   uid: string
   selection?: { quote: string; hash?: string } | null
@@ -97,6 +99,7 @@ export function DocsChatPanel({ uid, selection, onChanged }: DocsChatPanelProps)
       showWorkers={false}
       canTasks={false}
       hasVoice={canVoice}
+      beispielSchluessel={DOCS_BEISPIELE}
       onProviderChange={setProviderId}
       onSwitchMode={(naechster) => {
         if (naechster === 'sprache' && canVoice) setModus('sprache')

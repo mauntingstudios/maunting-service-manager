@@ -21,7 +21,7 @@ import {
 } from "./collab.mjs";
 import { applyAiEdit, AiEditError } from "./ai_edit.mjs";
 import { storeDocument, ydocOf } from "./persist.mjs";
-import { renderDocument } from "./render.mjs";
+import { renderDocument, renderNodesHtml } from "./render.mjs";
 import { loadState } from "./backend_client.mjs";
 
 const VERSION = process.env.npm_package_version || "1.0.0";
@@ -143,7 +143,7 @@ async function aktion(name, req, antwort) {
     });
   }
 
-  const match = /^\/internal\/docs\/([^/]+)\/(checkpoint|restore|undo-ai|render|ai-edit|disconnect-user|disconnect-doc)$/.exec(
+  const match = /^\/internal\/docs\/([^/]+)\/(checkpoint|restore|undo-ai|render|ai-preview|ai-edit|disconnect-user|disconnect-doc)$/.exec(
     req.url || "",
   );
   if (!match) {
@@ -221,6 +221,54 @@ async function aktion(name, req, antwort) {
     return json(antwort, 200, ergebnis);
   }
 
+  if (was === "ai-preview") {
+    // Nur lesen: der Klon nimmt die Aenderung auf, das Live-Dokument bleibt
+    // unberuehrt. Deshalb hier bewusst **kein** `storeDocument` — sonst
+    // entstuende eine Revision, die alle Mitarbeiter im Verlauf saehen.
+    const ergebnis = await withDocument(
+      docName,
+      async (ydoc) => {
+        const klon = new Y.Doc();
+        Y.applyUpdate(klon, Y.encodeStateAsUpdate(ydoc));
+        try {
+          const bearbeitet = applyAiEdit(klon, {
+            operation: body.operation,
+            markdown: body.markdown,
+            anchor: body.anchor,
+            runId: body.run_id,
+            callId: body.call_id,
+            expectedBlock: body.expected_block ?? null,
+          });
+          const fragment = klon.getXmlFragment("default");
+          const knoten = fragment
+            .toArray()
+            .slice(
+              bearbeitet.target_index,
+              bearbeitet.target_index + bearbeitet.inserted_count,
+            );
+          return {
+            ok: true,
+            html: renderNodesHtml(knoten, true),
+            target_block: bearbeitet.target_block,
+            target_index: bearbeitet.target_index,
+          };
+        } catch (error) {
+          if (error instanceof AiEditError) {
+            const fehler = new Error(error.message);
+            fehler.code = error.code;
+            fehler.candidates = error.candidates;
+            throw fehler;
+          }
+          throw error;
+        } finally {
+          klon.destroy();
+        }
+      },
+      { user_id: meta.user_id, fam: meta.family },
+    );
+    return json(antwort, 200, ergebnis);
+  }
+
   if (was === "ai-edit") {
     const ergebnis = await withDocument(
       docName,
@@ -251,6 +299,7 @@ async function aktion(name, req, antwort) {
               anchor: body.anchor,
               runId: body.run_id,
               callId: body.call_id,
+              expectedBlock: body.expected_block ?? null,
             });
           } catch (error) {
             if (error instanceof AiEditError) {

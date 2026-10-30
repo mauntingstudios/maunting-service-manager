@@ -14,15 +14,15 @@ vi.mock('@/api/docs', async (importOriginal) => {
 })
 
 describe('ExportMenu', () => {
-  it('nutzt die DNA-Dropdown und lädt das gewählte Format', async () => {
+  it('nutzt das DNA-Aktionsmenü und lädt das gewählte Format', async () => {
     render(<ExportMenu uid="doc-1" rev={4} />)
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('docs.export.label') }))
-    fireEvent.click(await screen.findByRole('option', { name: i18n.t('docs.export.markdown') }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: i18n.t('docs.export.markdown') }))
 
     await waitFor(() =>
       expect(docsApi.downloadExport).toHaveBeenCalledWith('doc-1', 'md', 4),
     )
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })

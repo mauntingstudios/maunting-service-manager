@@ -79,54 +79,56 @@ export function MembersDialog({ detail, open, onOpenChange, onChanged }: Members
           <DialogDescription>{t('docs.members.description')}</DialogDescription>
         </DialogHeader>
 
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-outline-variant/40 p-2">
-          <span className="text-xs text-on-surface-variant">{t('docs.members.defaultRole')}</span>
-          <Dropdown
-            aria-label={t('docs.members.defaultRole')}
-            value={defaultRolle}
-            onChange={(wert) => void standardRolleAendern(wert)}
-            options={[
-              { value: 'viewer', label: t('docs.roles.viewer') },
-              { value: 'commenter', label: t('docs.roles.commenter') },
-              { value: 'editor', label: t('docs.roles.editor') },
-            ]}
-            buttonClassName="min-w-[10rem]"
-          />
-        </div>
+        <div className="space-y-3 px-6 pb-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-outline-variant/40 p-2">
+            <span className="text-xs text-on-surface-variant">{t('docs.members.defaultRole')}</span>
+            <Dropdown
+              aria-label={t('docs.members.defaultRole')}
+              value={defaultRolle}
+              onChange={(wert) => void standardRolleAendern(wert)}
+              options={[
+                { value: 'viewer', label: t('docs.roles.viewer') },
+                { value: 'commenter', label: t('docs.roles.commenter') },
+                { value: 'editor', label: t('docs.roles.editor') },
+              ]}
+              buttonClassName="min-w-[10rem]"
+            />
+          </div>
 
-        <div className="max-h-[60vh] overflow-y-auto">
-          {laden && <p className="py-4 text-center text-xs text-on-surface-variant">{t('docs.members.loading')}</p>}
-          {!laden && rows.length === 0 && (
-            <p className="py-4 text-center text-xs text-on-surface-variant">{t('docs.members.empty')}</p>
-          )}
-          {rows.map((row) => (
-            <div
-              key={row.user_id}
-              className="flex flex-wrap items-center gap-2 border-b border-outline-variant/30 py-2 last:border-0"
-            >
-              <span className="min-w-0 flex-1 truncate text-sm text-on-surface">{row.username}</span>
-              {row.is_team_owner && <Badge variant="info">{t('docs.members.teamOwner')}</Badge>}
-              {row.is_doc_owner && <Badge variant="success">{t('docs.members.docOwner')}</Badge>}
-              {row.is_team_owner ? (
-                <Badge variant="info">{t('docs.roles.editor')}</Badge>
-              ) : (
-                <Dropdown
-                  aria-label={t('docs.members.roleFor', { name: row.username })}
-                  value={row.role ?? 'default'}
-                  onChange={(wert) => void aendern(row, wert)}
-                  options={[
-                    { value: 'default', label: t('docs.members.teamDefault', { role: t(`docs.roles.${detail.default_role}`) }) },
-                    { value: 'viewer', label: t('docs.roles.viewer') },
-                    { value: 'commenter', label: t('docs.roles.commenter') },
-                    { value: 'editor', label: t('docs.roles.editor') },
-                  ]}
-                  buttonClassName="min-w-[12rem]"
-                />
-              )}
-            </div>
-          ))}
+          <div className="max-h-[60vh] overflow-y-auto">
+            {laden && <p className="py-4 text-center text-xs text-on-surface-variant">{t('docs.members.loading')}</p>}
+            {!laden && rows.length === 0 && (
+              <p className="py-4 text-center text-xs text-on-surface-variant">{t('docs.members.empty')}</p>
+            )}
+            {rows.map((row) => (
+              <div
+                key={row.user_id}
+                className="flex flex-wrap items-center gap-3 border-b border-outline-variant/30 py-2.5 last:border-0"
+              >
+                <span className="min-w-0 flex-1 truncate text-sm text-on-surface">{row.username}</span>
+                {row.is_team_owner && <Badge variant="info">{t('docs.members.teamOwner')}</Badge>}
+                {row.is_doc_owner && <Badge variant="success">{t('docs.members.docOwner')}</Badge>}
+                {row.is_team_owner ? (
+                  <Badge variant="info">{t('docs.roles.editor')}</Badge>
+                ) : (
+                  <Dropdown
+                    aria-label={t('docs.members.roleFor', { name: row.username })}
+                    value={row.role ?? 'default'}
+                    onChange={(wert) => void aendern(row, wert)}
+                    options={[
+                      { value: 'default', label: t('docs.members.teamDefault', { role: t(`docs.roles.${detail.default_role}`) }) },
+                      { value: 'viewer', label: t('docs.roles.viewer') },
+                      { value: 'commenter', label: t('docs.roles.commenter') },
+                      { value: 'editor', label: t('docs.roles.editor') },
+                    ]}
+                    buttonClassName="min-w-[10rem] sm:min-w-[12rem]"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-on-surface-variant">{t('docs.members.boundary')}</p>
         </div>
-        <p className="text-xs text-on-surface-variant">{t('docs.members.boundary')}</p>
       </DialogContent>
     </Dialog>
   )

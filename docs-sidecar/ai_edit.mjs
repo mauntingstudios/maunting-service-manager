@@ -192,6 +192,25 @@ export function markdownToNodes(markdown) {
   return knoten;
 }
 
+/**
+ * Der sichtbare Text eines Blocks. `Y.XmlElement.toString()` liefert Markup
+ * (`<paragraph>…</paragraph>`) und taugt nicht als Fingerabdruck; der Client
+ * vergleicht den Zielblock mit `doc.textBetween(...)`.
+ */
+function plainText(node) {
+  if (node instanceof Y.XmlText) return node.toString();
+  if (!(node instanceof Y.XmlElement)) return "";
+  const inner = node.toArray().map(plainText).join("");
+  if (
+    ["paragraph", "heading", "listItem", "taskItem", "blockquote", "tableCell", "tableHeader"].includes(
+      node.nodeName,
+    )
+  ) {
+    return inner;
+  }
+  return node.toArray().map(plainText).join(" ");
+}
+
 export class AiEditError extends Error {
   constructor(code, message, candidates = []) {
     super(message);
@@ -200,7 +219,10 @@ export class AiEditError extends Error {
   }
 }
 
-export function applyAiEdit(ydoc, { operation, markdown, anchor, runId, callId }) {
+export function applyAiEdit(
+  ydoc,
+  { operation, markdown, anchor, runId, callId, expectedBlock = null },
+) {
   const fragment = ydoc.getXmlFragment("default");
   const origin = `ai:${runId || "run"}:${callId || Date.now()}`;
   const neue = markdownToNodes(markdown);
@@ -209,8 +231,11 @@ export function applyAiEdit(ydoc, { operation, markdown, anchor, runId, callId }
   }
 
   let ersetzt = false;
+  let targetBlock = null;
+  let targetIndex = null;
   ydoc.transact(() => {
     if (operation === "append") {
+      targetIndex = fragment.length;
       fragment.insert(fragment.length, neue);
       return;
     }
@@ -242,10 +267,25 @@ export function applyAiEdit(ydoc, { operation, markdown, anchor, runId, callId }
       );
     }
     const ziel = treffer[0];
+    if (expectedBlock !== null && plainText(ziel.node) !== expectedBlock) {
+      throw new AiEditError(
+        "AI_EDIT_STALE_SELECTION",
+        "Der Zielblock hat sich seit der Vorschau geaendert",
+      );
+    }
+    targetBlock = plainText(ziel.node);
+    targetIndex = ziel.index;
     fragment.delete(ziel.index, 1);
     fragment.insert(ziel.index, neue);
     ersetzt = true;
   }, origin);
 
-  return { ok: true, origin, replaced: ersetzt };
+  return {
+    ok: true,
+    origin,
+    replaced: ersetzt,
+    target_block: targetBlock,
+    target_index: targetIndex,
+    inserted_count: neue.length,
+  };
 }

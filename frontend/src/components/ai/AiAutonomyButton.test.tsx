@@ -62,7 +62,7 @@ describe('AiAutonomyButton', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Autonomer Modus' }))
     fireEvent.click(await screen.findByLabelText('Geltungsbereich'))
-    fireEvent.mouseDown(screen.getByRole('option', { name: 'valheim-01' }))
+    fireEvent.pointerDown(screen.getByRole('option', { name: 'valheim-01' }))
     fireEvent.click(screen.getByRole('option', { name: 'valheim-01' }))
 
     // Das Panel steht noch, und die Wahl ist angekommen.
@@ -87,6 +87,15 @@ describe('AiAutonomyButton', () => {
     expect(screen.queryByText(/auf allen deinen Servern/i)).not.toBeInTheDocument()
   })
 
+  it('zeigt im Dokument keine Serverauswahl, sondern die Vorschau-Erklärung', async () => {
+    vi.mocked(aiApi.listAutonomyGrants).mockResolvedValue([])
+    render(<AiAutonomyButton servers={SERVER} bereich="docs" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Autonomer Modus' }))
+
+    expect(await screen.findByText(/Jede KI-Änderung erscheint zuerst als ausgegraute Vorschau/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Geltungsbereich')).not.toBeInTheDocument()
+  })
+
   it('schließt das Panel weiterhin bei einem echten Klick daneben', async () => {
     // Die Gegenprobe. Ohne sie wäre der erste Test auch dann grün, wenn der
     // Wächter gar nichts mehr schließt.
@@ -94,7 +103,7 @@ describe('AiAutonomyButton', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Autonomer Modus' }))
     expect(await screen.findByLabelText('Geltungsbereich')).toBeInTheDocument()
 
-    fireEvent.mouseDown(document.body)
+    fireEvent.pointerDown(document.body)
     await waitFor(() =>
       expect(screen.queryByLabelText('Geltungsbereich')).not.toBeInTheDocument())
   })

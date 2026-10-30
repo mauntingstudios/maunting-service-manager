@@ -280,6 +280,21 @@ WERKZEUGE: dict[str, Werkzeug] = {
     "read_document_skill": Werkzeug(
         "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
     ),
+    # Teamwissen bleibt an das Dokumentteam gebunden. Die Handler lesen die
+    # Team-ID aus dem Laufkontext, nie aus einem Modellargument; ein
+    # Dokumenttext darf den Lauf nicht auf ein fremdes Team richten.
+    "read_team_notes": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.notes.use",)
+    ),
+    "read_team_calendar": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.calendar.use",)
+    ),
+    "search_team_memory": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.memory.use",)
+    ),
+    "learn_team_skill": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.skills.use",)
+    ),
     "edit_document": Werkzeug(
         "docs_write", gruppe="dokumente", angebot=("ai.docs.use",)
     ),
@@ -999,6 +1014,38 @@ GLOBAL_READ_TOOLS = _mit_art("global_read", "ask", "delegation")
 DOCUMENTS_TOOLS = _mit_gruppe("dokumente")
 DOCUMENTS_WRITE_TOOLS = _mit_art("docs_write")
 DOCUMENTS_READ_TOOLS = DOCUMENTS_TOOLS - DOCUMENTS_WRITE_TOOLS
+
+#: Dokumentwerkzeuge, die echtes Teamwissen lesen oder schreiben. Ein
+#: Link-Gast mit Editor-Recht am Dokument ist kein Teammitglied; er bekommt
+#: diese Werkzeuge deshalb gar nicht erst angeboten.
+DOCS_TEAM_TOOLS = frozenset({
+    "read_team_notes",
+    "read_team_calendar",
+    "search_team_memory",
+    "learn_team_skill",
+    "read_document_skill",
+})
+
+#: Das Oekosystem, das eine Dokument-KI lesen darf. Eine ausdrueckliche
+#: Aufzaehlung, keine Ableitung aus `SERVER_READ_TOOLS`/`GLOBAL_READ_TOOLS`:
+#: Logs, Konfigurationen, Dateien, Datenbank, Web, Mail, Aufgaben, Popups,
+#: Benutzer- und Cloudflare-Daten wuerden sonst stillschweigend mitwandern und
+#: koennten ueber ein geteiltes Dokument nach draussen gelangen. Ein neues
+#: Lesewerkzeug braucht hier bewusst eine Zeile.
+DOCS_ECOSYSTEM_READ = frozenset({
+    "list_my_servers",
+    "read_server_status",
+    "read_server_capacity",
+    "read_server_ports",
+    "read_server_network",
+    "check_server_reachability",
+    "read_server_mods",
+    "read_mod_updates",
+    "read_server_backups",
+    "read_guardian_incidents",
+    "read_node_health",
+    "read_node_capacity",
+})
 # Dokument-Schreibwerkzeuge laufen im Sofortpfad, nicht ueber eine
 # Vorschlagskarte. Der Grund ist die Zusage an den Nutzer: Singra schreibt
 # direkt, und der Rueckweg ist die Version plus `undo_ai_edit`.
@@ -1126,22 +1173,27 @@ GEHIRN_TOOLS = (
 ) - NUR_WORKER - {"ask_user"}
 
 
-def docs_kontext_schnitt(rolle: str = "voll") -> set[str]:
+def docs_kontext_schnitt(team_mitglied: bool = False) -> set[str]:
     """Werkzeuge, die in einem Dokument-Lauf uebrig bleiben.
 
-    Ein Dokumenttext ist Daten, keine Anweisung. Deshalb darf ein praeparierter
-    Text in einem Dokument-Lauf keine Server-, Mail-, Kalender-, Web- oder
-    Desktop-Aktion ausloesen. Es bleiben die Dokumentwerkzeuge und die
-    Worker-Steuerung: das Gehirn delegiert Schreibarbeit, der Worker fuehrt
-    sie aus, `voll` kann beides.
+    Ein Dokumenttext ist Daten, keine Anweisung. Deshalb gilt eine geschlossene
+    Aufzaehlung statt einer Ableitung aus allen Lesewerkzeugen. Die
+    Dokument-KI bearbeitet das Dokument direkt; es gibt keinen Worker, keine
+    Delegation und keinen Desktop-Weg.
+
+    ``team_mitglied`` entscheidet ueber echtes Teamwissen. Ein Link-Gast mit
+    Editor-Recht am Dokument darf den Text aendern, aber nicht das Gedaechtnis,
+    die Notizen, den Kalender oder die Skills des Teams lesen. Das wird hier
+    und in jedem Handler erneut geprueft, weil eine Mitgliedschaft waehrend
+    eines Laufs entzogen werden kann.
+
+    Die Rechtepruefung bleibt die Autoritaet: `angebotene_werkzeuge` filtert
+    vorher nach `ai.notes.use`, `ai.calendar.use`, `ai.memory.use`,
+    `ai.skills.use` und `ai.docs.use`. Diese Menge ersetzt kein Recht.
     """
-    erlaubt = set(DOCUMENTS_TOOLS)
-    if rolle == "gehirn":
-        erlaubt |= WORKER_STEUERUNG
-    elif rolle == "worker":
-        erlaubt |= NUR_WORKER
-    else:
-        erlaubt |= WORKER_STEUERUNG | NUR_WORKER
+    erlaubt = (set(DOCUMENTS_TOOLS) - set(DOCS_TEAM_TOOLS)) | set(DOCS_ECOSYSTEM_READ)
+    if team_mitglied:
+        erlaubt |= set(DOCS_TEAM_TOOLS)
     return erlaubt
 
 

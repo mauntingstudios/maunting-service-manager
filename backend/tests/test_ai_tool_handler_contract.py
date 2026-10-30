@@ -66,9 +66,17 @@ def test_every_global_read_tool_is_named_in_its_dispatch() -> None:
     quelle = inspect.getsource(ai_action_service._execute_global_read_tool)
     # `ask_user` ist kein Lesewerkzeug, sondern die Rueckfrage; sie wird im
     # Stream behandelt und erreicht diese Verteilung nie.
+    # Dokumentwerkzeuge tragen zwar die Art `global_read`, werden aber im
+    # Dokumentzweig ueber `DOCUMENTS_TOOLS` verteilt. Ihr Verdrahten haelt
+    # `test_dokument_lesen_geht_ueber_den_dokumentzweig` fest; hier wuerde
+    # eine zweite Namensliste nur wieder auseinanderlaufen.
     fehlend = sorted(
         name
-        for name in ai_tool_registry.GLOBAL_READ_TOOLS - ai_tool_registry.ASK_TOOLS
+        for name in (
+            ai_tool_registry.GLOBAL_READ_TOOLS
+            - ai_tool_registry.ASK_TOOLS
+            - ai_tool_registry.DOCUMENTS_TOOLS
+        )
         if f'"{name}"' not in quelle
     )
     assert fehlend == []
@@ -451,12 +459,13 @@ def test_the_tool_catalogue_stays_within_a_stated_budget() -> None:
             ],
             ensure_ascii=False,
         )
-        # Stand 28.10.2026, nachgemessen: Der Desktop-Fall liegt mit den zehn
-        # Dokumentwerkzeugen bei 81.297 Zeichen. Die Beschreibungen sind
-        # bereits auf das Noetige gekuerzt; die Grenze steigt deshalb einmalig
-        # auf 82.000 und behaelt gut 700 Zeichen Luft fuer die naechste
-        # bewusste Entscheidung.
-        assert len(katalog) < 82_000, (
+        # Stand 30.10.2026, nachgemessen: Der Desktop-Fall liegt mit den vier
+        # Teamwerkzeugen (Notizen, Kalender, Gedaechtnis, Skill) bei 82.990
+        # Zeichen. Sie sind eine bewusste Betreiberentscheidung: Die
+        # Dokument-KI soll Teamwissen lesen und Team-Skills lernen koennen.
+        # Die Grenze steigt deshalb einmalig auf 84.000 und behaelt gut 1.000
+        # Zeichen Luft. Wer sie erneut anhebt, misst vorher nach.
+        assert len(katalog) < 84_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
             "taucht in keiner Budgetrechnung auf."

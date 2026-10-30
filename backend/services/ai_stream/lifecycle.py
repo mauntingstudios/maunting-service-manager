@@ -832,31 +832,34 @@ async def _werkzeuge_und_grenze(
     # Werkzeuge deshalb auch dann nicht sehen, wenn sie im zentralen Katalog
     # registriert sind. Realtime fuegt sie in seiner Sitzung gezielt hinzu.
     erlaubt = vorbereitung.angebotene_werkzeuge - VOICE_CONTROL_TOOLS
-    # Der Rollenschnitt zuerst (docs/agentic-framework.md, §3): das Gehirn
-    # behaelt nur Gedaechtnis und Worker-Steuerung, ein Worker verliert genau
-    # diese beiden Gruppen plus `ask_user`, und der heutige Voll-Betrieb
-    # verliert alles, was zum Hintergrund-Betrieb gehoert — ohne
-    # `worker_model` am Zugang gibt es kein Gehirn und damit auch keine
-    # Auftraege. Geschnitten, nicht ersetzt: die Rechtepruefung darueber
-    # bleibt die Autoritaet, keine Menge hier ersetzt ein fehlendes Recht.
-    if rolle == "gehirn":
-        erlaubt = erlaubt & GEHIRN_TOOLS
-    elif rolle == "worker":
-        erlaubt = erlaubt - worker_ausschluss()
-    else:
-        erlaubt = erlaubt - (WORKER_STEUERUNG | NUR_WORKER)
-    # Dokumentkontext schneidet alles andere weg. Ein Dokumenttext ist Daten;
-    # ein praeparierter Text darf keine Server-, Mail-, Desktop- oder Webaktion
-    # ausloesen. Ausserhalb eines Dokument-Laufs bleiben die Dokumentwerkzeuge
-    # draussen, damit sie im normalen Chat nicht als Option erscheinen.
+    # Dokumentkontext zuerst und ohne Rollenschnitt: die Dokument-KI arbeitet
+    # direkt im Dokument, auch wenn am Zugang ein Arbeitsmodell haengt. Der
+    # Rollenschnitt wuerde ihr sonst die Dokument-Schreibwerkzeuge nehmen und
+    # die Arbeit an einen Worker geben — den es hier nicht gibt.
+    #
+    # Die Menge ist geschlossen. Ein praeparierter Dokumenttext darf keine
+    # Server-, Mail-, Desktop- oder Webaktion ausloesen; Teamwissen bekommt
+    # nur, wer wirklich Mitglied des Dokumentteams ist.
     docs_kontext = zustand.get("docs") if isinstance(zustand, dict) else None
     if isinstance(docs_kontext, dict) and docs_kontext.get("document_uid"):
-        erlaubt = erlaubt - {"search_memory", "read_skill", "search_docs", "read_docs"}
-        erlaubt = erlaubt & docs_kontext_schnitt(rolle)
+        erlaubt = erlaubt & docs_kontext_schnitt(
+            bool(docs_kontext.get("team_mitglied"))
+        )
     else:
+        # Der Rollenschnitt gilt nur ausserhalb eines Dokuments
+        # (docs/agentic-framework.md, §3): das Gehirn behaelt Gedaechtnis und
+        # Worker-Steuerung, ein Worker verliert beides plus `ask_user`, der
+        # Voll-Betrieb verliert den Hintergrundweg. Geschnitten, nicht ersetzt:
+        # die Rechtepruefung darueber bleibt die Autoritaet.
+        if rolle == "gehirn":
+            erlaubt = erlaubt & GEHIRN_TOOLS
+        elif rolle == "worker":
+            erlaubt = erlaubt - worker_ausschluss()
+        else:
+            erlaubt = erlaubt - (WORKER_STEUERUNG | NUR_WORKER)
         erlaubt = erlaubt - DOCUMENTS_TOOLS
-    if rolle == "gehirn":
-        erlaubt = erlaubt - DOCUMENTS_WRITE_TOOLS
+        if rolle == "gehirn":
+            erlaubt = erlaubt - DOCUMENTS_WRITE_TOOLS
     # Danach die Herkunft: aus dem Panel kein Zugriff auf den Rechner des
     # Benutzers (siehe `herkunft_schnitt`; die Gegenrichtung schneidet nichts,
     # die App bekommt alles). Der Schnitt steht **vor** Guardian und Aufgaben,

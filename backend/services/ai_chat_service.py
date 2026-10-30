@@ -233,6 +233,7 @@ def clear_history(
         AiConversation,
         AiMeldung,
         AiToolResult,
+        DocPendingEdit,
     )
     from services import ai_run_service
 
@@ -269,6 +270,11 @@ def clear_history(
     ).delete(synchronize_session=False)
     db.query(AiAttachment).filter(
         AiAttachment.conversation_id.in_(alle_conv_ids)
+    ).delete(synchronize_session=False)
+    # Ein geloeschter Verlauf darf keine Geistervorschlaege im Editor
+    # zuruecklassen; der Vorschlag gehoert zu genau diesem Gespraech.
+    db.query(DocPendingEdit).filter(
+        DocPendingEdit.conversation_id.in_(alle_conv_ids)
     ).delete(synchronize_session=False)
     vorschlaege = AiActionProposal.conversation_id.in_(alle_conv_ids)
     if user_weit:

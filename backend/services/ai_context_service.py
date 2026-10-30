@@ -572,17 +572,25 @@ def build_provider_messages(
             docs=docs,
         )}
     ]
-    skill_verzeichnis = _skill_index_message(
-        db,
-        user,
-        query,
-        unbeaufsichtigt and rolle != "worker",
-        nur_team_id=docs_team_id if docs else None,
-    )
+    # Ein Dokument-Lauf ohne Team-ID ist ein Link-Gast: Er darf das Dokument
+    # bearbeiten, aber kein Teamwissen sehen. `nur_team_id=None` bedeutet im
+    # Abruf „keine Einschraenkung“ und wuerde ihm persoenliches, server- und
+    # teambezogenes Wissen in den Prompt legen. Deshalb wird hier nicht
+    # abgerufen statt falsch eingeschraenkt.
+    teamwissen_erlaubt = (not docs) or docs_team_id is not None
+    skill_verzeichnis = None
+    if teamwissen_erlaubt:
+        skill_verzeichnis = _skill_index_message(
+            db,
+            user,
+            query,
+            unbeaufsichtigt and rolle != "worker",
+            nur_team_id=docs_team_id if docs else None,
+        )
     if skill_verzeichnis is not None:
         result.append(skill_verzeichnis)
     gedaechtnis_passend: str | None = None
-    if user is not None and rolle != "worker":
+    if user is not None and rolle != "worker" and teamwissen_erlaubt:
         from services import ai_gedaechtnis_abruf, permission_service
 
         if permission_service.has_global_permission(db, user, "ai.memory.use"):

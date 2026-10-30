@@ -135,7 +135,11 @@ export interface AiChatProps {
   showWorkers?: boolean
   /** Meldet die Modellwahl nach aussen, damit der eingebettete Sprachmodus sie nutzt. */
   onProviderChange?: (providerId: number | null) => void
+  /** Beispielschlüssel für den leeren Chat; Standard bleibt der Serverchat. */
+  beispielSchluessel?: readonly string[]
 }
+
+const SERVER_BEISPIELE = ['logs', 'network', 'mods'] as const
 
 export function AiChat({
   onSwitchMode,
@@ -147,6 +151,7 @@ export function AiChat({
   showGuardian = true,
   showWorkers = true,
   onProviderChange,
+  beispielSchluessel = SERVER_BEISPIELE,
 }: AiChatProps = {}) {
   const { t } = useTranslation()
   const canAttach = useHasPermission('ai.attachments.use')
@@ -1170,8 +1175,16 @@ export function AiChat({
       {/* ── Kopfzeile: Provider, Denkschritte, Autonomie, Skills ─────────
           `sticky` ist eine Position und liegt damit von selbst über der
           Schicht; ihr undurchsichtiger Grund deckt sie dort ab. */}
-      <header className="flex items-center justify-between border-b border-outline-variant/30 bg-surface-container-low px-2 py-1.5 sm:px-4 sm:py-2.5 shrink-0 sticky top-0 z-20 gap-1 min-w-0">
-        <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-1.5 overflow-x-auto msm-ohne-rollbalken py-0.5">
+      <header
+        className={`flex items-center justify-between border-b border-outline-variant/30 bg-surface-container-low px-2 py-1.5 sm:px-4 sm:py-2.5 shrink-0 sticky top-0 z-20 gap-1 min-w-0 ${
+          eingebettet ? 'flex-wrap gap-y-1' : ''
+        }`}
+      >
+        <div
+          className={`flex min-w-0 flex-1 items-center gap-1 sm:gap-1.5 py-0.5 ${
+            eingebettet ? 'flex-wrap' : 'overflow-x-auto msm-ohne-rollbalken'
+          }`}
+        >
           {/* Schrumpft im schmalen Browser-Panel, damit die Knöpfe daneben Platz haben. */}
           <div className="min-w-24 flex-1 max-w-56 sm:w-56 sm:flex-none shrink-0">
             <Dropdown
@@ -1199,7 +1212,11 @@ export function AiChat({
 
           {canUseAutonomy && (
             <div className="shrink-0">
-              <AiAutonomyButton servers={servers} disabled={busy} />
+              <AiAutonomyButton
+                servers={servers}
+                disabled={busy}
+                bereich={scope.kind === 'docs' ? 'docs' : 'panel'}
+              />
             </div>
           )}
 
@@ -1369,7 +1386,7 @@ export function AiChat({
                 {t('ai.chat.emptyDescription')}
               </p>
               <ul className="mx-auto mt-6 grid max-w-lg gap-2 text-left">
-                {['logs', 'network', 'mods'].map((key) => (
+                {beispielSchluessel.map((key) => (
                   <li key={key}>
                     <button
                       type="button"
@@ -1533,7 +1550,7 @@ export function AiChat({
         {/* Der Hinweis steht ueber dem Eingabefeld, nicht in einer
             Einstellungsseite: er soll dort auftauchen, wo die Entscheidung
             Folgen hat — bevor jemand etwas Persoenliches tippt. */}
-        {memoryNoticeDue && (
+        {memoryNoticeDue && scope.kind !== 'docs' && (
           <AiMemoryNotice onAnswered={() => setMemoryNoticeDue(false)} />
         )}
         <div className="mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl">

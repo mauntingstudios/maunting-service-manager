@@ -25,6 +25,7 @@ from services.auth_service import AuthService
 from services.panel_settings_service import PanelSettingsService
 from services.permission_service import has_global_permission
 from services.docs_collab_service import DocsCollabService
+from services.docs_pending_edit_service import DocsPendingEditService
 from services.docs_service import DocsService, fehler
 
 router = APIRouter(prefix="/api/docs", tags=["docs"])
@@ -372,6 +373,51 @@ def delete_comment(
     __=Depends(verify_csrf),
 ) -> dict:
     return DocsService.delete_comment(db, user, doc_uid, comment_uid)
+
+
+# ── KI-Vorschlaege ───────────────────────────────────────────────────
+
+
+@router.get("/{doc_uid}/pending-edits")
+def list_pending_edits(
+    doc_uid: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(_docs_user),
+) -> dict:
+    """Nur die eigenen, noch offenen KI-Vorschlaege eines Dokuments."""
+    return DocsPendingEditService.list_for_user(db, user, doc_uid)
+
+
+@router.get("/{doc_uid}/pending-edits/{pending_uid}/preview")
+def preview_pending_edit(
+    doc_uid: str,
+    pending_uid: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(_docs_user),
+) -> dict:
+    return DocsPendingEditService.preview(db, user, doc_uid, pending_uid)
+
+
+@router.post("/{doc_uid}/pending-edits/{pending_uid}/apply")
+def apply_pending_edit(
+    doc_uid: str,
+    pending_uid: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(_docs_user),
+    __=Depends(verify_csrf),
+) -> dict:
+    return DocsPendingEditService.apply(db, user, doc_uid, pending_uid)
+
+
+@router.post("/{doc_uid}/pending-edits/{pending_uid}/reject")
+def reject_pending_edit(
+    doc_uid: str,
+    pending_uid: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(_docs_user),
+    __=Depends(verify_csrf),
+) -> dict:
+    return DocsPendingEditService.reject(db, user, doc_uid, pending_uid)
 
 
 # ── Revisionen ───────────────────────────────────────────────────────

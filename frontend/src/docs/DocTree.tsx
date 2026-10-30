@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Archive, ArchiveRestore, FileText, Folder, FolderInput, FolderPlus, Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import { Button, Dropdown, Input, Kurzinfo } from '@/Singra/UI'
+import { Archive, ArchiveRestore, FileText, Folder, FolderInput, FolderPlus, Pencil, Plus, Search, Settings2, Trash2 } from 'lucide-react'
+import { ActionMenu, Button, Dropdown, Input, Kurzinfo } from '@/Singra/UI'
 import type { DocFolder, DocSummary } from '@/api/docs'
 import type { Team } from '@/api/teams'
 import { cx } from '@/utils/classNames'
@@ -231,19 +231,28 @@ export function DocTree({
                   <span className="truncate">{ordner.name}</span>
                 </button>
                 {canManageFolders && (
-                  <Dropdown
-                    aria-label={t('docs.tree.actionsFor', { name: ordner.name })}
-                    value={null}
-                    onChange={(wert) => {
-                      if (wert === 'rename') onRenameFolder(ordner)
-                      if (wert === 'delete') onDeleteFolder(ordner)
-                    }}
-                    placeholder={t('docs.tree.actions')}
+                  <ActionMenu
+                    label={t('docs.tree.actionsFor', { name: ordner.name })}
+                    ariaLabel={t('docs.tree.actionsFor', { name: ordner.name })}
+                    icon={<Settings2 className="h-4 w-4" />}
+                    iconOnly
+                    variant="ghost"
+                    compact
                     align="end"
-                    buttonClassName="h-8 min-w-[7rem] text-xs"
-                    options={[
-                      { value: 'rename', label: t('docs.tree.renameFolder'), icon: <Pencil className="h-4 w-4" /> },
-                      { value: 'delete', label: t('docs.tree.deleteFolder'), icon: <Trash2 className="h-4 w-4" /> },
+                    items={[
+                      {
+                        key: 'rename',
+                        label: t('docs.tree.renameFolder'),
+                        icon: <Pencil className="h-4 w-4" />,
+                        onSelect: () => onRenameFolder(ordner),
+                      },
+                      {
+                        key: 'delete',
+                        label: t('docs.tree.deleteFolder'),
+                        icon: <Trash2 className="h-4 w-4" />,
+                        destructive: true,
+                        onSelect: () => onDeleteFolder(ordner),
+                      },
                     ]}
                   />
                 )}
@@ -296,50 +305,51 @@ export function DocTree({
               </span>
             </button>
             {(doc.can_edit || doc.can_manage) && (
-              <Dropdown
-                aria-label={t('docs.tree.actionsFor', { name: doc.title })}
-                value={null}
-                onChange={(wert) => {
-                  if (wert === 'restore') onRestoreDocument(doc.uid)
-                  if (wert === 'archive') onArchiveDocument(doc)
-                  if (wert === 'move') onMoveDocument(doc)
-                  if (wert === 'trash') onTrashDocument(doc.uid)
-                }}
-                placeholder={t('docs.tree.actions')}
+              <ActionMenu
+                label={t('docs.tree.actionsFor', { name: doc.title })}
+                ariaLabel={t('docs.tree.actionsFor', { name: doc.title })}
+                icon={<Settings2 className="h-4 w-4" />}
+                iconOnly
+                variant="ghost"
+                compact
                 align="end"
-                buttonClassName="h-8 min-w-[7rem] text-xs"
-                options={
+                items={
                   trash
                     ? [
                         {
-                          value: 'restore',
+                          key: 'restore',
                           label: t('docs.tree.restore'),
                           icon: <ArchiveRestore className="h-4 w-4" />,
+                          onSelect: () => onRestoreDocument(doc.uid),
                         },
                       ]
                     : [
                         ...(doc.can_edit
                           ? [
                               {
-                                value: 'archive',
+                                key: 'archive',
                                 label: doc.archived
                                   ? t('docs.tree.unarchiveAction')
                                   : t('docs.tree.archiveAction'),
                                 icon: <Archive className="h-4 w-4" />,
+                                onSelect: () => onArchiveDocument(doc),
                               },
                             ]
                           : []),
                         ...(doc.can_manage
                           ? [
                               {
-                                value: 'move',
+                                key: 'move',
                                 label: t('docs.move.action'),
                                 icon: <FolderInput className="h-4 w-4" />,
+                                onSelect: () => onMoveDocument(doc),
                               },
                               {
-                                value: 'trash',
+                                key: 'trash',
                                 label: t('docs.tree.trashAction'),
                                 icon: <Trash2 className="h-4 w-4" />,
+                                destructive: true,
+                                onSelect: () => onTrashDocument(doc.uid),
                               },
                             ]
                           : []),

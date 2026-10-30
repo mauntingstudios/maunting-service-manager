@@ -109,6 +109,23 @@ def lauf_beginnen(
         return None, ("AI_MESSAGE_EMPTY", "ai.chat.errors.empty")
     if rolle is None:
         rolle = _rolle_ableiten(db, user, conversation, provider, unbeaufsichtigt)
+
+    # Teamwissen gehoert echten Teammitgliedern. Ein Link-Gast hat Zugriff auf
+    # das Dokument, aber keinen Platz in der Mitgliederliste — er bekommt
+    # weder Team-Gedaechtnis noch Team-Skills in den Prompt. Die Pruefung
+    # steht vor dem Kontextaufbau, weil `build_provider_messages` die Team-ID
+    # sonst bereits weitergereicht haette.
+    if docs_team_id is not None:
+        from models.team import Team
+        from services import team_service
+
+        team = db.get(Team, docs_team_id)
+        if (
+            team is None
+            or team.is_personal
+            or team_service.membership(db, docs_team_id, user.id) is None
+        ):
+            docs_team_id = None
     try:
         geerbte_signaturen = ai_run_service.vorgaenger_abloesen(
             db, conversation_id=conversation.id
@@ -219,6 +236,7 @@ def lauf_beginnen(
             zustand["docs"] = {
                 "document_uid": str(docs_document_uid),
                 "team_id": int(docs_team_id) if docs_team_id is not None else None,
+                "team_mitglied": docs_team_id is not None,
             }
         # Und die Herkunft, aus demselben Grund: der Katalog ist danach
         # geschnitten (`herkunft_schnitt`), und eine Fortsetzung darf nicht in

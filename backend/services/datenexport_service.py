@@ -146,6 +146,7 @@ AUSGESCHLOSSEN: dict[str, str] = {
     "doc_revisions.label_encrypted": "Versionsname; eigener Dokumentexport",
     "doc_revisions.state_encrypted": "Versionszustand; eigener Dokumentexport",
     "doc_revisions.preview_text_encrypted": "Vorschau einer Version; eigener Dokumentexport",
+    "doc_pending_edits.payload_encrypted": "Noch nicht bestaetigter KI-Vorschlag; kein Dokumentinhalt, eigener Dokumentexport",
 }
 
 #: Spalten, deren Name nach Geheimnis klingt, die aber keins sind.

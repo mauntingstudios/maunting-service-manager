@@ -1268,10 +1268,21 @@ def test_realtime_im_dokument_bleibt_auf_dokumentwerkzeugen_und_teamwissen(
 ) -> None:
     """Ein Dokumentgespraech darf keine Serverwerkzeuge und kein persoenliches
     Gedaechtnis bekommen — nur Dokumentwerkzeuge und das Teamgedaechtnis."""
+    from models.team import Team, TeamMember
     from services.docs_service import DocsService
 
     provider = _realtime(db, "Realtime Dokument")
-    doc = DocsService.create_document(db, regular_user, title="Sprachdokument")
+    team = Team(name="Sprach-Team", owner_user_id=regular_user.id)
+    db.add(team)
+    db.flush()
+    db.add(TeamMember(
+        team_id=team.id, user_id=regular_user.id, role="owner",
+        added_by=regular_user.id,
+    ))
+    db.commit()
+    doc = DocsService.create_document(
+        db, regular_user, team_id=team.id, title="Sprachdokument"
+    )
     monkeypatch.setattr(
         realtime_session.ai_action_service,
         "angebotene_werkzeuge",
@@ -1302,13 +1313,15 @@ def test_realtime_im_dokument_bleibt_auf_dokumentwerkzeugen_und_teamwissen(
         herkunft="panel",
         docs_conversation_id="docs-conv",
         docs_document_uid=doc["uid"],
-        docs_team_id=42,
+        docs_team_id=team.id,
     )
 
     namen = {tool["name"] for tool in vorbereitung.tools}
     assert "read_document" in namen
-    assert "read_server_status" not in namen
-    assert team_ids == [42]
+    # Unkritische Server-Metadaten darf die Dokument-KI lesen; Logs, Config,
+    # Dateien, Web und Worker bleiben gesperrt.
+    assert "read_server_status" in namen
+    assert team_ids == [team.id]
     assert gespraeche == ["docs-conv"]
     assert "Dokumentkontext" in vorbereitung.instructions
     assert vorbereitung.mitschreiben is False

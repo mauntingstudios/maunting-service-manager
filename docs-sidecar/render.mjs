@@ -18,7 +18,19 @@ function linkHref(attrs) {
   return null;
 }
 
-function inlineHtml(xmlText) {
+/**
+ * Nur Web- und Mail-Links. Markdown kann `javascript:` in den Link schreiben;
+ * die Vorschau landet per `innerHTML` im Browser, also gilt hier dieselbe
+ * Grenze wie im Export. Bilder bleiben im Export erhalten, in der Vorschau
+ * werden sie zu einem Platzhalter — ein `img src` wuerde beim blossen
+ * Anzeigen eine fremde Adresse aufrufen.
+ */
+function safeHref(href) {
+  if (!href || typeof href !== "string") return null;
+  return /^(https?:|mailto:)/i.test(href.trim()) ? href.trim() : null;
+}
+
+function inlineHtml(xmlText, preview = false) {
   const ops = typeof xmlText.toDelta === "function" ? xmlText.toDelta() : [];
   if (!ops.length) return escapeHtml(xmlText.toString());
   let html = "";
@@ -31,9 +43,11 @@ function inlineHtml(xmlText) {
     if (attrs.underline) stueck = `<u>${stueck}</u>`;
     if (attrs.strike) stueck = `<s>${stueck}</s>`;
     if (attrs.highlight) stueck = `<mark>${stueck}</mark>`;
-    const href = linkHref(attrs);
+    const href = safeHref(linkHref(attrs));
     if (href) {
-      stueck = `<a href="${escapeHtml(href)}" rel="noopener noreferrer">${stueck}</a>`;
+      stueck = preview
+        ? `<span class="docs-ai-link">${stueck}</span>`
+        : `<a href="${escapeHtml(href)}" rel="noopener noreferrer">${stueck}</a>`;
     }
     html += stueck;
   }
@@ -60,40 +74,40 @@ function inlineMarkdown(xmlText) {
   return text;
 }
 
-function kinderHtml(node) {
-  return node.toArray().map((kind) => blockHtml(kind)).join("");
+function kinderHtml(node, preview = false) {
+  return node.toArray().map((kind) => blockHtml(kind, preview)).join("");
 }
 
 function kinderMarkdown(node, einzug = "") {
   return node.toArray().map((kind) => blockMarkdown(kind, einzug)).join("");
 }
 
-function blockHtml(node) {
-  if (node instanceof Y.XmlText) return inlineHtml(node);
+function blockHtml(node, preview = false) {
+  if (node instanceof Y.XmlText) return inlineHtml(node, preview);
   if (!(node instanceof Y.XmlElement)) return "";
   const name = node.nodeName;
   const attrs = node.getAttributes?.() || {};
   switch (name) {
     case "paragraph":
-      return `<p>${kinderHtml(node)}</p>`;
+      return `<p>${kinderHtml(node, preview)}</p>`;
     case "heading": {
       const level = Math.min(Math.max(Number(attrs.level) || 1, 1), 6);
-      return `<h${level}>${kinderHtml(node)}</h${level}>`;
+      return `<h${level}>${kinderHtml(node, preview)}</h${level}>`;
     }
     case "blockquote":
-      return `<blockquote>${kinderHtml(node)}</blockquote>`;
+      return `<blockquote>${kinderHtml(node, preview)}</blockquote>`;
     case "bulletList":
-      return `<ul>${kinderHtml(node)}</ul>`;
+      return `<ul>${kinderHtml(node, preview)}</ul>`;
     case "orderedList":
-      return `<ol>${kinderHtml(node)}</ol>`;
+      return `<ol>${kinderHtml(node, preview)}</ol>`;
     case "listItem":
-      return `<li>${kinderHtml(node)}</li>`;
+      return `<li>${kinderHtml(node, preview)}</li>`;
     case "taskList":
-      return `<ul class="task-list">${kinderHtml(node)}</ul>`;
+      return `<ul class="task-list">${kinderHtml(node, preview)}</ul>`;
     case "taskItem":
       return `<li class="task-item"><input type="checkbox" disabled${
         attrs.checked ? " checked" : ""
-      }> ${kinderHtml(node)}</li>`;
+      }> ${kinderHtml(node, preview)}</li>`;
     case "codeBlock":
       return `<pre><code>${escapeHtml(node.toString())}</code></pre>`;
     case "horizontalRule":
@@ -101,8 +115,11 @@ function blockHtml(node) {
     case "hardBreak":
       return "<br>";
     case "image": {
-      const src = attrs.src || "";
       const alt = attrs.alt || "";
+      if (preview) {
+        return `<span class="docs-ai-bild">Bild: ${escapeHtml(alt || "ohne Beschreibung")}</span>`;
+      }
+      const src = attrs.src || "";
       const title = attrs.title ? ` title="${escapeHtml(attrs.title)}"` : "";
       // Die Asset-UID bleibt am Knoten, damit der Backend-Export Bilder als
       // Data-URL einbetten kann statt einer abgelaufenen signed URL.
@@ -112,16 +129,21 @@ function blockHtml(node) {
       return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${title}${asset}>`;
     }
     case "table":
-      return `<table><tbody>${kinderHtml(node)}</tbody></table>`;
+      return `<table><tbody>${kinderHtml(node, preview)}</tbody></table>`;
     case "tableRow":
-      return `<tr>${kinderHtml(node)}</tr>`;
+      return `<tr>${kinderHtml(node, preview)}</tr>`;
     case "tableHeader":
-      return `<th>${kinderHtml(node)}</th>`;
+      return `<th>${kinderHtml(node, preview)}</th>`;
     case "tableCell":
-      return `<td>${kinderHtml(node)}</td>`;
+      return `<td>${kinderHtml(node, preview)}</td>`;
     default:
-      return kinderHtml(node);
+      return kinderHtml(node, preview);
   }
+}
+
+/** Nur die Bloecke, ohne HTML-Rahmen — fuer die Vorschau im Editor. */
+export function renderNodesHtml(nodes, preview = true) {
+  return nodes.map((knoten) => blockHtml(knoten, preview)).join("");
 }
 
 function blockMarkdown(node, einzug = "") {

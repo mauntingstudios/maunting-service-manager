@@ -49,6 +49,11 @@ def aad_asset(doc_uid: str, asset_uid: str) -> str:
     return f"msm:docs:v1:{doc_uid}:asset:{asset_uid}"
 
 
+def aad_pending(doc_uid: str, pending_uid: str) -> str:
+    """Vorschlag einer KI-Aenderung, gebunden an Dokument und Vorschlag."""
+    return f"msm:docs:v1:{doc_uid}:pending:{pending_uid}"
+
+
 def aad_folder(team_id: int, folder_uid: str) -> str:
     return f"msm:docs:v1:{team_id}:folder:{folder_uid}:name"
 

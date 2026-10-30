@@ -13,6 +13,7 @@ import {
   createFolder,
   deleteFolder,
   updateFolder,
+  applyPendingEdit,
   deleteDocumentPermanent,
   docsErrorCode,
   getDocsStatus,
@@ -20,17 +21,22 @@ import {
   listComments,
   listDocuments,
   listFolders,
+  listPendingEdits,
   listRevisions,
+  previewPendingEdit,
+  rejectPendingEdit,
   restoreDocument,
   trashDocument,
   updateDocument,
   type DocComment,
   type DocDetail,
   type DocFolder,
+  type DocPendingView,
   type DocRevision,
   type DocSummary,
   type DocsStatus,
 } from '@/api/docs'
+import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
 import { DocTree } from './DocTree'
 import { DocEditor } from './DocEditor'
 import { CommentsPanel } from './CommentsPanel'
@@ -78,6 +84,8 @@ export function DocsApp() {
   const [shareOpen, setShareOpen] = useState(false)
   const [membersOpen, setMembersOpen] = useState(false)
   const [selection, setSelection] = useState<{ quote: string } | null>(null)
+  const [vorschlag, setVorschlag] = useState<DocPendingView | null>(null)
+  const [vorschlagBusy, setVorschlagBusy] = useState(false)
   const [moveDoc, setMoveDoc] = useState<DocSummary | null>(null)
   const [treeOffen, setTreeOffen] = useState(false)
   const [panelBreite, setPanelBreite] = useState(() => {
@@ -186,11 +194,51 @@ export function DocsApp() {
     [meldung, online, t, user],
   )
 
+  const vorschlagLaden = useCallback(async (docUid: string) => {
+    try {
+      const { pending_edits } = await listPendingEdits(docUid)
+      const erster =
+        pending_edits.find((eintrag) => eintrag.status !== 'stale') ?? pending_edits[0]
+      if (!erster) {
+        setVorschlag(null)
+        return
+      }
+      try {
+        const vorschau = await previewPendingEdit(docUid, erster.uid)
+        setVorschlag({ ...erster, ...vorschau })
+      } catch (error) {
+        // 409 heisst: Der Anker ist nicht mehr eindeutig oder der Vorschlag
+        // wurde in einem anderen Tab entschieden. Der Geist verschwindet, der
+        // Statuschip bietet noch das Verwerfen an.
+        const code = docsErrorCode(error)
+        if (
+          code === 'DOC_AI_PENDING_NOT_FOUND' ||
+          code === 'DOCS_FORBIDDEN' ||
+          code === 'DOCUMENT_NOT_FOUND'
+        ) {
+          setVorschlag(null)
+        } else {
+          // Auch ein voruebergehend nicht erreichbarer Sidecar soll den
+          // Vorschlag nicht aus der Oberflaeche tilgen: Verwerfen bleibt
+          // moeglich, Uebernehmen wird beim naechsten Versuch erneut geprueft.
+          setVorschlag({ ...erster, stale: true, html: '', target_block: null, target_index: null })
+        }
+      }
+    } catch {
+      setVorschlag(null)
+    }
+  }, [])
+
   useEffect(() => {
     setSelection(null)
-    if (uid) void detailLaden(uid)
-    else setDetail(null)
-  }, [detailLaden, uid])
+    if (uid) {
+      void detailLaden(uid)
+      void vorschlagLaden(uid)
+    } else {
+      setDetail(null)
+      setVorschlag(null)
+    }
+  }, [detailLaden, uid, vorschlagLaden])
 
   // Nach einem Reconnect die Rolle neu holen. Wurde sie inzwischen gesenkt,
   // wird der Editor dadurch read-only, bevor die naechste Aenderung entsteht.
@@ -217,13 +265,54 @@ export function DocsApp() {
       const daten = (event as CustomEvent<{ entity?: string; id?: string } | undefined>).detail
       if (!daten || daten.entity === 'docs') {
         void listeLaden()
-        if (uid) void detailLaden(uid)
+        if (uid) {
+          void detailLaden(uid)
+          void vorschlagLaden(uid)
+        }
         void panelDatenLaden()
       }
     }
+    const kiFertig = () => {
+      if (uid) void vorschlagLaden(uid)
+    }
     window.addEventListener('msm:docs-updated', handler)
-    return () => window.removeEventListener('msm:docs-updated', handler)
-  }, [detailLaden, listeLaden, panelDatenLaden, uid])
+    window.addEventListener(AI_ZUSTELLUNG_EVENT, kiFertig)
+    return () => {
+      window.removeEventListener('msm:docs-updated', handler)
+      window.removeEventListener(AI_ZUSTELLUNG_EVENT, kiFertig)
+    }
+  }, [detailLaden, listeLaden, panelDatenLaden, uid, vorschlagLaden])
+
+  const vorschlagAnwenden = useCallback(async () => {
+    if (!uid || !vorschlag || vorschlagBusy) return
+    setVorschlagBusy(true)
+    try {
+      await applyPendingEdit(uid, vorschlag.uid)
+      toast.success(t('docs.pending.applied'))
+      await detailLaden(uid)
+      await vorschlagLaden(uid)
+      await panelDatenLaden()
+    } catch (error) {
+      toast.error(meldung(error, t('docs.pending.applyFailed')))
+      await vorschlagLaden(uid)
+    } finally {
+      setVorschlagBusy(false)
+    }
+  }, [detailLaden, meldung, panelDatenLaden, t, uid, vorschlag, vorschlagBusy, vorschlagLaden])
+
+  const vorschlagVerwerfen = useCallback(async () => {
+    if (!uid || !vorschlag || vorschlagBusy) return
+    setVorschlagBusy(true)
+    try {
+      await rejectPendingEdit(uid, vorschlag.uid)
+      toast.success(t('docs.pending.rejected'))
+      await vorschlagLaden(uid)
+    } catch (error) {
+      toast.error(meldung(error, t('docs.pending.rejectFailed')))
+    } finally {
+      setVorschlagBusy(false)
+    }
+  }, [meldung, t, uid, vorschlag, vorschlagBusy, vorschlagLaden])
 
   const panelZiehen = useBreiteZiehen({
     breite: panelBreite,
@@ -523,6 +612,10 @@ export function DocsApp() {
               onCommentsChanged={() => void panelDatenLaden()}
               onTitleChanged={titelAendern}
               onSelectionChange={setSelection}
+              vorschlag={vorschlag}
+              vorschlagBusy={vorschlagBusy}
+              onApplyVorschlag={() => void vorschlagAnwenden()}
+              onRejectVorschlag={() => void vorschlagVerwerfen()}
             />
           )}
         </main>
@@ -577,7 +670,14 @@ export function DocsApp() {
                   />
                 )}
                 {panel === 'singra' && (
-                  <DocsChatPanel uid={detail.uid} selection={selection} onChanged={() => void detailLaden(detail.uid)} />
+                  <DocsChatPanel
+                    uid={detail.uid}
+                    selection={selection}
+                    onChanged={() => {
+                      void detailLaden(detail.uid)
+                      void vorschlagLaden(detail.uid)
+                    }}
+                  />
                 )}
               </div>
             </aside>

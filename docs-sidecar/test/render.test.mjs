@@ -3,7 +3,8 @@ import test from "node:test";
 
 import * as Y from "yjs";
 
-import { renderDocument } from "../render.mjs";
+import { renderDocument, renderNodesHtml } from "../render.mjs";
+import { markdownToNodes } from "../ai_edit.mjs";
 
 function dokument() {
   const ydoc = new Y.Doc();
@@ -46,6 +47,28 @@ test("HTML enthaelt Ueberschrift, Fettdruck und Liste", () => {
   assert.match(html, /<a href="https:\/\/example\.test"/);
   assert.match(html, /<ul><li><p>eins<\/p><\/li>/);
   assert.match(html, /@media print/);
+});
+
+test("Vorschau laesst nur sichere Links und keine Bild-URLs zu", () => {
+  // Wie im Sidecar: die Knoten werden erst in ein Dokument gestellt und dann
+  // daraus gelesen. Unattached liefert Yjs keinen Inhalt.
+  const ydoc = new Y.Doc();
+  const fragment = ydoc.getXmlFragment("default");
+  fragment.insert(
+    0,
+    markdownToNodes(
+      "[Gefährlich](javascript:alert(1)) und [OK](https://example.test)",
+    ),
+  );
+  const bild = new Y.XmlElement("image");
+  bild.setAttribute("src", "https://evil.test/bild.png");
+  bild.setAttribute("alt", "Alt");
+  fragment.insert(fragment.length, [bild]);
+  const html = renderNodesHtml(fragment.toArray(), true);
+  assert.doesNotMatch(html, /javascript:/);
+  assert.match(html, /docs-ai-link/);
+  assert.doesNotMatch(html, /evil\.test/);
+  assert.match(html, /docs-ai-bild/);
 });
 
 test("Markdown enthaelt Ueberschrift, Fettdruck und Punkte", () => {

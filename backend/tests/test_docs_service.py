@@ -248,14 +248,39 @@ def test_falsches_service_token_wird_abgewiesen(client, monkeypatch):
     assert antwort.status_code == 401
 
 
-def test_dokument_schnitt_entfernt_server_und_web_werkzeuge():
+def test_dokument_schnitt_ist_geschlossen_und_kennt_keinen_worker():
     from services.ai_tool_registry import docs_kontext_schnitt
 
-    erlaubt = docs_kontext_schnitt("worker")
+    erlaubt = docs_kontext_schnitt(True)
     assert "edit_document" in erlaubt
     assert "read_document" in erlaubt
-    assert "worker_frage" in erlaubt
-    for verboten in ("web_search", "send_mail", "restart_server", "desktop_system", "search_docs"):
+    assert "read_server_status" in erlaubt
+    assert "read_team_notes" in erlaubt
+    assert "read_team_notes" not in docs_kontext_schnitt(False)
+    for verboten in (
+        "web_search",
+        "send_mail",
+        "restart_server",
+        "desktop_system",
+        "search_docs",
+        "read_server_logs",
+        "read_config",
+        "list_server_files",
+        "read_database",
+        "execute_server_action",
+        "list_users",
+        "cloudflare_list_zones",
+        "list_tasks",
+        "popups_read",
+        "search_memory",
+        "read_skill",
+        "learn_skill",
+        "worker_start",
+        "worker_cancel",
+        "worker_antwort",
+        "worker_frage",
+        "wait_until",
+    ):
         assert verboten not in erlaubt
 
 
@@ -667,6 +692,6 @@ def test_dokumentrechte_im_katalog():
         READ_TOOLS,
     )
 
-    assert len(DOCUMENTS_TOOLS) == 10
+    assert len(DOCUMENTS_TOOLS) == 14
     assert DOCUMENTS_WRITE_TOOLS <= READ_TOOLS
     assert DOCUMENTS_WRITE_TOOLS.isdisjoint(GEHIRN_TOOLS)

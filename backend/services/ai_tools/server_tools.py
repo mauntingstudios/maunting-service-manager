@@ -1444,12 +1444,7 @@ def _execute_global_read_tool(
     # Dokumentwerkzeuge werden im Dokumentlauf vor diesem Zweig verteilt.
     # Der Zweig hier haelt sie fuer direkte Aufrufer namentlich erreichbar und
     # beantwortet einen Aufruf ohne Dokumentkontext mit einer klaren Meldung.
-    if tool_name in {
-        "list_documents", "read_document", "read_document_selection",
-        "get_document_outline", "list_document_comments", "read_document_skill",
-        "edit_document", "add_document_comment", "undo_ai_edit",
-        "update_document_title",
-    }:
+    if tool_name in DOCUMENTS_TOOLS:
         from services.ai_tools.document_tools import execute_document_tool
 
         return execute_document_tool(
@@ -2560,6 +2555,16 @@ def execute_read_tool(
         logger.info("Spekulativer Prefetch-Cache HIT für tool=%s user=%s", tool_name, user.id)
         return cached_result
 
+    # Dokumentwerkzeuge zuerst: Sie tragen die Art `global_read`, brauchen aber
+    # den Laufkontext (Dokument-UID, Team, Gespraech). Stuenden sie hinter dem
+    # allgemeinen Zweig, kaeme jeder Aufruf ohne Kontext an und endete mit
+    # „Dokumentkontext fehlt“.
+    if tool_name in DOCUMENTS_TOOLS:
+        from services.ai_tools.document_tools import execute_document_tool
+
+        return execute_document_tool(
+            db, user=user, tool_name=tool_name, arguments=arguments, kontext=kontext
+        )
     if tool_name in GLOBAL_READ_TOOLS:
         if tool_name == "worker_start":
             # Private Schluessel kommen nie aus dem Modelltext. Sie werden
@@ -2579,12 +2584,6 @@ def execute_read_tool(
             docs_team_id=(
                 getattr(kontext, "team_id", None) if tool_name == "worker_start" else None
             ),
-        )
-    if tool_name in DOCUMENTS_TOOLS:
-        from services.ai_tools.document_tools import execute_document_tool
-
-        return execute_document_tool(
-            db, user=user, tool_name=tool_name, arguments=arguments, kontext=kontext
         )
     server, arguments = _resolve_server(db, user, arguments)
     context = _execute_server_context_tool(

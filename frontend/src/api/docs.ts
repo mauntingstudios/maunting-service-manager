@@ -74,6 +74,28 @@ export interface DocMemberRow {
   is_doc_owner: boolean
 }
 
+export interface DocPendingEdit {
+  uid: string
+  operation: 'append' | 'replace_block'
+  status: 'pending' | 'applying' | 'stale'
+  summary: string | null
+  anchor_quote: string | null
+  created_at: string
+  expires_at: string
+}
+
+export interface DocPendingPreview {
+  uid: string
+  html: string
+  target_block: string | null
+  target_index: number | null
+}
+
+export type DocPendingView = DocPendingEdit &
+  Partial<DocPendingPreview> & {
+    stale?: boolean
+  }
+
 export interface CollabToken {
   url: string
   token: string
@@ -276,6 +298,30 @@ export function restoreRevision(uid: string, rev: number): Promise<{ rev: number
 
 export function undoAiEdit(uid: string): Promise<{ rev: number; undone: boolean }> {
   return api(`/docs/${encodeURIComponent(uid)}/ai-undo`, { method: 'POST' })
+}
+
+export function listPendingEdits(uid: string): Promise<{ pending_edits: DocPendingEdit[] }> {
+  return api(`/docs/${encodeURIComponent(uid)}/pending-edits`)
+}
+
+export function previewPendingEdit(uid: string, pendingUid: string): Promise<DocPendingPreview> {
+  return api(
+    `/docs/${encodeURIComponent(uid)}/pending-edits/${encodeURIComponent(pendingUid)}/preview`,
+  )
+}
+
+export function applyPendingEdit(uid: string, pendingUid: string): Promise<{ rev: number }> {
+  return api(
+    `/docs/${encodeURIComponent(uid)}/pending-edits/${encodeURIComponent(pendingUid)}/apply`,
+    { method: 'POST' },
+  )
+}
+
+export function rejectPendingEdit(uid: string, pendingUid: string): Promise<{ rejected: boolean }> {
+  return api(
+    `/docs/${encodeURIComponent(uid)}/pending-edits/${encodeURIComponent(pendingUid)}/reject`,
+    { method: 'POST' },
+  )
 }
 
 export function getCollabToken(uid: string): Promise<CollabToken> {

@@ -100,6 +100,47 @@ test("mehrdeutiges Zitat wirft mit Kandidaten", () => {
   );
 });
 
+test("expectedBlock verhindert einen falschen Zielblock", () => {
+  const ydoc = docMitText("Der alte Satz");
+  assert.throws(
+    () =>
+      applyAiEdit(ydoc, {
+        operation: "replace_block",
+        markdown: "Neu",
+        anchor: { quote: "alte" },
+        expectedBlock: "Ein ganz anderer Block",
+        runId: "run-1",
+        callId: "call-6",
+      }),
+    (error) => error instanceof AiEditError && error.code === "AI_EDIT_STALE_SELECTION",
+  );
+});
+
+test("applyAiEdit meldet Zielblock und Einfuegeposition fuer die Vorschau", () => {
+  const ydoc = docMitText("Der alte Satz");
+  const ersetzt = applyAiEdit(ydoc, {
+    operation: "replace_block",
+    markdown: "Der neue Satz",
+    anchor: { quote: "alte" },
+    expectedBlock: "Der alte Satz",
+    runId: "run-1",
+    callId: "call-7",
+  });
+  assert.equal(ersetzt.target_block, "Der alte Satz");
+
+  assert.equal(ersetzt.target_index, 0);
+  assert.equal(ersetzt.inserted_count, 1);
+
+  const angehaengt = applyAiEdit(ydoc, {
+    operation: "append",
+    markdown: "Noch einer",
+    runId: "run-1",
+    callId: "call-8",
+  });
+  assert.equal(angehaengt.target_block, null);
+  assert.equal(angehaengt.target_index, 1);
+});
+
 test("occurrence waehlt bei mehrdeutigem Zitat den richtigen Block", () => {
   const ydoc = new Y.Doc();
   const fragment = ydoc.getXmlFragment("default");

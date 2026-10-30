@@ -56,6 +56,11 @@ export function Ankerfenster({
     const ausloeser = anker.current
     const daneben = (e: PointerEvent) => {
       const ziel = e.target as Node
+      // Ein `Dropdown` im Fenster haengt per Portal an `document.body`. Ohne
+      // diese Ausnahme haelt der Waechter die Option fuer „draussen“ und
+      // schliesst das Fenster auf `pointerdown` — bevor das `click` der Option
+      // ankommt.
+      if ((ziel as HTMLElement | null)?.closest?.('[data-msm-dropdown-menu]')) return
       if (!fenster.current?.contains(ziel) && !ausloeser?.contains(ziel)) schliessen.current()
     }
     const escape = (e: KeyboardEvent) => {

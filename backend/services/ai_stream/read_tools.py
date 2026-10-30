@@ -502,6 +502,7 @@ def voice_werkzeug_ausfuehren(
         from services.ai_tools.document_tools import ToolKontext
 
         docs_kontext = ToolKontext(
+            conversation_id=conversation_id,
             document_uid=docs_document_uid,
             team_id=docs_team_id,
         )
@@ -1398,6 +1399,7 @@ async def _leserunde_ausfuehren(
 
         docs_kontext = ToolKontext(
             run_id=run_id,
+            conversation_id=conversation_id,
             document_uid=str(docs_state["document_uid"]),
             team_id=docs_state.get("team_id"),
             selection=ai_docs_selection.lesen(run_id),

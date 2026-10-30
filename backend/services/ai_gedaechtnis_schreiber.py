@@ -278,6 +278,9 @@ class Auftrag:
     server_hinweise: frozenset[int] = frozenset()
     gesprochen: bool = False
     quelle_ref: str | None = None
+    #: Dokument-Lauf: ausschliesslich dieses Team, keine persoenlichen oder
+    #: serverbezogenen Bereiche. ``None`` heisst: normales Gespraech.
+    nur_team_id: int | None = None
 
 
 @dataclass
@@ -430,7 +433,7 @@ def vormerken(db: Session, conversation_id: str, *, jetzt: datetime | None = Non
     """
     jetzt = jetzt or _jetzt()
     gespraech = db.get(AiConversation, conversation_id)
-    if gespraech is None or gespraech.kind != "primary":
+    if gespraech is None or gespraech.kind not in ("primary", "docs"):
         return False
     bisher = gespraech.gedaechtnis_faellig
     laeuft = gespraech.gedaechtnis_sperre is not None and gespraech.gedaechtnis_sperre > jetzt
@@ -665,7 +668,7 @@ def _neueste(db: Session, conversation_id: str) -> tuple[datetime, str] | None:
 def _gespraech_lesen(db: Session, conversation_id: str) -> _Gelesen | None:
     """Der Ausschnitt hinter der Marke. Nie im Ereignisloop (`durchgang`)."""
     gespraech = db.get(AiConversation, conversation_id)
-    if gespraech is None or gespraech.kind != "primary":
+    if gespraech is None or gespraech.kind not in ("primary", "docs"):
         return None
     user = db.get(User, gespraech.user_id)
     if user is None:
@@ -676,7 +679,31 @@ def _gespraech_lesen(db: Session, conversation_id: str) -> _Gelesen | None:
         # jedem leeren Durchgang: wer das Recht später bekommt, bekommt kein
         # Gedächtnis über die Zeit davor.
         return _Gelesen(None, _neueste(db, conversation_id))
-    einwilligung = ai_memory_service.einwilligung_seit(db, user.id)
+    nur_team_id: int | None = None
+    if gespraech.kind == "docs":
+        from models.doc import Document
+        from services import team_service
+
+        doc = (
+            db.query(Document).filter(Document.id == gespraech.document_id).first()
+            if gespraech.document_id is not None
+            else None
+        )
+        if doc is None or doc.deleted_at is not None:
+            return _Gelesen(None, _neueste(db, conversation_id))
+        team = db.get(Team, doc.team_id)
+        if (
+            team is None
+            or team.is_personal
+            or team_service.membership(db, doc.team_id, user.id) is None
+        ):
+            return _Gelesen(None, _neueste(db, conversation_id))
+        nur_team_id = doc.team_id
+        # Teamwissen braucht keine persoenliche Einwilligung. Der Ausschnitt
+        # wird trotzdem nur aus dem gelesen, was seit der Marke neu ist.
+        einwilligung = None
+    else:
+        einwilligung = ai_memory_service.einwilligung_seit(db, user.id)
     zone_name = ai_lage.zone_des_benutzers(user)
     ungelesen = _seite(db, _nach_der_marke(gespraech), grenze=500)
     if not ungelesen:
@@ -739,12 +766,20 @@ def _gespraech_lesen(db: Session, conversation_id: str) -> _Gelesen | None:
         None,
     )
     alle = vorlauf + zeilen
+    if nur_team_id is not None:
+        # Nur was der Mensch gesagt hat, wird Teamwissen. Ein noch nicht
+        # bestaetigter KI-Vorschlag steht in der Assistenten-Zeile; er darf
+        # nicht als Teamfakt enden, bevor ihn jemand uebernommen hat.
+        alle = [zeile for zeile in alle if zeile.vom_menschen]
+        if not alle:
+            return _Gelesen(None, (letzte.created_at, letzte.id), rest)
     auftrag = Auftrag(
         user_id=user.id,
         provider_id=anbieter,
         zeilen=tuple(alle),
         seit=alle[0].zeit,
         server_hinweise=hinweise,
+        nur_team_id=nur_team_id,
     )
     return _Gelesen(auftrag, (letzte.created_at, letzte.id), rest)
 
@@ -974,6 +1009,43 @@ def _server_im_text(db: Session, user: User, texte: list[str]) -> set[int]:
 
 def _bereiche(db: Session, user: User, auftrag: Auftrag, persoenlich: bool) -> list[Bereich]:
     """Wohin dieser Durchgang schreiben darf — mit Platz und Rechten."""
+    if auftrag.nur_team_id is not None:
+        # Dokument-Lauf: genau ein Team, sonst nichts. Kein persoenlicher
+        # Bereich, keine Servernotizen, keine anderen Teams — auch dann nicht,
+        # wenn der Ausschnitt Servernamen enthaelt oder der Benutzer mehrere
+        # Teams verwaltet.
+        from services import team_service
+
+        team = db.get(Team, auftrag.nur_team_id)
+        if (
+            team is None
+            or team.is_personal
+            or not team_service.can_manage_team_memory(db, user, team.id)
+        ):
+            return []
+        try:
+            identity, _o, sid, tid = ai_memory_service.scope_identity(
+                db, user, "team", None, team.id
+            )
+        except HTTPException:
+            return []
+        grenze = ai_limit_service.resolve_scope_memory_limit(
+            db, "team", user, team_id=tid, server_id=sid
+        )
+        if grenze == 0:
+            return []
+        frei = None if grenze is None else max(0, grenze - _bestand_zahl(db, identity))
+        name = team_service.ansprechbarer_name(db, user, team)
+        return [Bereich(
+            kennung="B1",
+            scope="team",
+            identity=identity,
+            name=f"Teamwissen „{name}“ (lesen alle im Team)",
+            server_id=sid,
+            team_id=tid,
+            frei=frei,
+        )]
+
     roh: list[tuple[str, int | None, int | None, str]] = []
     if persoenlich:
         roh.append(("user", None, None, "Persönlich: über den Benutzer"))
@@ -1260,7 +1332,13 @@ def _vorbereiten(auftrag: Auftrag, jetzt: datetime) -> _Vorbereitet | Ergebnis:
         # eingeschaltet hat.
         einwilligung = ai_memory_service.einwilligung_seit(db, user.id)
         seit = auftrag.seit if auftrag.seit.tzinfo else auftrag.seit.replace(tzinfo=timezone.utc)
-        persoenlich = einwilligung is not None and einwilligung <= seit
+        # Ein Dokument-Lauf schreibt ausschliesslich Teamwissen. Persoenliche
+        # Erinnerungen sind dort gesperrt, auch wenn eine Einwilligung vorliegt.
+        persoenlich = (
+            False
+            if auftrag.nur_team_id is not None
+            else einwilligung is not None and einwilligung <= seit
+        )
         if auftrag.gesprochen and not persoenlich:
             # Eine Mitschrift gibt es nur mit der Einwilligung
             # (`realtime_session.mitschreiben`). Fehlt sie jetzt oder fehlte

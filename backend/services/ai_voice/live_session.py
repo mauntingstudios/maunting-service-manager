@@ -247,14 +247,35 @@ def vorbereiten(
     if backend is None:
         raise RealtimeSitzungsfehler("REALTIME_NOT_CONFIGURED")
 
-    tools = angebotene_werkzeuge(db, provider=provider, user=user, herkunft=herkunft)
-    if docs_document_uid:
-        from services.ai_tool_registry import DOCUMENTS_TOOLS
+    if docs_team_id is not None:
+        from models.team import Team
+        from services import team_service
 
-        erlaubt = set(DOCUMENTS_TOOLS) | VOICE_CONTROL_TOOLS
+        team = db.get(Team, docs_team_id)
+        if (
+            team is None
+            or team.is_personal
+            or team_service.membership(db, docs_team_id, user.id) is None
+        ):
+            docs_team_id = None
+    tools = angebotene_werkzeuge(
+        db,
+        provider=provider,
+        user=user,
+        herkunft=herkunft,
+        docs=bool(docs_document_uid),
+    )
+    if docs_document_uid:
+        from services.ai_tool_registry import docs_kontext_schnitt
+
+        erlaubt = docs_kontext_schnitt(docs_team_id is not None) | VOICE_CONTROL_TOOLS
         tools = [tool for tool in tools if tool.get("name") in erlaubt]
     sprache = provider.realtime_language or "auto"
-    memory = gedaechtnis(db, user, nur_team_id=docs_team_id)
+    memory = (
+        ""
+        if docs_document_uid and docs_team_id is None
+        else gedaechtnis(db, user, nur_team_id=docs_team_id)
+    )
     # GPT-Live schreibt beide Seiten selbst ab: mit der Einwilligung hört der
     # Schreiber mit, ohne Abschriftmodell. Ein Dokumentgespraech schreibt
     # kein persoenliches Gedaechtnis mit.

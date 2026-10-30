@@ -25,11 +25,14 @@ from services.docs_service import DocsService, _inhalt_text, _titel
 MAX_TOOL_TEXT = 8_000
 MAX_FIND_TREFFER = 20
 MAX_KOMMENTAR = 4_000
+MAX_TEAM_NOTIZEN = 50
+MAX_TEAM_KALENDER = 200
 
 
 @dataclass(frozen=True)
 class ToolKontext:
     run_id: str | None = None
+    conversation_id: str | None = None
     document_uid: str | None = None
     team_id: int | None = None
     selection: dict[str, Any] | None = None
@@ -66,6 +69,37 @@ def _zugriff(db: Session, user: User, kontext: ToolKontext | None, minimum: str 
             f"Die Dokumentrolle '{zugriff.role}' erlaubt das nicht (noetig: {minimum})"
         )
     return zugriff
+
+
+def _team_mitgliedschaft(
+    db: Session, user: User, kontext: ToolKontext | None
+):
+    """Dokumentzugriff plus echte Mitgliedschaft im Dokumentteam.
+
+    Ein Link-Gast darf das Dokument bearbeiten; Team-Gedaechtnis, Team-Notizen,
+    Team-Kalender und Team-Skills bleiben ihm verschlossen. Die Pruefung steht
+    bei jedem Aufruf und nicht nur beim Start des Laufs, weil eine
+    Mitgliedschaft waehrend des Laufs entzogen werden kann.
+    """
+    from models.team import Team
+    from services import team_service
+
+    zugriff = _zugriff(db, user, kontext)
+    team_id = zugriff.document.team_id
+    if kontext is not None and kontext.team_id is not None and kontext.team_id != team_id:
+        raise AiActionValidationError(
+            "Der Lauf gehoert nicht zum Team dieses Dokuments"
+        )
+    team = db.get(Team, team_id)
+    if team is None or team.is_personal:
+        raise AiActionValidationError(
+            "Persoenliche Dokumente haben kein Teamwissen"
+        )
+    if team_service.membership(db, team_id, user.id) is None:
+        raise AiActionValidationError(
+            "Teamwissen ist nur fuer Mitglieder des Dokumentteams sichtbar"
+        )
+    return zugriff, team_id
 
 
 def _fundstellen(text: str, suche: str) -> list[dict[str, Any]]:
@@ -202,7 +236,7 @@ def execute_document_tool(
 
     if tool_name == "read_document_skill":
         _rechte(db, user)
-        zugriff = _zugriff(db, user, kontext)
+        zugriff, _team_id = _team_mitgliedschaft(db, user, kontext)
         from models.ai_skill import AiSkill
 
         key = str(arguments.get("skill_key") or "").strip()
@@ -226,6 +260,133 @@ def execute_document_tool(
             skill_key=row.skill_key, name=row.name, body=row.body[:MAX_TOOL_TEXT]
         )
 
+    if tool_name == "read_team_notes":
+        _rechte(db, user)
+        _zugriff_doc, team_id = _team_mitgliedschaft(db, user, kontext)
+        from services.notes_service import NotesService
+
+        query = str(arguments.get("query") or "").strip() or None
+        category = str(arguments.get("category") or "").strip() or None
+        is_pinned = bool(arguments["is_pinned"]) if arguments.get("is_pinned") is not None else None
+        notizen = NotesService.get_notes(
+            db,
+            user=user,
+            search=query,
+            category=category,
+            team_id=team_id,
+            is_pinned=is_pinned,
+        )
+        # `get_notes` liefert auch eigene persoenliche Notizen, wenn die
+        # Sichtbarkeit sie umfasst. Fuer den Dokument-Lauf zaehlt nur echtes
+        # Teamwissen; die Team-ID allein wuerde eine persoenliche Notiz mit
+        # gesetzter Team-ID nicht ausschliessen.
+        notizen = [
+            eintrag
+            for eintrag in notizen
+            if eintrag.get("note_type") == "team" and eintrag.get("team_id") == team_id
+        ][:MAX_TEAM_NOTIZEN]
+        return _untrusted(notes=notizen, count=len(notizen))
+
+    if tool_name == "read_team_calendar":
+        _rechte(db, user)
+        _zugriff_doc, team_id = _team_mitgliedschaft(db, user, kontext)
+        if not permission_service.has_global_permission(db, user, "ai.calendar.use"):
+            raise AiActionValidationError("Kalender-Einsicht ist nicht erlaubt")
+        from datetime import date as _datum, datetime as _zeit, timedelta as _spanne, timezone as _zone
+
+        from services.calendar_service import (
+            CalendarService,
+            _parse_datetime as _kalender_zeit,
+        )
+
+        start = str(arguments.get("start_date") or "").strip() or None
+        ende = str(arguments.get("end_date") or "").strip() or None
+        jetzt = _zeit.now(_zone.utc)
+        von = _kalender_zeit(start, user=user) if start else jetzt - _spanne(days=30)
+        if ende and re.fullmatch(r"\d{4}-\d{2}-\d{2}", ende):
+            # Ein reines Datum meint den ganzen Tag, nicht Mitternacht davor.
+            folgetag = _datum.fromisoformat(ende) + _spanne(days=1)
+            bis = _kalender_zeit(folgetag.isoformat(), user=user)
+        else:
+            bis = _kalender_zeit(ende, user=user) if ende else jetzt + _spanne(days=365)
+        events = CalendarService.vorkommen_im_fenster(
+            db, user=user, team_id=team_id, event_type="team", von=von, bis=bis
+        )
+        gekuerzt = len(events) > MAX_TEAM_KALENDER
+        return _untrusted(
+            events=events[:MAX_TEAM_KALENDER],
+            count=min(len(events), MAX_TEAM_KALENDER),
+            truncated=gekuerzt,
+        )
+
+    if tool_name == "search_team_memory":
+        _rechte(db, user)
+        _zugriff_doc, team_id = _team_mitgliedschaft(db, user, kontext)
+        if not permission_service.has_global_permission(db, user, "ai.memory.use"):
+            raise AiActionValidationError("Gedaechtnis ist fuer diesen Benutzer nicht freigegeben")
+        query = str(arguments.get("query") or "").strip()
+        if not query:
+            raise AiActionValidationError("query fehlt")
+        from services import ai_memory_service
+
+        treffer = ai_memory_service.search_entries(
+            db, user, query, nur_team_id=team_id
+        )
+        ai_memory_service._schluessel_laden([row for row, _value, _score in treffer])
+        return _untrusted(
+            query=query,
+            results=[
+                {
+                    "text": value,
+                    "origin": row.origin,
+                    "titel": row.titel,
+                }
+                for row, value, _score in treffer
+            ],
+        )
+
+    if tool_name == "learn_team_skill":
+        _rechte(db, user)
+        _zugriff_doc, team_id = _team_mitgliedschaft(db, user, kontext)
+        if not permission_service.has_global_permission(db, user, "ai.skills.use"):
+            raise AiActionValidationError("Skills sind fuer diesen Benutzer nicht freigegeben")
+        felder = ("skill_key", "name", "description", "body")
+        for feld in felder:
+            if not isinstance(arguments.get(feld), str) or not arguments[feld].strip():
+                raise AiActionValidationError(f'Skill-Feld "{feld}" fehlt oder ist leer')
+        from fastapi import HTTPException
+
+        from services import ai_skill_service, team_service
+
+        if not team_service.can_manage_team_skills(db, user, team_id):
+            return {
+                "learned": False,
+                "reason": (
+                    "Dein Mitgliedsschalter erlaubt keine Team-Skills. "
+                    "Ein Teammitglied mit Skill-Recht kann es uebernehmen."
+                ),
+            }
+        try:
+            row = ai_skill_service.upsert_skill(
+                db,
+                user=user,
+                skill_key=arguments["skill_key"],
+                name=arguments["name"],
+                description=arguments["description"],
+                body=arguments["body"],
+                team_id=team_id,
+                origin="ai",
+                status="active",
+            )
+        except HTTPException as exc:
+            raise AiActionValidationError(str(exc.detail)) from exc
+        return {
+            "learned": True,
+            "skill_key": row.skill_key,
+            "name": row.name,
+            "scope": "team",
+        }
+
     if tool_name == "edit_document":
         zugriff = _zugriff(db, user, kontext, "editor")
         from services.docs_collab_service import DocsCollabService
@@ -237,17 +398,62 @@ def execute_document_tool(
         if not markdown.strip():
             raise AiActionValidationError("markdown ist leer")
         anchor = arguments.get("anchor") if isinstance(arguments.get("anchor"), dict) else None
+        summary = str(arguments.get("summary") or "")[:200] or None
+        from services import ai_autonomy_service
+        from services.docs_pending_edit_service import DocsPendingEditService
+
+        # Ein offener Vorschlag blockiert auch die direkte Anwendung. Sonst
+        # stuende neben einer bereits uebernommenen Aenderung ein alter Geist,
+        # dessen Ziel nicht mehr stimmt.
+        offen = DocsPendingEditService.open_for(
+            db, doc_id=zugriff.document.id, user_id=user.id
+        )
+        if offen is not None:
+            return _untrusted(
+                pending=True,
+                pending_uid=offen.pending_uid,
+                hinweis=(
+                    "Es gibt bereits einen offenen Vorschlag fuer dieses Dokument. "
+                    "Bitte bestaetige oder verwirf ihn zuerst; lege keinen zweiten an."
+                ),
+            )
+
+        # Autonomie ist die ausdrueckliche Freigabe, ohne Bestaetigung
+        # anzuwenden. Ohne sie entsteht ein Vorschlag: sichtbar nur fuer den
+        # Menschen, der ihn ausgeloest hat, und noch nicht im Dokument.
+        autonom = ai_autonomy_service.autonomie_grundlage(
+            db, user=user, server_id=None, tool_name="edit_document"
+        )
+        if autonom is not None:
+            return _untrusted(
+                **DocsCollabService.ai_edit(
+                    db,
+                    user,
+                    zugriff.document.doc_uid,
+                    operation=operation,
+                    markdown=markdown,
+                    anchor=anchor,
+                    run_id=kontext.run_id if kontext else None,
+                    call_id=str(arguments.get("call_id") or "") or None,
+                    summary=summary,
+                )
+            )
+        if kontext is None or not kontext.conversation_id:
+            raise AiActionValidationError(
+                "Fuer einen Vorschlag fehlt das Dokumentgespraech im Lauf"
+            )
         return _untrusted(
-            **DocsCollabService.ai_edit(
+            **DocsPendingEditService.create(
                 db,
                 user,
                 zugriff.document.doc_uid,
+                conversation_id=kontext.conversation_id,
                 operation=operation,
                 markdown=markdown,
                 anchor=anchor,
-                run_id=kontext.run_id if kontext else None,
+                summary=summary,
+                run_id=kontext.run_id,
                 call_id=str(arguments.get("call_id") or "") or None,
-                summary=str(arguments.get("summary") or "")[:200] or None,
             )
         )
 
@@ -342,9 +548,49 @@ def _dokument_tool_definitions() -> list[dict]:
             ["skill_key"],
         ),
         funktion(
+            "read_team_notes",
+            "Liest ausschliesslich Team-Notizen des Dokumentteams. "
+            "Persoenliche Notizen sind hier nicht sichtbar.",
+            {
+                "query": {"type": "string", "maxLength": 200},
+                "category": {"type": "string", "maxLength": 64},
+                "is_pinned": {"type": "boolean"},
+            },
+            [],
+        ),
+        funktion(
+            "read_team_calendar",
+            "Liest ausschliesslich Team-Termine des Dokumentteams.",
+            {
+                "start_date": {"type": "string", "maxLength": 32},
+                "end_date": {"type": "string", "maxLength": 32},
+            },
+            [],
+        ),
+        funktion(
+            "search_team_memory",
+            "Sucht ausschliesslich im Team-Gedaechtnis des Dokumentteams.",
+            {"query": {"type": "string", "maxLength": 200}},
+            ["query"],
+        ),
+        funktion(
+            "learn_team_skill",
+            "Legt einen Skill fuer das Dokumentteam an oder aktualisiert ihn. "
+            "Nur Teamwissen, nie global oder persoenlich.",
+            {
+                "skill_key": {"type": "string", "maxLength": 64},
+                "name": {"type": "string", "maxLength": 120},
+                "description": {"type": "string", "maxLength": 400},
+                "body": {"type": "string", "maxLength": 8_000},
+            },
+            ["skill_key", "name", "description", "body"],
+        ),
+        funktion(
             "edit_document",
             "Aendert das Dokument: `append` haengt an, `replace_block` ersetzt den "
-            "Block mit Ankerzitat.",
+            "Block mit Ankerzitat. Ist der autonome Modus aus, entsteht nur ein "
+            "Vorschlag (pending=true), den der Mensch bestaetigen muss; dann "
+            "nicht erneut aufrufen.",
             {
                 "operation": {"type": "string", "enum": ["append", "replace_block"]},
                 "markdown": {"type": "string", "maxLength": 20_000},

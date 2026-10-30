@@ -59,7 +59,15 @@ from .user_mailbox import UserMailbox
 from .user_calendar import UserCalendar
 from .calendar_event import CalendarEvent
 from .note import Note
-from .doc import DocAsset, DocComment, DocFolder, DocMember, DocRevision, Document
+from .doc import (
+    DocAsset,
+    DocComment,
+    DocFolder,
+    DocMember,
+    DocPendingEdit,
+    DocRevision,
+    Document,
+)
 from .panel_popup import PanelPopup, UserPopupState
 from .vault_entry import VaultEntry
 from .vault_hint import VaultHint

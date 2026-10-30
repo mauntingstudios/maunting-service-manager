@@ -3119,17 +3119,28 @@ MAX_SEARCH_RESULTS = 15
 
 
 def search_entries(
-    db: Session, user: User, query: str, limit: int = MAX_SEARCH_RESULTS
+    db: Session,
+    user: User,
+    query: str,
+    limit: int = MAX_SEARCH_RESULTS,
+    *,
+    nur_team_id: int | None = None,
 ) -> list[tuple[AiMemoryEntry, str, float]]:
     """Findet Eintraege nach Bedeutung und Woertern (`ai_gedaechtnis_abruf.suchen`).
 
     Gesucht wird ausschliesslich in dem, was der Benutzer ohnehin sehen darf,
     **einschliesslich der Einwilligung**. Der Rueckgabewert enthaelt den
     Klartext; die gemeldeten Treffer gelten als benutzt.
+
+    ``nur_team_id`` beschraenkt die Suche auf das Gedaechtnis eines Teams.
+    Der Dokument-Lauf nutzt das, damit ein praeparierter Dokumenttext keine
+    persoenlichen oder serverbezogenen Erinnerungen abfragen kann.
     """
     from services import ai_gedaechtnis_abruf
 
     return [
         (treffer.row, treffer.text, treffer.rang)
-        for treffer in ai_gedaechtnis_abruf.suchen(db, user, query, limit)
+        for treffer in ai_gedaechtnis_abruf.suchen(
+            db, user, query, limit, nur_team_id=nur_team_id
+        )
     ]

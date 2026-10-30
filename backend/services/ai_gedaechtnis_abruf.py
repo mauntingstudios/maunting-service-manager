@@ -727,19 +727,35 @@ def anlagenwissen(db: Session, user: User, server_id: int, query: str = "") -> s
 # ── Suchen ───────────────────────────────────────────────────────────────────
 
 
-def suchen(db: Session, user: User, query: str, limit: int) -> list[Treffer]:
+def suchen(
+    db: Session,
+    user: User,
+    query: str,
+    limit: int,
+    *,
+    nur_team_id: int | None = None,
+) -> list[Treffer]:
     """`search_memory`: über alles, was der Benutzer gerade sehen darf.
 
     Dieselben Bereiche wie im Chat — **einschließlich der Einwilligung**: eine
     Suche kann nichts aufdecken, was ohne sie verborgen wäre —, dazu das
     Wissen aller sichtbaren Anlagen. Die gemeldeten Treffer gelten als
     gebraucht: hier hat jemand ausdrücklich gesucht.
+
+    ``nur_team_id`` ist der Dokument-Lauf: dann ausschließlich das Gedächtnis
+    dieses Teams. Die Mitgliedschaft prüft der Aufrufer, bevor er die ID
+    setzt; ohne sie bleibt der Wert ``None`` und der normale Sichtbarkeits-
+    filter gilt.
     """
     frage = query.strip()
     if not frage:
         return []
     kennungen = sichtbare_bereiche(
-        db, user, persoenlich=ai_memory_service.preference(db, user.id), anlage=True,
+        db,
+        user,
+        persoenlich=ai_memory_service.preference(db, user.id),
+        anlage=True,
+        nur_team_id=nur_team_id,
     )
     treffer = _treffer(db, kennungen, frage, still=True)[:limit]
     _gebraucht(db, [eintrag.row for eintrag in treffer])

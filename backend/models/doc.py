@@ -286,6 +286,80 @@ class DocRevision(Base):
     )
 
 
+PENDING_STATUSES = ("pending", "applying", "applied", "rejected", "stale")
+
+
+class DocPendingEdit(Base):
+    """Eine KI-Aenderung, die noch auf die Bestaetigung ihres Menschen wartet.
+
+    Sie liegt **nicht** im Yjs-Dokument und nicht in `doc_revisions`: Andere
+    Mitarbeiter duerfen sie nicht sehen, und der Verlauf soll keine Aenderung
+    zeigen, die es noch nicht gibt. Der Inhalt ist DIS-verschluesselt; die
+    Statusspalte bleibt Klartext, damit Aufraeumer und Sperren ohne
+    Entschluesselung arbeiten koennen.
+    """
+
+    __tablename__ = "doc_pending_edits"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN (" + ", ".join(f"'{s}'" for s in PENDING_STATUSES) + ")",
+            name="ck_doc_pending_edits_status",
+        ),
+        CheckConstraint(
+            "operation IN ('append', 'replace_block')",
+            name="ck_doc_pending_edits_operation",
+        ),
+        Index("ix_doc_pending_document_user", "document_id", "user_id"),
+        Index(
+            "uq_doc_pending_offen",
+            "document_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'applying')"),
+        ),
+        Index("ix_doc_pending_expires", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    pending_uid: Mapped[str] = mapped_column(
+        String(36), default=_gen_uid, nullable=False, unique=True
+    )
+    document_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ai_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    operation: Mapped[str] = mapped_column(String(16), nullable=False)
+    payload_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    base_rev: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # Wann die Uebernahme beansprucht wurde. Nicht `created_at`: Ein alter
+    # Vorschlag wuerde sonst waehrend der Uebernahme als haengend gelten.
+    applying_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    applied_rev: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class DocAsset(Base):
     __tablename__ = "doc_assets"
     __table_args__ = (Index("ix_doc_assets_document", "document_id"),)

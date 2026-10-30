@@ -6,6 +6,7 @@ import { IndexeddbPersistence } from 'y-indexeddb'
 import * as Y from 'yjs'
 import { useTranslation } from 'react-i18next'
 import {
+  AlertTriangle,
   History,
   MessageSquare,
   MessageSquarePlus,
@@ -24,9 +25,15 @@ import {
   undoAiEdit,
   uploadAsset,
   type DocDetail,
+  type DocPendingView,
 } from '@/api/docs'
 import { docsCollabUrl } from '@/config/api'
 import { createDocsExtensions, farbeFuerBenutzer } from './editor/extensions'
+import {
+  createPendingEdits,
+  PENDING_REFRESH_META,
+  type PendingHandles,
+} from './editor/PendingEdits'
 import { Toolbar } from './editor/Toolbar'
 import { MobileToolbar } from './editor/MobileToolbar'
 import { SlashMenu } from './editor/SlashMenu'
@@ -48,6 +55,10 @@ interface DocEditorProps {
   onCommentsChanged: () => void
   onTitleChanged: (title: string) => Promise<void>
   onSelectionChange?: (selection: { quote: string } | null) => void
+  vorschlag?: DocPendingView | null
+  vorschlagBusy?: boolean
+  onApplyVorschlag?: () => void
+  onRejectVorschlag?: () => void
 }
 
 type Verbindung = 'verbinden' | 'verbunden' | 'getrennt' | 'fehler'
@@ -64,6 +75,10 @@ export function DocEditor({
   onCommentsChanged,
   onTitleChanged,
   onSelectionChange,
+  vorschlag = null,
+  vorschlagBusy = false,
+  onApplyVorschlag,
+  onRejectVorschlag,
 }: DocEditorProps) {
   const { t } = useTranslation()
   const darfSchreiben = detail.can_edit && !detail.deleted
@@ -146,8 +161,33 @@ export function DocEditor({
     [userId, userName],
   )
 
+  // Die Extension wird einmal gebaut. Aktuelle Werte liest sie ueber diesen
+  // Ref, sonst muesste der Editor bei jedem Tastendruck neu entstehen.
+  const pendingHandles = useRef<PendingHandles>({
+    get: () => null,
+    busy: () => false,
+    onApply: () => {},
+    onReject: () => {},
+    labels: { title: '', apply: '', reject: '', applying: '' },
+  })
+  pendingHandles.current = {
+    get: () => vorschlag,
+    busy: () => vorschlagBusy,
+    onApply: () => onApplyVorschlag?.(),
+    onReject: () => onRejectVorschlag?.(),
+    labels: {
+      title: t('docs.pending.title'),
+      apply: t('docs.pending.apply'),
+      reject: t('docs.pending.reject'),
+      applying: t('docs.pending.applying'),
+    },
+  }
+
   const extensions = useMemo(
-    () => createDocsExtensions({ ydoc, provider, user, docUid: detail.uid }),
+    () => [
+      ...createDocsExtensions({ ydoc, provider, user, docUid: detail.uid }),
+      createPendingEdits(pendingHandles),
+    ],
     [provider, ydoc, user, detail.uid],
   )
 
@@ -169,6 +209,16 @@ export function DocEditor({
   useEffect(() => {
     editor?.setEditable(editable)
   }, [editor, editable])
+
+  // Dekorationen haengen an der Ansicht, nicht am Dokument. Ohne diesen
+  // Anstoss bliebe der Geisterblock stehen, wenn der Vorschlag in einem
+  // anderen Tab bestaetigt oder verworfen wurde.
+  useEffect(() => {
+    if (!editor?.view) return
+    editor.view.dispatch(
+      editor.state.tr.setMeta(PENDING_REFRESH_META, Date.now()),
+    )
+  }, [editor, vorschlag, vorschlagBusy, t])
 
   useEffect(() => {
     if (!editor || !onSelectionChange) return
@@ -403,6 +453,24 @@ export function DocEditor({
           <Kurzinfo text={t('docs.singra.undo')}>
             <Button variant="ghost" size="sm" onClick={() => void kiRueckgaengig()} aria-label={t('docs.singra.undo')}>
               <RotateCcw className="h-4 w-4" />
+            </Button>
+          </Kurzinfo>
+        )}
+        {vorschlag && !vorschlag.stale && (
+          <Badge variant="warning">{t('docs.pending.badge')}</Badge>
+        )}
+        {vorschlag?.stale && (
+          <Kurzinfo text={t('docs.pending.staleHint')}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={vorschlagBusy}
+              onClick={onRejectVorschlag}
+              aria-label={t('docs.pending.rejectStale')}
+              className="text-status-warning"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('docs.pending.staleShort')}</span>
             </Button>
           </Kurzinfo>
         )}

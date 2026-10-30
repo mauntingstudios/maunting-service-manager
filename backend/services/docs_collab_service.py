@@ -448,6 +448,44 @@ class DocsCollabService:
         return {"rev": doc.rev, **ergebnis}
 
     @staticmethod
+    def ai_preview(
+        db: Session,
+        user: User,
+        doc_uid: str,
+        *,
+        operation: str,
+        markdown: str,
+        anchor: dict | None,
+        expected_block: str | None = None,
+        run_id: str | None = None,
+        call_id: str | None = None,
+    ) -> dict:
+        """Prueft eine KI-Aenderung, ohne das Dokument anzufassen.
+
+        Der Sidecar wendet sie auf einen Klon an und rendert nur die
+        vorgeschlagenen Bloecke. Es entsteht keine Revision, kein Broadcast und
+        kein gespeicherter Zustand.
+        """
+        doc = db.query(Document).filter(Document.doc_uid == doc_uid).first()
+        if doc is None or doc.deleted_at is not None:
+            raise fehler(404, "DOCUMENT_NOT_FOUND", "Dokument nicht gefunden")
+        docs_access.require_role(db, user, doc, "editor")
+        return _call_sidecar(
+            f"/internal/docs/{doc_uid}/ai-preview",
+            {
+                "operation": operation,
+                "markdown": markdown[:20_000],
+                "anchor": anchor,
+                "expected_block": expected_block,
+                "run_id": run_id,
+                "call_id": call_id,
+                "user_id": user.id,
+                "family": _family_for_user(db, user.id),
+            },
+            timeout=30.0,
+        )
+
+    @staticmethod
     def ai_edit(
         db: Session,
         user: User,
@@ -459,6 +497,7 @@ class DocsCollabService:
         run_id: str | None,
         call_id: str | None,
         summary: str | None,
+        expected_block: str | None = None,
     ) -> dict:
         doc = db.query(Document).filter(Document.doc_uid == doc_uid).first()
         if doc is None or doc.deleted_at is not None:
@@ -471,6 +510,7 @@ class DocsCollabService:
                 "markdown": markdown[:20_000],
                 "anchor": anchor,
                 "summary": summary,
+                "expected_block": expected_block,
                 "run_id": run_id,
                 "call_id": call_id,
                 "user_id": user.id,
