@@ -7,22 +7,31 @@ import { schemaVersion } from "@msm/docs-schema/schema";
 
 import { authenticate } from "./auth.mjs";
 import {
+  aiUndo,
   contextFor,
   flushAll,
   flushDocument,
-  loadDocument,
   loadedDocuments,
   registerDocument,
   rememberContext,
+  resetAiUndo,
   restoreDocument,
   setServer,
   undoAi,
+  unregisterDocument,
   withDocument,
 } from "./collab.mjs";
-import { applyAiEdit, AiEditError } from "./ai_edit.mjs";
-import { storeDocument, ydocOf } from "./persist.mjs";
+import { applyEdits, applyEditsAtomically, structureOf } from "./ai_edit.mjs";
+import {
+  extractText,
+  sha256,
+  storeDocument,
+  withLock,
+  ydocOf,
+} from "./persist.mjs";
+import { clampText } from "./limits.mjs";
 import { renderDocument, renderNodesHtml } from "./render.mjs";
-import { loadState } from "./backend_client.mjs";
+import { aiStoreState, loadState } from "./backend_client.mjs";
 
 const VERSION = process.env.npm_package_version || "1.0.0";
 const START = Date.now();
@@ -75,6 +84,10 @@ const hocuspocus = new Server({
       console.error(`letzter Store fuer ${documentName} fehlgeschlagen: ${error.message}`);
     }
   },
+  async afterUnloadDocument({ documentName }) {
+    // Undo-Manager je Nutzer nicht unbegrenzt ueber entladene Dokumente halten.
+    unregisterDocument(documentName);
+  },
 });
 
 setServer(hocuspocus);
@@ -120,6 +133,22 @@ function tokenOk(req) {
   return header.toLowerCase().startsWith("bearer ") && header.slice(7).trim() === SERVICE_TOKEN;
 }
 
+/** Neuer Batch oder Altaufruf mit genau einer Aenderung. */
+function editsAusBody(body) {
+  if (Array.isArray(body?.edits)) return body.edits;
+  if (body?.operation) {
+    return [
+      {
+        op: body.operation,
+        markdown: body.markdown,
+        target: body.anchor || {},
+        expected_text: body.expected_block ?? null,
+      },
+    ];
+  }
+  return [];
+}
+
 async function aktion(name, req, antwort) {
   const body = await bodyLesen(req);
 
@@ -143,7 +172,7 @@ async function aktion(name, req, antwort) {
     });
   }
 
-  const match = /^\/internal\/docs\/([^/]+)\/(checkpoint|restore|undo-ai|render|ai-preview|ai-edit|disconnect-user|disconnect-doc)$/.exec(
+  const match = /^\/internal\/docs\/([^/]+)\/(checkpoint|restore|undo-ai|render|structure|ai-preview|ai-edit|disconnect-user|disconnect-doc)$/.exec(
     req.url || "",
   );
   if (!match) {
@@ -173,20 +202,32 @@ async function aktion(name, req, antwort) {
   }
 
   if (was === "restore") {
-    const ergebnis = await restoreDocument(docName, body.state_b64 || "", {
-      origin: `user:${meta.user_id || "system"}`,
-      author_user_id: meta.user_id,
-      author_family: meta.family,
-    });
+    const ergebnis = await withLock(
+      docName,
+      () =>
+        restoreDocument(docName, body.state_b64 || "", {
+          origin: `user:${meta.user_id || "system"}`,
+          author_user_id: meta.user_id,
+          author_family: meta.family,
+        }),
+      { waitMs: 3000 },
+    );
     return json(antwort, 200, ergebnis);
   }
 
   if (was === "undo-ai") {
-    await withDocument(docName, () => undefined, {});
-    const ergebnis = await undoAi(docName, {
-      author_user_id: meta.user_id,
-      author_family: meta.family,
-    });
+    const ergebnis = await withLock(
+      docName,
+      async () => {
+        await withDocument(docName, () => undefined, {});
+        return undoAi(docName, {
+          author_user_id: meta.user_id,
+          author_family: meta.family,
+          userId: meta.user_id,
+        });
+      },
+      { waitMs: 3000 },
+    );
     return json(antwort, 200, ergebnis);
   }
 
@@ -221,45 +262,74 @@ async function aktion(name, req, antwort) {
     return json(antwort, 200, ergebnis);
   }
 
-  if (was === "ai-preview") {
-    // Nur lesen: der Klon nimmt die Aenderung auf, das Live-Dokument bleibt
-    // unberuehrt. Deshalb hier bewusst **kein** `storeDocument` — sonst
-    // entstuende eine Revision, die alle Mitarbeiter im Verlauf saehen.
+  if (was === "structure") {
+    const offset = Math.max(0, Number(body.offset) || 0);
+    const limit = Math.min(300, Math.max(1, Number(body.limit) || 120));
     const ergebnis = await withDocument(
       docName,
-      async (ydoc) => {
+      (ydoc) =>
+        structureOf(ydoc.getXmlFragment("default"), { offset, limit }),
+      { user_id: meta.user_id, fam: meta.family },
+    );
+    return json(antwort, 200, ergebnis);
+  }
+
+  if (was === "ai-preview") {
+    // Nur lesen: der Klon nimmt die Aenderungen auf, das Live-Dokument bleibt
+    // unberuehrt. Deshalb hier bewusst **kein** Store — sonst entstuende eine
+    // Revision, die alle Mitarbeiter im Verlauf saehen.
+    const edits = editsAusBody(body);
+    const ergebnis = await withDocument(
+      docName,
+      (ydoc) => {
         const klon = new Y.Doc();
         Y.applyUpdate(klon, Y.encodeStateAsUpdate(ydoc));
         try {
-          const bearbeitet = applyAiEdit(klon, {
-            operation: body.operation,
-            markdown: body.markdown,
-            anchor: body.anchor,
-            runId: body.run_id,
-            callId: body.call_id,
-            expectedBlock: body.expected_block ?? null,
+          // Schrittweise anwenden und sofort rendern: nur in diesem Moment
+          // stimmen die Indizes. Ein spaeterer Einfuegungsschritt wuerde die
+          // Auswahl eines frueheren sonst verschieben.
+          const warnings = [];
+          const merker = new Map();
+          const vorschauen = edits.map((edit, index) => {
+            const schritt = applyEdits(klon, {
+              edits: [edit],
+              runId: body.run_id,
+              callId: body.call_id,
+              userId: meta.user_id,
+              warnings,
+              merker,
+            });
+            const eintrag = schritt.edits[0];
+            const knoten = klon.getXmlFragment("default").toArray();
+            let html = "";
+            if (eintrag.op === "replace_text") {
+              html = renderNodesHtml([knoten[eintrag.target_index]], true);
+            } else if (eintrag.op !== "delete_block") {
+              html = renderNodesHtml(
+                knoten.slice(
+                  eintrag.target_index,
+                  eintrag.target_index + eintrag.inserted_count,
+                ),
+                true,
+              );
+            }
+            return {
+              index,
+              op: eintrag.op,
+              html,
+              target_index: eintrag.target_index,
+              target_fingerprint: eintrag.target_fingerprint,
+            };
           });
-          const fragment = klon.getXmlFragment("default");
-          const knoten = fragment
-            .toArray()
-            .slice(
-              bearbeitet.target_index,
-              bearbeitet.target_index + bearbeitet.inserted_count,
-            );
           return {
             ok: true,
-            html: renderNodesHtml(knoten, true),
-            target_block: bearbeitet.target_block,
-            target_index: bearbeitet.target_index,
+            edits: vorschauen,
+            html: vorschauen
+              .map((vorschau) => vorschau.html)
+              .filter(Boolean)
+              .join(""),
+            warnings,
           };
-        } catch (error) {
-          if (error instanceof AiEditError) {
-            const fehler = new Error(error.message);
-            fehler.code = error.code;
-            fehler.candidates = error.candidates;
-            throw fehler;
-          }
-          throw error;
         } finally {
           klon.destroy();
         }
@@ -270,60 +340,87 @@ async function aktion(name, req, antwort) {
   }
 
   if (was === "ai-edit") {
-    const ergebnis = await withDocument(
+    const edits = editsAusBody(body);
+    // Das Lock umfasst Pruefung, Anwendung und den atomaren Store. Der
+    // Autosave nutzt denselben Schluessel und wartet; eine zweite KI-Anfrage
+    // bekommt nach kurzer Frist AI_EDIT_BUSY, statt spaeter still zu wirken.
+    const ergebnis = await withLock(
       docName,
-      async (ydoc) => {
-        const awareness = ydoc?.awareness;
-        try {
-          // Virtueller Mitbearbeiter: die Oberflaeche zeigt waehrend der
-          // KI-Aenderung einen eigenen Cursor, ohne einen echten Nutzer zu
-          // erfinden.
-          awareness?.setLocalStateField?.("user", {
-            name: "Singra",
-            color: "#a855f7",
-            ai: true,
-          });
-          await storeDocument(docName, ydoc, {
-            origin: `user:${meta.user_id || "ai"}`,
-            author_user_id: meta.user_id,
-            author_family: meta.family,
-            reason: "ai_pre_edit",
-            ai_run_id: body.run_id || null,
-            summary: "Vor KI-Aenderung",
-          });
-          let bearbeitet;
-          try {
-            bearbeitet = applyAiEdit(ydoc, {
-              operation: body.operation,
-              markdown: body.markdown,
-              anchor: body.anchor,
-              runId: body.run_id,
-              callId: body.call_id,
-              expectedBlock: body.expected_block ?? null,
-            });
-          } catch (error) {
-            if (error instanceof AiEditError) {
-              const fehler = new Error(error.message);
-              fehler.code = error.code;
-              fehler.candidates = error.candidates;
-              throw fehler;
+      () =>
+        withDocument(
+          docName,
+          async (ydoc) => {
+            const awareness = ydoc?.awareness;
+            try {
+              // Virtueller Mitbearbeiter: die Oberflaeche zeigt waehrend der
+              // KI-Aenderung einen eigenen Cursor, ohne einen echten Nutzer zu
+              // erfinden.
+              awareness?.setLocalStateField?.("user", {
+                name: "Singra",
+                color: "#a855f7",
+                ai: true,
+              });
+              const pre = Y.encodeStateAsUpdate(ydoc);
+              const preText = extractText(ydoc);
+              // Manager vor der Transaktion anlegen, sonst erfasst er sie nicht.
+              aiUndo(docName, ydoc, meta.user_id);
+
+              // Pruefung auf einem Klon, dann Anwendung ohne `await`
+              // dazwischen. Wirft die Anwendung wider Erwarten, stellt
+              // `applyEditsAtomically` den Pre-Zustand wieder her.
+              let bearbeitet;
+              try {
+                ({ result: bearbeitet } = applyEditsAtomically(
+                  ydoc,
+                  {
+                    edits,
+                    runId: body.run_id,
+                    callId: body.call_id,
+                    userId: meta.user_id,
+                  },
+                  { pre },
+                ));
+              } catch (error) {
+                // Nur wenn die Live-Anwendung wirklich lief und
+                // zurueckgerollt wurde, ist der Undo-Stapel belastet.
+                if (error.applied) resetAiUndo(docName, meta.user_id);
+                throw error;
+              }
+
+              const post = Y.encodeStateAsUpdate(ydoc);
+              const { text, truncated } = clampText(extractText(ydoc));
+              const gespeichert = await aiStoreState(docName, {
+                pre_state_b64: Buffer.from(pre).toString("base64"),
+                pre_state_sha256: sha256(pre),
+                state_b64: Buffer.from(post).toString("base64"),
+                state_sha256: sha256(post),
+                pre_content_text: preText,
+                content_text: text,
+                content_truncated: truncated,
+                origin: bearbeitet.origin,
+                author_user_id: meta.user_id,
+                author_family: meta.family,
+                ai_run_id: body.run_id || null,
+                summary: body.summary || "KI-Aenderung",
+                edits_applied: bearbeitet.edits.length,
+                schema_version: schemaVersion,
+              });
+              // `target_text` ist nur fuer die interne Pruefung da; im
+              // Werkzeugergebnis waere ein langer Altblock nur Ballast.
+              return {
+                ...bearbeitet,
+                edits: bearbeitet.edits.map(
+                  ({ target_text: _targetText, ...eintrag }) => eintrag,
+                ),
+                ...gespeichert,
+              };
+            } finally {
+              awareness?.setLocalStateField?.("user", null);
             }
-            throw error;
-          }
-          const gespeichert = await storeDocument(docName, ydoc, {
-            origin: bearbeitet.origin,
-            author_user_id: meta.user_id,
-            author_family: meta.family,
-            reason: "ai_edit",
-            ai_run_id: body.run_id || null,
-            summary: body.summary || "KI-Aenderung",
-          });
-          return { ...bearbeitet, ...gespeichert };
-        } finally {
-          awareness?.setLocalStateField?.("user", null);
-        }
-      },
-      { user_id: meta.user_id, fam: meta.family },
+          },
+          { user_id: meta.user_id, fam: meta.family },
+        ),
+      { waitMs: 3000 },
     );
     return json(antwort, 200, ergebnis);
   }
@@ -397,11 +494,27 @@ const httpServer = http.createServer(async (req, res) => {
   try {
     await aktion(name, req, res);
   } catch (error) {
-    const status = error.code === "AI_EDIT_STALE_SELECTION" ? 409 : 500;
+    // Konflikte sind erwartbar und fuer das Modell aufloesbar; nur echte
+    // Fehler bleiben 500.
+    const konflikte = new Set([
+      "AI_EDIT_STALE_SELECTION",
+      "AI_EDIT_TARGET_AMBIGUOUS",
+      "AI_EDIT_TARGET_NOT_FOUND",
+      "AI_EDIT_UNSAFE_MARKS",
+      "AI_EDIT_BUSY",
+      "AI_UNDO_UNAVAILABLE",
+    ]);
+    const ungueltig = new Set(["DOC_INVALID_TARGET", "AI_EDIT_BATCH_TOO_LARGE"]);
+    const status = konflikte.has(error.code)
+      ? 409
+      : ungueltig.has(error.code)
+        ? 422
+        : 500;
     json(res, status, {
       error: error.message,
       code: error.code || null,
-      candidates: error.candidates || undefined,
+      candidates: error.candidates?.length ? error.candidates : undefined,
+      edit_index: error.editIndex ?? undefined,
     });
   }
 });

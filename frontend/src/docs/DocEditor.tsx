@@ -161,7 +161,14 @@ export function DocEditor({
     busy: () => false,
     onApply: () => {},
     onReject: () => {},
-    labels: { title: '', apply: '', reject: '', applying: '' },
+    labels: {
+      title: '',
+      apply: '',
+      reject: '',
+      applying: '',
+      batchTitle: '',
+      editStale: '',
+    },
   })
   pendingHandles.current = {
     get: () => vorschlag,
@@ -173,6 +180,8 @@ export function DocEditor({
       apply: t('docs.pending.apply'),
       reject: t('docs.pending.reject'),
       applying: t('docs.pending.applying'),
+      batchTitle: t('docs.pending.batchTitle'),
+      editStale: t('docs.pending.editStale'),
     },
   }
 

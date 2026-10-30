@@ -93,3 +93,23 @@ test("withLock fuehrt Schreibvorgaenge nacheinander aus", async () => {
     "ende-b",
   ]);
 });
+
+test("withLock bricht nach der Frist ab, ohne fn auszufuehren", async () => {
+  let lief = false;
+  const erster = withLock("doc-besetzt", async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  await assert.rejects(
+    withLock("doc-besetzt", async () => {
+      lief = true;
+    }, { waitMs: 5 }),
+    (error) => error.code === "AI_EDIT_BUSY",
+  );
+  await erster;
+  assert.equal(lief, false, "abgelaufener Auftrag wurde trotzdem ausgefuehrt");
+
+  // Die Kette ist danach wieder frei.
+  const wert = await withLock("doc-besetzt", async () => 42);
+  assert.equal(wert, 42);
+});

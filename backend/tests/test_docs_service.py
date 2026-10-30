@@ -695,6 +695,7 @@ def test_dokumentrechte_im_katalog():
         READ_TOOLS,
     )
 
-    assert len(DOCUMENTS_TOOLS) == 14
+    assert len(DOCUMENTS_TOOLS) == 15
+    assert "read_document_structure" in DOCUMENTS_TOOLS
     assert DOCUMENTS_WRITE_TOOLS <= READ_TOOLS
     assert DOCUMENTS_WRITE_TOOLS.isdisjoint(GEHIRN_TOOLS)

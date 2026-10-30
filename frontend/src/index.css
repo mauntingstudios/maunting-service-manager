@@ -592,6 +592,27 @@
   text-decoration: line-through;
   text-decoration-color: hsl(var(--dna-foreground) / 0.35);
 }
+.docs-ai-vorschlag-anker {
+  outline: 1px dashed hsl(var(--dna-primary) / 0.5);
+  outline-offset: 3px;
+  border-radius: 0.25rem;
+}
+.docs-ai-vorschlag-loeschen {
+  opacity: 1;
+  background: hsl(var(--dna-danger) / 0.08);
+  text-decoration-color: hsl(var(--dna-danger) / 0.7);
+}
+.docs-ai-vorschlag-liste {
+  margin: 0 0 0.45rem;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  list-style: disc;
+}
+.docs-ai-vorschlag-hinweis {
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
+  color: hsl(var(--dna-danger));
+}
 .docs-ai-link { text-decoration: underline; text-underline-offset: 2px; }
 .docs-ai-bild {
   display: inline-block;

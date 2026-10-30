@@ -306,7 +306,7 @@ class DocPendingEdit(Base):
             name="ck_doc_pending_edits_status",
         ),
         CheckConstraint(
-            "operation IN ('append', 'replace_block')",
+            "operation IN ('append', 'replace_block', 'batch')",
             name="ck_doc_pending_edits_operation",
         ),
         Index("ix_doc_pending_document_user", "document_id", "user_id"),

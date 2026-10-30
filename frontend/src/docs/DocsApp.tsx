@@ -224,7 +224,14 @@ export function DocsApp() {
           // Auch ein voruebergehend nicht erreichbarer Sidecar soll den
           // Vorschlag nicht aus der Oberflaeche tilgen: Verwerfen bleibt
           // moeglich, Uebernehmen wird beim naechsten Versuch erneut geprueft.
-          setVorschlag({ ...erster, stale: true, html: '', target_block: null, target_index: null })
+          setVorschlag({
+            ...erster,
+            stale: true,
+            html: '',
+            previews: [],
+            target_block: null,
+            target_index: null,
+          })
         }
       }
     } catch {

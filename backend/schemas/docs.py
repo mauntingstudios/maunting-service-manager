@@ -132,3 +132,22 @@ class InternalStore(BaseModel):
     # Ein Checkpoint oder Pre-KI-Snapshot soll auch dann als Version erscheinen,
     # wenn sich der Zustand seit dem letzten Store nicht geaendert hat.
     force_revision: bool = False
+
+
+class InternalAiStore(BaseModel):
+    """Vorher-Zustand und Ergebnis einer KI-Aenderung, atomar gespeichert."""
+
+    pre_state_b64: str
+    pre_state_sha256: str
+    state_b64: str
+    state_sha256: str
+    pre_content_text: str = ""
+    content_text: str = ""
+    content_truncated: bool = False
+    origin: str
+    author_user_id: int
+    author_family: str | None = None
+    ai_run_id: str | None = None
+    summary: str | None = None
+    edits_applied: int = 1
+    schema_version: int = 1

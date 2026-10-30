@@ -463,9 +463,15 @@ def test_the_tool_catalogue_stays_within_a_stated_budget() -> None:
         # Teamwerkzeugen (Notizen, Kalender, Gedaechtnis, Skill) bei 82.990
         # Zeichen. Sie sind eine bewusste Betreiberentscheidung: Die
         # Dokument-KI soll Teamwissen lesen und Team-Skills lernen koennen.
-        # Die Grenze steigt deshalb einmalig auf 84.000 und behaelt gut 1.000
-        # Zeichen Luft. Wer sie erneut anhebt, misst vorher nach.
-        assert len(katalog) < 84_000, (
+        #
+        # Ebenfalls 30.10.2026, nachgemessen: 84.164 Zeichen mit
+        # `read_document_structure` und dem Batch-Schema von `edit_document`
+        # (Fingerabdruck, Index, bis zu 20 Teiländerungen). Beides ist die
+        # Grundlage dafuer, dass die KI eine Aenderung an der richtigen Stelle
+        # und in einem Zug schreibt, statt hinten anzuhängen. Die Grenze steigt
+        # deshalb auf 86.000, mit gut 1.800 Zeichen Luft. Wer sie erneut
+        # anhebt, misst vorher nach und schreibt es hin.
+        assert len(katalog) < 86_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
             "taucht in keiner Budgetrechnung auf."

@@ -96,15 +96,21 @@ def _call_sidecar(pfad: str, payload: dict, *, timeout: float = 10.0) -> dict:
         raise fehler(503, "DOCS_SIDECAR_UNAVAILABLE", "Dokumentserver nicht erreichbar") from exc
     if antwort.status_code == 404:
         raise fehler(404, "DOCUMENT_NOT_FOUND", "Dokument ist nicht geladen")
-    if antwort.status_code == 409:
+    if antwort.status_code in (409, 422):
         try:
             detail = antwort.json()
         except ValueError:
             detail = {}
+        extra: dict[str, object] = {}
+        if detail.get("candidates"):
+            extra["candidates"] = detail["candidates"]
+        if detail.get("edit_index") is not None:
+            extra["edit_index"] = detail["edit_index"]
         raise fehler(
-            409,
+            antwort.status_code,
             str(detail.get("code") or "AI_EDIT_STALE_SELECTION"),
             str(detail.get("error") or "Die Textstelle ist nicht mehr eindeutig"),
+            **extra,
         )
     if antwort.status_code >= 400:
         raise fehler(503, "DOCS_STORE_FAILED", "Dokumentserver hat abgelehnt")
@@ -323,6 +329,132 @@ class DocsCollabService:
         return {"stored": True, "rev": doc.rev, "revision_rev": revision_rev}
 
     @staticmethod
+    def _zustand(daten: dict, *, prefix: str = "") -> bytes:
+        """Liest und prueft einen Zustand aus der internen Nutzlast."""
+        feld = "state_b64" if not prefix else f"{prefix}_state_b64"
+        hash_feld = "state_sha256" if not prefix else f"{prefix}_state_sha256"
+        try:
+            roh = base64.b64decode(daten[feld], validate=True)
+        except (binascii.Error, KeyError, TypeError) as exc:
+            raise fehler(422, "DOC_INVALID_TARGET", "Zustand ist nicht base64-kodiert") from exc
+        if len(roh) > 4 * 1024 * 1024:
+            raise fehler(413, "DOC_TOO_LARGE", "Dokumentzustand groesser als 4 MiB")
+        if sha256_hex(roh) != str(daten.get(hash_feld, "")).lower():
+            raise fehler(422, "DOC_INVALID_TARGET", "Pruefsumme passt nicht zum Zustand")
+        return roh
+
+    @staticmethod
+    def ai_store(db: Session, doc_uid: str, daten: dict) -> dict:
+        """Schreibt Vorher-Revision, neuen Zustand und KI-Revision in einem Commit.
+
+        Die frueheren zwei Stores (``ai_pre_edit``, ``ai_edit``) liessen
+        entweder eine Revision ohne Aenderung zurueck oder eine Aenderung ohne
+        Revision. Hier gilt: entweder beides oder nichts.
+        """
+        doc = db.query(Document).filter(Document.doc_uid == doc_uid).first()
+        if doc is None or doc.deleted_at is not None:
+            raise fehler(404, "DOCUMENT_NOT_FOUND", "Dokument nicht gefunden")
+
+        origin = str(daten.get("origin") or "")
+        if not origin.startswith("ai:"):
+            raise fehler(403, "DOCS_FORBIDDEN", "Nur KI-Aenderungen laufen ueber diesen Weg")
+        author_id = daten.get("author_user_id")
+        if author_id is None:
+            raise fehler(403, "DOCS_FORBIDDEN", "KI-Aenderung ohne Autor")
+        author = db.get(User, int(author_id))
+        if author is None or not author.is_active:
+            raise fehler(403, "DOCS_FORBIDDEN", "Autor ist nicht aktiv")
+        if not _familie_aktiv(db, daten.get("author_family")):
+            raise fehler(403, "DOCS_FORBIDDEN", "Sitzung des Autors wurde beendet")
+        zugriff = docs_access.resolve_access(db, author, doc)
+        if zugriff is None or not zugriff.can_edit:
+            raise fehler(403, "DOCS_READ_ONLY", "Autor darf das Dokument nicht mehr schreiben")
+
+        pre_roh = DocsCollabService._zustand(daten, prefix="pre")
+        post_roh = DocsCollabService._zustand(daten)
+        post_hash = sha256_hex(post_roh)
+
+        # Wiederholung nach verlorener Antwort: der Zustand steht schon.
+        if doc.state_sha256 == post_hash and doc.state_encrypted:
+            return {
+                "stored": False,
+                "already": True,
+                "rev": doc.rev,
+                "revision_rev": None,
+            }
+
+        inhalt = str(daten.get("content_text") or "")
+        abgeschnitten = bool(daten.get("content_truncated"))
+        if len(inhalt) > 1_000_000:
+            inhalt = inhalt[:1_000_000]
+            abgeschnitten = True
+        pre_inhalt = str(daten.get("pre_content_text") or "")
+
+        try:
+            neuer_state = _enc(encrypt_state, post_roh, doc.doc_uid)
+            neuer_text = _enc(encrypt_text, inhalt, aad_text(doc.doc_uid))
+            pre_rev = DocsCollabService._revision_anlegen(
+                db,
+                doc,
+                pre_roh,
+                rev=doc.rev,
+                reason="ai_pre_edit",
+                author_user_id=author.id,
+                ai_run_id=daten.get("ai_run_id"),
+                summary="Vor KI-Aenderung",
+                content_text=pre_inhalt,
+                ist_ki=True,
+            )
+            doc.rev += 1
+            neuer_rev = doc.rev
+            doc.state_encrypted = neuer_state
+            doc.state_bytes = len(post_roh)
+            doc.state_sha256 = post_hash
+            doc.schema_version = int(daten.get("schema_version") or doc.schema_version)
+            doc.content_text_encrypted = neuer_text
+            doc.content_chars = len(inhalt)
+            doc.content_truncated = abgeschnitten
+            doc.updated_at = _now()
+            doc.last_edited_at = doc.updated_at
+            ai_rev = DocsCollabService._revision_anlegen(
+                db,
+                doc,
+                post_roh,
+                rev=neuer_rev,
+                reason="ai_edit",
+                author_user_id=author.id,
+                ai_run_id=daten.get("ai_run_id"),
+                summary=str(daten.get("summary") or "KI-Aenderung"),
+                content_text=inhalt,
+                ist_ki=True,
+            )
+            db.commit()
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as exc:  # noqa: BLE001 - Zustand darf nicht halb stehen
+            db.rollback()
+            raise fehler(
+                503, "DOCS_STORE_FAILED", "KI-Aenderung konnte nicht gespeichert werden"
+            ) from exc
+
+        db.refresh(doc)
+        _publish(
+            "stored",
+            doc,
+            user_id=author.id,
+            updated_at=_iso(doc.updated_at),
+            last_edited_by="Singra",
+        )
+        return {
+            "stored": True,
+            "rev": doc.rev,
+            "revision_rev": ai_rev,
+            "pre_revision_rev": pre_rev,
+            "edits_applied": int(daten.get("edits_applied") or 0),
+        }
+
+    @staticmethod
     def _revision_anlegen(
         db: Session,
         doc: Document,
@@ -442,10 +574,59 @@ class DocsCollabService:
             timeout=20.0,
         )
         if not ergebnis.get("undone", True):
-            raise fehler(409, "AI_UNDO_EMPTY", "Es gibt keine KI-Aenderung zum Rueckgaengigmachen")
+            raise fehler(
+                409,
+                str(ergebnis.get("code") or "AI_UNDO_EMPTY"),
+                "Es gibt keine KI-Aenderung dieses Nutzers zum Rueckgaengigmachen",
+            )
         db.refresh(doc)
         _publish("ai_edit", doc, user_id=user.id, undo=True)
         return {"rev": doc.rev, **ergebnis}
+
+    @staticmethod
+    def _ai_edits(
+        edits: list[dict] | None,
+        *,
+        operation: str | None,
+        markdown: str,
+        anchor: dict | None,
+        expected_block: str | None,
+    ) -> list[dict]:
+        """Batch oder Altaufruf; der Altaufruf bleibt ein Ein-Element-Batch."""
+        if edits is not None:
+            if not edits:
+                raise fehler(422, "DOC_INVALID_TARGET", "Keine Aenderungen")
+            return edits
+        if operation not in ("append", "replace_block"):
+            raise fehler(422, "DOC_INVALID_TARGET", "Unbekannte Operation")
+        eintrag: dict[str, object] = {
+            "op": operation,
+            "markdown": (markdown or "")[:20_000],
+            "target": anchor or {},
+        }
+        if expected_block is not None:
+            eintrag["expected_text"] = expected_block
+        return [eintrag]
+
+    @staticmethod
+    def document_structure(
+        db: Session, user: User, doc_uid: str, *, offset: int = 0, limit: int = 120
+    ) -> dict:
+        doc = db.query(Document).filter(Document.doc_uid == doc_uid).first()
+        if doc is None or doc.deleted_at is not None:
+            raise fehler(404, "DOCUMENT_NOT_FOUND", "Dokument nicht gefunden")
+        docs_access.require_role(db, user, doc, "viewer")
+        daten = _call_sidecar(
+            f"/internal/docs/{doc_uid}/structure",
+            {
+                "offset": max(0, int(offset)),
+                "limit": min(300, max(1, int(limit))),
+                "user_id": user.id,
+                "family": _family_for_user(db, user.id),
+            },
+            timeout=20.0,
+        )
+        return {"uid": doc.doc_uid, "rev": doc.rev, **daten}
 
     @staticmethod
     def ai_preview(
@@ -453,16 +634,17 @@ class DocsCollabService:
         user: User,
         doc_uid: str,
         *,
-        operation: str,
-        markdown: str,
-        anchor: dict | None,
+        operation: str | None = None,
+        markdown: str = "",
+        anchor: dict | None = None,
         expected_block: str | None = None,
         run_id: str | None = None,
         call_id: str | None = None,
+        edits: list[dict] | None = None,
     ) -> dict:
-        """Prueft eine KI-Aenderung, ohne das Dokument anzufassen.
+        """Prueft KI-Aenderungen, ohne das Dokument anzufassen.
 
-        Der Sidecar wendet sie auf einen Klon an und rendert nur die
+        Der Sidecar wendet sie auf einen Klon an und rendert die
         vorgeschlagenen Bloecke. Es entsteht keine Revision, kein Broadcast und
         kein gespeicherter Zustand.
         """
@@ -470,19 +652,34 @@ class DocsCollabService:
         if doc is None or doc.deleted_at is not None:
             raise fehler(404, "DOCUMENT_NOT_FOUND", "Dokument nicht gefunden")
         docs_access.require_role(db, user, doc, "editor")
+        liste = DocsCollabService._ai_edits(
+            edits,
+            operation=operation,
+            markdown=markdown,
+            anchor=anchor,
+            expected_block=expected_block,
+        )
+        nutzlast: dict[str, object] = {
+            "edits": liste,
+            "run_id": run_id,
+            "call_id": call_id,
+            "user_id": user.id,
+            "family": _family_for_user(db, user.id),
+        }
+        # Ein alter Sidecar kennt nur den Einzelaufruf. Beim Rollout bleibt
+        # dieser Weg deshalb fuer genau eine Aenderung mitgesendet.
+        if len(liste) == 1:
+            einzeln = liste[0]
+            nutzlast.update(
+                {
+                    "operation": einzeln.get("op"),
+                    "markdown": einzeln.get("markdown") or "",
+                    "anchor": einzeln.get("target") or {},
+                    "expected_block": einzeln.get("expected_text"),
+                }
+            )
         return _call_sidecar(
-            f"/internal/docs/{doc_uid}/ai-preview",
-            {
-                "operation": operation,
-                "markdown": markdown[:20_000],
-                "anchor": anchor,
-                "expected_block": expected_block,
-                "run_id": run_id,
-                "call_id": call_id,
-                "user_id": user.id,
-                "family": _family_for_user(db, user.id),
-            },
-            timeout=30.0,
+            f"/internal/docs/{doc_uid}/ai-preview", nutzlast, timeout=30.0
         )
 
     @staticmethod
@@ -491,32 +688,46 @@ class DocsCollabService:
         user: User,
         doc_uid: str,
         *,
-        operation: str,
-        markdown: str,
-        anchor: dict | None,
-        run_id: str | None,
-        call_id: str | None,
-        summary: str | None,
+        operation: str | None = None,
+        markdown: str = "",
+        anchor: dict | None = None,
+        run_id: str | None = None,
+        call_id: str | None = None,
+        summary: str | None = None,
         expected_block: str | None = None,
+        edits: list[dict] | None = None,
     ) -> dict:
         doc = db.query(Document).filter(Document.doc_uid == doc_uid).first()
         if doc is None or doc.deleted_at is not None:
             raise fehler(404, "DOCUMENT_NOT_FOUND", "Dokument nicht gefunden")
         docs_access.require_role(db, user, doc, "editor")
+        liste = DocsCollabService._ai_edits(
+            edits,
+            operation=operation,
+            markdown=markdown,
+            anchor=anchor,
+            expected_block=expected_block,
+        )
+        nutzlast: dict[str, object] = {
+            "edits": liste,
+            "summary": summary,
+            "run_id": run_id,
+            "call_id": call_id,
+            "user_id": user.id,
+            "family": _family_for_user(db, user.id),
+        }
+        if len(liste) == 1:
+            einzeln = liste[0]
+            nutzlast.update(
+                {
+                    "operation": einzeln.get("op"),
+                    "markdown": einzeln.get("markdown") or "",
+                    "anchor": einzeln.get("target") or {},
+                    "expected_block": einzeln.get("expected_text"),
+                }
+            )
         return _call_sidecar(
-            f"/internal/docs/{doc_uid}/ai-edit",
-            {
-                "operation": operation,
-                "markdown": markdown[:20_000],
-                "anchor": anchor,
-                "summary": summary,
-                "expected_block": expected_block,
-                "run_id": run_id,
-                "call_id": call_id,
-                "user_id": user.id,
-                "family": _family_for_user(db, user.id),
-            },
-            timeout=60.0,
+            f"/internal/docs/{doc_uid}/ai-edit", nutzlast, timeout=60.0
         )
 
     @staticmethod

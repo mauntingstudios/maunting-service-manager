@@ -1213,6 +1213,7 @@
       "read_document": "Document read",
       "read_document_selection": "Passage read",
       "get_document_outline": "Headings read",
+      "read_document_structure": "Document structure read",
       "list_document_comments": "Comments read",
       "read_document_skill": "Team skill read",
       "edit_document": "Document change",
@@ -1333,6 +1334,7 @@
       "read_document": "Reading the document",
       "read_document_selection": "Reading the selected passage",
       "get_document_outline": "Looking through the headings",
+      "read_document_structure": "Reading the document structure",
       "list_document_comments": "Reading the comments",
       "read_document_skill": "Reading the team skill",
       "edit_document": "Editing the document",
@@ -2398,7 +2400,9 @@
       "rejectFailed": "The suggestion could not be discarded.",
       "staleShort": "Suggestion outdated",
       "staleHint": "The target area changed. The suggestion can no longer be applied safely.",
-      "rejectStale": "Discard outdated suggestion"
+      "rejectStale": "Discard outdated suggestion",
+      "batchTitle": "{count} changes",
+      "editStale": "At least one target can no longer be found. Discard the suggestion and ask Singra for a fresh version."
     },
     "outline": {
       "label": "Outline",

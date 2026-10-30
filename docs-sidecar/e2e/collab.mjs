@@ -29,6 +29,7 @@ const DOC = "doc-e2e";
 
 const speicher = [];
 let rev = 0;
+let aiStores = 0;
 
 function json(antwort, status, daten) {
   const text = JSON.stringify(daten);
@@ -75,6 +76,20 @@ function backendStart() {
       speicher.push(daten);
       rev += 1;
       return json(res, 200, { stored: true, rev, revision_rev: rev });
+    }
+    if (req.method === "POST" && req.url === `/internal/docs/${DOC}/ai-store`) {
+      let body = "";
+      for await (const teil of req) body += teil;
+      const daten = JSON.parse(body || "{}");
+      aiStores += 1;
+      speicher.push({ ...daten, reason: "ai_edit" });
+      rev += 1;
+      return json(res, 200, {
+        stored: true,
+        rev,
+        revision_rev: rev,
+        pre_revision_rev: rev - 1,
+      });
     }
     return json(res, 404, { error: "unbekannt", url: req.url });
   });
@@ -200,6 +215,61 @@ try {
   await warteAuf(() => text(b).includes("Hallo von A"));
   assert.match(text(b), /Hallo von A/);
 
+  // Struktur fuer das Modell: Indizes, Pfad und Fingerabdruck.
+  const strukturAntwort = await fetch(
+    `http://127.0.0.1:${HTTP_PORT}/internal/docs/${DOC}/structure`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SERVICE_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ offset: 0, limit: 20 }),
+    },
+  );
+  const strukturText = await strukturAntwort.text();
+  assert.equal(strukturAntwort.status, 200, strukturText);
+  const struktur = JSON.parse(strukturText);
+  assert.ok(struktur.blocks.length > 0);
+  assert.match(struktur.blocks[0].fingerprint, /^[0-9a-f]{12}$/);
+  assert.equal(struktur.blocks[0].text, "Hallo von A");
+
+  // Vorschau wendet den Batch nur auf einem Klon an und haelt die Reihenfolge.
+  const vorschauAntwort = await fetch(
+    `http://127.0.0.1:${HTTP_PORT}/internal/docs/${DOC}/ai-preview`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SERVICE_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        edits: [
+          {
+            op: "insert_after",
+            target: { fingerprint: struktur.blocks[0].fingerprint, index: 0 },
+            markdown: "Eins",
+          },
+          {
+            op: "insert_after",
+            target: { fingerprint: struktur.blocks[0].fingerprint, index: 0 },
+            markdown: "Zwei",
+          },
+        ],
+        run_id: "run-vorschau",
+        user_id: 1,
+      }),
+    },
+  );
+  const vorschauText = await vorschauAntwort.text();
+  assert.equal(vorschauAntwort.status, 200, vorschauText);
+  const vorschau = JSON.parse(vorschauText);
+  assert.match(vorschau.edits[0].html, /Eins/);
+  assert.match(vorschau.edits[1].html, /Zwei/);
+  assert.match(vorschau.html, /Eins[\s\S]*Zwei/);
+  assert.doesNotMatch(text(a), /Eins/);
+  assert.doesNotMatch(text(b), /Eins/);
+
   // Viewer schreibt lokal; der Server darf es nicht annehmen.
   einfuegen(viewer, "Verboten vom Viewer");
   await new Promise((r) => setTimeout(r, 700));
@@ -219,18 +289,33 @@ try {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        operation: "append",
-        markdown: "## KI-Abschnitt\n\nText von Singra",
+        edits: [
+          {
+            op: "append",
+            markdown: "## KI-Abschnitt\n\nText von Singra",
+          },
+          {
+            op: "append",
+            markdown: "Zweiter Absatz von Singra",
+          },
+        ],
         run_id: "run-e2e",
         call_id: "call-e2e",
-        summary: "KI-Aenderung",
+        summary: "Zwei Aenderungen",
         user_id: 1,
       }),
     },
   );
   assert.equal(kiAntwort.status, 200, await kiAntwort.text());
-  await warteAuf(() => text(a).includes("Text von Singra"));
+  await warteAuf(
+    () =>
+      text(a).includes("Text von Singra") &&
+      text(a).includes("Zweiter Absatz von Singra"),
+  );
   assert.match(text(b), /Text von Singra/);
+  assert.match(text(b), /Zweiter Absatz von Singra/);
+  // Der ganze Batch landet in genau einem atomaren Store.
+  assert.equal(aiStores, 1);
 
   const undo = await fetch(
     `http://127.0.0.1:${HTTP_PORT}/internal/docs/${DOC}/undo-ai`,
@@ -244,7 +329,11 @@ try {
     },
   );
   assert.equal(undo.status, 200, await undo.text());
-  await warteAuf(() => !text(a).includes("Text von Singra"));
+  await warteAuf(
+    () =>
+      !text(a).includes("Text von Singra") &&
+      !text(a).includes("Zweiter Absatz von Singra"),
+  );
 
   // Wiederherstellung eines frueheren Zustands als Diff auf das Live-Dokument.
   const ziel = Buffer.from(Y.encodeStateAsUpdate(a)).toString("base64");

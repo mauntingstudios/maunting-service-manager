@@ -74,27 +74,58 @@ export interface DocMemberRow {
   is_doc_owner: boolean
 }
 
+export type DocPendingOp =
+  | 'append'
+  | 'replace_block'
+  | 'insert_before'
+  | 'insert_after'
+  | 'append_to_section'
+  | 'replace_text'
+  | 'delete_block'
+
+export interface DocPendingEditPart {
+  op: DocPendingOp
+  summary: string | null
+  target: {
+    index: number | null
+    fingerprint: string | null
+  }
+}
+
 export interface DocPendingEdit {
   uid: string
-  operation: 'append' | 'replace_block'
+  operation: 'append' | 'replace_block' | 'batch'
   status: 'pending' | 'applying' | 'stale'
   summary: string | null
   anchor_quote: string | null
+  edits?: DocPendingEditPart[] | null
   created_at: string
   expires_at: string
+}
+
+export interface DocPendingPreviewPart {
+  index: number
+  op: DocPendingOp
+  html: string
+  target_index: number | null
+  target_fingerprint: string | null
 }
 
 export interface DocPendingPreview {
   uid: string
   html: string
+  previews?: DocPendingPreviewPart[] | null
   target_block: string | null
   target_index: number | null
 }
 
-export type DocPendingView = DocPendingEdit &
-  Partial<DocPendingPreview> & {
-    stale?: boolean
-  }
+export interface DocPendingView extends DocPendingEdit {
+  html?: string
+  previews?: DocPendingPreviewPart[] | null
+  target_block?: string | null
+  target_index?: number | null
+  stale?: boolean
+}
 
 export interface CollabToken {
   url: string

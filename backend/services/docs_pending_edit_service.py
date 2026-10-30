@@ -151,9 +151,11 @@ class DocsPendingEditService:
         doc_uid: str,
         *,
         conversation_id: str,
-        operation: str,
-        markdown: str,
-        anchor: dict | None,
+        edits: list[dict] | None = None,
+        operation: str | None = None,
+        markdown: str = "",
+        anchor: dict | None = None,
+        expected_block: str | None = None,
         summary: str | None,
         run_id: str | None,
         call_id: str | None,
@@ -191,25 +193,50 @@ class DocsPendingEditService:
                 ),
             }
 
-        # Vor dem Speichern pruefen: Anker eindeutig, Markdown nicht leer. Der
+        # Vor dem Speichern pruefen: Ziele eindeutig, Markdown nicht leer. Der
         # Klon im Sidecar wird dabei nicht gespeichert.
-        vorschau = DocsCollabService.ai_preview(
-            db,
-            user,
-            doc.doc_uid,
-            operation=operation,
-            markdown=markdown,
-            anchor=anchor,
-            run_id=run_id,
-            call_id=call_id,
-        )
-        payload = {
-            "operation": operation,
-            "markdown": markdown[:20_000],
-            "anchor": anchor,
-            "summary": (summary or "")[:200] or None,
-            "target_block": vorschau.get("target_block"),
-        }
+        if edits is not None:
+            if not edits:
+                raise fehler(422, "DOC_INVALID_TARGET", "Keine Aenderungen")
+            DocsCollabService.ai_preview(
+                db,
+                user,
+                doc.doc_uid,
+                edits=edits,
+                run_id=run_id,
+                call_id=call_id,
+            )
+            payload = {
+                "version": 2,
+                "edits": edits,
+                "summary": (summary or "")[:200] or None,
+            }
+            gespeicherte_operation = "batch"
+        else:
+            if operation not in ("append", "replace_block"):
+                raise fehler(422, "DOC_INVALID_TARGET", "Unbekannte Operation")
+            if not markdown.strip():
+                raise fehler(422, "DOC_INVALID_TARGET", "markdown ist leer")
+            vorschau = DocsCollabService.ai_preview(
+                db,
+                user,
+                doc.doc_uid,
+                operation=operation,
+                markdown=markdown,
+                anchor=anchor,
+                expected_block=expected_block,
+                run_id=run_id,
+                call_id=call_id,
+            )
+            payload = {
+                "version": 1,
+                "operation": operation,
+                "markdown": markdown[:20_000],
+                "anchor": anchor,
+                "summary": (summary or "")[:200] or None,
+                "target_block": vorschau.get("target_block"),
+            }
+            gespeicherte_operation = operation
         pending_uid = str(uuid.uuid4())
         row = DocPendingEdit(
             pending_uid=pending_uid,
@@ -218,7 +245,7 @@ class DocsPendingEditService:
             conversation_id=gespraech.id,
             run_id=run_id,
             call_id=call_id,
-            operation=operation,
+            operation=gespeicherte_operation,
             payload_encrypted=encrypt_text(
                 json.dumps(payload, ensure_ascii=False),
                 aad_pending(doc.doc_uid, pending_uid),
@@ -272,17 +299,30 @@ class DocsPendingEditService:
         eintraege = []
         for row in rows:
             daten = _payload(row, doc)
-            eintraege.append(
-                {
-                    "uid": row.pending_uid,
-                    "operation": row.operation,
-                    "status": row.status,
-                    "summary": daten.get("summary"),
-                    "anchor_quote": (daten.get("anchor") or {}).get("quote"),
-                    "created_at": _iso(row.created_at),
-                    "expires_at": _iso(row.expires_at),
-                }
-            )
+            eintrag = {
+                "uid": row.pending_uid,
+                "operation": row.operation,
+                "status": row.status,
+                "summary": daten.get("summary"),
+                "created_at": _iso(row.created_at),
+                "expires_at": _iso(row.expires_at),
+            }
+            if daten.get("version") == 2:
+                eintrag["edits"] = [
+                    {
+                        "op": str(teil.get("op") or ""),
+                        "summary": str(teil.get("summary") or "")[:200] or None,
+                        "target": {
+                            "index": (teil.get("target") or {}).get("index"),
+                            "fingerprint": (teil.get("target") or {}).get("fingerprint"),
+                        },
+                    }
+                    for teil in (daten.get("edits") or [])
+                    if isinstance(teil, dict)
+                ]
+            else:
+                eintrag["anchor_quote"] = (daten.get("anchor") or {}).get("quote")
+            eintraege.append(eintrag)
         return {"pending_edits": eintraege}
 
     @staticmethod
@@ -304,6 +344,22 @@ class DocsPendingEditService:
             raise fehler(409, "DOC_AI_PENDING_DONE", "Vorschlag ist bereits entschieden")
         daten = _payload(row, doc)
         try:
+            if daten.get("version") == 2:
+                vorschau = DocsCollabService.ai_preview(
+                    db,
+                    user,
+                    doc.doc_uid,
+                    edits=daten.get("edits") or [],
+                    run_id=row.run_id,
+                    call_id=row.call_id,
+                )
+                return {
+                    "uid": row.pending_uid,
+                    "html": vorschau.get("html") or "",
+                    "previews": vorschau.get("edits") or [],
+                    "target_block": None,
+                    "target_index": None,
+                }
             vorschau = DocsCollabService.ai_preview(
                 db,
                 user,
@@ -316,7 +372,7 @@ class DocsPendingEditService:
                 call_id=row.call_id,
             )
         except HTTPException as exc:
-            if exc.status_code == 409:
+            if exc.status_code in (409, 422):
                 row.status = "stale"
                 row.resolved_at = _now()
                 db.commit()
@@ -371,20 +427,31 @@ class DocsPendingEditService:
             db.commit()
             raise
         try:
-            ergebnis = DocsCollabService.ai_edit(
-                db,
-                user,
-                doc.doc_uid,
-                operation=row.operation,
-                markdown=str(daten.get("markdown") or ""),
-                anchor=daten.get("anchor"),
-                summary=daten.get("summary"),
-                expected_block=daten.get("target_block"),
-                run_id=row.run_id,
-                call_id=row.call_id,
-            )
+            if daten.get("version") == 2:
+                ergebnis = DocsCollabService.ai_edit(
+                    db,
+                    user,
+                    doc.doc_uid,
+                    edits=daten.get("edits") or [],
+                    summary=daten.get("summary"),
+                    run_id=row.run_id,
+                    call_id=row.call_id,
+                )
+            else:
+                ergebnis = DocsCollabService.ai_edit(
+                    db,
+                    user,
+                    doc.doc_uid,
+                    operation=row.operation,
+                    markdown=str(daten.get("markdown") or ""),
+                    anchor=daten.get("anchor"),
+                    summary=daten.get("summary"),
+                    expected_block=daten.get("target_block"),
+                    run_id=row.run_id,
+                    call_id=row.call_id,
+                )
         except HTTPException as exc:
-            row.status = "stale" if exc.status_code == 409 else "pending"
+            row.status = "stale" if exc.status_code in (409, 422) else "pending"
             row.applying_at = None
             row.resolved_at = _now() if row.status == "stale" else None
             db.commit()

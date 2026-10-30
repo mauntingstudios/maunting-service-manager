@@ -274,6 +274,9 @@ WERKZEUGE: dict[str, Werkzeug] = {
     "get_document_outline": Werkzeug(
         "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
     ),
+    "read_document_structure": Werkzeug(
+        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
+    ),
     "list_document_comments": Werkzeug(
         "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
     ),

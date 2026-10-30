@@ -88,8 +88,10 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def fehler(status: int, code: str, message: str) -> HTTPException:
-    return HTTPException(status_code=status, detail={"code": code, "message": message})
+def fehler(status: int, code: str, message: str, **extra: object) -> HTTPException:
+    return HTTPException(
+        status_code=status, detail={"code": code, "message": message, **extra}
+    )
 
 
 def _enc(funktion, *args):

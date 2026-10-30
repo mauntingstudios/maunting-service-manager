@@ -253,7 +253,7 @@ def test_main_datenbank_erhaelt_die_messenger_brucke(pg_wegwerf) -> None:
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261030_01"
+        assert version == "20261031_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -338,7 +338,7 @@ def test_server_auf_messenger_revision_kommt_wieder_auf_den_head(pg_wegwerf) -> 
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261030_01"
+        assert version == "20261031_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -404,7 +404,7 @@ def test_alte_docs_revision_wird_ohne_datenverlust_repariert(pg_wegwerf) -> None
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
             dokumente = conn.execute(text("SELECT count(*) FROM documents")).scalar()
-        assert version == "20261030_01"
+        assert version == "20261031_01"
         assert "user_infos" in inspector.get_table_names()
         assert dokumente == 1
         assert any(
@@ -448,7 +448,7 @@ def test_vorhandene_queue_indizes_blockieren_die_reparatur_nicht(pg_wegwerf) -> 
                     "WHERE indexname = 'ix_e2ee_queue_target_device'"
                 )
             ).scalar()
-        assert version == "20261030_01"
+        assert version == "20261031_01"
         assert indizes == 1
     finally:
         engine.dispose()

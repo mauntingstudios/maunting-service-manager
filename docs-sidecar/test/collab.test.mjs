@@ -22,15 +22,30 @@ const text = (ydoc) => ydoc.getXmlFragment("default").toString();
 test("nach einem neuen Y.Doc verfolgt der Undo-Manager das neue Dokument", () => {
   const erstes = dokument("Erster Lauf");
   registerDocument("doc-neu", erstes, { rev: 1 });
-  applyAiEdit(erstes, { operation: "append", markdown: "Alte KI-Zeile.", runId: "r1", callId: "c1" });
-  assert.equal(aiUndo("doc-neu", erstes).canUndo(), true);
+  // Der Manager muss vor der Transaktion stehen, sonst erfasst er sie nicht.
+  aiUndo("doc-neu", erstes, "7");
+  applyAiEdit(erstes, {
+    operation: "append",
+    markdown: "Alte KI-Zeile.",
+    runId: "r1",
+    callId: "c1",
+    userId: "7",
+  });
+  assert.equal(aiUndo("doc-neu", erstes, "7").canUndo(), true);
 
   // Hocuspocus baut nach einem Reload ein frisches Y.Doc fuer denselben Namen.
   const zweites = dokument("Zweiter Lauf");
   registerDocument("doc-neu", zweites, { rev: 2 });
-  applyAiEdit(zweites, { operation: "append", markdown: "Neue KI-Zeile.", runId: "r2", callId: "c2" });
+  aiUndo("doc-neu", zweites, "7");
+  applyAiEdit(zweites, {
+    operation: "append",
+    markdown: "Neue KI-Zeile.",
+    runId: "r2",
+    callId: "c2",
+    userId: "7",
+  });
 
-  const manager = aiUndo("doc-neu", zweites);
+  const manager = aiUndo("doc-neu", zweites, "7");
   assert.equal(manager.canUndo(), true);
   manager.undo();
   assert.match(text(zweites), /Zweiter Lauf/);

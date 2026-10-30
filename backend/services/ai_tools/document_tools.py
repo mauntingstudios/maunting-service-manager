@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from models import User
@@ -27,6 +28,18 @@ MAX_FIND_TREFFER = 20
 MAX_KOMMENTAR = 4_000
 MAX_TEAM_NOTIZEN = 50
 MAX_TEAM_KALENDER = 200
+MAX_EDITS = 20
+MAX_BATCH_MARKDOWN = 20_000
+FINGERPRINT_RE = re.compile(r"^[0-9a-f]{12}$")
+EDIT_OPS = {
+    "append",
+    "replace_block",
+    "insert_before",
+    "insert_after",
+    "append_to_section",
+    "replace_text",
+    "delete_block",
+}
 
 
 @dataclass(frozen=True)
@@ -130,6 +143,93 @@ def _untrusted(**daten: Any) -> dict[str, Any]:
     return {"untrusted": True, **daten}
 
 
+def _edits(arguments: dict) -> list[dict]:
+    """Prueft den Batch und normalisiert den Altaufruf zu einer Aenderung."""
+    roh = arguments.get("edits")
+    if roh is None:
+        operation = str(arguments.get("operation") or "")
+        if operation not in ("append", "replace_block"):
+            raise AiActionValidationError("operation muss append oder replace_block sein")
+        markdown = str(arguments.get("markdown") or "")
+        if not markdown.strip():
+            raise AiActionValidationError("markdown ist leer")
+        anchor = arguments.get("anchor") if isinstance(arguments.get("anchor"), dict) else None
+        return [{"op": operation, "markdown": markdown, "target": anchor or {}}]
+
+    if not isinstance(roh, list) or not roh:
+        raise AiActionValidationError("edits muss eine nicht-leere Liste sein")
+    if len(roh) > MAX_EDITS:
+        raise AiActionValidationError(
+            f"Mehr als {MAX_EDITS} Aenderungen in einem Aufruf sind nicht erlaubt"
+        )
+
+    gesamt = 0
+    ergebnis: list[dict] = []
+    for nummer, eintrag in enumerate(roh, start=1):
+        if not isinstance(eintrag, dict):
+            raise AiActionValidationError(f"Aenderung {nummer} ist kein Objekt")
+        op = str(eintrag.get("op") or "")
+        if op not in EDIT_OPS:
+            raise AiActionValidationError(f"Aenderung {nummer}: unbekannte Operation")
+        ziel = eintrag.get("target") if isinstance(eintrag.get("target"), dict) else {}
+        if op != "append":
+            # Ein Zitat allein reicht im Batch nicht: ohne Fingerabdruck
+            # koennte eine gleichzeitige Aenderung still ueberschrieben
+            # werden. Der Altaufruf ohne `edits` bleibt davon unberuehrt.
+            fp = str(ziel.get("fingerprint") or "").strip().lower()
+            if not FINGERPRINT_RE.match(fp):
+                raise AiActionValidationError(
+                    f"Aenderung {nummer}: target.fingerprint fehlt; "
+                    "unveraendert aus read_document_structure uebernehmen"
+                )
+        markdown = str(eintrag.get("markdown") or "")
+        if op == "delete_block":
+            markdown = ""
+        elif op == "replace_text":
+            if not str(eintrag.get("find") or "").strip():
+                raise AiActionValidationError(
+                    f"Aenderung {nummer}: replace_text braucht find"
+                )
+            if not markdown.strip():
+                raise AiActionValidationError(
+                    f"Aenderung {nummer}: markdown (Ersatztext) ist leer"
+                )
+        elif not markdown.strip():
+            raise AiActionValidationError(f"Aenderung {nummer}: markdown ist leer")
+        gesamt += len(markdown)
+        bereinigt: dict[str, Any] = {
+            "op": op,
+            "target": ziel,
+            "markdown": markdown[:MAX_BATCH_MARKDOWN],
+        }
+        if op == "replace_text":
+            bereinigt["find"] = str(eintrag.get("find"))[:400]
+        if str(eintrag.get("summary") or "").strip():
+            bereinigt["summary"] = str(eintrag.get("summary"))[:200]
+        ergebnis.append(bereinigt)
+    if gesamt > MAX_BATCH_MARKDOWN:
+        raise AiActionValidationError("Die Aenderungen sind zusammen zu lang")
+    return ergebnis
+
+
+def _konflikt(exc: HTTPException) -> dict | None:
+    """Macht aus einem Stale-Konflikt ein Ergebnis, mit dem das Modell arbeitet."""
+    if exc.status_code not in (409, 422):
+        return None
+    detail = exc.detail if isinstance(exc.detail, dict) else {}
+    return _untrusted(
+        ok=False,
+        code=detail.get("code"),
+        message=detail.get("message"),
+        edit_index=detail.get("edit_index"),
+        candidates=detail.get("candidates") or [],
+        hint=(
+            "Das Ziel hat sich geaendert. Lies read_document_structure erneut und "
+            "plane die Aenderung einmal neu; wiederhole sie nicht blind."
+        ),
+    )
+
+
 def execute_document_tool(
     db: Session,
     *,
@@ -194,7 +294,6 @@ def execute_document_tool(
         zugriff = _zugriff(db, user, kontext)
         doc = zugriff.document
         from services.docs_collab_service import DocsCollabService
-        from fastapi import HTTPException
 
         ueberschriften: list[dict[str, Any]] = []
         try:
@@ -354,8 +453,6 @@ def execute_document_tool(
         for feld in felder:
             if not isinstance(arguments.get(feld), str) or not arguments[feld].strip():
                 raise AiActionValidationError(f'Skill-Feld "{feld}" fehlt oder ist leer')
-        from fastapi import HTTPException
-
         from services import ai_skill_service, team_service
 
         if not team_service.can_manage_team_skills(db, user, team_id):
@@ -387,17 +484,22 @@ def execute_document_tool(
             "scope": "team",
         }
 
+    if tool_name == "read_document_structure":
+        zugriff = _zugriff(db, user, kontext)
+        from services.docs_collab_service import DocsCollabService
+
+        offset = max(0, int(arguments.get("offset") or 0))
+        limit = min(300, max(1, int(arguments.get("limit") or 120)))
+        daten = DocsCollabService.document_structure(
+            db, user, zugriff.document.doc_uid, offset=offset, limit=limit
+        )
+        return _untrusted(title=_titel(zugriff.document), **daten)
+
     if tool_name == "edit_document":
         zugriff = _zugriff(db, user, kontext, "editor")
         from services.docs_collab_service import DocsCollabService
 
-        operation = str(arguments.get("operation") or "")
-        markdown = str(arguments.get("markdown") or "")
-        if operation not in ("append", "replace_block"):
-            raise AiActionValidationError("operation muss append oder replace_block sein")
-        if not markdown.strip():
-            raise AiActionValidationError("markdown ist leer")
-        anchor = arguments.get("anchor") if isinstance(arguments.get("anchor"), dict) else None
+        edits = _edits(arguments)
         summary = str(arguments.get("summary") or "")[:200] or None
         from services import ai_autonomy_service
         from services.docs_pending_edit_service import DocsPendingEditService
@@ -424,38 +526,40 @@ def execute_document_tool(
         autonom = ai_autonomy_service.autonomie_grundlage(
             db, user=user, server_id=None, tool_name="edit_document"
         )
-        if autonom is not None:
+        try:
+            if autonom is not None:
+                return _untrusted(
+                    **DocsCollabService.ai_edit(
+                        db,
+                        user,
+                        zugriff.document.doc_uid,
+                        edits=edits,
+                        run_id=kontext.run_id if kontext else None,
+                        call_id=str(arguments.get("call_id") or "") or None,
+                        summary=summary,
+                    )
+                )
+            if kontext is None or not kontext.conversation_id:
+                raise AiActionValidationError(
+                    "Fuer einen Vorschlag fehlt das Dokumentgespraech im Lauf"
+                )
             return _untrusted(
-                **DocsCollabService.ai_edit(
+                **DocsPendingEditService.create(
                     db,
                     user,
                     zugriff.document.doc_uid,
-                    operation=operation,
-                    markdown=markdown,
-                    anchor=anchor,
-                    run_id=kontext.run_id if kontext else None,
-                    call_id=str(arguments.get("call_id") or "") or None,
+                    conversation_id=kontext.conversation_id,
+                    edits=edits,
                     summary=summary,
+                    run_id=kontext.run_id,
+                    call_id=str(arguments.get("call_id") or "") or None,
                 )
             )
-        if kontext is None or not kontext.conversation_id:
-            raise AiActionValidationError(
-                "Fuer einen Vorschlag fehlt das Dokumentgespraech im Lauf"
-            )
-        return _untrusted(
-            **DocsPendingEditService.create(
-                db,
-                user,
-                zugriff.document.doc_uid,
-                conversation_id=kontext.conversation_id,
-                operation=operation,
-                markdown=markdown,
-                anchor=anchor,
-                summary=summary,
-                run_id=kontext.run_id,
-                call_id=str(arguments.get("call_id") or "") or None,
-            )
-        )
+        except HTTPException as exc:
+            ergebnis = _konflikt(exc)
+            if ergebnis is not None:
+                return ergebnis
+            raise
 
     if tool_name == "add_document_comment":
         zugriff = _zugriff(db, user, kontext, "commenter")
@@ -586,24 +690,65 @@ def _dokument_tool_definitions() -> list[dict]:
             ["skill_key", "name", "description", "body"],
         ),
         funktion(
-            "edit_document",
-            "Aendert das Dokument: `append` haengt an, `replace_block` ersetzt den "
-            "Block mit Ankerzitat. Ist der autonome Modus aus, entsteht nur ein "
-            "Vorschlag (pending=true), den der Mensch bestaetigen muss; dann "
-            "nicht erneut aufrufen.",
+            "read_document_structure",
+            "Liest die Blockstruktur mit Index, Typ, Ueberschriftenpfad und "
+            "Fingerabdruck. Vor jeder Aenderung aufrufen und die Ziele von hier "
+            "unveraendert uebernehmen.",
             {
-                "operation": {"type": "string", "enum": ["append", "replace_block"]},
-                "markdown": {"type": "string", "maxLength": 20_000},
-                "anchor": {
-                    "type": "object",
-                    "properties": {
-                        "quote": {"type": "string", "maxLength": 400},
-                        "occurrence": {"type": "integer", "minimum": 1},
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 300},
+            },
+            [],
+        ),
+        funktion(
+            "edit_document",
+            "Aendert das Dokument in einem Aufruf mit allen Teiländerungen. "
+            "Operationen: replace_block, insert_before, insert_after, "
+            "append_to_section, replace_text, delete_block; append nur, wenn "
+            "ausdruecklich ganz am Ende angehaengt werden soll. Ist der autonome "
+            "Modus aus, entsteht nur ein Vorschlag (pending=true), den der Mensch "
+            "bestaetigen muss; dann nicht erneut aufrufen.",
+            {
+                "edits": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "op": {
+                                "type": "string",
+                                "enum": [
+                                    "replace_block",
+                                    "insert_before",
+                                    "insert_after",
+                                    "append_to_section",
+                                    "replace_text",
+                                    "delete_block",
+                                    "append",
+                                ],
+                            },
+                            "target": {
+                                "type": "object",
+                                "properties": {
+                                    "index": {"type": "integer", "minimum": 0},
+                                    "type": {"type": "string", "maxLength": 40},
+                                    "fingerprint": {"type": "string", "maxLength": 16},
+                                    "quote": {"type": "string", "maxLength": 400},
+                                    "occurrence": {"type": "integer", "minimum": 1},
+                                },
+                                "required": ["fingerprint"],
+                            },
+                            "markdown": {"type": "string", "maxLength": 20_000},
+                            "find": {"type": "string", "maxLength": 400},
+                            "summary": {"type": "string", "maxLength": 200},
+                        },
+                        "required": ["op"],
                     },
                 },
                 "summary": {"type": "string", "maxLength": 200},
             },
-            ["operation", "markdown", "summary"],
+            ["edits", "summary"],
         ),
         funktion(
             "add_document_comment",

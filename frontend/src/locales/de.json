@@ -1213,6 +1213,7 @@
       "read_document": "Dokument gelesen",
       "read_document_selection": "Textstelle gelesen",
       "get_document_outline": "Überschriften gelesen",
+      "read_document_structure": "Dokumentstruktur gelesen",
       "list_document_comments": "Kommentare gelesen",
       "read_document_skill": "Team-Skill gelesen",
       "edit_document": "Dokumentänderung",
@@ -1333,6 +1334,7 @@
       "read_document": "Ich lese das Dokument",
       "read_document_selection": "Ich lese die markierte Stelle",
       "get_document_outline": "Ich sehe die Überschriften durch",
+      "read_document_structure": "Ich lese die Dokumentstruktur",
       "list_document_comments": "Ich lese die Kommentare",
       "read_document_skill": "Ich lese den Team-Skill",
       "edit_document": "Ich bearbeite das Dokument",
@@ -2398,7 +2400,9 @@
       "rejectFailed": "Der Vorschlag konnte nicht verworfen werden.",
       "staleShort": "Vorschlag veraltet",
       "staleHint": "Die Stelle hat sich geändert. Der Vorschlag lässt sich nicht mehr sicher einsetzen.",
-      "rejectStale": "Veralteten Vorschlag verwerfen"
+      "rejectStale": "Veralteten Vorschlag verwerfen",
+      "batchTitle": "{count} Änderungen",
+      "editStale": "Mindestens eine Stelle ist nicht mehr auffindbar. Verwirf den Vorschlag und bitte Singra um eine neue Fassung."
     },
     "outline": {
       "label": "Gliederung",

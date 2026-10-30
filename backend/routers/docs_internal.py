@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from database import get_db
-from schemas.docs import InternalAuthorize, InternalStore
+from schemas.docs import InternalAiStore, InternalAuthorize, InternalStore
 from services.docs_collab_service import DocsCollabService
 
 router = APIRouter(prefix="/internal/docs", tags=["docs-internal"])
@@ -50,3 +50,10 @@ def load_state(doc_uid: str, db: Session = Depends(get_db)) -> dict[str, Any]:
 @router.post("/{doc_uid}/store", dependencies=[Depends(_service_token)])
 def store(doc_uid: str, req: InternalStore, db: Session = Depends(get_db)) -> dict[str, Any]:
     return DocsCollabService.store(db, doc_uid, req.model_dump())
+
+
+@router.post("/{doc_uid}/ai-store", dependencies=[Depends(_service_token)])
+def ai_store(
+    doc_uid: str, req: InternalAiStore, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    return DocsCollabService.ai_store(db, doc_uid, req.model_dump())

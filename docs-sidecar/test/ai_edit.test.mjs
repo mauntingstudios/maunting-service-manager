@@ -59,7 +59,7 @@ test("replace_block ersetzt den Block mit dem Zitat", () => {
   assert.match(text(ydoc), /Der neue Satz/);
 });
 
-test("unbekanntes Zitat wirft AI_EDIT_STALE_SELECTION", () => {
+test("unbekanntes Zitat wirft AI_EDIT_TARGET_NOT_FOUND", () => {
   const ydoc = docMitText("Etwas");
   assert.throws(
     () =>
@@ -70,7 +70,7 @@ test("unbekanntes Zitat wirft AI_EDIT_STALE_SELECTION", () => {
         runId: "run-1",
         callId: "call-3",
       }),
-    (error) => error instanceof AiEditError && error.code === "AI_EDIT_STALE_SELECTION",
+    (error) => error instanceof AiEditError && error.code === "AI_EDIT_TARGET_NOT_FOUND",
   );
 });
 
@@ -95,7 +95,7 @@ test("mehrdeutiges Zitat wirft mit Kandidaten", () => {
       }),
     (error) =>
       error instanceof AiEditError &&
-      error.code === "AI_EDIT_STALE_SELECTION" &&
+      error.code === "AI_EDIT_TARGET_AMBIGUOUS" &&
       error.candidates.length === 2,
   );
 });

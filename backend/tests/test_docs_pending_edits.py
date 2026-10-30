@@ -268,3 +268,123 @@ def test_edit_document_mit_autonomie_wendet_direkt_an(db, monkeypatch):
     assert ergebnis.get("pending") is None
     assert ergebnis["ok"] is True
     assert db.query(DocPendingEdit).count() == 0
+
+
+def _batch_vorschau(*_args, **_kwargs):
+    return {
+        "ok": True,
+        "html": "<p>Neu</p>",
+        "edits": [
+            {
+                "index": 0,
+                "op": "replace_block",
+                "html": "<p>Neu</p>",
+                "target_index": 0,
+                "target_fingerprint": "0123456789ab",
+            }
+        ],
+    }
+
+
+_BATCH_EDITS = [
+    {
+        "op": "replace_block",
+        "target": {"fingerprint": "0123456789ab", "index": 0},
+        "markdown": "Neu",
+    }
+]
+
+
+def test_batch_vorschlag_speichert_edits_und_rendert_vorschau(db, monkeypatch):
+    owner = _benutzer(db, "pend_j")
+    team = _team(db, owner, "Batch")
+    doc, gespraech = _dokument_mit_gespraech(db, owner, team)
+    monkeypatch.setattr(DocsCollabService, "ai_preview", staticmethod(_batch_vorschau))
+
+    ergebnis = DocsPendingEditService.create(
+        db,
+        owner,
+        doc.doc_uid,
+        conversation_id=gespraech.id,
+        edits=_BATCH_EDITS,
+        summary="Neu",
+        run_id="run-1",
+        call_id="call-1",
+    )
+
+    row = db.query(DocPendingEdit).one()
+    assert row.operation == "batch"
+    assert ergebnis["pending"] is True
+
+    vorschau = DocsPendingEditService.preview(
+        db, owner, doc.doc_uid, ergebnis["pending_uid"]
+    )
+    assert vorschau["previews"][0]["target_fingerprint"] == "0123456789ab"
+    assert vorschau["html"] == "<p>Neu</p>"
+
+
+def test_batch_uebernehmen_reicht_alle_edits_weiter(db, monkeypatch):
+    owner = _benutzer(db, "pend_k")
+    team = _team(db, owner, "Batch-Anwenden")
+    doc, gespraech = _dokument_mit_gespraech(db, owner, team)
+    monkeypatch.setattr(DocsCollabService, "ai_preview", staticmethod(_batch_vorschau))
+
+    ergebnis = DocsPendingEditService.create(
+        db,
+        owner,
+        doc.doc_uid,
+        conversation_id=gespraech.id,
+        edits=_BATCH_EDITS,
+        summary="Neu",
+        run_id=None,
+        call_id=None,
+    )
+
+    gesehen: dict = {}
+
+    def _anwenden(db_, user_, doc_uid_, **kwargs):
+        gesehen.update(kwargs)
+        zeile = db_.query(Document).filter(Document.doc_uid == doc_uid_).one()
+        zeile.rev = 4
+        zeile.state_sha256 = "abc"
+        db_.commit()
+        return {"ok": True, "rev": 4, "edits_applied": 1}
+
+    monkeypatch.setattr(DocsCollabService, "ai_edit", staticmethod(_anwenden))
+    antwort = DocsPendingEditService.apply(
+        db, owner, doc.doc_uid, ergebnis["pending_uid"]
+    )
+
+    assert antwort["rev"] == 4
+    assert gesehen["edits"] == _BATCH_EDITS
+    row = db.query(DocPendingEdit).one()
+    assert row.status == "applied"
+
+
+def test_batch_preview_markiert_stale_wenn_ein_ziel_fehlt(db, monkeypatch):
+    from services.docs_service import fehler
+
+    owner = _benutzer(db, "pend_l")
+    team = _team(db, owner, "Batch-Stale")
+    doc, gespraech = _dokument_mit_gespraech(db, owner, team)
+    monkeypatch.setattr(DocsCollabService, "ai_preview", staticmethod(_batch_vorschau))
+
+    ergebnis = DocsPendingEditService.create(
+        db,
+        owner,
+        doc.doc_uid,
+        conversation_id=gespraech.id,
+        edits=_BATCH_EDITS,
+        summary="Neu",
+        run_id=None,
+        call_id=None,
+    )
+
+    def _stale(*_args, **_kwargs):
+        raise fehler(409, "AI_EDIT_TARGET_NOT_FOUND", "Weg")
+
+    monkeypatch.setattr(DocsCollabService, "ai_preview", staticmethod(_stale))
+    with pytest.raises(HTTPException) as fehler_info:
+        DocsPendingEditService.preview(db, owner, doc.doc_uid, ergebnis["pending_uid"])
+    assert fehler_info.value.status_code == 409
+    assert db.query(DocPendingEdit).one().status == "stale"

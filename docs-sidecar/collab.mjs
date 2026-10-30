@@ -2,11 +2,17 @@ import * as Y from "yjs";
 import { schemaVersion } from "@msm/docs-schema/schema";
 
 import { loadState } from "./backend_client.mjs";
-import { storeDocument, ydocOf } from "./persist.mjs";
+import {
+  restoreFragment,
+  storeDocument,
+  storeDocumentUnlocked,
+  ydocOf,
+} from "./persist.mjs";
 
 const loaded = new Map();
 const contexts = new Map();
 const undoManagers = new Map();
+const MAX_UNDO_NUTZER = 50;
 
 let serverRef = null;
 
@@ -17,7 +23,6 @@ export function setServer(server) {
 export function registerDocument(name, ydoc, context) {
   loaded.set(name, ydoc);
   rememberContext(name, context);
-  aiUndo(name, ydoc);
   return ydoc;
 }
 
@@ -25,9 +30,22 @@ export function contextFor(name) {
   return contexts.get(name) || {};
 }
 
+function undoEintragLoeschen(name) {
+  const eintrag = undoManagers.get(name);
+  if (!eintrag) return;
+  for (const nutzer of eintrag.byUser.values()) {
+    try {
+      nutzer.manager.destroy();
+    } catch {
+      /* Manager war schon weg. */
+    }
+  }
+  undoManagers.delete(name);
+}
+
 export function unregisterDocument(name) {
   loaded.delete(name);
-  undoManagers.delete(name);
+  undoEintragLoeschen(name);
 }
 
 export function rememberContext(name, context) {
@@ -56,10 +74,11 @@ export async function loadDocument(name) {
 /**
  * Yjs erwartet fuer `trackedOrigins` eine Set-artige Struktur (es ruft
  * `.add(undoManager)` im Konstruktor). Eine Funktion wird nicht unterstuetzt.
- * Diese Struktur trackt alles, dessen Origin mit `ai:` beginnt.
+ * Diese Struktur trackt nur Origins eines Nutzers: `ai:<userId>:`.
  */
 class AiOriginSet {
-  constructor() {
+  constructor(prefix) {
+    this.prefix = prefix;
     this.werte = new Set();
   }
 
@@ -73,7 +92,7 @@ class AiOriginSet {
 
   has(wert) {
     if (this.werte.has(wert)) return true;
-    return typeof wert === "string" && wert.startsWith("ai:");
+    return typeof wert === "string" && wert.startsWith(this.prefix);
   }
 
   [Symbol.iterator]() {
@@ -81,18 +100,70 @@ class AiOriginSet {
   }
 }
 
-export function aiUndo(name, ydoc) {
-  const vorhanden = undoManagers.get(name);
-  // Ein neuer Hocuspocus-Lebenszyklus bringt ein neues Y.Doc. Ein Manager vom
-  // alten Dokument wuerde dessen Aenderungen verfolgen; nach einem Reload
+/**
+ * Ein Undo-Manager pro Dokument und Nutzer.
+ *
+ * Frueher war der Manager dokumentweit; damit konnte jeder Editor die letzte
+ * KI-Aenderung eines anderen zuruecknehmen. Der Origin traegt deshalb die
+ * Nutzer-ID, und jeder Manager verfolgt nur sein eigenes Praefix. Der Manager
+ * muss **vor** der Transaktion angelegt werden, sonst erfasst er sie nicht.
+ */
+export function aiUndo(name, ydoc, userId) {
+  const key = String(userId ?? "anon");
+  let eintrag = undoManagers.get(name);
+  // Ein neuer Hocuspocus-Lebenszyklus bringt ein neues Y.Doc. Manager vom
+  // alten Dokument wuerden dessen Aenderungen verfolgen; nach einem Reload
   // waere "Letzte KI-Aenderung rueckgaengig" still wirkungslos.
-  if (vorhanden && vorhanden.ydoc === ydoc) return vorhanden.manager;
-  const manager = new Y.UndoManager(ydoc.getXmlFragment("default"), {
-    captureTimeout: 0,
-    trackedOrigins: new AiOriginSet(),
-  });
-  undoManagers.set(name, { ydoc, manager });
-  return manager;
+  if (!eintrag || eintrag.ydoc !== ydoc) {
+    if (eintrag) undoEintragLoeschen(name);
+    eintrag = { ydoc, byUser: new Map() };
+    undoManagers.set(name, eintrag);
+  }
+
+  let nutzer = eintrag.byUser.get(key);
+  if (!nutzer) {
+    const manager = new Y.UndoManager(ydoc.getXmlFragment("default"), {
+      captureTimeout: 0,
+      trackedOrigins: new AiOriginSet(`ai:${key}:`),
+    });
+    nutzer = { manager, usedAt: Date.now() };
+    eintrag.byUser.set(key, nutzer);
+    if (eintrag.byUser.size > MAX_UNDO_NUTZER) {
+      let aeltester = null;
+      for (const [kandidat, wert] of eintrag.byUser) {
+        if (kandidat === key) continue;
+        if (!aeltester || wert.usedAt < aeltester[1].usedAt) {
+          aeltester = [kandidat, wert];
+        }
+      }
+      if (aeltester) {
+        aeltester[1].manager.destroy();
+        eintrag.byUser.delete(aeltester[0]);
+      }
+    }
+  }
+  nutzer.usedAt = Date.now();
+  return nutzer.manager;
+}
+
+/**
+ * Verwirft den Undo-Verlauf eines Nutzers.
+ *
+ * Nach einem wider Erwarten doch angewandten und zurueckgerollten Batch
+ * stuende sonst ein Eintrag im Stapel, der nie sichtbar wurde.
+ */
+export function resetAiUndo(name, userId) {
+  const eintrag = undoManagers.get(name);
+  if (!eintrag) return;
+  const key = String(userId ?? "anon");
+  const nutzer = eintrag.byUser.get(key);
+  if (!nutzer) return;
+  try {
+    nutzer.manager.destroy();
+  } catch {
+    /* Manager war schon weg. */
+  }
+  eintrag.byUser.delete(key);
 }
 
 export async function flushDocument(name, meta = {}) {
@@ -160,22 +231,15 @@ export async function withDocument(name, fn, context = {}) {
 }
 
 export async function restoreDocument(name, stateB64, meta = {}) {
-  const ziel = new Y.Doc();
-  Y.applyUpdate(ziel, Buffer.from(stateB64, "base64"));
   return withDocument(
     name,
     async (ydoc) => {
-      const live = ydoc.getXmlFragment("default");
-      const quelle = ziel.getXmlFragment("default");
-      ydoc.transact(() => {
-        if (live.length > 0) live.delete(0, live.length);
-        if (quelle.length === 0) return;
-        const kopien = quelle
-          .toArray()
-          .map((node) => (typeof node.clone === "function" ? node.clone() : node));
-        live.insert(0, kopien);
-      }, meta.origin || "restore");
-      return storeDocument(name, ydoc, {
+      restoreFragment(
+        ydoc,
+        Buffer.from(stateB64, "base64"),
+        meta.origin || "restore",
+      );
+      return storeDocumentUnlocked(name, ydoc, {
         origin: meta.origin || "restore",
         author_user_id: meta.author_user_id ?? null,
         author_family: meta.author_family ?? null,
@@ -189,11 +253,17 @@ export async function restoreDocument(name, stateB64, meta = {}) {
 
 export async function undoAi(name, meta = {}) {
   const ydoc = loaded.get(name);
-  if (!ydoc) return { undone: false };
-  const manager = aiUndo(name, ydoc);
-  if (!manager.canUndo()) return { undone: false };
-  manager.undo();
-  const gespeichert = await storeDocument(name, ydoc, {
+  if (!ydoc) return { undone: false, code: "AI_UNDO_UNAVAILABLE" };
+  const key = String(meta.userId ?? meta.author_user_id ?? "anon");
+  const eintrag = undoManagers.get(name);
+  const nutzer =
+    eintrag && eintrag.ydoc === ydoc ? eintrag.byUser.get(key) : null;
+  if (!nutzer || !nutzer.manager.canUndo()) {
+    return { undone: false, code: "AI_UNDO_UNAVAILABLE" };
+  }
+  nutzer.manager.undo();
+  // Das Lock haelt der Aufrufer (Server); hier deshalb der ungelockte Store.
+  const gespeichert = await storeDocumentUnlocked(name, ydoc, {
     origin: "ai:undo",
     author_user_id: meta.author_user_id ?? null,
     author_family: meta.author_family ?? null,
