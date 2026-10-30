@@ -238,6 +238,10 @@ export function AiChat({
   // Dokumentpanel auf einem 1920px-Bildschirm erfüllt `sm:` trotzdem.
   const eingabeRef = useRef<HTMLDivElement | null>(null)
   const [eingabeSchmal, setEingabeSchmal] = useState(false)
+  // Eingebettet ist immer schmal: Das Dokument-Panel ist hoechstens 720px
+  // breit, auch wenn der Browser breit ist. Viewport-Breakpoints greifen dort
+  // deshalb nicht.
+  const eingabeKompakt = eingebettet || eingabeSchmal
   // Welches Modell **jetzt** gewählt ist. `ladeKontext` braucht das, um eine
   // Antwort zu erkennen, die zu einer älteren Wahl gehört. Zuweisung beim
   // Render, dasselbe Muster wie `autoscrollRef` in ServerConsolePanel.
@@ -398,12 +402,12 @@ export function AiChat({
   useEffect(() => {
     const el = eingabeRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const beobachten = () => setEingabeSchmal(el.clientWidth < 460)
+    const beobachten = () => setEingabeSchmal(el.clientWidth < 760)
     beobachten()
     const beobachter = new ResizeObserver(beobachten)
     beobachter.observe(el)
     return () => beobachter.disconnect()
-  }, [])
+  }, [eingebettet])
 
   useEffect(() => {
     const handlePrefChange = () => {
@@ -1639,7 +1643,7 @@ export function AiChat({
                 durationSeconds={dictationElapsed}
                 statusLabel="Jetzt sprechen …"
                 variant="danger"
-                kompakt={eingabeSchmal}
+                kompakt={eingabeKompakt}
                 className="w-full border-0 bg-transparent"
                 extraInfo={
                   <Kurzinfo
@@ -1649,7 +1653,7 @@ export function AiChat({
                         : t('ai.chat.dictationUnlimitedHint')
                     }
                     lage="oben"
-                    aussen={eingabeSchmal ? 'inline-flex shrink-0' : 'hidden sm:inline-flex shrink-0'}
+                    aussen={eingabeKompakt ? 'inline-flex shrink-0' : 'hidden sm:inline-flex shrink-0'}
                   >
                   <div className="flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low/60 px-2 py-0.5 text-xs text-on-surface-variant">
                     <span className="tabular-nums font-medium text-on-surface">
@@ -1671,10 +1675,10 @@ export function AiChat({
                 onConfirm={() => void diktatUmschalten()}
                 audioLevel={dictationAudioLevel}
                 cancelLabel={t(
-                  eingabeSchmal ? 'ai.chat.dictationCancelShort' : 'ai.chat.dictationCancel',
+                  eingabeKompakt ? 'ai.chat.dictationCancelShort' : 'ai.chat.dictationCancel',
                 )}
                 confirmLabel={t(
-                  eingabeSchmal ? 'ai.chat.dictationStopShort' : 'ai.chat.dictationStop',
+                  eingabeKompakt ? 'ai.chat.dictationStopShort' : 'ai.chat.dictationStop',
                 )}
                 cancelIcon={<X className="h-4 w-4" aria-hidden="true" />}
                 confirmIcon={<Check className="h-3.5 w-3.5" aria-hidden="true" />}
