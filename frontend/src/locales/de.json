@@ -788,6 +788,8 @@
       "dictationStart": "Nachricht diktieren",
       "dictationStop": "Aufnahme beenden",
       "dictationCancel": "Aufnahme verwerfen",
+      "dictationStopShort": "Beenden",
+      "dictationCancelShort": "Verwerfen",
       "dictationRemaining": "Noch {{min}} Min.",
       "dictationUnlimited": "Unbegrenzt",
       "dictationQuotaExceeded": "Das monatliche Diktierkontingent ist aufgebraucht.",

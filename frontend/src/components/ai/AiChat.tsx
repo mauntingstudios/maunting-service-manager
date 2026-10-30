@@ -1670,8 +1670,12 @@ export function AiChat({
                 onCancel={diktatAbbrechen}
                 onConfirm={() => void diktatUmschalten()}
                 audioLevel={dictationAudioLevel}
-                cancelLabel={t('ai.chat.dictationCancel')}
-                confirmLabel={t('ai.chat.dictationStop')}
+                cancelLabel={t(
+                  eingabeSchmal ? 'ai.chat.dictationCancelShort' : 'ai.chat.dictationCancel',
+                )}
+                confirmLabel={t(
+                  eingabeSchmal ? 'ai.chat.dictationStopShort' : 'ai.chat.dictationStop',
+                )}
                 cancelIcon={<X className="h-4 w-4" aria-hidden="true" />}
                 confirmIcon={<Check className="h-3.5 w-3.5" aria-hidden="true" />}
               />

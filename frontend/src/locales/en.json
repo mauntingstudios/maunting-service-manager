@@ -788,6 +788,8 @@
       "dictationStart": "Dictate message",
       "dictationStop": "Stop recording",
       "dictationCancel": "Discard recording",
+      "dictationStopShort": "Stop",
+      "dictationCancelShort": "Discard",
       "dictationRemaining": "{{min}} min left",
       "dictationUnlimited": "Unlimited",
       "dictationQuotaExceeded": "Monthly dictation quota has been reached.",

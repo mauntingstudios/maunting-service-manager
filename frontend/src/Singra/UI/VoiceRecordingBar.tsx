@@ -176,11 +176,11 @@ export function VoiceRecordingBar({
         {extraInfo}
       </div>
 
-      <div className={kompakt ? 'flex items-center gap-2' : 'contents'}>
+      <div className={kompakt ? 'flex flex-col gap-2' : 'contents'}>
         {/* Mitte: animierte Pegel. */}
         <div
           className={`flex items-center justify-center gap-[3px] h-6 px-2 mx-auto overflow-hidden opacity-90 ${
-            kompakt ? 'flex-1 max-w-none' : 'flex-1 max-w-[180px]'
+            kompakt ? 'w-full max-w-none' : 'flex-1 max-w-[180px]'
           }`}
           aria-hidden="true"
         >
@@ -205,13 +205,20 @@ export function VoiceRecordingBar({
           })}
         </div>
 
-        {/* Rechts: Abbrechen und Senden. */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Rechts: Abbrechen und Senden. In der kompakten Ansicht eine eigene
+            Zeile, damit der rote Knopf nicht aus dem schmalen Panel läuft. */}
+        <div
+          className={`flex items-center gap-1.5 ${
+            kompakt ? 'w-full flex-wrap justify-between' : 'shrink-0'
+          }`}
+        >
           {onCancel && (
             <button
               type="button"
               onClick={onCancel}
-              className="h-8 px-3 text-xs rounded-xl font-medium text-white/60 hover:text-status-destructive hover:bg-status-destructive/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+              className={`h-8 text-xs rounded-xl font-medium text-white/60 hover:text-status-destructive hover:bg-status-destructive/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer ${
+                kompakt ? 'px-2.5' : 'px-3'
+              }`}
               aria-label={cancelLabel}
             >
               {cancelIcon}
@@ -223,7 +230,9 @@ export function VoiceRecordingBar({
             <button
               type="button"
               onClick={onConfirm}
-              className={`h-8 px-3.5 text-xs rounded-xl font-medium text-white active:scale-95 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer ${
+              className={`h-8 text-xs rounded-xl font-medium text-white active:scale-95 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                kompakt ? 'px-2.5' : 'px-3.5'
+              } ${
                 isDanger
                   ? 'bg-status-destructive hover:bg-status-destructive/90 text-white shadow-status-destructive/20'
                   : 'bg-primary hover:bg-primary/90 text-on-primary shadow-primary/20'
