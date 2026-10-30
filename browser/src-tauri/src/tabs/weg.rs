@@ -68,9 +68,30 @@ pub fn externes_protokoll(url: &str) -> Option<String> {
 /// dann steht der Fehler im Protokoll, ohne Abfrage (sie trägt das Geheimnis).
 pub fn extern_oeffnen(app: &tauri::AppHandle, url: &str) {
     use tauri_plugin_opener::OpenerExt;
-    let gekuerzt = url.split(['?', '#']).next().unwrap_or(url);
-    if let Err(fehler) = app.opener().open_url(url, None::<&str>) {
-        eprintln!("[MSB] Externe Adresse nicht geöffnet ({gekuerzt}): {fehler}");
+
+    // Unter Android läuft `weg` im UI-Faden der Tab-WebView
+    // (`shouldOverrideUrlLoading`). `open_url` geht über die Plugin-Brücke und
+    // wartet auf eine Antwort, die nur dieser Faden geben kann: aus ihm heraus
+    // aufgerufen wartete die App auf sich selbst und stand bis zum ANR
+    // (30.10.2026, OAuth-Rücksprung der Shop-App). Der eigene Faden gibt den
+    // UI-Faden frei, bevor gewartet wird.
+    #[cfg(target_os = "android")]
+    {
+        let app = app.clone();
+        let url = url.to_string();
+        tauri::async_runtime::spawn_blocking(move || {
+            let gekuerzt = url.split(['?', '#']).next().unwrap_or(url.as_str());
+            if let Err(fehler) = app.opener().open_url(&url, None::<&str>) {
+                eprintln!("[MSB] Externe Adresse nicht geöffnet ({gekuerzt}): {fehler}");
+            }
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let gekuerzt = url.split(['?', '#']).next().unwrap_or(url);
+        if let Err(fehler) = app.opener().open_url(url, None::<&str>) {
+            eprintln!("[MSB] Externe Adresse nicht geöffnet ({gekuerzt}): {fehler}");
+        }
     }
 }
 
@@ -345,5 +366,20 @@ mod tests {
         // Mit Punkt am Ende derselbe Host; bis 09.10.2026 galt er als fremd.
         assert!(ziel_pruefen("https://ipc.localhost./konfig_laden").is_err());
         assert!(!navigation_erlaubt(&url::Url::parse("http://TAURI.localhost./browser.html").unwrap()));
+    }
+
+    #[test]
+    fn android_gibt_das_oeffnen_aus_dem_ui_faden_ab() {
+        // `open_url` wartet auf eine Antwort des UI-Fadens; aus ihm heraus
+        // aufgerufen stand die App bis zum ANR (30.10.2026, OAuth-Rücksprung
+        // der Shop-App). Der Android-Zweig muss den Aufruf deshalb abgeben.
+        let quelle = include_str!("weg.rs");
+        let android = quelle
+            .split_once("#[cfg(target_os = \"android\")]")
+            .and_then(|(_, rest)| rest.split_once("#[cfg(not(target_os = \"android\"))]"))
+            .map(|(android, _)| android)
+            .expect("Android-Zweig von extern_oeffnen fehlt");
+        assert!(android.contains("spawn_blocking"));
+        assert!(android.contains("open_url"));
     }
 }
