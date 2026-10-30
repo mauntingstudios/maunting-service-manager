@@ -62,6 +62,11 @@ pub enum TabEreignis {
     Schild { id: String, werbung: u32, tracker: u32 },
     /// Der Prozess der Seite ist abgestürzt.
     Absturz { id: String },
+    /// Der Browserprozess der Seiten ist beendet; alle Webviews sind tot.
+    /// Rust hat Umgebung und Controller verworfen und baut sie beim nächsten
+    /// Laden neu auf. Die Oberfläche lädt ihre offenen Seiten neu
+    /// (`desktop/absturz.rs`).
+    UmgebungNeu,
     /// Ein Video oder eine Seite will den ganzen Bildschirm.
     Vollbild { id: String, an: bool },
     /// Ein Anmeldefeld der Seite (`formular.rs`). `url` ist die Adresse
@@ -159,8 +164,9 @@ pub enum DownloadStand {
 }
 
 impl TabEreignis {
-    /// Der Tab, von dem das Ereignis kommt.
-    pub fn tab(&self) -> &str {
+    /// Der Tab, von dem das Ereignis kommt; `None` bei Ereignissen, die alle
+    /// Tabs zugleich betreffen (`UmgebungNeu`).
+    pub fn tab(&self) -> Option<&str> {
         use TabEreignis::*;
         match self {
             Laedt { id, .. } | Geladen { id, .. } | Adresse { id, .. } | Titel { id, .. } | Favicon { id, .. }
@@ -168,7 +174,8 @@ impl TabEreignis {
             | Vollbild { id, .. } | Formular { id, .. } | Kontextmenue { id, .. } | Dialog { id, .. }
             | Recht { id, .. } | Anmeldung { id, .. } | Fehlerseite { id, .. } | Gesperrt { id, .. }
             | Status { id, .. } | Treffer { id, .. } | Ton { id, .. } | Schlaf { id, .. } | Verworfen { id }
-            | Protokoll { id, .. } | Texte { id, .. } | Schliessen { id } => id,
+            | Protokoll { id, .. } | Texte { id, .. } | Schliessen { id } => Some(id),
+            UmgebungNeu => None,
         }
     }
 }
@@ -188,7 +195,7 @@ pub fn von_kotlin(json: &str) -> Option<TabEreignis> {
             | Absturz { .. } | Kontextmenue { .. } | Dialog { .. } | Recht { .. } | Anmeldung { .. } | Fehlerseite { .. }
             | Treffer { .. } | Download { .. } | Schliessen { .. }
     );
-    (erlaubt && super::id_pruefen(ereignis.tab()).is_ok()).then_some(ereignis)
+    (erlaubt && ereignis.tab().is_some_and(|id| super::id_pruefen(id).is_ok())).then_some(ereignis)
 }
 
 pub fn melden(app: &AppHandle, ereignis: TabEreignis) {
@@ -222,6 +229,16 @@ mod tests {
         assert!(von_kotlin(r#"{"art":"gesperrt","id":"tab-a1","url":"https://x.example/","grund":"eigene"}"#).is_none());
         assert!(von_kotlin(r#"{"art":"schild","id":"tab-a1","werbung":1,"tracker":1}"#).is_none());
         assert!(von_kotlin(r#"{"art":"absturz","id":"main"}"#).is_none());
+        assert!(von_kotlin(r#"{"art":"umgebung_neu"}"#).is_none());
+    }
+
+    /// Die Oberfläche liest `art` und baut darauf alle Seiten neu auf; ein
+    /// Feld `id` gibt es hier nicht, weil es alle Tabs zugleich trifft.
+    #[test]
+    fn die_neue_umgebung_geht_ohne_tab_an_die_oberflaeche() {
+        assert_eq!(serde_json::to_value(TabEreignis::UmgebungNeu).unwrap(), serde_json::json!({ "art": "umgebung_neu" }));
+        assert!(TabEreignis::UmgebungNeu.tab().is_none());
+        assert_eq!(TabEreignis::Absturz { id: "tab-a".into() }.tab(), Some("tab-a"));
     }
 
     #[test]

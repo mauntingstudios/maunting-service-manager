@@ -14,7 +14,7 @@
 //! passiert (Laden, Titel, Downloads), melden Rückrufe der WebView2; der Rest
 //! hängt in `webview2.rs`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Mutex};
@@ -57,6 +57,9 @@ pub(crate) struct Nativ {
     pub privat: bool,
     /// Benanntes persistentes Profil (Workspace oder externer Dienst), sonst `None`.
     pub profil: Option<String>,
+    /// Stand der Umgebung, unter der die Webview entstand. Meldungen einer
+    /// verworfenen Umgebung tragen einen älteren Stand.
+    pub generation: u64,
 }
 
 thread_local! {
@@ -65,6 +68,14 @@ thread_local! {
     static HELFER: RefCell<Option<ICoreWebView2Controller>> = const { RefCell::new(None) };
     /// Unsichtbare Helfer für benannte Profile (Browserdaten löschen).
     static HELFER_NAMED: RefCell<HashMap<String, ICoreWebView2Controller>> = RefCell::new(HashMap::new());
+    /// Zählt jede verworfene Umgebung. Eine Webview trägt den Stand, unter dem
+    /// sie entstand; Meldungen aus einem älteren Stand gehören ihr nicht mehr.
+    static GENERATION: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Der Stand der aktuellen Umgebung. Nur auf dem UI-Faden.
+pub(super) fn generation() -> u64 {
+    GENERATION.with(|g| g.get())
 }
 
 /// Einstellungen → Design: Seiten dunkel rendern. Gilt für das WebView2-Profil
@@ -127,6 +138,11 @@ pub(crate) fn mit_tab<T: Send + 'static>(
     })
 }
 
+/// Der Browserprozess der Seiten ist beendet: die gemerkte Umgebung und alle
+/// Controller sind tot. Gesetzt, bis [`umgebung`] eine neue aufgebaut hat;
+/// spätere Meldungen desselben Absturzes fallen so weg.
+static UMGEBUNG_WEG: AtomicBool = AtomicBool::new(false);
+
 /// Die Umgebung aller Tabs: ein eigenes Profil (`seitenprofil`), getrennt von
 /// dem der Oberfläche. Nur auf dem UI-Faden.
 fn umgebung(app: &AppHandle) -> Result<ICoreWebView2Environment, String> {
@@ -164,7 +180,66 @@ fn umgebung(app: &AppHandle) -> Result<ICoreWebView2Environment, String> {
     }
     let u = webview2_com::wait_with_pump(rx).map_err(fehler)?.map_err(fehler)?;
     UMGEBUNG.with(|slot| *slot.borrow_mut() = Some(u.clone()));
+    // Erst mit der neuen Umgebung gelten Meldungen des alten Browserprozesses
+    // wieder als veraltet; bis dahin sind sie schon abgeräumt.
+    UMGEBUNG_WEG.store(false, Ordering::SeqCst);
     Ok(u)
+}
+
+/// Der Browserprozess der Seiten ist beendet (`BROWSER_PROCESS_EXITED`).
+/// `true`, wenn dieses Ereignis der Aufräumer war; die Meldungen der übrigen
+/// Webviews desselben Absturzes ergeben dann `false`.
+///
+/// Aufgeräumt wird nach dem Rückruf auf dem UI-Faden: Controller zu verwerfen,
+/// während ihre eigene Meldung läuft, verschachtelt WebView2 (Regel 161).
+/// Danach meldet `UmgebungNeu`, und die Oberfläche lädt jede Seite neu;
+/// [`umgebung`] baut dabei eine frische auf.
+pub(super) fn browserprozess_beendet(app: &AppHandle) -> bool {
+    if UMGEBUNG_WEG.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        let innen = app2.clone();
+        let _ = app2.run_on_main_thread(move || abbauen(innen));
+    });
+    true
+}
+
+/// UI-Faden: alles, was am alten Browserprozess hing, fällt weg.
+fn abbauen(app: AppHandle) {
+    let ids: Vec<String> = NATIV.with(|n| n.borrow().keys().cloned().collect());
+    for id in &ids {
+        rueckfragen::vergessen(id);
+        cookies::vergessen(id);
+        crate::tabs::seite_vergessen(id);
+        crate::schild::tab_vergessen(id);
+    }
+    grundereignisse::verwerfen();
+    herunterladen::verwerfen();
+    NATIV.with(|n| n.borrow_mut().clear());
+    umgebung_verwerfen();
+    melden(&app, TabEreignis::UmgebungNeu);
+}
+
+/// UI-Faden: verwirft die gemerkte Umgebung samt Helfern und zählt den Stand
+/// hoch. Was danach noch aus dem alten Stand meldet, trifft keine Webview
+/// dieses Tabs mehr.
+fn umgebung_verwerfen() {
+    HELFER.with(|h| h.borrow_mut().take());
+    HELFER_NAMED.with(|h| h.borrow_mut().clear());
+    UMGEBUNG.with(|u| u.borrow_mut().take());
+    GENERATION.with(|g| g.set(g.get() + 1));
+}
+
+/// Gehört eine Meldung noch zur Webview, die der Tab gerade hat? Ohne Webview
+/// oder nach einem Neuaufbau trägt sie einen anderen oder keinen Stand.
+fn ist_aktuelle_generation(id: &str, gemeldet: u64) -> bool {
+    gehoert_noch_dazu(NATIV.with(|n| n.borrow().get(id).map(|t| t.generation)), gemeldet)
+}
+
+fn gehoert_noch_dazu(gespeichert: Option<u64>, gemeldet: u64) -> bool {
+    gespeichert == Some(gemeldet)
 }
 
 /// Die WebView2-Profile eigener Workspaces, für die Rechteverwaltung. Beim
@@ -287,8 +362,22 @@ fn chrome_user_agent(version: &str) -> Option<String> {
     Some(format!("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36"))
 }
 
-/// Legt den Controller eines Tabs an und hängt alles daran. UI-Faden.
+/// Legt den Controller eines Tabs an. Scheitert der Aufbau, während keine
+/// Webview offen ist, kann der Browserprozess still beendet sein: Ohne Webview
+/// meldet ihn niemand, und die gemerkte Umgebung ist tot. Ein zweiter Versuch
+/// mit frischer Umgebung ist dann gefahrlos, weil nichts daran hängt.
 fn anlegen(app: &AppHandle, id: &str, privat: bool, workspace: Option<&str>) -> Result<ICoreWebView2, String> {
+    match anlegen_mit_umgebung(app, id, privat, workspace) {
+        Err(erster) if NATIV.with(|n| n.borrow().is_empty()) => {
+            umgebung_verwerfen();
+            anlegen_mit_umgebung(app, id, privat, workspace).map_err(|zweiter| format!("{erster}; beim zweiten Versuch: {zweiter}"))
+        }
+        ergebnis => ergebnis,
+    }
+}
+
+/// Legt den Controller eines Tabs an und hängt alles daran. UI-Faden.
+fn anlegen_mit_umgebung(app: &AppHandle, id: &str, privat: bool, workspace: Option<&str>) -> Result<ICoreWebView2, String> {
     let umgebung = umgebung(app)?;
     let profil = if privat {
         None
@@ -347,7 +436,7 @@ fn anlegen(app: &AppHandle, id: &str, privat: bool, workspace: Option<&str>) -> 
             }
         }
     }
-    NATIV.with(|n| n.borrow_mut().insert(id.to_string(), Nativ { controller, core: core.clone(), umgebung, privat, profil }));
+    NATIV.with(|n| n.borrow_mut().insert(id.to_string(), Nativ { controller, core: core.clone(), umgebung, privat, profil, generation: generation() }));
     Ok(core)
 }
 
@@ -385,7 +474,7 @@ pub(super) fn popup_einrichten(
         herunterladen::anbinden(app, id, core, privat).map_err(fehler)?;
         webview2::einrichten(app, id, controller.clone(), umgebung.clone()).map_err(fehler)?;
     }
-    NATIV.with(|n| n.borrow_mut().insert(id.to_string(), Nativ { controller, core: core.clone(), umgebung, privat, profil }));
+    NATIV.with(|n| n.borrow_mut().insert(id.to_string(), Nativ { controller, core: core.clone(), umgebung, privat, profil, generation: generation() }));
     Ok(())
 }
 
@@ -786,6 +875,15 @@ mod tests {
         assert_eq!(KULISSE.A, 0xFF, "die Kulisse deckt, sie scheint nicht durch");
         let helligkeit = (u16::from(KULISSE.R) + u16::from(KULISSE.G) + u16::from(KULISSE.B)) / 3;
         assert!(helligkeit <= 64, "die Kulisse bleibt dunkel, Helligkeit {helligkeit}");
+    }
+
+    /// Eine Meldung gehört nur der Webview, die der Tab heute hat: nach einem
+    /// Neuaufbau trägt sie einen älteren Stand, ohne Webview gar keinen.
+    #[test]
+    fn eine_meldung_gehoert_nur_ihrer_generation() {
+        assert!(gehoert_noch_dazu(Some(4), 4));
+        assert!(!gehoert_noch_dazu(Some(3), 4), "Meldung aus der verworfenen Umgebung");
+        assert!(!gehoert_noch_dazu(None, 4), "der Tab hat keine Webview mehr");
     }
 
     #[test]

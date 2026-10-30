@@ -92,6 +92,12 @@ export type TabEreignis =
     }
   | { art: 'schild'; id: string; werbung: number; tracker: number }
   | { art: 'absturz'; id: string }
+  /**
+   * Der Browserprozess der Seiten ist beendet; Rust hat Umgebung und
+   * Webviews verworfen (`desktop/absturz.rs`). Kein Tabereignis: die
+   * Oberfläche baut jede offene Seite mit ihrer Adresse neu auf.
+   */
+  | { art: 'umgebung_neu' }
   | { art: 'vollbild'; id: string; an: boolean }
   /** `rahmen`: das Zahlungsfeld liegt in einem Rahmen dieser Herkunft (Stripe, Adyen). */
   | { art: 'formular'; id: string; url: string; meldung: FormularMeldung; rahmen?: string }
