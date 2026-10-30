@@ -45,7 +45,7 @@ export function SafetyNumberDialog({ open, onOpenChange, contactName, devices, l
             <p className="text-xs text-on-surface-variant">{t('common.loading')}</p>
           )}
           {!loading && devices.length === 0 && (
-            <p className="text-xs text-on-surface-variant">{t('messenger.noDeviceOnline', { name: contactName })}</p>
+            <p className="text-xs text-on-surface-variant">{t('messenger.noDeviceKeys', { name: contactName })}</p>
           )}
           {!loading && devices.map((d) => (
             <div key={d.id} className="rounded-lg border border-outline-variant/30 bg-surface-container-high/40 p-3 space-y-1">

@@ -88,7 +88,7 @@ export class SanitizedApiError extends Error {
   }
 }
 
-import { isNetworkOrOfflineError } from '@/lib/networkErrors'
+import { isNetworkOrOfflineError, istAbbruch } from '@/lib/networkErrors'
 export { isNetworkOrOfflineError }
 
 /**
@@ -384,7 +384,8 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
       }
     }
   } catch (fetchErr) {
-    if (!isCurrentlyOffline && typeof window !== 'undefined' && isNetworkOrOfflineError(fetchErr)) {
+    // Ein Abbruch beim Aufräumen einer Ansicht ist kein Offline-Beweis.
+    if (!isCurrentlyOffline && typeof window !== 'undefined' && isNetworkOrOfflineError(fetchErr) && !istAbbruch(fetchErr)) {
       isCurrentlyOffline = true
       window.dispatchEvent(new CustomEvent('msm:network-offline'))
     }
@@ -431,7 +432,7 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
       } catch (retryErr) {
         // Ein Netzwerkfehler, Timeout oder AbortError beim wiederholten Request
         // darf NIEMALS useAuthStore.getState().clearSession() aufrufen!
-        if (!isCurrentlyOffline && typeof window !== 'undefined' && isNetworkOrOfflineError(retryErr)) {
+        if (!isCurrentlyOffline && typeof window !== 'undefined' && isNetworkOrOfflineError(retryErr) && !istAbbruch(retryErr)) {
           isCurrentlyOffline = true
           window.dispatchEvent(new CustomEvent('msm:network-offline'))
         }

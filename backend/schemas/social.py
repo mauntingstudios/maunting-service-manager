@@ -530,17 +530,16 @@ class StreamMailboxAbos(BaseModel):
 
 
 class StreamPraesenz(BaseModel):
-    """Ob ein laufender Stream gerade vorne oder hinten steht.
+    """Ob ein laufender Stream gerade vorne, hinten oder ein Dienst ist.
 
-    Zwei Werte, mehr nicht: der Client sagt über sich selbst, was er zeigen
-    kann. Wer vorne steht, sieht die Nachricht ohnehin; ein Hintergrunddienst
-    zeigt sie selbst; erst wenn keiner das kann, geht ein Push hinaus. Damit
-    kommt dieselbe Meldung **einmal** an, auch wenn zwei Fenster oder MSS und
-    Pontis auf demselben Gerät offen sind.
+    Der Client sagt über sich selbst, was er zeigen kann. Wer vorne steht,
+    sieht die Nachricht ohnehin; ein eigener Hintergrunddienst (`dienst`)
+    zeigt sie selbst und bekommt sie auch dann, wenn ein anderes Gerät vorne
+    steht. Ohne Dienst bleibt es beim bisherigen einen Hintergrund-Client.
     """
 
     conn_id: str = Field(..., min_length=4, max_length=64)
-    zustand: Literal["vordergrund", "hintergrund"]
+    zustand: Literal["vordergrund", "hintergrund", "dienst"]
 
 
 class E2eeMailboxSyncItem(BaseModel):

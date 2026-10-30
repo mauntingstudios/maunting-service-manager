@@ -12,19 +12,21 @@
  * navigieren mit `navigate('/ai?ansicht=…')` (Glocke, Guardian, Aufgaben),
  * und genau diese Route gibt es hier. Eine Adressleiste hat das Fenster nicht.
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { listen } from '@tauri-apps/api/event'
 import { Bot, BrainCircuit, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, WifiOff, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
+import { istAbbruch } from '@/lib/networkErrors'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiRunNotice } from '@/components/ai/AiRunNotice'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
 import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
 import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
 import { BrowserBestaetigungDialog } from '@/components/BrowserBestaetigungDialog'
+import { PasskeyFernBestaetigung } from '@/components/PasskeyFernBestaetigung'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { PromptDialog } from '@/components/ui/PromptDialog'
 import { ToastContainer } from '@/components/ui/ToastContainer'
@@ -114,16 +116,15 @@ function getInitialRoute(offline = false): string {
   try {
     const settings = usePublicSettingsStore.getState()
     const gespeichert = localStorage.getItem(LETZTE_ROUTE_KEY)
-    if (gespeichert && ERLAUBTE_ROUTEN.includes(gespeichert)) {
-      if (offline) {
-        const offlineRouten = getErlaubteOfflineRouten(settings)
-        return offlineRouten.includes(gespeichert) ? gespeichert : getFallbackOfflineRoute(settings)
-      }
-      if (gespeichert === '/chat' && !settings.social_enabled) return '/ai'
-      if (gespeichert === '/kalender' && !settings.calendar_enabled) return '/ai'
-      if (gespeichert === '/notizen' && !settings.notes_enabled) return '/ai'
-      if (gespeichert === '/dokumente' && !settings.docs_enabled) return '/ai'
-      if (gespeichert === '/tresor' && !settings.vault_enabled) return '/ai'
+    // Die zuletzt offene Route bleibt stehen, auch offline. Nur ein
+    // abgeschaltetes Modul fällt auf einen erreichbaren Bereich zurück.
+    const pfad = gespeichert?.split(/[?#]/)[0] ?? ''
+    if (gespeichert && ERLAUBTE_ROUTEN.includes(pfad)) {
+      if (pfad === '/chat' && !settings.social_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
+      if (pfad === '/kalender' && !settings.calendar_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
+      if (pfad === '/notizen' && !settings.notes_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
+      if (pfad === '/dokumente' && !settings.docs_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
+      if (pfad === '/tresor' && !settings.vault_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
       return gespeichert
     }
   } catch {}
@@ -277,15 +278,23 @@ export function DesktopApp() {
     return () => window.removeEventListener(ABGEMELDET, zurKopplung)
   }, [])
 
-  // Regelmäßiges Lebenszeichen des gekoppelten Geräts an das Backend
+  // Regelmäßiges Lebenszeichen des gekoppelten Geräts an das Backend.
+  // Ein einzelner Aussetzer ist noch kein Offline: erst zwei Fehlschläge in
+  // Folge schalten die Anzeige um. Sonst reichte ein kurzer Funkloch-Moment,
+  // um die Oberfläche aus dem Tritt zu bringen.
+  const herzschlagFehler = useRef(0)
   useEffect(() => {
     if (!sitzungSteht || isOffline) return
     const interval = setInterval(() => {
-      api('/auth/devices/heartbeat', { method: 'POST' }).catch((err) => {
-        if (isNetworkOrOfflineError(err)) {
-          setIsOffline(true)
-        }
-      })
+      api('/auth/devices/heartbeat', { method: 'POST' })
+        .then(() => {
+          herzschlagFehler.current = 0
+        })
+        .catch((err) => {
+          if (!isNetworkOrOfflineError(err) || istAbbruch(err)) return
+          herzschlagFehler.current += 1
+          if (herzschlagFehler.current >= 2) setIsOffline(true)
+        })
     }, 45000)
     return () => clearInterval(interval)
   }, [sitzungSteht, isOffline])
@@ -358,6 +367,33 @@ export function DesktopApp() {
       })()
     }
   }, [phase, angemeldet, isOffline])
+
+  // Gerätebenachrichtigungen sind am Konto an: den Android-Dienst nach dem
+  // Start sicherstellen. Er überlebt danach Neustart und Update.
+  useEffect(() => {
+    if (!isAndroid || !angemeldet || isOffline) return
+    const user = useAuthStore.getState().user
+    if (!user) return
+    void import('@/services/hintergrunddienst')
+      .then((m) => m.sicherstellen(user.device_notifications !== false))
+      .catch(() => {})
+  }, [angemeldet, isOffline])
+
+  // Die Android-Berechtigung gehört an den Anfang, nicht an eine Testmeldung:
+  // ohne sie läuft der Dienst, aber keine Meldung erscheint.
+  useEffect(() => {
+    if (!isAndroid || !angemeldet) return
+    const user = useAuthStore.getState().user
+    if (!user || user.device_notifications === false) return
+    // Nach dem Start, nicht während des Aufbaus: die Activity muss für den
+    // Systemdialog bereits vorne stehen.
+    const timer = window.setTimeout(() => {
+      void import('@/lib/benachrichtigung')
+        .then((m) => m.pruefeUndFrageGeraeteBerechtigung())
+        .catch(() => {})
+    }, 1500)
+    return () => window.clearTimeout(timer)
+  }, [angemeldet])
 
   useEffect(() => {
     if (!sitzungSteht) return
@@ -592,6 +628,7 @@ export function DesktopApp() {
         <ToastContainer />
         <ConfirmDialog />
         <BrowserBestaetigungDialog />
+        <PasskeyFernBestaetigung />
         <PromptDialog />
         {splash && <Splash onFertig={splashBeenden} />}
       </div>
@@ -607,10 +644,12 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
   useEffect(() => {
     if (ERLAUBTE_ROUTEN.includes(location.pathname) || location.pathname.startsWith('/dokumente/')) {
       try {
-        localStorage.setItem(LETZTE_ROUTE_KEY, location.pathname)
+        // Mit Suche: der offene Chatkontakt steht in `?kontakt=…` und soll
+        // beim nächsten Start nicht verloren gehen.
+        localStorage.setItem(LETZTE_ROUTE_KEY, location.pathname + location.search)
       } catch {}
     }
-  }, [location.pathname])
+  }, [location.pathname, location.search])
 
   useEffect(() => {
     const unlisten = listen<string>('mss:navigiere-zu', (event) => {
@@ -622,21 +661,16 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
         if (ziel.startsWith('/dokumente') && !publicSettings.docs_enabled) return
         if (ziel.startsWith('/tresor') && !publicSettings.vault_enabled) return
 
-        if (isOffline) {
-          const offlineRouten = getErlaubteOfflineRouten(publicSettings)
-          // `/einstellungen?tab=audio` zählt wie `/einstellungen`.
-          if (!offlineRouten.includes(ziel.split(/[?#]/)[0])) {
-            navigate(getFallbackOfflineRoute(publicSettings))
-            return
-          }
-        }
+        // Eine ausdrückliche Navigation bleibt eine Navigation, auch offline.
+        // Die Zielseite zeigt ihren eigenen Offline-Zustand; ein Umweg über
+        // den Tresor würde den Kontext verlieren.
         navigate(ziel)
       }
     })
     return () => {
       void unlisten.then((u) => u())
     }
-  }, [navigate, isOffline, publicSettings])
+  }, [navigate, publicSettings])
   return !isOffline && publicSettings.social_enabled && !location.pathname.startsWith('/chat')
     ? <MessengerHintergrund />
     : null
@@ -817,13 +851,6 @@ function Hauptseite({
     }
   }, [darfTresor, darfMessenger, darfKalender, darfNotizen, darfDokumente, bereich, navigate, fallbackRoute])
 
-  // Offline: Nur aktivierte Offline-Routen erlauben
-  useEffect(() => {
-    if (isOffline && !offlineRouten.includes(location.pathname)) {
-      navigate(fallbackRoute, { replace: true })
-    }
-  }, [isOffline, location.pathname, navigate, offlineRouten, fallbackRoute])
-
   // Am Handy fehlt die Reiterleiste; die Kopfzeile nennt deshalb den offenen Bereich.
   const kopfTitel = bereich === 'ki' ? KI_NAME : t(BEREICH_TITEL[bereich])
   const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
@@ -930,7 +957,7 @@ function Hauptseite({
   return (
     <>
       {!chatVollbild && (
-        <header className="msm-topbar flex pt-[env(safe-area-inset-top,0px)] h-[calc(3.5rem+env(safe-area-inset-top,0px))] sm:h-[calc(4rem+env(safe-area-inset-top,0px))] items-center justify-between px-3 sm:px-4 md:px-6">
+        <header className="msm-topbar flex pt-[var(--msm-oben-sicher)] h-[calc(3.5rem+var(--msm-oben-sicher))] sm:h-[calc(4rem+var(--msm-oben-sicher))] items-center justify-between px-3 sm:px-4 md:px-6">
           {/* Linke Seite: Agent-Name & Aktivitätsanzeige */}
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <div className="min-w-0">
@@ -1233,7 +1260,12 @@ function Hauptseite({
       <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'tresor' || bereich === 'chat' ? 'p-0 bg-surface' : 'p-margin-mobile md:p-margin-desktop'}`}>
         <div className="relative z-10 flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
           {bereich === 'ki' ? (
-            darfChatten ? (
+            isOffline ? (
+              <div className="msm-card mx-auto mt-16 max-w-md p-6 text-center" role="status">
+                <WifiOff className="mx-auto mb-3 h-8 w-8 text-on-surface-variant" aria-hidden="true" />
+                <p className="text-sm text-on-surface-variant">{t('common.offline')}</p>
+              </div>
+            ) : darfChatten ? (
               <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden bg-surface">
                 {konfig && !isAndroid && !konfig.computer_use_aktiv && (
                   <div className="m-2 sm:m-3 mb-0 shrink-0 flex items-center justify-between rounded-lg border border-outline-variant/40 bg-surface-container-low/60 p-3 text-xs">

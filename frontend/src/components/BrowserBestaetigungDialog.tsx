@@ -16,7 +16,11 @@ export function BrowserBestaetigungDialog() {
   return (
     <Dialog open={offen !== null} onOpenChange={(auf) => { if (!auf) offen?.abbrechen() }}>
       {offen && (
-        <DialogContent className="max-w-sm p-6 text-center" aria-labelledby="browser-bestaetigung-titel">
+        <DialogContent
+          className="max-w-sm p-6 text-center"
+          overlayClassName="z-[130]"
+          aria-labelledby="browser-bestaetigung-titel"
+        >
           <Globe className="mx-auto mb-3 h-8 w-8 text-primary" aria-hidden="true" />
           <h2 id="browser-bestaetigung-titel" className="font-headline text-title-lg font-semibold text-on-surface">
             {t('auth.browserBestaetigung.appTitle')}

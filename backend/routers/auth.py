@@ -72,6 +72,7 @@ from services.permission_catalog import SYSTEM_ROLE_USER
 from services.role_service import get_role_by_name, set_user_roles
 from services.panel_settings_service import PanelSettingsService
 from services.session_service import issue_session, SessionTokens
+from services.sync_event_service import SyncEventService
 from services.totp_qr import qr_datenuri
 
 from services.captcha_service import CaptchaService
@@ -1670,7 +1671,21 @@ def passkey_browser_anlegen(
         vorgang = passkey_service.browser_vorgang_anlegen(db, user, req.zweck)
     except passkey_service.PasskeyFehler as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {**vorgang, "url": _panel_adresse(f"/bestaetigen#{vorgang['vorgang']}")}
+    url = _panel_adresse(f"/bestaetigen#{vorgang['vorgang']}")
+    # Bereits angemeldete Fenster desselben Kontos können die Bestätigung
+    # übernehmen. Die Zahl bleibt in der anfragenden App; das Ereignis trägt
+    # sie nicht.
+    SyncEventService.publish(
+        {
+            "type": "passkey_bestaetigung",
+            "vorgang": vorgang["vorgang"],
+            "zweck": req.zweck,
+            "client": req.client,
+            "url": url,
+        },
+        user_id=user.id,
+    )
+    return {**vorgang, "url": url}
 
 
 # Ohne `auth_rate_limit`: die App fragt alle 2 s, und die strenge Grenze je IP

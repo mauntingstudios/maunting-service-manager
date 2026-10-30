@@ -9,7 +9,7 @@ Was hier festgehalten wird:
 * **Widerruf trifft die offene Verbindung** (Punkt 20), nicht nur die Zeile.
 * **Abmelden trifft die eigene Sitzung**, nicht die Kanäle der anderen Geräte.
 * **Der Deckel verdängt den ältesten**, nicht den neuen.
-* **Ohne frischen Nachweis gibt es keinen Ausweis** (Punkt 21).
+* **Die Sitzung genügt**, weil der Ausweis nur zuhören darf und widerrufbar ist.
 """
 
 from __future__ import annotations
@@ -22,9 +22,6 @@ from models import NotificationChannel, User
 from services import notification_channel_service, passkey_service
 from services.auth_service import AuthService
 from services.sync_event_service import SyncEventService
-
-PASSWORT = "OwnerPass123!"
-
 
 @pytest.fixture(autouse=True)
 def _leere_abonnenten():
@@ -56,14 +53,14 @@ def test_ausweis_oeffnet_den_strom(db: Session, owner_user: User, client: TestCl
 
     antwort = client.post(
         "/api/events/presence",
-        json={"conn_id": conn_id, "zustand": "hintergrund"},
+        json={"conn_id": conn_id, "zustand": "dienst"},
         headers={"Authorization": f"Bearer {ausweis}"},
     )
 
     assert antwort.status_code == 200
     assert antwort.json() == {"ok": True}
     # Und der Zusteller ist jetzt der Dienst dieses Geräts.
-    assert SyncEventService.zustelllage(user_id=owner_user.id)[0] == conn_id
+    assert conn_id in SyncEventService.zustelllage(user_id=owner_user.id)[0]
 
 
 def test_ein_erfundener_ausweis_oeffnet_nichts(db: Session, owner_user: User, client: TestClient) -> None:
@@ -126,26 +123,12 @@ def test_deckel_verdraengt_den_aeltesten(db: Session, owner_user: User) -> None:
     assert erste[0].id not in offen
 
 
-def test_ohne_frischen_nachweis_gibt_es_keinen_ausweis(
-    client: TestClient, owner_cookies: dict, csrf_token: str | None, owner_user: User
-) -> None:
-    ohne = client.post(
-        "/api/notifications/channels",
-        json={"label": "Telefon"},
-        cookies=owner_cookies,
-        headers={"X-CSRF-Token": csrf_token or ""},
-    )
-
-    assert ohne.status_code == 403
-    assert "Passwort" in ohne.json()["detail"]
-
-
-def test_mit_passwort_entsteht_genau_ein_ausweis(
+def test_mit_gueltiger_sitzung_entsteht_ein_ausweis(
     client: TestClient, owner_cookies: dict, csrf_token: str | None, db: Session, owner_user: User
 ) -> None:
     antwort = client.post(
         "/api/notifications/channels",
-        json={"label": "Telefon", "password": PASSWORT},
+        json={"label": "Telefon"},
         cookies=owner_cookies,
         headers={"X-CSRF-Token": csrf_token or ""},
     )

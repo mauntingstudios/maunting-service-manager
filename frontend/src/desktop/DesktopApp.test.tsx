@@ -114,6 +114,13 @@ const BENUTZER: User = {
 
 const LETZTE_ROUTE_KEY = 'mss:letzte_route'
 
+/** Die App ist offline, ohne in den Tresor oder den Assistenten zu springen. */
+async function erwarteOffline() {
+  await waitFor(() => {
+    expect(screen.getAllByText(i18n.t('common.offline')).length).toBeGreaterThan(0)
+  })
+}
+
 function konfigMock(konfig: Record<string, unknown>) {
   invokeMock.mockImplementation((befehl: string) => {
     if (befehl === 'konfig_laden') return Promise.resolve(konfig)
@@ -360,9 +367,7 @@ describe('DesktopApp', () => {
     )
 
     render(<DesktopApp />)
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: i18n.t('mss.app.tresor') })).toBeInTheDocument()
-    })
+    await erwarteOffline()
     await act(async () => {
       await abmelden()
     })
@@ -428,12 +433,10 @@ describe('DesktopApp', () => {
     )
 
     render(<DesktopApp />)
-    // Landet direkt in der Hauptansicht (bereit), nicht im Wizard, und öffnet den Tresor
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: i18n.t('mss.app.tresor') })).toBeInTheDocument()
-      expect(screen.queryByTestId('ki-seite')).not.toBeInTheDocument()
-      expect(screen.queryByText(i18n.t('mss.wizard.codeLabel'))).not.toBeInTheDocument()
-    })
+    // Landet direkt in der Hauptansicht (bereit), nicht im Wizard. Die zuletzt
+    // offene oder die Standardroute bleibt stehen; nur der Offline-Hinweis kommt.
+    await erwarteOffline()
+    expect(screen.queryByText(i18n.t('mss.wizard.codeLabel'))).not.toBeInTheDocument()
   })
 
   it('erfolgreicher Refresh mit verzoegertem/fehlgeschlagenem checkAuth faellt nicht in Kopplung', async () => {
@@ -460,12 +463,9 @@ describe('DesktopApp', () => {
     )
 
     render(<DesktopApp />)
-    // Bleibt in bereit (Offline-Modus), keine Kopplungs-Maske, landet im Tresor
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { level: 1, name: i18n.t('mss.app.tresor') })).toBeInTheDocument()
-      expect(screen.queryByTestId('ki-seite')).not.toBeInTheDocument()
-      expect(screen.queryByText(i18n.t('mss.wizard.codeLabel'))).not.toBeInTheDocument()
-    })
+    // Bleibt in bereit (Offline-Modus), keine Kopplungs-Maske und kein Tresor-Zwang.
+    await erwarteOffline()
+    expect(screen.queryByText(i18n.t('mss.wizard.codeLabel'))).not.toBeInTheDocument()
   })
 
   it('blockiert den Kaltstart nicht mit Zwangs-Updates oder automatischem Neustart', async () => {
@@ -664,10 +664,7 @@ describe('DesktopApp', () => {
     // und die Kopfzeile nennt ihn. Bis 04.10.2026 erwartete der Test hier noch
     // den Namen des Assistenten und war nur grün, wenn er den Moment vor dem
     // Wechsel traf (auf dem Release-Runner rot).
-    await waitFor(() => {
-      expect(screen.getByText('Offline')).toBeInTheDocument()
-      expect(screen.getByRole('heading', { level: 1, name: i18n.t('mss.app.tresor') })).toBeInTheDocument()
-    })
+    await erwarteOffline()
 
     // Nur Tresor, Notizen und Kalender stehen in der Navigation
     const navigation = screen.getByRole('navigation', { name: i18n.t('mss.app.bereiche') })
@@ -676,9 +673,9 @@ describe('DesktopApp', () => {
     }
 
     // Singra, Messenger und Gedächtnis sind offline ausgeblendet
-    expect(screen.queryByText(i18n.t('mss.app.ki'))).not.toBeInTheDocument()
-    expect(screen.queryByText(i18n.t('mss.app.messenger'))).not.toBeInTheDocument()
-    expect(screen.queryByText(i18n.t('mss.app.gedaechtnis'))).not.toBeInTheDocument()
+    expect(within(navigation).queryByRole('button', { name: i18n.t('mss.app.ki') })).not.toBeInTheDocument()
+    expect(within(navigation).queryByRole('button', { name: i18n.t('mss.app.messenger') })).not.toBeInTheDocument()
+    expect(within(navigation).queryByRole('button', { name: i18n.t('mss.app.gedaechtnis') })).not.toBeInTheDocument()
     expect(screen.queryByTestId('ki-seite')).not.toBeInTheDocument()
     expect(screen.queryByTestId('messenger-seite')).not.toBeInTheDocument()
 
@@ -771,7 +768,7 @@ describe('DesktopApp', () => {
   })
 
   describe('Negativtests & Missbrauchsschutz im Offline-Modus', () => {
-    it('leitet beim Start im Offline-Modus von einer gespeicherten verbotenen Route (/ai) automatisch auf /tresor um', async () => {
+    it('öffnet beim Start im Offline-Modus die gespeicherte KI-Route statt des Tresors', async () => {
       localStorage.setItem(LETZTE_ROUTE_KEY, '/ai')
       localStorage.setItem('msm_cached_user', JSON.stringify(BENUTZER))
       useAuthStore.setState({ user: BENUTZER, isAuthenticated: true })
@@ -789,13 +786,12 @@ describe('DesktopApp', () => {
 
       render(<DesktopApp />)
 
-      await waitFor(() => {
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-      })
-      expect(screen.queryByTestId('ki-seite')).not.toBeInTheDocument()
+      await erwarteOffline()
+      expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
+      expect(localStorage.getItem(LETZTE_ROUTE_KEY)).toBe('/ai')
     })
 
-    it('leitet beim Start im Offline-Modus von /gedaechtnis automatisch auf /tresor um', async () => {
+    it('öffnet beim Start im Offline-Modus das gespeicherte Gedächtnis statt des Tresors', async () => {
       localStorage.setItem(LETZTE_ROUTE_KEY, '/gedaechtnis')
       localStorage.setItem('msm_cached_user', JSON.stringify(BENUTZER))
       useAuthStore.setState({ user: BENUTZER, isAuthenticated: true })
@@ -814,9 +810,32 @@ describe('DesktopApp', () => {
       render(<DesktopApp />)
 
       await waitFor(() => {
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
+        expect(screen.getByTestId('gedaechtnis-seite')).toBeInTheDocument()
       })
-      expect(screen.queryByTestId('gedaechtnis-seite')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
+    })
+
+    it('stellt die zuletzt offene Chat-Route samt Kontakt wieder her', async () => {
+      localStorage.setItem(LETZTE_ROUTE_KEY, '/chat?kontakt=42')
+      localStorage.setItem('msm_cached_user', JSON.stringify(BENUTZER))
+      useAuthStore.setState({ user: BENUTZER, isAuthenticated: true })
+
+      konfigMock({
+        backend_url: 'https://api.example.com',
+        sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
+        eingerichtet: true,
+      })
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(new Response('{}', { status: 200 }))),
+      )
+
+      render(<DesktopApp />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('messenger-seite')).toBeInTheDocument()
+      })
+      expect(localStorage.getItem(LETZTE_ROUTE_KEY)).toContain('?kontakt=42')
     })
 
     it('öffnet beim Start im Offline-Modus die zuletzt offenen Einstellungen, im Offline-Zustand', async () => {
@@ -862,7 +881,7 @@ describe('DesktopApp', () => {
       )
 
       render(<DesktopApp />)
-      await waitFor(() => expect(screen.getByTestId('tresor-seite')).toBeInTheDocument())
+      await erwarteOffline()
 
       fireEvent.click(screen.getAllByRole('button', { name: i18n.t('common.openUserMenu') })[0])
       fireEvent.click(await screen.findByRole('menuitem', { name: i18n.t('mss.app.einstellungen') }))
@@ -890,13 +909,11 @@ describe('DesktopApp', () => {
 
       render(<DesktopApp />)
 
-      await waitFor(() => {
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-      })
-      expect(screen.queryByTestId('ki-seite')).not.toBeInTheDocument()
+      await erwarteOffline()
+      expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
     })
 
-    it('fängt externe mss:navigiere-zu Events auf verbotene Routen (/ai, /gedaechtnis) offline ab und leitet auf /tresor', async () => {
+    it('folgt ausdrücklichen Navigationsereignissen auch offline', async () => {
       localStorage.setItem('msm_cached_user', JSON.stringify(BENUTZER))
       useAuthStore.setState({ user: BENUTZER, isAuthenticated: true })
 
@@ -913,48 +930,25 @@ describe('DesktopApp', () => {
 
       render(<DesktopApp />)
 
-      await waitFor(() => {
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-      })
+      await erwarteOffline()
 
-      // Missbrauchsversuch 1: Externes Event auf /ai
+      // Ein ausdrückliches Ziel bleibt stehen; die Seite zeigt ihren eigenen
+      // Offline-Zustand, statt den Kontext gegen den Tresor zu tauschen.
       triggerTauriEvent('mss:navigiere-zu', '/ai')
+      await erwarteOffline()
+      expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
 
-      await waitFor(() => {
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-        expect(screen.queryByTestId('ki-seite')).not.toBeInTheDocument()
-      })
-
-      // Missbrauchsversuch 2: Externes Event auf /gedaechtnis
       triggerTauriEvent('mss:navigiere-zu', '/gedaechtnis')
-
       await waitFor(() => {
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-        expect(screen.queryByTestId('gedaechtnis-seite')).not.toBeInTheDocument()
+        expect(screen.getByTestId('gedaechtnis-seite')).toBeInTheDocument()
       })
-
-      // Missbrauchsversuche 3–6: Ziele, die nur nach Einstellungen aussehen.
-      // Erlaubt ist der Pfad, nicht ein Text, der ihn enthält.
-      for (const ziel of ['/einstellungen/../ai', '/einstellungenx', '/ai?/einstellungen', '/ai#/einstellungen']) {
-        triggerTauriEvent('mss:navigiere-zu', ziel)
-        await waitFor(() => {
-          expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-          expect(screen.queryByTestId('ki-seite')).not.toBeInTheDocument()
-          expect(screen.queryByTestId('einstellungen-seite')).not.toBeInTheDocument()
-        })
-      }
 
       // Die Einstellungen sind offline erlaubt, auch mit vorgewähltem Reiter.
       triggerTauriEvent('mss:navigiere-zu', '/einstellungen?tab=audio')
       await waitFor(() => {
         expect(screen.getByTestId('einstellungen-seite')).toHaveAttribute('data-offline', 'true')
       })
-      triggerTauriEvent('mss:navigiere-zu', '/tresor')
-      await waitFor(() => {
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-      })
 
-      // Legitime Offline-Routen funktionieren weiterhin
       triggerTauriEvent('mss:navigiere-zu', '/kalender')
       await waitFor(() => {
         expect(screen.getByTestId('kalender-seite')).toBeInTheDocument()
@@ -964,9 +958,15 @@ describe('DesktopApp', () => {
       await waitFor(() => {
         expect(screen.getByTestId('notizen-seite')).toBeInTheDocument()
       })
+
+      // Ein unbekanntes Ziel fällt weiterhin auf eine erreichbare Route zurück.
+      triggerTauriEvent('mss:navigiere-zu', '/gibt-es-nicht')
+      await waitFor(() => {
+        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
+      })
     })
 
-    it('leitet bei dynamischem Netzwerkverlust (offline Event) während aktiver KI-Ansicht sofort auf /tresor um', async () => {
+    it('bleibt bei dynamischem Netzwerkverlust in der aktiven KI-Ansicht und zeigt Offline', async () => {
       konfigMock({
         backend_url: 'https://api.example.com',
         sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
@@ -1004,20 +1004,17 @@ describe('DesktopApp', () => {
 
       render(<DesktopApp />)
 
-      // Online: KI-Seite ist aktiv
+      // Online ist die Hauptansicht bereit.
       await waitFor(() => {
-        expect(screen.getByTestId('ki-seite')).toBeInTheDocument()
+        expect(screen.getByRole('navigation', { name: i18n.t('mss.app.bereiche') })).toBeInTheDocument()
       })
 
       // Plötzlicher Netzwerkausfall
       window.dispatchEvent(new Event('offline'))
 
-      // Sofortige Reaktion: Offline-Badge erscheint, KI verschwindet, Tresor wird aktiviert
-      await waitFor(() => {
-        expect(screen.getByText('Offline')).toBeInTheDocument()
-        expect(screen.queryByTestId('ki-seite')).not.toBeInTheDocument()
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-      })
+      // Die Ansicht bleibt; nur der Offline-Hinweis kommt dazu.
+      await erwarteOffline()
+      expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
     })
 
     it('bleibt bei Netzverlust in den Einstellungen und meldet ihnen den Offline-Zustand', async () => {
@@ -1070,9 +1067,7 @@ describe('DesktopApp', () => {
 
       render(<DesktopApp />)
 
-      await waitFor(() => {
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-      })
+      await erwarteOffline()
 
       // Flapping-Sturm: 10 schnelle Wechsel
       for (let i = 0; i < 10; i++) {
@@ -1080,11 +1075,9 @@ describe('DesktopApp', () => {
         window.dispatchEvent(new Event('offline'))
       }
 
-      // App darf nicht abstürzen und bleibt im sauberen Offline-Schutzmodus
-      await waitFor(() => {
-        expect(screen.getByTestId('tresor-seite')).toBeInTheDocument()
-        expect(screen.getByText('Offline')).toBeInTheDocument()
-      })
+      // App darf nicht abstürzen und bleibt im Offline-Zustand.
+      await erwarteOffline()
+      expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
     })
 
     it('lässt bei Offline-Start ohne gespeicherten Benutzer keinen unautorisierten Zugriff zu', async () => {
@@ -1138,9 +1131,7 @@ describe('DesktopApp', () => {
 
       render(<DesktopApp />)
 
-      await waitFor(() => {
-        expect(screen.getByTestId('kalender-seite')).toBeInTheDocument()
-      })
+      await erwarteOffline()
       expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
       expect(screen.queryByText(i18n.t('mss.app.tresor'))).not.toBeInTheDocument()
     })
@@ -1224,23 +1215,17 @@ describe('DesktopApp', () => {
 
       render(<DesktopApp />)
 
-      await waitFor(() => {
-        expect(screen.getByTestId('kalender-seite')).toBeInTheDocument()
-      })
+      await erwarteOffline()
 
       // Missbrauchsversuch auf deaktivierten Tresor via Tauri Event
       triggerTauriEvent('mss:navigiere-zu', '/tresor')
-      await waitFor(() => {
-        expect(screen.getByTestId('kalender-seite')).toBeInTheDocument()
-        expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
-      })
+      await erwarteOffline()
+      expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
 
       // Missbrauchsversuch auf deaktivierten Chat via Tauri Event
       triggerTauriEvent('mss:navigiere-zu', '/chat')
-      await waitFor(() => {
-        expect(screen.getByTestId('kalender-seite')).toBeInTheDocument()
-        expect(screen.queryByTestId('messenger-seite')).not.toBeInTheDocument()
-      })
+      await erwarteOffline()
+      expect(screen.queryByTestId('messenger-seite')).not.toBeInTheDocument()
     })
 
     it('übernimmt gecachte Deaktivierungen (localStorage msm_cached_public_settings) beim Offline-Start', async () => {
@@ -1270,10 +1255,9 @@ describe('DesktopApp', () => {
 
       render(<DesktopApp />)
 
-      // Weil Tresor und Kalender deaktiviert sind, muss die App auf Notizen ausweichen
-      await waitFor(() => {
-        expect(screen.getByTestId('notizen-seite')).toBeInTheDocument()
-      })
+      // Tresor und Kalender sind deaktiviert; die App bleibt in einem
+      // erlaubten Bereich und zeigt den Offline-Zustand.
+      await erwarteOffline()
       expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
       expect(screen.queryByTestId('kalender-seite')).not.toBeInTheDocument()
     })

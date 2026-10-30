@@ -11,13 +11,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const aufrufe = vi.hoisted(() => ({
   invoke: [] as { befehl: string; args?: Record<string, unknown> }[],
   api: [] as { pfad: string; methode: string; koerper: unknown }[],
-  nachweis: [] as string[],
+  startScheitert: false,
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (befehl: string, args?: Record<string, unknown>) => {
     aufrufe.invoke.push({ befehl, args })
-    if (befehl === 'dienst_stand') return { aktiv: true, akkuBefreit: false }
+    if (befehl === 'dienst_starten' && aufrufe.startScheitert) throw new Error('Dienst startet nicht')
+    if (befehl === 'dienst_stand') return { aktiv: true, akkuBefreit: false, benachrichtigungenErlaubt: true }
     return undefined
   },
 }))
@@ -34,13 +35,6 @@ vi.mock('@/api/client', () => ({
   },
 }))
 
-vi.mock('@/services/passkeyService', () => ({
-  passkeyNachweis: async (zweck: string) => {
-    aufrufe.nachweis.push(zweck)
-    return { type: 'browser', vorgang: 'v'.repeat(32) }
-  },
-}))
-
 vi.mock('@/config/api', () => ({ getEffectiveApiUrl: () => 'https://panel.test' }))
 
 import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
@@ -52,7 +46,7 @@ describe('hintergrunddienst', () => {
   beforeEach(() => {
     aufrufe.invoke.length = 0
     aufrufe.api.length = 0
-    aufrufe.nachweis.length = 0
+    aufrufe.startScheitert = false
     localStorage.clear()
     setzeAngemeldetesKonto(1)
     Object.defineProperty(navigator, 'userAgent', {
@@ -62,18 +56,14 @@ describe('hintergrunddienst', () => {
     ;(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {}
   })
 
-  it('legt den Ausweis mit frischem Nachweis an und startet den Dienst', async () => {
+  it('legt den Ausweis mit der Sitzung an und startet den Dienst', async () => {
     const ok = await einschalten('Telefon')
     await ruhe()
 
     expect(ok).toBe(true)
-    expect(aufrufe.nachweis).toEqual(['notification_channel'])
     const anlegen = aufrufe.api.find((a) => a.methode === 'POST')
     expect(anlegen?.pfad).toBe('/notifications/channels')
-    expect(anlegen?.koerper).toMatchObject({
-      label: 'Telefon',
-      passkey: { type: 'browser', vorgang: 'v'.repeat(32) },
-    })
+    expect(anlegen?.koerper).toEqual({ label: 'Telefon' })
 
     const start = aufrufe.invoke.find((a) => a.befehl === 'dienst_starten')
     expect(start?.args).toMatchObject({
@@ -81,6 +71,17 @@ describe('hintergrunddienst', () => {
       basis: 'https://panel.test',
     })
     expect(localStorage.getItem('msm:hintergrundkanal')).toBe('7')
+  })
+
+  it('widerruft den Kanal, wenn der Dienst nicht startet', async () => {
+    aufrufe.startScheitert = true
+    const ok = await einschalten('Telefon')
+
+    expect(ok).toBe(false)
+    expect(localStorage.getItem('msm:hintergrundkanal')).toBeNull()
+    expect(
+      aufrufe.api.some((a) => a.pfad === '/notifications/channels/7' && a.methode === 'DELETE'),
+    ).toBe(true)
   })
 
   it('schaltet den Dienst ab und widerruft den Ausweis', async () => {
@@ -98,7 +99,11 @@ describe('hintergrunddienst', () => {
   })
 
   it('liest den Stand aus Android, nicht aus dem Fenster', async () => {
-    await expect(stand()).resolves.toEqual({ aktiv: true, akkuBefreit: false })
+    await expect(stand()).resolves.toEqual({
+      aktiv: true,
+      akkuBefreit: false,
+      benachrichtigungenErlaubt: true,
+    })
   })
 
   it('tut auf einem Rechner nichts', async () => {
@@ -109,6 +114,5 @@ describe('hintergrunddienst', () => {
     await ausschalten()
 
     expect(aufrufe.invoke).toEqual([])
-    expect(aufrufe.nachweis).toEqual([])
   })
 })

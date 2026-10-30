@@ -8,15 +8,18 @@ in beide Richtungen falsch:
   doppelt, weil jeder Client selbst meldete.
 * `sende_an_konto` stellte an **alle** Adressen eines Kontos zu.
 
-Die Regel seither: der Client sagt, ob er vorne oder hinten steht
-(`POST /api/events/presence`). Der Server wählt daraus **einen** Zusteller je
-Konto und schickt den Push nur, wenn keiner die Meldung selbst zeigen kann.
-Jede Meldung trägt zusätzlich eine feste Kennung (`msg:<mailbox>:<id>`), damit
-dieselbe Nachricht auf demselben Gerät nicht zweimal erscheint.
+Die Regel seither: der Client sagt, ob er vorne, hinten oder ein Dienst ist
+(`POST /api/events/presence`). Der Server wählt daraus je Konto einen
+Vordergrund- und einen Dienst-Zusteller und schickt den Push nur, wenn keiner
+die Meldung selbst zeigen kann. Jede Meldung trägt zusätzlich eine feste
+Kennung (`msg:<mailbox>:<id>`), damit dieselbe Nachricht auf demselben Gerät
+nicht zweimal erscheint.
 
 Was hier festgehalten wird:
 
-* **Genau einer.** Zwei Vordergrund-Clients, ein `melden: true`.
+* **Höchstens zwei.** Ein Vordergrund-Client und ein Dienst. Zwei
+  Vordergrund-Clients ergeben ein `melden: true`.
+* **Der Dienst zählt mit.** Er meldet auch, wenn ein anderes Gerät vorne steht.
 * **Keiner heisst Push.** Ohne Zusteller geht der Push hinaus.
 * **Altverhalten bleibt.** Meldet kein Client etwas (ältere Fassung), gilt
   weiter „offene Verbindung genügt" — ein Update darf niemanden stummmachen.
@@ -81,22 +84,46 @@ def _verbinde(user_id: int, *, zustand: str | None = None, mailboxes: tuple[str,
 def test_vordergrund_ist_zusteller() -> None:
     conn, _ = _verbinde(1, zustand="vordergrund")
 
-    assert SyncEventService.zustelllage(user_id=1) == (conn, True)
+    assert SyncEventService.zustelllage(user_id=1) == ({conn}, True)
 
 
 def test_hintergrunddienst_ist_zusteller_wenn_niemand_vorne_steht() -> None:
     """Der Dauerdienst zeigt selbst — sonst käme beim geschlossenen Fenster
     nichts an."""
-    conn, _ = _verbinde(1, zustand="hintergrund")
+    conn, _ = _verbinde(1, zustand="dienst")
 
-    assert SyncEventService.zustelllage(user_id=1) == (conn, True)
+    assert SyncEventService.zustelllage(user_id=1) == ({conn}, True)
 
 
-def test_vordergrund_schlaegt_hintergrund() -> None:
-    _verbinde(1, zustand="hintergrund")
+def test_vordergrund_und_dienst_zeigen_beide() -> None:
+    """Das Handy meldet auch, wenn der PC vorne steht."""
+    dienst, _ = _verbinde(1, zustand="dienst")
     vorne, _ = _verbinde(1, zustand="vordergrund")
 
-    assert SyncEventService.zustelllage(user_id=1)[0] == vorne
+    assert SyncEventService.zustelllage(user_id=1) == ({vorne, dienst}, True)
+
+
+def test_dienst_verdraengt_hintergrund_app() -> None:
+    """Ohne Dienst zeigt ein Hintergrund-Fenster; mit Dienst nur der Dienst."""
+    _verbinde(1, zustand="hintergrund")
+    dienst, _ = _verbinde(1, zustand="dienst")
+
+    assert SyncEventService.zustelllage(user_id=1)[0] == {dienst}
+
+
+def test_vordergrund_und_hintergrund_app_ohne_dienst() -> None:
+    """Gibt es keinen Dienst, bleibt der Hintergrund-App-Client als Zusteller."""
+    hinten, _ = _verbinde(1, zustand="hintergrund")
+    vorne, _ = _verbinde(1, zustand="vordergrund")
+
+    assert SyncEventService.zustelllage(user_id=1)[0] == {vorne, hinten}
+
+
+def test_zwei_dienste_waehlen_einen() -> None:
+    _verbinde(1, zustand="dienst")
+    zweiter, _ = _verbinde(1, zustand="dienst")
+
+    assert SyncEventService.zustelllage(user_id=1)[0] == {zweiter}
 
 
 def test_ohne_praesenz_gibt_es_keinen_zusteller_aber_altverhalten() -> None:
@@ -104,7 +131,7 @@ def test_ohne_praesenz_gibt_es_keinen_zusteller_aber_altverhalten() -> None:
     an den Aufrufer, weiter „offene Verbindung genügt" zu prüfen."""
     _verbinde(1)
 
-    assert SyncEventService.zustelllage(user_id=1) == (None, False)
+    assert SyncEventService.zustelllage(user_id=1) == (set(), False)
 
 
 def test_praesenz_einer_fremden_verbindung_wird_abgelehnt() -> None:

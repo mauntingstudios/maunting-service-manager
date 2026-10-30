@@ -17,6 +17,7 @@ Head und zurueck.
 import re
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -253,6 +254,56 @@ def test_main_datenbank_erhaelt_die_messenger_brucke(pg_wegwerf) -> None:
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
         assert version == "20261030_01"
+    finally:
+        engine.dispose()
+        settings.database_url = previous
+
+
+@pytest.mark.parametrize("docs_revision", ["20261029_01", "20261030_01"])
+def test_docs_revision_ohne_docs_code_kommt_auf_den_main_stand(
+    pg_wegwerf, docs_revision: str
+) -> None:
+    """Eine Datenbank vom Dokumente-Branch startet wieder mit main-Code.
+
+    Die Revision aus dem Docs-Branch ist im main-Code unbekannt. Alembic
+    bricht sonst schon beim Auflösen ab. Die Docs-Tabellen müssen erhalten
+    bleiben, damit ein späterer Docs-Deploy weiterläuft.
+    """
+    db_url = pg_wegwerf("docs-revision")
+    previous = settings.database_url
+    settings.database_url = db_url
+    config = _config(Path(__file__).resolve().parent.parent)
+    from alembic.script import ScriptDirectory
+
+    bekannt = {
+        revision.revision
+        for revision in ScriptDirectory.from_config(config).walk_revisions()
+    }
+    if docs_revision in bekannt:
+        pytest.skip(
+            "Dieser Branch enthaelt den Docs-Code; der Rueckfall-Test gilt "
+            "nur fuer eine main-Datenbank ohne Docs-Modelle."
+        )
+    engine = create_engine(db_url)
+    try:
+        Base.metadata.create_all(engine)
+        command.stamp(config, "20261028_01")
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE documents (id SERIAL PRIMARY KEY)"))
+            conn.execute(
+                text("UPDATE alembic_version SET version_num = :revision"),
+                {"revision": docs_revision},
+            )
+
+        from services.schema_manager import initialize_or_upgrade_schema
+
+        assert initialize_or_upgrade_schema(engine) == "upgraded"
+        assert "documents" in set(inspect(engine).get_table_names())
+        with engine.connect() as conn:
+            version = conn.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar()
+        assert version == "20261028_01"
     finally:
         engine.dispose()
         settings.database_url = previous

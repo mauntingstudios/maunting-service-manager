@@ -43,3 +43,16 @@ export function isNetworkOrOfflineError(err: unknown): boolean {
   }
   return false
 }
+
+/**
+ * Ein bewusst abgebrochener Request. Er belegt nicht, dass das Netz weg ist:
+ * Ansichten brechen ihre Ladevorgänge beim Aufräumen ab, und daraus darf kein
+ * globaler Offline-Zustand werden.
+ */
+export function istAbbruch(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const name = 'name' in err ? String((err as { name: unknown }).name) : ''
+  const message = err instanceof Error ? err.message.trim().toLowerCase() : ''
+  // Nur der echte Abbruch, nicht jede Servermeldung, die „abort“ enthält.
+  return name === 'AbortError' || message === 'the operation was aborted.'
+}

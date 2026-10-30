@@ -62,6 +62,15 @@ describe('Am Handy', () => {
     }
   })
 
+  it('zeigt die Benachrichtigungen im Menü vor dem Raster', () => {
+    useSitzung.setState({ stand: 'an' })
+    zeigen(<HandyLeiste />)
+    fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
+    const menue = screen.getByRole('dialog', { name: 'Menü' })
+    fireEvent.click(within(menue).getByRole('button', { name: /Benachrichtigungen/ }))
+    expect(within(menue).getByRole('switch', { name: 'Geräte-Benachrichtigungen' })).toBeInTheDocument()
+  })
+
   it('zeigt alle Tabs als Raster mit einem Tab-Halt, öffnet und schließt daraus', () => {
     zeigen(<HandyLeiste />)
     fireEvent.click(screen.getByRole('button', { name: 'Alle Tabs (2)' }))

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
@@ -14,6 +15,8 @@ from database import Base
 import models  # noqa: F401 - ensure complete metadata
 
 logger = logging.getLogger(__name__)
+
+_MAIN_STAND_VOR_DOCS = "20261028_01"
 
 
 def _alembic_config() -> Config:
@@ -71,6 +74,47 @@ def _alte_docs_revision_zuruecksetzen(engine: Engine) -> None:
     )
 
 
+def _docs_revision_zuruecksetzen(engine: Engine, config: Config) -> None:
+    """Löst eine Docs-Revision auf, die dieser Code nicht kennt.
+
+    Wer den Dokumente-Branch ausprobiert und danach wieder main ausliefert,
+    behält dessen Revision in ``alembic_version``. Alembic bricht dann schon
+    beim Auflösen ab, bevor es die Tabellen sieht. Die Docs-Tabellen bleiben
+    unangetastet; nur die Kennung geht auf den main-Stand zurück, an dem die
+    Docs-Migration zuletzt angeknüpft hat.
+    """
+    tables = set(inspect(engine).get_table_names())
+    if "alembic_version" not in tables or "documents" not in tables:
+        return
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    if not version:
+        return
+    bekannte = {
+        revision.revision
+        for revision in ScriptDirectory.from_config(config).walk_revisions()
+    }
+    if version in bekannte:
+        return
+    missing = _missing_model_schema(engine)
+    if missing:
+        raise RuntimeError(
+            f"Datenbank steht auf unbekannter Revision {version}, "
+            "aber das main-Schema ist unvollständig: " + ", ".join(missing[:8])
+        )
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE alembic_version SET version_num = :stand"),
+            {"stand": _MAIN_STAND_VOR_DOCS},
+        )
+    logger.warning(
+        "Unbekannte Datenbank-Revision %s mit Docs-Schema; setze auf %s zurück. "
+        "Docs-Tabellen bleiben erhalten.",
+        version,
+        _MAIN_STAND_VOR_DOCS,
+    )
+
+
 def initialize_or_upgrade_schema(engine: Engine) -> str:
     """Create/stamp a fresh schema or upgrade an already managed schema.
 
@@ -98,7 +142,7 @@ def initialize_or_upgrade_schema(engine: Engine) -> str:
         return "initialized"
 
     _alte_docs_revision_zuruecksetzen(engine)
-
+    _docs_revision_zuruecksetzen(engine, config)
     command.upgrade(config, "head")
     missing = _missing_model_schema(engine)
     if missing:

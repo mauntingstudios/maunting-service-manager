@@ -18,7 +18,9 @@ vi.mock('@/services/nutzlastSignatur', () => ({ signiereNutzlast: vi.fn(async (_
 vi.mock('@/lib/errungenschaft', () => ({ meldeErrungenschaft: vi.fn() }))
 
 import { ChatSchluesselFehltError } from '@/services/chatKrypto'
+import { KontoSchluesselNichtUebertragenError } from '@/services/accountKeys'
 import { NachrichtAbgewiesenError } from '@/services/nachrichtVersand'
+import { toast } from '@/stores/toastStore'
 import { useMessengerSenden } from './useMessengerSenden'
 
 function optionenFuer(
@@ -127,6 +129,7 @@ describe('Sendebestätigung im Einheits-Transport', () => {
 
   it('gibt false zurück und entfernt die Zeile, wenn der Schlüssel fehlt', async () => {
     const nachrichten: { current: ChatMessage[] } = { current: [] }
+    const fehler = vi.spyOn(toast, 'error').mockImplementation(() => {})
     const optionen = optionenFuer(nachrichten, {
       konversation: {
         ensureChat: vi.fn(async () => ({ type: 'direct', id: 55 })),
@@ -142,6 +145,48 @@ describe('Sendebestätigung im Einheits-Transport', () => {
 
     expect(angenommen).toBe(false)
     expect(nachrichten.current).toHaveLength(0)
+    expect(fehler).toHaveBeenCalledWith('messenger.chatKeyMissing')
+    fehler.mockRestore()
+  })
+
+  it('nennt den noch nicht übertragenen Kontoschlüssel beim Namen', async () => {
+    const nachrichten: { current: ChatMessage[] } = { current: [] }
+    const fehler = vi.spyOn(toast, 'error').mockImplementation(() => {})
+    const optionen = optionenFuer(nachrichten, {
+      konversation: {
+        ensureChat: vi.fn(async () => ({ type: 'direct', id: 55 })),
+        baueVersand: vi.fn(async () => {
+          throw new KontoSchluesselNichtUebertragenError()
+        }),
+        erneuereSchluessel: vi.fn(async () => {}),
+      },
+    })
+    const { handleSendMessage } = useMessengerSenden(optionen)
+
+    const angenommen = await handleSendMessage()
+
+    expect(angenommen).toBe(false)
+    expect(fehler).toHaveBeenCalledWith('messenger.accountKeyMissing')
+    fehler.mockRestore()
+  })
+
+  it('nennt einen nicht geöffneten Chat, wenn ensureChat leer bleibt', async () => {
+    const nachrichten: { current: ChatMessage[] } = { current: [] }
+    const fehler = vi.spyOn(toast, 'error').mockImplementation(() => {})
+    const optionen = optionenFuer(nachrichten, {
+      konversation: {
+        ensureChat: vi.fn(async () => null),
+        baueVersand: vi.fn(),
+        erneuereSchluessel: vi.fn(async () => {}),
+      },
+    })
+    const { handleSendMessage } = useMessengerSenden(optionen)
+
+    const angenommen = await handleSendMessage()
+
+    expect(angenommen).toBe(false)
+    expect(fehler).toHaveBeenCalledWith('messenger.chatOpenFailed')
+    fehler.mockRestore()
   })
 
   it('macht aus 429 eine queued-Zeile mit Outbox-Auftrag, nicht failed', async () => {

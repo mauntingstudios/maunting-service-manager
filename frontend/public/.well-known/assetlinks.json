@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mauntingstudios.secure_browser",
+      "sha256_cert_fingerprints": [
+        "86:20:30:67:D2:E4:DE:2F:DB:10:EC:F1:40:75:E6:59:B5:6C:F7:F1:AC:A6:E9:27:E3:06:4D:FD:A4:5E:A0:33"
+      ]
+    }
+  }
+]

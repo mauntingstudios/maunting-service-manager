@@ -175,6 +175,13 @@ class Tab(private val plugin: TabsPlugin, context: Context, val id: String, val 
     if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
       WebSettingsCompat.setAlgorithmicDarkeningAllowed(s, seitenDunkel)
     }
+    // Passkeys: Die WebView delegiert an den Credential Manager der App.
+    // Ohne die Verknüpfung zwischen Panel-Domain und diesem Paket
+    // (`frontend/public/.well-known/assetlinks.json`) bleibt es beim alten
+    // „nicht unterstützt"; die Einstellung allein genügt nicht.
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_AUTHENTICATION)) {
+      WebSettingsCompat.setWebAuthenticationSupport(s, WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_FOR_APP)
+    }
     // Ohne „; wv“ und „Version/4.0“ halten Seiten den Tab für Chrome statt für
     // eine eingebettete WebView, die etwa Google bei der Anmeldung ablehnt.
     s.userAgentString = s.userAgentString.replace("; wv)", ")").replace(Regex("Version/[0-9.]+ "), "")

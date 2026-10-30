@@ -50,6 +50,10 @@ Zweitnachweis = Annotated[Union[PasskeyNachweis, BrowserNachweis], Field(discrim
 
 class BrowserVorgangRequest(BaseModel):
     zweck: str = Field(max_length=32)
+    #: Kennung des anfragenden Fensters. Der Server schickt sie im
+    #: Bestätigungsereignis mit, damit genau dieses Fenster den Hinweis
+    #: nicht doppelt zeigt.
+    client: str | None = Field(default=None, max_length=64)
 
 
 class BrowserVorgangKennung(BaseModel):

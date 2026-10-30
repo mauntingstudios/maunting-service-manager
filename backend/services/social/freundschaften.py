@@ -229,7 +229,9 @@ class FreundschaftenMixin:
         sender_name = sender.username if sender else "Jemand"
         ereignis = f"friend-request:{req.id}"
 
-        zusteller = SyncEventService.zustelllage(user_id=target.id)[0]
+        zusteller, _ = SyncEventService.zustelllage(user_id=target.id)
+        if not target.device_notifications:
+            zusteller = set()
         SyncEventService.publish(
             {
                 "type": "friend_request_received",
@@ -243,9 +245,9 @@ class FreundschaftenMixin:
             zusteller=zusteller,
             melden_markieren=True,
         )
-        # Ohne offenen Client (kein Fenster, kein Android-Dienst) traegt Push
-        # die Meldung. Mit Client zeigt genau dieser sie; Push waere die zweite.
-        if zusteller is None:
+        # Ohne Zusteller (kein Fenster, kein Android-Dienst) traegt Push die
+        # Meldung. Mit Zusteller zeigt dieser sie; Push waere die zweite.
+        if not zusteller:
             try:
                 from services import webpush_service
 
@@ -301,10 +303,12 @@ class FreundschaftenMixin:
         annehmender_name = annehmender.username if annehmender else "Jemand"
         anfragender_name = anfragender.username if anfragender else "Jemand"
 
-        # Der Anfragende erfährt es in genau einem seiner Clients; seine
-        # übrigen Fenster aktualisieren still. Die übrigen Geräte des
-        # Annehmenden auch.
-        zusteller = SyncEventService.zustelllage(user_id=req.user_id)[0]
+        # Der Anfragende erfährt es in seinem Vordergrund- und seinem
+        # Dienst-Client; seine übrigen Fenster aktualisieren still. Die übrigen
+        # Geräte des Annehmenden auch.
+        zusteller, _ = SyncEventService.zustelllage(user_id=req.user_id)
+        if anfragender is not None and not anfragender.device_notifications:
+            zusteller = set()
         SyncEventService.publish(
             {
                 "type": "friend_request_accepted",

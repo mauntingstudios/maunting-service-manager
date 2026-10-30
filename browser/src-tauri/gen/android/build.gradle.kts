@@ -5,7 +5,10 @@ buildscript {
     }
     dependencies {
         classpath("com.android.tools.build:gradle:8.11.0")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+        // Credential Manager 1.6 wird mit Kotlin 2.1 gebaut; der alte
+        // Compiler 1.9 kann dessen Metadaten nicht lesen. Nach einem
+        // `tauri android init` prüfen, dass diese Zeile erhalten bleibt.
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20")
     }
 }
 

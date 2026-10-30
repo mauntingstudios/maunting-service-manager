@@ -24,7 +24,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { api } from '@/api/client'
 import { getEffectiveApiUrl } from '@/config/api'
 import { getStorageItem, removeStorageItem, setStorageItem } from '@/lib/offlineAblage'
-import { passkeyNachweis } from '@/services/passkeyService'
 
 const KANAL_ABLAGE = 'msm:hintergrundkanal'
 
@@ -59,14 +58,16 @@ export interface DienstStand {
   aktiv: boolean
   /** Ist die App von der Akku-Optimierung ausgenommen? */
   akkuBefreit: boolean
+  /** Darf Android die Meldungen des Dienstes überhaupt zeigen? */
+  benachrichtigungenErlaubt: boolean
 }
 
 export async function stand(): Promise<DienstStand> {
-  if (!dienstVerfuegbar()) return { aktiv: false, akkuBefreit: false }
+  if (!dienstVerfuegbar()) return { aktiv: false, akkuBefreit: false, benachrichtigungenErlaubt: false }
   try {
     return await invoke<DienstStand>('dienst_stand')
   } catch {
-    return { aktiv: false, akkuBefreit: false }
+    return { aktiv: false, akkuBefreit: false, benachrichtigungenErlaubt: false }
   }
 }
 
@@ -84,40 +85,68 @@ function gemerkterKanal(): number | null {
 /**
  * Einschalten: Ausweis anlegen, Dienst starten, Akku-Ausnahme anbieten.
  *
- * Der Nachweis ist Pflicht — ein dauerhafter Zugang entsteht nie aus einem
- * bloß vorhandenen Token. `passkeyNachweis` fragt in der App über den Browser
- * (dort liegt der Passkey), im Browser direkt.
+ * Der Ausweis ist ein reiner Lese-Zugang für den Ereignisstrom. Die gültige
+ * Sitzung genügt; er wird beim Abmelden widerrufen und ist je Gerät widerrufbar.
  *
- * Gibt `false` zurück, wenn der Dienst hier nicht verfügbar ist oder der
- * Nachweis abgebrochen wurde — der Aufrufer zeigt dann den Grund.
+ * Gibt `false` zurück, wenn der Dienst hier nicht verfügbar ist, das Anlegen
+ * scheitert oder der native Start abgelehnt wird. Ein dann bereits angelegter
+ * Kanal wird wieder widerrufen: sonst sammeln sich nutzlose Ausweise an und
+ * verdrängen nach dem Deckel den aktiven.
  */
 export async function einschalten(label?: string): Promise<boolean> {
   if (!dienstVerfuegbar()) return false
 
-  let nachweis
+  let kanal: { id: number; token: string }
   try {
-    nachweis = await passkeyNachweis('notification_channel')
+    kanal = await api<{ id: number; token: string }>('/notifications/channels', {
+      method: 'POST',
+      body: JSON.stringify({ label: (label || 'Android').slice(0, 64) }),
+    })
   } catch {
     return false
   }
-
-  const kanal = await api<{ id: number; token: string }>('/notifications/channels', {
-    method: 'POST',
-    body: JSON.stringify({
-      label: (label || 'Android').slice(0, 64),
-      passkey: nachweis,
-    }),
-  })
   merkeKanal(kanal.id)
 
-  await invoke('dienst_starten', {
-    ausweis: kanal.token,
-    basis: panelBasis(),
-  })
+  try {
+    await invoke('dienst_starten', {
+      ausweis: kanal.token,
+      basis: panelBasis(),
+    })
+  } catch {
+    // Der Dienst hat den Ausweis nie bekommen. Der Kanal wäre nur Ballast
+    // und würde beim nächsten erfolgreichen Start einen anderen verdrängen.
+    merkeKanal(null)
+    await api(`/notifications/channels/${kanal.id}`, { method: 'DELETE' }).catch(() => {})
+    return false
+  }
   // Die Akku-Ausnahme ist der Unterschied zwischen „kommt an" und „kommt
   // manchmal an": ohne sie beendet Samsung/Xiaomi den Dienst nach Stunden.
   await invoke('dienst_akku_befreien').catch(() => {})
   return true
+}
+
+/** Öffnet die Android-Benachrichtigungseinstellungen dieser App. */
+export async function einstellungenOeffnen(): Promise<void> {
+  if (!dienstVerfuegbar()) return
+  await invoke('dienst_einstellungen_oeffnen').catch(() => {})
+}
+
+/**
+ * Nach dem Start den Dienst an den Kontoschalter angleichen.
+ *
+ * An: läuft er nicht, wird er gestartet; aus: ein noch laufender Dienst wird
+ * gestoppt. So wirkt ein Ausschalten auf einem anderen Gerät spätestens beim
+ * nächsten Start auch hier.
+ */
+export async function sicherstellen(erlaubt: boolean): Promise<void> {
+  if (!dienstVerfuegbar()) return
+  const lage = await stand()
+  if (!erlaubt) {
+    if (lage.aktiv) await ausschalten()
+    return
+  }
+  if (lage.aktiv) return
+  await einschalten('Android')
 }
 
 /**

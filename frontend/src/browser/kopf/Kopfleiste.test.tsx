@@ -12,6 +12,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 const { useTabsStore } = await import('../services/tabsStore')
 const { useEinstellungenStore } = await import('../services/einstellungenStore')
+const { useSitzung } = await import('../services/sitzung')
 const { Kopfleiste, tabTitel } = await import('./Kopfleiste')
 
 const warten = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
@@ -39,6 +40,7 @@ beforeEach(() => {
   alsAndroid(false)
   ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
   gerufen.length = 0
+  useSitzung.setState({ stand: 'aus' })
   useEinstellungenStore.setState({ ausgeblendet: [], tabAusrichtung: 'horizontal' })
   useTabsStore.setState({
     tabs: [
@@ -77,6 +79,12 @@ beforeEach(() => {
 
 afterEach(() => {
   alsAndroid(false)
+})
+
+it('zeigt die Benachrichtigungsglocke, wenn eine Sitzung steht', () => {
+  useSitzung.setState({ stand: 'an' })
+  render(<Kopfleiste />)
+  expect(screen.getByRole('button', { name: /Benachrichtigungen/ })).toBeInTheDocument()
 })
 
 describe('Kopfleiste Tab-Auslagern (Tear-off)', () => {

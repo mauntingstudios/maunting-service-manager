@@ -2,6 +2,7 @@ package com.mauntingstudios.secure_browser
 
 import android.Manifest
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -9,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -22,8 +24,8 @@ import app.tauri.plugin.Plugin
  * Die Oberfläche ruft `dienst_starten`, `dienst_stoppen`, `dienst_stand` und
  * `dienst_akku_befreien`; `dienst.rs` reicht sie hier als `starten`,
  * `stoppen`, `laeuft` und `akkuBefreien` durch. Geprüft
- * wird hier nur die Form — den Ausweis prüft der Server, und ob der Mensch ihn
- * anlegen durfte, hat er vorher mit einem frischen Nachweis belegt.
+ * wird hier nur die Form — den Ausweis prüft der Server. Er darf nur zuhören,
+ * wird beim Abmelden widerrufen und ist je Gerät abschaltbar.
  */
 @InvokeArg
 class DienstStartArgs {
@@ -73,12 +75,33 @@ class DienstPlugin(private val activity: Activity) : Plugin(activity) {
     fun laeuft(invoke: Invoke) {
         val ctx = activity.applicationContext
         val energie = activity.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val manager = NotificationManagerCompat.from(activity)
+        // Die App-Berechtigung allein genügt nicht: der Kanal „Nachrichten“
+        // kann zusätzlich stummgestellt sein. Dann bleibt die Warnung sichtbar.
+        val meldungskanal = manager.getNotificationChannel(Hintergrunddienst.KANAL_MELDUNG)
+        val erlaubt = manager.areNotificationsEnabled() &&
+            meldungskanal?.importance != NotificationManager.IMPORTANCE_NONE
         invoke.resolve(
             JSObject().apply {
                 put("aktiv", Hintergrunddienst.istEingeschaltet(ctx))
                 put("akkuBefreit", energie.isIgnoringBatteryOptimizations(activity.packageName))
+                put("benachrichtigungenErlaubt", erlaubt)
             },
         )
+    }
+
+    /** Öffnet die Benachrichtigungseinstellungen genau dieser App. */
+    @Command
+    fun einstellungenOeffnen(invoke: Invoke) {
+        try {
+            val absicht = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+            }
+            activity.startActivity(absicht)
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "Einstellungen nicht erreichbar")
+        }
     }
 
     /**

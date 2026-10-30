@@ -327,6 +327,27 @@ export function inDerApp(): boolean {
 const STAND_TAKT_MS = 2000
 
 /**
+ * Kennung dieses Fensters für den laufenden Browser-Vorgang.
+ *
+ * Der Server schickt sie im Bestätigungsereignis mit. So erkennt die App ihr
+ * eigenes Ereignis und zeigt den Hinweis nicht doppelt; andere angemeldete
+ * Fenster desselben Kontos sehen ihn.
+ */
+const eigeneClients = new Set<string>()
+
+export function istEigenerBestaetigungsClient(client: unknown): boolean {
+  return typeof client === 'string' && eigeneClients.has(client)
+}
+
+function neuerClient(): string {
+  try {
+    return window.crypto.randomUUID()
+  } catch {
+    return `c-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  }
+}
+
+/**
  * Passkey-Bestätigung für die App über den Standardbrowser.
  *
  * Ein Passkey gilt nur für die Adresse des Panels, die App läuft unter
@@ -336,10 +357,19 @@ const STAND_TAKT_MS = 2000
  * er erst mit der eigentlichen Aktion, einmal und nur für `zweck`.
  */
 async function imBrowserBestaetigen(zweck: PasskeyZweck): Promise<BrowserNachweis> {
-  const { vorgang, zahl, url } = await api<{ vorgang: string; zahl: number; url: string }>('/auth/passkey/browser', {
-    method: 'POST',
-    body: JSON.stringify({ zweck }),
-  })
+  const client = neuerClient()
+  eigeneClients.add(client)
+  let antwort: { vorgang: string; zahl: number; url: string }
+  try {
+    antwort = await api<{ vorgang: string; zahl: number; url: string }>('/auth/passkey/browser', {
+      method: 'POST',
+      body: JSON.stringify({ zweck, client }),
+    })
+  } catch (fehler) {
+    eigeneClients.delete(client)
+    throw fehler
+  }
+  const { vorgang, zahl, url } = antwort
   await oeffneBrowser(url)
 
   return new Promise<BrowserNachweis>((resolve, reject) => {
@@ -349,6 +379,7 @@ async function imBrowserBestaetigen(zweck: PasskeyZweck): Promise<BrowserNachwei
       if (fertig) return
       fertig = true
       clearTimeout(takt)
+      eigeneClients.delete(client)
       useBrowserBestaetigung.getState().setzen(null)
       if (fehler) reject(fehler)
       else resolve({ type: 'browser', vorgang })
@@ -368,6 +399,7 @@ async function imBrowserBestaetigen(zweck: PasskeyZweck): Promise<BrowserNachwei
       if (!fertig) takt = setTimeout(fragen, STAND_TAKT_MS)
     }
     useBrowserBestaetigung.getState().setzen({
+      vorgang,
       zahl,
       adresse: url,
       abbrechen: () => ende(new Error(i18n.t('auth.passkeyErrors.cancelled'))),

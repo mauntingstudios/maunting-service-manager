@@ -7,6 +7,8 @@ import { create } from 'zustand'
  * der Mensch im Browser antippt, und bietet Abbrechen an.
  */
 export interface OffeneBestaetigung {
+  /** Die Kennung des Vorgangs; daran erkennt die App ihr eigenes Ereignis. */
+  vorgang: string
   zahl: number
   adresse: string
   abbrechen: () => void

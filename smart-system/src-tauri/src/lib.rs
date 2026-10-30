@@ -101,6 +101,16 @@ async fn benachrichtigung_senden(
         .map_err(|e| e.to_string())
 }
 
+/// Fragt die Systemberechtigung für Benachrichtigungen an, ohne eine Meldung
+/// zu zeigen. Der Aufruf beim Start ist der Unterschied zwischen „Dienst
+/// läuft“ und „Dienst darf auch etwas zeigen“.
+#[tauri::command]
+async fn benachrichtigung_berechtigung_anfragen(app: tauri::AppHandle) -> Result<bool, String> {
+    let notif = app.notification();
+    let zustand = notif.request_permission().map_err(|e| e.to_string())?;
+    Ok(zustand == tauri_plugin_notification::PermissionState::Granted)
+}
+
 #[tauri::command]
 fn setze_status(app: tauri::AppHandle, status: String) -> Result<(), String> {
     // Nur das Tray. Das Schaufenster-Ereignis (`mss:overlay-zustand-test`)
@@ -971,6 +981,7 @@ pub fn run() {
             deinstallation_starten,
             sandbox_verfuegbar,
             benachrichtigung_senden,
+            benachrichtigung_berechtigung_anfragen,
             setze_tresor_schutz,
             biometrie_verfuegbar,
             biometrie_verifizieren,
@@ -998,6 +1009,7 @@ pub fn run() {
             dienst::dienst_stoppen,
             dienst::dienst_stand,
             dienst::dienst_akku_befreien,
+            dienst::dienst_einstellungen_oeffnen,
             updater::update_pruefen,
             updater::update_herunterladen,
             updater::update_installieren,

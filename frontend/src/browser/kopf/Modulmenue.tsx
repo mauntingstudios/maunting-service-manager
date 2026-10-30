@@ -7,10 +7,10 @@
  * Neu laden, Lesezeichen und die Suche in der Seite, wie im Menü von Chrome.
  */
 import { useRef, useState } from 'react'
-import { ArrowRight, Bot, Camera, Languages, Menu, RotateCw, Search, Star, X } from 'lucide-react'
+import { ArrowRight, Bell, Bot, Camera, Languages, Menu, RotateCw, Search, Star, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Ankerfenster } from '@/Singra/UI'
+import { Ankerfenster, BenachrichtigungenMenue } from '@/Singra/UI'
 
 import { useLeistenEintraege, useLeistenZahlen, useLeistenZiele } from '../leiste/eintraege'
 import { EINSTELLUNGEN_EINTRAG, KOPPELN_EINTRAG, type Leisteneintrag } from '../leiste/module'
@@ -133,6 +133,9 @@ export function Modulmenue({ handy = false }: { handy?: boolean }) {
   const { t } = useTranslation()
   const anker = useRef<HTMLButtonElement>(null)
   const [offen, setOffen] = useState(false)
+  const [benachrichtigungenOffen, setBenachrichtigungenOffen] = useState(false)
+  const sitzung = useSitzung((s) => s.stand)
+  const angemeldet = istGekoppelt(sitzung)
   const ziele = useZiele()
   const summe = ziele.reduce((n, z) => n + z.zahl, 0)
   const name = t('browser.leiste.menue')
@@ -166,6 +169,27 @@ export function Modulmenue({ handy = false }: { handy?: boolean }) {
         durchsichtig={geteilt}
       >
         {handy && <HandyAktionen schliessen={() => setOffen(false)} />}
+        {handy && angemeldet && (
+          <div className="mb-2 border-b border-outline-variant pb-2">
+            <button
+              type="button"
+              onClick={() => setBenachrichtigungenOffen((o) => !o)}
+              aria-expanded={benachrichtigungenOffen}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-on-surface hover:bg-surface-container-highest"
+            >
+              <Bell className="h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
+              <span className="min-w-0 flex-1">{t('notifications.title')}</span>
+              <span className="text-xs text-on-surface-variant" aria-hidden="true">
+                {benachrichtigungenOffen ? '−' : '+'}
+              </span>
+            </button>
+            {benachrichtigungenOffen && (
+              <div className="mt-1 overflow-hidden rounded-lg border border-outline-variant/40 bg-surface-container">
+                <BenachrichtigungenMenue />
+              </div>
+            )}
+          </div>
+        )}
         <ul className="grid grid-cols-3 gap-1">
           {ziele.map(({ schluessel, eintrag, offen: istOffen, zahl, oeffnen }) => {
             const Symbol = eintrag.symbol

@@ -3,11 +3,10 @@
 Anlegen, auflisten, widerrufen. Der Ausweis selbst erscheint genau einmal in
 der Antwort auf `POST` — danach nur noch seine Kennung und sein Label.
 
-**Warum ein frischer Nachweis.** Ein Ausweis, der länger gilt als eine Sitzung,
-ist ein neuer Zugang (Punkt 21). Er entsteht deshalb nur gegen Passwort, einen
-eingerichteten zweiten Faktor oder einen Passkey — nie gegen ein bloß
-vorhandenes Access-Token. `auth_rate_limit` sitzt davor, weil hier ein Passwort
-geprüft wird.
+**Warum die Sitzung genügt.** Der Ausweis darf nur zuhören und ist an die
+Sitzung gebunden; er wird beim Abmelden widerrufen und ist auf fünf je Konto
+begrenzt. Ein zusätzlicher Frisch-Nachweis (Passkey, TOTP) war für eine reine
+Gerätebenachrichtigung zu viel Reibung. `auth_rate_limit` bleibt davor.
 
 **Was er darf.** Nur zuhören: Ereignisstrom lesen, Präsenz melden, Mailboxen
 abonnieren (`routers/sync_events.py`). Jede andere Route lehnt ihn ab, weil
@@ -24,14 +23,13 @@ from database import get_db
 from dependencies import get_current_user, session_familie, verify_csrf
 from middleware.rate_limit import auth_rate_limit
 from models.user import User
-from schemas.passkey import FaktorNachweis
-from services import notification_channel_service, passkey_service
+from services import notification_channel_service
 
 router = APIRouter(prefix="/api/notifications/channels", tags=["notifications"])
 
 
-class KanalAnlage(FaktorNachweis):
-    """Ein neuer Kanal — samt Nachweis, dass der Mensch es ist."""
+class KanalAnlage(BaseModel):
+    """Ein neuer Kanal. Die gültige Sitzung ist der Nachweis."""
 
     label: str | None = Field(None, max_length=64)
 
@@ -84,17 +82,6 @@ def kanal_anlegen(
     Der Ausweis steht in der Antwort und nirgends sonst. Wer ihn verliert,
     legt einen neuen an und widerruft den alten.
     """
-    fehlt = passkey_service.frischer_nachweis_fehlt(
-        db,
-        user,
-        password=req.password,
-        otp_code=req.otp_code,
-        passkey=req.passkey.model_dump() if req.passkey else None,
-        zweck="notification_channel",
-    )
-    if fehlt:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=fehlt)
-
     kanal, ausweis = notification_channel_service.anlegen(
         db, user, familie=familie, label=req.label
     )
