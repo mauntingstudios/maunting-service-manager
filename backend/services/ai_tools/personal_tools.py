@@ -497,6 +497,48 @@ def _notes_tool_definitions() -> list[dict]:
         ),
     ]
 
+def _attachment_tool_definitions() -> list[dict]:
+    """Werkzeuge fuer Chat-Dateianhaenge (Suche nach Name/Zeit und Volltextabruf)."""
+    return [
+        _function(
+            "search_chat_attachments",
+            "Sucht im Chat hochgeladene Dateien (nach Name, Inhalt oder Upload-Zeitpunkt).",
+            {
+                "query": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Dateiname oder Suchbegriff im Text.",
+                },
+                "referenz_zeit": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "Ungefährer Upload-Zeitpunkt (z. B. '2026-10-29T14:00:00Z').",
+                },
+                "toleranz_stunden": {
+                    "type": "number",
+                    "description": "Suchfenster in Stunden vor und nach der Referenzzeit (Standard: 2.0).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximale Anzahl an Treffern (1 bis 20, Standard: 5).",
+                },
+            },
+            [],
+        ),
+        _function(
+            "read_chat_attachment",
+            "Liest den extrahierten Text oder Inhalt einer Datei anhand ihrer attachment_id.",
+            {
+                "attachment_id": {
+                    "type": "string",
+                    "maxLength": 36,
+                    "description": "Die 36-stellige UUID des Anhangs.",
+                },
+            },
+            ["attachment_id"],
+        ),
+    ]
+
 def _execute_send_test_email(db: Session, *, user: User) -> dict:
     """Schickt eine Testmail an die eigene Adresse des Fragenden.
 

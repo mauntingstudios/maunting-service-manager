@@ -86,3 +86,22 @@ class TeamDetailResponse(TeamResponse):
     # Wer eingeladen ist, ist noch niemand im Team — steht aber hier, damit der
     # Gruender nicht den Eindruck bekommt, seine Einladung sei verschwunden.
     invitations: list[TeamInvitationResponse] = []
+
+
+class TeamVaultSaltResponse(BaseModel):
+    is_setup: bool
+    salt: str | None = None
+    bucket_id: str | None = None
+    needs_rotation: bool = False
+    is_owner: bool = False
+
+
+class TeamVaultSetupRequest(BaseModel):
+    bucket_id: str = Field(min_length=64, max_length=64)
+    salt: str = Field(min_length=16, max_length=128)
+
+
+class TeamVaultRotateRequest(BaseModel):
+    bucket_id: str | None = Field(default=None, min_length=64, max_length=64)
+    salt: str | None = Field(default=None, min_length=16, max_length=128)
+

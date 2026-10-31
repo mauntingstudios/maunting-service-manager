@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   Archive,
   ArchiveRestore,
+  ArrowRightLeft,
   Check,
   Clock,
   Copy,
@@ -60,6 +61,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { getLocalVaultSalt, useVaultStore } from './vaultStore'
 import { PAPIERKORB_TAGE, istBekannteKategorie, istPasswortKategorie, type VaultItem } from './vaultEintrag'
 import { fehlerText } from './tresorFehler'
+import { TransferToTeamVaultModal } from './TransferToTeamVaultModal'
 
 type Ansicht = 'tresor' | 'fotos' | 'dateien' | 'zahlung' | 'archiv' | 'papierkorb'
 
@@ -194,6 +196,8 @@ export function VaultView() {
   const [modalAnfang, setModalAnfang] = useState('')
   const modalStand = JSON.stringify([modalService, modalUsername, modalPassword, modalUrl, modalNotes, modalTotpSecret])
   const [leakCheckResult, setLeakCheckResult] = useState<LeakCheckResult | null>(null)
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [transferItem, setTransferItem] = useState<VaultItem | null>(null)
 
   // TOTP-Ticker für alle Einträge mit 2FA-Secret
   useEffect(() => {
@@ -1499,6 +1503,23 @@ export function VaultView() {
                       </>
                     )}
                   </Button>
+                  <Button
+                    fingerziel
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const item = items.find((i) => i.id === editingItemId)
+                      if (item) {
+                        setTransferItem(item)
+                        setTransferOpen(true)
+                      }
+                    }}
+                    className="text-on-surface-variant hover:text-primary"
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5" />
+                    {t('teams.transferToTeam')}
+                  </Button>
                 </div>
               ) : (
                 <div />
@@ -1601,6 +1622,15 @@ export function VaultView() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* In Team-Tresor übertragen Modal */}
+      {transferOpen && (
+        <TransferToTeamVaultModal
+          open={transferOpen}
+          onOpenChange={setTransferOpen}
+          item={transferItem}
+        />
+      )}
     </div>
   )
 }

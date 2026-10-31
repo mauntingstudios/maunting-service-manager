@@ -74,6 +74,9 @@ class Team(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now, nullable=False
     )
+    vault_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    vault_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    vault_needs_rotation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     members: Mapped[list["TeamMember"]] = relationship(
         "TeamMember", back_populates="team", cascade="all, delete-orphan"

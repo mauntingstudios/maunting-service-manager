@@ -60,6 +60,25 @@ describe('Tresor-Sicherheit: Leck-Prüfung', () => {
     for (const schalter of screen.getAllByRole('switch')) expect(schalter).toHaveAccessibleName()
     expect(screen.getByRole('switch', { name: i18n.t('mss.vault.beiFensterwechsel') })).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: i18n.t('mss.vault.biometrieSchalter') })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: i18n.t('mss.vault.kiSpiegelung') })).toBeInTheDocument()
+  })
+
+  it('erlaubt das Umschalten der KI-Dateianhang-Spiegelung', () => {
+    render(
+      <MemoryRouter>
+        <TresorSicherheitTab />
+      </MemoryRouter>,
+    )
+    const kiSchalter = screen.getByRole('switch', { name: i18n.t('mss.vault.kiSpiegelung') })
+    expect(kiSchalter).toHaveAttribute('aria-checked', 'false')
+
+    fireEvent.click(kiSchalter)
+    expect(kiSchalter).toHaveAttribute('aria-checked', 'true')
+    expect(localStorage.getItem('msm_vault_mirror_chat_attachments')).toBe('true')
+
+    fireEvent.click(kiSchalter)
+    expect(kiSchalter).toHaveAttribute('aria-checked', 'false')
+    expect(localStorage.getItem('msm_vault_mirror_chat_attachments')).toBe('false')
   })
 
   it('öffnet den Biometrie-Aktivierungsdialog mit Dialog und PasswordInput, unterstützt Bestätigung und Abbruch', async () => {

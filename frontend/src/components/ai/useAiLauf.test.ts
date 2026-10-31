@@ -77,6 +77,7 @@ function fremdeApi(): ChatScopeApi {
     getContextStatus: vi.fn(),
     listAttachments: vi.fn().mockResolvedValue([]),
     uploadAttachment: vi.fn(),
+    deleteAttachment: vi.fn().mockResolvedValue(undefined),
     clearHistory: vi.fn(),
     editMessage: vi.fn(),
     stopRun: vi.fn().mockResolvedValue({ ok: true, stopped: true }),

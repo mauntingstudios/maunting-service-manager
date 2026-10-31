@@ -360,6 +360,22 @@ describe('AiChat', () => {
     await waitFor(() => expect(aiApi.uploadAttachment).toHaveBeenCalledWith(file))
   })
 
+  it('laedt im Dokument-Scope ueber die Dokument-API hoch', async () => {
+    vi.mocked(aiApi.getConversation).mockResolvedValue({ ...CONVERSATION, messages: [] })
+    vi.mocked(aiApi.uploadAttachment).mockReset().mockResolvedValue(attachment)
+    render(
+      <MemoryRouter>
+        <AiChat scope={{ kind: 'docs', documentUid: 'doc-upload-42' }} />
+      </MemoryRouter>,
+    )
+    await screen.findByRole('region', { name: i18n.t('ai.chat.title') })
+
+    const file = new File(['text'], 'doku-anhang.txt', { type: 'text/plain' })
+    fireEvent.change(screen.getByLabelText(i18n.t('ai.attachments.add')), { target: { files: [file] } })
+
+    await waitFor(() => expect(aiApi.uploadAttachment).toHaveBeenCalledWith(file, 'doc-upload-42'))
+  })
+
   it('laedt mehrere Dateien aus einer Auswahl hoch', async () => {
     const erste = new File(['# Einkauf'], 'einkauf.md', { type: 'text/markdown' })
     const zweite = new File(['export const x = 1'], 'beispiel.ts', { type: 'text/typescript' })

@@ -24,8 +24,12 @@ from schemas.team import (
     TeamResponse,
     TeamServerGrantWrite,
     TeamServerResponse,
+    TeamVaultRotateRequest,
+    TeamVaultSaltResponse,
+    TeamVaultSetupRequest,
 )
-from services import permission_service, team_service
+from schemas.vault import VaultSyncRequest, VaultSyncResponse
+from services import permission_service, team_service, vault_service
 
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
@@ -367,3 +371,64 @@ def assignable_servers(
             permission_keys=sorted(keys),
         ))
     return result
+
+
+# ─── Team-Tresor (E2EE Zero-Knowledge) ────────────────────────────────────────
+
+@router.get("/{team_id}/vault/salt", response_model=TeamVaultSaltResponse)
+def get_team_vault_salt(
+    team_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TeamVaultSaltResponse:
+    """Liefert Salz und Bucket-ID des Team-Tresors sowie den Rotations-Hinweis."""
+    team = team_service.get_team_for_member(db, team_id, user)
+    is_owner = bool(user.is_owner or team.owner_user_id == user.id)
+    return TeamVaultSaltResponse(
+        is_setup=team.vault_bucket_id is not None,
+        salt=team.vault_salt,
+        bucket_id=team.vault_bucket_id,
+        needs_rotation=bool(team.vault_needs_rotation),
+        is_owner=is_owner,
+    )
+
+
+@router.post("/{team_id}/vault/setup", dependencies=[Depends(verify_csrf)])
+def setup_team_vault(
+    team_id: int,
+    payload: TeamVaultSetupRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Richtet den Team-Tresor ein (nur Gruender)."""
+    team = team_service.get_team_for_member(db, team_id, user)
+    team_service.assert_team_owner(db, team, user)
+    vault_service.setup_team_vault(db, team, user, payload.bucket_id, payload.salt)
+    return {"status": "ok"}
+
+
+@router.post("/{team_id}/vault/rotate", dependencies=[Depends(verify_csrf)])
+def rotate_team_vault(
+    team_id: int,
+    payload: TeamVaultRotateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Rotiert das Master-Passwort des Team-Tresors und setzt das Rotations-Flag zurueck (nur Gruender)."""
+    team = team_service.get_team_for_member(db, team_id, user)
+    team_service.assert_team_owner(db, team, user)
+    vault_service.rotate_team_vault(db, team, user, payload.bucket_id, payload.salt)
+    return {"status": "ok"}
+
+
+@router.post("/{team_id}/vault/sync", response_model=VaultSyncResponse, dependencies=[Depends(verify_csrf)])
+def sync_team_vault(
+    team_id: int,
+    payload: VaultSyncRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> VaultSyncResponse:
+    """Fuehrt Revisions-Sync fuer den Team-Tresor durch (alle Team-Mitglieder)."""
+    team = team_service.get_team_for_member(db, team_id, user)
+    return vault_service.sync_team_vault(db, team, user, payload)
+

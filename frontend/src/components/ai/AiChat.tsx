@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, CalendarClock, Check, Image as ImageIcon, ListPlus, Loader2, Mic, Paperclip, Pencil, RotateCw, Send, ShieldAlert, Sparkles, Square, Trash2, X, Zap } from 'lucide-react'
+import { AudioLines, CalendarClock, Check, HardDrive, Image as ImageIcon, ListPlus, Loader2, Mic, Paperclip, Pencil, RotateCw, Send, ShieldAlert, Sparkles, Square, Trash2, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -30,6 +30,7 @@ import { toast } from '@/stores/toastStore'
 import { AiActionProposalCard } from './AiActionProposalCard'
 import { AiAnhangLeiste } from './anhaenge/AiAnhangLeiste'
 import { AiAnhangListe } from './anhaenge/AiAnhangListe'
+import { AiSpeicherDrawer } from './anhaenge/AiSpeicherDrawer'
 import { useAnhangUpload } from './anhaenge/useAnhangUpload'
 import { AiAutonomyButton } from './AiAutonomyButton'
 import { AiContextMeter } from './AiContextMeter'
@@ -595,7 +596,33 @@ export function AiChat({
     gesperrt: streaming,
     setAttachments,
     onFehler: meldeAnhangFehler,
+    uploadAttachment: chatApi.uploadAttachment,
+    deleteAttachment: chatApi.deleteAttachment,
   })
+
+  const [speicherOffen, setSpeicherOffen] = useState(false)
+
+  const handleStorageDelete = useCallback(async (anhang: AiAttachment, auchAusTresor: boolean) => {
+    await removeAttachment(anhang)
+    if (auchAusTresor) {
+      try {
+        const { useVaultStore } = await import('@/desktop/vault/vaultStore')
+        const vaultStore = useVaultStore.getState()
+        if (vaultStore.isUnlocked) {
+          const vaultItem = vaultStore.items.find((i) => i.service === anhang.original_name)
+          if (vaultItem) {
+            await vaultStore.deleteItem(vaultItem.id)
+          }
+        }
+      } catch {
+        // Vault-Löschung optional falls nicht initialisiert
+      }
+    }
+  }, [removeAttachment])
+
+  const handleInsertIntoPrompt = useCallback((anhang: AiAttachment) => {
+    setInput((prev) => (prev ? `${prev} [Datei: ${anhang.original_name}]` : `Beziehe dich bitte auf die Datei ${anhang.original_name}: `))
+  }, [setInput])
 
   const manuallyClosedGeoRef = useRef(false)
   const closedGeoIdRef = useRef(readClosedGeoAnalysis(merkSchluessel.closedGeoAnalysis))
@@ -1720,6 +1747,20 @@ export function AiChat({
                   </label>
                   </Kurzinfo>
                 )}
+                {canAttach && (
+                  <Kurzinfo text={t('ai.attachments.storageTitle')} lage="oben" seite="anfang" aussen="shrink-0">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                      aria-label={t('ai.attachments.storageTitle')}
+                      onClick={() => setSpeicherOffen(true)}
+                    >
+                      <HardDrive className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  </Kurzinfo>
+                )}
                 <textarea
                   ref={inputRef}
                   className="max-h-40 min-h-9 flex-1 resize-none border-0 bg-transparent py-1.5 text-sm leading-6 text-on-surface placeholder:text-on-surface-variant focus:outline-none"
@@ -1854,6 +1895,14 @@ export function AiChat({
       bereich="ki"
       offen={hintergrundOffen}
       onOffenChange={setzeHintergrundOffen}
+    />
+    <AiSpeicherDrawer
+      offen={speicherOffen}
+      onSchliessen={() => setSpeicherOffen(false)}
+      anhaenge={attachments}
+      onLoeschen={handleStorageDelete}
+      onInPromptEinfuegen={handleInsertIntoPrompt}
+      tresorSpiegelungAktiv={Boolean(localStorage.getItem('msm_vault_mirror_chat_attachments') === 'true')}
     />
     </RegionalAnalysisLayout>
   )

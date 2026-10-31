@@ -64,6 +64,42 @@ export interface TeamDetail extends Team {
   invitations: TeamInvitation[]
 }
 
+export interface TeamVaultSaltResponse {
+  is_setup: boolean
+  salt: string | null
+  bucket_id: string | null
+  needs_rotation: boolean
+  is_owner: boolean
+}
+
+export interface TeamVaultMutationItem {
+  id: string
+  ciphertext: string
+  revision: number
+  is_deleted?: boolean
+  expected_revision?: number
+}
+
+export interface TeamVaultSyncPayload {
+  bucket_id: string
+  since_revision: number
+  mutations?: TeamVaultMutationItem[]
+  client_format?: number
+}
+
+export interface TeamVaultSyncResult {
+  server_revision: number
+  entries: {
+    id: string
+    ciphertext: string
+    revision: number
+    is_deleted: boolean
+    updated_at: string
+  }[]
+  has_more: boolean
+  conflicts?: { id: string; server_revision: number }[]
+}
+
 export const teamsApi = {
   list: () => api<Team[]>('/teams'),
   get: (teamId: number) => api<TeamDetail>(`/teams/${teamId}`),
@@ -111,4 +147,20 @@ export const teamsApi = {
   declineInvitation: (teamId: number) => api(
     `/teams/invitations/${teamId}`, { method: 'DELETE' },
   ),
+  getVaultSalt: (teamId: number) => api<TeamVaultSaltResponse>(`/teams/${teamId}/vault/salt`),
+  setupVault: (teamId: number, payload: { bucket_id: string; salt: string }) =>
+    api<{ status: string }>(`/teams/${teamId}/vault/setup`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  rotateVault: (teamId: number, payload: { bucket_id?: string; salt?: string }) =>
+    api<{ status: string }>(`/teams/${teamId}/vault/rotate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  syncVault: (teamId: number, payload: TeamVaultSyncPayload) =>
+    api<TeamVaultSyncResult>(`/teams/${teamId}/vault/sync`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 }

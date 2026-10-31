@@ -684,6 +684,16 @@ Fehler. Die Hoster-Werkzeuge (`read_hoster_*`, `propose_hoster_*`) gehoeren \
 zur Hosting- und WHMCS-Anbindung, nie zu Einkaeufen."""
 
 
+DATEIANHAENGE = """\
+Chat-Dateianhaenge: Werkzeuge sind `search_chat_attachments` und `read_chat_attachment`. \
+Fragt der Benutzer nach einer hochgeladenen Datei ("lies die Datei", "was steht in der Einkaufsliste von vorhin", \
+"Notiz aus der Datei von vor 2 Tagen um 14 Uhr"):
+1. Suche die Datei mit `search_chat_attachments` (nach Name, Begriff oder ungefaehrem Upload-Zeitpunkt mit Zeitfenster).
+2. Bei genau einem Treffer: Lies den Inhalt sofort mit `read_chat_attachment` und fuehre die Bitte aus (z. B. Notiz vorschlagen mit `propose_note_create`).
+3. Bei mehreren Treffern: Nenne die Kandidaten und frage den Benutzer hoeflich, welche Datei gemeint ist.
+4. Rufe `notes_read` nur auf, wenn ausdruecklich bestehende Notizen gesucht werden — nie fuer Dateianhaenge."""
+
+
 # Dieser Abschnitt traegt den Wegfall nicht, er erklaert ihn nur. Getragen wird
 # er davon, dass es die Werkzeuge nicht gibt: kein Eintrag in `WERKZEUGE`, keine
 # Definition im Katalog, kein Zweig im Handler. Ein Prompt kann ein Modell nicht
@@ -1489,6 +1499,7 @@ BLOECKE = (
     POSTFACH_UND_KALENDER,
     POPUPS_UND_ANKUENDIGUNGEN,
     NOTIZEN,
+    DATEIANHAENGE,
     MESSENGER,
     CLOUDFLARE,
     BENUTZER_UND_RECHTE,
@@ -1537,6 +1548,7 @@ GEHIRN_BLOECKE = (
     POSTFACH_UND_KALENDER,
     POPUPS_UND_ANKUENDIGUNGEN,
     NOTIZEN,
+    DATEIANHAENGE,
     MESSENGER,
     CLOUDFLARE,
     BENUTZER_UND_RECHTE,
@@ -1756,6 +1768,7 @@ REALTIME_BLOECKE = (
     REGIONSANALYSE,
     POSTFACH_UND_KALENDER,
     NOTIZEN,
+    DATEIANHAENGE,
     MESSENGER,
     CLOUDFLARE,
     BENUTZER_UND_RECHTE,

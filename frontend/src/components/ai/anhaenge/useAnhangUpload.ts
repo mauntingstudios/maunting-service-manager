@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiAttachment } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
+import { spiegleAnhangInTresor } from '@/desktop/vault/kiAnhangSpiegelung'
 import { bereiteAiAnhangAuf } from '@/lib/aiAnhangAufbereitung'
 import { istVorschauFaehig } from '@/lib/aiAnhangTypen'
 
@@ -20,7 +21,12 @@ import { istVorschauFaehig } from '@/lib/aiAnhangTypen'
  * langsamere Reihenfolge ist der Preis fuer eine verlaessliche Zuordnung.
  */
 export function useAnhangUpload({
-  aktiv, gesperrt, setAttachments, onFehler,
+  aktiv,
+  gesperrt,
+  setAttachments,
+  onFehler,
+  uploadAttachment = aiApi.uploadAttachment,
+  deleteAttachment = aiApi.deleteAttachment,
 }: {
   aktiv: boolean
   /** Waehrend eines Laufs wird nichts angenommen — der Anhang gehoerte sonst
@@ -28,6 +34,8 @@ export function useAnhangUpload({
   gesperrt: boolean
   setAttachments: Dispatch<SetStateAction<AiAttachment[]>>
   onFehler: (text: string) => void
+  uploadAttachment?: (file: File) => Promise<AiAttachment>
+  deleteAttachment?: (id: string) => Promise<unknown>
 }) {
   const { t } = useTranslation()
   const [uploading, setUploading] = useState(false)
@@ -113,7 +121,8 @@ export function useAnhangUpload({
         if (!mountedRef.current) break
         try {
           const vorbereitet = await bereiteAiAnhangAuf(datei)
-          const created = await aiApi.uploadAttachment(vorbereitet)
+          const created = await uploadAttachment(vorbereitet)
+          void spiegleAnhangInTresor(datei).catch(() => {})
           if (!mountedRef.current) continue
           merkeVorschau(created.id, datei)
           // Nach Kennung einsetzen statt anhaengen: das Nachladen nach dem
@@ -131,11 +140,11 @@ export function useAnhangUpload({
       laufendRef.current = false
       if (mountedRef.current) setUploading(false)
     }
-  }, [aktiv, fehlerText, gesperrt, merkeVorschau, onFehler, setAttachments, t])
+  }, [aktiv, deleteAttachment, fehlerText, gesperrt, merkeVorschau, onFehler, setAttachments, t, uploadAttachment])
 
   const remove = useCallback(async (anhang: AiAttachment) => {
     try {
-      await aiApi.deleteAttachment(anhang.id)
+      await deleteAttachment(anhang.id)
       freigeben(anhang.id)
       if (mountedRef.current) {
         setAttachments((current) => current.filter((item) => item.id !== anhang.id))
@@ -143,7 +152,7 @@ export function useAnhangUpload({
     } catch (error: unknown) {
       onFehler(fehlerText(error))
     }
-  }, [fehlerText, freigeben, onFehler, setAttachments])
+  }, [deleteAttachment, fehlerText, freigeben, onFehler, setAttachments])
 
   return { uploading, uploadFiles, remove, vorschauen, clearPreviews }
 }

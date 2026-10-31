@@ -514,6 +514,8 @@ def remove_member(db: Session, *, team: Team, user: User, member_user_id: int) -
         origin="direct",
     )
     db.delete(member)
+    if team.vault_bucket_id:
+        team.vault_needs_rotation = True
     # Dokument-Freigaben dieses Teams verlieren mit der Mitgliedschaft ihre
     # Grundlage. Die Rollenauflösung verweigert ohnehin schon; die Zeilen
     # werden trotzdem entfernt, damit ein Wiedereintritt nicht stillschweigend

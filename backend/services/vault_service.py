@@ -11,7 +11,9 @@ from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
+from models.team import Team
 from models.user import User
 from models.vault_entry import VaultEntry
 from models.vault_hint import VaultHint
@@ -922,3 +924,40 @@ Maunting Service Manager
         return False, "E-Mail konnte nicht versendet werden. Bitte prüfe die E-Mail-Konfiguration."
 
     return True, "Dein Passwort-Hinweis wurde erfolgreich an deine E-Mail-Adresse gesendet."
+
+
+def setup_team_vault(db: Session, team: Team, user: User, bucket_id: str, salt: str) -> None:
+    """Richtet den E2EE-Tresor eines Teams ein."""
+    if team.vault_bucket_id is not None:
+        raise HTTPException(status_code=409, detail="Team-Tresor ist bereits eingerichtet.")
+    _pruefe_nicht_beerdigt(db, bucket_id)
+    team.vault_bucket_id = bucket_id.lower()
+    team.vault_salt = salt
+    team.vault_needs_rotation = False
+    db.commit()
+
+
+def rotate_team_vault(db: Session, team: Team, user: User, bucket_id: str | None = None, salt: str | None = None) -> None:
+    """Rotiert das Master-Passwort des Team-Tresors und setzt das Rotations-Flag zurück."""
+    if bucket_id:
+        _pruefe_nicht_beerdigt(db, bucket_id)
+        team.vault_bucket_id = bucket_id.lower()
+    if salt:
+        team.vault_salt = salt
+    team.vault_needs_rotation = False
+    db.commit()
+
+
+def sync_team_vault(db: Session, team: Team, user: User, request: VaultSyncRequest) -> VaultSyncResponse:
+    """Führt Revisions-Sync für den Team-Tresor durch."""
+    if not team.vault_bucket_id:
+        raise HTTPException(status_code=400, detail="Team-Tresor ist noch nicht eingerichtet.")
+    if request.bucket_id.lower() != team.vault_bucket_id.lower():
+        raise HTTPException(status_code=403, detail="Nicht autorisierter Tresor-Bucket für dieses Team.")
+    _pruefe_nicht_beerdigt(db, team.vault_bucket_id)
+    _pruefe_format(db, team.vault_bucket_id, request.client_format, request.min_client_format)
+    konflikte = _wende_mutationen_an(db, team.vault_bucket_id, request.mutations)
+    antwort = _lies_bucket(db, team.vault_bucket_id, request.since_revision)
+    antwort.conflicts = konflikte
+    return antwort
+

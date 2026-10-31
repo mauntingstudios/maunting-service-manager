@@ -95,6 +95,7 @@ from services.ai_tools.task_tools import (
 from services.ai_tools.personal_tools import (
     _mailbox_and_calendar_tool_definitions,
     _notes_tool_definitions,
+    _attachment_tool_definitions,
     _execute_send_test_email,
 )
 from services.ai_tools.document_tools import _dokument_tool_definitions
@@ -722,6 +723,7 @@ def _global_tool_definitions() -> list[dict]:
         *_worker_tool_definitions(),
         *_mailbox_and_calendar_tool_definitions(),
         *_notes_tool_definitions(),
+        *_attachment_tool_definitions(),
         *_dokument_tool_definitions(),
         *_user_tool_definitions(),
     ]
@@ -1422,6 +1424,133 @@ async def _resolve_curseforge_game_and_class_for_ai(
     return (int(resolved_gid) if resolved_gid else None, resolved_cls)
 
 
+def _execute_search_chat_attachments(
+    db: Session, *, user: User, arguments: dict, docs_document_uid: str | None = None
+) -> dict:
+    from datetime import datetime, timezone, timedelta
+    from models import AiAttachment
+    from services.ai_attachment_service import _aad
+    from services.dis_client import DisClient
+
+    query_text = str(arguments.get("query", "")).strip().lower() if arguments.get("query") else None
+    ref_zeit_str = arguments.get("referenz_zeit")
+    try:
+        toleranz_std = float(arguments.get("toleranz_stunden", 2.0))
+    except (ValueError, TypeError):
+        toleranz_std = 2.0
+    try:
+        limit = max(1, min(int(arguments.get("limit", 5)), 20))
+    except (ValueError, TypeError):
+        limit = 5
+
+    q = db.query(AiAttachment).filter(AiAttachment.status == "ready")
+
+    if docs_document_uid:
+        from services.ai_docs_chat_scope import resolve as docs_scope
+        conversation, _, _ = docs_scope(db, user, docs_document_uid)
+        q = q.filter(AiAttachment.conversation_id == conversation.id)
+    else:
+        q = q.filter(AiAttachment.user_id == user.id)
+
+    if ref_zeit_str:
+        try:
+            clean_str = str(ref_zeit_str).replace("Z", "+00:00")
+            ref_dt = datetime.fromisoformat(clean_str)
+            if ref_dt.tzinfo is None:
+                ref_dt = ref_dt.replace(tzinfo=timezone.utc)
+            start_zeit = ref_dt - timedelta(hours=toleranz_std)
+            end_zeit = ref_dt + timedelta(hours=toleranz_std)
+            q = q.filter(AiAttachment.created_at >= start_zeit, AiAttachment.created_at <= end_zeit)
+        except Exception:
+            pass
+
+    rows = q.order_by(AiAttachment.created_at.desc()).limit(limit * 3 if query_text else limit).all()
+
+    treffer = []
+    for r in rows:
+        name = r.original_name or ""
+        text_preview = None
+        text_content = ""
+        if r.extracted_text_encrypted:
+            try:
+                text_content = DisClient.decrypt(r.extracted_text_encrypted, aad=_aad(r.id, "text")) or ""
+                text_preview = text_content[:200]
+            except Exception:
+                text_preview = None
+
+        if query_text:
+            if query_text not in name.lower() and query_text not in text_content.lower():
+                continue
+
+        treffer.append({
+            "attachment_id": r.id,
+            "filename": name,
+            "media_type": r.media_type,
+            "size_bytes": r.size_bytes,
+            "created_at": r.created_at.isoformat(),
+            "preview": text_preview,
+        })
+        if len(treffer) >= limit:
+            break
+
+    return {
+        "attachments": treffer,
+        "count": len(treffer),
+        "hint": (
+            "Wenn genau eine passende Datei gefunden wurde, nutze direkt 'read_chat_attachment', um den vollen Inhalt zu lesen. "
+            "Wenn mehrere Dateien zutreffen, frage den Nutzer höflich, welche Datei gemeint ist."
+        ) if len(treffer) > 1 else None,
+    }
+
+
+def _execute_read_chat_attachment(
+    db: Session, *, user: User, arguments: dict, docs_document_uid: str | None = None
+) -> dict:
+    from uuid import UUID
+    from models import AiAttachment
+    from services.ai_attachment_service import _aad
+    from services.dis_client import DisClient
+
+    raw_id = arguments.get("attachment_id")
+    if not raw_id:
+        raise AiActionValidationError("attachment_id ist erforderlich")
+    try:
+        canonical_id = str(UUID(str(raw_id).strip()))
+    except (ValueError, TypeError):
+        raise AiActionValidationError("Ungültige attachment_id")
+
+    row = db.query(AiAttachment).filter(
+        AiAttachment.id == canonical_id,
+        AiAttachment.status == "ready",
+    ).first()
+
+    if row is None:
+        raise AiActionValidationError("Dateianhang nicht gefunden")
+
+    if row.user_id != user.id:
+        if docs_document_uid:
+            from services.ai_docs_chat_scope import resolve as docs_scope
+            docs_scope(db, user, docs_document_uid)
+        else:
+            raise AiActionValidationError("Keine Berechtigung für diesen Anhang")
+
+    text_inhalt = None
+    if row.extracted_text_encrypted:
+        try:
+            text_inhalt = DisClient.decrypt(row.extracted_text_encrypted, aad=_aad(row.id, "text"))
+        except Exception as exc:
+            logger.warning("Konnte Anhang-Text für %s nicht entschlüsseln: %s", row.id, exc)
+
+    return {
+        "attachment_id": row.id,
+        "filename": row.original_name,
+        "media_type": row.media_type,
+        "size_bytes": row.size_bytes,
+        "created_at": row.created_at.isoformat(),
+        "content_text": text_inhalt,
+    }
+
+
 def _execute_global_read_tool(
     db: Session, *, user: User, tool_name: str, arguments: dict,
     herkunft: str = "panel", familie: str | None = None,
@@ -2088,6 +2217,20 @@ def _execute_global_read_tool(
             return {"records": [{"id": r.get("id"), "name": r.get("name"), "type": r.get("type"), "content": r.get("content")} for r in records], "zone_id": zone_id}
         except Exception as exc:
             return {"error": "cloudflare_list_failed", "detail": str(exc), "zone_id": zone_id}
+
+    if tool_name == "search_chat_attachments":
+        if not permission_service.has_global_permission(db, user, "ai.attachments.use"):
+            raise AiActionValidationError("Dateianhang-Zugriff ist nicht erlaubt")
+        return _execute_search_chat_attachments(
+            db, user=user, arguments=arguments, docs_document_uid=docs_document_uid
+        )
+
+    if tool_name == "read_chat_attachment":
+        if not permission_service.has_global_permission(db, user, "ai.attachments.use"):
+            raise AiActionValidationError("Dateianhang-Zugriff ist nicht erlaubt")
+        return _execute_read_chat_attachment(
+            db, user=user, arguments=arguments, docs_document_uid=docs_document_uid
+        )
 
     # **Der Durchfall war die gefaehrlichste Zeile der Datei.** Bis hierher war
     # die Kapazitaetsabfrage der namenlose Rumpf am Ende der Kette: wer keinen

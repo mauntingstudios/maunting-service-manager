@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Brain, Check, Crown, LogOut, Mail, Plus, Server, Trash2, User, UserPlus, Users, UsersRound, X,
+  Brain, Check, Crown, LogOut, Mail, Plus, Server, ShieldCheck, Trash2, User, UserPlus, Users, UsersRound, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -18,6 +18,7 @@ import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiSkillManager } from '@/components/ai/AiSkillManager'
 import type { AiKnowledgeScope, AiSkillScope } from '@/components/ai/knowledgeScope'
 import { TabBar, type TabDef } from '@/components/ui/TabBar'
+import { TeamVaultView } from '@/desktop/vault/TeamVaultView'
 import { Avatar, Button, Dropdown, Input, MultiSelect, Switch } from '@/Singra/UI'
 import { PageHeader } from '@/Singra/UI/PageHeader'
 import { useHasPermission } from '@/hooks/useHasPermission'
@@ -45,7 +46,7 @@ const BEREICHE: TabDef<Bereich>[] = [
  * Karte unter dem ganzen KI-Wissen, und wer jemanden einladen wollte, musste
  * erst an Gedächtnis und Skills vorbei.
  */
-type TeamReiter = 'members' | 'servers' | 'knowledge'
+type TeamReiter = 'members' | 'servers' | 'knowledge' | 'vault'
 
 /**
  * Erinnerungen eines **echten** Teams.
@@ -382,6 +383,7 @@ export function Teams() {
       ? [{ id: 'servers' as const, labelKey: 'teams.tabServers', icon: Server, badge: team.servers.length }]
       : []),
     { id: 'knowledge', labelKey: 'teams.knowledge', icon: Brain },
+    { id: 'vault', labelKey: 'teams.vault', icon: ShieldCheck },
   ]
   const aktiverReiter: TeamReiter = teamReiter.some((row) => row.id === reiter) ? reiter : 'members'
   // Ohne Teams und ohne das Recht zu gründen hätte die linke Spalte nichts zu
@@ -701,6 +703,11 @@ export function Teams() {
                       </div>
                       <AiMemoryManager scope={memoryScope(team)} />
                       {canUseSkills && <AiSkillManager scope={skillScope(team)} />}
+                    </section>
+                  )}
+                  {aktiverReiter === 'vault' && (
+                    <section className="space-y-4" aria-labelledby="team-vault">
+                      <TeamVaultView team={team} />
                     </section>
                   )}
                 </div>

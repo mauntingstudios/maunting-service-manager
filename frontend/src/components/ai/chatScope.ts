@@ -28,6 +28,7 @@ export interface ChatScopeApi {
   getContextStatus: (providerId: number) => Promise<AiContextStatus>
   listAttachments: () => Promise<AiAttachment[]>
   uploadAttachment: (file: File) => Promise<AiAttachment>
+  deleteAttachment: (attachmentId: string) => Promise<void>
   clearHistory: () => Promise<void>
   editMessage: (messageId: string, content: string) => Promise<{ removed: number }>
   stopRun: () => Promise<{ ok: boolean; stopped: boolean }>
@@ -68,6 +69,9 @@ export function chatScopeApi(
       getContextStatus: (providerId) => aiApi.getContextStatus(providerId, uid),
       listAttachments: () => aiApi.listAttachments(uid),
       uploadAttachment: (file) => aiApi.uploadAttachment(file, uid),
+      deleteAttachment: async (id) => {
+        await aiApi.deleteAttachment(id)
+      },
       clearHistory: async () => {
         await aiApi.clearHistory(uid)
       },
@@ -98,6 +102,9 @@ export function chatScopeApi(
     getContextStatus: (providerId) => aiApi.getContextStatus(providerId),
     listAttachments: () => aiApi.listAttachments(),
     uploadAttachment: (file) => aiApi.uploadAttachment(file),
+    deleteAttachment: async (id) => {
+      await aiApi.deleteAttachment(id)
+    },
     clearHistory: async () => {
       await aiApi.clearHistory()
     },

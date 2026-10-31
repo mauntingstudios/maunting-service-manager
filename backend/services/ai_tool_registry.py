@@ -255,6 +255,12 @@ WERKZEUGE: dict[str, Werkzeug] = {
     "notes_read": Werkzeug(
         "global_read", gruppe="notes", angebot=("ai.notes.use",)
     ),
+    "search_chat_attachments": Werkzeug(
+        "global_read", gruppe="attachments", angebot=("ai.attachments.use",)
+    ),
+    "read_chat_attachment": Werkzeug(
+        "global_read", gruppe="attachments", angebot=("ai.attachments.use",)
+    ),
     # ── Dokumente ─────────────────────────────────────────────────────
     # Gruppe `dokumente`, nicht `docs`: `docs` gehoert seit jeher den
     # statischen Hilfeseiten (`search_docs`, `read_docs`). Die Handler pruefen
@@ -1048,6 +1054,8 @@ DOCS_ECOSYSTEM_READ = frozenset({
     "read_guardian_incidents",
     "read_node_health",
     "read_node_capacity",
+    "search_chat_attachments",
+    "read_chat_attachment",
 })
 # Dokument-Schreibwerkzeuge laufen im Sofortpfad, nicht ueber eine
 # Vorschlagskarte. Der Grund ist die Zusage an den Nutzer: Singra schreibt
@@ -1064,12 +1072,13 @@ CALENDAR_TOOLS = _mit_gruppe("calendar")
 POPUP_TOOLS = _mit_gruppe("popup")
 TASK_TOOLS = _mit_gruppe("tasks")
 NOTES_TOOLS = _mit_gruppe("notes")
+ATTACHMENT_TOOLS = _mit_gruppe("attachments")
 # Eine Gruppe "social" gab es hier bis 09/2026. Sie trug die beiden
 # Messenger-Suchen; beide sind entfernt, und die KI hat seitdem gar kein
 # Werkzeug mehr, das den Messenger anfasst. Siehe docs/agent-rules/security.md,
 # Abschnitt 5.1.
 CHAT_INTERACTION_TOOLS = (
-    MAIL_TOOLS | CALENDAR_TOOLS | POPUP_TOOLS | TASK_TOOLS | NOTES_TOOLS
+    MAIL_TOOLS | CALENDAR_TOOLS | POPUP_TOOLS | TASK_TOOLS | NOTES_TOOLS | ATTACHMENT_TOOLS
 )
 ASK_TOOLS = _mit_art("ask")
 DELEGATION_TOOLS = _mit_art("delegation")

@@ -70,6 +70,7 @@ from services.ai_tools.personal_tools import (
     _TESTMAILS,
     _mailbox_and_calendar_tool_definitions,
     _notes_tool_definitions,
+    _attachment_tool_definitions,
     _execute_send_test_email,
 )
 from services.ai_tools.geo_tools import (

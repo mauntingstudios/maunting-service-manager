@@ -23,6 +23,7 @@ import { toast } from '@/stores/toastStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useVaultStore } from './vaultStore'
 import { leakCheckGewaehlt, setLeakCheckEnabled } from './leakChecker'
+import { kiSpiegelungAktiv, setKiSpiegelungAktiv } from './kiAnhangSpiegelung'
 import { fehlerText } from './tresorFehler'
 import { KameraSicherungKarte } from './KameraSicherungKarte'
 
@@ -53,6 +54,7 @@ export function TresorSicherheitTab({ offline = false }: { offline?: boolean }) 
   const [masterPasswordInput, setMasterPasswordInput] = useState('')
   const [biometricsLoading, setBiometricsLoading] = useState(false)
   const [leckPruefung, setLeckPruefung] = useState(leakCheckGewaehlt)
+  const [kiSpiegelung, setKiSpiegelung] = useState(kiSpiegelungAktiv)
 
   useEffect(() => {
     void checkBiometricsSupport()
@@ -147,6 +149,21 @@ export function TresorSicherheitTab({ offline = false }: { offline?: boolean }) 
               onCheckedChange={(an) => {
                 setLeakCheckEnabled(an)
                 setLeckPruefung(an)
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 pt-2 border-t border-outline-variant/20">
+            <div>
+              <span id="tresor-ki-spiegelung" className="text-xs font-medium text-on-surface">{t('mss.vault.kiSpiegelung')}</span>
+              <p className="text-label-sm text-on-surface-variant">{t('mss.vault.kiSpiegelungHinweis')}</p>
+            </div>
+            <Switch
+              aria-labelledby="tresor-ki-spiegelung"
+              checked={kiSpiegelung}
+              onCheckedChange={(an) => {
+                setKiSpiegelungAktiv(an)
+                setKiSpiegelung(an)
               }}
             />
           </div>
