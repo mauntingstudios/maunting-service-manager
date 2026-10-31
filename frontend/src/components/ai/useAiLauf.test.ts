@@ -114,6 +114,23 @@ describe('useAiLauf', () => {
     expect(aiApi.stopRun).not.toHaveBeenCalled()
   })
 
+  it('schickt einen Anhang auch ohne Begleittext', async () => {
+    const { result } = baueLauf()
+
+    await act(async () => { await result.current.sendContent('', true) })
+
+    expect(streamAiMessage).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(streamAiMessage).mock.calls[0][0].content).toBe('')
+  })
+
+  it('schickt ohne Text und ohne Anhang nichts', async () => {
+    const { result } = baueLauf()
+
+    await act(async () => { await result.current.sendContent('') })
+
+    expect(streamAiMessage).not.toHaveBeenCalled()
+  })
+
   it('setzt die Abschnitte aus dem Abzug, statt sie anzuhängen', async () => {
     // Ein Abzug ist die **vollständige** Antwort bis hierher. Wer sich zweimal
     // anhängt, sähe beim Anhängen jede Werkzeugzeile doppelt.
@@ -372,5 +389,29 @@ describe('useAiLauf', () => {
 
     expect(result.current.streaming).toBe(false)
     expect(signale[0]?.aborted).toBe(true)
+  })
+})
+
+describe('App-Faehigkeiten', () => {
+  beforeEach(() => {
+    vi.mocked(streamAiMessage).mockReset().mockResolvedValue(undefined)
+  })
+
+  it('sendet computer_use=false als verkleinernde Angabe mit', async () => {
+    const { result } = renderHook(() => useAiLauf({
+      providerId: 1,
+      canAttach: false,
+      denken: { an: false, stufe: null },
+      ladeKontext: async () => {},
+      setAttachments: () => {},
+      appFaehigkeiten: { computer_use: false },
+    }))
+
+    act(() => { void result.current.sendContent('Was steht hier?') })
+
+    await vi.waitFor(() => expect(vi.mocked(streamAiMessage)).toHaveBeenCalled())
+    expect(vi.mocked(streamAiMessage).mock.calls[0][0]).toEqual(
+      expect.objectContaining({ app_faehigkeiten: { computer_use: false } }),
+    )
   })
 })

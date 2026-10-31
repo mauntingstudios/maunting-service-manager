@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Clock, Copy, Save } from 'lucide-react'
 import { api } from '@/api/client'
@@ -11,15 +11,46 @@ import { Dropdown } from '@/components/ui/Dropdown'
 import { Switch } from '@/components/ui/Switch'
 import { normalizePanelLanguage } from '@/config/panelLocales'
 import { PanelSettings, EMPTY_PANEL_SETTINGS } from './types'
+import { SeasonalSettings } from './SeasonalSettings'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 import { Spinner } from '@/components/ui/Spinner'
+
+function saisonalAlsStore(settings: PanelSettings) {
+  return {
+    enabled: settings.seasonal_enabled,
+    halloween: {
+      mode: settings.season_halloween_mode,
+      start: settings.season_halloween_start,
+      end: settings.season_halloween_end,
+    },
+    christmas: {
+      mode: settings.season_christmas_mode,
+      start: settings.season_christmas_start,
+      end: settings.season_christmas_end,
+    },
+  }
+}
+
+function saisonalAlsPayload(settings: PanelSettings) {
+  return {
+    seasonal_enabled: settings.seasonal_enabled,
+    season_halloween_mode: settings.season_halloween_mode,
+    season_halloween_start: settings.season_halloween_start,
+    season_halloween_end: settings.season_halloween_end,
+    season_christmas_mode: settings.season_christmas_mode,
+    season_christmas_start: settings.season_christmas_start,
+    season_christmas_end: settings.season_christmas_end,
+  }
+}
+
 export function GeneralTab() {
   const { t, i18n } = useTranslation()
   const canWrite = useHasPermission('panel.settings.write')
   const [settings, setSettings] = useState<PanelSettings>(EMPTY_PANEL_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const saisonStand = useRef<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -37,6 +68,44 @@ export function GeneralTab() {
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [])
+
+  // Saison-Schalter wirken sofort: Store aktualisieren, Server im Hintergrund
+  // nachziehen. Der grosse Speichern-Knopf bleibt fuer alle anderen Felder.
+  useEffect(() => {
+    const aktuell = JSON.stringify(saisonalAlsStore(settings))
+    if (saisonStand.current === null) {
+      saisonStand.current = aktuell
+      return
+    }
+    if (saisonStand.current === aktuell) return
+    saisonStand.current = aktuell
+
+    usePublicSettingsStore.getState().setSettings({ seasonal: saisonalAlsStore(settings) })
+    const timer = window.setTimeout(() => {
+      void api('/settings', {
+        method: 'POST',
+        body: JSON.stringify(saisonalAlsPayload(settings)),
+      })
+        .then(() => {
+          void usePublicSettingsStore.getState().refresh()
+        })
+        .catch((err: unknown) => {
+          toast.error(err instanceof Error ? err.message : t('settings.loadFailed'))
+          // Der Store wurde optimistisch gesetzt; nach einem Fehler wieder
+          // den tatsaechlichen Server-Stand zeigen.
+          void usePublicSettingsStore.getState().refresh()
+        })
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [
+    settings.seasonal_enabled,
+    settings.season_halloween_mode,
+    settings.season_halloween_start,
+    settings.season_halloween_end,
+    settings.season_christmas_mode,
+    settings.season_christmas_start,
+    settings.season_christmas_end,
+  ])
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -61,6 +130,7 @@ export function GeneralTab() {
           social_enabled: settings.social_enabled,
           vault_enabled: settings.vault_enabled,
           cloudflare_enabled: settings.cloudflare_enabled,
+          ...saisonalAlsPayload(settings),
         }),
       })
       toast.success(t('settings.saved'))
@@ -73,6 +143,7 @@ export function GeneralTab() {
         desktop_app_download_enabled: settings.desktop_app_download_enabled,
         browser_download_enabled: settings.browser_download_enabled,
         story_fable_download_enabled: settings.story_fable_download_enabled,
+        seasonal: saisonalAlsStore(settings),
       })
       void usePublicSettingsStore.getState().refresh()
     } catch (err: any) {
@@ -336,6 +407,11 @@ export function GeneralTab() {
             </div>
           </div>
         </div>
+
+        <SeasonalSettings
+          settings={settings}
+          onChange={(patch) => setSettings((vorher) => ({ ...vorher, ...patch }))}
+        />
 
         {canWrite && (
           <div className="flex justify-end">

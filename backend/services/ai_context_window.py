@@ -102,6 +102,8 @@ class Fenster:
     nutzbar_tokens: int
     #: Dasselbe in Zeichen. Das ist die Zahl, mit der der Kontextaufbau rechnet.
     zeichen: int
+    #: Ob das Modell Bilder liest. ``None`` heisst unbekannt, nie blind.
+    sieht: bool | None = None
 
 
 def unbekannt() -> Fenster:
@@ -146,6 +148,7 @@ def aus_modell(modell: Modell | None) -> Fenster:
         fenster_tokens=fenster,
         nutzbar_tokens=nutzbar,
         zeichen=nutzbar * ZEICHEN_JE_TOKEN,
+        sieht=modell.sieht,
     )
 
 

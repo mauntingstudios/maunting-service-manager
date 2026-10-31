@@ -1,5 +1,10 @@
 import { create } from 'zustand'
 import { api } from '@/api/client'
+import {
+  DEFAULT_SEASONAL_SETTINGS,
+  normalisiereSaison,
+  type SeasonalSettings,
+} from '@/season/typen'
 
 export interface PublicSettings {
   /** Kanonische Panel-Adresse, z. B. fuer Einladungslinks. Leer heisst unkonfiguriert. */
@@ -14,6 +19,7 @@ export interface PublicSettings {
   docs_enabled: boolean
   vault_enabled: boolean
   social_enabled: boolean
+  seasonal: SeasonalSettings
 }
 
 export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
@@ -28,6 +34,7 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   docs_enabled: true,
   vault_enabled: true,
   social_enabled: true,
+  seasonal: DEFAULT_SEASONAL_SETTINGS,
 }
 
 function istHttpAdresse(wert: unknown): wert is string {
@@ -93,6 +100,7 @@ function loadCachedSettings(): PublicSettings {
           typeof parsed.social_enabled === 'boolean'
             ? parsed.social_enabled
             : DEFAULT_PUBLIC_SETTINGS.social_enabled,
+        seasonal: normalisiereSaison(parsed.seasonal),
       }
     }
     return DEFAULT_PUBLIC_SETTINGS
@@ -177,6 +185,10 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
             typeof remote.social_enabled === 'boolean'
               ? remote.social_enabled
               : get().social_enabled,
+          // Die Saison ist ein verschachteltes Objekt. Fehlt sie in einer
+          // aelteren API-Antwort, bleibt die bisherige Einstellung stehen;
+          // kaputte Einzelfelder fallen ebenso einzeln zurueck.
+          seasonal: normalisiereSaison(remote.seasonal, get().seasonal),
         }
         saveCachedSettings(aktualisiert)
         set({ ...aktualisiert, isLoading: false, error: null })
@@ -210,6 +222,9 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
         docs_enabled: partial.docs_enabled ?? get().docs_enabled,
         vault_enabled: partial.vault_enabled ?? get().vault_enabled,
         social_enabled: partial.social_enabled ?? get().social_enabled,
+        seasonal: partial.seasonal
+          ? normalisiereSaison(partial.seasonal, get().seasonal)
+          : get().seasonal,
       }
       saveCachedSettings(updated)
       set({ ...updated })

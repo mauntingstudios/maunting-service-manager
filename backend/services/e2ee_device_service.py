@@ -30,7 +30,13 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models import User, UserE2eeDevice
+from models import (
+    E2eeAccount,
+    E2eeAccountKeyVault,
+    E2eeChatKey,
+    User,
+    UserE2eeDevice,
+)
 
 # Deckel je Konto. Ein Absender faechert seine Nachricht je Eintrag auf, also
 # kostet jedes Geraet alle Gegenstellen etwas. Zehn ist grosszuegig fuer
@@ -258,6 +264,36 @@ def _freigegebene(db: Session, user_id: int):
     )
 
 
+def _hat_kontoschluessel(db: Session, user_id: int, device_id: str) -> bool:
+    return (
+        db.query(E2eeAccountKeyVault.id)
+        .filter_by(user_id=user_id, device_id=(device_id or "").strip())
+        .first()
+        is not None
+    )
+
+
+def _freigegebene_schluesselhalter(db: Session, user_id: int) -> set[str]:
+    """Freigegebene Geraete, die ein Konto-Schluesselpaket besitzen.
+
+    Nur diese koennen den Bund an ein Geschwistergeraet weitergeben. Ein
+    wartendes Geraet hat nie etwas bekommen; es zaehlt hier nicht.
+    """
+    halter = {
+        row[0]
+        for row in db.query(E2eeAccountKeyVault.device_id)
+        .filter(E2eeAccountKeyVault.user_id == user_id)
+        .all()
+    }
+    freigegeben = {
+        row[0]
+        for row in _freigegebene(db, user_id)
+        .with_entities(UserE2eeDevice.device_id)
+        .all()
+    }
+    return halter & freigegeben
+
+
 def _auffrischen(
     db: Session,
     user: User,
@@ -373,6 +409,10 @@ class GeraeteaenderungAbgelehntError(PermissionError):
     """Entfernen ohne gueltige Unterschrift eines freigegebenen Geraets."""
 
 
+class LetzterSchluesselhalterError(GeraeteaenderungAbgelehntError):
+    """Das Ziel ist der letzte freigegebene Traeger des Kontoschluessels."""
+
+
 def _deckel_einhalten(db: Session, user: User) -> None:
     """Weist einen Neuzugang ab, wenn der Deckel voll ist.
 
@@ -397,9 +437,20 @@ def _deckel_einhalten(db: Session, user: User) -> None:
         raise GeraetedeckelErreichtError()
 
 
-def eintrag_als_dict(e: UserE2eeDevice, db: Session | None = None) -> dict:
-    """Der Eintrag, wie er im Verzeichnis herauskommt."""
-    return {
+def eintrag_als_dict(
+    e: UserE2eeDevice,
+    db: Session | None = None,
+    *,
+    mit_kontoschluessel: bool = False,
+) -> dict:
+    """Der Eintrag, wie er im Verzeichnis herauskommt.
+
+    ``has_account_key`` sieht nur der Kontoinhaber selbst. Fuer Dritte waere es
+    die Markierung „dieses Geraet lohnt sich zu stehlen“; die eigene Liste
+    braucht sie dagegen, um vor dem Entfernen des letzten Schluesselhalters zu
+    warnen.
+    """
+    daten = {
         "id": e.id,
         "device_id": e.device_id,
         "public_key": e.public_key_jwk,
@@ -411,9 +462,18 @@ def eintrag_als_dict(e: UserE2eeDevice, db: Session | None = None) -> dict:
         "inbox_hash": "",
         "transport": "queue-v1",
     }
+    if mit_kontoschluessel and db is not None:
+        daten["has_account_key"] = _hat_kontoschluessel(db, e.user_id, e.device_id)
+    return daten
 
 
-def geraete(db: Session, user_id: int, nur_bestaetigt: bool = False) -> list[dict]:
+def geraete(
+    db: Session,
+    user_id: int,
+    nur_bestaetigt: bool = False,
+    *,
+    fuer_besitzer: bool = False,
+) -> list[dict]:
     """Die Zustelladressen eines Kontos, juengste Aktivitaet zuerst.
 
     Mit `nur_bestaetigt` nur freigegebene Geraete: ein wartendes bekommt
@@ -426,7 +486,7 @@ def geraete(db: Session, user_id: int, nur_bestaetigt: bool = False) -> list[dic
     if nur_bestaetigt:
         query = query.filter(UserE2eeDevice.is_approved.is_(True))
     return [
-        eintrag_als_dict(e, db)
+        eintrag_als_dict(e, db, mit_kontoschluessel=fuer_besitzer)
         for e in query.order_by(UserE2eeDevice.last_seen_at.desc()).all()
     ]
 
@@ -689,15 +749,21 @@ def entfernen_hindernis(
     ist der Nachweis fuer eine 404 oder 403 weg (dieselbe Regel wie in
     `freigabe_hindernis`).
 
-    Zurueck kommt `"selbst"`, `"nicht_gefunden"` oder `None`. Die Entscheidung
-    faellt trotzdem in `vergessen` noch einmal — zwischen dieser Abfrage und dem
-    Loeschen kann sich das Verzeichnis aendern.
+    Zurueck kommt `"selbst"`, `"nicht_gefunden"`, `"letzter_schluesselhalter"`
+    oder `None`. Die Entscheidung faellt trotzdem in `vergessen` noch einmal —
+    zwischen dieser Abfrage und dem Loeschen kann sich das Verzeichnis aendern.
     """
     eintrag = _geraet(db, user.id, (device_id or "").strip())
     if eintrag is None:
         return "nicht_gefunden"
     if _ist_eigenes_geraet(eintrag, anfrage_familie):
         return "selbst"
+    if (
+        eintrag.is_approved
+        and _hat_kontoschluessel(db, user.id, eintrag.device_id)
+        and _freigegebene_schluesselhalter(db, user.id) == {eintrag.device_id}
+    ):
+        return "letzter_schluesselhalter"
     return None
 
 
@@ -792,6 +858,10 @@ def vergessen(
     dann mit. Kein eigener Loeschweg hier — sonst liefen zwei Wege aneinander
     vorbei.
     """
+    # Sperre vor dem Lesen: zwischen `entfernen_hindernis` und hier kann ein
+    # zweites Geraet freigegeben worden sein. Die Entscheidung „letzter
+    # Schluesselhalter“ muss auf demselben Stand fallen wie das Loeschen.
+    db.query(User.id).filter(User.id == user.id).with_for_update().one()
     eintrag = _geraet(db, user.id, (device_id or "").strip())
     if eintrag is None:
         return False
@@ -812,7 +882,21 @@ def vergessen(
             raise GeraeteaenderungAbgelehntError(
                 "Ein freigegebenes Geraet entfernt nur ein freigegebenes Geraet."
             )
+        if (
+            _hat_kontoschluessel(db, user.id, eintrag.device_id)
+            and _freigegebene_schluesselhalter(db, user.id) == {eintrag.device_id}
+        ):
+            raise LetzterSchluesselhalterError(
+                "Das ist der letzte freigegebene Schluesselhalter. Entfernen "
+                "wuerde alle Nachrichten unlesbar machen. Setze das Konto neu auf."
+            )
     familie = eintrag.auth_family
+    # Das verpackte Konto-Schluesselpaket haengt nicht per Fremdschluessel am
+    # Geraet und bliebe sonst fuer immer liegen. Es ist nach dem Entfernen
+    # wertlos, aber es ist Material, das niemand mehr braucht.
+    db.query(E2eeAccountKeyVault).filter_by(
+        user_id=user.id, device_id=eintrag.device_id
+    ).delete(synchronize_session=False)
     db.delete(eintrag)
     db.commit()
     _sperre_sitzung(db, user, familie)
@@ -820,26 +904,47 @@ def vergessen(
     return True
 
 
-def zuruecksetzen(db: Session, user: User, familie_behalten: str | None) -> int:
-    """Entfernt alle Geraete des Kontos und sperrt ihre Sitzungen.
+def zuruecksetzen(db: Session, user: User, familie_behalten: str | None) -> dict:
+    """Setzt die Konto-Identitaet und alle Geraete neu auf.
 
     Der Weg fuer den, dem alle Geraete verloren gegangen sind. Das Passwort
     prueft der Aufrufer. Danach ist das naechste Geraet, das sich meldet, das
     erste — und jedes Gegenueber sieht, dass alle ihm bekannten Geraete fort
-    sind, und warnt. Wer nur das Passwort hat, kann das auch; still geht es
-    nicht: die echten Geraete fliegen hinaus, und die Kontakte bekommen die
-    Warnung.
+    sind, und warnt.
+
+    **Der Kontoschluessel gehoert mit dazu.** Bis 10/2026 loeschte diese
+    Funktion nur die Geraetezeilen; `e2ee_accounts` und die verpackten Bunde
+    blieben stehen. Danach konnte kein Geraet mehr eine neue Identitaet
+    anlegen: `publish_account` lehnt einen anderen Schluessel mit 409 ab, und
+    der Client legt keinen neuen an, solange serverseitig einer steht. Der
+    Reset versprach einen Neuanfang und lieferte einen schluessellosen Chat.
+    Deshalb fallen hier auch die Kontozeile, alle Bunde und die **eigenen**
+    Chat-Schluessel. Fremde Chat-Schluessel, Nachrichten und Lesestaende
+    bleiben unberuehrt; sie gehoeren anderen Mitgliedern.
     """
+    # Sperre vor dem Lesen: zwei gleichzeitige Resets oder ein Reset neben
+    # einer Freigabe duerfen nicht dieselbe Zeile zweimal aufbauen.
+    db.query(User.id).filter(User.id == user.id).with_for_update().one()
+
     eintraege = db.query(UserE2eeDevice).filter(UserE2eeDevice.user_id == user.id).all()
     familien = {e.auth_family for e in eintraege if e.auth_family}
     for e in eintraege:
         db.delete(e)
+    db.query(E2eeAccountKeyVault).filter(
+        E2eeAccountKeyVault.user_id == user.id
+    ).delete(synchronize_session=False)
+    db.query(E2eeAccount).filter(
+        E2eeAccount.user_id == user.id
+    ).delete(synchronize_session=False)
+    chat_keys_entfernt = db.query(E2eeChatKey).filter(
+        E2eeChatKey.user_id == user.id
+    ).delete(synchronize_session=False)
     # Mit jeder Geraetezeile fallen ihre Zustelladresse und ihre offenen
     # Auftraege (ON DELETE CASCADE). Chiffretextobjekte und Idempotenzreste
     # bleiben bis zu ihrer Frist; `abgelaufene_raeumen` raeumt sie ab.
     # Der Notizschluessel lag auf diesen Geraeten. Ohne sie gibt es niemanden
     # mehr, der ihn hat oder den Eintrag beglaubigen koennte: das naechste
-    # Geraet setzt den Kontoschluessel neu (`kontoschluesselAbgleichen`).
+    # Geraet setzt den Kontoschluessel neu.
     db.query(User).filter(User.id == user.id).update(
         {
             User.notes_key_abdruck: None,
@@ -854,4 +959,8 @@ def zuruecksetzen(db: Session, user: User, familie_behalten: str | None) -> int:
     for familie in familien - {familie_behalten}:
         _sperre_sitzung(db, user, familie)
     _verzeichnis_geaendert(user.id)
-    return len(eintraege)
+    return {
+        "removed": len(eintraege),
+        "account_reset": True,
+        "chat_keys_removed": int(chat_keys_entfernt),
+    }

@@ -83,8 +83,12 @@ function mitWerkzeug(
  * räumt ab). Eine Zwischenschicht dafür wäre die nächste Abstraktion ohne
  * Nutzen.
  */
-export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, api = primaryChatApi }: {
+export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten, api = primaryChatApi }: {
   api?: ChatScopeApi
+  appFaehigkeiten?: {
+    computer_use?: boolean | null
+    artifact_install?: boolean | null
+  }
   providerId: number | null
   canAttach: boolean
   /**
@@ -95,6 +99,11 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
   /** Den Füllstand neu holen — nach `done` und nach dem Falten. */
   ladeKontext: () => Promise<void>
   setAttachments: (rows: AiAttachment[]) => void
+  /** Nur in der App gesetzt; aus dem Panel `undefined`. */
+  appFaehigkeiten?: {
+    computer_use?: boolean | null
+    artifact_install?: boolean | null
+  }
 }) {
   const { t } = useTranslation()
 
@@ -526,8 +535,11 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
    * daran hängt: ein frisch gebauter Pfeil je Render machte den Vergleich dort
    * wertlos, und der ganze Verlauf zeichnete sich bei jedem Textstück neu.
    */
-  const sendContent = useCallback(async (content: string) => {
-    if (!content || !providerId || streaming) return
+  const sendContent = useCallback(async (content: string, mitAnhaengen = false) => {
+    // Leer ist erlaubt, wenn ein Anhang mitgeht: ein Bild ohne Text ist eine
+    // Frage. Der Server bindet die ungebundenen Anhaenge an diese Nachricht
+    // und lehnt eine leere Nachricht ohne Anhang weiterhin ab.
+    if ((!content && !mitAnhaengen) || !providerId || streaming) return
 
     const now = new Date().toISOString()
     const assistantId = crypto.randomUUID()
@@ -554,6 +566,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
           request_id: crypto.randomUUID(),
           reasoning: denken.an,
           reasoning_effort: denken.stufe,
+          ...(appFaehigkeiten ? { app_faehigkeiten: appFaehigkeiten } : {}),
         }, verarbeite, signal),
         assistantId,
         optimisticUser.id,
@@ -561,7 +574,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
     } finally {
       streamingRef.current = false
     }
-  }, [api, denken.an, denken.stufe, providerId, streaming, verfolge])
+  }, [api, appFaehigkeiten, denken.an, denken.stufe, providerId, streaming, verfolge])
 
   /** Bricht den laufenden Strom und den serverseitigen Lauf kontrolliert ab. */
   const stoppeLauf = useCallback(async () => {

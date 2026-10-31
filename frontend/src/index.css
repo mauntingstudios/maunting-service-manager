@@ -662,3 +662,280 @@
   .docs-prose a { color: #000; }
   .docs-prose pre, .docs-prose blockquote, .docs-prose table, .docs-prose img { break-inside: avoid; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Saisonale Akzente (Halloween / Weihnachten)
+   ═══════════════════════════════════════════════════════════════════════
+
+   `useSaison` setzt `data-season` am <html>-Element. Alles hier haengt an
+   diesem Attribut: Panel, Pontis und MSS teilen dieses Stylesheet, also
+   genuegt eine Stelle fuer alle drei Oberflaechen.
+
+   Bewusst unlayered: die saisonalen Regeln sollen die Utilities (bg-primary,
+   text-primary) uebersteuern, ohne dass jede Komponente einen zweiten
+   Klassennamen braucht. Statusfarben (Erfolg, Warnung, Fehler) bleiben
+   unangetastet. Die Farbwerte selbst stehen als Tokens in
+   `@maunting/design-dna/tokens.css`. */
+
+html[data-season] body {
+  background:
+    radial-gradient(70rem 32rem at 50% -12rem, hsl(var(--season-glow) / .10), transparent 68%),
+    radial-gradient(42rem 26rem at 8% 108%, hsl(var(--season-accent) / .07), transparent 72%),
+    hsl(var(--dna-background));
+}
+
+html[data-season] .msm-deep-grid {
+  background-image:
+    linear-gradient(to right, hsl(var(--season-accent) / .055) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--season-accent) / .055) 1px, transparent 1px);
+}
+
+html[data-season] .msm-page-header::before {
+  background: linear-gradient(90deg, transparent, hsl(var(--season-accent) / .78), transparent);
+}
+
+html[data-season] .msm-page-header {
+  background:
+    radial-gradient(32rem 14rem at 100% 0%, hsl(var(--season-accent) / .06), transparent 70%),
+    hsl(var(--dna-panel) / .8);
+  box-shadow:
+    inset 0 -1px 0 hsl(var(--season-accent) / .08),
+    var(--dna-shadow-panel);
+}
+
+html[data-season] .msm-topbar::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(var(--season-accent) / .55), transparent);
+  pointer-events: none;
+}
+
+html[data-season] .msm-nav-link-active {
+  color: hsl(var(--season-accent-strong));
+  background-color: hsl(var(--season-accent) / .10);
+  border-color: hsl(var(--season-accent) / .26);
+}
+
+html[data-season] .msm-nav-link:hover {
+  color: hsl(var(--season-accent-strong));
+  background-color: hsl(var(--season-accent) / .08);
+}
+
+html[data-season] .msm-btn-ghost:hover,
+html[data-season] .msm-btn-secondary:hover {
+  color: hsl(var(--season-accent-strong));
+  background-color: hsl(var(--season-accent) / .10);
+  border-color: hsl(var(--season-accent) / .30);
+}
+
+/* Ein Akzent fuer jeden neutralen Knopf: derselbe Ton wie der aktive Tab. */
+html[data-season] button:hover:not(:disabled) {
+  box-shadow:
+    0 0 0 1px hsl(var(--season-accent) / .30),
+    0 0 18px hsl(var(--season-accent) / .12);
+}
+
+html[data-season] button:not([class*="msm-btn-primary"]):not([class*="msm-btn-destructive"]):not([class*="status-destructive"]):hover:not(:disabled) {
+  color: hsl(var(--season-accent-strong));
+}
+
+html[data-season] [data-msb-tab]:not([data-msb-tab="aktiv"]):hover {
+  color: hsl(var(--season-accent-strong));
+  background-color: hsl(var(--season-accent) / .06);
+}
+
+/* Fokus gehoert zum selben Akzent wie Hover und aktiver Tab. */
+html[data-season] .msm-input:focus {
+  border-color: hsl(var(--season-accent));
+  box-shadow: 0 0 0 2px hsl(var(--season-accent) / .22);
+}
+
+html[data-season] .msm-omnibox:focus-within {
+  border-color: hsl(var(--season-accent) / .65);
+  box-shadow: 0 0 0 2px hsl(var(--season-accent) / .18);
+}
+
+html[data-season] input:focus-visible,
+html[data-season] textarea:focus-visible,
+html[data-season] select:focus-visible {
+  outline-color: hsl(var(--season-accent));
+}
+
+html[data-season] [data-mss-reiter]:hover {
+  color: hsl(var(--season-accent-strong));
+  background-color: hsl(var(--season-accent) / .10);
+}
+
+html[data-season] [data-mss-reiter="aktiv"] {
+  background-color: hsl(var(--season-accent) / .16);
+  color: hsl(var(--season-accent-strong));
+}
+
+html[data-season] [data-msm-tabbar] [role="tab"][aria-selected="true"]:not([data-tab-variant="danger"]) {
+  background-color: hsl(var(--season-accent) / .16);
+  color: hsl(var(--season-accent-strong));
+}
+
+html[data-season] button[role="switch"][aria-checked="true"] {
+  background-color: hsl(var(--season-accent));
+}
+
+html[data-season] [data-season-icon] {
+  border-color: hsl(var(--season-accent) / .35);
+  background-color: hsl(var(--season-accent) / .10);
+  color: hsl(var(--season-accent-strong));
+}
+
+html[data-season] [data-season-heading] {
+  color: hsl(var(--season-accent-strong));
+}
+
+html[data-season] .msm-btn-primary {
+  background-color: hsl(var(--season-accent));
+  color: hsl(var(--season-on-accent));
+  box-shadow: 0 12px 28px hsl(var(--season-accent) / .22);
+}
+
+html[data-season] .msm-btn-primary:hover {
+  box-shadow: 0 14px 34px hsl(var(--season-accent) / .32);
+}
+
+html[data-season] *::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--season-accent) / .55);
+}
+
+/* Pontis: aktiver Tab und Kopfzeile */
+html[data-season] [data-msb-kopf]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(var(--season-accent) / .5), transparent);
+  pointer-events: none;
+}
+
+html[data-season] [data-msb-tab="aktiv"] {
+  background-color: hsl(var(--season-accent) / .08);
+  color: hsl(var(--season-accent-strong));
+  box-shadow: inset 0 -2px 0 hsl(var(--season-accent) / .55);
+}
+
+html[data-season] .msb-logo {
+  filter: drop-shadow(0 0 8px hsl(var(--season-accent) / .5));
+  border-radius: 6px;
+}
+
+/* MSS: Titelleiste und Startbild */
+html[data-season] .mss-titelleiste {
+  box-shadow: inset 0 -1px 0 hsl(var(--season-accent) / .35);
+}
+
+html[data-season] .mss-splash-stufe {
+  position: relative;
+}
+
+html[data-season] .mss-splash-stufe::before {
+  content: "";
+  position: absolute;
+  inset: -22% -30%;
+  z-index: -1;
+  background: radial-gradient(closest-side, hsl(var(--season-accent) / .16), transparent 72%);
+  pointer-events: none;
+}
+
+.msm-logo-bild {
+  filter: drop-shadow(0 0 12px hsl(var(--dna-focus) / .28));
+}
+
+html[data-season] .msm-logo-bild {
+  border-color: hsl(var(--season-accent) / .45);
+  background-color: hsl(var(--season-accent) / .12);
+  color: hsl(var(--season-accent-strong));
+  filter: drop-shadow(0 0 14px hsl(var(--season-accent) / .35));
+}
+
+/* Aufsteigende Asset-Hintergrund-Animation. Das Bild kommt aus
+   `frontend/public/season`, nicht aus einer externen Quelle. Im Standard ist
+   der Container unsichtbar; die CSS-Animation startet erst mit `data-season`. */
+.season-hintergrund {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.season-hintergrund::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(70rem 32rem at 50% -12rem, hsl(var(--season-glow) / .10), transparent 68%),
+    radial-gradient(42rem 26rem at 8% 108%, hsl(var(--season-accent) / .07), transparent 72%);
+  pointer-events: none;
+}
+
+.season-partikel {
+  position: absolute;
+  left: var(--season-x);
+  bottom: -15vh;
+  width: var(--season-size);
+  height: var(--season-size);
+  opacity: 0;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  animation: season-aufstieg var(--season-duration) linear var(--season-delay) infinite;
+  will-change: transform, opacity;
+}
+
+html[data-season="halloween"] .season-partikel {
+  background-image: var(--season-bg-halloween);
+}
+
+html[data-season="christmas"] .season-partikel {
+  background-image: var(--season-bg-christmas);
+}
+
+@keyframes season-aufstieg {
+  0% {
+    transform: translateY(0) scale(.85);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--season-opacity);
+  }
+  80% {
+    opacity: var(--season-opacity);
+  }
+  100% {
+    transform: translateY(-85vh) scale(1);
+    opacity: 0;
+  }
+}
+
+/* Standard-, Halloween- und Weihnachts-Logo: alle drei liegen im DOM, nur
+   eines ist sichtbar. So bleibt das Standard-Logo unveraendert erhalten. */
+.season-logo-halloween,
+.season-logo-christmas {
+  display: none;
+}
+
+html[data-season="halloween"] .season-logo-standard,
+html[data-season="christmas"] .season-logo-standard {
+  display: none;
+}
+
+html[data-season="halloween"] .season-logo-halloween,
+html[data-season="christmas"] .season-logo-christmas {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .season-partikel {
+    display: none !important;
+    animation: none;
+  }
+}

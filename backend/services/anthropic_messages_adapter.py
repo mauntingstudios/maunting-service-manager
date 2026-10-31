@@ -152,28 +152,33 @@ def _text_aus_inhalt(content: Any) -> str:
 def _bildbloecke_aus_inhalt(content: Any) -> list[dict]:
     """Die Bilder einer Nachricht, in Anthropics Blockform.
 
-    MSM baut Bilder ueberall in derselben Form, naemlich der von Chat
-    Completions: ``{"type": "image_url", "image_url": {"url": "data:…"}}``. So
-    legt `ai_stream_service._desktopmeldung` ein Bildschirmfoto ab und so
-    `ai_attachment_service` einen Bildanhang. Anthropic will an derselben
-    Stelle ``{"type": "image", "source": {"type": "base64", "media_type": …,
-    "data": …}}`` — dieselbe Angabe, in Einzelteilen.
+    Zwei Formen kommen herein: die Chat-Completions-Form
+    ``{"type": "image_url", "image_url": {"url": "data:…"}}`` (Bildschirmfotos
+    der Desktop-Steuerung) und bereits fertige Anthropic-Bloecke
+    ``{"type": "image", "source": {…}}`` (Bildanhaenge, fuer die
+    `ai_attachment_provider` den Dialekt schon kennt). Beide muessen
+    mitgehen.
 
     `_text_aus_inhalt` liest diese Bloecke nicht; in einem Bildblock gibt es
     kein ``text``. Wer sie stillschweigend fallen laesst, schickt dem Modell
-    den Begleitsatz „liegt dieser Nachricht als Bild bei" **ohne** das Bild —
-    und bekommt genau die Meldung zurueck, es liege kein auswertbares
-    Bildschirmergebnis vor.
+    den Begleitsatz „liegt dieser Nachricht als Bild bei" **ohne** das Bild.
 
     Was keine Base64-Data-URL ist, wird ausgelassen: MSM baut ausschliesslich
     solche, und eine erfundene Uebersetzung fuer eine Form, die es hier nicht
     gibt, waere geraten.
     """
+    from services.ai_attachment_provider import anthropic_bildblock
+
     if not isinstance(content, list):
         return []
     bloecke: list[dict] = []
     for block in content:
-        if not isinstance(block, dict) or block.get("type") != "image_url":
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "image" and isinstance(block.get("source"), dict):
+            bloecke.append(block)
+            continue
+        if block.get("type") != "image_url":
             continue
         quelle = block.get("image_url")
         adresse = quelle.get("url") if isinstance(quelle, dict) else quelle
@@ -182,14 +187,11 @@ def _bildbloecke_aus_inhalt(content: Any) -> list[dict]:
         kopf, _, daten = adresse.partition(",")
         if not daten or not kopf.startswith("data:") or not kopf.endswith(";base64"):
             continue
-        bloecke.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": kopf[len("data:"):-len(";base64")],
-                "data": daten,
-            },
-        })
+        uebersetzt = anthropic_bildblock(
+            kopf[len("data:"):-len(";base64")], daten
+        )
+        if uebersetzt is not None:
+            bloecke.append(uebersetzt)
     return bloecke
 
 

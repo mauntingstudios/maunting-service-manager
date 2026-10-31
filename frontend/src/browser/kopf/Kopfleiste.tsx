@@ -25,6 +25,7 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { WorkspaceIcon } from './WorkspaceLeiste'
+import { SaisonLogo } from '@/season/SaisonLogo'
 import { STANDARD_WORKSPACE_ID, useWorkspacesStore } from '../services/workspacesStore'
 import { farbwahl } from '@/config/farbpalette'
 import { useAnkerLage } from '@/Singra/UI/Ankerlage'
@@ -544,6 +545,7 @@ function TabReiter({ tab, aktiv, index: _index, onHoverZieh, onDropTab }: TabRei
     <div
       role="tab"
       aria-selected={aktiv}
+      data-msb-tab={aktiv ? 'aktiv' : undefined}
       tabIndex={aktiv ? 0 : -1}
       draggable
       onDragStart={dragStart}
@@ -932,6 +934,7 @@ export function Kopfleiste() {
   return (
     <div
       data-tauri-drag-region
+      data-msb-kopf=""
       onDoubleClick={(e) => e.target === e.currentTarget && void nativ.fensterAktion('maximieren')}
       onDragOver={(e) => {
         e.preventDefault()
@@ -964,7 +967,7 @@ export function Kopfleiste() {
                 className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
                 aria-label={t('browser.start.titel')}
               >
-                <img src="/msp.png" alt="" className="h-5 w-5 pointer-events-none" />
+                <SaisonLogo art="pontis" standardSrc="/msp.png" alt="" className="msb-logo h-5 w-5 pointer-events-none" />
               </button>
             </Kurzinfo>
           </div>
@@ -977,7 +980,7 @@ export function Kopfleiste() {
             className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg hover:bg-surface-container-high transition-colors"
             aria-label={t('browser.start.titel')}
           >
-            <img src="/msp.png" alt="" className="h-5 w-5 pointer-events-none" />
+            <img src="/msp.png" alt="" className="msb-logo h-5 w-5 pointer-events-none" />
           </button>
           <WorkspaceKopfDropdown />
           {kannScrollenLinks && (

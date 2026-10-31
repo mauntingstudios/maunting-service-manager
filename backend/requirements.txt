@@ -32,6 +32,16 @@ limits[redis]==3.13.0
 # services/webpush_service.py, die gegen den Testvektor aus RFC 8291 §5 geprueft
 # sind. Bewertung: docs/agent-rules/dependencies.md
 cryptography==42.0.8
+# --- KI-Anhaenge: Bildnormalisierung und PDF-Text ---
+# Pillow: Bildformate pruefen, EXIF/GPS entfernen, auf eine sichere Groesse
+# normalisieren. pillow-heif: HEIC/HEIF von Android-Kameras. pypdf: reiner
+# Python-PDF-Text, ohne Rendering und ohne Netzzugriff. Alle drei sind hinter
+# services/ai_bild_normalisierung.py und services/ai_attachment_extract.py
+# gekapselt; fehlt eine, bleiben Text/JPEG/PNG und der Providerpfad nutzbar.
+# Bewertung und Exit-Plan: docs/agent-rules/dependencies.md.
+Pillow==12.3.0
+pillow-heif==1.8.1
+pypdf==6.10.2
 psycopg2-binary==2.9.9
 asyncpg==0.29.0
 docker==7.1.0

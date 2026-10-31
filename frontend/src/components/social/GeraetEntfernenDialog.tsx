@@ -22,6 +22,8 @@ interface Props {
   geraet: E2eeGeraetItem
   /** Die Vergleichszahl aus der Liste — sie steht auch auf dem Gerät selbst. */
   sicherheitsnummer?: string
+  /** Das Ziel ist der letzte freigegebene Träger des Kontoschlüssels. */
+  letzterSchluesselhalter?: boolean
   onOpenChange: (offen: boolean) => void
   onEntfernt: () => Promise<void> | void
 }
@@ -50,6 +52,7 @@ interface Props {
 export function GeraetEntfernenDialog({
   geraet,
   sicherheitsnummer,
+  letzterSchluesselhalter = false,
   onOpenChange,
   onEntfernt,
 }: Props) {
@@ -110,6 +113,15 @@ export function GeraetEntfernenDialog({
             )}
           </div>
 
+          {letzterSchluesselhalter && (
+            <p
+              role="alert"
+              className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-on-surface"
+            >
+              {t('profile.e2eeDevices.lastKeyHolderRemoveWarning')}
+            </p>
+          )}
+
           {wartet ? (
             <p className="text-sm text-on-surface-variant">
               {t('profile.e2eeDevices.removePendingHelp')}
@@ -153,7 +165,7 @@ export function GeraetEntfernenDialog({
           </Button>
           <Button
             variant="destructive"
-            disabled={!bereit || laeuft}
+            disabled={!bereit || laeuft || letzterSchluesselhalter}
             onClick={() => void bestaetigen()}
           >
             <Trash2 className="h-4 w-4 mr-1" aria-hidden="true" />

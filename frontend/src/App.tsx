@@ -50,6 +50,8 @@ import { PrivacyAcknowledgementNotice } from './components/ui/PrivacyAcknowledge
 import { PrivacyNoticeVisibilityContext } from './components/ui/PrivacyNoticeVisibility'
 import { SupportWidgetLoader } from './components/SupportWidgetLoader'
 import { initOfflineSync } from './lib/offlineSync'
+import { useKontoBundNachholen } from './hooks/useKontoBundNachholen'
+import { SaisonDeko } from './season/SaisonDeko'
 
 function App() {
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
@@ -62,6 +64,10 @@ function App() {
   const notesEnabled = usePublicSettingsStore((s) => s.notes_enabled)
   const docsEnabled = usePublicSettingsStore((s) => s.docs_enabled)
   const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
+
+  // Der Konto-Schluessel wird auch ausserhalb des Messengers nachgeholt. Der
+  // Lauf ist idempotent und still; er sendet nur an freigegebene Geraete.
+  useKontoBundNachholen(isAuthenticated)
 
   useEffect(() => {
     void usePublicSettingsStore.getState().refresh()
@@ -104,6 +110,7 @@ function App() {
 
   return (
     <PrivacyNoticeVisibilityContext.Provider value={privacyNoticeVisible}>
+      <SaisonDeko />
       <ErrorBoundary>
       <Suspense fallback={
         <Loader fullScreen label="Maunting Service Manager" />

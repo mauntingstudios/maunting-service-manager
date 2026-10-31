@@ -303,6 +303,30 @@ def _desktop_argumente(db, *, user_id: int, call, sieht: bool | None = None) -> 
     return argumente
 
 
+def _letzte_nutzerfrage(provider_messages: list[dict]) -> str:
+    """Der Text der letzten Benutzernachricht, fuer die Rechner-Erkennung.
+
+    Anhaenge stehen als Liste getippter Bloecke in derselben Nachricht; nur
+    die Textbloecke zaehlen. Leer heisst hier: eine reine Bildfrage — und die
+    ist kein Rechnerauftrag.
+    """
+    for nachricht in reversed(provider_messages):
+        if not isinstance(nachricht, dict) or nachricht.get("role") != "user":
+            continue
+        inhalt = nachricht.get("content")
+        if isinstance(inhalt, str) and inhalt.strip():
+            return inhalt.strip()[:500]
+        if isinstance(inhalt, list):
+            texte = [
+                teil.get("text") for teil in inhalt
+                if isinstance(teil, dict) and isinstance(teil.get("text"), str)
+            ]
+            gesamt = " ".join(texte).strip()
+            if gesamt:
+                return gesamt[:500]
+    return ""
+
+
 def _desktop_behandeln(
     *,
     current_usage: StreamUsage,
@@ -348,6 +372,36 @@ def _desktop_behandeln(
     # Lese-Dispatch und wird dort mit `KEIN_BLICK_GRUND` beantwortet.
     auftraege = [call for call in auftraege if not _sieht_nicht(zustand, call)]
     if not auftraege:
+        return None, False
+
+    # Ein Anhang liegt bereits im Gespraech. Ein Desktop-Auftrag in derselben
+    # Runde waere genau der Fehler, den der Benutzer sieht: Das Bild wird
+    # "an den Rechner uebergeben", statt dass das Modell es ansieht. Das
+    # Werkzeugangebot ist oben schon geschnitten; hier steht die zweite,
+    # unabhaengige Schranke fuer den Fall, dass ein Aufruf trotzdem ankommt.
+    from services.tool_selection_port import desktop_absicht
+
+    gespeicherte_absicht = zustand.get("desktop_absicht")
+    absicht = (
+        gespeicherte_absicht
+        if isinstance(gespeicherte_absicht, bool)
+        else desktop_absicht(_letzte_nutzerfrage(provider_messages))
+    )
+    if zustand.get("hat_anhaenge") and not absicht:
+        provider_messages.extend(_rundenfehler_nachrichten(
+            current_usage.tool_calls,
+            rundentext,
+            code="AI_ATTACHMENT_DESKTOP_BLOCKED",
+            hinweis=(
+                "Nicht an den Rechner uebergeben: Der Anhang liegt bereits "
+                "als Datei oder Bild in diesem Gespraech. Lies ihn aus dem "
+                "Gespraech, statt ihn auf dem Rechner zu oeffnen."
+            ),
+        ))
+        logger.info(
+            "Desktop-Auftrag bei Anhang-Turn abgewiesen run_id=%s werkzeuge=%s",
+            run_id, ",".join(sorted({call.name for call in auftraege})),
+        )
         return None, False
 
     # Gezaehlt und geprueft in einem, **bevor** ein Auftrag entsteht: einer, den

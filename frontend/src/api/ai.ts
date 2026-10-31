@@ -1974,6 +1974,11 @@ export async function streamAiMessage(
     /** Dokument-Chat: bindet den Lauf an ein Dokument, nie an Modelltext. */
     document_uid?: string
     selection?: { quote: string; hash?: string }
+    /** Nur die App: verkleinert das Werkzeugangebot, oeffnet keine Rechte. */
+    app_faehigkeiten?: {
+      computer_use?: boolean | null
+      artifact_install?: boolean | null
+    }
   },
   onEvent: (event: AiStreamEvent) => void,
   signal?: AbortSignal,

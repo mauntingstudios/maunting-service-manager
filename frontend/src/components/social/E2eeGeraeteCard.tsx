@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Clock, Fingerprint, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock, Fingerprint, KeyRound, ShieldCheck, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -255,6 +255,15 @@ export function E2eeGeraeteCard() {
   const andereFrei = geraete?.some(
     (g) => g.device_id !== meinEintrag?.device_id && g.is_approved !== false,
   ) === true
+  // Welche freigegebenen Geräte halten ein Konto-Schlüsselpaket? Das Feld
+  // kommt nur in der eigenen Liste; ein alter Server liefert es nicht, dann
+  // wird nichts behauptet.
+  const hatSchluesselFeld = geraete?.some((g) => g.has_account_key !== undefined) === true
+  const schluesselhalter = (geraete ?? []).filter(
+    (g) => g.is_approved !== false && g.has_account_key === true,
+  )
+  const keinSchluesselhalter = hatSchluesselFeld && schluesselhalter.length === 0
+  const letzterSchluesselhalter = hatSchluesselFeld && schluesselhalter.length === 1
 
   return (
     <section className="msm-card space-y-4 p-6" aria-labelledby="e2ee-devices-title">
@@ -272,12 +281,25 @@ export function E2eeGeraeteCard() {
         {t('profile.e2eeDevices.approvalHelp')}
       </p>
 
-      {meinEintrag && !ichBinFrei && (
+      {meinEintrag && (!ichBinFrei || keinSchluesselhalter) && (
         <div className="space-y-3 rounded-lg border border-status-warning/30 bg-status-warning/10 p-4">
-          <p className="text-sm text-on-surface">{t('profile.e2eeDevices.thisDevicePending')}</p>
-          <p className="text-sm text-on-surface-variant">
-            {t(andereFrei ? 'profile.e2eeDevices.reapproveOtherDevice' : 'profile.e2eeDevices.reapproveHelp')}
-          </p>
+          {!ichBinFrei && (
+            <>
+              <p className="text-sm text-on-surface">{t('profile.e2eeDevices.thisDevicePending')}</p>
+              <p className="text-sm text-on-surface-variant">
+                {t(andereFrei ? 'profile.e2eeDevices.reapproveOtherDevice' : 'profile.e2eeDevices.reapproveHelp')}
+              </p>
+            </>
+          )}
+          {(keinSchluesselhalter || letzterSchluesselhalter) && (
+            <p className="text-sm text-on-surface">
+              {t(
+                keinSchluesselhalter
+                  ? 'profile.e2eeDevices.noKeyHolderHelp'
+                  : 'profile.e2eeDevices.lastKeyHolderHelp',
+              )}
+            </p>
+          )}
           <div className="space-y-2">
             <p className="text-sm font-medium text-on-surface">{t('profile.e2eeDevices.resetTitle')}</p>
             <p className="text-sm text-on-surface-variant">{t('profile.e2eeDevices.resetHelp')}</p>
@@ -285,14 +307,16 @@ export function E2eeGeraeteCard() {
             {faktor.wahl === 'passkey' ? (
               <div className="space-y-2 pt-2">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Button
-                    variant="primary"
-                    disabled={laeuft !== null}
-                    onClick={() => void wiederFreigebenMitFaktor()}
-                  >
-                    <ShieldCheck className="h-4 w-4 mr-2" aria-hidden="true" />
-                    {t('profile.e2eeDevices.reapprove')}
-                  </Button>
+                  {!ichBinFrei && (
+                    <Button
+                      variant="primary"
+                      disabled={laeuft !== null}
+                      onClick={() => void wiederFreigebenMitFaktor()}
+                    >
+                      <ShieldCheck className="h-4 w-4 mr-2" aria-hidden="true" />
+                      {t('profile.e2eeDevices.reapprove')}
+                    </Button>
+                  )}
                   <Button
                     variant="secondary"
                     disabled={laeuft !== null}
@@ -318,13 +342,15 @@ export function E2eeGeraeteCard() {
                       onChange={(e) => faktor.setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       className="font-mono tracking-widest"
                     />
-                    <Button
-                      variant="primary"
-                      disabled={!faktor.bereit || laeuft !== null}
-                      onClick={() => void wiederFreigebenMitFaktor()}
-                    >
-                      {t('profile.e2eeDevices.reapprove')}
-                    </Button>
+                    {!ichBinFrei && (
+                      <Button
+                        variant="primary"
+                        disabled={!faktor.bereit || laeuft !== null}
+                        onClick={() => void wiederFreigebenMitFaktor()}
+                      >
+                        {t('profile.e2eeDevices.reapprove')}
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       disabled={!faktor.bereit || laeuft !== null}
@@ -350,13 +376,15 @@ export function E2eeGeraeteCard() {
                     onChange={(e) => setConfirmationWord(e.target.value)}
                     className="min-w-0 flex-1 font-mono"
                   />
-                  <Button
-                    variant="primary"
-                    disabled={confirmationWord.trim().toUpperCase() !== 'RESET' || laeuft !== null}
-                    onClick={() => void wiederFreigeben({ confirmation: 'RESET' })}
-                  >
-                    {t('profile.e2eeDevices.reapprove')}
-                  </Button>
+                  {!ichBinFrei && (
+                    <Button
+                      variant="primary"
+                      disabled={confirmationWord.trim().toUpperCase() !== 'RESET' || laeuft !== null}
+                      onClick={() => void wiederFreigeben({ confirmation: 'RESET' })}
+                    >
+                      {t('profile.e2eeDevices.reapprove')}
+                    </Button>
+                  )}
                   <Button
                     variant="secondary"
                     disabled={confirmationWord.trim().toUpperCase() !== 'RESET' || laeuft !== null}
@@ -377,13 +405,15 @@ export function E2eeGeraeteCard() {
                   onChange={(e) => setPasswort(e.target.value)}
                   className="min-w-0 flex-1"
                 />
-                <Button
-                  variant="primary"
-                  disabled={!passwort || laeuft !== null}
-                  onClick={() => void wiederFreigeben({ password: passwort })}
-                >
-                  {t('profile.e2eeDevices.reapprove')}
-                </Button>
+                {!ichBinFrei && (
+                  <Button
+                    variant="primary"
+                    disabled={!passwort || laeuft !== null}
+                    onClick={() => void wiederFreigeben({ password: passwort })}
+                  >
+                    {t('profile.e2eeDevices.reapprove')}
+                  </Button>
+                )}
                 <Button
                   variant="secondary"
                   disabled={!passwort || laeuft !== null}
@@ -433,6 +463,12 @@ export function E2eeGeraeteCard() {
                     {istMeins && (
                       <span className="inline-flex items-center rounded-full border border-secondary/20 bg-secondary/10 px-2 py-0.5 text-xs font-medium text-secondary">
                         {t('profile.e2eeDevices.thisDevice')}
+                      </span>
+                    )}
+                    {geraet.is_approved !== false && geraet.has_account_key === true && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-status-success/30 bg-status-success/10 px-2 py-0.5 text-xs font-medium text-status-success">
+                        <KeyRound className="w-3 h-3" aria-hidden="true" />
+                        {t('profile.e2eeDevices.keyHolder')}
                       </span>
                     )}
                     {geraet.is_approved === false && (
@@ -519,6 +555,9 @@ export function E2eeGeraeteCard() {
         <GeraetEntfernenDialog
           geraet={zuEntfernen}
           sicherheitsnummer={sicherheitsnummern[zuEntfernen.device_id]}
+          letzterSchluesselhalter={
+            letzterSchluesselhalter && schluesselhalter[0]?.device_id === zuEntfernen.device_id
+          }
           onOpenChange={(offen) => {
             if (!offen) setZuEntfernen(null)
           }}

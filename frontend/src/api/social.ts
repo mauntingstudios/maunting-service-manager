@@ -299,6 +299,11 @@ export interface E2eeGeraetItem {
   inbox_hash?: string
   /** Die Transportfähigkeit des Geräts. Leer heißt: der alte Weg. */
   transport?: string
+  /**
+   * Nur in der eigenen Liste: hält dieses Gerät ein Konto-Schlüsselpaket?
+   * Fehlt bei fremden Konten.
+   */
+  has_account_key?: boolean | null
 }
 
 /**

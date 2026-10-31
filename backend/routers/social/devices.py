@@ -64,7 +64,12 @@ def put_own_e2ee_device(
     return e2ee_device_service.eintrag_als_dict(eintrag, db)
 
 
-@router.get("/e2ee/devices/{target_user_id}", response_model=list[E2eeDeviceItem], dependencies=[Depends(_check_social_enabled)])
+@router.get(
+    "/e2ee/devices/{target_user_id}",
+    response_model=list[E2eeDeviceItem],
+    response_model_exclude_none=True,
+    dependencies=[Depends(_check_social_enabled)],
+)
 def get_e2ee_devices(
     target_user_id: int,
     include_unapproved: bool = False,
@@ -84,9 +89,12 @@ def get_e2ee_devices(
     if not target or not target.is_active:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     nur_bestaetigt = True
-    if include_unapproved and current_user.id == target_user_id:
+    ist_besitzer = current_user.id == target_user_id
+    if include_unapproved and ist_besitzer:
         nur_bestaetigt = False
-    return e2ee_device_service.geraete(db, target_user_id, nur_bestaetigt=nur_bestaetigt)
+    return e2ee_device_service.geraete(
+        db, target_user_id, nur_bestaetigt=nur_bestaetigt, fuer_besitzer=ist_besitzer
+    )
 
 
 def _entfernen_nachweis(
@@ -306,6 +314,17 @@ def remove_own_e2ee_device(
             status_code=403,
             detail="Dieses Gerät kann sich nicht selbst entfernen.",
         )
+    if hindernis == "letzter_schluesselhalter":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "last_key_holder",
+                "message": (
+                    "Das ist der letzte freigegebene Schluesselhalter. Entfernen "
+                    "wuerde alle Nachrichten unlesbar machen. Setze das Konto neu auf."
+                ),
+            },
+        )
 
     # Erst der Beleg, dann der Nachweis: ein Einmalcode oder Passkey gilt genau
     # einmal und darf nicht fuer eine 403 verbrannt werden.
@@ -333,6 +352,11 @@ def remove_own_e2ee_device(
             approver_device_id=req.approver_device_id,
             signature=req.signature,
             anfrage_familie=familie,
+        )
+    except e2ee_device_service.LetzterSchluesselhalterError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "last_key_holder", "message": str(e)},
         )
     except e2ee_device_service.GeraeteaenderungAbgelehntError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -364,4 +388,5 @@ def reset_own_e2ee_devices(
         passkey=req.passkey,
     )
 
-    return {"ok": True, "removed": e2ee_device_service.zuruecksetzen(db, user, familie)}
+    ergebnis = e2ee_device_service.zuruecksetzen(db, user, familie)
+    return {"ok": True, **ergebnis}

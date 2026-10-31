@@ -20,7 +20,7 @@ import {
   onSchluesselWarnung,
 } from '@/services/e2eeGeraet'
 import { messengerSocket } from '@/services/messengerSocket'
-import { ladeEntwurf, loadLocalMessages, sichereDauerhafteAblage, sortMessagesChronologically, updateMessageInLocalStore } from '@/services/messengerLocalStore'
+import { ladeEntwurf, loadLocalMessages, sichereDauerhafteAblage, sortMessagesChronologically, updateMessageInLocalStore, type LocalStoredMessage } from '@/services/messengerLocalStore'
 import { holeOffeneMedien } from '@/services/medienNachholen'
 import { stosseKontoBundNachholenAn } from '@/services/kontoBundNachholen'
 import { setzeLoeschMelder, stosseLoeschungenAn } from '@/services/loeschAuftraege'
@@ -615,25 +615,33 @@ export function useMessengerKern({
       return sortMessagesChronologically(neu)
     })
 
-    await updateMessageInLocalStore(blindMailboxId, raw.client_uuid || raw.id, {
-      text: fertig.text,
-      isDeleted: fertig.isDeleted,
-      deletedAt: fertig.deletedAt,
-      isEdited: fertig.isEdited,
-      editedAt: fertig.editedAt,
-      imageAttachment: fertig.imageAttachment,
-      audioAttachment: fertig.audioAttachment,
-      fileAttachment: fertig.fileAttachment,
-      videoNoteAttachment: fertig.videoNoteAttachment,
-      stickerAttachment: fertig.stickerAttachment,
-      storyReply: fertig.storyReply,
-      noteAttachment: fertig.noteAttachment,
-      calendarAttachment: fertig.calendarAttachment,
-      antwortAuf: fertig.antwortAuf,
-      reaktionen: fertig.reaktionen,
-      isPinned: fertig.isPinned,
-      pinnedAt: fertig.pinnedAt,
-    }).catch(() => {})
+    // **Keine `undefined`-Werte in den Patch.** Frueher ueberschrieb eine
+    // Bearbeitung ohne Anhangsfelder genau diese Felder mit `undefined`;
+    // `JSON.stringify` liess sie beim Versiegeln fallen, und der Anhang war
+    // danach auch in der lokalen Ablage weg. Was die Nutzlast nicht nennt,
+    // bleibt stehen.
+    const patch = Object.fromEntries(
+      Object.entries({
+        text: fertig.text,
+        isDeleted: fertig.isDeleted,
+        deletedAt: fertig.deletedAt,
+        isEdited: fertig.isEdited,
+        editedAt: fertig.editedAt,
+        imageAttachment: fertig.imageAttachment,
+        audioAttachment: fertig.audioAttachment,
+        fileAttachment: fertig.fileAttachment,
+        videoNoteAttachment: fertig.videoNoteAttachment,
+        stickerAttachment: fertig.stickerAttachment,
+        storyReply: fertig.storyReply,
+        noteAttachment: fertig.noteAttachment,
+        calendarAttachment: fertig.calendarAttachment,
+        antwortAuf: fertig.antwortAuf,
+        reaktionen: fertig.reaktionen,
+        isPinned: fertig.isPinned,
+        pinnedAt: fertig.pinnedAt,
+      }).filter(([, wert]) => wert !== undefined),
+    ) as Partial<LocalStoredMessage>
+    await updateMessageInLocalStore(blindMailboxId, raw.client_uuid || raw.id, patch).catch(() => {})
 
     if (fertig.isPinned) setAngeheftet(fertig)
     else if (angeheftet?.clientUuid === fertig.clientUuid) setAngeheftet(null)

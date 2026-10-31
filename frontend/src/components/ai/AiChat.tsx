@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AudioLines, CalendarClock, Check, Image as ImageIcon, ListPlus, Loader2, Mic, Paperclip, Pencil, RotateCw, Send, ShieldAlert, Sparkles, Square, Trash2, X, Zap } from 'lucide-react'
-import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -29,6 +28,9 @@ import { useAuthStore } from '@/stores/authStore'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import { AiActionProposalCard } from './AiActionProposalCard'
+import { AiAnhangLeiste } from './anhaenge/AiAnhangLeiste'
+import { AiAnhangListe } from './anhaenge/AiAnhangListe'
+import { useAnhangUpload } from './anhaenge/useAnhangUpload'
 import { AiAutonomyButton } from './AiAutonomyButton'
 import { AiContextMeter } from './AiContextMeter'
 import { AiMemoryNotice } from './AiMemoryNotice'
@@ -58,7 +60,12 @@ interface ServerOption {
   name: string
 }
 
-const ATTACHMENT_ACCEPT = '.txt,.log,.cfg,.conf,.ini,.json,.properties,.toml,.yaml,.yml,.png,.jpg,.jpeg'
+/**
+ * Der Dateidialog zeigt alles. Ob eine Datei lesbar ist, entscheidet der
+ * Server an Inhalt und Endung — nicht der Browser anhand einer kurzen Liste,
+ * die genau die Formate vergisst, die jemand gerade braucht.
+ */
+const ATTACHMENT_ACCEPT = '*/*'
 
 /**
  * Wie oft das Tipp-Signal höchstens gesendet wird.
@@ -137,6 +144,11 @@ export interface AiChatProps {
   onProviderChange?: (providerId: number | null) => void
   /** Beispielschlüssel für den leeren Chat; Standard bleibt der Serverchat. */
   beispielSchluessel?: readonly string[]
+  /** Nur die App. Das Panel laesst das Feld weg. */
+  appFaehigkeiten?: {
+    computer_use?: boolean | null
+    artifact_install?: boolean | null
+  }
 }
 
 const SERVER_BEISPIELE = ['logs', 'network', 'mods'] as const
@@ -152,7 +164,7 @@ export function AiChat({
   showWorkers = true,
   onProviderChange,
   beispielSchluessel = SERVER_BEISPIELE,
-}: AiChatProps = {}) {
+  appFaehigkeiten,
   const { t } = useTranslation()
   const canAttach = useHasPermission('ai.attachments.use')
   const canUseAutonomy = useHasPermission('ai.autonomous.use')
@@ -211,7 +223,6 @@ export function AiChat({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
   const [dragging, setDragging] = useState(false)
   // Was beim Oeffnen schon lief. Wird in einem eigenen Effekt angehaengt, weil
   // das Anhaengen erst gehen kann, wenn die Verarbeitung steht.
@@ -565,7 +576,25 @@ export function AiChat({
   const {
     entries, setEntries, streaming, laufendeWerkzeuge, runId, setRunId,
     merkeVorschlag, sendContent, haengeAn, stoppeLauf,
-  } = useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, api: chatApi })
+  } = useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten, api: chatApi })
+
+  const meldeAnhangFehler = useCallback((text: string) => {
+    toast.error(text)
+  }, [])
+  // Dateiauswahl, Drag-and-drop, Zwischenablage und Vorschau liegen in einem
+  // eigenen Modul. Der Chat kennt nur noch `uploadFiles(files)`.
+  const {
+    uploading,
+    uploadFiles,
+    remove: removeAttachment,
+    vorschauen,
+    clearPreviews,
+  } = useAnhangUpload({
+    aktiv: canAttach,
+    gesperrt: streaming,
+    setAttachments,
+    onFehler: meldeAnhangFehler,
+  })
 
   const manuallyClosedGeoRef = useRef(false)
   const closedGeoIdRef = useRef(readClosedGeoAnalysis(merkSchluessel.closedGeoAnalysis))
@@ -892,38 +921,6 @@ export function AiChat({
     return karte
   }, [attachments])
 
-  const uploadAttachment = useCallback(async (file: File | undefined) => {
-    if (!file || streaming || uploading) return
-    setUploading(true)
-    try {
-      const created = await chatApi.uploadAttachment(file)
-      // Nach Kennung einsetzen statt anhaengen: das Nachladen nach dem Absenden
-      // (siehe `message`-Ereignis) kann eine Antwort ueberholen, die noch
-      // unterwegs war. Beim blossen Anhaengen stuende die Datei dann zweimal in
-      // der Liste — React beschwert sich ueber den doppelten Key, und der
-      // Benutzer sieht einen Anhang, den er nur einmal hochgeladen hat.
-      if (mountedRef.current) {
-        setAttachments((current) => [
-          ...current.filter((item) => item.id !== created.id),
-          created,
-        ])
-      }
-    } catch (error: unknown) {
-      toast.error(error instanceof SanitizedApiError ? error.message : t('ai.attachments.error'))
-    } finally {
-      if (mountedRef.current) setUploading(false)
-    }
-  }, [chatApi, streaming, t, uploading])
-
-  const removeAttachment = async (attachment: AiAttachment) => {
-    try {
-      await aiApi.deleteAttachment(attachment.id)
-      setAttachments((current) => current.filter((item) => item.id !== attachment.id))
-    } catch {
-      toast.error(t('ai.attachments.error'))
-    }
-  }
-
   const clearHistory = async () => {
     if (streaming) return
     const accepted = await confirm({
@@ -939,6 +936,7 @@ export function AiChat({
       userScrolledUpRef.current = false
       setEntries([])
       setAttachments([])
+      clearPreviews()
       setContextStatus(null)
       window.dispatchEvent(new Event('msm:ai-chat-cleared'))
     } catch (error: unknown) {
@@ -965,7 +963,8 @@ export function AiChat({
 
   const sendImmediatelyAndInterrupt = useCallback(async (content: string) => {
     const text = content.trim()
-    if (!text || !providerId) return
+    const mitAnhaengen = offeneAnhaenge.length > 0
+    if ((!text && !mitAnhaengen) || !providerId) return
     window.dispatchEvent(new CustomEvent('msm:ai-message-sent'))
     manuallyClosedGeoRef.current = false
     setInput('')
@@ -975,24 +974,28 @@ export function AiChat({
     if (streaming) {
       await stoppeLauf()
     }
-    await sendContent(text)
-  }, [providerId, scrolleNachUnten, sendContent, stoppeLauf, streaming])
+    await sendContent(text, mitAnhaengen)
+  }, [offeneAnhaenge.length, providerId, scrolleNachUnten, sendContent, stoppeLauf, streaming])
 
   const send = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (uploading || !providerId) return
     const content = input.trim()
-    if (!content || !providerId) return
+    const mitAnhaengen = offeneAnhaenge.length > 0
+    // Ein Bild ohne Begleittext ist eine vollstaendige Frage. Die bisherige
+    // Sperre `!content` verhinderte genau das, was der Dateianhang anbietet.
+    if (!content && !mitAnhaengen) return
     window.dispatchEvent(new CustomEvent('msm:ai-message-sent'))
     manuallyClosedGeoRef.current = false
     if (streaming) {
-      enqueueMessage(content)
+      if (content) enqueueMessage(content)
       return
     }
     setInput('')
     userScrolledUpRef.current = false
     setAmEnde(true)
     scrolleNachUnten(true)
-    await sendContent(content)
+    await sendContent(content, mitAnhaengen)
   }
 
   /**
@@ -1018,6 +1021,14 @@ export function AiChat({
       const index = current.findIndex((item) => item.kind === 'message' && item.id === messageId)
       return index === -1 ? current : current.slice(0, index)
     })
+    // Der Server hat die Anhaenge der bearbeiteten Nachricht entbunden, nicht
+    // geloescht. Einmal nachladen, damit sie als Chips wieder ueber dem
+    // Eingabefeld stehen; `sendContent` bindet sie gleich an die neue Fassung.
+    if (canAttach) {
+      void aiApi.listAttachments()
+        .then((rows) => { if (mountedRef.current) setAttachments(rows) })
+        .catch(() => undefined)
+    }
     setEditingId(null)
     setEditDraft('')
     userScrolledUpRef.current = false
@@ -1184,7 +1195,23 @@ export function AiChat({
         event.preventDefault()
         dragDepthRef.current = 0
         setDragging(false)
-        void uploadAttachment(event.dataTransfer.files?.[0])
+        void uploadFiles(event.dataTransfer.files)
+      }}
+      onPaste={(event) => {
+        // Strg+V mit einem Bild oder einer Datei in der Zwischenablage.
+        // Text bleibt Text: ohne Dateien wird nichts abgefangen. Nicht jeder
+        // Browser fuellt `files`; die `items`-Liste ist der zweite Weg.
+        const dateien = Array.from(event.clipboardData?.files ?? [])
+        if (dateien.length === 0) {
+          for (const eintrag of Array.from(event.clipboardData?.items ?? [])) {
+            if (eintrag.kind !== 'file') continue
+            const datei = eintrag.getAsFile()
+            if (datei) dateien.push(datei)
+          }
+        }
+        if (!canAttach || busy || dateien.length === 0) return
+        event.preventDefault()
+        void uploadFiles(dateien)
       }}
     >
       {/* ── Der Hintergrund: dieselbe Schicht wie im Messenger ─────────── */}
@@ -1507,16 +1534,17 @@ export function AiChat({
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
                         <div className="flex max-w-[85%] flex-col items-end rounded-2xl rounded-br-md border border-primary/25 bg-primary/10 px-4 py-2.5">
-                          <p className="w-full whitespace-pre-wrap break-words text-base sm:text-sm leading-relaxed sm:leading-6 text-on-surface">
-                            {message.content}
-                          </p>
+                          {message.content && (
+                            <p className="w-full whitespace-pre-wrap break-words text-base sm:text-sm leading-relaxed sm:leading-6 text-on-surface">
+                              {message.content}
+                            </p>
+                          )}
                           {/* Die Anhaenge stehen **in** der Nachricht, mit der
                               sie gesendet wurden. Vorher hingen sie nur an der
                               Unterhaltung: nach einem Neuladen war nicht mehr
                               erkennbar, zu welcher Frage sie gehoerten. */}
-                          <AnhangListe
+                          <AiAnhangListe
                             anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
-                            t={t}
                           />
                           {message.created_at && (
                             <span className="mt-1 text-label-sm text-on-surface-variant/70">
@@ -1575,28 +1603,12 @@ export function AiChat({
           {/* Nur Ungesendetes: alles Uebrige steht in seiner Nachricht. Vorher
               blieb jeder Anhang hier stehen und ging bei jeder Folgefrage
               erneut an den Anbieter. */}
-          {offeneAnhaenge.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-2" aria-label={t('ai.attachments.list')}>
-              {offeneAnhaenge.map((attachment) => (
-                <span
-                  key={attachment.id}
-                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-outline-variant/40 bg-surface-container-high px-2.5 py-1 text-xs text-on-surface-variant"
-                >
-                  <Paperclip className="h-3 w-3 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{attachment.original_name}</span>
-                  <button
-                    type="button"
-                    className="rounded-sm p-0.5 hover:bg-surface-container-highest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    disabled={busy}
-                    onClick={() => void removeAttachment(attachment)}
-                    aria-label={t('ai.attachments.remove')}
-                  >
-                    <X className="h-3 w-3" aria-hidden="true" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
+          <AiAnhangLeiste
+            anhaenge={offeneAnhaenge}
+            vorschauen={vorschauen}
+            onRemove={(anhang) => void removeAttachment(anhang)}
+            disabled={busy}
+          />
 
           {queuedMessages.length > 0 && (
             <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-outline-variant/30 bg-surface-container-high/60 px-2.5 py-1.5 text-xs text-on-surface-variant">
@@ -1689,17 +1701,18 @@ export function AiChat({
                   <Kurzinfo text={t('ai.attachments.add')} lage="oben" seite="anfang" aussen="shrink-0">
                   <label
                     className={`grid h-9 w-9 place-items-center rounded-full text-on-surface-variant transition-colors ${
-                      uploading ? 'pointer-events-none opacity-50' : 'cursor-pointer hover:bg-surface-container-high hover:text-on-surface'
+                      busy ? 'pointer-events-none opacity-50' : 'cursor-pointer hover:bg-surface-container-high hover:text-on-surface'
                     }`}
                   >
                     {uploading
                       ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                       : <Paperclip className="h-4 w-4" aria-hidden="true" />}
                     <input
-                      type="file" className="sr-only" disabled={uploading} accept={ATTACHMENT_ACCEPT}
+                      type="file" className="sr-only" disabled={busy}
+                      accept={ATTACHMENT_ACCEPT} multiple
                       aria-label={t('ai.attachments.add')}
                       onChange={(event) => {
-                        void uploadAttachment(event.target.files?.[0])
+                        void uploadFiles(event.target.files)
                         event.target.value = ''
                       }}
                     />
@@ -1807,7 +1820,11 @@ export function AiChat({
                 type="submit"
                 size="sm"
                 className="h-9 w-9 shrink-0 rounded-full p-0"
-                disabled={uploading || !input.trim() || !providerId}
+                disabled={
+                  uploading
+                  || (!input.trim() && offeneAnhaenge.length === 0)
+                  || !providerId
+                }
                 aria-label={t('ai.chat.send')}
               >
                 <Send className="h-4 w-4" aria-hidden="true" />
@@ -1838,40 +1855,5 @@ export function AiChat({
       onOffenChange={setzeHintergrundOffen}
     />
     </RegionalAnalysisLayout>
-  )
-}
-
-/**
- * Sortiert Vorschlaege chronologisch zwischen die Nachrichten.
- *
- * Beide Listen sind bereits nach `created_at` sortiert; hier werden sie nur
- * zusammengefuehrt. Ein Vorschlag steht damit dort, wo er entstanden ist.
- */
-/**
- * Die Anhänge einer Nachricht, unter ihrem Text.
- *
- * Zeigt auch, wenn beim Aufnehmen etwas unkenntlich gemacht wurde. Vorher wurde
- * eine Datei mit einem Tokenmuster komplett abgewiesen — bei echten Serverlogs
- * passiert das ständig. Jetzt wird redigiert, und der Hinweis hier ist der
- * Grund, warum niemand sich über ein `[REDACTED]` im eigenen Log wundern muss.
- */
-
-
-function AnhangListe({ anhaenge, t }: { anhaenge: AiAttachment[]; t: TFunction }) {
-  if (anhaenge.length === 0) return null
-  return (
-    <ul className="mt-2 space-y-1 border-t border-primary/20 pt-2">
-      {anhaenge.map((anhang) => (
-        <li key={anhang.id} className="flex items-center gap-1.5 text-xs text-on-surface-variant">
-          <Paperclip className="h-3 w-3 shrink-0" aria-hidden="true" />
-          <span className="truncate">{anhang.original_name}</span>
-          {anhang.redacted_spans ? (
-            <span className="shrink-0 rounded-full border border-outline-variant/50 px-1.5 py-0.5 text-label-sm">
-              {t('ai.attachments.redacted', { count: anhang.redacted_spans })}
-            </span>
-          ) : null}
-        </li>
-      ))}
-    </ul>
   )
 }

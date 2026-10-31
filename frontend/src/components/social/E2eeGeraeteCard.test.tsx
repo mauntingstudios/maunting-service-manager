@@ -24,6 +24,7 @@ const { liste } = vi.hoisted(() => ({
       is_approved?: boolean
       approved_by?: string
       approval_signature?: string
+      has_account_key?: boolean
     }[],
     fehler: null as Error | null,
   },
@@ -535,5 +536,29 @@ describe('E2eeGeraeteCard', () => {
     await waitFor(() =>
       expect(geraeteZuruecksetzen).toHaveBeenCalledWith({ otp_code: '123456' }),
     )
+  })
+})
+
+describe('E2eeGeraeteCard — Kontoschlüssel', () => {
+  it('zeigt, welches Gerät den Kontoschlüssel hält', async () => {
+    liste.inhalt = [
+      { device_id: 'dieses-geraet-0001', public_key: 'pub-1', label: '', has_account_key: true },
+      { device_id: 'fremdes-geraet-02', public_key: 'pub-2', label: 'Arbeitsrechner', has_account_key: false },
+    ]
+    render(<E2eeGeraeteCard />)
+
+    expect(await screen.findAllByText(i18n.t('profile.e2eeDevices.keyHolder'))).toHaveLength(1)
+    expect(screen.queryByText(i18n.t('profile.e2eeDevices.noKeyHolderHelp'))).toBeNull()
+  })
+
+  it('bietet bei einem schlüssellosen Konto den Neuanfang auch für ein freigegebenes Gerät', async () => {
+    liste.inhalt = [
+      { device_id: 'dieses-geraet-0001', public_key: 'pub-1', label: '', has_account_key: false },
+      { device_id: 'fremdes-geraet-02', public_key: 'pub-2', label: 'Arbeitsrechner', has_account_key: false },
+    ]
+    render(<E2eeGeraeteCard />)
+
+    expect(await screen.findByText(i18n.t('profile.e2eeDevices.noKeyHolderHelp'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: i18n.t('profile.e2eeDevices.resetButton') })).toBeInTheDocument()
   })
 })

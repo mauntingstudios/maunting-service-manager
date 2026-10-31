@@ -1,5 +1,6 @@
 import { LOGO_CONFIG } from '@/config/logo'
 import { useState } from 'react'
+import { SaisonLogo } from '@/season/SaisonLogo'
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg'
@@ -27,15 +28,16 @@ export function Logo({ size = 'md', className = '' }: LogoProps) {
   return (
     <div className={`${cls} relative flex-shrink-0 ${className}`}>
       {!failed ? (
-        <img
-          src={LOGO_CONFIG.src}
+        <SaisonLogo
+          art="msm"
+          standardSrc={LOGO_CONFIG.src}
           alt={LOGO_CONFIG.alt}
-          className={`${cls} block object-cover rounded-full border border-primary/20 drop-shadow-[0_0_12px_hsl(190_92%_62%_/_0.28)]`}
+          className={`${cls} msm-logo-bild block object-cover rounded-full border border-primary/20`}
           onError={() => setFailed(true)}
         />
       ) : (
         <div
-          className={`${cls} flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-label-sm font-bold text-primary`}
+          className={`${cls} msm-logo-bild flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-label-sm font-bold text-primary`}
           aria-label={LOGO_CONFIG.alt}
           role="img"
         >

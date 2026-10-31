@@ -1,5 +1,6 @@
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -24,6 +25,7 @@ from schemas.panel_settings import (
     GitHubTokenStatus,
     SingraWidgetInstallIdRequest,
     SingraWebhookSecretRequest,
+    SEASON_WINDOW_DEFAULTS,
 )
 from models import User
 from services import audit_service, vault_blob_service
@@ -39,6 +41,7 @@ from services.rate_limit_settings import (
 from services.email_service import EmailService
 from services.auth_service import AuthService
 from services.steam_account_service import SteamAccountService
+from services.sync_event_service import SyncEventService
 from services.steam_api_key_service import (
     current_source as steam_api_source,
     resolve_key as resolve_steam_api_key,
@@ -64,6 +67,73 @@ from services import singra_webhook_secret_service as singra_secret
 from services import singra_widget_install_service as singra_install
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+# Saisonale Akzente: Die Modi und Fenster sind einfach genug, um sie als
+# Zeichenketten in den bestehenden Panel-Einstellungen zu halten. Die Fenster
+# gelten jaehrlich und werden auf den Geraeten in Ortszeit ausgewertet.
+SEASON_MODES = ("off", "auto", "on")
+_SEASON_WINDOW = re.compile(
+    r"^(?P<month>0[1-9]|1[0-2])-(?P<day>0[1-9]|[12][0-9]|3[01])"
+    r"T(?P<hour>[01][0-9]|2[0-3]):(?P<minute>[0-5][0-9])$"
+)
+
+
+def _season_mode(value: str | None, default: str = "auto") -> str:
+    """Liest einen gespeicherten Modus und faellt bei Altbestand auf den Default zurueck."""
+    mode = (value or "").strip().lower()
+    return mode if mode in SEASON_MODES else default
+
+
+def _parse_season_window(value: object) -> str | None:
+    """Liest ein jaehrliches Fenster oder gibt ``None`` zurueck."""
+    text = str(value).strip()
+    match = _SEASON_WINDOW.fullmatch(text)
+    if not match:
+        return None
+    try:
+        # 2000 ist ein Schaltjahr; so bleibt der 29.02. ein gueltiger Tag.
+        datetime(2000, int(match.group("month")), int(match.group("day")))
+    except ValueError:
+        return None
+    return text
+
+
+def _season_window(value: str | None, default: str) -> str:
+    """Gibt ein gespeichertes Fenster nur zurueck, wenn es noch gueltig ist."""
+    return _parse_season_window(value) or default
+
+
+def _validate_season_window(value: object) -> str:
+    """Prueft ein jaehrliches Fenster im Format ``MM-DDTHH:MM``."""
+    text = _parse_season_window(value)
+    if not text:
+        raise HTTPException(status_code=400, detail="Ungueltiges Saison-Zeitfenster")
+    return text
+
+
+def _seasonal_settings(all_db: dict[str, str]) -> dict:
+    """Die saisonalen Einstellungen als flache, typisierte Werte."""
+    return {
+        "seasonal_enabled": all_db.get("seasonal_enabled", "true") != "false",
+        "season_halloween_mode": _season_mode(all_db.get("season_halloween_mode")),
+        "season_halloween_start": _season_window(
+            all_db.get("season_halloween_start"),
+            SEASON_WINDOW_DEFAULTS["season_halloween_start"],
+        ),
+        "season_halloween_end": _season_window(
+            all_db.get("season_halloween_end"),
+            SEASON_WINDOW_DEFAULTS["season_halloween_end"],
+        ),
+        "season_christmas_mode": _season_mode(all_db.get("season_christmas_mode")),
+        "season_christmas_start": _season_window(
+            all_db.get("season_christmas_start"),
+            SEASON_WINDOW_DEFAULTS["season_christmas_start"],
+        ),
+        "season_christmas_end": _season_window(
+            all_db.get("season_christmas_end"),
+            SEASON_WINDOW_DEFAULTS["season_christmas_end"],
+        ),
+    }
 
 
 def _mask_secret(value: str) -> str:
@@ -154,6 +224,7 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
         "docs_enabled": all_db.get("docs_enabled", "true") != "false",
         "vault_enabled": all_db.get("vault_enabled", "true") != "false",
         "social_enabled": all_db.get("social_enabled", "true") != "false",
+        **_seasonal_settings(all_db),
         "captcha_enabled": all_db.get("captcha_enabled", "true") == "true",
         "captcha_provider": all_db.get("captcha_provider", "altcha"),
         "captcha_site_key": all_db.get("captcha_site_key", ""),
@@ -179,6 +250,7 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
 def get_public_settings() -> dict:
     """Öffentlich abfragbare Panel-Einstellungen (z. B. Desktop-Download-Banner, Kalender, Notizen, Tresor)."""
     all_db = PanelSettingsService.get_all()
+    seasonal = _seasonal_settings(all_db)
     return {
         # Die kanonische Adresse des Panels. Sie ist oeffentlich — sie steht
         # ohnehin in Mails und OAuth-Rueckleitungen — und wird fuer
@@ -196,6 +268,23 @@ def get_public_settings() -> dict:
         "docs_enabled": all_db.get("docs_enabled", "true") != "false",
         "vault_enabled": all_db.get("vault_enabled", "true") != "false",
         "social_enabled": all_db.get("social_enabled", "true") != "false",
+        # Die Clients werten das Fenster in ihrer eigenen Ortszeit aus. Sie
+        # bekommen deshalb die Rohdaten und keinen serverseitig eingefrorenen
+        # Aktiv-Zustand: eine Zeitzone auf dem Server waere fuer ein Geraet in
+        # einer anderen Zeitzone schlicht falsch.
+        "seasonal": {
+            "enabled": seasonal["seasonal_enabled"],
+            "halloween": {
+                "mode": seasonal["season_halloween_mode"],
+                "start": seasonal["season_halloween_start"],
+                "end": seasonal["season_halloween_end"],
+            },
+            "christmas": {
+                "mode": seasonal["season_christmas_mode"],
+                "start": seasonal["season_christmas_start"],
+                "end": seasonal["season_christmas_end"],
+            },
+        },
     }
 
 
@@ -261,6 +350,15 @@ def update_settings(
             value = "true" if bool(value) else "false"
         if key == "social_enabled":
             value = "true" if bool(value) else "false"
+        if key == "seasonal_enabled":
+            value = "true" if bool(value) else "false"
+        if key in ("season_halloween_mode", "season_christmas_mode"):
+            mode = str(value).strip().lower()
+            if mode not in SEASON_MODES:
+                raise HTTPException(status_code=400, detail="Ungueltiger Saison-Modus")
+            value = mode
+        if key in SEASON_WINDOW_DEFAULTS:
+            value = _validate_season_window(value)
         # Ohne diese Normalisierung landet ein abgeschaltetes Banner als str(False) == "False"
         # in der Datenbank und wird beim Lesen gegen "false" verglichen — der Schalter liess
         # sich also gar nicht ausschalten.
@@ -347,6 +445,11 @@ def update_settings(
         from services.docs_collab_service import DocsCollabService
 
         DocsCollabService.flush_and_disconnect_all()
+    # Theme-Wechsel gehoert in denselben Echtzeit-Kanal wie Notizen und
+    # Kalender: die gekoppelten Apps laden daraufhin /settings/public neu,
+    # ohne dass ein App-Update oder Neustart noetig ist.
+    if any(key.startswith("season") for key in data):
+        SyncEventService.publish({"entity": "theme", "action": "changed"})
     return {"message": "Einstellungen gespeichert"}
 
 
