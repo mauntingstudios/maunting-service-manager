@@ -303,7 +303,7 @@ export function Teams() {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-primary">
-                {t('teams.eyebrow')}
+                {bereich === 'personal' ? t('teams.areaPersonal') : t('teams.eyebrow')}
               </span>
               {team?.is_owner && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-label-sm font-semibold text-primary">
@@ -558,21 +558,23 @@ export function Teams() {
 
                   <div className="flex items-center gap-3 rounded-xl border border-outline-variant/40 bg-surface p-3 shadow-sm">
                     <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                      <Brain className="h-5 w-5" />
+                      <Mail className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-lg font-bold leading-none text-on-surface">Aktiv</div>
-                      <div className="mt-1 truncate text-xs text-on-surface-variant">{t('teams.knowledge')}</div>
+                      <div className="text-lg font-bold leading-none text-on-surface">{team.is_owner ? offeneBeitritte.length : 0}</div>
+                      <div className="mt-1 truncate text-xs text-on-surface-variant">Ausstehend</div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3 rounded-xl border border-outline-variant/40 bg-surface p-3 shadow-sm">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-status-success/10 text-status-success">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
                       <ShieldCheck className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-lg font-bold leading-none text-on-surface">E2EE</div>
-                      <div className="mt-1 truncate text-xs text-on-surface-variant">Zero-Knowledge</div>
+                      <div className="text-lg font-bold leading-none text-on-surface">
+                        {team.servers.reduce((sum, s) => sum + s.permission_keys.length, 0)}
+                      </div>
+                      <div className="mt-1 truncate text-xs text-on-surface-variant">{t('teams.permissions')}</div>
                     </div>
                   </div>
                 </div>
@@ -688,7 +690,7 @@ export function Teams() {
                   {echte.length === 0 ? t('teams.noTeams') : t('teams.chooseTeam')}
                 </h3>
                 <p className="mt-1 max-w-sm text-xs text-on-surface-variant">
-                  {canCreate ? 'Erstelle links dein erstes Team oder wähle eine Organisation aus.' : 'Warte auf eine Einladung oder wähle ein Team aus.'}
+                  {canCreate ? 'Gründe ein neues Team oder wähle ein bestehendes aus.' : 'Warte auf eine Einladung oder wähle ein Team aus.'}
                 </p>
               </div>
             )}
@@ -726,7 +728,7 @@ function MitgliederReiter({
             {t('teams.members')}
           </h3>
           <p className="text-xs sm:text-sm text-on-surface-variant">
-            Verwalte Berechtigungen und Zugriffsrechte für alle Teammitglieder.
+            Lege fest, wer geteilte Skills und Erinnerungen dieses Teams verwalten darf.
           </p>
         </div>
 
