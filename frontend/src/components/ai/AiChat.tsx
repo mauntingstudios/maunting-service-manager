@@ -165,6 +165,7 @@ export function AiChat({
   onProviderChange,
   beispielSchluessel = SERVER_BEISPIELE,
   appFaehigkeiten,
+}: AiChatProps = {}) {
   const { t } = useTranslation()
   const canAttach = useHasPermission('ai.attachments.use')
   const canUseAutonomy = useHasPermission('ai.autonomous.use')
