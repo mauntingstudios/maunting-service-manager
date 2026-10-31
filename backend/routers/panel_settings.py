@@ -243,6 +243,7 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
         # Rate-Limits: immer resolved (Default wenn unset/invalid), nie Rohmüll
         "rate_limit_auth": resolve_auth_limit(all_db.get(RATE_LIMIT_AUTH_KEY, "")),
         "rate_limit_global": resolve_global_limit(all_db.get(RATE_LIMIT_GLOBAL_KEY, "")),
+        "allow_localhost_connections": all_db.get("allow_localhost_connections", "false") == "true",
     }
 
 
@@ -330,6 +331,37 @@ def update_settings(
     from services.auth_service import AuthService
     data = req.model_dump(exclude_none=True)
     for key, value in data.items():
+        if key in ("confirm_password", "confirm_otp_code", "confirm_passkey"):
+            continue
+        if key == "allow_localhost_connections":
+            target_val = bool(value)
+            current_val = PanelSettingsService.get("allow_localhost_connections", "false") == "true"
+            if target_val and not current_val:
+                from services import passkey_service
+                if user.two_factor_enabled or user.passkeys:
+                    confirmed = False
+                    if req.confirm_passkey is not None:
+                        try:
+                            passkey_service.bestaetigen(db, user, req.confirm_passkey, "localhost_connections")
+                            confirmed = True
+                        except passkey_service.PasskeyFehler as e:
+                            raise HTTPException(status_code=401, detail=str(e))
+                    elif req.confirm_otp_code:
+                        if user.two_factor_totp_aktiv and AuthService.verify_current_2fa_code(user, req.confirm_otp_code):
+                            confirmed = True
+                        else:
+                            raise HTTPException(status_code=401, detail="Der 2FA-Code ist ungültig oder abgelaufen.")
+                    if not confirmed:
+                        raise HTTPException(status_code=401, detail=passkey_service.nachweis_hinweis(user))
+                elif user.has_password:
+                    if not req.confirm_password or not AuthService.verify_password(req.confirm_password, user.password_hash):
+                        raise HTTPException(status_code=401, detail="Bitte dein Passwort bestätigen.")
+                else:
+                    # Pure social login: session of authenticated admin user is accepted
+                    pass
+            value = "true" if target_val else "false"
+            PanelSettingsService.set("allow_localhost_connections", value, db=db)
+            continue
         if key == "time_format" and value not in ("24h", "12h"):
             raise HTTPException(status_code=400, detail="Ungueltiges Zeitformat")
         if key == "imprint_url":

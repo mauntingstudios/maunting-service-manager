@@ -192,13 +192,15 @@ def ws_origin_erlaubt(origin: str | None) -> bool:
     """Steht die Herkunft eines WS-Upgrades auf der CORS-Allowlist?
 
     Dieselbe Liste wie fuer CORS (panel_url + MSM_CORS_ALLOWED_ORIGINS +
-    Desktop/Dev). Ohne Origin-Header ist die Antwort nein.
+    Desktop/Dev + dynamisches Localhost). Ohne Origin-Header ist die Antwort nein.
     """
-    from config import get_cors_origins
+    from config import get_cors_origins, is_localhost_origin_allowed
 
     if not origin:
         return False
-    return origin.rstrip("/") in {o.rstrip("/") for o in get_cors_origins()}
+    if origin.rstrip("/") in {o.rstrip("/") for o in get_cors_origins()}:
+        return True
+    return is_localhost_origin_allowed(origin)
 
 
 def get_current_user_for_ws(ws: WebSocket, db: Session) -> User:

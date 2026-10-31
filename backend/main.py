@@ -18,7 +18,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from config import TAURI_ORIGINS, get_cors_origins, settings
+from config import TAURI_ORIGINS, get_cors_origins, is_localhost_origin_allowed, settings
 from database import engine, Base
 from routers import (
     auth_router,
@@ -856,11 +856,18 @@ app = FastAPI(
     openapi_url=None,
 )
 
-# ── CORS: Explizite Origins (panel_url + MSM_CORS_ALLOWED_ORIGINS + Dev) ──
+class DynamicCORSMiddleware(CORSMiddleware):
+    def is_allowed_origin(self, origin: str) -> bool:
+        if super().is_allowed_origin(origin):
+            return True
+        return is_localhost_origin_allowed(origin)
+
+
+# ── CORS: Explizite Origins (panel_url + MSM_CORS_ALLOWED_ORIGINS + Dev + dynamisches Localhost) ──
 _cors_origins = get_cors_origins()
 
 app.add_middleware(
-    CORSMiddleware,
+    DynamicCORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

@@ -7,9 +7,12 @@ import {
   validateRateLimitGlobal,
 } from './SecurityTab'
 import * as client from '@/api/client'
+import * as passkeyServiceModule from '@/services/passkeyService'
 import i18n from '@/i18n'
 import { useToastStore } from '@/stores/toastStore'
 import { useConfirmStore } from '@/stores/confirmStore'
+import { useAuthStore } from '@/stores/authStore'
+import type { User } from '@/types'
 import {
   RATE_LIMIT_AUTH_DEFAULT,
   RATE_LIMIT_AUTH_MAX,
@@ -20,6 +23,19 @@ import {
 } from './types'
 
 vi.mock('@/api/client', () => ({ api: vi.fn() }))
+vi.mock('@/services/passkeyService', () => ({
+  passkeyNachweis: vi.fn(async () => ({
+    id: 'test-passkey-id',
+    rawId: 'raw-id',
+    type: 'public-key',
+    response: {
+      clientDataJSON: 'client-data',
+      authenticatorData: 'auth-data',
+      signature: 'sig',
+      userHandle: 'user-handle',
+    },
+  })),
+}))
 
 const permissions = vi.fn((key: string) => {
   if (key === 'system.secrets.rotate') return true
@@ -287,6 +303,180 @@ describe('SecurityTab rotation (regression)', () => {
     await waitFor(() => {
       const toasts = useToastStore.getState().toasts
       expect(toasts.some((t) => /offline|fehlgeschlagen|failed/i.test(t.message))).toBe(true)
+    })
+  })
+})
+
+describe('SecurityTab localhost connections', () => {
+  const dummyUser: User = {
+    id: 1,
+    username: 'admin',
+    email: 'admin@example.com',
+    is_owner: true,
+    is_active: true,
+    email_verified: true,
+    two_factor_enabled: false,
+    has_password: true,
+    email_notifications: true,
+    ai_notifications: false,
+  }
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('de')
+    useToastStore.setState({ toasts: [] })
+    useAuthStore.setState({ user: dummyUser })
+    permissions.mockImplementation(() => true)
+  })
+
+  it('renders localhost section and toggles off directly', async () => {
+    vi.mocked(client.api).mockImplementation(async (path: string, options?: any) => {
+      if (options?.method === 'POST') {
+        return { allow_localhost_connections: false }
+      }
+      return {
+        rate_limit_auth: 10,
+        rate_limit_global: 100,
+        allow_localhost_connections: true,
+      }
+    })
+
+    render(<SecurityTab />)
+    await waitFor(() => expect(screen.getByText(/Lokale Verbindungen \(Localhost\)/i)).toBeInTheDocument())
+
+    const switchBtn = screen.getByRole('switch', { name: /Lokale Verbindungen/i })
+    expect(switchBtn).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.click(switchBtn)
+    await waitFor(() => {
+      expect(client.api).toHaveBeenCalledWith('/settings', {
+        method: 'POST',
+        body: JSON.stringify({ allow_localhost_connections: false }),
+      })
+    })
+  })
+
+  it('requires password confirmation when enabling for user with password', async () => {
+    vi.mocked(client.api).mockImplementation(async (path: string, options?: any) => {
+      if (options?.method === 'POST') {
+        return { allow_localhost_connections: true }
+      }
+      return {
+        rate_limit_auth: 10,
+        rate_limit_global: 100,
+        allow_localhost_connections: false,
+      }
+    })
+
+    render(<SecurityTab />)
+    await waitFor(() => expect(screen.getByText(/Lokale Verbindungen \(Localhost\)/i)).toBeInTheDocument())
+    expect(screen.getByText(/Deaktiviert/i)).toBeInTheDocument()
+
+    const switchBtn = screen.getByRole('switch', { name: /Lokale Verbindungen/i })
+    fireEvent.click(switchBtn)
+
+    // Modal opens asking for password
+    await waitFor(() => expect(screen.getByText(/Localhost-Verbindungen freischalten/i)).toBeInTheDocument())
+    expect(screen.getByText(/Account-Passwort zur Bestätigung/i)).toBeInTheDocument()
+
+    const pwInput = document.querySelector('input[type="password"]') as HTMLInputElement
+    expect(pwInput).not.toBeNull()
+    fireEvent.change(pwInput, { target: { value: 'SecretMaster123!' } })
+
+    const confirmBtn = screen.getByRole('button', { name: /Bestätigen/i })
+    fireEvent.click(confirmBtn)
+
+    await waitFor(() => {
+      expect(client.api).toHaveBeenCalledWith('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          allow_localhost_connections: true,
+          confirm_password: 'SecretMaster123!',
+        }),
+      })
+    })
+  })
+
+  it('uses passkey confirmation when user has passkey', async () => {
+    useAuthStore.setState({
+      user: {
+        ...dummyUser,
+        two_factor_enabled: true,
+        two_factor_methods: ['passkey'],
+      },
+    })
+
+    vi.mocked(client.api).mockImplementation(async (path: string, options?: any) => {
+      if (options?.method === 'POST') {
+        return { allow_localhost_connections: true }
+      }
+      return {
+        rate_limit_auth: 10,
+        rate_limit_global: 100,
+        allow_localhost_connections: false,
+      }
+    })
+
+    render(<SecurityTab />)
+    await waitFor(() => expect(screen.getByText(/Lokale Verbindungen \(Localhost\)/i)).toBeInTheDocument())
+
+    const switchBtn = screen.getByRole('switch', { name: /Lokale Verbindungen/i })
+    fireEvent.click(switchBtn)
+
+    await waitFor(() => expect(screen.getByText(/Mit Passkey bestätigen/i)).toBeInTheDocument())
+    const passkeyBtn = screen.getByRole('button', { name: /Mit Passkey bestätigen/i })
+    fireEvent.click(passkeyBtn)
+
+    await waitFor(() => {
+      expect(passkeyServiceModule.passkeyNachweis).toHaveBeenCalledWith('localhost_connections')
+      expect(client.api).toHaveBeenCalledWith('/settings', {
+        method: 'POST',
+        body: expect.stringContaining('"allow_localhost_connections":true'),
+      })
+    })
+  })
+
+  it('uses double confirmation for pure social login user without password', async () => {
+    useAuthStore.setState({
+      user: {
+        ...dummyUser,
+        has_password: false,
+        two_factor_enabled: false,
+        two_factor_methods: [],
+      },
+    })
+
+    vi.mocked(client.api).mockImplementation(async (path: string, options?: any) => {
+      if (options?.method === 'POST') {
+        return { allow_localhost_connections: true }
+      }
+      return {
+        rate_limit_auth: 10,
+        rate_limit_global: 100,
+        allow_localhost_connections: false,
+      }
+    })
+
+    render(<SecurityTab />)
+    await waitFor(() => expect(screen.getByText(/Lokale Verbindungen \(Localhost\)/i)).toBeInTheDocument())
+
+    const switchBtn = screen.getByRole('switch', { name: /Lokale Verbindungen/i })
+    fireEvent.click(switchBtn)
+
+    // Step 1: initial warning
+    await waitFor(() => expect(screen.getByText(/Localhost-Verbindungen freischalten/i)).toBeInTheDocument())
+    const nextBtn = screen.getByRole('button', { name: /^Weiter/i })
+    fireEvent.click(nextBtn)
+
+    // Step 2: explicit social confirm
+    await waitFor(() => expect(screen.getByText(/Ausdrückliche Bestätigung erforderlich/i)).toBeInTheDocument())
+    const explicitConfirmBtn = screen.getByRole('button', { name: /Ausdrücklich freischalten/i })
+    fireEvent.click(explicitConfirmBtn)
+
+    await waitFor(() => {
+      expect(client.api).toHaveBeenCalledWith('/settings', {
+        method: 'POST',
+        body: JSON.stringify({ allow_localhost_connections: true }),
+      })
     })
   })
 })

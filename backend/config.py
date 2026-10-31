@@ -251,21 +251,47 @@ TAURI_ORIGINS = (
     "tauri://localhost",
     "http://tauri.localhost",
     "https://tauri.localhost",
-    "http://localhost:1430",
-    "http://127.0.0.1:1430",
-    # Browser-Grundgerüst im `tauri dev` (siehe browser/src-tauri/tauri.conf.json,
-    # `devUrl`). Es fehlte bis 22.10.2026: jede Anfrage des Browser-Fensters
-    # scheiterte am CORS-Preflight, und das Koppeln meldete nur noch
-    # „Failed to fetch“ — ohne Host und ohne Status.
-    "http://localhost:1450",
-    "http://127.0.0.1:1450",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost",
-    "http://127.0.0.1",
 )
+
+
+def is_localhost_origin(origin: str | None) -> bool:
+    """Prüft, ob eine Herkunft auf localhost, 127.0.0.1 oder [::1] zeigt (beliebiger Port, HTTP oder HTTPS)."""
+    if not origin:
+        return False
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(origin)
+    except Exception:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    hostname = (parsed.hostname or "").lower()
+    return hostname in ("localhost", "127.0.0.1", "::1", "[::1]")
+
+
+def is_localhost_origin_allowed(origin: str | None) -> bool:
+    """Darf ein Request von einer lokalen Herkunft das Backend ansprechen?
+
+    Gesteuert über die Panel-Einstellung `allow_localhost_connections` (Standard: aus).
+    Im lokalen Debug-Modus (settings.debug) zusätzlich aktiv.
+    """
+    if not is_localhost_origin(origin):
+        return False
+
+    try:
+        from services.panel_settings_service import PanelSettingsService
+        if PanelSettingsService.get("allow_localhost_connections", "false") == "true":
+            return True
+    except Exception:
+        pass
+
+    try:
+        if getattr(settings, "debug", False):
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def get_cors_origins() -> list[str]:

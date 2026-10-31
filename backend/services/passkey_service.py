@@ -56,6 +56,8 @@ ZWECKE_ANGEMELDET = frozenset({
     # Ein dauerhafter Kanal-Ausweis für Benachrichtigungen bei geschlossener
     # App ist ein neuer Zugang — er entsteht nur gegen einen frischen Nachweis.
     "notification_channel",
+    # Freischaltung von lokalen Entwickler-Verbindungen (Localhost) über CORS.
+    "localhost_connections",
 })
 ZWECKE = ZWECKE_ANGEMELDET | {"login", "oauth_2fa"}
 

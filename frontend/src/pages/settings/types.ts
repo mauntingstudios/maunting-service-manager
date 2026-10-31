@@ -68,6 +68,8 @@ export interface PanelSettings {
   rate_limit_auth: number
   /** Globale API-Anfragen pro Minute pro IP (Default 100, Range 50–1000) */
   rate_limit_global: number
+  /** Ob eingehende Verbindungen von localhost auf allen Ports via CORS erlaubt sind */
+  allow_localhost_connections: boolean
 }
 
 /** Erlaubte Bereiche — spiegeln backend/services/rate_limit_settings.py */
@@ -142,4 +144,5 @@ export const EMPTY_PANEL_SETTINGS: PanelSettings = {
   proactive_enabled: true,
   rate_limit_auth: RATE_LIMIT_AUTH_DEFAULT,
   rate_limit_global: RATE_LIMIT_GLOBAL_DEFAULT,
+  allow_localhost_connections: false,
 }

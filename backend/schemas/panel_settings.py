@@ -90,6 +90,7 @@ class PanelSettingsResponse(BaseModel):
     # Rate-Limits (Anfragen pro Minute pro IP); Defaults = Runtime-Fallback
     rate_limit_auth: int = 10
     rate_limit_global: int = 100
+    allow_localhost_connections: bool = False
 
 
 class PanelSettingsUpdate(BaseModel):
@@ -137,6 +138,10 @@ class PanelSettingsUpdate(BaseModel):
     # Optional: nur mitsenden wenn der Security-Tab speichert
     rate_limit_auth: int | None = None
     rate_limit_global: int | None = None
+    allow_localhost_connections: bool | None = None
+    confirm_password: str | None = None
+    confirm_otp_code: str | None = None
+    confirm_passkey: dict | None = None
 
 
 class TestEmailRequest(BaseModel):

@@ -551,3 +551,62 @@ def test_public_settings_expose_panel_url_without_trailing_slash(client: TestCli
     res = client.get("/api/settings/public")
     assert res.status_code == 200
     assert res.json()["panel_url"] == (settings.panel_url or "").rstrip("/")
+
+
+def test_localhost_connections_lifecycle(
+    client: TestClient, owner_user: User, owner_cookies: dict, csrf_token: str
+):
+    from config import is_localhost_origin, is_localhost_origin_allowed
+    from services.panel_settings_service import PanelSettingsService
+
+    assert is_localhost_origin("http://localhost:1430") is True
+    assert is_localhost_origin("http://localhost:1450") is True
+    assert is_localhost_origin("http://127.0.0.1:8080") is True
+    assert is_localhost_origin("https://[::1]:9000") is True
+    assert is_localhost_origin("https://example.com") is False
+
+    # Get settings initially shows allow_localhost_connections
+    res = client.get("/api/settings", cookies=owner_cookies)
+    assert res.status_code == 200
+    assert "allow_localhost_connections" in res.json()
+
+    # Wrong password is rejected
+    res_err = client.post(
+        "/api/settings",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+        json={
+            "allow_localhost_connections": True,
+            "confirm_password": "WrongPassword999!",
+        },
+    )
+    assert res_err.status_code == 401
+
+    # Correct password enables it
+    res_ok = client.post(
+        "/api/settings",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+        json={
+            "allow_localhost_connections": True,
+            "confirm_password": "OwnerPass123!",
+        },
+    )
+    assert res_ok.status_code == 200
+    settings_after = client.get("/api/settings", cookies=owner_cookies).json()
+    assert settings_after["allow_localhost_connections"] is True
+    assert is_localhost_origin_allowed("http://localhost:1430") is True
+    assert is_localhost_origin_allowed("http://localhost:9999") is True
+
+    # Disable without password
+    res_off = client.post(
+        "/api/settings",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+        json={
+            "allow_localhost_connections": False,
+        },
+    )
+    assert res_off.status_code == 200
+    settings_off = client.get("/api/settings", cookies=owner_cookies).json()
+    assert settings_off["allow_localhost_connections"] is False

@@ -9,14 +9,29 @@
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Gauge, KeyRound, Save, ShieldAlert } from 'lucide-react'
+import {
+  AlertTriangle,
+  Fingerprint,
+  Gauge,
+  KeyRound,
+  Laptop,
+  Save,
+  ShieldAlert,
+  X,
+} from 'lucide-react'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
+import { useAuthStore } from '@/stores/authStore'
+import { passkeyNachweis } from '@/services/passkeyService'
+import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import { NumberStepper } from '@/components/ui/NumberStepper'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { Spinner } from '@/components/ui/Spinner'
+import { Switch } from '@/components/ui/Switch'
 import {
   formatRotateSuccessSummary,
   mapRotateAdminResult,
@@ -75,10 +90,22 @@ export function SecurityTab() {
 
   const [authLimit, setAuthLimit] = useState(String(RATE_LIMIT_AUTH_DEFAULT))
   const [globalLimit, setGlobalLimit] = useState(String(RATE_LIMIT_GLOBAL_DEFAULT))
+  const [allowLocalhost, setAllowLocalhost] = useState(false)
+  const [localhostBusy, setLocalhostBusy] = useState(false)
+  const [showLocalhostModal, setShowLocalhostModal] = useState(false)
+  const [localhostSocialStep, setLocalhostSocialStep] = useState<1 | 2>(1)
+  const [localhostPassword, setLocalhostPassword] = useState('')
+  const [localhostTotp, setLocalhostTotp] = useState('')
   const [loading, setLoading] = useState(canReadSettings)
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState(false)
   const [lastSummary, setLastSummary] = useState<string | null>(null)
+
+  const currentUser = useAuthStore((s) => s.user)
+  const hasPasskey = Boolean(currentUser?.two_factor_methods?.includes('passkey'))
+  const hasTotp = Boolean(currentUser?.two_factor_methods?.includes('totp') || (!hasPasskey && currentUser?.two_factor_enabled))
+  const hasPassword = currentUser?.has_password !== false
+  const isPureSocialLogin = !hasPasskey && !hasTotp && !hasPassword
 
   useEffect(() => {
     if (!canReadSettings) {
@@ -100,6 +127,7 @@ export function SecurityTab() {
             : RATE_LIMIT_GLOBAL_DEFAULT
         setAuthLimit(String(auth))
         setGlobalLimit(String(global))
+        setAllowLocalhost(Boolean(merged.allow_localhost_connections))
       })
       .catch((err: unknown) => {
         // Kein stiller Fehler: Nutzer sieht die API-Meldung
@@ -164,6 +192,122 @@ export function SecurityTab() {
       toast.error(message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleToggleLocalhost = async (checked: boolean) => {
+    if (!canWriteSettings) {
+      toast.error(t('security.rateLimitNoWrite'))
+      return
+    }
+    if (!checked) {
+      setLocalhostBusy(true)
+      try {
+        await api('/settings', {
+          method: 'POST',
+          body: JSON.stringify({ allow_localhost_connections: false }),
+        })
+        setAllowLocalhost(false)
+        toast.success(t('security.localhostDisabled'))
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('security.localhostSaveFailed')
+        toast.error(message)
+      } finally {
+        setLocalhostBusy(false)
+      }
+    } else {
+      setShowLocalhostModal(true)
+      setLocalhostSocialStep(1)
+      setLocalhostPassword('')
+      setLocalhostTotp('')
+    }
+  }
+
+  const handleConfirmWithPasskey = async () => {
+    setLocalhostBusy(true)
+    try {
+      const nachweis = await passkeyNachweis('localhost_connections')
+      await api('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          allow_localhost_connections: true,
+          confirm_passkey: nachweis,
+        }),
+      })
+      setAllowLocalhost(true)
+      setShowLocalhostModal(false)
+      toast.success(t('security.localhostEnabled'))
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : t('security.localhostSaveFailed')
+      toast.error(msg)
+    } finally {
+      setLocalhostBusy(false)
+    }
+  }
+
+  const handleConfirmWithTotp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!localhostTotp.trim()) return
+    setLocalhostBusy(true)
+    try {
+      await api('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          allow_localhost_connections: true,
+          confirm_otp_code: localhostTotp.trim(),
+        }),
+      })
+      setAllowLocalhost(true)
+      setShowLocalhostModal(false)
+      toast.success(t('security.localhostEnabled'))
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : t('security.localhostSaveFailed')
+      toast.error(msg)
+    } finally {
+      setLocalhostBusy(false)
+    }
+  }
+
+  const handleConfirmWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!localhostPassword) return
+    setLocalhostBusy(true)
+    try {
+      await api('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          allow_localhost_connections: true,
+          confirm_password: localhostPassword,
+        }),
+      })
+      setAllowLocalhost(true)
+      setShowLocalhostModal(false)
+      toast.success(t('security.localhostEnabled'))
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : t('security.localhostSaveFailed')
+      toast.error(msg)
+    } finally {
+      setLocalhostBusy(false)
+    }
+  }
+
+  const handleConfirmSocialStep2 = async () => {
+    setLocalhostBusy(true)
+    try {
+      await api('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          allow_localhost_connections: true,
+        }),
+      })
+      setAllowLocalhost(true)
+      setShowLocalhostModal(false)
+      toast.success(t('security.localhostEnabled'))
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : t('security.localhostSaveFailed')
+      toast.error(msg)
+    } finally {
+      setLocalhostBusy(false)
     }
   }
 
@@ -347,6 +491,56 @@ export function SecurityTab() {
         </form>
       )}
 
+      {/* ── Lokale Verbindungen (Localhost / Entwickler) ── */}
+      {canReadSettings && (
+        <div className="msm-card p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Laptop className="h-5 w-5 text-primary" />
+                <h3 className="font-headline text-title-lg font-semibold text-on-surface">
+                  {t('security.localhostTitle', {
+                    defaultValue: 'Lokale Verbindungen (Localhost)',
+                  })}
+                </h3>
+                <Badge variant={allowLocalhost ? 'success' : 'default'}>
+                  {allowLocalhost
+                    ? t('security.localhostActiveBadge', { defaultValue: 'Aktiviert' })
+                    : t('security.localhostInactiveBadge', { defaultValue: 'Deaktiviert' })}
+                </Badge>
+              </div>
+              <p className="max-w-2xl text-sm text-on-surface-variant">
+                {t('security.localhostBody', {
+                  defaultValue:
+                    'Erlaubt lokalen Entwicklungs- und Test-Clients (z. B. Tauri Dev für Pontis oder MSS auf beliebigen Ports), über CORS auf dieses Backend zuzugreifen.',
+                })}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              {localhostBusy && <Spinner />}
+              <Switch
+                checked={allowLocalhost}
+                disabled={!canWriteSettings || localhostBusy}
+                onCheckedChange={(checked) => void handleToggleLocalhost(checked)}
+                aria-label={t('security.localhostTitle', { defaultValue: 'Lokale Verbindungen (Localhost)' })}
+              />
+            </div>
+          </div>
+
+          {allowLocalhost && (
+            <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-status-warning/30 bg-status-warning/10 p-3 text-xs text-on-surface">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-status-warning mt-0.5" />
+              <span>
+                {t('security.localhostWarning', {
+                  defaultValue:
+                    'Wenn diese Option aktiv ist, können alle lokalen Anwendungen, Webseiten und Skripte unter localhost Anfragen an dieses Panel senden. Standardmäßig deaktiviert.',
+                })}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {canRotate && (
         <div className="msm-card p-6">
           <div className="mb-3 flex items-center gap-2">
@@ -386,6 +580,208 @@ export function SecurityTab() {
         <p className="text-xs text-on-surface-variant">
           {t('security.rotateHiddenHint')}
         </p>
+      )}
+
+      {/* ── Bestätigungs- & Authentifizierungs-Modal für Localhost ── */}
+      {showLocalhostModal && (
+        <div
+          className="msm-modal-overlay"
+          onClick={() => !localhostBusy && setShowLocalhostModal(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="msm-card w-full max-w-lg p-6 space-y-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-outline/10 pb-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-status-warning shrink-0" />
+                <h3 className="font-headline text-title-md font-semibold text-on-surface">
+                  {isPureSocialLogin && localhostSocialStep === 2
+                    ? t('security.localhostSocialStep2Title')
+                    : t('security.localhostConfirmTitle')}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => !localhostBusy && setShowLocalhostModal(false)}
+                className="text-on-surface-variant hover:text-on-surface p-1 rounded-lg"
+                disabled={localhostBusy}
+                aria-label={t('common.close')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Risikohinweis */}
+            {!(isPureSocialLogin && localhostSocialStep === 2) && (
+              <div className="space-y-3">
+                <p className="text-sm text-on-surface-variant">
+                  {t('security.localhostConfirmBody')}
+                </p>
+                <div className="flex items-start gap-2 rounded-lg border border-status-warning/30 bg-status-warning/10 p-3 text-xs text-on-surface">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-status-warning mt-0.5" />
+                  <span>{t('security.localhostWarning')}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Fall 1: Passkey hinterlegt */}
+            {hasPasskey && (
+              <div className="space-y-4 pt-2">
+                <p className="text-xs text-on-surface-variant">
+                  {t('security.localhostPasskeyPrompt')}
+                </p>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowLocalhostModal(false)}
+                    disabled={localhostBusy}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => void handleConfirmWithPasskey()}
+                    disabled={localhostBusy}
+                    className="inline-flex items-center gap-2"
+                  >
+                    {localhostBusy ? <Spinner /> : <Fingerprint className="h-4 w-4" />}
+                    {t('security.localhostPasskeyBtn')}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Fall 2: 2FA / TOTP (kein Passkey) */}
+            {!hasPasskey && hasTotp && (
+              <form onSubmit={(e) => void handleConfirmWithTotp(e)} className="space-y-4 pt-2">
+                <div>
+                  <label className="block text-xs font-medium text-on-surface-variant mb-1.5">
+                    {t('security.localhostTotpLabel')}
+                  </label>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={8}
+                    placeholder="123456"
+                    value={localhostTotp}
+                    onChange={(e) => setLocalhostTotp(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowLocalhostModal(false)}
+                    disabled={localhostBusy}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={localhostBusy || !localhostTotp.trim()}
+                    className="inline-flex items-center gap-2"
+                  >
+                    {localhostBusy && <Spinner />}
+                    {t('common.confirm')}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {/* Fall 3: Account-Passwort (kein Passkey, kein TOTP) */}
+            {!hasPasskey && !hasTotp && hasPassword && (
+              <form onSubmit={(e) => void handleConfirmWithPassword(e)} className="space-y-4 pt-2">
+                <div>
+                  <label className="block text-xs font-medium text-on-surface-variant mb-1.5">
+                    {t('security.localhostPasswordLabel')}
+                  </label>
+                  <PasswordInput
+                    value={localhostPassword}
+                    onChange={(e) => setLocalhostPassword(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowLocalhostModal(false)}
+                    disabled={localhostBusy}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={localhostBusy || !localhostPassword}
+                    className="inline-flex items-center gap-2"
+                  >
+                    {localhostBusy && <Spinner />}
+                    {t('common.confirm')}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {/* Fall 4: Rein Social Login (kein Passwort, kein 2FA) */}
+            {isPureSocialLogin && (
+              <div className="space-y-4 pt-2">
+                {localhostSocialStep === 1 ? (
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setShowLocalhostModal(false)}
+                      disabled={localhostBusy}
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => setLocalhostSocialStep(2)}
+                      disabled={localhostBusy}
+                    >
+                      {t('common.next', { defaultValue: 'Weiter zur Bestätigung' })}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-sm text-status-destructive font-medium">
+                      {t('security.localhostSocialStep2Body')}
+                    </p>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setLocalhostSocialStep(1)}
+                        disabled={localhostBusy}
+                      >
+                        {t('common.back', { defaultValue: 'Zurück' })}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() => void handleConfirmSocialStep2()}
+                        disabled={localhostBusy}
+                        className="inline-flex items-center gap-2"
+                      >
+                        {localhostBusy && <Spinner />}
+                        {t('security.localhostSocialConfirmBtn')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )
