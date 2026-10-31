@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Switch } from '@/components/ui/Switch'
+import { SEASON_ASSETS } from '@/season/assets'
 import { istGueltigesFenster, type SeasonId, type SeasonMode } from '@/season/typen'
 import { saisonStatus } from '@/season/zeitfenster'
 import { useJetzt } from '@/season/useJetzt'
@@ -47,6 +48,32 @@ function SaisonSymbol({ id }: { id: SeasonId }) {
       <path d="M12 3v18M4.5 7.5l15 9M19.5 7.5l-15 9" />
       <path d="M12 6l-2-2m2 2 2-2M12 18l-2 2m2-2 2 2M6.5 9.5l-2.5-.5m2.5.5.5-2.5M17.5 15l2.5.5m-2.5-.5-.5 2.5M6.5 15l-2.5.5m2.5-.5.5 2.5M17.5 9.5l2.5-.5m-2.5.5-.5-2.5" />
     </svg>
+  )
+}
+
+function SaisonIcon({ id, titel }: { id: SeasonId; titel: string }) {
+  const [bildFehler, setBildFehler] = useState(false)
+  const logoSrc = SEASON_ASSETS[id]?.logoMsm
+
+  if (logoSrc && !bildFehler) {
+    return (
+      <div data-season-icon="" className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full border border-primary/30 bg-surface-container shadow-sm">
+        <img
+          src={logoSrc}
+          alt={titel}
+          className="h-full w-full rounded-full object-cover"
+          onError={() => setBildFehler(true)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <span data-season-icon="" className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-primary/20 bg-primary/10 text-primary">
+      <span className="h-5 w-5">
+        <SaisonSymbol id={id} />
+      </span>
+    </span>
   )
 }
 
@@ -181,11 +208,7 @@ function SaisonZeile({
   return (
     <div className="rounded-xl border border-outline-variant/50 bg-surface-container-low/40 p-4">
       <div className="flex flex-wrap items-start gap-3">
-        <span data-season-icon="" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
-          <span className="h-5 w-5">
-            <SaisonSymbol id={id} />
-          </span>
-        </span>
+        <SaisonIcon id={id} titel={titel} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-headline text-body-md font-semibold text-on-surface">{titel}</h3>
