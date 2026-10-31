@@ -25,6 +25,7 @@ import { PromptDialog } from '@/components/ui/PromptDialog'
 import { ABGEMELDET } from '@/desktop/auth'
 import { eingangBeobachten } from '@/desktop/vault/tresorEingang'
 import { tresorAutoSperrQuelle, useVaultStore } from '@/desktop/vault/vaultStore'
+import { teamTresorAutoSperrQuelle, useTeamVaultStore } from '@/desktop/vault/teamVaultStore'
 import { useAutoSperre } from '@/hooks/useAutoSperre'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
@@ -123,6 +124,7 @@ function Wurzel() {
   const angemeldet = stand === 'an'
   const social = usePublicSettingsStore((s) => s.social_enabled)
   const tresorOffen = useVaultStore((s) => s.isUnlocked)
+  const teamTresorOffen = useTeamVaultStore((s) => s.isUnlocked)
   const anruf = useCallStore((s) => s.state !== 'idle')
   const leiste = useEinstellungenStore((s) => s.leiste)
   const panelSeite = useEinstellungenStore((s) => s.panelSeite)
@@ -146,6 +148,7 @@ function Wurzel() {
   useWetterWidget()
   // Dieselben Schlösser wie in MSS: Tresor und Messenger sperren sich selbst.
   useAutoSperre(tresorAutoSperrQuelle, tresorOffen)
+  useAutoSperre(teamTresorAutoSperrQuelle, teamTresorOffen)
   useMessengerSperreBereitschaft()
   useTabWechselSperre()
   usePresenceAndActivity(angemeldet && social, angemeldet && social)

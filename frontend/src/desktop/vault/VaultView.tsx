@@ -139,6 +139,10 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       items: s.items,
       syncStatus: s.syncStatus,
       error: s.error,
+      isBiometricsSupported: s.isBiometricsSupported,
+      isBiometricsEnabled: s.isBiometricsEnabled,
+      checkBiometricsSupport: s.checkBiometricsSupport,
+      unlockWithBiometrics: s.unlockWithBiometrics,
       loadStatus: s.loadStatus,
       setup: s.setup,
       unlock: s.unlock,
@@ -174,8 +178,10 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   useEffect(() => {
     if (!isTeam) {
       void personalStore.checkBiometricsSupport()
+    } else if (team?.id) {
+      void teamStore.checkBiometricsSupport(team.id)
     }
-  }, [isTeam, personalStore.checkBiometricsSupport])
+  }, [isTeam, team?.id, personalStore.checkBiometricsSupport, teamStore.checkBiometricsSupport])
 
   // Hardware- und Software-Schutz vor Windows Computer-Use KI-Screenshots
   useEffect(() => {
@@ -200,8 +206,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const isOwner = isTeam ? (teamStore.isOwner ?? team?.is_owner ?? false) : true
   const needsRotation = isTeam ? teamStore.needsRotation : false
   const zurueckgesetzt = isTeam ? false : personalStore.zurueckgesetzt
-  const isBiometricsEnabled = isTeam ? false : personalStore.isBiometricsEnabled
-  const isBiometricsSupported = isTeam ? false : personalStore.isBiometricsSupported
+  const isBiometricsEnabled = isTeam ? teamStore.isBiometricsEnabled : personalStore.isBiometricsEnabled
+  const isBiometricsSupported = isTeam ? teamStore.isBiometricsSupported : personalStore.isBiometricsSupported
 
   // Team-Rotation State
   const [rotationOpen, setRotationOpen] = useState(false)
@@ -1029,7 +1035,9 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                   type="button"
                   variant="secondary"
                   onClick={async () => {
-                    const ok = await personalStore.unlockWithBiometrics()
+                    const ok = isTeam && team
+                      ? await teamStore.unlockWithBiometrics(team.id)
+                      : await personalStore.unlockWithBiometrics()
                     if (ok) {
                       toast.success(t('mss.vault.entsperrtBiometrie'))
                     }

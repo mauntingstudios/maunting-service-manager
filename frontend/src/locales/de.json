@@ -9439,7 +9439,8 @@
       "koppeln": "Koppeln",
       "mitZahl": "{{name}}, {{zahl}} neu",
       "menue": "Menü",
-      "dokumente": "Dokumente"
+      "dokumente": "Dokumente",
+      "teams": "Teams"
     },
     "panel": {
       "schliessen": "Panel schließen",

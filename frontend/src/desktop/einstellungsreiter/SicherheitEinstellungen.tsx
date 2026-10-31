@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 
 import { MessengerSicherheitTab } from '@/pages/profile/MessengerSicherheitTab'
 import { TresorSicherheitTab } from '../vault/TresorSicherheitTab'
+import { TeamTresorSicherheitTab } from '../vault/TeamTresorSicherheitTab'
 import { DevicesTab } from '@/pages/profile/DevicesTab'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
@@ -54,6 +55,14 @@ export function SicherheitEinstellungen({
             {t('mss.einstellungen.sicherheit.tresor')}
           </h2>
           <TresorSicherheitTab offline={offline} />
+        </section>
+      )}
+      {tresorAn && (
+        <section aria-labelledby="sicherheit-team-tresor" className="flex flex-col gap-3 pt-2">
+          <h2 id="sicherheit-team-tresor" className={GRUPPENTITEL}>
+            {t('teams.vault')}
+          </h2>
+          <TeamTresorSicherheitTab />
         </section>
       )}
       {!offline && (

@@ -7,6 +7,7 @@
  */
 
 import { create } from 'zustand'
+import i18n from '@/i18n'
 import { teamsApi, type TeamVaultMutationItem } from '@/api/teams'
 import {
   base64ToBytes,
@@ -14,7 +15,16 @@ import {
   decryptVaultEntry,
   deriveVaultKeys,
   encryptVaultEntry,
+  isBiometricsAvailable,
+  promptBiometricVerification,
 } from './vaultCrypto'
+import {
+  biometrieEntsperren,
+  biometrieLoeschen,
+  biometrieSpeichern,
+  biometrieSpeicherFragtSelbst,
+} from '../tauri'
+import type { AutoSperrQuelle } from '@/services/autoSperre'
 import { fillRandom } from '@msdis/shield/random'
 import type { VaultItem } from './vaultEintrag'
 
@@ -24,6 +34,7 @@ export interface TeamVaultState {
   salt: string | null
   isInitialized: boolean
   isUnlocked: boolean
+  isUnlocking: boolean
   needsRotation: boolean
   isOwner: boolean
   userKey: CryptoKey | null
@@ -32,7 +43,26 @@ export interface TeamVaultState {
   syncStatus: 'idle' | 'syncing' | 'error'
   error: string | null
 
+  // Einstellungen & Sicherheit
+  autoLockMinutes: number
+  lockOnWindowBlur: boolean
+  leakCheckEnabled: boolean
+  isBiometricsSupported: boolean
+  isBiometricsEnabled: boolean
+  lastActivityTime: number
+
   loadStatus: (teamId: number) => Promise<void>
+  loadSettings: (teamId: number) => Promise<void>
+  setAutoLockMinutes: (teamId: number, minutes: number) => void
+  setLockOnWindowBlur: (teamId: number, enabled: boolean) => void
+  setLeakCheckEnabled: (teamId: number, enabled: boolean) => void
+  checkBiometricsSupport: (teamId: number) => Promise<boolean>
+  enableBiometrics: (teamId: number, masterPassword: string) => Promise<boolean>
+  disableBiometrics: (teamId: number) => Promise<void>
+  unlockWithBiometrics: (teamId: number) => Promise<boolean>
+  recordActivity: () => void
+  checkAutoLock: () => void
+
   setup: (teamId: number, masterPassword: string) => Promise<boolean>
   unlock: (teamId: number, masterPassword: string) => Promise<boolean>
   rotatePassword: (teamId: number, newPassword: string) => Promise<boolean>
@@ -56,6 +86,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   salt: null,
   isInitialized: false,
   isUnlocked: false,
+  isUnlocking: false,
   needsRotation: false,
   isOwner: false,
   userKey: null,
@@ -64,9 +95,145 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   syncStatus: 'idle',
   error: null,
 
+  autoLockMinutes: 5,
+  lockOnWindowBlur: false,
+  leakCheckEnabled: true,
+  isBiometricsSupported: false,
+  isBiometricsEnabled: false,
+  lastActivityTime: Date.now(),
+
+  recordActivity: () => {
+    set({ lastActivityTime: Date.now() })
+  },
+
+  checkAutoLock: () => {
+    const { isUnlocked, autoLockMinutes, lastActivityTime } = get()
+    if (!isUnlocked || autoLockMinutes <= 0) return
+    const vergangenMs = Date.now() - lastActivityTime
+    if (vergangenMs >= autoLockMinutes * 60 * 1000) {
+      get().lock()
+    }
+  },
+
+  loadSettings: async (teamId: number) => {
+    if (typeof localStorage === 'undefined') return
+    const rawAutoLock = localStorage.getItem(`mss_team_vault_auto_lock_${teamId}`)
+    const autoLockMinutes = rawAutoLock !== null ? Number(rawAutoLock) : 5
+    const lockOnWindowBlur = localStorage.getItem(`mss_team_vault_lock_blur_${teamId}`) === 'true'
+    const leakCheckEnabled = localStorage.getItem(`mss_team_vault_leak_check_${teamId}`) !== 'false'
+    const isBiometricsEnabled = localStorage.getItem(`mss_team_vault_bio_${teamId}`) === 'true'
+
+    const isBiometricsSupported = await isBiometricsAvailable()
+    set({
+      autoLockMinutes,
+      lockOnWindowBlur,
+      leakCheckEnabled,
+      isBiometricsSupported,
+      isBiometricsEnabled: isBiometricsSupported && isBiometricsEnabled,
+    })
+  },
+
+  setAutoLockMinutes: (teamId: number, minutes: number) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(`mss_team_vault_auto_lock_${teamId}`, String(minutes))
+    }
+    set({ autoLockMinutes: minutes })
+  },
+
+  setLockOnWindowBlur: (teamId: number, enabled: boolean) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(`mss_team_vault_lock_blur_${teamId}`, String(enabled))
+    }
+    set({ lockOnWindowBlur: enabled })
+  },
+
+  setLeakCheckEnabled: (teamId: number, enabled: boolean) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(`mss_team_vault_leak_check_${teamId}`, String(enabled))
+    }
+    set({ leakCheckEnabled: enabled })
+  },
+
+  checkBiometricsSupport: async (teamId: number) => {
+    const supported = await isBiometricsAvailable()
+    const enabled = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(`mss_team_vault_bio_${teamId}`) === 'true'
+      : false
+    set({ isBiometricsSupported: supported, isBiometricsEnabled: supported && enabled })
+    return supported
+  },
+
+  enableBiometrics: async (teamId: number, masterPassword: string) => {
+    try {
+      const isAvailable = await isBiometricsAvailable()
+      if (!isAvailable) return false
+
+      let { salt, bucketId } = get()
+      if (!salt || !bucketId) {
+        await get().loadStatus(teamId)
+        salt = get().salt
+        bucketId = get().bucketId
+      }
+      if (!salt || !bucketId) return false
+
+      const saltBytes = base64ToBytes(salt)
+      const { bucketId: derivedBucket } = await deriveVaultKeys(masterPassword, saltBytes)
+      if (derivedBucket.toLowerCase() !== bucketId.toLowerCase()) {
+        return false
+      }
+
+      if (!(await biometrieSpeicherFragtSelbst())) {
+        const verified = await promptBiometricVerification(i18n.t('teams.vaultUnlock'))
+        if (!verified) return false
+      }
+
+      await biometrieSpeichern(masterPassword, `team_vault_biometric_key_${teamId}`)
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(`mss_team_vault_bio_${teamId}`, 'true')
+      }
+      set({ isBiometricsEnabled: true })
+      return true
+    } catch {
+      return false
+    }
+  },
+
+  disableBiometrics: async (teamId: number) => {
+    try {
+      await biometrieLoeschen(`team_vault_biometric_key_${teamId}`)
+    } catch {}
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(`mss_team_vault_bio_${teamId}`, 'false')
+    }
+    set({ isBiometricsEnabled: false })
+  },
+
+  unlockWithBiometrics: async (teamId: number) => {
+    set({ isUnlocking: true, error: null })
+    try {
+      const isAvailable = await isBiometricsAvailable()
+      if (!isAvailable) {
+        set({ isUnlocking: false, error: 'Biometrie nicht verfügbar' })
+        return false
+      }
+      const masterPassword = await biometrieEntsperren(i18n.t('teams.vaultUnlock'), `team_vault_biometric_key_${teamId}`)
+      if (!masterPassword) {
+        set({ isUnlocking: false })
+        return false
+      }
+      return await get().unlock(teamId, masterPassword)
+    } catch (err: unknown) {
+      set({ isUnlocking: false, error: err instanceof Error ? err.message : 'Entsperren fehlgeschlagen' })
+      return false
+    } finally {
+      set({ isUnlocking: false })
+    }
+  },
+
   loadStatus: async (teamId: number) => {
     try {
       const res = await teamsApi.getVaultSalt(teamId)
+      await get().loadSettings(teamId)
       set((state) => ({
         teamId,
         isInitialized: res.is_setup,
@@ -395,3 +562,15 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     })
   },
 }))
+
+export const teamTresorAutoSperrQuelle: AutoSperrQuelle = {
+  istEntsperrt: () => useTeamVaultStore.getState().isUnlocked,
+  istBeschaeftigt: () => useTeamVaultStore.getState().isUnlocking,
+  sperrtBeiFensterwechsel: () => useTeamVaultStore.getState().lockOnWindowBlur,
+  merkeAktivitaet: () => useTeamVaultStore.getState().recordActivity(),
+  pruefeFrist: () => {
+    useTeamVaultStore.getState().checkAutoLock()
+  },
+  sperre: () => useTeamVaultStore.getState().lock(),
+}
+

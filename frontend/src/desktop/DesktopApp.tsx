@@ -66,6 +66,7 @@ import { VaultView } from './vault/VaultView'
 import { kameraBeobachten } from './vault/kameraSicherung'
 import { eingangBeobachten } from './vault/tresorEingang'
 import { tresorAutoSperrQuelle, useVaultStore } from './vault/vaultStore'
+import { teamTresorAutoSperrQuelle, useTeamVaultStore } from './vault/teamVaultStore'
 import {
   beiFremdemSprachstart,
   sprachstartMelden,
@@ -153,11 +154,13 @@ export function DesktopApp() {
   const offeneUebernahme = useAuftragsschleife(sitzungSteht && !isAndroid)
 
   const isUnlocked = useVaultStore((s) => s.isUnlocked)
+  const isTeamVaultUnlocked = useTeamVaultStore((s) => s.isUnlocked)
 
   // Automatische Sperre bei Inaktivität oder Fensterwechsel. Tresor und
   // Messenger haben eigene Fristen und eigene Schlösser, aber dieselbe
   // Mechanik — siehe `services/autoSperre`.
   useAutoSperre(tresorAutoSperrQuelle, isUnlocked)
+  useAutoSperre(teamTresorAutoSperrQuelle, isTeamVaultUnlocked)
   useMessengerSperreBereitschaft()
 
   // Kamera-Sicherung: sieht bei offenem Tresor nach neuen Aufnahmen.

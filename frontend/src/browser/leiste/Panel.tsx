@@ -30,6 +30,7 @@ const Notes = lazy(() => import('@/pages/Notes').then((m) => ({ default: m.Notes
 const DocsEmbedded = lazy(() => import('@/docs/DocsEmbedded').then((m) => ({ default: m.DocsEmbedded })))
 const Calendar = lazy(() => import('@/pages/Calendar').then((m) => ({ default: m.Calendar })))
 const VaultView = lazy(() => import('@/desktop/vault/VaultView').then((m) => ({ default: m.VaultView })))
+const Teams = lazy(() => import('@/pages/Teams').then((m) => ({ default: m.Teams })))
 const LesezeichenPanel = lazy(() => import('../panels/Lesezeichen').then((m) => ({ default: m.LesezeichenPanel })))
 const VerlaufPanel = lazy(() => import('../panels/Verlauf').then((m) => ({ default: m.VerlaufPanel })))
 const DownloadsPanel = lazy(() => import('../panels/Downloads').then((m) => ({ default: m.DownloadsPanel })))
@@ -86,6 +87,8 @@ function Inhalt({ id, pfad, voll }: { id: PanelId; pfad: string; voll: boolean }
       return <MitKopplung id={id}><div className="h-full overflow-y-auto px-3 pt-3 pb-8"><Calendar /></div></MitKopplung>
     case 'tresor':
       return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden"><VaultView /></div></MitKopplung>
+    case 'teams':
+      return <MitKopplung id={id}><div className="h-full overflow-y-auto px-3 pt-3 pb-8"><Teams /></div></MitKopplung>
     case 'lesezeichen':
       return <LesezeichenPanel />
     case 'verlauf':

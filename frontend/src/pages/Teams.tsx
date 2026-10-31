@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Brain, Check, Crown, LogOut, Mail, Plus, Server, ShieldCheck, Trash2, User, UserPlus, Users, UsersRound, X,
+  Brain, Check, Crown, FileText, LogOut, Mail, Plus, Server, ShieldCheck, Trash2, User, UserPlus, Users, UsersRound, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -374,16 +374,19 @@ export function Teams() {
   // Mitgliedern des alten.
   const team = detail && !detail.is_personal && detail.id === selectedId ? detail : null
 
+  const inTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+
   // Server vergibt nur der Gründer; für alle anderen gibt es den Reiter nicht.
   // Wer bei einem Team auf „Server" stand und zu einem wechselt, dem er nur
   // angehört, landet bei den Mitgliedern statt auf einem leeren Reiter.
+  // Team-Tresor steht nur in nativen Desktop-/Tauri-Apps (MSS & Pontis) bereit.
   const teamReiter: TabDef<TeamReiter>[] = [
     { id: 'members', labelKey: 'teams.members', icon: Users, badge: team?.members.length },
     ...(team?.is_owner
       ? [{ id: 'servers' as const, labelKey: 'teams.tabServers', icon: Server, badge: team.servers.length }]
       : []),
     { id: 'knowledge', labelKey: 'teams.knowledge', icon: Brain },
-    { id: 'vault', labelKey: 'teams.vault', icon: ShieldCheck },
+    ...(inTauri ? [{ id: 'vault' as const, labelKey: 'teams.vault', icon: ShieldCheck }] : []),
   ]
   const aktiverReiter: TeamReiter = teamReiter.some((row) => row.id === reiter) ? reiter : 'members'
   // Ohne Teams und ohne das Recht zu gründen hätte die linke Spalte nichts zu
@@ -474,7 +477,7 @@ export function Teams() {
 
       {bereich === 'teams' && (
         <div
-          className={`msm-card grid min-w-0 overflow-hidden ${mitListe ? 'lg:grid-cols-[19rem_minmax(0,1fr)]' : ''}`}
+          className={`msm-card grid min-w-0 min-h-[48rem] overflow-hidden ${mitListe ? 'lg:grid-cols-[20rem_minmax(0,1fr)]' : ''}`}
           data-testid="team-workspace"
         >
           {/* ── Die Teamliste ─────────────────────────────────────────────
@@ -483,21 +486,39 @@ export function Teams() {
               auf einen Blick da, und das Gründen gehört ans Ende derselben
               Liste — dorthin, wo das neue Team gleich stehen wird. */}
           {mitListe && (
-            <aside className="flex min-w-0 flex-col gap-3 border-b border-outline-variant/50 bg-surface-container-low/35 p-4 lg:border-b-0 lg:border-r">
+            <aside className="flex min-w-0 flex-col gap-3 border-b border-outline-variant/50 bg-surface-container-low/35 p-4 lg:border-b-0 lg:border-r lg:min-h-[48rem]">
               {/* Ohne Teams bleibt links nur das Gründen; dass es noch keins
                   gibt, sagt die rechte Seite — nicht beide. */}
               {echte.length > 0 && (
-                <h2
-                  id="team-list"
-                  className="font-label-md text-xs font-semibold uppercase tracking-wider text-on-surface-variant"
-                >
-                  {t('teams.yourTeams')}
-                </h2>
+                <div className="flex items-center justify-between">
+                  <h2
+                    id="team-list"
+                    className="font-label-md text-xs font-semibold uppercase tracking-wider text-on-surface-variant"
+                  >
+                    {t('teams.yourTeams')}
+                  </h2>
+                  <span className="msm-badge-info text-xs">{echte.length}</span>
+                </div>
+              )}
+
+              {/* Kompaktes Dropdown für schmale Ansichten (z. B. Pontis Seitenleiste) */}
+              {echte.length > 1 && (
+                <div className="lg:hidden">
+                  <Dropdown
+                    value={selectedId ? String(selectedId) : null}
+                    onChange={(val) => {
+                      if (val) setSelectedId(Number(val))
+                    }}
+                    options={echte.map((e) => ({ value: String(e.id), label: e.name }))}
+                    placeholder={t('teams.chooseTeam')}
+                    aria-label={t('teams.yourTeams')}
+                  />
+                </div>
               )}
 
               {echte.length > 0 && (
                 <ul
-                  className="flex max-h-72 flex-col gap-1.5 overflow-y-auto pr-1 lg:max-h-[32rem]"
+                  className="flex flex-1 min-h-0 flex-col gap-1.5 overflow-y-auto pr-1 max-lg:max-h-48"
                   aria-labelledby="team-list"
                 >
                   {echte.map((eintrag) => {
@@ -574,7 +595,7 @@ export function Teams() {
             </aside>
           )}
 
-          <div className="min-w-0">
+          <div className="flex min-w-0 flex-1 flex-col">
             {team ? (
               <>
                 {/* ── Kopf: welches Team, wie viele, meine Rolle ────────────
@@ -589,14 +610,36 @@ export function Teams() {
                     <UsersRound aria-hidden="true" className="h-5 w-5" />
                   </span>
                   <div className="min-w-[12rem] flex-1">
-                    <h2 className="break-words font-headline text-title-lg font-semibold leading-7 text-on-surface">
-                      {team.name}
-                    </h2>
-                    <p className="mt-0.5 text-sm text-on-surface-variant">
-                      {team.is_owner ? t('teams.youFounder') : t('teams.youMember')}
-                      {' · '}
-                      {t('teams.memberCount', { count: team.members.length })}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="break-words font-headline text-title-lg font-semibold leading-7 text-on-surface">
+                        {team.name}
+                      </h2>
+                      <span className="msm-badge-info text-xs">
+                        {team.is_owner ? t('teams.founder') : t('teams.member')}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-on-surface-variant">
+                      <span>{t('teams.memberCount', { count: team.members.length })}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{t('teams.tabServers')}: {team.servers.length}</span>
+                      <span aria-hidden="true">·</span>
+                      <Link
+                        to="/dokumente"
+                        className="inline-flex items-center gap-1 text-primary hover:underline underline-offset-2"
+                      >
+                        <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>{t('browser.leiste.dokumente')}</span>
+                      </Link>
+                      {inTauri && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="inline-flex items-center gap-1 text-secondary">
+                            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                            <span>{t('teams.vault')}</span>
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
                   {team.is_owner ? (
                     <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void removeTeam(team)}>
@@ -625,7 +668,7 @@ export function Teams() {
                   />
                 </div>
 
-                <div className="p-4 sm:p-6">
+                <div className="p-4 sm:p-6 flex-1 min-h-0 flex flex-col">
                   {aktiverReiter === 'members' && (
                     <MitgliederReiter
                       team={team}
@@ -706,7 +749,7 @@ export function Teams() {
                     </section>
                   )}
                   {aktiverReiter === 'vault' && (
-                    <section className="space-y-4" aria-labelledby="team-vault">
+                    <section className="space-y-4 flex-1 min-h-0 flex flex-col" aria-labelledby="team-vault">
                       <TeamVaultView team={team} />
                     </section>
                   )}

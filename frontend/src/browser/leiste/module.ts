@@ -5,7 +5,7 @@
  * richtigen Panel.
  */
 import type { ElementType } from 'react'
-import { Bookmark, Bot, Calendar, Code, Download, FileText, History, KeyRound, Link2, MessageSquare, Settings, StickyNote } from 'lucide-react'
+import { Bookmark, Bot, Calendar, Code, Download, FileText, History, KeyRound, Link2, MessageSquare, Settings, StickyNote, UsersRound } from 'lucide-react'
 
 import { DiscordSymbol, InstagramSymbol, TelegramSymbol, WhatsAppSymbol } from '../marken'
 import type { Modul } from '../services/einstellungenStore'
@@ -17,6 +17,7 @@ export type PanelId =
   | 'dokumente'
   | 'kalender'
   | 'tresor'
+  | 'teams'
   | 'lesezeichen'
   | 'verlauf'
   | 'downloads'
@@ -47,6 +48,7 @@ export const MSM_EINTRAEGE: Leisteneintrag[] = [
   { id: 'dokumente', symbol: FileText, name: 'browser.leiste.dokumente', modul: 'dokumente', offline: true },
   { id: 'kalender', symbol: Calendar, name: 'browser.leiste.kalender', modul: 'kalender', offline: true },
   { id: 'tresor', symbol: KeyRound, name: 'browser.leiste.tresor', modul: 'tresor', offline: true },
+  { id: 'teams', symbol: UsersRound, name: 'browser.leiste.teams', modul: 'teams' },
 ]
 
 export const BROWSER_EINTRAEGE: Leisteneintrag[] = [
