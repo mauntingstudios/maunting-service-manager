@@ -37,7 +37,10 @@ function Kopplung() {
       confirmText: t('browser.einstellungen.trennen'),
       danger: true,
     })
-    if (ja) await abmelden()
+    if (ja) {
+      await abmelden()
+      navigate('/koppeln')
+    }
   }
 
   return (

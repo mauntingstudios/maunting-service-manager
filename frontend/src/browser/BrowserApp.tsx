@@ -22,6 +22,7 @@ import { ServerIncidentNotifier } from '@/components/notifications/ServerInciden
 import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { PromptDialog } from '@/components/ui/PromptDialog'
+import { ABGEMELDET } from '@/desktop/auth'
 import { eingangBeobachten } from '@/desktop/vault/tresorEingang'
 import { tresorAutoSperrQuelle, useVaultStore } from '@/desktop/vault/vaultStore'
 import { useAutoSperre } from '@/hooks/useAutoSperre'
@@ -186,6 +187,13 @@ function Wurzel() {
     void useGeraetKonfig.getState().laden()
     void useTabsStore.getState().hochfahren()
   }, [])
+  useEffect(() => {
+    const zurKopplung = () => {
+      navigate('/koppeln')
+    }
+    window.addEventListener(ABGEMELDET, zurKopplung)
+    return () => window.removeEventListener(ABGEMELDET, zurKopplung)
+  }, [navigate])
   useEffect(() => {
     let aus: (() => void) | null = null
     let weg = false

@@ -16,6 +16,7 @@ import { Kurzinfo, ModalContainerContext } from '@/Singra/UI'
 import { useZurueckSchliesst } from '@/Singra/UI/useZurueckSchliesst'
 import { Spinner } from '@/components/ui/Spinner'
 import { Zustandsflaeche } from '@/Singra/UI/Zustandsflaeche'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 import { useEinstellungenStore } from '../services/einstellungenStore'
 import { istGekoppelt, useSitzung } from '../services/sitzung'
@@ -169,7 +170,9 @@ function Vollbild({ id, titel, pfad }: { id: PanelId; titel: string; pfad: strin
       <div ref={setModalContainer} className="msb-bereich relative min-h-0 flex-1 overflow-hidden">
         <ModalContainerContext.Provider value={modalContainer}>
           <Suspense fallback={<Laedt />}>
-            <Inhalt id={id} pfad={pfad} voll />
+            <ErrorBoundary>
+              <Inhalt id={id} pfad={pfad} voll />
+            </ErrorBoundary>
           </Suspense>
         </ModalContainerContext.Provider>
       </div>
@@ -216,7 +219,9 @@ export function Panel({ seite }: { seite: 'links' | 'rechts' | 'voll' }) {
       <div ref={setModalContainer} className="msb-bereich relative min-h-0 flex-1 overflow-hidden">
         <ModalContainerContext.Provider value={modalContainer}>
           <Suspense fallback={<Laedt />}>
-            <Inhalt id={id} pfad={pathname} voll={false} />
+            <ErrorBoundary>
+              <Inhalt id={id} pfad={pathname} voll={false} />
+            </ErrorBoundary>
           </Suspense>
         </ModalContainerContext.Provider>
       </div>

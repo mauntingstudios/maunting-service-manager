@@ -548,6 +548,22 @@ export function DesktopApp() {
           }
         />
         <Route
+          path="/dokumente/:uid"
+          element={
+            publicSettings.docs_enabled ? (
+              <Hauptseite
+                bereich="dokumente"
+                konfig={konfig}
+                offeneUebernahme={offeneUebernahme}
+                onKonfigAenderung={ladeKonfigNeu}
+                isOffline={isOffline}
+              />
+            ) : (
+              <Navigate to={fallbackRoute} replace />
+            )
+          }
+        />
+        <Route
           path="/gedaechtnis"
           element={
             <Hauptseite
