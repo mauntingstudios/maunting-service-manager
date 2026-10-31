@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from services.ai_limit_service import (
     DICTATION_MINUTES_LIMIT_MAX,
+    MAX_ATTACHMENT_STORAGE_MB_MAX,
     MAX_MEMORY_ENTRIES_MAX,
     MAX_REASONING_EFFORT_MAX,
     REALTIME_MINUTES_LIMIT_MAX,
@@ -25,6 +26,7 @@ ReasoningLimit = Annotated[int | None, Field(ge=0, le=MAX_REASONING_EFFORT_MAX)]
 #: liegt deutlich unter den Kontingenten — warum, steht bei
 #: ``ai_limit_service.MAX_MEMORY_ENTRIES_MAX``.
 MemoryLimit = Annotated[int | None, Field(ge=0, le=MAX_MEMORY_ENTRIES_MAX)]
+AttachmentStorageLimit = Annotated[int | None, Field(ge=0, le=MAX_ATTACHMENT_STORAGE_MB_MAX)]
 
 
 class AiLimitsBase(BaseModel):
@@ -45,6 +47,8 @@ class AiLimitsBase(BaseModel):
     # Zeile darüber — ``set_role_limit`` verlangt *alle* ``LIMIT_FIELDS``, also
     # muss auch ein Aufrufer ohne dieses Feld ein vollständiges Set liefern.
     max_memory_entries: MemoryLimit = None
+    # Maximaler Speicherplatz für KI-Dateianhänge in MB.
+    max_attachment_storage_mb: AttachmentStorageLimit = None
 
 
 class AiRoleLimitsUpdate(AiLimitsBase):

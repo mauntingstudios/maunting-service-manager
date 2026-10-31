@@ -64,6 +64,9 @@ vi.mock('@/pages/Calendar', () => ({
 vi.mock('@/pages/Notes', () => ({
   Notes: () => <div data-testid="notizen-seite" />,
 }))
+vi.mock('@/pages/Teams', () => ({
+  Teams: () => <div data-testid="teams-seite" />,
+}))
 vi.mock('./Einstellungen', () => ({
   Einstellungen: ({ offline }: { offline?: boolean }) => (
     <div data-testid="einstellungen-seite" data-offline={String(Boolean(offline))} />

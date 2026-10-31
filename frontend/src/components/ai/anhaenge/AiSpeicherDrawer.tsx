@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  CheckSquare,
   File,
   FileCode,
   FileText,
@@ -8,6 +9,7 @@ import {
   Image as ImageIcon,
   MessageSquarePlus,
   Search,
+  Square,
   Trash2,
   X,
 } from 'lucide-react'
@@ -38,7 +40,8 @@ export function AiSpeicherDrawer({
   const { t, i18n } = useTranslation()
   const [suchbegriff, setSuchbegriff] = useState('')
   const [filter, setFilter] = useState<FilterArt>('alle')
-  const [zuLoeschendesAnhang, setZuLoeschendesAnhang] = useState<AiAttachment | null>(null)
+  const [ausgewaehlteIds, setAusgewaehlteIds] = useState<Set<string>>(new Set())
+  const [zuLoeschendeAnhaenge, setZuLoeschendeAnhaenge] = useState<AiAttachment[]>([])
   const [auchAusTresor, setAuchAusTresor] = useState(false)
   const [wirdGeloescht, setWirdGeloescht] = useState(false)
 
@@ -75,12 +78,41 @@ export function AiSpeicherDrawer({
     }
   }
 
+  const toggleSelect = (id: string) => {
+    setAusgewaehlteIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (ausgewaehlteIds.size === gefilterteAnhaenge.length) {
+      setAusgewaehlteIds(new Set())
+    } else {
+      setAusgewaehlteIds(new Set(gefilterteAnhaenge.map((a) => a.id)))
+    }
+  }
+
+  const handleOpenDelete = (items: AiAttachment[]) => {
+    setZuLoeschendeAnhaenge(items)
+    setAuchAusTresor(false)
+  }
+
   const handleDeleteConfirm = async () => {
-    if (!zuLoeschendesAnhang) return
+    if (zuLoeschendeAnhaenge.length === 0) return
     setWirdGeloescht(true)
     try {
-      await onLoeschen(zuLoeschendesAnhang, auchAusTresor)
-      setZuLoeschendesAnhang(null)
+      for (const anhang of zuLoeschendeAnhaenge) {
+        await onLoeschen(anhang, auchAusTresor)
+      }
+      setAusgewaehlteIds((prev) => {
+        const next = new Set(prev)
+        zuLoeschendeAnhaenge.forEach((a) => next.delete(a.id))
+        return next
+      })
+      setZuLoeschendeAnhaenge([])
       setAuchAusTresor(false)
     } finally {
       setWirdGeloescht(false)
@@ -150,6 +182,45 @@ export function AiSpeicherDrawer({
                 ))}
               </div>
             </div>
+
+            {/* Sammel-Aktionsleiste bei Auswahl */}
+            {gefilterteAnhaenge.length > 0 && (
+              <div className="mt-2.5 pt-2 border-t border-outline-variant/15 flex items-center justify-between text-xs text-on-surface-variant">
+                <button
+                  type="button"
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2 hover:text-on-surface transition-colors select-none font-medium"
+                >
+                  {ausgewaehlteIds.size === gefilterteAnhaenge.length ? (
+                    <CheckSquare className="h-4 w-4 text-primary" />
+                  ) : (
+                    <Square className="h-4 w-4 text-outline" />
+                  )}
+                  <span>{t('ai.attachments.selectAll')}</span>
+                </button>
+
+                {ausgewaehlteIds.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-primary">
+                      {t('ai.attachments.selectedCount', { count: ausgewaehlteIds.size })}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() => {
+                        const gewaehlt = gefilterteAnhaenge.filter((a) => ausgewaehlteIds.has(a.id))
+                        handleOpenDelete(gewaehlt)
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      {t('ai.attachments.deleteSelected', { count: ausgewaehlteIds.size })}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </DialogHeader>
 
           {/* Dateiliste */}
@@ -166,12 +237,23 @@ export function AiSpeicherDrawer({
               <ul className="space-y-1.5" aria-label={t('ai.attachments.list')}>
                 {gefilterteAnhaenge.map((item) => {
                   const art = anhangArt(item.media_type, item.original_name)
+                  const istAusgewaehlt = ausgewaehlteIds.has(item.id)
                   return (
                     <li
                       key={item.id}
-                      className="group flex items-center justify-between p-2.5 rounded-xl border border-outline-variant/30 bg-surface-container hover:bg-surface-container-high transition-colors gap-3"
+                      className={`group flex items-center justify-between p-2.5 rounded-xl border transition-colors gap-3 ${
+                        istAusgewaehlt
+                          ? 'border-primary/50 bg-primary/5'
+                          : 'border-outline-variant/30 bg-surface-container hover:bg-surface-container-high'
+                      }`}
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <Checkbox
+                          id={`select-${item.id}`}
+                          checked={istAusgewaehlt}
+                          onCheckedChange={() => toggleSelect(item.id)}
+                          aria-label={`${t('common.select', 'Auswählen')}: ${item.original_name}`}
+                        />
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface border border-outline-variant/30 text-on-surface-variant">
                           {art === 'image' ? (
                             <ImageIcon className="h-4 w-4" aria-hidden="true" />
@@ -225,10 +307,7 @@ export function AiSpeicherDrawer({
                             size="icon"
                             className="h-8 w-8 text-on-surface-variant hover:text-error"
                             aria-label={`${t('ai.attachments.remove')}: ${item.original_name}`}
-                            onClick={() => {
-                              setZuLoeschendesAnhang(item)
-                              setAuchAusTresor(false)
-                            }}
+                            onClick={() => handleOpenDelete([item])}
                           >
                             <Trash2 className="h-4 w-4" aria-hidden="true" />
                           </Button>
@@ -241,7 +320,7 @@ export function AiSpeicherDrawer({
             )}
           </div>
 
-          <DialogFooter className="p-3 sm:p-4 border-t border-outline-variant/20 bg-surface-container-low flex justify-end">
+          <DialogFooter variant="plain" className="p-3 sm:p-4 border-t border-outline-variant/20 flex justify-end">
             <Button type="button" variant="ghost" onClick={onSchliessen}>
               {t('common.close', 'Schließen')}
             </Button>
@@ -249,27 +328,37 @@ export function AiSpeicherDrawer({
         </DialogContent>
       </Dialog>
 
-      {/* Bestätigungsdialog zum Löschen */}
+      {/* Bestätigungsdialog zum Löschen (luftig, ohne dunklen Balken) */}
       <Dialog
-        open={Boolean(zuLoeschendesAnhang)}
-        onOpenChange={(auf) => { if (!auf && !wirdGeloescht) setZuLoeschendesAnhang(null) }}
+        open={zuLoeschendeAnhaenge.length > 0}
+        onOpenChange={(auf) => { if (!auf && !wirdGeloescht) setZuLoeschendeAnhaenge([]) }}
       >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('ai.attachments.deleteConfirmTitle')}</DialogTitle>
+        <DialogContent className="max-w-md p-6">
+          <DialogHeader className="p-0 pb-3">
+            <DialogTitle className="text-base font-semibold text-on-surface">
+              {t('ai.attachments.deleteConfirmTitle')}
+            </DialogTitle>
           </DialogHeader>
-          <div className="py-2 space-y-3">
-            <p className="text-sm text-on-surface-variant">
+
+          <div className="space-y-4 py-1">
+            <p className="text-sm text-on-surface-variant leading-relaxed">
               {t('ai.attachments.deleteConfirmMessage')}
             </p>
-            {zuLoeschendesAnhang && (
-              <p className="text-sm font-semibold text-on-surface truncate bg-surface-container p-2 rounded-lg border border-outline-variant/30">
-                {zuLoeschendesAnhang.original_name}
-              </p>
-            )}
+
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {zuLoeschendeAnhaenge.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between p-2.5 rounded-xl border border-outline-variant/30 bg-surface-container text-xs text-on-surface"
+                >
+                  <span className="font-medium truncate flex-1 mr-2">{item.original_name}</span>
+                  <span className="text-on-surface-variant shrink-0">{lesbareGroesse(item.size_bytes)}</span>
+                </div>
+              ))}
+            </div>
 
             {tresorSpiegelungAktiv && (
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex items-center gap-2.5 pt-2 border-t border-outline-variant/15">
                 <Checkbox
                   id="auch-aus-tresor-loeschen"
                   checked={auchAusTresor}
@@ -277,19 +366,20 @@ export function AiSpeicherDrawer({
                 />
                 <label
                   htmlFor="auch-aus-tresor-loeschen"
-                  className="text-xs text-on-surface cursor-pointer select-none"
+                  className="text-xs text-on-surface cursor-pointer select-none leading-normal"
                 >
                   {t('ai.attachments.deleteAlsoFromVault')}
                 </label>
               </div>
             )}
           </div>
-          <DialogFooter className="flex justify-end gap-2">
+
+          <DialogFooter variant="plain" className="mt-5 p-0 flex justify-end gap-2">
             <Button
               type="button"
               variant="ghost"
               disabled={wirdGeloescht}
-              onClick={() => setZuLoeschendesAnhang(null)}
+              onClick={() => setZuLoeschendeAnhaenge([])}
             >
               {t('common.cancel', 'Abbrechen')}
             </Button>

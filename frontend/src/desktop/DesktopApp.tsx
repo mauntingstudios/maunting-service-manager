@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { listen } from '@tauri-apps/api/event'
-import { Bot, BrainCircuit, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, WifiOff, X } from 'lucide-react'
+import { Bot, BrainCircuit, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, Users, WifiOff, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
@@ -43,6 +43,7 @@ import { Benutzerprofil } from '@/pages/Benutzerprofil'
 import { Calendar } from '@/pages/Calendar'
 import { DocsEmbedded } from '@/docs/DocsEmbedded'
 import { Notes } from '@/pages/Notes'
+import { Teams } from '@/pages/Teams'
 import { Privacy } from '@/pages/Privacy'
 import { useAuthStore } from '@/stores/authStore'
 import { useAutoSperre } from '@/hooks/useAutoSperre'
@@ -50,6 +51,7 @@ import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { useKontoBundNachholen } from '@/hooks/useKontoBundNachholen'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
+import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { ABGEMELDET, abmelden } from './auth'
 import { Einstellungen } from './Einstellungen'
@@ -90,7 +92,7 @@ type Phase = 'laedt' | 'einrichtung' | 'kopplung' | 'sandbox' | 'bereit'
 const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
 const SPLASH_GESEHEN_KEY = 'mss:splash_gesehen'
 const LETZTE_ROUTE_KEY = 'mss:letzte_route'
-const ERLAUBTE_ROUTEN = ['/ai', '/chat', '/kalender', '/notizen', '/dokumente', '/gedaechtnis', '/tresor', '/einstellungen']
+const ERLAUBTE_ROUTEN = ['/ai', '/chat', '/kalender', '/notizen', '/dokumente', '/gedaechtnis', '/tresor', '/teams', '/einstellungen']
 
 /**
  * Bereiche, die ohne Panel arbeiten. Die Einstellungen stehen immer darin:
@@ -126,6 +128,7 @@ function getInitialRoute(offline = false): string {
       if (pfad === '/notizen' && !settings.notes_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
       if (pfad === '/dokumente' && !settings.docs_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
       if (pfad === '/tresor' && !settings.vault_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
+      if (pfad === '/teams' && offline) return getFallbackOfflineRoute(settings)
       return gespeichert
     }
   } catch {}
@@ -586,6 +589,23 @@ export function DesktopApp() {
         />
         <Route path="/vault" element={<Navigate to={publicSettings.vault_enabled ? '/tresor' : fallbackRoute} replace />} />
         <Route
+          path="/teams"
+          element={
+            !isOffline ? (
+              <Hauptseite
+                bereich="teams"
+                konfig={konfig}
+                offeneUebernahme={offeneUebernahme}
+                onKonfigAenderung={ladeKonfigNeu}
+                isOffline={isOffline}
+              />
+            ) : (
+              <Navigate to={fallbackRoute} replace />
+            )
+          }
+        />
+        <Route path="/team" element={<Navigate to="/teams" replace />} />
+        <Route
           path="/privacy"
           element={
             // Die Hülle schneidet ab (`overflow-hidden`); scrollen muss die
@@ -662,6 +682,7 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
         if (ziel.startsWith('/notizen') && !publicSettings.notes_enabled) return
         if (ziel.startsWith('/dokumente') && !publicSettings.docs_enabled) return
         if (ziel.startsWith('/tresor') && !publicSettings.vault_enabled) return
+        if (ziel.startsWith('/teams') && isOffline) return
 
         // Eine ausdrückliche Navigation bleibt eine Navigation, auch offline.
         // Die Zielseite zeigt ihren eigenen Offline-Zustand; ein Umweg über
@@ -792,7 +813,7 @@ function Hauptseite({
   onKonfigAenderung,
   isOffline = false,
 }: {
-  bereich: 'ki' | 'chat' | 'profil' | 'kalender' | 'notizen' | 'dokumente' | 'gedaechtnis' | 'tresor' | 'einstellungen'
+  bereich: 'ki' | 'chat' | 'profil' | 'kalender' | 'notizen' | 'dokumente' | 'gedaechtnis' | 'tresor' | 'teams' | 'einstellungen'
   konfig: AppKonfig | null
   offeneUebernahme: string | null
   onKonfigAenderung?: () => void
@@ -817,9 +838,11 @@ function Hauptseite({
   const darfDokumente = publicSettings.docs_enabled && (isOffline || hasPermissionDokumente)
   const darfGedaechtnis = !isOffline && hasPermissionGedaechtnis
   const darfTresor = publicSettings.vault_enabled
+  const darfTeams = !isOffline
   const darfMessenger = publicSettings.social_enabled
   const [mobileMenuOffen, setMobileMenuOffen] = useState(false)
   const totalMessengerUnread = useMessengerNotificationStore((s) => s.totalUnreadCount)
+  const teamInvitationCount = useTeamInvitationStore((s) => s.count)
 
   const offlineRouten = useMemo(() => {
     const routen: string[] = []
@@ -851,7 +874,10 @@ function Hauptseite({
     if (!darfDokumente && bereich === 'dokumente') {
       navigate(fallbackRoute, { replace: true })
     }
-  }, [darfTresor, darfMessenger, darfKalender, darfNotizen, darfDokumente, bereich, navigate, fallbackRoute])
+    if (isOffline && bereich === 'teams') {
+      navigate(fallbackRoute, { replace: true })
+    }
+  }, [darfTresor, darfMessenger, darfKalender, darfNotizen, darfDokumente, isOffline, bereich, navigate, fallbackRoute])
 
   // Am Handy fehlt die Reiterleiste; die Kopfzeile nennt deshalb den offenen Bereich.
   const kopfTitel = bereich === 'ki' ? KI_NAME : t(BEREICH_TITEL[bereich])
@@ -1042,6 +1068,16 @@ function Hauptseite({
                 label={t('mss.app.tresor')}
               />
             )}
+            {darfTeams && (
+              <Reiter
+                aktiv={bereich === 'teams'}
+                onClick={() => navigate('/teams')}
+                icon={<Users className="h-4 w-4 shrink-0" />}
+                label={t('teams.title', 'Team')}
+                badge={teamInvitationCount}
+                pulse={teamInvitationCount > 0}
+              />
+            )}
           </nav>
 
           {/* Rechte Seite: UpdateBadge + Glocke + Profil-Avatar mit Dropdown-Menü */}
@@ -1218,6 +1254,26 @@ function Hauptseite({
                 </button>
               )}
 
+              {!isOffline && (
+                <button
+                  type="button"
+                  onClick={() => { navigate('/teams'); setMobileMenuOffen(false); }}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                    bereich === 'teams'
+                      ? 'bg-primary/15 text-primary border border-primary/30'
+                      : 'text-on-surface hover:bg-surface-container-high'
+                  }`}
+                >
+                  <Users className="h-4 w-4" />
+                  <span>{t('teams.title', 'Team')}</span>
+                  {teamInvitationCount > 0 && (
+                    <span className="ml-auto inline-flex items-center justify-center px-1.5 py-0.5 text-label-sm font-bold rounded-full bg-primary text-on-primary">
+                      {teamInvitationCount > 99 ? '99+' : teamInvitationCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => { navigate('/einstellungen'); setMobileMenuOffen(false); }}
@@ -1324,6 +1380,10 @@ function Hauptseite({
             <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
               <VaultView />
             </div>
+          ) : bereich === 'teams' ? (
+            <div className="mx-auto w-full max-w-6xl flex-1 min-h-0 overflow-y-auto pb-8 p-3 sm:p-4 md:p-6">
+              <Teams />
+            </div>
           ) : (
             <div className="mx-auto w-full max-w-3xl flex-1 min-h-0 overflow-y-auto pb-8">
               <Einstellungen onKonfigAenderung={onKonfigAenderung} offline={isOffline} />
@@ -1343,6 +1403,7 @@ const BEREICH_TITEL = {
   dokumente: 'mss.app.dokumente',
   gedaechtnis: 'mss.app.gedaechtnis',
   tresor: 'mss.app.tresor',
+  teams: 'teams.title',
   einstellungen: 'mss.app.einstellungen',
 } as const
 

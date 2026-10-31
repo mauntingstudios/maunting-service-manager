@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { AiAttachment } from '@/api/ai'
@@ -123,5 +123,34 @@ describe('AiSpeicherDrawer', () => {
     fireEvent.click(confirmBtn)
 
     expect(onLoeschen).toHaveBeenCalledWith(anhaengeTest[0], false)
+  })
+
+  it('unterstuetzt Multi-Select zum Sammel-Loeschen mehrerer Anhaenge', async () => {
+    const onLoeschen = vi.fn().mockResolvedValue(undefined)
+    render(
+      <AiSpeicherDrawer
+        offen
+        onSchliessen={vi.fn()}
+        anhaenge={anhaengeTest}
+        onLoeschen={onLoeschen}
+      />,
+    )
+
+    const selectAllBtn = screen.getByText('Alle auswählen')
+    fireEvent.click(selectAllBtn)
+
+    expect(screen.getByText('2 ausgewählt')).toBeInTheDocument()
+
+    const bulkDeleteBtn = screen.getByRole('button', { name: /Ausgewählte löschen \(2\)/ })
+    fireEvent.click(bulkDeleteBtn)
+
+    expect(screen.getByText('Datei löschen')).toBeInTheDocument()
+    const confirmBtn = screen.getAllByRole('button', { name: 'Anhang entfernen' })[0]
+    fireEvent.click(confirmBtn)
+
+    await waitFor(() => {
+      expect(onLoeschen).toHaveBeenCalledWith(anhaengeTest[0], false)
+      expect(onLoeschen).toHaveBeenCalledWith(anhaengeTest[1], false)
+    })
   })
 })

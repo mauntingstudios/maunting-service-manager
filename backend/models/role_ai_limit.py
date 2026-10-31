@@ -72,6 +72,9 @@ class RoleAiLimit(Base):
     # eine Zahl bewusst niedrig liegt, steht bei
     # ``ai_limit_service.MAX_MEMORY_ENTRIES_MAX``.
     max_memory_entries: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Maximaler Speicherplatz fuer hochgeladene KI-Dateianhaenge in Megabyte (MB).
+    # ``None`` bedeutet unbegrenzt, 0 verbietet Uploads komplett.
+    max_attachment_storage_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

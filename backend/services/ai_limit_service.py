@@ -107,6 +107,7 @@ MAX_REASONING_EFFORT_MAX = 6
 # dem gehört, der den Schalter umlegt, und weil der Abruf seit Stufe 4 nicht
 # mehr mit dem Vorrat wächst.
 MAX_MEMORY_ENTRIES_MAX = 5_000
+MAX_ATTACHMENT_STORAGE_MB_MAX = 100_000
 # Feste Systemgrenze fuer die Bereiche, die an keiner Benutzerrolle haengen:
 # `server_shared` gehoert der Anlage, `panel` dem Betreiber. Das Kontingent des
 # gerade schreibenden Benutzers waere dort das falsche Mass — es haengt daran,
@@ -149,6 +150,8 @@ LIMIT_FIELDS = (
     # 05.10.2026 hiess ``None`` hier „nichts hinterlegt“ und wurde beim Merken
     # zu ``MAX_SYSTEM_SCOPE_ENTRIES`` — waehrend die Maske „Unbegrenzt“ zeigte.
     "max_memory_entries",
+    # Maximaler Speicherplatz fuer hochgeladene KI-Dateianhaenge in Megabyte (MB).
+    "max_attachment_storage_mb",
 )
 LIMIT_MAXIMA = {
     "daily_token_limit": TOKEN_LIMIT_MAX,
@@ -158,6 +161,7 @@ LIMIT_MAXIMA = {
     "monthly_dictation_minutes_limit": DICTATION_MINUTES_LIMIT_MAX,
     "max_reasoning_effort": MAX_REASONING_EFFORT_MAX,
     "max_memory_entries": MAX_MEMORY_ENTRIES_MAX,
+    "max_attachment_storage_mb": MAX_ATTACHMENT_STORAGE_MB_MAX,
 }
 
 
@@ -178,6 +182,8 @@ class EffectiveAiLimits:
     #: Welche Grenze in welchem Bereich gilt (Team am Gruender, Systembereiche
     #: fest), entscheidet ``resolve_scope_memory_limit``.
     max_memory_entries: int | None
+    #: Maximaler Speicherplatz fuer KI-Dateianhaenge in MB; ``None`` heisst unbegrenzt.
+    max_attachment_storage_mb: int | None
 
 
 #: Felder eines Limit-Sets von vor dem 07.10.2026 (Migration 20261008_03).

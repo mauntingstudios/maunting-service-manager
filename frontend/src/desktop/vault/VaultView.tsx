@@ -34,10 +34,13 @@ import {
   Star,
   Trash2,
   Unlock,
+  Wand2,
   WifiOff,
   Zap,
   X,
 } from 'lucide-react'
+import type { TeamDetail } from '@/api/teams'
+import { useTeamVaultStore } from './teamVaultStore'
 import { Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Textarea, Zustandsflaeche } from '@/Singra/UI'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { TabBar, type TabDef } from '@/components/ui/TabBar'
@@ -83,62 +86,221 @@ export function restTageImPapierkorb(trashedAt: number, jetzt = Date.now()): num
   return Math.max(0, Math.ceil((trashedAt + PAPIERKORB_TAGE * TAG_MS - jetzt) / TAG_MS))
 }
 
-export function VaultView() {
+export interface VaultViewProps {
+  mode?: 'personal' | 'team'
+  team?: TeamDetail
+}
+
+export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
+  const isTeam = mode === 'team'
   const { t } = useTranslation()
 
-  const {
-    isInitialized,
-    isUnlocked,
-    isUnlocking,
-    unlockError,
-    isBiometricsEnabled,
-    isBiometricsSupported,
-    items,
-    searchQuery,
-    syncStatus,
-    zurueckgesetzt,
-    initializeVault,
-    unlock,
-    unlockWithBiometrics,
-    lock,
-    setSearchQuery,
-    saveItem,
-    trashItem,
-    restoreItem,
-    setArchived,
-    deleteItem,
-    emptyTrash,
-    toggleFavorite,
-    markUsed,
-    syncWithServer,
-    saveHint,
-    requestHintEmail,
-    checkBiometricsSupport,
-    fetchVaultSalt,
-  } = useVaultStore(
+  const personalStore = useVaultStore(
     // Nur diese Felder: `lastActivityTime` ändert sich bei jeder Mausbewegung.
-    useShallow((s) => ({ isInitialized: s.isInitialized, isUnlocked: s.isUnlocked, isUnlocking: s.isUnlocking, unlockError: s.unlockError, isBiometricsEnabled: s.isBiometricsEnabled, isBiometricsSupported: s.isBiometricsSupported, items: s.items, searchQuery: s.searchQuery, syncStatus: s.syncStatus, zurueckgesetzt: s.zurueckgesetzt, initializeVault: s.initializeVault, unlock: s.unlock, unlockWithBiometrics: s.unlockWithBiometrics, lock: s.lock, setSearchQuery: s.setSearchQuery, saveItem: s.saveItem, trashItem: s.trashItem, restoreItem: s.restoreItem, setArchived: s.setArchived, deleteItem: s.deleteItem, emptyTrash: s.emptyTrash, toggleFavorite: s.toggleFavorite, markUsed: s.markUsed, syncWithServer: s.syncWithServer, saveHint: s.saveHint, requestHintEmail: s.requestHintEmail, checkBiometricsSupport: s.checkBiometricsSupport, fetchVaultSalt: s.fetchVaultSalt })),
+    useShallow((s) => ({
+      isInitialized: s.isInitialized,
+      isUnlocked: s.isUnlocked,
+      isUnlocking: s.isUnlocking,
+      unlockError: s.unlockError,
+      isBiometricsEnabled: s.isBiometricsEnabled,
+      isBiometricsSupported: s.isBiometricsSupported,
+      items: s.items,
+      searchQuery: s.searchQuery,
+      syncStatus: s.syncStatus,
+      zurueckgesetzt: s.zurueckgesetzt,
+      initializeVault: s.initializeVault,
+      unlock: s.unlock,
+      unlockWithBiometrics: s.unlockWithBiometrics,
+      lock: s.lock,
+      setSearchQuery: s.setSearchQuery,
+      saveItem: s.saveItem,
+      trashItem: s.trashItem,
+      restoreItem: s.restoreItem,
+      setArchived: s.setArchived,
+      deleteItem: s.deleteItem,
+      emptyTrash: s.emptyTrash,
+      toggleFavorite: s.toggleFavorite,
+      markUsed: s.markUsed,
+      syncWithServer: s.syncWithServer,
+      saveHint: s.saveHint,
+      requestHintEmail: s.requestHintEmail,
+      checkBiometricsSupport: s.checkBiometricsSupport,
+      fetchVaultSalt: s.fetchVaultSalt,
+    })),
   )
+
+  const teamStore = useTeamVaultStore(
+    useShallow((s) => ({
+      teamId: s.teamId,
+      isInitialized: s.isInitialized,
+      isUnlocked: s.isUnlocked,
+      needsRotation: s.needsRotation,
+      isOwner: s.isOwner,
+      items: s.items,
+      syncStatus: s.syncStatus,
+      error: s.error,
+      loadStatus: s.loadStatus,
+      setup: s.setup,
+      unlock: s.unlock,
+      rotatePassword: s.rotatePassword,
+      lock: s.lock,
+      syncWithServer: s.syncWithServer,
+      saveItem: s.saveItem,
+      trashItem: s.trashItem,
+      restoreItem: s.restoreItem,
+      setArchived: s.setArchived,
+      deleteItem: s.deleteItem,
+      emptyTrash: s.emptyTrash,
+      toggleFavorite: s.toggleFavorite,
+      markUsed: s.markUsed,
+    })),
+  )
+
+  // Status des Team-Tresors laden
+  useEffect(() => {
+    if (isTeam && team?.id) {
+      void teamStore.loadStatus(team.id)
+    }
+  }, [isTeam, team?.id, teamStore.loadStatus])
 
   // Beim Laden Server-Status und Salt nur prüfen, falls lokal noch kein Salt vorliegt (Leck-2-Schutz)
   useEffect(() => {
-    if (!getLocalVaultSalt()) {
-      void fetchVaultSalt()
+    if (!isTeam && !getLocalVaultSalt()) {
+      void personalStore.fetchVaultSalt()
     }
-  }, [fetchVaultSalt])
+  }, [isTeam, personalStore.fetchVaultSalt])
 
   // Biometrie-Verfügbarkeit (Windows Hello / Fingerabdruck) beim Laden abfragen
   useEffect(() => {
-    void checkBiometricsSupport()
-  }, [checkBiometricsSupport])
+    if (!isTeam) {
+      void personalStore.checkBiometricsSupport()
+    }
+  }, [isTeam, personalStore.checkBiometricsSupport])
 
   // Hardware- und Software-Schutz vor Windows Computer-Use KI-Screenshots
   useEffect(() => {
-    void setzeTresorSchutz(isUnlocked)
+    const unlocked = isTeam ? teamStore.isUnlocked : personalStore.isUnlocked
+    void setzeTresorSchutz(unlocked)
     return () => {
       void setzeTresorSchutz(false)
     }
-  }, [isUnlocked])
+  }, [isTeam, teamStore.isUnlocked, personalStore.isUnlocked])
+
+  const [teamBusy, setTeamBusy] = useState(false)
+  const [teamSearchQuery, setTeamSearchQuery] = useState('')
+
+  const isInitialized = isTeam ? teamStore.isInitialized : personalStore.isInitialized
+  const isUnlocked = isTeam ? teamStore.isUnlocked : personalStore.isUnlocked
+  const isUnlocking = isTeam ? teamBusy : personalStore.isUnlocking
+  const unlockError = isTeam ? teamStore.error : personalStore.unlockError
+  const items = isTeam ? teamStore.items : personalStore.items
+  const searchQuery = isTeam ? teamSearchQuery : personalStore.searchQuery
+  const setSearchQuery = isTeam ? setTeamSearchQuery : personalStore.setSearchQuery
+  const syncStatus = isTeam ? teamStore.syncStatus : personalStore.syncStatus
+  const isOwner = isTeam ? (teamStore.isOwner ?? team?.is_owner ?? false) : true
+  const needsRotation = isTeam ? teamStore.needsRotation : false
+  const zurueckgesetzt = isTeam ? false : personalStore.zurueckgesetzt
+  const isBiometricsEnabled = isTeam ? false : personalStore.isBiometricsEnabled
+  const isBiometricsSupported = isTeam ? false : personalStore.isBiometricsSupported
+
+  // Team-Rotation State
+  const [rotationOpen, setRotationOpen] = useState(false)
+  const [rotPassword, setRotPassword] = useState('')
+  const [rotRepeat, setRotRepeat] = useState('')
+  const [rotBusy, setRotBusy] = useState(false)
+  const [rotLeakCheck, setRotLeakCheck] = useState<LeakCheckResult | null>(null)
+  const checkRotPasswordLeak = useMemo(() => createDebouncedLeakChecker(setRotLeakCheck), [])
+
+  const activeUnlock = async (pw: string) => {
+    if (isTeam) {
+      if (!team?.id) return false
+      setTeamBusy(true)
+      try {
+        return await teamStore.unlock(team.id, pw)
+      } finally {
+        setTeamBusy(false)
+      }
+    }
+    return await personalStore.unlock(pw)
+  }
+
+  const activeLock = () => {
+    if (isTeam) {
+      teamStore.lock()
+    } else {
+      personalStore.lock()
+    }
+  }
+
+  const activeSaveItem = isTeam ? teamStore.saveItem : personalStore.saveItem
+  const activeTrashItem = isTeam ? teamStore.trashItem : personalStore.trashItem
+  const activeRestoreItem = isTeam ? teamStore.restoreItem : personalStore.restoreItem
+  const activeSetArchived = isTeam ? teamStore.setArchived : personalStore.setArchived
+  const activeDeleteItem = isTeam ? teamStore.deleteItem : personalStore.deleteItem
+  const activeEmptyTrash = isTeam ? teamStore.emptyTrash : personalStore.emptyTrash
+  const activeToggleFavorite = isTeam ? teamStore.toggleFavorite : personalStore.toggleFavorite
+  const activeMarkUsed = isTeam ? teamStore.markUsed : personalStore.markUsed
+
+  const activeSyncWithServer = async () => {
+    if (isTeam) {
+      if (team?.id) await teamStore.syncWithServer(team.id)
+    } else {
+      await personalStore.syncWithServer()
+    }
+  }
+
+  const handleTeamSetup = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (masterPasswordInput.length < MASTER_PASSWORT_MINDESTLAENGE) {
+      toast.error(t('mss.vault.mindestlaenge', { anzahl: MASTER_PASSWORT_MINDESTLAENGE }))
+      return
+    }
+    if (masterPasswordInput !== confirmPasswordInput) {
+      toast.error(t('mss.vault.stimmtNichtUeberein'))
+      return
+    }
+    if (!team?.id) return
+    setTeamBusy(true)
+    try {
+      const ok = await teamStore.setup(team.id, masterPasswordInput)
+      if (ok) {
+        toast.success(t('mss.vault.eingerichtet'))
+        setMasterPasswordInput('')
+        setConfirmPasswordInput('')
+      } else {
+        toast.error(teamStore.error || t('mss.vault.speichernFehlgeschlagen'))
+      }
+    } finally {
+      setTeamBusy(false)
+    }
+  }
+
+  const handleTeamRotate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (rotPassword.length < MASTER_PASSWORT_MINDESTLAENGE) {
+      toast.error(t('mss.vault.mindestlaenge', { anzahl: MASTER_PASSWORT_MINDESTLAENGE }))
+      return
+    }
+    if (rotPassword !== rotRepeat) {
+      toast.error(t('mss.vault.stimmtNichtUeberein'))
+      return
+    }
+    if (!team?.id) return
+    setRotBusy(true)
+    try {
+      const ok = await teamStore.rotatePassword(team.id, rotPassword)
+      if (ok) {
+        toast.success(t('teams.vaultPasswordRotated'))
+        setRotationOpen(false)
+        setRotPassword('')
+        setRotRepeat('')
+      } else {
+        toast.error(teamStore.error || t('mss.vault.speichernFehlgeschlagen'))
+      }
+    } finally {
+      setRotBusy(false)
+    }
+  }
 
   // Die Sperre beim Fensterwechsel meldet `DesktopApp` einmal für die ganze
   // App an (`useAutoSperre`). Hier stand bis 09/2026 dieselbe Anmeldung ein
@@ -241,7 +403,7 @@ export function VaultView() {
       setTimeout(() => setCopiedIdField(null), 1500)
 
       if (itemId) {
-        void markUsed(itemId)
+        void activeMarkUsed(itemId)
       }
     } catch {
       toast.error(t('mss.vault.kopierenFehlgeschlagen'))
@@ -337,7 +499,7 @@ export function VaultView() {
     }
 
     try {
-      await saveItem({
+      await activeSaveItem({
         id: editingItemId || undefined,
         service: modalService.trim(),
         username: modalUsername.trim(),
@@ -356,7 +518,7 @@ export function VaultView() {
   // Löschen legt in den Papierkorb; das lässt sich zurücknehmen und fragt deshalb nicht.
   const handleTrashItem = async (item: VaultItem) => {
     try {
-      await trashItem(item.id)
+      await activeTrashItem(item.id)
       if (isModalOpen && editingItemId === item.id) {
         setIsModalOpen(false)
       }
@@ -371,7 +533,7 @@ export function VaultView() {
 
   const handleArchiv = async (item: VaultItem, archiviert: boolean) => {
     try {
-      await setArchived(item.id, archiviert)
+      await activeSetArchived(item.id, archiviert)
       if (isModalOpen && editingItemId === item.id) {
         setIsModalOpen(false)
       }
@@ -386,7 +548,7 @@ export function VaultView() {
 
   const handleRestoreItem = async (item: VaultItem) => {
     try {
-      await restoreItem(item.id)
+      await activeRestoreItem(item.id)
       toast.success(t('mss.vault.wiederhergestellt'))
     } catch (err) {
       toast.error(fehlerText(err, t('mss.vault.speichernFehlgeschlagen')))
@@ -408,7 +570,7 @@ export function VaultView() {
     })
     if (!ok) return
     try {
-      await deleteItem(item.id)
+      await activeDeleteItem(item.id)
       toast.success(t('mss.vault.geloescht'))
     } catch (err) {
       toast.error(fehlerText(err, t('mss.vault.loeschenFehlgeschlagen')))
@@ -425,7 +587,7 @@ export function VaultView() {
     })
     if (!ok) return
     try {
-      await emptyTrash()
+      await activeEmptyTrash()
       toast.success(t('mss.vault.papierkorbGeleert'))
     } catch (err) {
       toast.error(fehlerText(err, t('mss.vault.loeschenFehlgeschlagen')))
@@ -449,7 +611,7 @@ export function VaultView() {
     if (isRequestingHint) return
     setIsRequestingHint(true)
     try {
-      const res = await requestHintEmail()
+      const res = await personalStore.requestHintEmail()
       if (res.ok) {
         toast.success(res.message)
       } else if (res.message) {
@@ -533,6 +695,157 @@ export function VaultView() {
 
   const ModalBrandIcon = getBrandIcon(modalService, modalUrl)
 
+  // ── 0. TEAM-TRESOR: SETUP & ENTSPERREN ──
+  if (isTeam && !isInitialized) {
+    if (!isOwner) {
+      return (
+        <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
+          <div className="msm-card p-8 text-center space-y-3 max-w-md">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary mx-auto">
+              <Lock className="h-6 w-6" />
+            </div>
+            <h2 className="text-base font-semibold text-on-surface">{t('teams.vaultNotSetup')}</h2>
+            <p className="text-sm text-on-surface-variant max-w-md mx-auto">{t('teams.vaultNotSetupDesc')}</p>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
+        <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
+          <div className="text-center space-y-1.5">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
+              <ShieldCheck className="h-6 w-6" />
+            </div>
+            <h2 className="text-base font-bold text-on-surface">{t('teams.vaultSetup')}</h2>
+            <p className="text-xs text-on-surface-variant">{t('teams.vaultSetupDesc')}</p>
+          </div>
+
+          <form onSubmit={handleTeamSetup} className="space-y-3.5">
+            <PasswordInput
+              id="tresor-team-neues-master"
+              label={t('mss.vault.masterPasswort')}
+              value={masterPasswordInput}
+              onChange={(e) => {
+                setMasterPasswordInput(e.target.value)
+                debouncedLeakCheck(e.target.value)
+              }}
+              placeholder={t('mss.vault.masterPasswort')}
+              autoComplete="new-password"
+              autoFocus
+              required
+            />
+
+            <PasswordInput
+              id="tresor-team-master-wiederholen"
+              label={t('teams.vaultRepeatPassword')}
+              value={confirmPasswordInput}
+              onChange={(e) => setConfirmPasswordInput(e.target.value)}
+              placeholder={t('teams.vaultRepeatPassword')}
+              autoComplete="new-password"
+              required
+            />
+
+            {leakCheckResult && leakCheckResult.checked && (
+              <div className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${leakCheckResult.isLeaked ? 'bg-status-destructive/10 border-status-destructive/30 text-status-destructive' : 'bg-status-success/10 border-status-success/30 text-status-success'}`}>
+                {leakCheckResult.isLeaked ? <ShieldAlert className="h-4 w-4 shrink-0" /> : <ShieldCheck className="h-4 w-4 shrink-0" />}
+                <span>{leakCheckResult.isLeaked ? t('mss.vault.leckGefunden_other', { anzahl: leakCheckResult.count }) : t('mss.vault.keinLeck')}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const gen = generateSecurePassword(20, true)
+                  setMasterPasswordInput(gen)
+                  setConfirmPasswordInput(gen)
+                  debouncedLeakCheck(gen)
+                }}
+                disabled={teamBusy}
+              >
+                <Wand2 className="h-4 w-4 mr-1.5" />
+                {t('teams.vaultGeneratePassword')}
+              </Button>
+              <Button
+                type="submit"
+                disabled={teamBusy || masterPasswordInput.length < MASTER_PASSWORT_MINDESTLAENGE || masterPasswordInput !== confirmPasswordInput}
+              >
+                {teamBusy ? <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-1.5" />}
+                {t('teams.vaultSetup')}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  if (isTeam && !isUnlocked) {
+    return (
+      <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
+        <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
+          <div className="text-center space-y-1.5">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
+              <Lock className="h-6 w-6" />
+            </div>
+            <h2 className="text-base font-bold text-on-surface">{t('teams.vaultUnlock')}</h2>
+            <p className="text-xs text-on-surface-variant">{t('teams.vaultUnlockDesc')}</p>
+          </div>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!masterPasswordInput || teamBusy) return
+              const ok = await activeUnlock(masterPasswordInput)
+              if (ok) {
+                setMasterPasswordInput('')
+                toast.success(t('mss.vault.entsperrt'))
+              }
+            }}
+            className="space-y-3.5"
+          >
+            <PasswordInput
+              value={masterPasswordInput}
+              onChange={(e) => setMasterPasswordInput(e.target.value)}
+              placeholder={t('mss.vault.masterPasswort')}
+              aria-label={t('mss.vault.masterPasswort')}
+              autoComplete="current-password"
+              autoFocus
+            />
+
+            {unlockError && (
+              <div className="rounded-xl bg-status-destructive/15 border border-status-destructive/30 p-2.5 text-xs text-status-destructive">
+                {unlockError}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              disabled={teamBusy || !masterPasswordInput}
+              className="w-full bg-primary text-on-primary hover:bg-primary-hover py-2 flex items-center justify-center gap-1.5 text-xs"
+            >
+              {teamBusy ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  <span>{t('mss.vault.entschluessle')}</span>
+                </>
+              ) : (
+                <>
+                  <Unlock className="h-3.5 w-3.5" />
+                  <span>{t('profile.dataExport.vaultUnlock')}</span>
+                </>
+              )}
+            </Button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
   // ── 1. ERSTEINRICHTUNG (NUR wenn Ersteinrichtungs-Modus aktiv) ──
   if (!isUnlocked && isSetupMode) {
     const canSubmitSetup =
@@ -557,10 +870,10 @@ export function VaultView() {
             onSubmit={async (e) => {
               e.preventDefault()
               if (!canSubmitSetup) return
-              const ok = await initializeVault(masterPasswordInput)
+              const ok = await personalStore.initializeVault(masterPasswordInput)
               if (ok) {
                 if (hintInput.trim()) {
-                  void saveHint(hintInput)
+                  void personalStore.saveHint(hintInput)
                 }
                 setMasterPasswordInput('')
                 setConfirmPasswordInput('')
@@ -702,7 +1015,7 @@ export function VaultView() {
             onSubmit={async (e) => {
               e.preventDefault()
               if (!masterPasswordInput || isUnlocking) return
-              const ok = await unlock(masterPasswordInput)
+              const ok = await activeUnlock(masterPasswordInput)
               if (ok) {
                 setMasterPasswordInput('')
                 toast.success(t('mss.vault.entsperrt'))
@@ -716,7 +1029,7 @@ export function VaultView() {
                   type="button"
                   variant="secondary"
                   onClick={async () => {
-                    const ok = await unlockWithBiometrics()
+                    const ok = await personalStore.unlockWithBiometrics()
                     if (ok) {
                       toast.success(t('mss.vault.entsperrtBiometrie'))
                     }
@@ -1027,7 +1340,7 @@ export function VaultView() {
               variant="ghost"
               size="icon"
               fingerziel
-              onClick={() => void toggleFavorite(item.id)}
+              onClick={() => void activeToggleFavorite(item.id)}
               aria-label={t(item.isFavorite ? 'mss.vault.favoritEntfernen' : 'mss.vault.favoritSetzen', { name: item.service })}
               aria-pressed={!!item.isFavorite}
               className={`${
@@ -1071,7 +1384,9 @@ export function VaultView() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xs font-bold text-on-surface">{t('mss.vault.titelManager')}</h1>
+              <h1 className="text-xs font-bold text-on-surface">
+                {isTeam ? (team?.name ? `${team.name} – ${t('teams.vault')}` : t('teams.vault')) : t('mss.vault.titelManager')}
+              </h1>
             </div>
           </div>
         </div>
@@ -1094,7 +1409,7 @@ export function VaultView() {
             fingerziel
             size="icon"
             variant="ghost"
-            onClick={() => void syncWithServer()}
+            onClick={() => void activeSyncWithServer()}
             disabled={syncStatus === 'syncing'}
             aria-label={t('mss.vault.abgleichen')}
             className="text-on-surface-variant hover:text-on-surface"
@@ -1102,26 +1417,28 @@ export function VaultView() {
             <RefreshCw className={`h-3.5 w-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
           </Button>
 
-          <Button
-            fingerziel
-            size="icon"
-            variant="ghost"
-            onClick={() => {
-              setEditHintInput('')
-              setIsHintModalOpen(true)
-              void checkHintStatus()
-            }}
-            aria-label={t('mss.vault.hinweisVerwalten')}
-            className={`${hasHint === false ? 'text-status-warning hover:text-status-warning/80' : 'text-on-surface-variant hover:text-on-surface'}`}
-          >
-            <KeyRound className="h-3.5 w-3.5" />
-          </Button>
+          {!isTeam && (
+            <Button
+              fingerziel
+              size="icon"
+              variant="ghost"
+              onClick={() => {
+                setEditHintInput('')
+                setIsHintModalOpen(true)
+                void checkHintStatus()
+              }}
+              aria-label={t('mss.vault.hinweisVerwalten')}
+              className={`${hasHint === false ? 'text-status-warning hover:text-status-warning/80' : 'text-on-surface-variant hover:text-on-surface'}`}
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+            </Button>
+          )}
 
           <Button
             fingerziel
             size="icon"
             variant="ghost"
-            onClick={lock}
+            onClick={activeLock}
             aria-label={t('mss.vault.sperren')}
             className="text-on-surface-variant hover:text-status-destructive"
           >
@@ -1129,6 +1446,31 @@ export function VaultView() {
           </Button>
         </div>
       </div>
+
+      {/* Team-Tresor: Rotations-Banner bei Mitglieder-Austritt */}
+      {isTeam && needsRotation && (
+        <div role="alert" className="mx-4 mt-2.5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-status-warning/40 bg-status-warning/10 p-3 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-status-warning/20 text-status-warning">
+              <ShieldAlert className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-on-surface">{t('teams.vaultRotationTitle')}</h3>
+              <p className="text-label-sm text-on-surface-variant mt-0.5">{t('teams.vaultRotationNotice')}</p>
+            </div>
+          </div>
+          {isOwner && (
+            <Button
+              size="sm"
+              onClick={() => setRotationOpen(true)}
+              className="bg-status-warning text-black hover:bg-status-warning/90 font-semibold text-xs px-3 py-1.5"
+            >
+              <RotateCcw className="h-3.5 w-3.5 mr-1" />
+              {t('teams.vaultRotateBtn')}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Ohne diese Zeile sah man nicht, dass Gespeichertes noch nicht beim Server ist. */}
       {!zurueckgesetzt && (syncStatus === 'offline' || syncStatus === 'error') && (
@@ -1142,7 +1484,7 @@ export function VaultView() {
         >
           {syncStatus === 'error' ? <ShieldAlert className="h-3.5 w-3.5 shrink-0" /> : <WifiOff className="h-3.5 w-3.5 shrink-0" />}
           <span className="min-w-0 flex-1">{t(syncStatus === 'error' ? 'mss.vault.abgleichAbgelehnt' : 'mss.vault.offlineHinweis')}</span>
-          <Button fingerziel type="button" variant="ghost" size="sm" onClick={() => void syncWithServer()} className="shrink-0">
+          <Button fingerziel type="button" variant="ghost" size="sm" onClick={() => void activeSyncWithServer()} className="shrink-0">
             {t('common.retry')}
           </Button>
         </div>
@@ -1210,7 +1552,7 @@ export function VaultView() {
               if (!editHintInput.trim() || isSavingHint) return
               setIsSavingHint(true)
               try {
-                await saveHint(editHintInput.trim())
+                await personalStore.saveHint(editHintInput.trim())
                 toast.success(t('mss.vault.hinweisHinterlegt'))
                 setEditHintInput('')
               } catch {
@@ -1253,13 +1595,25 @@ export function VaultView() {
 
       {/* LISTE / TABELLE */}
       {ansicht === 'fotos' ? (
-        <TresorGalerie suche={searchQuery} />
+        isTeam ? (
+          <Zustandsflaeche art="leer" icon={<Images className="h-10 w-10" />} text={t('teams.vaultNoMediaYet', { defaultValue: 'Noch keine geteilten Fotos im Team-Tresor.' })} />
+        ) : (
+          <TresorGalerie suche={searchQuery} />
+        )
       ) : ansicht === 'dateien' ? (
-        <TresorDateiBereich suche={searchQuery} />
+        isTeam ? (
+          <Zustandsflaeche art="leer" icon={<FolderLock className="h-10 w-10" />} text={t('teams.vaultNoFilesYet', { defaultValue: 'Noch keine geteilten Dateien im Team-Tresor.' })} />
+        ) : (
+          <TresorDateiBereich suche={searchQuery} />
+        )
       ) : ansicht === 'zahlung' ? (
-        <div className="flex-1 overflow-y-auto px-4 py-3">
-          <TresorZahlung suche={searchQuery} />
-        </div>
+        isTeam ? (
+          <Zustandsflaeche art="leer" icon={<CreditCard className="h-10 w-10" />} text={t('teams.vaultNoPaymentsYet', { defaultValue: 'Noch keine Zahlungsmethoden im Team-Tresor.' })} />
+        ) : (
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            <TresorZahlung suche={searchQuery} />
+          </div>
+        )
       ) : (
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {ansicht === 'papierkorb' && ansichtsItems.length > 0 && (
@@ -1503,23 +1857,25 @@ export function VaultView() {
                       </>
                     )}
                   </Button>
-                  <Button
-                    fingerziel
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      const item = items.find((i) => i.id === editingItemId)
-                      if (item) {
-                        setTransferItem(item)
-                        setTransferOpen(true)
-                      }
-                    }}
-                    className="text-on-surface-variant hover:text-primary"
-                  >
-                    <ArrowRightLeft className="h-3.5 w-3.5" />
-                    {t('teams.transferToTeam')}
-                  </Button>
+                  {!isTeam && (
+                    <Button
+                      fingerziel
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const item = items.find((i) => i.id === editingItemId)
+                        if (item) {
+                          setTransferItem(item)
+                          setTransferOpen(true)
+                        }
+                      }}
+                      className="text-on-surface-variant hover:text-primary"
+                    >
+                      <ArrowRightLeft className="h-3.5 w-3.5" />
+                      {t('teams.transferToTeam')}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div />
@@ -1544,87 +1900,173 @@ export function VaultView() {
       />
 
       {/* Dialog: Passwort-Hinweis verwalten */}
-      <Dialog open={isHintModalOpen} onOpenChange={(offen) => !offen && void hinweisModalSchliessen()}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader className="px-5 py-4 pr-14">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <KeyRound className="h-4 w-4" />
+      {!isTeam && (
+        <Dialog open={isHintModalOpen} onOpenChange={(offen) => !offen && void hinweisModalSchliessen()}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader className="px-5 py-4 pr-14">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <KeyRound className="h-4 w-4" />
+                </div>
+                <div>
+                  <DialogTitle className="text-sm">{t('mss.vault.hinweisTitel')}</DialogTitle>
+                  <p className="text-label-sm text-on-surface-variant">
+                    {hasHint ? t('mss.vault.hinweisVorhanden') : t('mss.vault.hinweisFehlt')}
+                  </p>
+                </div>
               </div>
-              <div>
-                <DialogTitle className="text-sm">{t('mss.vault.hinweisTitel')}</DialogTitle>
-                <p className="text-label-sm text-on-surface-variant">
-                  {hasHint ? t('mss.vault.hinweisVorhanden') : t('mss.vault.hinweisFehlt')}
+            </DialogHeader>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                if (!editHintInput.trim() || isSavingHint) return
+                setIsSavingHint(true)
+                try {
+                  await personalStore.saveHint(editHintInput.trim())
+                  toast.success(t('mss.vault.hinweisGespeichert'))
+                  setEditHintInput('')
+                  setIsHintModalOpen(false)
+                } catch {
+                  toast.error(t('mss.vault.hinweisSpeichernFehlgeschlagen'))
+                } finally {
+                  setIsSavingHint(false)
+                }
+              }}
+            >
+              <div className="space-y-1 p-5">
+                <Input
+                  id="tresor-hinweis"
+                  label={hasHint ? t('mss.vault.hinweisAktualisieren') : t('mss.vault.hinweisAnlegen')}
+                  type="text"
+                  value={editHintInput}
+                  onChange={(e) => setEditHintInput(e.target.value)}
+                  placeholder={t('mss.vault.hinweisPlatzhalterLang')}
+                  autoFocus
+                />
+                <p className="text-label-sm text-on-surface-variant/80 leading-relaxed">
+                  {t('mss.vault.hinweisErklaerungLang')}
                 </p>
               </div>
-            </div>
-          </DialogHeader>
 
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault()
-              if (!editHintInput.trim() || isSavingHint) return
-              setIsSavingHint(true)
-              try {
-                await saveHint(editHintInput.trim())
-                toast.success(t('mss.vault.hinweisGespeichert'))
-                setEditHintInput('')
-                setIsHintModalOpen(false)
-              } catch {
-                toast.error(t('mss.vault.hinweisSpeichernFehlgeschlagen'))
-              } finally {
-                setIsSavingHint(false)
-              }
-            }}
-          >
-            <div className="space-y-1 p-5">
-              <Input
-                id="tresor-hinweis"
-                label={hasHint ? t('mss.vault.hinweisAktualisieren') : t('mss.vault.hinweisAnlegen')}
-                type="text"
-                value={editHintInput}
-                onChange={(e) => setEditHintInput(e.target.value)}
-                placeholder={t('mss.vault.hinweisPlatzhalterLang')}
-                autoFocus
-              />
-              <p className="text-label-sm text-on-surface-variant/80 leading-relaxed">
-                {t('mss.vault.hinweisErklaerungLang')}
-              </p>
-            </div>
+              <DialogFooter className="flex-wrap justify-between">
+                {hasHint ? (
+                  <Button
+                    fingerziel
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={isRequestingHint}
+                    onClick={() => void handleRequestHint()}
+                  >
+                    <Mail className="h-3.5 w-3.5" />
+                    <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.perMailTesten')}</span>
+                  </Button>
+                ) : (
+                  <div />
+                )}
 
-            <DialogFooter className="flex-wrap justify-between">
-              {hasHint ? (
+                <div className="flex items-center gap-1.5">
+                  <Button type="button" variant="ghost" onClick={() => void hinweisModalSchliessen()}>
+                    {t('common.close')}
+                  </Button>
+                  <Button type="submit" disabled={!editHintInput.trim() || isSavingHint}>
+                    {isSavingHint ? t('common.saving') : t('common.save')}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Dialog: Team-Master-Passwort rotieren */}
+      {isTeam && (
+        <Dialog open={rotationOpen} onOpenChange={setRotationOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader className="px-5 py-4">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-status-warning/20 text-status-warning">
+                  <RotateCcw className="h-4 w-4" />
+                </div>
+                <div>
+                  <DialogTitle className="text-sm font-semibold">{t('teams.vaultRotationTitle')}</DialogTitle>
+                  <p className="text-xs text-on-surface-variant">{t('teams.vaultRotationNotice')}</p>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <form onSubmit={handleTeamRotate} className="space-y-4 p-5">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-on-surface">{t('mss.vault.masterPasswort')}</label>
+                <PasswordInput
+                  value={rotPassword}
+                  onChange={(e) => {
+                    setRotPassword(e.target.value)
+                    checkRotPasswordLeak(e.target.value)
+                  }}
+                  placeholder={t('mss.vault.masterPasswort')}
+                  required
+                  disabled={rotBusy}
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-on-surface">{t('teams.vaultRepeatPassword')}</label>
+                <PasswordInput
+                  value={rotRepeat}
+                  onChange={(e) => setRotRepeat(e.target.value)}
+                  placeholder={t('teams.vaultRepeatPassword')}
+                  required
+                  disabled={rotBusy}
+                />
+              </div>
+
+              {rotLeakCheck && rotLeakCheck.checked && (
+                <div className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${rotLeakCheck.isLeaked ? 'bg-status-destructive/10 border-status-destructive/30 text-status-destructive' : 'bg-status-success/10 border-status-success/30 text-status-success'}`}>
+                  {rotLeakCheck.isLeaked ? <ShieldAlert className="h-4 w-4 shrink-0" /> : <ShieldCheck className="h-4 w-4 shrink-0" />}
+                  <span>{rotLeakCheck.isLeaked ? t('mss.vault.leckGefunden_other', { anzahl: rotLeakCheck.count }) : t('mss.vault.keinLeck')}</span>
+                </div>
+              )}
+
+              <DialogFooter className="flex-wrap justify-between gap-2 pt-2">
                 <Button
-                  fingerziel
                   type="button"
                   variant="secondary"
                   size="sm"
-                  disabled={isRequestingHint}
-                  onClick={() => void handleRequestHint()}
-                  
+                  onClick={() => {
+                    const gen = generateSecurePassword(20, true)
+                    setRotPassword(gen)
+                    setRotRepeat(gen)
+                    checkRotPasswordLeak(gen)
+                  }}
+                  disabled={rotBusy}
                 >
-                  <Mail className="h-3.5 w-3.5" />
-                  <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.perMailTesten')}</span>
+                  <Wand2 className="h-4 w-4 mr-1.5" />
+                  {t('teams.vaultGeneratePassword')}
                 </Button>
-              ) : (
-                <div />
-              )}
-
-              <div className="flex items-center gap-1.5">
-                <Button type="button" variant="ghost" onClick={() => void hinweisModalSchliessen()}>
-                  {t('common.close')}
-                </Button>
-                <Button type="submit" disabled={!editHintInput.trim() || isSavingHint}>
-                  {isSavingHint ? t('common.saving') : t('common.save')}
-                </Button>
-              </div>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setRotationOpen(false)}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={rotBusy || rotPassword.length < MASTER_PASSWORT_MINDESTLAENGE || rotPassword !== rotRepeat}
+                  >
+                    {rotBusy ? <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-1.5" />}
+                    {t('teams.vaultRotateBtn')}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* In Team-Tresor übertragen Modal */}
-      {transferOpen && (
+      {!isTeam && transferOpen && (
         <TransferToTeamVaultModal
           open={transferOpen}
           onOpenChange={setTransferOpen}

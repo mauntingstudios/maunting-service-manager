@@ -50,6 +50,21 @@ async def upload_attachment(
         conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
         db.commit()
     data = await file.read(ai_attachment_service.MAX_UPLOAD_BYTES + 1)
+
+    from sqlalchemy import func
+    from services import ai_limit_service
+    limits = ai_limit_service.resolve_effective_limits(db, user)
+    if limits.max_attachment_storage_mb is not None:
+        used_bytes = db.query(func.coalesce(func.sum(AiAttachment.size_bytes), 0)).filter(
+            AiAttachment.user_id == user.id,
+            AiAttachment.status == "ready",
+        ).scalar()
+        if (used_bytes + len(data)) > limits.max_attachment_storage_mb * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={"code": "storage_limit_exceeded", "max_mb": limits.max_attachment_storage_mb},
+            )
+
     try:
         return _response(ai_attachment_service.create_attachment(
             db, user=user, conversation=conversation, filename=file.filename,

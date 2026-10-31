@@ -83,6 +83,7 @@ export interface AiRoleLimits {
    * aus den echten Stufen des Modells, der Rang vergleicht nur.
    */
   max_reasoning_effort: number | null
+  max_attachment_storage_mb: number | null
   updated_at: string | null
 }
 
@@ -177,6 +178,13 @@ const FIELD_DEFINITIONS: Array<{
     max: REASONING_RANKS.length - 1,
     step: 1,
     ranks: REASONING_RANKS,
+  },
+  {
+    key: 'max_attachment_storage_mb',
+    labelKey: 'aiSettings.maxAttachmentStorageMb',
+    max: 100_000,
+    step: 10,
+    hintKey: 'aiSettings.maxAttachmentStorageMbHint',
   },
 ]
 

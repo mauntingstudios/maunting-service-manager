@@ -39,8 +39,13 @@ export interface TeamVaultState {
   lock: () => void
   syncWithServer: (teamId: number) => Promise<void>
   saveItem: (item: Partial<VaultItem>) => Promise<string>
-  deleteItem: (id: string) => Promise<void>
+  trashItem: (id: string) => Promise<void>
   restoreItem: (id: string) => Promise<void>
+  setArchived: (id: string, archiviert: boolean) => Promise<void>
+  deleteItem: (id: string) => Promise<void>
+  emptyTrash: () => Promise<void>
+  toggleFavorite: (id: string) => Promise<void>
+  markUsed: (id: string) => Promise<void>
   ordnerAnlegen: (name: string, ordner?: string) => Promise<string>
   dateiHinzufuegen: (datei: File, ordner?: string) => Promise<string>
 }
@@ -311,6 +316,12 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     }))
   },
 
+  trashItem: async (id: string) => {
+    const existing = get().items.find((i) => i.id === id)
+    if (!existing) return
+    await get().saveItem({ ...existing, trashedAt: Date.now() })
+  },
+
   restoreItem: async (id: string) => {
     const { items, saveItem } = get()
     const existing = items.find((i) => i.id === id)
@@ -318,6 +329,37 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     const restored = { ...existing }
     delete restored.trashedAt
     await saveItem(restored)
+  },
+
+  setArchived: async (id: string, archiviert: boolean) => {
+    const existing = get().items.find((i) => i.id === id)
+    if (!existing) return
+    const updated = { ...existing }
+    if (archiviert) {
+      updated.archivedAt = Date.now()
+    } else {
+      delete updated.archivedAt
+    }
+    await get().saveItem(updated)
+  },
+
+  emptyTrash: async () => {
+    const imPapierkorb = get().items.filter((i) => i.trashedAt)
+    for (const item of imPapierkorb) {
+      await get().deleteItem(item.id)
+    }
+  },
+
+  toggleFavorite: async (id: string) => {
+    const existing = get().items.find((i) => i.id === id)
+    if (!existing) return
+    await get().saveItem({ ...existing, isFavorite: !existing.isFavorite })
+  },
+
+  markUsed: async (id: string) => {
+    const existing = get().items.find((i) => i.id === id)
+    if (!existing) return
+    await get().saveItem({ ...existing, lastUsedAt: Date.now() })
   },
 
   ordnerAnlegen: async (name: string, ordner?: string) => {
