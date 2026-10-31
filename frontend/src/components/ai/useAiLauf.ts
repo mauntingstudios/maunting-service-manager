@@ -85,10 +85,6 @@ function mitWerkzeug(
  */
 export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten, api = primaryChatApi }: {
   api?: ChatScopeApi
-  appFaehigkeiten?: {
-    computer_use?: boolean | null
-    artifact_install?: boolean | null
-  }
   providerId: number | null
   canAttach: boolean
   /**
