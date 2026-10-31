@@ -24,7 +24,7 @@ apscheduler==3.10.4
 psutil==6.0.0
 python-dotenv==1.0.1
 slowapi==0.1.9
-limits[redis]==3.13.0
+limits[redis]==5.8.0
 # Traegt neben DIS und TLS auch den WebPush-Versand: RFC 8291 ist ECDH auf
 # P-256, HKDF-SHA256 und AES-128-GCM, und das VAPID-Token ist ein ES256-JWT
 # (python-jose oben). `pywebpush` wuerde `http-ece` und `py-vapid` nachziehen —
