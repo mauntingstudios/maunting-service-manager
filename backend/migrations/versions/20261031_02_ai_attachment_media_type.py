@@ -5,8 +5,8 @@ Die Spalte war 64 Zeichen breit. Die kanonischen OOXML-Typen sind laenger
 und ein Upload einer DOCX endete deshalb in einem Datenbankfehler statt in
 einem Anhang. Die Verbreiterung ist additiv; bestehende Werte bleiben.
 
-Revision ID: 20261031_01
-Revises: 20261028_01
+Revision ID: 20261031_02
+Revises: 20261031_01
 Create Date: 2026-10-31
 """
 
@@ -16,8 +16,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "20261031_01"
-down_revision: Union[str, None] = "20261028_01"
+revision: str = "20261031_02"
+down_revision: Union[str, None] = "20261031_01"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
