@@ -26,7 +26,7 @@ export function Titelleiste() {
 
   const knopf = 'flex w-11 items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
   return (
-    <div data-tauri-drag-region className="relative z-20 flex h-8 shrink-0 select-none items-stretch justify-end bg-surface-container-low">
+    <div data-tauri-drag-region className="mss-titelleiste relative z-20 flex h-8 shrink-0 select-none items-stretch justify-end bg-surface-container-low">
       {(
         [
           ['minimieren', Minus, t('mss.fenster.minimieren')],

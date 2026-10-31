@@ -1,3 +1,5 @@
+import { DEFAULT_SEASONAL_SETTINGS, type SeasonMode } from '@/season/typen'
+
 export type SupportWidgetProvider = 'singra' | 'crisp' | 'tawk' | 'custom'
 
 export interface PanelSettings {
@@ -44,6 +46,13 @@ export interface PanelSettings {
   notes_enabled: boolean
   vault_enabled: boolean
   social_enabled: boolean
+  seasonal_enabled: boolean
+  season_halloween_mode: SeasonMode
+  season_halloween_start: string
+  season_halloween_end: string
+  season_christmas_mode: SeasonMode
+  season_christmas_start: string
+  season_christmas_end: string
   captcha_enabled: boolean
   captcha_provider: 'altcha' | 'turnstile' | 'hcaptcha' | 'recaptcha' | 'none'
   captcha_site_key: string
@@ -112,6 +121,13 @@ export const EMPTY_PANEL_SETTINGS: PanelSettings = {
   notes_enabled: true,
   vault_enabled: true,
   social_enabled: true,
+  seasonal_enabled: DEFAULT_SEASONAL_SETTINGS.enabled,
+  season_halloween_mode: DEFAULT_SEASONAL_SETTINGS.halloween.mode,
+  season_halloween_start: DEFAULT_SEASONAL_SETTINGS.halloween.start,
+  season_halloween_end: DEFAULT_SEASONAL_SETTINGS.halloween.end,
+  season_christmas_mode: DEFAULT_SEASONAL_SETTINGS.christmas.mode,
+  season_christmas_start: DEFAULT_SEASONAL_SETTINGS.christmas.start,
+  season_christmas_end: DEFAULT_SEASONAL_SETTINGS.christmas.end,
   captcha_enabled: true,
   captcha_provider: 'altcha',
   captcha_site_key: '',

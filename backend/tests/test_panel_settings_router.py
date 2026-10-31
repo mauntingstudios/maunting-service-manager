@@ -403,6 +403,7 @@ class TestBooleanToggleRoundTrip:
         "imprint_enabled",
         "support_widget_enabled",
         "captcha_enabled",
+        "seasonal_enabled",
     ]
 
     @pytest.mark.parametrize("key", TOGGLES)
@@ -423,6 +424,125 @@ class TestBooleanToggleRoundTrip:
                 f"{key} kam als {body[key]!r} zurueck, erwartet war {erwartet!r} -- "
                 "vermutlich fehlt die Normalisierung auf 'true'/'false'."
             )
+
+
+class TestSeasonalSettings:
+    """Saisonale Akzente: Defaults, Roundtrip und die Form der Public-API."""
+
+    def test_get_settings_includes_auto_defaults(
+        self, client: TestClient, owner_cookies: dict
+    ):
+        body = client.get("/api/settings", cookies=owner_cookies).json()
+        assert body["seasonal_enabled"] is True
+        assert body["season_halloween_mode"] == "auto"
+        assert body["season_halloween_start"] == "10-24T00:00"
+        assert body["season_halloween_end"] == "11-01T06:00"
+        assert body["season_christmas_mode"] == "auto"
+        assert body["season_christmas_start"] == "12-01T00:00"
+        assert body["season_christmas_end"] == "01-06T23:59"
+
+    def test_modes_and_windows_survive_roundtrip(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str
+    ):
+        payload = {
+            "season_halloween_mode": "on",
+            "season_halloween_start": "10-31T18:30",
+            "season_halloween_end": "11-01T02:00",
+            "season_christmas_mode": "off",
+            "season_christmas_start": "12-24T16:00",
+            "season_christmas_end": "12-26T23:59",
+        }
+        res = client.post(
+            "/api/settings",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json=payload,
+        )
+        assert res.status_code == 200
+
+        body = client.get("/api/settings", cookies=owner_cookies).json()
+        for key, expected in payload.items():
+            assert body[key] == expected
+
+    @pytest.mark.parametrize("mode", ["off", "auto", "on"])
+    def test_all_modes_are_accepted(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str, mode: str
+    ):
+        res = client.post(
+            "/api/settings",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"season_halloween_mode": mode},
+        )
+        assert res.status_code == 200
+        body = client.get("/api/settings", cookies=owner_cookies).json()
+        assert body["season_halloween_mode"] == mode
+
+    def test_invalid_mode_is_rejected(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str
+    ):
+        res = client.post(
+            "/api/settings",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"season_halloween_mode": "immer"},
+        )
+        assert res.status_code == 400
+
+    @pytest.mark.parametrize(
+        "window",
+        [
+            "2026-10-24T00:00",
+            "13-01T00:00",
+            "02-30T12:00",
+            "10-24T24:00",
+            "10-24 00:00",
+        ],
+    )
+    def test_invalid_window_is_rejected(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str, window: str
+    ):
+        res = client.post(
+            "/api/settings",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"season_halloween_start": window},
+        )
+        assert res.status_code == 400
+
+    def test_seasonal_change_publishes_a_theme_event(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str
+    ):
+        from services.sync_event_service import SyncEventService
+
+        conn_id, queue = SyncEventService.subscribe(user_id=999_999, is_admin=True)
+        try:
+            res = client.post(
+                "/api/settings",
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+                json={"season_halloween_mode": "on"},
+            )
+            assert res.status_code == 200
+            event = queue.get_nowait()
+            assert event["entity"] == "theme"
+            assert event["action"] == "changed"
+        finally:
+            SyncEventService.unsubscribe(conn_id)
+
+    def test_public_settings_expose_the_seasonal_block(self, client: TestClient):
+        body = client.get("/api/settings/public").json()
+        assert body["seasonal"]["enabled"] is True
+        assert body["seasonal"]["halloween"] == {
+            "mode": "auto",
+            "start": "10-24T00:00",
+            "end": "11-01T06:00",
+        }
+        assert body["seasonal"]["christmas"] == {
+            "mode": "auto",
+            "start": "12-01T00:00",
+            "end": "01-06T23:59",
+        }
 
 
 def test_public_settings_expose_panel_url_without_trailing_slash(client: TestClient):

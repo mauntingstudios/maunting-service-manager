@@ -68,6 +68,7 @@ import { zurueckSchliessenOffen } from '@/Singra/UI/useZurueckSchliesst'
 import { Uebersetzungsleiste } from './uebersetzung/Uebersetzungsleiste'
 import { vollbildHinweis } from './seite/vollbildHinweis'
 import { useSuche } from './services/suche'
+import { SaisonDeko } from '@/season/SaisonDeko'
 
 declare global {
   interface Window {
@@ -335,6 +336,7 @@ function Wurzel() {
           <AnrufEbene />
         </div>
       )}
+      <SaisonDeko gekoppelt={gekoppelt} />
       <ConfirmDialog />
       <PromptDialog />
       <BrowserBestaetigungDialog />

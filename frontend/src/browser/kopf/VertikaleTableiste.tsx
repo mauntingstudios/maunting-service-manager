@@ -253,6 +253,7 @@ function VertikalerTabKnoten({
           type="button"
           role="treeitem"
           aria-selected={aktiv}
+          data-msb-tab={aktiv ? 'aktiv' : undefined}
           draggable
           onDragStart={(e) => dragStart(e, tab, titel)}
           onDragEnd={(e) => dragEnde(e, tab, titel)}
@@ -307,6 +308,7 @@ function VertikalerTabKnoten({
       <div
         role="treeitem"
         aria-selected={aktiv}
+        data-msb-tab={aktiv ? 'aktiv' : undefined}
         tabIndex={aktiv ? 0 : -1}
         draggable
         onPointerDown={pDown}

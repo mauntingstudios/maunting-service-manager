@@ -3547,7 +3547,32 @@
     },
     "loadFailed": "Laden fehlgeschlagen",
     "browserPromo": "Maunting-Pontis-Hinweis anzeigen",
-    "browserPromoHint": "Blendet in der Seitenleiste über dem MSS-Download einen Hinweis auf Maunting Pontis ein."
+    "browserPromoHint": "Blendet in der Seitenleiste über dem MSS-Download einen Hinweis auf Maunting Pontis ein.",
+    "seasonal": {
+      "title": "Saisonales",
+      "hint": "Halloween und Weihnachten legen sich über die Oberfläche, wenn ihre Zeit gekommen ist. Beide Fenster gelten jedes Jahr in der Ortszeit des Geräts.",
+      "enabled": "Saisonale Effekte",
+      "enabledHint": "Schaltet beide Saisons gemeinsam ab, unabhängig vom Zeitplan.",
+      "halloween": "Halloween",
+      "christmas": "Weihnachten",
+      "mode": "Modus",
+      "modeOff": "Aus",
+      "modeAuto": "Automatisch",
+      "modeOn": "Immer an",
+      "from": "Von",
+      "to": "Bis",
+      "dateLabel": "Datum",
+      "timeLabel": "Uhrzeit",
+      "datePlaceholder": "TT.MM.",
+      "timePlaceholder": "HH:MM",
+      "statusOff": "Aus",
+      "statusAlways": "Immer an",
+      "statusActive": "Aktiv",
+      "statusInactive": "Inaktiv",
+      "scheduleHint": "Beide Grenzen sind einschließlich. Fenster über den Jahreswechsel sind erlaubt.",
+      "invalidDate": "Bitte TT.MM. und eine Uhrzeit angeben.",
+      "preview": "Vorschau"
+    }
   },
   "profile": {
     "title": "Profil",

@@ -19,6 +19,7 @@ import type { NoteItem } from '@/pages/Notes'
 import type { CalendarEventItem, KalenderVorkommen } from '@/pages/Calendar'
 import { LEERES_DOKUMENT, ausbreiten, serieLesen } from '@/services/kalenderSerie'
 import { useAuthStore } from '@/stores/authStore'
+import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { angemeldetesKonto, beiKontowechsel } from '@/lib/angemeldetesKonto'
 import { updateMessageInLocalStore } from '@/services/messengerLocalStore'
 import { STORAGE_KEYS, getStorageItem, leereOfflineAblage, setStorageItem } from '@/lib/offlineAblage'
@@ -57,9 +58,9 @@ export interface OutboxMutation {
 }
 
 export interface SyncEventPayload {
-  entity: 'notes' | 'note' | 'calendar'
+  entity: 'notes' | 'note' | 'calendar' | 'theme'
   action: 'created' | 'updated' | 'deleted' | string
-  id: string
+  id?: string
   timestamp?: string
   team_id?: number | null
   user_id?: number
@@ -1926,6 +1927,15 @@ export function handleIncomingSyncEvent(eventName: string, data: SyncEventPayloa
 
   if (eventName === 'sync' || data.entity) {
     const entity = data.entity
+
+    // Panel-weite Saison-Einstellungen: kein Notiz-/Kalender-Datensatz,
+    // sondern nur der Hinweis, dass der Server-Stand neu gelesen wird.
+    if (entity === 'theme') {
+      void usePublicSettingsStore.getState().refresh()
+      window.dispatchEvent(new CustomEvent('msm:sync-event', { detail: data }))
+      return
+    }
+
     const id = data.id || (data as any).note_uid || (data as any).event_id
     const outbox = getOutbox()
     const hasPendingLocal = id ? outbox.some((m) => m.entityId === id) : false

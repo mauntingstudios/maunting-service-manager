@@ -4,6 +4,8 @@ import { GeneralTab } from './GeneralTab'
 import { api } from '@/api/client'
 import { usePermissionsStore } from '@/stores/permissionsStore'
 import { EMPTY_PANEL_SETTINGS } from './types'
+import { DEFAULT_PUBLIC_SETTINGS, usePublicSettingsStore } from '@/stores/publicSettingsStore'
+import { DEFAULT_SEASONAL_SETTINGS } from '@/season/typen'
 import i18n from '@/i18n'
 
 vi.mock('@/api/client', () => ({
@@ -26,6 +28,12 @@ describe('GeneralTab', () => {
       ...EMPTY_PANEL_SETTINGS,
       panel_url: 'https://panel.example',
       updates_automatic: false,
+    })
+    usePublicSettingsStore.setState({
+      ...DEFAULT_PUBLIC_SETTINGS,
+      seasonal: DEFAULT_SEASONAL_SETTINGS,
+      isLoading: false,
+      error: null,
     })
   })
 
@@ -66,6 +74,13 @@ describe('GeneralTab', () => {
       'vault_enabled',
       'social_enabled',
       'cloudflare_enabled',
+      'seasonal_enabled',
+      'season_halloween_mode',
+      'season_halloween_start',
+      'season_halloween_end',
+      'season_christmas_mode',
+      'season_christmas_start',
+      'season_christmas_end',
     ]
 
     render(<GeneralTab />)
@@ -81,6 +96,38 @@ describe('GeneralTab', () => {
       for (const schluessel of erwarteteSchluessel) {
         expect(body, `${schluessel} fehlt im POST-Body`).toHaveProperty(schluessel)
       }
+    })
+  })
+
+  it('speichert den Saison-Hauptschalter und die Zeitfenster', async () => {
+    render(<GeneralTab />)
+
+    const schalter = await screen.findByRole('switch', { name: 'Saisonale Effekte' })
+    expect(schalter).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.click(schalter)
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }))
+
+    await waitFor(() => {
+      const aufrufe = vi.mocked(api).mock.calls
+      const body = JSON.parse(String(aufrufe[aufrufe.length - 1][1]?.body))
+      expect(body.seasonal_enabled).toBe(false)
+      expect(body.season_halloween_mode).toBe('auto')
+      expect(body.season_halloween_start).toBe('10-24T00:00')
+      expect(body.season_halloween_end).toBe('11-01T06:00')
+      expect(body.season_christmas_start).toBe('12-01T00:00')
+      expect(body.season_christmas_end).toBe('01-06T23:59')
+    })
+  })
+
+  it('übernimmt den Saison-Schalter sofort in den öffentlichen Store', async () => {
+    render(<GeneralTab />)
+
+    const schalter = await screen.findByRole('switch', { name: 'Saisonale Effekte' })
+    fireEvent.click(schalter)
+
+    await waitFor(() => {
+      expect(usePublicSettingsStore.getState().seasonal.enabled).toBe(false)
     })
   })
 

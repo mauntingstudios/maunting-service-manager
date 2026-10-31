@@ -1305,6 +1305,7 @@ function Reiter({
         onClick={onClick}
         aria-pressed={aktiv}
         aria-label={label}
+        data-mss-reiter={aktiv ? 'aktiv' : undefined}
         className={`group relative flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
           aktiv
             ? 'bg-surface-container-high text-primary shadow-sm font-semibold'
