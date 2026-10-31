@@ -9,7 +9,7 @@ import { useJetzt } from './useJetzt'
  * Haelt `data-season` am Wurzelelement aktuell — und damit die gesamte
  * saisonale Gestaltung, ohne dass eine Komponente die Farben kennen muss.
  *
- * Der Takt ist eine Minute: die Fenster haben Minutenauflösung, und ein
+ * Der Takt liegt bei 15 Sekunden: die Fenster haben Minutenauflösung, und ein
  * Wechsel soll auch dann passieren, wenn niemand die Seite neu laedt. Beim
  * Zurueckkehren aus dem Hintergrund wird sofort nachgesehen, weil ein
  * eingefrorener Timer auf dem Telefon sonst erst spaeter aufwacht.
