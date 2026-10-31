@@ -11,7 +11,7 @@ python-jose[cryptography]==3.4.0
 # Temporaer fuer Passwort-Migration (passlib -> DIS Argon2id).
 # Wird entfernt sobald alle User-Hashes im msm-pw-v1: Format vorliegen.
 passlib[argon2]==1.7.4
-python-multipart==0.0.9
+python-multipart==0.0.33
 aiosmtplib==3.0.2
 email-validator==2.2.0
 httpx==0.27.0
