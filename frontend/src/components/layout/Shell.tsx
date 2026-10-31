@@ -75,7 +75,8 @@ export function Shell() {
   const isAiPage = location.pathname === '/ai' || location.pathname.startsWith('/ai')
   const isChatPage = location.pathname === '/chat' || location.pathname.startsWith('/chat')
   const isDocsPage = location.pathname === '/dokumente' || location.pathname.startsWith('/dokumente/')
-  const isFullHeightPage = isAiPage || isChatPage || isDocsPage
+  const isTeamsPage = location.pathname === '/teams' || location.pathname.startsWith('/teams')
+  const isFullHeightPage = isAiPage || isChatPage || isDocsPage || isTeamsPage
   /*
    * Der offene Chat beginnt am Handy ganz oben: die eigene Kopfzeile der Hülle
    * fällt weg, der Chat-Kopf trägt den Zurück-Pfeil. Zurück führt in die Liste,

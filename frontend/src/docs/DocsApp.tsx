@@ -94,9 +94,9 @@ export function DocsApp() {
   const [panelBreite, setPanelBreite] = useState(() => {
     try {
       const gespeichert = Number(localStorage.getItem(`docs.chat.breite:${user?.id ?? 'anonym'}`))
-      return Number.isFinite(gespeichert) && gespeichert > 0 ? Math.max(320, Math.min(720, gespeichert)) : 380
+      return Number.isFinite(gespeichert) && gespeichert > 0 ? Math.max(340, Math.min(860, gespeichert)) : 440
     } catch {
-      return 380
+      return 440
     }
   })
   const searchRef = useRef<number | null>(null)
@@ -645,8 +645,8 @@ export function DocsApp() {
                 tabIndex={0}
                 aria-orientation="vertical"
                 aria-valuenow={panelBreite}
-                aria-valuemin={320}
-                aria-valuemax={720}
+                aria-valuemin={340}
+                aria-valuemax={860}
                 aria-label={t('docs.chat.resize')}
                 className="group/griff absolute inset-y-0 left-0 z-10 flex w-2 cursor-col-resize touch-none items-center justify-center outline-none hover:bg-primary/10 focus-visible:bg-primary/10 active:bg-primary/15"
                 {...panelZiehen}

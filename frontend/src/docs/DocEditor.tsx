@@ -200,7 +200,7 @@ export function DocEditor({
       immediatelyRender: false,
       editorProps: {
         attributes: {
-          class: 'docs-prose focus:outline-none min-h-[60vh] px-6 py-5 md:px-10 md:py-8',
+          class: 'docs-prose focus:outline-none min-h-full w-full px-6 py-5 md:px-10 md:py-8',
           'aria-label': t('docs.editor.contentLabel'),
         },
       },
@@ -552,7 +552,7 @@ export function DocEditor({
 
       <div className="relative flex min-h-0 flex-1">
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <EditorContent editor={editor} />
+          <EditorContent editor={editor} className="min-h-full w-full" />
           {!synced && !online && (
             <p className="px-6 pb-4 text-xs text-on-surface-variant">{t('docs.offline.localChanges')}</p>
           )}

@@ -1334,7 +1334,8 @@ function Hauptseite({
           </div>
         </div>
       )}
-      <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'tresor' || bereich === 'chat' ? 'p-0 bg-surface' : 'p-margin-mobile md:p-margin-desktop'}`}>
+      {/* Hauptinhalt — KI, Tresor, Chat, Dokumente und Teams nehmen den ganzen Schirm (p-0), Kalender/Notizen zentrieren */}
+      <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'tresor' || bereich === 'chat' || bereich === 'dokumente' || bereich === 'teams' ? 'p-0 bg-surface' : 'p-margin-mobile md:p-margin-desktop'}`}>
         <div className="relative z-10 flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
           {bereich === 'ki' ? (
             isOffline ? (
@@ -1400,7 +1401,7 @@ function Hauptseite({
               <VaultView />
             </div>
           ) : bereich === 'teams' ? (
-            <div className="mx-auto w-full max-w-6xl flex-1 min-h-0 overflow-y-auto pb-8 p-3 sm:p-4 md:p-6">
+            <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
               <Teams />
             </div>
           ) : (

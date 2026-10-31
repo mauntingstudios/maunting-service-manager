@@ -88,7 +88,7 @@ function Inhalt({ id, pfad, voll }: { id: PanelId; pfad: string; voll: boolean }
     case 'tresor':
       return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden"><VaultView /></div></MitKopplung>
     case 'teams':
-      return <MitKopplung id={id}><div className="h-full overflow-y-auto px-3 pt-3 pb-8"><Teams /></div></MitKopplung>
+      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden"><Teams /></div></MitKopplung>
     case 'lesezeichen':
       return <LesezeichenPanel />
     case 'verlauf':
