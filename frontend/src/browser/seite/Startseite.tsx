@@ -15,6 +15,7 @@ import { ChevronDown, EyeOff, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/Singra/UI'
+import { SaisonLogo } from '@/season/SaisonLogo'
 
 import { istAndroid } from '../services/plattform'
 import { useEinstellungenStore } from '../services/einstellungenStore'
@@ -94,7 +95,7 @@ export function Startseite({ privat }: { privat: boolean }) {
         <div className="relative flex min-h-full w-full min-w-0 flex-col items-center px-4 sm:px-6 pb-6 pt-[14vh] overflow-x-hidden">
           <div className="flex w-full max-w-2xl min-w-0 flex-col items-center gap-8">
             <div className="flex items-center gap-3">
-              <img src="/msp.png" alt="" className="h-10 w-10" />
+              <SaisonLogo art="pontis" standardSrc="/msp.png" alt="" className="msb-logo h-10 w-10" />
               <h1 className="text-headline-sm text-on-surface">{t('browser.start.titel')}</h1>
             </div>
 

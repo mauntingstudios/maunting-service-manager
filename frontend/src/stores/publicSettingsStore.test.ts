@@ -3,6 +3,7 @@ import {
   usePublicSettingsStore,
   DEFAULT_PUBLIC_SETTINGS,
 } from './publicSettingsStore'
+import { DEFAULT_SEASONAL_SETTINGS } from '@/season/typen'
 
 vi.mock('@/api/client', () => ({
   api: vi.fn(),
@@ -130,6 +131,44 @@ describe('publicSettingsStore', () => {
     expect(state.vault_enabled).toBe(false)
     expect(state.social_enabled).toBe(false)
     expect(state.error).toBe('Failed to fetch (Offline)')
+  })
+
+  it('uebernimmt die saisonalen Einstellungen aus der Public-API und cached sie', async () => {
+    vi.mocked(api).mockResolvedValueOnce({
+      seasonal: {
+        enabled: false,
+        halloween: { mode: 'on', start: '10-30T18:00', end: '11-02T02:00' },
+        christmas: { mode: 'off', start: '12-20T00:00', end: '12-27T23:59' },
+      },
+    })
+
+    await usePublicSettingsStore.getState().refresh()
+
+    const state = usePublicSettingsStore.getState()
+    expect(state.seasonal.enabled).toBe(false)
+    expect(state.seasonal.halloween.mode).toBe('on')
+    expect(state.seasonal.halloween.start).toBe('10-30T18:00')
+    expect(state.seasonal.christmas.mode).toBe('off')
+
+    const cached = JSON.parse(localStorage.getItem('msm_cached_public_settings') || '{}')
+    expect(cached.seasonal.halloween.start).toBe('10-30T18:00')
+  })
+
+  it('behaelt die bisherige Saison, wenn eine aeltere API-Antwort sie nicht enthaelt', async () => {
+    usePublicSettingsStore.setState({
+      ...DEFAULT_PUBLIC_SETTINGS,
+      seasonal: {
+        enabled: false,
+        halloween: { mode: 'off', start: '10-30T18:00', end: '11-02T02:00' },
+        christmas: DEFAULT_SEASONAL_SETTINGS.christmas,
+      },
+    })
+    vi.mocked(api).mockResolvedValueOnce({ calendar_enabled: false })
+
+    await usePublicSettingsStore.getState().refresh()
+
+    expect(usePublicSettingsStore.getState().seasonal.enabled).toBe(false)
+    expect(usePublicSettingsStore.getState().seasonal.halloween.mode).toBe('off')
   })
 
   it('initFromCache aktualisiert den State synchron mit dem localStorage', () => {

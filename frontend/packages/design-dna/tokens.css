@@ -42,3 +42,28 @@
   --dna-voice-fault: 38 92% 50%;
   --dna-voice-rest: 205 18% 40%;
 }
+
+/* Saisonale Event-Tokens. Sie liegen bewusst hier bei den uebrigen
+   Farb-Tokens, damit es nur eine Token-Heimat gibt. Die Layout-Regeln, die
+   diese Werte verwenden, stehen in `frontend/src/index.css` und haengen an
+   `data-season`. Ohne Saison bleibt das Standard-Design unberuehrt. */
+:root {
+  --season-accent: 22 100% 62%;
+  --season-accent-strong: 26 100% 80%;
+  --season-on-accent: 28 45% 7%;
+  --season-glow: 24 100% 55%;
+}
+
+html[data-season="halloween"] {
+  --season-accent: 22 100% 62%;
+  --season-accent-strong: 26 100% 80%;
+  --season-on-accent: 28 45% 7%;
+  --season-glow: 24 100% 55%;
+}
+
+html[data-season="christmas"] {
+  --season-accent: 2 82% 58%;
+  --season-accent-strong: 42 100% 80%;
+  --season-on-accent: 45 100% 94%;
+  --season-glow: 2 85% 50%;
+}

@@ -3528,7 +3528,32 @@
     },
     "loadFailed": "Loading failed",
     "browserPromo": "Show Maunting Pontis notice",
-    "browserPromoHint": "Displays a notice about Maunting Pontis above the MSS download in the sidebar."
+    "browserPromoHint": "Displays a notice about Maunting Pontis above the MSS download in the sidebar.",
+    "seasonal": {
+      "title": "Seasonal",
+      "hint": "Halloween and Christmas overlay the interface when their time comes. Both windows repeat yearly in the device's local time.",
+      "enabled": "Seasonal effects",
+      "enabledHint": "Turns both seasons off together, regardless of their schedules.",
+      "halloween": "Halloween",
+      "christmas": "Christmas",
+      "mode": "Mode",
+      "modeOff": "Off",
+      "modeAuto": "Automatic",
+      "modeOn": "Always on",
+      "from": "From",
+      "to": "To",
+      "dateLabel": "Date",
+      "timeLabel": "Time",
+      "datePlaceholder": "DD.MM.",
+      "timePlaceholder": "HH:MM",
+      "statusOff": "Off",
+      "statusAlways": "Always on",
+      "statusActive": "Active",
+      "statusInactive": "Inactive",
+      "scheduleHint": "Both boundaries are inclusive. Windows across the turn of the year are allowed.",
+      "invalidDate": "Enter DD.MM. and a time.",
+      "preview": "Preview"
+    }
   },
   "profile": {
     "title": "Profile",

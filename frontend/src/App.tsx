@@ -48,6 +48,7 @@ import { PrivacyAcknowledgementNotice } from './components/ui/PrivacyAcknowledge
 import { PrivacyNoticeVisibilityContext } from './components/ui/PrivacyNoticeVisibility'
 import { SupportWidgetLoader } from './components/SupportWidgetLoader'
 import { initOfflineSync } from './lib/offlineSync'
+import { SaisonDeko } from './season/SaisonDeko'
 
 function App() {
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
@@ -101,6 +102,7 @@ function App() {
 
   return (
     <PrivacyNoticeVisibilityContext.Provider value={privacyNoticeVisible}>
+      <SaisonDeko />
       <ErrorBoundary>
       <Suspense fallback={
         <Loader fullScreen label="Maunting Service Manager" />

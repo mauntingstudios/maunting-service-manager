@@ -66,6 +66,7 @@ export function TabBar<TId extends string>({ tabs, active, onChange, ariaLabel, 
     <div
       role="tablist"
       aria-label={ariaLabel}
+      data-msm-tabbar=""
       className={`${embedded ? `rounded-lg bg-surface-container-low/50 ${kompakt ? 'p-0.5' : 'p-1'}` : 'msm-card p-2'} inline-flex flex-wrap ${kompakt ? 'gap-0.5' : 'gap-1'} ${
         einzeilig ? 'max-md:flex max-md:w-full max-md:flex-nowrap max-md:overflow-x-auto msm-ohne-rollbalken' : ''
       }`}
@@ -81,6 +82,7 @@ export function TabBar<TId extends string>({ tabs, active, onChange, ariaLabel, 
             type="button"
             role="tab"
             aria-selected={isActive}
+            data-tab-variant={tab.variant ?? 'default'}
             ref={isActive ? aktiverReiter : undefined}
             onClick={(e) => {
               onChange(tab.id)

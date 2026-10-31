@@ -5,6 +5,7 @@
  * (tauri.conf.json), alles andere ist das Hauptfenster.
  */
 import { useEffect } from 'react'
+import { useAuthStore } from '@/stores/authStore'
 
 import {
   registriereAudioGeraete,
@@ -14,12 +15,14 @@ import { DesktopApp } from './DesktopApp'
 import { OverlayFenster } from './OverlayFenster'
 import { TextMenue } from './TextMenue'
 import { konfigLaden } from './tauri'
+import { SaisonDeko } from '@/season/SaisonDeko'
 
 export function DesktopRoot() {
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
   const overlay =
     !isMobile &&
     new URLSearchParams(window.location.search).get('fenster') === 'overlay'
+  const angemeldet = useAuthStore((s) => s.isAuthenticated)
 
   // Gerätewahl und Mikrofon-Verarbeitung gelten in **beiden** Fenstern —
   // Sprachsitzungen laufen im Overlay wie im Hauptfenster. Die Einstellungen
@@ -42,6 +45,9 @@ export function DesktopRoot() {
   return (
     <>
       {overlay ? <OverlayFenster /> : <DesktopApp />}
+      {/* Das Overlay-Fenster ist absichtlich transparent; eine flaechendeckende
+          Saison-Waesche wuerde den Schwarm dahinter verdunkeln. */}
+      {!overlay && <SaisonDeko gekoppelt={angemeldet} />}
       <TextMenue />
     </>
   )

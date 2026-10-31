@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import firmenLogo from './assets/firmen-logo.png'
 import msmLogo from './assets/msm-logo.png'
+import { SaisonLogo } from '@/season/SaisonLogo'
 
 interface Stufe {
   bild: string
@@ -78,15 +79,25 @@ export function Splash({ onFertig }: { onFertig: () => void }) {
         style={{ animationDuration: `${STUFEN_DAUER_MS}ms` }}
       >
         {!ohneBild && (
-          // Rund, immer: die Logos sind kreisförmig angelegt, das Quadrat
-          // drumherum ist nur die Datei.
-          <img
-            src={aktuelle.bild}
-            alt={aktuelle.alt}
-            className="h-40 w-40 rounded-full object-cover"
-            draggable={false}
-            onError={() => setOhneBild(true)}
-          />
+          // Nur die MSS-Stufe wechselt das Logo; das Firmenlogo bleibt
+          // unveraendert. Rund, immer: die Logos sind kreisförmig angelegt.
+          stufe === 1 ? (
+            <SaisonLogo
+              art="msm"
+              standardSrc={aktuelle.bild}
+              alt={aktuelle.alt}
+              className="h-40 w-40 rounded-full object-cover"
+              onError={() => setOhneBild(true)}
+            />
+          ) : (
+            <img
+              src={aktuelle.bild}
+              alt={aktuelle.alt}
+              className="h-40 w-40 rounded-full object-cover"
+              draggable={false}
+              onError={() => setOhneBild(true)}
+            />
+          )
         )}
         <p className="text-xs uppercase tracking-widest text-on-surface-variant">
           {aktuelle.untertitel}

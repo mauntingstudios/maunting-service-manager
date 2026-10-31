@@ -9,6 +9,19 @@ from pydantic import BaseModel
 # gibt. Steht die Liste hier, sagt die API 422 statt stillschweigend ja.
 PanelLanguage = Literal["de", "en"]
 
+# Eine Saison ist entweder aus, folgt ihrem jaehrlichen Zeitfenster oder ist
+# dauerhaft an. Mehr Zustaende braucht die Oberflaeche nicht.
+SeasonMode = Literal["off", "auto", "on"]
+
+# Eine Quelle fuer die Vorgaben: Router-Validierung und Response-Schema lesen
+# beide hier, damit die Fenster nicht auseinanderlaufen koennen.
+SEASON_WINDOW_DEFAULTS = {
+    "season_halloween_start": "10-24T00:00",
+    "season_halloween_end": "11-01T06:00",
+    "season_christmas_start": "12-01T00:00",
+    "season_christmas_end": "01-06T23:59",
+}
+
 
 class PanelSettingsResponse(BaseModel):
     panel_url: str = ""
@@ -54,6 +67,15 @@ class PanelSettingsResponse(BaseModel):
     notes_enabled: bool = True
     vault_enabled: bool = True
     social_enabled: bool = True
+    # Saisonale Akzente. Die Zeitfenster gelten jaehrlich und werden auf dem
+    # jeweiligen Geraet in dessen Ortszeit ausgewertet; `MM-DDTHH:MM`.
+    seasonal_enabled: bool = True
+    season_halloween_mode: SeasonMode = "auto"
+    season_halloween_start: str = SEASON_WINDOW_DEFAULTS["season_halloween_start"]
+    season_halloween_end: str = SEASON_WINDOW_DEFAULTS["season_halloween_end"]
+    season_christmas_mode: SeasonMode = "auto"
+    season_christmas_start: str = SEASON_WINDOW_DEFAULTS["season_christmas_start"]
+    season_christmas_end: str = SEASON_WINDOW_DEFAULTS["season_christmas_end"]
     captcha_enabled: bool = True
     captcha_provider: str = "altcha"
     captcha_site_key: str = ""
@@ -77,6 +99,13 @@ class PanelSettingsUpdate(BaseModel):
     notes_enabled: bool | None = None
     vault_enabled: bool | None = None
     social_enabled: bool | None = None
+    seasonal_enabled: bool | None = None
+    season_halloween_mode: str | None = None
+    season_halloween_start: str | None = None
+    season_halloween_end: str | None = None
+    season_christmas_mode: str | None = None
+    season_christmas_start: str | None = None
+    season_christmas_end: str | None = None
     smtp_host: str | None = None
     smtp_port: str | None = None
     smtp_user: str | None = None
