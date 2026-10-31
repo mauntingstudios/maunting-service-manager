@@ -1,29 +1,29 @@
-fastapi==0.111.0
-uvicorn[standard]==0.30.0
-sqlalchemy==2.0.31
-alembic==1.18.5
-pydantic==2.10.6
-pydantic-settings==2.3.4
-python-jose[cryptography]==3.4.0
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.6
+alembic==1.20.1
+pydantic==2.14.1
+pydantic-settings==2.16.2
+python-jose[cryptography]==3.5.0
 # Dependabot #20 (algorithm confusion via DER-encoded public keys) has no fixed
 # release as of 2026-10-29; tracked for replacement with PyJWT. Do not remove
 # this note without updating the alert.
 # Temporaer fuer Passwort-Migration (passlib -> DIS Argon2id).
 # Wird entfernt sobald alle User-Hashes im msm-pw-v1: Format vorliegen.
 passlib[argon2]==1.7.4
-python-multipart==0.0.9
+python-multipart==0.0.32
 aiosmtplib==3.0.2
-email-validator==2.2.0
-httpx==0.27.0
+email-validator==2.3.0
+httpx==0.28.1
 # LiveKit kommt bewusst ohne eigenes Paket aus: ein Zugangstoken ist ein
 # HS256-JWT (python-jose oben), die Room-API spricht Twirp ueber JSON (httpx).
 # `livekit-api` wuerde aiohttp, protobuf und livekit-protocol nachziehen —
 # drei Pakete fuer rund vierzig Zeilen in services/livekit_service.py.
 # Bewertung: docs/agent-rules/dependencies.md
-apscheduler==3.10.4
+apscheduler==3.11.3
 psutil==6.0.0
-python-dotenv==1.0.1
-slowapi==0.1.9
+python-dotenv==1.2.4
+slowapi==0.1.10
 limits[redis]==3.13.0
 # Traegt neben DIS und TLS auch den WebPush-Versand: RFC 8291 ist ECDH auf
 # P-256, HKDF-SHA256 und AES-128-GCM, und das VAPID-Token ist ein ES256-JWT
@@ -41,21 +41,21 @@ cryptography==42.0.8
 # Bewertung und Exit-Plan: docs/agent-rules/dependencies.md.
 Pillow==12.3.0
 pillow-heif==1.8.1
-pypdf==6.10.2
-psycopg2-binary==2.9.9
-asyncpg==0.29.0
-docker==7.1.0
+pypdf==6.21.3
+psycopg2-binary==2.9.13
+asyncpg==0.32.0
+docker==7.2.0
 
 # --- S3 Cloud-Backup (M1-M4 Backup-System) ---
 # boto3: S3-kompatible Object-Storage-API. Wird von services/s3_service.py
 # als Fassade gekapselt (Single Source of Truth fuer alle S3-Operationen).
 # Beruehrt Storage und S3-Credentials (verschluesselt via DIS in panel_settings,
 # AAD="msm:backup:s3"). Offiziell AWS-Library, auditiert, weit verbreitet.
-# botocore wird transitiv durch boto3==1.43.40 gepinnt (gleiche Version).
+# botocore wird transitiv durch boto3==1.43.120 gepinnt (gleiche Version).
 # Dependency-Entscheidung dokumentiert in docs/agent-rules/dependencies.md
 # (Sektion: S3-Backup-Dependencies). Exit-Plan: S3Service-Fassade ermoeglicht
 # Austausch gegen alternative S3-Client-Library ohne Aenderung an Fachlogik.
-boto3==1.43.40
+boto3==1.43.120
 
 # --- Lokale Embeddings fuer das KI-Gedaechtnis ---
 # onnxruntime + tokenizers: das Satzmodell paraphrase-multilingual-MiniLM-L12-v2
@@ -75,8 +75,8 @@ boto3==1.43.40
 # die Gewichte kommen einmalig ueber install.sh/update.sh.
 # Exit-Plan: ai_embedding_service kapselt die gesamte Nutzung; faellt eine der
 # Bibliotheken weg, liefert encode() None und die Suche laeuft ohne Vektoren.
-onnxruntime==1.24.4
-tokenizers==0.21.1
+onnxruntime==1.31.1
+tokenizers==0.23.3
 
 # --- WebSocket-Client fuer den Sprachmodus ---
 # websockets: die ausgehende Verbindung zur Stimme
@@ -114,18 +114,18 @@ websockets==16.0
 # Der Import ist in services/ai_voice/pipecat_pipeline.py gekapselt und weich,
 # damit ein defektes optionales Voice-Paket weder Anmeldung noch Serverbetrieb
 # blockiert. Sicherheitsentscheidung und Exit-Plan: docs/agent-rules/dependencies.md.
-pipecat-ai==1.8.1
+pipecat-ai==1.14.0
 # Transitiv durch onnxruntime und pipecat-ai, hier gepinnt, weil
 # ai_embedding_service direkt damit rechnet (Mittelung, Normalisierung,
 # Skalarprodukt).
-numpy==2.5.1
+numpy==2.5.4
 # Ebenfalls transitiv (huggingface_hub verlangt pyyaml>=5.1), hier gepinnt,
 # weil ai_skill_service direkt damit den Frontmatter der mitgelieferten
 # Skill-Dateien liest. Ein eigener Miniparser waere weniger Abhaengigkeit,
 # aber er wuerde bei Doppelpunkten, Anfuehrungszeichen und mehrzeiligen Werten
 # still das Falsche tun — und genau solche Zeichen stehen in
 # Skill-Beschreibungen. Gelesen wird ausschliesslich mit `safe_load`.
-pyyaml==6.0.2
+pyyaml==6.0.3
 # QR-Code fuer die 2FA-Einrichtung, erzeugt im Panel.
 # Zweck: Bis hierher liess die Oberflaeche das Bild von api.qrserver.com holen
 # und schickte die vollstaendige otpauth://-URI als Query-Parameter mit — also
