@@ -39,7 +39,7 @@ cryptography==42.0.8
 # services/ai_bild_normalisierung.py und services/ai_attachment_extract.py
 # gekapselt; fehlt eine, bleiben Text/JPEG/PNG und der Providerpfad nutzbar.
 # Bewertung und Exit-Plan: docs/agent-rules/dependencies.md.
-Pillow==12.3.0
+Pillow==13.0.0
 pillow-heif==1.8.1
 pypdf==6.10.2
 psycopg2-binary==2.9.9
