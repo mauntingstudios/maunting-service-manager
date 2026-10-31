@@ -1527,12 +1527,13 @@ def _execute_read_chat_attachment(
     if row is None:
         raise AiActionValidationError("Dateianhang nicht gefunden")
 
-    if row.user_id != user.id:
-        if docs_document_uid:
-            from services.ai_docs_chat_scope import resolve as docs_scope
-            docs_scope(db, user, docs_document_uid)
-        else:
+    if docs_document_uid:
+        from services.ai_docs_chat_scope import resolve as docs_scope
+        conversation, _, _ = docs_scope(db, user, docs_document_uid)
+        if row.conversation_id != conversation.id:
             raise AiActionValidationError("Keine Berechtigung für diesen Anhang")
+    elif row.user_id != user.id:
+        raise AiActionValidationError("Keine Berechtigung für diesen Anhang")
 
     text_inhalt = None
     if row.extracted_text_encrypted:

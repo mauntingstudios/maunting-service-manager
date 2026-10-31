@@ -939,6 +939,7 @@ def setup_team_vault(db: Session, team: Team, user: User, bucket_id: str, salt: 
 
 def rotate_team_vault(db: Session, team: Team, user: User, bucket_id: str | None = None, salt: str | None = None) -> None:
     """Rotiert das Master-Passwort des Team-Tresors und setzt das Rotations-Flag zurück."""
+    old_bucket_id = team.vault_bucket_id
     if bucket_id:
         _pruefe_nicht_beerdigt(db, bucket_id)
         team.vault_bucket_id = bucket_id.lower()
@@ -946,6 +947,15 @@ def rotate_team_vault(db: Session, team: Team, user: User, bucket_id: str | None
         team.vault_salt = salt
     team.vault_needs_rotation = False
     db.commit()
+
+    if bucket_id and old_bucket_id and old_bucket_id.lower() != bucket_id.lower():
+        # Alten Bucket bereinigen und tombstonen, damit ausgetretene Mitglieder alte Daten nicht mehr abrufen können
+        try:
+            db.add(VaultBucketTombstone(bucket_id=old_bucket_id.lower()))
+            db.query(VaultEntry).filter(VaultEntry.bucket_id == old_bucket_id.lower()).delete()
+            db.commit()
+        except Exception:
+            db.rollback()
 
 
 def sync_team_vault(db: Session, team: Team, user: User, request: VaultSyncRequest) -> VaultSyncResponse:
