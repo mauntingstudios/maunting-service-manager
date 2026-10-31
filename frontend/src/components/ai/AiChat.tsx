@@ -24,6 +24,7 @@ import {
   writeAiReasoningChoice,
 } from '@/lib/aiChatPreferences'
 import { browserWahlInsKontoUebernehmen } from '@/lib/aiProviderKonto'
+import { bereiteAiAnhangAuf } from '@/lib/aiAnhangAufbereitung'
 import { ChatHintergrund, ChatHintergrundDialog } from '@/features/chatHintergrund'
 import { useAuthStore } from '@/stores/authStore'
 import { confirm } from '@/stores/confirmStore'
@@ -57,7 +58,17 @@ interface ServerOption {
   name: string
 }
 
-const ATTACHMENT_ACCEPT = '.txt,.log,.cfg,.conf,.ini,.json,.properties,.toml,.yaml,.yml,.png,.jpg,.jpeg'
+const ATTACHMENT_ACCEPT = [
+  '.txt', '.log', '.md', '.markdown', '.rst', '.csv', '.tsv', '.json', '.jsonl',
+  '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.properties',
+  '.html', '.htm', '.css', '.js', '.jsx', '.ts', '.tsx', '.py', '.sh', '.sql',
+  '.pdf', '.docx', '.xlsx', '.pptx', '.odt', '.ods', '.odp',
+  '.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.heif', '.avif',
+  '.bmp', '.tif', '.tiff',
+  // Der Picker soll nichts verstecken. Was der Server nicht lesen kann, sagt
+  // er mit einem benannten Fehler; was er sicher nicht annimmt, blockiert er.
+  '*/*',
+].join(',')
 
 /**
  * Wie oft das Tipp-Signal höchstens gesendet wird.
@@ -126,9 +137,16 @@ export interface AiChatProps {
   onSwitchMode?: (mode: 'sprache' | 'guardian' | 'aufgaben') => void
   canTasks?: boolean
   hasVoice?: boolean
+  /** Nur die App. Das Panel laesst das Feld weg. */
+  appFaehigkeiten?: {
+    computer_use?: boolean | null
+    artifact_install?: boolean | null
+  }
 }
 
-export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiChatProps = {}) {
+export function AiChat({
+  onSwitchMode, canTasks = false, hasVoice = false, appFaehigkeiten,
+}: AiChatProps = {}) {
   const { t } = useTranslation()
   const canAttach = useHasPermission('ai.attachments.use')
   const canUseAutonomy = useHasPermission('ai.autonomous.use')
@@ -504,7 +522,7 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
   const {
     entries, setEntries, streaming, laufendeWerkzeuge, runId, setRunId,
     merkeVorschlag, sendContent, haengeAn, stoppeLauf,
-  } = useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments })
+  } = useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten })
 
   const manuallyClosedGeoRef = useRef(false)
   const closedGeoIdRef = useRef(readClosedGeoAnalysis(merkSchluessel.closedGeoAnalysis))
@@ -835,7 +853,8 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
     if (!file || streaming || uploading) return
     setUploading(true)
     try {
-      const created = await aiApi.uploadAttachment(file)
+      const vorbereitet = await bereiteAiAnhangAuf(file)
+      const created = await aiApi.uploadAttachment(vorbereitet)
       // Nach Kennung einsetzen statt anhaengen: das Nachladen nach dem Absenden
       // (siehe `message`-Ereignis) kann eine Antwort ueberholen, die noch
       // unterwegs war. Beim blossen Anhaengen stuende die Datei dann zweimal in
@@ -848,7 +867,12 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
         ])
       }
     } catch (error: unknown) {
-      toast.error(error instanceof SanitizedApiError ? error.message : t('ai.attachments.error'))
+      const text = error instanceof SanitizedApiError
+        ? error.message
+        : error instanceof Error && error.message
+          ? error.message
+          : t('ai.attachments.error')
+      toast.error(text)
     } finally {
       if (mountedRef.current) setUploading(false)
     }
@@ -957,6 +981,14 @@ export function AiChat({ onSwitchMode, canTasks = false, hasVoice = false }: AiC
       const index = current.findIndex((item) => item.kind === 'message' && item.id === messageId)
       return index === -1 ? current : current.slice(0, index)
     })
+    // Der Server hat die Anhaenge der bearbeiteten Nachricht entbunden, nicht
+    // geloescht. Einmal nachladen, damit sie als Chips wieder ueber dem
+    // Eingabefeld stehen; `sendContent` bindet sie gleich an die neue Fassung.
+    if (canAttach) {
+      void aiApi.listAttachments()
+        .then((rows) => { if (mountedRef.current) setAttachments(rows) })
+        .catch(() => undefined)
+    }
     setEditingId(null)
     setEditDraft('')
     userScrolledUpRef.current = false

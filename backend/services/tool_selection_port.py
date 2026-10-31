@@ -34,11 +34,38 @@ HOTSET = frozenset({
 })
 
 
+#: Die beiden Werkzeuge, die den Rechner bedienen oder den Bildschirm lesen.
+#: `desktop_launch_app` bleibt bewusst draussen: ein Programm zu starten ist
+#: keine Bildschirm- oder Eingabesteuerung.
+DESKTOP_STEUERUNG = frozenset({"desktop_system", "desktop_steuern"})
+
+#: Wann ein Anhang-Turn doch ein Rechnerauftrag ist. Bewusst eng: „Was steht
+#: auf dem Bild?“ soll den Rechner nicht anfassen, „öffne die Datei auf meinem
+#: PC“ schon.
+_DESKTOP_ABSICHT = (
+    "rechner", "computer", "pc", "desktop", "bildschirm", "monitor",
+    "maus", "tastatur", "klick", "steuere", "bediene", "fenster",
+    "öffne", "oeffne", "starte", "installiere", "programm",
+)
+
+
+def desktop_absicht(query: str) -> bool:
+    """Nennt die Frage ausdruecklich den Rechner oder eine Eingabe?"""
+    text = (query or "").lower()
+    return any(wort in text for wort in _DESKTOP_ABSICHT)
+
+
 class ToolSelectionPort(Protocol):
     def select(self, query: str, allowed: frozenset[str], top_k: int = 5) -> list[str]: ...
 
 
-def pflichtwerkzeuge(erlaubt: frozenset[str], herkunft: str | None) -> frozenset[str]:
+def pflichtwerkzeuge(
+    erlaubt: frozenset[str],
+    herkunft: str | None,
+    *,
+    hat_anhaenge: bool = False,
+    query: str = "",
+) -> frozenset[str]:
     """Was kein Router-Schnitt entfernen darf, ueber ``HOTSET`` hinaus.
 
     Aus der App gehoeren Sehen, Zeigen und Programmstarten (``GEHIRN_DESKTOP``)
@@ -50,9 +77,17 @@ def pflichtwerkzeuge(erlaubt: frozenset[str], herkunft: str | None) -> frozenset
     Nur was ``erlaubt`` ohnehin enthaelt: die Rechte und ``herkunft_schnitt``
     haben vorher entschieden, diese Menge oeffnet nichts. Aus dem Panel ist
     sie leer.
+
+    ``hat_anhaenge`` nimmt die beiden Bildschirm-/Eingabewerkzeuge aus der
+    Pflicht, solange die Frage keinen Rechnerauftrag nennt. Sonst zwingt der
+    Router sie in jeden Anhang-Turn, und das Modell greift zum Rechner, statt
+    die Datei zu lesen. ``desktop_launch_app`` bleibt.
     """
     if herkunft != "desktop":
         return frozenset()
     from services.ai_tool_registry import GEHIRN_DESKTOP
 
-    return GEHIRN_DESKTOP & erlaubt
+    pflicht = GEHIRN_DESKTOP & erlaubt
+    if hat_anhaenge and not desktop_absicht(query):
+        pflicht = pflicht - DESKTOP_STEUERUNG
+    return pflicht

@@ -185,6 +185,16 @@ Warum gut: sichere Ablehnung, kein Fallback, Runtime-State wird bereinigt.
 
 ### 5.1 Messenger-Identität (E2EE)
 
+> **Nachtrag 31.10.2026 — Einheitstransport.** Der Sendepfad besteht seit
+> v5.8.0 aus einem symmetrischen Chat-Schlüssel je Gespräch und einer
+> **Konto-Identität** (RSA-OAEP + ECDSA), deren privater Teil je freigegebenem
+> Gerät verpackt in `e2ee_account_key_vault` liegt. Der folgende Abschnitt
+> beschreibt den früheren Double-Ratchet-Stand und ist für den heutigen
+> Sendepfad nicht mehr maßgeblich. Maßgeblich sind
+> `frontend/src/services/accountKeys.ts`, `frontend/src/services/chatKrypto.ts`
+> und `backend/routers/social/e2ee_keys.py`. Ein Reset muss deshalb
+> `e2ee_accounts`, die Bunde und die **eigenen** Chat-Schlüssel löschen.
+
 Der Identitätsschlüssel des Messengers gehört dem **Gerät**, nicht dem Konto.
 Er entsteht in `frontend/src/services/e2eeGeraet.ts`, bleibt dort, und
 veröffentlicht wird nur der öffentliche Teil (`user_e2ee_devices`). Es gibt

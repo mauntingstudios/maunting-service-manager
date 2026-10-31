@@ -26,6 +26,7 @@ import type { E2eeIdentity } from '@/services/e2eeIdentity'
 import {
   ChatSchluesselFehltError,
   ChatNutzlastUngueltigError,
+  ensureChatKeyVersion,
   entpackeChatNutzlast,
   entpackeReaktion,
   erzeugeChatSchluessel,
@@ -294,18 +295,9 @@ export function useKonversation({
     chatId: number,
     memberIds: number[],
   ): Promise<number> => {
-    const { keys, latest_key_version } = await getE2eeChatKeys(chatType, chatId)
-    const eigeneVersionen = keys.map((k) => k.key_version)
-    if (latest_key_version > 0 && eigeneVersionen.includes(latest_key_version)) {
-      return latest_key_version
-    }
-    const version = latest_key_version > 0 ? latest_key_version + 1 : 1
-    await erzeugeChatSchluessel(chatType, chatId, memberIds, version)
-    const nachher = await getE2eeChatKeys(chatType, chatId)
-    if (!nachher.keys.some((k) => k.key_version === version)) {
-      throw new ChatSchluesselFehltError()
-    }
-    return version
+    // Ein Pfad fuer Chat-Versand und Reset: `ensureChatKeyVersion` prueft, ob
+    // die eigene Zeile mit dem aktuellen Kontoschluessel wirklich lesbar ist.
+    return await ensureChatKeyVersion(chatType, chatId, memberIds)
   }, [])
 
   const ensureKeyVersion = useCallback(async (chatZiel: { type: 'direct' | 'group'; id: number }): Promise<number> => {
@@ -705,19 +697,27 @@ export function useKonversation({
       case 'edit_message': {
         const version = await ensureKeyVersionFuer(ziel.chatType, ziel.chatId, ziel.mitglieder)
         const text = String(eintrag.felder.new_text || '')
+        const gespeichert = eintrag.felder.nutzlast
+        const nutzlast: Record<string, unknown> = (
+          gespeichert && typeof gespeichert === 'object'
+            ? { ...(gespeichert as Record<string, unknown>), text }
+            : {
+                text,
+                sender_id: eigeneId,
+                sender_name: '',
+                // Altbestand ohne gespeicherte Nutzlast: der Text bleibt
+                // sendbar, aber Anhänge aus dieser Zeit sind bereits verloren.
+                timestamp: String(eintrag.felder.edited_at || new Date().toISOString()),
+              }
+        )
+        nutzlast.edited_at = String(eintrag.felder.edited_at || new Date().toISOString())
         const verschluesselt = await verschluessleChatNutzlast(
           ziel.chatType,
           ziel.chatId,
           zielUuid,
           eigeneId,
           version,
-          {
-            text,
-            sender_id: eigeneId,
-            sender_name: '',
-            timestamp: String(eintrag.felder.edited_at || new Date().toISOString()),
-            edited_at: String(eintrag.felder.edited_at || new Date().toISOString()),
-          },
+          nutzlast,
         )
         await updateChatMessage(zielUuid, {
           encrypted_payload: verschluesselt.encrypted_payload,

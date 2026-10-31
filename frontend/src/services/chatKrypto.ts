@@ -27,8 +27,10 @@ import {
 } from './accountKeys'
 
 export class ChatSchluesselFehltError extends Error {
-  constructor() {
-    super('Für dieses Gespräch fehlt der Chat-Schlüssel. Ein Mitglied muss ihn zustellen.')
+  constructor(
+    message = 'Für dieses Gespräch fehlt der Chat-Schlüssel. Ein Mitglied muss ihn zustellen.',
+  ) {
+    super(message)
     this.name = 'ChatSchluesselFehltError'
   }
 }
@@ -173,10 +175,28 @@ export async function ensureChatKeyVersion(
   const { keys, latest_key_version } = await getE2eeChatKeys(chatType, chatId)
   const eigene = keys.map((k) => k.key_version)
   if (latest_key_version > 0 && eigene.includes(latest_key_version)) {
-    return latest_key_version
+    // Eine Zeile ist noch kein lesbarer Schluessel. Nach einem Reset oder
+    // einem Konto-Wechsel kann die eigene Zeile stehen, waehrend der private
+    // Kontoschluessel sie nicht mehr oeffnet. Dann muss eine neue Version
+    // entstehen, statt beim Senden an der alten zu scheitern.
+    try {
+      await schluesselAusAntwort(chatType, chatId, latest_key_version, keys)
+      return latest_key_version
+    } catch {
+      // Weiter zur Rotation unten.
+    }
   }
   const version = latest_key_version > 0 ? latest_key_version + 1 : 1
-  await erzeugeChatSchluessel(chatType, chatId, memberIds, version)
+  try {
+    await erzeugeChatSchluessel(chatType, chatId, memberIds, version)
+  } catch (fehler) {
+    if (chatType === 'group') {
+      throw new ChatSchluesselFehltError(
+        'Für diesen Gruppenchat kann nur die Gruppenleitung einen neuen Schlüssel anlegen.',
+      )
+    }
+    throw fehler
+  }
   const nachher = await getE2eeChatKeys(chatType, chatId)
   if (!nachher.keys.some((k) => k.key_version === version)) {
     throw new ChatSchluesselFehltError()

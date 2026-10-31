@@ -684,6 +684,10 @@ class E2eeDeviceItem(BaseModel):
     # Die Transportfaehigkeit des Geraets. "geraet-v1" heisst: es kennt die
     # Zustellung mit Quittung. Leer heisst: der alte Weg.
     transport: str = ""
+    # Nur in der eigenen Geraeteliste: haelt dieses Geraet ein verpacktes
+    # Konto-Schluesselpaket? Fuer Dritte bleibt das Feld weg
+    # (`response_model_exclude_none`), weil es das lohnendste Ziel markiert.
+    has_account_key: bool | None = None
 
 
 # ==========================================

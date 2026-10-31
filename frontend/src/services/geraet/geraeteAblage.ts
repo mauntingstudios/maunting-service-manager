@@ -271,6 +271,24 @@ export async function speichereKontoPaar(
 }
 
 /**
+ * Entfernt die Konto-Identitaet aus der lokalen Geraetezeile.
+ *
+ * Nur der Reset benutzt das. Ohne diesen Schritt wuerde `ensureAccountKeys`
+ * nach dem serverseitigen Reset den alten Schluessel erneut veroeffentlichen —
+ * und der passt nicht mehr zu den geloeschten Chat-Schluesseln.
+ */
+export async function loescheKontoPaar(kontoId: number): Promise<void> {
+  if (!istOffen()) throw new MessengerVerschlossenError()
+  const vorhanden = await lies(kontoId)
+  if (!vorhanden) return
+  const geraet = await vollstaendig(vorhanden)
+  geraet.kontoPaar = undefined
+  geraet.kontoSignaturPaar = undefined
+  await schreibe(kontoId, geraet, vorhanden.sitzungenUebernommen)
+  geraetImRam = { konto: kontoId, geraet }
+}
+
+/**
  * Hängt den alten `self`-Eintrag an das Konto, das sich als erstes meldet.
  *
  * Ohne diesen Schritt verlöre jede bestehende Installation beim Update ihren

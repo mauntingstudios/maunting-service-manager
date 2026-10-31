@@ -1930,6 +1930,11 @@ export async function streamAiMessage(
     reasoning: boolean
     /** Die gewuenschte Denkstufe. Der Server klemmt sie auf Modell und Rolle. */
     reasoning_effort?: string | null
+    /** Nur die App: verkleinert das Werkzeugangebot, oeffnet keine Rechte. */
+    app_faehigkeiten?: {
+      computer_use?: boolean | null
+      artifact_install?: boolean | null
+    }
   },
   onEvent: (event: AiStreamEvent) => void,
   signal?: AbortSignal,

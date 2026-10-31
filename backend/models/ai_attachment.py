@@ -27,7 +27,9 @@ class AiAttachment(Base):
     message_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     original_name: Mapped[str] = mapped_column(ai_text("ai_attachments.original_name"), nullable=False)
-    media_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 128 statt 64: die kanonischen OOXML-Typen (DOCX/XLSX/PPTX) sind laenger
+    # als die alten 64 Zeichen. Migration 20261031_01 zieht die Spalte nach.
+    media_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     content_encrypted: Mapped[str] = mapped_column(Text, nullable=False)

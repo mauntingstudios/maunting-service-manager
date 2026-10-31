@@ -279,7 +279,15 @@ def truncate_from(db: Session, conversation: AiConversation, message: AiMessage)
             AiMessage.created_at >= cutoff,
         ).all()
     ]
-    ai_attachment_service.drop_for_messages(db, betroffene)
+    # Die bearbeitete Nachricht selbst wird geloescht, ihr Anhang aber nicht:
+    # er ist der Grund, warum der Benutzer die Frage nur umformuliert. Er wird
+    # entbunden und bindet sich beim naechsten Senden an die neue Fassung.
+    # Anhaenge **spaeterer** Nachrichten gehoeren zu einer Praemisse, die es
+    # nicht mehr gibt, und fallen mit ihr.
+    ai_attachment_service.unbind_for_message(db, message.id)
+    ai_attachment_service.drop_for_messages(
+        db, [kennung for kennung in betroffene if kennung != message.id]
+    )
     removed = (
         db.query(AiMessage)
         .filter(

@@ -959,3 +959,35 @@ Python-SDK würde `aiohttp`, `protobuf` und `livekit-protocol` nachziehen — dr
 Pakete für rund vierzig Zeilen. Alles Nötige steht in
 `backend/services/livekit_service.py`; das ist zugleich der Exit-Punkt, falls
 die Entscheidung einmal kippt.
+
+### Warum Pillow, pillow-heif und pypdf fuer KI-Anhaenge
+
+Zweck:
+  Der KI-Chat soll Kamerafotos, Screenshots, PDFs und Office-Dateien annehmen
+  und dem Modell lesbar machen, ohne dass ein 256-KiB-Deckel oder ein fehlender
+  Decoder jede zweite Datei abweist.
+
+Notwendigkeit:
+  Python allein kann JPEG/PNG nicht sicher neu kodieren, keine EXIF-Daten
+  entfernen und kein HEIC lesen. Ein eigener Decoder waere fuer Bildformate
+  weder wartbar noch sicher. pypdf ist reines Python, liest Text ohne
+  Rendering und braucht keinen Netzzugriff. Pillow und pillow-heif liefern
+  geprüfte Decoder; die Dateien werden nur im Speicher verarbeitet.
+
+Security:
+  Keine Server-Credentials, keine Tokens, kein Netzzugriff. Die Bibliotheken
+  sehen ausschliesslich die vom Benutzer hochgeladene Datei. Pillow wird mit
+  Pixel-/Groessenlimits betrieben; EXIF/GPS wird durch Neu-Encoding entfernt.
+  PDF und Office werden nur als Text gelesen, nie gerendert oder ausgefuehrt.
+  Ausfuehrbare Signaturen, Archive, SVG und Makros bleiben gesperrt.
+
+Kapselung:
+  `services/ai_bild_normalisierung.py` und
+  `services/ai_attachment_extract.py` sind die einzigen Aufrufer. Der
+  Anhangdienst kennt nur `normalisiere_bild` und die Extraktionsfunktionen.
+
+Exit-Plan:
+  Faellt eine Bibliothek weg, liefert der Bildpfad fuer JPEG/PNG/WebP/GIF
+  weiter (Rohdurchreichen nach Magic-Pruefung), HEIC/AVIF/TIFF/BMP werden mit
+  einem benannten Fehler abgewiesen, PDF/Office auf den Textpfad reduziert.
+  Die Fassade bleibt; kein Router und kein Frontend muss angefasst werden.

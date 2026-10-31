@@ -121,7 +121,14 @@ function Umschalter({ aktiv, onClick, icon, label, shortLabel }: {
  *
  * Darunter eingeklappt das Skill-**Verzeichnis**: nur lesend, dafür vollständig.
  */
-export function Ai() {
+export function Ai({
+  appFaehigkeiten,
+}: {
+  appFaehigkeiten?: {
+    computer_use?: boolean | null
+    artifact_install?: boolean | null
+  }
+} = {}) {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.user)
   const canChat = useHasPermission('ai.chat.use')
@@ -271,6 +278,7 @@ export function Ai() {
           onSwitchMode={setzeAnsicht}
           canTasks={canManageTasks}
           hasVoice={Boolean(sprachkonfiguration)}
+          appFaehigkeiten={appFaehigkeiten}
         />
       )}
     </div>

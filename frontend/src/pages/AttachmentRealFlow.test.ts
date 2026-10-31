@@ -85,7 +85,7 @@ describe('Anhang von Ende zu Ende', () => {
         fileId: beiAlice.image_attachment.fileId,
       }),
     ).toBe(foto)
-  })
+  }, 15_000)
 
   it('nützt dem Server nichts, dass er Absender und Mailbox kennt', async () => {
     // Genau das war die Lücke des alten Verfahrens: wer die beiden

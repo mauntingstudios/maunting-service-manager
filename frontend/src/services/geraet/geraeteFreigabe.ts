@@ -20,7 +20,7 @@ import {
 } from '@/api/social'
 import { signiere } from '../absenderSignatur'
 import { STANDARD_BEZEICHNUNG, geraeteBezeichnung } from '../geraeteBezeichnung'
-import { eigenesGeraet, meinKonto, type EigenesGeraet } from './geraeteAblage'
+import { eigenesGeraet, loescheKontoPaar, meinKonto, type EigenesGeraet } from './geraeteAblage'
 import { entfernenDaten, freigabeDaten, setzeEigeneFreigabe } from './geraeteVertrauen'
 import { vergessenGeraete } from './geraeteVerzeichnis'
 
@@ -203,8 +203,42 @@ export async function geraeteZuruecksetzen(
   const konto = meinKonto()
   await resetEigeneGeraete(input)
   veroeffentlichtAls = null
+
+  // Der Server hat Konto, Bunde und die eigenen Chat-Schluessel geloescht.
+  // Lokal muss derselbe Schnitt passieren: sonst veroeffentlicht
+  // `ensureAccountKeys` den alten Kontoschluessel wieder, und die neuen
+  // Chat-Schluessel waeren gegen ihn verpackt.
+  await loescheKontoPaar(konto)
+  const { leereKontoCache, neueKontoIdentitaet } = await import('../accountKeys')
+  leereKontoCache()
+  const { leereChatSchluesselCache } = await import('../chatKrypto')
+  leereChatSchluesselCache()
+
   vergessenGeraete(konto)
   await geraetVeroeffentlichen()
+  // Erst das Geraet, dann die Identitaet: `publishE2eeAccount` verlangt ein
+  // freigegebenes Geraet. Nach dem Reset ist dieses hier das erste.
+  await neueKontoIdentitaet()
+
+  // Der serverseitige Reset macht alte Nachrichten unlesbar. Auf diesem Gerät
+  // lagen sie bis 10/2026 weiter im Klartext — der Dialog versprach das
+  // Gegenteil. Die Ablage räumen, aber den Schlüsselaufbau nicht daran
+  // scheitern lassen: die Wiederherstellung des Kontos ist wichtiger als ein
+  // fehlgeschlagenes lokales Aufräumen, das beim nächsten Start nachgeholt
+  // werden kann.
+  try {
+    const { clearLocalMessengerStore } = await import('../messengerLocalStore')
+    await clearLocalMessengerStore()
+  } catch {
+    // Siehe oben: Der Reset bleibt gültig; der lokale Speicher wird beim
+    // nächsten vollständigen Leeren erneut versucht.
+  }
+  const { leereKlartextSpeicher } = await import('../klartextSpeicher')
+  leereKlartextSpeicher()
+  const { leereGespraeche } = await import('../gespraechsListe')
+  leereGespraeche()
+  const { leereGruppenNamen } = await import('../gruppenName')
+  leereGruppenNamen()
 }
 
 /** Vergisst, dass dieses Gerät schon veröffentlicht wurde. */

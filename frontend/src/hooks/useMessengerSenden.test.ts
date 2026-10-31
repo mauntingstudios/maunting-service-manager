@@ -234,3 +234,38 @@ describe('Sendebestätigung im Einheits-Transport', () => {
     expect(nachrichten.current[0].status).toBe('sent')
   })
 })
+
+describe('Bearbeiten behaelt die ganze Nachricht', () => {
+  it('traegt Anhang und urspruenglichen Zeitpunkt in die neue Nutzlast', async () => {
+    const nachrichten: { current: ChatMessage[] } = { current: [] }
+    const sendeWirkung = vi.fn(async () => 'gesendet')
+    const optionen = optionenFuer(nachrichten, { sendeWirkung })
+    const { handleEditMessage } = useMessengerSenden(optionen)
+    const alt: ChatMessage = {
+      id: 7,
+      clientUuid: 'uuid-7',
+      senderId: 1,
+      senderName: 'test-sender',
+      text: 'alte Fassung',
+      createdAt: '2026-10-31T10:00:00.000Z',
+      isSelf: true,
+      imageAttachment: {
+        mediaId: 'media-1',
+        paketSchluessel: 'paket-1',
+        fileId: 'datei-1',
+        name: 'einkauf.png',
+      },
+    }
+
+    await handleEditMessage(alt, 'neue Fassung')
+
+    const eintrag = sendeWirkung.mock.calls[0][0] as {
+      felder: { new_text: string; nutzlast: Record<string, unknown> }
+    }
+    expect(eintrag.felder.new_text).toBe('neue Fassung')
+    expect(eintrag.felder.nutzlast.text).toBe('neue Fassung')
+    expect(eintrag.felder.nutzlast.image_attachment).toEqual(alt.imageAttachment)
+    expect(eintrag.felder.nutzlast.timestamp).toBe(alt.createdAt)
+    expect(eintrag.felder.nutzlast.sender_name).toBe('test-sender')
+  })
+})

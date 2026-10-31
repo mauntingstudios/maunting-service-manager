@@ -57,6 +57,8 @@ def lauf_beginnen(
     familie: str | None = None,
     voice_output_checkpoint: str | None = None,
     intern: bool = False,
+    modell_sieht: bool | None = None,
+    app_faehigkeiten: dict[str, Any] | None = None,
 ) -> tuple[AiRun | None, tuple[str, str] | None]:
     """Legt einen Lauf an: Benutzernachricht, Kontingent, Antwortnachricht.
 
@@ -107,6 +109,13 @@ def lauf_beginnen(
         return None, ("AI_MESSAGE_EMPTY", "ai.chat.errors.empty")
     if rolle is None:
         rolle = _rolle_ableiten(db, user, conversation, provider, unbeaufsichtigt)
+    # Nur die App darf ihre Faehigkeiten melden, und nur um das Angebot zu
+    # verkleinern. Die Ausfuehrung bleibt in Tauri gesperrt.
+    computer_use_aktiv: bool | None = None
+    if herkunft == "desktop" and isinstance(app_faehigkeiten, dict):
+        wert = app_faehigkeiten.get("computer_use")
+        if isinstance(wert, bool):
+            computer_use_aktiv = wert
     try:
         geerbte_signaturen = ai_run_service.vorgaenger_abloesen(
             db, conversation_id=conversation.id
@@ -122,7 +131,7 @@ def lauf_beginnen(
             intern=intern,
         )
         db.add(user_msg)
-        ai_attachment_service.bind_to_message(
+        gebundene_anhaenge = ai_attachment_service.bind_to_message(
             db, conversation_id=conversation.id, user_id=user.id,
             message_id=benutzernachricht_id,
         )
@@ -139,6 +148,7 @@ def lauf_beginnen(
             db, conversation, query=safe_content, server_id=serverbezug,
             context_chars=context_chars, unbeaufsichtigt=unbeaufsichtigt,
             gesprochen=gesprochen, rolle=rolle, herkunft=herkunft,
+            modell_sieht=modell_sieht, computer_use_aktiv=computer_use_aktiv,
         )
         # Eine Unterbrechung ist keine neue Information des Benutzers und darf
         # deshalb weder als Chatzeile gespeichert noch in die Erinnerung
@@ -219,6 +229,11 @@ def lauf_beginnen(
         # Auftrag (`_desktop_behandeln`); die Familie allein entscheidet
         # nichts — weder ueber Rechte noch ueber den Katalog.
         zustand["familie"] = familie
+        # Ob in dieser Runde ein Anhang mitgeht und ob Computer-Use ueberhaupt
+        # erlaubt ist. Beides entscheidet nur ueber das Werkzeugangebot, nie
+        # ueber Rechte; der Herkunftsschnitt bleibt die harte Grenze.
+        zustand["hat_anhaenge"] = gebundene_anhaenge > 0
+        zustand["computer_use_aktiv"] = computer_use_aktiv
         # Das Budget dieses Laufs, festgehalten fuer alle Fortsetzungen. Es hier
         # abzulegen statt es je Segment neu zu ermitteln ist dieselbe
         # Entscheidung wie bei `reasoning_effort`: was mitten in einer Aufgabe
@@ -340,6 +355,8 @@ def _anlauf_im_thread(
     herkunft: str = "panel",
     familie: str | None = None,
     voice_output_checkpoint: str | None = None,
+    modell_sieht: bool | None = None,
+    app_faehigkeiten: dict[str, Any] | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """Der Anlauf mit **eigener** Sitzung — das ist der ganze Zweck.
 
@@ -380,6 +397,8 @@ def _anlauf_im_thread(
             herkunft=herkunft,
             familie=familie,
             voice_output_checkpoint=voice_output_checkpoint,
+            modell_sieht=modell_sieht,
+            app_faehigkeiten=app_faehigkeiten,
         )
         # Nur die Kennung verlaesst den Thread. Ein ORM-Objekt aus einer gleich
         # geschlossenen Sitzung ist eine Falle: nach dem Commit sind seine
@@ -402,6 +421,8 @@ async def lauf_beginnen_nebenher(
     herkunft: str = "panel",
     familie: str | None = None,
     voice_output_checkpoint: str | None = None,
+    modell_sieht: bool | None = None,
+    app_faehigkeiten: dict[str, Any] | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """`lauf_beginnen`, aber **neben** der Ereignisschleife statt auf ihr.
 
@@ -428,5 +449,7 @@ async def lauf_beginnen_nebenher(
             herkunft=herkunft,
             familie=familie,
             voice_output_checkpoint=voice_output_checkpoint,
+            modell_sieht=modell_sieht,
+            app_faehigkeiten=app_faehigkeiten,
         )
 

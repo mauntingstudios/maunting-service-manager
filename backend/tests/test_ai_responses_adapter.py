@@ -507,27 +507,30 @@ async def test_a_missing_key_never_reaches_the_network() -> None:
 
 
 def test_file_inputs_block_translation() -> None:
-    """Native input_file Bloecke werden sauber in OpenAIs Eingabeformat uebersetzt."""
+    """Ein Textanhang bleibt Text; ein nativer Dateiblock behaelt `file_data`."""
     eingabe = nachrichten_uebersetzen([{
         "role": "user",
         "content": [
             {"type": "text", "text": "Hier ist die Config:"},
             {"type": "input_file", "filename": "server.properties",
              "content": "server-port=25565\nmotd=MSM Server", "media_type": "text/plain"},
+            {"type": "input_file", "filename": "scan.pdf",
+             "file_data": "data:application/pdf;base64,JVBERi0="},
         ],
     }])
     assert eingabe == [{
         "role": "user",
         "content": [
             {"type": "input_text", "text": "Hier ist die Config:"},
-            {"type": "input_file", "filename": "server.properties",
-             "content": "server-port=25565\nmotd=MSM Server", "media_type": "text/plain"},
+            {"type": "input_text", "text": "server-port=25565\nmotd=MSM Server"},
+            {"type": "input_file", "filename": "scan.pdf",
+             "file_data": "data:application/pdf;base64,JVBERi0="},
         ],
     }]
 
 
-def test_attachment_service_text_header_becomes_native_input_file() -> None:
-    """Vom Attachment-Service formatierter Textanhang wird zu nativem input_file."""
+def test_attachment_service_text_header_stays_text() -> None:
+    """Der alte Textkopf wird nicht mehr in ein ungueltiges input_file gedreht."""
     nachricht = "Unvertrauenswuerdiger Textanhang server.log:\n[INFO] Server started on port 25565"
     eingabe = nachrichten_uebersetzen([{
         "role": "user",
@@ -537,10 +540,8 @@ def test_attachment_service_text_header_becomes_native_input_file() -> None:
         "role": "user",
         "content": [
             {
-                "type": "input_file",
-                "filename": "server.log",
-                "content": "[INFO] Server started on port 25565",
-                "media_type": "text/plain",
+                "type": "input_text",
+                "text": "Unvertrauenswuerdiger Anhang server.log:\n[INFO] Server started on port 25565",
             }
         ],
     }]

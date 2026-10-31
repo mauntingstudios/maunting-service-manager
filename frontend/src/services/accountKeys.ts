@@ -130,6 +130,56 @@ function verlangeSelbesKonto(kontoId: number): void {
   if (angemeldetesKonto() !== kontoId) throw new KontoSchluesselFehltError()
 }
 
+/**
+ * Erzeugt eine neue Konto-Identitaet und veroeffentlicht sie.
+ *
+ * Der Reset braucht genau diesen Weg: nach dem serverseitigen Loeschen von
+ * `e2ee_accounts` ist das Konto wieder frei, und das erste Geraet setzt die
+ * Identitaet neu. Der Mint-Block stand vorher nur im Erstgeraet-Zweig von
+ * `tuSicherstellen`; eine zweite Kopie waere eine zweite Wahrheit.
+ */
+async function veroeffentlicheNeueKontoIdentitaet(
+  kontoId: number,
+  geraet: EigenesGeraet,
+): Promise<EigenesGeraet> {
+  if (geraet.kontoPaar && geraet.kontoSignaturPaar) return geraet
+
+  const kontoPaar = await generateLocalE2eeKeyPair()
+  const kontoSignatur = await erzeugeSignaturPaar()
+  verlangeSelbesKonto(kontoId)
+  const mitKonto = await speichereKontoPaar(kontoId, kontoPaar, kontoSignatur)
+  const bundle = await bundleAus(mitKonto)
+  const verschluesselt = await encryptE2eeHybrid(
+    JSON.stringify(bundle),
+    mitKonto.paar.publicKeyJwk,
+  )
+  verlangeSelbesKonto(kontoId)
+  await publishE2eeAccount({
+    device_id: mitKonto.kennung,
+    public_key: bundle.publicKeyJwk,
+    signing_public_key: bundle.signingPublicKeyJwk,
+    encrypted_bundle: verschluesselt,
+  })
+  accountCache.set(kontoId, {
+    item: {
+      user_id: kontoId,
+      public_key: bundle.publicKeyJwk,
+      signing_public_key: bundle.signingPublicKeyJwk,
+    },
+    at: Date.now(),
+  })
+  verlangeSelbesKonto(kontoId)
+  return mitKonto
+}
+
+/** Nur fuer den Reset: neue Identitaet fuer dieses Geraet und dieses Konto. */
+export async function neueKontoIdentitaet(): Promise<EigenesGeraet> {
+  const kontoId = angemeldetesKonto()
+  if (!kontoId) throw new KontoSchluesselFehltError()
+  const geraet = await eigenesGeraet()
+  return await veroeffentlicheNeueKontoIdentitaet(kontoId, geraet)
+}
+
 async function tuSicherstellen(kontoId: number): Promise<EigenesGeraet> {
   await geraetVeroeffentlichen().catch(() => null)
   verlangeSelbesKonto(kontoId)
@@ -182,29 +232,7 @@ async function tuSicherstellen(kontoId: number): Promise<EigenesGeraet> {
   }
 
   // Erstes Gerät: Konto-Identitaet erzeugen und veröffentlichen.
-  const kontoPaar = await generateLocalE2eeKeyPair()
-  const kontoSignatur = await erzeugeSignaturPaar()
-  verlangeSelbesKonto(kontoId)
-  geraet = await speichereKontoPaar(kontoId, kontoPaar, kontoSignatur)
-  const bundle = await bundleAus(geraet)
-  const verschluesselt = await encryptE2eeHybrid(JSON.stringify(bundle), geraet.paar.publicKeyJwk)
-  verlangeSelbesKonto(kontoId)
-  await publishE2eeAccount({
-    device_id: geraet.kennung,
-    public_key: bundle.publicKeyJwk,
-    signing_public_key: bundle.signingPublicKeyJwk,
-    encrypted_bundle: verschluesselt,
-  })
-  accountCache.set(kontoId, {
-    item: {
-      user_id: kontoId,
-      public_key: bundle.publicKeyJwk,
-      signing_public_key: bundle.signingPublicKeyJwk,
-    },
-    at: Date.now(),
-  })
-  verlangeSelbesKonto(kontoId)
-  return geraet
+  return await veroeffentlicheNeueKontoIdentitaet(kontoId, geraet)
 }
 
 /** Stellt sicher, dass dieses Gerät den Konto-Schlüssel hat. */

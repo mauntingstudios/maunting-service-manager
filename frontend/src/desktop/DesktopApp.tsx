@@ -46,6 +46,7 @@ import { Privacy } from '@/pages/Privacy'
 import { useAuthStore } from '@/stores/authStore'
 import { useAutoSperre } from '@/hooks/useAutoSperre'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
+import { useKontoBundNachholen } from '@/hooks/useKontoBundNachholen'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
@@ -141,6 +142,7 @@ export function DesktopApp() {
     }
   })
   const angemeldet = useAuthStore((s) => s.isAuthenticated)
+  useKontoBundNachholen(angemeldet)
   const sitzungSteht = phase === 'bereit' || phase === 'sandbox'
   const offeneUebernahme = useAuftragsschleife(sitzungSteht && !isAndroid)
 
@@ -1223,7 +1225,12 @@ function Hauptseite({
                   </div>
                 )}
                 <div className="flex-1 min-h-0 overflow-hidden">
-                  <Ai />
+                  <Ai
+                    appFaehigkeiten={{
+                      computer_use: konfig ? konfig.computer_use_aktiv : null,
+                      artifact_install: konfig ? konfig.artifact_install_aktiv : null,
+                    }}
+                  />
                 </div>
               </div>
             ) : (
