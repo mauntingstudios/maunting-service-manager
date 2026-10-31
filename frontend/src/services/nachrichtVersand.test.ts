@@ -352,3 +352,42 @@ describe('stelleZu', () => {
     expect(einreihen).not.toHaveBeenCalled()
   })
 })
+
+describe('baueNutzlast — lokale Medienfelder', () => {
+  it('entfernt dataUrl und Blob, behaelt aber die Zeiger', () => {
+    const nutzlast = baueNutzlast({
+      clientUuid: 'u-1',
+      absenderId: 7,
+      absenderName: 'anna',
+      text: 'hallo',
+      zeitpunkt: '2026-09-24T10:00:00.000Z',
+      erwaehnt: {},
+      finalImg: {
+        name: 'einkauf.png',
+        mediaId: 'medium-1',
+        paketSchluessel: 'paket-1',
+        fileId: 'datei-1',
+        dataUrl: 'data:image/png;base64,AAAA',
+      },
+      finalFile: {
+        name: 'zettel.pdf',
+        sizeBytes: 10,
+        mimeType: 'application/pdf',
+        dataUrl: 'data:application/pdf;base64,AAAA',
+      },
+    })
+
+    expect(nutzlast.image_attachment).toEqual({
+      name: 'einkauf.png',
+      mediaId: 'medium-1',
+      paketSchluessel: 'paket-1',
+      fileId: 'datei-1',
+    })
+    expect(nutzlast.file_attachment).toEqual({
+      name: 'zettel.pdf',
+      sizeBytes: 10,
+      mimeType: 'application/pdf',
+    })
+    expect(JSON.stringify(nutzlast)).not.toContain('data:')
+  })
+})

@@ -219,7 +219,7 @@ def test_main_datenbank_erhaelt_die_messenger_brucke(pg_wegwerf) -> None:
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261028_01"
+        assert version == "20261031_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -258,7 +258,7 @@ def test_docs_revision_ohne_docs_code_kommt_auf_den_main_stand(
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261028_01"
+        assert version == "20261031_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -292,7 +292,7 @@ def test_server_auf_messenger_revision_kommt_wieder_auf_den_head(pg_wegwerf) -> 
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261028_01"
+        assert version == "20261031_01"
     finally:
         engine.dispose()
         settings.database_url = previous

@@ -10,6 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -104,7 +105,17 @@ def publish_account(
         )
     else:
         vault.encrypted_bundle = req.encrypted_bundle
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # Zwei Geraete melden sich im selben Augenblick zum ersten Mal. Der
+        # Verlierer soll nicht als 500 enden; der Client holt den Bund dann
+        # vom Geschwister oder versucht es erneut.
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Die Konto-Identitaet wurde gleichzeitig angelegt.",
+        ) from exc
     return {
         "user_id": current_user.id,
         "public_key": account.public_key_jwk,

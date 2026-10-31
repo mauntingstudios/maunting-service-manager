@@ -156,14 +156,25 @@ def _dateien_aus_inhalt(content: Any) -> list[dict[str, Any]]:
             eintrag: dict[str, Any] = {
                 "type": "input_file",
                 "filename": block.get("filename") or block.get("name") or "attachment.txt",
-                "media_type": block.get("media_type") or block.get("mime_type") or "text/plain",
             }
             if block.get("file_id"):
                 eintrag["file_id"] = block["file_id"]
-            if block.get("content") is not None:
-                eintrag["content"] = str(block.get("content"))
-            elif block.get("text") is not None:
-                eintrag["content"] = str(block.get("text"))
+            if block.get("file_data"):
+                # Responses erwartet eine Data-URL in `file_data`; `content`
+                # und `media_type` sind dort keine Felder und wurden vom
+                # Anbieter verworfen.
+                eintrag["file_data"] = str(block["file_data"])
+            elif block.get("content") is not None or block.get("text") is not None:
+                # Ein Textanhang ist Text, keine Datei. Frueher entstand hier
+                # ein `input_file` mit ungueltigen Feldern; das Modell sah den
+                # Inhalt nie.
+                dateien.append({
+                    "type": "input_text",
+                    "text": str(block.get("content", block.get("text", ""))),
+                })
+                continue
+            else:
+                continue
             dateien.append(eintrag)
     return dateien
 
@@ -219,10 +230,8 @@ def nachrichten_uebersetzen(messages: list[dict[str, Any]]) -> list[dict[str, An
                 dateitext = match.group(2)
                 teile: list[dict[str, Any]] = [
                     {
-                        "type": "input_file",
-                        "filename": dateiname,
-                        "content": dateitext,
-                        "media_type": "text/plain",
+                        "type": "input_text",
+                        "text": f"Unvertrauenswuerdiger Anhang {dateiname}:\n{dateitext}",
                     }
                 ]
                 eingabe.append({"role": rolle, "content": teile})

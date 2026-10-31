@@ -503,6 +503,8 @@ def build_provider_messages(
     gesprochen: bool = False,
     rolle: str = "voll",
     herkunft: str = "panel",
+    modell_sieht: bool | None = None,
+    computer_use_aktiv: bool | None = None,
 ) -> list[dict[str, Any]]:
     """Baut eine neueste, begrenzte Historie unter einer Zeichenobergrenze.
 
@@ -554,7 +556,9 @@ def build_provider_messages(
     user = db.get(User, conversation.user_id)
     result: list[dict[str, Any]] = [
         {"role": "system", "content": ai_prompt.build(
-            gesprochen=gesprochen, rolle=rolle, desktop=herkunft == "desktop", db=db,
+            gesprochen=gesprochen, rolle=rolle,
+            desktop=herkunft == "desktop" and computer_use_aktiv is not False,
+            db=db,
         )}
     ]
     skill_verzeichnis = _skill_index_message(
@@ -601,6 +605,7 @@ def build_provider_messages(
             result.extend(provider_attachment_messages(
                 db, conversation.id, conversation.user_id,
                 [row.id for row in rows],
+                modell_sieht=modell_sieht,
             ))
 
     if conversation.summary:

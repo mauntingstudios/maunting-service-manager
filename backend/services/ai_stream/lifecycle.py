@@ -855,36 +855,59 @@ async def _werkzeuge_und_grenze(
         eintrag for eintrag in tools
         if str(eintrag.get("function", {}).get("name")) in erlaubt
     ]
+
+    def _content_text(c) -> str:
+        if isinstance(c, str):
+            return c
+        if isinstance(c, list):
+            parts = []
+            for p in c:
+                if isinstance(p, dict) and isinstance(p.get("text"), str):
+                    parts.append(p["text"])
+                elif isinstance(p, str):
+                    parts.append(p)
+            return " ".join(parts)
+        return ""
+
+    letzte = ""
+    msgs = zustand.get("provider_messages", []) if isinstance(zustand, dict) else []
+    for m in reversed(msgs):
+        if isinstance(m, dict) and m.get("role") == "user":
+            txt = _content_text(m.get("content")).strip()
+            if txt:
+                letzte = txt[:500]
+                break
+    if not letzte:
+        letzte = str(zustand.get("query", "") if isinstance(zustand, dict) else "").strip()[:500]
+
+    from services.tool_selection_port import DESKTOP_STEUERUNG, desktop_absicht
+
+    hat_anhaenge = bool(zustand.get("hat_anhaenge")) if isinstance(zustand, dict) else False
+    computer_use_aktiv = (
+        zustand.get("computer_use_aktiv") if isinstance(zustand, dict) else None
+    )
+    # Aus der App bleiben die Desktop-Werkzeuge nur dann im Angebot, wenn
+    # Computer-Use nicht ausdruecklich aus ist und die Frage nicht bloß einen
+    # Anhang liest. Der Rechte- und Herkunftsschnitt oben bleibt die harte
+    # Grenze; hier wird nur enger geschnitten.
+    desktop_steuerung_erlaubt = (
+        computer_use_aktiv is not False
+        and not (hat_anhaenge and not desktop_absicht(letzte))
+    )
+    if not desktop_steuerung_erlaubt:
+        erlaubt = erlaubt - DESKTOP_STEUERUNG
+
     try:
         from services.semantic_tool_router_adapter import SemanticToolRouterAdapter, gruppen_nachbarn
         from services.tool_selection_port import HOTSET, pflichtwerkzeuge
         import logging
         _log = logging.getLogger(__name__)
-        def _content_text(c) -> str:
-            if isinstance(c, str):
-                return c
-            if isinstance(c, list):
-                parts = []
-                for p in c:
-                    if isinstance(p, dict) and isinstance(p.get("text"), str):
-                        parts.append(p["text"])
-                    elif isinstance(p, str):
-                        parts.append(p)
-                return " ".join(parts)
-            return ""
-        letzte = ""
-        msgs = zustand.get("provider_messages", []) if isinstance(zustand, dict) else []
-        for m in reversed(msgs):
-            if isinstance(m, dict) and m.get("role") == "user":
-                txt = _content_text(m.get("content")).strip()
-                if txt:
-                    letzte = txt[:500]
-                    break
-        if not letzte:
-            letzte = str(zustand.get("query", "") if isinstance(zustand, dict) else "").strip()[:500]
         # Was der Router nie wegschneidet: der Grundstock und, aus der App,
         # die Desktop-Werkzeuge (`pflichtwerkzeuge`).
-        pflicht = pflichtwerkzeuge(frozenset(erlaubt), herkunft)
+        pflicht = pflichtwerkzeuge(
+            frozenset(erlaubt), herkunft,
+            hat_anhaenge=hat_anhaenge, query=letzte,
+        )
         hot = [n for n in HOTSET if n in erlaubt]
         hot_and_topk = len(set(hot) | pflicht) + 5
         if letzte and len(erlaubt) > hot_and_topk:
@@ -903,6 +926,13 @@ async def _werkzeuge_und_grenze(
     except Exception as exc:
         import logging
         logging.getLogger(__name__).debug("Tool-Routing uebersprungen: %s", type(exc).__name__)
+    # Auch nach dem Routing und im Fehlerzweig: was hier nicht erlaubt ist,
+    # darf nicht durch `routed` oder `gruppen_nachbarn` zurueckkommen.
+    if not desktop_steuerung_erlaubt:
+        tools = [
+            e for e in tools
+            if str(e.get("function", {}).get("name")) not in DESKTOP_STEUERUNG
+        ]
     # Was der Katalog selbst kostet. Er geht in Zeile `tools=tools` neben den
     # Nachrichten über dieselbe Leitung, wurde aber in keinem Budget
     # mitgezählt: `message_character_count` summiert nur `content`. Bei 51

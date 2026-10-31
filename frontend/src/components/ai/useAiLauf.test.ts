@@ -335,3 +335,27 @@ describe('useAiLauf', () => {
     expect(signale[0]?.aborted).toBe(true)
   })
 })
+
+describe('App-Faehigkeiten', () => {
+  beforeEach(() => {
+    vi.mocked(streamAiMessage).mockReset().mockResolvedValue(undefined)
+  })
+
+  it('sendet computer_use=false als verkleinernde Angabe mit', async () => {
+    const { result } = renderHook(() => useAiLauf({
+      providerId: 1,
+      canAttach: false,
+      denken: { an: false, stufe: null },
+      ladeKontext: async () => {},
+      setAttachments: () => {},
+      appFaehigkeiten: { computer_use: false },
+    }))
+
+    act(() => { void result.current.sendContent('Was steht hier?') })
+
+    await vi.waitFor(() => expect(vi.mocked(streamAiMessage)).toHaveBeenCalled())
+    expect(vi.mocked(streamAiMessage).mock.calls[0][0]).toEqual(
+      expect.objectContaining({ app_faehigkeiten: { computer_use: false } }),
+    )
+  })
+})

@@ -116,6 +116,20 @@ class AiWorkerInfo(BaseModel):
     created_at: datetime
 
 
+class AiAppFaehigkeiten(BaseModel):
+    """Was die gekoppelte App in diesem Moment wirklich kann.
+
+    Die Werte duerfen das Werkzeugangebot **nur verkleinern**. Die tatsaechliche
+    Durchsetzung bleibt in der Tauri-App (`auftrag.rs`): ein Client, der hier
+    „aus“ behauptet, verliert Werkzeuge; einer, der „an“ behauptet, bekommt
+    dadurch keine Rechte. Deshalb ist das Feld kein Ersatz fuer die
+    Herkunftspruefung aus dem Token.
+    """
+
+    computer_use: bool | None = None
+    artifact_install: bool | None = None
+
+
 class AiChatRequest(BaseModel):
     content: str = Field(min_length=1, max_length=16_000)
     provider_id: int = Field(ge=1)
@@ -127,6 +141,9 @@ class AiChatRequest(BaseModel):
     # ist ein Wunsch, keine Anweisung — `ai_reasoning.vorgabe` klemmt ihn auf
     # das, was Modell und Rolle hergeben, bevor er den Server verlaesst.
     reasoning_effort: str | None = Field(default=None, max_length=16)
+    # Nur die App sendet das. Aus dem Panel wird es ignoriert; die Herkunft
+    # kommt weiterhin aus dem Token.
+    app_faehigkeiten: AiAppFaehigkeiten | None = None
     # Hier stand `herkunft: Literal["panel", "desktop"]`. Das Feld ist am
     # 21.08.2026 verschwunden, nicht umbenannt: die Herkunft entscheidet, ob
     # die KI die Werkzeuge fuer den Rechner des Benutzers ueberhaupt angeboten

@@ -243,6 +243,24 @@ export interface Nutzlastangaben extends HochgeladeneAnhaenge {
 }
 
 /**
+ * Was von einem Anhang auf die Leitung darf.
+ *
+ * Die lokale Ablage hält für die sofortige Anzeige zusätzlich `dataUrl` und
+ * bei Ton/Videonotizen einen Blob. Die gehören nicht in das Chiffrat: sie
+ * vergrößern die Nutzlast um das Vielfache, und beim Bearbeiten einer noch
+ * nicht vom Server bestätigten Zeile würden sie sonst erneut mitreisen. Auf
+ * der Leitung zählen nur Zeiger und Schlüssel.
+ */
+function ohneLokaleDaten<T extends object>(anhang: T | undefined): T | undefined {
+  if (!anhang) return undefined
+  const kopie = { ...(anhang as Record<string, unknown>) }
+  delete kopie.dataUrl
+  delete kopie.blob
+  delete kopie.videoUrl
+  return kopie as T
+}
+
+/**
  * Die Nutzlast einer Nachricht, bevor sie unterschrieben wird.
  *
  * Die Reihenfolge der Felder ist die, in der sie immer standen.
@@ -287,12 +305,12 @@ export function baueNutzlast(angaben: Nutzlastangaben): Record<string, unknown> 
 
   if (note) payloadObj.note_attachment = note
   if (cal) payloadObj.calendar_attachment = cal
-  if (finalImg) payloadObj.image_attachment = finalImg
-  if (finalAudio) payloadObj.audio_attachment = finalAudio
-  if (finalFile) payloadObj.file_attachment = finalFile
+  if (finalImg) payloadObj.image_attachment = ohneLokaleDaten(finalImg)
+  if (finalAudio) payloadObj.audio_attachment = ohneLokaleDaten(finalAudio)
+  if (finalFile) payloadObj.file_attachment = ohneLokaleDaten(finalFile)
   if (sticker) payloadObj.sticker_attachment = sticker
   if (storyReply) payloadObj.story_reply = storyReply
-  if (finalVideoNote) payloadObj.video_note_attachment = finalVideoNote
+  if (finalVideoNote) payloadObj.video_note_attachment = ohneLokaleDaten(finalVideoNote)
   if (augenblick) payloadObj.augenblick = augenblick
   if (funkenRettung) payloadObj.funken_rettung = funkenRettung
 

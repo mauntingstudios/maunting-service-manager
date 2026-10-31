@@ -313,6 +313,37 @@ export function useMessengerSenden(optionen: Optionen) {
       return geaendert
     })
 
+    /**
+     * Die vollstaendige Nutzlast, nicht nur der Text.
+     *
+     * Der Server ersetzt beim Bearbeiten das ganze Chiffrat. Wer hier nur
+     * `text` baut, loescht damit Anhang, Zitat, Erwaehnungen und Verfall aus
+     * der Nachricht — sichtbar auf beiden Seiten. Gebaut wird deshalb mit
+     * demselben `baueNutzlast` wie beim Senden; geaendert werden nur `text`
+     * und `edited_at`.
+     */
+    const nutzlast = baueNutzlast({
+      clientUuid: msg.clientUuid || String(msg.id),
+      absenderId: currentUserId,
+      absenderName: msg.senderName || user?.username || 'Ich',
+      text: cleanText,
+      zeitpunkt: msg.createdAt || bearbeitetAm,
+      bezug: msg.antwortAuf ?? null,
+      weitergeleitet: msg.weitergeleitet,
+      erwaehnt: erwaehnungsFelder(cleanText, activeGroup),
+      verfaelltAm: msg.verfaelltAm,
+      note: msg.noteAttachment,
+      cal: msg.calendarAttachment,
+      sticker: msg.stickerAttachment,
+      storyReply: msg.storyReply,
+      finalImg: msg.imageAttachment,
+      finalFile: msg.fileAttachment,
+      finalAudio: msg.audioAttachment,
+      finalVideoNote: msg.videoNoteAttachment,
+      augenblick: msg.augenblick,
+      funkenRettung: msg.funkenRettung,
+    })
+
     try {
       await sendeWirkung({
         typ: 'edit_message',
@@ -322,6 +353,7 @@ export function useMessengerSenden(optionen: Optionen) {
           target_client_uuid: msg.clientUuid,
           new_text: cleanText,
           edited_at: bearbeitetAm,
+          nutzlast,
         },
         ziel: msg.clientUuid ?? null,
         zielId: msg.id,

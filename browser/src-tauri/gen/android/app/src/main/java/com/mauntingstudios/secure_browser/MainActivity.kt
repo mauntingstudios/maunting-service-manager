@@ -161,10 +161,27 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  override fun finish() {
+    // Nur ein Instrumentationstest lässt die Activity stehen: Ihr Abbau reißt
+    // im Test den Prozess mit (FORTIFY im WebView-Abbau), bevor der Testlauf
+    // sein Ergebnis gemeldet hat. Der Testprozess endet ohnehin mit dem Lauf.
+    // Im Betrieb immer `true`.
+    if (!beendeProzessBeimSchliessen) return
+    super.finish()
+  }
+
   override fun onDestroy() {
     super.onDestroy()
+    // Ebenso: Im Test keinen Prozess beenden; der Testlauf meldet sein
+    // Ergebnis erst nach dem Beenden der Activity.
+    if (!beendeProzessBeimSchliessen) return
     // Wie im Smart System: endet die Activity, endet der Prozess, und die
     // Tauri-/Rust-Umgebung startet beim nächsten Öffnen frisch.
     android.os.Process.killProcess(android.os.Process.myPid())
+  }
+
+  companion object {
+    /** Im Betrieb immer `true`; nur `TabsBrueckeTest` setzt ihn vorübergehend. */
+    @Volatile var beendeProzessBeimSchliessen = true
   }
 }

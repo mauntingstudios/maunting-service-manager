@@ -84,7 +84,9 @@ function mitWerkzeug(
  * räumt ab). Eine Zwischenschicht dafür wäre die nächste Abstraktion ohne
  * Nutzen.
  */
-export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments }: {
+export function useAiLauf({
+  providerId, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten,
+}: {
   providerId: number | null
   canAttach: boolean
   /**
@@ -95,6 +97,11 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
   /** Den Füllstand neu holen — nach `done` und nach dem Falten. */
   ladeKontext: () => Promise<void>
   setAttachments: (rows: AiAttachment[]) => void
+  /** Nur in der App gesetzt; aus dem Panel `undefined`. */
+  appFaehigkeiten?: {
+    computer_use?: boolean | null
+    artifact_install?: boolean | null
+  }
 }) {
   const { t } = useTranslation()
 
@@ -554,6 +561,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
           request_id: crypto.randomUUID(),
           reasoning: denken.an,
           reasoning_effort: denken.stufe,
+          ...(appFaehigkeiten ? { app_faehigkeiten: appFaehigkeiten } : {}),
         }, verarbeite, signal),
         assistantId,
         optimisticUser.id,
@@ -561,7 +569,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
     } finally {
       streamingRef.current = false
     }
-  }, [denken.an, denken.stufe, providerId, streaming, verfolge])
+  }, [appFaehigkeiten, denken.an, denken.stufe, providerId, streaming, verfolge])
 
   /** Bricht den laufenden Strom und den serverseitigen Lauf kontrolliert ab. */
   const stoppeLauf = useCallback(async () => {

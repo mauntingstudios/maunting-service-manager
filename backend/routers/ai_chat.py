@@ -707,6 +707,16 @@ async def stream_message(
             # die Familie holt sich einen Auftrag der, der zuerst fragt, und
             # ein Blick auf "meinen Bildschirm" zeigte den des anderen.
             familie=familie,
+            # Ob das Modell Bilder liest, kommt aus demselben Katalog wie das
+            # Fenster. `None` heisst unbekannt; nur ein ausdrueckliches False
+            # ersetzt das Bild durch einen Hinweis.
+            modell_sieht=fenster.sieht,
+            # Nur die App meldet ihre Faehigkeiten; aus dem Panel ignoriert der
+            # Launcher das Feld. Es verkleinert nur das Angebot.
+            app_faehigkeiten=(
+                payload.app_faehigkeiten.model_dump()
+                if payload.app_faehigkeiten is not None else None
+            ),
         )
         if run_id is None:
             code, message_key = fehler or ("AI_PREPARATION_FAILED", "ai.chat.errors.unavailable")

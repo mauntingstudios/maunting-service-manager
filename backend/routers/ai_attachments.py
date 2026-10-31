@@ -43,7 +43,7 @@ async def upload_attachment(
     _require_chat(db, user)
     conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
     db.commit()
-    data = await file.read(ai_attachment_service.MAX_ATTACHMENT_BYTES + 1)
+    data = await file.read(ai_attachment_service.MAX_UPLOAD_BYTES + 1)
     try:
         return _response(ai_attachment_service.create_attachment(
             db, user=user, conversation=conversation, filename=file.filename,

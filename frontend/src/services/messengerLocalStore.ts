@@ -2403,8 +2403,15 @@ export async function updateMessageInLocalStore(
     // ihn ersetzen; späte Status- oder Kennungsupdates laufen ins Leere.
     if (alt.isDeleted && patch.isDeleted !== true) return
 
+    // Ein `undefined` im Patch ist keine Aussage. Beim Versiegeln fällt der
+    // Schluessel aus dem JSON, und ein Anhang, den der Aufrufer nur nicht
+    // genannt hat, waere danach dauerhaft weg. Nur ausdrueckliche Werte
+    // ueberschreiben den Bestand.
+    const bereinigt = Object.fromEntries(
+      Object.entries(patch).filter(([, wert]) => wert !== undefined),
+    ) as Partial<LocalStoredMessage>
     const alteId = roh.id as number
-    const neu = { ...alt, ...patch, blindMailboxId }
+    const neu = { ...alt, ...bereinigt, blindMailboxId }
     const zeile = await versiegleZeile(
       neu,
       NACHRICHT_KLARFELDER,
