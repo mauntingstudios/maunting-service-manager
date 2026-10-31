@@ -16,8 +16,13 @@ from __future__ import annotations
 import io
 from typing import Final
 
-MAX_IMAGE_DIMENSION: Final = 4096
-MAX_IMAGE_PIXELS: Final = 16_000_000
+#: Sicherheitsgrenze gegen Dekodier-Bomben, kein Komfortlimit. Die Kante
+#: bleibt bei 12.000 px, die Pixelzahl bei 50 MP (z.B. 8000x6250 oder
+#: 10000x5000). Alles darunter wird **verkleinert**, nicht abgewiesen.
+MAX_IMAGE_DIMENSION: Final = 12_000
+MAX_IMAGE_PIXELS: Final = 50_000_000
+#: Zielgroesse fuer den Anbieter. OpenAI nimmt Inline-Bilder bis 20 MB,
+#: Anthropic bis 5 MB; 3072 px und rund 2 MB bleiben deutlich darunter.
 TARGET_IMAGE_DIMENSION: Final = 3072
 TARGET_IMAGE_BYTES: Final = 2 * 1024 * 1024
 
@@ -108,6 +113,12 @@ def normalisiere_bild(data: bytes, *, suffix: str = "", declared_type: str = "")
                 or breite * hoehe > MAX_IMAGE_PIXELS
             ):
                 raise BildNormalisierungError("AI_ATTACHMENT_IMAGE_TOO_LARGE")
+
+            # JPEG kann beim Dekodieren direkt auf eine kleinere Stufe gehen.
+            # Ohne das kostet ein 48-MP-Foto mehrere hundert MB Arbeitsspeicher,
+            # nur um danach ohnehin auf 3072 px verkleinert zu werden.
+            if (roh.format or "").upper() == "JPEG":
+                roh.draft("RGB", (TARGET_IMAGE_DIMENSION * 2, TARGET_IMAGE_DIMENSION * 2))
 
             bild = ImageOps.exif_transpose(roh)
             hat_alpha = bild.mode in ("RGBA", "LA") or (

@@ -765,12 +765,20 @@
       "directoryManageHint": "Geändert wird ein Skill dort, wo er gilt: persönliche und Team-Skills unter Teams, panelweite in den Einstellungen."
     },
     "attachments": {
-      "add": "Sicheren Anhang hinzufügen",
+      "add": "Datei oder Bild anhängen",
       "list": "Anhänge dieser Unterhaltung",
       "remove": "Anhang entfernen",
-      "error": "Anhang konnte nicht sicher verarbeitet werden.",
-      "tooLarge": "Die Datei ist größer als 20 MB und kann nicht hochgeladen werden.",
-      "drop": "Datei hier ablegen",
+      "error": "Der Anhang konnte nicht verarbeitet werden.",
+      "tooLarge": "Die Datei ist größer als {{limit}} MB und kann nicht hochgeladen werden.",
+      "drop": "Dateien hier ablegen",
+      "uploading": "Wird hochgeladen …",
+      "timeout": "Der Upload dauert zu lange. Bitte versuche es erneut.",
+      "kind": {
+        "image": "Bild",
+        "text": "Text",
+        "document": "Dokument",
+        "binary": "Datei"
+      },
       "redacted_one": "{{count}} Stelle unkenntlich",
       "redacted_other": "{{count}} Stellen unkenntlich"
     },
@@ -1318,13 +1326,13 @@
         "AI_PROVIDER_PROTOCOL_ERROR": "Der Anbieter hat eine unerwartete Antwort geliefert.",
         "AI_PROVIDER_RESPONSE_TOO_LARGE": "Die Antwort des Anbieters war zu groß.",
         "AI_ATTACHMENT_NAME_INVALID": "Der Dateiname ist ungültig. Benenne die Datei um und versuche es erneut.",
-        "AI_ATTACHMENT_SIZE_INVALID": "Die Datei ist für diesen Typ zu groß.",
-        "AI_ATTACHMENT_TYPE_BLOCKED": "Dieser Dateityp ist aus Sicherheitsgründen gesperrt.",
+        "AI_ATTACHMENT_SIZE_INVALID": "Die Datei ist größer als 32 MB und kann nicht hochgeladen werden.",
+        "AI_ATTACHMENT_TYPE_BLOCKED": "Ausführbare Dateien werden nicht angenommen. Text, Code und Dokumente sind erlaubt.",
         "AI_ATTACHMENT_TYPE_MISMATCH": "Der angegebene Dateityp passt nicht zum Inhalt.",
         "AI_ATTACHMENT_LIMIT_REACHED": "Für diesen Chat sind zu viele Anhänge offen. Sende oder entferne zuerst einen.",
         "AI_ATTACHMENT_CONTENT_INVALID": "Die Datei ist beschädigt oder nicht lesbar.",
         "AI_ATTACHMENT_ARCHIVE_BLOCKED": "Archive und Dateien mit Makros werden nicht angenommen.",
-        "AI_ATTACHMENT_IMAGE_TOO_LARGE": "Das Bild ist zu groß. Verkleinere es und versuche es erneut.",
+        "AI_ATTACHMENT_IMAGE_TOO_LARGE": "Das Bild ist für die Verarbeitung zu groß. Speichere es kleiner und versuche es erneut.",
         "AI_ATTACHMENT_IMAGE_FORMAT_UNSUPPORTED": "Dieses Bildformat kann auf diesem Server nicht gelesen werden. Speichere es als JPEG oder PNG.",
         "AI_ATTACHMENT_DOCUMENT_INVALID": "Das Dokument ist beschädigt, verschlüsselt oder nicht lesbar.",
         "AI_QUOTA_DAILY_TOKEN_LIMIT": "Das Tokenkontingent der letzten 24 Stunden ist ausgeschöpft. Es wird frei, sobald ältere Anfragen aus dem Zeitraum fallen.",
@@ -2569,7 +2577,7 @@
     },
     "ai_attachments_use": {
       "title": "Dateianhänge im Chat",
-      "desc": "Dokumente und Logs zur Analyse an die KI übermitteln."
+      "desc": "Bilder, Dokumente und Logs zur Analyse an die KI übermitteln."
     },
     "ai_memory_use": {
       "title": "KI-Gedächtnis nutzen",

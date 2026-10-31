@@ -131,7 +131,10 @@ class AiAppFaehigkeiten(BaseModel):
 
 
 class AiChatRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=16_000)
+    # Leer ist erlaubt, wenn mindestens ein Anhang offen ist: ein Bild ohne
+    # Begleittext ist eine vollstaendige Frage. Der Router prueft das zusammen
+    # mit den ungebundenen Anhaengen.
+    content: str = Field(min_length=0, max_length=16_000)
     provider_id: int = Field(ge=1)
     request_id: UUID
     # Ob das Modell nachdenken soll. Bei 145 der 272 denkenden Modelle bei

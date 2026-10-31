@@ -230,7 +230,9 @@ def test_provider_attachment_text_is_bounded_and_owner_filtered(
     serialized = str(messages)
     assert "other.log" not in serialized
     assert len(messages) == 1
-    text = messages[0]["content"].split("\n", 1)[1]
+    inhalt = messages[0]["content"]
+    assert isinstance(inhalt, list)
+    text = inhalt[0]["text"].split("\n", 1)[1]
     assert text.startswith("x" * MAX_PROVIDER_TEXT_CHARS)
     assert "[gekuerzt nach" in text
 
@@ -276,7 +278,9 @@ def test_attachment_text_is_never_sent_with_system_authority(
 
     assert len(messages) == 1
     assert messages[0]["role"] == "user"
-    assert "Unvertrauenswuerdiger Anhang" in messages[0]["content"]
+    inhalt = messages[0]["content"]
+    assert isinstance(inhalt, list)
+    assert "Unvertrauenswuerdiger Anhang" in inhalt[0]["text"]
 
 
 def _message(db: Session, conversation: AiConversation, role: str, content: str) -> AiMessage:
@@ -549,23 +553,127 @@ def test_blocked_and_broken_files_stay_422(
     regular_user: User,
     user_cookies: dict,
 ) -> None:
-    from services.ai_attachment_service import MAX_TEXT_BYTES
+    from services.ai_attachment_service import MAX_UPLOAD_BYTES
 
     _enable_attachments(db, regular_user)
     _conversation(db, regular_user)
 
     faelle = [
         ("schaedlich.exe", b"MZ\x90\x00payload", "application/octet-stream", "AI_ATTACHMENT_TYPE_BLOCKED"),
+        # Ohne Endung bleibt eine ELF-Datei eine Binaerdatei, auch wenn die
+        # ersten Bytes zufaellig als UTF-8 lesbar waeren.
+        ("programm", b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 64, "application/octet-stream", "AI_ATTACHMENT_TYPE_BLOCKED"),
         ("archiv.zip", b"PK\x03\x04payload", "application/zip", "AI_ATTACHMENT_ARCHIVE_BLOCKED"),
-        ("bild.svg", b"<svg xmlns='http://www.w3.org/2000/svg'></svg>", "image/svg+xml", "AI_ATTACHMENT_TYPE_BLOCKED"),
         ("kaputt.md", b"Text\x00mit NUL", "text/markdown", "AI_ATTACHMENT_CONTENT_INVALID"),
-        ("zu_gross.txt", b"x" * (MAX_TEXT_BYTES + 1), "text/plain", "AI_ATTACHMENT_SIZE_INVALID"),
+        ("zu_gross.txt", b"x" * (MAX_UPLOAD_BYTES + 1), "text/plain", "AI_ATTACHMENT_SIZE_INVALID"),
     ]
     for name, data, media_type, code in faelle:
         antwort = _upload(client, user_cookies, name, data, media_type)
         assert antwort.status_code == 422, (name, antwort.text)
         assert antwort.json()["detail"]["code"] == code
     assert db.query(AiAttachment).count() == 0
+
+
+def test_text_and_script_like_files_are_read_not_blocked(
+    client: TestClient,
+    db: Session,
+    regular_user: User,
+    user_cookies: dict,
+) -> None:
+    """SVG, PHP, Batch und Shell sind Text. Der Server fuehrt sie nie aus.
+
+    Vorher entschied `detect_mime_from_magic_bytes` aus dem Messenger, und ein
+    `<?php`, ein `@echo` oder ein `<svg>` galt als ausfuehrbar. Fuer den
+    KI-Chat war das die falsche Frage: hier wird gelesen, nicht gestartet.
+    """
+    _enable_attachments(db, regular_user)
+    _conversation(db, regular_user)
+
+    faelle = [
+        ("diagramm.svg", b"<svg xmlns='http://www.w3.org/2000/svg'><script>x()</script></svg>", "image/svg+xml"),
+        ("werkzeug.php", b"<?php echo 'hallo';", "application/x-httpd-php"),
+        ("start.bat", b"@echo off\necho hallo\n", "text/plain"),
+        ("start.sh", b"#!/bin/sh\necho hallo\n", "text/x-shellscript"),
+    ]
+    for name, data, media_type in faelle:
+        antwort = _upload(client, user_cookies, name, data, media_type)
+        assert antwort.status_code == 201, (name, antwort.text)
+    namen = {row.original_name for row in db.query(AiAttachment).all()}
+    assert namen == {name for name, _, _ in faelle}
+    svg = next(
+        row for row in db.query(AiAttachment).all()
+        if row.original_name == "diagramm.svg"
+    )
+    assert svg.media_type == "image/svg+xml"
+    assert svg.extracted_text_encrypted is not None
+
+
+def test_large_text_is_accepted_and_only_trimmed_for_the_model(
+    client: TestClient,
+    db: Session,
+    regular_user: User,
+    user_cookies: dict,
+) -> None:
+    """Mehr als 2 MB Text sind kein Upload-Fehler mehr.
+
+    Der Server nimmt die Datei an, extrahiert den Text und kuerzt ihn erst
+    fuer den Anbieter auf das Kontextbudget — mit sichtbarem Hinweis.
+    """
+    from services.ai_attachment_service import provider_attachment_messages
+    from services.dis_client import DisClient
+
+    _enable_attachments(db, regular_user)
+    conversation = _conversation(db, regular_user)
+    inhalt = ("# Protokoll\n" + "Zeile mit Inhalt\n" * 200_000).encode()
+    assert len(inhalt) > 2 * 1024 * 1024
+
+    antwort = _upload(client, user_cookies, "gross.md", inhalt, "text/markdown")
+    assert antwort.status_code == 201, antwort.text
+    row = db.query(AiAttachment).one()
+    assert row.media_type == "text/markdown"
+    gespeichert = DisClient.decrypt(
+        row.extracted_text_encrypted, aad=f"msm:ai:attachment:{row.id}:text"
+    )
+    assert "Protokoll" in gespeichert
+
+    nachrichten = provider_attachment_messages(
+        db, conversation.id, regular_user.id, text_budget=12_000
+    )
+    text = nachrichten[0]["content"][0]["text"]
+    assert "[gekuerzt nach 12000 von" in text
+
+
+def test_large_image_is_downscaled_instead_of_rejected(
+    client: TestClient,
+    db: Session,
+    regular_user: User,
+    user_cookies: dict,
+) -> None:
+    """Ein 6000x4000-Foto wird verkleinert, nicht abgewiesen.
+
+    Die alte Grenze lag bei 4096 px — jedes moderne Kamerafoto fiel damit
+    heraus, obwohl OpenAI und Anthropic deutlich groessere Inline-Bilder
+    annehmen und die Normalisierung ohnehin auf 3072 px geht.
+    """
+    from services.ai_attachment_service import _aad
+    from services.dis_client import DisClient
+
+    _enable_attachments(db, regular_user)
+    _conversation(db, regular_user)
+    foto = Image.new("RGB", (6000, 4000), (20, 120, 210))
+    puffer = io.BytesIO()
+    foto.save(puffer, format="JPEG", quality=88)
+
+    antwort = _upload(client, user_cookies, "kamera.jpg", puffer.getvalue(), "image/jpeg")
+    assert antwort.status_code == 201, antwort.text
+    row = db.query(AiAttachment).one()
+    import base64
+
+    roh = base64.b64decode(
+        DisClient.decrypt(row.content_encrypted, aad=_aad(row.id, "content"))
+    )
+    with Image.open(io.BytesIO(roh)) as normalisiert:
+        assert max(normalisiert.size) <= 3072
 
 
 def test_the_old_lifetime_limit_no_longer_blocks_after_sending(
@@ -608,8 +716,94 @@ def test_blind_model_gets_a_notice_instead_of_an_unknown_image(
         db, conversation.id, regular_user.id, modell_sieht=False
     )
     assert len(nachrichten) == 1
-    assert "kann keine Bilder lesen" in str(nachrichten[0]["content"])
-    assert "image_url" not in str(nachrichten[0]["content"])
+    text = str(nachrichten[0]["content"])
+    assert "kann keine Bilder lesen" in text
+    assert "image_url" not in text
+    assert "type': 'image" not in text
+
+
+def test_image_goes_as_vision_block_to_openai_and_anthropic(
+    client: TestClient,
+    db: Session,
+    regular_user: User,
+    user_cookies: dict,
+) -> None:
+    """Dasselbe Bild, zwei Dialekte — und nie ein Rechnerauftrag.
+
+    OpenAI bekommt ``image_url`` mit Data-URL, Anthropic einen ``image``-Block
+    mit getrenntem ``media_type``. Beide sind reine Vision-Eingaben; ein
+    Desktop-Werkzeug entsteht daraus nicht.
+    """
+    from services.ai_attachment_service import provider_attachment_messages
+
+    _enable_attachments(db, regular_user)
+    conversation = _conversation(db, regular_user)
+    antwort = _upload(client, user_cookies, "bild.png", _bild_bytes("PNG"), "image/png")
+    assert antwort.status_code == 201, antwort.text
+
+    openai = provider_attachment_messages(
+        db, conversation.id, regular_user.id, protokoll="chat_completions"
+    )
+    anthropic = provider_attachment_messages(
+        db, conversation.id, regular_user.id, protokoll="anthropic_messages"
+    )
+
+    openai_bloecke = openai[0]["content"]
+    assert any(block["type"] == "image_url" for block in openai_bloecke)
+    assert all(block.get("type") != "image" for block in openai_bloecke)
+
+    anthropic_bloecke = anthropic[0]["content"]
+    bild = next(block for block in anthropic_bloecke if block["type"] == "image")
+    assert bild["source"]["type"] == "base64"
+    assert bild["source"]["media_type"] in {"image/png", "image/jpeg"}
+    assert all(block.get("type") != "image_url" for block in anthropic_bloecke)
+    assert "desktop" not in str(openai).lower()
+
+
+def test_an_image_without_text_can_start_a_run(
+    client: TestClient,
+    db: Session,
+    regular_user: User,
+    user_cookies: dict,
+) -> None:
+    """Ein Bild ohne Begleittext ist eine vollstaendige Frage.
+
+    Die alte Pruefung `content ist leer -> 400` verhinderte genau das. Der
+    Anhang wird beim Anlegen der Nachricht gebunden; vorher entscheidet die
+    Menge der ungebundenen Anhaenge, ob die Nachricht Inhalt hat.
+    """
+    from models import AiProvider
+    from services import ai_run_service, ai_stream_service
+    from services.ai_attachment_service import has_unbound
+
+    _enable_attachments(db, regular_user)
+    conversation = _conversation(db, regular_user)
+    antwort = _upload(client, user_cookies, "frage.png", _bild_bytes("PNG"), "image/png")
+    assert antwort.status_code == 201, antwort.text
+    assert has_unbound(db, conversation.id, regular_user.id) is True
+
+    provider = AiProvider(
+        name="Anhang-Test", provider_kind="openrouter", default_model="model-a",
+        enabled=True, requires_api_key=False,
+    )
+    db.add(provider)
+    db.commit()
+    db.refresh(provider)
+
+    run, fehler = ai_stream_service.lauf_beginnen(
+        db, user=regular_user, conversation=conversation, provider=provider,
+        request_id=uuid4(), content="", reasoning=False,
+    )
+    assert run is not None, fehler
+    zustand = ai_run_service.zustand_lesen(run)
+    benutzer_id = zustand["user_message_id"]
+    nachricht = db.get(AiMessage, benutzer_id)
+    assert nachricht is not None
+    assert nachricht.content == ""
+    assert zustand["hat_anhaenge"] is True
+    row = db.query(AiAttachment).one()
+    assert row.message_id == benutzer_id
+    assert has_unbound(db, conversation.id, regular_user.id) is False
 
 
 def test_windows_and_webview_paths_are_reduced_to_the_file_name(

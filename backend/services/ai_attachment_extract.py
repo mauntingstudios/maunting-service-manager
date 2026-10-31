@@ -26,7 +26,9 @@ TEXT_EXTENSIONS = {
     ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties",
     ".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx", ".py", ".sh", ".sql",
     ".java", ".c", ".h", ".cpp", ".hpp", ".go", ".rs", ".rb", ".php", ".bat",
-    ".cmd", ".ps1", ".env", ".gitignore", ".editorconfig",
+    ".cmd", ".ps1", ".env", ".gitignore", ".editorconfig", ".svg", ".kt", ".kts",
+    ".swift", ".lua", ".pl", ".r", ".scala", ".cs", ".fs", ".vb", ".asm",
+    ".m", ".mm", ".gradle", ".lock",
 }
 
 TEXT_MIME = {
@@ -81,6 +83,14 @@ def ist_office_endung(suffix: str) -> bool:
 
 
 def dekodiere_text(data: bytes) -> str:
+    # UTF-16 traegt NUL-Bytes strukturell und ist trotzdem Text. Die BOM
+    # entscheidet; ohne BOM bleibt ein NUL ein Binaerhinweis.
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            text = data.decode("utf-16")
+        except UnicodeDecodeError as exc:
+            raise ExtraktionError("AI_ATTACHMENT_CONTENT_INVALID") from exc
+        return _begrenze(text, MAX_TEXT_CHARS)
     if b"\x00" in data:
         raise ExtraktionError("AI_ATTACHMENT_CONTENT_INVALID")
     try:

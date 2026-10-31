@@ -765,12 +765,20 @@
       "directoryManageHint": "A skill is edited where it applies: personal and team skills under Teams, panel-wide ones in Settings."
     },
     "attachments": {
-      "add": "Add safe attachment",
+      "add": "Attach file or image",
       "list": "Attachments in this conversation",
       "remove": "Remove attachment",
-      "error": "Attachment could not be processed safely.",
-      "tooLarge": "The file is larger than 20 MB and cannot be uploaded.",
-      "drop": "Drop file here",
+      "error": "The attachment could not be processed.",
+      "tooLarge": "The file is larger than {{limit}} MB and cannot be uploaded.",
+      "drop": "Drop files here",
+      "uploading": "Uploading …",
+      "timeout": "The upload is taking too long. Please try again.",
+      "kind": {
+        "image": "Image",
+        "text": "Text",
+        "document": "Document",
+        "binary": "File"
+      },
       "redacted_one": "{{count}} spot redacted",
       "redacted_other": "{{count}} spots redacted"
     },
@@ -1318,13 +1326,13 @@
         "AI_PROVIDER_PROTOCOL_ERROR": "The provider returned an unexpected response.",
         "AI_PROVIDER_RESPONSE_TOO_LARGE": "The provider's response was too large.",
         "AI_ATTACHMENT_NAME_INVALID": "The file name is invalid. Rename the file and try again.",
-        "AI_ATTACHMENT_SIZE_INVALID": "The file is too large for this type.",
-        "AI_ATTACHMENT_TYPE_BLOCKED": "This file type is blocked for security reasons.",
+        "AI_ATTACHMENT_SIZE_INVALID": "The file is larger than 32 MB and cannot be uploaded.",
+        "AI_ATTACHMENT_TYPE_BLOCKED": "Executable files are not accepted. Text, code and documents are allowed.",
         "AI_ATTACHMENT_TYPE_MISMATCH": "The declared file type does not match the content.",
         "AI_ATTACHMENT_LIMIT_REACHED": "Too many attachments are open in this chat. Send or remove one first.",
         "AI_ATTACHMENT_CONTENT_INVALID": "The file is damaged or cannot be read.",
         "AI_ATTACHMENT_ARCHIVE_BLOCKED": "Archives and files with macros are not accepted.",
-        "AI_ATTACHMENT_IMAGE_TOO_LARGE": "The image is too large. Resize it and try again.",
+        "AI_ATTACHMENT_IMAGE_TOO_LARGE": "The image is too large to process. Save it smaller and try again.",
         "AI_ATTACHMENT_IMAGE_FORMAT_UNSUPPORTED": "This image format cannot be read on this server. Save it as JPEG or PNG.",
         "AI_ATTACHMENT_DOCUMENT_INVALID": "The document is damaged, encrypted, or unreadable.",
         "AI_QUOTA_DAILY_TOKEN_LIMIT": "The token allowance for the last 24 hours is used up. It frees up as older requests drop out of the period.",
@@ -2569,7 +2577,7 @@
     },
     "ai_attachments_use": {
       "title": "Use chat attachments",
-      "desc": "Upload documents and logs for AI analysis."
+      "desc": "Upload images, documents and logs for AI analysis."
     },
     "ai_memory_use": {
       "title": "Use AI memory",

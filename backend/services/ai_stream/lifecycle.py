@@ -880,22 +880,30 @@ async def _werkzeuge_und_grenze(
     if not letzte:
         letzte = str(zustand.get("query", "") if isinstance(zustand, dict) else "").strip()[:500]
 
-    from services.tool_selection_port import DESKTOP_STEUERUNG, desktop_absicht
+    from services.ai_tool_registry import DESKTOP_TOOLS
+    from services.tool_selection_port import desktop_erlaubt
 
     hat_anhaenge = bool(zustand.get("hat_anhaenge")) if isinstance(zustand, dict) else False
     computer_use_aktiv = (
         zustand.get("computer_use_aktiv") if isinstance(zustand, dict) else None
     )
+    desktop_intent = (
+        zustand.get("desktop_absicht") if isinstance(zustand, dict) else None
+    )
     # Aus der App bleiben die Desktop-Werkzeuge nur dann im Angebot, wenn
     # Computer-Use nicht ausdruecklich aus ist und die Frage nicht bloß einen
     # Anhang liest. Der Rechte- und Herkunftsschnitt oben bleibt die harte
-    # Grenze; hier wird nur enger geschnitten.
-    desktop_steuerung_erlaubt = (
-        computer_use_aktiv is not False
-        and not (hat_anhaenge and not desktop_absicht(letzte))
+    # Grenze; hier wird nur enger geschnitten. ``desktop_intent`` ist die
+    # eingefrorene Absicht der Frage — `letzte` waere oft ein Gedaechtnis- oder
+    # Anhangsblock.
+    desktop_werkzeuge_erlaubt = desktop_erlaubt(
+        query=letzte,
+        hat_anhaenge=hat_anhaenge,
+        computer_use_aktiv=computer_use_aktiv,
+        desktop_intent=desktop_intent if isinstance(desktop_intent, bool) else None,
     )
-    if not desktop_steuerung_erlaubt:
-        erlaubt = erlaubt - DESKTOP_STEUERUNG
+    if not desktop_werkzeuge_erlaubt:
+        erlaubt = erlaubt - DESKTOP_TOOLS
 
     try:
         from services.semantic_tool_router_adapter import SemanticToolRouterAdapter, gruppen_nachbarn
@@ -907,6 +915,7 @@ async def _werkzeuge_und_grenze(
         pflicht = pflichtwerkzeuge(
             frozenset(erlaubt), herkunft,
             hat_anhaenge=hat_anhaenge, query=letzte,
+            desktop_intent=desktop_intent if isinstance(desktop_intent, bool) else None,
         )
         hot = [n for n in HOTSET if n in erlaubt]
         hot_and_topk = len(set(hot) | pflicht) + 5
@@ -928,10 +937,10 @@ async def _werkzeuge_und_grenze(
         logging.getLogger(__name__).debug("Tool-Routing uebersprungen: %s", type(exc).__name__)
     # Auch nach dem Routing und im Fehlerzweig: was hier nicht erlaubt ist,
     # darf nicht durch `routed` oder `gruppen_nachbarn` zurueckkommen.
-    if not desktop_steuerung_erlaubt:
+    if not desktop_werkzeuge_erlaubt:
         tools = [
             e for e in tools
-            if str(e.get("function", {}).get("name")) not in DESKTOP_STEUERUNG
+            if str(e.get("function", {}).get("name")) not in DESKTOP_TOOLS
         ]
     # Was der Katalog selbst kostet. Er geht in Zeile `tools=tools` neben den
     # Nachrichten über dieselbe Leitung, wurde aber in keinem Budget

@@ -328,9 +328,46 @@ describe('AiChat', () => {
     await screen.findByText('synthetic-note.txt')
 
     const file = new File(['synthetic content'], 'another-synthetic.txt', { type: 'text/plain' })
-    fireEvent.change(screen.getByLabelText('Sicheren Anhang hinzufügen'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText(i18n.t('ai.attachments.add')), { target: { files: [file] } })
 
     await waitFor(() => expect(aiApi.uploadAttachment).toHaveBeenCalledWith(file))
+  })
+
+  it('laedt mehrere Dateien aus einer Auswahl hoch', async () => {
+    const erste = new File(['# Einkauf'], 'einkauf.md', { type: 'text/markdown' })
+    const zweite = new File(['export const x = 1'], 'beispiel.ts', { type: 'text/typescript' })
+    vi.mocked(aiApi.uploadAttachment)
+      .mockReset()
+      .mockResolvedValueOnce({ ...attachment, id: 'anhang-md', original_name: 'einkauf.md', media_type: 'text/markdown' })
+      .mockResolvedValueOnce({ ...attachment, id: 'anhang-ts', original_name: 'beispiel.ts', media_type: 'text/plain' })
+    render(<MemoryRouter><AiChat /></MemoryRouter>)
+    await screen.findByText('synthetic-note.txt')
+
+    fireEvent.change(
+      screen.getByLabelText(i18n.t('ai.attachments.add')),
+      { target: { files: [erste, zweite] } },
+    )
+
+    await waitFor(() => expect(aiApi.uploadAttachment).toHaveBeenCalledTimes(2))
+    expect(aiApi.uploadAttachment).toHaveBeenNthCalledWith(1, erste)
+    expect(aiApi.uploadAttachment).toHaveBeenNthCalledWith(2, zweite)
+    expect(await screen.findByText('einkauf.md')).toBeTruthy()
+    expect(await screen.findByText('beispiel.ts')).toBeTruthy()
+  })
+
+  it('nimmt ein Bild aus der Zwischenablage an', async () => {
+    const bild = new File(['png'], 'clipboard.png', { type: 'image/png' })
+    vi.mocked(aiApi.uploadAttachment)
+      .mockReset()
+      .mockResolvedValue({ ...attachment, id: 'anhang-bild', original_name: 'clipboard.png', media_type: 'image/png' })
+    render(<MemoryRouter><AiChat /></MemoryRouter>)
+    await screen.findByText('synthetic-note.txt')
+
+    fireEvent.paste(screen.getByRole('region', { name: i18n.t('ai.chat.title') }), {
+      clipboardData: { files: [bild] },
+    })
+
+    await waitFor(() => expect(aiApi.uploadAttachment).toHaveBeenCalledWith(bild))
   })
 
   // Im rollenden Verlauf rollte die Fläche mit (unten im Chat nicht zu sehen)

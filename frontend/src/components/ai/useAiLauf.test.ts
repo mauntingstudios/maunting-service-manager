@@ -75,6 +75,23 @@ describe('useAiLauf', () => {
     useToastStore.setState({ toasts: [] })
   })
 
+  it('schickt einen Anhang auch ohne Begleittext', async () => {
+    const { result } = baueLauf()
+
+    await act(async () => { await result.current.sendContent('', true) })
+
+    expect(streamAiMessage).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(streamAiMessage).mock.calls[0][0].content).toBe('')
+  })
+
+  it('schickt ohne Text und ohne Anhang nichts', async () => {
+    const { result } = baueLauf()
+
+    await act(async () => { await result.current.sendContent('') })
+
+    expect(streamAiMessage).not.toHaveBeenCalled()
+  })
+
   it('setzt die Abschnitte aus dem Abzug, statt sie anzuhängen', async () => {
     // Ein Abzug ist die **vollständige** Antwort bis hierher. Wer sich zweimal
     // anhängt, sähe beim Anhängen jede Werkzeugzeile doppelt.

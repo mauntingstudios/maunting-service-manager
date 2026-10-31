@@ -19,6 +19,7 @@ from models import AiMessage, AiProvider, AiRun, User
 import services.ai_stream as ai_stream
 from services import (
     ai_attachment_service,
+    ai_provider_registry,
     ai_provider_service,
     ai_run_service,
 )
@@ -105,7 +106,13 @@ def lauf_beginnen(
     adressiert an ihn selbst.
     """
     safe_content = redact_sensitive_text(content).strip()
-    if not safe_content:
+    # Ein Bild ohne Begleittext ist eine vollstaendige Frage ("Was ist das?").
+    # Der Anhang wird erst beim Anlegen der Nachricht gebunden; vorher ist
+    # genau die Menge der ungebundenen Anhaenge die Antwort darauf, ob diese
+    # Nachricht Inhalt hat.
+    if not safe_content and not ai_attachment_service.has_unbound(
+        db, conversation.id, user.id
+    ):
         return None, ("AI_MESSAGE_EMPTY", "ai.chat.errors.empty")
     if rolle is None:
         rolle = _rolle_ableiten(db, user, conversation, provider, unbeaufsichtigt)
@@ -144,11 +151,22 @@ def lauf_beginnen(
         serverbezug = ai_run_service.letzter_serverbezug(
             db, conversation_id=conversation.id
         )
+        # Der Anhang-Adapter muss wissen, in welchem Dialekt der Zugang
+        # antwortet. Das ist eine Eigenschaft des Anbieters, nicht des
+        # Modellnamens; ein unbekannter Anbieter faellt auf die verbreitete
+        # Chat-Completions-Form zurueck.
+        try:
+            provider_protokoll = ai_provider_registry.anbieter(
+                provider.provider_kind
+            ).protokoll_chat
+        except KeyError:
+            provider_protokoll = None
         provider_messages = build_provider_messages(
             db, conversation, query=safe_content, server_id=serverbezug,
             context_chars=context_chars, unbeaufsichtigt=unbeaufsichtigt,
             gesprochen=gesprochen, rolle=rolle, herkunft=herkunft,
             modell_sieht=modell_sieht, computer_use_aktiv=computer_use_aktiv,
+            provider_protokoll=provider_protokoll,
         )
         # Eine Unterbrechung ist keine neue Information des Benutzers und darf
         # deshalb weder als Chatzeile gespeichert noch in die Erinnerung
@@ -234,6 +252,12 @@ def lauf_beginnen(
         # ueber Rechte; der Herkunftsschnitt bleibt die harte Grenze.
         zustand["hat_anhaenge"] = gebundene_anhaenge > 0
         zustand["computer_use_aktiv"] = computer_use_aktiv
+        # Nur die Absicht, nicht die Frage: Der Arbeitszustand soll nach dem
+        # Lauf keine Frage mehr tragen. Der Wert entscheidet, ob ein
+        # Anhang-Turn die Desktop-Werkzeuge sehen darf.
+        from services.tool_selection_port import desktop_absicht
+
+        zustand["desktop_absicht"] = desktop_absicht(safe_content)
         # Das Budget dieses Laufs, festgehalten fuer alle Fortsetzungen. Es hier
         # abzulegen statt es je Segment neu zu ermitteln ist dieselbe
         # Entscheidung wie bei `reasoning_effort`: was mitten in einer Aufgabe

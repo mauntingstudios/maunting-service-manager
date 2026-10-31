@@ -3,21 +3,18 @@
  *
  * Der Server normalisiert Bilder noch einmal selbst; hier geht es nur darum,
  * ein 8-MB-Kamerafoto nicht unnoetig ueber die Leitung zu schicken und das
- * 20-MiB-Request-Limit gar nicht erst zu beruehren. Was der Browser nicht
- * dekodieren kann (typisch: HEIC in einer alten WebView), bleibt unveraendert
- * und geht an den Server, der es mit pillow-heif versucht.
+ * Request-Limit gar nicht erst zu beruehren. Was der Browser nicht dekodieren
+ * kann (typisch: HEIC in einer alten WebView), bleibt unveraendert und geht an
+ * den Server, der es mit pillow-heif versucht. Text- und Dokumentdateien
+ * werden bewusst nicht angefasst.
  */
 
 import i18n from '@/i18n'
+import { istBildDatei, MAX_ANHANG_BYTES } from './aiAnhangTypen'
 
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+const MAX_UPLOAD_BYTES = MAX_ANHANG_BYTES
 const ZIEL_BYTES = 1.5 * 1024 * 1024
 const MAX_KANTE = 2048
-
-function istBild(file: File): boolean {
-  if ((file.type || '').startsWith('image/')) return true
-  return /\.(png|jpe?g|webp|gif|heic|heif|avif|bmp|tiff?)$/i.test(file.name)
-}
 
 function neuerName(name: string, mime: string): string {
   if (mime === 'image/png') return name.replace(/\.[^.]+$/, '') + '.png'
@@ -35,9 +32,14 @@ async function alsBlob(canvas: HTMLCanvasElement, mime: string): Promise<Blob | 
  */
 export async function bereiteAiAnhangAuf(file: File): Promise<File> {
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error(i18n.t('ai.attachments.tooLarge'))
+    throw new Error(i18n.t('ai.attachments.tooLarge', {
+      limit: Math.round(MAX_UPLOAD_BYTES / (1024 * 1024)),
+    }))
   }
-  if (!istBild(file) || file.size <= ZIEL_BYTES) return file
+  // Text wird nie im Browser beschnitten. Er geht vollstaendig an den Server,
+  // der ihn als Text extrahiert und erst fuer das Modell auf das Kontextbudget
+  // kuerzt. Eine 8-MB-Logdatei ist damit kein Upload-Fehler mehr.
+  if (!istBildDatei(file) || file.size <= ZIEL_BYTES) return file
   if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return file
 
   let bitmap: ImageBitmap

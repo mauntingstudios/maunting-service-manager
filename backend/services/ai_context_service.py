@@ -505,6 +505,7 @@ def build_provider_messages(
     herkunft: str = "panel",
     modell_sieht: bool | None = None,
     computer_use_aktiv: bool | None = None,
+    provider_protokoll: str | None = None,
 ) -> list[dict[str, Any]]:
     """Baut eine neueste, begrenzte Historie unter einer Zeichenobergrenze.
 
@@ -600,12 +601,31 @@ def build_provider_messages(
         from services import permission_service
 
         if permission_service.has_global_permission(db, user, "ai.attachments.use"):
-            from services.ai_attachment_service import provider_attachment_messages
+            from services.ai_attachment_service import (
+                MAX_PROVIDER_TEXT_CHARS,
+                MAX_PROVIDER_TEXT_CHARS_OBEN,
+                provider_attachment_messages,
+            )
 
+            # Der Anhangstext darf mit dem Fenster wachsen. Eine feste Grenze
+            # von wenigen tausend Zeichen machte aus einem 200k-Fenster wieder
+            # einen Chat, der nur den Anfang einer Logdatei sieht. Bei einem
+            # **bekannten** Fenster bleibt ein Fuenftel fuer Anhaenge; bei
+            # einem unbekannten gilt der alte Sockel. Der Deckel verhindert,
+            # dass ein sehr grosses Fenster zu einer einzigen Datei wird.
+            if context_chars:
+                text_budget = min(
+                    max(context_chars // 5, 4_000),
+                    MAX_PROVIDER_TEXT_CHARS_OBEN,
+                )
+            else:
+                text_budget = MAX_PROVIDER_TEXT_CHARS
             result.extend(provider_attachment_messages(
                 db, conversation.id, conversation.user_id,
                 [row.id for row in rows],
                 modell_sieht=modell_sieht,
+                protokoll=provider_protokoll,
+                text_budget=text_budget,
             ))
 
     if conversation.summary:
@@ -674,13 +694,14 @@ def build_provider_messages(
 
     selected: list[dict[str, str]] = []
     # `len(item["content"])` war fuer Bildanhaenge die Zahl der Listenelemente
-    # (also 2), nicht die Groesse der Base64-Daten. Bis zu fuenf Anhaenge zu je
-    # 256 KB liefen so an der Kuerzung auf MAX_CONTEXT_CHARS vorbei.
+    # (also 2), nicht die Groesse der Base64-Daten. Bis zu zehn Anhaenge mit
+    # jeweils rund 2 MB normalisiertem Bild liefen so an der Kuerzung auf
+    # MAX_CONTEXT_CHARS vorbei.
     used = message_character_count(result) + message_character_count(nachspann)
     # Untergrenze statt blosser Differenz. Ein 30-KB-Screenshot zaehlt hier mit
-    # rund 40.000 Zeichen, ein Textanhang mit bis zu 12.000, Zusammenfassung und
-    # Tool-Block mit weiteren 12.000 — jedes davon kann `MAX_CONTEXT_CHARS`
-    # allein ueberschreiten. Die Differenz war dann negativ, die Schleife brach
+    # rund 40.000 Zeichen, ein Textanhang je nach Modellfenster mit bis zu
+    # 160.000, Zusammenfassung und Tool-Block mit weiteren 12.000 — jedes
+    # davon kann `MAX_CONTEXT_CHARS` allein ueberschreiten. Die Differenz war dann negativ, die Schleife brach
     # vor der ersten Zeile ab, und die erste Zeile ist die gerade gestellte
     # Frage (`rows` ist absteigend sortiert). Das Modell sah dann einen Anhang
     # ohne die Frage, zu der er gehoert. Der Sockel kostet im schlimmsten Fall

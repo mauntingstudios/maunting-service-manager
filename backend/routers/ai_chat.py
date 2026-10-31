@@ -41,6 +41,7 @@ from schemas.ai_chat import (
     AiWorkerInfo,
 )
 from services import (
+    ai_attachment_service,
     ai_chat_service,
     ai_context_service,
     ai_context_window,
@@ -650,7 +651,9 @@ async def stream_message(
             raise HTTPException(status_code=409, detail="AI-Anfrage ist bereits aktiv oder fehlgeschlagen")
     else:
         safe_content = redact_sensitive_text(payload.content).strip()
-        if not safe_content:
+        if not safe_content and not ai_attachment_service.has_unbound(
+            db, conversation.id, user.id
+        ):
             raise HTTPException(status_code=400, detail="Nachricht ist nach Sicherheitsfilter leer")
         # Die Denkvorgabe wird **hier** festgelegt und nicht erst beim Senden:
         # der Anlauf kennt keinen HTTP-Client, der Modellkatalog ist aber ein

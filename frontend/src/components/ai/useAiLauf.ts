@@ -533,8 +533,11 @@ export function useAiLauf({
    * daran hängt: ein frisch gebauter Pfeil je Render machte den Vergleich dort
    * wertlos, und der ganze Verlauf zeichnete sich bei jedem Textstück neu.
    */
-  const sendContent = useCallback(async (content: string) => {
-    if (!content || !providerId || streaming) return
+  const sendContent = useCallback(async (content: string, mitAnhaengen = false) => {
+    // Leer ist erlaubt, wenn ein Anhang mitgeht: ein Bild ohne Text ist eine
+    // Frage. Der Server bindet die ungebundenen Anhaenge an diese Nachricht
+    // und lehnt eine leere Nachricht ohne Anhang weiterhin ab.
+    if ((!content && !mitAnhaengen) || !providerId || streaming) return
 
     const now = new Date().toISOString()
     const assistantId = crypto.randomUUID()
