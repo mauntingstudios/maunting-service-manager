@@ -208,3 +208,94 @@ def test_rotation_cleanup_loescht_erst_nach_frist(db, client, owner_user, owner_
     db.expire_all()
     assert db.query(VaultEntry).filter_by(bucket_id=alt).count() == 0
     assert db.query(VaultEntry).filter_by(bucket_id=neu).count() == 1
+
+
+def test_team_rotation_unberechtigt_und_ungueltige_zustaende(
+    db, client, owner_user, owner_cookies, regular_user, user_cookies
+):
+    team = _team_mit_tresor(db, owner_user, regular_user)
+    alt, neu = _bucket(), _bucket()
+
+    # 1. Setup durch Owner
+    assert client.post(
+        f"/api/teams/{team.id}/vault/setup",
+        json={"bucket_id": alt, "salt": "altsalt1234567890abcdef"},
+        cookies=owner_cookies, headers=_headers(owner_cookies),
+    ).status_code == 200
+
+    # 2. Nicht-Owner (regular_user) darf keine Rotations-Endpunkte steuern (403)
+    u_h = _headers(user_cookies)
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef"},
+        cookies=user_cookies, headers=u_h,
+    ).status_code == 403
+
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/commit",
+        cookies=user_cookies, headers=u_h,
+    ).status_code == 403
+
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/abort",
+        cookies=user_cookies, headers=u_h,
+    ).status_code == 403
+
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/rollback",
+        cookies=user_cookies, headers=u_h,
+    ).status_code == 403
+
+    # 3. Ungueltige Zustaende beim Owner
+    o_h = _headers(owner_cookies)
+    # Commit ohne vorheriges Prepare (409)
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/commit",
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 409
+
+    # Rollback ohne vorherigen Commit (409)
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/rollback",
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 409
+
+    # Prepare mit identischem aktiven Bucket (400)
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/prepare",
+        json={"bucket_id": alt, "salt": "neusalt1234567890abcdef"},
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 400
+
+
+def test_private_rotation_ungueltige_zustaende(client, owner_cookies):
+    alt, neu = _bucket(), _bucket()
+    h = _headers(owner_cookies)
+
+    # Vor Setup: Prepare wirft 400
+    assert client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA="},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 400
+
+    # Tresor einrichten
+    assert client.post(
+        "/api/vault/salt",
+        json={"kdf_salt": "YWx0c2FsdDEyMzQ1Njc4OTA=", "bucket_id": alt},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 200
+
+    # Commit ohne Prepare wirft 409
+    assert client.post("/api/vault/rotation/commit", cookies=owner_cookies, headers=h).status_code == 409
+
+    # Rollback ohne Commit wirft 409
+    assert client.post("/api/vault/rotation/rollback", cookies=owner_cookies, headers=h).status_code == 409
+
+    # Prepare mit demselben Bucket wirft 400
+    assert client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": alt, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA="},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 400
+

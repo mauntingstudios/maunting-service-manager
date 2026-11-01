@@ -337,7 +337,30 @@ def test_team_blobs_quota_und_lifecycle(
     )
     assert res_klein.status_code == 200
 
-    # 9. Loeschen
+    # 9. Loeschen mit falschem Schluessel scheitert mit 403 (LoeschnachweisFalsch)
+    falscher_key = secrets.token_bytes(32).hex()
+    res_del_falsch = client.request(
+        "DELETE",
+        f"/api/teams/{team.id}/vault/blobs/{blob_id}",
+        json={"schluessel": falscher_key},
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
+    )
+    assert res_del_falsch.status_code == 403
+
+    # 10. Nicht-Teammitglied darf keine Team-Blobs anlegen (404)
+    fremdes_team = Team(name="Anderes Team", owner_user_id=owner_user.id)
+    db.add(fremdes_team)
+    db.commit()
+    res_fremd = client.post(
+        f"/api/teams/{fremdes_team.id}/vault/blobs",
+        json={"id": secrets.token_hex(16), "chunk_count": 1, "bytes_total": bytes_total, "delete_verifier": verifier},
+        cookies=user_cookies,
+        headers=_headers(user_cookies),
+    )
+    assert res_fremd.status_code == 404
+
+    # 11. Loeschen mit korrektem Schluessel
     res_del = client.request(
         "DELETE",
         f"/api/teams/{team.id}/vault/blobs/{blob_id}",
@@ -347,4 +370,5 @@ def test_team_blobs_quota_und_lifecycle(
     )
     assert res_del.status_code == 200
     assert res_del.json() == {"status": "ok"}
+
 

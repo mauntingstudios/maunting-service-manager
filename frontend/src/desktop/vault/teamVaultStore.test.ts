@@ -215,4 +215,30 @@ describe('teamVaultStore', () => {
     const geaendert = useTeamVaultStore.getState().items.find((i) => i.id === id)
     expect(geaendert?.service).toBe('Vorher Nachher')
   })
+
+  it('wirft einen Fehler und synchronisiert neu bei Konflikt auf einem Eintrag', async () => {
+    vi.mocked(teamsApi.setupVault).mockResolvedValue({ status: 'ok' })
+    await useTeamVaultStore.getState().setup(42, 'SuperSecretMasterPassword123!')
+
+    // Bei saveItem meldet der Server einen Konflikt auf 'e1'
+    vi.mocked(teamsApi.syncVault)
+      .mockResolvedValueOnce({
+        server_revision: 3,
+        entries: [],
+        has_more: false,
+        conflicts: ['e1'],
+      })
+      .mockResolvedValueOnce({
+        server_revision: 3,
+        entries: [],
+        has_more: false,
+      })
+
+    await expect(
+      useTeamVaultStore.getState().saveItem({ id: 'e1', service: 'Test' }),
+    ).rejects.toThrow('Konflikt: Eintrag wurde zwischenzeitlich geändert. Neueste Fassung wurde geladen.')
+
+    // saveItem mit Konflikt(1) + automatisches syncWithServer(2)
+    expect(teamsApi.syncVault).toHaveBeenCalledTimes(2)
+  })
 })

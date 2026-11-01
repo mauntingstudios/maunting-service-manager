@@ -6690,6 +6690,24 @@
       "browserDownloadSubtextAndroid": "Gehärteter, privater Webbrowser für Android",
       "dokumente": "Dokumente"
     },
+    "card": {
+      "sectionTitle": "Maunting Card",
+      "sectionDescription": "Deine persönliche kryptographische Chipkarte schützt deinen privaten Tresor und berechtigt dich für Team-Bereiche. Sie läuft lokal und Zero-Knowledge auf deinem Endgerät.",
+      "flipAria": "Maunting Card umdrehen",
+      "flipTooltip": "Karte umdrehen",
+      "clickToFlip": "Klicken zum Umdrehen • Authentifiziert mit Argon2id & DIS",
+      "statusActive": "AKTIV",
+      "statusRotation": "ERNEUERUNG FÄLLIG",
+      "statusLocked": "GESPERRT",
+      "statusUninitialized": "NICHT EINGERICHTET",
+      "actionUnlock": "PIN eingeben",
+      "actionLock": "Sperren",
+      "actionManage": "Verwalten",
+      "unlockTitle": "Maunting Card entsperren",
+      "unlockSubtitle": "Gib deine Karten-PIN / dein Passwort ein, um deinen Tresor freizuschalten.",
+      "pinPlaceholder": "Karten-Passwort / PIN",
+      "unlockSubmit": "Entsperren"
+    },
     "vault": {
       "titel": "Tresor-Sicherheit",
       "autoSperre": "Automatische Sperre",

@@ -6,6 +6,7 @@ import { api } from '@/api/client'
 import { updatePrivacy } from '@/api/social'
 import { BenutzernameInline } from '@/components/BenutzernameInline'
 import { InfoKarte } from '@/components/social/InfoKarte'
+import { MauntingCard } from '@/desktop/vault/MauntingCardView'
 import { Avatar, Button, Dropdown, type DropdownOption } from '@/Singra/UI'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
@@ -174,6 +175,31 @@ export function ProfilTab({ social = true }: { social?: boolean }) {
               {t('profile.avatarHint')}
             </p>
           </div>
+        </div>
+      </section>
+
+      {/* ── Maunting Card (Zero-Knowledge Identität & Smartcard) ── */}
+      <section className="msm-card p-6" aria-labelledby="maunting-card-title">
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-secondary" aria-hidden="true" />
+            <h2 id="maunting-card-title" className="font-headline text-title-lg font-semibold text-on-surface">
+              {t('mss.card.sectionTitle', 'Maunting Card')}
+            </h2>
+          </div>
+          <span className="text-xs text-on-surface-variant font-mono">
+            Zero-Knowledge Identity
+          </span>
+        </div>
+        <p className="max-w-2xl font-body-md text-sm leading-6 text-on-surface-variant mb-6">
+          {t(
+            'mss.card.sectionDescription',
+            'Deine persönliche kryptographische Chipkarte schützt deinen privaten Tresor und berechtigt dich für Team-Bereiche. Sie läuft lokal und Zero-Knowledge auf deinem Endgerät.'
+          )}
+        </p>
+
+        <div className="flex justify-center py-2">
+          <MauntingCard />
         </div>
       </section>
 

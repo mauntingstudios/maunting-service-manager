@@ -8,6 +8,7 @@
 
 import { create } from 'zustand'
 import i18n from '@/i18n'
+import { still } from '@/lib/still'
 import { teamsApi, type TeamVaultMutationItem, type TeamVaultSyncResult } from '@/api/teams'
 import {
   base64ToBytes,
@@ -525,7 +526,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
           await biometrieSpeichern(newPassword, `team_vault_biometric_key_${teamId}`)
         }
       } catch {
-        try { await biometrieLoeschen(`team_vault_biometric_key_${teamId}`) } catch {}
+        try { await biometrieLoeschen(`team_vault_biometric_key_${teamId}`) } catch (err) { still(err, 'teamVaultStore:biometrieLoeschen') }
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem(`mss_team_vault_bio_${teamId}`, 'false')
         }
@@ -533,7 +534,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
       }
 
       teamFuerBucketMerken(newBucketId, teamId)
-      try { await ablageLaden(newBucketId) } catch {}
+      try { await ablageLaden(newBucketId) } catch (err) { still(err, 'teamVaultStore:ablageLaden') }
 
       set({
         salt: newSalt,

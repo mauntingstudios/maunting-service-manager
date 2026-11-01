@@ -26,6 +26,7 @@ import {
   biometrieSpeicherFragtSelbst,
 } from '../tauri'
 import { meldeErrungenschaft } from '@/lib/errungenschaft'
+import { still } from '@/lib/still'
 import { angemeldetesKonto, beiKontowechsel } from '@/lib/angemeldetesKonto'
 import {
   ablageLaden,
@@ -1219,13 +1220,13 @@ export const useVaultStore = create<VaultState>((set, get) => {
       try {
         if (get().isBiometricsEnabled) await biometrieSpeichern(newPassword, FACH_TRESOR)
       } catch {
-        try { await biometrieLoeschen(FACH_TRESOR) } catch {}
+        try { await biometrieLoeschen(FACH_TRESOR) } catch (err) { still(err, 'vaultStore:biometrieLoeschen') }
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem(VAULT_BIOMETRICS_ENABLED_KEY, 'false')
         }
         set({ isBiometricsEnabled: false })
       }
-      try { await ablageLaden(neueBucketId) } catch {}
+      try { await ablageLaden(neueBucketId) } catch (err) { still(err, 'vaultStore:ablageLaden') }
       set({
         bucketId: neueBucketId,
         bucketAuthToken: neuerAuthToken,

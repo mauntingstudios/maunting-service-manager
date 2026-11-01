@@ -6690,6 +6690,24 @@
       "browserDownloadSubtextAndroid": "Hardened, private web browser for Android",
       "dokumente": "Documents"
     },
+    "card": {
+      "sectionTitle": "Maunting Card",
+      "sectionDescription": "Your personal cryptographic smartcard protects your private vault and authorizes you for team workspaces. It runs locally and zero-knowledge on your device.",
+      "flipAria": "Flip Maunting Card",
+      "flipTooltip": "Flip card",
+      "clickToFlip": "Click to flip • Authenticated with Argon2id & DIS",
+      "statusActive": "ACTIVE",
+      "statusRotation": "RENEWAL DUE",
+      "statusLocked": "LOCKED",
+      "statusUninitialized": "NOT SET UP",
+      "actionUnlock": "Enter PIN",
+      "actionLock": "Lock",
+      "actionManage": "Manage",
+      "unlockTitle": "Unlock Maunting Card",
+      "unlockSubtitle": "Enter your card PIN / password to unlock your vault.",
+      "pinPlaceholder": "Card Password / PIN",
+      "unlockSubmit": "Unlock"
+    },
     "vault": {
       "titel": "Vault security",
       "autoSperre": "Auto-lock",
@@ -6888,6 +6906,7 @@
       "nochTage_one": "{{count}} day left",
       "nochTage_other": "{{count}} days left",
       "dateien": {
+        "vorbereiten": "Preparing file …",
         "hochladen": "Upload",
         "hochladenFehler": "The file could not be stored.",
         "ordnerAnlegen": "New folder",
