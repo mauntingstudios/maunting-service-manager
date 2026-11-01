@@ -50,6 +50,17 @@ def get_scheduler() -> AsyncIOScheduler:
     global _scheduler
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone=timezone.utc)
+        from apscheduler.events import EVENT_JOB_ERROR
+
+        def _on_job_error(event):
+            logger.error(
+                "Scheduler-Job '%s' fehlgeschlagen: %s",
+                getattr(event, "job_id", "unbekannt"),
+                getattr(event, "exception", None),
+                exc_info=getattr(event, "exception", None),
+            )
+
+        _scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
     return _scheduler
 
 

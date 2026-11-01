@@ -158,3 +158,4 @@ pyyaml==6.0.2
 # feindlichere Lieferkette und ein Paket mehr im Browser-Bundle, ohne
 # Sicherheitsgewinn) und der Eigenbau (siehe Notwendigkeit).
 segno==1.6.6
+sentry-sdk==2.18.0

@@ -559,6 +559,16 @@ def arbeiter_starten() -> bool:
     except RuntimeError:
         return False
     _arbeiter = schleife.create_task(_schleife(), name="ai-mail-outbox")
+
+    def _outbox_cb(a: asyncio.Task) -> None:
+        try:
+            exc = a.exception()
+            if exc:
+                logger.error("AI-Mail-Outbox-Arbeiter unerwartet fehlgeschlagen: %s", exc, exc_info=exc)
+        except asyncio.CancelledError:
+            pass
+
+    _arbeiter.add_done_callback(_outbox_cb)
     return True
 
 

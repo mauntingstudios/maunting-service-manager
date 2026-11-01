@@ -132,21 +132,21 @@ def global_limit_string(raw: Any = None) -> str:
 
 
 def current_auth_limit_from_settings() -> int:
-    """Liest rate_limit_auth aus dem PanelSettings-Cache und resolved sicher.
-
-    Separat von resolve_*, damit Limiters nur diesen Einstieg nutzen und
-    DB-Import hier gekapselt bleibt (vermeidet enge Kopplung im pure helper).
-    """
+    """Liest rate_limit_auth aus dem PanelSettings-Cache und resolved sicher."""
     from services.panel_settings_service import PanelSettingsService
-
-    return resolve_auth_limit(PanelSettingsService.get(KEY_AUTH, ""))
+    try:
+        return resolve_auth_limit(PanelSettingsService.get(KEY_AUTH, ""))
+    except Exception:
+        return DEFAULT_AUTH
 
 
 def current_global_limit_from_settings() -> int:
     """Liest rate_limit_global aus dem PanelSettings-Cache und resolved sicher."""
     from services.panel_settings_service import PanelSettingsService
-
-    return resolve_global_limit(PanelSettingsService.get(KEY_GLOBAL, ""))
+    try:
+        return resolve_global_limit(PanelSettingsService.get(KEY_GLOBAL, ""))
+    except Exception:
+        return DEFAULT_GLOBAL
 
 
 def dynamic_global_limit_provider() -> str:

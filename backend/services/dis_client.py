@@ -82,10 +82,17 @@ class DisClient:
     @staticmethod
     def _post(endpoint: str, payload: dict) -> dict:
         url = settings.dis_sidecar_url.rstrip("/") + endpoint
+        t0 = time.perf_counter()
         try:
             resp = _client.post(url, json=payload, headers=DisClient._headers())
         except httpx.HTTPError as e:
             raise DisSidecarError(f"DIS Sidecar nicht erreichbar: {e}") from e
+        finally:
+            try:
+                from routers.metrics import record_sidecar_metrics
+                record_sidecar_metrics(time.perf_counter() - t0)
+            except Exception:
+                pass
         if resp.status_code == 401:
             raise DisSidecarError("DIS Sidecar Auth fehlgeschlagen (Token falsch?)")
         if resp.status_code == 400:
@@ -106,6 +113,16 @@ class DisClient:
         if resp.status_code != 200:
             raise DisSidecarError(f"DIS Sidecar Fehler: HTTP {resp.status_code}")
         return resp.json()
+
+    @staticmethod
+    def health_check(timeout: float = 2.0) -> bool:
+        """Prüft die Erreichbarkeit des DIS-Sidecars über /health."""
+        url = settings.dis_sidecar_url.rstrip("/") + "/health"
+        try:
+            resp = _client.get(url, headers=DisClient._headers(), timeout=timeout)
+            return resp.status_code == 200
+        except Exception:
+            return False
 
     # ── Encryption (AES-256-GCM) ────────────────────────────────────────
 

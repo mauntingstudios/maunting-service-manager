@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from database import SessionLocal
 from models import AiRun, User
+from services.task_runner import sichere_aufgabe
 
 
 class VoicePrefetch:
@@ -86,9 +87,15 @@ class VoicePrefetch:
         )
         if task is not None:
             await self._senden({**nachricht, "prefetch_status": "gestartet"})
-            asyncio.create_task(self._beobachten(task, prediction, revision))
+            sichere_aufgabe(
+                self._beobachten(task, prediction, revision),
+                name="voice-prefetch-beobachten",
+            )
             if prediction.intent == "analyze_region":
-                asyncio.create_task(self._geo_ziel_senden(prediction, revision))
+                sichere_aufgabe(
+                    self._geo_ziel_senden(prediction, revision),
+                    name="voice-prefetch-geo-ziel",
+                )
 
     def _ohne_rueckfrage(self, tool_name: str, arguments: dict) -> bool:
         """Ob das Werkzeug ohne Zustimmung laufen dürfte, also vorab laufen darf.

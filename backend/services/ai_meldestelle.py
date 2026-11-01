@@ -213,7 +213,17 @@ def sofort_zustellung_triggern(user_id: int) -> None:
         finally:
             db.close()
 
-    loop.create_task(_zustell_lauf())
+    t = loop.create_task(_zustell_lauf())
+
+    def _meldestelle_cb(a: asyncio.Task) -> None:
+        try:
+            exc = a.exception()
+            if exc:
+                logger.error("Meldestelle-Zustellung fehlgeschlagen: %s", exc, exc_info=exc)
+        except asyncio.CancelledError:
+            pass
+
+    t.add_done_callback(_meldestelle_cb)
 
 
 def _mail_einreihen(

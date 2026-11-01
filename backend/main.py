@@ -813,6 +813,7 @@ def _protokoll_einrichten() -> None:
     Betrieb bleibt damit nicht von sich aus gesprächig.
     """
     import logging
+    from middleware.request_id import JsonFormatter, RequestIDFilter
 
     stufen = {
         "CRITICAL": logging.CRITICAL,
@@ -823,18 +824,63 @@ def _protokoll_einrichten() -> None:
     }
     gewaehlt = (os.getenv("MSM_LOG_LEVEL") or "").strip().upper()
     stufe = stufen.get(gewaehlt, logging.WARNING)
+    log_format = (os.getenv("MSM_LOG_FORMAT") or "text").strip().lower()
 
     wurzel = logging.getLogger()
     if not wurzel.handlers:
         handler = logging.StreamHandler()
-        # Wie uvicorn: knapp, mit Ursprung. `disable_existing_loggers` bleibt
-        # unberührt — hier kommt nur ein Handler dazu, kein eigenes dictConfig.
-        handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
         wurzel.addHandler(handler)
+
+    req_filter = RequestIDFilter()
+    for h in wurzel.handlers:
+        h.addFilter(req_filter)
+        if log_format == "json":
+            h.setFormatter(JsonFormatter())
+        else:
+            h.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
+
     # Nie strenger machen als gewünscht: uvicorn hat hier nichts gesetzt, und
     # eine Test-/Debug-Stufe soll sich nicht an einer fremden 30 festhalten.
     if wurzel.level > stufe:
         wurzel.setLevel(stufe)
+
+    # Optionales Sentry-Reporting (WP1.5)
+    sentry_dsn = os.getenv("MSM_SENTRY_DSN")
+    if sentry_dsn:
+        try:
+            import sentry_sdk
+
+            def _sentry_before_send(event, hint):
+                event.pop("user", None)
+                if "breadcrumbs" in event and isinstance(event.get("breadcrumbs"), dict):
+                    for bc in event["breadcrumbs"].get("values", []):
+                        if isinstance(bc, dict) and "data" in bc:
+                            bc["data"] = "[FILTERED]"
+                if "request" in event:
+                    req = event["request"]
+                    if "headers" in req and isinstance(req["headers"], dict):
+                        for h_key in list(req["headers"].keys()):
+                            if h_key.lower() in (
+                                "authorization",
+                                "cookie",
+                                "x-csrf-token",
+                                "x-mailbox-token",
+                                "x-provider-api-key",
+                            ):
+                                req["headers"][h_key] = "[FILTERED]"
+                    if "query_string" in req:
+                        req["query_string"] = "[FILTERED]"
+                    if "data" in req:
+                        req["data"] = "[FILTERED]"
+                return event
+
+            sentry_sdk.init(
+                dsn=sentry_dsn,
+                before_send=_sentry_before_send,
+                send_default_pii=False,
+            )
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Sentry-Initialisierung übersprungen: %s", exc)
 
 
 # Die automatischen Doku-Routen sind bewusst abgeschaltet und werden weiter
@@ -884,6 +930,7 @@ app.add_middleware(
         "X-Mailbox-Token",
         # Der Bucket des offenen Tresors an den Datei-Routen (`routers/vault.py`).
         "X-MSM-Vault-Bucket",
+        "X-Request-ID",
     ],
     # Was das Frontend aus einer Antwort liest. Die App spricht von fremder
     # Herkunft und sähe alles andere als `null` (Dateiname und Prüfsumme der
@@ -894,14 +941,119 @@ app.add_middleware(
         "X-MSM-Dump-Size",
         "X-MSM-Dump-SHA256",
         "X-MSM-Export-Truncated",
+        "X-Request-ID",
     ],
 )
 
 
-# ── Rate Limiting (slowapi) ──
+# ── Rate Limiting (slowapi) & Request-ID (WP1.1 & 1.3) ──
+from fastapi.exceptions import RequestValidationError
+from errors import status_to_error_code
+from middleware.request_id import RequestIDMiddleware, get_request_id
+
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+# RequestIDMiddleware als äußerste Schicht
+app.add_middleware(RequestIDMiddleware)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    req_id = getattr(request.state, "request_id", "") or get_request_id()
+    import logging
+    logging.getLogger("msm.error").exception(
+        "Unerwarteter interner Fehler [%s]: %s", req_id, exc.__class__.__name__, exc_info=exc
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": {
+                "code": "internal",
+                "message": "Interner Fehler",
+                "request_id": req_id,
+            }
+        },
+        headers={"X-Request-ID": req_id} if req_id else None,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    req_id = getattr(request.state, "request_id", "") or get_request_id()
+    sanitized_errors = []
+    for err in exc.errors():
+        sanitized_errors.append({
+            "loc": [str(x) for x in err.get("loc", [])],
+            "msg": err.get("msg", ""),
+            "type": err.get("type", ""),
+        })
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": {
+                "code": "validation_failed",
+                "message": "Ungültige Eingabedaten",
+                "errors": sanitized_errors,
+            }
+        },
+        headers={"X-Request-ID": req_id} if req_id else None,
+    )
+
+
+@app.exception_handler(RateLimitExceeded)
+def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    req_id = getattr(request.state, "request_id", "") or get_request_id()
+    response = JSONResponse(
+        status_code=429,
+        content={
+            "detail": {
+                "code": "rate_limited",
+                "message": "Zu viele Anfragen",
+            }
+        },
+        headers={"X-Request-ID": req_id} if req_id else None,
+    )
+    limiter = getattr(request.app.state, "limiter", None)
+    if limiter:
+        try:
+            view_rate_limit = getattr(request.state, "view_rate_limit", None)
+            response = limiter._inject_headers(response, view_rate_limit)
+        except Exception:
+            pass
+    if "Retry-After" not in response.headers and "retry-after" not in response.headers:
+        response.headers["Retry-After"] = "60"
+    if req_id and "X-Request-ID" not in response.headers:
+        response.headers["X-Request-ID"] = req_id
+    return response
+
+
+@app.exception_handler(StarletteHTTPException)
+async def starlette_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    req_id = getattr(request.state, "request_id", "") or get_request_id()
+    detail = exc.detail
+    if isinstance(detail, dict) and "code" in detail:
+        content = {"detail": detail}
+    elif isinstance(detail, dict):
+        code = status_to_error_code(exc.status_code).value
+        content = {"detail": {"code": code, **detail}}
+    else:
+        # String-Details (oder non-dict) bleiben unverändert erhalten,
+        # damit der bisherige API-Vertrag (z. B. detail="Nicht da") nicht bricht.
+        content = {"detail": detail}
+    headers = dict(exc.headers or {})
+    if req_id and "X-Request-ID" not in headers:
+        headers["X-Request-ID"] = req_id
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers=headers,
+    )
+
+
+@app.exception_handler(HTTPException)
+async def fastapi_http_exception_handler(request: Request, exc: HTTPException):
+    return await starlette_http_exception_handler(request, exc)
+
 
 
 # ── CSP + Security Headers Middleware ──
@@ -1083,6 +1235,8 @@ app.include_router(social_calls_router)
 app.include_router(livekit_admin_router)
 app.include_router(browser_suche_router)
 app.include_router(browser_wetter_router)
+from routers.metrics import router as metrics_router
+app.include_router(metrics_router)
 
 
 
@@ -1120,9 +1274,13 @@ def app_version():
     return {"name": settings.app_name, "version": "5.8.0"}
 
 
+from services.health_service import pruefe_gesundheit
+
+
 @app.get("/api/health")
-def health():
-    return {"status": "ok"}
+async def health(deep: bool = False):
+    status_code, body = await pruefe_gesundheit(deep=deep)
+    return JSONResponse(status_code=status_code, content=body)
 
 # Static Frontend (Single-Host Produktion). Phase 4: abschaltbar fuer API-only.
 # Wichtig: Mount NACH allen API-Routern und expliziten Routes hinzufügen,

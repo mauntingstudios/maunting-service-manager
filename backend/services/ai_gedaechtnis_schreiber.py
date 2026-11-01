@@ -478,7 +478,17 @@ def starten(conversation_id: str) -> bool:
         return False
     aufgabe = asyncio.get_running_loop().create_task(_durchgang_sicher(conversation_id))
     _LAUFEND[conversation_id] = aufgabe
-    aufgabe.add_done_callback(lambda _a: _LAUFEND.pop(conversation_id, None))
+
+    def _cb(a: asyncio.Task) -> None:
+        _LAUFEND.pop(conversation_id, None)
+        try:
+            exc = a.exception()
+            if exc:
+                logger.error("Gedaechtnis-Durchgang fehlgeschlagen (%s): %s", conversation_id, exc, exc_info=exc)
+        except asyncio.CancelledError:
+            pass
+
+    aufgabe.add_done_callback(_cb)
     return True
 
 
@@ -954,7 +964,17 @@ def aus_mitschrift(
         return False
     aufgabe = asyncio.get_running_loop().create_task(_mitschrift_schreiben(auftraege))
     _NEBENHER.add(aufgabe)
-    aufgabe.add_done_callback(_NEBENHER.discard)
+
+    def _mitschrift_cb(a: asyncio.Task) -> None:
+        _NEBENHER.discard(a)
+        try:
+            exc = a.exception()
+            if exc:
+                logger.error("Mitschrift-Schreiben fehlgeschlagen: %s", exc, exc_info=exc)
+        except asyncio.CancelledError:
+            pass
+
+    aufgabe.add_done_callback(_mitschrift_cb)
     return True
 
 

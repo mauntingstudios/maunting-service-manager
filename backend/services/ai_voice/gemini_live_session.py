@@ -513,7 +513,11 @@ class GeminiLiveSitzung:
             )
 
     def _region_nachladen(self, argumente: dict, initial: dict) -> None:
-        task = asyncio.create_task(self._region_nachladen_lassen(argumente, initial))
+        from services.task_runner import sichere_aufgabe
+        task = sichere_aufgabe(
+            self._region_nachladen_lassen(argumente, initial),
+            name="gemini-live-region-nachladen",
+        )
         self._region_tasks.add(task)
         task.add_done_callback(self._region_tasks.discard)
 

@@ -456,7 +456,9 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                             angebotene_werkzeuge=angebotene_werkzeuge,
                         )
                     ):
-                        fruehe_leseaufgaben[call.id] = asyncio.create_task(
+                        from services.task_runner import sichere_aufgabe
+
+                        fruehe_leseaufgaben[call.id] = sichere_aufgabe(
                             _lesewerkzeug_ausfuehren(
                                 user_id=user_id,
                                 call=call,
@@ -467,7 +469,9 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                                     if zustand.get("prefetch_session_id") else None
                                 ),
                                 schloss=frueh_schloss,
-                            )
+                            ),
+                            name=f"fruehes-lesewerkzeug-{call.name}",
+                            extra={"run_id": run_id, "tool": call.name},
                         )
                     # Vollstaendige Tool-Calls sind intern. Ihre Anzeige und
                     # Persistenz bleiben ausschliesslich in der Rundenphase.

@@ -229,7 +229,17 @@ def _starten(identity: str) -> bool:
         return False
     aufgabe = asyncio.get_running_loop().create_task(_bereich_sicher(identity))
     _LAUFEND[identity] = aufgabe
-    aufgabe.add_done_callback(lambda _a: _LAUFEND.pop(identity, None))
+
+    def _altbestand_cb(a: asyncio.Task) -> None:
+        _LAUFEND.pop(identity, None)
+        try:
+            exc = a.exception()
+            if exc:
+                logger.error("Gedaechtnis-Altbestand fehlgeschlagen (%s): %s", identity, exc, exc_info=exc)
+        except asyncio.CancelledError:
+            pass
+
+    aufgabe.add_done_callback(_altbestand_cb)
     return True
 
 
