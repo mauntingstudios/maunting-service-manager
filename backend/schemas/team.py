@@ -94,11 +94,13 @@ class TeamVaultSaltResponse(BaseModel):
     bucket_id: str | None = None
     needs_rotation: bool = False
     is_owner: bool = False
+    has_hint: bool = False
 
 
 class TeamVaultSetupRequest(BaseModel):
     bucket_id: str = Field(min_length=64, max_length=64)
     salt: str = Field(min_length=16, max_length=128)
+    hint: str | None = Field(default=None, max_length=512, description="Optionaler Passwort-Hinweis fuer das Master-Passwort")
 
 
 class TeamVaultRotateRequest(BaseModel):

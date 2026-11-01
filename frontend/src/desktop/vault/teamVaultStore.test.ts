@@ -8,6 +8,9 @@ vi.mock('@/api/teams', () => ({
     setupVault: vi.fn(),
     rotateVault: vi.fn(),
     syncVault: vi.fn(),
+    getVaultHintStatus: vi.fn(),
+    setVaultHint: vi.fn(),
+    requestVaultHint: vi.fn(),
   },
 }))
 
@@ -78,5 +81,53 @@ describe('teamVaultStore', () => {
     expect(state.isUnlocked).toBe(false)
     expect(state.userKey).toBeNull()
     expect(state.items).toEqual([])
+  })
+
+  it('richtet den Team-Tresor mit Passwort-Hinweis ein', async () => {
+    vi.mocked(teamsApi.setupVault).mockResolvedValue({ status: 'ok' })
+
+    const ok = await useTeamVaultStore.getState().setup(42, 'SuperSecretMasterPassword123!', 'Lieblingshaustier')
+
+    expect(ok).toBe(true)
+    const state = useTeamVaultStore.getState()
+    expect(state.hasHint).toBe(true)
+    expect(teamsApi.setupVault).toHaveBeenCalledWith(42, expect.objectContaining({
+      salt: expect.any(String),
+      bucket_id: expect.any(String),
+      hint: 'Lieblingshaustier',
+    }))
+  })
+
+  it('hinterlegt den Passwort-Hinweis nachträglich', async () => {
+    vi.mocked(teamsApi.setVaultHint).mockResolvedValue({ status: 'ok' })
+
+    await useTeamVaultStore.getState().saveHint(42, 'Geburtsstadt')
+
+    expect(teamsApi.setVaultHint).toHaveBeenCalledWith(42, 'Geburtsstadt')
+    expect(useTeamVaultStore.getState().hasHint).toBe(true)
+  })
+
+  it('prüft den Status des Passwort-Hinweises', async () => {
+    vi.mocked(teamsApi.getVaultHintStatus).mockResolvedValue({
+      has_hint: true,
+      last_requested_at: null,
+      can_request: true,
+      cooldown_seconds_remaining: 0,
+    })
+
+    const has = await useTeamVaultStore.getState().checkHintStatus(42)
+
+    expect(has).toBe(true)
+    expect(useTeamVaultStore.getState().hasHint).toBe(true)
+  })
+
+  it('fordert den Passwort-Hinweis per E-Mail an', async () => {
+    vi.mocked(teamsApi.requestVaultHint).mockResolvedValue({ status: 'ok', message: 'E-Mail gesendet' })
+
+    const res = await useTeamVaultStore.getState().requestHintEmail(42)
+
+    expect(res.ok).toBe(true)
+    expect(res.message).toBe('E-Mail gesendet')
+    expect(teamsApi.requestVaultHint).toHaveBeenCalledWith(42)
   })
 })

@@ -157,6 +157,10 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       emptyTrash: s.emptyTrash,
       toggleFavorite: s.toggleFavorite,
       markUsed: s.markUsed,
+      hasHint: s.hasHint,
+      saveHint: s.saveHint,
+      checkHintStatus: s.checkHintStatus,
+      requestHintEmail: s.requestHintEmail,
     })),
   )
 
@@ -265,14 +269,21 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       toast.error(t('mss.vault.stimmtNichtUeberein'))
       return
     }
+    if (!hintInput.trim() && !skipHintSetup) {
+      toast.error(t('mss.vault.hinweisNoetig'))
+      return
+    }
     if (!team?.id) return
     setTeamBusy(true)
     try {
-      const ok = await teamStore.setup(team.id, masterPasswordInput)
+      const hint = skipHintSetup ? undefined : hintInput.trim()
+      const ok = await teamStore.setup(team.id, masterPasswordInput, hint)
       if (ok) {
         toast.success(t('mss.vault.eingerichtet'))
         setMasterPasswordInput('')
         setConfirmPasswordInput('')
+        setHintInput('')
+        setSkipHintSetup(false)
       } else {
         toast.error(teamStore.error || t('mss.vault.speichernFehlgeschlagen'))
       }
@@ -313,8 +324,24 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   // zweites Mal — sie tat nichts, was die andere nicht auch tat, und wäre bei
   // der nächsten Änderung die Fassung gewesen, die jemand vergisst.
 
-  const hasHint = useVaultStore((s) => s.hasHint)
-  const checkHintStatus = useVaultStore((s) => s.checkHintStatus)
+  const personalHasHint = useVaultStore((s) => s.hasHint)
+  const personalCheckHintStatus = useVaultStore((s) => s.checkHintStatus)
+
+  const activeHasHint = isTeam ? teamStore.hasHint : personalHasHint
+  const activeCheckHintStatus = async () => {
+    if (isTeam && team?.id) {
+      return await teamStore.checkHintStatus(team.id)
+    }
+    return await personalCheckHintStatus()
+  }
+
+  const activeSaveHint = async (hintText: string) => {
+    if (isTeam && team?.id) {
+      await teamStore.saveHint(team.id, hintText)
+    } else {
+      await personalStore.saveHint(hintText)
+    }
+  }
 
   // Ersteinrichtung
   const [skipHintSetup, setSkipHintSetup] = useState(false)
@@ -617,7 +644,10 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     if (isRequestingHint) return
     setIsRequestingHint(true)
     try {
-      const res = await personalStore.requestHintEmail()
+      const res =
+        isTeam && team?.id
+          ? await teamStore.requestHintEmail(team.id)
+          : await personalStore.requestHintEmail()
       if (res.ok) {
         toast.success(res.message)
       } else if (res.message) {
@@ -743,15 +773,58 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               required
             />
 
-            <PasswordInput
-              id="tresor-team-master-wiederholen"
-              label={t('teams.vaultRepeatPassword')}
-              value={confirmPasswordInput}
-              onChange={(e) => setConfirmPasswordInput(e.target.value)}
-              placeholder={t('teams.vaultRepeatPassword')}
-              autoComplete="new-password"
-              required
-            />
+            <div>
+              <PasswordInput
+                id="tresor-team-master-wiederholen"
+                label={t('teams.vaultRepeatPassword')}
+                value={confirmPasswordInput}
+                onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                placeholder={t('teams.vaultRepeatPassword')}
+                autoComplete="new-password"
+                required
+              />
+
+              {confirmPasswordInput.length > 0 && (
+                <div className="mt-1 text-label-sm">
+                  {masterPasswordInput === confirmPasswordInput ? (
+                    <span className="flex items-center gap-1 text-status-success">
+                      <Check className="h-3 w-3" /> {t('mss.vault.stimmtUeberein')}
+                    </span>
+                  ) : (
+                    <span className="text-status-destructive">{t('mss.vault.stimmtNichtUeberein')}</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Passwort-Hinweis (Pflicht / Optionale Ablehnung) */}
+            <div className="space-y-1.5 pt-1 border-t border-outline-variant/20">
+              <div className="flex flex-wrap items-center justify-between gap-x-2">
+                <label htmlFor="tresor-team-hinweis-neu" className="block text-label-sm font-medium text-on-surface">
+                  {t('mss.vault.hinweisBezeichnung')} {!skipHintSetup && <span className="text-primary font-bold">*</span>}
+                </label>
+                <span className="text-label-sm text-on-surface-variant">{t('mss.vault.hinweisWozu')}</span>
+              </div>
+              <Input
+                id="tresor-team-hinweis-neu"
+                type="text"
+                disabled={skipHintSetup}
+                value={skipHintSetup ? '' : hintInput}
+                onChange={(e) => setHintInput(e.target.value)}
+                placeholder={skipHintSetup ? t('mss.vault.hinweisAbgelehnt') : t('mss.vault.hinweisPlatzhalter')}
+              />
+
+              <label className="flex items-center gap-2 cursor-pointer pt-0.5 text-label-sm text-on-surface-variant hover:text-on-surface">
+                <Checkbox
+                  checked={skipHintSetup}
+                  onCheckedChange={(gesetzt) => {
+                    setSkipHintSetup(gesetzt)
+                    if (gesetzt) setHintInput('')
+                  }}
+                />
+                <span>{t('mss.vault.ohneHinweisFortfahren')}</span>
+              </label>
+            </div>
 
             {leakCheckResult && leakCheckResult.checked && (
               <div className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${leakCheckResult.isLeaked ? 'bg-status-destructive/10 border-status-destructive/30 text-status-destructive' : 'bg-status-success/10 border-status-success/30 text-status-success'}`}>
@@ -778,10 +851,21 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               </Button>
               <Button
                 type="submit"
-                disabled={teamBusy || masterPasswordInput.length < MASTER_PASSWORT_MINDESTLAENGE || masterPasswordInput !== confirmPasswordInput}
+                disabled={
+                  teamBusy ||
+                  masterPasswordInput.length < MASTER_PASSWORT_MINDESTLAENGE ||
+                  masterPasswordInput !== confirmPasswordInput ||
+                  (!hintInput.trim() && !skipHintSetup)
+                }
               >
-                {teamBusy ? <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-1.5" />}
-                {t('teams.vaultSetup')}
+                {teamBusy ? (
+                  <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <ShieldCheck className="h-4 w-4 mr-1.5" />
+                )}
+                {!hintInput.trim() && !skipHintSetup && masterPasswordInput.length >= MASTER_PASSWORT_MINDESTLAENGE && masterPasswordInput === confirmPasswordInput
+                  ? t('mss.vault.hinweisNoetig')
+                  : t('teams.vaultSetup')}
               </Button>
             </div>
           </form>
@@ -846,6 +930,23 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                 </>
               )}
             </Button>
+
+            {activeHasHint && (
+              <div className="pt-2 text-center">
+                <Button
+                  fingerziel
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRequestHint}
+                  disabled={isRequestingHint}
+                  className="w-full text-xs text-on-surface-variant hover:text-on-surface flex items-center justify-center gap-1.5"
+                >
+                  <Mail className="h-3.5 w-3.5" />
+                  <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.hinweisPerMail')}</span>
+                </Button>
+              </div>
+            )}
           </form>
         </div>
       </div>
@@ -1425,22 +1526,20 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
             <RefreshCw className={`h-3.5 w-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
           </Button>
 
-          {!isTeam && (
-            <Button
-              fingerziel
-              size="icon"
-              variant="ghost"
-              onClick={() => {
-                setEditHintInput('')
-                setIsHintModalOpen(true)
-                void checkHintStatus()
-              }}
-              aria-label={t('mss.vault.hinweisVerwalten')}
-              className={`${hasHint === false ? 'text-status-warning hover:text-status-warning/80' : 'text-on-surface-variant hover:text-on-surface'}`}
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-            </Button>
-          )}
+          <Button
+            fingerziel
+            size="icon"
+            variant="ghost"
+            onClick={() => {
+              setEditHintInput('')
+              setIsHintModalOpen(true)
+              void activeCheckHintStatus()
+            }}
+            aria-label={t('mss.vault.hinweisVerwalten')}
+            className={`${activeHasHint === false ? 'text-status-warning hover:text-status-warning/80' : 'text-on-surface-variant hover:text-on-surface'}`}
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+          </Button>
 
           <Button
             fingerziel
@@ -1527,7 +1626,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       )}
 
       {/* HINWEIS-ERINNERUNG: Wenn nach dem Entsperren noch kein Hinweis hinterlegt ist */}
-      {hasHint === false && !dismissedHintReminder && (
+      {activeHasHint === false && !dismissedHintReminder && (
         <div className="mx-4 mt-2.5 p-3 rounded-2xl bg-status-warning/10 border border-status-warning/30 text-on-surface shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2.5">
@@ -1560,7 +1659,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               if (!editHintInput.trim() || isSavingHint) return
               setIsSavingHint(true)
               try {
-                await personalStore.saveHint(editHintInput.trim())
+                await activeSaveHint(editHintInput.trim())
                 toast.success(t('mss.vault.hinweisHinterlegt'))
                 setEditHintInput('')
               } catch {
@@ -1908,85 +2007,83 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       />
 
       {/* Dialog: Passwort-Hinweis verwalten */}
-      {!isTeam && (
-        <Dialog open={isHintModalOpen} onOpenChange={(offen) => !offen && void hinweisModalSchliessen()}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader className="px-5 py-4 pr-14">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <KeyRound className="h-4 w-4" />
-                </div>
-                <div>
-                  <DialogTitle className="text-sm">{t('mss.vault.hinweisTitel')}</DialogTitle>
-                  <p className="text-label-sm text-on-surface-variant">
-                    {hasHint ? t('mss.vault.hinweisVorhanden') : t('mss.vault.hinweisFehlt')}
-                  </p>
-                </div>
+      <Dialog open={isHintModalOpen} onOpenChange={(offen) => !offen && void hinweisModalSchliessen()}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader className="px-5 py-4 pr-14">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <KeyRound className="h-4 w-4" />
               </div>
-            </DialogHeader>
-
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault()
-                if (!editHintInput.trim() || isSavingHint) return
-                setIsSavingHint(true)
-                try {
-                  await personalStore.saveHint(editHintInput.trim())
-                  toast.success(t('mss.vault.hinweisGespeichert'))
-                  setEditHintInput('')
-                  setIsHintModalOpen(false)
-                } catch {
-                  toast.error(t('mss.vault.hinweisSpeichernFehlgeschlagen'))
-                } finally {
-                  setIsSavingHint(false)
-                }
-              }}
-            >
-              <div className="space-y-1 p-5">
-                <Input
-                  id="tresor-hinweis"
-                  label={hasHint ? t('mss.vault.hinweisAktualisieren') : t('mss.vault.hinweisAnlegen')}
-                  type="text"
-                  value={editHintInput}
-                  onChange={(e) => setEditHintInput(e.target.value)}
-                  placeholder={t('mss.vault.hinweisPlatzhalterLang')}
-                  autoFocus
-                />
-                <p className="text-label-sm text-on-surface-variant/80 leading-relaxed">
-                  {t('mss.vault.hinweisErklaerungLang')}
+              <div>
+                <DialogTitle className="text-sm">{t('mss.vault.hinweisTitel')}</DialogTitle>
+                <p className="text-label-sm text-on-surface-variant">
+                  {activeHasHint ? t('mss.vault.hinweisVorhanden') : t('mss.vault.hinweisFehlt')}
                 </p>
               </div>
+            </div>
+          </DialogHeader>
 
-              <DialogFooter className="flex-wrap justify-between">
-                {hasHint ? (
-                  <Button
-                    fingerziel
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={isRequestingHint}
-                    onClick={() => void handleRequestHint()}
-                  >
-                    <Mail className="h-3.5 w-3.5" />
-                    <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.perMailTesten')}</span>
-                  </Button>
-                ) : (
-                  <div />
-                )}
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!editHintInput.trim() || isSavingHint) return
+              setIsSavingHint(true)
+              try {
+                await activeSaveHint(editHintInput.trim())
+                toast.success(t('mss.vault.hinweisGespeichert'))
+                setEditHintInput('')
+                setIsHintModalOpen(false)
+              } catch {
+                toast.error(t('mss.vault.hinweisSpeichernFehlgeschlagen'))
+              } finally {
+                setIsSavingHint(false)
+              }
+            }}
+          >
+            <div className="space-y-1 p-5">
+              <Input
+                id="tresor-hinweis"
+                label={activeHasHint ? t('mss.vault.hinweisAktualisieren') : t('mss.vault.hinweisAnlegen')}
+                type="text"
+                value={editHintInput}
+                onChange={(e) => setEditHintInput(e.target.value)}
+                placeholder={t('mss.vault.hinweisPlatzhalterLang')}
+                autoFocus
+              />
+              <p className="text-label-sm text-on-surface-variant/80 leading-relaxed">
+                {t('mss.vault.hinweisErklaerungLang')}
+              </p>
+            </div>
 
-                <div className="flex items-center gap-1.5">
-                  <Button type="button" variant="ghost" onClick={() => void hinweisModalSchliessen()}>
-                    {t('common.close')}
-                  </Button>
-                  <Button type="submit" disabled={!editHintInput.trim() || isSavingHint}>
-                    {isSavingHint ? t('common.saving') : t('common.save')}
-                  </Button>
-                </div>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
+            <DialogFooter className="flex-wrap justify-between">
+              {activeHasHint ? (
+                <Button
+                  fingerziel
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isRequestingHint}
+                  onClick={() => void handleRequestHint()}
+                >
+                  <Mail className="h-3.5 w-3.5" />
+                  <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.perMailTesten')}</span>
+                </Button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center gap-1.5">
+                <Button type="button" variant="ghost" onClick={() => void hinweisModalSchliessen()}>
+                  {t('common.close')}
+                </Button>
+                <Button type="submit" disabled={!editHintInput.trim() || isSavingHint}>
+                  {isSavingHint ? t('common.saving') : t('common.save')}
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog: Team-Master-Passwort rotieren */}
       {isTeam && (

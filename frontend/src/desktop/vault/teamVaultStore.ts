@@ -42,6 +42,7 @@ export interface TeamVaultState {
   serverRevision: number
   syncStatus: 'idle' | 'syncing' | 'error'
   error: string | null
+  hasHint: boolean | null
 
   // Einstellungen & Sicherheit
   autoLockMinutes: number
@@ -63,7 +64,10 @@ export interface TeamVaultState {
   recordActivity: () => void
   checkAutoLock: () => void
 
-  setup: (teamId: number, masterPassword: string) => Promise<boolean>
+  setup: (teamId: number, masterPassword: string, hint?: string) => Promise<boolean>
+  saveHint: (teamId: number, hint: string) => Promise<void>
+  checkHintStatus: (teamId: number) => Promise<boolean>
+  requestHintEmail: (teamId: number) => Promise<{ ok: boolean; message: string }>
   unlock: (teamId: number, masterPassword: string) => Promise<boolean>
   rotatePassword: (teamId: number, newPassword: string) => Promise<boolean>
   lock: () => void
@@ -94,6 +98,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   serverRevision: 0,
   syncStatus: 'idle',
   error: null,
+  hasHint: null,
 
   autoLockMinutes: 5,
   lockOnWindowBlur: false,
@@ -241,6 +246,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
         bucketId: res.bucket_id,
         needsRotation: res.needs_rotation,
         isOwner: res.is_owner,
+        hasHint: res.has_hint ?? false,
         // Wenn das Team wechselt und vorher ein anderer Tresor offen war:
         ...(state.teamId !== teamId ? { isUnlocked: false, userKey: null, items: [], serverRevision: 0 } : {}),
       }))
@@ -249,14 +255,15 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     }
   },
 
-  setup: async (teamId: number, masterPassword: string) => {
+  setup: async (teamId: number, masterPassword: string, hint?: string) => {
     try {
       const saltBytes = new Uint8Array(32)
       fillRandom(saltBytes)
       const salt = bytesToBase64(saltBytes)
       const { userKey, bucketId } = await deriveVaultKeys(masterPassword, saltBytes)
 
-      await teamsApi.setupVault(teamId, { bucket_id: bucketId, salt })
+      const trimmedHint = hint?.trim() || undefined
+      await teamsApi.setupVault(teamId, { bucket_id: bucketId, salt, hint: trimmedHint })
       set({
         teamId,
         bucketId,
@@ -264,6 +271,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
         isInitialized: true,
         isUnlocked: true,
         needsRotation: false,
+        hasHint: !!trimmedHint,
         userKey,
         items: [],
         serverRevision: 0,
@@ -273,6 +281,39 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     } catch (err: unknown) {
       set({ error: err instanceof Error ? err.message : 'Fehler beim Einrichten des Team-Tresors' })
       return false
+    }
+  },
+
+  saveHint: async (teamId: number, hint: string) => {
+    if (!hint.trim()) return
+    try {
+      await teamsApi.setVaultHint(teamId, hint.trim())
+      set({ hasHint: true })
+    } catch {
+      throw new Error(i18n.t('mss.vault.hinweisSpeichernFehlgeschlagen'))
+    }
+  },
+
+  checkHintStatus: async (teamId: number) => {
+    try {
+      const res = await teamsApi.getVaultHintStatus(teamId)
+      const has = !!res.has_hint
+      set({ hasHint: has })
+      return has
+    } catch {
+      return false
+    }
+  },
+
+  requestHintEmail: async (teamId: number): Promise<{ ok: boolean; message: string }> => {
+    try {
+      const res = await teamsApi.requestVaultHint(teamId)
+      return { ok: true, message: res.message || i18n.t('mss.vault.hinweisGesendet') }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes('429')) {
+        return { ok: false, message: '' }
+      }
+      return { ok: false, message: i18n.t('mss.vault.hinweisAnfordernFehler') }
     }
   },
 

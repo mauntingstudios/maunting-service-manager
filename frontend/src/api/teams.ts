@@ -70,6 +70,14 @@ export interface TeamVaultSaltResponse {
   bucket_id: string | null
   needs_rotation: boolean
   is_owner: boolean
+  has_hint?: boolean
+}
+
+export interface TeamVaultHintStatusResponse {
+  has_hint: boolean
+  last_requested_at: string | null
+  can_request: boolean
+  cooldown_seconds_remaining: number
 }
 
 export interface TeamVaultMutationItem {
@@ -148,10 +156,21 @@ export const teamsApi = {
     `/teams/invitations/${teamId}`, { method: 'DELETE' },
   ),
   getVaultSalt: (teamId: number) => api<TeamVaultSaltResponse>(`/teams/${teamId}/vault/salt`),
-  setupVault: (teamId: number, payload: { bucket_id: string; salt: string }) =>
+  setupVault: (teamId: number, payload: { bucket_id: string; salt: string; hint?: string }) =>
     api<{ status: string }>(`/teams/${teamId}/vault/setup`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+  getVaultHintStatus: (teamId: number) =>
+    api<TeamVaultHintStatusResponse>(`/teams/${teamId}/vault/hint-status`),
+  setVaultHint: (teamId: number, hint: string) =>
+    api<{ status: string; message?: string }>(`/teams/${teamId}/vault/hint`, {
+      method: 'POST',
+      body: JSON.stringify({ hint }),
+    }),
+  requestVaultHint: (teamId: number) =>
+    api<{ status: string; message?: string }>(`/teams/${teamId}/vault/request-hint`, {
+      method: 'POST',
     }),
   rotateVault: (teamId: number, payload: { bucket_id?: string; salt?: string }) =>
     api<{ status: string }>(`/teams/${teamId}/vault/rotate`, {

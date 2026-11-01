@@ -24,6 +24,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -77,6 +78,10 @@ class Team(Base):
     vault_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     vault_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
     vault_needs_rotation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    vault_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vault_last_hint_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     members: Mapped[list["TeamMember"]] = relationship(
         "TeamMember", back_populates="team", cascade="all, delete-orphan"

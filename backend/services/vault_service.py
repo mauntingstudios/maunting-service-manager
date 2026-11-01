@@ -926,7 +926,14 @@ Maunting Service Manager
     return True, "Dein Passwort-Hinweis wurde erfolgreich an deine E-Mail-Adresse gesendet."
 
 
-def setup_team_vault(db: Session, team: Team, user: User, bucket_id: str, salt: str) -> None:
+def setup_team_vault(
+    db: Session,
+    team: Team,
+    user: User,
+    bucket_id: str,
+    salt: str,
+    hint: str | None = None,
+) -> None:
     """Richtet den E2EE-Tresor eines Teams ein."""
     if team.vault_bucket_id is not None:
         raise HTTPException(status_code=409, detail="Team-Tresor ist bereits eingerichtet.")
@@ -934,7 +941,134 @@ def setup_team_vault(db: Session, team: Team, user: User, bucket_id: str, salt: 
     team.vault_bucket_id = bucket_id.lower()
     team.vault_salt = salt
     team.vault_needs_rotation = False
+    if hint and hint.strip():
+        team.vault_hint = AuthService.encrypt_secret(
+            hint.strip(), aad=f"msm:team:vault:hint:{team.id}"
+        )
     db.commit()
+
+
+def set_team_vault_hint(db: Session, team: Team, user: User, hint_text: str) -> None:
+    """Hinterlegt oder aktualisiert den Passwort-Hinweis für den Team-Tresor."""
+    if not team.vault_bucket_id:
+        raise HTTPException(status_code=400, detail="Team-Tresor ist noch nicht eingerichtet.")
+    encrypted_hint = AuthService.encrypt_secret(
+        hint_text.strip(), aad=f"msm:team:vault:hint:{team.id}"
+    )
+    team.vault_hint = encrypted_hint
+    db.commit()
+
+
+def get_team_vault_hint_status(db: Session, team: Team) -> VaultHintStatusResponse:
+    """Prüft, ob ein Hinweis für den Team-Tresor hinterlegt ist und ob die 10-Minuten-Sperrfrist aktiv ist."""
+    if not team.vault_hint:
+        return VaultHintStatusResponse(
+            has_hint=False,
+            last_requested_at=None,
+            can_request=False,
+            cooldown_seconds_remaining=0,
+        )
+
+    cooldown = 0
+    can_request = True
+    last_req = _to_utc(team.vault_last_hint_requested_at)
+    if last_req:
+        diff = (_now() - last_req).total_seconds()
+        if diff < HINT_RATE_LIMIT_SECONDS:
+            can_request = False
+            cooldown = int(HINT_RATE_LIMIT_SECONDS - diff)
+
+    return VaultHintStatusResponse(
+        has_hint=True,
+        last_requested_at=team.vault_last_hint_requested_at,
+        can_request=can_request,
+        cooldown_seconds_remaining=cooldown,
+    )
+
+
+def _team_hinweis_vormerken(db: Session, team: Team, user: User) -> _HinweisVersand | str:
+    """Setzt die Sperrfrist des Team-Tresors und liefert, was die Mail braucht."""
+    if not team.vault_hint:
+        return "Für diesen Team-Tresor ist kein Passwort-Hinweis hinterlegt."
+
+    now = _now()
+    grenze = now - timedelta(seconds=HINT_RATE_LIMIT_SECONDS)
+
+    getroffen = (
+        db.query(Team)
+        .filter(
+            Team.id == team.id,
+            (Team.vault_last_hint_requested_at.is_(None))
+            | (Team.vault_last_hint_requested_at <= grenze),
+        )
+        .update({"vault_last_hint_requested_at": now}, synchronize_session=False)
+    )
+    db.commit()
+
+    if not getroffen:
+        db.refresh(team)
+        last_req = _to_utc(team.vault_last_hint_requested_at)
+        diff = (now - last_req).total_seconds() if last_req else 0
+        wait_minutes = max(1, int((HINT_RATE_LIMIT_SECONDS - diff + 59) // 60))
+        return f"Der Hinweis kann nur alle 10 Minuten angefordert werden. Bitte warte noch {wait_minutes} Minute(n)."
+
+    try:
+        raw_hint = AuthService.decrypt_secret(
+            team.vault_hint, aad=f"msm:team:vault:hint:{team.id}"
+        )
+    except Exception:
+        return "Der hinterlegte Hinweis konnte nicht gelesen werden. Bitte hinterlege ihn erneut."
+
+    return _HinweisVersand(
+        hint_id=team.id, hinweis=raw_hint, name=user.username, adresse=user.email
+    )
+
+
+def _team_sperrfrist_freigeben(db: Session, team_id: int) -> None:
+    db.query(Team).filter(Team.id == team_id).update(
+        {"vault_last_hint_requested_at": None}, synchronize_session=False
+    )
+    db.commit()
+
+
+async def request_team_vault_hint_email(
+    db: Session, team: Team, user: User
+) -> tuple[bool, str]:
+    """Sendet den hinterlegten Hinweis des Team-Tresors an die E-Mail des anfordernden Mitglieds."""
+    versand = await asyncio.to_thread(_team_hinweis_vormerken, db, team, user)
+    if isinstance(versand, str):
+        return False, versand
+    raw_hint = versand.hinweis
+
+    from services.email_service import EmailService
+
+    team_name = team.name
+    subject = f"Team-Tresor ({team_name}): Passwort-Hinweis"
+    body = f"""Hallo {versand.name},
+
+du hast den Passwort-Hinweis für den Team-Tresor "{team_name}" im Maunting Service Manager angefordert.
+
+Der hinterlegte Hinweis lautet:
+{raw_hint}
+
+Falls du diese Anforderung nicht ausgelöst hast, überprüfe bitte die Sicherheit deines Kontos.
+
+Maunting Service Manager
+"""
+    html_content = EmailService._notification_email_html(
+        versand.name,
+        f"Team-Tresor: {html.escape(team_name)}",
+        "Hier ist die Gedankenstütze für das Master-Passwort des Team-Tresors:",
+        f"<strong>{html.escape(raw_hint)}</strong>",
+        kategorie="Tresor",
+    )
+
+    success = await EmailService.send_email(versand.adresse, subject, body, html_content)
+    if not success:
+        await asyncio.to_thread(_team_sperrfrist_freigeben, db, versand.hint_id)
+        return False, "E-Mail konnte nicht versendet werden. Bitte prüfe die E-Mail-Konfiguration."
+
+    return True, "Der Passwort-Hinweis wurde erfolgreich an deine E-Mail-Adresse gesendet."
 
 
 def rotate_team_vault(db: Session, team: Team, user: User, bucket_id: str | None = None, salt: str | None = None) -> None:

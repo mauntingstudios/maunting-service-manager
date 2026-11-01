@@ -28,7 +28,12 @@ from schemas.team import (
     TeamVaultSaltResponse,
     TeamVaultSetupRequest,
 )
-from schemas.vault import VaultSyncRequest, VaultSyncResponse
+from schemas.vault import (
+    VaultHintSetRequest,
+    VaultHintStatusResponse,
+    VaultSyncRequest,
+    VaultSyncResponse,
+)
 from services import permission_service, team_service, vault_service
 
 
@@ -390,6 +395,7 @@ def get_team_vault_salt(
         bucket_id=team.vault_bucket_id,
         needs_rotation=bool(team.vault_needs_rotation),
         is_owner=is_owner,
+        has_hint=bool(team.vault_hint),
     )
 
 
@@ -403,7 +409,9 @@ def setup_team_vault(
     """Richtet den Team-Tresor ein (nur Gruender)."""
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
-    vault_service.setup_team_vault(db, team, user, payload.bucket_id, payload.salt)
+    vault_service.setup_team_vault(
+        db, team, user, payload.bucket_id, payload.salt, payload.hint
+    )
     return {"status": "ok"}
 
 
@@ -431,4 +439,44 @@ def sync_team_vault(
     """Fuehrt Revisions-Sync fuer den Team-Tresor durch (alle Team-Mitglieder)."""
     team = team_service.get_team_for_member(db, team_id, user)
     return vault_service.sync_team_vault(db, team, user, payload)
+
+
+@router.get("/{team_id}/vault/hint-status", response_model=VaultHintStatusResponse)
+def get_team_vault_hint_status(
+    team_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> VaultHintStatusResponse:
+    """Prueft den Status des Passwort-Hinweises fuer den Team-Tresor (fuer Teammitglieder)."""
+    team = team_service.get_team_for_member(db, team_id, user)
+    return vault_service.get_team_vault_hint_status(db, team)
+
+
+@router.post("/{team_id}/vault/hint", dependencies=[Depends(verify_csrf)])
+def set_team_vault_hint(
+    team_id: int,
+    payload: VaultHintSetRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Hinterlegt oder aktualisiert den Passwort-Hinweis fuer den Team-Tresor."""
+    team = team_service.get_team_for_member(db, team_id, user)
+    vault_service.set_team_vault_hint(db, team, user, payload.hint)
+    return {"status": "ok", "message": "Passwort-Hinweis erfolgreich hinterlegt."}
+
+
+@router.post("/{team_id}/vault/request-hint", dependencies=[Depends(verify_csrf)])
+async def request_team_vault_hint(
+    team_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Sendet den hinterlegten Hinweis des Team-Tresors an die E-Mail des Mitglieds (max. 1x alle 10 Minuten)."""
+    team = team_service.get_team_for_member(db, team_id, user)
+    success, msg = await vault_service.request_team_vault_hint_email(db, team, user)
+    if not success:
+        if "10 Minuten" in msg:
+            raise HTTPException(status_code=429, detail=msg)
+        raise HTTPException(status_code=400, detail=msg)
+    return {"status": "ok", "message": msg}
 
