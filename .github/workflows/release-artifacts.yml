@@ -123,6 +123,13 @@ jobs:
           [[ "$version" =~ ^[A-Za-z0-9._-]+$ ]]
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Verify repository versions match tag
+        if: github.ref_type == 'tag'
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          python scripts/sync-tauri-version.py "${TAG}"
+          git diff --exit-code
+
       - name: Package panel, frontend and agent
         run: bash scripts/build-release-artifacts.sh "${{ steps.version.outputs.value }}" release
 

@@ -28,7 +28,6 @@ mod audio;
 mod aufraeumen;
 mod auftrag;
 mod bildschirm;
-mod biometrie;
 mod datei_speichern;
 mod deinstallation;
 mod dienst;
@@ -37,9 +36,17 @@ mod durchklick;
 #[cfg(windows)]
 mod ducking;
 mod erinnerung;
-mod geheimnisse;
 mod kamera_krypto;
 mod konfig;
+
+#[cfg(all(not(target_os = "android"), not(debug_assertions)))]
+const DIENST: &str = "MauntingSmartSystem";
+#[cfg(any(target_os = "android", debug_assertions))]
+const DIENST: &str = "MauntingSmartSystemDev";
+#[cfg(all(not(target_os = "android"), not(debug_assertions)))]
+const DIENST_FRUEHER: Option<&str> = Some("SingraSmartSystem");
+#[cfg(any(target_os = "android", debug_assertions))]
+const DIENST_FRUEHER: Option<&str> = Some("SingraSmartSystemDev");
 mod medien;
 mod nsis_migration;
 mod sandbox;
@@ -160,23 +167,6 @@ fn konfig_aendern(
     felder: serde_json::Value,
 ) -> Result<konfig::AppKonfig, String> {
     konfig::aendern(&app, |k| konfig::felder_einmischen(k, felder))
-}
-
-/// Refresh-Token in den OS-Tresor bzw. Sandbox-Speicher. Das Access-Token wird
-/// bewusst nie gespeichert — es lebt nur im flüchtigen Speicher des Frontends.
-#[tauri::command(async)]
-fn refresh_token_speichern(app: tauri::AppHandle, token: String) -> Result<(), String> {
-    geheimnisse::speichern(&app, &token)
-}
-
-#[tauri::command(async)]
-fn refresh_token_laden(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    geheimnisse::laden(&app)
-}
-
-#[tauri::command(async)]
-fn refresh_token_loeschen(app: tauri::AppHandle) -> Result<(), String> {
-    geheimnisse::loeschen(&app)
 }
 
 /// Human Error Guard: Aktiviert/Deaktiviert Hardware- und Software-Schutz des
@@ -774,104 +764,21 @@ fn hauptfenster_verstecken(app: tauri::AppHandle) -> Result<(), String> {
     fenster.hide().map_err(|e| e.to_string())
 }
 
-/// Prüft, ob Windows Hello oder biometrische Authentifizierung verfügbar ist.
-#[tauri::command(async)]
-async fn biometrie_verfuegbar(app: tauri::AppHandle) -> bool {
-    biometrie::pruefe_verfuegbarkeit(&app).await
-}
-
-/// Fordert den Benutzer zur biometrischen Bestätigung (Windows Hello) auf.
-#[tauri::command(async)]
-async fn biometrie_verifizieren(app: tauri::AppHandle, nachricht: Option<String>) -> Result<bool, String> {
-    let msg = nachricht.unwrap_or_else(|| "Tresor entsperren".to_string());
-    biometrie::verifiziere_benutzer(&app, &msg).await
-}
-
-/// Das angesprochene Schlüsselfach. Fehlt die Angabe, ist der Tresor gemeint —
-/// er war vor der Trennung von Tresor und Messenger der einzige Nutzer.
-fn fach_oder_tresor(fach: Option<String>) -> String {
-    fach.unwrap_or_else(|| biometrie::FACH_TRESOR.to_string())
-}
-
-/// Speichert das biometrische Geheimnis im geschützten Schlüsselspeicher des
-/// Betriebssystems.
-///
-/// `async`, weil der Android-Keystore vor dem Ablegen selbst nach einer
-/// Bestätigung fragt: auf dem Hauptthread stünde die Anwendung, solange der
-/// Fingerabdruck-Dialog offen ist — und der Dialog käme gar nicht erst.
-#[tauri::command(async)]
-async fn biometrie_speichern(
-    app: tauri::AppHandle,
-    geheimnis: String,
-    fach: Option<String>,
-) -> Result<(), String> {
-    biometrie::speichere_biometrie_geheimnis(&app, &fach_oder_tresor(fach), &geheimnis)
-}
-
-/// Fordert die Bestätigung an und gibt das Geheimnis erst danach heraus.
-#[tauri::command(async)]
-async fn biometrie_entsperren(
-    app: tauri::AppHandle,
-    nachricht: Option<String>,
-    fach: Option<String>,
-) -> Result<String, String> {
-    let msg = nachricht.unwrap_or_else(|| "Tresor entsperren".to_string());
-    biometrie::entsperre_mit_biometrie(&app, &fach_oder_tresor(fach), &msg).await
-}
-
-/// Entfernt das biometrische Geheimnis aus dem Schlüsselspeicher.
-#[tauri::command(async)]
-async fn biometrie_loeschen(app: tauri::AppHandle, fach: Option<String>) -> Result<(), String> {
-    biometrie::loesche_biometrie_geheimnis(&app, &fach_oder_tresor(fach))
-}
-
-/// Meldet, ob diese Plattform ein Geheimnis verwahren kann.
-///
-/// Nicht dasselbe wie `biometrie_verfuegbar`: fragen können und verwahren können
-/// sind zwei Dinge. Ohne diese Unterscheidung wird ein Schnelleinstieg
-/// angeboten, der beim Einrichten scheitert.
-#[tauri::command]
-fn biometrie_speicher_verfuegbar(app: tauri::AppHandle) -> bool {
-    biometrie::geheimnisspeicher_verfuegbar(&app)
-}
-
-/// Fragt der Schlüsselspeicher beim Ablegen von sich aus nach einer Bestätigung?
-///
-/// Android ja, Windows nein. Wer einen Schnelleinstieg einrichtet, soll genau
-/// einmal bestätigen: auf Windows tut das die Anwendung vorher, auf Android der
-/// Keystore selbst. Ohne diese Auskunft fragte Android zweimal hintereinander.
-#[tauri::command]
-fn biometrie_speicher_fragt_selbst() -> bool {
-    biometrie::speicher_fragt_selbst()
-}
-
-/// Das Gerätegeheimnis des Messengers, falls eines hinterlegt ist.
-///
-/// Ohne Abfrage, siehe `biometrie::lies_geraetegeheimnis`. `None` heißt „noch
-/// keines da" — dann erzeugt das Frontend eines und legt es über
-/// `biometrie_speichern` im Fach `messenger_device_secret` ab.
-///
-/// Der Zufall kommt aus dem Browser und nicht von hier. Nicht aus Bequemlichkeit:
-/// er stammt dort aus `crypto.getRandomValues`, derselben Quelle, aus der schon
-/// jeder Nachrichtenschlüssel kommt. Ein eigener Zufallsgenerator in Rust wäre
-/// eine zusätzliche Abhängigkeit für eine Aufgabe, die längst gelöst ist.
-///
-/// `async` aus demselben Grund wie `biometrie_speichern`: auf Android geht der
-/// Weg über das Kotlin-Plugin, und der hält den Faden auf.
-#[tauri::command(async)]
-async fn messenger_geraetegeheimnis(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    biometrie::lies_geraetegeheimnis(&app)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    schluesselfach::einrichten(schluesselfach::Dienst {
+        name: DIENST,
+        frueher: DIENST_FRUEHER,
+        android_paket: "com.mauntingstudios.smart_system",
+    });
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
     // `tauri dev` bekommt eine eigene Kennung und damit eigene Konfiguration,
     // eigenen WebView-Speicher und einen eigenen Autostart-Eintrag. So bleibt
     // die installierte App an ihrem Backend angemeldet, während die Dev-App an
-    // einem anderen hängt. Den Keyring trennt `geheimnisse::DIENST`.
+    // einem anderen hängt. Den Keyring trennt `DIENST`.
     #[allow(unused_mut)]
     let mut kontext = tauri::generate_context!();
     #[cfg(all(debug_assertions, desktop))]
@@ -887,46 +794,22 @@ pub fn run() {
 
     #[cfg(not(target_os = "android"))]
     {
-        // "--autostart" markiert Boot-Starts: Crash-Guard und sanfter Start
-        // (spaetere Ausbaustufe) muessen wissen, ob ein Mensch gestartet hat.
-        //
-        // **Der Dateiname darf kein Leerzeichen enthalten.** Dieses Plugin
-        // schreibt den Run-Schluessel der Registry **ungequotet**:
-        // `C:\...\MauntingSmartSystem.exe --autostart`. Hiesse die Datei
-        // "Maunting Smart System.exe", probierte CreateProcess zuerst
-        // `Maunting.exe` und dann `Maunting Smart.exe` im selben Ordner — und
-        // der NSIS-Standardordner unter LOCALAPPDATA ist vom Benutzer
-        // beschreibbar. Wer dort eine `Maunting.exe` ablegen kann, wird beim
-        // naechsten Anmelden statt MSS gestartet. Deshalb steht in
-        // tauri.conf.json `"mainBinaryName": "MauntingSmartSystem"` ohne
-        // Leerzeichen; die lesbare Beschriftung im Task-Manager kommt
-        // ohnehin aus `productName` und nicht aus dem Dateinamen.
         builder = builder
             .plugin(tauri_plugin_autostart::init(
                 MacosLauncher::LaunchAgent,
                 Some(vec!["--autostart"]),
             ))
-            // Die Handler hängen an den einzelnen Hotkeys (`on_shortcut` in
-            // `hotkeys_registrieren`) — ein globaler Handler müsste selbst
-            // auseinanderhalten, welcher der beiden gedrückt wurde.
             .plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
 
-    // Auf Android haengen hier die Plattform-Plugins an; auf dem Desktop bleibt
-    // die Bindung unveraendert und `mut` ungenutzt.
     #[allow(unused_mut)]
     let mut builder = updater_core::init_updater(builder, updater_core::UpdateConfig::mss());
 
     #[cfg(target_os = "android")]
     {
         builder = builder
-            // Die reine Bestätigung (ohne Geheimnis) — die kann das offizielle
-            // Plugin, und `biometrie::verifiziere_benutzer` greift darauf zu.
             .plugin(tauri_plugin_biometric::init())
-            // Der Schlüsselspeicher selbst. Das offizielle Plugin kann fragen,
-            // aber nichts verwahren; dieses hier hängt am Android-Keystore und
-            // ist das Gegenstück zum Credential Store auf Windows.
-            .plugin(biometrie::init_android_schluesselfach())
+            .plugin(schluesselfach::biometrie::init_android_schluesselfach())
             // Kameraaufnahmen für die Kamera-Sicherung des Tresors.
             .plugin(medien::init_android_medien())
             // Terminerinnerungen, die Android auch bei geschlossener App zeigt.
@@ -957,9 +840,9 @@ pub fn run() {
             konfig_laden,
             konfig_speichern,
             konfig_aendern,
-            refresh_token_speichern,
-            refresh_token_laden,
-            refresh_token_loeschen,
+            schluesselfach::befehle::refresh_token_speichern,
+            schluesselfach::befehle::refresh_token_laden,
+            schluesselfach::befehle::refresh_token_loeschen,
             wakeword_stand,
             wakeword_aufnehmen,
             wakeword_trainieren,
@@ -983,14 +866,14 @@ pub fn run() {
             benachrichtigung_senden,
             benachrichtigung_berechtigung_anfragen,
             setze_tresor_schutz,
-            biometrie_verfuegbar,
-            biometrie_verifizieren,
-            biometrie_speichern,
-            biometrie_entsperren,
-            biometrie_loeschen,
-            biometrie_speicher_verfuegbar,
-            biometrie_speicher_fragt_selbst,
-            messenger_geraetegeheimnis,
+            schluesselfach::befehle::biometrie_verfuegbar,
+            schluesselfach::befehle::biometrie_verifizieren,
+            schluesselfach::befehle::biometrie_speichern,
+            schluesselfach::befehle::biometrie_entsperren,
+            schluesselfach::befehle::biometrie_loeschen,
+            schluesselfach::befehle::biometrie_speicher_verfuegbar,
+            schluesselfach::befehle::biometrie_speicher_fragt_selbst,
+            schluesselfach::befehle::messenger_geraetegeheimnis,
             datei_speichern::datei_speichern_start,
             datei_speichern::datei_speichern_teil,
             datei_speichern::datei_speichern_ende,
@@ -1139,5 +1022,50 @@ mod tests {
         assert!(!ist_eigene_oberflaeche("http://tauri.localhost.evil.example/"));
         assert!(!ist_eigene_oberflaeche("http://localhost:14300/"));
         assert!(!ist_eigene_oberflaeche("https://panel.example.com/"));
+    }
+
+    #[test]
+    fn das_token_liegt_nie_im_klartext_und_nicht_in_der_sicherung() {
+        let token_src = include_str!("../../../crates/schluesselfach/src/geheimnisse.rs");
+        let token_prod = token_src.split("#[cfg(test)]").next().unwrap();
+        assert!(!token_prod.contains("fs::write"));
+        assert!(token_prod.contains("session_refresh_token"));
+
+        let manifest = include_str!("../gen/android/app/src/main/AndroidManifest.xml");
+        assert!(manifest.contains("android:allowBackup=\"false\""));
+        assert!(manifest.contains("android:fullBackupContent=\"false\""));
+        assert!(manifest.contains("android:dataExtractionRules=\"@xml/datensicherung\""));
+
+        let sicherung = include_str!("../gen/android/app/src/main/res/xml/datensicherung.xml");
+        assert!(sicherung.contains("<cloud-backup>"));
+        assert!(sicherung.contains("<device-transfer>"));
+    }
+
+    #[test]
+    fn das_schluesselfach_ist_in_beiden_apps_gleich() {
+        let ohne_paket = |s: &str| {
+            s.replace("\r\n", "\n")
+                .lines()
+                .filter(|z| !z.starts_with("package "))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let paare = [
+            (
+                include_str!("../../../browser/src-tauri/gen/android/app/src/main/java/com/mauntingstudios/secure_browser/Schluesselfach.kt"),
+                include_str!("../gen/android/app/src/main/java/com/mauntingstudios/smart_system/Schluesselfach.kt"),
+            ),
+            (
+                include_str!("../../../browser/src-tauri/gen/android/app/src/main/java/com/mauntingstudios/secure_browser/SchluesselfachPlugin.kt"),
+                include_str!("../gen/android/app/src/main/java/com/mauntingstudios/smart_system/SchluesselfachPlugin.kt"),
+            ),
+            (
+                include_str!("../../../browser/src-tauri/gen/android/app/src/main/java/com/mauntingstudios/secure_browser/SchluesselfachActivity.kt"),
+                include_str!("../gen/android/app/src/main/java/com/mauntingstudios/smart_system/SchluesselfachActivity.kt"),
+            ),
+        ];
+        for (msb, mss) in paare {
+            assert_eq!(ohne_paket(msb), ohne_paket(mss));
+        }
     }
 }

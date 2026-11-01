@@ -3066,10 +3066,10 @@ dependencies = [
  "hound",
  "image",
  "jni 0.21.1",
- "keyring",
  "reqwest",
  "rustls",
  "rustpotter",
+ "schluesselfach",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -4768,6 +4768,18 @@ dependencies = [
  "quote",
  "serde_derive_internals",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "schluesselfach"
+version = "1.0.0"
+dependencies = [
+ "keyring",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin-biometric",
+ "windows 0.62.2",
 ]
 
 [[package]]

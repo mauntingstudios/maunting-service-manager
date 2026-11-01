@@ -200,3 +200,69 @@ jobs:
       - name: Rust tests
         working-directory: browser/src-tauri
         run: cargo test
+
+  msm-agent:
+    name: MSM Agent (Python 3.12 + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: msm-agent/requirements.txt
+      - name: Install dependencies
+        working-directory: msm-agent
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Run pytest
+        working-directory: msm-agent
+        run: python -m pytest tests -q
+
+  dis-sidecar:
+    name: DIS Sidecar (Node 22 + node --test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dis-sidecar/package-lock.json
+      - name: Install dependencies
+        working-directory: dis-sidecar
+        run: npm ci
+      - name: Run tests
+        working-directory: dis-sidecar
+        run: node --test test-*.mjs
+
+  recovery:
+    name: Recovery App (UI test + cargo test)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: recovery/package-lock.json
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: recovery/src-tauri
+      - name: Install dependencies
+        working-directory: recovery
+        run: npm ci
+      - name: UI tests
+        working-directory: recovery
+        run: npm test
+      - name: Rust tests
+        working-directory: recovery/src-tauri
+        run: cargo test
+

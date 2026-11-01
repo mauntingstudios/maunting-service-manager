@@ -29,6 +29,7 @@ def _api() -> str:
 def test_jede_versionsstelle_traegt_dieselbe_version() -> None:
     stellen = {
         "frontend/package.json": _json("frontend/package.json"),
+        "smart-system/package.json": _json("smart-system/package.json"),
         "smart-system/src-tauri/tauri.conf.json": _json("smart-system/src-tauri/tauri.conf.json"),
         "smart-system/src-tauri/Cargo.toml": _cargo("smart-system/src-tauri/Cargo.toml"),
         "recovery/src-tauri/tauri.conf.json": _json("recovery/src-tauri/tauri.conf.json"),
@@ -45,5 +46,5 @@ def test_jede_versionsstelle_traegt_dieselbe_version() -> None:
 
 def test_der_release_gleicht_auch_den_browser_an() -> None:
     skript = (ROOT / "scripts" / "sync-tauri-version.py").read_text(encoding="utf-8")
-    for pfad in ("browser/src-tauri/tauri.conf.json", "browser/src-tauri/Cargo.toml", "browser/package.json"):
+    for pfad in ("browser/src-tauri/tauri.conf.json", "browser/src-tauri/Cargo.toml", "browser/package.json", "smart-system/package.json"):
         assert pfad in skript

@@ -1,10 +1,11 @@
-# Self-Hosting & Deployment Guide
+# Self-Hosting & Deployment Guide (Summary)
 
 > [!NOTE]
-> Die deutschsprachige Fassung dieser Dokumentation befindet sich unter [docs/de-docs/self-hosting.md](de-docs/self-hosting.md) (im Panel unter `/docs/self-hosting`).
-> PostgreSQL ist die einzige unterstützte Panel-Runtime-Datenbank.
+> **Kanonische Dokumentation:** Die vollständige, kanonische Betriebsdokumentation befindet sich auf Deutsch unter [docs/de-docs/self-hosting.md](de-docs/self-hosting.md) (im Panel unter `/docs/self-hosting`).
+> Diese englische Fassung dient als zusammenfassender Überblick („Summary“) der Architektur und Deployment-Artefakte.
+> PostgreSQL 16 ist die einzige unterstützte Panel-Runtime-Datenbank.
 
-This guide is the canonical operational documentation for deploying, configuring, and maintaining the Maunting Service Manager (MSM) ecosystem. While the repository is structured as a monorepo, its architectural components are built and packaged as decoupled, modular deployment artifacts.
+This guide is an operational summary for deploying, configuring, and maintaining the Maunting Service Manager (MSM) ecosystem. For the authoritative, comprehensive documentation (including MSS, Pontis, Search, Vault Cloud, DB Encryption, AI, Voice, E2EE, Push Notifications, and Kubernetes), refer to the German canonical manual at [docs/de-docs/self-hosting.md](de-docs/self-hosting.md). While the repository is structured as a monorepo, its architectural components are built and packaged as decoupled, modular deployment artifacts.
 
 ---
 

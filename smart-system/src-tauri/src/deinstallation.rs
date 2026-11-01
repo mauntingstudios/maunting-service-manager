@@ -68,7 +68,7 @@ pub fn aufraeumen(app: &AppHandle) -> Aufraeumbericht {
         }
     };
 
-    let mut tresor_geleert = match crate::geheimnisse::loeschen(app) {
+    let mut tresor_geleert = match schluesselfach::geheimnisse::loeschen(app) {
         Ok(()) => true,
         Err(meldung) => {
             fehler.push(format!("Tresor: {meldung}"));
@@ -78,11 +78,11 @@ pub fn aufraeumen(app: &AppHandle) -> Aufraeumbericht {
     // Die Fächer von Tresor und Messenger liegen im selben Speicher. Bis
     // 02.10.2026 blieben sie nach der Deinstallation stehen.
     for fach in [
-        crate::biometrie::FACH_TRESOR,
-        crate::biometrie::FACH_MESSENGER,
-        crate::biometrie::FACH_MESSENGER_GERAET,
+        schluesselfach::biometrie::FACH_TRESOR,
+        schluesselfach::biometrie::FACH_MESSENGER,
+        schluesselfach::biometrie::FACH_MESSENGER_GERAET,
     ] {
-        if let Err(meldung) = crate::biometrie::loesche_biometrie_geheimnis(app, fach) {
+        if let Err(meldung) = schluesselfach::biometrie::loesche_biometrie_geheimnis(app, fach) {
             fehler.push(format!("Tresor: {meldung}"));
             tresor_geleert = false;
         }

@@ -23,6 +23,20 @@ if frontend_pkg.exists():
     pkg_data["version"] = tag
     frontend_pkg.write_text(json.dumps(pkg_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
+smart_system_pkg = Path("smart-system/package.json")
+if smart_system_pkg.exists():
+    ss_pkg_data = json.loads(smart_system_pkg.read_text(encoding="utf-8"))
+    ss_pkg_data["version"] = tag
+    smart_system_pkg.write_text(json.dumps(ss_pkg_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+smart_system_lock = Path("smart-system/package-lock.json")
+if smart_system_lock.exists():
+    ss_lock_data = json.loads(smart_system_lock.read_text(encoding="utf-8"))
+    ss_lock_data["version"] = tag
+    if "packages" in ss_lock_data and "" in ss_lock_data["packages"]:
+        ss_lock_data["packages"][""]["version"] = tag
+    smart_system_lock.write_text(json.dumps(ss_lock_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
 frontend_lock = Path("frontend/package-lock.json")
 if frontend_lock.exists():
     lock_data = json.loads(frontend_lock.read_text(encoding="utf-8"))
