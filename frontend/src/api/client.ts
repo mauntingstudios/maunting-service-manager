@@ -218,17 +218,19 @@ function validierungsfehler(eintrag: unknown): string {
     message?: string
     ctx?: Record<string, unknown>
   }
+  if (typeof message === 'string' && message) return message
   if (!type && !loc) {
-    if (typeof message === 'string' && message) return message
     if (typeof msg === 'string' && msg) return msg
   }
   const name = Array.isArray(loc) ? [...loc].reverse().find((teil) => typeof teil === 'string' && teil !== 'body') : null
   const feld = i18n.t(`errors.validation.fields.${name}`, { defaultValue: i18n.t('errors.validation.fields.unbekannt') })
   const art = typeof msg === 'string' && /e-?mail/i.test(msg) ? 'email' : type
+  const minFromMsg = typeof msg === 'string' ? msg.match(/at least (\d+)/i)?.[1] : undefined
+  const maxFromMsg = typeof msg === 'string' ? msg.match(/at most (\d+)/i)?.[1] : undefined
   return i18n.t(`errors.validation.${art}`, {
     feld,
-    min: ctx?.min_length ?? ctx?.ge ?? '',
-    max: ctx?.max_length ?? ctx?.le ?? '',
+    min: ctx?.min_length ?? ctx?.ge ?? minFromMsg ?? '',
+    max: ctx?.max_length ?? ctx?.le ?? maxFromMsg ?? '',
     defaultValue: i18n.t('errors.validation.ungueltig', { feld }),
   })
 }

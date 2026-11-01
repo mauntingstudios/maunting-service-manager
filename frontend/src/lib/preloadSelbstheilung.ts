@@ -8,6 +8,8 @@
  * neu geladen (Endlosschleifen-Schutz), sondern der Fehler an die ErrorBoundary übergeben.
  */
 
+import { still } from '@/lib/still'
+
 export const PRELOAD_RELOAD_KEY = 'msm:preload-reloaded'
 export const PRELOAD_URL_PARAM = 'msm_preload_retry'
 
@@ -78,11 +80,20 @@ export function registerPreloadHandler(): void {
  * via `window.history.replaceState`. Dadurch bleibt die URL für den Benutzer sauber
  * und zukünftige Chunk-Ausfälle in diesem Tab können erneut selbstheilen.
  */
-export function cleanupPreloadUrlParam(): void {
+export function cleanupPreloadUrlParam(
+  storage: Storage | null = typeof window !== 'undefined' ? window.sessionStorage : null
+): void {
   if (typeof window === 'undefined' || !window.location || !window.history?.replaceState) {
     return
   }
   try {
+    if (storage) {
+      try {
+        storage.removeItem(PRELOAD_RELOAD_KEY)
+      } catch (err) {
+        still(err, 'preload-storage-cleanup')
+      }
+    }
     const url = new URL(window.location.href)
     if (url.searchParams.has(PRELOAD_URL_PARAM)) {
       url.searchParams.delete(PRELOAD_URL_PARAM)
@@ -90,5 +101,7 @@ export function cleanupPreloadUrlParam(): void {
       const cleanUrl = url.pathname + (query ? `?${query}` : '') + url.hash
       window.history.replaceState(window.history.state, '', cleanUrl)
     }
-  } catch {}
+  } catch (err) {
+    still(err, 'preload-url-cleanup')
+  }
 }

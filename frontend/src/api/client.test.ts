@@ -527,6 +527,47 @@ describe('api client', () => {
       )
     })
 
+    it('extrahiert min_length aus msg als Fallback, wenn ctx fehlt', async () => {
+      fetchSpy.mockReturnValueOnce(
+        mockResponse(422, {
+          detail: {
+            code: 'validation_failed',
+            message: 'Validation failed',
+            errors: [
+              { loc: ['body', 'username'], msg: 'String should have at least 5 characters', type: 'string_too_short' },
+            ],
+          },
+        }),
+      )
+
+      const fehler = await api('/test', { method: 'POST', body: '{}' })
+        .then(() => null)
+        .catch((e: SanitizedApiError) => e)
+
+      expect(fehler?.message).toBe(
+        'Validation failed: Username is too short, at least 5 characters.',
+      )
+    })
+
+    it('behaelt explizite message-Eigenschaften in Fehlerobjekten bei', async () => {
+      fetchSpy.mockReturnValueOnce(
+        mockResponse(422, {
+          detail: {
+            message: 'Eingabefehler',
+            errors: [
+              { loc: ['body', 'custom_field'], message: 'Dieses Feld ist bereits vergeben' },
+            ],
+          },
+        }),
+      )
+
+      const fehler = await api('/test', { method: 'POST', body: '{}' })
+        .then(() => null)
+        .catch((e: SanitizedApiError) => e)
+
+      expect(fehler?.message).toBe('Eingabefehler: Dieses Feld ist bereits vergeben')
+    })
+
     it('should surface install/update lock i18n key from structured detail', async () => {
       fetchSpy.mockReturnValueOnce(
         mockResponse(409, {

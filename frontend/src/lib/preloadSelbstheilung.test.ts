@@ -98,6 +98,23 @@ describe('Vite Preload Selbstheilung (Hardening WP2.1)', () => {
       }
     })
 
+    it('räumt zusätzlich den sessionStorage-Marker ab', async () => {
+      const { cleanupPreloadUrlParam, PRELOAD_RELOAD_KEY } = await import('./preloadSelbstheilung')
+      const mockStorage: Record<string, string> = { [PRELOAD_RELOAD_KEY]: 'true' }
+      const storage = {
+        getItem: (k: string) => mockStorage[k] ?? null,
+        setItem: (k: string, v: string) => {
+          mockStorage[k] = v
+        },
+        removeItem: (k: string) => {
+          delete mockStorage[k]
+        },
+      } as Storage
+
+      cleanupPreloadUrlParam(storage)
+      expect(storage.getItem(PRELOAD_RELOAD_KEY)).toBeNull()
+    })
+
     it('tut nichts, wenn msm_preload_retry nicht in der URL steht', async () => {
       const { cleanupPreloadUrlParam } = await import('./preloadSelbstheilung')
       const replaceStateSpy = vi.spyOn(window.history, 'replaceState')

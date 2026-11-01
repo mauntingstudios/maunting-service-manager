@@ -989,11 +989,18 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     req_id = getattr(request.state, "request_id", "") or get_request_id()
     sanitized_errors = []
     for err in exc.errors():
-        sanitized_errors.append({
+        ctx = {}
+        for k, v in (err.get("ctx") or {}).items():
+            if isinstance(v, (int, float, str, bool)):
+                ctx[k] = v
+        entry = {
             "loc": [str(x) for x in err.get("loc", [])],
             "msg": err.get("msg", ""),
             "type": err.get("type", ""),
-        })
+        }
+        if ctx:
+            entry["ctx"] = ctx
+        sanitized_errors.append(entry)
     return JSONResponse(
         status_code=422,
         content={

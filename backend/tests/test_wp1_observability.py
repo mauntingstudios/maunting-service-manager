@@ -96,6 +96,34 @@ def test_unerwarteter_fehler_ohne_internas():
     assert "Traceback" not in raw_text
 
 
+def test_validation_error_422_struktur_und_ctx():
+    from pydantic import BaseModel, Field
+
+    class SampleInput(BaseModel):
+        username: str = Field(min_length=3)
+
+    @app.post("/api/test-fault-422", include_in_schema=False)
+    def sample_route(payload: SampleInput):
+        return {"status": "ok"}
+
+    test_client = TestClient(app, raise_server_exceptions=False)
+    res = test_client.post(
+        "/api/test-fault-422",
+        json={"username": "a"},
+        headers={"X-Request-ID": "val-test-id-422"},
+    )
+    assert res.status_code == 422
+    assert res.headers.get("x-request-id") == "val-test-id-422"
+    body = res.json()
+    assert body["detail"]["code"] == "validation_failed"
+    assert body["detail"]["message"] == "Ungültige Eingabedaten"
+    errors = body["detail"]["errors"]
+    assert len(errors) == 1
+    assert "username" in errors[0]["loc"]
+    assert errors[0]["type"] == "string_too_short"
+    assert errors[0]["ctx"]["min_length"] == 3
+
+
 @pytest.mark.asyncio
 async def test_health_deep_503_bei_db_ausfall():
     from services import health_service
