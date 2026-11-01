@@ -278,3 +278,46 @@ def test_prometheus_sidecar_und_queue_metriken():
     assert "queue_depth" in metrics_text
 
 
+def test_sensitive_data_scrubbing_in_logs_und_sentry():
+    import json
+    from middleware.request_id import JsonFormatter, scrub_sensitive_data
+    import os
+
+    # 1. Prüfe scrub_sensitive_data direkt
+    raw_text = (
+        "Failed with Bearer eyJhbGciOi.secret.signature and password=supersecret "
+        "and api_key=xyz123 at postgresql://user:mysecretpassword@127.0.0.1:5432/msmdb"
+    )
+    scrubbed = scrub_sensitive_data(raw_text)
+    assert "supersecret" not in scrubbed
+    assert "mysecretpassword" not in scrubbed
+    assert "eyJhbGciOi" not in scrubbed
+    assert "Bearer [REDACTED]" in scrubbed
+    assert "password=[REDACTED]" in scrubbed
+    assert "api_key=[REDACTED]" in scrubbed
+    assert "postgresql://user:[REDACTED]@127.0.0.1:5432/msmdb" in scrubbed
+
+    # 2. Prüfe JsonFormatter Exception- und Message-Scrubbing
+    formatter = JsonFormatter()
+    try:
+        raise ValueError("Sensitive error: password=secretpass in postgresql://dbuser:topsecret@localhost:5432/db")
+    except Exception as exc:
+        record = logging.LogRecord(
+            name="msm.test",
+            level=logging.ERROR,
+            pathname="test.py",
+            lineno=42,
+            msg="Database error with token=secrettoken",
+            args=(),
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        formatted = formatter.format(record)
+        parsed = json.loads(formatted)
+        assert "secretpass" not in parsed["exc"]
+        assert "topsecret" not in parsed["exc"]
+        assert "secrettoken" not in parsed["msg"]
+        assert "[REDACTED]" in parsed["exc"]
+        assert "[REDACTED]" in parsed["msg"]
+
+
+

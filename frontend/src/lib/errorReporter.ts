@@ -62,13 +62,23 @@ class ErrorReporter {
     }
   }
 
-  private async initSentry(dsn: string): Promise<void> {
+  async initSentry(dsn: string): Promise<void> {
     try {
-      const sentryPkg = '@sentry/react'
-      const sentryModule = await import(/* @vite-ignore */ sentryPkg).catch(() => null)
-      if (sentryModule && sentryModule.init) {
-        this.sentryClient = sentryModule
-        sentryModule.init({
+      let sentry: any = null
+      const globalSentry = typeof window !== 'undefined' ? (window as any).Sentry : null
+      if (globalSentry && typeof globalSentry.init === 'function') {
+        sentry = globalSentry
+      } else {
+        const sentryPkg = '@sentry/react'
+        const sentryModule = await import(/* @vite-ignore */ sentryPkg).catch(() => null)
+        if (sentryModule && typeof sentryModule.init === 'function') {
+          sentry = sentryModule
+        }
+      }
+
+      if (sentry) {
+        this.sentryClient = sentry
+        sentry.init({
           dsn,
           beforeSend(event: any) {
             if (event.request) {
@@ -85,9 +95,21 @@ class ErrorReporter {
             if (event.message) {
               event.message = scrubMessage(event.message)
             }
+            if (event.exception?.values) {
+              for (const exc of event.exception.values) {
+                if (exc.value) exc.value = scrubMessage(exc.value)
+              }
+            }
+            if (event.breadcrumbs?.values) {
+              for (const bc of event.breadcrumbs.values) {
+                if (bc.data) bc.data = '[FILTERED]'
+              }
+            }
             return event
           },
         })
+      } else {
+        console.warn('[ErrorReporter] VITE_SENTRY_DSN ist konfiguriert, aber weder @sentry/react noch window.Sentry ist verfügbar.')
       }
     } catch (err) {
       console.warn('[ErrorReporter] Sentry konnte nicht initialisiert werden:', err)

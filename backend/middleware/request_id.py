@@ -47,6 +47,19 @@ class RequestIDFilter(logging.Filter):
         return True
 
 
+def scrub_sensitive_data(text: str) -> str:
+    """Entfernt sensitive Tokens, Passwörter und Datenbank-Credentials aus Text/Stacktraces."""
+    if not text:
+        return ""
+    # Bearer tokens
+    text = re.sub(r"(Bearer\s+)[A-Za-z0-9._~+/-]+=*", r"\1[REDACTED]", text, flags=re.I)
+    # Passwörter / Secrets / Tokens im Query- oder Key-Value-Format
+    text = re.sub(r"(password|secret|token|api[_-]?key)=([^\s&'\"]+)", r"\1=[REDACTED]", text, flags=re.I)
+    # PostgreSQL / DB-URLs mit Credentials: postgresql://user:pass@host:port/db
+    text = re.sub(r"(postgres(?:ql)?://)([^:@/]+):([^@/]+)@", r"\1\2:[REDACTED]@", text, flags=re.I)
+    return text
+
+
 class JsonFormatter(logging.Formatter):
     """Schreibt Logs als einzeilige JSON-Objekte (stdlib-only)."""
 
@@ -55,7 +68,7 @@ class JsonFormatter(logging.Formatter):
             "ts": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "msg": record.getMessage(),
+            "msg": scrub_sensitive_data(record.getMessage()),
             "request_id": getattr(record, "request_id", "") or "",
             "method": getattr(record, "method", "") or "",
             "path": getattr(record, "path", "") or "",
@@ -64,7 +77,7 @@ class JsonFormatter(logging.Formatter):
             "user_id": getattr(record, "user_id", "") or "",
         }
         if record.exc_info:
-            log_entry["exc"] = self.formatException(record.exc_info)
+            log_entry["exc"] = scrub_sensitive_data(self.formatException(record.exc_info))
         return json.dumps(log_entry, ensure_ascii=False)
 
 

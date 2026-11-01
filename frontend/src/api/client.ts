@@ -497,6 +497,19 @@ export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
       } catch (retryErr) {
         // Ein Netzwerkfehler, Timeout oder AbortError beim wiederholten Request
         // darf NIEMALS useAuthStore.getState().clearSession() aufrufen!
+        const isTimeout =
+          (retryErr && typeof retryErr === 'object' && (retryErr as any).name === 'TimeoutError') ||
+          (retryErr instanceof Error && retryErr.message.toLowerCase().includes('timeout'))
+
+        if (isTimeout) {
+          throw new SanitizedApiError(
+            i18n.t('errors.REQUEST_TIMEOUT', {
+              defaultValue: 'Zeitüberschreitung der Anfrage (Server antwortet nicht rechtzeitig).',
+            }),
+            { status: 408, code: 'timeout' }
+          )
+        }
+
         if (!isCurrentlyOffline && typeof window !== 'undefined' && isNetworkOrOfflineError(retryErr) && !istAbbruch(retryErr)) {
           isCurrentlyOffline = true
           window.dispatchEvent(new CustomEvent('msm:network-offline'))

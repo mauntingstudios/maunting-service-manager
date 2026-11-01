@@ -849,6 +849,7 @@ def _protokoll_einrichten() -> None:
     if sentry_dsn:
         try:
             import sentry_sdk
+            from middleware.request_id import scrub_sensitive_data
 
             def _sentry_before_send(event, hint):
                 event.pop("user", None)
@@ -856,6 +857,12 @@ def _protokoll_einrichten() -> None:
                     for bc in event["breadcrumbs"].get("values", []):
                         if isinstance(bc, dict) and "data" in bc:
                             bc["data"] = "[FILTERED]"
+                if "exception" in event and isinstance(event.get("exception"), dict):
+                    for exc_val in event["exception"].get("values", []):
+                        if isinstance(exc_val, dict) and "value" in exc_val:
+                            exc_val["value"] = scrub_sensitive_data(str(exc_val["value"]))
+                if "message" in event and isinstance(event.get("message"), str):
+                    event["message"] = scrub_sensitive_data(event["message"])
                 if "request" in event:
                     req = event["request"]
                     if "headers" in req and isinstance(req["headers"], dict):

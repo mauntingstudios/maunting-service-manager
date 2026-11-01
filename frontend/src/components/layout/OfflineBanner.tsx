@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { WifiOff, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useIsOnline } from '@/hooks/useIsOnline'
-import { getEffectiveApiUrl } from '@/config/api'
+import { apiUrl } from '@/config/api'
 
 export function OfflineBanner() {
   const isOnline = useIsOnline()
@@ -17,8 +17,7 @@ export function OfflineBanner() {
     if (typeof window === 'undefined' || retrying) return
     setRetrying(true)
     try {
-      const baseUrl = getEffectiveApiUrl()
-      const res = await fetch(`${baseUrl}/api/health`, { cache: 'no-store' })
+      const res = await fetch(apiUrl('/health'), { cache: 'no-store' })
       if (res.ok) {
         window.dispatchEvent(new CustomEvent('msm:network-online'))
       }
