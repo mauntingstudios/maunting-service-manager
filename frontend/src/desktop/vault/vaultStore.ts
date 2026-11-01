@@ -854,7 +854,10 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
   fetchVaultSalt: async () => {
     try {
-      const res = await api<{ kdf_salt: string | null; bucket_id: string | null; has_vault: boolean }>('/api/vault/salt')
+      const res = await api<{ kdf_salt: string | null; bucket_id: string | null; has_vault: boolean; has_hint?: boolean }>('/api/vault/salt')
+      if (res.has_hint !== undefined) {
+        set({ hasHint: !!res.has_hint })
+      }
       if (res.kdf_salt && typeof localStorage !== 'undefined') {
         localStorage.setItem(VAULT_SALT_KEY, res.kdf_salt)
       }

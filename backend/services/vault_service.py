@@ -634,13 +634,16 @@ def register_blind_bucket(db: Session, konto: TresorKonto, bucket_id: str, auth_
 def get_vault_salt(db: Session, konto: TresorKonto) -> VaultSaltResponse:
     """Liest den hinterlegten KDF-Salt und Bucket-Status des Benutzers."""
     setting = einstellung(db, konto)
+    hint_obj = _eigene_zeile(db, VaultHint, konto)
     db.commit()
+    has_hint = bool(hint_obj and hint_obj.hint)
     if not setting:
-        return VaultSaltResponse(kdf_salt=None, bucket_id=None, has_vault=False)
+        return VaultSaltResponse(kdf_salt=None, bucket_id=None, has_vault=False, has_hint=has_hint)
     return VaultSaltResponse(
         kdf_salt=setting.kdf_salt,
         bucket_id=setting.bucket_id,
         has_vault=bool(setting.bucket_id or setting.kdf_salt),
+        has_hint=has_hint,
     )
 
 

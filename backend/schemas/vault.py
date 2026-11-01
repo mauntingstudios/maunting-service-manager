@@ -178,6 +178,7 @@ class VaultSaltResponse(BaseModel):
     kdf_salt: str | None = None
     bucket_id: str | None = None
     has_vault: bool = False
+    has_hint: bool = False
 
 
 class VaultSaltSetRequest(BaseModel):

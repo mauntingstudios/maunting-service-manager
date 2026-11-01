@@ -126,6 +126,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       requestHintEmail: s.requestHintEmail,
       checkBiometricsSupport: s.checkBiometricsSupport,
       fetchVaultSalt: s.fetchVaultSalt,
+      checkHintStatus: s.checkHintStatus,
+      hasHint: s.hasHint,
     })),
   )
 
@@ -173,10 +175,14 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
   // Beim Laden Server-Status und Salt nur prüfen, falls lokal noch kein Salt vorliegt (Leck-2-Schutz)
   useEffect(() => {
-    if (!isTeam && !getLocalVaultSalt()) {
-      void personalStore.fetchVaultSalt()
+    if (!isTeam) {
+      if (!getLocalVaultSalt()) {
+        void personalStore.fetchVaultSalt()
+      } else {
+        void personalStore.checkHintStatus()
+      }
     }
-  }, [isTeam, personalStore.fetchVaultSalt])
+  }, [isTeam, personalStore.fetchVaultSalt, personalStore.checkHintStatus])
 
   // Biometrie-Verfügbarkeit (Windows Hello / Fingerabdruck) beim Laden abfragen
   useEffect(() => {
@@ -1123,20 +1129,22 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
             </Button>
           </form>
 
-          {/* Hinweis per E-Mail anfordern */}
+          {/* Hinweis per E-Mail anfordern (nur wenn ein Hinweis hinterlegt ist) */}
           <div className="flex flex-col items-center gap-1 pt-1">
-            <Button
-              fingerziel
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleRequestHint}
-              disabled={isRequestingHint}
-              className="text-on-surface-variant hover:text-primary"
-            >
-              <HelpCircle className="h-3.5 w-3.5" />
-              <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.hinweisPerMail')}</span>
-            </Button>
+            {activeHasHint && (
+              <Button
+                fingerziel
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleRequestHint}
+                disabled={isRequestingHint}
+                className="text-on-surface-variant hover:text-primary"
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+                <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.hinweisPerMail')}</span>
+              </Button>
+            )}
 
             {!isTeam && !isInitialized && (
               <Button
