@@ -182,4 +182,14 @@ export const teamsApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  resetVault: (teamId: number, payload: {
+    confirmation: string
+    password?: string | null
+    otp_code?: string
+    passkey?: Record<string, unknown>
+  }) =>
+    api<{ status: string }>(`/teams/${teamId}/vault/reset`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 }

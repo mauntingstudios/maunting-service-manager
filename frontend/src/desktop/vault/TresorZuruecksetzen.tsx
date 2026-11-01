@@ -10,12 +10,15 @@ import { useZweitfaktor, ZweitfaktorFeld } from '@/components/auth/ZweitfaktorNa
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
+import { useTeamVaultStore } from './teamVaultStore'
 import { speicherAbfragen, type TresorSpeicher } from './tresorBlobApi'
 
 interface Props {
   onAbbrechen: () => void
   /** Danach ist kein Tresor mehr eingerichtet; die Ansicht wechselt ins Einrichten. */
   onFertig: () => void
+  isTeam?: boolean
+  teamId?: number
 }
 
 /**
@@ -25,7 +28,7 @@ interface Props {
  * Faktor, gleich welcher; immer das Wort „delete", nicht einfügbar. Ein
  * reines Social-Konto ohne 2FA braucht nur das Wort.
  */
-export function TresorZuruecksetzen({ onAbbrechen, onFertig }: Props) {
+export function TresorZuruecksetzen({ onAbbrechen, onFertig, isTeam, teamId }: Props) {
   const { t } = useTranslation()
   const user = useAuthStore((s) => s.user)
   const resetVault = useVaultStore((s) => s.resetVault)
@@ -39,8 +42,10 @@ export function TresorZuruecksetzen({ onAbbrechen, onFertig }: Props) {
   // Die Dateien gehen mit: das braucht der Nutzer vorher. Der Server kennt nur Zahl und Größe.
   const [speicher, setSpeicher] = useState<TresorSpeicher | null>(null)
   useEffect(() => {
-    speicherAbfragen().then(setSpeicher, () => setSpeicher(null))
-  }, [])
+    if (!isTeam) {
+      speicherAbfragen().then(setSpeicher, () => setSpeicher(null))
+    }
+  }, [isTeam])
 
   const absenden = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,7 +54,12 @@ export function TresorZuruecksetzen({ onAbbrechen, onFertig }: Props) {
     try {
       // Der Passkey zuerst: der Browser verlangt die Abfrage nah am Klick.
       const zweiter = await faktor.nachweis('vault_reset')
-      await resetVault({ password: brauchtPasswort ? passwort : null, ...zweiter }, wort)
+      const payload = { password: brauchtPasswort ? passwort : null, ...zweiter }
+      if (isTeam && teamId) {
+        await useTeamVaultStore.getState().resetVault(teamId, payload, wort)
+      } else {
+        await resetVault(payload, wort)
+      }
       toast.success(t('mss.vault.zuruecksetzen.fertig'))
       onFertig()
     } catch (err) {
@@ -60,14 +70,20 @@ export function TresorZuruecksetzen({ onAbbrechen, onFertig }: Props) {
 
   return (
     <form onSubmit={absenden} className="space-y-3.5">
-      <h2 className="text-center text-base font-bold text-on-surface">{t('mss.vault.zuruecksetzen.titel')}</h2>
+      <h2 className="text-center text-base font-bold text-on-surface">
+        {isTeam ? 'Team-Tresor zurücksetzen' : t('mss.vault.zuruecksetzen.titel')}
+      </h2>
 
       <div className="rounded-xl border border-status-destructive/30 bg-status-destructive/10 p-3">
         <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-status-destructive">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           {t('mss.vault.zuruecksetzen.warnungTitel')}
         </p>
-        <p className="text-xs text-on-surface-variant">{t('mss.vault.zuruecksetzen.warnungText')}</p>
+        <p className="text-xs text-on-surface-variant">
+          {isTeam
+            ? 'Dadurch werden alle Einträge dieses Team-Tresors unwiderruflich gelöscht. Der Eigentümer kann danach ein neues Master-Passwort festlegen.'
+            : t('mss.vault.zuruecksetzen.warnungText')}
+        </p>
         {speicher && speicher.blobs > 0 && (
           <p className="mt-2 text-xs text-on-surface-variant">
             {/* Ohne Anzahl: frühere Fassungen sind auch Blobs, `blobs / 3` zählte sie als Dateien. */}

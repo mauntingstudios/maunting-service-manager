@@ -755,6 +755,18 @@ def tresor_zuruecksetzen(db: Session, konto: TresorKonto) -> None:
     db.flush()
 
 
+def team_tresor_zuruecksetzen(db: Session, team: Team) -> None:
+    """Loescht den Tresor des Teams ganz: Salz, Hinweis und den Bucket samt Inhalt. Committet nicht."""
+    if team.vault_bucket_id:
+        _bucket_entfernen(db, team.vault_bucket_id)
+    team.vault_bucket_id = None
+    team.vault_salt = None
+    team.vault_needs_rotation = False
+    team.vault_hint = None
+    team.vault_last_hint_requested_at = None
+    db.flush()
+
+
 HINT_RATE_LIMIT_SECONDS = 600  # 10 Minuten Cooldown
 
 

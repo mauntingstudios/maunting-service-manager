@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from dependencies import get_current_user, verify_csrf
+from middleware.rate_limit import auth_rate_limit
 from models import Server, Team, TeamInvitation, TeamMember, User
 from schemas.team import (
     TeamCreate,
@@ -31,10 +32,18 @@ from schemas.team import (
 from schemas.vault import (
     VaultHintSetRequest,
     VaultHintStatusResponse,
+    VaultResetRequest,
     VaultSyncRequest,
     VaultSyncResponse,
 )
-from services import permission_service, team_service, vault_service
+from services import (
+    audit_service,
+    passkey_service,
+    permission_service,
+    team_service,
+    vault_service,
+)
+from services.auth_service import AuthService
 
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
@@ -479,4 +488,42 @@ async def request_team_vault_hint(
             raise HTTPException(status_code=429, detail=msg)
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "ok", "message": msg}
+
+
+@router.post("/{team_id}/vault/reset", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
+def reset_team_vault(
+    team_id: int,
+    payload: VaultResetRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Setzt den Tresor des Teams zurueck, wenn das Master-Passwort vergessen ist (nur Gruender)."""
+    team = team_service.get_team_for_member(db, team_id, user)
+    team_service.assert_team_owner(db, team, user)
+
+    if (payload.confirmation or "").strip().lower() != "delete":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bestätigung delete erforderlich")
+    if user.has_password and (
+        not payload.password or not AuthService.verify_password(payload.password, user.password_hash)
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bitte dein Passwort bestätigen.")
+    if user.two_factor_enabled and not passkey_service.zweiter_faktor_bestaetigt(
+        db,
+        user,
+        otp_code=payload.otp_code,
+        passkey=payload.passkey.model_dump() if payload.passkey else None,
+        zweck="vault_reset",
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=passkey_service.nachweis_hinweis(user))
+
+    vault_service.team_tresor_zuruecksetzen(db, team)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="team.vault.reset",
+        target_type="team",
+        target_id=team.id,
+        commit=True,
+    )
+    return {"status": "ok"}
 

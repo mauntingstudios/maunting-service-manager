@@ -70,6 +70,7 @@ export interface TeamVaultState {
   requestHintEmail: (teamId: number) => Promise<{ ok: boolean; message: string }>
   unlock: (teamId: number, masterPassword: string) => Promise<boolean>
   rotatePassword: (teamId: number, newPassword: string) => Promise<boolean>
+  resetVault: (teamId: number, nachweis: Record<string, unknown>, bestaetigung: string) => Promise<void>
   lock: () => void
   syncWithServer: (teamId: number) => Promise<void>
   saveItem: (item: Partial<VaultItem>) => Promise<string>
@@ -396,6 +397,25 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
       set({ error: err instanceof Error ? err.message : 'Fehler beim Rotieren des Master-Passworts' })
       return false
     }
+  },
+
+  resetVault: async (teamId: number, nachweis: Record<string, unknown>, bestaetigung: string) => {
+    await teamsApi.resetVault(teamId, {
+      ...nachweis,
+      confirmation: bestaetigung,
+    })
+    set({
+      isInitialized: false,
+      isUnlocked: false,
+      userKey: null,
+      bucketId: null,
+      salt: null,
+      needsRotation: false,
+      hasHint: false,
+      items: [],
+      serverRevision: 0,
+      error: null,
+    })
   },
 
   lock: () => {

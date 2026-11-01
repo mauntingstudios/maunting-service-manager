@@ -628,6 +628,8 @@ export const useVaultStore = create<VaultState>((set, get) => {
       album: itemData.album ?? existing?.album,
       sicherung: itemData.sicherung ?? existing?.sicherung,
       zahlung: itemData.zahlung ?? existing?.zahlung,
+      transferredAt: itemData.transferredAt !== undefined ? itemData.transferredAt : existing?.transferredAt,
+      transferredLabel: itemData.transferredLabel !== undefined ? itemData.transferredLabel : existing?.transferredLabel,
       createdAt: existing?.createdAt || now,
       updatedAt: now,
       revision,

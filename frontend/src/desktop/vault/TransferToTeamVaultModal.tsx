@@ -77,6 +77,10 @@ export function TransferToTeamVaultModal({ open, onOpenChange, item }: TransferT
         }
       }
 
+      const zielTeam = teams.find((t) => t.id === tid)
+      const teamName = zielTeam?.name || 'Team'
+      const transferLabel = modus === 'verschieben' ? 'Verschoben' : 'Kopiert'
+
       // Eintrag im Team-Tresor anlegen (Zero-Knowledge Re-Encryption)
       const saveItem = useTeamVaultStore.getState().saveItem
       await saveItem({
@@ -88,11 +92,28 @@ export function TransferToTeamVaultModal({ open, onOpenChange, item }: TransferT
         notes: item.notes,
         totpSecret: item.totpSecret,
         extra: item.extra,
+        transferredAt: Date.now(),
+        transferredLabel: transferLabel,
       })
 
-      // Bei Verschieben aus persönlichem Tresor entfernen
+      // Bei Verschieben aus persönlichem Tresor entfernen; bei Kopieren Eintrag markieren
       if (modus === 'verschieben') {
         await deletePersonalItem(item.id)
+      } else {
+        const savePersonalItem = useVaultStore.getState().saveItem
+        await savePersonalItem({
+          id: item.id,
+          service: item.service,
+          category: item.category,
+          username: item.username,
+          password: item.password,
+          url: item.url,
+          notes: item.notes,
+          totpSecret: item.totpSecret,
+          extra: item.extra,
+          transferredAt: Date.now(),
+          transferredLabel: `In Team "${teamName}" kopiert`,
+        })
       }
 
       toast.success(t('teams.transferSuccess'))

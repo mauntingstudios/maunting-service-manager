@@ -62,7 +62,7 @@ import { formatBytes } from '@/lib/format'
 import { setzeTresorSchutz } from '../tauri'
 import { useShallow } from 'zustand/react/shallow'
 import { getLocalVaultSalt, useVaultStore } from './vaultStore'
-import { PAPIERKORB_TAGE, istBekannteKategorie, istPasswortKategorie, type VaultItem } from './vaultEintrag'
+import { PAPIERKORB_TAGE, formatTransferBadge, istBekannteKategorie, istPasswortKategorie, type VaultItem } from './vaultEintrag'
 import { fehlerText } from './tresorFehler'
 import { TransferToTeamVaultModal } from './TransferToTeamVaultModal'
 
@@ -875,6 +875,26 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   }
 
   if (isTeam && !isUnlocked) {
+    if (zuruecksetzen) {
+      return (
+        <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
+          <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
+            <TresorZuruecksetzen
+              isTeam={true}
+              teamId={team?.id}
+              onAbbrechen={() => setZuruecksetzen(false)}
+              onFertig={() => {
+                setZuruecksetzen(false)
+                if (team?.id) {
+                  void teamStore.loadStatus(team.id)
+                }
+              }}
+            />
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
         <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
@@ -944,6 +964,24 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                 >
                   <Mail className="h-3.5 w-3.5" />
                   <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.hinweisPerMail')}</span>
+                </Button>
+              </div>
+            )}
+
+            {isOwner && (
+              <div className="pt-1 text-center">
+                <Button
+                  fingerziel
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setZuruecksetzen(true)
+                    setMasterPasswordInput('')
+                  }}
+                  className="text-xs text-on-surface-variant hover:text-status-destructive"
+                >
+                  {t('mss.vault.zuruecksetzen.link')}
                 </Button>
               </div>
             )}
@@ -1272,7 +1310,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
           <ZeilenBild item={item} Symbol={ItemBrand} />
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs font-semibold text-on-surface truncate">
                 {item.service}
               </span>
@@ -1286,6 +1324,11 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                 >
                   <ExternalLink className="h-3 w-3" />
                 </a>
+              )}
+              {formatTransferBadge(item) && (
+                <span className="inline-flex items-center px-1.5 py-0.5 text-label-sm font-medium rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
+                  {formatTransferBadge(item)}
+                </span>
               )}
             </div>
 
@@ -1924,52 +1967,55 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               />
             </div>
 
-            <DialogFooter className="flex-wrap justify-between">
+            <DialogFooter className="flex flex-col gap-3 bg-transparent border-t border-outline-variant/20 p-4 w-full">
               {editingItemId ? (
-                <div className="flex items-center gap-1">
+                <div className="grid grid-cols-3 gap-2 w-full">
                   <Button
                     fingerziel
                     type="button"
                     variant="ghost"
                     size="sm"
+                    aria-label={t('mss.vault.inPapierkorb')}
                     onClick={() => {
                       const item = items.find((i) => i.id === editingItemId)
                       if (item) void handleTrashItem(item)
                     }}
-                    className="text-status-destructive hover:bg-status-destructive/10"
+                    className="w-full justify-center text-status-destructive hover:bg-status-destructive/10 text-xs px-2"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    {t('mss.vault.inPapierkorb')}
+                    <Trash2 className="h-3.5 w-3.5 shrink-0 mr-1" />
+                    <span className="truncate">Papierkorb</span>
                   </Button>
                   <Button
                     fingerziel
                     type="button"
                     variant="ghost"
                     size="sm"
+                    aria-label={items.find((i) => i.id === editingItemId)?.archivedAt ? t('mss.vault.ausArchiv') : t('mss.vault.archivieren')}
                     onClick={() => {
                       const item = items.find((i) => i.id === editingItemId)
                       if (item) void handleArchiv(item, !item.archivedAt)
                     }}
-                    className="text-on-surface-variant"
+                    className="w-full justify-center text-on-surface-variant text-xs px-2"
                   >
                     {items.find((i) => i.id === editingItemId)?.archivedAt ? (
                       <>
-                        <ArchiveRestore className="h-3.5 w-3.5" />
-                        {t('mss.vault.ausArchiv')}
+                        <ArchiveRestore className="h-3.5 w-3.5 shrink-0 mr-1" />
+                        <span className="truncate">Aus Archiv</span>
                       </>
                     ) : (
                       <>
-                        <Archive className="h-3.5 w-3.5" />
-                        {t('mss.vault.archivieren')}
+                        <Archive className="h-3.5 w-3.5 shrink-0 mr-1" />
+                        <span className="truncate">Archivieren</span>
                       </>
                     )}
                   </Button>
-                  {!isTeam && (
+                  {!isTeam ? (
                     <Button
                       fingerziel
                       type="button"
                       variant="ghost"
                       size="sm"
+                      aria-label={t('teams.transferToTeam')}
                       onClick={() => {
                         const item = items.find((i) => i.id === editingItemId)
                         if (item) {
@@ -1977,18 +2023,18 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                           setTransferOpen(true)
                         }
                       }}
-                      className="text-on-surface-variant hover:text-primary"
+                      className="w-full justify-center text-on-surface-variant hover:text-primary text-xs px-2"
                     >
-                      <ArrowRightLeft className="h-3.5 w-3.5" />
-                      {t('teams.transferToTeam')}
+                      <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 mr-1" />
+                      <span className="truncate">Übertragen</span>
                     </Button>
+                  ) : (
+                    <div />
                   )}
                 </div>
-              ) : (
-                <div />
-              )}
+              ) : null}
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-between w-full pt-1">
                 <Button type="button" variant="ghost" onClick={() => void modalSchliessen()}>
                   {t('common.cancel')}
                 </Button>

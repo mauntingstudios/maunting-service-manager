@@ -71,6 +71,10 @@ export interface VaultItem {
   sicherung?: SicherungAngaben
   /** Nur bei Art `zahlung`: Karte oder Bankkonto (`zahlung.ts`). */
   zahlung?: ZahlungAngaben
+  /** Zeitstempel (ms), wann der Eintrag übertragen wurde; erlischt nach 7 Tagen. */
+  transferredAt?: number
+  /** 'Kopiert' | 'Verschoben' oder Ziel-/Quell-Name. */
+  transferredLabel?: string
   createdAt: number
   updatedAt: number
   revision: number
@@ -108,6 +112,8 @@ const AENDERBAR: Record<Exclude<keyof VaultItem, 'id' | 'revision' | 'createdAt'
   album: true,
   sicherung: true,
   zahlung: true,
+  transferredAt: true,
+  transferredLabel: true,
 }
 const AENDERBARE_FELDER = Object.keys(AENDERBAR) as (keyof typeof AENDERBAR)[]
 
@@ -213,6 +219,8 @@ export function itemAusUmschlag(id: string, revision: number, payload: Record<st
     album,
     sicherung,
     zahlung,
+    transferredAt: zahlOderNichts(payload.transferredAt),
+    transferredLabel: typeof payload.transferredLabel === 'string' ? payload.transferredLabel : undefined,
     createdAt: Number(payload.createdAt || Date.now()),
     updatedAt: Number(payload.updatedAt || Date.now()),
     revision,
@@ -298,4 +306,33 @@ export function fassungenZusammenfuehren(
     }
   }
   return { item, weg: [...weg.values()] }
+}
+
+/**
+ * Formatiert den Übertragungs-Hinweis für Einträge, die vor bis zu 7 Tagen
+ * übertragen wurden. Liefert null, wenn der Eintrag nicht übertragen wurde
+ * oder die Übertragung älter als 7 Tage (eine Woche) ist.
+ */
+export function formatTransferBadge(item: VaultItem, jetzt = Date.now()): string | null {
+  if (!item.transferredAt) return null
+  const diffMs = jetzt - item.transferredAt
+  if (diffMs < 0 || diffMs > 7 * 24 * 60 * 60 * 1000) return null
+
+  const minuten = Math.floor(diffMs / (60 * 1000))
+  const stunden = Math.floor(diffMs / (60 * 60 * 1000))
+  const tage = Math.floor(diffMs / (24 * 60 * 60 * 1000))
+
+  let zeitText = ''
+  if (minuten < 1) {
+    zeitText = 'Gerade'
+  } else if (minuten < 60) {
+    zeitText = `Vor ${minuten} Min.`
+  } else if (stunden < 24) {
+    zeitText = `Vor ${stunden} Std.`
+  } else {
+    zeitText = `Vor ${tage} ${tage === 1 ? 'Tag' : 'Tagen'}`
+  }
+
+  const aktion = item.transferredLabel?.toLowerCase().includes('verschoben') ? 'verschoben' : 'übertragen'
+  return `${zeitText} ${aktion}`
 }

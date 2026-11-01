@@ -60,6 +60,10 @@ function skillScope(detail: TeamDetail): AiSkillScope {
  * Verwaltet Mitglieder, Berechtigungen, Server-Freigaben, geteiltes KI-Wissen
  * sowie den Ende-zu-Ende verschlüsselten Team-Tresor.
  */
+const STORAGE_KEY_BEREICH = 'msm_teams_last_bereich'
+const STORAGE_KEY_TEAM_ID = 'msm_teams_last_id'
+const STORAGE_KEY_REITER = 'msm_teams_last_reiter'
+
 export function Teams() {
   const { t } = useTranslation()
   const canCreate = useHasPermission('teams.create')
@@ -67,10 +71,61 @@ export function Teams() {
   const canUseSkills = useHasPermission('ai.skills.use')
   const benutzerId = useAuthStore((state) => state.user?.id ?? null)
 
-  const [bereich, setBereich] = useState<Bereich>('personal')
-  const [reiter, setReiter] = useState<TeamReiter>('members')
+  const [bereich, setBereichState] = useState<Bereich>(() => {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem(STORAGE_KEY_BEREICH)
+      if (saved === 'teams' || saved === 'personal') return saved
+    }
+    return 'personal'
+  })
+
+  const setBereich = (next: Bereich) => {
+    setBereichState(next)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_BEREICH, next)
+    }
+  }
+
+  const [reiter, setReiterState] = useState<TeamReiter>(() => {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem(STORAGE_KEY_REITER) as TeamReiter
+      if (['members', 'servers', 'knowledge', 'vault'].includes(saved)) return saved
+    }
+    return 'members'
+  })
+
+  const setReiter = (next: TeamReiter) => {
+    setReiterState(next)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_REITER, next)
+    }
+  }
+
   const [teams, setTeams] = useState<Team[]>([])
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedIdState] = useState<number | null>(() => {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem(STORAGE_KEY_TEAM_ID)
+      if (saved) {
+        const num = Number(saved)
+        if (!isNaN(num)) return num
+      }
+    }
+    return null
+  })
+
+  const setSelectedId = (idOrUpdater: number | null | ((prev: number | null) => number | null)) => {
+    setSelectedIdState((prev) => {
+      const next = typeof idOrUpdater === 'function' ? idOrUpdater(prev) : idOrUpdater
+      if (typeof localStorage !== 'undefined') {
+        if (next !== null) {
+          localStorage.setItem(STORAGE_KEY_TEAM_ID, String(next))
+        } else {
+          localStorage.removeItem(STORAGE_KEY_TEAM_ID)
+        }
+      }
+      return next
+    })
+  }
   const [detail, setDetail] = useState<TeamDetail | null>(null)
   const [assignable, setAssignable] = useState<TeamServer[]>([])
   const [users, setUsers] = useState<UserOption[]>([])
@@ -87,7 +142,11 @@ export function Teams() {
   const reloadTeams = useCallback(async () => {
     const rows = await teamsApi.list()
     setTeams(rows)
-    setSelectedId((current) => current ?? rows.find((row) => !row.is_personal)?.id ?? null)
+    setSelectedId((current) =>
+      current && rows.some((row) => !row.is_personal && row.id === current)
+        ? current
+        : (rows.find((row) => !row.is_personal)?.id ?? null),
+    )
     return rows
   }, [])
 
@@ -102,10 +161,16 @@ export function Teams() {
       .then(([rows, userRows, invitationRows]) => {
         if (!active) return
         setTeams(rows)
-        setSelectedId(rows.find((row) => !row.is_personal)?.id ?? null)
+        setSelectedId((current) =>
+          current && rows.some((row) => !row.is_personal && row.id === current)
+            ? current
+            : (rows.find((row) => !row.is_personal)?.id ?? null),
+        )
         setUsers(userRows.map((row) => ({ id: row.id, username: row.username })))
         setEinladungen(invitationRows)
-        if (invitationRows.length > 0) setBereich('teams')
+        if (typeof localStorage !== 'undefined' && !localStorage.getItem(STORAGE_KEY_BEREICH) && invitationRows.length > 0) {
+          setBereich('teams')
+        }
       })
       .catch((error: unknown) => {
         if (active) toast.error(error instanceof SanitizedApiError ? error.message : t('teams.errors.load'))
@@ -591,7 +656,7 @@ export function Teams() {
                 </div>
 
                 {/* Tabbed Canvas Area */}
-                <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 lg:p-8">
+                <div className={`flex-1 min-h-0 ${aktiverReiter === 'vault' ? 'p-0 overflow-hidden flex flex-col' : 'overflow-y-auto p-4 sm:p-6 lg:p-8'}`}>
                   {aktiverReiter === 'members' && (
                     <MitgliederReiter
                       team={team}
@@ -675,7 +740,7 @@ export function Teams() {
                   )}
 
                   {aktiverReiter === 'vault' && (
-                    <section className="flex-1 min-h-0 flex flex-col h-full" aria-labelledby="team-vault">
+                    <section className="flex-1 min-h-0 flex flex-col h-full w-full" aria-labelledby="team-vault">
                       <TeamVaultView team={team} />
                     </section>
                   )}
