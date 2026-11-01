@@ -197,7 +197,7 @@ interface ChunkZeile {
 }
 
 /** `abgelehnt`: der Server wies den Blob ab (etwa 413, 422); der nächste Lauf versucht es wieder. */
-export type UploadFehler = 'speicherVoll' | 'platteVoll' | 'zuVieleDateien' | 'abgelehnt'
+export type UploadFehler = 'speicherVoll' | 'ownerKeinSpeicher' | 'platteVoll' | 'zuVieleDateien' | 'abgelehnt'
 
 export interface UploadFortschritt {
   gesendet: number
@@ -411,7 +411,12 @@ const VOLL: Record<string, UploadFehler> = { VAULT_PLATTE_VOLL: 'platteVoll', VA
  */
 function uploadFehler(err: unknown): UploadFehler | null {
   const s = status(err)
-  if (s === 507) return (err instanceof SanitizedApiError && err.code && VOLL[err.code]) || 'speicherVoll'
+  if (s === 507) {
+    if (err instanceof Error && (err.message?.includes('Team-Owner') || err.message?.includes('keinen Tresorspeicher'))) {
+      return 'ownerKeinSpeicher'
+    }
+    return (err instanceof SanitizedApiError && err.code && VOLL[err.code]) || 'speicherVoll'
+  }
   return s === 413 || s === 422 ? 'abgelehnt' : null
 }
 

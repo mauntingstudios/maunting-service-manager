@@ -29,10 +29,11 @@ import {
   Presentation,
   Trash2,
 } from 'lucide-react'
-import { Button, Lichtbox, ProgressBar } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, Lichtbox, ProgressBar } from '@/Singra/UI'
 import { archivInhalt, type ArchivEintrag } from '@/lib/zipLesen'
 import { formatBytes, formatZeitpunkt } from '@/lib/format'
 import { useVaultStore } from './vaultStore'
+import { useTeamVaultStore } from './teamVaultStore'
 import { type VaultItem } from './vaultEintrag'
 import { ansichtOeffnen, ansichtSchliessen, blobLesen } from './tresorDateien'
 import { artBezeichnung, dateiAufsGeraet, istText, vorschauArt, type VorschauArt } from './tresorAnzeige'
@@ -109,16 +110,25 @@ interface Props {
   folge: VaultItem[]
   onWechseln: (item: VaultItem) => void
   onSchliessen: () => void
+  isTeam?: boolean
 }
 
 // Am Telefon 44 px Tippfläche; `min-*` schlägt die Höhe aus `size`.
 const KNOPF = 'min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 text-white/85 hover:bg-white/10 hover:text-white'
 
-export function TresorDateiAnsicht({ item: anfang, ort, folge, onWechseln, onSchliessen }: Props) {
+export function TresorDateiAnsicht({ item: anfang, ort, folge, onWechseln, onSchliessen, isTeam = false }: Props) {
   const { t, i18n } = useTranslation()
-  const userKey = useVaultStore((s) => s.userKey)
+  const userKey = isTeam ? useTeamVaultStore((s) => s.userKey) : useVaultStore((s) => s.userKey)
+  const items = isTeam ? useTeamVaultStore((s) => s.items) : useVaultStore((s) => s.items)
   // Live aus dem Store: nach Bearbeiten oder Zurückholen hat die Datei ein neues Original.
-  const item = useVaultStore((s) => s.items.find((i) => i.id === anfang.id)) ?? anfang
+  const item = items.find((i) => i.id === anfang.id) ?? anfang
+
+  useEffect(() => {
+    if (!item.datei && item.extra?.base64 && isTeam) {
+      void useTeamVaultStore.getState().migriereBase64Datei(item)
+    }
+  }, [item, isTeam])
+
   const datei = item.datei
   const art = datei ? vorschauArt(datei.typ, item.service) : null
   const groesse = datei?.original.echt ?? 0
@@ -155,7 +165,8 @@ export function TresorDateiAnsicht({ item: anfang, ort, folge, onWechseln, onSch
           fortschritt: (anteil) => setAnzeige((a) => (a.id === id ? { ...a, anteil } : a)),
         })
         // Während des Ladens gesperrt oder weitergeblättert: nichts mehr anzeigen.
-        if (abbruch.signal.aborted || useVaultStore.getState().userKey !== userKey) return
+        const aktiverKey = isTeam ? useTeamVaultStore.getState().userKey : useVaultStore.getState().userKey
+        if (abbruch.signal.aborted || aktiverKey !== userKey) return
         const fertig = { id, ...LEER, anteil: null }
         if (textartig) {
           const bytes = new Uint8Array(await blob.arrayBuffer())
@@ -187,13 +198,27 @@ export function TresorDateiAnsicht({ item: anfang, ort, folge, onWechseln, onSch
 
   useNeuBeiNetz(anzeige.fehler, erneut)
 
-  if (!datei) return null
+  if (!datei) {
+    if (isTeam && item.extra?.base64) {
+      return (
+        <Dialog open onOpenChange={onSchliessen}>
+          <DialogContent className="max-w-md p-6 text-center">
+            <div className="flex flex-col items-center justify-center gap-3 py-6">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <p className="text-body-sm text-text-muted">{t('mss.vault.dateien.vorbereiten', { defaultValue: 'Datei wird vorbereitet...' })}</p>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )
+    }
+    return null
+  }
 
   const aufGeraet = () => dateiAufsGeraet(item, userKey)
 
   // Scheitert es, bleibt die Datei offen; der Toast sagt es.
   const inPapierkorb = async () => {
-    if ((await inDenPapierkorb([item.id])).length > 0) onSchliessen()
+    if ((await inDenPapierkorb([item.id], undefined, isTeam)).length > 0) onSchliessen()
   }
 
   // Textdateien haben keine eigene Ansicht: sobald der Text da ist, geht der Editor auf.
@@ -205,11 +230,12 @@ export function TresorDateiAnsicht({ item: anfang, ort, folge, onWechseln, onSch
         ort={ort}
         ansicht={art === 'markdown' || art === 'tabelle' ? art : undefined}
         onFertig={onSchliessen}
+        isTeam={isTeam}
       />
     )
   }
   if (bildBearbeiten && anzeige.url) {
-    return <TresorBildeditor item={item} vorschauUrl={anzeige.url} onFertig={() => setBildBearbeiten(false)} />
+    return <TresorBildeditor item={item} vorschauUrl={anzeige.url} onFertig={() => setBildBearbeiten(false)} isTeam={isTeam} />
   }
 
   const datum = (ms: number) => formatZeitpunkt(ms, i18n.language)

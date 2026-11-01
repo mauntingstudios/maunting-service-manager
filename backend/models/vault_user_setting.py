@@ -45,6 +45,15 @@ class VaultUserSetting(Base):
         String(128),
         nullable=True,
     )
+    # Zwei-Phasen-Rotation (wie beim Team-Tresor).
+    pending_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pending_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    rotation_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    old_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    old_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    rotation_cleanup_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_now,

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { teamsApi } from '@/api/teams'
 import { useTeamVaultStore } from './teamVaultStore'
+import { encryptVaultEntry } from './vaultCrypto'
+import { VAULT_TOMBSTONE_MARKER } from './vaultEintrag'
 
 vi.mock('@/api/teams', () => ({
   teamsApi: {
@@ -121,6 +123,54 @@ describe('teamVaultStore', () => {
     expect(useTeamVaultStore.getState().hasHint).toBe(true)
   })
 
+  it('ignoriert eine Löschung ohne Tombstone-Beweis und einen Revisions-Rückschritt', async () => {
+    vi.mocked(teamsApi.setupVault).mockResolvedValue({ status: 'ok' })
+    await useTeamVaultStore.getState().setup(42, 'SuperSecretMasterPassword123!')
+    const key = useTeamVaultStore.getState().userKey!
+    const lebendig = await encryptVaultEntry({ service: 'Mail', username: 'u', password: 'p' }, key, 'e1')
+    useTeamVaultStore.setState({
+      items: [{ id: 'e1', service: 'Mail', username: 'u', password: 'p', createdAt: 0, updatedAt: 0, revision: 5 }],
+      serverRevision: 5,
+    })
+
+    // Server behauptet Löschung, Umschlag ist aber ein normaler Eintrag.
+    vi.mocked(teamsApi.syncVault).mockResolvedValue({
+      server_revision: 6,
+      has_more: false,
+      entries: [{ id: 'e1', ciphertext: lebendig, revision: 6, is_deleted: true, updated_at: '' }],
+    })
+    await useTeamVaultStore.getState().syncWithServer(42)
+    expect(useTeamVaultStore.getState().items.map((i) => i.id)).toEqual(['e1'])
+
+    // Ältere Revision darf den neueren Stand nicht ersetzen.
+    const alt = await encryptVaultEntry({ service: 'Alt', username: '', password: '' }, key, 'e1')
+    vi.mocked(teamsApi.syncVault).mockResolvedValue({
+      server_revision: 6,
+      has_more: false,
+      entries: [{ id: 'e1', ciphertext: alt, revision: 3, is_deleted: false, updated_at: '' }],
+    })
+    await useTeamVaultStore.getState().syncWithServer(42)
+    expect(useTeamVaultStore.getState().items[0].service).toBe('Mail')
+  })
+
+  it('befolgt eine Löschung mit Tombstone-Beweis im Umschlag', async () => {
+    vi.mocked(teamsApi.setupVault).mockResolvedValue({ status: 'ok' })
+    await useTeamVaultStore.getState().setup(42, 'SuperSecretMasterPassword123!')
+    const key = useTeamVaultStore.getState().userKey!
+    const grab = await encryptVaultEntry({ [VAULT_TOMBSTONE_MARKER]: true, deletedAt: 1, updatedAt: 1 }, key, 'e1')
+    useTeamVaultStore.setState({
+      items: [{ id: 'e1', service: 'Mail', username: 'u', password: 'p', createdAt: 0, updatedAt: 0, revision: 5 }],
+      serverRevision: 5,
+    })
+    vi.mocked(teamsApi.syncVault).mockResolvedValue({
+      server_revision: 6,
+      has_more: false,
+      entries: [{ id: 'e1', ciphertext: grab, revision: 6, is_deleted: true, updated_at: '' }],
+    })
+    await useTeamVaultStore.getState().syncWithServer(42)
+    expect(useTeamVaultStore.getState().items).toEqual([])
+  })
+
   it('fordert den Passwort-Hinweis per E-Mail an', async () => {
     vi.mocked(teamsApi.requestVaultHint).mockResolvedValue({ status: 'ok', message: 'E-Mail gesendet' })
 
@@ -129,5 +179,40 @@ describe('teamVaultStore', () => {
     expect(res.ok).toBe(true)
     expect(res.message).toBe('E-Mail gesendet')
     expect(teamsApi.requestVaultHint).toHaveBeenCalledWith(42)
+  })
+
+  it('legt ein Album an und ändert dessen Einträge', async () => {
+    vi.mocked(teamsApi.setupVault).mockResolvedValue({ status: 'ok' })
+    vi.mocked(teamsApi.syncVault).mockResolvedValue({ server_revision: 2, entries: [], has_more: false })
+
+    await useTeamVaultStore.getState().setup(42, 'SuperSecretMasterPassword123!')
+    const albumId = await useTeamVaultStore.getState().albumAnlegen('Urlaub 2026', ['img-1', 'img-2'])
+
+    const album = useTeamVaultStore.getState().items.find((i) => i.id === albumId)
+    expect(album).toBeDefined()
+    expect(album?.service).toBe('Urlaub 2026')
+    expect(album?.category).toBe('album')
+    expect(album?.album?.eintraege).toEqual(['img-1', 'img-2'])
+
+    // Ändern: img-1 entfernen, img-3 hinzufügen
+    await useTeamVaultStore.getState().albumAendern(albumId, { hinzu: ['img-3'], weg: ['img-1'] })
+
+    const aktualisiert = useTeamVaultStore.getState().items.find((i) => i.id === albumId)
+    expect(aktualisiert?.album?.eintraege).toEqual(['img-2', 'img-3'])
+  })
+
+  it('ändert Einträge atomar über aendern', async () => {
+    vi.mocked(teamsApi.setupVault).mockResolvedValue({ status: 'ok' })
+    vi.mocked(teamsApi.syncVault).mockResolvedValue({ server_revision: 2, entries: [], has_more: false })
+
+    await useTeamVaultStore.getState().setup(42, 'SuperSecretMasterPassword123!')
+    const id = await useTeamVaultStore.getState().saveItem({ service: 'Vorher', username: 'user1' })
+
+    await useTeamVaultStore.getState().aendern(id, (frisch) => ({
+      service: `${frisch.service} Nachher`,
+    }))
+
+    const geaendert = useTeamVaultStore.getState().items.find((i) => i.id === id)
+    expect(geaendert?.service).toBe('Vorher Nachher')
   })
 })

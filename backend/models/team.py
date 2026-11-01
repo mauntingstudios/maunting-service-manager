@@ -82,6 +82,16 @@ class Team(Base):
     vault_last_hint_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Zwei-Phasen-Rotation: pending ist der Staging-Bucket, old der nach
+    # Commit noch 7 Tage gehaltene Vorgaenger (Rollback-Fenster).
+    vault_pending_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    vault_pending_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    vault_rotation_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    vault_old_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    vault_old_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    vault_rotation_cleanup_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     members: Mapped[list["TeamMember"]] = relationship(
         "TeamMember", back_populates="team", cascade="all, delete-orphan"

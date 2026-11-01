@@ -18,6 +18,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { LanguageProvider, useLanguage } from '@/lib/useLanguage';
 import { decryptBackup, DecryptError } from '@/lib/decrypt';
+import { istTresorBackup, entschluesseleTresorBackup } from '@/lib/vaultBackup';
 import {
   createTempDir,
   writeTempFile,
@@ -37,7 +38,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { ProgressBar } from '@/components/ProgressBar';
 import { BrandMark } from '@/components/BrandMark';
 
-type Step = 'input' | 'decrypting' | 'extracting' | 'success' | 'error';
+type Step = 'input' | 'decrypting' | 'extracting' | 'success' | 'error' | 'vaultSuccess';
 
 /** Maps an error to the most specific German i18n key. */
 function classifyError(err: unknown): TranslationKey {
@@ -66,6 +67,8 @@ function AppContent() {
   const [decryptedSize, setDecryptedSize] = useState(0);
   const [validationError, setValidationError] = useState<TranslationKey | null>(null);
   const [fileTree, setFileTree] = useState<FileTreeNode | null>(null);
+  const [vaultEntries, setVaultEntries] = useState<Record<string, unknown>[] | null>(null);
+  const istTresor = fileBytes ? istTresorBackup(fileBytes) : false;
   // Progress feedback for the decrypt/extract steps (null = indeterminate).
   const [progress, setProgress] = useState<number | null>(null);
   const [progressLabel, setProgressLabel] = useState<string | undefined>(undefined);
@@ -103,7 +106,7 @@ function AppContent() {
       setValidationError('validation.passwordRequired');
       return;
     }
-    if (!salt) {
+    if (!istTresor && !salt) {
       setValidationError('validation.saltRequired');
       return;
     }
@@ -112,6 +115,21 @@ function AppContent() {
     setProgress(null);
     setProgressLabel(undefined);
     setStep('decrypting');
+
+    // Tresor-Backup: Salt steckt in der Datei, kein tar.gz danach.
+    if (istTresor) {
+      try {
+        const eintraege = await entschluesseleTresorBackup(fileBytes, password);
+        setVaultEntries(eintraege);
+        setStep('vaultSuccess');
+      } catch (err) {
+        setErrorMsgKey(classifyError(err));
+        setStep('error');
+      } finally {
+        setPassword('');
+      }
+      return;
+    }
 
     try {
       // 1. Decrypt with DIS (Argon2id + AES-256-GCM)
@@ -163,6 +181,7 @@ function AppContent() {
     // Clean up temp files from the previous session (VAL-CROSS-004)
     await cleanupTemp();
     setStep('input');
+    setVaultEntries(null);
     setFileName(null);
     setFileBytes(null);
     setPassword('');
@@ -218,7 +237,11 @@ function AppContent() {
             disabled={step !== 'input'}
           />
 
-          <SaltInput value={salt} onChange={setSalt} disabled={step !== 'input'} />
+          {istTresor ? (
+            <p className="text-sm text-muted-foreground" role="status">{t('vault.detected')}</p>
+          ) : (
+            <SaltInput value={salt} onChange={setSalt} disabled={step !== 'input'} />
+          )}
 
           {validationError ? (
             <p
@@ -250,6 +273,47 @@ function AppContent() {
           extractedDir={tempDirRef.current ? `${tempDirRef.current}\\extracted` : ''}
           onRetry={handleReset}
         />
+      ) : null}
+
+      {step === 'vaultSuccess' && vaultEntries ? (
+        <section className="msm-card flex flex-col gap-4 p-6" data-testid="vault-success">
+          <h2 className="text-lg font-semibold text-foreground">{t('vault.successTitle')}</h2>
+          <p className="text-sm text-muted-foreground">
+            {t('vault.entries')}: {vaultEntries.length}
+          </p>
+          {vaultEntries.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('vault.empty')}</p>
+          ) : (
+            <ul className="flex max-h-96 flex-col gap-1 overflow-auto text-sm">
+              {vaultEntries.map((e, i) => (
+                <li key={i} className="rounded border border-border px-2 py-1">
+                  {String(e.service ?? e.id ?? `#${i + 1}`)}
+                  {typeof e.username === 'string' && e.username ? ` — ${e.username}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground"
+              onClick={() => {
+                const blob = new Blob([JSON.stringify(vaultEntries, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'tresor-backup.json';
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              {t('vault.export')}
+            </button>
+            <button type="button" className="rounded border border-border px-3 py-1.5 text-sm" onClick={() => void handleReset()}>
+              {t('state.success.retry')}
+            </button>
+          </div>
+        </section>
       ) : null}
 
       {step === 'error' ? <ErrorState messageKey={errorMsgKey} onRetry={handleRetry} /> : null}

@@ -82,5 +82,13 @@ export const en: Record<LocaleKeys, string> = {
   'language.de': 'German',
   'language.en': 'English',
 
-  'footer.offline': 'This app works completely offline.',
+  'vault.heading': 'Open vault backup',
+  'vault.description': 'Vault backup (.msmvault) from a password rotation. The master password from that time is enough; the salt is embedded in the file.',
+  'vault.fileLabel': 'Vault backup (.msmvault)',
+  'vault.passwordLabel': 'Master password (at time of rotation)',
+  'vault.detected': 'Vault backup detected — no salt needed.',
+  'vault.successTitle': 'Vault backup decrypted',
+  'vault.entries': 'Entries in the backup',
+  'vault.export': 'Export as JSON',
+  'vault.empty': 'No entries found.',  'footer.offline': 'This app works completely offline.',
 };

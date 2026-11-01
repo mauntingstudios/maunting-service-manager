@@ -179,6 +179,21 @@ class VaultSaltResponse(BaseModel):
     bucket_id: str | None = None
     has_vault: bool = False
     has_hint: bool = False
+    rotation_state: str | None = None
+    pending_bucket_id: str | None = None
+    pending_salt: str | None = None
+
+
+class VaultRotationPrepareRequest(BaseModel):
+    bucket_id: str = Field(..., min_length=64, max_length=64)
+    salt: str = Field(..., min_length=16, max_length=128)
+
+    @field_validator("bucket_id")
+    @classmethod
+    def validate_rotation_bucket(cls, v: str) -> str:
+        if not HEX_64_REGEX.match(v):
+            raise ValueError("bucket_id must be a 64-character hex string")
+        return v.lower()
 
 
 class VaultSaltSetRequest(BaseModel):

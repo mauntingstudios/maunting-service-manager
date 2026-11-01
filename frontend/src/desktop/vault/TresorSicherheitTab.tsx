@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { Fingerprint, ShieldCheck } from 'lucide-react'
+import { Fingerprint, RotateCcw, ShieldCheck } from 'lucide-react'
 
 import { sperrfristOptionen } from '@/services/autoSperre'
 import { Button, Dialog, DialogContent, Dropdown, type DropdownOption, PasswordInput, Switch } from '@/Singra/UI'
@@ -45,10 +45,40 @@ export function TresorSicherheitTab({ offline = false }: { offline?: boolean }) 
     enableBiometrics,
     disableBiometrics,
     checkBiometricsSupport,
+    rotatePassword,
+    rotationState,
+    abortRotation,
+    rollbackRotation,
   } = useVaultStore(
     // Nur diese Felder: `lastActivityTime` ändert sich bei jeder Mausbewegung.
-    useShallow((s) => ({ isInitialized: s.isInitialized, isUnlocked: s.isUnlocked, autoLockMinutes: s.autoLockMinutes, lockOnWindowBlur: s.lockOnWindowBlur, isBiometricsSupported: s.isBiometricsSupported, isBiometricsEnabled: s.isBiometricsEnabled, setAutoLockMinutes: s.setAutoLockMinutes, setLockOnWindowBlur: s.setLockOnWindowBlur, enableBiometrics: s.enableBiometrics, disableBiometrics: s.disableBiometrics, checkBiometricsSupport: s.checkBiometricsSupport })),
+    useShallow((s) => ({ isInitialized: s.isInitialized, isUnlocked: s.isUnlocked, autoLockMinutes: s.autoLockMinutes, lockOnWindowBlur: s.lockOnWindowBlur, isBiometricsSupported: s.isBiometricsSupported, isBiometricsEnabled: s.isBiometricsEnabled, setAutoLockMinutes: s.setAutoLockMinutes, setLockOnWindowBlur: s.setLockOnWindowBlur, enableBiometrics: s.enableBiometrics, disableBiometrics: s.disableBiometrics, checkBiometricsSupport: s.checkBiometricsSupport, rotatePassword: s.rotatePassword, rotationState: s.rotationState, abortRotation: s.abortRotation, rollbackRotation: s.rollbackRotation })),
   )
+
+  const [rotationOpen, setRotationOpen] = useState(false)
+  const [rotAktuell, setRotAktuell] = useState('')
+  const [rotNeu, setRotNeu] = useState('')
+  const [rotWiederholung, setRotWiederholung] = useState('')
+  const [rotBusy, setRotBusy] = useState(false)
+
+  const handleRotation = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (rotNeu.length < 12 || rotNeu !== rotWiederholung) return
+    setRotBusy(true)
+    try {
+      const ok = await rotatePassword(rotAktuell, rotNeu)
+      if (ok) {
+        toast.success(t('mss.vault.rotationErfolg'))
+        setRotationOpen(false)
+        setRotAktuell('')
+        setRotNeu('')
+        setRotWiederholung('')
+      } else {
+        toast.error(t('mss.vault.rotationFehler'))
+      }
+    } finally {
+      setRotBusy(false)
+    }
+  }
 
   const [biometricsModalOpen, setBiometricsModalOpen] = useState(false)
   const [masterPasswordInput, setMasterPasswordInput] = useState('')
@@ -219,6 +249,53 @@ export function TresorSicherheitTab({ offline = false }: { offline?: boolean }) 
           )}
         </div>
       </div>
+
+      {/* Master-Passwort rotieren (Zwei-Phasen, mit verschlüsseltem Vorab-Backup) */}
+      <div className="msm-card p-5 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <RotateCcw className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-on-surface">{t('mss.vault.rotationTitel')}</h2>
+            <p className="text-label-sm text-on-surface-variant">{t('mss.vault.rotationHinweis')}</p>
+          </div>
+        </div>
+        <div className="pt-2 border-t border-outline-variant/30 flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" disabled={!isInitialized || !isUnlocked} onClick={() => setRotationOpen(true)}>
+            <RotateCcw className="h-4 w-4 mr-1.5" />
+            {t('mss.vault.rotationStarten')}
+          </Button>
+          {rotationState === 'prepared' && (
+            <Button type="button" size="sm" variant="ghost" onClick={() => void abortRotation()}>
+              {t('mss.vault.rotationAbbrechen')}
+            </Button>
+          )}
+          {rotationState === 'committed' && (
+            <Button type="button" size="sm" variant="ghost" onClick={() => void rollbackRotation()}>
+              {t('mss.vault.rotationRollback')}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <Dialog open={rotationOpen} onOpenChange={setRotationOpen}>
+        <DialogContent className="max-w-sm p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-on-surface">{t('mss.vault.rotationTitel')}</h3>
+          <p className="text-xs text-on-surface-variant">{t('mss.vault.rotationBackupHinweis')}</p>
+          <form onSubmit={handleRotation} className="space-y-3">
+            <PasswordInput value={rotAktuell} onChange={(e) => setRotAktuell(e.target.value)} placeholder={t('mss.vault.rotationAktuellesPasswort')} autoFocus required disabled={rotBusy} />
+            <PasswordInput value={rotNeu} onChange={(e) => setRotNeu(e.target.value)} placeholder={t('mss.vault.rotationNeuesPasswort')} required disabled={rotBusy} />
+            <PasswordInput value={rotWiederholung} onChange={(e) => setRotWiederholung(e.target.value)} placeholder={t('mss.vault.rotationPasswortWiederholen')} required disabled={rotBusy} />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={() => setRotationOpen(false)} disabled={rotBusy}>{t('common.cancel')}</Button>
+              <Button type="submit" disabled={rotBusy || !rotAktuell || rotNeu.length < 12 || rotNeu !== rotWiederholung}>
+                {rotBusy ? t('mss.vault.rotationLaeuft') : t('mss.vault.rotationStarten')}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {istAndroid && <KameraSicherungKarte offline={offline} />}
 

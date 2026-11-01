@@ -60,6 +60,26 @@ Der Tresor synchronisiert über zwei Endpunkte — `/api/vault/sync` (angemeldet
 - `/reset` (seit 5.0.2, angemeldet; Nachweise wie beim Löschen des Kontos: Passwort, wenn vorhanden, bei 2FA zusätzlich ein Faktor, immer das Wort `delete`) löst Salz, Kontokopplung und Hinweis vom Konto. Ciphertexte bleiben: ein blinder Bucket gehört keinem Konto, und ein gekoppelter lebt womöglich auf einem anderen Gerät weiter. Die lokale Kopie eines Geräts löscht nur das Gerät selbst, nie der Server.
 - `/sync` weist Buckets ab, die an einen blinden Besitznachweis gebunden und nicht dem aufrufenden Konto zugeordnet sind, und beansprucht keinen Bucket mehr, in dem bereits Ciphertext liegt.
 
+### 2.6 Zwei-Phasen-Rotation & Sicherheitsnetz (Master-Passwort-Änderung)
+
+Das Ändern des Master-Passworts in einem Zero-Knowledge-System erfordert das vollständige Umschlüsseln aller Daten auf dem Endgerät. Scheitert dieser Prozess vorzeitig (Netzwerkabbruch, Absturz, Verbindungsverlust), führt ein direktes Überschreiben des bestehenden Buckets zu irreparabler Datenbeschädigung. Daher nutzt der Passwort-Manager ein atomares Zwei-Phasen-Verfahren:
+
+1. **Lokales Notfall-Backup:** Vor Beginn der Umschlüsselung wird im geschützten AppData-Verzeichnis (`desktop/vault/tresorBackup.ts`) ein verschlüsseltes Backup des aktuellen Bestands angelegt.
+2. **Phase 1 — Prepare (`/rotation/prepare`):** Der Server reserviert einen neuen Staging-Bucket (`vault_staging_bucket_id`) und hinterlegt das neue KDF-Salz. Die bestehenden Daten im aktiven Bucket bleiben unberührt.
+3. **Client-Staging:** Der Client entschlüsselt alle Einträge mit dem bisherigen Schlüssel, verschlüsselt sie mit dem neu abgeleiteten Schlüssel und überträgt sie in den Staging-Bucket.
+4. **Client-Verifikation:** Der Client liest und verifiziert den Staging-Bestand, bevor er den Abschluss anfordert.
+5. **Phase 2 — Commit (`/rotation/commit`):** Der Server vertauscht atomar die Zeiger: Der Staging-Bucket wird zum aktiven Bucket (`vault_bucket_id`), der bisherige Bucket wird zu `vault_previous_bucket_id`, und `vault_rotated_at` wird auf den aktuellen Zeitstempel gesetzt.
+6. **Abbruch & Rollback:**
+   - Tritt während des Stagings ein Fehler auf, verwirft `/rotation/abort` den Staging-Bucket restlos; der alte Zustand bleibt aktiv.
+   - Tritt nach dem Commit ein Problem auf, stellt `/rotation/rollback` den vorherigen Bucket wieder als aktiv her.
+7. **7-Tage-Haltefrist & automatisierte Bereinigung:** Der bisherige Bucket (`vault_previous_bucket_id`) wird für 7 Tage aufbewahrt (`ROTATION_HALTEFRIST = timedelta(days=7)`). Erst nach Ablauf dieser Frist löscht der periodische Hintergrund-Dienst `bereinige_faellige_rotationen(db)` die veralteten Daten endgültig.
+8. **Schutz vor Bucket-Übernahme:** Die Funktion `_pruefe_bucket_nicht_vergeben(db, ...)` stellt sicher, dass weder aktive noch Staging- oder alte Buckets von fremden Konten oder Teams beansprucht werden können.
+
+#### Wichtiger Sicherheitshinweis: Rotation ist beratend (`needs_rotation`) und optional
+
+- **Keine Blockade:** Wenn ein Mitglied ein Team verlässt oder entfernt wird, setzt das Backend die Markierung `needs_rotation = True`. Dies dient als Empfehlung für den Team-Inhaber, blockiert den Tresor aber zu keinem Zeitpunkt.
+- **Kryptographische Grenzen:** Das Rotieren des Master-Passworts oder des Tresor-Schlüssels kann bereits kopierte Daten nicht ungeschehen machen. Hat ein ausscheidendes Mitglied Einträge vor seinem Austritt lokal kopiert oder exportiert, verbleiben diese Daten in seinem Besitz. Die Rotation stellt sicher, dass künftige Einträge und Änderungen für frühere Mitglieder nicht mehr lesbar sind.
+
 ---
 
 ## 3. Benutzeroberfläche & Bedienkomfort
@@ -118,6 +138,22 @@ Der Tresor synchronisiert über zwei Endpunkte — `/api/vault/sync` (angemeldet
 - **Unterdrückung doppelter Passwort-Augen:** Native Browser-/Windows-Augen-Symbole (`::-ms-reveal`) sind neutralisiert; es wird exakt ein einheitliches Icon angezeigt.
 - **Radikale Textreduktion:** Sämtliche langen Textpassagen, Beipackzettel und Infoboxen wurden entfernt. Das UI ist minimalistisch, selbsterklärend und sauber.
 
+### 3.12 Team-Datei-Cloud & Blob-Pipeline
+- **Dateigrößenunabhängige Verschlüsselung:** Team-Tresore nutzen dieselbe DIS-Chunk-Verschlüsselung wie persönliche Tresore (`@msdis/shield/file-encryption`).
+- **Eigentümer-basiertes Quota-Modell:** Der Speicherplatz für Team-Dateien wird vollständig dem Kontingent des jeweiligen Team-Owners (`quote_fuer(db, owner)`) zugerechnet. Verfügt der Team-Owner über keine Rolle mit Tresorspeicher, wird der Upload mit dem Fehler `"Der Team-Owner hat keinen Tresorspeicher (Rolle ohne Speicher in den Panel-Einstellungen)."` (HTTP 507) abgewiesen.
+- **Team-Blob-Endpunkte:** Eigene REST-Endpunkte unter `/api/teams/{id}/vault/blobs...` wickeln Reservierung, Chunks, Fertigstellung und Löschung isoliert ab.
+- **Dynamisches Client-Routing:** Über `blobBasisSetzen(teamId)` wird der Dateizugriff im Frontend transparent zwischen persönlichem Tresor und dem jeweiligen Team-Tresor gesteuert.
+- **Automatische Lazy-Migration:** Ältere Team-Dateianhänge im Inline-Base64-Format werden beim ersten Betrachten (`TresorDateiAnsicht`) automatisch in die Chunk-Blob-Pipeline überführt (`migriereBase64Datei`).
+- **Medien- und Datei-Integration:** Bildbetrachter, Bildeditor, Texteditor und Mediengalerie unterstützen Team-Tresore vollständig über das `isTeam`-Attribut.
+- **Tombstone- und Revisions-Integrität:** Gelöschte Team-Einträge müssen zwingend einen kryptographischen `mss-vault-tombstone-v1`-Nachweis im Ciphertext tragen; Revisions-Rückschritte werden abgewiesen.
+
+### 3.13 Standalone Recovery-App Tresor-Modus
+- **Notfall-Wiederherstellung ohne Backend:** Die Recovery-App (`recovery/`) bietet einen eigenständigen Wiederherstellungsmodus für exportierte Tresor-Backups.
+- **Header-Erkennung:** Tresor-Backups beginnen mit der Kennung `MSS-VAULT-BACKUP-V1`, gefolgt von KDF-Salz, Erstellungszeitpunkt und verschlüsselten Frames.
+- **Rahmenformat & KDF:** Entschlüsselt das Standard-Backup-Format (`[4-Byte Länge][12-Byte Nonce][Ciphertext + 16-Byte Tag]`) mit speicherhartem Argon2id (128 MiB, 3 Durchgänge, Parallelität 4).
+- **Vollständig offline:** Läuft im Browser oder in der Tauri-App ohne Netzwerkverbindung.
+- **Ansicht und Export:** Übersichtliche Anzeige der entschlüsselten Zugangsdaten und Notizen sowie JSON-Export.
+
 ---
 
 ## 4. Zentrale Panel-Verwaltung & KISS-Architektur
@@ -132,15 +168,22 @@ Der Tresor synchronisiert über zwei Endpunkte — `/api/vault/sync` (angemeldet
 
 ### Backend
 - `backend/models/vault_entry.py`: Schlankes PostgreSQL-Datenmodell für anonyme Tresoreinträge (ohne Node-Spalten).
-- `backend/models/__init__.py`: Registrierung des Modells.
+- `backend/models/vault_user_setting.py`: Modell für Tresoreinstellungen inklusive Rotations-Spalten (`vault_staging_bucket_id`, `vault_previous_bucket_id`, `vault_rotated_at`).
+- `backend/models/team.py`: Team-Modell mit denselben Rotations-Spalten für Team-Tresore.
+- `backend/models/__init__.py`: Registrierung der Modelle.
 - `backend/migrations/versions/20260902_02_vault_entries.py`: Alembic-Migration für `vault_entries` und Indizes.
 - `backend/migrations/versions/20260905_01_drop_vault_entries_node_id.py`: Bereinigungs-Migration zur Entfernung verwaister Node-Spalten.
-- `backend/schemas/vault.py`: Pydantic-Validierungs- und Datenübertragungsmodelle.
-- `backend/services/vault_service.py`: Revisionsverwaltung und deterministische Synchronisationslogik.
-- `backend/routers/vault.py`: REST-Endpunkt `/api/vault/sync`.
+- `backend/migrations/versions/20261102_01_vault_rotation.py`: Alembic-Migration für Zwei-Phasen-Rotation (Staging, Previous, Rotated-At).
+- `backend/schemas/vault.py`: Pydantic-Validierungs- und Datenübertragungsmodelle inklusive Rotations-Schemas (`VaultRotationPrepareRequest`).
+- `backend/services/vault_service.py`: Revisionsverwaltung, Zwei-Phasen-Rotationslogik (`rotation_vorbereiten_*`, `rotation_commit_*`, `rotation_abbrechen_*`, `rotation_rollback_*`), Bucket-Claim-Schutz (`_pruefe_bucket_nicht_vergeben`) und 7-Tage-Bereinigung (`bereinige_faellige_rotationen`).
+- `backend/services/vault_blob_service.py`: Quota- und Belegungs-Berechnung über `quota_override` und `belegt_override`.
+- `backend/routers/vault.py`: REST-Endpunkte für Sync und Zwei-Phasen-Rotation (`/rotation/prepare`, `/commit`, `/abort`, `/rollback`).
+- `backend/routers/teams.py`: REST-Endpunkte für Team-Tresor-Sync, Zwei-Phasen-Rotation und Team-Blobs (`/api/teams/{id}/vault/blobs...`).
 - `backend/routers/__init__.py`: Router-Export.
-- `backend/main.py`: Einbindung des Vault-Routers unter `/api/vault`.
+- `backend/main.py`: Einbindung des Vault-Routers unter `/api/vault` und Scheduler-Job für Rotations-Bereinigung.
 - `backend/tests/test_vault_router.py`: Pytest-Suite für Authentifizierung, Validierung und Synchronisation.
+- `backend/tests/test_vault_rotation.py`: Pytest-Suite für Vorbereitung, Commit, Rollback, Abort und 7-Tage-Bereinigung.
+- `backend/tests/test_team_vault.py`: Pytest-Suite für Team-Tresor, Tombstone-Prüfung, Revisionsschutz, Fremdbucket-Abweisung und Team-Blob-Lifecycle mit Owner-Quota.
 
 ### Frontend
 - `frontend/src/desktop/vault/vaultCrypto.ts`: DIS-Kryptographie, `SecureBuffer`, PBKDF2 und AES-256-GCM.
@@ -148,8 +191,22 @@ Der Tresor synchronisiert über zwei Endpunkte — `/api/vault/sync` (angemeldet
 - `frontend/src/desktop/vault/totpEngine.ts`: RFC 6238 TOTP-Generator und URI-Parser.
 - `frontend/src/desktop/vault/totpEngine.test.ts`: Vitest-Suite für TOTP-Zeittakt und Base32.
 - `frontend/src/desktop/vault/brandCatalog.tsx`: Lokaler SVG-Markenkatalog.
-- `frontend/src/desktop/vault/vaultStore.ts`: Zustand Offline-First Store mit Revisionsabgleich.
-- `frontend/src/desktop/vault/VaultView.tsx`: Tresor-Oberfläche mit Master-Passwort-Schutz und 2FA-Ring.
+- `frontend/src/desktop/vault/vaultStore.ts`: Zustand Offline-First Store mit Revisionsabgleich und Zwei-Phasen-Rotation.
+- `frontend/src/desktop/vault/teamVaultStore.ts`: Team-Tresor Store mit Blob-Pipeline, Tombstone-Prüfung, Revisionsmonotonie und Lazy Migration.
+- `frontend/src/desktop/vault/vaultRotation.ts`: Client-Implementierung der atomaren Zwei-Phasen-Rotation (`rotateVaultCore`).
+- `frontend/src/desktop/vault/tresorBackup.ts`: Lokaler Notfall-Backup-Writer in Tauri-AppData vor Schlüsselumstellungen.
+- `frontend/src/desktop/vault/tresorBlobApi.ts`: Dynamische Umschaltung der Blob-Basis-URL (`blobBasisSetzen`).
+- `frontend/src/desktop/vault/tresorSammel.ts`: Archivierungs- und Papierkorb-Aktionen mit `isTeam`-Unterstützung.
+- `frontend/src/desktop/vault/VaultView.tsx`: Tresor-Oberfläche mit Master-Passwort-Schutz, Team-Dateien, Mediengalerie und 2FA-Ring.
+- `frontend/src/desktop/vault/TresorDateiBereich.tsx`: Datei-Verwaltung mit Team-Umschaltung.
+- `frontend/src/desktop/vault/TresorGalerie.tsx`: Bild- und Video-Galerie mit Team-Unterstützung.
+- `frontend/src/desktop/vault/TresorDateiAnsicht.tsx`: Detailansicht mit automatischer Migration älterer Base64-Dateien.
+- `frontend/src/desktop/vault/TresorBildeditor.tsx` & `TresorTexteditor.tsx`: Editoren mit Store-Auswahl für Team- und Privattresore.
 - `frontend/src/desktop/DesktopApp.tsx`: Navigation, Route `/tresor` und Drawer-Integration.
 - `frontend/src/pages/settings/GeneralTab.tsx`: Panelweiter Aktivierungs-Schalter (`vault_enabled`).
 - `frontend/src/locales/de.json` & `frontend/src/locales/en.json`: Übersetzungen.
+
+### Recovery-App
+- `recovery/src/lib/vaultBackup.ts`: Entschlüsselungsmodul für Tresor-Backups (`MSS-VAULT-BACKUP-V1`, Argon2id 128 MiB).
+- `recovery/src/lib/vaultBackup.test.ts`: Vitest-Suite für Entschlüsselung, Kennungserkennung und Fehlertoleranz.
+- `recovery/src/App.tsx`: Notfall-Wiederherstellungsansicht mit JSON-Export für Tresordaten.

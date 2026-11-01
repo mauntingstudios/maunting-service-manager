@@ -6,7 +6,9 @@ Teams sehen — auch das persoenliche, das er nie selbst angelegt hat. Erst das
 `team_service.create_team`.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -30,9 +32,15 @@ from schemas.team import (
     TeamVaultSetupRequest,
 )
 from schemas.vault import (
+    VaultBlobAnlegen,
+    VaultBlobLoeschen,
+    VaultBlobStatus,
+    VaultBlobsKlein,
     VaultHintSetRequest,
     VaultHintStatusResponse,
     VaultResetRequest,
+    VaultRotationPrepareRequest,
+    VaultSpeicher,
     VaultSyncRequest,
     VaultSyncResponse,
 )
@@ -41,6 +49,7 @@ from services import (
     passkey_service,
     permission_service,
     team_service,
+    vault_blob_service,
     vault_service,
 )
 from services.auth_service import AuthService
@@ -405,6 +414,9 @@ def get_team_vault_salt(
         needs_rotation=bool(team.vault_needs_rotation),
         is_owner=is_owner,
         has_hint=bool(team.vault_hint),
+        rotation_state=team.vault_rotation_state,
+        pending_bucket_id=team.vault_pending_bucket_id,
+        pending_salt=team.vault_pending_salt,
     )
 
 
@@ -418,9 +430,14 @@ def setup_team_vault(
     """Richtet den Team-Tresor ein (nur Gruender)."""
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
-    vault_service.setup_team_vault(
-        db, team, user, payload.bucket_id, payload.salt, payload.hint
-    )
+    try:
+        vault_service.setup_team_vault(
+            db, team, user, payload.bucket_id, payload.salt, payload.hint
+        )
+    except vault_service.VaultZurueckgesetzt as exc:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Dieser Tresor wurde zurückgesetzt.") from exc
+    except vault_service.VaultBucketAccessDenied as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     return {"status": "ok"}
 
 
@@ -438,6 +455,60 @@ def rotate_team_vault(
     return {"status": "ok"}
 
 
+@router.post("/{team_id}/vault/rotation/prepare", dependencies=[Depends(verify_csrf)])
+def prepare_team_vault_rotation(
+    team_id: int,
+    payload: "VaultRotationPrepareRequest",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    team = team_service.get_team_for_member(db, team_id, user)
+    team_service.assert_team_owner(db, team, user)
+    try:
+        vault_service.rotation_vorbereiten_team(db, team, payload.bucket_id, payload.salt)
+    except vault_service.VaultZurueckgesetzt as exc:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Dieser Tresor wurde zurückgesetzt.") from exc
+    except vault_service.VaultBucketAccessDenied as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
+@router.post("/{team_id}/vault/rotation/commit", dependencies=[Depends(verify_csrf)])
+def commit_team_vault_rotation(
+    team_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    team = team_service.get_team_for_member(db, team_id, user)
+    team_service.assert_team_owner(db, team, user)
+    vault_service.rotation_commit_team(db, team)
+    return {"status": "ok"}
+
+
+@router.post("/{team_id}/vault/rotation/abort", dependencies=[Depends(verify_csrf)])
+def abort_team_vault_rotation(
+    team_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    team = team_service.get_team_for_member(db, team_id, user)
+    team_service.assert_team_owner(db, team, user)
+    vault_service.rotation_abbrechen_team(db, team)
+    return {"status": "ok"}
+
+
+@router.post("/{team_id}/vault/rotation/rollback", dependencies=[Depends(verify_csrf)])
+def rollback_team_vault_rotation(
+    team_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    team = team_service.get_team_for_member(db, team_id, user)
+    team_service.assert_team_owner(db, team, user)
+    vault_service.rotation_rollback_team(db, team)
+    return {"status": "ok"}
+
+
 @router.post("/{team_id}/vault/sync", response_model=VaultSyncResponse, dependencies=[Depends(verify_csrf)])
 def sync_team_vault(
     team_id: int,
@@ -447,7 +518,12 @@ def sync_team_vault(
 ) -> VaultSyncResponse:
     """Fuehrt Revisions-Sync fuer den Team-Tresor durch (alle Team-Mitglieder)."""
     team = team_service.get_team_for_member(db, team_id, user)
-    return vault_service.sync_team_vault(db, team, user, payload)
+    try:
+        return vault_service.sync_team_vault(db, team, user, payload)
+    except vault_service.VaultZurueckgesetzt as exc:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Dieser Tresor wurde zurückgesetzt.") from exc
+    except vault_service.VaultBucketAccessDenied as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
 @router.get("/{team_id}/vault/hint-status", response_model=VaultHintStatusResponse)
@@ -525,5 +601,178 @@ def reset_team_vault(
         target_id=team.id,
         commit=True,
     )
+    return {"status": "ok"}
+
+
+# ─── Team-Tresor Dateien (Blob-Cloud, Owner-Quota) ───────────────────────────
+
+
+def _team_bucket(db: Session, team_id: int, user: User) -> tuple[Team, str]:
+    team = team_service.get_team_for_member(db, team_id, user)
+    if not team.vault_bucket_id:
+        raise HTTPException(status_code=400, detail="Team-Tresor ist noch nicht eingerichtet.")
+    return team, team.vault_bucket_id
+
+
+def _blob_fehler_team(exc: vault_blob_service.BlobFehler) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=str(exc))
+
+
+def _owner_speicher(db: Session, team: Team) -> tuple[User, int, int]:
+    """Owner, seine Rollen-Quota und seine Gesamt-Belegung (privat + seine Teams)."""
+    owner = db.get(User, team.owner_user_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail="Team-Owner nicht gefunden")
+    quota = vault_blob_service.quote_fuer(db, owner)
+    belegt_gesamt = 0
+    for anderes in db.query(Team).filter(Team.owner_user_id == owner.id, Team.vault_bucket_id.isnot(None)).all():
+        belegt_gesamt += vault_blob_service.belegt(db, anderes.vault_bucket_id)
+    try:
+        einstellung = vault_service.einstellung(db, vault_service.tresor_konto(owner.id))
+        if einstellung is not None and einstellung.bucket_id:
+            belegt_gesamt += vault_blob_service.belegt(db, einstellung.bucket_id)
+    except Exception:
+        pass
+    return owner, quota, belegt_gesamt
+
+
+@router.get("/{team_id}/vault/speicher", response_model=VaultSpeicher)
+def team_vault_speicher(
+    team_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> VaultSpeicher:
+    team, bucket = _team_bucket(db, team_id, user)
+    owner, quota, belegt_gesamt = _owner_speicher(db, team)
+    daten = vault_blob_service.speicher(db, owner, bucket)
+    daten["quote"] = quota
+    daten["belegt"] = belegt_gesamt
+    return VaultSpeicher(**daten)
+
+
+@router.post("/{team_id}/vault/blobs", status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_csrf)])
+def team_blob_anlegen(
+    team_id: int,
+    payload: VaultBlobAnlegen,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    _team, bucket = _team_bucket(db, team_id, user)
+    owner, quota, belegt_gesamt = _owner_speicher(db, _team)
+    if quota <= 0:
+        raise HTTPException(
+            status_code=507,
+            detail="Der Team-Owner hat keinen Tresorspeicher (Rolle ohne Speicher in den Panel-Einstellungen).",
+        )
+    try:
+        vault_blob_service.anlegen(
+            db, user, bucket, payload.id, payload.chunk_count, payload.bytes_total,
+            payload.delete_verifier, quota_override=quota, belegt_override=belegt_gesamt,
+        )
+    except vault_blob_service.BlobFehler as exc:
+        raise _blob_fehler_team(exc) from exc
+    return {"id": payload.id}
+
+
+@router.put("/{team_id}/vault/blobs/{blob_id}/chunks/{index}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_csrf)])
+async def team_blob_chunk_hochladen(
+    team_id: int,
+    blob_id: str,
+    index: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    _team, bucket = _team_bucket(db, team_id, user)
+    try:
+        erwartet = await run_in_threadpool(vault_blob_service.laenge_fuer_upload, db, bucket, blob_id, index)
+    except vault_blob_service.BlobFehler as exc:
+        raise _blob_fehler_team(exc) from exc
+    await run_in_threadpool(db.rollback)
+    daten = bytearray()
+    async for teil in request.stream():
+        daten += teil
+        if len(daten) > erwartet:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Chunk zu gross.")
+    if len(daten) != erwartet:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Chunk hat die falsche Laenge.")
+    try:
+        await run_in_threadpool(vault_blob_service.chunk_ablegen, db, bucket, blob_id, index, daten)
+    except vault_blob_service.BlobFehler as exc:
+        raise _blob_fehler_team(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{team_id}/vault/blobs/{blob_id}/status", response_model=VaultBlobStatus)
+def team_blob_status(
+    team_id: int,
+    blob_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> VaultBlobStatus:
+    _team, bucket = _team_bucket(db, team_id, user)
+    try:
+        blob = vault_blob_service.eigener_blob(db, bucket, blob_id)
+    except vault_blob_service.BlobFehler as exc:
+        raise _blob_fehler_team(exc) from exc
+    return VaultBlobStatus(state=blob.state, chunk_count=blob.chunk_count, vorhanden=vault_blob_service.vorhandene_chunks(blob))
+
+
+@router.post("/{team_id}/vault/blobs/{blob_id}/fertig", dependencies=[Depends(verify_csrf)])
+def team_blob_fertig(
+    team_id: int,
+    blob_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    _team, bucket = _team_bucket(db, team_id, user)
+    try:
+        vault_blob_service.fertigstellen(db, bucket, blob_id)
+    except vault_blob_service.BlobFehler as exc:
+        raise _blob_fehler_team(exc) from exc
+    return {"state": "fertig"}
+
+
+@router.get("/{team_id}/vault/blobs/{blob_id}/chunks/{index}")
+def team_blob_chunk_lesen(
+    team_id: int,
+    blob_id: str,
+    index: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> FileResponse:
+    _team, bucket = _team_bucket(db, team_id, user)
+    try:
+        pfad = vault_blob_service.chunk_pfad(db, bucket, blob_id, index)
+    except vault_blob_service.BlobFehler as exc:
+        raise _blob_fehler_team(exc) from exc
+    return FileResponse(pfad, media_type="application/octet-stream")
+
+
+@router.post("/{team_id}/vault/blobs/klein", dependencies=[Depends(verify_csrf)])
+def team_blobs_klein(
+    team_id: int,
+    payload: VaultBlobsKlein,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    _team, bucket = _team_bucket(db, team_id, user)
+    inhalt = vault_blob_service.kleine_lesen(db, bucket, payload.ids)
+    return Response(content=inhalt, media_type="application/octet-stream")
+
+
+@router.delete("/{team_id}/vault/blobs/{blob_id}", dependencies=[Depends(verify_csrf)])
+def team_blob_loeschen(
+    team_id: int,
+    blob_id: str,
+    payload: VaultBlobLoeschen,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    _team, bucket = _team_bucket(db, team_id, user)
+    try:
+        vault_blob_service.loeschen(db, bucket, blob_id, payload.schluessel)
+    except vault_blob_service.BlobFehler as exc:
+        raise _blob_fehler_team(exc) from exc
     return {"status": "ok"}
 

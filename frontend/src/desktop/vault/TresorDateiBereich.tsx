@@ -68,6 +68,7 @@ import { useLangdruck } from '@/hooks/useLangdruck'
 import { ZipZuGross } from '@/lib/zipSchreiben'
 import { cx } from '@/utils/classNames'
 import { useVaultStore } from './vaultStore'
+import { useTeamVaultStore } from './teamVaultStore'
 import { type VaultItem } from './vaultEintrag'
 import { angeheftet, offlineAnheften, offlineLoesen, useTresorUploads, type UploadFortschritt } from './tresorDateien'
 import { dateiAufsGeraet, mehrereAufGeraetSpeichern } from './tresorAnzeige'
@@ -93,15 +94,16 @@ const amTelefon = () => typeof window !== 'undefined' && !!window.matchMedia?.('
 interface Props {
   /** Suchbegriff aus der Kopfleiste des Tresors. Nicht leer: Treffer aus allen Ordnern statt des geöffneten. */
   suche?: string
+  isTeam?: boolean
 }
 
-export function TresorDateiBereich({ suche = '' }: Props) {
+export function TresorDateiBereich({ suche = '', isTeam = false }: Props) {
   const { t, i18n } = useTranslation()
-  const items = useVaultStore((s) => s.items)
-  const userKey = useVaultStore((s) => s.userKey)
-  const dateiHinzufuegen = useVaultStore((s) => s.dateiHinzufuegen)
-  const ordnerAnlegen = useVaultStore((s) => s.ordnerAnlegen)
-  const aendern = useVaultStore((s) => s.aendern)
+  const items = isTeam ? useTeamVaultStore((s) => s.items) : useVaultStore((s) => s.items)
+  const userKey = isTeam ? useTeamVaultStore((s) => s.userKey) : useVaultStore((s) => s.userKey)
+  const dateiHinzufuegen = isTeam ? useTeamVaultStore((s) => s.dateiHinzufuegen) : useVaultStore((s) => s.dateiHinzufuegen)
+  const ordnerAnlegen = isTeam ? useTeamVaultStore((s) => s.ordnerAnlegen) : useVaultStore((s) => s.ordnerAnlegen)
+  const aendern = isTeam ? useTeamVaultStore((s) => s.aendern) : useVaultStore((s) => s.aendern)
   const uploads = useTresorUploads((s) => s.je)
   const [ordner, setOrdner] = useState<string | undefined>(undefined)
   /**
@@ -355,13 +357,13 @@ export function TresorDateiBereich({ suche = '' }: Props) {
   // Wie in der Galerie: ein Fehler hält den Rest nicht auf, die Meldung nennt die Zahl (tresorSammel).
   const archivieren = async (liste: VaultItem[]) => {
     if (liste.length === 0 || sammel) return
-    await insArchiv(liste.map((i) => i.id), setSammel)
+    await insArchiv(liste.map((i) => i.id), setSammel, isTeam)
     auswahlLeeren()
   }
 
   const inPapierkorb = async (liste: VaultItem[]) => {
     if (liste.length === 0 || sammel) return
-    await inDenPapierkorb(liste.map((i) => i.id), setSammel)
+    await inDenPapierkorb(liste.map((i) => i.id), setSammel, isTeam)
     auswahlLeeren()
   }
 
@@ -841,6 +843,7 @@ export function TresorDateiBereich({ suche = '' }: Props) {
           folge={inhalt.filter((i) => i.datei && !oeffnetImEditor(i))}
           onWechseln={setAnsicht}
           onSchliessen={() => setAnsicht(null)}
+          isTeam={isTeam}
         />
       )}
     </div>

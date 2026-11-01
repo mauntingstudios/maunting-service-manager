@@ -13,6 +13,7 @@ import { RotateCcw, RotateCw, Undo2 } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
+import { useTeamVaultStore } from './teamVaultStore'
 import { type VaultItem } from './vaultEintrag'
 import { blobLesen } from './tresorDateien'
 import { fehlerText } from './tresorFehler'
@@ -78,10 +79,20 @@ export function zeichnen(quelle: CanvasImageSource, breite: number, hoehe: numbe
   return leinwand
 }
 
-export function TresorBildeditor({ item, vorschauUrl, onFertig }: { item: VaultItem; vorschauUrl: string; onFertig: () => void }) {
+export function TresorBildeditor({
+  item,
+  vorschauUrl,
+  onFertig,
+  isTeam = false,
+}: {
+  item: VaultItem
+  vorschauUrl: string
+  onFertig: () => void
+  isTeam?: boolean
+}) {
   const { t } = useTranslation()
-  const userKey = useVaultStore((s) => s.userKey)
-  const dateiErsetzen = useVaultStore((s) => s.dateiErsetzen)
+  const userKey = isTeam ? useTeamVaultStore((s) => s.userKey) : useVaultStore((s) => s.userKey)
+  const dateiErsetzen = isTeam ? useTeamVaultStore((s) => s.dateiErsetzen) : useVaultStore((s) => s.dateiErsetzen)
   const [drehung, setDrehung] = useState(0)
   const [rahmen, setRahmen] = useState<Rahmen>(GANZ)
   const [bild, setBild] = useState<HTMLImageElement | null>(null)

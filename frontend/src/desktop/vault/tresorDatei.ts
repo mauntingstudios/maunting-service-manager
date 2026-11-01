@@ -151,6 +151,21 @@ export async function blobSchluesselWickeln(kopf: BlobKopf, userKey: CryptoKey, 
   }
 }
 
+/** Wickelt den Blob-Schlüssel von einem Tresor-Schlüssel auf einen neuen (Rotation). Chunks bleiben unverändert. */
+export async function blobSchluesselNeuWickeln(
+  kopf: BlobKopf,
+  alterKey: CryptoKey,
+  neuerKey: CryptoKey,
+  eintragId: string,
+): Promise<BlobKopf> {
+  const roh = await decryptBytes(kopf.schluessel, alterKey, fileKeyAad(kontext(eintragId, kopf.id)))
+  try {
+    return { ...kopf, schluessel: await encryptBytes(roh, neuerKey, fileKeyAad(kontext(eintragId, kopf.id))) }
+  } finally {
+    roh.fill(0)
+  }
+}
+
 /** Prüft einen Kopf aus einem entschlüsselten Eintrag, bevor er benutzt wird. */
 export function istBlobKopf(wert: unknown): wert is BlobKopf {
   if (!wert || typeof wert !== 'object') return false

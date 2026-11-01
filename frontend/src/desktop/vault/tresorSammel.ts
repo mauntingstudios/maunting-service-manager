@@ -10,6 +10,7 @@
 import i18n from '@/i18n'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
+import { useTeamVaultStore } from './teamVaultStore'
 
 /** Stand einer laufenden Sammelaktion für die Fortschrittsleiste; `null`: keine läuft. */
 export type SammelStand = { text: string; anteil: number | null } | null
@@ -61,8 +62,9 @@ function melden(geschafft: string[], fehler: number, erfolg: string, misserfolg:
 const ohneAnzeige = () => {}
 
 /** Legt `ids` in den Papierkorb und gibt die zurück, bei denen es klappte. */
-export async function inDenPapierkorb(ids: string[], fortschritt: (stand: SammelStand) => void = ohneAnzeige) {
-  const { trashItem, restoreItem } = useVaultStore.getState()
+export async function inDenPapierkorb(ids: string[], fortschritt: (stand: SammelStand) => void = ohneAnzeige, isTeam = false) {
+  const store = isTeam ? useTeamVaultStore.getState() : useVaultStore.getState()
+  const { trashItem, restoreItem } = store
   const { geschafft, fehler } = await fuerAlle(ids, i18n.t('mss.vault.fotos.sammel.papierkorb', { count: ids.length }), trashItem, fortschritt)
   melden(
     geschafft,
@@ -75,8 +77,9 @@ export async function inDenPapierkorb(ids: string[], fortschritt: (stand: Sammel
 }
 
 /** Legt `ids` ins Archiv und gibt die zurück, bei denen es klappte. */
-export async function insArchiv(ids: string[], fortschritt: (stand: SammelStand) => void = ohneAnzeige) {
-  const { setArchived } = useVaultStore.getState()
+export async function insArchiv(ids: string[], fortschritt: (stand: SammelStand) => void = ohneAnzeige, isTeam = false) {
+  const store = isTeam ? useTeamVaultStore.getState() : useVaultStore.getState()
+  const { setArchived } = store
   const { geschafft, fehler } = await fuerAlle(
     ids,
     i18n.t('mss.vault.fotos.sammel.archiv', { count: ids.length }),

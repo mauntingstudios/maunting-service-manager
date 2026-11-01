@@ -81,7 +81,15 @@ export const de = {
   'language.de': 'Deutsch',
   'language.en': 'English',
 
-  'footer.offline': 'Diese App funktioniert vollständig offline.',
+  'vault.heading': 'Tresor-Backup öffnen',
+  'vault.description': 'Tresor-Backup (.msmvault) aus einer Passwort-Rotation. Es genügt das damalige Master-Passwort; ein Salt ist in der Datei enthalten.',
+  'vault.fileLabel': 'Tresor-Backup (.msmvault)',
+  'vault.passwordLabel': 'Master-Passwort (zum Zeitpunkt der Rotation)',
+  'vault.detected': 'Tresor-Backup erkannt — kein Salt nötig.',
+  'vault.successTitle': 'Tresor-Backup entschlüsselt',
+  'vault.entries': 'Einträge im Backup',
+  'vault.export': 'Als JSON exportieren',
+  'vault.empty': 'Keine Einträge gefunden.',  'footer.offline': 'Diese App funktioniert vollständig offline.',
 } as const;
 
 export type LocaleKeys = keyof typeof de;

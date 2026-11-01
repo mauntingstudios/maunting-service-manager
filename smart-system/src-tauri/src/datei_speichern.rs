@@ -499,6 +499,53 @@ fn verwerfen_mit_app(app: &tauri::AppHandle, vorgang: Vorgang) {
     }
 }
 
+/// Automatisches Tresor-Backup vor einer Passwort-Rotation: verschluesselte
+/// Bytes (Format der Recovery-App) in `tresor-backups/` im App-Verzeichnis.
+/// Kein Dialog, kein JS-Pfad. Es bleiben die letzten drei Dateien.
+#[tauri::command(async)]
+pub async fn tresor_backup_speichern(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+    name: String,
+    inhalt_base64: String,
+) -> Result<String, String> {
+    nur_hauptfenster(&window)?;
+    if inhalt_base64.len() > 256 * 1024 * 1024 {
+        return Err("Das Backup ist zu gross.".to_string());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(inhalt_base64)
+        .map_err(|_| "Das Backup kam nicht als Base64 an.".to_string())?;
+    let ordner = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "App-Verzeichnis unbekannt".to_string())?
+        .join("tresor-backups");
+    let dateiname = sicherer_dateiname(&name);
+    let pfad = ordner.join(&dateiname);
+    let tmp_dateiname = dateiname.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        std::fs::create_dir_all(&ordner).map_err(|f| f.to_string())?;
+        let tmp = ordner.join(format!(".{tmp_dateiname}.part"));
+        std::fs::write(&tmp, &bytes).map_err(|f| f.to_string())?;
+        std::fs::rename(&tmp, &pfad).map_err(|f| f.to_string())?;
+        let mut dateien: Vec<(SystemTime, PathBuf)> = std::fs::read_dir(&ordner)
+            .map_err(|f| f.to_string())?
+            .flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "msmvault"))
+            .filter_map(|e| e.metadata().ok()?.modified().ok().map(|m| (m, e.path())))
+            .collect();
+        dateien.sort_by_key(|(m, _)| *m);
+        while dateien.len() > 3 {
+            let (_, alt) = dateien.remove(0);
+            let _ = std::fs::remove_file(alt);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|f| f.to_string())??;
+    Ok(dateiname)
+}
 #[cfg(test)]
 mod tests {
     use super::*;

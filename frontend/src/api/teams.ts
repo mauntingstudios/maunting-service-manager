@@ -71,6 +71,9 @@ export interface TeamVaultSaltResponse {
   needs_rotation: boolean
   is_owner: boolean
   has_hint?: boolean
+  rotation_state?: string | null
+  pending_bucket_id?: string | null
+  pending_salt?: string | null
 }
 
 export interface TeamVaultHintStatusResponse {
@@ -105,7 +108,8 @@ export interface TeamVaultSyncResult {
     updated_at: string
   }[]
   has_more: boolean
-  conflicts?: { id: string; server_revision: number }[]
+  /** IDs, deren Mutation an `expected_revision` gescheitert ist (Backend: Liste von Strings). */
+  conflicts?: string[]
 }
 
 export const teamsApi = {
@@ -177,6 +181,17 @@ export const teamsApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  rotationPrepare: (teamId: number, payload: { bucket_id: string; salt: string }) =>
+    api<{ status: string }>(`/teams/${teamId}/vault/rotation/prepare`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  rotationCommit: (teamId: number) =>
+    api<{ status: string }>(`/teams/${teamId}/vault/rotation/commit`, { method: 'POST' }),
+  rotationAbort: (teamId: number) =>
+    api<{ status: string }>(`/teams/${teamId}/vault/rotation/abort`, { method: 'POST' }),
+  rotationRollback: (teamId: number) =>
+    api<{ status: string }>(`/teams/${teamId}/vault/rotation/rollback`, { method: 'POST' }),
   syncVault: (teamId: number, payload: TeamVaultSyncPayload) =>
     api<TeamVaultSyncResult>(`/teams/${teamId}/vault/sync`, {
       method: 'POST',

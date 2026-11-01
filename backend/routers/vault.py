@@ -27,6 +27,7 @@ from schemas.vault import (
     VaultHintSetRequest,
     VaultHintStatusResponse,
     VaultResetRequest,
+    VaultRotationPrepareRequest,
     VaultSaltResponse,
     VaultSaltSetRequest,
     VaultSyncRequest,
@@ -222,6 +223,8 @@ def sync_vault_entries(
     """
     try:
         return vault_service.sync_vault(db, konto, payload)
+    except HTTPException:
+        raise
     except vault_service.VaultZurueckgesetzt as exc:
         raise _mit_code(status.HTTP_410_GONE, "VAULT_ZURUECKGESETZT") from exc
     except vault_service.VaultClientZuAlt as exc:
@@ -286,6 +289,47 @@ def set_vault_salt(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.post("/rotation/prepare")
+def rotation_prepare(
+    payload: VaultRotationPrepareRequest,
+    db: Session = Depends(get_db),
+    konto: vault_service.TresorKonto = Depends(_tresor_konto),
+    __=Depends(verify_csrf),
+) -> dict[str, str]:
+    vault_service.rotation_vorbereiten_privat(db, konto, payload.bucket_id, payload.salt)
+    return {"status": "ok"}
+
+
+@router.post("/rotation/commit")
+def rotation_commit(
+    db: Session = Depends(get_db),
+    konto: vault_service.TresorKonto = Depends(_tresor_konto),
+    __=Depends(verify_csrf),
+) -> dict[str, str]:
+    vault_service.rotation_commit_privat(db, konto)
+    return {"status": "ok"}
+
+
+@router.post("/rotation/abort")
+def rotation_abort(
+    db: Session = Depends(get_db),
+    konto: vault_service.TresorKonto = Depends(_tresor_konto),
+    __=Depends(verify_csrf),
+) -> dict[str, str]:
+    vault_service.rotation_abbrechen_privat(db, konto)
+    return {"status": "ok"}
+
+
+@router.post("/rotation/rollback")
+def rotation_rollback(
+    db: Session = Depends(get_db),
+    konto: vault_service.TresorKonto = Depends(_tresor_konto),
+    __=Depends(verify_csrf),
+) -> dict[str, str]:
+    vault_service.rotation_rollback_privat(db, konto)
+    return {"status": "ok"}
 
 
 @router.post("/reset", dependencies=[Depends(auth_rate_limit)])

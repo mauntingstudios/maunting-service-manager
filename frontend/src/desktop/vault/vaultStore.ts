@@ -55,7 +55,7 @@ import {
   type DateiVersion,
 } from './tresorDateien'
 import { bildAngaben } from './tresorBilder'
-import { bucketMelderSetzen, zurueckgesetztFrage } from './tresorBlobApi'
+import { blobBasisSetzen, bucketMelderSetzen, zurueckgesetztFrage } from './tresorBlobApi'
 import { fehlerText, TresorFehler } from './tresorFehler'
 import {
   ALBUM_HOECHSTENS,
@@ -494,6 +494,12 @@ interface VaultState {
    * `nachweis` ist, was das Konto hat: Passwort oder zweiter Faktor.
    */
   resetVault: (nachweis: Record<string, unknown>, bestaetigung: string) => Promise<void>
+  rotationState: string | null
+  pendingBucketId: string | null
+  /** Zwei-Phasen-Rotation des Master-Passworts (gleiches Protokoll wie Team). */
+  rotatePassword: (currentPassword: string, newPassword: string) => Promise<boolean>
+  abortRotation: () => Promise<void>
+  rollbackRotation: () => Promise<boolean>
   setSearchQuery: (q: string) => void
   setSelectedItemId: (id: string | null) => void
   createQuickPasswordEntry: (serviceName?: string) => Promise<VaultItem>
@@ -812,6 +818,8 @@ export const useVaultStore = create<VaultState>((set, get) => {
   lastSyncTime: null,
   zurueckgesetzt: false,
   hasHint: null,
+  rotationState: null,
+  pendingBucketId: null,
 
   autoLockMinutes: liesSperrfrist(VAULT_SPERR_PRAEFIX, 15),
   lockOnWindowBlur: liesFensterwechsel(VAULT_SPERR_PRAEFIX),
@@ -854,10 +862,11 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
   fetchVaultSalt: async () => {
     try {
-      const res = await api<{ kdf_salt: string | null; bucket_id: string | null; has_vault: boolean; has_hint?: boolean }>('/api/vault/salt')
+      const res = await api<{ kdf_salt: string | null; bucket_id: string | null; has_vault: boolean; has_hint?: boolean; rotation_state?: string | null; pending_bucket_id?: string | null; pending_salt?: string | null }>('/api/vault/salt')
       if (res.has_hint !== undefined) {
         set({ hasHint: !!res.has_hint })
       }
+      set({ rotationState: res.rotation_state ?? null, pendingBucketId: res.pending_bucket_id ?? null })
       if (res.kdf_salt && typeof localStorage !== 'undefined') {
         localStorage.setItem(VAULT_SALT_KEY, res.kdf_salt)
       }
@@ -1016,6 +1025,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
   },
 
   lock: () => {
+    blobBasisSetzen(null)
     ansichtenSchliessen()
     set({
       isUnlocked: false,
@@ -1067,6 +1077,192 @@ export const useVaultStore = create<VaultState>((set, get) => {
     get().resetLocalVaultState()
   },
 
+  rotatePassword: async (currentPassword, newPassword) => {
+    const { items, userKey, bucketId } = get()
+    if (!userKey || !bucketId) return false
+    const salt = getLocalVaultSalt()
+    if (!salt) return false
+    try {
+      const alt = await deriveVaultKeys(currentPassword, salt)
+      if (alt.bucketId.toLowerCase() !== bucketId.toLowerCase()) {
+        set({ unlockError: i18n.t('mss.vault.errors.wrongMasterPassword') })
+        return false
+      }
+      const { rotateVaultCore, rotationJournalSchreiben } = await import('./vaultRotation')
+      const { erstelleBackupBytes, speichereBackupImAppOrdner, backupDateiname } = await import('./tresorBackup')
+      const { blobSchluesselNeuWickeln, istBlobKopf } = await import('./tresorDatei')
+      const { fillRandom } = await import('@msdis/shield/random')
+
+      // Fortsetzen: serverseitig vorbereitete Rotation wiederverwenden.
+      const status = await api<{ rotation_state?: string | null; pending_bucket_id?: string | null; pending_salt?: string | null }>('/api/vault/salt')
+      let neuesSalt: string
+      let neuesSaltBytes: Uint8Array
+      let neueBucketId: string
+      let neuerKey: CryptoKey
+      let neuerAuthToken: string
+      if (status.rotation_state === 'prepared' && status.pending_bucket_id && status.pending_salt) {
+        neuesSalt = status.pending_salt
+        // Gleicher Parser wie getLocalVaultSalt: Hex oder Base64.
+        if (/^[0-9a-fA-F]+$/.test(neuesSalt) && neuesSalt.length % 2 === 0) {
+          neuesSaltBytes = new Uint8Array(neuesSalt.length / 2)
+          for (let i = 0; i < neuesSaltBytes.length; i++) {
+            neuesSaltBytes[i] = parseInt(neuesSalt.substr(i * 2, 2), 16)
+          }
+        } else {
+          neuesSaltBytes = base64ToBytes(neuesSalt)
+        }
+        const abgeleitet = await deriveVaultKeys(newPassword, neuesSaltBytes)
+        if (abgeleitet.bucketId.toLowerCase() !== status.pending_bucket_id.toLowerCase()) {
+          set({ unlockError: i18n.t('mss.vault.errors.wrongMasterPassword') })
+          return false
+        }
+        neueBucketId = abgeleitet.bucketId
+        neuerKey = abgeleitet.userKey
+        neuerAuthToken = abgeleitet.bucketAuthToken
+      } else {
+        neuesSaltBytes = new Uint8Array(32)
+        fillRandom(neuesSaltBytes)
+        neuesSalt = Array.from(neuesSaltBytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+        const abgeleitet = await deriveVaultKeys(newPassword, neuesSaltBytes)
+        neueBucketId = abgeleitet.bucketId
+        neuerKey = abgeleitet.userKey
+        neuerAuthToken = abgeleitet.bucketAuthToken
+      }
+
+      const syncTransport = async (b: string, mutationen: { id: string; ciphertext: string; revision: number; is_deleted: boolean }[]) => {
+        if (mutationen.length > 0) {
+          return api<{ server_revision: number; entries: VaultSyncResponse['entries']; has_more?: boolean }>('/api/vault/sync', {
+            method: 'POST',
+            body: JSON.stringify({ bucket_id: b, since_revision: 0, mutations: mutationen }),
+          })
+        }
+        const alle: VaultSyncResponse['entries'] = []
+        let seit = 0
+        for (;;) {
+          const res = await api<VaultSyncResponse>('/api/vault/sync', {
+            method: 'POST',
+            body: JSON.stringify({ bucket_id: b, since_revision: seit }),
+          })
+          alle.push(...res.entries)
+          seit = res.server_revision
+          if (!res.has_more) return { server_revision: seit, entries: alle, has_more: false }
+        }
+      }
+
+      await rotateVaultCore({
+        scope: 'privat',
+        items,
+        neuerKey,
+        neueBucketId,
+        neuesSalt,
+        backup: async () => {
+          const bytes = await erstelleBackupBytes(items as unknown as Record<string, unknown>[], currentPassword)
+          await speichereBackupImAppOrdner(bytes, backupDateiname('privat'))
+        },
+        transformItem: async (item) => {
+          // Blob-Schluessel auf den neuen Tresor-Schluessel umwickeln; Chunks bleiben.
+          if (!item.datei) return item
+          const wickeln = async (kopf: unknown) =>
+            istBlobKopf(kopf) ? blobSchluesselNeuWickeln(kopf, userKey, neuerKey, item.id) : kopf
+          const datei = { ...item.datei }
+          datei.original = (await wickeln(datei.original)) as typeof datei.original
+          if (datei.vorschau) datei.vorschau = (await wickeln(datei.vorschau)) as typeof datei.vorschau
+          if (datei.miniatur) datei.miniatur = (await wickeln(datei.miniatur)) as typeof datei.miniatur
+          if (datei.frueher) {
+            const frueher = []
+            for (const f of datei.frueher) {
+              const kopf = { ...f }
+              kopf.original = (await wickeln(kopf.original)) as typeof kopf.original
+              if (kopf.vorschau) kopf.vorschau = (await wickeln(kopf.vorschau)) as typeof kopf.vorschau
+              if (kopf.miniatur) kopf.miniatur = (await wickeln(kopf.miniatur)) as typeof kopf.miniatur
+              frueher.push(kopf)
+            }
+            datei.frueher = frueher as typeof datei.frueher
+          }
+          return { ...item, datei }
+        },
+        transport: {
+          prepare: async (b, s) => {
+            if (status.rotation_state !== 'prepared') {
+              await api('/api/vault/rotation/prepare', { method: 'POST', body: JSON.stringify({ bucket_id: b, salt: s }) })
+            }
+          },
+          sync: syncTransport,
+          commit: async () => { await api('/api/vault/rotation/commit', { method: 'POST' }) },
+          abort: async () => { await api('/api/vault/rotation/abort', { method: 'POST' }) },
+        },
+      })
+      void rotationJournalSchreiben
+
+      // Canary fuer den neuen Bucket schreiben (lokal + als Eintrag synchronisieren).
+      try {
+        const canaryCiphertext = await encryptVaultEntry(
+          { canary: 'mss-vault-initialized-v1', createdAt: Date.now() },
+          neuerKey,
+          'vault-canary',
+        )
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(VAULT_CANARY_KEY, canaryCiphertext)
+          localStorage.setItem(`${VAULT_CANARY_PREFIX}${neueBucketId}`, canaryCiphertext)
+        }
+        await syncTransport(neueBucketId, [
+          { id: 'vault-canary', ciphertext: canaryCiphertext, revision: 1, is_deleted: false },
+        ])
+      } catch {}
+
+      // Lokale Kennungen auf den neuen Tresor umstellen.
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(VAULT_SALT_KEY, neuesSalt)
+        localStorage.setItem(VAULT_SERVER_BUCKET_KEY, neueBucketId)
+        localStorage.removeItem(`${VAULT_CANARY_PREFIX}${bucketId}`)
+      }
+      try {
+        if (get().isBiometricsEnabled) await biometrieSpeichern(newPassword, FACH_TRESOR)
+      } catch {
+        try { await biometrieLoeschen(FACH_TRESOR) } catch {}
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(VAULT_BIOMETRICS_ENABLED_KEY, 'false')
+        }
+        set({ isBiometricsEnabled: false })
+      }
+      try { await ablageLaden(neueBucketId) } catch {}
+      set({
+        bucketId: neueBucketId,
+        bucketAuthToken: neuerAuthToken,
+        userKey: neuerKey,
+        rotationState: 'committed',
+        pendingBucketId: null,
+        unlockError: null,
+      })
+      await get().syncWithServer()
+      return true
+    } catch (err) {
+      set({ unlockError: err instanceof Error ? err.message : i18n.t('mss.vault.errors.cryptoUnavailable') })
+      return false
+    }
+  },
+
+  abortRotation: async () => {
+    try {
+      await api('/api/vault/rotation/abort', { method: 'POST' })
+    } finally {
+      const { rotationJournalSchreiben } = await import('./vaultRotation')
+      rotationJournalSchreiben('privat', null)
+      set({ rotationState: null, pendingBucketId: null })
+    }
+  },
+
+  rollbackRotation: async () => {
+    try {
+      await api('/api/vault/rotation/rollback', { method: 'POST' })
+      get().lock()
+      await get().fetchVaultSalt()
+      return true
+    } catch {
+      return false
+    }
+  },
+
   initializeVault: async (masterPassword: string) => {
     runBiometricsMigration()
     set({ isUnlocking: true, unlockError: null })
@@ -1076,6 +1272,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
       const { userKey, bucketId, bucketAuthToken } = await deriveVaultKeys(masterPassword, salt)
 
       await ablageLaden(bucketId)
+      blobBasisSetzen(null)
 
       // KDF-Salt und Bucket lokal sichern
       if (typeof localStorage !== 'undefined') {
@@ -1325,6 +1522,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
       }
 
       // Erfolg: Fehlversuche zurücksetzen
+      blobBasisSetzen(null)
       set({
         isInitialized: true,
         isUnlocked: true,

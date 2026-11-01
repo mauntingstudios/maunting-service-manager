@@ -265,8 +265,10 @@ def ist_beerdigt(db: Session, bucket_id: str) -> bool:
 
 
 def anlegen(
-    db: Session, user: User, bucket_id: str, blob_id: str, chunk_count: int, bytes_total: int, delete_verifier: str
+    db: Session, user: User, bucket_id: str, blob_id: str, chunk_count: int, bytes_total: int, delete_verifier: str,
+    *, quota_override: int | None = None, belegt_override: int | None = None,
 ) -> VaultBlob:
+    """``quota_override``/``belegt_override``: Team-Dateien rechnen auf den Owner."""
     if not ist_blob_id(blob_id) or not _HEX64.match(delete_verifier or ""):
         raise BlobUngueltig("Ungueltige Kennung.")
     if not _groesse_passt(chunk_count, bytes_total):
@@ -281,7 +283,9 @@ def anlegen(
     anzahl = int(db.scalar(select(func.count()).select_from(VaultBlob).where(VaultBlob.bucket_id == bucket_id)) or 0)
     if anzahl >= MAX_BLOBS_JE_BUCKET:
         raise ZuVieleDateien("Zu viele Dateien in diesem Tresor.")
-    if belegt(db, bucket_id) + bytes_total > quote_fuer(db, user):
+    quote = quota_override if quota_override is not None else quote_fuer(db, user)
+    belegt_wert = belegt_override if belegt_override is not None else belegt(db, bucket_id)
+    if belegt_wert + bytes_total > quote:
         raise SpeicherVoll("Der Speicher dieses Kontos ist voll.")
 
     basis = _basis()

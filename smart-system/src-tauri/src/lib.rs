@@ -877,6 +877,7 @@ pub fn run() {
             datei_speichern::datei_speichern_start,
             datei_speichern::datei_speichern_teil,
             datei_speichern::datei_speichern_ende,
+            datei_speichern::tresor_backup_speichern,
             medien::medien_zugriff,
             medien::medien_sicherung_schluessel,
             medien::medien_einrichten,

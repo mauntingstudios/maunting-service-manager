@@ -9,10 +9,15 @@ import { toast } from '@/stores/toastStore'
 import { zipGrenzenPruefen, zipStrom } from '@/lib/zipSchreiben'
 import { inDerApp } from '@/services/passkeyService'
 import { useVaultStore } from './vaultStore'
+import { useTeamVaultStore } from './teamVaultStore'
 import { androidApp, kameraGespeichert } from './kameraSicherung'
 import { type VaultItem } from './vaultEintrag'
 import type { BlobKopf } from './tresorDatei'
 import { ansichtOeffnen, ansichtSchliessen, klartextTeile } from './tresorDateien'
+
+function sitzungGilt(userKey: CryptoKey): boolean {
+  return useVaultStore.getState().userKey === userKey || useTeamVaultStore.getState().userKey === userKey
+}
 
 /** Wie der Tresor eine Datei zeigt. `null`: nur eine Infokarte zum Speichern. */
 export type VorschauArt =
@@ -134,7 +139,7 @@ export async function aufGeraetSpeichern(
   if (!inDerApp()) {
     const teile: Blob[] = []
     for await (const klartext of klartextTeile(kopf, eintragId, userKey)) teile.push(new Blob([klartext as BlobPart]))
-    if (useVaultStore.getState().userKey !== userKey) return false
+    if (!sitzungGilt(userKey)) return false
     herunterladen(new Blob(teile, { type: typ }), name)
     return gespeichert(true)
   }
@@ -186,7 +191,7 @@ function herunterladen(blob: Blob, name: string): void {
 /** Gesperrt: nichts mehr herausgeben, die halbe Datei fällt weg. */
 async function* bisGesperrt(teile: AsyncIterable<Uint8Array>, userKey: CryptoKey): AsyncGenerator<Uint8Array> {
   for await (const teil of teile) {
-    if (useVaultStore.getState().userKey !== userKey) throw new Error('gesperrt')
+    if (!sitzungGilt(userKey)) throw new Error('gesperrt')
     yield teil
   }
 }

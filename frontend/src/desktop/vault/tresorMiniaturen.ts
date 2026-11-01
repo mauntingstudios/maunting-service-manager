@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from 'react'
 import { useVaultStore } from './vaultStore'
+import { useTeamVaultStore } from './teamVaultStore'
 import { ansichtOeffnen, ansichtSchliessen, miniaturenLesen } from './tresorDateien'
 import type { BlobKopf } from './tresorDatei'
 
@@ -39,7 +40,7 @@ let wartend: Anforderung[] = []
 let geplant = false
 
 function sitzungGilt(userKey: CryptoKey): boolean {
-  return useVaultStore.getState().userKey === userKey
+  return useVaultStore.getState().userKey === userKey || useTeamVaultStore.getState().userKey === userKey
 }
 
 function aufraeumen() {
@@ -136,8 +137,15 @@ export function miniaturFreigeben(blobId: string): void {
 }
 
 /** Die Miniatur-URL eines Blobs, solange `aktiv` gilt; sonst `null`. */
-export function useMiniatur(kopf: BlobKopf | undefined, eintragId: string, aktiv: boolean): string | null {
-  const userKey = useVaultStore((s) => s.userKey)
+export function useMiniatur(
+  kopf: BlobKopf | undefined,
+  eintragId: string,
+  aktiv: boolean,
+  schluesselOverride?: CryptoKey | null,
+): string | null {
+  const vaultUserKey = useVaultStore((s) => s.userKey)
+  const teamUserKey = useTeamVaultStore((s) => s.userKey)
+  const userKey = schluesselOverride !== undefined ? schluesselOverride : (vaultUserKey ?? teamUserKey)
   const [url, setUrl] = useState<string | null>(null)
   const blobId = kopf && kopf.echt > 0 ? kopf.id : null
   useEffect(() => {

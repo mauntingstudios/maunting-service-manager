@@ -65,6 +65,7 @@ import { useLangdruck } from '@/hooks/useLangdruck'
 import { ZipZuGross } from '@/lib/zipSchreiben'
 import { cx } from '@/utils/classNames'
 import { useVaultStore } from './vaultStore'
+import { useTeamVaultStore } from './teamVaultStore'
 import { type VaultItem } from './vaultEintrag'
 import { ansichtOeffnen, ansichtSchliessen, blobLesen, useTresorUploads, angeheftet, offlineAnheften, offlineLoesen } from './tresorDateien'
 import { miniaturenVorladen, useMiniatur } from './tresorMiniaturen'
@@ -365,16 +366,16 @@ const FILTER: { id: Filter; labelKey: string; icon: LucideIcon }[] = [
   { id: 'alben', labelKey: 'mss.vault.fotos.alben', icon: Library },
 ]
 
-export function TresorGalerie({ suche = '' }: { suche?: string }) {
+export function TresorGalerie({ suche = '', isTeam = false }: { suche?: string; isTeam?: boolean }) {
   const { t, i18n } = useTranslation()
-  const items = useVaultStore((s) => s.items)
-  const userKey = useVaultStore((s) => s.userKey)
-  const dateiHinzufuegen = useVaultStore((s) => s.dateiHinzufuegen)
-  const albumAnlegen = useVaultStore((s) => s.albumAnlegen)
-  const albumAendern = useVaultStore((s) => s.albumAendern)
-  const aendern = useVaultStore((s) => s.aendern)
-  const trashItem = useVaultStore((s) => s.trashItem)
-  const restoreItem = useVaultStore((s) => s.restoreItem)
+  const items = isTeam ? useTeamVaultStore((s) => s.items) : useVaultStore((s) => s.items)
+  const userKey = isTeam ? useTeamVaultStore((s) => s.userKey) : useVaultStore((s) => s.userKey)
+  const dateiHinzufuegen = isTeam ? useTeamVaultStore((s) => s.dateiHinzufuegen) : useVaultStore((s) => s.dateiHinzufuegen)
+  const albumAnlegen = isTeam ? useTeamVaultStore((s) => s.albumAnlegen) : useVaultStore((s) => s.albumAnlegen)
+  const albumAendern = isTeam ? useTeamVaultStore((s) => s.albumAendern) : useVaultStore((s) => s.albumAendern)
+  const aendern = isTeam ? useTeamVaultStore((s) => s.aendern) : useVaultStore((s) => s.aendern)
+  const trashItem = isTeam ? useTeamVaultStore((s) => s.trashItem) : useVaultStore((s) => s.trashItem)
+  const restoreItem = isTeam ? useTeamVaultStore((s) => s.restoreItem) : useVaultStore((s) => s.restoreItem)
   const { speicher, ohneSpeicher } = useTresorSpeicher()
   const [filter, setFilterRoh] = useState<Filter>('alle')
   const [quelle, setQuelle] = useState('')
@@ -416,7 +417,8 @@ export function TresorGalerie({ suche = '' }: { suche?: string }) {
   useEffect(() => {
     if (filter !== 'aehnlich' || !userKey) return
     let abgebrochen = false
-    const alle = sichtbareEintraege(useVaultStore.getState().items).filter(istMedium)
+    const aktuelleItems = isTeam ? useTeamVaultStore.getState().items : useVaultStore.getState().items
+    const alle = sichtbareEintraege(aktuelleItems).filter(istMedium)
     setAehnlich({ fertig: 0, gesamt: alle.length, gruppen: null })
     void hashesBerechnen(alle, userKey, () => abgebrochen, (fertig) => !abgebrochen && setAehnlich((a) => ({ ...a, fertig })))
       .then((hashes) => {
@@ -575,9 +577,9 @@ export function TresorGalerie({ suche = '' }: { suche?: string }) {
   useEffect(() => {
     if (!userKey || anzahlMedien === 0) return
     let abgebrochen = false
-    const anfragen = useVaultStore
-      .getState()
-      .items.filter((i) => istMedium(i) && i.datei)
+    const aktuelleItems = isTeam ? useTeamVaultStore.getState().items : useVaultStore.getState().items
+    const anfragen = aktuelleItems
+      .filter((i) => istMedium(i) && i.datei)
       .map((i) => ({ kopf: i.datei!.miniatur, eintragId: i.id }))
     const zeit = setTimeout(() => void miniaturenVorladen(anfragen, () => abgebrochen).catch(() => {}), 2000)
     return () => {
@@ -715,13 +717,13 @@ export function TresorGalerie({ suche = '' }: { suche?: string }) {
   // Ein Fehler hält den Rest nicht auf; die Meldung nennt, wie viele nicht gingen (tresorSammel).
   const inPapierkorb = async (ids: string[]) => {
     if (ids.length === 0 || sammel) return
-    await inDenPapierkorb(ids, setSammel)
+    await inDenPapierkorb(ids, setSammel, isTeam)
     auswahlLeeren()
   }
 
   const archivieren = async (ids: string[]) => {
     if (ids.length === 0 || sammel) return
-    await insArchiv(ids, setSammel)
+    await insArchiv(ids, setSammel, isTeam)
     auswahlLeeren()
   }
 
@@ -1179,6 +1181,7 @@ export function TresorGalerie({ suche = '' }: { suche?: string }) {
           }}
           onArchivieren={(id) => void archivieren([id])}
           onPapierkorb={(id) => void inPapierkorb([id])}
+          isTeam={isTeam}
         />
       )}
     </div>
@@ -1206,6 +1209,7 @@ function GalerieLichtbox({
   onBlaettern,
   onArchivieren,
   onPapierkorb,
+  isTeam = false,
 }: {
   item: VaultItem
   index: number
@@ -1217,6 +1221,7 @@ function GalerieLichtbox({
   onBlaettern: (richtung: 1 | -1) => void
   onArchivieren: (id: string) => void
   onPapierkorb: (id: string) => void
+  isTeam?: boolean
 }) {
   const { t, i18n } = useTranslation()
   const upload = useTresorUploads((s) => s.je[item.id])
@@ -1250,7 +1255,8 @@ function GalerieLichtbox({
           signal: abbruch.signal,
           fortschritt: welcher === 'original' ? (anteil) => setAnzeige((a) => (a.id === id ? { ...a, anteil } : a)) : undefined,
         })
-        if (abbruch.signal.aborted || useVaultStore.getState().userKey !== userKey) return
+        const storeUserKey = isTeam ? useTeamVaultStore.getState().userKey : useVaultStore.getState().userKey
+        if (abbruch.signal.aborted || storeUserKey !== userKey) return
         const url = ansichtOeffnen(blob)
         setAnzeige((a) => {
           if (a.id !== id) {
@@ -1368,7 +1374,7 @@ function GalerieLichtbox({
   }
 
   if (bearbeiten && anzeige.url) {
-    return <TresorBildeditor item={item} vorschauUrl={anzeige.url} onFertig={() => setBearbeiten(false)} />
+    return <TresorBildeditor item={item} vorschauUrl={anzeige.url} onFertig={() => setBearbeiten(false)} isTeam={isTeam} />
   }
 
   return (

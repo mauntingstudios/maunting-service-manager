@@ -55,6 +55,7 @@ import { TresorZuruecksetzen } from './TresorZuruecksetzen'
 import { TresorDateiBereich } from './TresorDateiBereich'
 import { TresorGalerie } from './TresorGalerie'
 import { TresorZahlung } from './TresorZahlung'
+import { blobBasisSetzen } from './tresorBlobApi'
 import { verdeckt } from './zahlung'
 import { inhaltVon } from './tresorOrdner'
 import { useMiniatur } from './tresorMiniaturen'
@@ -149,6 +150,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       setup: s.setup,
       unlock: s.unlock,
       rotatePassword: s.rotatePassword,
+      rotationState: s.rotationState,
+      abortRotation: s.abortRotation,
       lock: s.lock,
       syncWithServer: s.syncWithServer,
       saveItem: s.saveItem,
@@ -172,6 +175,18 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       void teamStore.loadStatus(team.id)
     }
   }, [isTeam, team?.id, teamStore.loadStatus])
+
+  // Blob-Basis für Dateiuploads/-downloads anpassen (Team vs. Privat)
+  useEffect(() => {
+    if (isTeam && team?.id) {
+      blobBasisSetzen(team.id)
+    } else {
+      blobBasisSetzen(null)
+    }
+    return () => {
+      blobBasisSetzen(null)
+    }
+  }, [isTeam, team?.id])
 
   // Beim Laden Server-Status und Salt nur prüfen, falls lokal noch kein Salt vorliegt (Leck-2-Schutz)
   useEffect(() => {
@@ -221,6 +236,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
   // Team-Rotation State
   const [rotationOpen, setRotationOpen] = useState(false)
+  const [rotCurrent, setRotCurrent] = useState('')
   const [rotPassword, setRotPassword] = useState('')
   const [rotRepeat, setRotRepeat] = useState('')
   const [rotBusy, setRotBusy] = useState(false)
@@ -311,10 +327,11 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     if (!team?.id) return
     setRotBusy(true)
     try {
-      const ok = await teamStore.rotatePassword(team.id, rotPassword)
+      const ok = await teamStore.rotatePassword(team.id, rotCurrent, rotPassword)
       if (ok) {
         toast.success(t('teams.vaultPasswordRotated'))
         setRotationOpen(false)
+        setRotCurrent('')
         setRotPassword('')
         setRotRepeat('')
       } else {
@@ -1523,6 +1540,25 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         </div>
       )}
 
+      {/* Unterbrochene Team-Rotation fortsetzen oder abbrechen */}
+      {isTeam && teamStore.rotationState === 'prepared' && (
+        <div role="alert" className="mx-4 mt-2.5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-status-warning/40 bg-status-warning/10 p-3 shadow-sm">
+          <p className="text-xs text-on-surface">{t('mss.vault.rotationFortsetzenHinweis')}</p>
+          <div className="flex gap-2">
+            {isOwner && (
+              <Button size="sm" onClick={() => setRotationOpen(true)} className="text-xs px-3 py-1.5">
+                {t('mss.vault.rotationFortsetzen')}
+              </Button>
+            )}
+            {isOwner && (
+              <Button size="sm" variant="ghost" onClick={() => team?.id && void teamStore.abortRotation(team.id)} className="text-xs px-3 py-1.5">
+                {t('mss.vault.rotationAbbrechen')}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Ohne diese Zeile sah man nicht, dass Gespeichertes noch nicht beim Server ist. */}
       {!zurueckgesetzt && (syncStatus === 'offline' || syncStatus === 'error') && (
         <div
@@ -1646,17 +1682,9 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
       {/* LISTE / TABELLE */}
       {ansicht === 'fotos' ? (
-        isTeam ? (
-          <Zustandsflaeche art="leer" icon={<Images className="h-10 w-10" />} text={t('teams.vaultNoMediaYet', { defaultValue: 'Noch keine geteilten Fotos im Team-Tresor.' })} />
-        ) : (
-          <TresorGalerie suche={searchQuery} />
-        )
+        <TresorGalerie suche={searchQuery} isTeam={isTeam} />
       ) : ansicht === 'dateien' ? (
-        isTeam ? (
-          <Zustandsflaeche art="leer" icon={<FolderLock className="h-10 w-10" />} text={t('teams.vaultNoFilesYet', { defaultValue: 'Noch keine geteilten Dateien im Team-Tresor.' })} />
-        ) : (
-          <TresorDateiBereich suche={searchQuery} />
-        )
+        <TresorDateiBereich suche={searchQuery} isTeam={isTeam} />
       ) : ansicht === 'zahlung' ? (
         isTeam ? (
           <Zustandsflaeche art="leer" icon={<CreditCard className="h-10 w-10" />} text={t('teams.vaultNoPaymentsYet', { defaultValue: 'Noch keine Zahlungsmethoden im Team-Tresor.' })} />
@@ -2050,7 +2078,20 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
             <form onSubmit={handleTeamRotate} className="space-y-4 p-5">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-on-surface">{t('mss.vault.masterPasswort')}</label>
+                <label className="text-xs font-medium text-on-surface">{t('mss.vault.rotationAktuellesPasswort')}</label>
+                <PasswordInput
+                  value={rotCurrent}
+                  onChange={(e) => setRotCurrent(e.target.value)}
+                  placeholder={t('mss.vault.rotationAktuellesPasswort')}
+                  required
+                  disabled={rotBusy}
+                  autoFocus
+                />
+                <p className="text-label-sm text-on-surface-variant">{t('mss.vault.rotationBackupHinweis')}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-on-surface">{t('mss.vault.rotationNeuesPasswort')}</label>
                 <PasswordInput
                   value={rotPassword}
                   onChange={(e) => {
@@ -2105,7 +2146,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                   <Button
                     type="submit"
                     size="sm"
-                    disabled={rotBusy || rotPassword.length < MASTER_PASSWORT_MINDESTLAENGE || rotPassword !== rotRepeat}
+                    disabled={rotBusy || !rotCurrent || rotPassword.length < MASTER_PASSWORT_MINDESTLAENGE || rotPassword !== rotRepeat}
                   >
                     {rotBusy ? <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-1.5" />}
                     {t('teams.vaultRotateBtn')}

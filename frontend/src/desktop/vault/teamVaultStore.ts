@@ -8,7 +8,7 @@
 
 import { create } from 'zustand'
 import i18n from '@/i18n'
-import { teamsApi, type TeamVaultMutationItem } from '@/api/teams'
+import { teamsApi, type TeamVaultMutationItem, type TeamVaultSyncResult } from '@/api/teams'
 import {
   base64ToBytes,
   bytesToBase64,
@@ -26,7 +26,23 @@ import {
 } from '../tauri'
 import type { AutoSperrQuelle } from '@/services/autoSperre'
 import { fillRandom } from '@msdis/shield/random'
-import type { VaultItem } from './vaultEintrag'
+import { ALBUM_HOECHSTENS, VAULT_TOMBSTONE_MARKER, type VaultItem } from './vaultEintrag'
+import {
+  angeheftet,
+  blobLesen,
+  dateiBlobs,
+  dateiVorbereiten,
+  offlineAnheften,
+  offlineLoesen,
+  uploadsFortsetzen,
+  vorbereitungAbschliessen,
+  VERSIONEN,
+  type DateiVersion,
+} from './tresorDateien'
+import { bildAngaben } from './tresorBilder'
+import { blobBasisSetzen, blobLoeschen, teamFuerBucketMerken } from './tresorBlobApi'
+import { ablageLaden, blobsLesen, blobsSchreiben } from './tresorAblage'
+import { blobSchluesselNeuWickeln, istBlobKopf } from './tresorDatei'
 
 export interface TeamVaultState {
   teamId: number | null
@@ -43,6 +59,8 @@ export interface TeamVaultState {
   syncStatus: 'idle' | 'syncing' | 'error'
   error: string | null
   hasHint: boolean | null
+  rotationState: string | null
+  pendingBucketId: string | null
 
   // Einstellungen & Sicherheit
   autoLockMinutes: number
@@ -69,11 +87,14 @@ export interface TeamVaultState {
   checkHintStatus: (teamId: number) => Promise<boolean>
   requestHintEmail: (teamId: number) => Promise<{ ok: boolean; message: string }>
   unlock: (teamId: number, masterPassword: string) => Promise<boolean>
-  rotatePassword: (teamId: number, newPassword: string) => Promise<boolean>
+  rotatePassword: (teamId: number, currentPassword: string, newPassword: string) => Promise<boolean>
+  abortRotation: (teamId: number) => Promise<void>
+  rollbackRotation: (teamId: number) => Promise<boolean>
   resetVault: (teamId: number, nachweis: Record<string, unknown>, bestaetigung: string) => Promise<void>
   lock: () => void
   syncWithServer: (teamId: number) => Promise<void>
   saveItem: (item: Partial<VaultItem>) => Promise<string>
+  aendern: (id: string, aenderung: Partial<VaultItem> | ((frisch: VaultItem) => Partial<VaultItem> | undefined)) => Promise<void>
   trashItem: (id: string) => Promise<void>
   restoreItem: (id: string) => Promise<void>
   setArchived: (id: string, archiviert: boolean) => Promise<void>
@@ -83,7 +104,14 @@ export interface TeamVaultState {
   markUsed: (id: string) => Promise<void>
   ordnerAnlegen: (name: string, ordner?: string) => Promise<string>
   dateiHinzufuegen: (datei: File, ordner?: string) => Promise<string>
+  dateiErsetzen: (id: string, inhalt: Blob) => Promise<void>
+  fassungZurueckholen: (id: string, originalId: string) => Promise<void>
+  albumAnlegen: (name: string, eintraege: string[]) => Promise<string>
+  albumAendern: (id: string, aenderung: { hinzu?: string[]; weg?: string[] }) => Promise<void>
+  migriereBase64Datei: (item: VaultItem) => Promise<void>
 }
+
+const migrierendeDateien = new Set<string>()
 
 export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   teamId: null,
@@ -100,6 +128,8 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   syncStatus: 'idle',
   error: null,
   hasHint: null,
+  rotationState: null,
+  pendingBucketId: null,
 
   autoLockMinutes: 5,
   lockOnWindowBlur: false,
@@ -239,6 +269,8 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   loadStatus: async (teamId: number) => {
     try {
       const res = await teamsApi.getVaultSalt(teamId)
+      if (res.bucket_id) teamFuerBucketMerken(res.bucket_id, teamId)
+      if (res.pending_bucket_id) teamFuerBucketMerken(res.pending_bucket_id, teamId)
       await get().loadSettings(teamId)
       set((state) => ({
         teamId,
@@ -248,6 +280,8 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
         needsRotation: res.needs_rotation,
         isOwner: res.is_owner,
         hasHint: res.has_hint ?? false,
+        rotationState: res.rotation_state ?? null,
+        pendingBucketId: res.pending_bucket_id ?? null,
         // Wenn das Team wechselt und vorher ein anderer Tresor offen war:
         ...(state.teamId !== teamId ? { isUnlocked: false, userKey: null, items: [], serverRevision: 0 } : {}),
       }))
@@ -265,6 +299,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
 
       const trimmedHint = hint?.trim() || undefined
       await teamsApi.setupVault(teamId, { bucket_id: bucketId, salt, hint: trimmedHint })
+      teamFuerBucketMerken(bucketId, teamId)
       set({
         teamId,
         bucketId,
@@ -278,6 +313,8 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
         serverRevision: 0,
         error: null,
       })
+      blobBasisSetzen(teamId)
+      await ablageLaden(bucketId).catch(() => {})
       return true
     } catch (err: unknown) {
       set({ error: err instanceof Error ? err.message : 'Fehler beim Einrichten des Team-Tresors' })
@@ -339,12 +376,30 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
         return false
       }
 
+      teamFuerBucketMerken(currentBucket, teamId)
+
+      // Cached Blobs vorab entschlüsseln für sofortige Anzeige
+      const gespeicherte = blobsLesen(currentBucket)
+      const vorabItems: VaultItem[] = []
+      for (const b of gespeicherte) {
+        if (b.is_deleted) continue
+        try {
+          const dec = await decryptVaultEntry(b.ciphertext, userKey, b.id)
+          if (dec && dec[VAULT_TOMBSTONE_MARKER] !== true) {
+            vorabItems.push({ ...(dec as unknown as VaultItem), id: b.id, revision: b.revision })
+          }
+        } catch {}
+      }
+
       set({
         teamId,
         userKey,
         isUnlocked: true,
+        items: vorabItems,
         error: null,
       })
+      blobBasisSetzen(teamId)
+      await ablageLaden(currentBucket).catch(() => {})
       await get().syncWithServer(teamId)
       return true
     } catch (err: unknown) {
@@ -353,42 +408,141 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     }
   },
 
-  rotatePassword: async (teamId: number, newPassword: string) => {
-    const { items, userKey } = get()
-    if (!userKey) return false
+  rotatePassword: async (teamId: number, currentPassword: string, newPassword: string) => {
+    const { items, userKey, salt, bucketId } = get()
+    if (!userKey || !salt || !bucketId) return false
 
     try {
-      const newSaltBytes = new Uint8Array(32)
-      fillRandom(newSaltBytes)
-      const newSalt = bytesToBase64(newSaltBytes)
-      const { userKey: newUserKey, bucketId: newBucketId } = await deriveVaultKeys(newPassword, newSaltBytes)
-
-      // Bestehende Einträge mit dem neuen Schlüssel neu verschlüsseln
-      const mutations: TeamVaultMutationItem[] = []
-      for (const item of items) {
-        const ciphertext = await encryptVaultEntry(item as unknown as Record<string, unknown>, newUserKey, item.id)
-        mutations.push({
-          id: item.id,
-          ciphertext,
-          revision: item.revision,
-          is_deleted: Boolean(item.trashedAt),
-        })
+      // Aktuelles Passwort prüfen (Bucket muss übereinstimmen) — zugleich
+      // das Passwort, mit dem das Vorab-Backup versiegelt wird.
+      const saltBytesAlt = base64ToBytes(salt)
+      const { bucketId: altBucket } = await deriveVaultKeys(currentPassword, saltBytesAlt)
+      if (altBucket.toLowerCase() !== bucketId.toLowerCase()) {
+        set({ error: 'Falsches aktuelles Master-Passwort' })
+        return false
       }
 
-      await teamsApi.rotateVault(teamId, { bucket_id: newBucketId, salt: newSalt })
+      const { rotateVaultCore } = await import('./vaultRotation')
+      const { erstelleBackupBytes, speichereBackupImAppOrdner, backupDateiname } = await import('./tresorBackup')
 
-      // Mutationen in den neuen Bucket syncen
-      await teamsApi.syncVault(teamId, {
-        bucket_id: newBucketId,
-        since_revision: 0,
-        mutations,
+      // Fortsetzen: serverseitig vorbereitete Rotation mit denselben Werten.
+      const status = await teamsApi.getVaultSalt(teamId)
+      let newSalt: string
+      let newSaltBytes: Uint8Array
+      let newBucketId: string
+      let newUserKey: CryptoKey
+      if (status.rotation_state === 'prepared' && status.pending_bucket_id && status.pending_salt) {
+        newSalt = status.pending_salt
+        newSaltBytes = base64ToBytes(newSalt)
+        const abgeleitet = await deriveVaultKeys(newPassword, newSaltBytes)
+        newBucketId = status.pending_bucket_id
+        if (abgeleitet.bucketId.toLowerCase() !== newBucketId.toLowerCase()) {
+          set({ error: 'Neues Passwort passt nicht zur vorbereiteten Rotation' })
+          return false
+        }
+        newUserKey = abgeleitet.userKey
+      } else {
+        newSaltBytes = new Uint8Array(32)
+        fillRandom(newSaltBytes)
+        newSalt = bytesToBase64(newSaltBytes)
+        const abgeleitet = await deriveVaultKeys(newPassword, newSaltBytes)
+        newBucketId = abgeleitet.bucketId
+        newUserKey = abgeleitet.userKey
+      }
+
+      await rotateVaultCore({
+        scope: `team-${teamId}`,
+        items,
+        neuerKey: newUserKey,
+        neueBucketId: newBucketId,
+        neuesSalt: newSalt,
+        backup: async () => {
+          const bytes = await erstelleBackupBytes(
+            items as unknown as Record<string, unknown>[],
+            currentPassword,
+          )
+          await speichereBackupImAppOrdner(bytes, backupDateiname('team'))
+        },
+        transformItem: async (item) => {
+          // Blob-Schluessel auf den neuen Tresor-Schluessel umwickeln; Chunks bleiben.
+          if (!item.datei) return item
+          const wickeln = async (kopf: unknown) =>
+            istBlobKopf(kopf) ? blobSchluesselNeuWickeln(kopf, userKey, newUserKey, item.id) : kopf
+          const datei = { ...item.datei }
+          datei.original = (await wickeln(datei.original)) as typeof datei.original
+          if (datei.vorschau) datei.vorschau = (await wickeln(datei.vorschau)) as typeof datei.vorschau
+          if (datei.miniatur) datei.miniatur = (await wickeln(datei.miniatur)) as typeof datei.miniatur
+          if (datei.frueher) {
+            const frueher = []
+            for (const f of datei.frueher) {
+              const kopf = { ...f }
+              kopf.original = (await wickeln(kopf.original)) as typeof kopf.original
+              if (kopf.vorschau) kopf.vorschau = (await wickeln(kopf.vorschau)) as typeof kopf.vorschau
+              if (kopf.miniatur) kopf.miniatur = (await wickeln(kopf.miniatur)) as typeof kopf.miniatur
+              frueher.push(kopf)
+            }
+            datei.frueher = frueher as typeof datei.frueher
+          }
+          return { ...item, datei }
+        },
+        transport: {
+          prepare: async (b, s) => {
+            if (status.rotation_state !== 'prepared') {
+              await teamsApi.rotationPrepare(teamId, { bucket_id: b, salt: s })
+            }
+          },
+          sync: async (b, mutationen) => {
+            if (mutationen.length > 0) {
+              const res = await teamsApi.syncVault(teamId, {
+                bucket_id: b,
+                since_revision: 0,
+                mutations: mutationen,
+              })
+              return res
+            }
+            // Alles lesen (Seiten über server_revision).
+            const alle: TeamVaultSyncResult['entries'] = []
+            let seit = 0
+            for (;;) {
+              const res = await teamsApi.syncVault(teamId, { bucket_id: b, since_revision: seit })
+              alle.push(...res.entries)
+              seit = res.server_revision
+              if (!res.has_more) return { server_revision: seit, entries: alle, has_more: false }
+            }
+          },
+          commit: async () => {
+            await teamsApi.rotationCommit(teamId)
+          },
+          abort: async () => {
+            await teamsApi.rotationAbort(teamId)
+          },
+        },
       })
+
+      // Biometrie zeigt sonst weiter aufs alte Passwort.
+      try {
+        if (get().isBiometricsEnabled) {
+          await biometrieSpeichern(newPassword, `team_vault_biometric_key_${teamId}`)
+        }
+      } catch {
+        try { await biometrieLoeschen(`team_vault_biometric_key_${teamId}`) } catch {}
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(`mss_team_vault_bio_${teamId}`, 'false')
+        }
+        set({ isBiometricsEnabled: false })
+      }
+
+      teamFuerBucketMerken(newBucketId, teamId)
+      try { await ablageLaden(newBucketId) } catch {}
 
       set({
         salt: newSalt,
         bucketId: newBucketId,
         userKey: newUserKey,
         needsRotation: false,
+        rotationState: 'committed',
+        pendingBucketId: null,
+        serverRevision: 0,
         error: null,
       })
       await get().syncWithServer(teamId)
@@ -399,7 +553,29 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     }
   },
 
+  abortRotation: async (teamId: number) => {
+    try {
+      await teamsApi.rotationAbort(teamId)
+    } finally {
+      const { rotationJournalSchreiben } = await import('./vaultRotation')
+      rotationJournalSchreiben(`team-${teamId}`, null)
+      set({ rotationState: null, pendingBucketId: null })
+    }
+  },
+
+  rollbackRotation: async (teamId: number) => {
+    try {
+      await teamsApi.rotationRollback(teamId)
+      set({ rotationState: null, pendingBucketId: null, isUnlocked: false, userKey: null, items: [] })
+      await get().loadStatus(teamId)
+      return true
+    } catch {
+      return false
+    }
+  },
+
   resetVault: async (teamId: number, nachweis: Record<string, unknown>, bestaetigung: string) => {
+    blobBasisSetzen(null)
     await teamsApi.resetVault(teamId, {
       ...nachweis,
       confirmation: bestaetigung,
@@ -419,6 +595,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   },
 
   lock: () => {
+    blobBasisSetzen(null)
     set({
       isUnlocked: false,
       userKey: null,
@@ -434,32 +611,69 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
 
     set({ syncStatus: 'syncing' })
     try {
-      const res = await teamsApi.syncVault(teamId, {
-        bucket_id: bucketId,
-        since_revision: serverRevision,
-      })
-
       const map = new Map(get().items.map((i) => [i.id, i]))
-      for (const entry of res.entries) {
-        if (entry.is_deleted) {
-          map.delete(entry.id)
-        } else {
-          try {
-            const entschluesselt = await decryptVaultEntry(entry.ciphertext, userKey, entry.id)
-            map.set(entry.id, {
-              ...(entschluesselt as unknown as VaultItem),
-              id: entry.id,
-              revision: entry.revision,
-            })
-          } catch (decErr) {
-            console.error('Konnte Team-Tresor Eintrag nicht entschlüsseln:', decErr)
+      const gespeicherte = new Map(blobsLesen(bucketId).map((b) => [b.id, b]))
+      let aktuelleRevision = serverRevision
+      let hasMore = true
+
+      while (hasMore) {
+        const res = await teamsApi.syncVault(teamId, {
+          bucket_id: bucketId,
+          since_revision: aktuelleRevision,
+        })
+
+        for (const entry of res.entries) {
+          // Revisions-Rückschritt: ein älterer Serverstand ersetzt keinen neueren.
+          const bekannt = map.get(entry.id)
+          if (bekannt && typeof bekannt.revision === 'number' && entry.revision < bekannt.revision) {
+            console.warn(`Team-Tresor-Sync: Revisions-Rückschritt für ${entry.id} ignoriert.`)
+            continue
           }
+          // Löschungen nur mit Tombstone-Beweis im Umschlag (wie privat seit dem Audit).
+          let entschluesselt: Record<string, unknown> | null = null
+          try {
+            entschluesselt = await decryptVaultEntry(entry.ciphertext, userKey, entry.id)
+          } catch {
+            entschluesselt = null
+          }
+          const istGrab = entschluesselt?.[VAULT_TOMBSTONE_MARKER] === true
+          if (entry.is_deleted || istGrab) {
+            if (istGrab) {
+              map.delete(entry.id)
+            } else {
+              console.warn(`Team-Tresor-Sync: unbelegte Löschung für ${entry.id} ignoriert.`)
+            }
+            continue
+          }
+          if (!entschluesselt) {
+            console.error(`Konnte Team-Tresor Eintrag ${entry.id} nicht entschlüsseln.`)
+            continue
+          }
+          map.set(entry.id, {
+            ...(entschluesselt as unknown as VaultItem),
+            id: entry.id,
+            revision: entry.revision,
+          })
         }
+
+        for (const entry of res.entries) {
+          gespeicherte.set(entry.id, {
+            id: entry.id,
+            ciphertext: entry.ciphertext,
+            revision: entry.revision,
+            is_deleted: entry.is_deleted,
+          })
+        }
+
+        aktuelleRevision = res.server_revision
+        hasMore = !!res.has_more
       }
+
+      blobsSchreiben(bucketId, Array.from(gespeicherte.values()))
 
       set({
         items: Array.from(map.values()),
-        serverRevision: res.server_revision,
+        serverRevision: aktuelleRevision,
         syncStatus: 'idle',
       })
     } catch (err: unknown) {
@@ -493,7 +707,9 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
       id,
       ciphertext,
       revision,
-      is_deleted: Boolean(vollstaendig.trashedAt),
+      // Papierkorb ist ein Flag im Umschlag, keine Löschung. Gelöscht wird
+      // ausschließlich über deleteItem mit Tombstone-Beweis.
+      is_deleted: false,
     }
 
     const res = await teamsApi.syncVault(teamId, {
@@ -502,11 +718,29 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
       mutations: [mutation],
     })
 
+    // Konflikt: ein anderes Mitglied war schneller. Serverstand holen statt
+    // lokal so zu tun, als wäre gespeichert worden.
+    if (Array.isArray(res.conflicts) && res.conflicts.includes(id)) {
+      await get().syncWithServer(teamId)
+      throw new Error('Konflikt: Eintrag wurde zwischenzeitlich geändert. Neueste Fassung wurde geladen.')
+    }
+
+    const aktuelleBlobs = blobsLesen(bucketId).filter((b) => b.id !== id)
+    blobsSchreiben(bucketId, [...aktuelleBlobs, { id, ciphertext, revision, is_deleted: false }])
+
     set((state) => ({
       items: [...state.items.filter((i) => i.id !== id), vollstaendig],
       serverRevision: res.server_revision,
     }))
     return id
+  },
+
+  aendern: async (id: string, aenderung: Partial<VaultItem> | ((frisch: VaultItem) => Partial<VaultItem> | undefined)) => {
+    const frisch = get().items.find((i) => i.id === id)
+    if (!frisch) return
+    const ergebnis = typeof aenderung === 'function' ? aenderung(frisch) : aenderung
+    if (!ergebnis) return
+    await get().saveItem({ ...frisch, ...ergebnis })
   },
 
   deleteItem: async (id: string) => {
@@ -516,15 +750,30 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     const existing = items.find((i) => i.id === id)
     if (!existing) return
 
+    if (existing.datei) {
+      blobBasisSetzen(teamId)
+      const blobs = dateiBlobs(existing.datei)
+      for (const b of blobs) {
+        blobLoeschen(bucketId, b.id, b.loeschen).catch(() => {})
+        void offlineLoesen(b.id)
+      }
+    }
+
     const now = Date.now()
+    // Endgültiges Löschen trägt seinen Beweis im Umschlag (Tombstone-Marker),
+    // wie im privaten Tresor. `is_deleted` allein löscht nirgendwo mehr.
+    const grab = {
+      [VAULT_TOMBSTONE_MARKER]: true,
+      deletedAt: now,
+      updatedAt: now,
+    }
+    const ciphertext = await encryptVaultEntry(grab, userKey, id)
     const trashed: VaultItem = {
       ...existing,
       trashedAt: now,
       updatedAt: now,
       revision: existing.revision + 1,
     }
-
-    const ciphertext = await encryptVaultEntry(trashed as unknown as Record<string, unknown>, userKey, id)
     const mutation: TeamVaultMutationItem = {
       id,
       ciphertext,
@@ -537,6 +786,9 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
       since_revision: get().serverRevision,
       mutations: [mutation],
     })
+
+    const aktuelleBlobs = blobsLesen(bucketId).filter((b) => b.id !== id)
+    blobsSchreiben(bucketId, [...aktuelleBlobs, { id, ciphertext, revision: mutation.revision, is_deleted: true }])
 
     set((state) => ({
       items: state.items.filter((i) => i.id !== id),
@@ -599,28 +851,134 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   },
 
   dateiHinzufuegen: async (datei: File, ordner?: string) => {
-    // Speichert Metadaten und Base64-Daten für den Team-Tresor
-    const reader = new FileReader()
-    const base64 = await new Promise<string>((resolve, reject) => {
-      reader.onload = () => {
-        const res = reader.result as string
-        const kommateil = res.indexOf(',')
-        resolve(kommateil !== -1 ? res.substring(kommateil + 1) : res)
-      }
-      reader.onerror = () => reject(reader.error)
-      reader.readAsDataURL(datei)
-    })
+    const { teamId, userKey, bucketId } = get()
+    if (!teamId || !userKey || !bucketId) throw new Error(i18n.t('mss.vault.errors.locked'))
+    blobBasisSetzen(teamId)
+    const id = window.crypto.randomUUID()
+    const { vorschau, miniatur, ...bild } = await bildAngaben(datei)
+    const angaben = await dateiVorbereiten(datei, userKey, bucketId, id, () => get().userKey !== userKey, { vorschau, miniatur })
+    try {
+      if (get().userKey !== userKey) throw new Error(i18n.t('mss.vault.errors.locked'))
+      await get().saveItem({ id, service: datei.name, category: 'datei', datei: { ...angaben, ...bild }, ordner })
+    } finally {
+      vorbereitungAbschliessen(angaben)
+    }
+    void uploadsFortsetzen(bucketId)
+    return id
+  },
 
-    return await get().saveItem({
-      service: datei.name,
-      category: 'datei',
-      ordner,
-      extra: {
-        base64,
-        size: datei.size,
-        type: datei.type,
-      },
+  dateiErsetzen: async (id: string, inhalt: Blob) => {
+    const { teamId, userKey, bucketId } = get()
+    if (!teamId || !userKey || !bucketId) throw new Error(i18n.t('mss.vault.errors.locked'))
+    blobBasisSetzen(teamId)
+    const alt = get().items.find((i) => i.id === id)
+    if (!alt?.datei) throw new Error(i18n.t('mss.vault.dateien.oeffnenFehler'))
+    const { vorschau, miniatur, ...bild } = await bildAngaben(inhalt)
+    const warAngeheftet = (await angeheftet([alt.datei.original.id])).size > 0
+    const neu = await dateiVorbereiten(inhalt, userKey, bucketId, id, () => get().userKey !== userKey, {
+      vorschau,
+      miniatur,
+      original: warAngeheftet ? 'immer' : undefined,
     })
+    try {
+      if (get().userKey !== userKey) throw new Error(i18n.t('mss.vault.errors.locked'))
+      let gefunden = false
+      let loeschBlobs: { id: string; loeschen: string }[] = []
+      await get().aendern(id, (jetzt) => {
+        if (!jetzt.datei) throw new Error(i18n.t('mss.vault.dateien.oeffnenFehler'))
+        gefunden = true
+        const { frueher = [], ...bisher } = jetzt.datei
+        const versionen: DateiVersion[] = [
+          { typ: bisher.typ, ersetzt: Date.now(), original: bisher.original, vorschau: bisher.vorschau, miniatur: bisher.miniatur },
+          ...frueher,
+        ]
+        const weg = versionen.slice(VERSIONEN).flatMap((v) => [v.original, v.vorschau, v.miniatur])
+        loeschBlobs = weg.map((k) => ({ id: k.id, loeschen: k.loeschen }))
+        return {
+          datei: {
+            ...bisher,
+            ...bild,
+            typ: inhalt.type || bisher.typ,
+            geaendert: Date.now(),
+            original: neu.original,
+            vorschau: neu.vorschau,
+            miniatur: neu.miniatur,
+            frueher: versionen.slice(0, VERSIONEN),
+          },
+        }
+      })
+      if (!gefunden) throw new Error(i18n.t('mss.vault.dateien.oeffnenFehler'))
+      for (const b of loeschBlobs) {
+        blobLoeschen(bucketId, b.id, b.loeschen).catch(() => {})
+      }
+      if (warAngeheftet) {
+        await offlineAnheften(neu.original, id, userKey)
+        await offlineLoesen(alt.datei.original.id)
+      }
+    } finally {
+      vorbereitungAbschliessen(neu)
+    }
+    void uploadsFortsetzen(bucketId)
+  },
+
+  fassungZurueckholen: async (id: string, originalId: string) => {
+    const { userKey, teamId } = get()
+    if (!userKey || !teamId) throw new Error(i18n.t('mss.vault.errors.locked'))
+    blobBasisSetzen(teamId)
+    const fassung = get().items.find((i) => i.id === id)?.datei?.frueher?.find((v) => v.original.id === originalId)
+    if (!fassung) throw new Error(i18n.t('mss.vault.dateien.oeffnenFehler'))
+    const inhalt = await blobLesen(fassung.original, id, userKey, fassung.typ)
+    await get().dateiErsetzen(id, inhalt)
+  },
+
+  albumAnlegen: async (name: string, eintraege: string[]) => {
+    const liste = [...new Set(eintraege)]
+    if (liste.length > ALBUM_HOECHSTENS) throw new Error(i18n.t('mss.vault.fotos.albumVoll', { max: ALBUM_HOECHSTENS }))
+    const id = window.crypto.randomUUID()
+    await get().saveItem({ id, service: name, category: 'album', album: { eintraege: liste } })
+    return id
+  },
+
+  albumAendern: async (id: string, { hinzu = [], weg = [] }: { hinzu?: string[]; weg?: string[] }) => {
+    await get().aendern(id, (album) => {
+      if (album.category !== 'album') return undefined
+      const raus = new Set(weg)
+      const liste = [...new Set([...(album.album?.eintraege ?? []), ...hinzu])].filter((e) => !raus.has(e))
+      if (liste.length > ALBUM_HOECHSTENS) throw new Error(i18n.t('mss.vault.fotos.albumVoll', { max: ALBUM_HOECHSTENS }))
+      return { album: { eintraege: liste } }
+    })
+  },
+
+  migriereBase64Datei: async (item: VaultItem) => {
+    const { teamId, userKey, bucketId } = get()
+    if (!teamId || !userKey || !bucketId || !item.extra?.base64) return
+    if (migrierendeDateien.has(item.id)) return
+    migrierendeDateien.add(item.id)
+    blobBasisSetzen(teamId)
+    const base64Str = item.extra.base64 as string
+    const bytes = base64ToBytes(base64Str)
+    try {
+      const mimeType = (item.extra.type as string) || 'application/octet-stream'
+      const dateiBlob = new Blob([bytes as unknown as BlobPart], { type: mimeType })
+      const { vorschau, miniatur, ...bild } = await bildAngaben(dateiBlob)
+      const angaben = await dateiVorbereiten(dateiBlob, userKey, bucketId, item.id, () => get().userKey !== userKey, { vorschau, miniatur })
+      try {
+        if (get().userKey !== userKey) return
+        const updatedExtra = { ...item.extra }
+        delete updatedExtra.base64
+        await get().saveItem({
+          ...item,
+          datei: { ...angaben, ...bild },
+          extra: Object.keys(updatedExtra).length > 0 ? updatedExtra : undefined,
+        })
+      } finally {
+        vorbereitungAbschliessen(angaben)
+      }
+      void uploadsFortsetzen(bucketId)
+    } finally {
+      migrierendeDateien.delete(item.id)
+      bytes.fill(0)
+    }
   },
 }))
 

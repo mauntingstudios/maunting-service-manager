@@ -29,6 +29,30 @@ export function zurueckgesetztFrage(frage: () => boolean): void {
   zurueckgesetzt = frage
 }
 
+/**
+ * Basis der Blob-Routen: privat `/api/vault`, Team `/api/teams/<id>/vault`.
+ * Es ist immer nur ein Tresor offen; der jeweilige Store setzt die Basis beim
+ * Entsperren und der private beim Sperren/Öffnen zurück auf privat.
+ */
+let blobTeamId: number | null = null
+const bucketTeamMap = new Map<string, number>()
+
+export function teamFuerBucketMerken(bucketId: string, teamId: number): void {
+  bucketTeamMap.set(bucketId.toLowerCase(), teamId)
+}
+
+export function blobBasisSetzen(teamId: number | null): void {
+  blobTeamId = teamId
+}
+
+export function blobBasis(bucket?: string): string {
+  if (bucket) {
+    const tid = bucketTeamMap.get(bucket.toLowerCase())
+    if (tid !== undefined) return `/api/teams/${tid}/vault`
+  }
+  return blobTeamId ? `/api/teams/${blobTeamId}/vault` : '/api/vault'
+}
+
 /** Meldet auf `VAULT_BUCKET_UNBEKANNT` den Bucket einmal neu und wiederholt. */
 async function mitBucket<T>(anfrage: () => Promise<T>): Promise<T> {
   if (zurueckgesetzt()) throw new SanitizedApiError(i18n.t('errors.vault_zurueckgesetzt'), { status: 410, code: 'VAULT_ZURUECKGESETZT' })
@@ -69,8 +93,8 @@ function mitBucketKopf(bucket: string, kopf: Record<string, string> = {}): Recor
   return { ...kopf, 'X-MSM-Vault-Bucket': bucket }
 }
 
-export function speicherAbfragen(): Promise<TresorSpeicher> {
-  return api<TresorSpeicher>('/api/vault/speicher')
+export function speicherAbfragen(bucket?: string): Promise<TresorSpeicher> {
+  return api<TresorSpeicher>(`${blobBasis(bucket)}/speicher`)
 }
 
 export async function blobReservieren(
@@ -81,7 +105,7 @@ export async function blobReservieren(
   loeschPruefwert: string,
 ): Promise<void> {
   await mitBucket(() =>
-    api('/api/vault/blobs', {
+    api(`${blobBasis(bucket)}/blobs`, {
       method: 'POST',
       headers: mitBucketKopf(bucket),
       body: JSON.stringify({ id, chunk_count: chunkAnzahl, bytes_total: bytes, delete_verifier: loeschPruefwert }),
@@ -90,12 +114,12 @@ export async function blobReservieren(
 }
 
 export function blobStand(bucket: string, id: string): Promise<BlobStand> {
-  return mitBucket(() => api<BlobStand>(`/api/vault/blobs/${id}/status`, { headers: mitBucketKopf(bucket) }))
+  return mitBucket(() => api<BlobStand>(`${blobBasis(bucket)}/blobs/${id}/status`, { headers: mitBucketKopf(bucket) }))
 }
 
 export async function chunkHochladen(bucket: string, id: string, index: number, chiffrat: Uint8Array): Promise<void> {
   await mitBucket(() =>
-    apiStream(`/api/vault/blobs/${id}/chunks/${index}`, {
+    apiStream(`${blobBasis(bucket)}/blobs/${id}/chunks/${index}`, {
       method: 'PUT',
       headers: mitBucketKopf(bucket, { 'Content-Type': 'application/octet-stream', Accept: '*/*' }),
       body: chiffrat as BodyInit,
@@ -104,12 +128,12 @@ export async function chunkHochladen(bucket: string, id: string, index: number, 
 }
 
 export async function blobFertig(bucket: string, id: string): Promise<void> {
-  await mitBucket(() => api(`/api/vault/blobs/${id}/fertig`, { method: 'POST', headers: mitBucketKopf(bucket) }))
+  await mitBucket(() => api(`${blobBasis(bucket)}/blobs/${id}/fertig`, { method: 'POST', headers: mitBucketKopf(bucket) }))
 }
 
 export async function chunkLaden(id: string, index: number, signal?: AbortSignal): Promise<Uint8Array> {
   const antwort = await mitBucket(() =>
-    apiStream(`/api/vault/blobs/${id}/chunks/${index}`, {
+    apiStream(`${blobBasis()}/blobs/${id}/chunks/${index}`, {
       method: 'GET',
       headers: { Accept: 'application/octet-stream' },
       signal,
@@ -124,7 +148,7 @@ export async function chunkLaden(id: string, index: number, signal?: AbortSignal
  */
 export async function kleineLaden(ids: string[]): Promise<Map<string, Uint8Array>> {
   const antwort = await mitBucket(() =>
-    apiStream('/api/vault/blobs/klein', {
+    apiStream(`${blobBasis()}/blobs/klein`, {
       method: 'POST',
       headers: { Accept: 'application/octet-stream' },
       body: JSON.stringify({ ids }),
@@ -147,7 +171,7 @@ export async function kleineLaden(ids: string[]): Promise<Map<string, Uint8Array
 
 export async function blobLoeschen(bucket: string, id: string, loeschen: string): Promise<void> {
   await mitBucket(() =>
-    api(`/api/vault/blobs/${id}`, {
+    api(`${blobBasis(bucket)}/blobs/${id}`, {
       method: 'DELETE',
       headers: mitBucketKopf(bucket),
       body: JSON.stringify({ schluessel: loeschen }),

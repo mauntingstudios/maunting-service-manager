@@ -22,6 +22,7 @@ import { confirm } from '@/stores/confirmStore'
 import { detectLineEnding, serializeLineEndings } from '@/components/server/fileHelpers'
 import type { EditorTab } from '@/components/server/fileWorkspaceTypes'
 import { useVaultStore } from './vaultStore'
+import { useTeamVaultStore } from './teamVaultStore'
 import { type VaultItem } from './vaultEintrag'
 import { blobLesen } from './tresorDateien'
 import { dateiAufsGeraet } from './tresorAnzeige'
@@ -42,15 +43,17 @@ interface Props {
   /** Markdown und Tabellen haben eine gelesene Ansicht neben dem Text. */
   ansicht?: 'markdown' | 'tabelle'
   onFertig: (gespeichert: string | null) => void
+  isTeam?: boolean
 }
 
-export function TresorTexteditor({ item: anfang, text, ort, ansicht, onFertig }: Props) {
+export function TresorTexteditor({ item: anfang, text, ort, ansicht, onFertig, isTeam = false }: Props) {
   const { t } = useTranslation()
-  const dateiErsetzen = useVaultStore((s) => s.dateiErsetzen)
-  const fassungZurueckholen = useVaultStore((s) => s.fassungZurueckholen)
-  const userKey = useVaultStore((s) => s.userKey)
+  const dateiErsetzen = isTeam ? useTeamVaultStore((s) => s.dateiErsetzen) : useVaultStore((s) => s.dateiErsetzen)
+  const fassungZurueckholen = isTeam ? useTeamVaultStore((s) => s.fassungZurueckholen) : useVaultStore((s) => s.fassungZurueckholen)
+  const userKey = isTeam ? useTeamVaultStore((s) => s.userKey) : useVaultStore((s) => s.userKey)
+  const items = isTeam ? useTeamVaultStore((s) => s.items) : useVaultStore((s) => s.items)
   // Nach dem Speichern hat die Datei ein neues Original und neue frühere Fassungen.
-  const item = useVaultStore((s) => s.items.find((i) => i.id === anfang.id)) ?? anfang
+  const item = items.find((i) => i.id === anfang.id) ?? anfang
   const [versionenOffen, setVersionenOffen] = useState(false)
   const [lesen, setLesen] = useState(!!ansicht)
   const [holt, setHolt] = useState<string | null>(null)
@@ -103,7 +106,8 @@ export function TresorTexteditor({ item: anfang, text, ort, ansicht, onFertig }:
     setHolt(originalId)
     try {
       await fassungZurueckholen(item.id, originalId)
-      const neu = useVaultStore.getState().items.find((i) => i.id === item.id)?.datei
+      const aktuelleItems = isTeam ? useTeamVaultStore.getState().items : useVaultStore.getState().items
+      const neu = aktuelleItems.find((i) => i.id === item.id)?.datei
       if (!neu || !userKey) return
       const inhalt = await (await blobLesen(neu.original, item.id, userKey, neu.typ)).text()
       setTab((a) => ({ ...a, content: inhalt, savedContent: inhalt, saveState: 'clean', lineEnding: detectLineEnding(inhalt), size: inhalt.length }))

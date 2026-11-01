@@ -265,6 +265,49 @@ def _pruefe_nicht_beerdigt(db: Session, bucket_id: str) -> None:
         raise VaultZurueckgesetzt("Dieser Tresor wurde zurückgesetzt.")
 
 
+def _pruefe_bucket_nicht_vergeben(
+    db: Session,
+    bucket_id: str,
+    *,
+    ausgenommen_team_id: int | None = None,
+    ausgenommen_konto_index: str | None = None,
+    erlaubter_staging_bucket: str | None = None,
+) -> None:
+    _pruefe_nicht_beerdigt(db, bucket_id)
+    b = bucket_id.lower()
+
+    if db.get(VaultBlindBucket, b) is not None:
+        raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
+
+    besitzer = _bucket_besitzer(db, b)
+    if besitzer is not None and besitzer != ausgenommen_konto_index:
+        raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
+
+    anderes_konto = (
+        db.query(VaultUserSetting.konto_index)
+        .filter(
+            (func.lower(VaultUserSetting.pending_bucket_id) == b)
+            | (func.lower(VaultUserSetting.old_bucket_id) == b)
+        )
+        .first()
+    )
+    if anderes_konto is not None and anderes_konto[0] != ausgenommen_konto_index:
+        raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
+
+    team_query = db.query(Team.id).filter(
+        (func.lower(Team.vault_bucket_id) == b)
+        | (func.lower(Team.vault_pending_bucket_id) == b)
+        | (func.lower(Team.vault_old_bucket_id) == b)
+    )
+    if ausgenommen_team_id is not None:
+        team_query = team_query.filter(Team.id != ausgenommen_team_id)
+    if team_query.first() is not None:
+        raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
+
+    if b != (erlaubter_staging_bucket or "").lower() and _bucket_hat_eintraege(db, b):
+        raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
+
+
 def _beanspruchen(db: Session, bucket_id: str) -> None:
     """Sperrt den Bucket fuer einen Erstanspruch und prueft danach erneut, ob er beerdigt ist.
 
@@ -444,8 +487,40 @@ def sync_vault(db: Session, konto: TresorKonto, request: VaultSyncRequest) -> Va
     if besitzer is None and db.get(VaultBlindBucket, bucket_id) is not None:
         raise VaultBucketAccessDenied("Dieser Tresor-Bucket ist an einen blinden Besitznachweis gebunden.")
 
-    if user_setting and user_setting.bucket_id and user_setting.bucket_id != bucket_id:
+    ist_staging = bool(
+        user_setting
+        and user_setting.rotation_state == "prepared"
+        and user_setting.pending_bucket_id
+        and user_setting.pending_bucket_id.lower() == bucket_id
+    )
+    ist_alt = bool(
+        user_setting
+        and user_setting.old_bucket_id
+        and user_setting.old_bucket_id.lower() == bucket_id
+    )
+    if ist_alt:
+        if request.mutations:
+            raise HTTPException(status_code=409, detail="Tresor wurde rotiert. Der vorherige Stand ist eingefroren.")
+        _pruefe_format(db, bucket_id, request.client_format, request.min_client_format)
+        return _lies_bucket(db, bucket_id, request.since_revision)
+
+    if (
+        user_setting
+        and user_setting.rotation_state == "prepared"
+        and user_setting.bucket_id
+        and user_setting.bucket_id.lower() == bucket_id
+        and request.mutations
+    ):
+        raise VaultBucketAccessDenied("Rotation laeuft: aktiver Bucket ist eingefroren.")
+    if user_setting and user_setting.bucket_id and user_setting.bucket_id != bucket_id and not ist_staging:
         raise VaultBucketAccessDenied("Nicht autorisierter Tresor-Bucket für dieses Benutzerkonto.")
+
+    if ist_staging:
+        _pruefe_format(db, bucket_id, request.client_format, request.min_client_format)
+        konflikte_staging = _wende_mutationen_an(db, bucket_id, request.mutations)
+        antwort_staging = _lies_bucket(db, bucket_id, request.since_revision)
+        antwort_staging.conflicts = konflikte_staging
+        return antwort_staging
 
     if besitzer is None:
         # Erstanspruch: nur auf einen Bucket, in dem nichts liegt. Ein Bucket mit
@@ -633,6 +708,10 @@ def register_blind_bucket(db: Session, konto: TresorKonto, bucket_id: str, auth_
 
 def get_vault_salt(db: Session, konto: TresorKonto) -> VaultSaltResponse:
     """Liest den hinterlegten KDF-Salt und Bucket-Status des Benutzers."""
+    try:
+        bereinige_faellige_rotationen(db)
+    except Exception:
+        db.rollback()
     setting = einstellung(db, konto)
     hint_obj = _eigene_zeile(db, VaultHint, konto)
     db.commit()
@@ -644,6 +723,9 @@ def get_vault_salt(db: Session, konto: TresorKonto) -> VaultSaltResponse:
         bucket_id=setting.bucket_id,
         has_vault=bool(setting.bucket_id or setting.kdf_salt),
         has_hint=has_hint,
+        rotation_state=setting.rotation_state,
+        pending_bucket_id=setting.pending_bucket_id,
+        pending_salt=setting.pending_salt,
     )
 
 
@@ -680,6 +762,11 @@ def set_vault_salt(
     setting = einstellung(db, konto)
     besitzer = _bucket_besitzer(db, clean_bucket)
     if besitzer is not None and besitzer != konto.index:
+        raise VaultBucketAccessDenied("Der angegebene Tresor-Bucket ist bereits vergeben.")
+    if db.query(Team.id).filter(
+        (func.lower(Team.vault_bucket_id) == clean_bucket)
+        | (func.lower(Team.vault_pending_bucket_id) == clean_bucket)
+    ).first() is not None:
         raise VaultBucketAccessDenied("Der angegebene Tresor-Bucket ist bereits vergeben.")
 
     eigener = setting is not None and setting.bucket_id == clean_bucket
@@ -952,7 +1039,7 @@ def setup_team_vault(
     """Richtet den E2EE-Tresor eines Teams ein."""
     if team.vault_bucket_id is not None:
         raise HTTPException(status_code=409, detail="Team-Tresor ist bereits eingerichtet.")
-    _pruefe_nicht_beerdigt(db, bucket_id)
+    _pruefe_bucket_nicht_vergeben(db, bucket_id, ausgenommen_team_id=team.id)
     team.vault_bucket_id = bucket_id.lower()
     team.vault_salt = salt
     team.vault_needs_rotation = False
@@ -1086,37 +1173,235 @@ Maunting Service Manager
     return True, "Der Passwort-Hinweis wurde erfolgreich an deine E-Mail-Adresse gesendet."
 
 
-def rotate_team_vault(db: Session, team: Team, user: User, bucket_id: str | None = None, salt: str | None = None) -> None:
-    """Rotiert das Master-Passwort des Team-Tresors und setzt das Rotations-Flag zurück."""
-    old_bucket_id = team.vault_bucket_id
-    if bucket_id:
-        _pruefe_nicht_beerdigt(db, bucket_id)
-        team.vault_bucket_id = bucket_id.lower()
-    if salt:
-        team.vault_salt = salt
+ROTATION_HALTEFRIST = timedelta(days=7)
+
+
+def _staging_loeschen(db: Session, bucket_id: str) -> None:
+    db.query(VaultEntry).filter(VaultEntry.bucket_id == bucket_id.lower()).delete(synchronize_session=False)
+
+
+def _blobs_umhaengen(db: Session, alt: str, neu: str) -> None:
+    """Blob-Zeilen auf den neuen Bucket haengen (Dateien ziehen nicht um)."""
+    from models.vault_blob import VaultBlob
+    from models.vault_eingang import VaultEingang
+
+    db.query(VaultBlob).filter(VaultBlob.bucket_id == alt.lower()).update(
+        {"bucket_id": neu.lower()}, synchronize_session=False
+    )
+    db.query(VaultEingang).filter(VaultEingang.bucket_id == alt.lower()).update(
+        {"bucket_id": neu.lower()}, synchronize_session=False
+    )
+
+
+def rotation_vorbereiten_team(db: Session, team: Team, bucket_id: str, salt: str) -> None:
+    gesperrt = db.query(Team).filter(Team.id == team.id).with_for_update().first()
+    if gesperrt is not None:
+        team = gesperrt
+    if not team.vault_bucket_id:
+        raise HTTPException(status_code=400, detail="Team-Tresor ist noch nicht eingerichtet.")
+    neu = bucket_id.lower()
+    if neu == team.vault_bucket_id.lower():
+        raise HTTPException(status_code=400, detail="Neuer Bucket entspricht dem aktiven Bucket.")
+    _pruefe_bucket_nicht_vergeben(
+        db, neu, ausgenommen_team_id=team.id, erlaubter_staging_bucket=team.vault_pending_bucket_id
+    )
+    if team.vault_pending_bucket_id and team.vault_pending_bucket_id.lower() != neu:
+        _staging_loeschen(db, team.vault_pending_bucket_id)
+    team.vault_pending_bucket_id = neu
+    team.vault_pending_salt = salt
+    team.vault_rotation_state = "prepared"
+    db.commit()
+
+
+def rotation_commit_team(db: Session, team: Team) -> None:
+    gesperrt = db.query(Team).filter(Team.id == team.id).with_for_update().first()
+    if gesperrt is not None:
+        team = gesperrt
+    if not team.vault_pending_bucket_id or not team.vault_bucket_id:
+        raise HTTPException(status_code=409, detail="Keine vorbereitete Rotation vorhanden.")
+    alt, alt_salt = team.vault_bucket_id, team.vault_salt
+    neu, neu_salt = team.vault_pending_bucket_id, team.vault_pending_salt
+    _blobs_umhaengen(db, alt, neu)
+    team.vault_bucket_id, team.vault_salt = neu, neu_salt
+    team.vault_old_bucket_id, team.vault_old_salt = alt, alt_salt
+    team.vault_rotation_cleanup_after = _now() + ROTATION_HALTEFRIST
+    team.vault_pending_bucket_id = None
+    team.vault_pending_salt = None
+    team.vault_rotation_state = "committed"
     team.vault_needs_rotation = False
     db.commit()
 
-    if bucket_id and old_bucket_id and old_bucket_id.lower() != bucket_id.lower():
-        # Alten Bucket bereinigen und tombstonen, damit ausgetretene Mitglieder alte Daten nicht mehr abrufen können
-        try:
-            db.add(VaultBucketTombstone(bucket_id=old_bucket_id.lower()))
-            db.query(VaultEntry).filter(VaultEntry.bucket_id == old_bucket_id.lower()).delete()
-            db.commit()
-        except Exception:
-            db.rollback()
+
+def rotation_abbrechen_team(db: Session, team: Team) -> None:
+    if team.vault_pending_bucket_id:
+        _staging_loeschen(db, team.vault_pending_bucket_id)
+    team.vault_pending_bucket_id = None
+    team.vault_pending_salt = None
+    team.vault_rotation_state = None
+    db.commit()
+
+
+def rotation_rollback_team(db: Session, team: Team) -> None:
+    if not team.vault_old_bucket_id or team.vault_rotation_state != "committed":
+        raise HTTPException(status_code=409, detail="Kein Rollback mehr moeglich.")
+    aktuell, aktuell_salt = team.vault_bucket_id, team.vault_salt
+    _blobs_umhaengen(db, aktuell, team.vault_old_bucket_id)
+    if aktuell:
+        _staging_loeschen(db, aktuell)
+    team.vault_bucket_id, team.vault_salt = team.vault_old_bucket_id, team.vault_old_salt
+    team.vault_old_bucket_id = None
+    team.vault_old_salt = None
+    team.vault_rotation_cleanup_after = None
+    team.vault_rotation_state = None
+    db.commit()
+
+
+def rotate_team_vault(db: Session, team: Team, user: User, bucket_id: str | None = None, salt: str | None = None) -> None:
+    """Alt-Endpunkt: committet nur noch eine vorbereitete Rotation."""
+    if not team.vault_pending_bucket_id:
+        raise HTTPException(status_code=409, detail="Rotation zuerst vorbereiten (rotation/prepare).")
+    if bucket_id and bucket_id.lower() != team.vault_pending_bucket_id.lower():
+        raise HTTPException(status_code=409, detail="Bucket entspricht nicht der vorbereiteten Rotation.")
+    rotation_commit_team(db, team)
 
 
 def sync_team_vault(db: Session, team: Team, user: User, request: VaultSyncRequest) -> VaultSyncResponse:
     """Führt Revisions-Sync für den Team-Tresor durch."""
     if not team.vault_bucket_id:
         raise HTTPException(status_code=400, detail="Team-Tresor ist noch nicht eingerichtet.")
-    if request.bucket_id.lower() != team.vault_bucket_id.lower():
+    ziel = request.bucket_id.lower()
+    ist_staging = (
+        team.vault_rotation_state == "prepared"
+        and team.vault_pending_bucket_id is not None
+        and ziel == team.vault_pending_bucket_id.lower()
+    )
+    ist_alt = bool(
+        team.vault_old_bucket_id
+        and team.vault_old_bucket_id.lower() == ziel
+    )
+    if ist_alt:
+        if request.mutations:
+            raise HTTPException(status_code=409, detail="Tresor wurde rotiert. Der vorherige Stand ist eingefroren.")
+        _pruefe_nicht_beerdigt(db, ziel)
+        _pruefe_format(db, ziel, request.client_format, request.min_client_format)
+        return _lies_bucket(db, ziel, request.since_revision)
+
+    if ziel != team.vault_bucket_id.lower() and not ist_staging:
         raise HTTPException(status_code=403, detail="Nicht autorisierter Tresor-Bucket für dieses Team.")
-    _pruefe_nicht_beerdigt(db, team.vault_bucket_id)
-    _pruefe_format(db, team.vault_bucket_id, request.client_format, request.min_client_format)
-    konflikte = _wende_mutationen_an(db, team.vault_bucket_id, request.mutations)
-    antwort = _lies_bucket(db, team.vault_bucket_id, request.since_revision)
+    if (
+        team.vault_rotation_state == "prepared"
+        and ziel == team.vault_bucket_id.lower()
+        and request.mutations
+    ):
+        raise HTTPException(status_code=409, detail="Rotation laeuft: aktiver Bucket ist eingefroren.")
+    _pruefe_nicht_beerdigt(db, ziel)
+    _pruefe_format(db, ziel, request.client_format, request.min_client_format)
+    konflikte = _wende_mutationen_an(db, ziel, request.mutations)
+    antwort = _lies_bucket(db, ziel, request.since_revision)
     antwort.conflicts = konflikte
     return antwort
+
+
+# ─── Private Rotation (gleiches Protokoll wie Team) ──────────────────────────
+
+
+def rotation_vorbereiten_privat(db: Session, konto: TresorKonto, bucket_id: str, salt: str) -> None:
+    setting = db.scalar(
+        select(VaultUserSetting).where(VaultUserSetting.konto_index == konto.index).with_for_update()
+    ) or einstellung(db, konto)
+    if setting is None or not setting.bucket_id:
+        raise HTTPException(status_code=400, detail="Tresor ist noch nicht eingerichtet.")
+    neu = bucket_id.lower()
+    if neu == setting.bucket_id.lower():
+        raise HTTPException(status_code=400, detail="Neuer Bucket entspricht dem aktiven Bucket.")
+    _pruefe_bucket_nicht_vergeben(
+        db, neu, ausgenommen_konto_index=konto.index, erlaubter_staging_bucket=setting.pending_bucket_id
+    )
+    if setting.pending_bucket_id and setting.pending_bucket_id.lower() != neu:
+        _staging_loeschen(db, setting.pending_bucket_id)
+    setting.pending_bucket_id = neu
+    setting.pending_salt = salt
+    setting.rotation_state = "prepared"
+    setting.updated_at = _now()
+    db.commit()
+
+
+def rotation_commit_privat(db: Session, konto: TresorKonto) -> None:
+    setting = db.scalar(
+        select(VaultUserSetting).where(VaultUserSetting.konto_index == konto.index).with_for_update()
+    ) or einstellung(db, konto)
+    if setting is None or not setting.pending_bucket_id or not setting.bucket_id:
+        raise HTTPException(status_code=409, detail="Keine vorbereitete Rotation vorhanden.")
+    alt, alt_salt = setting.bucket_id, setting.kdf_salt
+    neu, neu_salt = setting.pending_bucket_id, setting.pending_salt
+    _blobs_umhaengen(db, alt, neu)
+    setting.bucket_id, setting.kdf_salt = neu, neu_salt
+    setting.old_bucket_id, setting.old_salt = alt, alt_salt
+    setting.rotation_cleanup_after = _now() + ROTATION_HALTEFRIST
+    setting.pending_bucket_id = None
+    setting.pending_salt = None
+    setting.rotation_state = "committed"
+    setting.updated_at = _now()
+    db.commit()
+
+
+def rotation_abbrechen_privat(db: Session, konto: TresorKonto) -> None:
+    setting = einstellung(db, konto)
+    if setting is None:
+        return
+    if setting.pending_bucket_id:
+        _staging_loeschen(db, setting.pending_bucket_id)
+    setting.pending_bucket_id = None
+    setting.pending_salt = None
+    setting.rotation_state = None
+    setting.updated_at = _now()
+    db.commit()
+
+
+def rotation_rollback_privat(db: Session, konto: TresorKonto) -> None:
+    setting = einstellung(db, konto)
+    if setting is None or not setting.old_bucket_id or setting.rotation_state != "committed":
+        raise HTTPException(status_code=409, detail="Kein Rollback mehr moeglich.")
+    aktuell = setting.bucket_id
+    _blobs_umhaengen(db, aktuell, setting.old_bucket_id)
+    if aktuell:
+        _staging_loeschen(db, aktuell)
+    setting.bucket_id, setting.kdf_salt = setting.old_bucket_id, setting.old_salt
+    setting.old_bucket_id = None
+    setting.old_salt = None
+    setting.rotation_cleanup_after = None
+    setting.rotation_state = None
+    setting.updated_at = _now()
+    db.commit()
+
+
+def bereinige_faellige_rotationen(db: Session) -> int:
+    """Loescht Alt-Buckets nach der 7-Tage-Haltefrist. Laeuft lazy + per Scheduler."""
+    jetzt = _now()
+    geloescht = 0
+    for team in db.query(Team).filter(
+        Team.vault_old_bucket_id.isnot(None),
+        Team.vault_rotation_cleanup_after.isnot(None),
+        Team.vault_rotation_cleanup_after <= jetzt,
+    ).all():
+        _bucket_entfernen(db, team.vault_old_bucket_id)
+        team.vault_old_bucket_id = None
+        team.vault_old_salt = None
+        team.vault_rotation_cleanup_after = None
+        team.vault_rotation_state = None
+        geloescht += 1
+    for setting in db.query(VaultUserSetting).filter(
+        VaultUserSetting.old_bucket_id.isnot(None),
+        VaultUserSetting.rotation_cleanup_after.isnot(None),
+        VaultUserSetting.rotation_cleanup_after <= jetzt,
+    ).all():
+        _bucket_entfernen(db, setting.old_bucket_id)
+        setting.old_bucket_id = None
+        setting.old_salt = None
+        setting.rotation_cleanup_after = None
+        setting.rotation_state = None
+        geloescht += 1
+    if geloescht:
+        db.commit()
+    return geloescht
 

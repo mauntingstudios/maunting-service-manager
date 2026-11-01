@@ -95,6 +95,9 @@ class TeamVaultSaltResponse(BaseModel):
     needs_rotation: bool = False
     is_owner: bool = False
     has_hint: bool = False
+    rotation_state: str | None = None
+    pending_bucket_id: str | None = None
+    pending_salt: str | None = None
 
 
 class TeamVaultSetupRequest(BaseModel):
