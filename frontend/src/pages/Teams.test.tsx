@@ -364,7 +364,7 @@ describe('Teams', () => {
     fireEvent.click(absenden as HTMLElement)
 
     await waitFor(() => expect(teamsApi.inviteMember).toHaveBeenCalledWith(2, {
-      user_id: 3, can_manage_skills: false, can_manage_memory: false,
+      user_id: 3, can_manage_skills: false, can_manage_memory: false, can_access_vault: true,
     }))
     // Das Backend legt seit dem 23.08.2026 nur eine Einladung an. Die Meldung
     // „Mitglied aufgenommen." war danach schlicht falsch: aufgenommen wurde

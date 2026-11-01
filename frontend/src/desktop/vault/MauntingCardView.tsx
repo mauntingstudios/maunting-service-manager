@@ -221,7 +221,7 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
             {/* Flip-Icon unten rechts */}
             <div
               className="absolute bottom-3 right-3 p-1.5 rounded-full bg-black/40 text-sky-300 hover:text-white hover:bg-black/60 transition-colors backdrop-blur-sm"
-              title={t('mss.card.flipTooltip', 'Karte umdrehen')}
+              aria-hidden="true"
             >
               <RotateCw className="w-3.5 h-3.5" aria-hidden="true" />
             </div>
@@ -301,7 +301,7 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
             {/* Flip-Icon unten rechts */}
             <div
               className="absolute bottom-3 right-3 p-1.5 rounded-full bg-black/40 text-sky-300 hover:text-white hover:bg-black/60 transition-colors backdrop-blur-sm"
-              title={t('mss.card.flipTooltip', 'Karte umdrehen')}
+              aria-hidden="true"
             >
               <RotateCw className="w-3.5 h-3.5" aria-hidden="true" />
             </div>

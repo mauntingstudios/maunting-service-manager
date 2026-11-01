@@ -75,6 +75,7 @@ def _zusammenfassung(
         is_owner=user.is_owner or (member is not None and member.role == "owner"),
         can_manage_skills=member is not None and member.can_manage_skills,
         can_manage_memory=member is not None and member.can_manage_memory,
+        can_access_vault=user.is_owner or (member is not None and (member.role == "owner" or member.can_access_vault)),
         member_count=count,
         created_at=team.created_at,
     )
@@ -94,6 +95,8 @@ def _invitation(db: Session, einladung: TeamInvitation, team: Team) -> TeamInvit
         invited_by_username=einlader.username if einlader is not None else None,
         can_manage_skills=einladung.can_manage_skills,
         can_manage_memory=einladung.can_manage_memory,
+        can_access_vault=einladung.can_access_vault,
+        team_role_id=einladung.team_role_id,
         invited_at=einladung.created_at,
     )
 
@@ -111,6 +114,8 @@ def _detail(db: Session, team: Team, user: User) -> TeamDetailResponse:
             user_id=member.user_id, username=username, avatar_url=avatar_url, role=member.role,
             can_manage_skills=member.can_manage_skills,
             can_manage_memory=member.can_manage_memory,
+            can_access_vault=member.can_access_vault,
+            team_role_id=member.team_role_id,
             joined_at=member.joined_at,
         )
         for member, username, avatar_url in rows
@@ -285,6 +290,8 @@ def invite_member(
         db, team=team, user=user, new_user_id=payload.user_id,
         can_manage_skills=payload.can_manage_skills,
         can_manage_memory=payload.can_manage_memory,
+        can_access_vault=payload.can_access_vault,
+        team_role_id=payload.team_role_id,
     )
     return _detail(db, team, user)
 
@@ -303,6 +310,8 @@ def update_member(
         db, team=team, user=user, member_user_id=member_user_id,
         can_manage_skills=payload.can_manage_skills,
         can_manage_memory=payload.can_manage_memory,
+        can_access_vault=payload.can_access_vault,
+        team_role_id=payload.team_role_id,
     )
     return _detail(db, team, user)
 
@@ -407,16 +416,23 @@ def get_team_vault_salt(
     """Liefert Salz und Bucket-ID des Team-Tresors sowie den Rotations-Hinweis."""
     team = team_service.get_team_for_member(db, team_id, user)
     is_owner = bool(user.is_owner or team.owner_user_id == user.id)
+    can_access = True
+    if not is_owner:
+        m = team_service.membership(db, team_id, user.id)
+        if m is not None and not m.can_access_vault:
+            can_access = False
+
     return TeamVaultSaltResponse(
         is_setup=team.vault_bucket_id is not None,
-        salt=team.vault_salt,
-        bucket_id=team.vault_bucket_id,
-        needs_rotation=bool(team.vault_needs_rotation),
+        salt=team.vault_salt if can_access else None,
+        bucket_id=team.vault_bucket_id if can_access else None,
+        needs_rotation=bool(team.vault_needs_rotation) if can_access else False,
         is_owner=is_owner,
-        has_hint=bool(team.vault_hint),
-        rotation_state=team.vault_rotation_state,
-        pending_bucket_id=team.vault_pending_bucket_id,
-        pending_salt=team.vault_pending_salt,
+        can_access_vault=can_access,
+        has_hint=bool(team.vault_hint) if can_access else False,
+        rotation_state=team.vault_rotation_state if can_access else None,
+        pending_bucket_id=team.vault_pending_bucket_id if can_access else None,
+        pending_salt=team.vault_pending_salt if can_access else None,
     )
 
 
@@ -518,6 +534,13 @@ def sync_team_vault(
 ) -> VaultSyncResponse:
     """Fuehrt Revisions-Sync fuer den Team-Tresor durch (alle Team-Mitglieder)."""
     team = team_service.get_team_for_member(db, team_id, user)
+    if not user.is_owner and team.owner_user_id != user.id:
+        m = team_service.membership(db, team.id, user.id)
+        if m is not None and not m.can_access_vault:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Zutritt zum Team-Tresor verweigert: Deine Team-Rolle hat keinen Tresor-Zugriff.",
+            )
     try:
         return vault_service.sync_team_vault(db, team, user, payload)
     except vault_service.VaultZurueckgesetzt as exc:
@@ -611,6 +634,13 @@ def _team_bucket(db: Session, team_id: int, user: User) -> tuple[Team, str]:
     team = team_service.get_team_for_member(db, team_id, user)
     if not team.vault_bucket_id:
         raise HTTPException(status_code=400, detail="Team-Tresor ist noch nicht eingerichtet.")
+    if not user.is_owner and team.owner_user_id != user.id:
+        m = team_service.membership(db, team.id, user.id)
+        if m is not None and not m.can_access_vault:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Zutritt zum Team-Tresor verweigert: Deine Team-Rolle hat keinen Tresor-Zugriff.",
+            )
     return team, team.vault_bucket_id
 
 

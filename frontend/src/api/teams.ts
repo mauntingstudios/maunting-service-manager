@@ -14,6 +14,8 @@ export interface TeamMember {
   role: 'owner' | 'member'
   can_manage_skills: boolean
   can_manage_memory: boolean
+  can_access_vault?: boolean
+  team_role_id?: number | null
   joined_at: string
 }
 
@@ -35,6 +37,8 @@ export interface TeamInvitation {
   invited_by_username: string | null
   can_manage_skills: boolean
   can_manage_memory: boolean
+  can_access_vault?: boolean
+  team_role_id?: number | null
   invited_at: string
 }
 
@@ -53,6 +57,7 @@ export interface Team {
   is_owner: boolean
   can_manage_skills: boolean
   can_manage_memory: boolean
+  can_access_vault?: boolean
   member_count: number
   created_at: string
 }
@@ -70,6 +75,7 @@ export interface TeamVaultSaltResponse {
   bucket_id: string | null
   needs_rotation: boolean
   is_owner: boolean
+  can_access_vault?: boolean
   has_hint?: boolean
   rotation_state?: string | null
   pending_bucket_id?: string | null
@@ -126,12 +132,19 @@ export const teamsApi = {
    * und die Oberfläche meldete danach eine Aufnahme, die nie stattfand.
    */
   inviteMember: (teamId: number, payload: {
-    user_id: number; can_manage_skills: boolean; can_manage_memory: boolean
+    user_id: number
+    can_manage_skills: boolean
+    can_manage_memory: boolean
+    can_access_vault?: boolean
+    team_role_id?: number | null
   }) => api<TeamDetail>(`/teams/${teamId}/members`, {
     method: 'POST', body: JSON.stringify(payload),
   }),
   updateMember: (teamId: number, userId: number, payload: {
-    can_manage_skills: boolean; can_manage_memory: boolean
+    can_manage_skills: boolean
+    can_manage_memory: boolean
+    can_access_vault?: boolean
+    team_role_id?: number | null
   }) => api<TeamDetail>(`/teams/${teamId}/members/${userId}`, {
     method: 'PUT', body: JSON.stringify(payload),
   }),

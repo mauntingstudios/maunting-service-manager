@@ -30,7 +30,7 @@ from .node_enrollment import NodeEnrollment
 from .role import Role
 from .role_permission import RolePermission
 from .server_permission import ServerPermission
-from .team import Team, TeamInvitation, TeamMember, TeamServerGrant
+from .team import Team, TeamInvitation, TeamMember, TeamRole, TeamServerGrant
 from .backup import Backup
 from .panel_backup import PanelBackup
 from .mod import Mod
@@ -127,7 +127,7 @@ __all__ = [
     "AiGuardianRepair", "AiTask", "AiActionApproval",
     "AiMailOutbox", "AiMeldung", "DesktopJob", "DevicePairing",
     "Server", "Node", "NodeEnrollment", "Role", "RolePermission", "ServerPermission",
-    "Team", "TeamInvitation", "TeamMember", "TeamServerGrant",
+    "Team", "TeamInvitation", "TeamMember", "TeamRole", "TeamServerGrant",
     "Backup", "PanelBackup", "Mod", "AuditLog", "RefreshToken", "JwtBlacklist",
     "EmailVerification", "BackupCode", "UserPasskey", "PanelSetting", "ServerPort",
     "OAuthProvider", "OAuthUserLink", "LoginChallenge",

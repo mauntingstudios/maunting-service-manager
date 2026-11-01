@@ -31,6 +31,7 @@ describe('TeamVaultView', () => {
       isUnlocked: false,
       needsRotation: false,
       isOwner: true,
+      canAccessVault: true,
       items: [],
       loadStatus: vi.fn(),
       setup: vi.fn(),
@@ -85,5 +86,16 @@ describe('TeamVaultView', () => {
     // Dialog geöffnet mit PasswordInput
     expect(screen.getAllByPlaceholderText(i18n.t('mss.vault.masterPasswort')).length).toBeGreaterThan(0)
     expect(screen.getByPlaceholderText(i18n.t('teams.vaultRepeatPassword'))).toBeInTheDocument()
+  })
+
+  it('zeigt die Schranke (Zutritt verwehrt), wenn can_access_vault false ist', () => {
+    useTeamVaultStore.setState({ isInitialized: true, isUnlocked: false, canAccessVault: false })
+
+    render(<TeamVaultView team={{ ...mockTeam, can_access_vault: false }} />)
+
+    expect(screen.getByRole('heading', { name: i18n.t('teams.vaultAccessDenied') })).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('teams.vaultAccessDeniedDesc'))).toBeInTheDocument()
+    // Sicherstellen, dass kein Entsperr-Passwortfeld gerendert wird
+    expect(screen.queryByPlaceholderText(i18n.t('mss.vault.masterPasswort'))).not.toBeInTheDocument()
   })
 })

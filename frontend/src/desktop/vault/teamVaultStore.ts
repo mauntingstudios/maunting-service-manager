@@ -54,6 +54,7 @@ export interface TeamVaultState {
   isUnlocking: boolean
   needsRotation: boolean
   isOwner: boolean
+  canAccessVault: boolean
   userKey: CryptoKey | null
   items: VaultItem[]
   serverRevision: number
@@ -123,6 +124,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   isUnlocking: false,
   needsRotation: false,
   isOwner: false,
+  canAccessVault: true,
   userKey: null,
   items: [],
   serverRevision: 0,
@@ -280,6 +282,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
         bucketId: res.bucket_id,
         needsRotation: res.needs_rotation,
         isOwner: res.is_owner,
+        canAccessVault: res.can_access_vault ?? true,
         hasHint: res.has_hint ?? false,
         rotationState: res.rotation_state ?? null,
         pendingBucketId: res.pending_bucket_id ?? null,

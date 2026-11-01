@@ -372,3 +372,99 @@ def test_team_blobs_quota_und_lifecycle(
     assert res_del.json() == {"status": "ok"}
 
 
+def test_team_vault_access_barrier_when_disabled(
+    db: Session,
+    client,
+    owner_user: User,
+    owner_cookies: dict,
+    regular_user: User,
+    user_cookies: dict,
+) -> None:
+    # 1. Team anlegen, regular_user mit can_access_vault=False
+    team = Team(name="Security Restricted Team", owner_user_id=owner_user.id)
+    db.add(team)
+    db.flush()
+    db.add(TeamMember(team_id=team.id, user_id=owner_user.id, role="owner", can_access_vault=True))
+    db.add(TeamMember(team_id=team.id, user_id=regular_user.id, role="member", can_access_vault=False))
+    db.commit()
+
+    # 2. Owner richtet Tresor ein
+    bucket_id = _valid_bucket_id()
+    salt = "somesalt1234567890abcdef"
+    resp = client.post(
+        f"/api/teams/{team.id}/vault/setup",
+        json={"bucket_id": bucket_id, "salt": salt},
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
+    )
+    assert resp.status_code == 200
+
+    # 3. Owner hat vollen Zugriff
+    resp_owner = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies)
+    assert resp_owner.status_code == 200
+    data_owner = resp_owner.json()
+    assert data_owner["can_access_vault"] is True
+    assert data_owner["salt"] == salt
+    assert data_owner["bucket_id"] == bucket_id
+
+    # 4. Member mit can_access_vault=False erhaelt Schranke (can_access_vault=False, kein Salt/Bucket)
+    resp_member = client.get(f"/api/teams/{team.id}/vault/salt", cookies=user_cookies)
+    assert resp_member.status_code == 200
+    data_member = resp_member.json()
+    assert data_member["can_access_vault"] is False
+    assert data_member["salt"] is None
+    assert data_member["bucket_id"] is None
+
+    # 5. Member Sync-Versuch wird mit 403 Forbidden abgewiesen
+    sync_payload = {
+        "bucket_id": bucket_id,
+        "since_revision": 0,
+        "mutations": [
+            {
+                "id": "unauthorized-entry",
+                "ciphertext": "sv-vault-v1:bm9wZQ==",
+                "revision": 0,
+                "is_deleted": False,
+            }
+        ],
+    }
+    resp_sync = client.post(
+        f"/api/teams/{team.id}/vault/sync",
+        json=sync_payload,
+        cookies=user_cookies,
+        headers=_headers(user_cookies),
+    )
+    assert resp_sync.status_code == 403
+
+    # 6. Member Speicherabfrage wird mit 403 Forbidden abgewiesen
+    resp_speicher = client.get(f"/api/teams/{team.id}/vault/speicher", cookies=user_cookies)
+    assert resp_speicher.status_code == 403
+
+    # 7. Owner schaltet can_access_vault auf True um
+    resp_update = client.put(
+        f"/api/teams/{team.id}/members/{regular_user.id}",
+        json={"can_manage_skills": False, "can_manage_memory": False, "can_access_vault": True},
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
+    )
+    assert resp_update.status_code == 200
+
+    # 8. Member hat nun Zugriff
+    resp_member_unlocked = client.get(f"/api/teams/{team.id}/vault/salt", cookies=user_cookies)
+    assert resp_member_unlocked.status_code == 200
+    data_unlocked = resp_member_unlocked.json()
+    assert data_unlocked["can_access_vault"] is True
+    assert data_unlocked["salt"] == salt
+    assert data_unlocked["bucket_id"] == bucket_id
+
+    # 9. Sync klappt nun
+    resp_sync_ok = client.post(
+        f"/api/teams/{team.id}/vault/sync",
+        json=sync_payload,
+        cookies=user_cookies,
+        headers=_headers(user_cookies),
+    )
+    assert resp_sync_ok.status_code == 200
+
+
+

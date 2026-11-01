@@ -139,6 +139,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       isUnlocked: s.isUnlocked,
       needsRotation: s.needsRotation,
       isOwner: s.isOwner,
+      canAccessVault: s.canAccessVault,
       items: s.items,
       syncStatus: s.syncStatus,
       error: s.error,
@@ -753,6 +754,26 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   }, [searchedItems, favoriteItems, recentItems, ansicht])
 
   const ModalBrandIcon = getBrandIcon(modalService, modalUrl)
+
+  // ── 0. TEAM-TRESOR: ZUTRITT VERWEHRT (Schranke bei fehlender Berechtigung) ──
+  const hasVaultAccess = !isTeam || (team?.can_access_vault !== false && teamStore.canAccessVault !== false)
+  if (isTeam && !hasVaultAccess) {
+    return (
+      <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
+        <div className="w-full max-w-sm p-6 space-y-4 rounded-2xl bg-surface-container border border-status-destructive/30 shadow-xl text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-status-destructive/10 text-status-destructive border border-status-destructive/30">
+            <Lock className="h-7 w-7" />
+          </div>
+          <div className="space-y-1.5">
+            <h2 className="text-base font-bold text-on-surface">{t('teams.vaultAccessDenied')}</h2>
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              {t('teams.vaultAccessDeniedDesc')}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // ── 0. TEAM-TRESOR: SETUP & ENTSPERREN ──
   if (isTeam && !isInitialized) {

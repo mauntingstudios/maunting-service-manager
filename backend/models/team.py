@@ -102,20 +102,47 @@ class Team(Base):
     server_grants: Mapped[list["TeamServerGrant"]] = relationship(
         "TeamServerGrant", back_populates="team", cascade="all, delete-orphan"
     )
+    roles: Mapped[list["TeamRole"]] = relationship(
+        "TeamRole", back_populates="team", cascade="all, delete-orphan"
+    )
 
     @property
     def is_personal(self) -> bool:
         return self.personal_for_user_id is not None
 
 
-class TeamMember(Base):
-    """Mitgliedschaft mit zwei Schaltern statt eines Rollensystems.
+class TeamRole(Base):
+    """Team-spezifische Rollen für feingranulare Berechtigungen.
 
-    Bewusst keine frei definierbaren Team-Rollen: fuer den Zweck — wer darf das
-    gemeinsame Wissen veraendern — genuegen zwei Ja/Nein-Fragen. Ein zweites
-    vollstaendiges Rollensystem neben dem des Betreibers waere doppelt so viel
-    Oberflaeche fuer denselben Nutzen und doppelt so viele Stellen, an denen
-    eine Rechtepruefung falsch sein kann.
+    Steuert Tresor-Zugriff (can_access_vault), Skill- und Memory-Verwaltung.
+    Standard-Rollen sind 'Admin' (alles an), 'Mitglied' (Tresor an), 'Gast' (alles aus).
+    """
+
+    __tablename__ = "team_roles"
+    __table_args__ = (
+        UniqueConstraint("team_id", "name", name="uq_team_roles_team_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(32), nullable=False)
+    color: Mapped[str] = mapped_column(String(16), default="#3b82f6", nullable=False)
+    can_access_vault: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    can_manage_skills: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_manage_memory: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+
+    team: Mapped["Team"] = relationship("Team", back_populates="roles")
+    members: Mapped[list["TeamMember"]] = relationship("TeamMember", back_populates="team_role")
+
+
+class TeamMember(Base):
+    """Mitgliedschaft mit Schaltern für Rechte und optionaler Team-Rolle.
 
     Serverrechte stehen bewusst **nicht** hier: die haengen am Team, nicht am
     einzelnen Mitglied. Wer im Team ist, bekommt die Server des Teams.
@@ -140,6 +167,10 @@ class TeamMember(Base):
     # im Namen dieses Mitglieds fuer das Team zu lernen.
     can_manage_skills: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_manage_memory: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_access_vault: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    team_role_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("team_roles.id", ondelete="SET NULL"), nullable=True
+    )
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )
@@ -148,6 +179,7 @@ class TeamMember(Base):
     )
 
     team: Mapped["Team"] = relationship("Team", back_populates="members")
+    team_role: Mapped["TeamRole | None"] = relationship("TeamRole", back_populates="members")
 
 
 class TeamInvitation(Base):
@@ -183,6 +215,10 @@ class TeamInvitation(Base):
     )
     can_manage_skills: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_manage_memory: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_access_vault: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    team_role_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("team_roles.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )

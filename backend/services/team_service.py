@@ -263,6 +263,7 @@ def team_invitations(db: Session, team_id: int) -> list[TeamInvitation]:
 def invite_member(
     db: Session, *, team: Team, user: User, new_user_id: int,
     can_manage_skills: bool, can_manage_memory: bool,
+    can_access_vault: bool = True, team_role_id: int | None = None,
 ) -> TeamInvitation:
     """Spricht eine Einladung aus — und macht noch **niemanden** zum Mitglied.
 
@@ -310,6 +311,8 @@ def invite_member(
 
     offen.can_manage_skills = can_manage_skills
     offen.can_manage_memory = can_manage_memory
+    offen.can_access_vault = can_access_vault
+    offen.team_role_id = team_role_id
     offen.invited_by = user.id
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.member.invited", target_type="team",
@@ -353,6 +356,9 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
     if bestehend is not None:
         bestehend.can_manage_skills = einladung.can_manage_skills
         bestehend.can_manage_memory = einladung.can_manage_memory
+        bestehend.can_access_vault = einladung.can_access_vault
+        if einladung.team_role_id is not None:
+            bestehend.team_role_id = einladung.team_role_id
         db.delete(einladung)
         # Kein "joined": beigetreten ist hier niemand. Dieselbe Aktion und
         # dieselben Felder wie in `update_member` — nur steht als Handelnder
@@ -364,6 +370,7 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
                 "member_user_id": user.id,
                 "can_manage_skills": bestehend.can_manage_skills,
                 "can_manage_memory": bestehend.can_manage_memory,
+                "can_access_vault": bestehend.can_access_vault,
             },
             origin="direct",
         )
@@ -380,6 +387,8 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
         team_id=team_id, user_id=user.id, role="member",
         can_manage_skills=einladung.can_manage_skills,
         can_manage_memory=einladung.can_manage_memory,
+        can_access_vault=einladung.can_access_vault,
+        team_role_id=einladung.team_role_id,
         added_by=einladung.invited_by,
     )
     db.add(member)
@@ -409,6 +418,7 @@ def decline_invitation(db: Session, *, user: User, team_id: int) -> None:
 def update_member(
     db: Session, *, team: Team, user: User, member_user_id: int,
     can_manage_skills: bool, can_manage_memory: bool,
+    can_access_vault: bool = True, team_role_id: int | None = None,
 ) -> TeamMember:
     """Setzt die Schalter eines Mitglieds — herunter sofort, herauf als Angebot.
 
@@ -447,6 +457,9 @@ def update_member(
     )
     member.can_manage_skills = neu_skills
     member.can_manage_memory = neu_memory
+    member.can_access_vault = can_access_vault
+    if team_role_id is not None:
+        member.team_role_id = team_role_id
 
     offen = invitation(db, team.id, member_user_id)
     if angehoben:
@@ -455,6 +468,8 @@ def update_member(
             db.add(offen)
         offen.can_manage_skills = can_manage_skills
         offen.can_manage_memory = can_manage_memory
+        offen.can_access_vault = can_access_vault
+        offen.team_role_id = team_role_id
         offen.invited_by = user.id
     elif offen is not None:
         # Der Wunsch von jetzt ueberholt das Angebot von vorhin.

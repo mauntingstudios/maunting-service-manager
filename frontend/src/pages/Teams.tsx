@@ -220,7 +220,10 @@ export function Teams() {
     if (!detail || !newMemberId) return
     await run(async () => {
       setDetail(await teamsApi.inviteMember(detail.id, {
-        user_id: Number(newMemberId), can_manage_skills: false, can_manage_memory: false,
+        user_id: Number(newMemberId),
+        can_manage_skills: false,
+        can_manage_memory: false,
+        can_access_vault: true,
       }))
       setNewMemberId(null)
     }, 'teams.memberInvited')
@@ -246,7 +249,8 @@ export function Teams() {
   }
 
   const setMemberSwitches = async (
-    member: TeamMember, next: { can_manage_skills: boolean; can_manage_memory: boolean },
+    member: TeamMember,
+    next: { can_manage_skills: boolean; can_manage_memory: boolean; can_access_vault?: boolean },
   ) => {
     if (!detail) return
     await run(async () => {
@@ -711,11 +715,11 @@ function MitgliederReiter({
   offeneAnhebungen: TeamInvitation[]
   onKandidat: (id: string | null) => void
   onEinladen: () => void
-  onSchalter: (member: TeamMember, next: { can_manage_skills: boolean; can_manage_memory: boolean }) => void
+  onSchalter: (member: TeamMember, next: { can_manage_skills: boolean; can_manage_memory: boolean; can_access_vault?: boolean }) => void
   onEntfernen: (member: TeamMember) => void
 }) {
   const { t } = useTranslation()
-  const spalten = 'md:grid-cols-[minmax(0,1fr)_9rem_9rem_2.75rem]'
+  const spalten = 'md:grid-cols-[minmax(0,1fr)_8rem_8rem_8rem_2.75rem]'
 
   return (
     <section className="space-y-6 max-w-5xl" aria-labelledby="team-members">
@@ -725,7 +729,7 @@ function MitgliederReiter({
             {t('teams.members')}
           </h3>
           <p className="text-xs sm:text-sm text-on-surface-variant">
-            Lege fest, wer geteilte Skills und Erinnerungen dieses Teams verwalten darf.
+            Lege fest, wer geteilte Skills, Erinnerungen und den Tresor dieses Teams nutzen und verwalten darf.
           </p>
         </div>
 
@@ -757,6 +761,7 @@ function MitgliederReiter({
           <span>{t('teams.member')}</span>
           <span>{t('teams.manageSkills')}</span>
           <span>{t('teams.manageMemory')}</span>
+          <span>{t('teams.accessVault')}</span>
           <span />
         </div>
         <ul className="divide-y divide-outline-variant/30">
@@ -815,9 +820,22 @@ function MitgliederReiter({
                     checked={member.can_manage_memory}
                     disabled={!team.is_owner || busy}
                     onCheckedChange={(next) => onSchalter(member, {
-                      can_manage_skills: member.can_manage_skills, can_manage_memory: next,
+                      can_manage_skills: member.can_manage_skills, can_manage_memory: next, can_access_vault: member.can_access_vault,
                     })}
                     aria-label={`${t('teams.manageMemory')}: ${member.username}`}
+                  />
+                </label>
+                <label className="col-span-2 flex items-center justify-between gap-2 md:col-span-1 md:justify-start">
+                  <span className="text-xs text-on-surface-variant md:hidden">{t('teams.accessVault')}</span>
+                  <Switch
+                    checked={member.can_access_vault !== false}
+                    disabled={!team.is_owner || busy || member.role === 'owner'}
+                    onCheckedChange={(next) => onSchalter(member, {
+                      can_manage_skills: member.can_manage_skills,
+                      can_manage_memory: member.can_manage_memory,
+                      can_access_vault: next,
+                    })}
+                    aria-label={`${t('teams.accessVault')}: ${member.username}`}
                   />
                 </label>
               </li>
