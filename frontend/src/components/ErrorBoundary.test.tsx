@@ -51,4 +51,28 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('Alles gut')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Neu laden' })).not.toBeInTheDocument()
   })
+
+  it('zeigt eine Fehler-ID an', () => {
+    render(
+      <ErrorBoundary>
+        <Kaputt />
+      </ErrorBoundary>,
+    )
+
+    expect(document.body.textContent).toMatch(/ID:\s*[a-zA-Z0-9-]+/)
+  })
+
+  it('ruft den onError Callback mit Fehler und ID auf', () => {
+    const onError = vi.fn()
+    render(
+      <ErrorBoundary onError={onError}>
+        <Kaputt />
+      </ErrorBoundary>,
+    )
+
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(Error)
+    expect(typeof onError.mock.calls[0][1]).toBe('string')
+    expect(onError.mock.calls[0][1].length).toBeGreaterThan(0)
+  })
 })

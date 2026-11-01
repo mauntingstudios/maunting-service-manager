@@ -64,6 +64,14 @@ export function SelfHostingDocs() {
         status={<Network className="h-6 w-6 text-primary" aria-hidden="true" />}
       />
 
+      <aside className="mb-6 flex gap-3 rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm leading-6 text-on-surface" aria-label={t('docsSelfHosting.canonicalNotice')}>
+        {/* Kanonische Dokumentation: docs/de-docs/self-hosting.md */}
+        <Globe className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+        <p>
+          {t('docsSelfHosting.canonicalNotice')}
+        </p>
+      </aside>
+
       {/* Jeder Abschnitt mit Überschrift steht hier. Fehlt einer, ist er nur
           durch Scrollen zu finden (so ging es der Datenbankverschlüsselung). */}
       <Sprungleiste

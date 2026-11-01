@@ -4340,6 +4340,7 @@
   "errors": {
     "RATE_LIMITED": "Zu viele Anfragen. Bitte warte einen Moment.",
     "SESSION_EXPIRED": "Sitzung abgelaufen. Bitte melde dich erneut an.",
+    "REQUEST_TIMEOUT": "Zeitüberschreitung der Anfrage. Bitte versuche es erneut.",
     "install_update_already_running": "Es läuft bereits eine Installation oder Aktualisierung. Bitte warte, bis dieser Job abgeschlossen ist.",
     "steam_search_failed": "Steam-Suche fehlgeschlagen.",
     "steam_load_failed": "Steam-Daten konnten nicht geladen werden.",
@@ -4638,6 +4639,7 @@
     "hosterApiLink": "Referenz öffnen"
   },
   "docsSelfHosting": {
+    "canonicalNotice": "Die deutschsprachige Langfassung (docs/de-docs/self-hosting.md) ist die kanonische Betriebsdokumentation für alle MSM-Komponenten.",
     "eyebrow": "Betriebshandbuch",
     "title": "Self-Hosting & Deployment",
     "subtitle": "Verstehe, welche MSM-Komponente auf welchen Host gehört, nutze versionierte Release-Artefakte und verbinde neue Nodes ohne manuelle Token-Weitergabe.",

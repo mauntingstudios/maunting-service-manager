@@ -8,6 +8,7 @@ export function isNetworkOrOfflineError(err: unknown): boolean {
     return true
   }
   if (!err) return false
+  if (istAbbruch(err)) return false
 
   // Statuscode-Prüfung (z. B. von SanitizedApiError oder Response-Objekten bei Reverse-Proxy-Ausfällen)
   const status =
@@ -22,13 +23,12 @@ export function isNetworkOrOfflineError(err: unknown): boolean {
   }
 
   if (err instanceof Error) {
-    if (err.name === 'TypeError' || err.name === 'AbortError') return true
+    if (err.name === 'TypeError') return true
     const msg = err.message.toLowerCase()
     if (
       msg.includes('fetch') ||
       msg.includes('network') ||
       msg.includes('offline') ||
-      msg.includes('timeout') ||
       msg.includes('failed to fetch') ||
       msg.includes('connection refused') ||
       msg.includes('bad gateway') ||
@@ -45,14 +45,19 @@ export function isNetworkOrOfflineError(err: unknown): boolean {
 }
 
 /**
- * Ein bewusst abgebrochener Request. Er belegt nicht, dass das Netz weg ist:
- * Ansichten brechen ihre Ladevorgänge beim Aufräumen ab, und daraus darf kein
- * globaler Offline-Zustand werden.
+ * Ein bewusst abgebrochener Request oder Client-Timeout. Beides belegt nicht,
+ * dass das Netz weg ist: Ansichten brechen Ladevorgänge beim Aufräumen ab oder
+ * ein Server antwortet verzögert, daraus darf kein globaler Offline-Zustand werden.
  */
 export function istAbbruch(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
   const name = 'name' in err ? String((err as { name: unknown }).name) : ''
   const message = err instanceof Error ? err.message.trim().toLowerCase() : ''
-  // Nur der echte Abbruch, nicht jede Servermeldung, die „abort“ enthält.
-  return name === 'AbortError' || message === 'the operation was aborted.'
+  return (
+    name === 'AbortError' ||
+    name === 'TimeoutError' ||
+    message === 'the operation was aborted.' ||
+    message.includes('request timeout after') ||
+    message.includes('the user aborted a request')
+  )
 }

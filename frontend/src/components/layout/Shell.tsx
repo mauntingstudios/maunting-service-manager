@@ -10,6 +10,8 @@ import { PasskeyFernBestaetigung } from '@/components/PasskeyFernBestaetigung'
 import { PanelPopupModal } from '@/components/popups/PanelPopupModal'
 import { AnrufEbene } from '@/components/calling/AnrufEbene'
 import { CrossDeviceCallBanner } from '@/components/calling/CrossDeviceCallBanner'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { OfflineBanner } from './OfflineBanner'
 import { api } from '@/api/client'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
@@ -131,6 +133,7 @@ export function Shell() {
         {!chatVollbild && (
           <Topbar menuButtonRef={mobileNavigationTriggerRef} onOpenNavigation={() => setMobileNavigationOpen(true)} />
         )}
+        <OfflineBanner />
         <CrossDeviceCallBanner />
         {/* Ohne `overflow-auto`: `main` hat als `flex-1` in einer Spalte ohne
             feste Höhe immer genau seine Inhaltshöhe, lief also nie über. Die
@@ -140,7 +143,9 @@ export function Shell() {
             `overflow-x-auto` mit. */}
         <main className={`flex-1 relative flex flex-col min-h-0 ${isFullHeightPage ? `p-0 overflow-hidden ${chatVollbild ? '' : 'h-[calc(100dvh-3rem)] max-h-[calc(100dvh-3rem)] lg:h-[100dvh] lg:max-h-[100dvh]'}` : 'p-margin-mobile md:p-margin-desktop'}`}>
           <div className={`relative z-10 flex-1 w-full flex flex-col min-h-0 ${isFullHeightPage ? 'h-full overflow-hidden' : ''}`}>
-            <Outlet />
+            <ErrorBoundary key={location.pathname} compact>
+              <Outlet />
+            </ErrorBoundary>
           </div>
 
           {!isFullHeightPage && <VersionFooter />}

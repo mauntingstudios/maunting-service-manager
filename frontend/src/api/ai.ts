@@ -1745,6 +1745,7 @@ export const aiApi = {
   executeAction: (proposalId: string, confirmationToken: string) => api<{ proposal: AiActionProposal; result: Record<string, unknown> }>(`/ai/actions/${proposalId}/execute`, {
     method: 'POST',
     body: JSON.stringify({ confirmation_token: confirmationToken }),
+    timeoutMs: 0,
   }),
   listAutonomyGrants: () => api<AiAutonomyGrant[]>('/ai/autonomy'),
   /**
@@ -1854,7 +1855,9 @@ export const aiApi = {
    *  Ein langer Text geht in Teilen; das kann einige Sekunden dauern. */
   importMemoryPreview: (payload: AiMemoryImportTarget & { raw_text: string }) =>
     api<AiMemoryImportPreview>('/ai/memory/import/preview', {
-      method: 'POST', body: JSON.stringify(payload),
+      method: 'POST',
+      body: JSON.stringify(payload),
+      timeoutMs: 0,
     }),
   /** Übernimmt die ausgewählten Einträge; übersprungene kommen mit Grund zurück. */
   executeMemoryImport: (
@@ -1863,7 +1866,9 @@ export const aiApi = {
       items: AiMemoryImportItem[]
     },
   ) => api<AiMemoryImportResult>('/ai/memory/import', {
-    method: 'POST', body: JSON.stringify(payload),
+    method: 'POST',
+    body: JSON.stringify(payload),
+    timeoutMs: 0,
   }),
   /** Das Verzeichnis ohne Texte — dasselbe, das auch die KI im Prompt sieht. */
   listSkills: () => api<AiSkillSummary[]>('/ai/skills'),

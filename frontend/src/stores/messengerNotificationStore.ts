@@ -13,6 +13,7 @@ import { create } from 'zustand'
 import { api } from '@/api/client'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { MESSENGER_KEYS, getStorageItem, setStorageItem } from '@/lib/offlineAblage'
+import { still } from '@/lib/still'
 import { deriveBlindMailboxId, deriveGroupBlindMailboxId } from '@/services/e2eeCrypto'
 import { useAuthStore } from '@/stores/authStore'
 import { useFunkenStore } from '@/stores/funkenStore'
@@ -116,7 +117,9 @@ function loadMailboxDirectory(): Record<string, MailboxMeta> {
   try {
     const raw = getStorageItem(STORAGE_MAILBOX_DIR_KEY)
     if (raw) return JSON.parse(raw)
-  } catch {}
+  } catch (err) {
+    still(err, 'messengerNotificationStore:loadMailboxDirectory')
+  }
   return {}
 }
 
@@ -124,7 +127,9 @@ function loadMutes(): Record<string, number> {
   try {
     const raw = getStorageItem(STORAGE_MUTES_KEY)
     if (raw) return JSON.parse(raw)
-  } catch {}
+  } catch (err) {
+    still(err, 'messengerNotificationStore:loadMutes')
+  }
   return {}
 }
 
@@ -132,7 +137,9 @@ function loadBlocks(): number[] {
   try {
     const raw = getStorageItem(STORAGE_BLOCKS_KEY)
     if (raw) return JSON.parse(raw)
-  } catch {}
+  } catch (err) {
+    still(err, 'messengerNotificationStore:loadBlocks')
+  }
   return []
 }
 
@@ -140,7 +147,9 @@ function loadBlockedProfiles(): Record<number, { username: string; avatarUrl?: s
   try {
     const raw = getStorageItem(STORAGE_BLOCKED_PROFILES_KEY)
     if (raw) return JSON.parse(raw)
-  } catch {}
+  } catch (err) {
+    still(err, 'messengerNotificationStore:loadBlockedProfiles')
+  }
   return {}
 }
 
@@ -157,8 +166,9 @@ function ladeListe(schluessel: string): string[] {
 function schreibeListe(schluessel: string, werte: string[]): void {
   try {
     setStorageItem(schluessel, JSON.stringify(werte))
-  } catch {
+  } catch (err) {
     // Ohne localStorage gilt die Auswahl eben nur für diese Sitzung.
+    still(err, 'messengerNotificationStore:schreibeListe')
   }
 }
 
@@ -166,7 +176,9 @@ function loadUnread(): Record<string, number> {
   try {
     const raw = getStorageItem(STORAGE_UNREAD_KEY)
     if (raw) return JSON.parse(raw)
-  } catch {}
+  } catch (err) {
+    still(err, 'messengerNotificationStore:loadUnread')
+  }
   return {}
 }
 
@@ -251,8 +263,9 @@ export function playNotificationChime(): void {
 
       osc.start(now)
       osc.stop(now + 0.43)
-    } catch {
+    } catch (err) {
       // Stiller Fallback bei blockiertem AudioContext
+      still(err, 'messengerNotificationStore:playNotificationChime')
     }
   }
 
@@ -304,7 +317,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         }
         try {
           setStorageItem(STORAGE_MAILBOX_DIR_KEY, JSON.stringify(updated))
-        } catch {}
+        } catch (err) {
+          still(err, 'messengerNotificationStore:registerMailbox')
+        }
         return { mailboxDirectory: updated }
       })
     },
@@ -317,7 +332,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         }
         try {
           setStorageItem(STORAGE_MAILBOX_DIR_KEY, JSON.stringify(updated))
-        } catch {}
+        } catch (err) {
+          still(err, 'messengerNotificationStore:registerMailboxes')
+        }
         return { mailboxDirectory: updated }
       })
     },
@@ -337,7 +354,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         const updated = { ...state.unreadCounts, [mailboxId]: current + 1 }
         try {
           setStorageItem(STORAGE_UNREAD_KEY, JSON.stringify(updated))
-        } catch {}
+        } catch (err) {
+          still(err, 'messengerNotificationStore:incrementUnread')
+        }
         return {
           unreadCounts: updated,
           totalUnreadCount: calcTotal(updated, state.mutedChats),
@@ -352,7 +371,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         const updated = { ...state.unreadCounts, [mailboxId]: newCount }
         try {
           setStorageItem(STORAGE_UNREAD_KEY, JSON.stringify(updated))
-        } catch {}
+        } catch (err) {
+          still(err, 'messengerNotificationStore:decrementUnread')
+        }
         return {
           unreadCounts: updated,
           totalUnreadCount: calcTotal(updated, state.mutedChats),
@@ -367,7 +388,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         const updated = { ...state.unreadCounts, [mailboxId]: 0 }
         try {
           setStorageItem(STORAGE_UNREAD_KEY, JSON.stringify(updated))
-        } catch {}
+        } catch (err) {
+          still(err, 'messengerNotificationStore:markAsRead')
+        }
         return {
           unreadCounts: updated,
           totalUnreadCount: calcTotal(updated, state.mutedChats),
@@ -378,7 +401,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
     clearAllUnread: () => {
       try {
         localStorage.removeItem(STORAGE_UNREAD_KEY)
-      } catch {}
+      } catch (err) {
+        still(err, 'messengerNotificationStore:clearAllUnread')
+      }
       set({ unreadCounts: {}, totalUnreadCount: 0 })
     },
 
@@ -399,7 +424,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         const updated = { ...state.mutedChats, [mailboxId]: expiry }
         try {
           setStorageItem(STORAGE_MUTES_KEY, JSON.stringify(updated))
-        } catch {}
+        } catch (err) {
+          still(err, 'messengerNotificationStore:muteChat')
+        }
         return {
           mutedChats: updated,
           totalUnreadCount: calcTotal(state.unreadCounts, updated),
@@ -413,7 +440,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         delete updated[mailboxId]
         try {
           setStorageItem(STORAGE_MUTES_KEY, JSON.stringify(updated))
-        } catch {}
+        } catch (err) {
+          still(err, 'messengerNotificationStore:unmuteChat')
+        }
         return {
           mutedChats: updated,
           totalUnreadCount: calcTotal(state.unreadCounts, updated),
@@ -503,7 +532,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         try {
           setStorageItem(STORAGE_BLOCKS_KEY, JSON.stringify(nextIds))
           setStorageItem(STORAGE_BLOCKED_PROFILES_KEY, JSON.stringify(nextProfiles))
-        } catch {}
+        } catch (err) {
+          still(err, 'messengerNotificationStore:blockUser:storage')
+        }
         return { blockedUserIds: nextIds, blockedProfiles: nextProfiles }
       })
       // Blockieren löscht den Funken, sofort und unwiderruflich. Aufheben
@@ -511,8 +542,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
       void useFunkenStore.getState().vergiss(userId)
       try {
         await api(`/social/friends/${userId}/block`, { method: 'POST' })
-      } catch {
+      } catch (err) {
         // Lokaler Fallback bleibt aktiv
+        still(err, 'messengerNotificationStore:blockUser:api')
       }
     },
 
@@ -524,13 +556,16 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         try {
           setStorageItem(STORAGE_BLOCKS_KEY, JSON.stringify(nextIds))
           setStorageItem(STORAGE_BLOCKED_PROFILES_KEY, JSON.stringify(nextProfiles))
-        } catch {}
+        } catch (err) {
+          still(err, 'messengerNotificationStore:unblockUser:storage')
+        }
         return { blockedUserIds: nextIds, blockedProfiles: nextProfiles }
       })
       try {
         await api(`/social/friends/${userId}/unblock`, { method: 'POST' })
-      } catch {
+      } catch (err) {
         // Lokaler Fallback bleibt aktiv
+        still(err, 'messengerNotificationStore:unblockUser:api')
       }
     },
 
@@ -549,10 +584,13 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
           try {
             setStorageItem(STORAGE_BLOCKS_KEY, JSON.stringify(ids))
             setStorageItem(STORAGE_BLOCKED_PROFILES_KEY, JSON.stringify(profiles))
-          } catch {}
+          } catch (err) {
+            still(err, 'messengerNotificationStore:syncBlocked:storage')
+          }
         }
-      } catch {
+      } catch (err) {
         // Stiller Fallback auf lokalen Cache
+        still(err, 'messengerNotificationStore:syncBlockedFromBackend')
       }
     },
 
@@ -580,7 +618,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
                   isGroup: false,
                   userId: f.user_id,
                 }
-              } catch {}
+              } catch (err) {
+                still(err, 'messengerNotificationStore:syncMailboxDirectory:deriveFriend')
+              }
             }
           }
         }
@@ -596,7 +636,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
                   isGroup: true,
                   groupId: g.id,
                 }
-              } catch {}
+              } catch (err) {
+                still(err, 'messengerNotificationStore:syncMailboxDirectory:deriveGroup')
+              }
             }
           }
         }
@@ -614,7 +656,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
                     userId: p.user_id,
                   }
                 }
-              } catch {}
+              } catch (err) {
+                still(err, 'messengerNotificationStore:syncMailboxDirectory:derivePublic')
+              }
             }
           }
         }
@@ -622,8 +666,9 @@ export const useMessengerNotificationStore = create<MessengerNotificationState>(
         if (Object.keys(dirUpdates).length > 0) {
           get().registerMailboxes(dirUpdates)
         }
-      } catch {
+      } catch (err) {
         // Stiller Fallback
+        still(err, 'messengerNotificationStore:syncMailboxDirectoryFromBackend')
       }
     },
   }

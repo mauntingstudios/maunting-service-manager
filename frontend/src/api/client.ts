@@ -79,12 +79,14 @@ export function bekommtAnmeldung(url: string): boolean {
 export class SanitizedApiError extends Error {
   readonly status: number | null
   readonly code: string | null
+  readonly requestId: string | null
 
-  constructor(message: string, options: { status?: number; code?: string } = {}) {
+  constructor(message: string, options: { status?: number; code?: string; requestId?: string } = {}) {
     super(message)
     this.name = 'SanitizedApiError'
     this.status = options.status ?? null
     this.code = options.code ?? null
+    this.requestId = options.requestId ?? null
   }
 }
 
@@ -329,7 +331,35 @@ async function refreshToken(): Promise<void> {
   }
 }
 
-export async function api<T>(path: string, options?: RequestInit): Promise<T> {
+export interface ApiOptions extends RequestInit {
+  timeoutMs?: number
+}
+
+function combineSignals(signals: (AbortSignal | null | undefined)[]): { signal: AbortSignal; cleanup: () => void } {
+  const active = signals.filter((s): s is AbortSignal => Boolean(s))
+  if (typeof AbortSignal !== 'undefined' && 'any' in AbortSignal && typeof (AbortSignal as any).any === 'function') {
+    return { signal: (AbortSignal as any).any(active), cleanup: () => {} }
+  }
+  const controller = new AbortController()
+  const onAbort = () => controller.abort()
+  for (const s of active) {
+    if (s.aborted) {
+      controller.abort()
+      break
+    }
+    s.addEventListener('abort', onAbort)
+  }
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      for (const s of active) {
+        s.removeEventListener('abort', onAbort)
+      }
+    },
+  }
+}
+
+export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
   const method = (options?.method || 'GET').toUpperCase()
   const isStateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
 
@@ -370,13 +400,33 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
     ...(method === 'GET' ? { cache: 'no-store' } : {}),
   }
 
-  const makeRequest = async (): Promise<Response> => {
-    return fetch(url, fetchOptions)
+  const timeoutMs =
+    options?.timeoutMs !== undefined ? options.timeoutMs : isFormData ? 0 : 30_000
+
+  const doFetchWithTimeout = async (requestHeaders: Record<string, string>): Promise<Response> => {
+    let tid: any = null
+    const tCtrl = timeoutMs > 0 ? new AbortController() : null
+    if (tCtrl && timeoutMs > 0) {
+      tid = setTimeout(() => {
+        tCtrl.abort(new DOMException(`Request timeout after ${timeoutMs}ms`, 'TimeoutError'))
+      }, timeoutMs)
+    }
+    const { signal, cleanup } = combineSignals([options?.signal, tCtrl?.signal])
+    try {
+      return await fetch(url, {
+        ...fetchOptions,
+        headers: requestHeaders,
+        signal,
+      })
+    } finally {
+      if (tid) clearTimeout(tid)
+      cleanup()
+    }
   }
 
   let res: Response
   try {
-    res = await makeRequest()
+    res = await doFetchWithTimeout(headers)
     if (isCurrentlyOffline) {
       isCurrentlyOffline = false
       if (typeof window !== 'undefined') {
@@ -384,8 +434,26 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
       }
     }
   } catch (fetchErr) {
+    const isTimeout =
+      (fetchErr && typeof fetchErr === 'object' && (fetchErr as any).name === 'TimeoutError') ||
+      (fetchErr instanceof Error && fetchErr.message.toLowerCase().includes('timeout'))
+
+    if (isTimeout) {
+      throw new SanitizedApiError(
+        i18n.t('errors.REQUEST_TIMEOUT', {
+          defaultValue: 'Zeitüberschreitung der Anfrage (Server antwortet nicht rechtzeitig).',
+        }),
+        { status: 408, code: 'timeout' }
+      )
+    }
+
     // Ein Abbruch beim Aufräumen einer Ansicht ist kein Offline-Beweis.
-    if (!isCurrentlyOffline && typeof window !== 'undefined' && isNetworkOrOfflineError(fetchErr) && !istAbbruch(fetchErr)) {
+    if (
+      !isCurrentlyOffline &&
+      typeof window !== 'undefined' &&
+      isNetworkOrOfflineError(fetchErr) &&
+      !istAbbruch(fetchErr)
+    ) {
       isCurrentlyOffline = true
       window.dispatchEvent(new CustomEvent('msm:network-offline'))
     }
@@ -424,10 +492,7 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
         delete newHeaders['X-CSRF-Token']
       }
       try {
-        res = await fetch(url, {
-          ...fetchOptions,
-          headers: newHeaders,
-        })
+        res = await doFetchWithTimeout(newHeaders)
         captureCsrfFromResponse(res)
       } catch (retryErr) {
         // Ein Netzwerkfehler, Timeout oder AbortError beim wiederholten Request
@@ -465,7 +530,11 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
       }
       const finalMessage = (message && i18n.exists(message) ? i18n.t(message) : null) || i18n.t('errors.RATE_LIMITED')
       toast.error(finalMessage)
-      throw new SanitizedApiError(finalMessage, { status: 429, code: code ?? undefined })
+      throw new SanitizedApiError(finalMessage, {
+        status: 429,
+        code: code ?? undefined,
+        requestId: res.headers?.get?.('x-request-id') ?? undefined,
+      })
     }
     const text = await res.text()
     let message: string | null = null
@@ -498,6 +567,7 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
     throw new SanitizedApiError(message || res.statusText || `HTTP ${res.status}`, {
       status: res.status,
       code: code ?? undefined,
+      requestId: res.headers?.get?.('x-request-id') ?? undefined,
     })
   }
 

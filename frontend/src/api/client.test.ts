@@ -644,4 +644,59 @@ describe('api client', () => {
       }
     })
   })
+
+  describe('Timeout und Abbruch (Hardening WP2.3)', () => {
+    it('bricht einen Request nach Ablauf des Timeouts ab, liefert SanitizedApiError und feuert kein Offline-Event', async () => {
+      vi.useFakeTimers()
+      const offlineSpy = vi.fn()
+      window.addEventListener('msm:network-offline', offlineSpy)
+      try {
+        fetchSpy.mockImplementation((_url, options) => {
+          return new Promise((_resolve, reject) => {
+            const signal = (options as RequestInit)?.signal
+            signal?.addEventListener('abort', () => {
+              const err = new DOMException('Request timeout after 1000ms', 'TimeoutError')
+              reject(err)
+            })
+          })
+        })
+        const apiPromise = api('/timeout-test', { timeoutMs: 1000 })
+        const assertion = expect(apiPromise).rejects.toMatchObject({
+          name: 'SanitizedApiError',
+          status: 408,
+          code: 'timeout',
+          message: i18n.t('errors.REQUEST_TIMEOUT'),
+        })
+        await vi.advanceTimersByTimeAsync(1500)
+        await assertion
+        expect(offlineSpy).not.toHaveBeenCalled()
+      } finally {
+        window.removeEventListener('msm:network-offline', offlineSpy)
+        vi.useRealTimers()
+      }
+    })
+
+    it('löscht die Benutzersitzung bei einem Abbruch nicht', async () => {
+      useAuthStore.setState({ user: { id: 'u1', username: 'tester' } as any })
+      const abbruch = new Error('The operation was aborted.')
+      abbruch.name = 'AbortError'
+      fetchSpy.mockRejectedValueOnce(abbruch)
+
+      await expect(api('/abort-test')).rejects.toThrow()
+      expect(useAuthStore.getState().user).not.toBeNull()
+    })
+
+    it('setzt für FormData keinen Standard-Timeout', async () => {
+      const formData = new FormData()
+      formData.append('file', 'test-content')
+      fetchSpy.mockReturnValueOnce(mockResponse(200, { ok: true }))
+
+      await api('/upload-test', { method: 'POST', body: formData })
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      const call = fetchSpy.mock.calls[0]
+      const options = call[1] as RequestInit
+      expect(options.body).toBe(formData)
+    })
+  })
 })
+

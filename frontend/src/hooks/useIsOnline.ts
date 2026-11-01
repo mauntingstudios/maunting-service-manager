@@ -17,9 +17,13 @@ export function useIsOnline(): boolean {
     const handleOffline = () => setIsOnline(false)
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+    window.addEventListener('msm:network-online', handleOnline)
+    window.addEventListener('msm:network-offline', handleOffline)
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('msm:network-online', handleOnline)
+      window.removeEventListener('msm:network-offline', handleOffline)
     }
   }, [])
 

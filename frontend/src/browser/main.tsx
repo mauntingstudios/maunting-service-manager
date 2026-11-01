@@ -7,6 +7,8 @@
 import { geraeteArtSetzen } from '@/desktop/geraeteArt'
 import { gestenleisteUebernehmen } from '@/lib/gestenleiste'
 import { randomUuidNachruesten } from '@/lib/uuidNachruesten'
+import { errorReporter } from '@/lib/errorReporter'
+import { registerPreloadHandler } from '@/lib/preloadSelbstheilung'
 
 // Nur die Brücke zu Rust: `nativ.ts` importiert nichts aus der App.
 import { nativ, konfig as geraetKonfig } from './services/nativ'
@@ -33,6 +35,8 @@ async function hochfahren(): Promise<void> {
 }
 
 randomUuidNachruesten()
+errorReporter.init()
+registerPreloadHandler()
 // Android: die Gestenleiste unten, die ältere WebViews nicht melden (Punkt 87).
 gestenleisteUebernehmen()
 // Die Kopplung meldet dem Panel, dass hier der Browser koppelt, nicht MSS.

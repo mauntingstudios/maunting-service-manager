@@ -173,7 +173,7 @@ function Vollbild({ id, titel, pfad }: { id: PanelId; titel: string; pfad: strin
       <div ref={setModalContainer} className="msb-bereich relative min-h-0 flex-1 overflow-hidden">
         <ModalContainerContext.Provider value={modalContainer}>
           <Suspense fallback={<Laedt />}>
-            <ErrorBoundary>
+            <ErrorBoundary compact>
               <Inhalt id={id} pfad={pfad} voll />
             </ErrorBoundary>
           </Suspense>
@@ -222,7 +222,7 @@ export function Panel({ seite }: { seite: 'links' | 'rechts' | 'voll' }) {
       <div ref={setModalContainer} className="msb-bereich relative min-h-0 flex-1 overflow-hidden">
         <ModalContainerContext.Provider value={modalContainer}>
           <Suspense fallback={<Laedt />}>
-            <ErrorBoundary>
+            <ErrorBoundary compact>
               <Inhalt id={id} pfad={pathname} voll={false} />
             </ErrorBoundary>
           </Suspense>
