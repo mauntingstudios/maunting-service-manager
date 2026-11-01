@@ -7,11 +7,11 @@ import { benutzernameFehler, benutzernameVorschlag } from './benutzername'
  * in `tests/test_benutzername.py::TestRegeln` genauso.
  */
 describe('benutzernameFehler', () => {
-  it.each(['max', 'Max_Mustermann', 'a.b-c', '_x_', 'x'.repeat(32)])('erlaubt %s', (name) => {
+  it.each(['max', 'Max_Muster', 'a.b-c', '_x_', 'x'.repeat(12)])('erlaubt %s', (name) => {
     expect(benutzernameFehler(name)).toBeNull()
   })
 
-  it.each(['ab', 'x'.repeat(33), 'max@web.de', 'mit leer', '.max', 'max-', 'Ümlaut'])(
+  it.each(['ab', 'x'.repeat(13), 'max@web.de', 'mit leer', '.max', 'max-', 'Ümlaut'])(
     'lehnt %s ab',
     (name) => {
       expect(benutzernameFehler(name)).toEqual({ schluessel: 'benutzername.fehlerForm' })

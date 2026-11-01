@@ -236,7 +236,7 @@ export function Register() {
                 placeholder="admin"
                 required
                 minLength={3}
-                maxLength={32}
+                maxLength={12}
               />
             </div>
 

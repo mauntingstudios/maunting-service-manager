@@ -75,7 +75,7 @@ export function BenutzernameFeld({ start }: Props) {
             setName(e.target.value)
             setBeruehrt(true)
           }}
-          maxLength={32}
+          maxLength={12}
           autoComplete="username"
           autoFocus
           error={fehlertext}

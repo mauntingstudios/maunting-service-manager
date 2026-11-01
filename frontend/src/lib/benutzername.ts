@@ -8,7 +8,7 @@
  * sonst ließe sich ein Name nicht mit @ ansprechen. Kein @, damit niemand
  * wieder eine E-Mail als Namen bekommt.
  */
-export const BENUTZERNAME_MUSTER = /^[A-Za-z0-9_][A-Za-z0-9_.-]{1,30}[A-Za-z0-9_]$/
+export const BENUTZERNAME_MUSTER = /^[A-Za-z0-9_][A-Za-z0-9_.-]{1,10}[A-Za-z0-9_]$/
 
 const GESPERRT = new Set(['everyone', 'here', 'alle'])
 

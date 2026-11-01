@@ -38,13 +38,13 @@ def _patch(client: TestClient, cookies: dict, csrf: str | None, name: str):
 
 
 class TestRegeln:
-    @pytest.mark.parametrize("name", ["max", "Max_Mustermann", "a.b-c", "_x_", "x" * 32])
+    @pytest.mark.parametrize("name", ["max", "Max_Muster", "a.b-c", "_x_", "x" * 12])
     def test_erlaubt(self, name):
         assert UsernameUpdateRequest(username=name).username == name
 
     @pytest.mark.parametrize(
         "name",
-        ["ab", "x" * 33, "max@web.de", "mit leer", ".max", "max-", "Ümlaut", "alle", "Everyone"],
+        ["ab", "x" * 13, "max@web.de", "mit leer", ".max", "max-", "Ümlaut", "alle", "Everyone"],
     )
     def test_abgelehnt(self, name):
         with pytest.raises(ValidationError):
@@ -151,7 +151,7 @@ class TestVorlaeufigerName:
         assert login.status_code == 200
         cookies = dict(login.cookies)
         assert client.get("/api/auth/me", cookies=cookies).json()["username_gewaehlt"] is False
-        resp = _patch(client, cookies, cookies.get("__Secure-csrf_token"), "selbst_gewaehlt")
+        resp = _patch(client, cookies, cookies.get("__Secure-csrf_token"), "mein_name")
         assert resp.json()["username_gewaehlt"] is True
 
 

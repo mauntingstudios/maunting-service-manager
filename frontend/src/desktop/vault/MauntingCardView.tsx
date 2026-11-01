@@ -11,7 +11,17 @@ import {
   Unlock,
 } from 'lucide-react'
 
-import { Avatar, Button } from '@/Singra/UI'
+import {
+  Avatar,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  PasswordInput,
+} from '@/Singra/UI'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
@@ -140,7 +150,7 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
     <div className={`flex flex-col items-center select-none ${className}`}>
       {/* 3D-Karten-Container */}
       <div
-        className="relative w-full max-w-[460px] aspect-[1024/644] cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-2xl"
+        className="relative w-full max-w-[560px] sm:max-w-[620px] aspect-[5/3] cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-2xl"
         style={{ perspective: '1200px' }}
         tabIndex={0}
         role="button"
@@ -170,39 +180,40 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
             <img
               src="/cards/maunting-card-front.png"
               alt="Maunting Card Front"
-              className="w-full h-full object-contain pointer-events-none"
+              className="w-full h-full object-cover pointer-events-none rounded-2xl"
               draggable={false}
             />
 
-            {/* Avatar in der Neon-Box (X: 6.35%, Y: 30.43%, W: 19.53%, H: 30.90%) */}
+            {/* Avatar in der Neon-Box — mathematisch zentriert */}
             <div
-              className="absolute flex items-center justify-center p-1 rounded-xl overflow-hidden"
+              className="absolute aspect-square flex items-center justify-center pointer-events-none"
               style={{
-                left: '6.35%',
-                top: '30.43%',
-                width: '19.53%',
-                height: '30.90%',
+                left: '14.98%',
+                top: '45.96%',
+                transform: 'translate(-50%, -50%)',
+                width: '17.5%',
               }}
             >
               <Avatar
                 src={user?.avatar_url}
                 name={user?.username}
-                size="lg"
-                className="w-full h-full rounded-lg object-cover shadow-inner"
+                size="2xl"
+                className="!w-full !h-full rounded-2xl shadow-inner [&>div]:rounded-2xl"
               />
             </div>
 
-            {/* Username in der Neon-Pill (X: 5.66%, Y: 62.89%, W: 41.21%, H: 9.94%) */}
+            {/* Username in der Neon-Pill — zentriert */}
             <div
-              className="absolute flex items-center px-3"
+              className="absolute flex items-center justify-center px-2 text-center pointer-events-none"
               style={{
-                left: '5.66%',
-                top: '62.89%',
-                width: '41.21%',
-                height: '9.94%',
+                left: '24.75%',
+                top: '70.00%',
+                transform: 'translate(-50%, -50%)',
+                width: '39.0%',
+                height: '8.5%',
               }}
             >
-              <span className="font-mono text-xs sm:text-sm font-bold tracking-wider text-sky-200 truncate drop-shadow-[0_0_8px_rgba(56,189,248,0.6)]">
+              <span className="font-sans text-xs sm:text-sm md:text-base font-bold tracking-wider text-white truncate drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
                 {user?.username?.toUpperCase() || 'MAUNTING USER'}
               </span>
             </div>
@@ -211,8 +222,8 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
             <div className="absolute top-4 right-4 z-10">{statusBadge}</div>
 
             {/* Ablaufdatum neben dem Chip */}
-            <div className="absolute bottom-4 right-14 font-mono text-[10px] sm:text-xs text-sky-300/80 tracking-widest drop-shadow-sm">
-              <span className="text-sky-400/50 mr-1.5 font-sans font-medium text-[9px]">VALID THRU</span>
+            <div className="absolute bottom-4 right-12 font-mono text-[10px] sm:text-xs text-sky-300/90 tracking-widest drop-shadow-sm">
+              <span className="text-sky-400/60 mr-1.5 font-sans font-medium text-[9px]">VALID THRU</span>
               {expiry.validThru}
             </div>
 
@@ -237,29 +248,30 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
             <img
               src="/cards/maunting-card-back.png"
               alt="Maunting Card Back"
-              className="w-full h-full object-contain pointer-events-none"
+              className="w-full h-full object-cover pointer-events-none rounded-2xl"
               draggable={false}
             />
 
-            {/* Mittlere Neon-Pill (X: 23.63%, Y: 34.63%, W: 52.54%, H: 17.70%) */}
+            {/* Mittlere Metallic-Pill — Card Number und Fingerprint zentriert */}
             <div
-              className="absolute flex flex-col justify-center items-center px-2"
+              className="absolute flex flex-col justify-center items-center px-2 text-center pointer-events-none"
               style={{
-                left: '23.63%',
-                top: '34.63%',
-                width: '52.54%',
-                height: '17.70%',
+                left: '51.50%',
+                top: '45.00%',
+                transform: 'translate(-50%, -50%)',
+                width: '50.0%',
+                height: '13.5%',
               }}
             >
-              <span className="font-mono text-xs sm:text-sm md:text-base font-bold tracking-widest text-sky-100 drop-shadow-[0_0_10px_rgba(56,189,248,0.8)]">
+              <span className="font-mono text-xs sm:text-sm md:text-base font-bold tracking-widest text-slate-950 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] leading-tight">
                 {cardNumber}
               </span>
-              <span className="font-mono text-[9px] sm:text-[10px] text-sky-300/70 tracking-wider truncate max-w-full">
+              <span className="font-mono text-[9px] sm:text-[10px] md:text-xs font-semibold text-slate-800 tracking-wider truncate max-w-full drop-shadow-sm">
                 FP: {fingerprint}
               </span>
             </div>
 
-            {/* Aktionen auf der Rückseite (unter der Pill-Box) */}
+            {/* Aktionen auf der Rückseite */}
             <div
               className="absolute bottom-5 inset-x-6 flex items-center justify-center gap-2 z-10"
               onClick={(e) => e.stopPropagation()}
@@ -267,7 +279,7 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
               {!isUnlocked ? (
                 <button
                   type="button"
-                  className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold shadow-lg shadow-sky-500/30 flex items-center gap-1.5 text-xs py-1 px-3 rounded-md"
+                  className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold shadow-lg shadow-sky-500/30 flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
                   onClick={() => setUnlockDialogOpen(true)}
                 >
                   <Unlock className="w-3.5 h-3.5" aria-hidden="true" />
@@ -276,7 +288,7 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
               ) : (
                 <button
                   type="button"
-                  className="bg-slate-900/80 hover:bg-slate-800 text-sky-200 border border-sky-500/30 flex items-center gap-1.5 text-xs py-1 px-3 rounded-md"
+                  className="bg-slate-900/80 hover:bg-slate-800 text-sky-200 border border-sky-500/30 flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
                   onClick={handleQuickLock}
                 >
                   <Lock className="w-3.5 h-3.5" aria-hidden="true" />
@@ -287,7 +299,7 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
               {onOpenSecurityTab && (
                 <button
                   type="button"
-                  className="text-sky-300 hover:text-white hover:bg-sky-950/40 flex items-center gap-1 text-xs py-1 px-2.5 rounded-md"
+                  className="text-sky-300 hover:text-white hover:bg-sky-950/40 flex items-center gap-1 text-xs py-1.5 px-3 rounded-lg transition-colors"
                   onClick={onOpenSecurityTab}
                 >
                   <Shield className="w-3.5 h-3.5" aria-hidden="true" />
@@ -311,65 +323,59 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
         {t('mss.card.clickToFlip', 'Klicken zum Umdrehen • Authentifiziert mit Argon2id & DIS')}
       </p>
 
-      {/* ════════════════════════ ENTSPERR-MODAL ════════════════════════ */}
-      {unlockDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-sky-500/30 p-6 text-white shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                <KeyRound className="w-5 h-5" aria-hidden="true" />
-              </div>
-              <div>
-                <h3 id="card-unlock-title" className="font-headline text-lg font-semibold text-white">
-                  {t('mss.card.unlockTitle', 'Maunting Card entsperren')}
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {t('mss.card.unlockSubtitle', 'Gib deine Karten-PIN / dein Passwort ein, um deinen Tresor freizuschalten.')}
-                </p>
-              </div>
-            </div>
+      {/* ════════════════════════ ENTSPERR-MODAL (Design DNA) ════════════════════════ */}
+      <Dialog open={unlockDialogOpen} onOpenChange={setUnlockDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-primary" aria-hidden="true" />
+              {t('mss.card.unlockTitle', 'Maunting Card entsperren')}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                'mss.card.unlockSubtitle',
+                'Gib deine Karten-PIN / dein Passwort ein, um deinen Tresor freizuschalten.'
+              )}
+            </DialogDescription>
+          </DialogHeader>
 
-            <form onSubmit={handleUnlockSubmit} className="space-y-4">
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder={t('mss.card.pinPlaceholder', 'Karten-Passwort / PIN')}
-                autoFocus
+          <form onSubmit={handleUnlockSubmit} className="p-6 space-y-4">
+            <PasswordInput
+              id="card-unlock-password"
+              label={t('mss.card.pinLabel', 'Karten-Passwort / PIN')}
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              placeholder={t('mss.card.pinPlaceholder', 'Karten-Passwort / PIN')}
+              autoFocus
+              disabled={submittingUnlock}
+              required
+            />
+
+            <DialogFooter variant="plain" className="px-0 pb-0 mt-6">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setUnlockDialogOpen(false)}
                 disabled={submittingUnlock}
-                required
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-sky-500/30 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-
-              <div className="flex items-center justify-end gap-2.5 pt-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setUnlockDialogOpen(false)}
-                  disabled={submittingUnlock}
-                >
-                  {t('common.cancel', 'Abbrechen')}
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="sm"
-                  disabled={submittingUnlock || !passwordInput.trim()}
-                  className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold flex items-center gap-1.5"
-                >
-                  {submittingUnlock ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                  )}
-                  {t('mss.card.unlockSubmit', 'Entsperren')}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+              >
+                {t('common.cancel', 'Abbrechen')}
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={submittingUnlock || !passwordInput.trim()}
+              >
+                {submittingUnlock ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                )}
+                {t('mss.card.unlockSubmit', 'Entsperren')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

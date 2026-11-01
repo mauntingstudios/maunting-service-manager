@@ -531,8 +531,8 @@
     "profile": {
       "title": "Singra",
       "description": "Gedächtnis und Einstellungen von Singra.",
-      "skillsMoved": "Eigene Skills verwalten unter",
-      "skillsMovedLink": "Teams → Persönlich",
+      "tabMemory": "Gedächtnis",
+      "tabSkills": "Persönliche Skills",
       "devicesTitle": "Geräte koppeln",
       "devicesDescription": "Code zum Verbinden von Desktop- und Mobil-Apps.",
       "devicesApiAddress": "Diese Adresse in der App eintragen",
@@ -782,7 +782,7 @@
       "personalDescription": "Deine eigenen Vorgehensweisen. Niemand sonst sieht sie, und die KI liest sie nur in deinen Gesprächen.",
       "directoryTitle": "Skills von Singra",
       "directoryDescription": "Aktuell wirksame Skills: integriert, panelweit, persönlich und aus deinen Teams.",
-      "directoryManageHint": "Geändert wird ein Skill dort, wo er gilt: persönliche und Team-Skills unter Teams, panelweite in den Einstellungen."
+      "directoryManageHint": "Geändert wird ein Skill dort, wo er gilt: persönliche Skills im Profil unter KI, Team-Skills unter Teams, panelweite in den Einstellungen."
     },
     "attachments": {
       "add": "Datei oder Bild anhängen",
@@ -9240,10 +9240,10 @@
     "titel": "Wähle deinen Benutzernamen",
     "hinweis": "Mit diesem Namen meldest du dich an, und unter ihm finden dich andere im Panel und im Messenger. Du kannst ihn später im Profil ändern.",
     "label": "Benutzername",
-    "regel": "3–32 Zeichen: Buchstaben, Ziffern, Unterstrich, Punkt oder Bindestrich",
+    "regel": "3–12 Zeichen: Buchstaben, Ziffern, Unterstrich, Punkt oder Bindestrich",
     "weiter": "Weiter",
     "gespeichert": "Benutzername gespeichert.",
-    "fehlerForm": "3–32 Zeichen: Buchstaben, Ziffern, Unterstrich, Punkt oder Bindestrich. Punkt und Bindestrich nicht am Anfang oder Ende.",
+    "fehlerForm": "3–12 Zeichen: Buchstaben, Ziffern, Unterstrich, Punkt oder Bindestrich. Punkt und Bindestrich nicht am Anfang oder Ende.",
     "fehlerReserviert": "„{{name}}“ ist reserviert.",
     "aendern": "Benutzernamen ändern"
   },

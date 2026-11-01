@@ -73,7 +73,7 @@ export function BenutzernameInline({ className = '' }: Props) {
             onKeyDown={(e) => {
               if (e.key === 'Escape') setOffen(false)
             }}
-            maxLength={32}
+            maxLength={12}
             autoComplete="username"
             autoFocus
             className={`h-8 ${fehler ? 'border-status-destructive focus:ring-status-destructive' : ''}`}

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -139,6 +139,10 @@ describe('Profil → KI', () => {
   it('zeigt die persönlichen Skills direkt im Profil, wenn die Berechtigung vorhanden ist', async () => {
     render(<MemoryRouter><AiTab /></MemoryRouter>)
     await screen.findByLabelText('Persönliches KI-Memory')
+
+    const skillsTab = await screen.findByRole('tab', { name: /Skills/i })
+    expect(skillsTab).toBeInTheDocument()
+    fireEvent.click(skillsTab)
 
     expect(await screen.findByLabelText('Skills')).toBeInTheDocument()
     expect(screen.getByText(/Deine eigenen Vorgehensweisen/)).toBeInTheDocument()

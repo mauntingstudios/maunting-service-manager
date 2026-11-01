@@ -21,7 +21,7 @@ def _validate_time_zone(value: str | None) -> str | None:
 # (frontend/src/services/erwaehnungen.ts), sonst liesse sich ein Name nicht
 # mit @ ansprechen. Kein @, damit niemand wieder eine E-Mail als Namen
 # bekommt. Die Frontend-Kopie steht in frontend/src/lib/benutzername.ts.
-BENUTZERNAME_MUSTER = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{1,30}[A-Za-z0-9_]$")
+BENUTZERNAME_MUSTER = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{1,10}[A-Za-z0-9_]$")
 #: Worte, die in Erwaehnungen alle meinen. Als Name waeren sie nie ansprechbar.
 BENUTZERNAME_GESPERRT = frozenset({"everyone", "here", "alle"})
 
@@ -30,7 +30,7 @@ def benutzername_fehler(value: str) -> str | None:
     """Warum ``value`` kein Benutzername sein darf, oder None."""
     if not BENUTZERNAME_MUSTER.match(value):
         return (
-            "Der Benutzername muss 3-32 Zeichen lang sein: Buchstaben, Ziffern, "
+            "Der Benutzername muss 3-12 Zeichen lang sein: Buchstaben, Ziffern, "
             "Unterstrich, Punkt oder Bindestrich, nicht am Anfang oder Ende "
             "ein Punkt oder Bindestrich."
         )
@@ -48,7 +48,7 @@ def _validate_username(value: str) -> str:
 
 
 class UserCreate(BaseModel):
-    username: str = Field(..., min_length=3, max_length=64)
+    username: str = Field(..., min_length=3, max_length=12)
     email: EmailStr
     password: str = Field(..., min_length=8)
     captcha_token: str | None = None
@@ -96,7 +96,7 @@ class LocationSharingUpdateRequest(BaseModel):
 
 
 class UsernameUpdateRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=64)
+    username: str = Field(..., min_length=3, max_length=12)
 
     @field_validator("username")
     @classmethod
@@ -162,7 +162,7 @@ class OwnerEmailConfig(BaseModel):
 
 
 class OwnerSetupRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=64)
+    username: str = Field(..., min_length=3, max_length=12)
     email: EmailStr
     password: str = Field(..., min_length=8)
     email_config: OwnerEmailConfig | None = None
@@ -183,7 +183,7 @@ class SetupVerifyRequest(BaseModel):
 
 
 class AdminUserCreate(BaseModel):
-    username: str = Field(..., min_length=3, max_length=64)
+    username: str = Field(..., min_length=3, max_length=12)
     email: EmailStr
     password: str = Field(..., min_length=8)
     is_owner: bool = False

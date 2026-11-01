@@ -531,8 +531,8 @@
     "profile": {
       "title": "Singra",
       "description": "Memory and settings for Singra.",
-      "skillsMoved": "Manage personal skills under",
-      "skillsMovedLink": "Teams → personal",
+      "tabMemory": "Memory",
+      "tabSkills": "Personal Skills",
       "devicesTitle": "Pair devices",
       "devicesDescription": "Code for connecting desktop and mobile apps.",
       "devicesApiAddress": "Enter this address in the app",
@@ -782,7 +782,7 @@
       "personalDescription": "Your own procedures. Nobody else sees them, and the AI reads them only in your conversations.",
       "directoryTitle": "Singra’s skills",
       "directoryDescription": "Currently active skills: built-in, panel-wide, personal, and from your teams.",
-      "directoryManageHint": "A skill is edited where it applies: personal and team skills under Teams, panel-wide ones in Settings."
+      "directoryManageHint": "A skill is edited where it applies: personal skills in Profile under AI, team skills under Teams, panel-wide ones in Settings."
     },
     "attachments": {
       "add": "Attach file or image",
@@ -9241,10 +9241,10 @@
     "titel": "Choose your username",
     "hinweis": "You sign in with this name, and others find you by it in the panel and the messenger. You can change it later in your profile.",
     "label": "Username",
-    "regel": "3–32 characters: letters, digits, underscore, dot or hyphen",
+    "regel": "3–12 characters: letters, digits, underscore, dot or hyphen",
     "weiter": "Continue",
     "gespeichert": "Username saved.",
-    "fehlerForm": "3–32 characters: letters, digits, underscore, dot or hyphen. No dot or hyphen at the start or end.",
+    "fehlerForm": "3–12 characters: letters, digits, underscore, dot or hyphen. No dot or hyphen at the start or end.",
     "fehlerReserviert": "“{{name}}” is reserved.",
     "aendern": "Change username"
   },
