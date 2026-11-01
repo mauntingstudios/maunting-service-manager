@@ -3909,9 +3909,10 @@
     "docsEnabledHint": "Rich-Text-Dokumente für Teams mit Echtzeit-Bearbeitung.",
     "seasonal": {
       "title": "Saisonales",
-      "hint": "Halloween und Weihnachten legen sich über die Oberfläche, wenn ihre Zeit gekommen ist. Beide Fenster gelten jedes Jahr in der Ortszeit des Geräts.",
+      "hint": "Halloween, Weihnachten und das MSM-Jubiläum legen sich über die Oberfläche, wenn ihre Zeit gekommen ist. Die Fenster gelten jedes Jahr in der Ortszeit des Geräts.",
       "enabled": "Saisonale Effekte",
-      "enabledHint": "Schaltet beide Saisons gemeinsam ab, unabhängig vom Zeitplan.",
+      "enabledHint": "Schaltet alle Saisons gemeinsam ab, unabhängig vom Zeitplan.",
+      "birthday": "MSM-Jubiläum (20. Mai)",
       "halloween": "Halloween",
       "christmas": "Weihnachten",
       "mode": "Modus",

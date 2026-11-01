@@ -16,6 +16,13 @@ describe('jaehrliches Saisonfenster', () => {
     expect(istImFenster('10-24T00:00', '11-01T06:00', zeit('2026-11-01T06:01:00'))).toBe(false)
   })
 
+  it('trifft das MSM-Jubilaeum rund um den 20. Mai', () => {
+    expect(istImFenster('05-18T00:00', '05-22T23:59', zeit('2026-05-17T23:59:00'))).toBe(false)
+    expect(istImFenster('05-18T00:00', '05-22T23:59', zeit('2026-05-20T12:00:00'))).toBe(true)
+    expect(istImFenster('05-18T00:00', '05-22T23:59', zeit('2026-05-22T23:59:00'))).toBe(true)
+    expect(istImFenster('05-18T00:00', '05-22T23:59', zeit('2026-05-23T00:00:00'))).toBe(false)
+  })
+
   it('laesst Weihnachten ueber den Jahreswechsel laufen', () => {
     expect(istImFenster('12-01T00:00', '01-06T23:59', zeit('2026-11-30T23:59:00'))).toBe(false)
     expect(istImFenster('12-01T00:00', '01-06T23:59', zeit('2026-12-24T18:00:00'))).toBe(true)
@@ -31,7 +38,8 @@ describe('jaehrliches Saisonfenster', () => {
 })
 
 describe('aktive Saison', () => {
-  it('waehlt im Oktober Halloween und im Dezember Weihnachten', () => {
+  it('waehlt im Mai Jubilaeum, im Oktober Halloween und im Dezember Weihnachten', () => {
+    expect(aktiveSaison(DEFAULT_SEASONAL_SETTINGS, zeit('2026-05-20T12:00:00'))).toBe('birthday')
     expect(aktiveSaison(DEFAULT_SEASONAL_SETTINGS, zeit('2026-10-31T20:00:00'))).toBe('halloween')
     expect(aktiveSaison(DEFAULT_SEASONAL_SETTINGS, zeit('2026-12-24T18:00:00'))).toBe('christmas')
     expect(aktiveSaison(DEFAULT_SEASONAL_SETTINGS, zeit('2026-06-01T12:00:00'))).toBeNull()
@@ -92,11 +100,13 @@ describe('Normalisierung der Saison-Einstellungen', () => {
   it('fuellt fehlende Felder einzeln aus dem Rueckfall', () => {
     const rueckfall = {
       enabled: false,
+      birthday: { mode: 'auto' as const, start: '05-18T00:00', end: '05-22T23:59' },
       halloween: { mode: 'on' as const, start: '10-30T18:00', end: '11-02T02:00' },
       christmas: { mode: 'off' as const, start: '12-20T00:00', end: '12-27T23:59' },
     }
     expect(normalisiereSaison({ halloween: { start: '10-31T12:00' } }, rueckfall)).toEqual({
       enabled: false,
+      birthday: { mode: 'auto', start: '05-18T00:00', end: '05-22T23:59' },
       halloween: { mode: 'on', start: '10-31T12:00', end: '11-02T02:00' },
       christmas: { mode: 'off', start: '12-20T00:00', end: '12-27T23:59' },
     })

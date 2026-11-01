@@ -19,6 +19,11 @@ import { Spinner } from '@/components/ui/Spinner'
 function saisonalAlsStore(settings: PanelSettings) {
   return {
     enabled: settings.seasonal_enabled,
+    birthday: {
+      mode: settings.season_birthday_mode,
+      start: settings.season_birthday_start,
+      end: settings.season_birthday_end,
+    },
     halloween: {
       mode: settings.season_halloween_mode,
       start: settings.season_halloween_start,
@@ -35,6 +40,9 @@ function saisonalAlsStore(settings: PanelSettings) {
 function saisonalAlsPayload(settings: PanelSettings) {
   return {
     seasonal_enabled: settings.seasonal_enabled,
+    season_birthday_mode: settings.season_birthday_mode,
+    season_birthday_start: settings.season_birthday_start,
+    season_birthday_end: settings.season_birthday_end,
     season_halloween_mode: settings.season_halloween_mode,
     season_halloween_start: settings.season_halloween_start,
     season_halloween_end: settings.season_halloween_end,
@@ -99,6 +107,9 @@ export function GeneralTab() {
     return () => window.clearTimeout(timer)
   }, [
     settings.seasonal_enabled,
+    settings.season_birthday_mode,
+    settings.season_birthday_start,
+    settings.season_birthday_end,
     settings.season_halloween_mode,
     settings.season_halloween_start,
     settings.season_halloween_end,

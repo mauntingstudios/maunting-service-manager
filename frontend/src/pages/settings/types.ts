@@ -48,6 +48,9 @@ export interface PanelSettings {
   vault_enabled: boolean
   social_enabled: boolean
   seasonal_enabled: boolean
+  season_birthday_mode: SeasonMode
+  season_birthday_start: string
+  season_birthday_end: string
   season_halloween_mode: SeasonMode
   season_halloween_start: string
   season_halloween_end: string
@@ -126,6 +129,9 @@ export const EMPTY_PANEL_SETTINGS: PanelSettings = {
   vault_enabled: true,
   social_enabled: true,
   seasonal_enabled: DEFAULT_SEASONAL_SETTINGS.enabled,
+  season_birthday_mode: DEFAULT_SEASONAL_SETTINGS.birthday.mode,
+  season_birthday_start: DEFAULT_SEASONAL_SETTINGS.birthday.start,
+  season_birthday_end: DEFAULT_SEASONAL_SETTINGS.birthday.end,
   season_halloween_mode: DEFAULT_SEASONAL_SETTINGS.halloween.mode,
   season_halloween_start: DEFAULT_SEASONAL_SETTINGS.halloween.start,
   season_halloween_end: DEFAULT_SEASONAL_SETTINGS.halloween.end,

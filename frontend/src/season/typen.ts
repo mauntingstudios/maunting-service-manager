@@ -5,7 +5,7 @@
  * Ortszeit ausgewertet. Sie stehen als `MM-DDTHH:MM` in den Panel-Settings,
  * damit ein Serverwechsel oder ein anderes Geraet die Saison nicht verschiebt.
  */
-export const SEASON_IDS = ['halloween', 'christmas'] as const
+export const SEASON_IDS = ['birthday', 'halloween', 'christmas'] as const
 export type SeasonId = (typeof SEASON_IDS)[number]
 
 export type SeasonMode = 'off' | 'auto' | 'on'
@@ -18,12 +18,14 @@ export interface SeasonWindow {
 
 export interface SeasonalSettings {
   enabled: boolean
+  birthday: SeasonWindow
   halloween: SeasonWindow
   christmas: SeasonWindow
 }
 
 export const DEFAULT_SEASONAL_SETTINGS: SeasonalSettings = {
   enabled: true,
+  birthday: { mode: 'auto', start: '05-18T00:00', end: '05-22T23:59' },
   halloween: { mode: 'auto', start: '10-24T00:00', end: '11-01T06:00' },
   christmas: { mode: 'auto', start: '12-01T00:00', end: '01-06T23:59' },
 }
@@ -64,6 +66,7 @@ export function normalisiereSaison(
   const roh = wert && typeof wert === 'object' ? (wert as Record<string, unknown>) : {}
   return {
     enabled: typeof roh.enabled === 'boolean' ? roh.enabled : rueckfall.enabled,
+    birthday: normalisiereFenster(roh.birthday, rueckfall.birthday),
     halloween: normalisiereFenster(roh.halloween, rueckfall.halloween),
     christmas: normalisiereFenster(roh.christmas, rueckfall.christmas),
   }

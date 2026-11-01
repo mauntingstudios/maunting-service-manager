@@ -75,6 +75,9 @@ describe('GeneralTab', () => {
       'social_enabled',
       'cloudflare_enabled',
       'seasonal_enabled',
+      'season_birthday_mode',
+      'season_birthday_start',
+      'season_birthday_end',
       'season_halloween_mode',
       'season_halloween_start',
       'season_halloween_end',
@@ -112,6 +115,8 @@ describe('GeneralTab', () => {
       const aufrufe = vi.mocked(api).mock.calls
       const body = JSON.parse(String(aufrufe[aufrufe.length - 1][1]?.body))
       expect(body.seasonal_enabled).toBe(false)
+      expect(body.season_birthday_start).toBe('05-18T00:00')
+      expect(body.season_birthday_end).toBe('05-22T23:59')
       expect(body.season_halloween_mode).toBe('auto')
       expect(body.season_halloween_start).toBe('10-24T00:00')
       expect(body.season_halloween_end).toBe('11-01T06:00')

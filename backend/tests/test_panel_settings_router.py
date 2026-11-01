@@ -434,6 +434,9 @@ class TestSeasonalSettings:
     ):
         body = client.get("/api/settings", cookies=owner_cookies).json()
         assert body["seasonal_enabled"] is True
+        assert body["season_birthday_mode"] == "auto"
+        assert body["season_birthday_start"] == "05-18T00:00"
+        assert body["season_birthday_end"] == "05-22T23:59"
         assert body["season_halloween_mode"] == "auto"
         assert body["season_halloween_start"] == "10-24T00:00"
         assert body["season_halloween_end"] == "11-01T06:00"
@@ -533,6 +536,11 @@ class TestSeasonalSettings:
     def test_public_settings_expose_the_seasonal_block(self, client: TestClient):
         body = client.get("/api/settings/public").json()
         assert body["seasonal"]["enabled"] is True
+        assert body["seasonal"]["birthday"] == {
+            "mode": "auto",
+            "start": "05-18T00:00",
+            "end": "05-22T23:59",
+        }
         assert body["seasonal"]["halloween"] == {
             "mode": "auto",
             "start": "10-24T00:00",

@@ -34,6 +34,17 @@ function wertAusAnzeige(datum: string, zeit: string): string | null {
 }
 
 function SaisonSymbol({ id }: { id: SeasonId }) {
+  if (id === 'birthday') {
+    return (
+      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+        <path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8" />
+        <path d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2-1 2-1" />
+        <path d="M2 21h20" />
+        <path d="M7 8v3M12 8v3M17 8v3" />
+        <path d="M7 4h.01M12 4h.01M17 4h.01" />
+      </svg>
+    )
+  }
   if (id === 'halloween') {
     return (
       <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
@@ -298,6 +309,18 @@ export function SeasonalSettings({
       </div>
 
       <div className="mt-4 space-y-3">
+        <SaisonZeile
+          id="birthday"
+          titel={t('settings.seasonal.birthday')}
+          mode={settings.season_birthday_mode}
+          start={settings.season_birthday_start}
+          end={settings.season_birthday_end}
+          enabled={settings.seasonal_enabled}
+          jetzt={jetzt}
+          onMode={(mode) => onChange({ season_birthday_mode: mode })}
+          onStart={(start) => onChange({ season_birthday_start: start })}
+          onEnd={(end) => onChange({ season_birthday_end: end })}
+        />
         <SaisonZeile
           id="halloween"
           titel={t('settings.seasonal.halloween')}

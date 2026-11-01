@@ -115,6 +115,15 @@ def _seasonal_settings(all_db: dict[str, str]) -> dict:
     """Die saisonalen Einstellungen als flache, typisierte Werte."""
     return {
         "seasonal_enabled": all_db.get("seasonal_enabled", "true") != "false",
+        "season_birthday_mode": _season_mode(all_db.get("season_birthday_mode")),
+        "season_birthday_start": _season_window(
+            all_db.get("season_birthday_start"),
+            SEASON_WINDOW_DEFAULTS["season_birthday_start"],
+        ),
+        "season_birthday_end": _season_window(
+            all_db.get("season_birthday_end"),
+            SEASON_WINDOW_DEFAULTS["season_birthday_end"],
+        ),
         "season_halloween_mode": _season_mode(all_db.get("season_halloween_mode")),
         "season_halloween_start": _season_window(
             all_db.get("season_halloween_start"),
@@ -275,6 +284,11 @@ def get_public_settings() -> dict:
         # einer anderen Zeitzone schlicht falsch.
         "seasonal": {
             "enabled": seasonal["seasonal_enabled"],
+            "birthday": {
+                "mode": seasonal["season_birthday_mode"],
+                "start": seasonal["season_birthday_start"],
+                "end": seasonal["season_birthday_end"],
+            },
             "halloween": {
                 "mode": seasonal["season_halloween_mode"],
                 "start": seasonal["season_halloween_start"],
@@ -384,7 +398,7 @@ def update_settings(
             value = "true" if bool(value) else "false"
         if key == "seasonal_enabled":
             value = "true" if bool(value) else "false"
-        if key in ("season_halloween_mode", "season_christmas_mode"):
+        if key in ("season_halloween_mode", "season_christmas_mode", "season_birthday_mode"):
             mode = str(value).strip().lower()
             if mode not in SEASON_MODES:
                 raise HTTPException(status_code=400, detail="Ungueltiger Saison-Modus")

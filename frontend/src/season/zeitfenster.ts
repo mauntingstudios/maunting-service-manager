@@ -60,7 +60,7 @@ export function aktiveSaison(
   jetzt: Date = new Date(),
 ): SeasonId | null {
   if (!einstellungen.enabled) return null
-  const reihenfolge: SeasonId[] = ['christmas', 'halloween']
+  const reihenfolge: SeasonId[] = ['christmas', 'halloween', 'birthday']
   for (const id of reihenfolge) {
     const fenster = einstellungen[id]
     if (fenster.mode === 'on') return id

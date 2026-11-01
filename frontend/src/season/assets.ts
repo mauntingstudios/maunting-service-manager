@@ -4,6 +4,11 @@
  * unangetastet; diese Dateien kommen nur zum Zug, wenn `data-season` aktiv ist.
  */
 export const SEASON_ASSETS = {
+  birthday: {
+    logoMsm: '/season/birthday-logo-msm.png',
+    logoPontis: '/season/birthday-logo-pontis.png',
+    hintergrund: '/season/birthday-hintergrund.png',
+  },
   halloween: {
     logoMsm: '/season/halloween-logo-msm.png',
     logoPontis: '/season/halloween-logo-pontis.png',

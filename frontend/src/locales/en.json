@@ -3909,9 +3909,10 @@
     "docsEnabledHint": "Rich-text documents for teams with live editing.",
     "seasonal": {
       "title": "Seasonal",
-      "hint": "Halloween and Christmas overlay the interface when their time comes. Both windows repeat yearly in the device's local time.",
+      "hint": "Halloween, Christmas, and the MSM Anniversary overlay the interface when their time comes. The windows repeat yearly in the device's local time.",
       "enabled": "Seasonal effects",
-      "enabledHint": "Turns both seasons off together, regardless of their schedules.",
+      "enabledHint": "Turns all seasons off together, regardless of their schedules.",
+      "birthday": "MSM Anniversary (May 20)",
       "halloween": "Halloween",
       "christmas": "Christmas",
       "mode": "Mode",

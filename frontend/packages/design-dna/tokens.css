@@ -54,6 +54,13 @@
   --season-glow: 24 100% 55%;
 }
 
+html[data-season="birthday"] {
+  --season-accent: 216 100% 64%;
+  --season-accent-strong: 285 100% 84%;
+  --season-on-accent: 220 50% 8%;
+  --season-glow: 218 100% 55%;
+}
+
 html[data-season="halloween"] {
   --season-accent: 22 100% 62%;
   --season-accent-strong: 26 100% 80%;

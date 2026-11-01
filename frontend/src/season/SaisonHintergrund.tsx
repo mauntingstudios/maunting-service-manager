@@ -32,6 +32,7 @@ const PARTIKEL: Partikel[] = [
  */
 export function SaisonHintergrund() {
   const motive = {
+    '--season-bg-birthday': `url("${SEASON_ASSETS.birthday.hintergrund}")`,
     '--season-bg-halloween': `url("${SEASON_ASSETS.halloween.hintergrund}")`,
     '--season-bg-christmas': `url("${SEASON_ASSETS.christmas.hintergrund}")`,
   } as CSSProperties

@@ -19,6 +19,15 @@ describe('SeasonalSettings', () => {
     expect(onChange).toHaveBeenCalledWith({ season_halloween_mode: 'on' })
   })
 
+  it('meldet die Sofort-Aktivierung des MSM-Jubilaeums', () => {
+    const onChange = vi.fn()
+    render(<SeasonalSettings settings={EMPTY_PANEL_SETTINGS} onChange={onChange} />)
+
+    fireEvent.click(screen.getByRole('switch', { name: 'MSM-Jubiläum (20. Mai) Immer an' }))
+
+    expect(onChange).toHaveBeenCalledWith({ season_birthday_mode: 'on' })
+  })
+
   it('meldet den Zeitplan von Weihnachten', () => {
     const onChange = vi.fn()
     render(<SeasonalSettings settings={{ ...EMPTY_PANEL_SETTINGS, season_christmas_mode: 'off' }} onChange={onChange} />)
@@ -32,11 +41,22 @@ describe('SeasonalSettings', () => {
     const onChange = vi.fn()
     render(<SeasonalSettings settings={EMPTY_PANEL_SETTINGS} onChange={onChange} />)
 
-    const datum = screen.getAllByLabelText('Von Datum')[0]
+    const datum = screen.getAllByLabelText('Von Datum')[1]
     fireEvent.change(datum, { target: { value: '2510' } })
     fireEvent.blur(datum)
 
     expect(onChange).toHaveBeenCalledWith({ season_halloween_start: '10-25T00:00' })
+  })
+
+  it('meldet Aenderungen am Geburtstags-Zeitfenster', () => {
+    const onChange = vi.fn()
+    render(<SeasonalSettings settings={EMPTY_PANEL_SETTINGS} onChange={onChange} />)
+
+    const datum = screen.getAllByLabelText('Von Datum')[0]
+    fireEvent.change(datum, { target: { value: '1905' } })
+    fireEvent.blur(datum)
+
+    expect(onChange).toHaveBeenCalledWith({ season_birthday_start: '05-19T00:00' })
   })
 
   it('zeigt einen Fehler bei einem unmoeglichen Datum', () => {

@@ -25,7 +25,7 @@ export function useSaison(erlaubt = true): SeasonId | null {
     ? (import.meta.env.VITE_SEASON_PREVIEW as string | undefined)?.trim().toLowerCase()
     : undefined
   const vorschauSaison =
-    vorschau === 'halloween' || vorschau === 'christmas' ? vorschau : null
+    vorschau === 'halloween' || vorschau === 'christmas' || vorschau === 'birthday' ? vorschau : null
 
   // Ungekoppelte Instanzen bleiben im Standard-Design, selbst wenn die
   // Vorgaben des Panels bereits im Cache liegen.

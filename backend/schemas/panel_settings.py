@@ -16,6 +16,8 @@ SeasonMode = Literal["off", "auto", "on"]
 # Eine Quelle fuer die Vorgaben: Router-Validierung und Response-Schema lesen
 # beide hier, damit die Fenster nicht auseinanderlaufen koennen.
 SEASON_WINDOW_DEFAULTS = {
+    "season_birthday_start": "05-18T00:00",
+    "season_birthday_end": "05-22T23:59",
     "season_halloween_start": "10-24T00:00",
     "season_halloween_end": "11-01T06:00",
     "season_christmas_start": "12-01T00:00",
@@ -71,6 +73,9 @@ class PanelSettingsResponse(BaseModel):
     # Saisonale Akzente. Die Zeitfenster gelten jaehrlich und werden auf dem
     # jeweiligen Geraet in dessen Ortszeit ausgewertet; `MM-DDTHH:MM`.
     seasonal_enabled: bool = True
+    season_birthday_mode: SeasonMode = "auto"
+    season_birthday_start: str = SEASON_WINDOW_DEFAULTS["season_birthday_start"]
+    season_birthday_end: str = SEASON_WINDOW_DEFAULTS["season_birthday_end"]
     season_halloween_mode: SeasonMode = "auto"
     season_halloween_start: str = SEASON_WINDOW_DEFAULTS["season_halloween_start"]
     season_halloween_end: str = SEASON_WINDOW_DEFAULTS["season_halloween_end"]
@@ -103,6 +108,9 @@ class PanelSettingsUpdate(BaseModel):
     vault_enabled: bool | None = None
     social_enabled: bool | None = None
     seasonal_enabled: bool | None = None
+    season_birthday_mode: str | None = None
+    season_birthday_start: str | None = None
+    season_birthday_end: str | None = None
     season_halloween_mode: str | None = None
     season_halloween_start: str | None = None
     season_halloween_end: str | None = None
