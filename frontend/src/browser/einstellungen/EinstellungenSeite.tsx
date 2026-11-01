@@ -40,8 +40,9 @@ const SicherheitEinstellungen = lazy(() =>
 const ProfilTab = lazy(() => import('@/pages/profile/ProfilTab').then((m) => ({ default: m.ProfilTab })))
 const KontoTab = lazy(() => import('@/pages/profile/KontoTab').then((m) => ({ default: m.KontoTab })))
 const SocialTab = lazy(() => import('@/pages/profile/SocialTab').then((m) => ({ default: m.SocialTab })))
+const AiTab = lazy(() => import('@/pages/profile/AiTab').then((m) => ({ default: m.AiTab })))
 
-type GekoppelteKategorie = 'profil' | 'konto' | 'soziales'
+type GekoppelteKategorie = 'profil' | 'konto' | 'soziales' | 'ki'
 
 const INHALT: Record<Exclude<Kategorie, 'sicherheit' | GekoppelteKategorie>, () => JSX.Element | null> = {
   allgemein: Allgemein,
@@ -96,6 +97,7 @@ function GekoppelteSeite({ teil }: { teil: GekoppelteKategorie }) {
       {teil === 'profil' && <ProfilTab social={social} />}
       {teil === 'konto' && <KontoTab />}
       {teil === 'soziales' && <SocialTab />}
+      {teil === 'ki' && <AiTab />}
     </Suspense>
   )
 }
@@ -160,7 +162,7 @@ export function EinstellungenSeite({ teil }: { teil: string | null }) {
   // auf „Allgemein" zu springen; Soziales gibt es ohne Messenger nicht.
   const angefordert: Kategorie | null = teil === 'sicherheit'
     ? 'sicherheit'
-    : teil === 'profil' || teil === 'konto'
+    : teil === 'profil' || teil === 'konto' || teil === 'ki'
       ? teil
       : teil === 'soziales' && social
         ? 'soziales'
@@ -204,7 +206,7 @@ export function EinstellungenSeite({ teil }: { teil: string | null }) {
           <div className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-4 md:px-8 md:py-6">
             {kategorie === 'sicherheit' ? (
               <SicherheitSeite offline={stand === 'offline'} />
-            ) : kategorie === 'profil' || kategorie === 'konto' || kategorie === 'soziales' ? (
+            ) : kategorie === 'profil' || kategorie === 'konto' || kategorie === 'soziales' || kategorie === 'ki' ? (
               <GekoppelteSeite teil={kategorie} />
             ) : (
               (() => {

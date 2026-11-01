@@ -15,12 +15,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { listen } from '@tauri-apps/api/event'
-import { Bot, BrainCircuit, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, Users, WifiOff, X } from 'lucide-react'
+import { Bot, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, Users, WifiOff, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
 import { istAbbruch } from '@/lib/networkErrors'
-import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
+import { AiTab } from '@/pages/profile/AiTab'
 import { AiRunNotice } from '@/components/ai/AiRunNotice'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
 import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
@@ -850,12 +850,10 @@ function Hauptseite({
   const hasPermissionKalender = useHasPermission('ai.calendar.use')
   const hasPermissionNotizen = useHasPermission('ai.notes.use')
   const hasPermissionDokumente = useHasPermission('docs.use')
-  const hasPermissionGedaechtnis = useHasPermission('ai.memory.use')
   const darfChatten = !isOffline && hasPermissionChat
   const darfKalender = publicSettings.calendar_enabled && (isOffline || hasPermissionKalender)
   const darfNotizen = publicSettings.notes_enabled && (isOffline || hasPermissionNotizen)
   const darfDokumente = publicSettings.docs_enabled && (isOffline || hasPermissionDokumente)
-  const darfGedaechtnis = !isOffline && hasPermissionGedaechtnis
   const darfTresor = publicSettings.vault_enabled
   const darfTeams = !isOffline
   const darfMessenger = publicSettings.social_enabled
@@ -1071,14 +1069,6 @@ function Hauptseite({
               label={t('mss.app.dokumente')}
             />
           )}
-          {!isOffline && darfGedaechtnis && (
-              <Reiter
-                aktiv={bereich === 'gedaechtnis'}
-                onClick={() => navigate('/gedaechtnis')}
-                icon={<BrainCircuit className="h-4 w-4 shrink-0" />}
-                label={t('mss.app.gedaechtnis')}
-              />
-            )}
             {darfTresor && (
               <Reiter
                 aktiv={bereich === 'tresor'}
@@ -1243,21 +1233,6 @@ function Hauptseite({
                 </button>
               )}
 
-              {!isOffline && darfGedaechtnis && (
-                <button
-                  type="button"
-                  onClick={() => { navigate('/gedaechtnis'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'gedaechtnis'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <BrainCircuit className="h-4 w-4" />
-                  <span>{t('mss.app.gedaechtnis')}</span>
-                </button>
-              )}
-
               {darfTresor && (
                 <button
                   type="button"
@@ -1394,7 +1369,7 @@ function Hauptseite({
             </div>
           ) : bereich === 'gedaechtnis' ? (
             <div className="mx-auto w-full max-w-3xl flex-1 min-h-0 overflow-y-auto pb-8">
-              <AiMemoryManager />
+              <AiTab />
             </div>
           ) : bereich === 'tresor' ? (
             <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">

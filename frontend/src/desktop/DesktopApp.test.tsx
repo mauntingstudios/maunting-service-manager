@@ -75,6 +75,9 @@ vi.mock('./Einstellungen', () => ({
 vi.mock('@/components/ai/AiMemoryManager', () => ({
   AiMemoryManager: () => <div data-testid="gedaechtnis-seite" />,
 }))
+vi.mock('@/pages/profile/AiTab', () => ({
+  AiTab: () => <div data-testid="gedaechtnis-seite" />,
+}))
 vi.mock('@/components/ai/AiRunNotice', () => ({
   AiRunNotice: () => null,
 }))

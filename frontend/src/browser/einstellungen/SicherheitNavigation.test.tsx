@@ -42,6 +42,9 @@ vi.mock('@/pages/profile/KontoTab', () => ({
 vi.mock('@/pages/profile/SocialTab', () => ({
   SocialTab: () => <div data-testid="soziales-tab">Soziales-Inhalt</div>,
 }))
+vi.mock('@/pages/profile/AiTab', () => ({
+  AiTab: () => <div data-testid="ki-tab">KI-Inhalt</div>,
+}))
 
 function Seite() {
   const url = useTabsStore((s) => s.tabs.find((t) => t.id === s.aktivId)?.url ?? '')
@@ -65,13 +68,14 @@ describe('Sicherheit in den Browsereinstellungen', () => {
     })
   })
 
-  it('Metadaten: Profil, Konto, Sicherheit und Soziales sind Unterpunkte von MSM-Dienste', () => {
+  it('Metadaten: Profil, Konto, Sicherheit, Soziales und KI sind Unterpunkte von MSM-Dienste', () => {
     const diensteIndex = KATEGORIEN.findIndex((k) => k.id === 'dienste')
     expect(KATEGORIEN.findIndex((k) => k.id === 'profil')).toBe(diensteIndex + 1)
     expect(KATEGORIEN.findIndex((k) => k.id === 'konto')).toBe(diensteIndex + 2)
     expect(KATEGORIEN.findIndex((k) => k.id === 'sicherheit')).toBe(diensteIndex + 3)
     expect(KATEGORIEN.findIndex((k) => k.id === 'soziales')).toBe(diensteIndex + 4)
-    for (const id of ['profil', 'konto', 'sicherheit', 'soziales'] as const) {
+    expect(KATEGORIEN.findIndex((k) => k.id === 'ki')).toBe(diensteIndex + 5)
+    for (const id of ['profil', 'konto', 'sicherheit', 'soziales', 'ki'] as const) {
       expect(KATEGORIEN.find((k) => k.id === id)?.unterpunkt).toBe(true)
     }
   })
@@ -83,8 +87,10 @@ describe('Sicherheit in den Browsereinstellungen', () => {
     expect(sichtbareKategorien(true, true).some((k) => k.id === 'sicherheit')).toBe(true)
     expect(sichtbareKategorien(true, true).some((k) => k.id === 'profil')).toBe(true)
     expect(sichtbareKategorien(true, true).some((k) => k.id === 'konto')).toBe(true)
+    expect(sichtbareKategorien(true, true).some((k) => k.id === 'ki')).toBe(true)
     expect(sichtbareKategorien(true, false).some((k) => k.id === 'profil')).toBe(false)
     expect(sichtbareKategorien(true, false).some((k) => k.id === 'konto')).toBe(false)
+    expect(sichtbareKategorien(true, false).some((k) => k.id === 'ki')).toBe(false)
   })
 
   it('Soziales erscheint nur mit Kopplung und eingeschaltetem Messenger', () => {
@@ -221,5 +227,14 @@ describe('Sicherheit in den Browsereinstellungen', () => {
 
     expect(screen.queryByTestId('sicherheit-einstellungen')).not.toBeInTheDocument()
     expect(screen.getByText('Nicht mit MSM gekoppelt')).toBeInTheDocument()
+  })
+
+  it('Inhalt: gekoppelt-online lädt KI-Tab bei Auswahl von ki', async () => {
+    useSitzung.setState({ stand: 'an' })
+    useTabsStore.getState().einstellungen('ki')
+    renderSeite()
+    await waitFor(() => {
+      expect(screen.getByTestId('ki-tab')).toBeInTheDocument()
+    })
   })
 })

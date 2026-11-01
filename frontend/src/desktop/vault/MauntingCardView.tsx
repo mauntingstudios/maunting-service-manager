@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import {
   AlertTriangle,
   CheckCircle2,
-  Download,
   KeyRound,
   Lock,
   RefreshCw,
@@ -12,7 +11,7 @@ import {
   Unlock,
 } from 'lucide-react'
 
-import { Avatar, Button, Dialog, DialogContent, PasswordInput } from '@/Singra/UI'
+import { Avatar, Button } from '@/Singra/UI'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
@@ -43,7 +42,6 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
   const {
     isInitialized,
     isUnlocked,
-    isUnlocking,
     unlockError,
     bucketId,
     unlock,
@@ -165,14 +163,14 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
         >
           {/* ════════════════════════ VORDERSEITE ════════════════════════ */}
           <div
-            className="absolute inset-0 w-full h-full rounded-2xl overflow-hidden shadow-2xl border border-sky-500/30"
+            className="absolute inset-0 w-full h-full filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.55)]"
             style={{ backfaceVisibility: 'hidden' }}
           >
             {/* Hintergrundbild Vorderseite */}
             <img
-              src="/cards/maunting-card-front.jpg"
+              src="/cards/maunting-card-front.png"
               alt="Maunting Card Front"
-              className="w-full h-full object-cover pointer-events-none"
+              className="w-full h-full object-contain pointer-events-none"
               draggable={false}
             />
 
@@ -229,7 +227,7 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
 
           {/* ════════════════════════ RÜCKSEITE ════════════════════════ */}
           <div
-            className="absolute inset-0 w-full h-full rounded-2xl overflow-hidden shadow-2xl border border-sky-500/30"
+            className="absolute inset-0 w-full h-full filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.55)]"
             style={{
               backfaceVisibility: 'hidden',
               transform: 'rotateY(180deg)',
@@ -237,9 +235,9 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
           >
             {/* Hintergrundbild Rückseite */}
             <img
-              src="/cards/maunting-card-back.jpg"
+              src="/cards/maunting-card-back.png"
               alt="Maunting Card Back"
-              className="w-full h-full object-cover pointer-events-none"
+              className="w-full h-full object-contain pointer-events-none"
               draggable={false}
             />
 

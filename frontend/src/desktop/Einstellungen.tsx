@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
+  Bot,
   FileSignature,
   Mail,
   MonitorCog,
@@ -38,6 +39,8 @@ import { Zustandsflaeche } from '@/Singra/UI'
 import { KontoTab } from '@/pages/profile/KontoTab'
 import { ProfilTab } from '@/pages/profile/ProfilTab'
 import { SocialTab } from '@/pages/profile/SocialTab'
+import { AiTab } from '@/pages/profile/AiTab'
+import { useHasPermission } from '@/hooks/useHasPermission'
 import { SYSTEM_KATEGORIE } from './vault/vaultEintrag'
 import { useVaultStore } from './vault/vaultStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
@@ -50,16 +53,18 @@ import {
   SicherheitEinstellungen,
 } from './einstellungsreiter'
 
-type EinstellungsTab = 'profil' | 'konto' | 'sicherheit' | 'social' | 'desktop' | 'audio' | 'rechtliches' | 'gefahr'
+type EinstellungsTab = 'profil' | 'konto' | 'sicherheit' | 'social' | 'ki' | 'desktop' | 'audio' | 'rechtliches' | 'gefahr'
 
 /** Reiter, deren Inhalt nur aus dem Panel kommt. */
-const BRAUCHT_SERVER: ReadonlySet<EinstellungsTab> = new Set(['profil', 'konto', 'social'])
+const BRAUCHT_SERVER: ReadonlySet<EinstellungsTab> = new Set(['profil', 'konto', 'social', 'ki'])
 
 const FRUEHERE_REITER: Record<string, EinstellungsTab> = {
   account: 'konto',
   messenger: 'sicherheit',
   tresor: 'sicherheit',
   wakeword: 'audio',
+  gedaechtnis: 'ki',
+  ai: 'ki',
 }
 
 const isAndroidClient = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
@@ -78,6 +83,7 @@ export function Einstellungen({
   const social = publicSettings.social_enabled
   const tresorAn = publicSettings.vault_enabled
   const tresorEntsperrt = useVaultStore((s) => s.isUnlocked)
+  const canUseAi = useHasPermission('ai.chat.use') || useHasPermission('ai.memory.use')
 
   const tabs: TabDef<EinstellungsTab>[] = useMemo(() => [
     { id: 'profil', labelKey: 'profile.tabs.profile', icon: offline ? WifiOff : User },
@@ -86,6 +92,9 @@ export function Einstellungen({
       ? [{ id: 'sicherheit' as const, labelKey: 'profile.tabs.security', icon: Shield }]
       : []),
     ...(social ? [{ id: 'social' as const, labelKey: 'profile.tabs.social', icon: offline ? WifiOff : Users }] : []),
+    ...((canUseAi || offline)
+      ? [{ id: 'ki' as const, labelKey: 'profile.tabs.ai', icon: offline ? WifiOff : Bot }]
+      : []),
     {
       id: 'desktop',
       labelKey: isAndroidClient ? 'mss.einstellungen.tab.app' : 'mss.einstellungen.tab.desktop',
@@ -94,7 +103,7 @@ export function Einstellungen({
     { id: 'audio', labelKey: 'mss.einstellungen.tab.audio', icon: Volume2 },
     { id: 'rechtliches', labelKey: 'mss.einstellungen.tab.rechtliches', icon: FileSignature },
     { id: 'gefahr', labelKey: 'mss.einstellungen.tab.gefahr', icon: AlertTriangle, variant: 'danger' },
-  ], [social, tresorAn, offline])
+  ], [social, tresorAn, offline, canUseAi])
 
   const tabAusSuche = useCallback((suche: string): EinstellungsTab => {
     const wunsch = new URLSearchParams(suche).get('tab') ?? ''
@@ -144,6 +153,7 @@ export function Einstellungen({
         <SicherheitEinstellungen offline={offline} social={social} tresorAn={tresorAn} />
       )}
       {tab === 'social' && !offline && <SocialTab />}
+      {tab === 'ki' && !offline && <AiTab />}
       {tab === 'desktop' && <DesktopIntegration onKonfigAenderung={onKonfigAenderung} offline={offline} />}
       {tab === 'audio' && (
         <>

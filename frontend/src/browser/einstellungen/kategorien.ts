@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   Blocks,
+  Bot,
   Download,
   Gauge,
   History,
@@ -34,6 +35,7 @@ export type Kategorie =
   | 'konto'
   | 'sicherheit'
   | 'soziales'
+  | 'ki'
   | 'ueber'
 
 export const KATEGORIEN: { id: Kategorie; symbol: LucideIcon; unterpunkt?: boolean }[] = [
@@ -52,6 +54,7 @@ export const KATEGORIEN: { id: Kategorie; symbol: LucideIcon; unterpunkt?: boole
   { id: 'konto', symbol: Mail, unterpunkt: true },
   { id: 'sicherheit', symbol: Shield, unterpunkt: true },
   { id: 'soziales', symbol: Users, unterpunkt: true },
+  { id: 'ki', symbol: Bot, unterpunkt: true },
   { id: 'ueber', symbol: Info },
 ]
 
@@ -63,7 +66,7 @@ export const KATEGORIEN: { id: Kategorie; symbol: LucideIcon; unterpunkt?: boole
 export function sichtbareKategorien(android: boolean, gekoppelt = false, social = true) {
   return KATEGORIEN.filter((k) => {
     if (android && (k.id === 'leistung' || k.id === 'erweiterungen')) return false
-    if ((k.id === 'sicherheit' || k.id === 'profil' || k.id === 'konto') && !gekoppelt) return false
+    if ((k.id === 'sicherheit' || k.id === 'profil' || k.id === 'konto' || k.id === 'ki') && !gekoppelt) return false
     if (k.id === 'soziales' && (!gekoppelt || !social)) return false
     return true
   })
