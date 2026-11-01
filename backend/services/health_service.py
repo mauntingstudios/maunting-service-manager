@@ -5,8 +5,8 @@ Vertrag:
 - /api/health?deep=1 prueft Abhaengigkeiten:
   - Datenbank: SELECT 1 mit 2 s Frist
   - DIS Sidecar: GET /health mit 2 s Frist
-  - Festplattenspeicher: freier Speicherplatz
-  Liefert 200 bei Erfolg, 503 mit status: 'degraded' bei Ausfall einer Kernkomponente.
+  - Festplattenspeicher: mindestens 5 % freier Speicherplatz
+  Liefert 200 bei Erfolg, 503 mit status: 'degraded' bei Ausfall einer Kernkomponente oder Speichermangel.
 """
 
 import asyncio
@@ -39,16 +39,23 @@ async def _pruefe_dis_sidecar(timeout: float = 2.0) -> Tuple[bool, str]:
         return False, f"Fehler: {type(e).__name__}"
 
 
-def _pruefe_festplatte() -> Dict[str, Any]:
+def _pruefe_festplatte() -> Tuple[bool, Dict[str, Any]]:
     try:
         # Auf Windows den System-Root-Pfad ermitteln, sonst "/"
         root = os.path.splitdrive(os.path.abspath("."))[0] + os.path.sep if os.name == "nt" else "/"
         usage = shutil.disk_usage(root)
         free_gb = round(usage.free / (1024**3), 2)
         total_gb = round(usage.total / (1024**3), 2)
-        return {"status": "ok", "free_gb": free_gb, "total_gb": total_gb}
+        free_pct = round((usage.free / usage.total) * 100, 2) if usage.total > 0 else 0.0
+        is_ok = free_pct >= 5.0
+        return is_ok, {
+            "status": "ok" if is_ok else "low_space",
+            "free_gb": free_gb,
+            "total_gb": total_gb,
+            "free_percent": free_pct,
+        }
     except Exception as e:
-        return {"status": "unbekannt", "error": str(e)}
+        return True, {"status": "unbekannt", "error": str(e)}
 
 
 async def pruefe_gesundheit(deep: bool = False) -> Tuple[int, Dict[str, Any]]:
@@ -58,7 +65,7 @@ async def pruefe_gesundheit(deep: bool = False) -> Tuple[int, Dict[str, Any]]:
 
     db_ok, db_msg = await _pruefe_datenbank(timeout=2.0)
     dis_ok, dis_msg = await _pruefe_dis_sidecar(timeout=2.0)
-    disk_info = _pruefe_festplatte()
+    disk_ok, disk_info = _pruefe_festplatte()
 
     checks = {
         "database": db_msg,
@@ -66,7 +73,7 @@ async def pruefe_gesundheit(deep: bool = False) -> Tuple[int, Dict[str, Any]]:
         "disk": disk_info,
     }
 
-    if db_ok and dis_ok:
+    if db_ok and dis_ok and disk_ok:
         return 200, {"status": "ok", "checks": checks}
     else:
         return 503, {"status": "degraded", "checks": checks}

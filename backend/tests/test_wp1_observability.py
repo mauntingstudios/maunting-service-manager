@@ -121,6 +121,30 @@ async def test_health_deep_503_bei_db_ausfall():
 
 
 @pytest.mark.asyncio
+async def test_health_deep_503_bei_speichermangel():
+    client = TestClient(app, raise_server_exceptions=False)
+
+    with patch("services.health_service._pruefe_datenbank", new_callable=AsyncMock) as mock_db:
+        mock_db.return_value = (True, "ok")
+        with patch("services.health_service._pruefe_dis_sidecar", new_callable=AsyncMock) as mock_dis:
+            mock_dis.return_value = (True, "ok")
+            with patch("services.health_service._pruefe_festplatte") as mock_disk:
+                mock_disk.return_value = (
+                    False,
+                    {"status": "low_space", "free_gb": 4.0, "total_gb": 100.0, "free_percent": 4.0},
+                )
+
+                res_deep = client.get("/api/health?deep=1")
+                assert res_deep.status_code == 503
+                data = res_deep.json()
+                assert data["status"] == "degraded"
+                assert data["checks"]["database"] == "ok"
+                assert data["checks"]["dis_sidecar"] == "ok"
+                assert data["checks"]["disk"]["status"] == "low_space"
+                assert data["checks"]["disk"]["free_percent"] == 4.0
+
+
+@pytest.mark.asyncio
 async def test_ungelesene_task_ausnahme_wird_protokolliert():
     token = request_id_ctx.set("task-req-1234")
     logged_errors = []

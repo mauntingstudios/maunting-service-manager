@@ -210,7 +210,18 @@ function captureCsrfFromResponse(res: Response): void {
  */
 function validierungsfehler(eintrag: unknown): string {
   if (typeof eintrag === 'string') return eintrag
-  const { type, loc, msg, ctx } = (eintrag ?? {}) as { type?: string; loc?: unknown[]; msg?: string; ctx?: Record<string, unknown> }
+  if (!eintrag || typeof eintrag !== 'object') return ''
+  const { type, loc, msg, message, ctx } = eintrag as {
+    type?: string
+    loc?: unknown[]
+    msg?: string
+    message?: string
+    ctx?: Record<string, unknown>
+  }
+  if (!type && !loc) {
+    if (typeof message === 'string' && message) return message
+    if (typeof msg === 'string' && msg) return msg
+  }
   const name = Array.isArray(loc) ? [...loc].reverse().find((teil) => typeof teil === 'string' && teil !== 'body') : null
   const feld = i18n.t(`errors.validation.fields.${name}`, { defaultValue: i18n.t('errors.validation.fields.unbekannt') })
   const art = typeof msg === 'string' && /e-?mail/i.test(msg) ? 'email' : type
@@ -235,7 +246,9 @@ function extractErrorMessage(detail: unknown): string | null {
     // {message, errors[]} wie der Blueprint-Importer), die Detail-Liste mit
     // anhaengen, damit der Nutzer sieht, welche Felder konkret kaputt sind.
     const errorsList = Array.isArray(obj.errors)
-      ? (obj.errors as unknown[]).map((e) => String(e)).filter(Boolean)
+      ? (obj.errors as unknown[])
+          .map((e) => (typeof e === 'string' ? e : validierungsfehler(e)))
+          .filter(Boolean)
       : []
     const baseMessage =
       (typeof obj.message === 'string' && obj.message) ||

@@ -25,6 +25,7 @@ import '@/index.css'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { initOfflineSync } from '@/lib/offlineSync'
+import { cleanupPreloadUrlParam } from '@/lib/preloadSelbstheilung'
 import { transportEinrichten } from './transport'
 import { DesktopRoot } from './DesktopRoot'
 
@@ -40,4 +41,5 @@ void textBereit.finally(() => {
       </ErrorBoundary>
     </React.StrictMode>,
   )
+  cleanupPreloadUrlParam()
 })

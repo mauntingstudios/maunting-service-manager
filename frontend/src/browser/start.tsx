@@ -23,6 +23,7 @@ import './browser.css'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { transportEinrichten } from '@/desktop/transport'
 import { initOfflineSync } from '@/lib/offlineSync'
+import { cleanupPreloadUrlParam } from '@/lib/preloadSelbstheilung'
 import { BrowserApp } from './BrowserApp'
 
 transportEinrichten()
@@ -36,4 +37,5 @@ void textBereit.finally(() => {
       </ErrorBoundary>
     </StrictMode>,
   )
+  cleanupPreloadUrlParam()
 })

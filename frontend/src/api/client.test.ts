@@ -481,6 +481,52 @@ describe('api client', () => {
       )
     })
 
+    it('verarbeitet strukturierte Validierungsfehler (422) mit Fehlerobjekten ohne [object Object]', async () => {
+      fetchSpy.mockReturnValueOnce(
+        mockResponse(422, {
+          detail: {
+            code: 'validation_failed',
+            message: 'Ungültige Eingabedaten',
+            errors: [
+              { loc: ['body', 'email'], msg: 'Input should be a valid string', type: 'string_type' },
+            ],
+          },
+        }),
+      )
+
+      const fehler = await api('/test', { method: 'POST', body: '{}' })
+        .then(() => null)
+        .catch((e: SanitizedApiError) => e)
+
+      expect(fehler?.message).toContain('Ungültige Eingabedaten')
+      expect(fehler?.message).not.toContain('[object Object]')
+      expect(fehler?.message).toContain('Email address is invalid.')
+    })
+
+    it('formatiert mehrere Fehlerobjekte in errors[] sauber mit Semikolon getrennt', async () => {
+      fetchSpy.mockReturnValueOnce(
+        mockResponse(422, {
+          detail: {
+            code: 'validation_failed',
+            message: 'Validation failed',
+            errors: [
+              { loc: ['body', 'username'], msg: 'String should have at least 3 characters', type: 'string_too_short', ctx: { min_length: 3 } },
+              { loc: ['body', 'email'], msg: 'Input should be a valid string', type: 'string_type' },
+            ],
+          },
+        }),
+      )
+
+      const fehler = await api('/test', { method: 'POST', body: '{}' })
+        .then(() => null)
+        .catch((e: SanitizedApiError) => e)
+
+      expect(fehler?.message).not.toContain('[object Object]')
+      expect(fehler?.message).toBe(
+        'Validation failed: Username is too short, at least 3 characters.; Email address is invalid.',
+      )
+    })
+
     it('should surface install/update lock i18n key from structured detail', async () => {
       fetchSpy.mockReturnValueOnce(
         mockResponse(409, {

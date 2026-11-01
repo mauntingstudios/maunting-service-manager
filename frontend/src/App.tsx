@@ -50,6 +50,7 @@ import { PrivacyAcknowledgementNotice } from './components/ui/PrivacyAcknowledge
 import { PrivacyNoticeVisibilityContext } from './components/ui/PrivacyNoticeVisibility'
 import { SupportWidgetLoader } from './components/SupportWidgetLoader'
 import { initOfflineSync } from './lib/offlineSync'
+import { cleanupPreloadUrlParam } from './lib/preloadSelbstheilung'
 import { useKontoBundNachholen } from './hooks/useKontoBundNachholen'
 import { SaisonDeko } from './season/SaisonDeko'
 
@@ -70,6 +71,7 @@ function App() {
   useKontoBundNachholen(isAuthenticated)
 
   useEffect(() => {
+    cleanupPreloadUrlParam()
     void usePublicSettingsStore.getState().refresh()
     return initOfflineSync()
   }, [])

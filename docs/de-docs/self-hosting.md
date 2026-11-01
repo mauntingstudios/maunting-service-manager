@@ -585,6 +585,29 @@ manuellen Override aus `MSM_API_URL` abgeleitet, weil nur der API-Host sie setze
 darf. `MSM_LOCAL_AGENT_ENABLED=false` wird auf einer migrierten Backend-only-
 Control-Plane automatisch gesetzt; Betreiber müssen dafür keinen Token kopieren.
 
+## Observability, Protokollierung und Fehlerüberwachung
+
+MSM bietet strukturierte Protokollierung, Anforderungs-IDs, Prometheus-Metriken
+und optionale Sentry-/GlitchTip-Anbindung für Backend und Frontend.
+
+### Protokoll-Format und Korrelations-IDs
+
+- `MSM_LOG_LEVEL`: Log-Stufe des Backends (`CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`). Standard: `WARNING`.
+- `MSM_LOG_FORMAT`: Ausgabeformat (`text` oder `json`). Standard ist `text` für
+  lesbare Systemd- und Journald-Ausgabe. Bei `json` schreibt der Logger
+  strukturierte JSON-Zeilen mit Zeitstempel, `request_id`, Log-Stufe und
+  Modulname für Kollektoren wie Vector, Loki oder ELK.
+- Jede eingehende HTTP-Anfrage erhält eine eindeutige `X-Request-ID`, die in
+  Logs, Fehlerantworten und Metriken mitgeführt wird.
+
+### Sentry- und GlitchTip-Fehlerüberwachung
+
+- `MSM_SENTRY_DSN`: DSN für Backend-Fehler. Unbehandelte 500-Ausnahmen werden
+  automatisch übertragen. Der integrierte PII-Scrubber entfernt Passwörter,
+  Session-Cookies, Bearer-Tokens und Authorization-Header vor dem Versand.
+- `VITE_SENTRY_DSN`: DSN für das Frontend (während des Baus oder über die
+  Umgebung übergeben). Leitet unbehandelte Client-Fehler weiter.
+
 ## Verschlüsselung der Datenbank nach dem Update
 
 Seit dem 26.09.2026 stehen die Inhalte der KI (Chats, Titel, Zusammenfassungen,

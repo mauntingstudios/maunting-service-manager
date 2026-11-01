@@ -44,7 +44,7 @@ import { registerServiceWorker } from './utils/pwa'
 import { randomUuidNachruesten } from './lib/uuidNachruesten'
 import { errorReporter } from './lib/errorReporter'
 
-import { registerPreloadHandler } from './lib/preloadSelbstheilung'
+import { registerPreloadHandler, cleanupPreloadUrlParam } from './lib/preloadSelbstheilung'
 
 randomUuidNachruesten()
 errorReporter.init()
@@ -63,4 +63,5 @@ void textBereit.finally(() => {
       </BrowserRouter>
     </React.StrictMode>
   )
+  cleanupPreloadUrlParam()
 })

@@ -64,4 +64,69 @@ describe('Vite Preload Selbstheilung (Hardening WP2.1)', () => {
       })
     }
   })
+
+  describe('cleanupPreloadUrlParam', () => {
+    it('entfernt msm_preload_retry per replaceState und erhält übrige Parameter', async () => {
+      const { cleanupPreloadUrlParam, PRELOAD_URL_PARAM } = await import('./preloadSelbstheilung')
+      const replaceStateSpy = vi.spyOn(window.history, 'replaceState')
+
+      const originalHref = window.location.href
+      const originalSearch = window.location.search
+
+      try {
+        Object.defineProperty(window, 'location', {
+          value: {
+            ...window.location,
+            pathname: '/servers',
+            search: `?tab=details&${PRELOAD_URL_PARAM}=1`,
+            hash: '#status',
+            href: `http://localhost/servers?tab=details&${PRELOAD_URL_PARAM}=1#status`,
+          },
+          writable: true,
+        })
+
+        cleanupPreloadUrlParam()
+
+        expect(replaceStateSpy).toHaveBeenCalledTimes(1)
+        expect(replaceStateSpy).toHaveBeenCalledWith(window.history.state, '', '/servers?tab=details#status')
+      } finally {
+        replaceStateSpy.mockRestore()
+        Object.defineProperty(window, 'location', {
+          value: { ...window.location, search: originalSearch, href: originalHref },
+          writable: true,
+        })
+      }
+    })
+
+    it('tut nichts, wenn msm_preload_retry nicht in der URL steht', async () => {
+      const { cleanupPreloadUrlParam } = await import('./preloadSelbstheilung')
+      const replaceStateSpy = vi.spyOn(window.history, 'replaceState')
+
+      const originalHref = window.location.href
+      const originalSearch = window.location.search
+
+      try {
+        Object.defineProperty(window, 'location', {
+          value: {
+            ...window.location,
+            pathname: '/dashboard',
+            search: '?view=compact',
+            hash: '',
+            href: 'http://localhost/dashboard?view=compact',
+          },
+          writable: true,
+        })
+
+        cleanupPreloadUrlParam()
+
+        expect(replaceStateSpy).not.toHaveBeenCalled()
+      } finally {
+        replaceStateSpy.mockRestore()
+        Object.defineProperty(window, 'location', {
+          value: { ...window.location, search: originalSearch, href: originalHref },
+          writable: true,
+        })
+      }
+    })
+  })
 })

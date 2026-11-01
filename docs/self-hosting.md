@@ -239,6 +239,23 @@ The updater pulls the latest tested release archive, verifies checksums, runs da
 
 ---
 
+## Observability, Logging & Error Tracking
+
+MSM provides structured logging, correlation IDs, Prometheus metrics, and optional Sentry/GlitchTip integration across backend and frontend.
+
+### Log Format & Correlation
+
+- `MSM_LOG_LEVEL`: Log level (`CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`). Default is `WARNING`.
+- `MSM_LOG_FORMAT`: Output format. Defaults to `text` for readable systemd journal entries. Set to `json` for structured JSON logs with timestamps, `X-Request-ID`, module name, and severity (compatible with Vector, Loki, and ELK).
+- Every HTTP request receives or inherits an `X-Request-ID` header, which is attached to log lines, error envelopes, and metrics.
+
+### Error Tracking (Sentry / GlitchTip)
+
+- `MSM_SENTRY_DSN`: Backend Sentry DSN. Unhandled server errors (HTTP 500) are forwarded with automatic PII scrubbing (passwords, auth headers, tokens, and cookies are scrubbed prior to dispatch).
+- `VITE_SENTRY_DSN`: Frontend Sentry DSN (configured during frontend build or environment). The frontend error reporter forwards uncaught React exceptions and window errors.
+
+---
+
 ## Diagnostics & Troubleshooting
 
 | Issue | Diagnostic Command | Resolution |

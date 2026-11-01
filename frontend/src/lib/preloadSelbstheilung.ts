@@ -72,3 +72,23 @@ export function registerPreloadHandler(): void {
     window.addEventListener('vite:preloadError', (event) => handlePreloadError(event))
   }
 }
+
+/**
+ * Bereinigt den URL-Parameter `msm_preload_retry` nach erfolgreichem Boot/Mount
+ * via `window.history.replaceState`. Dadurch bleibt die URL für den Benutzer sauber
+ * und zukünftige Chunk-Ausfälle in diesem Tab können erneut selbstheilen.
+ */
+export function cleanupPreloadUrlParam(): void {
+  if (typeof window === 'undefined' || !window.location || !window.history?.replaceState) {
+    return
+  }
+  try {
+    const url = new URL(window.location.href)
+    if (url.searchParams.has(PRELOAD_URL_PARAM)) {
+      url.searchParams.delete(PRELOAD_URL_PARAM)
+      const query = url.searchParams.toString()
+      const cleanUrl = url.pathname + (query ? `?${query}` : '') + url.hash
+      window.history.replaceState(window.history.state, '', cleanUrl)
+    }
+  } catch {}
+}
