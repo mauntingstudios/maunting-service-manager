@@ -66,7 +66,7 @@ def test_canonical_docs_cover_deployment_and_secret_free_enrollment() -> None:
         "msm-panel-<VERSION>.tar.gz",
         "msm-frontend-<VERSION>.tar.gz",
         "msm-agent-<VERSION>.tar.gz",
-        "PostgreSQL ist die einzige unterstützte Panel-Runtime-Datenbank",
+        "PostgreSQL 16 ist die einzige unterstützte Panel-Runtime-Datenbank",
         "weder einen Repository-Clone noch manuelles Kopieren",
         "/docs/self-hosting",
     }
