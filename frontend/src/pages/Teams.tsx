@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Brain, Check, Crown, LogOut, Mail, Plus, Server, ShieldCheck, Trash2, User, UserPlus, Users, UsersRound, X,
+  Brain, Check, Crown, LogOut, Mail, Plus, Server, ShieldCheck, Trash2, UserPlus, Users, UsersRound, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { api, SanitizedApiError } from '@/api/client'
 import {
@@ -32,13 +31,6 @@ interface UserOption {
   username: string
 }
 
-type Bereich = 'personal' | 'teams'
-
-const BEREICHE: TabDef<Bereich>[] = [
-  { id: 'personal', labelKey: 'teams.areaPersonal', icon: User },
-  { id: 'teams', labelKey: 'teams.areaTeams', icon: UsersRound },
-]
-
 type TeamReiter = 'members' | 'servers' | 'knowledge' | 'vault'
 
 function memoryScope(detail: TeamDetail): AiKnowledgeScope {
@@ -58,9 +50,9 @@ function skillScope(detail: TeamDetail): AiSkillScope {
  * Modernes Organisation- & Team-Dashboard (Vollbild / Full-Page).
  *
  * Verwaltet Mitglieder, Berechtigungen, Server-Freigaben, geteiltes KI-Wissen
- * sowie den Ende-zu-Ende verschlüsselten Team-Tresor.
+ * sowie den Ende-zu-Ende verschlüsselten Team-Tresor kollaborativer Teams.
+ * Persönliche Skills und Gedächtniseinträge liegen im Benutzerprofil.
  */
-const STORAGE_KEY_BEREICH = 'msm_teams_last_bereich'
 const STORAGE_KEY_TEAM_ID = 'msm_teams_last_id'
 const STORAGE_KEY_REITER = 'msm_teams_last_reiter'
 
@@ -70,21 +62,6 @@ export function Teams() {
   const canReadUsers = useHasPermission('users.read')
   const canUseSkills = useHasPermission('ai.skills.use')
   const benutzerId = useAuthStore((state) => state.user?.id ?? null)
-
-  const [bereich, setBereichState] = useState<Bereich>(() => {
-    if (typeof localStorage !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEY_BEREICH)
-      if (saved === 'teams' || saved === 'personal') return saved
-    }
-    return 'personal'
-  })
-
-  const setBereich = (next: Bereich) => {
-    setBereichState(next)
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_BEREICH, next)
-    }
-  }
 
   const [reiter, setReiterState] = useState<TeamReiter>(() => {
     if (typeof localStorage !== 'undefined') {
@@ -135,9 +112,7 @@ export function Teams() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
-  const persoenlich = useMemo(() => teams.find((team) => team.is_personal) ?? null, [teams])
   const echte = useMemo(() => teams.filter((team) => !team.is_personal), [teams])
-  const aktiveId = bereich === 'personal' ? persoenlich?.id ?? null : selectedId
 
   const reloadTeams = useCallback(async () => {
     const rows = await teamsApi.list()
@@ -168,9 +143,6 @@ export function Teams() {
         )
         setUsers(userRows.map((row) => ({ id: row.id, username: row.username })))
         setEinladungen(invitationRows)
-        if (typeof localStorage !== 'undefined' && !localStorage.getItem(STORAGE_KEY_BEREICH) && invitationRows.length > 0) {
-          setBereich('teams')
-        }
       })
       .catch((error: unknown) => {
         if (active) toast.error(error instanceof SanitizedApiError ? error.message : t('teams.errors.load'))
@@ -182,12 +154,12 @@ export function Teams() {
   }, [canReadUsers, t])
 
   useEffect(() => {
-    if (aktiveId === null) {
+    if (selectedId === null) {
       setDetail(null)
       return
     }
     let active = true
-    teamsApi.get(aktiveId)
+    teamsApi.get(selectedId)
       .then((row) => {
         if (!active) return
         setDetail(row)
@@ -203,7 +175,7 @@ export function Teams() {
         if (active) toast.error(error instanceof SanitizedApiError ? error.message : t('teams.errors.load'))
       })
     return () => { active = false }
-  }, [aktiveId, t])
+  }, [selectedId, t])
 
   const run = async (action: () => Promise<unknown>, successKey?: string) => {
     if (busy) return
@@ -368,7 +340,7 @@ export function Teams() {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-primary">
-                {bereich === 'personal' ? t('teams.areaPersonal') : t('teams.eyebrow')}
+                {t('teams.eyebrow')}
               </span>
               {team?.is_owner && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-label-sm font-semibold text-primary">
@@ -378,21 +350,13 @@ export function Teams() {
               )}
             </div>
             <h1 className="font-headline text-lg sm:text-xl font-bold leading-tight text-on-surface">
-              {bereich === 'personal' ? t('teams.areaPersonal') : team?.name ?? t('teams.title')}
+              {team?.name ?? t('teams.title')}
             </h1>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <TabBar
-            tabs={BEREICHE}
-            active={bereich}
-            onChange={setBereich}
-            ariaLabel={t('teams.areaLabel')}
-            embedded
-          />
-
-          {bereich === 'teams' && team && (
+          {team && (
             <div className="flex items-center gap-1 sm:gap-2">
               {team.is_owner ? (
                 <Button
@@ -425,7 +389,7 @@ export function Teams() {
       </header>
 
       {/* ── Sub-Header & Einladungs-Alerts ──────────────────────────────── */}
-      {bereich === 'teams' && (meineBeitritte.length > 0 || meineAnhebungen.length > 0) && (
+      {(meineBeitritte.length > 0 || meineAnhebungen.length > 0) && (
         <div className="shrink-0 space-y-2 border-b border-outline-variant/40 bg-surface-container-low/40 p-3 sm:px-6">
           <AngebotsBlock
             kennung="team-my-invitations"
@@ -449,41 +413,10 @@ export function Teams() {
       )}
 
       {/* ── Dashboard Canvas ───────────────────────────────────────────── */}
-      {bereich === 'personal' ? (
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
-          <section className="msm-card p-6" aria-labelledby="personal-title">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-secondary/10 text-secondary">
-                <User className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <div>
-                <h2 id="personal-title" className="font-headline text-lg sm:text-xl font-semibold text-on-surface">
-                  {t('teams.areaPersonal')}
-                </h2>
-                <p className="mt-0.5 text-xs sm:text-sm text-on-surface-variant">
-                  {t('teams.personalKnowledgeHint')}
-                </p>
-              </div>
-            </div>
-            <p className="mt-4 rounded-xl border border-outline-variant/40 bg-surface-container-low/45 p-3 text-xs leading-5 text-on-surface-variant">
-              {t('teams.personalMemoryElsewhere')}{' '}
-              <Link to="/profile?tab=ai" className="font-medium text-primary underline underline-offset-2 hover:text-primary-hover">
-                {t('teams.personalMemoryLink')}
-              </Link>
-            </p>
-          </section>
-
-          {detail?.is_personal && canUseSkills && (
-            <div className="msm-card p-6">
-              <AiSkillManager scope={skillScope(detail)} />
-            </div>
-          )}
-        </div>
-      ) : (
-        <div
-          className="flex flex-1 min-h-0 w-full overflow-hidden"
-          data-testid="team-workspace"
-        >
+      <div
+        className="flex flex-1 min-h-0 w-full overflow-hidden"
+        data-testid="team-workspace"
+      >
           {/* ── Left Rail: Organisations & Teams ───────────────────────── */}
           {mitListe && (
             <aside className="hidden w-72 shrink-0 flex-col border-r border-outline-variant/40 bg-surface-container-low/40 lg:flex">
@@ -761,7 +694,6 @@ export function Teams() {
             )}
           </main>
         </div>
-      )}
     </div>
   )
 }

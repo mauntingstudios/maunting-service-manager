@@ -4,8 +4,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
 import { api } from '@/api/client'
+import { teamsApi } from '@/api/teams'
 import { usePermissionsStore } from '@/stores/permissionsStore'
 import { AiTab } from './AiTab'
+
+vi.mock('@/api/teams', () => ({
+  teamsApi: {
+    list: vi.fn().mockResolvedValue([
+      {
+        id: 1,
+        name: 'tester',
+        is_personal: true,
+        is_owner: true,
+        can_manage_skills: true,
+        can_manage_memory: true,
+        member_count: 1,
+        created_at: '2026-08-01T10:00:00Z',
+      },
+    ]),
+  },
+}))
 
 /**
  * Der Mock antwortet **pfadabhängig**, nicht pauschal mit `[]`.
@@ -118,12 +136,27 @@ describe('Profil → KI', () => {
     expect(api).not.toHaveBeenCalledWith('/auth/me/agent-name', expect.anything())
   })
 
-  it('zeigt keine Skill-Verwaltung mehr, sondern den Weg dorthin', async () => {
+  it('zeigt die persönlichen Skills direkt im Profil, wenn die Berechtigung vorhanden ist', async () => {
     render(<MemoryRouter><AiTab /></MemoryRouter>)
     await screen.findByLabelText('Persönliches KI-Memory')
 
-    await waitFor(() => expect(screen.queryByLabelText('Skills')).not.toBeInTheDocument())
-    expect(screen.queryByLabelText('Skills von Singra')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Teams/ })).toHaveAttribute('href', '/teams')
+    expect(await screen.findByLabelText('Skills')).toBeInTheDocument()
+    expect(screen.getByText(/Deine eigenen Vorgehensweisen/)).toBeInTheDocument()
+  })
+
+  it('blendet die persönlichen Skills aus, wenn ai.skills.use fehlt', async () => {
+    usePermissionsStore.setState({
+      me: {
+        is_owner: false, role_id: null, role_name: null,
+        global_keys: ['ai.memory.use'],
+        server_keys: {},
+      },
+      isLoading: false, error: null,
+    })
+
+    render(<MemoryRouter><AiTab /></MemoryRouter>)
+    await screen.findByLabelText('Persönliches KI-Memory')
+
+    expect(screen.queryByLabelText('Skills')).not.toBeInTheDocument()
   })
 })

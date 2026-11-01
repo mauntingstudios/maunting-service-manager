@@ -135,9 +135,9 @@ function renderTeams() {
   return render(<MemoryRouter><Teams /></MemoryRouter>)
 }
 
-/** Wechselt in den Teambereich — die Seite startet bewusst bei „Persönlich". */
+/** Teams startet direkt in der Ansicht der echten Teams. */
 async function zuTeams() {
-  fireEvent.click(await screen.findByRole('tab', { name: 'Teams' }))
+  // Kein Tab-Wechsel mehr nötig: Teams-Bereich ist jetzt primär
 }
 
 /**
@@ -235,19 +235,12 @@ describe('Teams', () => {
     expect(screen.queryByText('server.console.exec')).not.toBeInTheDocument()
   })
 
-  it('zeigt unter Persönlich Skills, aber kein Gedächtnis', async () => {
+  it('startet direkt in der Ansicht der echten Teams ohne Persönlich-Reiter', async () => {
     renderTeams()
 
-    // Der Bereich „Persönlich" ist die Voreinstellung: das eigene Wissen ist
-    // das, was man am häufigsten sucht.
-    expect(await screen.findByRole('tab', { name: 'Persönlich' })).toHaveAttribute('aria-selected', 'true')
-    await screen.findByLabelText('Skills')
+    await screen.findByRole('heading', { name: 'Betrieb' })
+    expect(screen.queryByRole('tab', { name: 'Persönlich' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Persönliches KI-Memory')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Wissen dieses Teams')).not.toBeInTheDocument()
-    expect(screen.getByText(/Erinnerungen stehen nicht hier/)).toBeInTheDocument()
-
-    // Mitglieder und Server gibt es beim Ein-Mann-Team nicht.
-    expect(screen.queryByText('Mitglieder')).not.toBeInTheDocument()
   })
 
   it('führt das persönliche Team nicht in der Teamliste', async () => {
@@ -303,7 +296,7 @@ describe('Teams', () => {
     expect(screen.queryByText(/persönlichen Memory-Einträge/)).not.toBeInTheDocument()
   })
 
-  it('zeigt keine Skills ohne das Recht, sie zu benutzen', async () => {
+  it('zeigt keine Skills im Team ohne das Recht, sie zu benutzen', async () => {
     usePermissionsStore.setState({
       me: {
         is_owner: false, role_id: null, role_name: null,
@@ -313,10 +306,10 @@ describe('Teams', () => {
     })
     renderTeams()
 
-    await screen.findByRole('tab', { name: 'Persönlich' })
-    // Vorher rendert die Seite das Panel ungeprüft, und der Endpunkt dahinter
-    // verlangt `ai.skills.use` — es gab eine Fehlermeldung statt einer Ansicht.
-    await waitFor(() => expect(screen.queryByLabelText('Skills')).not.toBeInTheDocument())
+    await screen.findByRole('heading', { name: 'Betrieb' })
+    fireEvent.click(await screen.findByRole('tab', { name: 'KI-Wissen' }))
+    await screen.findByLabelText('Wissen dieses Teams')
+    expect(screen.queryByLabelText('Skills')).not.toBeInTheDocument()
   })
 
   it('meldet eine Anhebung als Anfrage — nicht als Speicherung', async () => {
