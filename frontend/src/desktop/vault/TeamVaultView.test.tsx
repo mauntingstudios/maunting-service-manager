@@ -69,7 +69,7 @@ describe('TeamVaultView', () => {
 
     expect(screen.getByText(i18n.t('teams.vaultUnlock'))).toBeInTheDocument()
     expect(screen.getByPlaceholderText(i18n.t('mss.vault.masterPasswort'))).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: new RegExp(i18n.t('profile.dataExport.vaultUnlock')) })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: new RegExp(i18n.t('mss.vault.entsperren')) })).toBeInTheDocument()
   })
 
   it('zeigt Rotations-Warnbanner und öffnet Rotations-Dialog', () => {

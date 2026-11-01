@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 
-const PORT = 19199;
+const PORT = 19196;
 const TOKEN = 'test-password-wrap-token';
 
 // Erzeugt mit passlib (CryptContext(schemes=['argon2'])), wie das Panel

@@ -264,6 +264,8 @@ describe('Jugendschutz beim Start', () => {
 describe('zurueckGehen und Verlauf', () => {
   beforeEach(() => {
     ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
+    useEinstellungenStore.setState({ beimStart: 'letzte' })
+    sessionStorage.clear()
     const id = 'tab-1'
     useTabsStore.setState({
       tabs: [{ ...useTabsStore.getState().tabs[0], id, url: 'https://1.example/', nativDa: true, zurueck: false, vorher: null }],
