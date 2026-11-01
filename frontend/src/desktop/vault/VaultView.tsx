@@ -874,123 +874,6 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     )
   }
 
-  if (isTeam && !isUnlocked) {
-    if (zuruecksetzen) {
-      return (
-        <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
-          <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
-            <TresorZuruecksetzen
-              isTeam={true}
-              teamId={team?.id}
-              onAbbrechen={() => setZuruecksetzen(false)}
-              onFertig={() => {
-                setZuruecksetzen(false)
-                if (team?.id) {
-                  void teamStore.loadStatus(team.id)
-                }
-              }}
-            />
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
-        <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
-          <div className="text-center space-y-1.5">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
-              <Lock className="h-6 w-6" />
-            </div>
-            <h2 className="text-base font-bold text-on-surface">{t('teams.vaultUnlock')}</h2>
-            <p className="text-xs text-on-surface-variant">{t('teams.vaultUnlockDesc')}</p>
-          </div>
-
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault()
-              if (!masterPasswordInput || teamBusy) return
-              const ok = await activeUnlock(masterPasswordInput)
-              if (ok) {
-                setMasterPasswordInput('')
-                toast.success(t('mss.vault.entsperrt'))
-              }
-            }}
-            className="space-y-3.5"
-          >
-            <PasswordInput
-              value={masterPasswordInput}
-              onChange={(e) => setMasterPasswordInput(e.target.value)}
-              placeholder={t('mss.vault.masterPasswort')}
-              aria-label={t('mss.vault.masterPasswort')}
-              autoComplete="current-password"
-              autoFocus
-            />
-
-            {unlockError && (
-              <div className="rounded-xl bg-status-destructive/15 border border-status-destructive/30 p-2.5 text-xs text-status-destructive">
-                {unlockError}
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              disabled={teamBusy || !masterPasswordInput}
-              className="w-full bg-primary text-on-primary hover:bg-primary-hover py-2 flex items-center justify-center gap-1.5 text-xs"
-            >
-              {teamBusy ? (
-                <>
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  <span>{t('mss.vault.entschluessle')}</span>
-                </>
-              ) : (
-                <>
-                  <Unlock className="h-3.5 w-3.5" />
-                  <span>{t('profile.dataExport.vaultUnlock')}</span>
-                </>
-              )}
-            </Button>
-
-            {activeHasHint && (
-              <div className="pt-2 text-center">
-                <Button
-                  fingerziel
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleRequestHint}
-                  disabled={isRequestingHint}
-                  className="w-full text-xs text-on-surface-variant hover:text-on-surface flex items-center justify-center gap-1.5"
-                >
-                  <Mail className="h-3.5 w-3.5" />
-                  <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.hinweisPerMail')}</span>
-                </Button>
-              </div>
-            )}
-
-            {isOwner && (
-              <div className="pt-1 text-center">
-                <Button
-                  fingerziel
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setZuruecksetzen(true)
-                    setMasterPasswordInput('')
-                  }}
-                  className="text-xs text-on-surface-variant hover:text-status-destructive"
-                >
-                  {t('mss.vault.zuruecksetzen.link')}
-                </Button>
-              </div>
-            )}
-          </form>
-        </div>
-      </div>
-    )
-  }
-
   // ── 1. ERSTEINRICHTUNG (NUR wenn Ersteinrichtungs-Modus aktiv) ──
   if (!isUnlocked && isSetupMode) {
     const canSubmitSetup =
@@ -1139,10 +1022,16 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
           {zuruecksetzen ? (
             <TresorZuruecksetzen
+              isTeam={isTeam}
+              teamId={team?.id}
               onAbbrechen={() => setZuruecksetzen(false)}
               onFertig={() => {
                 setZuruecksetzen(false)
-                setIsSetupMode(true)
+                if (isTeam && team?.id) {
+                  void teamStore.loadStatus(team.id)
+                } else {
+                  setIsSetupMode(true)
+                }
               }}
             />
           ) : (
@@ -1152,14 +1041,18 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               <Lock className="h-6 w-6" />
             </div>
             <h2 className="text-base font-bold text-on-surface">
-              {t('mss.vault.titelManager')}
+              {isTeam ? t('teams.vaultUnlock') : t('mss.vault.titelManager')}
             </h2>
+            {isTeam && (
+              <p className="text-xs text-on-surface-variant">{t('teams.vaultUnlockDesc')}</p>
+            )}
           </div>
 
           <form
             onSubmit={async (e) => {
               e.preventDefault()
-              if (!masterPasswordInput || isUnlocking) return
+              const isBusy = isTeam ? teamBusy : isUnlocking
+              if (!masterPasswordInput || isBusy) return
               const ok = await activeUnlock(masterPasswordInput)
               if (ok) {
                 setMasterPasswordInput('')
@@ -1181,7 +1074,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                       toast.success(t('mss.vault.entsperrtBiometrie'))
                     }
                   }}
-                  disabled={isUnlocking}
+                  disabled={isTeam ? teamBusy : isUnlocking}
                   className="w-full flex items-center justify-center gap-2 py-2 text-xs border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
                 >
                   <Fingerprint className="h-4 w-4" />
@@ -1213,10 +1106,10 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
             <Button
               type="submit"
-              disabled={isUnlocking || !masterPasswordInput}
+              disabled={(isTeam ? teamBusy : isUnlocking) || !masterPasswordInput}
               className="w-full bg-primary text-on-primary hover:bg-primary-hover py-2 flex items-center justify-center gap-1.5 text-xs"
             >
-              {isUnlocking ? (
+              {(isTeam ? teamBusy : isUnlocking) ? (
                 <>
                   <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                   <span>{t('mss.vault.entschluessle')}</span>
@@ -1245,7 +1138,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.hinweisPerMail')}</span>
             </Button>
 
-            {!isInitialized && (
+            {!isTeam && !isInitialized && (
               <Button
                 fingerziel
                 type="button"
@@ -1261,7 +1154,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               </Button>
             )}
 
-            {isInitialized && (
+            {isInitialized && isOwner && (
               <Button
                 fingerziel
                 type="button"
