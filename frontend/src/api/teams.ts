@@ -76,6 +76,7 @@ export interface TeamRole {
   name: string
   description?: string | null
   color: string
+  icon?: string | null
   can_access_vault: boolean
   can_manage_skills: boolean
   can_manage_memory: boolean
@@ -91,6 +92,7 @@ export interface TeamRoleWritePayload {
   name: string
   description?: string | null
   color?: string
+  icon?: string | null
   can_access_vault?: boolean
   can_manage_skills?: boolean
   can_manage_memory?: boolean

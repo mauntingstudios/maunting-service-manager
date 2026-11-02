@@ -7,12 +7,16 @@ from pydantic import BaseModel, Field
 class RoleCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     description: str | None = Field(None, max_length=255)
+    color: str = Field("#3b82f6", max_length=16)
+    icon: str | None = Field(None, max_length=32)
     permissions: list[str] = Field(default_factory=list)
 
 
 class RoleUpdate(BaseModel):
     name: str | None = Field(None, min_length=2, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     description: str | None = Field(None, max_length=255)
+    color: str | None = Field(None, max_length=16)
+    icon: str | None = Field(None, max_length=32)
     permissions: list[str] | None = None
 
 
@@ -20,6 +24,8 @@ class RoleResponse(BaseModel):
     id: int
     name: str
     description: str | None
+    color: str = "#3b82f6"
+    icon: str | None = None
     is_system: bool
     permissions: list[str]
     created_at: datetime

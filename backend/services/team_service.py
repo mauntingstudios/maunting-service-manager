@@ -206,6 +206,7 @@ def ensure_default_team_roles(
         name="Admin",
         description="Voller Zugriff auf alle Funktionen des Teams",
         color="#ef4444",
+        icon="crown",
         can_access_vault=True,
         can_manage_skills=True,
         can_manage_memory=True,
@@ -222,7 +223,8 @@ def ensure_default_team_roles(
         team_id=team.id,
         name="Mitglied",
         description="Standardrolle für neue Teammitglieder",
-        color="#3b82f6",
+        color="#10b981",
+        icon="user-check",
         can_access_vault=True,
         can_manage_skills=False,
         can_manage_memory=False,
@@ -240,6 +242,7 @@ def ensure_default_team_roles(
         name="Gast",
         description="Eingeschränkter Lesezugriff",
         color="#64748b",
+        icon="eye",
         can_access_vault=True,
         can_manage_skills=False,
         can_manage_memory=False,
@@ -1008,6 +1011,7 @@ def create_team_role(
     name: str,
     description: str | None = None,
     color: str = "#3b82f6",
+    icon: str | None = None,
     is_default: bool = False,
     is_admin: bool = False,
     can_access_vault: bool = True,
@@ -1040,6 +1044,7 @@ def create_team_role(
         name=safe_name,
         description=description.strip() if description else None,
         color=color if color else "#3b82f6",
+        icon=icon,
         is_default=is_default,
         is_admin=is_admin,
         can_access_vault=can_access_vault,
@@ -1088,6 +1093,7 @@ def update_team_role(
     name: str,
     description: str | None = None,
     color: str = "#3b82f6",
+    icon: str | None = None,
     is_default: bool = False,
     is_admin: bool = False,
     can_access_vault: bool = True,
@@ -1123,6 +1129,7 @@ def update_team_role(
     role.name = safe_name
     role.description = description.strip() if description else None
     role.color = color if color else "#3b82f6"
+    role.icon = icon
     role.is_default = is_default
     role.is_admin = is_admin
     role.can_access_vault = can_access_vault

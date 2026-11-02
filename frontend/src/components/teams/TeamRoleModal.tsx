@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Crown, Server, Shield, Sparkles } from 'lucide-react'
+import { Crown, Server, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { SanitizedApiError } from '@/api/client'
@@ -11,21 +11,23 @@ import {
 } from '@/api/teams'
 import {
   Button,
+  ColorPicker,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  IconPicker,
   Input,
   MultiSelect,
   RechteAbschnitte,
+  renderRoleIcon,
   Switch,
   Textarea,
 } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import {
-  ROLE_COLOR_PRESETS,
   TEAM_PERMISSION_ABSCHNITTE,
   TEAM_PERMISSION_DEFINITIONS,
 } from './teamPermissionsCatalog'
@@ -50,6 +52,7 @@ export function TeamRoleModal({
 
   const [name, setName] = useState('')
   const [color, setColor] = useState('#3b82f6')
+  const [icon, setIcon] = useState<string | null>(null)
   const [description, setDescription] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [isDefault, setIsDefault] = useState(false)
@@ -64,6 +67,7 @@ export function TeamRoleModal({
     if (role) {
       setName(role.name)
       setColor(role.color || '#3b82f6')
+      setIcon(role.icon || null)
       setDescription(role.description || '')
       setIsAdmin(Boolean(role.is_admin))
       setIsDefault(Boolean(role.is_default))
@@ -77,6 +81,7 @@ export function TeamRoleModal({
     } else {
       setName('')
       setColor('#3b82f6')
+      setIcon(null)
       setDescription('')
       setIsAdmin(false)
       setIsDefault(false)
@@ -139,6 +144,7 @@ export function TeamRoleModal({
         name: name.trim(),
         description: description.trim() || null,
         color,
+        icon: icon || null,
         is_admin: isAdmin,
         is_default: isDefault,
         permission_keys: Array.from(permissionKeys),
@@ -169,14 +175,14 @@ export function TeamRoleModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="voll" className="max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogContent size="md" className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <div
               className="grid h-8 w-8 place-items-center rounded-lg text-white shadow-sm"
               style={{ backgroundColor: color }}
             >
-              <Shield className="h-4 w-4" />
+              {renderRoleIcon(icon, 'h-4 w-4 text-white')}
             </div>
             <div>
               <DialogTitle>
@@ -190,7 +196,7 @@ export function TeamRoleModal({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-          {/* ── Basisdaten: Name, Farbe, Beschreibung ─────────────────────── */}
+          {/* ── Basisdaten: Name, Farbe, Icon, Beschreibung ─────────────── */}
           <div className="space-y-4 rounded-xl border border-outline-variant/40 bg-surface-container-low/50 p-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
@@ -211,38 +217,23 @@ export function TeamRoleModal({
                 <label className="block text-xs font-semibold text-on-surface mb-1.5">
                   {t('teams.roleColor')}
                 </label>
-                <div className="flex items-center gap-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {ROLE_COLOR_PRESETS.map((preset) => (
-                      <button
-                        key={preset.value}
-                        type="button"
-                        onClick={() => setColor(preset.value)}
-                        className={`h-7 w-7 rounded-lg transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary flex items-center justify-center ${
-                          color.toLowerCase() === preset.value.toLowerCase()
-                            ? 'scale-110 ring-2 ring-primary ring-offset-2 ring-offset-surface'
-                            : 'hover:scale-105 opacity-80 hover:opacity-100'
-                        }`}
-                        style={{ backgroundColor: preset.value }}
-                        title={preset.label}
-                        aria-label={preset.label}
-                      >
-                        {color.toLowerCase() === preset.value.toLowerCase() && (
-                          <Check className="h-3.5 w-3.5 text-white" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    type="color"
-                    value={color}
-                    onChange={(e) => setColor(e.target.value)}
-                    className="h-8 w-8 cursor-pointer rounded-lg border border-outline-variant/50 bg-transparent p-0.5"
-                    title={t('teams.roleColor')}
-                    aria-label={t('teams.roleColor')}
-                  />
-                </div>
+                <ColorPicker
+                  value={color}
+                  onChange={setColor}
+                  disabled={busy}
+                />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-on-surface mb-1.5">
+                Rollen-Icon
+              </label>
+              <IconPicker
+                value={icon}
+                onChange={setIcon}
+                disabled={busy}
+              />
             </div>
 
             <div>
@@ -413,7 +404,7 @@ export function TeamRoleModal({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="p-4 border-t border-outline-variant/30 !bg-surface-container-low/70 flex items-center justify-end gap-2">
           <Button
             type="button"
             variant="ghost"

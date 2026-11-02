@@ -20,7 +20,7 @@ import type { AiKnowledgeScope, AiSkillScope } from '@/components/ai/knowledgeSc
 import { TeamRoleModal } from '@/components/teams/TeamRoleModal'
 import { TabBar, type TabDef } from '@/components/ui/TabBar'
 import { TeamVaultView } from '@/desktop/vault/TeamVaultView'
-import { Avatar, Button, Dropdown, Input, MultiSelect, Switch } from '@/Singra/UI'
+import { Avatar, Button, Dropdown, Input, MultiSelect, RoleBadge, Switch } from '@/Singra/UI'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { useAuthStore } from '@/stores/authStore'
 import { confirm } from '@/stores/confirmStore'
@@ -882,14 +882,13 @@ function MitgliederReiter({
                     {member.roles && member.roles.length > 0 && (
                       <span className="mt-1 flex flex-wrap gap-1">
                         {member.roles.map((r) => (
-                          <span
+                          <RoleBadge
                             key={r.id}
-                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold text-white shadow-2xs"
-                            style={{ backgroundColor: r.color || '#3b82f6' }}
-                          >
-                            {r.is_admin && <Crown className="h-2.5 w-2.5 text-amber-300" />}
-                            {r.name}
-                          </span>
+                            name={r.name}
+                            color={r.color}
+                            icon={r.icon}
+                            size="sm"
+                          />
                         ))}
                       </span>
                     )}
@@ -1066,17 +1065,16 @@ function RollenReiter({
                 className="flex flex-col justify-between rounded-xl border border-outline-variant/40 bg-surface p-4 shadow-sm transition-all hover:border-outline-variant"
               >
                 <div className="space-y-3">
-                  {/* Header: Color Indicator, Name & Badges */}
+                  {/* Header: RoleBadge & Badges */}
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className="h-3.5 w-3.5 shrink-0 rounded-full shadow-xs ring-2 ring-surface"
-                        style={{ backgroundColor: role.color || '#3b82f6' }}
+                    <h4 className="flex items-center gap-2.5 min-w-0">
+                      <RoleBadge
+                        name={role.name}
+                        color={role.color}
+                        icon={role.icon}
+                        size="md"
                       />
-                      <h4 className="font-bold text-sm text-on-surface truncate">
-                        {role.name}
-                      </h4>
-                    </div>
+                    </h4>
 
                     <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                       {role.is_admin && (

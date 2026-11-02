@@ -108,6 +108,8 @@ export interface Gruppenrolle {
   /** Nur für Systemrollen: ist `description` noch der Übersetzungsschlüssel? */
   description_is_key?: boolean
   permissions: string[]
+  color?: string
+  icon?: string
 }
 
 /**
@@ -120,6 +122,8 @@ export const SYSTEM_GRUPPENROLLEN: Gruppenrolle[] = [
     name: 'social.groupRoles.system.owner.name',
     description: 'social.groupRoles.system.owner.desc',
     is_system: true,
+    color: '#f59e0b',
+    icon: 'crown',
     permissions: GRUPPEN_RECHTE.map((p) => p.key),
   },
   {
@@ -127,6 +131,8 @@ export const SYSTEM_GRUPPENROLLEN: Gruppenrolle[] = [
     name: 'social.groupRoles.system.admin.name',
     description: 'social.groupRoles.system.admin.desc',
     is_system: true,
+    color: '#f43f5e',
+    icon: 'shield',
     permissions: GRUPPEN_RECHTE.map((p) => p.key),
   },
   {
@@ -134,6 +140,8 @@ export const SYSTEM_GRUPPENROLLEN: Gruppenrolle[] = [
     name: 'social.groupRoles.system.moderator.name',
     description: 'social.groupRoles.system.moderator.desc',
     is_system: true,
+    color: '#3b82f6',
+    icon: 'shield-check',
     permissions: [
       'send_messages',
       'attach_media',
@@ -152,6 +160,8 @@ export const SYSTEM_GRUPPENROLLEN: Gruppenrolle[] = [
     name: 'social.groupRoles.system.member.name',
     description: 'social.groupRoles.system.member.desc',
     is_system: true,
+    color: '#10b981',
+    icon: 'user-check',
     permissions: ['send_messages', 'attach_media', 'invite_members', 'join_group_calls'],
   },
 ]
@@ -168,6 +178,14 @@ export function permissionTitleKey(recht: string): string {
 
 export function permissionDescKey(recht: string): string {
   return `social.groupRoles.perm.${recht}.desc`
+}
+
+export function rollentext(
+  wert: string,
+  istSystem: boolean,
+  t: (schluessel: string, options?: any) => string,
+): string {
+  return istSystem ? t(wert) : wert
 }
 
 export interface RechteFrage {
@@ -272,4 +290,58 @@ export function rechteAusGruppe(
 }
 export function hatGruppenrecht(frage: RechteFrage, recht: GruppenRechtKennung): boolean {
   return wirksameGruppenrechte(frage).has(recht)
+}
+
+export interface MitgliedRollenInfo {
+  id: string
+  name: string
+  color: string
+  icon?: string
+}
+
+export function ermittleMitgliedRolle(
+  group: ChatGroupItem,
+  konto: number,
+  zustand?: Gruppenzustand | null,
+): MitgliedRollenInfo | null {
+  const istOwner = Number(group.owner_user_id) === Number(konto)
+  const mitglied = group.members?.find((m) => Number(m.user_id) === Number(konto))
+  const systemRolleId = istOwner ? 'owner' : (mitglied?.role || 'member')
+
+  // 1. Zuerst schauen, ob der Benutzer einer benutzerdefinierten Rolle in zustand.zuordnung zugewiesen ist:
+  if (zustand) {
+    for (const r of zustand.rollen) {
+      if ((zustand.zuordnung[r.id] ?? []).includes(konto)) {
+        return {
+          id: r.id,
+          name: r.name,
+          color: r.color || '#3b82f6',
+          icon: r.icon,
+        }
+      }
+    }
+    // Überschreibung der Systemrolle im Zustand?
+    const ueberschreibung = zustand.rollen.find((r) => r.id === systemRolleId)
+    if (ueberschreibung) {
+      return {
+        id: ueberschreibung.id,
+        name: ueberschreibung.name,
+        color: ueberschreibung.color || (systemRolleId === 'owner' ? '#f59e0b' : systemRolleId === 'admin' ? '#f43f5e' : systemRolleId === 'moderator' ? '#3b82f6' : '#10b981'),
+        icon: ueberschreibung.icon || (systemRolleId === 'owner' ? 'crown' : systemRolleId === 'admin' ? 'shield' : systemRolleId === 'moderator' ? 'shield-check' : 'user-check'),
+      }
+    }
+  }
+
+  // 2. Eingebaute Systemrolle:
+  const systemRolle = SYSTEM_GRUPPENROLLEN.find((r) => r.id === systemRolleId)
+  if (systemRolle) {
+    return {
+      id: systemRolle.id,
+      name: systemRolle.name,
+      color: systemRolle.color || '#3b82f6',
+      icon: systemRolle.icon,
+    }
+  }
+
+  return null
 }

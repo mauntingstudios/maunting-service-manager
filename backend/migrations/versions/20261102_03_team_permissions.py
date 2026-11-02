@@ -20,16 +20,29 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     tables = sa.inspect(op.get_bind()).get_table_names()
 
-    # 1. team_roles Spalten ergänzen (description, is_admin)
+    # 1. team_roles Spalten ergänzen (description, is_admin, icon)
     if "team_roles" in tables:
         cols = [c["name"] for c in sa.inspect(op.get_bind()).get_columns("team_roles")]
         with op.batch_alter_table("team_roles") as batch:
             if "description" not in cols:
                 batch.add_column(sa.Column("description", sa.String(length=255), nullable=True))
+            if "icon" not in cols:
+                batch.add_column(sa.Column("icon", sa.String(length=32), nullable=True))
             if "is_admin" not in cols:
                 batch.add_column(
                     sa.Column("is_admin", sa.Boolean(), nullable=False, server_default=sa.false())
                 )
+
+    # 1b. roles Spalten ergänzen (color, icon) für Panel-Rollen
+    if "roles" in tables:
+        role_cols = [c["name"] for c in sa.inspect(op.get_bind()).get_columns("roles")]
+        with op.batch_alter_table("roles") as batch:
+            if "color" not in role_cols:
+                batch.add_column(
+                    sa.Column("color", sa.String(length=16), nullable=False, server_default="#3b82f6")
+                )
+            if "icon" not in role_cols:
+                batch.add_column(sa.Column("icon", sa.String(length=32), nullable=True))
 
     # 2. team_role_permissions Tabelle anlegen
     if "team_role_permissions" not in tables:

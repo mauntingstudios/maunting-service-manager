@@ -245,20 +245,27 @@ def set_server_permissions(
 
 
 def create_role(
-    db: Session, actor: User, name: str, description: str | None, keys: list[str], commit: bool = True
+    db: Session,
+    actor: User,
+    name: str,
+    description: str | None,
+    keys: list[str],
+    color: str = "#3b82f6",
+    icon: str | None = None,
+    commit: bool = True,
 ) -> Role:
     if role_service.get_role_by_name(db, name):
         raise RechteFehler(400, "Name bereits vergeben")
     ensure_no_role_escalation(db, actor, keys)
     try:
-        role = role_service.create_role(db, name, description, keys, commit)
+        role = role_service.create_role(db, name, description, keys, color=color, icon=icon, commit=commit)
         audit_service.record_privileged_action(
             db,
             user_id=actor.id,
             action="roles.create",
             target_type="role",
             target_id=role.id,
-            details={"name": role.name, "permissions": keys or []},
+            details={"name": role.name, "permissions": keys or [], "color": color, "icon": icon},
             commit=commit,
         )
     except ValueError as e:
@@ -273,6 +280,8 @@ def update_role(
     name: str | None,
     description: str | None,
     keys: list[str] | None,
+    color: str | None = None,
+    icon: str | None = None,
     commit: bool = True,
 ) -> Role:
     role = role_service.get_role(db, role_id)
@@ -293,7 +302,9 @@ def update_role(
         )
     ensure_no_role_escalation(db, actor, keys)
     try:
-        role = role_service.update_role(db, role, name, description, keys, commit)
+        role = role_service.update_role(
+            db, role, name, description, keys, color=color, icon=icon, commit=commit
+        )
         audit_service.record_privileged_action(
             db,
             user_id=actor.id,
@@ -303,6 +314,8 @@ def update_role(
             details={
                 "name": role.name,
                 "permissions": keys if keys is not None else "[unchanged]",
+                "color": color,
+                "icon": icon,
             },
             commit=commit,
         )

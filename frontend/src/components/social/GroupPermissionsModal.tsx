@@ -6,10 +6,13 @@ import {
   Button,
   Badge,
   Avatar,
+  ColorPicker,
   Dropdown,
+  IconPicker,
   Input,
   Textarea,
   Kurzinfo,
+  RoleBadge,
   type DropdownOption,
   RechteAbschnitte,
   type RechteAbschnittDefinition,
@@ -183,7 +186,13 @@ const ROLE_OPTION_IDS = ['admin', 'moderator', 'member'] as const
 
 interface GroupRoleFormProps {
   initial: GroupRoleDefinition | null
-  onSubmit: (name: string, description: string, permissions: string[]) => Promise<void>
+  onSubmit: (
+    name: string,
+    description: string,
+    permissions: string[],
+    color?: string,
+    icon?: string,
+  ) => Promise<void>
   onCancel: () => void
   disabled?: boolean
 }
@@ -203,6 +212,30 @@ function GroupRoleForm({ initial, onSubmit, onCancel, disabled }: GroupRoleFormP
    */
   const [name, setName] = useState(
     initial ? rollentext(initial.name, initial.is_system, t) : '',
+  )
+  const [color, setColor] = useState(
+    initial?.color ||
+      (initial?.id === 'owner'
+        ? '#f59e0b'
+        : initial?.id === 'admin'
+        ? '#f43f5e'
+        : initial?.id === 'moderator'
+        ? '#3b82f6'
+        : initial?.id === 'member'
+        ? '#10b981'
+        : '#3b82f6'),
+  )
+  const [icon, setIcon] = useState<string | null>(
+    initial?.icon ||
+      (initial?.id === 'owner'
+        ? 'crown'
+        : initial?.id === 'admin'
+        ? 'shield'
+        : initial?.id === 'moderator'
+        ? 'shield-check'
+        : initial?.id === 'member'
+        ? 'user-check'
+        : null),
   )
   const [description, setDescription] = useState(
     initial
@@ -243,7 +276,13 @@ function GroupRoleForm({ initial, onSubmit, onCancel, disabled }: GroupRoleFormP
     if (!name.trim()) return
     setSaving(true)
     try {
-      await onSubmit(name.trim(), description.trim(), Array.from(selectedPerms))
+      await onSubmit(
+        name.trim(),
+        description.trim(),
+        Array.from(selectedPerms),
+        color,
+        icon || undefined,
+      )
     } finally {
       setSaving(false)
     }
@@ -293,17 +332,39 @@ function GroupRoleForm({ initial, onSubmit, onCancel, disabled }: GroupRoleFormP
         </div>
         <div>
           <label className="block text-xs font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">
-            {t('social.groupRoles.descLabel')}
+            Farbe
           </label>
-          <Input
-            type="text"
-            value={description}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)}
-            placeholder={t('social.groupRoles.descPlaceholder')}
+          <ColorPicker
+            value={color}
+            onChange={setColor}
             disabled={disabled}
-            className="text-xs h-9"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">
+          Rollen-Icon
+        </label>
+        <IconPicker
+          value={icon}
+          onChange={setIcon}
+          disabled={disabled}
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">
+          {t('social.groupRoles.descLabel')}
+        </label>
+        <Input
+          type="text"
+          value={description}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)}
+          placeholder={t('social.groupRoles.descPlaceholder')}
+          disabled={disabled}
+          className="text-xs h-9"
+        />
       </div>
 
       {/* Permissions Picker */}
@@ -462,6 +523,8 @@ export function GroupPermissionsModal({
         description: eigen.beschreibung || vorlage.description,
         description_is_key: !eigen.beschreibung,
         permissions: eigen.rechte,
+        color: eigen.color || vorlage.color,
+        icon: eigen.icon || vorlage.icon,
       }
     })
     const eigene = eigeneRollen
@@ -472,6 +535,8 @@ export function GroupPermissionsModal({
         description: r.beschreibung,
         is_system: false,
         permissions: r.rechte,
+        color: r.color || '#3b82f6',
+        icon: r.icon,
       }))
     return [...system, ...eigene]
   }, [eigeneRollen])
@@ -859,7 +924,13 @@ export function GroupPermissionsModal({
     }
   }
 
-  const handleCreateRole = async (name: string, description: string, permissions: string[]) => {
+  const handleCreateRole = async (
+    name: string,
+    description: string,
+    permissions: string[],
+    color?: string,
+    icon?: string,
+  ) => {
     // Zufällig statt fortlaufend: zwei Geräte, die gleichzeitig eine Rolle
     // anlegen, dürfen sich keine Kennung teilen — sonst stünde die eine Rolle
     // in der Zuordnung der anderen.
@@ -869,7 +940,7 @@ export function GroupPermissionsModal({
         ...vorher,
         rollen: [
           ...vorher.rollen,
-          { id, name, beschreibung: description, rechte: permissions },
+          { id, name, beschreibung: description, rechte: permissions, color, icon },
         ],
       }),
       t('social.groupRoles.created', { name }),
@@ -885,7 +956,9 @@ export function GroupPermissionsModal({
     role: GroupRoleDefinition,
     name: string,
     description: string,
-    permissions: string[]
+    permissions: string[],
+    color?: string,
+    icon?: string,
   ) => {
     // Eine Systemrolle hat noch keinen Eintrag im Block, solange sie unverändert
     // ist. Die erste Änderung legt ihn an — unter derselben Kennung, damit die
@@ -910,6 +983,8 @@ export function GroupPermissionsModal({
           name: role.is_system ? role.id : name,
           beschreibung,
           rechte: permissions,
+          color,
+          icon,
         }
         return {
           ...vorher,
@@ -1351,26 +1426,36 @@ export function GroupPermissionsModal({
                               )}
                             </div>
                             <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <Badge
-                                variant={
+                              <RoleBadge
+                                name={
                                   isMemberOwner
-                                    ? 'warning'
+                                    ? t('social.groupRoles.system.owner.name')
                                     : member.role === 'admin'
-                                    ? 'info'
+                                    ? t('social.groupRoles.system.admin.name')
                                     : member.role === 'moderator'
-                                    ? 'default'
-                                    : 'default'
+                                    ? t('social.groupRoles.system.moderator.name')
+                                    : t('social.groupRoles.system.member.name')
                                 }
-                                className="text-label-sm py-0 px-2 font-medium"
-                              >
-                                {isMemberOwner
-                                  ? t('social.groupRoles.system.owner.name')
-                                  : member.role === 'admin'
-                                  ? t('social.groupRoles.system.admin.name')
-                                  : member.role === 'moderator'
-                                  ? t('social.groupRoles.system.moderator.name')
-                                  : t('social.groupRoles.system.member.name')}
-                              </Badge>
+                                color={
+                                  isMemberOwner
+                                    ? '#f59e0b'
+                                    : member.role === 'admin'
+                                    ? '#f43f5e'
+                                    : member.role === 'moderator'
+                                    ? '#3b82f6'
+                                    : '#10b981'
+                                }
+                                icon={
+                                  isMemberOwner
+                                    ? 'crown'
+                                    : member.role === 'admin'
+                                    ? 'shield'
+                                    : member.role === 'moderator'
+                                    ? 'shield-check'
+                                    : 'user-check'
+                                }
+                                size="sm"
+                              />
                             </div>
                             {/*
                               Die eigenen Rollen dieser Gruppe. Anklickbar für
@@ -1386,12 +1471,13 @@ export function GroupPermissionsModal({
                                   )
                                   if (!canEditThisMember) {
                                     return traegt ? (
-                                      <span
+                                      <RoleBadge
                                         key={`mem-rolle-${member.user_id}-${rolle.id}`}
-                                        className="text-label-sm px-2 py-0.5 rounded-md bg-primary/15 text-primary font-semibold"
-                                      >
-                                        {rolle.name}
-                                      </span>
+                                        name={rolle.name}
+                                        color={rolle.color}
+                                        icon={rolle.icon}
+                                        size="sm"
+                                      />
                                     ) : null
                                   }
                                   return (
@@ -1542,7 +1628,7 @@ export function GroupPermissionsModal({
               {editingRole && (
                 <GroupRoleForm
                   initial={editingRole}
-                  onSubmit={(n, d, p) => handleUpdateRole(editingRole, n, d, p)}
+                  onSubmit={(n, d, p, c, i) => handleUpdateRole(editingRole, n, d, p, c, i)}
                   onCancel={() => setEditingRole(null)}
                   disabled={rollenSpeichern}
                 />
@@ -1560,14 +1646,12 @@ export function GroupPermissionsModal({
                       {/* Top Row: Role Name & Badges + Action Buttons */}
                       <div className="flex items-center justify-between gap-3 flex-wrap">
                         <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
-                          {r.is_system ? (
-                            <Shield className="w-4 h-4 text-status-warning shrink-0" />
-                          ) : (
-                            <Shield className="w-4 h-4 text-primary shrink-0" />
-                          )}
-                          <span className="text-xs sm:text-sm font-bold text-on-surface truncate">
-                            {rollentext(r.name, r.is_system, t)}
-                          </span>
+                          <RoleBadge
+                            name={rollentext(r.name, r.is_system, t)}
+                            color={r.color}
+                            icon={r.icon}
+                            size="md"
+                          />
                           {r.is_system ? (
                             <span className="text-label-sm px-2 py-0.5 rounded-md bg-status-warning/15 text-status-warning font-semibold shrink-0">
                               {t('social.groupRoles.badgeSystem')}

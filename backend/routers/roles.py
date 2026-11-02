@@ -20,6 +20,8 @@ def _to_response(db: Session, role) -> RoleResponse:
         id=role.id,
         name=role.name,
         description=role.description,
+        color=getattr(role, "color", None) or "#3b82f6",
+        icon=getattr(role, "icon", None),
         is_system=role.is_system,
         permissions=role_service.role_permission_keys(db, role.id),
         created_at=role.created_at,
@@ -70,7 +72,13 @@ def create_role(
 ) -> RoleResponse:
     try:
         role = rechtevergabe_service.create_role(
-            db, actor, req.name, req.description, req.permissions
+            db,
+            actor,
+            req.name,
+            req.description,
+            req.permissions,
+            color=req.color,
+            icon=req.icon,
         )
     except rechtevergabe_service.RechteFehler as fehler:
         raise _http(fehler) from None
@@ -87,7 +95,14 @@ def update_role(
 ) -> RoleResponse:
     try:
         role = rechtevergabe_service.update_role(
-            db, actor, role_id, req.name, req.description, req.permissions
+            db,
+            actor,
+            role_id,
+            req.name,
+            req.description,
+            req.permissions,
+            color=req.color,
+            icon=req.icon,
         )
     except rechtevergabe_service.RechteFehler as fehler:
         raise _http(fehler) from None

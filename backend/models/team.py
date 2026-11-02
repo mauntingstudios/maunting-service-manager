@@ -130,6 +130,7 @@ class TeamRole(Base):
     name: Mapped[str] = mapped_column(String(32), nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     color: Mapped[str] = mapped_column(String(16), default="#3b82f6", nullable=False)
+    icon: Mapped[str | None] = mapped_column(String(32), nullable=True)
     can_access_vault: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     can_manage_skills: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_manage_memory: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -50,6 +50,7 @@ class TeamRoleWrite(BaseModel):
     name: str = Field(min_length=2, max_length=32)
     description: str | None = Field(default=None, max_length=255)
     color: str = Field(default="#3b82f6", max_length=16)
+    icon: str | None = Field(default=None, max_length=32)
     can_access_vault: bool = True
     can_manage_skills: bool = False
     can_manage_memory: bool = False
@@ -65,6 +66,7 @@ class TeamRoleResponse(BaseModel):
     name: str
     description: str | None = None
     color: str
+    icon: str | None = None
     can_access_vault: bool
     can_manage_skills: bool
     can_manage_memory: bool

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Shield, Trash2, Pencil, X } from 'lucide-react'
+import { Plus, Trash2, Pencil, X } from 'lucide-react'
 import { rbacApi } from '@/api/rbac'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
@@ -8,7 +8,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import type { PermissionCatalog, Role } from '@/types/permissions'
 import { PermissionEditor } from '@/Singra/UI/PermissionEditor'
 import { PageHeader } from '@/Singra/UI/PageHeader'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, ColorPicker, IconPicker, Kurzinfo, RoleBadge } from '@/Singra/UI'
 
 import { Spinner } from '@/components/ui/Spinner'
 /**
@@ -39,7 +39,13 @@ export const ROLLENNAME_MUSTER = '^[a-zA-Z0-9_\\-]+$'
 interface RoleFormProps {
   catalog: PermissionCatalog
   initial: Role | null
-  onSubmit: (name: string, description: string | null, permissions: string[]) => Promise<void>
+  onSubmit: (
+    name: string,
+    description: string | null,
+    permissions: string[],
+    color?: string,
+    icon?: string | null,
+  ) => Promise<void>
   onCancel: () => void
 }
 
@@ -48,6 +54,8 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
   const isAdminRole = initial?.is_system && initial?.name === 'admin'
   const [name, setName] = useState(initial?.name ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
+  const [color, setColor] = useState(initial?.color || '#3b82f6')
+  const [icon, setIcon] = useState<string | null>(initial?.icon || null)
   const [selected, setSelected] = useState<Set<string>>(
     new Set(initial?.permissions ?? []),
   )
@@ -62,7 +70,13 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
     e.preventDefault()
     setSaving(true)
     try {
-      await onSubmit(name.trim(), description.trim() || null, Array.from(selected).sort())
+      await onSubmit(
+        name.trim(),
+        description.trim() || null,
+        Array.from(selected).sort(),
+        color,
+        icon || null,
+      )
     } finally {
       setSaving(false)
     }
@@ -93,17 +107,39 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
         </div>
         <div>
           <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-            {t('roles.description')}
+            Farbe
           </label>
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder={t('roles.descriptionPlaceholder')}
-            className="msm-input"
-            maxLength={255}
+          <ColorPicker
+            value={color}
+            onChange={setColor}
+            disabled={saving}
           />
         </div>
+      </div>
+
+      <div>
+        <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+          Rollen-Icon
+        </label>
+        <IconPicker
+          value={icon}
+          onChange={setIcon}
+          disabled={saving}
+        />
+      </div>
+
+      <div>
+        <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+          {t('roles.description')}
+        </label>
+        <input
+          type="text"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder={t('roles.descriptionPlaceholder')}
+          className="msm-input"
+          maxLength={255}
+        />
       </div>
 
       <div className="space-y-2">
@@ -159,9 +195,15 @@ export function Roles() {
     void refresh()
   }, [])
 
-  const handleCreate = async (name: string, description: string | null, permissions: string[]) => {
+  const handleCreate = async (
+    name: string,
+    description: string | null,
+    permissions: string[],
+    color?: string,
+    icon?: string | null,
+  ) => {
     try {
-      await rbacApi.createRole({ name, description, permissions })
+      await rbacApi.createRole({ name, description, permissions, color, icon })
       toast.success(t('roles.created'))
       setCreating(false)
       await refresh()
@@ -175,12 +217,16 @@ export function Roles() {
     name: string,
     description: string | null,
     permissions: string[],
+    color?: string,
+    icon?: string | null,
   ) => {
     try {
       await rbacApi.updateRole(role.id, {
         name: role.is_system ? null : name,
         description,
         permissions,
+        color,
+        icon,
       })
       toast.success(t('roles.updated'))
       setEditing(null)
@@ -272,12 +318,12 @@ export function Roles() {
               <tr key={role.id} className="border-b border-outline-variant/30 hover:bg-surface-container-high/50 transition-colors">
                 <td className="p-4">
                   <div className="flex items-center gap-2">
-                    {role.is_system && <Shield className="w-4 h-4 text-status-warning" />}
-                    <span className="font-body-md text-on-surface">
-                      {role.is_system
-                        ? t(`roles.systemNames.${role.name}`, { defaultValue: role.name })
-                        : role.name}
-                    </span>
+                    <RoleBadge
+                      name={role.is_system ? t(`roles.systemNames.${role.name}`, { defaultValue: role.name }) : role.name}
+                      color={role.color}
+                      icon={role.icon}
+                      size="sm"
+                    />
                     {role.is_system ? (
                       <span className="text-xs px-1.5 py-0.5 rounded bg-status-warning/10 text-status-warning border border-status-warning/30">
                         {t('roles.system')}
@@ -341,7 +387,7 @@ export function Roles() {
           <RoleForm
             catalog={catalog}
             initial={editing}
-            onSubmit={(n, d, p) => handleUpdate(editing, n, d, p)}
+            onSubmit={(n, d, p, c, i) => handleUpdate(editing, n, d, p, c, i)}
             onCancel={() => setEditing(null)}
           />
         </div>

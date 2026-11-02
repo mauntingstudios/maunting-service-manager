@@ -110,3 +110,13 @@ export {
   type ThirdPartyPrivacyDialogProps,
   type DrittanbieterHinweisStatus,
 } from './ThirdPartyPrivacyDialog'
+export { ColorPicker, ROLE_COLOR_PRESETS, type ColorPickerProps } from './ColorPicker'
+export {
+  IconPicker,
+  ROLE_ICONS,
+  getRoleIconComponent,
+  renderRoleIcon,
+  type IconPickerProps,
+  type RoleIconDef,
+} from './IconPicker'
+export { RoleBadge, type RoleBadgeProps } from './RoleBadge'

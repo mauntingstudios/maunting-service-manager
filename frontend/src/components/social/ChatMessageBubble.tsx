@@ -18,7 +18,7 @@
  * eine Geste allein findet niemand — es braucht beide.
  */
 
-import React, { useRef, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -44,7 +44,7 @@ import {
   Trash2,
 } from 'lucide-react'
 
-import { Avatar, Button, Kurzinfo } from '@/Singra/UI'
+import { Avatar, Button, Kurzinfo, RoleBadge } from '@/Singra/UI'
 import {
   ChatMediaFile,
   ChatMediaImage,
@@ -71,6 +71,12 @@ import {
 import { reaktionsknoepfe, type Reaktionen } from '@/services/reaktionen'
 import { hervorzuhebendeWorte, teileText, type Textstueck } from '@/services/erwaehnungen'
 import type { ChatGroupItem } from '@/api/social'
+import type { Gruppenzustand } from '@/services/gruppenKonfig'
+import {
+  ermittleMitgliedRolle,
+  rollentext,
+  SYSTEM_ROLLEN_IDS,
+} from '@/services/gruppenRollen'
 import type { AugenblickMarke, RettungsMarke } from '@/services/funkenService'
 // Die Stecknadel ist rot, weil eine Stecknadel rot ist — kein Fehler, keine
 // Gefahr. Für so etwas gibt es keinen Status-Token, und genau dafür ist die
@@ -243,6 +249,7 @@ export interface BlasenKontext {
   michGemeint?: boolean
   /** Hervorgehoben, weil gerade hierher gesprungen oder gesucht wurde. */
   hervorgehoben?: boolean
+  gruppenzustand?: Gruppenzustand | null
 }
 
 /** Der Auswahlmodus: aus der Kopfzeile wird eine Aktionsleiste. */
@@ -361,7 +368,13 @@ function ChatMessageBubbleContent({
     importedAttachmentIds,
     michGemeint,
     hervorgehoben,
+    gruppenzustand,
   } = kontext
+
+  const senderRolle = useMemo(() => {
+    if (!activeGroup) return null
+    return ermittleMitgliedRolle(activeGroup, msg.senderId, gruppenzustand)
+  }, [activeGroup, msg.senderId, gruppenzustand])
 
   /**
    * Am Telefon aufgeklappt, am Rechner beim Darüberfahren.
@@ -521,8 +534,18 @@ function ChatMessageBubbleContent({
       >
         {/* Group sender name if in group and not self */}
         {activeGroup && !msg.isSelf && (
-          <div className="text-label-sm font-bold text-tertiary">
-            {msg.senderName || t('messenger.userNumbered', { id: msg.senderId })}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-label-sm font-bold text-tertiary">
+              {msg.senderName || t('messenger.userNumbered', { id: msg.senderId })}
+            </span>
+            {senderRolle && (
+              <RoleBadge
+                name={rollentext(senderRolle.name, SYSTEM_ROLLEN_IDS.has(senderRolle.id), t)}
+                color={senderRolle.color}
+                icon={senderRolle.icon}
+                size="sm"
+              />
+            )}
           </div>
         )}
 

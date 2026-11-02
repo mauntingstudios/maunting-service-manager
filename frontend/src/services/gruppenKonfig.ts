@@ -51,6 +51,8 @@ export interface GruppenRolle {
   name: string
   beschreibung: string
   rechte: string[]
+  color?: string
+  icon?: string
 }
 
 export interface Gruppenzustand {

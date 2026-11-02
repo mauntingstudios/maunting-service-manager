@@ -26,6 +26,8 @@ export interface Role {
   id: number
   name: string
   description: string | null
+  color?: string
+  icon?: string | null
   is_system: boolean
   permissions: string[]
   created_at: string
@@ -34,12 +36,16 @@ export interface Role {
 export interface RoleCreate {
   name: string
   description?: string | null
+  color?: string
+  icon?: string | null
   permissions: string[]
 }
 
 export interface RoleUpdate {
   name?: string | null
   description?: string | null
+  color?: string | null
+  icon?: string | null
   permissions?: string[] | null
 }
 

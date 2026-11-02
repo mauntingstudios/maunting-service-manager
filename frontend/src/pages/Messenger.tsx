@@ -2310,6 +2310,7 @@ function MessengerSeite() {
               // und die Regel deshalb nicht durchsetzen.
               michGemeint: binIchGemeint(msg, currentUserId, activeGroup),
               hervorgehoben: Boolean(msg.clientUuid && hervorgehoben === msg.clientUuid),
+              gruppenzustand: gruppenRollenZustand,
             }}
             ton={ton}
             aktionen={blasenAktionen}

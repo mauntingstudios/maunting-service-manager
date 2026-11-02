@@ -128,12 +128,24 @@ def _replace_role_permissions(db: Session, role_id: int, keys: list[str], commit
 
 
 def create_role(
-    db: Session, name: str, description: str | None, keys: list[str], commit: bool = True
+    db: Session,
+    name: str,
+    description: str | None,
+    keys: list[str],
+    color: str = "#3b82f6",
+    icon: str | None = None,
+    commit: bool = True,
 ) -> Role:
     """``commit=False`` flusht nur: der Aufrufer schreibt mit, was dazugehoert (KI-Karte, AGENTS 93)."""
     if name in SYSTEM_ROLE_NAMES:
         raise ValueError("Reservierter Rollenname")
-    role = Role(name=name, description=description, is_system=False)
+    role = Role(
+        name=name,
+        description=description,
+        color=color or "#3b82f6",
+        icon=icon,
+        is_system=False,
+    )
     db.add(role)
     db.commit() if commit else db.flush()
     db.refresh(role)
@@ -148,6 +160,8 @@ def update_role(
     name: str | None,
     description: str | None,
     keys: list[str] | None,
+    color: str | None = None,
+    icon: str | None = None,
     commit: bool = True,
 ) -> Role:
     """is_system-Rollen: Name und is_system unveraenderlich. Permissions der
@@ -160,6 +174,10 @@ def update_role(
         role.name = name
     if description is not None:
         role.description = description
+    if color is not None:
+        role.color = color
+    if icon is not None:
+        role.icon = icon if icon != "" else None
     db.commit() if commit else db.flush()
 
     if keys is not None and not (role.is_system and role.name == SYSTEM_ROLE_ADMIN):
@@ -190,22 +208,36 @@ def ensure_system_roles(db: Session) -> tuple[Role, Role]:
         admin = Role(
             name=SYSTEM_ROLE_ADMIN,
             description="Vollzugriff auf alle Funktionen",
+            color="#ef4444",
+            icon="crown",
             is_system=True,
         )
         db.add(admin)
         db.commit()
         db.refresh(admin)
+    else:
+        if not getattr(admin, "icon", None):
+            admin.icon = "crown"
+            admin.color = "#ef4444"
+            db.commit()
 
     user = get_role_by_name(db, SYSTEM_ROLE_USER)
     if user is None:
         user = Role(
             name=SYSTEM_ROLE_USER,
             description="Standard-Rolle ohne globale Rechte; Server-Zugriffe via Delegation",
+            color="#10b981",
+            icon="user-check",
             is_system=True,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
+    else:
+        if not getattr(user, "icon", None):
+            user.icon = "user-check"
+            user.color = "#10b981"
+            db.commit()
 
     # admin-Rolle auf den aktuellen Katalog syncen
     _sync_role_permissions(db, admin.id, admin_role_keys())
