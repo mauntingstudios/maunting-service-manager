@@ -7,6 +7,7 @@ import { Button, Dropdown, NumberStepper, Checkbox, Kurzinfo } from '@/Singra/UI
 import { api } from '@/api/client'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
+import { clientErkennen } from '@/services/praesenz/sitzung'
 import type { BlueprintListEntry } from '@/types'
 import {
   changeBlueprintSource,
@@ -33,6 +34,16 @@ import {
 } from './BlueprintBuilderEditors'
 
 export type BlueprintBuilderMode = 'create' | 'edit' | 'clone'
+
+/**
+ * Die Web-Hülle hat eine feste Seitenleiste, die sichtbar bleiben soll; dort
+ * beginnt das Studio erst daneben. In den Apps (MSS, Pontis) gibt es keine
+ * Seitenleiste — ohne diese Unterscheidung bliebe links ein 256-px-Streifen
+ * der darunterliegenden Seite stehen.
+ */
+export function studioUeberlagerung(client: 'web' | 'mss' | 'pontis'): string {
+  return `fixed inset-0 z-50 flex min-h-0 min-w-0 items-stretch bg-black/70 backdrop-blur-sm${client === 'web' ? ' lg:pl-64' : ''}`
+}
 
 interface BlueprintBuilderProps {
   mode: BlueprintBuilderMode
@@ -945,7 +956,7 @@ export function BlueprintBuilder({ mode, sourceId, entries, onClose, onSaved }: 
   )
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex min-h-0 min-w-0 items-stretch bg-black/70 backdrop-blur-sm lg:pl-64" role="dialog" aria-modal="true" aria-labelledby="blueprint-builder-title" aria-describedby="blueprint-builder-description" data-testid="blueprint-builder-overlay">
+    <div className={studioUeberlagerung(clientErkennen())} role="dialog" aria-modal="true" aria-labelledby="blueprint-builder-title" aria-describedby="blueprint-builder-description" data-testid="blueprint-builder-overlay">
       <div className="flex h-[100dvh] max-h-[100dvh] min-w-0 w-full flex-col overflow-hidden border-l border-outline-variant bg-background shadow-panel-strong" data-testid="blueprint-builder-panel">
         <header className="flex min-w-0 shrink-0 items-start gap-3 border-b border-outline-variant/60 px-4 py-3 md:items-center md:gap-4 md:px-6">
           <div className="min-w-0 flex-1">

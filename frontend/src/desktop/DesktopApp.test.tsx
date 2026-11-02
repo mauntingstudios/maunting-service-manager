@@ -52,6 +52,44 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 vi.mock('@/pages/Ai', () => ({
   Ai: () => <div data-testid="ki-seite" />,
 }))
+// Die Server-Verwaltung sind die echten Panel-Seiten; hier zaehlt nur, welche
+// davon unter welchem Pfad erscheint.
+vi.mock('@/pages/Dashboard', () => ({
+  Dashboard: () => <div data-testid="dashboard-seite" />,
+}))
+vi.mock('@/pages/Servers', () => ({
+  Servers: () => <div data-testid="server-seite" />,
+}))
+vi.mock('@/pages/ServerDetail', () => ({
+  ServerDetail: () => <div data-testid="server-detail-seite" />,
+}))
+vi.mock('@/pages/Users', () => ({
+  Users: () => <div data-testid="benutzer-seite" />,
+}))
+vi.mock('@/pages/Roles', () => ({
+  Roles: () => <div data-testid="rollen-seite" />,
+}))
+vi.mock('@/pages/Blueprints', () => ({
+  Blueprints: () => <div data-testid="blueprints-seite" />,
+}))
+vi.mock('@/pages/AdminNodes', () => ({
+  AdminNodes: () => <div data-testid="nodes-seite" />,
+}))
+vi.mock('@/pages/AdminAudit', () => ({
+  AdminAudit: () => <div data-testid="audit-seite" />,
+}))
+vi.mock('@/pages/Settings', () => ({
+  Settings: () => <div data-testid="panel-einstellungen-seite" />,
+}))
+vi.mock('@/pages/PanelBackups', () => ({
+  PanelBackups: () => <div data-testid="panel-backups-seite" />,
+}))
+vi.mock('@/pages/PanelDatabase', () => ({
+  PanelDatabase: () => <div data-testid="panel-datenbank-seite" />,
+}))
+vi.mock('@/pages/Docs', () => ({
+  Docs: () => <div data-testid="hilfe-seite" />,
+}))
 vi.mock('@/pages/Messenger', () => ({
   Messenger: () => <div data-testid="messenger-seite" />,
 }))
@@ -196,10 +234,10 @@ describe('DesktopApp', () => {
 
     render(<DesktopApp />)
     await waitFor(() => {
-      expect(screen.getByTestId('ki-seite')).toBeInTheDocument()
+      // Wie im Web beginnt die App ohne gemerkte Ansicht in der Übersicht.
+      expect(screen.getByTestId('dashboard-seite')).toBeInTheDocument()
     })
-    // Der Name der KI steht in der Kopfleiste.
-    expect(screen.getByRole('heading', { level: 1, name: 'Singra' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: i18n.t('nav.dashboard') })).toBeInTheDocument()
   })
 
   it('ohne Sandbox-Ordner bietet die App genau diesen Schritt noch einmal an', async () => {
@@ -334,7 +372,7 @@ describe('DesktopApp', () => {
 
     render(<DesktopApp />)
     await waitFor(() => {
-      expect(screen.getByTestId('ki-seite')).toBeInTheDocument()
+      expect(screen.getByTestId('dashboard-seite')).toBeInTheDocument()
     })
     // Derselbe Aufruf wie der Eintrag im Profilmenue.
     await act(async () => {
@@ -419,6 +457,8 @@ describe('DesktopApp', () => {
       }),
     )
 
+    // Die App startet in der Uebersicht; der Hinweis haengt am KI-Chat.
+    localStorage.setItem(LETZTE_ROUTE_KEY, '/ai')
     render(<DesktopApp />)
     await waitFor(() => {
       expect(screen.getByText(i18n.t('mss.einstellungen.banner.computerUseHinweis'))).toBeInTheDocument()
@@ -518,7 +558,7 @@ describe('DesktopApp', () => {
     render(<DesktopApp />)
 
     await waitFor(() => {
-      expect(screen.getByTestId('ki-seite')).toBeInTheDocument()
+      expect(screen.getByTestId('dashboard-seite')).toBeInTheDocument()
     })
     expect(invokeMock).not.toHaveBeenCalledWith('update_installieren')
     expect(invokeMock).not.toHaveBeenCalledWith('app_neu_starten')
@@ -624,7 +664,7 @@ describe('DesktopApp', () => {
     render(<DesktopApp />)
 
     await waitFor(() => {
-      expect(screen.getByTestId('ki-seite')).toBeInTheDocument()
+      expect(screen.getByTestId('dashboard-seite')).toBeInTheDocument()
       expect(eventListeners.get('updater:bereit')?.size).toBeGreaterThan(0)
     })
 
@@ -773,6 +813,177 @@ describe('DesktopApp', () => {
     expect(blase).toHaveClass('xl:!hidden')
   })
 
+  describe('Server-Verwaltung', () => {
+    /** Antworten, die eine angemeldete Sitzung mit Panel-Rechten nachstellen. */
+    function panelFetch(me: Record<string, unknown>) {
+      return vi.fn((eingabe: RequestInfo | URL) => {
+        const url = String(eingabe)
+        const json = (daten: unknown) =>
+          Promise.resolve(
+            new Response(JSON.stringify(daten), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          )
+        if (url.includes('/auth/refresh')) return json({ access_token: 'a', refresh_token: 'r' })
+        if (url.includes('/auth/me')) return json(BENUTZER)
+        if (url.includes('/permissions/me')) return json(me)
+        return json({})
+      })
+    }
+
+    const BETREIBER = {
+      is_owner: true,
+      role_id: 1,
+      role_name: 'Owner',
+      global_keys: [],
+      server_keys: {},
+    }
+
+    it('öffnet die Übersicht und führt über Reiter und Mehr-Menü zu den Panel-Seiten', async () => {
+      konfigMock({
+        backend_url: 'https://api.example.com',
+        sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
+        eingerichtet: true,
+      })
+      vi.stubGlobal('fetch', panelFetch(BETREIBER))
+
+      render(<DesktopApp />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('dashboard-seite')).toBeInTheDocument()
+      })
+      expect(screen.getByRole('heading', { level: 1, name: i18n.t('nav.dashboard') })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('tab', { name: i18n.t('nav.servers') }))
+      await waitFor(() => {
+        expect(screen.getByTestId('server-seite')).toBeInTheDocument()
+      })
+      expect(screen.getByRole('heading', { level: 1, name: i18n.t('nav.servers') })).toBeInTheDocument()
+
+      // Administration und Panel liegen im „Mehr“-Menü.
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.dashboard.mehr') }))
+      const benutzer = await screen.findByRole('menuitem', { name: i18n.t('nav.users') })
+      fireEvent.click(benutzer)
+      await waitFor(() => {
+        expect(screen.getByTestId('benutzer-seite')).toBeInTheDocument()
+      })
+      expect(screen.getByRole('heading', { level: 1, name: i18n.t('nav.users') })).toBeInTheDocument()
+    })
+
+    it('öffnet eine gemerkte Server-Detailseite und führt mit dem Zurück-Pfeil zur Liste', async () => {
+      localStorage.setItem(LETZTE_ROUTE_KEY, '/servers/7')
+      localStorage.setItem('msm_cached_user', JSON.stringify(BENUTZER))
+      useAuthStore.setState({ user: BENUTZER, isAuthenticated: true })
+      konfigMock({
+        backend_url: 'https://api.example.com',
+        sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
+        eingerichtet: true,
+      })
+      vi.stubGlobal('fetch', panelFetch(BETREIBER))
+
+      render(<DesktopApp />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('server-detail-seite')).toBeInTheDocument()
+      })
+      // Die Kopfzeile nennt die Liste, aus der die Seite kommt.
+      expect(screen.getByRole('heading', { level: 1, name: i18n.t('nav.servers') })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('common.back') }))
+      await waitFor(() => {
+        expect(screen.getByTestId('server-seite')).toBeInTheDocument()
+      })
+      expect(screen.queryByRole('button', { name: i18n.t('common.back') })).not.toBeInTheDocument()
+    })
+
+    it('blendet die Server-Verwaltung offline aus dem Menü aus, ohne die offene Seite zu verwerfen', async () => {
+      localStorage.setItem(LETZTE_ROUTE_KEY, '/servers')
+      localStorage.setItem('msm_cached_user', JSON.stringify(BENUTZER))
+      useAuthStore.setState({ user: BENUTZER, isAuthenticated: true })
+      konfigMock({
+        backend_url: 'https://api.example.com',
+        sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
+        eingerichtet: true,
+      })
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.reject(new TypeError('Failed to fetch (Offline / Flugmodus)'))),
+      )
+
+      render(<DesktopApp />)
+
+      await erwarteOffline()
+      // Kein Rauswurf: die offene Seite mit ihren Eingaben bleibt stehen.
+      expect(screen.getByTestId('server-seite')).toBeInTheDocument()
+
+      // Der Einstieg in die Server-Verwaltung ist offline zu.
+      const navigation = screen.getByRole('navigation', { name: i18n.t('mss.app.bereiche') })
+      expect(within(navigation).queryByRole('button', { name: i18n.t('nav.dashboard') })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('Hilfe', () => {
+    function hilfeFetch() {
+      return vi.fn((eingabe: RequestInfo | URL) => {
+        const url = String(eingabe)
+        const json = (daten: unknown) =>
+          Promise.resolve(
+            new Response(JSON.stringify(daten), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          )
+        if (url.includes('/auth/refresh')) return json({ access_token: 'a', refresh_token: 'r' })
+        if (url.includes('/auth/me')) return json(BENUTZER)
+        return json({})
+      })
+    }
+
+    it('zeigt den Hilfe-Reiter hinter Teams und öffnet die Dokumentation', async () => {
+      konfigMock({
+        backend_url: 'https://api.example.com',
+        sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
+        eingerichtet: true,
+      })
+      vi.stubGlobal('fetch', hilfeFetch())
+
+      render(<DesktopApp />)
+
+      const navigation = await screen.findByRole('navigation', { name: i18n.t('mss.app.bereiche') })
+      const hilfe = within(navigation).getByRole('button', { name: i18n.t('nav.docs') })
+      const reiter = within(navigation).getAllByRole('button')
+      const teams = within(navigation).getByRole('button', { name: i18n.t('teams.title') })
+      expect(reiter.indexOf(hilfe)).toBeGreaterThan(reiter.indexOf(teams))
+
+      fireEvent.click(hilfe)
+      await waitFor(() => {
+        expect(screen.getByTestId('hilfe-seite')).toBeInTheDocument()
+      })
+      expect(screen.getByRole('heading', { level: 1, name: i18n.t('nav.docs') })).toBeInTheDocument()
+    })
+
+    it('blendet die Hilfe ohne Netz aus', async () => {
+      localStorage.setItem('msm_cached_user', JSON.stringify(BENUTZER))
+      useAuthStore.setState({ user: BENUTZER, isAuthenticated: true })
+      konfigMock({
+        backend_url: 'https://api.example.com',
+        sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
+        eingerichtet: true,
+      })
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.reject(new TypeError('Failed to fetch (Offline / Flugmodus)'))),
+      )
+
+      render(<DesktopApp />)
+
+      await erwarteOffline()
+      const navigation = screen.getByRole('navigation', { name: i18n.t('mss.app.bereiche') })
+      expect(within(navigation).queryByRole('button', { name: i18n.t('nav.docs') })).not.toBeInTheDocument()
+    })
+  })
+
   describe('Negativtests & Missbrauchsschutz im Offline-Modus', () => {
     it('öffnet beim Start im Offline-Modus die gespeicherte KI-Route statt des Tresors', async () => {
       localStorage.setItem(LETZTE_ROUTE_KEY, '/ai')
@@ -916,6 +1127,8 @@ describe('DesktopApp', () => {
       render(<DesktopApp />)
 
       await erwarteOffline()
+      // Die manipulierte Adresse wird nie geoeffnet: es bleibt bei der Uebersicht.
+      expect(screen.getByTestId('dashboard-seite')).toBeInTheDocument()
       expect(screen.queryByTestId('tresor-seite')).not.toBeInTheDocument()
     })
 
@@ -973,6 +1186,7 @@ describe('DesktopApp', () => {
     })
 
     it('bleibt bei dynamischem Netzwerkverlust in der aktiven KI-Ansicht und zeigt Offline', async () => {
+      localStorage.setItem(LETZTE_ROUTE_KEY, '/ai')
       konfigMock({
         backend_url: 'https://api.example.com',
         sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
@@ -1057,6 +1271,7 @@ describe('DesktopApp', () => {
     })
 
     it('bleibt stabil bei extrem schnellem Wechsel (Flapping) zwischen online und offline Events', async () => {
+      localStorage.setItem(LETZTE_ROUTE_KEY, '/ai')
       konfigMock({
         backend_url: 'https://api.example.com',
         sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
@@ -1192,7 +1407,8 @@ describe('DesktopApp', () => {
       render(<DesktopApp />)
 
       await waitFor(() => {
-        expect(screen.getByTestId('ki-seite')).toBeInTheDocument()
+        // Ein abgeschalteter Chat faellt online auf die Uebersicht zurueck.
+        expect(screen.getByTestId('dashboard-seite')).toBeInTheDocument()
       })
       expect(screen.queryByTestId('messenger-seite')).not.toBeInTheDocument()
       expect(screen.queryByText(i18n.t('mss.app.messenger'))).not.toBeInTheDocument()

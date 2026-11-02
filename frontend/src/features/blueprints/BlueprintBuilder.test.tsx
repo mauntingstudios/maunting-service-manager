@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { BlueprintBuilder } from './BlueprintBuilder'
+import { BlueprintBuilder, studioUeberlagerung } from './BlueprintBuilder'
 import { validateBlueprintDraft, type BlueprintDraft } from './contract'
 import i18n from '@/i18n'
 
@@ -41,6 +41,17 @@ describe('BlueprintBuilder accessibility', () => {
     // Die Symbolknöpfe der Fußleiste nennen sich per aria-label und Kurzinfo, nie per title.
     expect(screen.getByRole('button', { name: 'Zurück' })).toBeInTheDocument()
     expect(document.querySelectorAll('[title]')).toHaveLength(0)
+  })
+
+  it('lässt in den Apps die ganze Fläche frei und in der Web-Hülle die Seitenleiste stehen', () => {
+    // Die Web-Hülle hat links eine feste Seitenleiste; MSS und Pontis nicht.
+    expect(studioUeberlagerung('web')).toContain('lg:pl-64')
+    expect(studioUeberlagerung('mss')).not.toContain('lg:pl-64')
+    expect(studioUeberlagerung('pontis')).not.toContain('lg:pl-64')
+    for (const client of ['web', 'mss', 'pontis'] as const) {
+      expect(studioUeberlagerung(client)).toContain('fixed')
+      expect(studioUeberlagerung(client)).toContain('inset-0')
+    }
   })
 
   it('closes on Escape and returns focus to the opener', async () => {

@@ -8,14 +8,15 @@
  * **echte** KI-Seite des Panels (`pages/Ai`) — Chat, Realtime, Guardian,
  * Aufgaben, Worker — plus die Desktop-Einstellungen.
  *
- * Der Router ist ein MemoryRouter mit Start `/ai`: die Panel-Komponenten
- * navigieren mit `navigate('/ai?ansicht=…')` (Glocke, Guardian, Aufgaben),
- * und genau diese Route gibt es hier. Eine Adressleiste hat das Fenster nicht.
+ * Der Router ist ein MemoryRouter. Er startet in der Server-Übersicht (`/`)
+ * oder in der zuletzt geöffneten Ansicht; die Panel-Komponenten navigieren
+ * mit ihren eigenen Pfaden (`/ai?ansicht=…`, `/servers/:id`), und genau diese
+ * Routen gibt es hier. Eine Adressleiste hat das Fenster nicht.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { listen } from '@tauri-apps/api/event'
-import { Bot, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, Users, WifiOff, X } from 'lucide-react'
+import { ArrowLeft, BookOpen, Bot, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, Users, WifiOff, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
@@ -62,6 +63,9 @@ import { Aufraeumkarte } from './Aufraeumkarte'
 import { DesktopAktionKarte } from './DesktopAktionKarte'
 import { Uebernahmekarte } from './Uebernahmekarte'
 import { Wizard } from './Wizard'
+import { DashboardBereich } from './dashboard/DashboardBereich'
+import { dashboardElternroute, dashboardTitelKey, istDashboardRoute } from './dashboard/dashboardWege'
+import { HilfeBereich, istHilfeRoute } from './hilfe/HilfeBereich'
 import { VaultView } from './vault/VaultView'
 import { kameraBeobachten } from './vault/kameraSicherung'
 import { eingangBeobachten } from './vault/tresorEingang'
@@ -95,6 +99,11 @@ const SPLASH_GESEHEN_KEY = 'mss:splash_gesehen'
 const LETZTE_ROUTE_KEY = 'mss:letzte_route'
 const ERLAUBTE_ROUTEN = ['/ai', '/chat', '/kalender', '/notizen', '/dokumente', '/gedaechtnis', '/tresor', '/teams', '/einstellungen']
 
+/** Bereiche, die die App als letzte Ansicht merkt und beim Start wieder öffnet. */
+function istMerkbareRoute(pathname: string): boolean {
+  return ERLAUBTE_ROUTEN.includes(pathname) || istDashboardRoute(pathname) || istHilfeRoute(pathname)
+}
+
 /**
  * Bereiche, die ohne Panel arbeiten. Die Einstellungen stehen immer darin:
  * Audio, Wake-Word, Hotkeys und Autostart leben auf diesem Gerät, und wer
@@ -123,17 +132,21 @@ function getInitialRoute(offline = false): string {
     // Die zuletzt offene Route bleibt stehen, auch offline. Nur ein
     // abgeschaltetes Modul fällt auf einen erreichbaren Bereich zurück.
     const pfad = gespeichert?.split(/[?#]/)[0] ?? ''
-    if (gespeichert && ERLAUBTE_ROUTEN.includes(pfad)) {
-      if (pfad === '/chat' && !settings.social_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
-      if (pfad === '/kalender' && !settings.calendar_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
-      if (pfad === '/notizen' && !settings.notes_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
-      if (pfad === '/dokumente' && !settings.docs_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
-      if (pfad === '/tresor' && !settings.vault_enabled) return offline ? getFallbackOfflineRoute(settings) : '/ai'
+    if (gespeichert && istMerkbareRoute(pfad)) {
+      // Die Server-Verwaltung braucht das Panel; offline bleibt der lokale Bereich.
+      if (offline && istDashboardRoute(pfad)) return getFallbackOfflineRoute(settings)
+      if (pfad === '/chat' && !settings.social_enabled) return offline ? getFallbackOfflineRoute(settings) : '/'
+      if (pfad === '/kalender' && !settings.calendar_enabled) return offline ? getFallbackOfflineRoute(settings) : '/'
+      if (pfad === '/notizen' && !settings.notes_enabled) return offline ? getFallbackOfflineRoute(settings) : '/'
+      if (pfad === '/dokumente' && !settings.docs_enabled) return offline ? getFallbackOfflineRoute(settings) : '/'
+      if (pfad === '/tresor' && !settings.vault_enabled) return offline ? getFallbackOfflineRoute(settings) : '/'
       if (pfad === '/teams' && offline) return getFallbackOfflineRoute(settings)
       return gespeichert
     }
   } catch {}
-  return offline ? getFallbackOfflineRoute() : '/ai'
+  // Wie im Web beginnt die App in der Übersicht; ohne Panel bleibt es beim
+  // lokalen Bereich.
+  return offline ? getFallbackOfflineRoute() : '/'
 }
 
 export function DesktopApp() {
@@ -636,7 +649,25 @@ export function DesktopApp() {
             </div>
           }
         />
-        <Route path="*" element={<Navigate to={fallbackRoute} replace />} />
+        {/* Server-Verwaltung und Hilfe: dieselben Seiten wie im Panel, nur in
+            der Hülle der App. Der Splat ist nötig, damit die verschachtelten
+            Routen in `DashboardBereich` und `HilfeBereich` greifen;
+            unbekannte Pfade fallen wie bisher auf den erreichbaren Bereich
+            zurück. Eine offene Seite bleibt auch ohne Netz stehen — ein
+            einzelner fehlgeschlagener Abruf darf niemanden samt Eingaben
+            hinauswerfen. */}
+        <Route
+          path="/*"
+          element={
+            <SeitenWeiche
+              konfig={konfig}
+              offeneUebernahme={offeneUebernahme}
+              onKonfigAenderung={ladeKonfigNeu}
+              isOffline={isOffline}
+              fallbackRoute={fallbackRoute}
+            />
+          }
+        />
       </Routes>
     )
   }
@@ -683,7 +714,7 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
   const publicSettings = usePublicSettingsStore()
 
   useEffect(() => {
-    if (ERLAUBTE_ROUTEN.includes(location.pathname) || location.pathname.startsWith('/dokumente/')) {
+    if (istMerkbareRoute(location.pathname) || location.pathname.startsWith('/dokumente/')) {
       try {
         // Mit Suche: der offene Chatkontakt steht in `?kontakt=…` und soll
         // beim nächsten Start nicht verloren gehen.
@@ -696,6 +727,8 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
     const unlisten = listen<string>('mss:navigiere-zu', (event) => {
       if (event.payload) {
         const ziel = event.payload
+        // Die Server-Verwaltung braucht das Panel; offline bleibt sie zu.
+        if (isOffline && istDashboardRoute(ziel.split(/[?#]/)[0])) return
         if (ziel.startsWith('/chat') && !publicSettings.social_enabled) return
         if (ziel.startsWith('/kalender') && !publicSettings.calendar_enabled) return
         if (ziel.startsWith('/notizen') && !publicSettings.notes_enabled) return
@@ -822,6 +855,47 @@ function SprachwacheHaupt() {
 }
 
 /**
+ * Server-Verwaltung, Hilfe oder der Rückfall.
+ *
+ * Der Router-Pfad ist ein Splat (`/*`): nur dann finden die Seiten aus
+ * `pages/` ihre eigenen Unterrouten wie `/servers/:id` oder
+ * `/docs/self-hosting` im Speicherrouter. Alles, was keine Panel-Seite ist,
+ * landet wie bisher im erreichbaren Bereich.
+ */
+function SeitenWeiche({
+  konfig,
+  offeneUebernahme,
+  onKonfigAenderung,
+  isOffline,
+  fallbackRoute,
+}: {
+  konfig: AppKonfig | null
+  offeneUebernahme: string | null
+  onKonfigAenderung?: () => void
+  isOffline?: boolean
+  fallbackRoute: string
+}) {
+  const location = useLocation()
+  const bereich = istHilfeRoute(location.pathname)
+    ? 'hilfe'
+    : istDashboardRoute(location.pathname)
+      ? 'dashboard'
+      : null
+  if (!bereich) {
+    return <Navigate to={fallbackRoute} replace />
+  }
+  return (
+    <Hauptseite
+      bereich={bereich}
+      konfig={konfig}
+      offeneUebernahme={offeneUebernahme}
+      onKonfigAenderung={onKonfigAenderung}
+      isOffline={isOffline}
+    />
+  )
+}
+
+/**
  * Kopfleiste + Inhalt.
  * Aufgeräumte Topbar mit Profil-Avatar-Dropdown und daumenfreundlicher Bedienung.
  */
@@ -832,7 +906,7 @@ function Hauptseite({
   onKonfigAenderung,
   isOffline = false,
 }: {
-  bereich: 'ki' | 'chat' | 'profil' | 'kalender' | 'notizen' | 'dokumente' | 'gedaechtnis' | 'tresor' | 'teams' | 'einstellungen'
+  bereich: 'dashboard' | 'ki' | 'chat' | 'profil' | 'kalender' | 'notizen' | 'dokumente' | 'gedaechtnis' | 'tresor' | 'teams' | 'hilfe' | 'einstellungen'
   konfig: AppKonfig | null
   offeneUebernahme: string | null
   onKonfigAenderung?: () => void
@@ -897,7 +971,12 @@ function Hauptseite({
   }, [darfTresor, darfMessenger, darfKalender, darfNotizen, darfDokumente, isOffline, bereich, navigate, fallbackRoute])
 
   // Am Handy fehlt die Reiterleiste; die Kopfzeile nennt deshalb den offenen Bereich.
-  const kopfTitel = bereich === 'ki' ? KI_NAME : t(BEREICH_TITEL[bereich])
+  const kopfTitel = bereich === 'ki'
+    ? KI_NAME
+    : bereich === 'dashboard'
+      ? t(dashboardTitelKey(location.pathname))
+      : t(BEREICH_TITEL[bereich])
+  const dashboardEltern = bereich === 'dashboard' ? dashboardElternroute(location.pathname) : null
   const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
   /* Am Handy beginnt der offene Chat ganz oben: die MSM-Leiste faellt weg,
      der Chat-Kopf traegt den Zurueck-Pfeil. Zurueck fuehrt in die Liste. */
@@ -1005,6 +1084,18 @@ function Hauptseite({
         <header className="msm-topbar flex pt-[var(--msm-oben-sicher)] h-[calc(3.5rem+var(--msm-oben-sicher))] sm:h-[calc(4rem+var(--msm-oben-sicher))] items-center justify-between px-3 sm:px-4 md:px-6">
           {/* Linke Seite: Agent-Name & Aktivitätsanzeige */}
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            {dashboardEltern && (
+              <Kurzinfo text={t('common.back')} seite="anfang">
+                <button
+                  type="button"
+                  onClick={() => navigate(dashboardEltern)}
+                  aria-label={t('common.back')}
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-outline-variant/40 bg-surface-container-low text-on-surface transition-colors hover:bg-surface-container max-sm:min-h-11 max-sm:min-w-11"
+                >
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </Kurzinfo>
+            )}
             <div className="min-w-0">
               <h1 className="truncate font-headline text-base sm:text-title-lg font-bold text-on-surface">{kopfTitel}</h1>
             </div>
@@ -1027,6 +1118,14 @@ function Hauptseite({
             className="hidden md:flex items-center rounded-xl border border-outline-variant/30 bg-surface-container-low/60 p-1 backdrop-blur-sm"
             aria-label={t('mss.app.bereiche')}
           >
+            {!isOffline && (
+              <Reiter
+                aktiv={bereich === 'dashboard'}
+                onClick={() => navigate('/')}
+                icon={<LayoutDashboard className="h-4 w-4 shrink-0" />}
+                label={t('nav.dashboard')}
+              />
+            )}
             {!isOffline && (
               <Reiter
                 aktiv={bereich === 'ki'}
@@ -1085,6 +1184,14 @@ function Hauptseite({
                 label={t('teams.title', 'Team')}
                 badge={teamInvitationCount}
                 pulse={teamInvitationCount > 0}
+              />
+            )}
+            {!isOffline && (
+              <Reiter
+                aktiv={bereich === 'hilfe'}
+                onClick={() => navigate('/docs')}
+                icon={<BookOpen className="h-4 w-4 shrink-0" />}
+                label={t('nav.docs')}
               />
             )}
           </nav>
@@ -1153,6 +1260,20 @@ function Hauptseite({
             </div>
 
             <nav className="flex flex-col gap-1 pt-1" aria-label={t('mss.app.bereiche')}>
+              {!isOffline && (
+                <button
+                  type="button"
+                  onClick={() => { navigate('/'); setMobileMenuOffen(false); }}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                    bereich === 'dashboard'
+                      ? 'bg-primary/15 text-primary border border-primary/30'
+                      : 'text-on-surface hover:bg-surface-container-high'
+                  }`}
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>{t('nav.dashboard')}</span>
+                </button>
+              )}
               {!isOffline && (
                 <button
                   type="button"
@@ -1268,6 +1389,21 @@ function Hauptseite({
                 </button>
               )}
 
+              {!isOffline && (
+                <button
+                  type="button"
+                  onClick={() => { navigate('/docs'); setMobileMenuOffen(false); }}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                    bereich === 'hilfe'
+                      ? 'bg-primary/15 text-primary border border-primary/30'
+                      : 'text-on-surface hover:bg-surface-container-high'
+                  }`}
+                >
+                  <BookOpen className="h-4 w-4" />
+                  <span>{t('nav.docs')}</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => { navigate('/einstellungen'); setMobileMenuOffen(false); }}
@@ -1312,7 +1448,9 @@ function Hauptseite({
       {/* Hauptinhalt — KI, Tresor, Chat, Dokumente und Teams nehmen den ganzen Schirm (p-0), Kalender/Notizen zentrieren */}
       <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'tresor' || bereich === 'chat' || bereich === 'dokumente' || bereich === 'teams' ? 'p-0 bg-surface' : 'p-margin-mobile md:p-margin-desktop'}`}>
         <div className="relative z-10 flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
-          {bereich === 'ki' ? (
+          {bereich === 'dashboard' ? (
+            <DashboardBereich />
+          ) : bereich === 'ki' ? (
             isOffline ? (
               <div className="msm-card mx-auto mt-16 max-w-md p-6 text-center" role="status">
                 <WifiOff className="mx-auto mb-3 h-8 w-8 text-on-surface-variant" aria-hidden="true" />
@@ -1379,6 +1517,8 @@ function Hauptseite({
             <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
               <Teams />
             </div>
+          ) : bereich === 'hilfe' ? (
+            <HilfeBereich />
           ) : (
             <div className="mx-auto w-full max-w-3xl flex-1 min-h-0 overflow-y-auto pb-8">
               <Einstellungen onKonfigAenderung={onKonfigAenderung} offline={isOffline} />
@@ -1399,6 +1539,7 @@ const BEREICH_TITEL = {
   gedaechtnis: 'mss.app.gedaechtnis',
   tresor: 'mss.app.tresor',
   teams: 'teams.title',
+  hilfe: 'nav.docs',
   einstellungen: 'mss.app.einstellungen',
 } as const
 

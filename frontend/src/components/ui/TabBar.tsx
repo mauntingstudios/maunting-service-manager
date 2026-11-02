@@ -13,7 +13,10 @@ import { Kurzinfo } from '@/Singra/UI/Kurzinfo'
  */
 export interface TabDef<TId extends string> {
   id: TId
-  labelKey: string
+  /** i18n-Schlüssel des Namens. Entfällt, wenn `label` den Text fertig mitbringt. */
+  labelKey?: string
+  /** Fertiger Name, etwa aus der gemeinsamen Panel-Navigation. */
+  label?: string
   /** Ohne Symbol bleibt nur der Name (dichte Leisten wie in den Entwicklerwerkzeugen). */
   icon?: LucideIcon
   /** Wird in der Tabs-Reihenfolge zuerst versteckt (z.B. fuer Danger-Zone). */
@@ -75,7 +78,7 @@ export function TabBar<TId extends string>({ tabs, active, onChange, ariaLabel, 
         const Icon = tab.icon
         const isActive = active === tab.id
         const isDanger = tab.variant === 'danger'
-        const name = t(tab.labelKey)
+        const name = tab.label ?? t(tab.labelKey ?? '')
         const nurSymbol = kompakt && !!Icon && !isActive
         const knopf = (
           <button

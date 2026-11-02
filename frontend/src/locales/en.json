@@ -6764,6 +6764,11 @@
       "browserDownloadSubtextAndroid": "Hardened, private web browser for Android",
       "dokumente": "Documents"
     },
+    "dashboard": {
+      "bereiche": "Server management",
+      "mehr": "More",
+      "panelEinstellungen": "Panel settings"
+    },
     "card": {
       "sectionTitle": "Maunting Card",
       "sectionDescription": "Your personal cryptographic smartcard protects your private vault and authorizes you for team workspaces. It runs locally and zero-knowledge on your device.",

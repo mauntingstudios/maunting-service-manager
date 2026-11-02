@@ -3,10 +3,10 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/authStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { useIsOnline } from '@/hooks/useIsOnline'
+import { usePanelNavigation } from './usePanelNavigation'
 import { Logo } from '@/components/Logo'
 import { LogOut, Plus, User as UserIcon, X } from 'lucide-react'
-import { buildNavigation, type NavGroupName } from './navigation'
+import type { NavGroupName } from './navigation'
 import { DesktopAppDownloadBadge } from './DesktopAppDownloadBadge'
 import { BrowserDownloadBadge } from './BrowserDownloadBadge'
 import { BenachrichtigungsGlocke, ProfileDropdown, type ProfileDropdownItem, buttonClasses } from '@/Singra/UI'
@@ -28,26 +28,10 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
 
-  // Hooks duerfen nicht hinter `||`-Short-Circuit verschwinden — daher beide
-  // Permissions getrennt aufrufen und erst danach booleisch verknuepfen.
-  const hasUsersRead = useHasPermission('users.read')
-  const hasUsersManage = useHasPermission('users.manage')
-  const canManageUsers = hasUsersRead || hasUsersManage
-  const canManageRoles = useHasPermission('roles.manage')
-  const canViewAudit = useHasPermission('system.audit.read')
+  // Die Navigation und ihre Rechte stehen in `usePanelNavigation`; das
+  // Dashboard der App liest dieselbe Quelle.
+  const { items: navItems, isOnline } = usePanelNavigation()
   const canCreateServer = useHasPermission('servers.create')
-  const canViewSettings = useHasPermission('panel.settings.read')
-  const canManagePanelBackups = useHasPermission('panel.settings.write')
-  const canReadPanelDatabase = useHasPermission('panel.database.read')
-  const canReadNodes = useHasPermission('nodes.read')
-  const canManageNodes = useHasPermission('nodes.manage')
-  const canChatWithAi = useHasPermission('ai.chat.use')
-  const canManageAiSkills = useHasPermission('ai.skills.manage')
-  const canUseSkills = useHasPermission('ai.skills.use')
-  const canUseDocs = useHasPermission('docs.use')
-  const canCreateTeams = useHasPermission('teams.create')
-  const canUseAi = canChatWithAi || canManageAiSkills
-  const isOnline = useIsOnline()
   const totalMessengerUnread = useMessengerNotificationStore((s) => s.totalUnreadCount)
   const teamInvitationCount = useTeamInvitationStore((s) => s.count)
   const teamInvitationenLaden = useTeamInvitationStore((s) => s.laden)
@@ -87,9 +71,6 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
   }, [mobile])
 
   const publicSettings = usePublicSettingsStore()
-  const calendarEnabled = publicSettings.calendar_enabled
-  const notesEnabled = publicSettings.notes_enabled
-  const docsEnabled = publicSettings.docs_enabled
   const socialEnabled = publicSettings.social_enabled
   // Die Hülle meldet die Präsenz; eine zweite Meldung aus der Seitenleiste
   // schrieb bis 27.10.2026 bei jedem Routenwechsel doppelt.
@@ -127,21 +108,6 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
     },
   ]
 
-  const navItems = buildNavigation({
-    dashboard: t('nav.dashboard'), calendar: t('nav.calendar'), notes: t('nav.notes'),
-    documents: t('nav.documents'),
-    chat: t('nav.chat'),
-    servers: t('nav.servers'), users: t('nav.users'), roles: t('nav.roles'),
-    teams: t('nav.teams'),
-    audit: t('nav.audit'),
-    settings: t('nav.settings'), blueprints: t('nav.blueprints'), panelBackups: t('nav.panelBackups'),
-    panelDatabase: t('nav.panelDatabase'), nodes: t('nav.nodes'), docs: t('nav.docs'), ai: t('nav.ai'),
-  }, {
-    owner: Boolean(user?.is_owner), canManageUsers, canManageRoles, canViewAudit, canViewSettings,
-    canManagePanelBackups, canReadPanelDatabase, canViewNodes: canReadNodes || canManageNodes, canUseAi, canUseSkills,
-    canCreateTeams, teamInvitationCount,
-    calendarEnabled, notesEnabled, docsEnabled, canUseDocs, socialEnabled, isOnline,
-  })
   const groupLabels: Record<NavGroupName, string> = {
     Overview: t('navGroups.overview'), Infrastructure: t('navGroups.infrastructure'),
     Administration: t('navGroups.administration'), Panel: t('navGroups.panel'), Help: t('navGroups.help'),
