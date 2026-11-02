@@ -252,21 +252,21 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
               draggable={false}
             />
 
-            {/* Mittlere Metallic-Pill — Card Number immer einzeilig nebeneinander */}
+            {/* Mittlere Metallic-Pill — Card Number sicher innerhalb des Rahmens */}
             <div
-              className="absolute flex flex-col justify-center items-center px-2 text-center pointer-events-none"
+              className="absolute flex flex-col justify-center items-center px-3 text-center pointer-events-none"
               style={{
                 left: '51.50%',
                 top: '45.00%',
                 transform: 'translate(-50%, -50%)',
-                width: '50.0%',
-                height: '13.5%',
+                width: '48.0%',
+                height: '13.0%',
               }}
             >
-              <span className="font-mono text-xs sm:text-sm md:text-base font-bold tracking-wider sm:tracking-widest text-slate-950 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] leading-tight whitespace-nowrap select-all">
+              <span className="font-mono text-[10px] sm:text-xs md:text-[13px] font-bold tracking-tight sm:tracking-normal text-slate-950 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] leading-none whitespace-nowrap select-all">
                 {cardNumber}
               </span>
-              <span className="font-mono text-[8px] sm:text-[9px] font-semibold text-slate-800 tracking-wider whitespace-nowrap truncate max-w-full drop-shadow-sm mt-0.5">
+              <span className="font-mono text-[7px] sm:text-[8px] md:text-[9px] font-semibold text-slate-800/90 tracking-tight whitespace-nowrap truncate max-w-full drop-shadow-sm mt-0.5 sm:mt-1">
                 FP: {fingerprint}
               </span>
             </div>
