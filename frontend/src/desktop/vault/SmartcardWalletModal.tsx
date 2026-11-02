@@ -7,6 +7,7 @@ import { resolveDeviceAuthSession } from '@/api/vaultDeviceAuth'
 import { encryptAuthPayload, parseDeviceAuthQrCode } from './deviceAuthCrypto'
 import { useVaultStore } from './vaultStore'
 import { useAuthStore } from '@/stores/authStore'
+import { still } from '@/lib/still'
 import { MauntingCard } from './MauntingCardView'
 
 export interface SmartcardWalletModalProps {
@@ -48,9 +49,13 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
     try {
       const anyScreen = window.screen as any
       if (anyScreen?.orientation?.lock) {
-        anyScreen.orientation.lock('landscape').catch(() => {})
+        anyScreen.orientation.lock('landscape').catch((err: unknown) => {
+          still(err, 'SmartcardWalletModal.orientation.lock.promise')
+        })
       }
-    } catch {}
+    } catch (err) {
+      still(err, 'SmartcardWalletModal.orientation.lock')
+    }
 
     return () => {
       window.removeEventListener('resize', checkOrientation)
@@ -60,7 +65,9 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         if (anyScreen?.orientation?.unlock) {
           anyScreen.orientation.unlock()
         }
-      } catch {}
+      } catch (err) {
+        still(err, 'SmartcardWalletModal.orientation.unlock')
+      }
     }
   }, [isOpen])
 
@@ -79,7 +86,9 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         setErrorMessage('QR-Code gehört zu einem anderen Benutzerkonto.')
         try {
           navigator.vibrate?.([100, 50, 100])
-        } catch {}
+        } catch (err) {
+          still(err, 'SmartcardWalletModal.vibrateError')
+        }
         setTimeout(() => setErrorMessage(null), 3000)
         return
       }
@@ -107,7 +116,9 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         setSuccessMessage(msg)
         try {
           navigator.vibrate?.([60, 40, 120])
-        } catch {}
+        } catch (err) {
+          still(err, 'SmartcardWalletModal.vibrateSuccess')
+        }
 
         // Nach kurzem Feedback-Puls Wallet-Modus schließen
         setTimeout(() => {
@@ -145,7 +156,7 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 p-3 backdrop-blur-2xl overflow-hidden select-none touch-none"
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-surface-container-lowest/95 p-3 backdrop-blur-2xl overflow-hidden select-none touch-none"
       role="dialog"
       aria-modal="true"
       aria-label="Smartcard Wallet-Modus"
@@ -185,7 +196,7 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         <div
           className={`w-full transition-all duration-300 rounded-2xl ${
             successMessage
-              ? 'ring-4 ring-emerald-400 shadow-[0_0_80px_rgba(52,211,153,0.55)] scale-[1.02]'
+              ? 'ring-4 ring-status-success shadow-[0_0_80px_rgba(52,211,153,0.55)] scale-[1.02]'
               : isProcessing
               ? 'ring-4 ring-primary shadow-[0_0_70px_rgba(56,189,248,0.5)] animate-pulse'
               : 'shadow-[0_0_50px_rgba(56,189,248,0.22)] ring-2 ring-primary/40'
@@ -198,24 +209,24 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
       {/* ── Status-Leiste & Feedback unten ────────────────────────────── */}
       <div className="absolute bottom-5 inset-x-4 z-40 flex flex-col items-center justify-center pointer-events-none">
         {successMessage ? (
-          <div className="flex items-center gap-2 rounded-full bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-300 border border-emerald-500/40 shadow-xl backdrop-blur-md animate-in fade-in zoom-in duration-200">
-            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+          <div className="flex items-center gap-2 rounded-full bg-status-success/20 px-4 py-2 text-sm font-semibold text-status-success border border-status-success/40 shadow-xl backdrop-blur-md animate-scale-in">
+            <CheckCircle2 className="h-4 w-4 text-status-success" />
             <span>{successMessage}</span>
           </div>
         ) : errorMessage ? (
-          <div className="flex items-center gap-2 rounded-full bg-red-500/20 px-4 py-2 text-xs sm:text-sm font-medium text-red-300 border border-red-500/40 shadow-xl backdrop-blur-md">
-            <AlertCircle className="h-4 w-4 text-red-400" />
+          <div className="flex items-center gap-2 rounded-full bg-status-destructive/20 px-4 py-2 text-xs sm:text-sm font-medium text-status-destructive border border-status-destructive/40 shadow-xl backdrop-blur-md">
+            <AlertCircle className="h-4 w-4 text-status-destructive" />
             <span>{errorMessage}</span>
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded-full bg-slate-900/80 px-4 py-1.5 text-xs font-medium text-sky-200/90 border border-sky-500/25 shadow-xl backdrop-blur-md">
-            <span className="h-2 w-2 rounded-full bg-sky-400 animate-pulse" />
+          <div className="flex items-center gap-2 rounded-full bg-surface-container-high/90 px-4 py-1.5 text-xs font-medium text-primary border border-primary/25 shadow-xl backdrop-blur-md">
+            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
             <span>An Zielgerät halten zum Freigeben</span>
           </div>
         )}
 
         {cameraError && !successMessage && (
-          <p className="mt-2 text-[11px] text-amber-300/80 text-center max-w-xs">
+          <p className="mt-2 text-label-sm text-status-warning text-center max-w-xs">
             Kamera aktiv: Bitte Zugriff erlauben, falls das Zielgerät nicht erkannt wird.
           </p>
         )}

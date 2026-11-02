@@ -27,6 +27,7 @@ vi.mock('@/api/client', async (original) => ({
 // Wie in kameraSicherung.test.ts: das echte Modul fände sich über authStore
 // halb initialisiert vor.
 vi.mock('./vault/tresorBlobApi', () => ({
+  blobBasisSetzen: vi.fn(),
   bucketMelderSetzen: vi.fn(),
   zurueckgesetztFrage: vi.fn(),
   blobStand: vi.fn(),

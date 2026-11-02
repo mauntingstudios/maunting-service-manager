@@ -101,7 +101,7 @@ export function IconPicker({
             type="button"
             disabled={disabled}
             onClick={() => onChange(null)}
-            className="text-[11px] text-on-surface-variant hover:text-on-surface underline disabled:opacity-50"
+            className="text-label-sm text-on-surface-variant hover:text-on-surface underline disabled:opacity-50"
           >
             Icon zurücksetzen
           </button>

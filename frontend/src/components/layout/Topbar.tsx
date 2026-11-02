@@ -35,7 +35,7 @@ export function Topbar({ onOpenNavigation, menuButtonRef, onOpenWallet }: Topbar
         <button
           type="button"
           onClick={onOpenWallet}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 border border-primary/25 transition-all active:scale-95 text-xs font-semibold shadow-xs"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 border border-primary/25 transition-all active:scale-95 text-xs font-semibold shadow-sm"
           aria-label="Smartcard Wallet"
         >
           <CreditCard className="w-3.5 h-3.5" />

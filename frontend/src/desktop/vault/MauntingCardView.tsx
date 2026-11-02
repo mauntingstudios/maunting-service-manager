@@ -213,37 +213,37 @@ export function MauntingCard({
     switch (status) {
       case 'active':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm backdrop-blur-md">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-status-success/20 text-status-success border border-status-success/40 shadow-sm backdrop-blur-md">
+            <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
             {t('mss.card.statusActive', 'AKTIV')}
           </span>
         )
       case 'rotation_due':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm backdrop-blur-md">
-            <AlertTriangle className="w-3 h-3 text-amber-400" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-status-warning/20 text-status-warning border border-status-warning/40 shadow-sm backdrop-blur-md">
+            <AlertTriangle className="w-3 h-3 text-status-warning" />
             {t('mss.card.statusRotation', 'ERNEUERUNG FÄLLIG')}
           </span>
         )
       case 'unauthorized':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm backdrop-blur-md">
-            <AlertTriangle className="w-3 h-3 text-amber-400" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-status-warning/20 text-status-warning border border-status-warning/40 shadow-sm backdrop-blur-md">
+            <AlertTriangle className="w-3 h-3 text-status-warning" />
             {t('mss.card.statusUnauthorized', 'GERÄT NICHT AUTORISIERT')}
           </span>
         )
       case 'locked':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm backdrop-blur-md">
-            <Lock className="w-3 h-3 text-sky-400" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-primary/20 text-primary border border-primary/40 shadow-sm backdrop-blur-md">
+            <Lock className="w-3 h-3 text-primary" />
             {t('mss.card.statusLocked', 'GESPERRT')}
           </span>
         )
       case 'uninitialized':
       default:
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/20 text-slate-300 border border-slate-500/40 shadow-sm backdrop-blur-md">
-            <KeyRound className="w-3 h-3 text-slate-400" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-surface-container-high/60 text-on-surface-variant border border-outline-variant/40 shadow-sm backdrop-blur-md">
+            <KeyRound className="w-3 h-3 text-on-surface-variant" />
             {t('mss.card.statusUninitialized', 'NICHT EINGERICHTET')}
           </span>
         )
@@ -328,14 +328,14 @@ export function MauntingCard({
             <div className="absolute top-4 right-4 z-10">{statusBadge}</div>
 
             {/* Ablaufdatum neben dem Chip */}
-            <div className="absolute bottom-4 right-12 font-mono text-[10px] sm:text-xs text-sky-300/90 tracking-widest drop-shadow-sm">
-              <span className="text-sky-400/60 mr-1.5 font-sans font-medium text-[9px]">VALID THRU</span>
+            <div className="absolute bottom-4 right-12 font-mono text-label-sm font-mono text-primary/90 tracking-widest drop-shadow-sm">
+              <span className="text-primary/60 mr-1.5 font-sans font-medium text-label-sm">VALID THRU</span>
               {expiry.validThru}
             </div>
 
             {/* Flip-Icon unten rechts */}
             <div
-              className="absolute bottom-3 right-3 p-1.5 rounded-full bg-black/40 text-sky-300 hover:text-white hover:bg-black/60 transition-colors backdrop-blur-sm"
+              className="absolute bottom-3 right-3 p-1.5 rounded-full bg-black/40 text-primary hover:text-white hover:bg-black/60 transition-colors backdrop-blur-sm"
               aria-hidden="true"
             >
               <RotateCw className="w-3.5 h-3.5" aria-hidden="true" />
@@ -369,7 +369,7 @@ export function MauntingCard({
                 height: '14.5%',
               }}
             >
-              <span className="font-mono text-xs sm:text-[13px] md:text-[14px] font-bold tracking-normal sm:tracking-wide text-slate-950 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] leading-none whitespace-nowrap select-all">
+              <span className="font-mono text-xs sm:text-[13px] md:text-[14px] font-bold tracking-normal sm:tracking-wide text-black drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] leading-none whitespace-nowrap select-all">
                 {cardNumber}
               </span>
             </div>
@@ -382,7 +382,7 @@ export function MauntingCard({
               {status === 'unauthorized' ? (
                 <button
                   type="button"
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold shadow-lg shadow-amber-500/30 flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
+                  className="bg-status-warning hover:bg-status-warning/90 text-black font-semibold shadow-lg flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
                   onClick={() => setAuthorizeDialogOpen(true)}
                 >
                   <Shield className="w-3.5 h-3.5" aria-hidden="true" />
@@ -391,7 +391,7 @@ export function MauntingCard({
               ) : !isUnlocked ? (
                 <button
                   type="button"
-                  className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold shadow-lg shadow-sky-500/30 flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
+                  className="bg-primary hover:bg-primary/90 text-on-primary font-semibold shadow-lg flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
                   onClick={() => {
                     setUnlockTab('password')
                     setUnlockDialogOpen(true)
@@ -403,7 +403,7 @@ export function MauntingCard({
               ) : (
                 <button
                   type="button"
-                  className="bg-slate-900/80 hover:bg-slate-800 text-sky-200 border border-sky-500/30 flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
+                  className="bg-surface-container-high/90 hover:bg-surface-container-highest text-primary border border-primary/30 flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
                   onClick={handleQuickLock}
                 >
                   <Lock className="w-3.5 h-3.5" aria-hidden="true" />
@@ -414,7 +414,7 @@ export function MauntingCard({
               {onOpenSecurityTab && (
                 <button
                   type="button"
-                  className="text-sky-300 hover:text-white hover:bg-sky-950/40 flex items-center gap-1 text-xs py-1.5 px-3 rounded-lg transition-colors"
+                  className="text-primary hover:text-on-surface hover:bg-surface-container-high/60 flex items-center gap-1 text-xs py-1.5 px-3 rounded-lg transition-colors"
                   onClick={onOpenSecurityTab}
                 >
                   <Shield className="w-3.5 h-3.5" aria-hidden="true" />
@@ -425,7 +425,7 @@ export function MauntingCard({
 
             {/* Flip-Icon unten rechts */}
             <div
-              className="absolute bottom-3 right-3 p-1.5 rounded-full bg-black/40 text-sky-300 hover:text-white hover:bg-black/60 transition-colors backdrop-blur-sm"
+              className="absolute bottom-3 right-3 p-1.5 rounded-full bg-black/40 text-primary hover:text-white hover:bg-black/60 transition-colors backdrop-blur-sm"
               aria-hidden="true"
             >
               <RotateCw className="w-3.5 h-3.5" aria-hidden="true" />
@@ -464,7 +464,7 @@ export function MauntingCard({
                 onClick={() => setUnlockTab('qr')}
                 className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                   unlockTab === 'qr'
-                    ? 'bg-surface text-primary shadow-xs font-bold border border-outline-variant/20'
+                    ? 'bg-surface text-primary shadow-sm font-bold border border-outline-variant/20'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
@@ -476,7 +476,7 @@ export function MauntingCard({
                 onClick={() => setUnlockTab('password')}
                 className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                   unlockTab === 'password'
-                    ? 'bg-surface text-primary shadow-xs font-bold border border-outline-variant/20'
+                    ? 'bg-surface text-primary shadow-sm font-bold border border-outline-variant/20'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
@@ -554,7 +554,7 @@ export function MauntingCard({
         <DialogContent className="max-w-lg">
           <DialogHeader className="pr-10 sm:pr-12">
             <DialogTitle className="flex items-center gap-2.5 text-base sm:text-lg font-bold">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/25">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-status-warning/15 text-status-warning border border-status-warning/25">
                 <Shield className="w-4 h-4" aria-hidden="true" />
               </span>
               <span>{t('mss.card.authorizeTitle', 'Gerät autorisieren')}</span>
@@ -575,7 +575,7 @@ export function MauntingCard({
                 onClick={() => setAuthorizeTab('qr')}
                 className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                   authorizeTab === 'qr'
-                    ? 'bg-surface text-primary shadow-xs font-bold border border-outline-variant/20'
+                    ? 'bg-surface text-primary shadow-sm font-bold border border-outline-variant/20'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
@@ -587,7 +587,7 @@ export function MauntingCard({
                 onClick={() => setAuthorizeTab('password')}
                 className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                   authorizeTab === 'password'
-                    ? 'bg-surface text-primary shadow-xs font-bold border border-outline-variant/20'
+                    ? 'bg-surface text-primary shadow-sm font-bold border border-outline-variant/20'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >

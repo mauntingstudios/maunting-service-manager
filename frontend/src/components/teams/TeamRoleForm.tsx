@@ -253,7 +253,7 @@ export function TeamRoleForm({
         <div className="flex items-start justify-between gap-3 rounded-xl border border-outline-variant/40 bg-surface-container-low/40 p-3.5">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-sm font-bold text-on-surface">
-              <Crown className="h-4 w-4 text-amber-500" />
+              <Crown className="h-4 w-4 text-status-warning" />
               <span>{t('teams.isAdmin')}</span>
             </div>
             <p className="mt-1 text-xs text-on-surface-variant leading-relaxed">
@@ -289,9 +289,9 @@ export function TeamRoleForm({
 
       {/* ── Granulare Team-Rechte via Design-DNA RechteAbschnitte ──────── */}
       {isAdmin ? (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center">
-          <Crown className="mx-auto h-6 w-6 text-amber-500 mb-1.5" />
-          <h4 className="text-sm font-bold text-amber-600 dark:text-amber-400">
+        <div className="rounded-xl border border-status-warning/30 bg-status-warning/10 p-4 text-center">
+          <Crown className="mx-auto h-6 w-6 text-status-warning mb-1.5" />
+          <h4 className="text-sm font-bold text-status-warning">
             Administrator-Rolle aktiviert
           </h4>
           <p className="mt-1 text-xs text-on-surface-variant max-w-md mx-auto">

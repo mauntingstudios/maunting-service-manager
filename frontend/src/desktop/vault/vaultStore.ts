@@ -1452,7 +1452,9 @@ export const useVaultStore = create<VaultState>((set, get) => {
               localStorage.setItem(VAULT_CANARY_KEY, cipher)
               localStorage.setItem(VAULT_SERVER_BUCKET_KEY, bucketId)
               break
-            } catch {}
+            } catch (err) {
+              still(err, 'vaultStore.authorizeDevice.canaryMatch')
+            }
           }
 
           if (!decryptedSuccessfully) {
@@ -1605,7 +1607,9 @@ export const useVaultStore = create<VaultState>((set, get) => {
               localStorage.setItem(VAULT_CANARY_KEY, cipher)
               localStorage.setItem(VAULT_SERVER_BUCKET_KEY, bucketId)
               break
-            } catch {}
+            } catch (err) {
+              still(err, 'vaultStore.authorizeDevice.canaryMatch')
+            }
           }
 
           if (!decryptedSuccessfully) {

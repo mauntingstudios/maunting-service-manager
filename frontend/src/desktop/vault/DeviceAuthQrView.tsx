@@ -13,6 +13,7 @@ import {
 } from './deviceAuthCrypto'
 import { MauntingQrCard, Spinner } from '@/Singra/UI'
 import { useAuthStore } from '@/stores/authStore'
+import { still } from '@/lib/still'
 
 export interface DeviceAuthQrViewProps {
   purpose: 'authorize' | 'unlock'
@@ -121,8 +122,8 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
           }
           setErrorMsg('Session abgelaufen. Bitte erneut versuchen.')
         }
-      } catch {
-        // Netzwerkfehler während Polling ignorieren
+      } catch (err) {
+        still(err, 'DeviceAuthQrView.poll')
       }
     }
 
@@ -159,8 +160,8 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
 
   if (resolved) {
     return (
-      <div className="flex flex-col items-center justify-center p-8 text-center space-y-3 animate-in zoom-in-95 duration-200">
-        <div className="grid h-12 w-12 place-items-center rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-lg">
+      <div className="flex flex-col items-center justify-center p-8 text-center space-y-3 animate-scale-in">
+        <div className="grid h-12 w-12 place-items-center rounded-full bg-status-success/20 text-status-success border border-status-success/40 shadow-lg">
           <CheckCircle2 className="h-6 w-6" />
         </div>
         <p className="text-sm font-bold text-on-surface">Erfolgreich freigegeben!</p>

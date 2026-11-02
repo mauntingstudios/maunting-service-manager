@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import jsQR from 'jsqr'
+import { still } from '@/lib/still'
 
 export interface UseBackgroundQrScannerOptions {
   /** Ob die Kamera und der Scan aktiv sein sollen. Standard: true. */
@@ -117,7 +118,9 @@ export function useBackgroundQrScanner({
     if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
       try {
         detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
-      } catch {}
+      } catch (err) {
+        still(err, 'useBackgroundQrScanner.initDetector')
+      }
     }
 
     let active = true
@@ -130,7 +133,9 @@ export function useBackgroundQrScanner({
       if (vibrateOnDetect) {
         try {
           navigator.vibrate?.([40, 30, 40])
-        } catch {}
+        } catch (err) {
+          still(err, 'useBackgroundQrScanner.vibrate')
+        }
       }
 
       onDetected?.(code)
@@ -162,7 +167,9 @@ export function useBackgroundQrScanner({
               return
             }
           }
-        } catch {}
+        } catch (err) {
+          still(err, 'useBackgroundQrScanner.detect')
+        }
       }
 
       // 2. High-Speed jsQR Analyse
@@ -207,7 +214,9 @@ export function useBackgroundQrScanner({
             return
           }
         }
-      } catch {}
+      } catch (err) {
+        still(err, 'useBackgroundQrScanner.jsQr')
+      }
 
       if (active) {
         animRef.current = requestAnimationFrame(scan)

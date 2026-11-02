@@ -29,7 +29,7 @@ export function RoleBadge({
     return (
       <span
         className={`inline-flex items-center gap-1 rounded-full border font-semibold transition-colors ${
-          size === 'sm' ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'
+          size === 'sm' ? 'px-2 py-0.5 text-label-sm' : 'px-2.5 py-1 text-xs'
         } ${className}`}
         style={{
           backgroundColor: `${effectiveColor}1a`, // ~10% opacity
@@ -47,7 +47,7 @@ export function RoleBadge({
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full font-semibold text-white transition-colors shadow-2xs ${
-        size === 'sm' ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'
+        size === 'sm' ? 'px-2 py-0.5 text-label-sm' : 'px-2.5 py-1 text-xs'
       } ${className}`}
       style={{
         backgroundColor: effectiveColor,

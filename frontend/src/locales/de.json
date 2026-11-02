@@ -6705,7 +6705,7 @@
     "roleName": "Rollenname",
     "roleColor": "Farbe",
     "roleDescription": "Beschreibung",
-    "roleDescriptionPlaceholder": "Optionale Beschreibung der Aufgaben und Zugriffe dieser Rolle...",
+    "roleDescriptionPlaceholder": "Optionale Beschreibung der Aufgaben und Zugriffe dieser Rolle …",
     "isAdmin": "Administrator",
     "isAdminDesc": "Volle Berechtigungen auf alle Team-Funktionen und Server-Rechte des Gründers.",
     "isDefault": "Standardrolle",
@@ -6780,7 +6780,19 @@
       "unlockTitle": "Maunting Card entsperren",
       "unlockSubtitle": "Gib deine Karten-PIN / dein Passwort ein, um deinen Tresor freizuschalten.",
       "pinPlaceholder": "Karten-Passwort / PIN",
-      "unlockSubmit": "Entsperren"
+      "unlockSubmit": "Entsperren",
+      "actionAuthorize": "Gerät autorisieren",
+      "authorizeSubmit": "Gerät freischalten",
+      "authorizeSubtitle": "Bestätige deine Identität, um dieses Gerät für deine Smartcard freizuschalten. Schlüssel verbleiben dabei nicht im Arbeitsspeicher.",
+      "authorizeTitle": "Gerät autorisieren",
+      "authorizedErfolg": "Gerät erfolgreich autorisiert",
+      "passwordHelp": "Das persönliche Passwort, das du bei der Erstellung deiner Smartcard (Master-Passwort) vergeben hast.",
+      "passwordLabel": "Karten-Passwort",
+      "passwordPlaceholder": "Dein bei der Einrichtung gewähltes Passwort",
+      "statusUnauthorized": "GERÄT NICHT AUTORISIERT",
+      "tabPassword": "Karten-Passwort",
+      "tabSmartphoneScan": "Mit Smartphone scannen",
+      "vaultNeedsAuthorization": "Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet. Bitte bestätige das Gerät einmalig."
     },
     "vault": {
       "titel": "Tresor-Sicherheit",
@@ -6901,7 +6913,9 @@
         "wortLabel": "Tippe delete zur Bestätigung (nicht kopierbar)",
         "knopf": "Tresor endgültig zurücksetzen",
         "laeuft": "Wird zurückgesetzt …",
-        "fertig": "Tresor zurückgesetzt. Richte jetzt einen neuen ein."
+        "fertig": "Tresor zurückgesetzt. Richte jetzt einen neuen ein.",
+        "tabHinweis": "Master-Passwort vergessen oder Notfall-Reset? Leert den persönlichen Tresor und setzt die Maunting Card zurück.",
+        "warnungKurz": "Achtung: Unwiderruflicher Schritt. Nicht synchronisierte Einträge gehen verloren."
       },
       "sendeMail": "E-Mail wird gesendet …",
       "perMailTesten": "Per E-Mail testen",
@@ -7124,7 +7138,8 @@
         "uploadStand_zuVieleDateien_other": "{{count}} Dateien warten: Dein Tresor hat die Höchstzahl an Dateien erreicht. Lösche Dateien, die du nicht mehr brauchst.",
         "gespeichertUnverschluesselt": "Gespeichert. Diese Kopie liegt unverschlüsselt auf dem Gerät.",
         "verschiebenFehler_one": "Ein Eintrag ließ sich nicht verschieben.",
-        "verschiebenFehler_other": "{{count}} Einträge ließen sich nicht verschieben."
+        "verschiebenFehler_other": "{{count}} Einträge ließen sich nicht verschieben.",
+        "vorbereiten": "Datei vorbereiten …"
       },
       "fotos": {
         "videos": "Videos",
@@ -7323,7 +7338,14 @@
           "mastercard": "Mastercard",
           "amex": "American Express"
         }
-      }
+      },
+      "autoSperreHinweis": "Sperrt nach Inaktivität automatisch alle privaten und Team-Tresore.",
+      "entsperrtErfolg": "Maunting Card via Smartcard-Wallet erfolgreich entsperrt",
+      "falschesPasswort": "Falsches Karten-Passwort",
+      "konsolidiertHinweis": "Zentrale Sicherheitseinstellungen für deinen persönlichen Tresor und alle Team-Tresore.",
+      "nurPrivat": "Privater Tresor",
+      "tresorSchlossHinweis": "Zero-Knowledge Tresor-Schloss. Klicke auf die Karte oder nutze die Schaltflächen unten zum Entsperren.",
+      "zurueckgesetztErfolg": "Tresor wurde erfolgreich zurückgesetzt"
     },
     "aktion": {
       "freigabeErforderlich": "Bestätigung erforderlich",

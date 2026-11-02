@@ -3143,6 +3143,46 @@
     "ai_docs_use": {
       "title": "Use Singra in documents",
       "desc": "Singra may read, comment on and edit documents, never beyond your own document role."
+    },
+    "team_members_invite": {
+      "title": "Invite members",
+      "desc": "Invite new users to this team."
+    },
+    "team_members_kick": {
+      "title": "Remove members",
+      "desc": "Remove existing members from this team."
+    },
+    "team_roles_manage": {
+      "title": "Manage team roles",
+      "desc": "Create, edit, delete roles and assign them to members."
+    },
+    "team_servers_manage": {
+      "title": "Manage team servers",
+      "desc": "Assign servers to the team and configure permissions."
+    },
+    "ai_memory_read": {
+      "title": "View team memory",
+      "desc": "Read shared AI knowledge and memories of the team."
+    },
+    "ai_memory_write": {
+      "title": "Edit team memory",
+      "desc": "Create or update memories and entries in the team memory."
+    },
+    "ai_team_context_use": {
+      "title": "Use team context",
+      "desc": "Allows AI to automatically incorporate shared team knowledge into conversations."
+    },
+    "vault_read": {
+      "title": "View team vault",
+      "desc": "Decrypt entries and passwords in the shared team vault."
+    },
+    "vault_write": {
+      "title": "Edit team vault entries",
+      "desc": "Store, update and delete entries in the team vault."
+    },
+    "vault_files": {
+      "title": "Manage team vault files",
+      "desc": "Upload, download and manage file attachments in the team vault."
     }
   },
   "serverPermissions": {
@@ -6657,7 +6697,38 @@
     "transferMove": "Move (delete from personal vault)",
     "transferCopy": "Copy (keep in personal vault)",
     "transferSelectTeam": "Select target team",
-    "transferSuccess": "Entry successfully transferred to the team vault"
+    "transferSuccess": "Entry successfully transferred to the team vault",
+    "roles": "Roles & permissions",
+    "rolesHint": "Manage roles with granular permissions for servers, AI knowledge and the team vault.",
+    "createRole": "Create role",
+    "editRole": "Edit role",
+    "roleName": "Role name",
+    "roleColor": "Color",
+    "roleDescription": "Description",
+    "roleDescriptionPlaceholder": "Optional description of the tasks and access for this role …",
+    "isAdmin": "Administrator",
+    "isAdminDesc": "Full permissions for all team features and server permissions of the founder.",
+    "isDefault": "Default role",
+    "isDefaultDesc": "Automatically assigned to new members upon joining.",
+    "adminBadge": "Admin",
+    "defaultBadge": "Default",
+    "roleSaved": "Role successfully saved.",
+    "roleDeleted": "Role successfully deleted.",
+    "deleteRoleTitle": "Delete role",
+    "deleteRoleConfirm": "Do you really want to delete the role “{{name}}”? Members will lose the associated permissions.",
+    "assignRoles": "Assign roles",
+    "noRolesYet": "No custom roles created yet.",
+    "roleMembersCount": "{{count}} member",
+    "roleMembersCount_other": "{{count}} members",
+    "manageRoles": "Manage roles",
+    "serverGrantsTitle": "Server permissions",
+    "serverGrantsDesc": "Select which permissions this role receives on individual team servers.",
+    "noServersAssigned": "No servers assigned to this team yet.",
+    "categoryTeam": "Team management",
+    "categoryAi": "AI & knowledge",
+    "categoryVault": "Team vault",
+    "allPermissions": "All permissions",
+    "noPermissions": "No permissions"
   },
   "mss": {
     "fenster": {
@@ -6708,8 +6779,20 @@
       "actionManage": "Manage",
       "unlockTitle": "Unlock Maunting Card",
       "unlockSubtitle": "Enter your card PIN / password to unlock your vault.",
-      "pinPlaceholder": "Card Password / PIN",
-      "unlockSubmit": "Unlock"
+      "pinPlaceholder": "Card password / PIN",
+      "unlockSubmit": "Unlock",
+      "actionAuthorize": "Authorize device",
+      "authorizeSubmit": "Unlock device",
+      "authorizeSubtitle": "Confirm your identity to unlock this device for your Smartcard. Keys do not remain in memory.",
+      "authorizeTitle": "Authorize device",
+      "authorizedErfolg": "Device successfully authorized",
+      "passwordHelp": "The personal password you chose when creating your Smartcard (master password).",
+      "passwordLabel": "Card password",
+      "passwordPlaceholder": "The password chosen during setup",
+      "statusUnauthorized": "DEVICE NOT AUTHORIZED",
+      "tabPassword": "Card password",
+      "tabSmartphoneScan": "Scan with smartphone",
+      "vaultNeedsAuthorization": "This device is not yet authorized for your Maunting Card. Please authorize this device once."
     },
     "vault": {
       "titel": "Vault security",
@@ -6830,7 +6913,9 @@
         "wortLabel": "Type delete to confirm (cannot be pasted)",
         "knopf": "Reset vault permanently",
         "laeuft": "Resetting …",
-        "fertig": "Vault reset. Set up a new one now."
+        "fertig": "Vault reset. Set up a new one now.",
+        "tabHinweis": "Forgot master password or emergency reset? Clears personal vault and resets Maunting Card.",
+        "warnungKurz": "Notice: Irreversible step. Unsynchronized entries will be lost."
       },
       "sendeMail": "Sending email …",
       "perMailTesten": "Test by email",
@@ -7155,7 +7240,8 @@
       "rotationFehler": "Password change failed. The old vault remains unchanged.",
       "rotationLaeuft": "Changing …",
       "rotationFortsetzen": "Resume rotation",
-      "rotationFortsetzenHinweis": "A password rotation was interrupted. The old vault remains fully usable.",      "leckPruefung": "Check passwords against known breaches",
+      "rotationFortsetzenHinweis": "A password rotation was interrupted. The old vault remains fully usable.",
+      "leckPruefung": "Check passwords against known breaches",
       "leckPruefungHinweis": "From 6 characters on, the first 5 characters of the SHA-1 hash go to Have I Been Pwned. The password itself never leaves the device.",
       "kiSpiegelung": "Mirror AI file attachments in vault",
       "kiSpiegelungHinweis": "Additionally save files uploaded to the chat in your personal vault under the \"KI-Anhänge\" folder.",
@@ -7252,7 +7338,14 @@
           "mastercard": "Mastercard",
           "amex": "American Express"
         }
-      }
+      },
+      "autoSperreHinweis": "Automatically locks all personal and team vaults after inactivity.",
+      "entsperrtErfolg": "Maunting Card unlocked successfully via Smartcard wallet",
+      "falschesPasswort": "Incorrect card password",
+      "konsolidiertHinweis": "Central security settings for your personal vault and all team vaults.",
+      "nurPrivat": "Personal vault",
+      "tresorSchlossHinweis": "Zero-knowledge vault lock. Click the card or use the buttons below to unlock.",
+      "zurueckgesetztErfolg": "Vault was successfully reset"
     },
     "aktion": {
       "freigabeErforderlich": "Confirmation required",

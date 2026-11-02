@@ -94,7 +94,7 @@ export function ColorPicker({
               aria-label={preset.label}
             >
               {isSelected && (
-                <Check className="h-3.5 w-3.5 text-white drop-shadow-xs" />
+                <Check className="h-3.5 w-3.5 text-white drop-shadow-sm" />
               )}
             </button>
           )
@@ -104,7 +104,7 @@ export function ColorPicker({
       {/* Custom Hex Input mit Live-Vorschau */}
       <div className="flex items-center gap-2 pt-0.5">
         <div
-          className="h-8 w-8 rounded-lg shrink-0 border border-outline-variant/40 shadow-xs flex items-center justify-center transition-colors"
+          className="h-8 w-8 rounded-lg shrink-0 border border-outline-variant/40 shadow-sm flex items-center justify-center transition-colors"
           style={{ backgroundColor: HEX_REGEX.test(hexInput) ? hexInput : currentColor }}
         >
           <span className="sr-only">Aktuelle Farbe: {currentColor}</span>
@@ -130,7 +130,7 @@ export function ColorPicker({
           />
         </div>
 
-        <span className="text-[11px] text-on-surface-variant font-mono">
+        <span className="text-label-sm text-on-surface-variant font-mono">
           {HEX_REGEX.test(hexInput) ? 'Gültig' : 'HEX (#RRGGBB)'}
         </span>
       </div>

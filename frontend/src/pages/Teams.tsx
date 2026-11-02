@@ -926,10 +926,10 @@ function MitgliederReiter({
                       {(member.roles || []).map((r) => (
                         <span
                           key={r.id}
-                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-white shadow-2xs"
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label-sm font-semibold text-white shadow-2xs"
                           style={{ backgroundColor: r.color || '#3b82f6' }}
                         >
-                          {r.is_admin && <Crown className="h-2.5 w-2.5 text-amber-300" />}
+                          {r.is_admin && <Crown className="h-2.5 w-2.5 text-status-warning" />}
                           {r.name}
                         </span>
                       ))}
@@ -1109,7 +1109,7 @@ function RollenReiter({
 
                     <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                       {role.is_admin && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-status-warning/10 px-2 py-0.5 text-xs font-semibold text-status-warning border border-status-warning/20">
                           <Crown className="h-3 w-3" />
                           {t('teams.adminBadge')}
                         </span>
@@ -1138,7 +1138,7 @@ function RollenReiter({
                     </div>
 
                     {role.is_admin ? (
-                      <div className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                      <div className="text-xs text-status-warning font-medium">
                         Volle Berechtigungen (Administrator)
                       </div>
                     ) : (
@@ -1146,19 +1146,19 @@ function RollenReiter({
                         {role.permission_keys.map((key) => (
                           <span
                             key={key}
-                            className="rounded-md bg-surface-container-high/80 px-2 py-0.5 text-[11px] text-on-surface-variant font-mono"
+                            className="rounded-md bg-surface-container-high/80 px-2 py-0.5 text-label-sm text-on-surface-variant font-mono"
                           >
                             {t(`permissionDetails.${key.replace(/\./g, '_')}.title`, { defaultValue: key })}
                           </span>
                         ))}
                         {hasServerGrants && (
-                          <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] text-primary font-medium flex items-center gap-1">
+                          <span className="rounded-md bg-primary/10 px-2 py-0.5 text-label-sm text-primary font-medium flex items-center gap-1">
                             <Server className="h-3 w-3" />
                             {role.server_grants.length} Server
                           </span>
                         )}
                         {role.permission_keys.length === 0 && !hasServerGrants && (
-                          <span className="text-[11px] text-on-surface-variant/70 italic">
+                          <span className="text-label-sm text-on-surface-variant/70 italic">
                             Keine Rechte zugewiesen
                           </span>
                         )}

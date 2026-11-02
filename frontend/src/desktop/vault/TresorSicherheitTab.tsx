@@ -195,7 +195,7 @@ export function TresorSicherheitTab({ offline = false }: { offline?: boolean }) 
             <div>
               <div className="flex items-center gap-2">
                 <span id="tresor-ki-spiegelung" className="text-xs font-medium text-on-surface">{t('mss.vault.kiSpiegelung')}</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
+                <span className="px-1.5 py-0.5 rounded text-label-sm font-semibold bg-primary/10 text-primary border border-primary/20">
                   {t('mss.vault.nurPrivat', 'Privater Tresor')}
                 </span>
               </div>
