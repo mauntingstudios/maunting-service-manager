@@ -252,7 +252,7 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
               draggable={false}
             />
 
-            {/* Mittlere Metallic-Pill — Card Number und Fingerprint zentriert */}
+            {/* Mittlere Metallic-Pill — Card Number immer einzeilig nebeneinander */}
             <div
               className="absolute flex flex-col justify-center items-center px-2 text-center pointer-events-none"
               style={{
@@ -263,10 +263,10 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
                 height: '13.5%',
               }}
             >
-              <span className="font-mono text-xs sm:text-sm md:text-base font-bold tracking-widest text-slate-950 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] leading-tight">
+              <span className="font-mono text-xs sm:text-sm md:text-base font-bold tracking-wider sm:tracking-widest text-slate-950 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] leading-tight whitespace-nowrap select-all">
                 {cardNumber}
               </span>
-              <span className="font-mono text-[9px] sm:text-[10px] md:text-xs font-semibold text-slate-800 tracking-wider truncate max-w-full drop-shadow-sm">
+              <span className="font-mono text-[8px] sm:text-[9px] font-semibold text-slate-800 tracking-wider whitespace-nowrap truncate max-w-full drop-shadow-sm mt-0.5">
                 FP: {fingerprint}
               </span>
             </div>
