@@ -252,18 +252,18 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
               draggable={false}
             />
 
-            {/* Mittlere Metallic-Pill — Card Number exakt zentriert und fixiert */}
+            {/* Mittlere Metallic-Pill — Card Number exakt zentriert und ausgemessen */}
             <div
-              className="absolute flex items-center justify-center text-center pointer-events-none"
+              className="absolute flex items-center justify-center text-center pointer-events-none px-4"
               style={{
-                left: '51.50%',
+                left: '51.55%',
                 top: '45.00%',
                 transform: 'translate(-50%, -50%)',
-                width: '50.0%',
-                height: '13.0%',
+                width: '52.5%',
+                height: '14.5%',
               }}
             >
-              <span className="font-mono text-xs sm:text-sm md:text-base font-bold tracking-wider text-slate-950 drop-shadow-[0_1px_2px_rgba(255,255,255,0.8)] leading-none whitespace-nowrap select-all">
+              <span className="font-mono text-xs sm:text-[13px] md:text-[14px] font-bold tracking-normal sm:tracking-wide text-slate-950 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] leading-none whitespace-nowrap select-all">
                 {cardNumber}
               </span>
             </div>
