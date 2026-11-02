@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Brain, Check, Crown, LogOut, Mail, Plus, Server, ShieldCheck, Trash2, UserPlus, Users, UsersRound, X,
+  Brain, Check, Crown, LogOut, Mail, Pencil, Plus, Server, Shield, ShieldCheck, Sparkles, Trash2, UserPlus, Users, UsersRound, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -11,11 +11,13 @@ import {
   type TeamDetail,
   type TeamInvitation,
   type TeamMember,
+  type TeamRole,
   type TeamServer,
 } from '@/api/teams'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiSkillManager } from '@/components/ai/AiSkillManager'
 import type { AiKnowledgeScope, AiSkillScope } from '@/components/ai/knowledgeScope'
+import { TeamRoleModal } from '@/components/teams/TeamRoleModal'
 import { TabBar, type TabDef } from '@/components/ui/TabBar'
 import { TeamVaultView } from '@/desktop/vault/TeamVaultView'
 import { Avatar, Button, Dropdown, Input, MultiSelect, Switch } from '@/Singra/UI'
@@ -31,7 +33,7 @@ interface UserOption {
   username: string
 }
 
-type TeamReiter = 'members' | 'servers' | 'knowledge' | 'vault'
+type TeamReiter = 'members' | 'servers' | 'roles' | 'knowledge' | 'vault'
 
 function memoryScope(detail: TeamDetail): AiKnowledgeScope {
   return { kind: 'team', teamId: detail.id, canManage: detail.can_manage_memory }
@@ -66,7 +68,7 @@ export function Teams() {
   const [reiter, setReiterState] = useState<TeamReiter>(() => {
     if (typeof localStorage !== 'undefined') {
       const saved = localStorage.getItem(STORAGE_KEY_REITER) as TeamReiter
-      if (['members', 'servers', 'knowledge', 'vault'].includes(saved)) return saved
+      if (['members', 'servers', 'roles', 'knowledge', 'vault'].includes(saved)) return saved
     }
     return 'members'
   })
@@ -296,6 +298,63 @@ export function Teams() {
     }, 'teams.serversSaved')
   }
 
+  const [roleModalOpen, setRoleModalOpen] = useState(false)
+  const [editingRole, setEditingRole] = useState<TeamRole | null>(null)
+
+  const openCreateRole = () => {
+    setEditingRole(null)
+    setRoleModalOpen(true)
+  }
+
+  const openEditRole = (role: TeamRole) => {
+    setEditingRole(role)
+    setRoleModalOpen(true)
+  }
+
+  const onRoleSaved = (savedRole: TeamRole) => {
+    setDetail((prev) => {
+      if (!prev) return null
+      const existing = prev.roles || []
+      const found = existing.some((r) => r.id === savedRole.id)
+      const nextRoles = found
+        ? existing.map((r) => (r.id === savedRole.id ? savedRole : r))
+        : [...existing, savedRole]
+      return { ...prev, roles: nextRoles }
+    })
+  }
+
+  const deleteRole = async (role: TeamRole) => {
+    if (!detail) return
+    if (!await confirm({
+      title: t('teams.deleteRoleTitle'),
+      message: t('teams.deleteRoleConfirm', { name: role.name }),
+      confirmText: t('common.delete'),
+      danger: true,
+    })) return
+
+    await run(async () => {
+      await teamsApi.deleteRole(detail.id, role.id)
+      setDetail((prev) => prev ? {
+        ...prev,
+        roles: (prev.roles || []).filter((r) => r.id !== role.id),
+      } : null)
+    }, 'teams.roleDeleted')
+  }
+
+  const setMemberRoles = async (member: TeamMember, roleIds: number[]) => {
+    if (!detail) return
+    await run(async () => {
+      const updatedMember = await teamsApi.setMemberRoles(detail.id, member.user_id, roleIds)
+      setDetail((prev) => {
+        if (!prev) return null
+        return {
+          ...prev,
+          members: prev.members.map((m) => (m.user_id === member.user_id ? { ...m, ...updatedMember } : m)),
+        }
+      })
+    }, 'teams.memberSaved')
+  }
+
   if (loading) {
     return (
       <div className="flex h-full flex-1 items-center justify-center p-8" aria-label={t('common.loading')}>
@@ -327,6 +386,7 @@ export function Teams() {
     ...(team?.is_owner
       ? [{ id: 'servers' as const, labelKey: 'teams.tabServers', icon: Server, badge: team.servers.length }]
       : []),
+    { id: 'roles' as const, labelKey: 'teams.roles', icon: Shield, badge: team?.roles?.length ?? 0 },
     { id: 'knowledge', labelKey: 'teams.knowledge', icon: Brain },
     ...(inTauri ? [{ id: 'vault' as const, labelKey: 'teams.vault', icon: ShieldCheck }] : []),
   ]
@@ -606,6 +666,7 @@ export function Teams() {
                       onKandidat={setNewMemberId}
                       onEinladen={() => void inviteMember()}
                       onSchalter={(member, next) => void setMemberSwitches(member, next)}
+                      onSetMemberRoles={(member, roleIds) => void setMemberRoles(member, roleIds)}
                       onEntfernen={(member) => void removeMember(member)}
                     />
                   )}
@@ -655,6 +716,16 @@ export function Teams() {
                     </section>
                   )}
 
+                  {aktiverReiter === 'roles' && (
+                    <RollenReiter
+                      team={team}
+                      busy={busy}
+                      onOpenCreateRole={openCreateRole}
+                      onOpenEditRole={openEditRole}
+                      onDeleteRole={(role) => void deleteRole(role)}
+                    />
+                  )}
+
                   {aktiverReiter === 'knowledge' && (
                     <section className="space-y-6 max-w-5xl" aria-labelledby="team-knowledge">
                       <div>
@@ -698,13 +769,23 @@ export function Teams() {
             )}
           </main>
         </div>
+
+      {team && (
+        <TeamRoleModal
+          open={roleModalOpen}
+          onOpenChange={setRoleModalOpen}
+          team={team}
+          role={editingRole}
+          onSaved={onRoleSaved}
+        />
+      )}
     </div>
   )
 }
 
 function MitgliederReiter({
   team, benutzerId, kandidaten, newMemberId, busy, offeneBeitritte, offeneAnhebungen,
-  onKandidat, onEinladen, onSchalter, onEntfernen,
+  onKandidat, onEinladen, onSchalter, onSetMemberRoles, onEntfernen,
 }: {
   team: TeamDetail
   benutzerId: number | null
@@ -716,13 +797,14 @@ function MitgliederReiter({
   onKandidat: (id: string | null) => void
   onEinladen: () => void
   onSchalter: (member: TeamMember, next: { can_manage_skills: boolean; can_manage_memory: boolean; can_access_vault?: boolean }) => void
+  onSetMemberRoles: (member: TeamMember, roleIds: number[]) => void
   onEntfernen: (member: TeamMember) => void
 }) {
   const { t } = useTranslation()
-  const spalten = 'md:grid-cols-[minmax(0,1fr)_8rem_8rem_8rem_2.75rem]'
+  const spalten = 'md:grid-cols-[minmax(0,1.2fr)_12rem_7rem_7rem_7rem_2.75rem]'
 
   return (
-    <section className="space-y-6 max-w-5xl" aria-labelledby="team-members">
+    <section className="space-y-6 max-w-6xl" aria-labelledby="team-members">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h3 id="team-members" className="font-headline text-lg font-semibold text-on-surface">
@@ -759,6 +841,7 @@ function MitgliederReiter({
           className={`hidden gap-4 border-b border-outline-variant/40 bg-surface-container-low/40 px-4 py-3 font-label-md text-label-sm uppercase tracking-wider text-on-surface-variant md:grid ${spalten}`}
         >
           <span>{t('teams.member')}</span>
+          <span>{t('teams.roles')}</span>
           <span>{t('teams.manageSkills')}</span>
           <span>{t('teams.manageMemory')}</span>
           <span>{t('teams.accessVault')}</span>
@@ -767,6 +850,12 @@ function MitgliederReiter({
         <ul className="divide-y divide-outline-variant/30">
           {team.members.map((member) => {
             const ich = member.user_id === benutzerId
+            const roleOptions = (team.roles || []).map((r) => ({ value: String(r.id), label: r.name }))
+            const memberRoleValues = (
+              member.roles?.map((r) => String(r.id)) ??
+              (member.role_ids?.map(String) ?? (member.team_role_id ? [String(member.team_role_id)] : []))
+            )
+
             return (
               <li
                 key={member.user_id}
@@ -790,6 +879,20 @@ function MitgliederReiter({
                         </>
                       )}
                     </span>
+                    {member.roles && member.roles.length > 0 && (
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {member.roles.map((r) => (
+                          <span
+                            key={r.id}
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold text-white shadow-2xs"
+                            style={{ backgroundColor: r.color || '#3b82f6' }}
+                          >
+                            {r.is_admin && <Crown className="h-2.5 w-2.5 text-amber-300" />}
+                            {r.name}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="flex justify-end md:order-last">
@@ -803,6 +906,38 @@ function MitgliederReiter({
                     </Button>
                   )}
                 </div>
+
+                {/* Rollen-Zuweisung */}
+                <div className="col-span-2 flex flex-col justify-center gap-1 md:col-span-1 min-w-[10rem]">
+                  <span className="text-xs font-semibold text-on-surface-variant md:hidden">{t('teams.roles')}</span>
+                  {team.is_owner && member.role !== 'owner' ? (
+                    <MultiSelect
+                      options={roleOptions}
+                      values={memberRoleValues}
+                      onChange={(selectedIds) => onSetMemberRoles(member, selectedIds.map(Number))}
+                      disabled={busy}
+                      placeholder={t('teams.assignRoles')}
+                      aria-label={`${t('teams.roles')}: ${member.username}`}
+                    />
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {(member.roles || []).map((r) => (
+                        <span
+                          key={r.id}
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-white shadow-2xs"
+                          style={{ backgroundColor: r.color || '#3b82f6' }}
+                        >
+                          {r.is_admin && <Crown className="h-2.5 w-2.5 text-amber-300" />}
+                          {r.name}
+                        </span>
+                      ))}
+                      {(!member.roles || member.roles.length === 0) && (
+                        <span className="text-xs text-on-surface-variant/70 italic">-</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <label className="col-span-2 flex items-center justify-between gap-2 md:col-span-1 md:justify-start">
                   <span className="text-xs text-on-surface-variant md:hidden">{t('teams.manageSkills')}</span>
                   <Switch
@@ -860,6 +995,182 @@ function MitgliederReiter({
             hinweis={t('teams.pendingUpgradesHint')}
             einladungen={offeneAnhebungen}
           />
+        </div>
+      )}
+    </section>
+  )
+}
+
+function RollenReiter({
+  team,
+  busy,
+  onOpenCreateRole,
+  onOpenEditRole,
+  onDeleteRole,
+}: {
+  team: TeamDetail
+  busy: boolean
+  onOpenCreateRole: () => void
+  onOpenEditRole: (role: TeamRole) => void
+  onDeleteRole: (role: TeamRole) => void
+}) {
+  const { t } = useTranslation()
+  const roles = team.roles || []
+
+  return (
+    <section className="space-y-6 max-w-5xl" aria-labelledby="team-roles">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h3 id="team-roles" className="font-headline text-lg font-semibold text-on-surface">
+            {t('teams.roles')}
+          </h3>
+          <p className="text-xs sm:text-sm text-on-surface-variant">
+            {t('teams.rolesHint')}
+          </p>
+        </div>
+
+        {team.is_owner && (
+          <Button type="button" size="sm" disabled={busy} onClick={onOpenCreateRole}>
+            <Plus className="h-4 w-4 mr-1.5" aria-hidden="true" />
+            {t('teams.createRole')}
+          </Button>
+        )}
+      </div>
+
+      {roles.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/30 p-8 text-center text-sm text-on-surface-variant">
+          <Shield className="mx-auto h-8 w-8 text-on-surface-variant/60 mb-2" />
+          <p className="font-medium">{t('teams.noRolesYet')}</p>
+          {team.is_owner && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="mt-3"
+              disabled={busy}
+              onClick={onOpenCreateRole}
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              {t('teams.createRole')}
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {roles.map((role) => {
+            const hasServerGrants = (role.server_grants?.length ?? 0) > 0
+
+            return (
+              <div
+                key={role.id}
+                className="flex flex-col justify-between rounded-xl border border-outline-variant/40 bg-surface p-4 shadow-sm transition-all hover:border-outline-variant"
+              >
+                <div className="space-y-3">
+                  {/* Header: Color Indicator, Name & Badges */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className="h-3.5 w-3.5 shrink-0 rounded-full shadow-xs ring-2 ring-surface"
+                        style={{ backgroundColor: role.color || '#3b82f6' }}
+                      />
+                      <h4 className="font-bold text-sm text-on-surface truncate">
+                        {role.name}
+                      </h4>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                      {role.is_admin && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                          <Crown className="h-3 w-3" />
+                          {t('teams.adminBadge')}
+                        </span>
+                      )}
+                      {role.is_default && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary border border-primary/20">
+                          <Sparkles className="h-3 w-3" />
+                          {t('teams.defaultBadge')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  {role.description && (
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                      {role.description}
+                    </p>
+                  )}
+
+                  {/* Permission summary chips */}
+                  <div className="space-y-2 pt-1 border-t border-outline-variant/30">
+                    <div className="flex items-center gap-1.5 text-xs text-on-surface-variant font-medium">
+                      <Users className="h-3.5 w-3.5" />
+                      <span>{t('teams.roleMembersCount', { count: role.members_count })}</span>
+                    </div>
+
+                    {role.is_admin ? (
+                      <div className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                        Volle Berechtigungen (Administrator)
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {role.permission_keys.map((key) => (
+                          <span
+                            key={key}
+                            className="rounded-md bg-surface-container-high/80 px-2 py-0.5 text-[11px] text-on-surface-variant font-mono"
+                          >
+                            {t(`permissionDetails.${key.replace(/\./g, '_')}.title`, { defaultValue: key })}
+                          </span>
+                        ))}
+                        {hasServerGrants && (
+                          <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] text-primary font-medium flex items-center gap-1">
+                            <Server className="h-3 w-3" />
+                            {role.server_grants.length} Server
+                          </span>
+                        )}
+                        {role.permission_keys.length === 0 && !hasServerGrants && (
+                          <span className="text-[11px] text-on-surface-variant/70 italic">
+                            Keine Rechte zugewiesen
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions Footer */}
+                {team.is_owner && (
+                  <div className="flex items-center justify-end gap-1.5 pt-3 mt-3 border-t border-outline-variant/30">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => onOpenEditRole(role)}
+                      className="text-xs h-7 px-2"
+                      aria-label={`${t('teams.editRole')}: ${role.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5 mr-1" />
+                      {t('common.edit')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy || role.is_default}
+                      onClick={() => onDeleteRole(role)}
+                      className="text-xs h-7 px-2 text-status-destructive hover:bg-status-destructive/10"
+                      aria-label={`${t('teams.deleteRoleTitle')}: ${role.name}`}
+                      title={role.is_default ? 'Standardrolle kann nicht gelöscht werden' : undefined}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      {t('common.delete')}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </section>

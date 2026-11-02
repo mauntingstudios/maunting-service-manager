@@ -15,16 +15,30 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user, verify_csrf
 from middleware.rate_limit import auth_rate_limit
-from models import Server, Team, TeamInvitation, TeamMember, User
+from models import (
+    Server,
+    Team,
+    TeamInvitation,
+    TeamMember,
+    TeamMemberRole,
+    TeamRole,
+    TeamRolePermission,
+    TeamRoleServerGrant,
+    User,
+)
 from schemas.team import (
     TeamCreate,
     TeamDetailResponse,
     TeamInvitationResponse,
     TeamMemberResponse,
+    TeamMemberRolesUpdate,
     TeamMemberUpdate,
     TeamMemberWrite,
     TeamRename,
     TeamResponse,
+    TeamRoleResponse,
+    TeamRoleServerGrantResponse,
+    TeamRoleWrite,
     TeamServerGrantWrite,
     TeamServerResponse,
     TeamVaultRotateRequest,
@@ -101,6 +115,56 @@ def _invitation(db: Session, einladung: TeamInvitation, team: Team) -> TeamInvit
     )
 
 
+def _role_response(db: Session, role: TeamRole) -> TeamRoleResponse:
+    perm_keys = [p.permission_key for p in role.permissions]
+
+    grants_by_server: dict[int, list[str]] = {}
+    for sg in role.server_grants:
+        grants_by_server.setdefault(sg.server_id, []).append(sg.permission_key)
+
+    server_grant_responses: list[TeamRoleServerGrantResponse] = []
+    for s_id, p_keys in grants_by_server.items():
+        s = db.get(Server, s_id)
+        server_grant_responses.append(
+            TeamRoleServerGrantResponse(
+                server_id=s_id,
+                server_name=s.name if s else f"Server #{s_id}",
+                permission_keys=sorted(p_keys),
+            )
+        )
+
+    count = (
+        db.query(func.count(func.distinct(TeamMemberRole.team_member_id)))
+        .filter(TeamMemberRole.team_role_id == role.id)
+        .scalar()
+        or 0
+    )
+    legacy_count = (
+        db.query(func.count(TeamMember.id))
+        .filter(TeamMember.team_role_id == role.id)
+        .scalar()
+        or 0
+    )
+    members_count = max(count, legacy_count)
+
+    return TeamRoleResponse(
+        id=role.id,
+        team_id=role.team_id,
+        name=role.name,
+        description=role.description,
+        color=role.color,
+        can_access_vault=role.can_access_vault,
+        can_manage_skills=role.can_manage_skills,
+        can_manage_memory=role.can_manage_memory,
+        is_default=role.is_default,
+        is_admin=role.is_admin,
+        created_at=role.created_at,
+        permission_keys=perm_keys,
+        server_grants=server_grant_responses,
+        members_count=members_count,
+    )
+
+
 def _detail(db: Session, team: Team, user: User) -> TeamDetailResponse:
     rows = (
         db.query(TeamMember, User.username, User.avatar_url)
@@ -109,17 +173,28 @@ def _detail(db: Session, team: Team, user: User) -> TeamDetailResponse:
         .order_by(TeamMember.role.desc(), User.username)
         .all()
     )
-    members = [
-        TeamMemberResponse(
-            user_id=member.user_id, username=username, avatar_url=avatar_url, role=member.role,
-            can_manage_skills=member.can_manage_skills,
-            can_manage_memory=member.can_manage_memory,
-            can_access_vault=member.can_access_vault,
-            team_role_id=member.team_role_id,
-            joined_at=member.joined_at,
+    team_roles = team_service.list_team_roles(db, team.id)
+    roles_by_id = {r.id: _role_response(db, r) for r in team_roles}
+
+    members = []
+    for member, username, avatar_url in rows:
+        role_ids = team_service.get_member_role_ids(db, member.id, member.team_role_id)
+        m_roles = [roles_by_id[rid] for rid in role_ids if rid in roles_by_id]
+        members.append(
+            TeamMemberResponse(
+                user_id=member.user_id,
+                username=username,
+                avatar_url=avatar_url,
+                role=member.role,
+                can_manage_skills=member.can_manage_skills,
+                can_manage_memory=member.can_manage_memory,
+                can_access_vault=member.can_access_vault,
+                team_role_id=member.team_role_id,
+                role_ids=role_ids,
+                roles=m_roles,
+                joined_at=member.joined_at,
+            )
         )
-        for member, username, avatar_url in rows
-    ]
     servers: list[TeamServerResponse] = []
     for server_id in team_service.team_server_ids(db, team.id):
         server = db.get(Server, server_id)
@@ -141,7 +216,11 @@ def _detail(db: Session, team: Team, user: User) -> TeamDetailResponse:
         else []
     )
     return TeamDetailResponse(
-        **base.model_dump(), members=members, servers=servers, invitations=einladungen,
+        **base.model_dump(),
+        members=members,
+        servers=servers,
+        invitations=einladungen,
+        roles=list(roles_by_id.values()),
     )
 
 
@@ -332,6 +411,128 @@ def remove_member(
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.remove_member(db, team=team, user=user, member_user_id=member_user_id)
     return _detail(db, team, user)
+
+
+@router.put("/{team_id}/members/{member_user_id}/roles", response_model=TeamMemberResponse)
+def set_member_roles(
+    team_id: int,
+    member_user_id: int,
+    payload: TeamMemberRolesUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> TeamMemberResponse:
+    team = team_service.get_team_for_member(db, team_id, user)
+    valid_roles = team_service.set_member_roles(
+        db, team=team, user=user, member_user_id=member_user_id, role_ids=payload.role_ids
+    )
+    member = team_service.membership(db, team.id, member_user_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="Mitglied nicht gefunden")
+    target_user = db.get(User, member_user_id)
+    role_responses = [_role_response(db, r) for r in valid_roles]
+    return TeamMemberResponse(
+        user_id=member.user_id,
+        username=target_user.username if target_user else "",
+        avatar_url=target_user.avatar_url if target_user else None,
+        role=member.role,
+        can_manage_skills=member.can_manage_skills,
+        can_manage_memory=member.can_manage_memory,
+        can_access_vault=member.can_access_vault,
+        team_role_id=member.team_role_id,
+        role_ids=[r.id for r in valid_roles],
+        roles=role_responses,
+        joined_at=member.joined_at,
+    )
+
+
+# ── Team-Rollen ───────────────────────────────────────────────────────
+
+@router.get("/{team_id}/roles", response_model=list[TeamRoleResponse])
+def list_team_roles(
+    team_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[TeamRoleResponse]:
+    team = team_service.get_team_for_member(db, team_id, user)
+    roles = team_service.list_team_roles(db, team.id)
+    return [_role_response(db, role) for role in roles]
+
+
+@router.post("/{team_id}/roles", response_model=TeamRoleResponse, status_code=status.HTTP_201_CREATED)
+def create_team_role(
+    team_id: int,
+    payload: TeamRoleWrite,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> TeamRoleResponse:
+    team = team_service.get_team_for_member(db, team_id, user)
+    server_grants = [
+        {"server_id": g.server_id, "permission_keys": g.permission_keys}
+        for g in payload.server_grants
+    ]
+    role = team_service.create_team_role(
+        db,
+        team=team,
+        user=user,
+        name=payload.name,
+        description=payload.description,
+        color=payload.color,
+        is_default=payload.is_default,
+        is_admin=payload.is_admin,
+        can_access_vault=payload.can_access_vault,
+        can_manage_skills=payload.can_manage_skills,
+        can_manage_memory=payload.can_manage_memory,
+        permission_keys=payload.permission_keys,
+        server_grants=server_grants,
+    )
+    return _role_response(db, role)
+
+
+@router.put("/{team_id}/roles/{role_id}", response_model=TeamRoleResponse)
+def update_team_role(
+    team_id: int,
+    role_id: int,
+    payload: TeamRoleWrite,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> TeamRoleResponse:
+    team = team_service.get_team_for_member(db, team_id, user)
+    server_grants = [
+        {"server_id": g.server_id, "permission_keys": g.permission_keys}
+        for g in payload.server_grants
+    ]
+    role = team_service.update_team_role(
+        db,
+        team=team,
+        user=user,
+        role_id=role_id,
+        name=payload.name,
+        description=payload.description,
+        color=payload.color,
+        is_default=payload.is_default,
+        is_admin=payload.is_admin,
+        can_access_vault=payload.can_access_vault,
+        can_manage_skills=payload.can_manage_skills,
+        can_manage_memory=payload.can_manage_memory,
+        permission_keys=payload.permission_keys,
+        server_grants=server_grants,
+    )
+    return _role_response(db, role)
+
+
+@router.delete("/{team_id}/roles/{role_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_team_role(
+    team_id: int,
+    role_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> None:
+    team = team_service.get_team_for_member(db, team_id, user)
+    team_service.delete_team_role(db, team=team, user=user, role_id=role_id)
 
 
 @router.put("/{team_id}/servers", response_model=TeamDetailResponse)

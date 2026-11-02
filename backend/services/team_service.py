@@ -19,11 +19,24 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models import Team, TeamInvitation, TeamMember, TeamServerGrant, User
+from models import (
+    Server,
+    Team,
+    TeamInvitation,
+    TeamMember,
+    TeamMemberRole,
+    TeamRole,
+    TeamRolePermission,
+    TeamRoleServerGrant,
+    TeamServerGrant,
+    User,
+)
 from services import audit_service, permission_service
+from services.permission_catalog import SERVER_KEYS, TEAM_KEYS, is_team_key
 
 
 MAX_TEAMS_PER_OWNER = 20
@@ -123,6 +136,130 @@ def assert_team_owner(db: Session, team: Team, user: User) -> None:
         raise HTTPException(status_code=403, detail="Nur der Teamgruender darf das")
 
 
+def get_member_role_ids(db: Session, member_id: int, fallback_role_id: int | None = None) -> list[int]:
+    """Alle zugewiesenen Rollen-IDs eines Team-Mitglieds."""
+    rows = (
+        db.query(TeamMemberRole.team_role_id)
+        .filter(TeamMemberRole.team_member_id == member_id)
+        .all()
+    )
+    role_ids = {row[0] for row in rows}
+    if fallback_role_id is not None:
+        role_ids.add(fallback_role_id)
+    return sorted(role_ids)
+
+
+def has_team_permission(db: Session, team_id: int, user: User, permission_key: str) -> bool:
+    """Prüft, ob der Benutzer im Team dieses Recht hält (Owner, Rolle oder Legacy-Schalter)."""
+    if user.is_owner:
+        return True
+    member = membership(db, team_id, user.id)
+    if member is None:
+        return False
+    if member.role == "owner":
+        return True
+
+    role_ids = get_member_role_ids(db, member.id, member.team_role_id)
+    if role_ids:
+        roles = db.query(TeamRole).filter(TeamRole.id.in_(role_ids)).all()
+        for role in roles:
+            if role.is_admin:
+                return True
+        has_perm = (
+            db.query(TeamRolePermission.id)
+            .filter(
+                TeamRolePermission.role_id.in_(role_ids),
+                TeamRolePermission.permission_key == permission_key,
+            )
+            .first()
+        )
+        if has_perm is not None:
+            return True
+
+    # Fallback auf Legacy-Schalter an TeamMember
+    if permission_key in ("ai.skills.manage",) and member.can_manage_skills:
+        return True
+    if permission_key in ("ai.memory.write",) and member.can_manage_memory:
+        return True
+    if permission_key in ("vault.read", "vault.write") and member.can_access_vault:
+        return True
+
+    return False
+
+
+def assert_team_permission(db: Session, team: Team, user: User, permission_key: str) -> None:
+    if not has_team_permission(db, team.id, user, permission_key):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung im Team")
+
+
+def ensure_default_team_roles(
+    db: Session, team: Team, founder_member: TeamMember | None = None
+) -> list[TeamRole]:
+    """Stellt sicher, dass das Team die Standardrollen Admin, Mitglied und Gast besitzt."""
+    existing = db.query(TeamRole).filter(TeamRole.team_id == team.id).all()
+    if existing:
+        return existing
+
+    # 1. Admin
+    admin_role = TeamRole(
+        team_id=team.id,
+        name="Admin",
+        description="Voller Zugriff auf alle Funktionen des Teams",
+        color="#ef4444",
+        can_access_vault=True,
+        can_manage_skills=True,
+        can_manage_memory=True,
+        is_default=False,
+        is_admin=True,
+    )
+    db.add(admin_role)
+    db.flush()
+    for key in TEAM_KEYS:
+        db.add(TeamRolePermission(role_id=admin_role.id, permission_key=key))
+
+    # 2. Mitglied
+    member_role = TeamRole(
+        team_id=team.id,
+        name="Mitglied",
+        description="Standardrolle für neue Teammitglieder",
+        color="#3b82f6",
+        can_access_vault=True,
+        can_manage_skills=False,
+        can_manage_memory=False,
+        is_default=True,
+        is_admin=False,
+    )
+    db.add(member_role)
+    db.flush()
+    for key in ("vault.read", "vault.write", "ai.memory.read", "ai.skills.use", "ai.team_context.use"):
+        db.add(TeamRolePermission(role_id=member_role.id, permission_key=key))
+
+    # 3. Gast
+    guest_role = TeamRole(
+        team_id=team.id,
+        name="Gast",
+        description="Eingeschränkter Lesezugriff",
+        color="#64748b",
+        can_access_vault=True,
+        can_manage_skills=False,
+        can_manage_memory=False,
+        is_default=False,
+        is_admin=False,
+    )
+    db.add(guest_role)
+    db.flush()
+    for key in ("vault.read", "ai.memory.read"):
+        db.add(TeamRolePermission(role_id=guest_role.id, permission_key=key))
+
+    # Wenn Gründer-Mitglied übergeben wurde, Admin-Rolle zuweisen
+    if founder_member is not None:
+        founder_member.team_role_id = admin_role.id
+        db.add(TeamMemberRole(team_member_id=founder_member.id, team_role_id=admin_role.id))
+        db.flush()
+
+    return [admin_role, member_role, guest_role]
+
+
 def _assert_name_is_free(
     db: Session, *, owner_user_id: int, name: str, team_id: int | None = None
 ) -> None:
@@ -178,10 +315,13 @@ def create_team(db: Session, *, user: User, name: str) -> Team:
     team = Team(name=safe_name, owner_user_id=user.id, personal_for_user_id=None)
     db.add(team)
     db.flush()
-    db.add(TeamMember(
+    founder_member = TeamMember(
         team_id=team.id, user_id=user.id, role="owner",
         can_manage_skills=True, can_manage_memory=True, added_by=user.id,
-    ))
+    )
+    db.add(founder_member)
+    db.flush()
+    ensure_default_team_roles(db, team=team, founder_member=founder_member)
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.created", target_type="team",
         target_id=team.id, details={"name": safe_name}, origin="direct",
@@ -284,7 +424,8 @@ def invite_member(
     kann der Gruender ein zu grosszuegiges Angebot zuruecknehmen, ohne dass es
     dafuer einen eigenen Weg braucht.
     """
-    assert_team_owner(db, team, user)
+    if not has_team_permission(db, team.id, user, "team.members.invite"):
+        assert_team_owner(db, team, user)
     if team.is_personal:
         # Das persoenliche Team ist per Definition eines. Wer teilen will,
         # gruendet ein echtes — sonst waere "persoenlich" nur noch ein Name.
@@ -294,6 +435,11 @@ def invite_member(
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     if membership(db, team.id, new_user_id) is not None:
         raise HTTPException(status_code=409, detail="Benutzer ist bereits im Team")
+
+    if team_role_id is None and not team.is_personal:
+        default_role = db.query(TeamRole.id).filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True)).first()
+        if default_role is not None:
+            team_role_id = default_role[0]
 
     offen = invitation(db, team.id, new_user_id)
     if offen is None:
@@ -359,6 +505,12 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
         bestehend.can_access_vault = einladung.can_access_vault
         if einladung.team_role_id is not None:
             bestehend.team_role_id = einladung.team_role_id
+            exists = db.query(TeamMemberRole.id).filter(
+                TeamMemberRole.team_member_id == bestehend.id,
+                TeamMemberRole.team_role_id == einladung.team_role_id,
+            ).first()
+            if exists is None:
+                db.add(TeamMemberRole(team_member_id=bestehend.id, team_role_id=einladung.team_role_id))
         db.delete(einladung)
         # Kein "joined": beigetreten ist hier niemand. Dieselbe Aktion und
         # dieselben Felder wie in `update_member` — nur steht als Handelnder
@@ -392,6 +544,14 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
         added_by=einladung.invited_by,
     )
     db.add(member)
+    db.flush()
+    if einladung.team_role_id is not None:
+        db.add(TeamMemberRole(team_member_id=member.id, team_role_id=einladung.team_role_id))
+    elif not team.is_personal:
+        default_role = db.query(TeamRole).filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True)).first()
+        if default_role is not None:
+            member.team_role_id = default_role.id
+            db.add(TeamMemberRole(team_member_id=member.id, team_role_id=default_role.id))
     db.delete(einladung)
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.member.joined", target_type="team",
@@ -510,7 +670,8 @@ def remove_member(db: Session, *, team: Team, user: User, member_user_id: int) -
     fuer alles, was das Team weitergibt.
     """
     if member_user_id != user.id:
-        assert_team_owner(db, team, user)
+        if not has_team_permission(db, team.id, user, "team.members.kick"):
+            assert_team_owner(db, team, user)
     if member_user_id == team.owner_user_id:
         raise HTTPException(status_code=409, detail="Der Gruender bleibt im Team")
     member = membership(db, team.id, member_user_id)
@@ -572,7 +733,8 @@ def set_server_grants(
     """
     from services.permission_catalog import SERVER_KEYS
 
-    assert_team_owner(db, team, user)
+    if not has_team_permission(db, team.id, user, "team.servers.manage"):
+        assert_team_owner(db, team, user)
     if team.is_personal:
         raise HTTPException(status_code=409, detail="Das persoenliche Team teilt keine Server")
 
@@ -803,10 +965,266 @@ def learning_team(
 
 
 def can_manage_team_skills(db: Session, user: User, team_id: int) -> bool:
-    member = membership(db, team_id, user.id)
-    return member is not None and member.can_manage_skills
+    return has_team_permission(db, team_id, user, "ai.skills.manage")
 
 
 def can_manage_team_memory(db: Session, user: User, team_id: int) -> bool:
-    member = membership(db, team_id, user.id)
-    return member is not None and member.can_manage_memory
+    return has_team_permission(db, team_id, user, "ai.memory.write")
+
+
+def list_team_roles(db: Session, team_id: int) -> list[TeamRole]:
+    """Gibt alle Rollen des Teams zurück, sortiert nach Admin, Default und Name."""
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail="Team nicht gefunden")
+    roles = (
+        db.query(TeamRole)
+        .filter(TeamRole.team_id == team_id)
+        .order_by(TeamRole.is_admin.desc(), TeamRole.is_default.desc(), TeamRole.name)
+        .all()
+    )
+    if not roles and not team.is_personal:
+        roles = ensure_default_team_roles(db, team)
+        db.commit()
+    return roles
+
+
+def get_team_role(db: Session, team_id: int, role_id: int) -> TeamRole:
+    role = (
+        db.query(TeamRole)
+        .filter(TeamRole.team_id == team_id, TeamRole.id == role_id)
+        .first()
+    )
+    if role is None:
+        raise HTTPException(status_code=404, detail="Team-Rolle nicht gefunden")
+    return role
+
+
+def create_team_role(
+    db: Session,
+    *,
+    team: Team,
+    user: User,
+    name: str,
+    description: str | None = None,
+    color: str = "#3b82f6",
+    is_default: bool = False,
+    is_admin: bool = False,
+    can_access_vault: bool = True,
+    can_manage_skills: bool = False,
+    can_manage_memory: bool = False,
+    permission_keys: list[str] | None = None,
+    server_grants: list[dict] | None = None,
+) -> TeamRole:
+    """Erstellt eine neue Rolle im Team."""
+    if not has_team_permission(db, team.id, user, "team.roles.manage"):
+        assert_team_owner(db, team, user)
+
+    safe_name = name.strip()
+    if not 2 <= len(safe_name) <= 32:
+        raise HTTPException(status_code=422, detail="Rollenname muss 2 bis 32 Zeichen lang sein")
+
+    existing_name = (
+        db.query(TeamRole.id)
+        .filter(TeamRole.team_id == team.id, func.lower(TeamRole.name) == safe_name.lower())
+        .first()
+    )
+    if existing_name is not None:
+        raise HTTPException(status_code=409, detail="Eine Rolle mit diesem Namen existiert bereits im Team")
+
+    if is_default:
+        db.query(TeamRole).filter(TeamRole.team_id == team.id).update({TeamRole.is_default: False})
+
+    role = TeamRole(
+        team_id=team.id,
+        name=safe_name,
+        description=description.strip() if description else None,
+        color=color if color else "#3b82f6",
+        is_default=is_default,
+        is_admin=is_admin,
+        can_access_vault=can_access_vault,
+        can_manage_skills=can_manage_skills,
+        can_manage_memory=can_manage_memory,
+    )
+    db.add(role)
+    db.flush()
+
+    if permission_keys:
+        for key in permission_keys:
+            if is_team_key(key):
+                db.add(TeamRolePermission(role_id=role.id, permission_key=key))
+
+    if server_grants:
+        founder = db.get(User, team.owner_user_id)
+        for grant in server_grants:
+            server_id = grant.get("server_id")
+            keys = grant.get("permission_keys", [])
+            if not server_id:
+                continue
+            for k in keys:
+                if k in SERVER_KEYS:
+                    if founder and not permission_service.direct_server_permission(db, founder, server_id, k):
+                        raise HTTPException(
+                            status_code=403,
+                            detail=f"Der Teamgründer hält \"{k}\" auf Server {server_id} nicht direkt.",
+                        )
+                    db.add(TeamRoleServerGrant(role_id=role.id, server_id=server_id, permission_key=k))
+
+    audit_service.record_privileged_action(
+        db, user_id=user.id, action="team.role.created", target_type="team_role",
+        target_id=role.id, details={"name": safe_name, "team_id": team.id}, origin="direct",
+    )
+    db.commit()
+    db.refresh(role)
+    return role
+
+
+def update_team_role(
+    db: Session,
+    *,
+    team: Team,
+    user: User,
+    role_id: int,
+    name: str,
+    description: str | None = None,
+    color: str = "#3b82f6",
+    is_default: bool = False,
+    is_admin: bool = False,
+    can_access_vault: bool = True,
+    can_manage_skills: bool = False,
+    can_manage_memory: bool = False,
+    permission_keys: list[str] | None = None,
+    server_grants: list[dict] | None = None,
+) -> TeamRole:
+    """Aktualisiert eine bestehende Rolle im Team."""
+    if not has_team_permission(db, team.id, user, "team.roles.manage"):
+        assert_team_owner(db, team, user)
+
+    role = get_team_role(db, team.id, role_id)
+    safe_name = name.strip()
+    if not 2 <= len(safe_name) <= 32:
+        raise HTTPException(status_code=422, detail="Rollenname muss 2 bis 32 Zeichen lang sein")
+
+    existing_name = (
+        db.query(TeamRole.id)
+        .filter(
+            TeamRole.team_id == team.id,
+            TeamRole.id != role_id,
+            func.lower(TeamRole.name) == safe_name.lower(),
+        )
+        .first()
+    )
+    if existing_name is not None:
+        raise HTTPException(status_code=409, detail="Eine Rolle mit diesem Namen existiert bereits im Team")
+
+    if is_default and not role.is_default:
+        db.query(TeamRole).filter(TeamRole.team_id == team.id).update({TeamRole.is_default: False})
+
+    role.name = safe_name
+    role.description = description.strip() if description else None
+    role.color = color if color else "#3b82f6"
+    role.is_default = is_default
+    role.is_admin = is_admin
+    role.can_access_vault = can_access_vault
+    role.can_manage_skills = can_manage_skills
+    role.can_manage_memory = can_manage_memory
+
+    if permission_keys is not None:
+        desired_keys = {k for k in permission_keys if is_team_key(k)}
+        db.query(TeamRolePermission).filter(TeamRolePermission.role_id == role.id).delete()
+        for key in desired_keys:
+            db.add(TeamRolePermission(role_id=role.id, permission_key=key))
+
+    if server_grants is not None:
+        db.query(TeamRoleServerGrant).filter(TeamRoleServerGrant.role_id == role.id).delete()
+        founder = db.get(User, team.owner_user_id)
+        for grant in server_grants:
+            server_id = grant.get("server_id")
+            keys = grant.get("permission_keys", [])
+            if not server_id:
+                continue
+            for k in keys:
+                if k in SERVER_KEYS:
+                    if founder and not permission_service.direct_server_permission(db, founder, server_id, k):
+                        raise HTTPException(
+                            status_code=403,
+                            detail=f"Der Teamgründer hält \"{k}\" auf Server {server_id} nicht direkt.",
+                        )
+                    db.add(TeamRoleServerGrant(role_id=role.id, server_id=server_id, permission_key=k))
+
+    audit_service.record_privileged_action(
+        db, user_id=user.id, action="team.role.updated", target_type="team_role",
+        target_id=role.id, details={"name": safe_name, "team_id": team.id}, origin="direct",
+    )
+    db.commit()
+    db.refresh(role)
+    return role
+
+
+def delete_team_role(db: Session, *, team: Team, user: User, role_id: int) -> None:
+    """Löscht eine Team-Rolle."""
+    if not has_team_permission(db, team.id, user, "team.roles.manage"):
+        assert_team_owner(db, team, user)
+
+    role = get_team_role(db, team.id, role_id)
+    if role.is_default:
+        raise HTTPException(status_code=409, detail="Die Standardrolle eines Teams kann nicht gelöscht werden")
+
+    audit_service.record_privileged_action(
+        db, user_id=user.id, action="team.role.deleted", target_type="team_role",
+        target_id=role.id, details={"name": role.name, "team_id": team.id}, origin="direct",
+    )
+    db.delete(role)
+    db.commit()
+
+
+def get_member_roles(db: Session, member_id: int) -> list[TeamRole]:
+    """Gibt alle TeamRole-Objekte eines Mitglieds zurück."""
+    member = db.get(TeamMember, member_id)
+    if member is None:
+        return []
+    role_ids = get_member_role_ids(db, member.id, member.team_role_id)
+    if not role_ids:
+        return []
+    return db.query(TeamRole).filter(TeamRole.id.in_(role_ids)).order_by(TeamRole.name).all()
+
+
+def set_member_roles(
+    db: Session, *, team: Team, user: User, member_user_id: int, role_ids: list[int]
+) -> list[TeamRole]:
+    """Weist einem Mitglied Rollen im Team zu."""
+    if not has_team_permission(db, team.id, user, "team.roles.manage"):
+        assert_team_owner(db, team, user)
+
+    member = membership(db, team.id, member_user_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="Mitglied nicht gefunden")
+
+    valid_roles = (
+        db.query(TeamRole)
+        .filter(TeamRole.team_id == team.id, TeamRole.id.in_(role_ids))
+        .all()
+    ) if role_ids else []
+
+    valid_role_ids = {r.id for r in valid_roles}
+
+    db.query(TeamMemberRole).filter(TeamMemberRole.team_member_id == member.id).delete()
+    for rid in valid_role_ids:
+        db.add(TeamMemberRole(team_member_id=member.id, team_role_id=rid))
+
+    member.team_role_id = next(iter(valid_role_ids), None)
+
+    if any(r.can_access_vault for r in valid_roles):
+        member.can_access_vault = True
+    if any(r.can_manage_skills for r in valid_roles):
+        member.can_manage_skills = True
+    if any(r.can_manage_memory for r in valid_roles):
+        member.can_manage_memory = True
+
+    audit_service.record_privileged_action(
+        db, user_id=user.id, action="team.member.roles.set", target_type="team",
+        target_id=team.id, details={"member_user_id": member_user_id, "role_ids": sorted(valid_role_ids)},
+        origin="direct",
+    )
+    db.commit()
+    return valid_roles

@@ -114,8 +114,8 @@ class Team(Base):
 class TeamRole(Base):
     """Team-spezifische Rollen für feingranulare Berechtigungen.
 
-    Steuert Tresor-Zugriff (can_access_vault), Skill- und Memory-Verwaltung.
-    Standard-Rollen sind 'Admin' (alles an), 'Mitglied' (Tresor an), 'Gast' (alles aus).
+    Steuert Server-Rechte, KI-Wissen, Tresor-Zugriff und Team-Verwaltung.
+    Standard-Rollen sind 'Admin' (alles an), 'Mitglied' (Tresor/Wissen an), 'Gast' (Leserechte).
     """
 
     __tablename__ = "team_roles"
@@ -128,17 +128,91 @@ class TeamRole(Base):
         Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(32), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     color: Mapped[str] = mapped_column(String(16), default="#3b82f6", nullable=False)
     can_access_vault: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     can_manage_skills: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_manage_memory: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )
 
     team: Mapped["Team"] = relationship("Team", back_populates="roles")
     members: Mapped[list["TeamMember"]] = relationship("TeamMember", back_populates="team_role")
+    permissions: Mapped[list["TeamRolePermission"]] = relationship(
+        "TeamRolePermission", back_populates="role", cascade="all, delete-orphan"
+    )
+    server_grants: Mapped[list["TeamRoleServerGrant"]] = relationship(
+        "TeamRoleServerGrant", back_populates="role", cascade="all, delete-orphan"
+    )
+    member_assignments: Mapped[list["TeamMemberRole"]] = relationship(
+        "TeamMemberRole", back_populates="role", cascade="all, delete-orphan"
+    )
+
+
+class TeamRolePermission(Base):
+    """Ein permission_key, der einer Team-Rolle zugewiesen ist."""
+
+    __tablename__ = "team_role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role_id", "permission_key", name="uq_team_role_permissions_role_key"),
+        Index("ix_team_role_permissions_lookup", "role_id", "permission_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    role_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("team_roles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    permission_key: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    role: Mapped["TeamRole"] = relationship("TeamRole", back_populates="permissions")
+
+
+class TeamRoleServerGrant(Base):
+    """Ein Server-Recht, das einer Team-Rolle für einen bestimmten Server gewährt wird."""
+
+    __tablename__ = "team_role_server_grants"
+    __table_args__ = (
+        UniqueConstraint("role_id", "server_id", "permission_key", name="uq_team_role_server_grants"),
+        Index("ix_team_role_server_grants_lookup", "server_id", "permission_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    role_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("team_roles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    server_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("servers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    permission_key: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    role: Mapped["TeamRole"] = relationship("TeamRole", back_populates="server_grants")
+
+
+class TeamMemberRole(Base):
+    """Verknüpfung zwischen TeamMember und TeamRole (Mehrfachrollen pro Mitglied)."""
+
+    __tablename__ = "team_member_roles"
+    __table_args__ = (
+        UniqueConstraint("team_member_id", "team_role_id", name="uq_team_member_roles"),
+        Index("ix_team_member_roles_lookup", "team_member_id", "team_role_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_member_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("team_members.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    team_role_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("team_roles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+
+    member: Mapped["TeamMember"] = relationship("TeamMember", back_populates="role_assignments")
+    role: Mapped["TeamRole"] = relationship("TeamRole", back_populates="member_assignments")
 
 
 class TeamMember(Base):
@@ -180,6 +254,9 @@ class TeamMember(Base):
 
     team: Mapped["Team"] = relationship("Team", back_populates="members")
     team_role: Mapped["TeamRole | None"] = relationship("TeamRole", back_populates="members")
+    role_assignments: Mapped[list["TeamMemberRole"]] = relationship(
+        "TeamMemberRole", back_populates="member", cascade="all, delete-orphan"
+    )
 
 
 class TeamInvitation(Base):

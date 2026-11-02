@@ -222,6 +222,31 @@ SERVER_KEYS: frozenset[str] = frozenset(p.key for p in SERVER_PERMISSIONS)
 ALL_KEYS: frozenset[str] = GLOBAL_KEYS | SERVER_KEYS
 
 
+# ── Team-spezifische Permissions ──────────────────────────────────────
+# Werden in `team_role_permissions` einer Rolle im Team zugeordnet.
+
+TEAM_PERMISSIONS: tuple[PermissionDef, ...] = (
+    PermissionDef("team.members.invite",  "team",  "Mitglieder einladen"),
+    PermissionDef("team.members.kick",    "team",  "Mitglieder entfernen"),
+    PermissionDef("team.roles.manage",    "team",  "Team-Rollen verwalten"),
+    PermissionDef("team.servers.manage",  "team",  "Team-Server verwalten"),
+    PermissionDef("ai.memory.read",       "ai",    "Team-Gedächtnis einsehen"),
+    PermissionDef("ai.memory.write",      "ai",    "Team-Gedächtnis bearbeiten"),
+    PermissionDef("ai.skills.use",        "ai",    "Team-Skills ausführen"),
+    PermissionDef("ai.skills.manage",     "ai",    "Team-Skills erstellen und bearbeiten"),
+    PermissionDef("ai.team_context.use",  "ai",    "Team-Kontext in Prompts nutzen"),
+    PermissionDef("vault.read",           "vault", "Team-Tresor einsehen"),
+    PermissionDef("vault.write",          "vault", "Einträge im Team-Tresor erstellen und bearbeiten"),
+    PermissionDef("vault.files",          "vault", "Dateianhänge im Team-Tresor verwalten"),
+)
+
+TEAM_KEYS: frozenset[str] = frozenset(p.key for p in TEAM_PERMISSIONS)
+
+
+def is_team_key(key: str) -> bool:
+    return key in TEAM_KEYS
+
+
 # ── Unkritische Serverrechte ──────────────────────────────────────────
 # Was die KI im autonomen Modus ohne Rueckfrage vergeben darf, wenn jemand
 # "die normalen Rechte" fuer einen Server verlangt: sehen, starten, stoppen,

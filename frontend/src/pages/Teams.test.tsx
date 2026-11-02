@@ -26,6 +26,11 @@ vi.mock('@/api/teams', () => ({
     invitations: vi.fn(),
     acceptInvitation: vi.fn(),
     declineInvitation: vi.fn(),
+    listRoles: vi.fn(),
+    createRole: vi.fn(),
+    updateRole: vi.fn(),
+    deleteRole: vi.fn(),
+    setMemberRoles: vi.fn(),
   },
 }))
 
@@ -60,7 +65,7 @@ const personal: Team = {
 
 const real: Team = { ...personal, id: 2, name: 'Betrieb', is_personal: false, member_count: 2 }
 
-const personalDetail: TeamDetail = { ...personal, members: [], servers: [], invitations: [] }
+const personalDetail: TeamDetail = { ...personal, members: [], servers: [], invitations: [], roles: [] }
 
 /** Der offen Eingeladene: angeschrieben, aber kein Mitglied. */
 const offeneEinladung: TeamInvitation = {
@@ -77,6 +82,40 @@ const realDetail: TeamDetail = {
   ],
   servers: [{ server_id: 7, server_name: 'Valheim', permission_keys: ['server.view'] }],
   invitations: [offeneEinladung],
+  roles: [
+    {
+      id: 10,
+      team_id: 2,
+      name: 'Admin',
+      description: 'Volle Rechte',
+      color: '#3b82f6',
+      can_access_vault: true,
+      can_manage_skills: true,
+      can_manage_memory: true,
+      is_default: false,
+      is_admin: true,
+      created_at: '2026-08-09T10:00:00Z',
+      permission_keys: [],
+      server_grants: [],
+      members_count: 1,
+    },
+    {
+      id: 11,
+      team_id: 2,
+      name: 'Mitglied',
+      description: 'Standard-Rechte',
+      color: '#10b981',
+      can_access_vault: true,
+      can_manage_skills: false,
+      can_manage_memory: false,
+      is_default: true,
+      is_admin: false,
+      created_at: '2026-08-09T10:00:00Z',
+      permission_keys: ['ai.memory.read'],
+      server_grants: [{ server_id: 7, server_name: 'Valheim', permission_keys: ['server.view'] }],
+      members_count: 1,
+    },
+  ],
 }
 
 /** Eine Einladung an den angemeldeten Benutzer selbst — sein Weg ins Team. */
@@ -519,5 +558,35 @@ describe('Teams', () => {
     await screen.findByRole('heading', { name: 'Betrieb' })
 
     expect(screen.queryByLabelText('Teamname')).not.toBeInTheDocument()
+  })
+
+  it('zeigt den Rollen-Reiter und listet Rollen auf', async () => {
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    const rolesTab = screen.getByRole('tab', { name: /Rollen/i })
+    fireEvent.click(rolesTab)
+
+    expect(await screen.findByRole('heading', { name: 'Admin' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Mitglied' })).toBeInTheDocument()
+    expect(screen.getByText('Volle Berechtigungen (Administrator)')).toBeInTheDocument()
+    expect(screen.getByText('Standard')).toBeInTheDocument()
+  })
+
+  it('loescht eine Rolle nach Bestaetigung', async () => {
+    vi.mocked(teamsApi.deleteRole).mockResolvedValue(undefined as any)
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    const rolesTab = screen.getByRole('tab', { name: /Rollen/i })
+    fireEvent.click(rolesTab)
+
+    const deleteBtn = await screen.findByLabelText('Rolle löschen: Admin')
+    fireEvent.click(deleteBtn)
+
+    await waitFor(() => expect(confirm).toHaveBeenCalled())
+    await waitFor(() => expect(teamsApi.deleteRole).toHaveBeenCalledWith(2, 10))
   })
 })

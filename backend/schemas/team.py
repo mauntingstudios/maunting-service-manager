@@ -20,6 +20,7 @@ class TeamMemberWrite(BaseModel):
     can_manage_memory: bool = False
     can_access_vault: bool = True
     team_role_id: int | None = None
+    role_ids: list[int] = Field(default_factory=list)
 
 
 class TeamMemberUpdate(BaseModel):
@@ -27,27 +28,52 @@ class TeamMemberUpdate(BaseModel):
     can_manage_memory: bool
     can_access_vault: bool = True
     team_role_id: int | None = None
+    role_ids: list[int] | None = None
+
+
+class TeamMemberRolesUpdate(BaseModel):
+    role_ids: list[int] = Field(default_factory=list)
+
+
+class TeamRoleServerGrantWrite(BaseModel):
+    server_id: int = Field(ge=1)
+    permission_keys: list[str] = Field(default_factory=list, max_length=64)
+
+
+class TeamRoleServerGrantResponse(BaseModel):
+    server_id: int
+    server_name: str
+    permission_keys: list[str]
 
 
 class TeamRoleWrite(BaseModel):
     name: str = Field(min_length=2, max_length=32)
+    description: str | None = Field(default=None, max_length=255)
     color: str = Field(default="#3b82f6", max_length=16)
     can_access_vault: bool = True
     can_manage_skills: bool = False
     can_manage_memory: bool = False
     is_default: bool = False
+    is_admin: bool = False
+    permission_keys: list[str] = Field(default_factory=list, max_length=64)
+    server_grants: list[TeamRoleServerGrantWrite] = Field(default_factory=list)
 
 
 class TeamRoleResponse(BaseModel):
     id: int
     team_id: int
     name: str
+    description: str | None = None
     color: str
     can_access_vault: bool
     can_manage_skills: bool
     can_manage_memory: bool
     is_default: bool
+    is_admin: bool = False
     created_at: datetime
+    permission_keys: list[str] = Field(default_factory=list)
+    server_grants: list[TeamRoleServerGrantResponse] = Field(default_factory=list)
+    members_count: int = 0
 
 
 class TeamServerGrantWrite(BaseModel):
@@ -65,6 +91,8 @@ class TeamMemberResponse(BaseModel):
     can_manage_memory: bool
     can_access_vault: bool = True
     team_role_id: int | None = None
+    role_ids: list[int] = Field(default_factory=list)
+    roles: list[TeamRoleResponse] = Field(default_factory=list)
     joined_at: datetime
 
 

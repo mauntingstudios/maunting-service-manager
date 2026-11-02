@@ -16,6 +16,8 @@ export interface TeamMember {
   can_manage_memory: boolean
   can_access_vault?: boolean
   team_role_id?: number | null
+  role_ids?: number[]
+  roles?: TeamRole[]
   joined_at: string
 }
 
@@ -62,11 +64,48 @@ export interface Team {
   created_at: string
 }
 
+export interface TeamRoleServerGrant {
+  server_id: number
+  server_name: string
+  permission_keys: string[]
+}
+
+export interface TeamRole {
+  id: number
+  team_id: number
+  name: string
+  description?: string | null
+  color: string
+  can_access_vault: boolean
+  can_manage_skills: boolean
+  can_manage_memory: boolean
+  is_default: boolean
+  is_admin: boolean
+  created_at: string
+  permission_keys: string[]
+  server_grants: TeamRoleServerGrant[]
+  members_count: number
+}
+
+export interface TeamRoleWritePayload {
+  name: string
+  description?: string | null
+  color?: string
+  can_access_vault?: boolean
+  can_manage_skills?: boolean
+  can_manage_memory?: boolean
+  is_default?: boolean
+  is_admin?: boolean
+  permission_keys?: string[]
+  server_grants?: { server_id: number; permission_keys: string[] }[]
+}
+
 export interface TeamDetail extends Team {
   members: TeamMember[]
   servers: TeamServer[]
   /** Offene Einladungen dieses Teams — das Backend füllt sie nur für den Gründer. */
   invitations: TeamInvitation[]
+  roles?: TeamRole[]
 }
 
 export interface TeamVaultSaltResponse {
@@ -137,6 +176,7 @@ export const teamsApi = {
     can_manage_memory: boolean
     can_access_vault?: boolean
     team_role_id?: number | null
+    role_ids?: number[]
   }) => api<TeamDetail>(`/teams/${teamId}/members`, {
     method: 'POST', body: JSON.stringify(payload),
   }),
@@ -145,6 +185,7 @@ export const teamsApi = {
     can_manage_memory: boolean
     can_access_vault?: boolean
     team_role_id?: number | null
+    role_ids?: number[]
   }) => api<TeamDetail>(`/teams/${teamId}/members/${userId}`, {
     method: 'PUT', body: JSON.stringify(payload),
   }),
@@ -156,6 +197,24 @@ export const teamsApi = {
   }) => api<TeamDetail>(`/teams/${teamId}/servers`, {
     method: 'PUT', body: JSON.stringify(payload),
   }),
+  listRoles: (teamId: number) => api<TeamRole[]>(`/teams/${teamId}/roles`),
+  createRole: (teamId: number, payload: TeamRoleWritePayload) =>
+    api<TeamRole>(`/teams/${teamId}/roles`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateRole: (teamId: number, roleId: number, payload: Partial<TeamRoleWritePayload>) =>
+    api<TeamRole>(`/teams/${teamId}/roles/${roleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  deleteRole: (teamId: number, roleId: number) =>
+    api(`/teams/${teamId}/roles/${roleId}`, { method: 'DELETE' }),
+  setMemberRoles: (teamId: number, userId: number, roleIds: number[]) =>
+    api<TeamMember>(`/teams/${teamId}/members/${userId}/roles`, {
+      method: 'PUT',
+      body: JSON.stringify({ role_ids: roleIds }),
+    }),
   /**
    * Was der Gründer dem Team überhaupt geben könnte — nur, was er **direkt**
    * selbst hält. Damit zeigt die Oberfläche dieselbe Obergrenze, die das

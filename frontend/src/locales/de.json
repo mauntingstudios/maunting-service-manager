@@ -3143,6 +3143,46 @@
     "ai_docs_use": {
       "title": "Singra in Dokumenten verwenden",
       "desc": "Singra darf Dokumente lesen, kommentieren und bearbeiten, nie mehr als die eigene Dokumentrolle."
+    },
+    "team_members_invite": {
+      "title": "Mitglieder einladen",
+      "desc": "Neue Benutzer in dieses Team einladen."
+    },
+    "team_members_kick": {
+      "title": "Mitglieder entfernen",
+      "desc": "Bestehende Mitglieder aus dem Team ausschließen."
+    },
+    "team_roles_manage": {
+      "title": "Team-Rollen verwalten",
+      "desc": "Rollen erstellen, bearbeiten, löschen und Mitgliedern zuweisen."
+    },
+    "team_servers_manage": {
+      "title": "Team-Server verwalten",
+      "desc": "Server dem Team zuweisen und Berechtigungen anpassen."
+    },
+    "ai_memory_read": {
+      "title": "Team-Gedächtnis einsehen",
+      "desc": "Geteiltes KI-Wissen und Erinnerungen des Teams lesen."
+    },
+    "ai_memory_write": {
+      "title": "Team-Gedächtnis bearbeiten",
+      "desc": "Erinnerungen und Einträge im Team-Gedächtnis anlegen oder ändern."
+    },
+    "ai_team_context_use": {
+      "title": "Team-Kontext nutzen",
+      "desc": "Erlaubt der KI, geteiltes Wissen automatisch in Konversationen einzubinden."
+    },
+    "vault_read": {
+      "title": "Team-Tresor einsehen",
+      "desc": "Einträge und Passwörter im geteilten Team-Tresor entschlüsseln."
+    },
+    "vault_write": {
+      "title": "Tresor-Einträge bearbeiten",
+      "desc": "Neue Einträge im Team-Tresor speichern, aktualisieren und löschen."
+    },
+    "vault_files": {
+      "title": "Tresor-Dateien verwalten",
+      "desc": "Dateianhänge im Team-Tresor hochladen, herunterladen und verwalten."
     }
   },
   "serverPermissions": {
@@ -6657,7 +6697,38 @@
     "transferMove": "Verschieben (aus persönlichem Tresor entfernen)",
     "transferCopy": "Kopieren (im persönlichen Tresor behalten)",
     "transferSelectTeam": "Ziel-Team auswählen",
-    "transferSuccess": "Eintrag erfolgreich in den Team-Tresor übertragen"
+    "transferSuccess": "Eintrag erfolgreich in den Team-Tresor übertragen",
+    "roles": "Rollen & Rechte",
+    "rolesHint": "Verwalte Rollen mit granularen Rechten für Server, KI-Wissen und den Team-Tresor.",
+    "createRole": "Rolle erstellen",
+    "editRole": "Rolle bearbeiten",
+    "roleName": "Rollenname",
+    "roleColor": "Farbe",
+    "roleDescription": "Beschreibung",
+    "roleDescriptionPlaceholder": "Optionale Beschreibung der Aufgaben und Zugriffe dieser Rolle...",
+    "isAdmin": "Administrator",
+    "isAdminDesc": "Volle Berechtigungen auf alle Team-Funktionen und Server-Rechte des Gründers.",
+    "isDefault": "Standardrolle",
+    "isDefaultDesc": "Wird neuen Mitgliedern beim Beitritt automatisch zugewiesen.",
+    "adminBadge": "Admin",
+    "defaultBadge": "Standard",
+    "roleSaved": "Rolle erfolgreich gespeichert.",
+    "roleDeleted": "Rolle erfolgreich gelöscht.",
+    "deleteRoleTitle": "Rolle löschen",
+    "deleteRoleConfirm": "Möchtest du die Rolle „{{name}}“ wirklich löschen? Mitglieder verlieren die damit verbundenen Rechte.",
+    "assignRoles": "Rollen zuweisen",
+    "noRolesYet": "Bisher wurden keine individuellen Rollen erstellt.",
+    "roleMembersCount": "{{count}} Mitglied",
+    "roleMembersCount_other": "{{count}} Mitglieder",
+    "manageRoles": "Rollen verwalten",
+    "serverGrantsTitle": "Server-Berechtigungen",
+    "serverGrantsDesc": "Wähle aus, welche Rechte diese Rolle auf den einzelnen Team-Servern erhält.",
+    "noServersAssigned": "Diesem Team sind noch keine Server zugewiesen.",
+    "categoryTeam": "Teamverwaltung",
+    "categoryAi": "KI & Wissen",
+    "categoryVault": "Team-Tresor",
+    "allPermissions": "Alle Rechte",
+    "noPermissions": "Keine Rechte"
   },
   "mss": {
     "fenster": {
@@ -7154,7 +7225,8 @@
       "rotationFehler": "Passwortwechsel fehlgeschlagen. Der alte Tresor bleibt unverändert.",
       "rotationLaeuft": "Wird geändert …",
       "rotationFortsetzen": "Rotation fortsetzen",
-      "rotationFortsetzenHinweis": "Eine Passwort-Rotation wurde unterbrochen. Der alte Tresor ist unverändert nutzbar.",      "leckPruefung": "Passwörter gegen bekannte Lecks prüfen",
+      "rotationFortsetzenHinweis": "Eine Passwort-Rotation wurde unterbrochen. Der alte Tresor ist unverändert nutzbar.",
+      "leckPruefung": "Passwörter gegen bekannte Lecks prüfen",
       "leckPruefungHinweis": "Ab 6 Zeichen gehen die ersten 5 Zeichen des SHA-1-Prüfwerts an Have I Been Pwned. Das Passwort selbst verlässt das Gerät nicht.",
       "kiSpiegelung": "KI-Dateianhänge im Tresor spiegeln",
       "kiSpiegelungHinweis": "In den Chat hochgeladene Dateien zusätzlich im persönlichen Tresor im Ordner „KI-Anhänge“ sichern.",
