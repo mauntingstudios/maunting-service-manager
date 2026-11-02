@@ -19,19 +19,27 @@ export function useBenutzernameSpeichern() {
   const setUser = useAuthStore((s) => s.setUser)
   const [speichert, setSpeichert] = useState(false)
 
-  const speichern = async (name: string): Promise<boolean> => {
+  /**
+   * `uebernehmen: false` lässt den Sitzungsspeicher unberührt. Die Namenswahl
+   * braucht das: erst nach der Kartenfreigabe soll das Panel erscheinen, der
+   * Name auf der Karte aber schon der neue sein.
+   */
+  const speichern = async (
+    name: string,
+    optionen?: { uebernehmen?: boolean },
+  ): Promise<User | null> => {
     setSpeichert(true)
     try {
       const konto = await api<User>('/auth/me/username', {
         method: 'PATCH',
         body: JSON.stringify({ username: name.trim() }),
       })
-      setUser(konto)
+      if (optionen?.uebernehmen !== false) setUser(konto)
       toast.success(t('benutzername.gespeichert'))
-      return true
+      return konto
     } catch (err: any) {
       toast.error(err?.message || t('common.error'))
-      return false
+      return null
     } finally {
       setSpeichert(false)
     }
@@ -43,13 +51,19 @@ export function useBenutzernameSpeichern() {
 interface Props {
   /** Womit das Feld startet. */
   start: string
+  /**
+   * `false`: Das gespeicherte Konto wird nicht in die Sitzung übernommen.
+   * Die Namenswahl zeigt danach die Maunting Card und übernimmt es erst am Ende.
+   */
+  uebernehmen?: boolean
+  onGespeichert?: (konto: User) => void
 }
 
 /**
  * Die einmalige Namenswahl (`BenutzernameWaehlen`). Ändern im Profil geht
  * über `BenutzernameInline`, nicht hierüber.
  */
-export function BenutzernameFeld({ start }: Props) {
+export function BenutzernameFeld({ start, uebernehmen = true, onGespeichert }: Props) {
   const { t } = useTranslation()
   const { speichert, speichern } = useBenutzernameSpeichern()
   const [name, setName] = useState(start)
@@ -58,10 +72,12 @@ export function BenutzernameFeld({ start }: Props) {
   const fehler = benutzernameFehler(name)
   const fehlertext = beruehrt && fehler ? t(fehler.schluessel, fehler) : undefined
 
-  const abschicken = (e: FormEvent) => {
+  const abschicken = async (e: FormEvent) => {
     e.preventDefault()
     setBeruehrt(true)
-    if (!fehler) void speichern(name)
+    if (fehler) return
+    const konto = await speichern(name, { uebernehmen })
+    if (konto) onGespeichert?.(konto)
   }
 
   return (

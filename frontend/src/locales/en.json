@@ -6797,7 +6797,15 @@
       "statusUnauthorized": "DEVICE NOT AUTHORIZED",
       "tabPassword": "Card password",
       "tabSmartphoneScan": "Scan with smartphone",
-      "vaultNeedsAuthorization": "This device is not yet authorized for your Maunting Card. Please authorize this device once."
+      "vaultNeedsAuthorization": "This device is not yet authorized for your Maunting Card. Please authorize this device once.",
+      "welcomeTitle": "Your Maunting Card",
+      "welcomeIntro": "Your card belongs to your account. Enter your master password to authorize this device for the smartcard. You can also do this later in your profile.",
+      "welcomeNotSetUp": "Your card is set up as soon as you create the vault on this device. You can continue now.",
+      "welcomeAuthorized": "This device is authorized for your Maunting Card.",
+      "welcomePasswordLabel": "Master password (optional)",
+      "welcomeChecking": "Checking vault …",
+      "welcomeContinue": "Continue",
+      "welcomeSkip": "Later"
     },
     "vault": {
       "titel": "Vault security",

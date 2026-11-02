@@ -25,6 +25,7 @@ import {
 } from '@/Singra/UI'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
+import type { User } from '@/types'
 import { useVaultStore } from './vaultStore'
 import { DeviceAuthQrView } from './DeviceAuthQrView'
 import {
@@ -36,6 +37,12 @@ import {
 
 interface MauntingCardProps {
   className?: string
+  /**
+   * Zeigt ein anderes Konto als das angemeldete. Direkt nach der Namenswahl
+   * steht der neue Name noch nicht im Sitzungsspeicher — die Karte soll ihn
+   * aber schon tragen.
+   */
+  userOverride?: User | null
   onOpenSecurityTab?: () => void
   unlockOverride?: (password: string) => Promise<boolean>
   onUnlockSuccess?: () => void
@@ -55,6 +62,7 @@ interface MauntingCardProps {
  */
 export function MauntingCard({
   className = '',
+  userOverride,
   onOpenSecurityTab,
   unlockOverride,
   onUnlockSuccess,
@@ -65,7 +73,8 @@ export function MauntingCard({
   onExternalAuthorizeHandled,
 }: MauntingCardProps) {
   const { t } = useTranslation()
-  const { user } = useAuthStore()
+  const { user: angemeldetesKonto } = useAuthStore()
+  const user = userOverride ?? angemeldetesKonto
 
   const {
     isInitialized,

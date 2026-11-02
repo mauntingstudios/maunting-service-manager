@@ -154,7 +154,7 @@ describe('ProtectedRoute: Namenswahl', () => {
     vi.mocked(client.api).mockReset()
   })
 
-  it('zeigt statt des Panels die Namenswahl und danach das Panel an derselben Stelle', async () => {
+  it('zeigt statt des Panels die Namenswahl, danach die Karte und dann das Panel an derselben Stelle', async () => {
     // Konten aus dem Social Login trugen bis 09/2026 die E-Mail ohne
     // Sonderzeichen als Namen. Jetzt waehlen sie einmal selbst.
     useAuthStore.setState({
@@ -177,11 +177,17 @@ describe('ProtectedRoute: Namenswahl', () => {
     fireEvent.change(feld, { target: { value: 'maunting' } })
     fireEvent.click(screen.getByRole('button', { name: i18n.t('benutzername.weiter') }))
 
-    await screen.findByTestId('protected-content')
+    // Danach steht die Maunting Card. Ohne Tresor gibt es nichts freizuschalten.
+    expect(await screen.findByText(i18n.t('mss.card.welcomeTitle'))).toBeInTheDocument()
+    expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument()
     expect(client.api).toHaveBeenCalledWith('/auth/me/username', {
       method: 'PATCH',
       body: JSON.stringify({ username: 'maunting' }),
     })
+
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('mss.card.welcomeContinue') }))
+
+    await screen.findByTestId('protected-content')
   })
 
   it('laesst einen Namen mit @ gar nicht erst abschicken', async () => {

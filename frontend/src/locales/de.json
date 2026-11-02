@@ -6797,7 +6797,15 @@
       "statusUnauthorized": "GERÄT NICHT AUTORISIERT",
       "tabPassword": "Karten-Passwort",
       "tabSmartphoneScan": "Mit Smartphone scannen",
-      "vaultNeedsAuthorization": "Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet. Bitte bestätige das Gerät einmalig."
+      "vaultNeedsAuthorization": "Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet. Bitte bestätige das Gerät einmalig.",
+      "welcomeTitle": "Deine Maunting Card",
+      "welcomeIntro": "Deine Karte gehört zu deinem Konto. Gib dein Master-Passwort ein, damit dieses Gerät für die Smartcard freigegeben ist. Du kannst das jederzeit im Profil nachholen.",
+      "welcomeNotSetUp": "Deine Karte wird eingerichtet, sobald du den Tresor auf diesem Gerät einrichtest. Du kannst jetzt fortfahren.",
+      "welcomeAuthorized": "Dieses Gerät ist für deine Maunting Card freigegeben.",
+      "welcomePasswordLabel": "Master-Passwort (optional)",
+      "welcomeChecking": "Tresor wird geprüft …",
+      "welcomeContinue": "Weiter",
+      "welcomeSkip": "Später"
     },
     "vault": {
       "titel": "Tresor-Sicherheit",
