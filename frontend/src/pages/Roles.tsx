@@ -8,7 +8,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import type { PermissionCatalog, Role } from '@/types/permissions'
 import { PermissionEditor } from '@/Singra/UI/PermissionEditor'
 import { PageHeader } from '@/Singra/UI/PageHeader'
-import { Button, ColorPicker, IconPicker, Kurzinfo, RoleBadge } from '@/Singra/UI'
+import { Button, ColorPicker, IconPicker, Kurzinfo, RoleBadge, renderRoleIcon } from '@/Singra/UI'
 
 import { Spinner } from '@/components/ui/Spinner'
 /**
@@ -83,7 +83,34 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-outline-variant/35 bg-surface-container/60 p-5 sm:p-6 shadow-sm space-y-6">
+      <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
+        <div className="flex items-center gap-3">
+          <div
+            className="grid h-9 w-9 place-items-center rounded-xl text-white shadow-sm"
+            style={{ backgroundColor: color }}
+          >
+            {renderRoleIcon(icon, 'h-4 w-4 text-white')}
+          </div>
+          <div>
+            <h3 className="font-headline text-body-md font-bold text-primary">
+              {initial ? `${t('common.edit')}: ${initial.name}` : t('roles.create')}
+            </h3>
+            <p className="text-xs text-on-surface-variant">
+              {t('roles.subtitle')}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+          aria-label={t('common.close')}
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
       {isAdminRole && (
         <div className="msm-alert-warning text-sm">{t('roles.adminLocked')}</div>
       )}
@@ -279,20 +306,12 @@ export function Roles() {
           </Button>) : undefined} />
 
       {creating && (
-        <div className="msm-card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-headline text-body-lg text-primary">{t('roles.create')}</h3>
-            <button onClick={() => setCreating(false)} className="text-on-surface-variant hover:text-on-surface">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <RoleForm
-            catalog={catalog}
-            initial={null}
-            onSubmit={handleCreate}
-            onCancel={() => setCreating(false)}
-          />
-        </div>
+        <RoleForm
+          catalog={catalog}
+          initial={null}
+          onSubmit={handleCreate}
+          onCancel={() => setCreating(false)}
+        />
       )}
 
       <div className="msm-card overflow-hidden">
@@ -375,22 +394,12 @@ export function Roles() {
       </div>
 
       {editing && (
-        <div className="msm-card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-headline text-body-lg text-primary">
-              {t('common.edit')}: {editing.name}
-            </h3>
-            <button onClick={() => setEditing(null)} className="text-on-surface-variant hover:text-on-surface">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <RoleForm
-            catalog={catalog}
-            initial={editing}
-            onSubmit={(n, d, p, c, i) => handleUpdate(editing, n, d, p, c, i)}
-            onCancel={() => setEditing(null)}
-          />
-        </div>
+        <RoleForm
+          catalog={catalog}
+          initial={editing}
+          onSubmit={(n, d, p, c, i) => handleUpdate(editing, n, d, p, c, i)}
+          onCancel={() => setEditing(null)}
+        />
       )}
     </div>
   )

@@ -72,7 +72,7 @@ export function ColorPicker({
       )}
 
       {/* 12 Presets Grid */}
-      <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label={label || 'Farbauswahl'}>
+      <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label={label || 'Farbauswahl'}>
         {ROLE_COLOR_PRESETS.map((preset) => {
           const isSelected = currentColor.toLowerCase() === preset.value.toLowerCase()
 
@@ -84,7 +84,7 @@ export function ColorPicker({
               aria-checked={isSelected}
               disabled={disabled}
               onClick={() => handlePresetClick(preset.value)}
-              className={`relative h-7 w-7 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 flex items-center justify-center ${
+              className={`relative h-8 w-8 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 flex items-center justify-center ${
                 isSelected
                   ? 'scale-110 ring-2 ring-primary ring-offset-2 ring-offset-surface shadow-sm'
                   : 'hover:scale-105 opacity-85 hover:opacity-100 disabled:opacity-50'

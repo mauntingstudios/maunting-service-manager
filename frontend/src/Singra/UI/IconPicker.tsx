@@ -109,7 +109,7 @@ export function IconPicker({
       </div>
 
       <div
-        className="grid grid-cols-7 sm:grid-cols-10 gap-1.5 p-2 rounded-xl border border-outline-variant/30 bg-surface-container-high/40 max-h-40 overflow-y-auto"
+        className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl border border-outline-variant/30 bg-surface-container-high/30 max-h-48 overflow-y-auto"
         role="radiogroup"
         aria-label={label || 'Rollen-Icon auswählen'}
       >
@@ -122,7 +122,7 @@ export function IconPicker({
           onClick={() => onChange(null)}
           title="Kein Icon"
           aria-label="Kein Icon"
-          className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+          className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
             currentKey === null
               ? 'bg-primary/20 text-primary border border-primary/40 shadow-xs'
               : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high'
@@ -146,7 +146,7 @@ export function IconPicker({
               onClick={() => onChange(item.key)}
               title={item.label}
               aria-label={item.label}
-              className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+              className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                 isSelected
                   ? 'bg-primary text-on-primary shadow-sm scale-105'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'

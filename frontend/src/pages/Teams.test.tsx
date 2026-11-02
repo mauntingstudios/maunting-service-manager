@@ -589,4 +589,26 @@ describe('Teams', () => {
     await waitFor(() => expect(confirm).toHaveBeenCalled())
     await waitFor(() => expect(teamsApi.deleteRole).toHaveBeenCalledWith(2, 10))
   })
+
+  it('öffnet das Rollen-Formular inline beim Klick auf Rolle erstellen und bricht ab', async () => {
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    const rolesTab = screen.getByRole('tab', { name: /Rollen/i })
+    fireEvent.click(rolesTab)
+
+    const createBtn = await screen.findByRole('button', { name: 'Rolle erstellen' })
+    fireEvent.click(createBtn)
+
+    // Inline form should be displayed
+    const nameInput = await screen.findByPlaceholderText('z. B. Moderator, Entwickler, Redakteur')
+    expect(nameInput).toBeInTheDocument()
+
+    // Cancel closes inline form
+    const cancelBtn = screen.getByRole('button', { name: 'Abbrechen' })
+    fireEvent.click(cancelBtn)
+
+    expect(screen.queryByPlaceholderText('z. B. Moderator, Entwickler, Redakteur')).not.toBeInTheDocument()
+  })
 })

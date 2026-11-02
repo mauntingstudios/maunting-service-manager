@@ -17,7 +17,7 @@ import {
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiSkillManager } from '@/components/ai/AiSkillManager'
 import type { AiKnowledgeScope, AiSkillScope } from '@/components/ai/knowledgeScope'
-import { TeamRoleModal } from '@/components/teams/TeamRoleModal'
+import { TeamRoleForm } from '@/components/teams/TeamRoleForm'
 import { TabBar, type TabDef } from '@/components/ui/TabBar'
 import { TeamVaultView } from '@/desktop/vault/TeamVaultView'
 import { Avatar, Button, Dropdown, Input, MultiSelect, RoleBadge, Switch } from '@/Singra/UI'
@@ -298,17 +298,22 @@ export function Teams() {
     }, 'teams.serversSaved')
   }
 
-  const [roleModalOpen, setRoleModalOpen] = useState(false)
   const [editingRole, setEditingRole] = useState<TeamRole | null>(null)
+  const [isCreatingRole, setIsCreatingRole] = useState(false)
 
   const openCreateRole = () => {
     setEditingRole(null)
-    setRoleModalOpen(true)
+    setIsCreatingRole(true)
   }
 
   const openEditRole = (role: TeamRole) => {
+    setIsCreatingRole(false)
     setEditingRole(role)
-    setRoleModalOpen(true)
+  }
+
+  const closeRoleForm = () => {
+    setIsCreatingRole(false)
+    setEditingRole(null)
   }
 
   const onRoleSaved = (savedRole: TeamRole) => {
@@ -321,6 +326,7 @@ export function Teams() {
         : [...existing, savedRole]
       return { ...prev, roles: nextRoles }
     })
+    closeRoleForm()
   }
 
   const deleteRole = async (role: TeamRole) => {
@@ -646,7 +652,10 @@ export function Teams() {
                   <TabBar
                     tabs={teamReiter}
                     active={aktiverReiter}
-                    onChange={setReiter}
+                    onChange={(nextTab) => {
+                      setReiter(nextTab)
+                      closeRoleForm()
+                    }}
                     ariaLabel={t('teams.sections')}
                     embedded
                   />
@@ -720,8 +729,12 @@ export function Teams() {
                     <RollenReiter
                       team={team}
                       busy={busy}
+                      isCreatingRole={isCreatingRole}
+                      editingRole={editingRole}
                       onOpenCreateRole={openCreateRole}
                       onOpenEditRole={openEditRole}
+                      onCloseRoleForm={closeRoleForm}
+                      onRoleSaved={onRoleSaved}
                       onDeleteRole={(role) => void deleteRole(role)}
                     />
                   )}
@@ -769,16 +782,6 @@ export function Teams() {
             )}
           </main>
         </div>
-
-      {team && (
-        <TeamRoleModal
-          open={roleModalOpen}
-          onOpenChange={setRoleModalOpen}
-          team={team}
-          role={editingRole}
-          onSaved={onRoleSaved}
-        />
-      )}
     </div>
   )
 }
@@ -1003,21 +1006,29 @@ function MitgliederReiter({
 function RollenReiter({
   team,
   busy,
+  isCreatingRole,
+  editingRole,
   onOpenCreateRole,
   onOpenEditRole,
+  onCloseRoleForm,
+  onRoleSaved,
   onDeleteRole,
 }: {
   team: TeamDetail
   busy: boolean
+  isCreatingRole: boolean
+  editingRole: TeamRole | null
   onOpenCreateRole: () => void
   onOpenEditRole: (role: TeamRole) => void
+  onCloseRoleForm: () => void
+  onRoleSaved: (role: TeamRole) => void
   onDeleteRole: (role: TeamRole) => void
 }) {
   const { t } = useTranslation()
   const roles = team.roles || []
 
   return (
-    <section className="space-y-6 max-w-5xl" aria-labelledby="team-roles">
+    <section className="space-y-6 max-w-6xl" aria-labelledby="team-roles">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h3 id="team-roles" className="font-headline text-lg font-semibold text-on-surface">
@@ -1028,7 +1039,7 @@ function RollenReiter({
           </p>
         </div>
 
-        {team.is_owner && (
+        {team.is_owner && !isCreatingRole && !editingRole && (
           <Button type="button" size="sm" disabled={busy} onClick={onOpenCreateRole}>
             <Plus className="h-4 w-4 mr-1.5" aria-hidden="true" />
             {t('teams.createRole')}
@@ -1036,7 +1047,27 @@ function RollenReiter({
         )}
       </div>
 
-      {roles.length === 0 ? (
+      {/* Inline Create Form */}
+      {isCreatingRole && (
+        <TeamRoleForm
+          team={team}
+          role={null}
+          onSaved={onRoleSaved}
+          onCancel={onCloseRoleForm}
+        />
+      )}
+
+      {/* Inline Edit Form */}
+      {editingRole && (
+        <TeamRoleForm
+          team={team}
+          role={editingRole}
+          onSaved={onRoleSaved}
+          onCancel={onCloseRoleForm}
+        />
+      )}
+
+      {roles.length === 0 && !isCreatingRole && !editingRole ? (
         <div className="rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/30 p-8 text-center text-sm text-on-surface-variant">
           <Shield className="mx-auto h-8 w-8 text-on-surface-variant/60 mb-2" />
           <p className="font-medium">{t('teams.noRolesYet')}</p>

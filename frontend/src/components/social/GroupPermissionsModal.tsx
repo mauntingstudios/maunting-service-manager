@@ -13,6 +13,7 @@ import {
   Textarea,
   Kurzinfo,
   RoleBadge,
+  renderRoleIcon,
   type DropdownOption,
   RechteAbschnitte,
   type RechteAbschnittDefinition,
@@ -289,20 +290,27 @@ function GroupRoleForm({ initial, onSubmit, onCancel, disabled }: GroupRoleFormP
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-outline-variant/30 bg-surface-container/60 p-5">
+    <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-outline-variant/35 bg-surface-container/60 p-5 sm:p-6 shadow-sm">
       <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-        <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4 text-primary" />
-          <h3 className="font-headline text-body-md font-bold text-primary">
-            {initial
-              ? t('social.groupRoles.editRole', { name: rollentext(initial.name, initial.is_system, t) })
-              : t('social.groupRoles.newRole')}
-          </h3>
+        <div className="flex items-center gap-3">
+          <div
+            className="grid h-9 w-9 place-items-center rounded-xl text-white shadow-sm"
+            style={{ backgroundColor: color }}
+          >
+            {renderRoleIcon(icon, 'h-4 w-4 text-white')}
+          </div>
+          <div>
+            <h3 className="font-headline text-body-md font-bold text-primary">
+              {initial
+                ? t('social.groupRoles.editRole', { name: rollentext(initial.name, initial.is_system, t) })
+                : t('social.groupRoles.newRole')}
+            </h3>
+          </div>
         </div>
         <button
           type="button"
           onClick={onCancel}
-          className="p-1 rounded-md text-on-surface-variant hover:text-on-surface transition-colors"
+          className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
           aria-label={t('common.close')}
         >
           <X className="w-4 h-4" />
