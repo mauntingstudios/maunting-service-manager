@@ -11,7 +11,7 @@ viele Nodes:
 
 | Rolle | Enthält | Benötigt das vollständige Repository? |
 | --- | --- | --- |
-| Panel/Control Plane | Backend, DIS-Sidecar, LiveKit-Sidecar, Wetter-Sidecar, Panel-PostgreSQL, Frontend und lokaler Agent | Nein, das Panel-Release enthält nur die benötigten Projektteile. |
+| Panel/Control Plane | Backend, DIS-Sidecar, Dokumente-Sidecar, LiveKit-Sidecar, Wetter-Sidecar, Panel-PostgreSQL, Frontend und lokaler Agent | Nein, das Panel-Release enthält nur die benötigten Projektteile. |
 | Separates Frontend | Fertig gebautes statisches Vite-Bundle | Nein, `msm-frontend-<VERSION>.tar.gz` genügt. |
 | Remote-Node | Agent, Rootless Docker, TLS und node-eigene Serverdaten | Nein, der Node lädt sein Agent-Paket direkt vom Panel. |
 
@@ -540,6 +540,7 @@ bewusste Sicherheitsgrenze.
 - Frontend: `frontend/.env.example`
 - Agent/Node: `msm-agent/.env.example`
 - DIS-Sidecar: `dis-sidecar/.env.example`
+- Dokumente-Sidecar (gemeinsames Bearbeiten, KI-Vorschau, Export): `docs-sidecar/.env.example`
 - LiveKit-Sidecar (Messenger-Anrufe): `livekit-sidecar/.env.example`
 - Wetter-Sidecar (Vorhersage für Startseite und Homescreen-Widget): `wetter-sidecar/.env.example`
 
@@ -2044,6 +2045,38 @@ einschalten. Wer nicht neu installieren will, ändert die Zeile in der eigenen
 Caddy-Site von Hand und lädt Caddy neu (`systemctl reload caddy`).
 
 ---
+
+## Dokumente-Modul: Collab-Sidecar (`docs-sidecar`)
+
+Das Dokumente-Modul bearbeitet Texte gemeinsam und in Echtzeit. Der
+Node-Prozess `docs-sidecar` hält dafür den geteilten Dokumentzustand (Yjs über
+Hocuspocus-WebSocket), nimmt KI-Bearbeitungen entgegen und rendert Exporte.
+Ohne ihn bleibt das Modul dunkel: das Backend verweigert Collab-Tokens, und die
+Oberfläche zeigt ein Banner statt des Editors.
+
+| Port | Bindung | Wofür |
+| --- | --- | --- |
+| 8100 | nur `127.0.0.1` | Hocuspocus-WebSocket, von Caddy unter `/api/docs/collab` durchgereicht |
+| 8101 | nur `127.0.0.1` | interne HTTP-API (Persistenz, KI-Edits, Export) — **nie** über Caddy freigeben |
+
+Beide Ports binden an Loopback; ein öffentlicher Pfad existiert nicht. Die
+interne API unter `/internal/*` spricht ausschließlich mit dem Backend auf
+demselben Server (`MSM_BACKEND_URL=http://127.0.0.1:8000`) und wird von Caddy
+bewusst nicht durchgereicht.
+
+Drei Geheimnisse verbinden Backend und Sidecar; sie müssen in `backend/.env`
+und `docs-sidecar/.env` übereinstimmen. `install.sh` und `update.sh` erzeugen
+fehlende Werte selbst und lassen bestehende stehen:
+
+- `MSM_DOCS_SIDECAR_TOKEN` — belegt dem Sidecar, dass der Aufruf vom Backend kommt.
+- `MSM_DOCS_COLLAB_SECRET` — signiert die kurzlebigen Collab-Tokens der Clients.
+- `MSM_DOCS_SIGNING_SECRET` — signiert zeitlich begrenzte Bild-URLs im Export.
+
+Der Dienst heißt `msm-docs-sidecar.service` und startet vor
+`msm-panel.service`. Es läuft **genau eine Instanz**: der Collab-Zustand lebt
+im Prozess, eine zweite Instanz sähe fremde Dokumente nicht. Im Panel-Tarball
+liegt der Sidecar unter `docs-sidecar/` (`server.mjs`, `package.json`,
+`package-lock.json`); die Release-Pipeline prüft das bei jedem Build.
 
 ## Messenger: Sprach-, Video- und Gruppenanrufe
 

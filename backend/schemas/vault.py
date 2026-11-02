@@ -185,8 +185,19 @@ class VaultSaltResponse(BaseModel):
 
 
 class VaultRotationPrepareRequest(BaseModel):
+    """Rotation vorbereiten: frischer Kontonachweis wie beim Tresor-Reset.
+
+    Das Master-Passwort kennt der Server nicht; der Nachweis ist deshalb das
+    Kontopasswort oder ein eingerichteter zweiter Faktor (`zweck="vault_rotation"`).
+    Ohne ihn machte ein gestohlenes Sitzungs-Token aus jeder Rotation eine
+    fremde: prepare legte das Staging an, commit schaltete um.
+    """
+
     bucket_id: str = Field(..., min_length=64, max_length=64)
     salt: str = Field(..., min_length=16, max_length=128)
+    password: Optional[str] = Field(default=None, max_length=256)
+    otp_code: Optional[str] = Field(default=None, pattern=r"^\d{6}$")
+    passkey: Optional[Zweitnachweis] = None
 
     @field_validator("bucket_id")
     @classmethod
@@ -194,6 +205,27 @@ class VaultRotationPrepareRequest(BaseModel):
         if not HEX_64_REGEX.match(v):
             raise ValueError("bucket_id must be a 64-character hex string")
         return v.lower()
+
+    @field_validator("salt")
+    @classmethod
+    def validate_rotation_salt(cls, v: str) -> str:
+        # Wie `kdf_salt`: erst kuerzen, dann pruefen — ein Salz aus
+        # Leerzeichen bestand sonst die Laengenpruefung und landete als "".
+        v = v.strip()
+        if not SALZ_REGEX.match(v):
+            raise ValueError("salt must be 16-128 base64/hex characters")
+        return v
+
+
+class VaultRotationCommitRequest(BaseModel):
+    """Rotation abschliessen: derselbe frische Nachweis wie bei prepare.
+
+    Ein gestohlenes Token darf eine vorbereitete Rotation nicht vollenden.
+    """
+
+    password: Optional[str] = Field(default=None, max_length=256)
+    otp_code: Optional[str] = Field(default=None, pattern=r"^\d{6}$")
+    passkey: Optional[Zweitnachweis] = None
 
 
 class VaultSaltSetRequest(BaseModel):

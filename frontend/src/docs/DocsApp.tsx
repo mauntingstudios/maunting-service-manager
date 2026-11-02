@@ -26,6 +26,7 @@ import {
   previewPendingEdit,
   rejectPendingEdit,
   restoreDocument,
+  searchDocuments,
   trashDocument,
   updateDocument,
   type DocComment,
@@ -71,6 +72,7 @@ export function DocsApp() {
   const [documents, setDocuments] = useState<DocSummary[]>([])
   const [folderUid, setFolderUid] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [suchGrenze, setSuchGrenze] = useState<number | null>(null)
   const [trash, setTrash] = useState(false)
   const [archived, setArchived] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -114,15 +116,18 @@ export function DocsApp() {
     setLoading(true)
     setFehler(null)
     try {
+      const begriff = search.trim()
       const [ordner, docs] = await Promise.all([
         listFolders(teamId),
-        listDocuments({
-          teamId,
-          search: search.trim() || undefined,
-          archived,
-          trash,
-          limit: 200,
-        }),
+        (async () => {
+          if (!begriff) {
+            setSuchGrenze(null)
+            return listDocuments({ teamId, archived, trash, limit: 200 })
+          }
+          const ergebnis = await searchDocuments({ search: begriff, limit: 200 })
+          setSuchGrenze(ergebnis.truncated ? ergebnis.searched : null)
+          return ergebnis.items
+        })(),
       ])
       setFolders(ordner)
       setDocuments(docs)
@@ -561,6 +566,7 @@ export function DocsApp() {
               }}
               search={search}
               onSearch={setSearch}
+              searchHinweis={suchGrenze}
               trash={trash}
               archived={archived}
               onTrashChange={setTrash}

@@ -9,11 +9,21 @@ vi.mock('@/api/teams', () => ({
     getVaultSalt: vi.fn(),
     setupVault: vi.fn(),
     rotateVault: vi.fn(),
+    rotationPrepare: vi.fn(),
+    rotationCommit: vi.fn(),
+    rotationAbort: vi.fn(),
     syncVault: vi.fn(),
     getVaultHintStatus: vi.fn(),
     setVaultHint: vi.fn(),
     requestVaultHint: vi.fn(),
   },
+}))
+
+// Das Vorab-Backup (Argon2 + Tauri) gehört nicht in diesen Test.
+vi.mock('./tresorBackup', () => ({
+  erstelleBackupBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
+  speichereBackupImAppOrdner: vi.fn(async () => undefined),
+  backupDateiname: vi.fn(() => 'tresor-team-test.msmvault'),
 }))
 
 describe('teamVaultStore', () => {
@@ -240,5 +250,38 @@ describe('teamVaultStore', () => {
 
     // saveItem mit Konflikt(1) + automatisches syncWithServer(2)
     expect(teamsApi.syncVault).toHaveBeenCalledTimes(2)
+  })
+
+  it('sendet den Kontonachweis bei prepare und commit der Rotation mit', async () => {
+    vi.mocked(teamsApi.setupVault).mockResolvedValue({ status: 'ok' })
+    await useTeamVaultStore.getState().setup(42, 'AltesMasterPasswort123!')
+    vi.mocked(teamsApi.getVaultSalt).mockResolvedValue({
+      is_setup: true,
+      salt: useTeamVaultStore.getState().salt,
+      bucket_id: useTeamVaultStore.getState().bucketId,
+      needs_rotation: true,
+      is_owner: true,
+      rotation_state: null,
+      pending_bucket_id: null,
+      pending_salt: null,
+    })
+    vi.mocked(teamsApi.syncVault).mockResolvedValue({ server_revision: 1, entries: [], has_more: false })
+    vi.mocked(teamsApi.rotationPrepare).mockResolvedValue({ status: 'ok' })
+    vi.mocked(teamsApi.rotationCommit).mockResolvedValue({ status: 'ok' })
+
+    const ok = await useTeamVaultStore.getState().rotatePassword(
+      42,
+      'AltesMasterPasswort123!',
+      'NeuesMasterPasswort456!',
+      { password: 'konto-passwort' },
+    )
+
+    expect(ok).toBe(true)
+    expect(teamsApi.rotationPrepare).toHaveBeenCalledWith(42, expect.objectContaining({
+      bucket_id: expect.any(String),
+      salt: expect.any(String),
+      password: 'konto-passwort',
+    }))
+    expect(teamsApi.rotationCommit).toHaveBeenCalledWith(42, { password: 'konto-passwort' })
   })
 })

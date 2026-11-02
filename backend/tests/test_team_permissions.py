@@ -15,6 +15,7 @@ beim Anlegen als auch bei jeder spaeteren Pruefung.
 from __future__ import annotations
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from models import (
@@ -23,7 +24,9 @@ from models import (
     Server,
     ServerPermission,
     Team,
+    TeamInvitation,
     TeamMember,
+    TeamRole,
     TeamServerGrant,
     User,
 )
@@ -1489,3 +1492,214 @@ def test_the_invited_user_can_see_and_accept_over_http(
         mitglied["user_id"] for mitglied in angenommen.json()["members"]
     ]
     assert client.get("/api/teams/invitations", cookies=user_cookies).json() == []
+
+
+# ── Rollen-Deckel: Admin nur vom Gruender, sonst nur Gehaltenes (Befund 2) ──
+
+
+def _verwalter(db: Session, team: Team, founder: User, member: User) -> User:
+    """Mitglied mit `team.roles.manage` — viel, aber kein Gruender."""
+    rolle = team_service.create_team_role(
+        db, team=team, user=founder, name="Verwalter",
+        permission_keys=["team.roles.manage"],
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.set_member_roles(
+        db, team=team, user=founder, member_user_id=member.id, role_ids=[rolle.id]
+    )
+    assert team_service.has_team_permission(db, team.id, member, "team.roles.manage") is True
+    return member
+
+
+def _admin_rolle(db: Session, team: Team) -> TeamRole:
+    return db.query(TeamRole).filter(
+        TeamRole.team_id == team.id, TeamRole.is_admin.is_(True)
+    ).one()
+
+
+def test_nicht_gruender_kann_keine_adminrolle_anlegen(db: Session, regular_user: User) -> None:
+    verwalter_nutzer = _user(db, "verwalter")
+    team = _team_with_member(db, regular_user, verwalter_nutzer)
+    _verwalter(db, team, regular_user, verwalter_nutzer)
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.create_team_role(
+            db, team=team, user=verwalter_nutzer, name="Superadmin", is_admin=True
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_ADMIN_OWNER_ONLY"
+
+    # Der Gruender kann — unveraendert.
+    rolle = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Superadmin", is_admin=True
+    )
+    assert rolle.is_admin is True
+
+
+def test_nicht_gruender_vergibt_nur_gehaltene_rechte(db: Session, regular_user: User) -> None:
+    verwalter_nutzer = _user(db, "verwalter")
+    team = _team_with_member(db, regular_user, verwalter_nutzer)
+    _verwalter(db, team, regular_user, verwalter_nutzer)
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.create_team_role(
+            db, team=team, user=verwalter_nutzer, name="Rausschmeisser",
+            permission_keys=["team.members.kick"],
+            can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"
+
+    # Gehaltenes plus getragene Schalter gehen durch.
+    rolle = team_service.create_team_role(
+        db, team=team, user=verwalter_nutzer, name="Rollenhelfer",
+        permission_keys=["team.roles.manage"],
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+    )
+    assert rolle.is_admin is False
+
+
+def test_nicht_gruender_vergibt_nur_getragene_schalter(db: Session, regular_user: User) -> None:
+    verwalter_nutzer = _user(db, "verwalter")
+    team = _team_with_member(db, regular_user, verwalter_nutzer)
+    _verwalter(db, team, regular_user, verwalter_nutzer)
+    mitglied = team_service.membership(db, team.id, verwalter_nutzer.id)
+    assert mitglied is not None
+    mitglied.can_access_vault = False
+    mitglied.can_manage_skills = False
+    mitglied.can_manage_memory = False
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.create_team_role(
+            db, team=team, user=verwalter_nutzer, name="Tresoröffner",
+            permission_keys=["team.roles.manage"], can_access_vault=True,
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"
+
+
+def test_nicht_gruender_kann_adminrolle_weder_zuteilen_noch_aufwerten(
+    db: Session, regular_user: User
+) -> None:
+    verwalter_nutzer = _user(db, "verwalter")
+    opfer = _user(db, "opfer")
+    team = _team_with_member(db, regular_user, verwalter_nutzer)
+    team_service.invite_member(
+        db, team=team, user=regular_user, new_user_id=opfer.id,
+        can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.accept_invitation(db, user=opfer, team_id=team.id)
+    _verwalter(db, team, regular_user, verwalter_nutzer)
+    admin = _admin_rolle(db, team)
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.set_member_roles(
+            db, team=team, user=verwalter_nutzer, member_user_id=opfer.id, role_ids=[admin.id]
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_ADMIN_OWNER_ONLY"
+
+    leser = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Leser", permission_keys=["ai.memory.read"]
+    )
+    with pytest.raises(HTTPException) as exc:
+        team_service.update_team_role(
+            db, team=team, user=verwalter_nutzer, role_id=leser.id,
+            name="Leser", is_admin=True,
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_ADMIN_OWNER_ONLY"
+
+    # Der Gruender teilt die Admin-Rolle weiter zu — unveraendert.
+    team_service.set_member_roles(
+        db, team=team, user=regular_user, member_user_id=opfer.id, role_ids=[admin.id]
+    )
+    assert team_service.has_team_permission(db, team.id, opfer, "team.roles.manage") is True
+
+
+# ── Fremde Rollen auf Einladung und Annahme (Befund 3) ──
+
+
+def test_einladung_mit_fremder_rolle_wird_abgelehnt(db: Session, regular_user: User) -> None:
+    gast = _user(db, "gast")
+    team = _team_with_member(db, regular_user, _user(db, "kollege"))
+    fremd = team_service.create_team(db, user=regular_user, name="fremdteam")
+    fremde_rolle = db.query(TeamRole).filter(TeamRole.team_id == fremd.id).first()
+    assert fremde_rolle is not None
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.invite_member(
+            db, team=team, user=regular_user, new_user_id=gast.id,
+            can_manage_skills=False, can_manage_memory=False,
+            team_role_id=fremde_rolle.id,
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail["code"] == "TEAM_ROLE_NOT_IN_TEAM"
+
+
+def test_annahme_uebernimmt_keine_fremde_rolle(db: Session, regular_user: User) -> None:
+    """Einladungen von vor dem Fix tragen die Fremdrolle noch — die Annahme lehnt sie ab."""
+    gast = _user(db, "gast")
+    kollege = _user(db, "kollege")
+    team = _team_with_member(db, regular_user, kollege)
+    fremd = team_service.create_team(db, user=regular_user, name="fremdteam")
+    fremde_rolle = db.query(TeamRole).filter(TeamRole.team_id == fremd.id).first()
+    assert fremde_rolle is not None
+    db.add(TeamInvitation(
+        team_id=team.id, user_id=gast.id, team_role_id=fremde_rolle.id,
+        invited_by=regular_user.id,
+    ))
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.accept_invitation(db, user=gast, team_id=team.id)
+    assert exc.value.status_code == 422
+    assert exc.value.detail["code"] == "TEAM_ROLE_NOT_IN_TEAM"
+    assert team_service.membership(db, team.id, gast.id) is None
+
+
+def test_annahme_einer_adminrolle_nur_auf_gruendereinladung(
+    db: Session, regular_user: User
+) -> None:
+    gast = _user(db, "gast")
+    verwalter_nutzer = _user(db, "verwalter")
+    team = _team_with_member(db, regular_user, verwalter_nutzer)
+    admin = _admin_rolle(db, team)
+    db.add(TeamInvitation(
+        team_id=team.id, user_id=gast.id, team_role_id=admin.id,
+        invited_by=verwalter_nutzer.id,
+    ))
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.accept_invitation(db, user=gast, team_id=team.id)
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_ADMIN_OWNER_ONLY"
+    assert team_service.membership(db, team.id, gast.id) is None
+
+
+def test_role_ids_in_einladung_und_update_sind_422(
+    db: Session, client, owner_user: User, regular_user: User,
+    owner_cookies: dict, csrf_token: str,
+) -> None:
+    """`role_ids` gehoert allein an PUT /members/{id}/roles — anderswo ist es ein Fehler, kein Schweigen."""
+    gast = _user(db, "gast3")
+    team = _team_with_member(db, owner_user, regular_user)
+    kopf = {"X-CSRF-Token": csrf_token}
+
+    einladung = client.post(
+        f"/api/teams/{team.id}/members",
+        json={"user_id": gast.id, "can_manage_skills": False, "can_manage_memory": False, "role_ids": [1]},
+        cookies=owner_cookies, headers=kopf,
+    )
+    assert einladung.status_code == 422
+    assert einladung.json()["detail"]["code"] == "TEAM_ROLE_IDS_UNGUELTIG"
+
+    update = client.put(
+        f"/api/teams/{team.id}/members/{regular_user.id}",
+        json={"can_manage_skills": False, "can_manage_memory": False, "role_ids": [1]},
+        cookies=owner_cookies, headers=kopf,
+    )
+    assert update.status_code == 422
+    assert update.json()["detail"]["code"] == "TEAM_ROLE_IDS_UNGUELTIG"

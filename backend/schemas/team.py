@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from schemas.passkey import Zweitnachweis
+
 
 class TeamCreate(BaseModel):
     name: str = Field(min_length=2, max_length=64)
@@ -171,4 +173,9 @@ class TeamVaultSetupRequest(BaseModel):
 class TeamVaultRotateRequest(BaseModel):
     bucket_id: str | None = Field(default=None, min_length=64, max_length=64)
     salt: str | None = Field(default=None, min_length=16, max_length=128)
+    # Alt-Endpunkt: committet eine vorbereitete Rotation und braucht deshalb
+    # denselben frischen Nachweis wie `/rotation/commit`.
+    password: str | None = Field(default=None, max_length=256)
+    otp_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    passkey: Zweitnachweis | None = None
 

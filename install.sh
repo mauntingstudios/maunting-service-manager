@@ -773,6 +773,8 @@ if $SHOULD_COPY_FILES; then
             rsync -a --chown="$MSM_USER:$MSM_USER" --delete --exclude '.env' --exclude 'node_modules/' \
                 --exclude 'test/' \
                 "$SCRIPT_DIR/docs-sidecar/" "$MSM_DIR/docs-sidecar/"
+        else
+            warn "docs-sidecar fehlt im Release-Archiv — das Dokumente-Modul bleibt ohne Collab-Server dunkel."
         fi
         if [[ -d "$SCRIPT_DIR/dis-sidecar" ]]; then
             rsync -a --chown="$MSM_USER:$MSM_USER" --delete --exclude '.env' --exclude 'node_modules/' \

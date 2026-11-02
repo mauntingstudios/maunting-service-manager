@@ -159,6 +159,13 @@ export interface TeamVaultSyncResult {
   conflicts?: string[]
 }
 
+/** Frischer Kontonachweis vor prepare/commit der Rotation: Kontopasswort oder zweiter Faktor. */
+export interface RotationNachweis {
+  password?: string | null
+  otp_code?: string
+  passkey?: unknown
+}
+
 export const teamsApi = {
   list: () => api<Team[]>('/teams'),
   get: (teamId: number) => api<TeamDetail>(`/teams/${teamId}`),
@@ -255,13 +262,16 @@ export const teamsApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  rotationPrepare: (teamId: number, payload: { bucket_id: string; salt: string }) =>
+  rotationPrepare: (teamId: number, payload: { bucket_id: string; salt: string } & RotationNachweis) =>
     api<{ status: string }>(`/teams/${teamId}/vault/rotation/prepare`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  rotationCommit: (teamId: number) =>
-    api<{ status: string }>(`/teams/${teamId}/vault/rotation/commit`, { method: 'POST' }),
+  rotationCommit: (teamId: number, nachweis: RotationNachweis) =>
+    api<{ status: string }>(`/teams/${teamId}/vault/rotation/commit`, {
+      method: 'POST',
+      body: JSON.stringify(nachweis),
+    }),
   rotationAbort: (teamId: number) =>
     api<{ status: string }>(`/teams/${teamId}/vault/rotation/abort`, { method: 'POST' }),
   rotationRollback: (teamId: number) =>

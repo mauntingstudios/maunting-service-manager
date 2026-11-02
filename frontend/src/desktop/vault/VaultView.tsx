@@ -44,6 +44,8 @@ import { useTeamVaultStore } from './teamVaultStore'
 import { Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Textarea, Zustandsflaeche } from '@/Singra/UI'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { TabBar, type TabDef } from '@/components/ui/TabBar'
+import { useZweitfaktor, ZweitfaktorFeld } from '@/components/auth/ZweitfaktorNachweis'
+import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { getBrandIcon } from './brandCatalog'
@@ -248,6 +250,13 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const [rotBusy, setRotBusy] = useState(false)
   const [rotLeakCheck, setRotLeakCheck] = useState<LeakCheckResult | null>(null)
   const checkRotPasswordLeak = useMemo(() => createDebouncedLeakChecker(setRotLeakCheck), [])
+  const [rotKontoPasswort, setRotKontoPasswort] = useState('')
+  // Frischer Kontonachweis wie bei der privaten Rotation: das Master-Passwort
+  // kennt der Server nicht, also belegt Konto-Passwort oder zweiter Faktor.
+  const rotBenutzer = useAuthStore((s) => s.user)
+  const rotFaktor = useZweitfaktor()
+  const rotBrauchtPasswort = rotBenutzer?.has_password !== false
+  const rotHatNachweis = rotBrauchtPasswort || rotFaktor.methoden.length > 0
 
   const activeUnlock = async (pw: string) => {
     if (isTeam) {
@@ -333,13 +342,18 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     if (!team?.id) return
     setRotBusy(true)
     try {
-      const ok = await teamStore.rotatePassword(team.id, rotCurrent, rotPassword)
+      const zweiter = await rotFaktor.nachweis('vault_rotation')
+      const ok = await teamStore.rotatePassword(team.id, rotCurrent, rotPassword, {
+        password: rotBrauchtPasswort ? rotKontoPasswort : null,
+        ...zweiter,
+      })
       if (ok) {
         toast.success(t('teams.vaultPasswordRotated'))
         setRotationOpen(false)
         setRotCurrent('')
         setRotPassword('')
         setRotRepeat('')
+        setRotKontoPasswort('')
       } else {
         toast.error(teamStore.error || t('mss.vault.speichernFehlgeschlagen'))
       }
@@ -2164,6 +2178,33 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                 </div>
               )}
 
+              <div className="space-y-3 border-t border-outline-variant/30 pt-3">
+                <div>
+                  <h4 className="text-xs font-semibold text-on-surface">{t('mss.vault.rotationNachweisTitel')}</h4>
+                  <p className="text-label-sm text-on-surface-variant">{t('mss.vault.rotationNachweisHinweis')}</p>
+                </div>
+                {rotHatNachweis ? (
+                  <>
+                    {rotBrauchtPasswort && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-on-surface">{t('mss.vault.rotationKontoPasswort')}</label>
+                        <PasswordInput
+                          value={rotKontoPasswort}
+                          onChange={(e) => setRotKontoPasswort(e.target.value)}
+                          placeholder={t('mss.vault.rotationKontoPasswort')}
+                          autoComplete="current-password"
+                          required
+                          disabled={rotBusy}
+                        />
+                      </div>
+                    )}
+                    <ZweitfaktorFeld faktor={rotFaktor} id="team-rotation-otp" disabled={rotBusy} />
+                  </>
+                ) : (
+                  <p className="text-xs text-status-warning">{t('mss.vault.rotationKeinNachweis')}</p>
+                )}
+              </div>
+
               <DialogFooter className="flex-wrap justify-between gap-2 pt-2">
                 <Button
                   type="button"
@@ -2187,7 +2228,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                   <Button
                     type="submit"
                     size="sm"
-                    disabled={rotBusy || !rotCurrent || rotPassword.length < MASTER_PASSWORT_MINDESTLAENGE || rotPassword !== rotRepeat}
+                    disabled={rotBusy || !rotHatNachweis || !rotFaktor.bereit || (rotBrauchtPasswort && !rotKontoPasswort) || !rotCurrent || rotPassword.length < MASTER_PASSWORT_MINDESTLAENGE || rotPassword !== rotRepeat}
                   >
                     {rotBusy ? <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-1.5" />}
                     {t('teams.vaultRotateBtn')}

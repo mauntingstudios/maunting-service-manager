@@ -501,8 +501,12 @@ interface VaultState {
   resetVault: (nachweis: Record<string, unknown>, bestaetigung: string) => Promise<void>
   rotationState: string | null
   pendingBucketId: string | null
-  /** Zwei-Phasen-Rotation des Master-Passworts (gleiches Protokoll wie Team). */
-  rotatePassword: (currentPassword: string, newPassword: string) => Promise<boolean>
+  /**
+   * Zwei-Phasen-Rotation des Master-Passworts (gleiches Protokoll wie Team).
+   * `nachweis` ist der frische Kontonachweis (Kontopasswort oder zweiter
+   * Faktor); der Server verlangt ihn bei prepare und commit.
+   */
+  rotatePassword: (currentPassword: string, newPassword: string, nachweis?: Record<string, unknown>) => Promise<boolean>
   abortRotation: () => Promise<void>
   rollbackRotation: () => Promise<boolean>
   setSearchQuery: (q: string) => void
@@ -1085,7 +1089,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
     get().resetLocalVaultState()
   },
 
-  rotatePassword: async (currentPassword, newPassword) => {
+  rotatePassword: async (currentPassword, newPassword, nachweis = {}) => {
     const { items, userKey, bucketId } = get()
     if (!userKey || !bucketId) return false
     const salt = getLocalVaultSalt()
@@ -1192,11 +1196,11 @@ export const useVaultStore = create<VaultState>((set, get) => {
         transport: {
           prepare: async (b, s) => {
             if (status.rotation_state !== 'prepared') {
-              await api('/api/vault/rotation/prepare', { method: 'POST', body: JSON.stringify({ bucket_id: b, salt: s }) })
+              await api('/api/vault/rotation/prepare', { method: 'POST', body: JSON.stringify({ bucket_id: b, salt: s, ...nachweis }) })
             }
           },
           sync: syncTransport,
-          commit: async () => { await api('/api/vault/rotation/commit', { method: 'POST' }) },
+          commit: async () => { await api('/api/vault/rotation/commit', { method: 'POST', body: JSON.stringify(nachweis) }) },
           abort: async () => { await api('/api/vault/rotation/abort', { method: 'POST' }) },
         },
       })

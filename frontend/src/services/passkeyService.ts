@@ -193,6 +193,7 @@ export type PasskeyZweck =
   | 'oauth_link'
   | '2fa_change'
   | 'vault_reset'
+  | 'vault_rotation'
   | 'kamera_sicherung'
   | 'notification_channel'
   | 'localhost_connections'

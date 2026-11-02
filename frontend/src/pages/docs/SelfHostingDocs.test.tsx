@@ -185,6 +185,25 @@ describe('SelfHostingDocs', () => {
     expect(screen.getByText(/The panel backup contains the database, not \/opt\/msm\/vault-blobs/)).toBeInTheDocument()
   })
 
+  it('nennt Ports, Geheimnisse und Release-Inhalt des Docs-Sidecars', async () => {
+    // Ohne diesen Abschnitt wüsste ein Betreiber nicht, warum das
+    // Dokumente-Modul nach dem Release dunkel bleibt — und /internal/*
+    // landete eines Tages aus Versehen hinter Caddy.
+    renderPage()
+
+    expect(document.querySelector('a[href="#docs-sidecar"]')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Documents module: collab sidecar' })).toBeInTheDocument()
+    expect(screen.getByText(/8100.*\/api\/docs\/collab/)).toBeInTheDocument()
+    expect(screen.getByText(/does not proxy \/internal\/\*/)).toBeInTheDocument()
+    expect(screen.getByText(/MSM_DOCS_SIDECAR_TOKEN, MSM_DOCS_COLLAB_SECRET/)).toBeInTheDocument()
+    expect(screen.getByText(/msm-docs-sidecar\.service/)).toBeInTheDocument()
+    expect(screen.getByText(/server\.mjs, package\.json and package-lock\.json/)).toBeInTheDocument()
+
+    await i18n.changeLanguage('de')
+    renderPage()
+    expect(screen.getByRole('heading', { name: 'Dokumente-Modul: Collab-Sidecar' })).toBeInTheDocument()
+  })
+
   it('führt jeden Abschnitt in der Sprungleiste, und jede Marke trifft einen', () => {
     // Die Datenbankverschlüsselung stand bis 27.09.2026 auf der Seite, aber
     // nicht in der Leiste, und war nur durch Scrollen zu finden.

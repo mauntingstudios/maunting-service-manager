@@ -138,6 +138,9 @@ jobs:
         run: |
           sha256sum --check SHA256SUMS
           tar -tzf "msm-panel-${{ steps.version.outputs.value }}.tar.gz" | grep -q '/backend/main.py$'
+          tar -tzf "msm-panel-${{ steps.version.outputs.value }}.tar.gz" | grep -q '/docs-sidecar/server.mjs$'
+          tar -tzf "msm-panel-${{ steps.version.outputs.value }}.tar.gz" | grep -q '/docs-sidecar/package.json$'
+          tar -tzf "msm-panel-${{ steps.version.outputs.value }}.tar.gz" | grep -q '/docs-sidecar/package-lock.json$'
           tar -tzf "msm-panel-${{ steps.version.outputs.value }}.tar.gz" | grep -q '/livekit-sidecar/docker-compose.yml$'
           tar -tzf "msm-panel-${{ steps.version.outputs.value }}.tar.gz" | grep -q '/searxng-sidecar/docker-compose.yml$'
           tar -tzf "msm-panel-${{ steps.version.outputs.value }}.tar.gz" | grep -q '/wetter-sidecar/docker-compose.yml$'

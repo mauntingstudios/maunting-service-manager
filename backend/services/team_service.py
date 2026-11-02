@@ -192,6 +192,102 @@ def assert_team_permission(db: Session, team: Team, user: User, permission_key: 
         raise HTTPException(status_code=403, detail="Keine Berechtigung im Team")
 
 
+def _ist_team_gruender(team: Team, user: User) -> bool:
+    """Ob der Benutzer im Team alles darf: globaler Owner oder Teamgruender."""
+    return bool(user.is_owner or team.owner_user_id == user.id)
+
+
+def _admin_nur_gruender() -> HTTPException:
+    return HTTPException(
+        status_code=403,
+        detail={
+            "code": "TEAM_ROLE_ADMIN_OWNER_ONLY",
+            "message": "Nur der Teamgründer darf eine Admin-Rolle anlegen, ändern oder zuteilen.",
+        },
+    )
+
+
+def _pruefe_rollen_deckel(
+    db: Session, team: Team, user: User, *,
+    is_admin: bool,
+    permission_keys: list[str] | None,
+    flags: dict[str, bool],
+) -> None:
+    """Der Deckel: wer nicht Gruender ist, vergibt nur, was er selbst haelt.
+
+    Bis 11/2026 legte jeder mit `team.roles.manage` Admin-Rollen an und teilte
+    sie zu — samt Rechten und Schaltern, die er selbst nicht hatte. Jetzt gilt:
+    `is_admin` nur durch den Gruender, jedes Recht nur gehalten
+    (`has_team_permission`), jeder Schalter nur getragen (Mitgliedszeile). Der
+    Gruender bleibt unbeschraenkt; `has_team_permission` selbst ist unveraendert.
+    """
+    if _ist_team_gruender(team, user):
+        return
+    if is_admin:
+        raise _admin_nur_gruender()
+    for key in permission_keys or []:
+        if is_team_key(key) and not has_team_permission(db, team.id, user, key):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "TEAM_ROLE_GRANT_DENIED",
+                    "message": f'Das Recht "{key}" hältst du im Team nicht und kannst es nicht vergeben.',
+                },
+            )
+    eigen = membership(db, team.id, user.id)
+    getragen = {
+        "can_access_vault": bool(eigen is not None and eigen.can_access_vault),
+        "can_manage_skills": bool(eigen is not None and eigen.can_manage_skills),
+        "can_manage_memory": bool(eigen is not None and eigen.can_manage_memory),
+    }
+    for name, gesetzt in flags.items():
+        if gesetzt and not getragen.get(name, False):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "TEAM_ROLE_GRANT_DENIED",
+                    "message": "Diesen Teamschalter trägst du selbst nicht und kannst ihn nicht vergeben.",
+                },
+            )
+
+
+def _pruefe_rollenzuteilung(db: Session, team: Team, user: User, rollen: list[TeamRole]) -> None:
+    """Der Deckel fuer die Zuteilung bestehender Rollen: jede Rolle zaehlt wie neu angelegt."""
+    if _ist_team_gruender(team, user):
+        return
+    for rolle in rollen:
+        keys = [
+            row[0]
+            for row in db.query(TeamRolePermission.permission_key)
+            .filter(TeamRolePermission.role_id == rolle.id)
+            .all()
+        ]
+        _pruefe_rollen_deckel(
+            db, team, user,
+            is_admin=rolle.is_admin,
+            permission_keys=keys,
+            flags={
+                "can_access_vault": rolle.can_access_vault,
+                "can_manage_skills": rolle.can_manage_skills,
+                "can_manage_memory": rolle.can_manage_memory,
+            },
+        )
+
+
+def _rolle_im_team(db: Session, team: Team, team_role_id: int) -> TeamRole:
+    """Die Rolle muss zum Team gehoeren — sonst 422 statt stiller Fremdrolle."""
+    rolle = db.get(TeamRole, team_role_id)
+    if rolle is None or rolle.team_id != team.id:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "TEAM_ROLE_NOT_IN_TEAM",
+                "message": "Diese Rolle gehört nicht zu diesem Team.",
+            },
+        )
+    return rolle
+
+
 def ensure_default_team_roles(
     db: Session, team: Team, founder_member: TeamMember | None = None
 ) -> list[TeamRole]:
@@ -439,10 +535,19 @@ def invite_member(
     if membership(db, team.id, new_user_id) is not None:
         raise HTTPException(status_code=409, detail="Benutzer ist bereits im Team")
 
+    # Eine Rolle aus einem fremden Team landet nie auf der Einladung.
+    if team_role_id is not None:
+        _rolle_im_team(db, team, team_role_id)
+
     if team_role_id is None and not team.is_personal:
         default_role = db.query(TeamRole.id).filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True)).first()
         if default_role is not None:
             team_role_id = default_role[0]
+
+    # Auch die Einladung vergibt die Rolle: der Deckel gilt hier wie bei der
+    # direkten Zuteilung — einschliesslich der automatisch gewaehlten Standardrolle.
+    if team_role_id is not None:
+        _pruefe_rollenzuteilung(db, team, user, [_rolle_im_team(db, team, team_role_id)])
 
     offen = invitation(db, team.id, new_user_id)
     if offen is None:
@@ -500,6 +605,17 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
         db.delete(einladung)
         db.commit()
         raise HTTPException(status_code=404, detail="Einladung nicht gefunden")
+
+    # Die Rolle auf der Einladung gilt erst nach erneuter Pruefung: sie muss
+    # noch da sein und zum Team gehoeren — und eine Admin-Rolle traegt nur eine
+    # Einladung vom Gruender (Einladungen von vor dem Deckel eingeschlossen;
+    # ein Erstellerfeld hat die Rolle nicht, der Einlader steht auf der Einladung).
+    if einladung.team_role_id is not None:
+        rolle = _rolle_im_team(db, team, einladung.team_role_id)
+        if rolle.is_admin:
+            einlader = db.get(User, einladung.invited_by) if einladung.invited_by else None
+            if einlader is None or not _ist_team_gruender(team, einlader):
+                raise _admin_nur_gruender()
 
     bestehend = membership(db, team_id, user.id)
     if bestehend is not None:
@@ -608,6 +724,8 @@ def update_member(
     member = membership(db, team.id, member_user_id)
     if member is None:
         raise HTTPException(status_code=404, detail="Mitglied nicht gefunden")
+    if team_role_id is not None:
+        _pruefe_rollenzuteilung(db, team, user, [_rolle_im_team(db, team, team_role_id)])
 
     # Das `and` ist die ganze Regel: was aus ist, bleibt aus; was an ist, darf
     # aus werden.
@@ -1023,6 +1141,16 @@ def create_team_role(
     """Erstellt eine neue Rolle im Team."""
     if not has_team_permission(db, team.id, user, "team.roles.manage"):
         assert_team_owner(db, team, user)
+    _pruefe_rollen_deckel(
+        db, team, user,
+        is_admin=is_admin,
+        permission_keys=permission_keys,
+        flags={
+            "can_access_vault": can_access_vault,
+            "can_manage_skills": can_manage_skills,
+            "can_manage_memory": can_manage_memory,
+        },
+    )
 
     safe_name = name.strip()
     if not 2 <= len(safe_name) <= 32:
@@ -1107,6 +1235,16 @@ def update_team_role(
         assert_team_owner(db, team, user)
 
     role = get_team_role(db, team.id, role_id)
+    _pruefe_rollen_deckel(
+        db, team, user,
+        is_admin=is_admin,
+        permission_keys=permission_keys,
+        flags={
+            "can_access_vault": can_access_vault,
+            "can_manage_skills": can_manage_skills,
+            "can_manage_memory": can_manage_memory,
+        },
+    )
     safe_name = name.strip()
     if not 2 <= len(safe_name) <= 32:
         raise HTTPException(status_code=422, detail="Rollenname muss 2 bis 32 Zeichen lang sein")
@@ -1212,6 +1350,10 @@ def set_member_roles(
         .filter(TeamRole.team_id == team.id, TeamRole.id.in_(role_ids))
         .all()
     ) if role_ids else []
+
+    # Der Deckel gilt der Zuteilung wie der Anlage: eine Admin-Rolle teilt nur
+    # der Gruender zu, fremde Rechte und Schalter niemand, der sie nicht haelt.
+    _pruefe_rollenzuteilung(db, team, user, valid_roles)
 
     valid_role_ids = {r.id for r in valid_roles}
 

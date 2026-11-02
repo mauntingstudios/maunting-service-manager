@@ -128,7 +128,7 @@ def test_team_vault_lifecycle(
     new_bucket = _valid_bucket_id()
     resp = client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": new_bucket, "salt": new_salt},
+        json={"bucket_id": new_bucket, "salt": new_salt, "password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     )
@@ -153,6 +153,7 @@ def test_team_vault_lifecycle(
     assert resp.status_code == 200
     resp = client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     )
@@ -216,7 +217,7 @@ def test_team_setup_und_prepare_beanspruchen_keinen_fremdbucket(
     # Prepare mit Fremdbucket muss mit 403 abgewiesen werden
     res_rot = client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": fremder_bucket, "salt": "neusalt1234567890abcdef"},
+        json={"bucket_id": fremder_bucket, "salt": "neusalt1234567890abcdef", "password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     )

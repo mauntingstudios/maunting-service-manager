@@ -178,7 +178,7 @@ def list_documents(
     cursor: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(_docs_user),
-) -> list[dict]:
+) -> dict | list[dict]:
     if search:
         return DocsService.search_documents(db, user, search, limit=limit)
     return DocsService.list_documents(

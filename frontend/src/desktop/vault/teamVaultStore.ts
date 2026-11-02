@@ -9,7 +9,7 @@
 import { create } from 'zustand'
 import i18n from '@/i18n'
 import { still } from '@/lib/still'
-import { teamsApi, type TeamVaultMutationItem, type TeamVaultSyncResult } from '@/api/teams'
+import { teamsApi, type RotationNachweis, type TeamVaultMutationItem, type TeamVaultSyncResult } from '@/api/teams'
 import {
   base64ToBytes,
   bytesToBase64,
@@ -89,7 +89,7 @@ export interface TeamVaultState {
   checkHintStatus: (teamId: number) => Promise<boolean>
   requestHintEmail: (teamId: number) => Promise<{ ok: boolean; message: string }>
   unlock: (teamId: number, masterPassword: string) => Promise<boolean>
-  rotatePassword: (teamId: number, currentPassword: string, newPassword: string) => Promise<boolean>
+  rotatePassword: (teamId: number, currentPassword: string, newPassword: string, nachweis?: RotationNachweis) => Promise<boolean>
   abortRotation: (teamId: number) => Promise<void>
   rollbackRotation: (teamId: number) => Promise<boolean>
   resetVault: (teamId: number, nachweis: Record<string, unknown>, bestaetigung: string) => Promise<void>
@@ -412,7 +412,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     }
   },
 
-  rotatePassword: async (teamId: number, currentPassword: string, newPassword: string) => {
+  rotatePassword: async (teamId: number, currentPassword: string, newPassword: string, nachweis: RotationNachweis = {}) => {
     const { items, userKey, salt, bucketId } = get()
     if (!userKey || !salt || !bucketId) return false
 
@@ -492,7 +492,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
         transport: {
           prepare: async (b, s) => {
             if (status.rotation_state !== 'prepared') {
-              await teamsApi.rotationPrepare(teamId, { bucket_id: b, salt: s })
+              await teamsApi.rotationPrepare(teamId, { bucket_id: b, salt: s, ...nachweis })
             }
           },
           sync: async (b, mutationen) => {
@@ -515,7 +515,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
             }
           },
           commit: async () => {
-            await teamsApi.rotationCommit(teamId)
+            await teamsApi.rotationCommit(teamId, nachweis)
           },
           abort: async () => {
             await teamsApi.rotationAbort(teamId)

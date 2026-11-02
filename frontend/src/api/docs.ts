@@ -156,7 +156,6 @@ function query(params: Record<string, string | number | boolean | null | undefin
 export function listDocuments(params: {
   teamId?: number | null
   folderUid?: string | null
-  search?: string
   archived?: boolean
   trash?: boolean
   member?: string
@@ -167,13 +166,34 @@ export function listDocuments(params: {
     `/docs${query({
       team_id: params.teamId ?? undefined,
       folder_uid: params.folderUid ?? undefined,
-      search: params.search,
       archived: params.archived || undefined,
       trash: params.trash || undefined,
       member: params.member,
       limit: params.limit,
       cursor: params.cursor,
     })}`,
+  )
+}
+
+export interface DocSearchResult {
+  items: DocSummary[]
+  /** Wie viele der jüngsten Dokumente durchsucht wurden (Grenze: 200). */
+  searched: number
+  /** Ob ältere Dokumente außerhalb der Suche blieben. */
+  truncated: boolean
+}
+
+/**
+ * Sucht in den jüngsten Dokumenten. Der Server durchsucht höchstens die 200
+ * jüngsten und sagt über `truncated`, wenn ältere außen vor blieben — statt
+ * still zu schweigen.
+ */
+export function searchDocuments(params: {
+  search: string
+  limit?: number
+}): Promise<DocSearchResult> {
+  return api<DocSearchResult>(
+    `/docs${query({ search: params.search, limit: params.limit })}`,
   )
 }
 

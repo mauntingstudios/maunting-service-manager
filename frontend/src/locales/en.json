@@ -2368,6 +2368,9 @@
       "emptyTitle": "No document yet",
       "emptyText": "Create a document. It belongs to your team from the start."
     },
+    "search": {
+      "truncatedHint": "Only the {{count}} newest documents were searched. Older matches may be missing."
+    },
     "comments": {
       "title": "Comments",
       "open": "Open comments",
@@ -3313,6 +3316,7 @@
         "oauth_link": "Link a social account",
         "2fa_change": "Change two-factor sign-in",
         "vault_reset": "Reset vault",
+        "vault_rotation": "Change master password",
         "kamera_sicherung": "Turn on camera backup",
         "notification_channel": "Allow background notifications"
       }
@@ -5070,6 +5074,30 @@
       "limits": {
         "title": "Limits",
         "body": "A device gets exactly one delivery address; changing it means a new device and a new approval. Open deliveries per inbox: 50, at most 10 MiB in total. A backup taken after this change brings no open delivery back; the history stays on the devices."
+      }
+    },
+    "docsSidecar": {
+      "title": "Documents module: collab sidecar",
+      "intro": "Realtime co-editing is carried by its own Node process: docs-sidecar holds the shared document state (Yjs over Hocuspocus WebSocket), accepts AI edits and renders exports. Without it the module stays dark.",
+      "zweck": {
+        "title": "Purpose",
+        "body": "The sidecar holds the shared document state, validates collab tokens against the backend and renders Markdown and HTML exports. Without it the backend refuses collab tokens and the UI shows a banner instead of the editor."
+      },
+      "ports": {
+        "title": "Ports",
+        "body": "8100: Hocuspocus WebSocket, 127.0.0.1 only, proxied by Caddy at /api/docs/collab. 8101: internal HTTP API, 127.0.0.1 only; Caddy deliberately does not proxy /internal/*. There is no public path."
+      },
+      "secrets": {
+        "title": "Secrets",
+        "body": "MSM_DOCS_SIDECAR_TOKEN, MSM_DOCS_COLLAB_SECRET and MSM_DOCS_SIGNING_SECRET must match in backend/.env and docs-sidecar/.env. install.sh and update.sh generate missing values themselves and leave existing ones alone."
+      },
+      "service": {
+        "title": "Service",
+        "body": "msm-docs-sidecar.service starts before msm-panel.service. Exactly one instance runs: the collab state lives in the process."
+      },
+      "release": {
+        "title": "Release",
+        "body": "The panel tarball contains docs-sidecar/ with server.mjs, package.json and package-lock.json; the release pipeline verifies that on every build."
       }
     },
     "push": {
@@ -7254,6 +7282,10 @@
       "rotationLaeuft": "Changing …",
       "rotationFortsetzen": "Resume rotation",
       "rotationFortsetzenHinweis": "A password rotation was interrupted. The old vault remains fully usable.",
+      "rotationNachweisTitel": "Confirm it is you",
+      "rotationNachweisHinweis": "The server does not know your master password. Confirm the change with your account password or your second factor instead.",
+      "rotationKontoPasswort": "Account password",
+      "rotationKeinNachweis": "Your account has neither a password nor two-factor authentication. Set an account password first, then you can change the master password.",
       "leckPruefung": "Check passwords against known breaches",
       "leckPruefungHinweis": "From 6 characters on, the first 5 characters of the SHA-1 hash go to Have I Been Pwned. The password itself never leaves the device.",
       "kiSpiegelung": "Mirror AI file attachments in vault",

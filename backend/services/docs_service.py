@@ -157,6 +157,26 @@ def _inhalt_text(doc: Document) -> str:
         return ""
 
 
+def _inhalt_gebuendelt(docs: list[Document]) -> dict[str, str]:
+    from services.dis_client import DisClient
+
+    mit_inhalt = [d for d in docs if d.content_text_encrypted]
+    if not mit_inhalt:
+        return {}
+    try:
+        werte = DisClient.decrypt_many(
+            [(d.content_text_encrypted, aad_text(d.doc_uid)) for d in mit_inhalt]
+        )
+    except DisSidecarError as exc:
+        raise fehler(
+            503, "DOCS_STORE_FAILED", "Verschluesselungsdienst nicht erreichbar"
+        ) from exc
+    return {
+        d.doc_uid: (wert if wert is not None else "")
+        for d, wert in zip(mit_inhalt, werte)
+    }
+
+
 def _publish(action: str, doc: Document, *, user_id: int | None = None, **extra) -> None:
     payload = {
         "entity": "docs",
@@ -380,35 +400,46 @@ class DocsService:
     @staticmethod
     def search_documents(
         db: Session, user: User, suchbegriff: str, *, limit: int = 50
-    ) -> list[dict]:
+    ) -> dict:
         begriff = suchbegriff.strip().lower()
         if not begriff:
-            return []
+            return {"items": [], "searched": 0, "truncated": False}
         team_ids = team_service.user_team_ids(db, user)
         if not team_ids:
-            return []
-        kandidaten = (
+            return {"items": [], "searched": 0, "truncated": False}
+        # Eine Zeile mehr als die Grenze: nur so sieht die Suche, dass aeltere
+        # Dokumente ausserhalb blieben (`truncated`), statt still zu schweigen.
+        zeilen = (
             db.query(Document)
             .filter(
                 Document.team_id.in_(team_ids),
                 Document.deleted_at.is_(None),
             )
             .order_by(Document.updated_at.desc())
-            .limit(MAX_SEARCH_KANDIDATEN)
+            .limit(MAX_SEARCH_KANDIDATEN + 1)
             .all()
         )
-        titel = _titel_gebuendelt(kandidaten)
-        treffer: list[dict] = []
+        gekuerzt = len(zeilen) > MAX_SEARCH_KANDIDATEN
+        kandidaten = zeilen[:MAX_SEARCH_KANDIDATEN]
+        # Erst der Zugriff, dann die Krypto: was der Benutzer nicht sehen darf,
+        # wird gar nicht erst entschluesselt — und was er sehen darf, in zwei
+        # gebuendelten Aufrufen statt einem je Dokument.
+        sichtbar: list = []
         for doc in kandidaten:
-            if begriff not in titel[doc.doc_uid].lower() and begriff not in _inhalt_text(doc).lower():
-                continue
             zugriff = docs_access.resolve_access(db, user, doc)
             if zugriff is None:
+                continue
+            sichtbar.append((doc, zugriff))
+        titel = _titel_gebuendelt([doc for doc, _ in sichtbar])
+        inhalte = _inhalt_gebuendelt([doc for doc, _ in sichtbar])
+        treffer: list[dict] = []
+        for doc, zugriff in sichtbar:
+            if begriff not in titel[doc.doc_uid].lower() and begriff not in inhalte.get(doc.doc_uid, "").lower():
                 continue
             treffer.append(DocsService._summary(db, doc, zugriff, titel[doc.doc_uid]))
             if len(treffer) >= limit:
                 break
-        return treffer
+        return {"items": treffer, "searched": len(kandidaten), "truncated": gekuerzt}
 
     @staticmethod
     def get_document(db: Session, user: User, doc_uid: str) -> dict:

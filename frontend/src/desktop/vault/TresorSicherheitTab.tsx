@@ -19,6 +19,8 @@ import { TresorZuruecksetzen } from './TresorZuruecksetzen'
 
 import { sperrfristOptionen } from '@/services/autoSperre'
 import { Button, Dialog, DialogContent, Dropdown, type DropdownOption, PasswordInput, Switch } from '@/Singra/UI'
+import { useZweitfaktor, ZweitfaktorFeld } from '@/components/auth/ZweitfaktorNachweis'
+import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 
 import { useShallow } from 'zustand/react/shallow'
@@ -59,20 +61,32 @@ export function TresorSicherheitTab({ offline = false }: { offline?: boolean }) 
   const [rotAktuell, setRotAktuell] = useState('')
   const [rotNeu, setRotNeu] = useState('')
   const [rotWiederholung, setRotWiederholung] = useState('')
+  const [rotKontoPasswort, setRotKontoPasswort] = useState('')
   const [rotBusy, setRotBusy] = useState(false)
+  // Frischer Kontonachweis: das Master-Passwort kennt der Server nicht, also
+  // belegt das Konto-Passwort oder der zweite Faktor, wer rotieren darf.
+  const benutzer = useAuthStore((s) => s.user)
+  const rotFaktor = useZweitfaktor()
+  const rotBrauchtPasswort = benutzer?.has_password !== false
+  const rotHatNachweis = rotBrauchtPasswort || rotFaktor.methoden.length > 0
 
   const handleRotation = async (e: React.FormEvent) => {
     e.preventDefault()
     if (rotNeu.length < 12 || rotNeu !== rotWiederholung) return
     setRotBusy(true)
     try {
-      const ok = await rotatePassword(rotAktuell, rotNeu)
+      const zweiter = await rotFaktor.nachweis('vault_rotation')
+      const ok = await rotatePassword(rotAktuell, rotNeu, {
+        password: rotBrauchtPasswort ? rotKontoPasswort : null,
+        ...zweiter,
+      })
       if (ok) {
         toast.success(t('mss.vault.rotationErfolg'))
         setRotationOpen(false)
         setRotAktuell('')
         setRotNeu('')
         setRotWiederholung('')
+        setRotKontoPasswort('')
       } else {
         toast.error(t('mss.vault.rotationFehler'))
       }
@@ -300,9 +314,32 @@ export function TresorSicherheitTab({ offline = false }: { offline?: boolean }) 
             <PasswordInput value={rotAktuell} onChange={(e) => setRotAktuell(e.target.value)} placeholder={t('mss.vault.rotationAktuellesPasswort')} autoFocus required disabled={rotBusy} />
             <PasswordInput value={rotNeu} onChange={(e) => setRotNeu(e.target.value)} placeholder={t('mss.vault.rotationNeuesPasswort')} required disabled={rotBusy} />
             <PasswordInput value={rotWiederholung} onChange={(e) => setRotWiederholung(e.target.value)} placeholder={t('mss.vault.rotationPasswortWiederholen')} required disabled={rotBusy} />
+            <div className="space-y-3 border-t border-outline-variant/30 pt-3">
+              <div>
+                <h4 className="text-xs font-semibold text-on-surface">{t('mss.vault.rotationNachweisTitel')}</h4>
+                <p className="text-label-sm text-on-surface-variant">{t('mss.vault.rotationNachweisHinweis')}</p>
+              </div>
+              {rotHatNachweis ? (
+                <>
+                  {rotBrauchtPasswort && (
+                    <PasswordInput
+                      value={rotKontoPasswort}
+                      onChange={(e) => setRotKontoPasswort(e.target.value)}
+                      label={t('mss.vault.rotationKontoPasswort')}
+                      autoComplete="current-password"
+                      required
+                      disabled={rotBusy}
+                    />
+                  )}
+                  <ZweitfaktorFeld faktor={rotFaktor} id="rotation-otp" disabled={rotBusy} />
+                </>
+              ) : (
+                <p className="text-xs text-status-warning">{t('mss.vault.rotationKeinNachweis')}</p>
+              )}
+            </div>
             <div className="flex items-center justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setRotationOpen(false)} disabled={rotBusy}>{t('common.cancel')}</Button>
-              <Button type="submit" disabled={rotBusy || !rotAktuell || rotNeu.length < 12 || rotNeu !== rotWiederholung}>
+              <Button type="submit" disabled={rotBusy || !rotHatNachweis || !rotFaktor.bereit || (rotBrauchtPasswort && !rotKontoPasswort) || !rotAktuell || rotNeu.length < 12 || rotNeu !== rotWiederholung}>
                 {rotBusy ? t('mss.vault.rotationLaeuft') : t('mss.vault.rotationStarten')}
               </Button>
             </div>

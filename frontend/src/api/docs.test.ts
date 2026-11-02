@@ -13,6 +13,7 @@ import {
   listDocuments,
   listRevisions,
   restoreRevision,
+  searchDocuments,
   updateDocument,
 } from './docs'
 
@@ -21,13 +22,21 @@ afterEach(() => vi.restoreAllMocks())
 it('baut die Listenabfrage nur aus gesetzten Filtern', async () => {
   const api = vi.spyOn(client, 'api').mockResolvedValue([])
 
-  await listDocuments({ teamId: 7, search: 'protokoll', trash: true, limit: 50, cursor: 120 })
+  await listDocuments({ teamId: 7, trash: true, limit: 50, cursor: 120 })
   expect(api).toHaveBeenLastCalledWith(
-    '/docs?team_id=7&search=protokoll&trash=true&limit=50&cursor=120',
+    '/docs?team_id=7&trash=true&limit=50&cursor=120',
   )
 
-  await listDocuments({ teamId: null, archived: false, search: '' })
+  await listDocuments({ teamId: null, archived: false })
   expect(api).toHaveBeenLastCalledWith('/docs')
+})
+
+it('sucht über den eigenen Weg und liefert Treffer mit Suchtiefe', async () => {
+  const api = vi.spyOn(client, 'api').mockResolvedValue({ items: [], searched: 200, truncated: true })
+
+  const ergebnis = await searchDocuments({ search: 'protokoll', limit: 200 })
+  expect(api).toHaveBeenLastCalledWith('/docs?search=protokoll&limit=200')
+  expect(ergebnis).toEqual({ items: [], searched: 200, truncated: true })
 })
 
 it('legt Dokumente ohne Team und Ordner mit expliziten Nullen an', async () => {

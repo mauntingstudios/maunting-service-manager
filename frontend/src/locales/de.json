@@ -2368,6 +2368,9 @@
       "emptyTitle": "Noch kein Dokument",
       "emptyText": "Lege ein Dokument an. Es gehört zunächst deinem Team."
     },
+    "search": {
+      "truncatedHint": "Nur die {{count}} neuesten Dokumente wurden durchsucht. Ältere Treffer fehlen möglicherweise."
+    },
     "comments": {
       "title": "Kommentare",
       "open": "Kommentare öffnen",
@@ -3313,6 +3316,7 @@
         "oauth_link": "Social-Konto verknüpfen",
         "2fa_change": "Zwei-Faktor-Anmeldung ändern",
         "vault_reset": "Tresor zurücksetzen",
+        "vault_rotation": "Master-Passwort ändern",
         "kamera_sicherung": "Kamera-Sicherung einschalten",
         "notification_channel": "Benachrichtigungen im Hintergrund erlauben"
       }
@@ -5070,6 +5074,30 @@
       "limits": {
         "title": "Grenzen",
         "body": "Ein Gerät bekommt genau eine Zustelladresse; ein Wechsel bedeutet ein neues Gerät und eine neue Freigabe. Offene Zustellungen je Inbox: 50, zusammen höchstens 10 MiB. Ein Backup nach dieser Änderung bringt keine offene Zustellung zurück; der Verlauf bleibt auf den Geräten."
+      }
+    },
+    "docsSidecar": {
+      "title": "Dokumente-Modul: Collab-Sidecar",
+      "intro": "Gemeinsames Bearbeiten in Echtzeit trägt ein eigener Node-Prozess: docs-sidecar hält den geteilten Dokumentzustand (Yjs über Hocuspocus-WebSocket), nimmt KI-Bearbeitungen entgegen und rendert Exporte. Ohne ihn bleibt das Modul dunkel.",
+      "zweck": {
+        "title": "Zweck",
+        "body": "Der Sidecar hält den geteilten Dokumentzustand, prüft Collab-Tokens gegen das Backend und rendert Markdown- und HTML-Exporte. Das Backend verweigert ohne ihn Collab-Tokens, die Oberfläche zeigt ein Banner statt des Editors."
+      },
+      "ports": {
+        "title": "Ports",
+        "body": "8100: Hocuspocus-WebSocket, nur 127.0.0.1, von Caddy unter /api/docs/collab durchgereicht. 8101: interne HTTP-API, nur 127.0.0.1; /internal/* wird von Caddy bewusst nicht durchgereicht. Ein öffentlicher Pfad existiert nicht."
+      },
+      "secrets": {
+        "title": "Geheimnisse",
+        "body": "MSM_DOCS_SIDECAR_TOKEN, MSM_DOCS_COLLAB_SECRET und MSM_DOCS_SIGNING_SECRET müssen in backend/.env und docs-sidecar/.env übereinstimmen. install.sh und update.sh erzeugen fehlende Werte selbst und lassen bestehende stehen."
+      },
+      "service": {
+        "title": "Dienst",
+        "body": "msm-docs-sidecar.service startet vor msm-panel.service. Es läuft genau eine Instanz: der Collab-Zustand lebt im Prozess."
+      },
+      "release": {
+        "title": "Release",
+        "body": "Der Panel-Tarball enthält docs-sidecar/ mit server.mjs, package.json und package-lock.json; die Release-Pipeline prüft das bei jedem Build."
       }
     },
     "push": {
@@ -7254,6 +7282,10 @@
       "rotationLaeuft": "Wird geändert …",
       "rotationFortsetzen": "Rotation fortsetzen",
       "rotationFortsetzenHinweis": "Eine Passwort-Rotation wurde unterbrochen. Der alte Tresor ist unverändert nutzbar.",
+      "rotationNachweisTitel": "Bestätige, dass du es bist",
+      "rotationNachweisHinweis": "Der Server kennt dein Master-Passwort nicht. Bestätige die Änderung deshalb mit deinem Konto-Passwort oder deinem zweiten Faktor.",
+      "rotationKontoPasswort": "Konto-Passwort",
+      "rotationKeinNachweis": "Dein Konto hat weder Passwort noch Zwei-Faktor-Anmeldung. Lege zuerst ein Konto-Passwort fest, dann lässt sich das Master-Passwort ändern.",
       "leckPruefung": "Passwörter gegen bekannte Lecks prüfen",
       "leckPruefungHinweis": "Ab 6 Zeichen gehen die ersten 5 Zeichen des SHA-1-Prüfwerts an Have I Been Pwned. Das Passwort selbst verlässt das Gerät nicht.",
       "kiSpiegelung": "KI-Dateianhänge im Tresor spiegeln",

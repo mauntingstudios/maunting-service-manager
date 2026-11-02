@@ -189,6 +189,7 @@ The bootstrap installer automates:
 - PostgreSQL database setup and Redis caching services
 - Rootless Docker setup for the dedicated `msm` system account
 - The Data Isolation & Security service (DIS)
+- Docs sidecar for realtime document collaboration (`/api/docs/collab`)
 - LiveKit sidecar for audio and video messenger calls
 - Local Node Agent and Guardian monitoring daemon
 - Caddy reverse proxy with automated Let's Encrypt TLS provisioning
@@ -221,6 +222,7 @@ The bootstrap installer automates:
 │  → Port 8000 (Localhost)                │
 │  → PostgreSQL (Loopback) / Redis        │
 │  → DIS Sidecar (@msdis/shield)          │
+│  → Docs Sidecar (/api/docs/collab)      │
 │  → LiveKit Sidecar (/livekit)           │
 └────────────┬────────────────────────────┘
              │ (mTLS / HMAC Enrollment)

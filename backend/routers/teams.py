@@ -53,6 +53,7 @@ from schemas.vault import (
     VaultHintSetRequest,
     VaultHintStatusResponse,
     VaultResetRequest,
+    VaultRotationCommitRequest,
     VaultRotationPrepareRequest,
     VaultSpeicher,
     VaultSyncRequest,
@@ -365,6 +366,14 @@ def invite_member(
     Die Antwort zeigt ihn deshalb unter `invitations` und nicht unter
     `members`.
     """
+    if payload.role_ids:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "TEAM_ROLE_IDS_UNGUELTIG",
+                "message": "Mehrere Rollen vergibt nur PUT /members/{id}/roles; hier zählt allein team_role_id.",
+            },
+        )
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.invite_member(
         db, team=team, user=user, new_user_id=payload.user_id,
@@ -385,6 +394,14 @@ def update_member(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> TeamDetailResponse:
+    if payload.role_ids:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "TEAM_ROLE_IDS_UNGUELTIG",
+                "message": "Mehrere Rollen vergibt nur PUT /members/{id}/roles; hier zählt allein team_role_id.",
+            },
+        )
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.update_member(
         db, team=team, user=user, member_user_id=member_user_id,
@@ -661,7 +678,7 @@ def setup_team_vault(
     return {"status": "ok"}
 
 
-@router.post("/{team_id}/vault/rotate", dependencies=[Depends(verify_csrf)])
+@router.post("/{team_id}/vault/rotate", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
 def rotate_team_vault(
     team_id: int,
     payload: TeamVaultRotateRequest,
@@ -671,37 +688,88 @@ def rotate_team_vault(
     """Rotiert das Master-Passwort des Team-Tresors und setzt das Rotations-Flag zurueck (nur Gruender)."""
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
+    _team_rotationsnachweis(db, user, payload)
     vault_service.rotate_team_vault(db, team, user, payload.bucket_id, payload.salt)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="team.vault.rotation.commit",
+        target_type="team",
+        target_id=team.id,
+        commit=True,
+    )
     return {"status": "ok"}
 
 
-@router.post("/{team_id}/vault/rotation/prepare", dependencies=[Depends(verify_csrf)])
+def _team_rotationsnachweis(
+    db: Session,
+    user: User,
+    payload: VaultRotationPrepareRequest | VaultRotationCommitRequest | TeamVaultRotateRequest,
+) -> None:
+    """Frischer Kontonachweis vor prepare/commit der Team-Rotation (wie privat).
+
+    Das Master-Passwort kennt der Server nicht; der Nachweis ist deshalb das
+    Kontopasswort oder ein eingerichteter zweiter Faktor. Auch der Alt-Endpunkt
+    `/rotate` vollendet eine vorbereitete Rotation und braucht ihn.
+    """
+    fehlt = passkey_service.frischer_nachweis_fehlt(
+        db,
+        user,
+        password=payload.password,
+        otp_code=payload.otp_code,
+        passkey=payload.passkey.model_dump() if payload.passkey else None,
+        zweck="vault_rotation",
+    )
+    if fehlt:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=fehlt)
+
+
+@router.post("/{team_id}/vault/rotation/prepare", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
 def prepare_team_vault_rotation(
     team_id: int,
-    payload: "VaultRotationPrepareRequest",
+    payload: VaultRotationPrepareRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
+    _team_rotationsnachweis(db, user, payload)
     try:
         vault_service.rotation_vorbereiten_team(db, team, payload.bucket_id, payload.salt)
     except vault_service.VaultZurueckgesetzt as exc:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Dieser Tresor wurde zurückgesetzt.") from exc
     except vault_service.VaultBucketAccessDenied as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="team.vault.rotation.prepare",
+        target_type="team",
+        target_id=team.id,
+        commit=True,
+    )
     return {"status": "ok"}
 
 
-@router.post("/{team_id}/vault/rotation/commit", dependencies=[Depends(verify_csrf)])
+@router.post("/{team_id}/vault/rotation/commit", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
 def commit_team_vault_rotation(
     team_id: int,
+    payload: VaultRotationCommitRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
+    _team_rotationsnachweis(db, user, payload)
     vault_service.rotation_commit_team(db, team)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="team.vault.rotation.commit",
+        target_type="team",
+        target_id=team.id,
+        commit=True,
+    )
     return {"status": "ok"}
 
 
@@ -714,6 +782,14 @@ def abort_team_vault_rotation(
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
     vault_service.rotation_abbrechen_team(db, team)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="team.vault.rotation.abort",
+        target_type="team",
+        target_id=team.id,
+        commit=True,
+    )
     return {"status": "ok"}
 
 
@@ -726,6 +802,14 @@ def rollback_team_vault_rotation(
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
     vault_service.rotation_rollback_team(db, team)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="team.vault.rotation.rollback",
+        target_type="team",
+        target_id=team.id,
+        commit=True,
+    )
     return {"status": "ok"}
 
 

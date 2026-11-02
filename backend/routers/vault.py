@@ -29,6 +29,7 @@ from schemas.vault import (
     VaultHintSetRequest,
     VaultHintStatusResponse,
     VaultResetRequest,
+    VaultRotationCommitRequest,
     VaultRotationPrepareRequest,
     VaultSaltResponse,
     VaultSaltSetRequest,
@@ -300,44 +301,108 @@ def set_vault_salt(
         ) from exc
 
 
-@router.post("/rotation/prepare")
+def _rotationsnachweis(
+    db: Session,
+    current_user: User,
+    payload: VaultRotationPrepareRequest | VaultRotationCommitRequest,
+) -> None:
+    """Frischer Kontonachweis vor prepare/commit: das Sitzungs-Token allein genuegt nicht.
+
+    Das Master-Passwort kennt der Server nicht; der Nachweis ist deshalb das
+    Kontopasswort oder ein eingerichteter zweiter Faktor. Beide Schritte
+    brauchen ihn: sonst vollendet ein gestohlenes Token eine vorbereitete
+    Rotation. Abort/Rollback stellen nur den alten Stand wieder her und laufen
+    ohne Nachweis — aber mit Sperre (Befund 44) und Audit.
+    """
+    fehlt = passkey_service.frischer_nachweis_fehlt(
+        db,
+        current_user,
+        password=payload.password,
+        otp_code=payload.otp_code,
+        passkey=payload.passkey.model_dump() if payload.passkey else None,
+        zweck="vault_rotation",
+    )
+    if fehlt:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=fehlt)
+
+
+@router.post("/rotation/prepare", dependencies=[Depends(auth_rate_limit)])
 def rotation_prepare(
     payload: VaultRotationPrepareRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     konto: vault_service.TresorKonto = Depends(_tresor_konto),
     __=Depends(verify_csrf),
 ) -> dict[str, str]:
+    _rotationsnachweis(db, current_user, payload)
     vault_service.rotation_vorbereiten_privat(db, konto, payload.bucket_id, payload.salt)
+    audit_service.record_privileged_action(
+        db,
+        user_id=current_user.id,
+        action="vault.rotation.prepare",
+        target_type="user",
+        target_id=current_user.id,
+        commit=True,
+    )
     return {"status": "ok"}
 
 
-@router.post("/rotation/commit")
+@router.post("/rotation/commit", dependencies=[Depends(auth_rate_limit)])
 def rotation_commit(
+    payload: VaultRotationCommitRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     konto: vault_service.TresorKonto = Depends(_tresor_konto),
     __=Depends(verify_csrf),
 ) -> dict[str, str]:
+    _rotationsnachweis(db, current_user, payload)
     vault_service.rotation_commit_privat(db, konto)
+    audit_service.record_privileged_action(
+        db,
+        user_id=current_user.id,
+        action="vault.rotation.commit",
+        target_type="user",
+        target_id=current_user.id,
+        commit=True,
+    )
     return {"status": "ok"}
 
 
 @router.post("/rotation/abort")
 def rotation_abort(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     konto: vault_service.TresorKonto = Depends(_tresor_konto),
     __=Depends(verify_csrf),
 ) -> dict[str, str]:
     vault_service.rotation_abbrechen_privat(db, konto)
+    audit_service.record_privileged_action(
+        db,
+        user_id=current_user.id,
+        action="vault.rotation.abort",
+        target_type="user",
+        target_id=current_user.id,
+        commit=True,
+    )
     return {"status": "ok"}
 
 
 @router.post("/rotation/rollback")
 def rotation_rollback(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     konto: vault_service.TresorKonto = Depends(_tresor_konto),
     __=Depends(verify_csrf),
 ) -> dict[str, str]:
     vault_service.rotation_rollback_privat(db, konto)
+    audit_service.record_privileged_action(
+        db,
+        user_id=current_user.id,
+        action="vault.rotation.rollback",
+        target_type="user",
+        target_id=current_user.id,
+        commit=True,
+    )
     return {"status": "ok"}
 
 

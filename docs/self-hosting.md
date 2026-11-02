@@ -21,6 +21,7 @@ flowchart TD
         Postgres[("PostgreSQL 16 (Panel Runtime)")]
         Redis[("Redis (Pub/Sub & Cache)")]
         DISSidecar["DIS Sidecar (AI Inference)"]
+        DocsSidecar["Docs Sidecar (Realtime Collab)"]
         LiveKit["LiveKit Sidecar (Voice/WebRTC)"]
         WeatherSidecar["Weather Sidecar (DWD & Forecasts)"]
         LocalAgent["Local Worker Agent"]
@@ -43,6 +44,7 @@ flowchart TD
     BackendAPI --> Postgres
     BackendAPI --> Redis
     BackendAPI --> DISSidecar
+    BackendAPI --> DocsSidecar
     BackendAPI --> LiveKit
     BackendAPI --> WeatherSidecar
     BackendAPI -->|mTLS + TLS Pinning| LocalAgent
@@ -55,7 +57,7 @@ flowchart TD
 
 | Component | Responsibility | Repository Requirement |
 | :--- | :--- | :--- |
-| **Panel / Control Plane** | Backend orchestrator, DIS sidecar, LiveKit sidecar, Weather sidecar, Panel PostgreSQL, Vite frontend, and local worker agent. | No. The production release archive `msm-panel-<VERSION>.tar.gz` contains only the required services. |
+| **Panel / Control Plane** | Backend orchestrator, DIS sidecar, docs sidecar, LiveKit sidecar, Weather sidecar, Panel PostgreSQL, Vite frontend, and local worker agent. | No. The production release archive `msm-panel-<VERSION>.tar.gz` contains only the required services. |
 | **Separate Frontend** | Pre-built static Vite bundle served via Caddy, Nginx, or CDN. | No. `msm-frontend-<VERSION>.tar.gz` is sufficient. |
 | **Remote Worker Nodes** | Worker agent, rootless Docker engine, TLS termination, and node-local game server data. | No. Nodes fetch their self-contained agent archive directly from the control plane during enrollment (weder einen Repository-Clone noch manuelles Kopieren). |
 
@@ -216,6 +218,17 @@ The self-hosted Weather Sidecar provides hyper-local weather data and official s
 - **Forecast Pipeline:** Retrieves forecast data via NOAA GFS and worldwide open weather APIs.
 - **Official Severe Weather Warnings:** Directly integrates with official meteorological alerts (Deutscher Wetterdienst / DWD for Germany).
 - **Mobile Home Screen Widget:** Powers the Android Home Screen Widget in 2×2 compact format, displaying live temperature, weather icons, hourly forecast pills, and severe warning banners with scoped authentication tokens.
+
+---
+
+## Docs Sidecar (Realtime Collaboration)
+
+The documents module edits texts together in realtime. The Node process `docs-sidecar` holds the shared Yjs document state (Hocuspocus WebSocket), applies AI edits, and renders exports. Without it the module stays dark.
+
+- **Ports (loopback only):** `8100` WebSocket, proxied by Caddy at `/api/docs/collab`; `8101` internal HTTP API, never proxied (`/internal/*` stays on the server).
+- **Secrets** (must match in `backend/.env` and `docs-sidecar/.env`; install/update generate missing values): `MSM_DOCS_SIDECAR_TOKEN`, `MSM_DOCS_COLLAB_SECRET`, `MSM_DOCS_SIGNING_SECRET`.
+- **Service:** `msm-docs-sidecar.service`, exactly one instance (process-local collab state).
+- **Release:** shipped in the panel tarball under `docs-sidecar/` (`server.mjs`, `package.json`, `package-lock.json`); verified on every build.
 
 ---
 

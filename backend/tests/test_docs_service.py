@@ -687,6 +687,60 @@ def test_purge_entfernt_abgelaufene_papierkorb_dokumente(db):
     assert db.query(Document).filter(Document.doc_uid == daten["uid"]).first() is None
 
 
+def test_suche_entschluesselt_gebuendelt_ohne_einzelaufrufe(db, monkeypatch):
+    """Befund 5: Titel und Inhalte je ein `decrypt_many`, kein `decrypt` je Dokument."""
+    from services.dis_client import DisClient
+
+    user = _benutzer(db, "docs_suche_a")
+    for i in range(3):
+        daten = DocsService.create_document(db, user, title=f"Protokoll {i}")
+        DocsCollabService.store(
+            db, daten["uid"], _payload(b"x", f"Geheiminhalt {i}", author_user_id=user.id)
+        )
+
+    einzel: list = []
+    orig_decrypt = DisClient.decrypt
+
+    def zaehle_decrypt(ciphertext: str, aad: str | None = None) -> str:
+        einzel.append(ciphertext)
+        return orig_decrypt(ciphertext, aad)
+
+    gebuendelt: list = []
+    orig_many = DisClient.decrypt_many
+
+    def zaehle_many(items):  # type: ignore[no-untyped-def]
+        gebuendelt.append(list(items))
+        return orig_many(items)
+
+    monkeypatch.setattr(DisClient, "decrypt", staticmethod(zaehle_decrypt))
+    monkeypatch.setattr(DisClient, "decrypt_many", staticmethod(zaehle_many))
+
+    ergebnis = DocsService.search_documents(db, user, "geheiminhalt")
+    assert sorted(t["title"] for t in ergebnis["items"]) == [
+        "Protokoll 0", "Protokoll 1", "Protokoll 2",
+    ]
+    assert ergebnis["searched"] == 3
+    assert ergebnis["truncated"] is False
+    assert einzel == []
+    assert len(gebuendelt) == 2
+    assert sorted(len(aufruf) for aufruf in gebuendelt) == [3, 3]
+
+
+def test_suche_zeigt_kuerzung_bei_mehr_als_200_dokumenten(db):
+    """Befund 5: jenseits der 200 juengsten schweigt die Suche nicht still."""
+    user = _benutzer(db, "docs_suche_b")
+    for i in range(205):
+        DocsService.create_document(db, user, title=f"Suchwort {i}")
+
+    ergebnis = DocsService.search_documents(db, user, "suchwort")
+    assert ergebnis["searched"] == 200
+    assert ergebnis["truncated"] is True
+    assert len(ergebnis["items"]) == 50
+
+    ergebnis = DocsService.search_documents(db, user, "   ")
+    assert ergebnis == {"items": [], "searched": 0, "truncated": False}
+
+
 def test_dokumentrechte_im_katalog():
     from services.ai_tool_registry import (
         DOCUMENTS_TOOLS,

@@ -33,6 +33,8 @@ interface DocTreeProps {
   onRenameFolder: (folder: DocFolder) => void
   onDeleteFolder: (folder: DocFolder) => void
   loading: boolean
+  /** Anzahl durchsuchter Dokumente, wenn die Suche ältere außen vor ließ — sonst null. */
+  searchHinweis?: number | null
 }
 
 function ordnerTiefe(folders: DocFolder[]): Map<string, number> {
@@ -79,6 +81,7 @@ export function DocTree({
   onRenameFolder,
   onDeleteFolder,
   loading,
+  searchHinweis,
 }: DocTreeProps) {
   const { t } = useTranslation()
   const [dropZiel, setDropZiel] = useState<string | null>(null)
@@ -122,6 +125,11 @@ export function DocTree({
             className="pl-9"
           />
         </div>
+        {searchHinweis != null && (
+          <p role="note" className="text-label-sm text-on-surface-variant">
+            {t('docs.search.truncatedHint', { count: searchHinweis })}
+          </p>
+        )}
         <div className="flex items-center gap-1">
           <Button variant="primary" size="sm" className="flex-1" onClick={onCreateDocument}>
             <Plus className="mr-1 h-4 w-4" />

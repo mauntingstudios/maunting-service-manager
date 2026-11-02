@@ -20,6 +20,10 @@ def _headers(cookies: dict) -> dict[str, str]:
     return {"X-CSRF-Token": token}
 
 
+OWNER_PASSWORT = "OwnerPass123!"
+NUTZER_PASSWORT = "UserPass123!"
+
+
 def _team_mit_tresor(db: Session, owner: User, member: User):
     team = Team(name="Rotation", owner_user_id=owner.id)
     db.add(team)
@@ -56,7 +60,7 @@ def test_team_rotation_verliert_nichts_bei_abbruch(db, client, owner_user, owner
     # Prepare darf den aktiven Bucket NICHT umschalten (alter Fehler: sofort weg).
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef"},
+        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     ).status_code == 200
     status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
@@ -91,13 +95,14 @@ def test_team_rotation_commit_und_rollback(db, client, owner_user, owner_cookies
     _sync(client, team.id, alt, owner_cookies)
     client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef"},
+        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     )
     _sync(client, team.id, neu, owner_cookies, "e1", "sv-vault-v2:neu")
 
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     ).status_code == 200
     status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
@@ -145,7 +150,7 @@ def test_private_rotation_zwei_phasen(client, owner_cookies):
 
     assert client.post(
         "/api/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA="},
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=h,
     ).status_code == 200
     # Aktiv bleibt, Staging laeuft daneben.
@@ -158,7 +163,11 @@ def test_private_rotation_zwei_phasen(client, owner_cookies):
             {"id": "p1", "ciphertext": "sv-vault-v2:neu", "revision": 0, "is_deleted": False}]},
         cookies=owner_cookies, headers=h,
     ).status_code == 200
-    assert client.post("/api/vault/rotation/commit", cookies=owner_cookies, headers=h).status_code == 200
+    assert client.post(
+        "/api/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 200
     status = client.get("/api/vault/salt", cookies=owner_cookies).json()
     assert status["bucket_id"] == neu
     assert status["kdf_salt"] == "bmV1c2FsdDEyMzQ1Njc4OTA="
@@ -192,12 +201,13 @@ def test_rotation_cleanup_loescht_erst_nach_frist(db, client, owner_user, owner_
     _sync(client, team.id, alt, owner_cookies)
     client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef"},
+        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     )
     _sync(client, team.id, neu, owner_cookies, "e1", "sv-vault-v2:neu")
     client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     )
     db.expire_all()
@@ -223,16 +233,18 @@ def test_team_rotation_unberechtigt_und_ungueltige_zustaende(
         cookies=owner_cookies, headers=_headers(owner_cookies),
     ).status_code == 200
 
-    # 2. Nicht-Owner (regular_user) darf keine Rotations-Endpunkte steuern (403)
+    # 2. Nicht-Owner (regular_user) darf keine Rotations-Endpunkte steuern (403).
+    # Der Nachweis liegt bei, damit das Nein wirklich von der Owner-Pruefung kommt.
     u_h = _headers(user_cookies)
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef"},
+        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": NUTZER_PASSWORT},
         cookies=user_cookies, headers=u_h,
     ).status_code == 403
 
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": NUTZER_PASSWORT},
         cookies=user_cookies, headers=u_h,
     ).status_code == 403
 
@@ -251,6 +263,7 @@ def test_team_rotation_unberechtigt_und_ungueltige_zustaende(
     # Commit ohne vorheriges Prepare (409)
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=o_h,
     ).status_code == 409
 
@@ -263,7 +276,7 @@ def test_team_rotation_unberechtigt_und_ungueltige_zustaende(
     # Prepare mit identischem aktiven Bucket (400)
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": alt, "salt": "neusalt1234567890abcdef"},
+        json={"bucket_id": alt, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=o_h,
     ).status_code == 400
 
@@ -275,7 +288,7 @@ def test_private_rotation_ungueltige_zustaende(client, owner_cookies):
     # Vor Setup: Prepare wirft 400
     assert client.post(
         "/api/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA="},
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=h,
     ).status_code == 400
 
@@ -287,7 +300,11 @@ def test_private_rotation_ungueltige_zustaende(client, owner_cookies):
     ).status_code == 200
 
     # Commit ohne Prepare wirft 409
-    assert client.post("/api/vault/rotation/commit", cookies=owner_cookies, headers=h).status_code == 409
+    assert client.post(
+        "/api/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 409
 
     # Rollback ohne Commit wirft 409
     assert client.post("/api/vault/rotation/rollback", cookies=owner_cookies, headers=h).status_code == 409
@@ -295,7 +312,153 @@ def test_private_rotation_ungueltige_zustaende(client, owner_cookies):
     # Prepare mit demselben Bucket wirft 400
     assert client.post(
         "/api/vault/rotation/prepare",
-        json={"bucket_id": alt, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA="},
+        json={"bucket_id": alt, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=h,
     ).status_code == 400
 
+
+# ── Frischer Nachweis (Befund 1) ─────────────────────────────────────────
+# Das Sitzungs-Token allein schaltet keine Rotation: prepare und commit
+# brauchen das Kontopasswort oder einen eingerichteten zweiten Faktor.
+
+
+def _privat_einrichten(client, cookies, alt: str) -> None:
+    h = _headers(cookies)
+    assert client.post(
+        "/api/vault/salt",
+        json={"kdf_salt": "YWx0c2FsdDEyMzQ1Njc4OTA=", "bucket_id": alt},
+        cookies=cookies, headers=h,
+    ).status_code == 200
+
+
+def test_private_rotation_prepare_ohne_nachweis_403(client, owner_cookies):
+    alt, neu = _bucket(), _bucket()
+    h = _headers(owner_cookies)
+    _privat_einrichten(client, owner_cookies, alt)
+    antwort = client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA="},
+        cookies=owner_cookies, headers=h,
+    )
+    assert antwort.status_code == 403
+    assert "Passwort" in antwort.json()["detail"]
+    assert client.get("/api/vault/salt", cookies=owner_cookies).json()["rotation_state"] is None
+
+
+def test_private_rotation_prepare_falsches_passwort_403(client, owner_cookies):
+    alt, neu = _bucket(), _bucket()
+    h = _headers(owner_cookies)
+    _privat_einrichten(client, owner_cookies, alt)
+    antwort = client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "password": "falsch"},
+        cookies=owner_cookies, headers=h,
+    )
+    assert antwort.status_code == 403
+    assert client.get("/api/vault/salt", cookies=owner_cookies).json()["rotation_state"] is None
+
+
+def test_private_rotation_commit_ohne_nachweis_403(client, owner_cookies):
+    alt, neu = _bucket(), _bucket()
+    h = _headers(owner_cookies)
+    _privat_einrichten(client, owner_cookies, alt)
+    assert client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 200
+    # Ein gestohlenes Token vollendet die vorbereitete Rotation nicht.
+    assert client.post(
+        "/api/vault/rotation/commit", json={}, cookies=owner_cookies, headers=h
+    ).status_code == 403
+    assert client.get("/api/vault/salt", cookies=owner_cookies).json()["bucket_id"] == alt
+    # Mit Nachweis laeuft sie durch.
+    assert client.post(
+        "/api/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 200
+
+
+def test_team_rotation_prepare_ohne_nachweis_403(db, client, owner_user, owner_cookies, regular_user):
+    team = _team_mit_tresor(db, owner_user, regular_user)
+    alt, neu = _bucket(), _bucket()
+    o_h = _headers(owner_cookies)
+    assert client.post(
+        f"/api/teams/{team.id}/vault/setup",
+        json={"bucket_id": alt, "salt": "altsalt1234567890abcdef"},
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 200
+    antwort = client.post(
+        f"/api/teams/{team.id}/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef"},
+        cookies=owner_cookies, headers=o_h,
+    )
+    assert antwort.status_code == 403
+    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
+    assert status["rotation_state"] is None
+
+
+def test_team_rotation_commit_ohne_nachweis_403(db, client, owner_user, owner_cookies, regular_user):
+    team = _team_mit_tresor(db, owner_user, regular_user)
+    alt, neu = _bucket(), _bucket()
+    o_h = _headers(owner_cookies)
+    client.post(
+        f"/api/teams/{team.id}/vault/setup",
+        json={"bucket_id": alt, "salt": "altsalt1234567890abcdef"},
+        cookies=owner_cookies, headers=o_h,
+    )
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 200
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/commit",
+        json={},
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 403
+    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
+    assert status["bucket_id"] == alt
+
+
+def test_rotation_mit_2fa_braucht_den_faktor(db, client, owner_user, owner_cookies):
+    """Bei aktiver 2FA traegt der eingerichtete Faktor den Nachweis, nicht das Passwort."""
+    from services.auth_service import AuthService
+    from tests._totp import random_totp_secret, totp_now
+
+    geheimnis = random_totp_secret()
+    owner_user.two_factor_secret_encrypted = AuthService.encrypt_secret(
+        geheimnis, aad=f"msm:user:{owner_user.id}:2fa"
+    )
+    owner_user.two_factor_enabled = True
+    db.commit()
+
+    alt, neu = _bucket(), _bucket()
+    h = _headers(owner_cookies)
+    _privat_einrichten(client, owner_cookies, alt)
+    # Das Passwort allein genuegt nicht mehr.
+    assert client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 403
+    # Der Code aus der App oeffnet.
+    assert client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "otp_code": totp_now(geheimnis)},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 200
+
+
+def test_rotation_salz_aus_leerzeichen_422(client, owner_cookies):
+    """Befund 45: ein Salz aus Leerzeichen scheitert an der Pruefung, nicht erst am Kuerzen."""
+    alt, neu = _bucket(), _bucket()
+    h = _headers(owner_cookies)
+    _privat_einrichten(client, owner_cookies, alt)
+    antwort = client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": " " * 16, "password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    )
+    assert antwort.status_code == 422

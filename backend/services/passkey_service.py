@@ -52,7 +52,7 @@ from services import login_challenge_service
 ZWECKE_ANGEMELDET = frozenset({
     "2fa_disable", "device_pairing", "e2ee_reset", "e2ee_reapprove", "e2ee_remove",
     "password_change", "email_change", "account_delete", "data_export",
-    "oauth_link", "2fa_change", "vault_reset", "kamera_sicherung",
+    "oauth_link", "2fa_change", "vault_reset", "vault_rotation", "kamera_sicherung",
     # Ein dauerhafter Kanal-Ausweis für Benachrichtigungen bei geschlossener
     # App ist ein neuer Zugang — er entsteht nur gegen einen frischen Nachweis.
     "notification_channel",
