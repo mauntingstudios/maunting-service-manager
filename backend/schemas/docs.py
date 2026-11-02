@@ -25,6 +25,14 @@ class DocFolderMove(BaseModel):
     parent_uid: str | None = None
 
 
+class DocFolderPatch(BaseModel):
+    """Ordner-PATCH: Jedes Feld darf fehlen — `model_fields_set` unterscheidet
+    "nicht aendern" von einem expliziten `null` (Befund 17)."""
+
+    name: str | None = None
+    parent_uid: str | None = None
+
+
 class DocCreate(BaseModel):
     team_id: int | None = None
     folder_uid: str | None = None
@@ -47,6 +55,13 @@ class MemberPut(BaseModel):
 class ShareCreate(BaseModel):
     role: ShareRole = "viewer"
     expires_in_days: int | None = Field(default=7, ge=1, le=30)
+
+
+class ShareClaim(BaseModel):
+    """Loest eine Freigabe ein — das Token steht im Body, nie im Pfad:
+    Pfade landen in Server-Logs, Bodies nicht (Befund 50)."""
+
+    token: str = Field(min_length=1, max_length=256)
 
 
 class CommentCreate(BaseModel):

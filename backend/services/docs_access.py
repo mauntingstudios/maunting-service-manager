@@ -14,8 +14,8 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from models.doc import DocMember, Document
+from models.team import TeamMember
 from models.user import User
-from services import team_service
 
 
 ROLE_RANG: dict[str, int] = {"viewer": 1, "commenter": 2, "editor": 3}
@@ -53,36 +53,6 @@ def _bester(role_a: str, role_b: str | None) -> str:
     return role_a if ROLE_RANG[role_a] <= ROLE_RANG[role_b] else role_b
 
 
-def _manual_override(db: Session, doc_id: int, user_id: int) -> DocMember | None:
-    return (
-        db.query(DocMember)
-        .filter(
-            DocMember.document_id == doc_id,
-            DocMember.user_id == user_id,
-            DocMember.source == "manual",
-        )
-        .first()
-    )
-
-
-def _link_member(db: Session, doc_id: int, user_id: int) -> DocMember | None:
-    row = (
-        db.query(DocMember)
-        .filter(
-            DocMember.document_id == doc_id,
-            DocMember.user_id == user_id,
-            DocMember.source == "link",
-        )
-        .first()
-    )
-    if row is None:
-        return None
-    expires = _aware(row.expires_at)
-    if expires is not None and expires <= _now():
-        return None
-    return row
-
-
 def _share_gueltig(doc: Document) -> bool:
     if not doc.share_token_hash or not doc.share_role:
         return False
@@ -94,32 +64,81 @@ def resolve_access(
     db: Session, user: User, doc: Document, *, mit_trash: bool = False
 ) -> DocAccess | None:
     """Effektive Rolle oder ``None``, wenn das Dokument nicht sichtbar ist."""
-    if doc.deleted_at is not None and not mit_trash:
-        return None
+    return resolve_access_many(db, user, [doc], mit_trash=mit_trash).get(doc.id)
 
-    if user.is_owner:
-        return DocAccess(doc, "editor", True)
 
-    mitglied = team_service.membership(db, doc.team_id, user.id)
-    if mitglied is not None:
-        if mitglied.role == "owner":
-            return DocAccess(doc, "editor", True)
-        override = _manual_override(db, doc.id, user.id)
-        if override is not None:
-            role = override.role
-        elif doc.owner_user_id == user.id:
-            role = "editor"
-        else:
-            role = doc.default_role if doc.default_role in ROLE_RANG else "editor"
-        manage = doc.owner_user_id == user.id and role == "editor"
-        return DocAccess(doc, role, manage)
+def resolve_access_many(
+    db: Session, user: User, docs: list[Document], *, mit_trash: bool = False
+) -> dict[int, DocAccess | None]:
+    """Wie `resolve_access`, aber gebuendelt ueber viele Dokumente.
 
-    link = _link_member(db, doc.id, user.id)
-    if link is not None and _share_gueltig(doc):
-        role = _bester(link.role, doc.share_role)
-        return DocAccess(doc, role, False, via_link=True)
-
-    return None
+    Mitgliedschaften, manuelle Rollen und Link-Rollen je einmal lesen statt
+    einmal je Dokument — die Liste lief sonst in N+1 Abfragen (Befund 24).
+    Die Einzelpruefung nutzt denselben Weg, damit beide nie auseinanderlaufen.
+    """
+    if not docs:
+        return {}
+    jetzt = _now()
+    team_ids = {doc.team_id for doc in docs}
+    mitglieder = {
+        m.team_id: m
+        for m in db.query(TeamMember)
+        .filter(TeamMember.team_id.in_(team_ids), TeamMember.user_id == user.id)
+        .all()
+    }
+    doc_ids = [doc.id for doc in docs]
+    manuell = {
+        row.document_id: row
+        for row in db.query(DocMember)
+        .filter(
+            DocMember.document_id.in_(doc_ids),
+            DocMember.user_id == user.id,
+            DocMember.source == "manual",
+        )
+        .all()
+    }
+    links = {
+        row.document_id: row
+        for row in db.query(DocMember)
+        .filter(
+            DocMember.document_id.in_(doc_ids),
+            DocMember.user_id == user.id,
+            DocMember.source == "link",
+        )
+        .all()
+    }
+    ergebnis: dict[int, DocAccess | None] = {}
+    for doc in docs:
+        if doc.deleted_at is not None and not mit_trash:
+            ergebnis[doc.id] = None
+            continue
+        if user.is_owner:
+            ergebnis[doc.id] = DocAccess(doc, "editor", True)
+            continue
+        mitglied = mitglieder.get(doc.team_id)
+        if mitglied is not None:
+            if mitglied.role == "owner":
+                ergebnis[doc.id] = DocAccess(doc, "editor", True)
+                continue
+            override = manuell.get(doc.id)
+            if override is not None:
+                role = override.role
+            elif doc.owner_user_id == user.id:
+                role = "editor"
+            else:
+                role = doc.default_role if doc.default_role in ROLE_RANG else "editor"
+            manage = doc.owner_user_id == user.id and role == "editor"
+            ergebnis[doc.id] = DocAccess(doc, role, manage)
+            continue
+        link = links.get(doc.id)
+        if link is not None:
+            laeuft_ab = _aware(link.expires_at)
+            if (laeuft_ab is None or laeuft_ab > jetzt) and _share_gueltig(doc):
+                role = _bester(link.role, doc.share_role)
+                ergebnis[doc.id] = DocAccess(doc, role, False, via_link=True)
+                continue
+        ergebnis[doc.id] = None
+    return ergebnis
 
 
 def access_or_404(

@@ -2519,6 +2519,7 @@
       "AI_UNDO_EMPTY": "There is no AI change to undo.",
       "DOC_TOO_LARGE": "The document is too large.",
       "DOC_ASSET_TOO_LARGE": "The file is too large. The limit is 4 MiB per attachment.",
+      "DOC_INVALID_MIME": "This file type is not allowed. Images and PDF are allowed.",
       "DOC_QUOTA_EXCEEDED": "The quota is exhausted.",
       "DOC_INVALID_TARGET": "That target is invalid.",
       "DOC_AI_PENDING_OPEN": "There is already an open suggestion for this document.",

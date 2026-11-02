@@ -77,6 +77,9 @@ os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
 os.environ["MSM_PANEL_URL"] = "http://localhost:3000"
 os.environ["MSM_API_URL"] = "http://localhost:8000"
 os.environ["MSM_ACCESS_TOKEN_EXPIRE_MINUTES"] = "15"
+# Signaturgeheimnis fuer Docs-Asset-URLs (Befund 10): Ohne Wert antwortet das
+# Signieren mit 503 — der leere Wert wird im Fix-Test per monkeypatch gesetzt.
+os.environ["MSM_DOCS_SIGNING_SECRET"] = "test-docs-signing-secret-nur-fuer-tests"
 
 from datetime import datetime, timedelta, timezone
 

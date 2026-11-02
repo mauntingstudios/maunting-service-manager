@@ -6,7 +6,7 @@ import * as Y from "yjs";
 process.env.MSM_BACKEND_URL = "http://backend.test";
 process.env.MSM_DOCS_SIDECAR_TOKEN = "service-token";
 
-const { extractText, sha256, storeDocument, withLock } = await import(
+const { decodeState, extractText, forgetRev, rememberRev, restoreFragment, sha256, storeDocument, withLock } = await import(
   "../persist.mjs"
 );
 
@@ -112,4 +112,47 @@ test("withLock bricht nach der Frist ab, ohne fn auszufuehren", async () => {
   // Die Kette ist danach wieder frei.
   const wert = await withLock("doc-besetzt", async () => 42);
   assert.equal(wert, 42);
+});
+
+test("storeDocument sendet die geladene Revision und merkt die neue", async () => {
+  // Befund 9: Der erste Store meldet die geladene Rev 5, die Antwort (Rev 6)
+  // schiebt die Spur nach — der zweite Store meldet 6. Am alten Stand war
+  // expected_rev immer 0 und veraltete Staende liefen still durch.
+  const aufrufe = [];
+  const revs = [6, 7, 8];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, optionen) => {
+    aufrufe.push({ url: String(url), optionen });
+    return new Response(JSON.stringify({ stored: true, rev: revs.shift() ?? 8 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  try {
+    const ydoc = dokument();
+    rememberRev("doc-rev-9", 5);
+    await storeDocument("doc-rev-9", ydoc, { reason: "autosave" });
+    await storeDocument("doc-rev-9", ydoc, { reason: "autosave" });
+    assert.equal(aufrufe.length, 2);
+    assert.equal(JSON.parse(aufrufe[0].optionen.body).expected_rev, 5);
+    assert.equal(JSON.parse(aufrufe[1].optionen.body).expected_rev, 6);
+    forgetRev("doc-rev-9");
+    await storeDocument("doc-rev-9", ydoc, { reason: "autosave" });
+    assert.equal(JSON.parse(aufrufe[2].optionen.body).expected_rev, 0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+test("decodeState und restoreFragment weisen Zustaende ueber 4 MiB ab", () => {
+  // Befund 34: Jeder Zustandsweg (Restore, Render-state_b64, kuenftige) laeuft
+  // durch die Groessenpruefung — mehr als 4 MiB ist DOC_TOO_LARGE.
+  // Am alten Stand nahm restoreFragment alles und der Render-Zweig pruefte nie.
+  const gross = Buffer.alloc(4 * 1024 * 1024 + 1).toString("base64");
+  assert.throws(() => decodeState(gross), (error) => error.code === "DOC_TOO_LARGE");
+  assert.throws(
+    () => restoreFragment(new Y.Doc(), Buffer.alloc(4 * 1024 * 1024 + 1)),
+    (error) => error.code === "DOC_TOO_LARGE",
+  );
+  const klein = decodeState(Buffer.from("eA==", "base64").toString("base64"));
+  assert.equal(klein.byteLength, 1);
 });

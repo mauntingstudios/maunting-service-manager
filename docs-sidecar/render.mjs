@@ -30,6 +30,20 @@ function safeHref(href) {
   return /^(https?:|mailto:)/i.test(href.trim()) ? href.trim() : null;
 }
 
+/**
+ * Nur eigene Bilder: Data-URLs oder die signierte Asset-Adresse.
+ * Fremde `https:`-Bilder wuerden beim blossen Anzeigen des Exports eine
+ * fremde Adresse aufrufen; `javascript:`/`file:` gehoeren nirgendwo hin.
+ * Dieselbe Grenze wie `safeHref`, als eigene Funktion fuer Bilder (Befund 36).
+ */
+function safeImageSrc(src) {
+  if (!src || typeof src !== "string") return null;
+  const sauber = src.trim();
+  if (/^data:image\//i.test(sauber)) return sauber;
+  if (sauber.startsWith("/api/docs/assets/")) return sauber;
+  return null;
+}
+
 function inlineHtml(xmlText, preview = false) {
   const ops = typeof xmlText.toDelta === "function" ? xmlText.toDelta() : [];
   if (!ops.length) return escapeHtml(xmlText.toString());
@@ -61,7 +75,7 @@ function inlineMarkdown(xmlText) {
   for (const op of ops) {
     let stueck = String(op.insert ?? "");
     const attrs = op.attributes || {};
-    const href = linkHref(attrs);
+    const href = safeHref(linkHref(attrs));
     if (attrs.code) stueck = `\`${stueck}\``;
     if (attrs.bold) stueck = `**${stueck}**`;
     if (attrs.italic) stueck = `*${stueck}*`;
@@ -126,7 +140,8 @@ function blockHtml(node, preview = false) {
       const asset = attrs.assetUid
         ? ` data-asset-uid="${escapeHtml(String(attrs.assetUid))}"`
         : "";
-      return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${title}${asset}>`;
+      const echt = safeImageSrc(src);
+      return `<img${echt ? ` src="${escapeHtml(echt)}"` : ""} alt="${escapeHtml(alt)}"${title}${asset}>`;
     }
     case "table":
       return `<table><tbody>${kinderHtml(node, preview)}</tbody></table>`;
@@ -197,7 +212,7 @@ function blockMarkdown(node, einzug = "") {
     case "image": {
       const src = attrs.src || "";
       const alt = attrs.alt || "";
-      return `![${alt}](${src})\n\n`;
+      return `![${alt}](${safeImageSrc(src) || ""})\n\n`;
     }
     case "table":
       return `${kinderMarkdown(node, einzug)}\n`;

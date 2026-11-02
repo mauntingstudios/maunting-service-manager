@@ -30,7 +30,7 @@ from schemas.panel_settings import (
 )
 from models import User
 from services import audit_service, vault_blob_service
-from services.panel_settings_service import PanelSettingsService
+from services.panel_settings_service import PanelSettingsService, docs_enabled
 from services.rate_limit_settings import (
     KEY_AUTH as RATE_LIMIT_AUTH_KEY,
     KEY_GLOBAL as RATE_LIMIT_GLOBAL_KEY,
@@ -231,7 +231,7 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
         "story_fable_download_enabled": all_db.get("story_fable_download_enabled", "false") == "true",
         "calendar_enabled": all_db.get("calendar_enabled", "true") != "false",
         "notes_enabled": all_db.get("notes_enabled", "true") != "false",
-        "docs_enabled": all_db.get("docs_enabled", "true") != "false",
+        "docs_enabled": docs_enabled(),
         "vault_enabled": all_db.get("vault_enabled", "true") != "false",
         "social_enabled": all_db.get("social_enabled", "true") != "false",
         **_seasonal_settings(all_db),
@@ -276,7 +276,7 @@ def get_public_settings() -> dict:
         "imprint_url": all_db.get("imprint_url", ""),
         "calendar_enabled": all_db.get("calendar_enabled", "true") != "false",
         "notes_enabled": all_db.get("notes_enabled", "true") != "false",
-        "docs_enabled": all_db.get("docs_enabled", "true") != "false",
+        "docs_enabled": docs_enabled(),
         "vault_enabled": all_db.get("vault_enabled", "true") != "false",
         "social_enabled": all_db.get("social_enabled", "true") != "false",
         # Die Clients werten das Fenster in ihrer eigenen Ortszeit aus. Sie

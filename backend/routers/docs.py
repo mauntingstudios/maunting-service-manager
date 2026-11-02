@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
+from cookies import lies_zugangstoken
 from database import get_db
 from dependencies import get_current_user, verify_csrf
 from models.user import User
@@ -16,13 +17,15 @@ from schemas.docs import (
     CommentUpdate,
     DocCreate,
     DocFolderCreate,
+    DocFolderPatch,
     DocUpdate,
     MemberPut,
     RevisionCreate,
+    ShareClaim,
     ShareCreate,
 )
 from services.auth_service import AuthService
-from services.panel_settings_service import PanelSettingsService
+from services.panel_settings_service import docs_enabled
 from services.permission_service import has_global_permission
 from services.docs_collab_service import DocsCollabService
 from services.docs_pending_edit_service import DocsPendingEditService
@@ -32,7 +35,7 @@ router = APIRouter(prefix="/api/docs", tags=["docs"])
 
 
 def _check_docs_enabled() -> None:
-    if PanelSettingsService.get("docs_enabled", "true") == "false":
+    if not docs_enabled():
         raise fehler(403, "DOCS_DISABLED", "Das Dokumente-Modul ist deaktiviert")
 
 
@@ -50,7 +53,9 @@ def _session_claims(request: Request) -> tuple[str | None, str | None]:
     auth = request.headers.get("authorization", "")
     if auth[:7].lower() == "bearer ":
         token = auth[7:].strip()
-    token = token or request.cookies.get("__Secure-access_token")
+    # Zentraler Helfer statt festem Namen: Im Dev-Stack liegt das Token
+    # unter `msm_dev_access_token` — sonst kaemen fam/jti nie an (Befund 16).
+    token = token or lies_zugangstoken(request.cookies)
     if not token:
         return None, None
     payload = AuthService.decode_token(token) or {}
@@ -103,17 +108,21 @@ def create_folder(
 @router.patch("/folders/{folder_uid}")
 def update_folder(
     folder_uid: str,
-    req: dict[str, Any],
+    req: DocFolderPatch,
     db: Session = Depends(get_db),
     user: User = Depends(_docs_user),
     __=Depends(verify_csrf),
 ) -> dict:
+    # Ein fehlendes Feld aendert nichts; ein explizites `null` beim Elter
+    # verschiebt nach oben. Ohne Schema waere Nicht-String als Name ein
+    # 500 statt 422 (Befund 17).
     return DocsService.update_folder(
         db,
         user,
         folder_uid,
-        name=req.get("name"),
-        parent_uid=req.get("parent_uid") if "parent_uid" in req else None,
+        name=req.name,
+        parent_uid=req.parent_uid,
+        parent_aendern="parent_uid" in req.model_fields_set,
     )
 
 
@@ -130,14 +139,14 @@ def delete_folder(
 # ── Oeffentliche Hilfswege ───────────────────────────────────────────
 
 
-@router.post("/shared/{token}/claim")
+@router.post("/shared/claim")
 def claim_share(
-    token: str,
+    req: ShareClaim,
     db: Session = Depends(get_db),
     user: User = Depends(_docs_user),
     __=Depends(verify_csrf),
 ) -> dict:
-    return DocsService.claim_share(db, user, token)
+    return DocsService.claim_share(db, user, req.token)
 
 
 @router.get("/assets/{asset_uid}/content")
@@ -149,6 +158,9 @@ def get_asset_content(
     user_id: int = Query(...),
     db: Session = Depends(get_db),
 ) -> Response:
+    # Ohne Sitzung, aber nicht ohne Schalter: Auch signierte Inhalte ruhen,
+    # wenn das Modul aus ist. Zugang und Rolle prueft der Dienst (Befund 42).
+    _check_docs_enabled()
     asset, _, roh = DocsService.asset_content(
         db, asset_uid=asset_uid, doc_uid=doc, token=token, expires=expires, user_id=user_id
     )
@@ -485,8 +497,8 @@ def collab_token(
     from services.docs_access import access_or_404
 
     doc = DocsService.access(db, user, doc_uid).document
-    fam, jti = _session_claims(request)
-    return DocsCollabService.issue_token(db, user, doc, fam=fam, jti=jti)
+    fam, _ = _session_claims(request)
+    return DocsCollabService.issue_token(db, user, doc, fam=fam)
 
 
 # ── Assets und Export ────────────────────────────────────────────────

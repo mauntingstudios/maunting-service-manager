@@ -31,7 +31,6 @@ from services.docs_crypto import (
     decrypt_blob,
     decrypt_revision_state,
     decrypt_state,
-    decrypt_text,
     encrypt_revision_state,
     encrypt_state,
     encrypt_text,
@@ -43,6 +42,7 @@ from services.docs_service import (
     _enc,
     _inhalt_text,
     _publish,
+    _titel,
 )
 
 
@@ -101,9 +101,9 @@ def _call_sidecar(pfad: str, payload: dict, *, timeout: float = 10.0) -> dict:
             detail = antwort.json()
         except ValueError:
             detail = {}
+        # Nur der Stellenzeiger geht weiter — Textkandidaten bleiben beim
+        # Sidecar im Log und erreichen das Modell nie (Befund 37).
         extra: dict[str, object] = {}
-        if detail.get("candidates"):
-            extra["candidates"] = detail["candidates"]
         if detail.get("edit_index") is not None:
             extra["edit_index"] = detail["edit_index"]
         raise fehler(
@@ -122,11 +122,57 @@ def _call_sidecar(pfad: str, payload: dict, *, timeout: float = 10.0) -> dict:
 
 def _familie_aktiv(db: Session, familie: str | None) -> bool:
     if not familie:
+        # Kein Familienmerkmal: sitzungslose Wege (API-/Dev-Token, Autoren
+        # ohne Refresh-Sitzung) tragen keines. Sie laufen ohne
+        # Familienbindung; nur eine *genannte*, aber unbekannte Familie ist
+        # ein Faelschungsversuch (Befund 8).
         return True
-    basis = db.query(RefreshToken.id).filter(RefreshToken.family == str(familie))
-    if basis.filter(RefreshToken.revoked_at.is_(None)).first() is not None:
-        return True
-    return basis.first() is None
+    return (
+        db.query(RefreshToken.id)
+        .filter(
+            RefreshToken.family == str(familie),
+            RefreshToken.revoked_at.is_(None),
+        )
+        .first()
+        is not None
+    )
+
+
+def _ai_nutzlast(
+    liste: list[dict],
+    *,
+    run_id: str | None,
+    call_id: str | None,
+    user: User,
+    family: str,
+    summary: str | None = None,
+) -> dict[str, object]:
+    """Baut die KI-Nutzlast an den Sidecar — einmal, fuer Vorschau und Edit.
+
+    Inklusive Legacy-Einzelblock: Ein alter Sidecar kennt nur den
+    Einzelaufruf; beim Rollout bleibt dieser Weg fuer genau eine Aenderung
+    mitgesendet (Befund 20).
+    """
+    nutzlast: dict[str, object] = {
+        "edits": liste,
+        "run_id": run_id,
+        "call_id": call_id,
+        "user_id": user.id,
+        "family": family,
+    }
+    if summary is not None:
+        nutzlast["summary"] = summary
+    if len(liste) == 1:
+        einzeln = liste[0]
+        nutzlast.update(
+            {
+                "operation": einzeln.get("op"),
+                "markdown": einzeln.get("markdown") or "",
+                "anchor": einzeln.get("target") or {},
+                "expected_block": einzeln.get("expected_text"),
+            }
+        )
+    return nutzlast
 
 
 class DocsCollabService:
@@ -134,7 +180,7 @@ class DocsCollabService:
 
     @staticmethod
     def issue_token(
-        db: Session, user: User, doc: Document, *, fam: str | None, jti: str | None
+        db: Session, user: User, doc: Document, *, fam: str | None
     ) -> dict:
         zugriff = docs_access.access_or_404(db, user, doc)
         ablauf = _now() + timedelta(minutes=COLLAB_TOKEN_TTL_MINUTEN)
@@ -147,7 +193,10 @@ class DocsCollabService:
             "role": zugriff.role,
             "ro": not zugriff.can_edit,
             "fam": fam or "",
-            "jti": jti or str(uuid.uuid4()),
+            # Frisch pro Token, nie aus der Sitzung: Der Sidecar bindet das
+            # Token ueber die Kennung an genau eine Verbindung — mit der
+            # Sitzungskennung sperrten sich zwei Tabs gegenseitig (Befund 41).
+            "jti": str(uuid.uuid4()),
             "exp": int(ablauf.timestamp()),
         }
         token = jwt.encode(claims, _secret(), algorithm="HS256")
@@ -164,8 +213,12 @@ class DocsCollabService:
 
     @staticmethod
     def authorize(
-        db: Session, *, doc_uid: str, user_id: int, role: str, fam: str | None
+        db: Session, *, doc_uid: str, user_id: int, role: str, fam: str | None,
+        jti: str | None = None,
     ) -> dict:
+        # jti laeuft bis hierher durch, damit die Rueckfrage vollstaendig
+        # ist; die Bindung an genau eine Verbindung prueft der Sidecar
+        # (Befund 41).
         user = db.get(User, user_id)
         if user is None or not user.is_active:
             raise fehler(403, "DOCS_FORBIDDEN", "Konto ist inaktiv")
@@ -214,7 +267,15 @@ class DocsCollabService:
 
     @staticmethod
     def store(db: Session, doc_uid: str, daten: dict) -> dict:
-        doc = db.query(Document).filter(Document.doc_uid == doc_uid).first()
+        # Zeilensperre: Zwei Stores laufen nacheinander, nie ineinander —
+        # sonst gingen Updates verloren und `uq_doc_revisions_doc_rev`
+        # krachte (Befund 9).
+        doc = (
+            db.query(Document)
+            .filter(Document.doc_uid == doc_uid)
+            .with_for_update()
+            .first()
+        )
         if doc is None or doc.deleted_at is not None:
             raise fehler(404, "DOCUMENT_NOT_FOUND", "Dokument nicht gefunden")
 
@@ -233,6 +294,20 @@ class DocsCollabService:
                 raise fehler(403, "DOCS_READ_ONLY", "Autor darf das Dokument nicht mehr schreiben")
         elif not ist_ki:
             raise fehler(403, "DOCS_FORBIDDEN", "Speichern ohne Autor ist nur fuer KI erlaubt")
+
+        # Veralteter Stand: Wer auf einer alten Rev aufsetzt, speichert nicht
+        # darueber, sondern laedt neu. 0 heisst "unbekannt" (Altwege).
+        try:
+            erwartet = int(daten.get("expected_rev") or 0)
+        except (TypeError, ValueError):
+            erwartet = 0
+        if erwartet > 0 and erwartet != doc.rev:
+            raise fehler(
+                409,
+                "DOC_REV_CONFLICT",
+                f"Stand ist neuer (Rev {doc.rev}). Bitte neu laden und erneut speichern.",
+                current_rev=doc.rev,
+            )
 
         try:
             roh = base64.b64decode(daten["state_b64"], validate=True)
@@ -351,7 +426,14 @@ class DocsCollabService:
         entweder eine Revision ohne Aenderung zurueck oder eine Aenderung ohne
         Revision. Hier gilt: entweder beides oder nichts.
         """
-        doc = db.query(Document).filter(Document.doc_uid == doc_uid).first()
+        # Dieselbe Zeilensperre wie `store`: Sonst laege ein KI-Store neben
+        # einem Autosave und eine der beiden Revs ginge verloren (Befund 9).
+        doc = (
+            db.query(Document)
+            .filter(Document.doc_uid == doc_uid)
+            .with_for_update()
+            .first()
+        )
         if doc is None or doc.deleted_at is not None:
             raise fehler(404, "DOCUMENT_NOT_FOUND", "Dokument nicht gefunden")
 
@@ -659,25 +741,13 @@ class DocsCollabService:
             anchor=anchor,
             expected_block=expected_block,
         )
-        nutzlast: dict[str, object] = {
-            "edits": liste,
-            "run_id": run_id,
-            "call_id": call_id,
-            "user_id": user.id,
-            "family": _family_for_user(db, user.id),
-        }
-        # Ein alter Sidecar kennt nur den Einzelaufruf. Beim Rollout bleibt
-        # dieser Weg deshalb fuer genau eine Aenderung mitgesendet.
-        if len(liste) == 1:
-            einzeln = liste[0]
-            nutzlast.update(
-                {
-                    "operation": einzeln.get("op"),
-                    "markdown": einzeln.get("markdown") or "",
-                    "anchor": einzeln.get("target") or {},
-                    "expected_block": einzeln.get("expected_text"),
-                }
-            )
+        nutzlast = _ai_nutzlast(
+            liste,
+            run_id=run_id,
+            call_id=call_id,
+            user=user,
+            family=_family_for_user(db, user.id),
+        )
         return _call_sidecar(
             f"/internal/docs/{doc_uid}/ai-preview", nutzlast, timeout=30.0
         )
@@ -708,24 +778,14 @@ class DocsCollabService:
             anchor=anchor,
             expected_block=expected_block,
         )
-        nutzlast: dict[str, object] = {
-            "edits": liste,
-            "summary": summary,
-            "run_id": run_id,
-            "call_id": call_id,
-            "user_id": user.id,
-            "family": _family_for_user(db, user.id),
-        }
-        if len(liste) == 1:
-            einzeln = liste[0]
-            nutzlast.update(
-                {
-                    "operation": einzeln.get("op"),
-                    "markdown": einzeln.get("markdown") or "",
-                    "anchor": einzeln.get("target") or {},
-                    "expected_block": einzeln.get("expected_text"),
-                }
-            )
+        nutzlast = _ai_nutzlast(
+            liste,
+            run_id=run_id,
+            call_id=call_id,
+            user=user,
+            family=_family_for_user(db, user.id),
+            summary=summary,
+        )
         return _call_sidecar(
             f"/internal/docs/{doc_uid}/ai-edit", nutzlast, timeout=60.0
         )
@@ -760,7 +820,7 @@ class DocsCollabService:
                     "format": format,
                     "state_b64": base64.b64encode(roh).decode("ascii") if roh is not None else None,
                     "rev": ziel_rev,
-                    "titel": _titel(db, doc),
+                    "titel": _titel(doc),
                 },
                 timeout=30.0,
             )
@@ -826,9 +886,9 @@ class DocsCollabService:
 
     @staticmethod
     def module_enabled() -> bool:
-        from services.panel_settings_service import PanelSettingsService
+        from services.panel_settings_service import docs_enabled
 
-        return PanelSettingsService.get("docs_enabled", "true") != "false"
+        return docs_enabled()
 
     # ── Best-effort Steuerung ────────────────────────────────────────
 
@@ -889,9 +949,3 @@ def _family_for_user(db: Session, user_id: int) -> str:
     )
     return row.family if row else ""
 
-
-def _titel(db: Session, doc: Document) -> str:
-    try:
-        return decrypt_text(doc.title_encrypted, f"msm:docs:v1:{doc.doc_uid}:title")
-    except Exception:
-        return "Dokument"

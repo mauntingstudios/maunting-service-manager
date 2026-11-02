@@ -2519,6 +2519,7 @@
       "AI_UNDO_EMPTY": "Es gibt keine KI-Änderung zum Rückgängigmachen.",
       "DOC_TOO_LARGE": "Das Dokument ist zu groß.",
       "DOC_ASSET_TOO_LARGE": "Die Datei ist zu groß. Erlaubt sind 4 MiB je Anhang.",
+      "DOC_INVALID_MIME": "Dieser Dateityp ist nicht erlaubt. Erlaubt sind Bilder und PDF.",
       "DOC_QUOTA_EXCEEDED": "Das Kontingent ist erschöpft.",
       "DOC_INVALID_TARGET": "Das Ziel ist ungültig.",
       "DOC_AI_PENDING_OPEN": "Es gibt bereits einen offenen Vorschlag für dieses Dokument.",

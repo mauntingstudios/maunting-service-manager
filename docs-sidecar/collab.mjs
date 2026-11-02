@@ -3,6 +3,8 @@ import { schemaVersion } from "@msm/docs-schema/schema";
 
 import { loadState } from "./backend_client.mjs";
 import {
+  forgetRev,
+  rememberRev,
   restoreFragment,
   storeDocument,
   storeDocumentUnlocked,
@@ -45,6 +47,7 @@ function undoEintragLoeschen(name) {
 
 export function unregisterDocument(name) {
   loaded.delete(name);
+  forgetRev(name);
   undoEintragLoeschen(name);
 }
 
@@ -68,6 +71,7 @@ export async function loadDocument(name) {
   if (zustand.state_b64) {
     Y.applyUpdate(ydoc, Buffer.from(zustand.state_b64, "base64"));
   }
+  rememberRev(name, zustand.rev);
   return registerDocument(name, ydoc, { rev: zustand.rev });
 }
 

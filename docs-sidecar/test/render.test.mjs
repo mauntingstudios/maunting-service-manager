@@ -110,3 +110,44 @@ test("Bilder tragen im HTML die Asset-UID fuer den Export", () => {
   const md = renderDocument(ydoc, "md", "Mit Bild");
   assert.match(md, /!\[Schaubild\]\(\/api\/docs\/assets\/a\/content\?token=t\)/);
 });
+
+test("Export filtert fremde Hrefs und Bildquellen (Befund 36)", () => {
+  // Dieselbe Allowlist wie HTML: Links nur http/https/mailto, Bilder nur
+  // data:image oder die eigene Asset-Adresse. Am alten Stand liefen
+  // javascript:-Links und fremde Bild-URLs ungefiltert in den Export.
+  const ydoc = new Y.Doc();
+  const fragment = ydoc.getXmlFragment("default");
+  fragment.insert(
+    0,
+    markdownToNodes("[Boese](javascript:alert(1)) und [Datei](file:///etc/passwd) und [OK](https://example.test)"),
+  );
+  const fremd = new Y.XmlElement("image");
+  fremd.setAttribute("src", "https://evil.test/bild.png");
+  fremd.setAttribute("alt", "Fremd");
+  fragment.insert(fragment.length, [fremd]);
+  const script = new Y.XmlElement("image");
+  script.setAttribute("src", "javascript:alert(1)");
+  script.setAttribute("alt", "Skript");
+  fragment.insert(fragment.length, [script]);
+  const eigen = new Y.XmlElement("image");
+  eigen.setAttribute("src", "data:image/png;base64,iVBORw0KGgo=");
+  eigen.setAttribute("alt", "Eigen");
+  fragment.insert(fragment.length, [eigen]);
+
+  const md = renderDocument(ydoc, "md", "Titel");
+  assert.doesNotMatch(md, /javascript:/);
+  assert.doesNotMatch(md, /file:/);
+  assert.doesNotMatch(md, /evil\.test/);
+  assert.match(md, /\[OK\]\(https:\/\/example\.test\)/);
+  assert.match(md, /Boese/);
+  assert.match(md, /!\[Fremd\]\(\)/);
+  assert.match(md, /!\[Eigen\]\(data:image\/png;base64,iVBORw0KGgo=\)/);
+
+  const html = renderDocument(ydoc, "html", "Titel");
+  assert.doesNotMatch(html, /javascript:/);
+  assert.doesNotMatch(html, /file:/);
+  assert.doesNotMatch(html, /evil\.test/);
+  assert.match(html, /<a href="https:\/\/example\.test"/);
+  assert.match(html, /<img alt="Fremd"/);
+  assert.match(html, /<img src="data:image\/png;base64,iVBORw0KGgo=" alt="Eigen"/);
+});

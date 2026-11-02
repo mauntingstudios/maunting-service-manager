@@ -744,6 +744,22 @@ def decline_invitation(db: Session, *, user: User, team_id: int) -> None:
     db.commit()
 
 
+def _docs_verbindungen_trennen(db: Session, team_id: int, user_id: int) -> None:
+    """Trennt die Collab-Verbindungen eines Benutzers best effort.
+
+    Der Collab-Token lebt 30 Minuten; nach einer Rollenaenderung tippte der
+    Betroffene sonst mit der alten Rolle weiter (Befund 41).
+    """
+    try:
+        from models.doc import Document
+        from services.docs_collab_service import DocsCollabService
+
+        for (doc_uid,) in db.query(Document.doc_uid).filter(Document.team_id == team_id):
+            DocsCollabService.disconnect_user(doc_uid, user_id)
+    except Exception:
+        pass
+
+
 def update_member(
     db: Session, *, team: Team, user: User, member_user_id: int,
     can_manage_skills: bool, can_manage_memory: bool,
@@ -831,6 +847,7 @@ def update_member(
             details={"member_user_id": member_user_id}, origin="direct",
         )
     db.commit()
+    _docs_verbindungen_trennen(db, team.id, member_user_id)
     db.refresh(member)
     return member
 
@@ -1442,4 +1459,5 @@ def set_member_roles(
         origin="direct",
     )
     db.commit()
+    _docs_verbindungen_trennen(db, team.id, member_user_id)
     return valid_roles

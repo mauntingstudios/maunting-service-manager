@@ -159,3 +159,12 @@ class PanelSettingsService:
         return True
 
 
+def docs_enabled() -> bool:
+    """Ob das Dokumente-Modul eingeschaltet ist — die einzige Wahrheit.
+
+    Alle Vergleichsstellen nutzen sie, damit "an" ueberall dasselbe heisst:
+    Vorgabe an, nur der gespeicherte Wert "false" schaltet ab (Befund 18).
+    """
+    return PanelSettingsService.get("docs_enabled", "true") != "false"
+
+

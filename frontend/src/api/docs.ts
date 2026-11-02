@@ -296,7 +296,8 @@ export function deleteShare(uid: string): Promise<{ ok: boolean }> {
 }
 
 export function claimShare(token: string): Promise<DocDetail> {
-  return api(`/docs/shared/${encodeURIComponent(token)}/claim`, { method: 'POST' })
+  // Das Token steht im Body, nie im Pfad (Befund 50).
+  return api('/docs/shared/claim', { method: 'POST', body: JSON.stringify({ token }) })
 }
 
 export function listComments(uid: string, status?: 'open' | 'resolved'): Promise<DocComment[]> {
@@ -400,10 +401,59 @@ function arrayBufferToBase64(bytes: ArrayBuffer): string {
   return btoa(binary)
 }
 
+/** Upload-Grenzen des Servers (`status.limits`) — der Aufrufer reicht sie
+ * herein, wenn er den Status schon haelt; sonst laedt `uploadAsset` ihn. */
+export interface UploadGrenzen {
+  assetBytes: number
+  assetsPerDoc: number
+}
+
+export function grenzenAusStatus(status: DocsStatus): UploadGrenzen {
+  return {
+    assetBytes: status.limits['asset_bytes'] ?? 4 * 1024 * 1024,
+    assetsPerDoc: status.limits['assets_per_doc'] ?? 100,
+  }
+}
+
+/** MIME-Allowlist des Servers (`ERLAUBTE_ASSET_MIMES`) — der Client lehnt
+ * frueh ab, der Server bleibt massgeblich. */
+const ERLAUBTE_UPLOAD_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'application/pdf',
+])
+
 export async function uploadAsset(
   uid: string,
   file: File,
+  optionen?: { grenzen?: UploadGrenzen; anzahlAssets?: number },
 ): Promise<{ asset_uid: string; signed_url: string; expires_at: string }> {
+  // Grenzen VOR dem Lesen pruefen: Eine zu grosse Datei darf nie als
+  // ArrayBuffer in den Speicher (Befund 32). Die Fehler tragen die
+  // Server-Codes, damit die Anzeige dieselbe Sprache spricht.
+  const grenzen = optionen?.grenzen ?? grenzenAusStatus(await getDocsStatus())
+  const mime = file.type || 'application/octet-stream'
+  if (!ERLAUBTE_UPLOAD_MIMES.has(mime)) {
+    throw new SanitizedApiError('Dateityp ist nicht erlaubt', {
+      status: 422,
+      code: 'DOC_INVALID_MIME',
+    })
+  }
+  if (file.size > grenzen.assetBytes) {
+    throw new SanitizedApiError('Anhang ist zu gross', {
+      status: 413,
+      code: 'DOC_ASSET_TOO_LARGE',
+    })
+  }
+  if (optionen?.anzahlAssets !== undefined && optionen.anzahlAssets >= grenzen.assetsPerDoc) {
+    throw new SanitizedApiError('Anhangsgrenze erreicht', {
+      status: 413,
+      code: 'DOC_QUOTA_EXCEEDED',
+    })
+  }
   const buffer = await file.arrayBuffer()
   const sha256 = await sha256Hex(buffer)
   return api(`/docs/${encodeURIComponent(uid)}/assets`, {

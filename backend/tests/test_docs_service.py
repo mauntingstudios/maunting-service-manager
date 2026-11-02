@@ -15,6 +15,7 @@ from fastapi import HTTPException
 
 from models.doc import DocRevision, Document
 from models.team import Team, TeamMember
+from models.user import User
 from services.auth_service import AuthService
 from services.docs_collab_service import DocsCollabService
 from services.docs_crypto import decrypt_state
@@ -42,6 +43,19 @@ def _team(db, owner, name: str):
 def _mitglied(db, team, user, role: str = "member") -> None:
     db.add(TeamMember(team_id=team.id, user_id=user.id, role=role, added_by=team.owner_user_id))
     db.commit()
+
+
+def _docs_recht(db, user) -> None:
+    """Gibt dem Benutzer den Dokumentzugang (`docs.use`, Befund 42)."""
+    from models.role import Role, RolePermission
+    from services.role_service import set_user_roles
+
+    rolle = Role(name=f"docs-nutzer-{user.username}", description="Dokumentzugang", is_system=False)
+    db.add(rolle)
+    db.flush()
+    db.add(RolePermission(role_id=rolle.id, permission_key="docs.use", granted=True))
+    db.commit()
+    set_user_roles(db, user, [rolle.id])
 
 
 def _payload(roh: bytes, inhalt: str, **extra):
@@ -136,6 +150,43 @@ def test_share_link_gibt_viewer_und_endet_mit_dem_link(db):
     assert fehler_info.value.status_code == 404
 
 
+def test_freigabe_claim_kommt_aus_dem_body(db):
+    """Befund 50: Claim per POST /shared/claim mit {token} im Body — gueltig
+    200, ungueltig 404. Der alte Pfad mit Token ist weg (404). Am alten
+    Stand stand das Token im Pfad und landete in Server-Logs."""
+    from fastapi.testclient import TestClient
+
+    from database import get_db
+    from dependencies import verify_csrf
+    from main import app
+    from routers.docs import _docs_user
+
+    owner = _benutzer(db, "docs_s50_a")
+    extern = _benutzer(db, "docs_s50_b")
+    daten = DocsService.create_document(db, owner, title="Geteilt")
+    freigabe = DocsService.create_share(db, owner, daten["uid"], role="viewer", expires_in_days=7)
+    token = freigabe["url"].rsplit("/", 1)[-1]
+
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[_docs_user] = lambda: extern
+    app.dependency_overrides[verify_csrf] = lambda: None
+    try:
+        with TestClient(app) as client:
+            gueltig = client.post("/api/docs/shared/claim", json={"token": token})
+            assert gueltig.status_code == 200
+            assert gueltig.json()["role"] == "viewer"
+
+            ungueltig = client.post("/api/docs/shared/claim", json={"token": "0" * 64})
+            assert ungueltig.status_code == 404
+
+            alt_post = client.post(f"/api/docs/shared/{token}/claim")
+            assert alt_post.status_code == 404
+            alt_get = client.get(f"/api/docs/shared/{token}/claim")
+            assert alt_get.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_store_zaehlt_rev_und_ist_idempotent(db):
     user = _benutzer(db, "docs_k")
     daten = DocsService.create_document(db, user, title="Zustand")
@@ -199,6 +250,106 @@ def test_store_verweigert_viewer(db):
     assert fehler_info.value.detail["code"] == "DOCS_READ_ONLY"
 
 
+def test_store_mit_veraltetem_stand_ist_konflikt(db):
+    """Befund 9: expected_rev ungleich Rev → 409 mit aktuellem Stand, nichts
+    gespeichert. Passender Stand und 0 ("unbekannt") speichern wie bisher.
+    Am alten Stand wurde der veraltete Zustand still daruebergespeichert."""
+    user = _benutzer(db, "docs_rev_a")
+    daten = DocsService.create_document(db, user)
+    DocsCollabService.store(db, daten["uid"], _payload(b"eins", "eins", author_user_id=user.id))
+
+    with pytest.raises(HTTPException) as info:
+        DocsCollabService.store(
+            db, daten["uid"],
+            _payload(b"alt", "alt", author_user_id=user.id, expected_rev=999),
+        )
+    assert info.value.status_code == 409
+    assert info.value.detail["code"] == "DOC_REV_CONFLICT"
+    assert info.value.detail["current_rev"] == 1
+
+    db.expire_all()
+    doc = db.query(Document).filter(Document.doc_uid == daten["uid"]).one()
+    assert doc.rev == 1
+    assert decrypt_state(doc.state_encrypted, daten["uid"]) == b"eins"
+
+    frisch = DocsCollabService.store(
+        db, daten["uid"],
+        _payload(b"zwei", "zwei", author_user_id=user.id, expected_rev=1),
+    )
+    assert frisch["stored"] is True
+    assert frisch["rev"] == 2
+    altweg = DocsCollabService.store(
+        db, daten["uid"],
+        _payload(b"drei", "drei", author_user_id=user.id, expected_rev=0),
+    )
+    assert altweg["rev"] == 3
+
+
+def test_zwei_stores_gleichzeitig_einer_gewinnt(db):
+    """Befund 9: Zwei Stores auf derselben Rev ueber zwei Verbindungen —
+    einer speichert, der andere bekommt 409, kein IntegrityError.
+    Am alten Stand krachte `uq_doc_revisions_doc_rev` oder ein Update ging
+    still verloren."""
+    import threading
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import NullPool
+
+    import database as db_module
+
+    user = _benutzer(db, "docs_rev_b")
+    daten = DocsService.create_document(db, user)
+    DocsCollabService.store(db, daten["uid"], _payload(b"eins", "eins", author_user_id=user.id))
+    uid = daten["uid"]
+    autor_id = user.id
+
+    engine = create_engine(db_module.engine.url, poolclass=NullPool)
+    sitzungen = sessionmaker(bind=engine)
+    barriere = threading.Barrier(2)
+    ausgang: list[str] = []
+    fehler: list[Exception] = []
+
+    def speicherung(inhalt: bytes) -> None:
+        s = sitzungen()
+        try:
+            barriere.wait(timeout=10)
+            ergebnis = DocsCollabService.store(
+                s, uid, _payload(inhalt, inhalt.decode(), author_user_id=autor_id, expected_rev=1)
+            )
+            ausgang.append("stored" if ergebnis["stored"] else "idempotent")
+        except HTTPException as exc:
+            ausgang.append(f"http-{exc.status_code}")
+        except Exception as exc:  # noqa: BLE001 — alles ausser 409 ist ein Fehler
+            fehler.append(exc)
+        finally:
+            s.close()
+
+    try:
+        threads = [
+            threading.Thread(target=speicherung, args=(b"zweig-a",)),
+            threading.Thread(target=speicherung, args=(b"zweig-b",)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert not any(t.is_alive() for t in threads)
+    finally:
+        engine.dispose()
+
+    assert fehler == []
+    assert sorted(ausgang) == ["http-409", "stored"]
+    db.expire_all()
+    assert db.query(Document).filter(Document.doc_uid == uid).one().rev == 2
+    assert (
+        db.query(DocRevision)
+        .join(Document, DocRevision.document_id == Document.id)
+        .filter(Document.doc_uid == uid, DocRevision.rev == 2)
+        .count()
+    ) == 1
+
+
 def test_ki_store_ohne_autor_ist_erlaubt(db):
     user = _benutzer(db, "docs_o")
     daten = DocsService.create_document(db, user)
@@ -226,6 +377,27 @@ def test_aad_bindung_scheitert_bei_falscher_uid(db):
         decrypt_state(doc.state_encrypted, "andere-uid")
 
 
+def test_geteilter_titel_helfer_behaelt_aad(db):
+    """Befund 19: Collab nutzt den Titel-Helfer des Dienstes — ein Bestand,
+    eine AAD. Die Helfer-AAD gleicht der frueheren literalen, sodass
+    bestehende Titel weiter lesbar sind. Am alten Stand gab es zwei
+    Definitionen und das Literal im Collab-Dienst."""
+    import pathlib
+
+    import services.docs_collab_service as collab
+    from services.docs_crypto import aad_title
+    from services.docs_service import _titel as dienst_titel
+
+    assert collab._titel is dienst_titel
+    assert "msm:docs:v1" not in pathlib.Path(collab.__file__).read_text(encoding="utf-8")
+
+    user = _benutzer(db, "docs_titel_a")
+    daten = DocsService.create_document(db, user, title="Gemeinsamer Titel")
+    doc = db.query(Document).filter(Document.doc_uid == daten["uid"]).one()
+    assert collab._titel(doc) == "Gemeinsamer Titel"
+    assert aad_title(daten["uid"]) == f"msm:docs:v1:{daten['uid']}:title"
+
+
 def test_modulschalter_im_authorize(db, monkeypatch):
     from services.panel_settings_service import PanelSettingsService
 
@@ -236,6 +408,112 @@ def test_modulschalter_im_authorize(db, monkeypatch):
         db, doc_uid=daten["uid"], user_id=user.id, role="editor", fam=None
     )
     assert antwort["module_enabled"] is False
+
+
+def test_unbekannte_sitzungsfamilie_wird_abgewiesen(db):
+    """Befund 8: Fremde oder widerrufene Familie → 403, am alten Stand 200.
+
+    Gueltige Familie und fehlendes Merkmal (sitzunglose Wege) laufen;
+    der Owner bleibt von der Familienbindung ausgenommen.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from models.refresh_token import RefreshToken
+
+    def sitzung(user_id, familie, widerrufen=False):
+        db.add(RefreshToken(
+            user_id=user_id,
+            token_hash=f"hash-{familie}",
+            family=familie,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            revoked_at=datetime.now(timezone.utc) if widerrufen else None,
+        ))
+        db.commit()
+
+    user = _benutzer(db, "docs_fam_a")
+    daten = DocsService.create_document(db, user)
+    sitzung(user.id, "fam-gueltig")
+    sitzung(user.id, "fam-tot", widerrufen=True)
+
+    assert DocsCollabService.authorize(
+        db, doc_uid=daten["uid"], user_id=user.id, role="editor", fam="fam-gueltig"
+    )["ok"] is True
+    assert DocsCollabService.authorize(
+        db, doc_uid=daten["uid"], user_id=user.id, role="editor", fam=None
+    )["ok"] is True
+
+    for familie in ("fam-fremd", "fam-tot"):
+        with pytest.raises(HTTPException) as info:
+            DocsCollabService.authorize(
+                db, doc_uid=daten["uid"], user_id=user.id, role="editor", fam=familie
+            )
+        assert info.value.status_code == 403
+
+    owner = _benutzer(db, "docs_fam_owner")
+    owner.is_owner = True
+    db.commit()
+    assert DocsCollabService.authorize(
+        db, doc_uid=daten["uid"], user_id=owner.id, role="editor", fam="fam-fremd"
+    )["ok"] is True
+
+
+def test_collab_token_traegt_frische_kennung(db):
+    """Befund 41: Jedes Token bekommt eine frische jti — zwei Tabs teilen
+    sich nie eine Kennung, sonst sperrte die Verbindungsbindung den zweiten
+    Tab. Am alten Stand kam die Kennung aus der Sitzung."""
+    from jose import jwt as jose_jwt
+
+    from config import settings
+
+    user = _benutzer(db, "docs_jti_a")
+    daten = DocsService.create_document(db, user)
+    doc = db.query(Document).filter(Document.doc_uid == daten["uid"]).one()
+    eins = DocsCollabService.issue_token(db, user, doc, fam="fam-x")
+    zwei = DocsCollabService.issue_token(db, user, doc, fam="fam-x")
+
+    geheimnis = settings.docs_collab_secret or settings.secret_key
+    kennungen = [
+        jose_jwt.decode(
+            paket["token"], geheimnis, algorithms=["HS256"],
+            audience="msm-docs", issuer="msm",
+        )["jti"]
+        for paket in (eins, zwei)
+    ]
+    assert kennungen[0] != kennungen[1]
+    import uuid as uuid_mod
+
+    for kennung in kennungen:
+        assert str(uuid_mod.UUID(str(kennung))) == str(kennung)
+
+
+def test_rollenwechsel_trennt_collab_verbindung(db, monkeypatch):
+    """Befund 41: Rollenwechsel (set_member_roles, update_member) trennt die
+    Collab-Verbindungen des Mitglieds je Team-Dokument — sonst tippte es mit
+    der alten Rolle weiter. Am alten Stand blieb die Verbindung offen."""
+    import services.team_service as team_dienst
+
+    getrennt: list[tuple] = []
+    monkeypatch.setattr(
+        DocsCollabService, "disconnect_user",
+        staticmethod(lambda doc_uid, user_id: getrennt.append((doc_uid, user_id))),
+    )
+    chef = _benutzer(db, "docs_dc_a")
+    gast = _benutzer(db, "docs_dc_b")
+    team = _team(db, chef, "Trenn-Team")
+    _mitglied(db, team, gast)
+    daten = DocsService.create_document(db, chef, team_id=team.id)
+
+    team_dienst.set_member_roles(
+        db, team=team, user=chef, member_user_id=gast.id, role_ids=[]
+    )
+    assert getrennt == [(daten["uid"], gast.id)]
+
+    getrennt.clear()
+    team_dienst.update_member(
+        db, team=team, user=chef, member_user_id=gast.id,
+        can_manage_skills=False, can_manage_memory=False,
+    )
+    assert getrennt == [(daten["uid"], gast.id)]
 
 
 def test_falsches_service_token_wird_abgewiesen(client, monkeypatch):
@@ -435,6 +713,7 @@ def _asset_token(url: str) -> dict:
 
 def test_asset_upload_und_signierte_url(db):
     user = _benutzer(db, "docs_y")
+    _docs_recht(db, user)
     daten = DocsService.create_document(db, user)
     roh = b"\x89PNG\r\n\x1a\nfake"
     hochgeladen = DocsService.upload_asset(
@@ -466,6 +745,75 @@ def test_asset_upload_und_signierte_url(db):
     assert falsch.value.status_code == 403
 
 
+def test_asset_inhalt_prueft_modul_und_zugriff(db, monkeypatch):
+    """Befund 42: Die Signatur allein genuegt nicht — abgeschaltetes Modul
+    und entzogene Mitgliedschaft sind 403, auch mit gueltiger URL.
+    Am alten Stand las jede gueltige Signatur den Inhalt."""
+    from services.panel_settings_service import PanelSettingsService
+
+    chef = _benutzer(db, "docs_az_a")
+    gast = _benutzer(db, "docs_az_b")
+    _docs_recht(db, gast)
+    team = _team(db, chef, "Asset-Team")
+    _mitglied(db, team, gast)
+    daten = DocsService.create_document(db, chef, team_id=team.id)
+    roh = b"geheim"
+    hochgeladen = DocsService.upload_asset(
+        db, chef, daten["uid"], file_name="a.png", mime="image/png",
+        data_base64=base64.b64encode(roh).decode(), sha256=hashlib.sha256(roh).hexdigest(),
+    )
+    url, _ = DocsService.asset_signed_url(db, gast, daten["uid"], hochgeladen["asset_uid"])
+    teile = _asset_token(url)
+
+    _, _, inhalt = DocsService.asset_content(db, asset_uid=hochgeladen["asset_uid"], **teile)
+    assert inhalt == roh
+
+    monkeypatch.setattr(
+        PanelSettingsService, "get",
+        classmethod(lambda cls, key, default="", db=None: "false" if key == "docs_enabled" else default),
+    )
+    with pytest.raises(HTTPException) as aus:
+        DocsService.asset_content(db, asset_uid=hochgeladen["asset_uid"], **teile)
+    assert aus.value.status_code == 403
+    assert aus.value.detail["code"] == "DOCS_DISABLED"
+    monkeypatch.undo()
+
+    db.query(TeamMember).filter(
+        TeamMember.team_id == team.id, TeamMember.user_id == gast.id
+    ).delete()
+    db.commit()
+    with pytest.raises(HTTPException) as raus:
+        DocsService.asset_content(db, asset_uid=hochgeladen["asset_uid"], **teile)
+    assert raus.value.status_code == 403
+    assert raus.value.detail["code"] == "DOCS_FORBIDDEN"
+
+
+def test_signieren_ohne_geheimnis_ist_503(db, monkeypatch):
+    """Befund 10: Ohne MSM_DOCS_SIGNING_SECRET antworten Signieren und
+    Pruefen mit 503 — kein Fallback auf Service-Token oder bekannten Wert.
+    Am alten Stand signierte der feste Wert "msm-docs" gueltige URLs."""
+    from config import settings
+
+    user = _benutzer(db, "docs_sig_a")
+    daten = DocsService.create_document(db, user)
+    roh = b"signatur-test"
+    hochgeladen = DocsService.upload_asset(
+        db, user, daten["uid"], file_name="a.png", mime="image/png",
+        data_base64=base64.b64encode(roh).decode(), sha256=hashlib.sha256(roh).hexdigest(),
+    )
+    assert "/api/docs/assets/" in hochgeladen["signed_url"]
+
+    monkeypatch.setattr(settings, "docs_signing_secret", "")
+    with pytest.raises(HTTPException) as signieren:
+        DocsService.asset_signed_url(db, user, daten["uid"], hochgeladen["asset_uid"])
+    assert signieren.value.status_code == 503
+    assert signieren.value.detail["code"] == "DOCS_SIGNING_NOT_CONFIGURED"
+    with pytest.raises(HTTPException) as pruefen:
+        DocsService.asset_content(db, asset_uid=hochgeladen["asset_uid"], **_asset_token(hochgeladen["signed_url"]))
+    assert pruefen.value.status_code == 503
+    assert pruefen.value.detail["code"] == "DOCS_SIGNING_NOT_CONFIGURED"
+
+
 def test_asset_weist_falsche_pruefsumme_und_svg_ab(db):
     user = _benutzer(db, "docs_z")
     daten = DocsService.create_document(db, user)
@@ -483,6 +831,129 @@ def test_asset_weist_falsche_pruefsumme_und_svg_ab(db):
             sha256=hashlib.sha256(b"<svg/>").hexdigest(),
         )
     assert svg.value.status_code == 422
+
+
+def _zwei_verbindungen():
+    """Eigene Engine mit zwei unabhaengigen Verbindungen (Befund 43/9)."""
+    import threading
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import NullPool
+
+    import database as db_module
+
+    engine = create_engine(db_module.engine.url, poolclass=NullPool)
+    return engine, sessionmaker(bind=engine), threading.Barrier(2)
+
+
+def test_quote_haelt_bei_gleichzeitigen_anlagen(db, monkeypatch):
+    """Befund 43: Zwei Anlagen zugleich ueber zwei Verbindungen — eine
+    gewinnt, die andere bekommt 413, die Quote steht nie drueber.
+    Am alten Stand zaehlten beide vorbei und legten beide an."""
+    import threading
+
+    import services.docs_service as dienst
+
+    monkeypatch.setattr(dienst, "MAX_DOCUMENTS_PER_TEAM", 3)
+    user = _benutzer(db, "docs_q_a")
+    team = _team(db, user, "Quoten-Team")
+    DocsService.create_document(db, user, team_id=team.id)
+    DocsService.create_document(db, user, team_id=team.id)
+    team_id = team.id
+    benutzer_id = user.id
+
+    engine, sitzungen, barriere = _zwei_verbindungen()
+    ausgang: list[str] = []
+    try:
+        def anlage() -> None:
+            s = sitzungen()
+            try:
+                leser = s.get(User, benutzer_id)
+                barriere.wait(timeout=10)
+                dienst.DocsService.create_document(s, leser, team_id=team_id)
+                ausgang.append("ok")
+            except HTTPException as exc:
+                ausgang.append(f"http-{exc.status_code}")
+            finally:
+                s.close()
+
+        threads = [threading.Thread(target=anlage) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert not any(t.is_alive() for t in threads)
+    finally:
+        engine.dispose()
+
+    assert sorted(ausgang) == ["http-413", "ok"]
+    db.expire_all()
+    assert (
+        db.query(Document).filter(Document.team_id == team_id).count()
+    ) == 3
+
+
+def test_quote_haelt_bei_gleichzeitigen_uploads(db, monkeypatch):
+    """Befund 43: Zwei Uploads zugleich ueber zwei Verbindungen — einer
+    gewinnt, der andere bekommt 413, die Quote steht nie drueber.
+    Am alten Stand zaehlten beide vorbei und luden beide hoch."""
+    import threading
+
+    import services.docs_service as dienst
+
+    monkeypatch.setattr(dienst, "MAX_ASSETS_PER_DOC", 2)
+    user = _benutzer(db, "docs_q_b")
+    daten = DocsService.create_document(db, user)
+    DocsService.upload_asset(
+        db, user, daten["uid"], file_name="a.png", mime="image/png",
+        data_base64=base64.b64encode(b"eins").decode(),
+        sha256=hashlib.sha256(b"eins").hexdigest(),
+    )
+    uid = daten["uid"]
+    benutzer_id = user.id
+
+    engine, sitzungen, barriere = _zwei_verbindungen()
+    ausgang: list[str] = []
+    try:
+        def hochladen(roh: bytes) -> None:
+            s = sitzungen()
+            try:
+                leser = s.get(User, benutzer_id)
+                barriere.wait(timeout=10)
+                dienst.DocsService.upload_asset(
+                    s, leser, uid, file_name="b.png", mime="image/png",
+                    data_base64=base64.b64encode(roh).decode(),
+                    sha256=hashlib.sha256(roh).hexdigest(),
+                )
+                ausgang.append("ok")
+            except HTTPException as exc:
+                ausgang.append(f"http-{exc.status_code}")
+            finally:
+                s.close()
+
+        threads = [
+            threading.Thread(target=hochladen, args=(b"zwei-a",)),
+            threading.Thread(target=hochladen, args=(b"zwei-b",)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert not any(t.is_alive() for t in threads)
+    finally:
+        engine.dispose()
+
+    assert sorted(ausgang) == ["http-413", "ok"]
+    db.expire_all()
+    doc = db.query(Document).filter(Document.doc_uid == uid).one()
+    from models.doc import DocAsset
+
+    assert (
+        db.query(DocAsset)
+        .filter(DocAsset.document_id == doc.id, DocAsset.deleted_at.is_(None))
+        .count()
+    ) == 2
 
 
 def test_kommentare_mit_anker_und_rolle(db):
@@ -518,6 +989,42 @@ def test_ordner_anlegen_verschieben_und_loeschen(db):
 
     DocsService.delete_folder(db, user, ordner["uid"])
     assert DocsService.get_document(db, user, daten["uid"])["folder_uid"] is None
+
+
+def test_ordner_patch_unterscheidet_null_und_fehlend(db):
+    """Befund 17: Nicht-String als Name → 422 (kein 500); explizites
+    `parent_uid: null` verschiebt nach oben; Weglassen aendert nichts.
+    Am alten Stand war Nicht-String ein 500 und `null` wirkungslos."""
+    from fastapi.testclient import TestClient
+
+    from database import get_db
+    from dependencies import verify_csrf
+    from main import app
+    from routers.docs import _docs_user
+
+    user = _benutzer(db, "docs_ord_a")
+    elter = DocsService.create_folder(db, user, team_id=None, parent_uid=None, name="Elter")
+    kind = DocsService.create_folder(db, user, team_id=None, parent_uid=elter["uid"], name="Kind")
+    assert kind["parent_uid"] == elter["uid"]
+
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[_docs_user] = lambda: user
+    app.dependency_overrides[verify_csrf] = lambda: None
+    try:
+        with TestClient(app) as client:
+            antwort = client.patch(f"/api/docs/folders/{kind['uid']}", json={"name": 123})
+            assert antwort.status_code == 422
+
+            antwort = client.patch(f"/api/docs/folders/{kind['uid']}", json={"name": "KindNeu"})
+            assert antwort.status_code == 200
+            assert antwort.json()["name"] == "KindNeu"
+            assert antwort.json()["parent_uid"] == elter["uid"]
+
+            antwort = client.patch(f"/api/docs/folders/{kind['uid']}", json={"parent_uid": None})
+            assert antwort.status_code == 200
+            assert antwort.json()["parent_uid"] is None
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_revisionen_enthalten_vorschau(db):
@@ -634,6 +1141,37 @@ def test_router_sperrt_bei_deaktiviertem_modul(db, monkeypatch):
             assert antwort.json()["detail"]["code"] == "DOCS_DISABLED"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_sitzungsmerkmale_kommen_auch_aus_dem_dev_cookie(monkeypatch):
+    """Befund 16: Im Dev-Stack liest die Collab-Anmeldung das Zugangstoken
+    aus `msm_dev_access_token` — fam/jti kommen an. Am alten Stand las sie
+    nur `__Secure-access_token` und lieferte (None, None)."""
+    import config
+    from fastapi import Request
+
+    from routers.docs import _session_claims
+    from services.auth_service import AuthService
+
+    def schalte(an: bool) -> None:
+        monkeypatch.setattr(config.settings, "dev_http_cookies", an, raising=False)
+        monkeypatch.setattr(config.settings, "debug", True, raising=False)
+        monkeypatch.setattr(config.settings, "panel_url", "http://localhost:3000", raising=False)
+        monkeypatch.setattr(config.settings, "api_url", "", raising=False)
+
+    monkeypatch.setattr(
+        AuthService, "decode_token",
+        staticmethod(lambda t: {"familie": "fam-x", "jti": "jti-y"} if t == "dev-token" else None),
+    )
+
+    def anfrage(cookie: str) -> Request:
+        return Request({"type": "http", "headers": [(b"cookie", cookie.encode())]})
+
+    schalte(True)
+    assert _session_claims(anfrage("msm_dev_access_token=dev-token")) == ("fam-x", "jti-y")
+
+    schalte(False)
+    assert _session_claims(anfrage("__Secure-access_token=dev-token")) == ("fam-x", "jti-y")
 
 
 def test_dokumentgespraech_ist_je_dokument_eindeutig(db):
@@ -753,3 +1291,41 @@ def test_dokumentrechte_im_katalog():
     assert "read_document_structure" in DOCUMENTS_TOOLS
     assert DOCUMENTS_WRITE_TOOLS <= READ_TOOLS
     assert DOCUMENTS_WRITE_TOOLS.isdisjoint(GEHIRN_TOOLS)
+
+
+def test_liste_liest_zugriff_und_ordner_gebuendelt(db):
+    """Befund 24: 200 Dokumente — konstante Abfragezahl, stabile Ordnung.
+
+    Am alten Stand las die Liste je Dokument Mitgliedschaft, manuellen
+    Override und Ordner einzeln (600+ Anweisungen); jetzt je einmal.
+    Sortierung und Paginierung bleiben wie bisher.
+    """
+    from tests._statements import count_statements
+
+    owner = _benutzer(db, "docs_liste_a")
+    mitglied = _benutzer(db, "docs_liste_b")
+    team = _team(db, owner, "Listen-Team")
+    _mitglied(db, team, mitglied)
+    ordner_a = DocsService.create_folder(db, owner, team_id=team.id, parent_uid=None, name="Ablage")
+    for i in range(210):
+        DocsService.create_document(
+            db, owner, team_id=team.id,
+            folder_uid=ordner_a["uid"] if i % 3 == 0 else None,
+            title=f"Dokument {i:03d}",
+        )
+
+    db.expire_all()
+    assert mitglied.is_owner is False
+    with count_statements(db) as anweisungen:
+        seite = DocsService.list_documents(db, mitglied, limit=200)
+    assert len(seite) == 200
+    assert len(anweisungen) <= 10
+
+    # Stabile Ordnung: zwei Laeufe, eine Reihenfolge; Ordner stimmen.
+    db.expire_all()
+    nochmal = DocsService.list_documents(db, mitglied, limit=200)
+    assert [eintrag["uid"] for eintrag in nochmal] == [eintrag["uid"] for eintrag in seite]
+    assert {eintrag["folder_uid"] for eintrag in seite} <= {None, ordner_a["uid"]}
+    # 70 im Ordner angelegt, 4 davon unter den 10 aeltesten ausserhalb des Limits.
+    assert sum(1 for eintrag in seite if eintrag["folder_uid"] == ordner_a["uid"]) == 66
+    assert {eintrag["role"] for eintrag in seite} == {"editor"}

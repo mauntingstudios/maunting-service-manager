@@ -18,6 +18,7 @@ import {
   docsErrorCode,
   getDocsStatus,
   getDocument,
+  grenzenAusStatus,
   listComments,
   listDocuments,
   listFolders,
@@ -636,6 +637,7 @@ export function DocsApp() {
               vorschlagBusy={vorschlagBusy}
               onApplyVorschlag={() => void vorschlagAnwenden()}
               onRejectVorschlag={() => void vorschlagVerwerfen()}
+              grenzen={status ? grenzenAusStatus(status) : undefined}
             />
           )}
         </main>

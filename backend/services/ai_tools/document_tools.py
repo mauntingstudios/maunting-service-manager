@@ -217,12 +217,13 @@ def _konflikt(exc: HTTPException) -> dict | None:
     if exc.status_code not in (409, 422):
         return None
     detail = exc.detail if isinstance(exc.detail, dict) else {}
+    # Keine Textkandidaten ans Modell: Bei Mehrdeutigkeit bekommt es nur
+    # den Code und den Stellenzeiger (Befund 37).
     return _untrusted(
         ok=False,
         code=detail.get("code"),
         message=detail.get("message"),
         edit_index=detail.get("edit_index"),
-        candidates=detail.get("candidates") or [],
         hint=(
             "Das Ziel hat sich geaendert. Lies read_document_structure erneut und "
             "plane die Aenderung einmal neu; wiederhole sie nicht blind."

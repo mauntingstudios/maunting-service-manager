@@ -5,7 +5,7 @@ import { Server } from "@hocuspocus/server";
 import * as Y from "yjs";
 import { schemaVersion } from "@msm/docs-schema/schema";
 
-import { authenticate } from "./auth.mjs";
+import { authenticate, jtiFreigeben } from "./auth.mjs";
 import {
   aiUndo,
   contextFor,
@@ -23,7 +23,9 @@ import {
 } from "./collab.mjs";
 import { applyEdits, applyEditsAtomically, structureOf } from "./ai_edit.mjs";
 import {
+  decodeState,
   extractText,
+  rememberRev,
   sha256,
   storeDocument,
   withLock,
@@ -62,6 +64,7 @@ const hocuspocus = new Server({
     if (zustand.state_b64) {
       Y.applyUpdate(document, Buffer.from(zustand.state_b64, "base64"));
     }
+    rememberRev(documentName, zustand.rev);
     registerDocument(documentName, document, context);
     return document;
   },
@@ -77,7 +80,8 @@ const hocuspocus = new Server({
       reason: null,
     });
   },
-  async onDisconnect({ documentName }) {
+  async onDisconnect({ documentName, context }) {
+    jtiFreigeben(documentName, context?.jti);
     try {
       await flushDocument(documentName);
     } catch (error) {
@@ -234,7 +238,7 @@ async function aktion(name, req, antwort) {
   if (was === "render") {
     if (body.state_b64) {
       const ydoc = new Y.Doc();
-      Y.applyUpdate(ydoc, Buffer.from(body.state_b64, "base64"));
+      Y.applyUpdate(ydoc, decodeState(body.state_b64));
       const inhalt = renderDocument(ydoc, body.format || "html", body.titel || "Dokument");
       return json(antwort, 200, {
         content: inhalt,
@@ -276,7 +280,7 @@ async function aktion(name, req, antwort) {
 
   if (was === "ai-preview") {
     // Nur lesen: der Klon nimmt die Aenderungen auf, das Live-Dokument bleibt
-    // unberuehrt. Deshalb hier bewusst **kein** Store — sonst entstuende eine
+    // unberuehrt. Deshalb hier bewusst **kein** Store â€” sonst entstuende eine
     // Revision, die alle Mitarbeiter im Verlauf saehen.
     const edits = editsAusBody(body);
     const ergebnis = await withDocument(
@@ -405,6 +409,10 @@ async function aktion(name, req, antwort) {
                 edits_applied: bearbeitet.edits.length,
                 schema_version: schemaVersion,
               });
+              // Der KI-Store schiebt die Backend-Rev weiter, ohne durch den
+              // Autosave zu laufen — die Spur nachfuehren, sonst liefe der
+              // naechste Autosave ins 409 (Befund 9).
+              rememberRev(docName, gespeichert.rev);
               // `target_text` ist nur fuer die interne Pruefung da; im
               // Werkzeugergebnis waere ein langer Altblock nur Ballast.
               return {
@@ -510,10 +518,21 @@ const httpServer = http.createServer(async (req, res) => {
       : ungueltig.has(error.code)
         ? 422
         : 500;
+    // Rohtext, Kandidaten und Backend-Status gehoeren ins Log, nicht in die
+    // Antwort: Wer den Fehler sieht (Modell, Client), bekommt nur den
+    // oeffentlichen Code und den Stellenzeiger (Befund 37).
+    const docTreffer = /^\/internal\/docs\/([^/]+)\//.exec(url || "");
+    console.error(
+      `docs-sidecar Fehler [${docTreffer ? decodeURIComponent(docTreffer[1]) : "-"}] ` +
+        `${error.code || "unbekannt"}: ${error.message}` +
+        (error.status ? ` (backend-status ${error.status})` : "") +
+        (error.candidates?.length
+          ? ` | kandidaten: ${JSON.stringify(error.candidates).slice(0, 2000)}`
+          : ""),
+    );
     json(res, status, {
-      error: error.message,
+      error: error.code || "DOCS_SIDECAR_ERROR",
       code: error.code || null,
-      candidates: error.candidates?.length ? error.candidates : undefined,
       edit_index: error.editIndex ?? undefined,
     });
   }

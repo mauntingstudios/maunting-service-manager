@@ -20,11 +20,13 @@ import { Badge, Button, Kurzinfo, confirm, prompt } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import {
   createComment,
+  docsErrorCode,
   getCollabToken,
   undoAiEdit,
   uploadAsset,
   type DocDetail,
   type DocPendingView,
+  type UploadGrenzen,
 } from '@/api/docs'
 import { docsCollabUrl } from '@/config/api'
 import { createDocsExtensions, farbeFuerBenutzer } from './editor/extensions'
@@ -60,6 +62,7 @@ interface DocEditorProps {
   vorschlagBusy?: boolean
   onApplyVorschlag?: () => void
   onRejectVorschlag?: () => void
+  grenzen?: UploadGrenzen
 }
 
 type Verbindung = 'verbinden' | 'verbunden' | 'getrennt' | 'fehler'
@@ -82,6 +85,7 @@ export function DocEditor({
   vorschlagBusy = false,
   onApplyVorschlag,
   onRejectVorschlag,
+  grenzen,
 }: DocEditorProps) {
   const { t } = useTranslation()
   const darfSchreiben = detail.can_edit && !detail.deleted
@@ -296,7 +300,7 @@ export function DocEditor({
 
   const bildHochladen = async (datei: File) => {
     try {
-      const asset = await uploadAsset(detail.uid, datei)
+      const asset = await uploadAsset(detail.uid, datei, { grenzen })
       editor
         ?.chain()
         .focus()
@@ -308,8 +312,16 @@ export function DocEditor({
           },
         })
         .run()
-    } catch {
-      toast.error(t('docs.errors.DOC_ASSET_TOO_LARGE'))
+    } catch (error) {
+      // Die Vorpruefung spricht Server-Codes — die Anzeige ebenso (Befund 32).
+      const code = docsErrorCode(error)
+      toast.error(
+        code === 'DOC_QUOTA_EXCEEDED'
+          ? t('docs.errors.DOC_QUOTA_EXCEEDED')
+          : code === 'DOC_INVALID_MIME'
+            ? t('docs.errors.DOC_INVALID_MIME')
+            : t('docs.errors.DOC_ASSET_TOO_LARGE'),
+      )
     }
   }
 

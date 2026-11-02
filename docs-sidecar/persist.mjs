@@ -7,6 +7,22 @@ import { storeState } from "./backend_client.mjs";
 import { assertStateSize, clampText } from "./limits.mjs";
 
 const locks = new Map();
+const bekannteRevs = new Map();
+
+/**
+ * Merkt die Backend-Revision eines geladenen Dokuments.
+ *
+ * Jeder Store sendet sie als `expected_rev`; das Backend lehnt einen
+ * veralteten Stand mit 409 ab, statt ihn still zu ueberschreiben
+ * (Befund 9). 0 heisst "unbekannt" und bleibt Wegen ohne Ladewissen offen.
+ */
+export function rememberRev(docName, rev) {
+  if (Number.isInteger(rev) && rev >= 0) bekannteRevs.set(docName, rev);
+}
+
+export function forgetRev(docName) {
+  bekannteRevs.delete(docName);
+}
 
 /**
  * Serialisiert Arbeit pro Schluessel.
@@ -44,8 +60,22 @@ export function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/**
+ * Dekodiert einen Zustand aus dem Body und prueft die Groesse.
+ *
+ * Der einzige Einlass fuer fremde Zustaende — Restore, Render und jeder
+ * kuenftige Zustandsweg laufen hier durch, damit nie ein Zustand ueber
+ * 4 MiB ins Dokument gelangt (Befund 34).
+ */
+export function decodeState(stateB64) {
+  const bytes = Buffer.from(stateB64 || "", "base64");
+  assertStateSize(bytes.byteLength);
+  return bytes;
+}
+
 /** Ersetzt den Dokumentinhalt durch einen frueheren Zustand (ohne Store). */
 export function restoreFragment(ydoc, stateBytes, origin = "restore") {
+  assertStateSize(stateBytes.byteLength);
   const quelle = new Y.Doc();
   Y.applyUpdate(quelle, stateBytes);
   try {
@@ -119,7 +149,7 @@ export async function storeDocumentUnlocked(docName, ydoc, meta = {}) {
   const { text, truncated } = clampText(extractText(ydoc));
   const payload = {
     state_b64: Buffer.from(update).toString("base64"),
-    expected_rev: Number(meta.expected_rev || 0),
+    expected_rev: Number(meta.expected_rev ?? bekannteRevs.get(docName) ?? 0),
     origin: meta.origin || "autosave",
     author_user_id: meta.author_user_id ?? null,
     author_family: meta.author_family ?? null,
@@ -134,7 +164,12 @@ export async function storeDocumentUnlocked(docName, ydoc, meta = {}) {
     content_truncated: truncated,
     schema_version: schemaVersion,
   };
-  return storeState(docName, payload);
+  const ergebnis = await storeState(docName, payload);
+  // Jeder erfolgreiche Store schiebt die Backend-Rev weiter — auch fremde
+  // Wege (Checkpoint, Restore, KI). Ohne Nachfuehren meldete der naechste
+  // Autosave einen veralteten Stand und liefe ins 409 (Befund 9).
+  rememberRev(docName, ergebnis?.rev);
+  return ergebnis;
 }
 
 export function storeDocument(docName, ydoc, meta = {}) {

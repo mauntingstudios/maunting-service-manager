@@ -39,6 +39,7 @@ def authorize(req: InternalAuthorize, db: Session = Depends(get_db)) -> dict[str
         user_id=req.user_id,
         role=req.role,
         fam=req.fam,
+        jti=req.jti,
     )
 
 

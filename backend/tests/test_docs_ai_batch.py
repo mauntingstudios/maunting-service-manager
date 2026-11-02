@@ -171,10 +171,14 @@ def test_sidecar_konflikt_wird_als_ergebnis_zurueckgegeben(db, monkeypatch):
     assert ergebnis["ok"] is False
     assert ergebnis["code"] == "AI_EDIT_TARGET_NOT_FOUND"
     assert ergebnis["edit_index"] == 1
-    assert ergebnis["candidates"] == [{"index": 2, "fingerprint": "abc"}]
+    # Befund 37: Das Modell bekommt nur Code und Stellenzeiger — keine
+    # Textkandidaten, auch wenn der Sidecar sie mitsendet.
+    assert "candidates" not in ergebnis
 
 
-def test_fehler_vom_sidecar_traegt_kandidaten(db, monkeypatch):
+def test_fehler_vom_sidecar_traegt_keine_kandidaten(db, monkeypatch):
+    """Befund 37: Die Fehlerantwort enthaelt keine candidates/Rohtexte —
+    der Backend-Fehler traegt nur Code und Stellenzeiger weiter."""
     owner = _benutzer(db, "batch_b")
     daten = DocsService.create_document(db, owner)
 
@@ -185,8 +189,8 @@ def test_fehler_vom_sidecar_traegt_kandidaten(db, monkeypatch):
         def json():
             return {
                 "code": "AI_EDIT_TARGET_NOT_FOUND",
-                "error": "Der Zielblock wurde nicht gefunden",
-                "candidates": [{"index": 1}],
+                "error": "AI_EDIT_TARGET_NOT_FOUND",
+                "candidates": [{"index": 1, "text": "geheimer Rohtext"}],
                 "edit_index": 0,
             }
 
@@ -203,7 +207,10 @@ def test_fehler_vom_sidecar_traegt_kandidaten(db, monkeypatch):
         )
     detail = fehler_info.value.detail
     assert fehler_info.value.status_code == 409
-    assert detail["candidates"] == [{"index": 1}]
+    assert detail["code"] == "AI_EDIT_TARGET_NOT_FOUND"
+    assert detail["edit_index"] == 0
+    assert "candidates" not in detail
+    assert "geheimer Rohtext" not in str(detail)
     assert detail["edit_index"] == 0
 
 
@@ -290,3 +297,62 @@ def test_ai_store_verlangt_ki_origin(db):
         )
     assert fehler_info.value.status_code == 403
     assert db.query(DocRevision).count() == 0
+
+
+def test_ki_nutzlast_ist_fuer_gleiche_eingabe_gleich():
+    """Befund 20: Ein Helfer baut die Nutzlast — gleiche Eingabe, gleiche
+    Payload, inklusive Legacy-Einzelblock bei genau einer Aenderung.
+    Am alten Stand gab es den Helfer nicht (ImportError)."""
+    from types import SimpleNamespace
+
+    from services.docs_collab_service import _ai_nutzlast
+
+    benutzer = SimpleNamespace(id=7)
+    liste = [{"op": "replace_block", "markdown": "Neu", "target": {"index": 0}, "expected_text": "Alt"}]
+    eins = _ai_nutzlast(liste, run_id="r", call_id="c", user=benutzer, family="fam", summary="S")
+    zwei = _ai_nutzlast(
+        [dict(eintrag) for eintrag in liste],
+        run_id="r", call_id="c", user=benutzer, family="fam", summary="S",
+    )
+    assert eins == zwei
+    assert eins["operation"] == "replace_block"
+    assert eins["markdown"] == "Neu"
+    assert eins["anchor"] == {"index": 0}
+    assert eins["expected_block"] == "Alt"
+    assert eins["summary"] == "S"
+    assert eins["user_id"] == 7
+
+    ohne = _ai_nutzlast([], run_id="r", call_id="c", user=benutzer, family="fam")
+    assert "operation" not in ohne
+    assert "summary" not in ohne
+
+
+def test_vorschau_und_edit_senden_dieselbe_nutzlast(db, monkeypatch):
+    """Befund 20: `ai_preview` und `ai_edit` rufen den Helfer — was an den
+    Sidecar geht, gleicht dem Helfer-Ergebnis (der Edit traegt zusaetzlich
+    die Zusammenfassung)."""
+    import services.docs_collab_service as collab
+
+    aufrufe: list[tuple] = []
+    monkeypatch.setattr(
+        collab, "_call_sidecar", lambda pfad, nutzlast, **kw: aufrufe.append((pfad, nutzlast)) or {}
+    )
+    user = _benutzer(db, "batch_nutzlast")
+    daten = DocsService.create_document(db, user)
+    edits = [{"op": "append", "markdown": "Mehr", "target": {}}]
+
+    DocsCollabService.ai_preview(db, user, daten["uid"], edits=edits, run_id="r", call_id="c")
+    DocsCollabService.ai_edit(
+        db, user, daten["uid"], edits=edits, run_id="r", call_id="c", summary="Weiter"
+    )
+    assert [pfad for pfad, _ in aufrufe] == [
+        f"/internal/docs/{daten['uid']}/ai-preview",
+        f"/internal/docs/{daten['uid']}/ai-edit",
+    ]
+    vorschau, edit = aufrufe[0][1], aufrufe[1][1]
+    assert vorschau == collab._ai_nutzlast(
+        edits, run_id="r", call_id="c", user=user, family=""
+    )
+    assert edit == collab._ai_nutzlast(
+        edits, run_id="r", call_id="c", user=user, family="", summary="Weiter"
+    )

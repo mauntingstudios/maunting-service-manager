@@ -30,11 +30,13 @@ from models.doc import (
     DocRevision,
     Document,
 )
-from models.team import TeamMember
+from models.team import Team, TeamMember
 from models.user import User
 from services import audit_service, docs_access, team_service
 from services.docs_access import ROLE_RANG, DocAccess
 from services.dis_client import DisSidecarError
+from services.panel_settings_service import docs_enabled
+from services.permission_service import has_global_permission
 from services.docs_crypto import (
     DocCryptoError,
     aad_asset,
@@ -106,13 +108,33 @@ def _uid() -> str:
     return str(uuid.uuid4())
 
 
+def _team_sperren(db: Session, team_id: int) -> None:
+    """Sperrt die Teamzeile fuer eine Quotenpruefung.
+
+    Zaehlen und Einfuegen laufen darunter serialisiert — sonst zaehlten zwei
+    gleichzeitige Anlagen beide vorbei und die Quote braeche (Befund 43).
+    Auf den Zaehl-Queries selbst ist FOR UPDATE unmoeglich (Aggregat);
+    die Zeilensperre des Besitzers ist der Weg.
+    """
+    db.query(Team).filter(Team.id == team_id).with_for_update().one()
+
+
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _signing_secret() -> bytes:
-    secret = settings.docs_signing_secret or settings.docs_sidecar_token or "msm-docs"
-    return secret.encode("utf-8")
+    # Kein Fallback: Weder das Service-Token noch ein bekannter Wert duerfen
+    # einspringen — sonst schmiedet jeder Leser des Quelltexts gueltige
+    # Asset-URLs. Ohne Geheimnis antwortet das Signieren mit 503 statt mit
+    # einer faelschbaren URL (Befund 10).
+    if not settings.docs_signing_secret:
+        raise fehler(
+            503,
+            "DOCS_SIGNING_NOT_CONFIGURED",
+            "Signaturgeheimnis fehlt (MSM_DOCS_SIGNING_SECRET)",
+        )
+    return settings.docs_signing_secret.encode("utf-8")
 
 
 def _doc(db: Session, doc_uid: str, *, mit_trash: bool = False) -> Document:
@@ -234,12 +256,21 @@ class DocsService:
         zugriff: DocAccess,
         titel: str,
         team_name: str | None = None,
+        *,
+        ordner_uid: str | None = None,
+        ordner_geloest: bool = False,
     ) -> dict:
-        folder = db.get(DocFolder, doc.folder_id) if doc.folder_id else None
+        # Listen loesen alle Ordner in einer Abfrage und reichen die Kennung
+        # herein; Einzelabrufe lesen wie bisher (Befund 24).
+        if ordner_geloest:
+            folder_uid = ordner_uid
+        else:
+            folder = db.get(DocFolder, doc.folder_id) if doc.folder_id else None
+            folder_uid = folder.folder_uid if folder else None
         return {
             "uid": doc.doc_uid,
             "title": titel,
-            "folder_uid": folder.folder_uid if folder else None,
+            "folder_uid": folder_uid,
             "icon": doc.icon,
             "team_id": doc.team_id,
             "team_name": team_name,
@@ -258,8 +289,6 @@ class DocsService:
 
     @staticmethod
     def _detail(db: Session, doc: Document, zugriff: DocAccess) -> dict:
-        from models.team import Team
-
         titel = _titel(doc)
         team = db.get(Team, doc.team_id)
         owner = db.get(User, doc.owner_user_id) if doc.owner_user_id else None
@@ -294,6 +323,7 @@ class DocsService:
         else:
             team = team_service.get_team_for_member(db, team_id, user)
 
+        _team_sperren(db, team.id)
         anzahl = db.query(func.count(Document.id)).filter(Document.team_id == team.id).scalar() or 0
         if anzahl >= MAX_DOCUMENTS_PER_TEAM:
             raise fehler(413, "DOC_QUOTA_EXCEEDED", "Team hat die Dokumentgrenze erreicht")
@@ -387,14 +417,24 @@ class DocsService:
         kandidaten = query.offset(offset).limit(limit).all()
 
         titel = _titel_gebuendelt(kandidaten)
+        zugriffe = docs_access.resolve_access_many(db, user, kandidaten, mit_trash=trash)
+        ordner_ids = {doc.folder_id for doc in kandidaten if doc.folder_id}
+        ordner = (
+            {f.id: f.folder_uid for f in db.query(DocFolder).filter(DocFolder.id.in_(ordner_ids)).all()}
+            if ordner_ids
+            else {}
+        )
         ergebnis: list[dict] = []
         for doc in kandidaten:
-            zugriff = docs_access.resolve_access(db, user, doc, mit_trash=trash)
+            zugriff = zugriffe.get(doc.id)
             if zugriff is None:
                 continue
             if doc.deleted_at is not None and not zugriff.can_manage:
                 continue
-            ergebnis.append(DocsService._summary(db, doc, zugriff, titel[doc.doc_uid]))
+            ergebnis.append(DocsService._summary(
+                db, doc, zugriff, titel[doc.doc_uid],
+                ordner_uid=ordner.get(doc.folder_id), ordner_geloest=True,
+            ))
         return ergebnis
 
     @staticmethod
@@ -425,20 +465,34 @@ class DocsService:
         # wird gar nicht erst entschluesselt — und was er sehen darf, in zwei
         # gebuendelten Aufrufen statt einem je Dokument.
         sichtbar: list = []
+        zugriffe = docs_access.resolve_access_many(db, user, kandidaten)
         for doc in kandidaten:
-            zugriff = docs_access.resolve_access(db, user, doc)
+            zugriff = zugriffe.get(doc.id)
             if zugriff is None:
                 continue
             sichtbar.append((doc, zugriff))
         titel = _titel_gebuendelt([doc for doc, _ in sichtbar])
         inhalte = _inhalt_gebuendelt([doc for doc, _ in sichtbar])
-        treffer: list[dict] = []
+        treffer_docs: list = []
         for doc, zugriff in sichtbar:
             if begriff not in titel[doc.doc_uid].lower() and begriff not in inhalte.get(doc.doc_uid, "").lower():
                 continue
-            treffer.append(DocsService._summary(db, doc, zugriff, titel[doc.doc_uid]))
-            if len(treffer) >= limit:
+            treffer_docs.append((doc, zugriff))
+            if len(treffer_docs) >= limit:
                 break
+        ordner_ids = {doc.folder_id for doc, _ in treffer_docs if doc.folder_id}
+        ordner = (
+            {f.id: f.folder_uid for f in db.query(DocFolder).filter(DocFolder.id.in_(ordner_ids)).all()}
+            if ordner_ids
+            else {}
+        )
+        treffer = [
+            DocsService._summary(
+                db, doc, zugriff, titel[doc.doc_uid],
+                ordner_uid=ordner.get(doc.folder_id), ordner_geloest=True,
+            )
+            for doc, zugriff in treffer_docs
+        ]
         return {"items": treffer, "searched": len(kandidaten), "truncated": gekuerzt}
 
     @staticmethod
@@ -473,6 +527,7 @@ class DocsService:
         if umzug:
             ziel_team = team_service.get_team_for_member(db, int(daten["team_id"]), user)
             ziel_team_id = ziel_team.id
+            _team_sperren(db, ziel_team.id)
             anzahl = (
                 db.query(func.count(Document.id))
                 .filter(Document.team_id == ziel_team.id, Document.id != doc.id)
@@ -616,6 +671,7 @@ class DocsService:
     def duplicate_document(db: Session, user: User, doc_uid: str) -> dict:
         doc = _doc(db, doc_uid)
         docs_access.require_role(db, user, doc, "editor")
+        _team_sperren(db, doc.team_id)
         anzahl = db.query(func.count(Document.id)).filter(Document.team_id == doc.team_id).scalar() or 0
         if anzahl >= MAX_DOCUMENTS_PER_TEAM:
             raise fehler(413, "DOC_QUOTA_EXCEEDED", "Team hat die Dokumentgrenze erreicht")
@@ -818,6 +874,7 @@ class DocsService:
         *,
         name: str | None = None,
         parent_uid: str | None = None,
+        parent_aendern: bool = False,
     ) -> dict:
         ordner = db.query(DocFolder).filter(DocFolder.folder_uid == folder_uid).first()
         if ordner is None:
@@ -838,7 +895,9 @@ class DocsService:
                 sauber, aad_folder(ordner.team_id, ordner.folder_uid)
             )
 
-        if parent_uid is not None:
+        # Nur bei gesetztem Feld anfassen: Fehlend heisst "behalten",
+        # explizites `null` heisst "nach oben" (Befund 17).
+        if parent_aendern:
             neuer_parent = DocsService._folder(db, ordner.team_id, parent_uid) if parent_uid else None
             if neuer_parent is not None:
                 if neuer_parent.id == ordner.id:
@@ -1332,6 +1391,12 @@ class DocsService:
         if sha256_hex(roh) != sha256.lower():
             raise fehler(422, "DOC_INVALID_TARGET", "Pruefsumme passt nicht zur Datei")
 
+        # Team- vor Dokumentzeile: Zaehler, Dokument- und Team-Bytes werden
+        # darunter je einmal vergeben; danach ist der Dokumentstand frisch
+        # zu lesen, nicht aus dem Sitzungs-Cache (Befund 43).
+        _team_sperren(db, doc.team_id)
+        db.query(Document).filter(Document.id == doc.id).with_for_update().one()
+        db.refresh(doc)
         anzahl = db.query(func.count(DocAsset.id)).filter(
             DocAsset.document_id == doc.id, DocAsset.deleted_at.is_(None)
         ).scalar() or 0
@@ -1401,7 +1466,15 @@ class DocsService:
         user = db.get(User, user_id)
         if user is None or not user.is_active:
             raise fehler(403, "DOCS_FORBIDDEN", "Konto ist inaktiv")
-        docs_access.require_role(db, user, doc, "viewer")
+        # Die Signatur allein genuegt nicht: Modulschalter, Dokumentzugang
+        # und aktuelle Rolle gelten auch fuer signierte URLs — entzogener
+        # Zugriff ist 403, nicht 404 (Befund 42).
+        if not docs_enabled():
+            raise fehler(403, "DOCS_DISABLED", "Das Dokumente-Modul ist deaktiviert")
+        if not has_global_permission(db, user, "docs.use"):
+            raise fehler(403, "DOCS_FORBIDDEN", "Kein Zugriff auf Dokumente")
+        if docs_access.resolve_access(db, user, doc) is None:
+            raise fehler(403, "DOCS_FORBIDDEN", "Zugriff auf das Dokument entzogen")
         asset = DocsService._asset(db, doc, asset_uid)
         try:
             roh = decrypt_blob(asset.ciphertext_blob, aad_asset(doc.doc_uid, asset.asset_uid))

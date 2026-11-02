@@ -15,6 +15,7 @@ import {
   restoreRevision,
   searchDocuments,
   updateDocument,
+  uploadAsset,
 } from './docs'
 
 afterEach(() => vi.restoreAllMocks())
@@ -71,7 +72,10 @@ it('kodiert UIDs in Pfaden und behält Teil-Updates knapp', async () => {
   expect(api).toHaveBeenLastCalledWith('/docs/a%2Fb/revisions/12/restore', { method: 'POST' })
 
   await claimShare('tok/en')
-  expect(api).toHaveBeenLastCalledWith('/docs/shared/tok%2Fen/claim', { method: 'POST' })
+  expect(api).toHaveBeenLastCalledWith('/docs/shared/claim', {
+    method: 'POST',
+    body: JSON.stringify({ token: 'tok/en' }),
+  })
 
   await getAssetSignedUrl('a/b', 'asset/1', 900)
   expect(api).toHaveBeenLastCalledWith('/docs/a%2Fb/assets/asset%2F1/signed-url?ttl=900')
@@ -140,4 +144,80 @@ it('erkennt nur den Server-Fehlercode, nicht beliebige Fehler', () => {
   )
   expect(docsErrorCode(new client.SanitizedApiError('x'))).toBeNull()
   expect(docsErrorCode(new Error('DOC_LIMIT_REACHED'))).toBeNull()
+})
+
+const GRENZEN = { assetBytes: 4 * 1024 * 1024, assetsPerDoc: 100 }
+
+function dateiMitGroesse(name: string, typ: string, groesse: number): File {
+  const datei = new File(['x'], name, { type: typ })
+  Object.defineProperty(datei, 'size', { value: groesse })
+  return datei
+}
+
+it('lehnt zu grosse Dateien ohne arrayBuffer-Aufruf ab (Befund 32)', async () => {
+  const api = vi.spyOn(client, 'api').mockResolvedValue({})
+  const datei = dateiMitGroesse('gross.png', 'image/png', 5 * 1024 * 1024)
+  const lesen = vi.spyOn(datei, 'arrayBuffer')
+
+  await expect(uploadAsset('doc-1', datei, { grenzen: GRENZEN })).rejects.toMatchObject({
+    code: 'DOC_ASSET_TOO_LARGE',
+  })
+  expect(lesen).not.toHaveBeenCalled()
+  expect(api).not.toHaveBeenCalled()
+})
+
+it('lehnt fremde Dateitypen ohne arrayBuffer-Aufruf ab (Befund 32)', async () => {
+  const api = vi.spyOn(client, 'api').mockResolvedValue({})
+  const datei = dateiMitGroesse('skript.svg', 'image/svg+xml', 1024)
+  const lesen = vi.spyOn(datei, 'arrayBuffer')
+
+  await expect(uploadAsset('doc-1', datei, { grenzen: GRENZEN })).rejects.toMatchObject({
+    code: 'DOC_INVALID_MIME',
+  })
+  expect(lesen).not.toHaveBeenCalled()
+  expect(api).not.toHaveBeenCalled()
+})
+
+it('lehnt volle Anhangsgrenzen ohne arrayBuffer-Aufruf ab (Befund 32)', async () => {
+  const api = vi.spyOn(client, 'api').mockResolvedValue({})
+  const datei = dateiMitGroesse('bild.png', 'image/png', 1024)
+  const lesen = vi.spyOn(datei, 'arrayBuffer')
+
+  await expect(
+    uploadAsset('doc-1', datei, { grenzen: GRENZEN, anzahlAssets: 100 }),
+  ).rejects.toMatchObject({ code: 'DOC_QUOTA_EXCEEDED' })
+  expect(lesen).not.toHaveBeenCalled()
+  expect(api).not.toHaveBeenCalled()
+})
+
+it('laedt die Grenzen selbst, wenn der Aufrufer keine reicht (Befund 32)', async () => {
+  const api = vi
+    .spyOn(client, 'api')
+    .mockResolvedValue({ enabled: true, limits: { asset_bytes: 10, assets_per_doc: 100 } })
+  const datei = dateiMitGroesse('bild.png', 'image/png', 1024)
+  const lesen = vi.spyOn(datei, 'arrayBuffer')
+
+  await expect(uploadAsset('doc-1', datei)).rejects.toMatchObject({
+    code: 'DOC_ASSET_TOO_LARGE',
+  })
+  expect(api).toHaveBeenLastCalledWith('/docs/status')
+  expect(lesen).not.toHaveBeenCalled()
+})
+
+it('laedt gueltige Dateien weiter hoch (Befund 32)', async () => {
+  const api = vi.spyOn(client, 'api').mockResolvedValue({ asset_uid: 'a-1' })
+  vi.stubGlobal('crypto', {
+    subtle: { digest: async () => new Uint8Array(32).fill(7).buffer },
+  })
+  try {
+    const datei = new File(['bild-bytes'], 'bild.png', { type: 'image/png' })
+    const ergebnis = await uploadAsset('doc-1', datei, { grenzen: GRENZEN })
+    expect(ergebnis).toEqual({ asset_uid: 'a-1' })
+    expect(api).toHaveBeenLastCalledWith('/docs/doc-1/assets', {
+      method: 'POST',
+      body: expect.stringContaining('"mime":"image/png"'),
+    })
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })

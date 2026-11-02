@@ -714,3 +714,49 @@ class TestLocalhostFreigabeOhneNachweis:
         assert res.status_code == 403
         send.assert_not_awaited()
         assert client.get("/api/settings", cookies=owner_cookies).json()["allow_localhost_connections"] is False
+
+
+def test_modulpruefung_hat_einen_ort_und_vier_aufrufer():
+    """Befund 18: `docs_enabled()` ist einmal definiert und wird genau viermal
+    aufgerufen (Docs-Route, Collab-Dienst, zweimal Panel-Route). Rohvergleiche
+    des Schalters gibt es nur noch in der Definition selbst. Am alten Stand
+    standen vier geteilte Vergleiche im Code."""
+    import pathlib
+    import re
+
+    aufruf = re.compile(r"\bdocs_enabled\(")
+    root = pathlib.Path(__file__).resolve().parents[1]
+    dateien = [
+        root / "services" / "panel_settings_service.py",
+        root / "routers" / "docs.py",
+        root / "routers" / "panel_settings.py",
+        root / "services" / "docs_collab_service.py",
+    ]
+    definitionen: list[str] = []
+    aufrufe: list[str] = []
+    rohvergleiche: list[str] = []
+    for pfad in dateien:
+        for nummer, zeile in enumerate(pfad.read_text(encoding="utf-8").splitlines(), 1):
+            gestrippt = zeile.strip()
+            fund = f"{pfad.name}:{nummer}"
+            if gestrippt.startswith("def docs_enabled("):
+                definitionen.append(fund)
+            elif aufruf.search(gestrippt) and not gestrippt.startswith(
+                ("from ", "import ", "#", "def ")
+            ):
+                aufrufe.append(fund)
+            if 'get("docs_enabled"' in gestrippt or "get('docs_enabled'" in gestrippt:
+                rohvergleiche.append(fund)
+    assert definitionen != [] and all(
+        fund.startswith("panel_settings_service.py") for fund in definitionen
+    ), definitionen
+    assert len(definitionen) == 1, definitionen
+    assert len(aufrufe) == 4, aufrufe
+    assert {fund.rsplit(":", 1)[0] for fund in aufrufe} == {
+        "docs.py",
+        "panel_settings.py",
+        "docs_collab_service.py",
+    }, aufrufe
+    # Der einzige Rohvergleich steht in der Definition selbst.
+    assert len(rohvergleiche) == 1, rohvergleiche
+    assert rohvergleiche[0].startswith("panel_settings_service.py"), rohvergleiche
