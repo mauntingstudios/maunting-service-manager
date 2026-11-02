@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Shell } from './components/layout/Shell'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { PublicOnlyRoute } from './components/PublicOnlyRoute'
@@ -9,6 +9,12 @@ import { ToastContainer } from './components/ui/ToastContainer'
 import { ConfirmDialog } from './components/ui/ConfirmDialog'
 import { PromptDialog } from './components/ui/PromptDialog'
 import { Loader } from './components/ui/Loader'
+import { SmartcardWalletModal } from './desktop/vault/SmartcardWalletModal'
+
+function WalletRoute() {
+  const navigate = useNavigate()
+  return <SmartcardWalletModal isOpen={true} onClose={() => navigate(-1)} />
+}
 
 const SetupWizard = lazy(() => import('./pages/SetupWizard').then(module => ({ default: module.SetupWizard })))
 const Login = lazy(() => import('./pages/Login').then(module => ({ default: module.Login })))
@@ -202,6 +208,7 @@ function App() {
           <Route path="user/:userId" element={socialEnabled ? <Benutzerprofil /> : <Navigate to="/" replace />} />
           <Route path="ai" element={<RequirePermission routeKey="ai"><Ai /></RequirePermission>} />
           <Route path="teams" element={<Teams />} />
+          <Route path="wallet" element={<WalletRoute />} />
           <Route path="docs" element={<Docs />} />
           <Route path="docs/blueprints" element={<BlueprintsDocs />} />
           <Route path="docs/oauth" element={<OAuthDocs />} />

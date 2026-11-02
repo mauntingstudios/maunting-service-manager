@@ -281,3 +281,15 @@ class VaultSpeicher(BaseModel):
     in_loeschung: int
     #: Nicht geloeschte Blobs. Je Datei und Fassung sind es drei.
     blobs: int
+
+
+class VaultDeviceAuthSessionCreate(BaseModel):
+    public_key: str = Field(..., min_length=16, max_length=2048)
+    purpose: str = Field(default="authorize", max_length=32)
+    device_info: Optional[str] = Field(default=None, max_length=128)
+
+
+class VaultDeviceAuthResolve(BaseModel):
+    session_id: str = Field(..., min_length=8, max_length=64)
+    encrypted_payload: str = Field(..., min_length=1, max_length=16 * 1024)
+

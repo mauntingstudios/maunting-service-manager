@@ -19,6 +19,10 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
+vi.mock('./DeviceAuthQrView', () => ({
+  DeviceAuthQrView: () => <div data-testid="mock-device-auth-qr">QR Scanner View</div>,
+}))
+
 describe('MauntingCard Component', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -61,15 +65,16 @@ describe('MauntingCard Component', () => {
     fireEvent.click(card)
 
     // Entsperren Button ist auf der Rückseite sichtbar
-    expect(screen.getByText('PIN eingeben')).toBeInTheDocument()
+    expect(screen.getByText('Karte entsperren')).toBeInTheDocument()
   })
 
-  it('öffnet Entsperr-Dialog bei Klick auf PIN eingeben', () => {
+  it('öffnet Entsperr-Dialog bei Klick auf Karte entsperren', () => {
     render(<MauntingCard />)
-    const unlockBtn = screen.getByText('PIN eingeben')
+    const unlockBtn = screen.getByText('Karte entsperren')
     fireEvent.click(unlockBtn)
 
-    expect(screen.getByPlaceholderText('Karten-Passwort / PIN')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Dein bei der Einrichtung gewähltes Passwort')).toBeInTheDocument()
+    expect(screen.getByText(/Das persönliche Passwort, das du bei der Erstellung deiner Smartcard/i)).toBeInTheDocument()
   })
 
   it('zeigt Status GERÄT NICHT AUTORISIERT und öffnet Autorisierungs-Dialog', () => {
@@ -94,6 +99,41 @@ describe('MauntingCard Component', () => {
     expect(authBtn).toBeInTheDocument()
     fireEvent.click(authBtn)
 
-    expect(screen.getByText('Gerät für Maunting Card autorisieren')).toBeInTheDocument()
+    // Dialog-Titel "Gerät autorisieren" ist im Header sichtbar
+    expect(screen.getAllByText('Gerät autorisieren').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('wechselt zwischen Smartphone-Scan und Karten-Passwort-Reiter im Autorisierungs-Dialog', () => {
+    vi.mocked(useVaultStore).mockReturnValue({
+      isInitialized: true,
+      isUnlocked: false,
+      isDeviceAuthorized: false,
+      isUnlocking: false,
+      unlockError: null,
+      bucketId: 'e3b0c44298fc1c149afbf4c8996fb924',
+      unlock: vi.fn(),
+      authorizeDevice: vi.fn(),
+      lock: vi.fn(),
+      rotationState: null,
+    } as any)
+
+    render(<MauntingCard />)
+    const authBtn = screen.getByText('Gerät autorisieren')
+    fireEvent.click(authBtn)
+
+    // Standardmäßig ist der QR-Scan-Tab aktiv
+    expect(screen.getByTestId('mock-device-auth-qr')).toBeInTheDocument()
+
+    // Wechsel zu Karten-Passwort
+    const passwordTabBtn = screen.getByRole('button', { name: 'Karten-Passwort' })
+    fireEvent.click(passwordTabBtn)
+
+    expect(screen.getByPlaceholderText('Dein bei der Einrichtung gewähltes Passwort')).toBeInTheDocument()
+
+    // Wechsel zurück zu QR
+    const qrTabBtn = screen.getByRole('button', { name: 'Mit Smartphone scannen' })
+    fireEvent.click(qrTabBtn)
+
+    expect(screen.getByTestId('mock-device-auth-qr')).toBeInTheDocument()
   })
 })

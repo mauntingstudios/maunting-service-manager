@@ -16,6 +16,8 @@ from schemas.vault import (
     VaultBlobLoeschen,
     VaultBlobsKlein,
     VaultBlobStatus,
+    VaultDeviceAuthResolve,
+    VaultDeviceAuthSessionCreate,
     VaultEingangAnlegen,
     VaultEingangDatensatz,
     VaultEingangListe,
@@ -33,7 +35,14 @@ from schemas.vault import (
     VaultSyncRequest,
     VaultSyncResponse,
 )
-from services import audit_service, passkey_service, vault_blob_service, vault_service, vault_sicherung_service
+from services import (
+    audit_service,
+    passkey_service,
+    vault_blob_service,
+    vault_device_auth_service,
+    vault_service,
+    vault_sicherung_service,
+)
 from services.dis_client import DisSidecarError
 from services.auth_service import AuthService
 from services.panel_settings_service import PanelSettingsService
@@ -846,3 +855,72 @@ def sicherung_eingang_loeschen(
     """Fuer einen Datensatz, dessen Datei sich beim Hochladen geaendert hat. Lesen kann der Zugang nichts."""
     vault_blob_service.eingang_loeschen(db, sicherung.bucket, eingang_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── Smartcard E2EE Device-Auth Relay ──────────────────────────────────────
+
+
+@router.post("/device-auth/session", status_code=status.HTTP_201_CREATED)
+@limiter.limit("60/minute")
+def create_device_auth_session(
+    payload: VaultDeviceAuthSessionCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    session_id, token, expires = vault_device_auth_service.create_device_auth_session(
+        db=db,
+        user_id=current_user.id,
+        public_key=payload.public_key,
+        purpose=payload.purpose,
+        device_info=payload.device_info,
+    )
+    return {
+        "session_id": session_id,
+        "session_token": token,
+        "expires_at": expires.isoformat(),
+        "purpose": payload.purpose,
+    }
+
+
+@router.get("/device-auth/session/{session_id}")
+@limiter.limit("300/minute")
+def get_device_auth_session_status(
+    session_id: str,
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    res = vault_device_auth_service.get_device_auth_session_status(
+        db=db,
+        session_id=session_id,
+        session_token=token,
+        user_id=current_user.id,
+    )
+    if res.get("status") == "not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session nicht gefunden.")
+    return res
+
+
+@router.post("/device-auth/resolve")
+@limiter.limit("60/minute")
+def resolve_device_auth_session(
+    payload: VaultDeviceAuthResolve,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, bool]:
+    ok = vault_device_auth_service.resolve_device_auth_session(
+        db=db,
+        session_id=payload.session_id,
+        user_id=current_user.id,
+        encrypted_payload=payload.encrypted_payload,
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session nicht gefunden, abgelaufen oder gehört zu einem anderen Benutzer.",
+        )
+    return {"success": True}
+

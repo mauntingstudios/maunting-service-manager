@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   KeyRound,
   Lock,
+  QrCode,
   RefreshCw,
   RotateCw,
   Shield,
@@ -25,6 +26,7 @@ import {
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
+import { DeviceAuthQrView } from './DeviceAuthQrView'
 import {
   calculateCardExpiry,
   formatCardNumber,
@@ -79,12 +81,52 @@ export function MauntingCard({
 
   const [isFlipped, setIsFlipped] = useState(false)
   const [unlockDialogOpen, setUnlockDialogOpen] = useState(false)
+  const [unlockTab, setUnlockTab] = useState<'qr' | 'password'>('qr')
   const [passwordInput, setPasswordInput] = useState('')
   const [submittingUnlock, setSubmittingUnlock] = useState(false)
 
   const [authorizeDialogOpen, setAuthorizeDialogOpen] = useState(false)
+  const [authorizeTab, setAuthorizeTab] = useState<'qr' | 'password'>('qr')
   const [authorizePasswordInput, setAuthorizePasswordInput] = useState('')
   const [submittingAuthorize, setSubmittingAuthorize] = useState(false)
+
+  const handleDeviceAuthQrSuccess = useCallback(
+    (payload: Record<string, unknown>) => {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('msm_vault_device_authorized', 'true')
+        localStorage.setItem('msm_vault_setup_done', 'true')
+        if (typeof payload.bucketId === 'string' && payload.bucketId) {
+          localStorage.setItem('msm_vault_server_bucket', payload.bucketId)
+        }
+      }
+      useVaultStore.setState((prev) => ({
+        ...prev,
+        isDeviceAuthorized: true,
+        bucketId: typeof payload.bucketId === 'string' && payload.bucketId ? payload.bucketId : prev.bucketId,
+        failedUnlockAttempts: 0,
+        unlockError: null,
+      }))
+      toast.success(t('mss.card.authorizedErfolg', 'Gerät via Smartcard-Wallet erfolgreich autorisiert'))
+      setAuthorizeDialogOpen(false)
+      onAuthorizeSuccess?.()
+    },
+    [t, onAuthorizeSuccess],
+  )
+
+  const handleUnlockQrSuccess = useCallback(
+    () => {
+      useVaultStore.setState((prev) => ({
+        ...prev,
+        isUnlocked: true,
+        failedUnlockAttempts: 0,
+        unlockError: null,
+      }))
+      toast.success(t('mss.vault.entsperrtErfolg', 'Maunting Card via Smartcard-Wallet erfolgreich entsperrt'))
+      setUnlockDialogOpen(false)
+      onUnlockSuccess?.()
+    },
+    [t, onUnlockSuccess],
+  )
 
   useEffect(() => {
     if (externalUnlockTrigger) {
@@ -135,7 +177,7 @@ export function MauntingCard({
         setAuthorizeDialogOpen(false)
         onAuthorizeSuccess?.()
       } else {
-        toast.error(unlockError || t('mss.vault.falschesPasswort', 'Falsche PIN / Falsches Passwort'))
+        toast.error(unlockError || t('mss.vault.falschesPasswort', 'Falsches Karten-Passwort'))
       }
     } finally {
       setSubmittingAuthorize(false)
@@ -155,7 +197,7 @@ export function MauntingCard({
         setUnlockDialogOpen(false)
         onUnlockSuccess?.()
       } else {
-        toast.error(unlockError || t('mss.vault.falschesPasswort', 'Falsche PIN / Falsches Passwort'))
+        toast.error(unlockError || t('mss.vault.falschesPasswort', 'Falsches Karten-Passwort'))
       }
     } finally {
       setSubmittingUnlock(false)
@@ -350,10 +392,13 @@ export function MauntingCard({
                 <button
                   type="button"
                   className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold shadow-lg shadow-sky-500/30 flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
-                  onClick={() => setUnlockDialogOpen(true)}
+                  onClick={() => {
+                    setUnlockTab('password')
+                    setUnlockDialogOpen(true)
+                  }}
                 >
                   <Unlock className="w-3.5 h-3.5" aria-hidden="true" />
-                  {t('mss.card.actionUnlock', 'PIN eingeben')}
+                  {t('mss.card.actionUnlock', 'Karte entsperren')}
                 </button>
               ) : (
                 <button
@@ -395,108 +440,224 @@ export function MauntingCard({
 
       {/* ════════════════════════ ENTSPERR-MODAL (Design DNA) ════════════════════════ */}
       <Dialog open={unlockDialogOpen} onOpenChange={setUnlockDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="w-5 h-5 text-primary" aria-hidden="true" />
-              {t('mss.card.unlockTitle', 'Maunting Card entsperren')}
+        <DialogContent className="max-w-lg">
+          <DialogHeader className="pr-10 sm:pr-12">
+            <DialogTitle className="flex items-center gap-2.5 text-base sm:text-lg font-bold">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary border border-primary/25">
+                <KeyRound className="w-4 h-4" aria-hidden="true" />
+              </span>
+              <span>{t('mss.card.unlockTitle', 'Smartcard entsperren')}</span>
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="mt-1.5 text-xs text-on-surface-variant leading-relaxed">
               {t(
                 'mss.card.unlockSubtitle',
-                'Gib deine Karten-PIN / dein Passwort ein, um deinen Tresor freizuschalten.'
+                'Scanne den Code mit deinem Smartphone oder gib dein persönliches Karten-Passwort ein.'
               )}
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleUnlockSubmit} className="p-6 space-y-4">
-            <PasswordInput
-              id="card-unlock-password"
-              label={t('mss.card.pinLabel', 'Karten-Passwort / PIN')}
-              value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value)}
-              placeholder={t('mss.card.pinPlaceholder', 'Karten-Passwort / PIN')}
-              autoFocus
-              disabled={submittingUnlock}
-              required
-            />
-
-            <DialogFooter variant="plain" className="px-0 pb-0 mt-6">
-              <Button
+          {/* Reiter-Auswahl: Segmented Control Pill */}
+          <div className="px-6 pt-5">
+            <div className="flex p-1 rounded-xl bg-surface-container-high/60 border border-outline-variant/25 gap-1">
+              <button
                 type="button"
-                variant="secondary"
-                onClick={() => setUnlockDialogOpen(false)}
-                disabled={submittingUnlock}
+                onClick={() => setUnlockTab('qr')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                  unlockTab === 'qr'
+                    ? 'bg-surface text-primary shadow-xs font-bold border border-outline-variant/20'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
               >
-                {t('common.cancel', 'Abbrechen')}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={submittingUnlock || !passwordInput.trim()}
+                <QrCode className="w-3.5 h-3.5" />
+                <span>{t('mss.card.tabSmartphoneScan', 'Mit Smartphone scannen')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setUnlockTab('password')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                  unlockTab === 'password'
+                    ? 'bg-surface text-primary shadow-xs font-bold border border-outline-variant/20'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
               >
-                {submittingUnlock ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                )}
-                {t('mss.card.unlockSubmit', 'Entsperren')}
-              </Button>
-            </DialogFooter>
-          </form>
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>{t('mss.card.tabPassword', 'Karten-Passwort')}</span>
+              </button>
+            </div>
+          </div>
+
+          {unlockTab === 'qr' ? (
+            <div className="px-6 py-5 space-y-4">
+              <DeviceAuthQrView
+                purpose="unlock"
+                onSuccess={handleUnlockQrSuccess}
+              />
+              <DialogFooter variant="plain" className="px-0 pb-0 pt-1 flex justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setUnlockDialogOpen(false)}
+                >
+                  {t('common.cancel', 'Abbrechen')}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <form onSubmit={handleUnlockSubmit} className="px-6 py-5 space-y-4">
+              <div className="space-y-1.5">
+                <PasswordInput
+                  id="card-unlock-password"
+                  label={t('mss.card.passwordLabel', 'Karten-Passwort')}
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder={t('mss.card.passwordPlaceholder', 'Dein bei der Einrichtung gewähltes Passwort')}
+                  autoFocus
+                  disabled={submittingUnlock}
+                  required
+                />
+                <p className="text-xs text-on-surface-variant/75 pl-0.5">
+                  {t(
+                    'mss.card.passwordHelp',
+                    'Das persönliche Passwort, das du bei der Erstellung deiner Smartcard (Master-Passwort) vergeben hast.'
+                  )}
+                </p>
+              </div>
+
+              <DialogFooter variant="plain" className="px-0 pb-0 pt-2 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setUnlockDialogOpen(false)}
+                  disabled={submittingUnlock}
+                >
+                  {t('common.cancel', 'Abbrechen')}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={submittingUnlock || !passwordInput.trim()}
+                >
+                  {submittingUnlock ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                  )}
+                  {t('mss.card.unlockSubmit', 'Entsperren')}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
       {/* ════════════════════════ AUTORISIERUNGS-MODAL (Design DNA) ════════════════════════ */}
       <Dialog open={authorizeDialogOpen} onOpenChange={setAuthorizeDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-amber-400" aria-hidden="true" />
-              {t('mss.card.authorizeTitle', 'Gerät für Maunting Card autorisieren')}
+        <DialogContent className="max-w-lg">
+          <DialogHeader className="pr-10 sm:pr-12">
+            <DialogTitle className="flex items-center gap-2.5 text-base sm:text-lg font-bold">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/25">
+                <Shield className="w-4 h-4" aria-hidden="true" />
+              </span>
+              <span>{t('mss.card.authorizeTitle', 'Gerät autorisieren')}</span>
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="mt-1.5 text-xs text-on-surface-variant leading-relaxed">
               {t(
                 'mss.card.authorizeSubtitle',
-                'Bestätige dein Master-Passwort / deine PIN einmalig auf diesem Gerät. Der kryptographische Schlüssel verbleibt nicht im Arbeitsspeicher.'
+                'Bestätige deine Identität, um dieses Gerät für deine Smartcard freizuschalten. Schlüssel verbleiben dabei nicht im Arbeitsspeicher.'
               )}
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleAuthorizeSubmit} className="p-6 space-y-4">
-            <PasswordInput
-              id="card-authorize-password"
-              label={t('mss.card.pinLabel', 'Karten-Passwort / PIN')}
-              value={authorizePasswordInput}
-              onChange={(e) => setAuthorizePasswordInput(e.target.value)}
-              placeholder={t('mss.card.pinPlaceholder', 'Karten-Passwort / PIN')}
-              autoFocus
-              disabled={submittingAuthorize}
-              required
-            />
-
-            <DialogFooter variant="plain" className="px-0 pb-0 mt-6">
-              <Button
+          {/* Reiter-Auswahl: Segmented Control Pill */}
+          <div className="px-6 pt-5">
+            <div className="flex p-1 rounded-xl bg-surface-container-high/60 border border-outline-variant/25 gap-1">
+              <button
                 type="button"
-                variant="secondary"
-                onClick={() => setAuthorizeDialogOpen(false)}
-                disabled={submittingAuthorize}
+                onClick={() => setAuthorizeTab('qr')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                  authorizeTab === 'qr'
+                    ? 'bg-surface text-primary shadow-xs font-bold border border-outline-variant/20'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
               >
-                {t('common.cancel', 'Abbrechen')}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={submittingAuthorize || !authorizePasswordInput.trim()}
+                <QrCode className="w-3.5 h-3.5" />
+                <span>{t('mss.card.tabSmartphoneScan', 'Mit Smartphone scannen')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthorizeTab('password')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                  authorizeTab === 'password'
+                    ? 'bg-surface text-primary shadow-xs font-bold border border-outline-variant/20'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
               >
-                {submittingAuthorize ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                )}
-                {t('mss.card.authorizeSubmit', 'Gerät freischalten')}
-              </Button>
-            </DialogFooter>
-          </form>
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>{t('mss.card.tabPassword', 'Karten-Passwort')}</span>
+              </button>
+            </div>
+          </div>
+
+          {authorizeTab === 'qr' ? (
+            <div className="px-6 py-5 space-y-4">
+              <DeviceAuthQrView
+                purpose="authorize"
+                onSuccess={handleDeviceAuthQrSuccess}
+              />
+              <DialogFooter variant="plain" className="px-0 pb-0 pt-1 flex justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setAuthorizeDialogOpen(false)}
+                >
+                  {t('common.cancel', 'Abbrechen')}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <form onSubmit={handleAuthorizeSubmit} className="px-6 py-5 space-y-4">
+              <div className="space-y-1.5">
+                <PasswordInput
+                  id="card-authorize-password"
+                  label={t('mss.card.passwordLabel', 'Karten-Passwort')}
+                  value={authorizePasswordInput}
+                  onChange={(e) => setAuthorizePasswordInput(e.target.value)}
+                  placeholder={t('mss.card.passwordPlaceholder', 'Dein bei der Einrichtung gewähltes Passwort')}
+                  autoFocus
+                  disabled={submittingAuthorize}
+                  required
+                />
+                <p className="text-xs text-on-surface-variant/75 pl-0.5">
+                  {t(
+                    'mss.card.passwordHelp',
+                    'Das persönliche Passwort, das du bei der Erstellung deiner Smartcard (Master-Passwort) vergeben hast.'
+                  )}
+                </p>
+              </div>
+
+              <DialogFooter variant="plain" className="px-0 pb-0 pt-2 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setAuthorizeDialogOpen(false)}
+                  disabled={submittingAuthorize}
+                >
+                  {t('common.cancel', 'Abbrechen')}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={submittingAuthorize || !authorizePasswordInput.trim()}
+                >
+                  {submittingAuthorize ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                  )}
+                  {t('mss.card.authorizeSubmit', 'Gerät freischalten')}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

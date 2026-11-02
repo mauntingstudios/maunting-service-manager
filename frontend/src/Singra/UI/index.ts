@@ -120,3 +120,8 @@ export {
   type RoleIconDef,
 } from './IconPicker'
 export { RoleBadge, type RoleBadgeProps } from './RoleBadge'
+export {
+  useBackgroundQrScanner,
+  type UseBackgroundQrScannerOptions,
+  type UseBackgroundQrScannerReturn,
+} from '@/hooks/useBackgroundQrScanner'

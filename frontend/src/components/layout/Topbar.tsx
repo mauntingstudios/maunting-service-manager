@@ -1,14 +1,15 @@
 import type { RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Logo } from '@/components/Logo'
-import { Menu } from 'lucide-react'
+import { CreditCard, Menu } from 'lucide-react'
 
 interface TopbarProps {
   onOpenNavigation?: () => void
   menuButtonRef?: RefObject<HTMLButtonElement>
+  onOpenWallet?: () => void
 }
 
-export function Topbar({ onOpenNavigation, menuButtonRef }: TopbarProps) {
+export function Topbar({ onOpenNavigation, menuButtonRef, onOpenWallet }: TopbarProps) {
   const { t } = useTranslation()
 
   return (
@@ -29,6 +30,19 @@ export function Topbar({ onOpenNavigation, menuButtonRef }: TopbarProps) {
           <span className="font-headline text-sm font-bold text-primary">MSM</span>
         </div>
       </div>
+
+      {onOpenWallet && (
+        <button
+          type="button"
+          onClick={onOpenWallet}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 border border-primary/25 transition-all active:scale-95 text-xs font-semibold shadow-xs"
+          aria-label="Smartcard Wallet"
+        >
+          <CreditCard className="w-3.5 h-3.5" />
+          <span>Wallet</span>
+        </button>
+      )}
     </header>
   )
 }
+

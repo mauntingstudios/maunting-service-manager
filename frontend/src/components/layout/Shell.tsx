@@ -17,6 +17,7 @@ import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
 import { chatIstOffen } from '@/lib/chatVollbild'
+import { SmartcardWalletModal } from '@/desktop/vault/SmartcardWalletModal'
 
 export function Shell() {
   useMessengerSperreBereitschaft()
@@ -24,9 +25,16 @@ export function Shell() {
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
   const [sidebarHidden, setSidebarHidden] = useState(false)
   const [socialEnabled, setSocialEnabled] = useState(true)
+  const [walletOpen, setWalletOpen] = useState(false)
   const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null)
 
   const { status: presenceStatus, changeStatus: handlePresenceChange } = usePresenceAndActivity(socialEnabled, true)
+
+  useEffect(() => {
+    const handleOpenWallet = () => setWalletOpen(true)
+    window.addEventListener('msm:open-wallet', handleOpenWallet)
+    return () => window.removeEventListener('msm:open-wallet', handleOpenWallet)
+  }, [])
 
   useEffect(() => {
     api<{ social_enabled?: boolean }>('/settings/public')
@@ -131,7 +139,11 @@ export function Shell() {
       {/* Main Content Area */}
       <div className={`flex-1 ${sidebarHidden ? 'ml-0' : 'lg:ml-64'} flex flex-col min-w-0 relative z-10 transition-all duration-300 ${isFullHeightPage ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : ''}`}>
         {!chatVollbild && (
-          <Topbar menuButtonRef={mobileNavigationTriggerRef} onOpenNavigation={() => setMobileNavigationOpen(true)} />
+          <Topbar
+            menuButtonRef={mobileNavigationTriggerRef}
+            onOpenNavigation={() => setMobileNavigationOpen(true)}
+            onOpenWallet={() => setWalletOpen(true)}
+          />
         )}
         <OfflineBanner />
         <CrossDeviceCallBanner />
@@ -169,6 +181,9 @@ export function Shell() {
 
       {/* Anruf-Overlay für Direkt- und Gruppenanrufe (global im Shell verfügbar) */}
       <AnrufEbene />
+
+      {/* Vollbild Smartcard-Wallet-Modus für Mobilgeräte */}
+      <SmartcardWalletModal isOpen={walletOpen} onClose={() => setWalletOpen(false)} />
     </div>
   )
 }
