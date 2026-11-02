@@ -520,3 +520,31 @@ describe('Tresor-Galerie: Quellen', () => {
     expect(quelleVon(bild('Screenshot-Aufnahme.mp4', undefined, 'video/mp4')).art).not.toBe('screenshot')
   })
 })
+
+describe('VaultView: Gesperrter Zustand & Maunting Card', () => {
+  it('rendert Maunting Card als Tresor-Schloss im gesperrten Zustand', () => {
+    useVaultStore.setState({
+      isInitialized: true,
+      isUnlocked: false,
+      isDeviceAuthorized: true,
+      hasHint: false,
+    })
+
+    render(<VaultView />)
+    expect(screen.getByText(/Zero-Knowledge Tresor-Schloss/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: new RegExp(i18n.t('mss.vault.entsperren')) })).toBeInTheDocument()
+  })
+
+  it('zeigt Autorisierungs-Aufforderung wenn Gerät nicht autorisiert ist', () => {
+    useVaultStore.setState({
+      isInitialized: true,
+      isUnlocked: false,
+      isDeviceAuthorized: false,
+      hasHint: false,
+    })
+
+    render(<VaultView />)
+    expect(screen.getByText(/Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet/i)).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /Gerät autorisieren/i }).length).toBeGreaterThanOrEqual(1)
+  })
+})

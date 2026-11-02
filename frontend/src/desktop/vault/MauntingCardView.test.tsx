@@ -71,4 +71,29 @@ describe('MauntingCard Component', () => {
 
     expect(screen.getByPlaceholderText('Karten-Passwort / PIN')).toBeInTheDocument()
   })
+
+  it('zeigt Status GERÄT NICHT AUTORISIERT und öffnet Autorisierungs-Dialog', () => {
+    const authorizeDevice = vi.fn().mockResolvedValue(true)
+    vi.mocked(useVaultStore).mockReturnValue({
+      isInitialized: true,
+      isUnlocked: false,
+      isDeviceAuthorized: false,
+      isUnlocking: false,
+      unlockError: null,
+      bucketId: 'e3b0c44298fc1c149afbf4c8996fb924',
+      unlock: vi.fn(),
+      authorizeDevice,
+      lock: vi.fn(),
+      rotationState: null,
+    } as any)
+
+    render(<MauntingCard />)
+    expect(screen.getByText('GERÄT NICHT AUTORISIERT')).toBeInTheDocument()
+
+    const authBtn = screen.getByText('Gerät autorisieren')
+    expect(authBtn).toBeInTheDocument()
+    fireEvent.click(authBtn)
+
+    expect(screen.getByText('Gerät für Maunting Card autorisieren')).toBeInTheDocument()
+  })
 })

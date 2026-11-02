@@ -33,6 +33,7 @@ describe('mauntingCard', () => {
 
   it('ermittelt korrekten Kartenstatus', () => {
     expect(getCardStatus({ isInitialized: false, isUnlocked: false })).toBe('uninitialized')
+    expect(getCardStatus({ isInitialized: true, isUnlocked: false, isDeviceAuthorized: false })).toBe('unauthorized')
     expect(getCardStatus({ isInitialized: true, isUnlocked: false })).toBe('locked')
     expect(getCardStatus({ isInitialized: true, isUnlocked: true })).toBe('active')
     expect(getCardStatus({ isInitialized: true, isUnlocked: true, isExpired: true })).toBe('rotation_due')

@@ -325,6 +325,7 @@ const VAULT_SPERR_PRAEFIX = 'mss:vault'
 const VAULT_BIOMETRICS_ENABLED_KEY = 'mss:vault_biometrics_enabled'
 const VAULT_SERVER_BUCKET_KEY = 'mss:vault_server_bucket'
 const VAULT_BIO_MIGRATED_KEY = 'mss:vault_bio_migrated_v2'
+const VAULT_DEVICE_AUTHORIZED_KEY = 'mss:vault_device_authorized'
 /** Das Konto, dem Salz, Bucket, Canary und Biometrie-Merker gehören. */
 const VAULT_KONTO_KEY = 'mss:vault_konto'
 
@@ -336,6 +337,7 @@ function lokaleKennungenLoeschen(): void {
   localStorage.removeItem(VAULT_BIOMETRICS_ENABLED_KEY)
   localStorage.removeItem(VAULT_SERVER_BUCKET_KEY)
   localStorage.removeItem(VAULT_SALT_KEY)
+  localStorage.removeItem(VAULT_DEVICE_AUTHORIZED_KEY)
   const toRemove: string[] = []
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i)
@@ -447,6 +449,7 @@ let bestaetigenFehlversuche = 0
 interface VaultState {
   isInitialized: boolean
   isUnlocked: boolean
+  isDeviceAuthorized: boolean
   isUnlocking: boolean
   unlockError: string | null
   failedUnlockAttempts: number
@@ -472,6 +475,7 @@ interface VaultState {
   // Aktionen
   fetchVaultSalt: () => Promise<string | null>
   initializeVault: (masterPassword: string) => Promise<boolean>
+  authorizeDevice: (masterPassword: string) => Promise<boolean>
   unlock: (masterPassword: string) => Promise<boolean>
   unlockWithBiometrics: () => Promise<boolean>
   /**
@@ -805,6 +809,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
   return {
   isInitialized: typeof localStorage !== 'undefined' ? !!localStorage.getItem(VAULT_SETUP_DONE_KEY) : false,
   isUnlocked: false,
+  isDeviceAuthorized: typeof localStorage !== 'undefined' ? localStorage.getItem(VAULT_DEVICE_AUTHORIZED_KEY) === 'true' : false,
   isUnlocking: false,
   unlockError: null,
   failedUnlockAttempts: 0,
@@ -885,6 +890,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
           localStorage.removeItem(VAULT_CANARY_KEY)
           localStorage.removeItem(VAULT_SERVER_BUCKET_KEY)
           localStorage.removeItem(VAULT_SALT_KEY)
+  localStorage.removeItem(VAULT_DEVICE_AUTHORIZED_KEY)
         }
         set({ isInitialized: false })
       }
@@ -1055,6 +1061,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
     set({
       isInitialized: false,
       isUnlocked: false,
+      isDeviceAuthorized: false,
       isBiometricsEnabled: false,
       failedUnlockAttempts: 0,
       lockedUntilMs: 0,
@@ -1302,6 +1309,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
         localStorage.setItem(`${VAULT_CANARY_PREFIX}${bucketId}`, canaryCiphertext)
         localStorage.setItem(VAULT_SETUP_DONE_KEY, 'true')
         localStorage.setItem(VAULT_SERVER_BUCKET_KEY, bucketId)
+        localStorage.setItem(VAULT_DEVICE_AUTHORIZED_KEY, 'true')
         const pendingQueue = getPendingQueue(bucketId)
         if (!pendingQueue.some((p) => p.id === 'vault-canary')) {
           pendingQueue.push({
@@ -1332,6 +1340,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
       set({
         isInitialized: true,
         isUnlocked: true,
+        isDeviceAuthorized: true,
         isUnlocking: false,
         failedUnlockAttempts: 0,
         lockedUntilMs: 0,
@@ -1355,6 +1364,156 @@ export const useVaultStore = create<VaultState>((set, get) => {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : i18n.t('mss.vault.errors.setupFailed')
       set({ isUnlocking: false, unlockError: msg })
+      return false
+    }
+  },
+
+  authorizeDevice: async (masterPassword: string) => {
+    // 1. Client-seitiger Brute-Force-Schutz (SEC-07): Sperrfrist prüfen
+    const now = Date.now()
+    const { lockedUntilMs, failedUnlockAttempts } = get()
+    if (lockedUntilMs > now) {
+      const waitSeconds = Math.ceil((lockedUntilMs - now) / 1000)
+      const errorMsg = `Zu viele Fehlversuche. Bitte warte noch ${waitSeconds} Sekunde(n).`
+      set({ isUnlocking: false, unlockError: errorMsg })
+      return false
+    }
+
+    set({ isUnlocking: true, unlockError: null })
+    try {
+      // 2. Salt ermitteln (lokal oder von Backend abrufen)
+      let salt = getLocalVaultSalt()
+      if (!salt) {
+        await get().fetchVaultSalt()
+        salt = getLocalVaultSalt()
+      }
+
+      const isSetupDone = typeof localStorage !== 'undefined' && localStorage.getItem(VAULT_SETUP_DONE_KEY) === 'true'
+      const hasCanary = typeof localStorage !== 'undefined' && (
+        !!localStorage.getItem(VAULT_CANARY_KEY) ||
+        Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).some((k) => k?.startsWith(VAULT_CANARY_PREFIX))
+      )
+      const hasServerBucket = typeof localStorage !== 'undefined' && !!localStorage.getItem(VAULT_SERVER_BUCKET_KEY)
+      const isConfigured = get().isInitialized || isSetupDone || hasCanary || hasServerBucket
+
+      if (!isConfigured) {
+        throw new TresorFehler(i18n.t('mss.vault.errors.notSetup'))
+      }
+
+      if (!salt) {
+        throw new TresorFehler(i18n.t('mss.vault.errors.keysMissing'))
+      }
+
+      const { userKey, bucketId, bucketAuthToken } = await deriveVaultKeys(masterPassword, salt)
+
+      const serverBucket = typeof localStorage !== 'undefined' ? localStorage.getItem(VAULT_SERVER_BUCKET_KEY) : null
+      if (serverBucket && bucketId !== serverBucket) {
+        throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+      }
+
+      // 3. Canary prüfen
+      let canaryCiphertext = typeof localStorage !== 'undefined' ? localStorage.getItem(VAULT_CANARY_KEY) : null
+      let matchedCanary = false
+
+      if (canaryCiphertext) {
+        try {
+          await decryptVaultEntry(canaryCiphertext, userKey, 'vault-canary')
+          matchedCanary = true
+        } catch {
+          throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+        }
+      } else if (typeof localStorage !== 'undefined') {
+        const legacyCanaryKeys: string[] = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i)
+          if (k && k.startsWith(VAULT_CANARY_PREFIX)) {
+            legacyCanaryKeys.push(k)
+          }
+        }
+
+        if (legacyCanaryKeys.length > 0) {
+          const sortedKeys = legacyCanaryKeys.sort((a, b) => {
+            if (serverBucket && a === `${VAULT_CANARY_PREFIX}${serverBucket}`) return -1
+            if (serverBucket && b === `${VAULT_CANARY_PREFIX}${serverBucket}`) return 1
+            const blobsA = getStoredBlobs(a.replace(VAULT_CANARY_PREFIX, '')).length
+            const blobsB = getStoredBlobs(b.replace(VAULT_CANARY_PREFIX, '')).length
+            return blobsB - blobsA
+          })
+
+          let decryptedSuccessfully = false
+          for (const k of sortedKeys) {
+            const cipher = localStorage.getItem(k)
+            if (!cipher) continue
+            try {
+              await decryptVaultEntry(cipher, userKey, 'vault-canary')
+              canaryCiphertext = cipher
+              decryptedSuccessfully = true
+              matchedCanary = true
+              localStorage.setItem(VAULT_CANARY_KEY, cipher)
+              localStorage.setItem(VAULT_SERVER_BUCKET_KEY, bucketId)
+              break
+            } catch {}
+          }
+
+          if (!decryptedSuccessfully) {
+            throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+          }
+        }
+      }
+
+      let serverBestaetigt = false
+      if (!matchedCanary && !serverBucket) {
+        let passt: boolean
+        try {
+          passt = await blindVaultCheck(bucketId, bucketAuthToken)
+        } catch {
+          throw new TresorFehler(i18n.t('mss.vault.errors.serverCheckFailed'))
+        }
+        if (!passt) {
+          throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+        }
+        serverBestaetigt = true
+      }
+
+      const isVerified = matchedCanary || serverBestaetigt || (serverBucket !== null && bucketId === serverBucket)
+      if (!isVerified) {
+        throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+      }
+
+      // 4. Gerät als autorisiert markieren (Device Trust)
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(VAULT_DEVICE_AUTHORIZED_KEY, 'true')
+        localStorage.setItem(VAULT_SETUP_DONE_KEY, 'true')
+        localStorage.setItem(VAULT_SERVER_BUCKET_KEY, bucketId)
+      }
+
+      // Wichtig für Zero-Knowledge & Memory Hygiene:
+      // userKey wird NICHT gespeichert, kein Klartext im RAM abgelegt!
+      // Der Tresor bleibt gesperrt, bis der Nutzer ihn bewusst mit PIN entsperrt.
+      set({
+        isDeviceAuthorized: true,
+        isUnlocking: false,
+        failedUnlockAttempts: 0,
+        lockedUntilMs: 0,
+        unlockError: null,
+        bucketId,
+      })
+
+      return true
+    } catch (err: unknown) {
+      const attempts = failedUnlockAttempts + 1
+      let backoffMs = 0
+      if (attempts >= 3) {
+        backoffMs = Math.min(60000, Math.pow(2, attempts - 3) * 1000)
+      }
+
+      const msg = err instanceof Error ? err.message : i18n.t('mss.vault.errors.unlockFailed')
+      set({
+        isUnlocking: false,
+        failedUnlockAttempts: attempts,
+        lockedUntilMs: Date.now() + backoffMs,
+        unlockError: msg,
+      })
       return false
     }
   },
@@ -1520,6 +1679,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(VAULT_SETUP_DONE_KEY, 'true')
         localStorage.setItem(VAULT_SERVER_BUCKET_KEY, bucketId)
+        localStorage.setItem(VAULT_DEVICE_AUTHORIZED_KEY, 'true')
       }
 
       // Erfolg: Fehlversuche zurücksetzen
@@ -1527,6 +1687,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
       set({
         isInitialized: true,
         isUnlocked: true,
+        isDeviceAuthorized: true,
         isUnlocking: false,
         failedUnlockAttempts: 0,
         lockedUntilMs: 0,

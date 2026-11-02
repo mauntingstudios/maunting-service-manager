@@ -52,6 +52,7 @@ import { MASTER_PASSWORT_MINDESTLAENGE, generateSecurePassword } from './vaultCr
 import { createDebouncedLeakChecker, type LeakCheckResult } from './leakChecker'
 import { QrScannerModal } from './QrScannerModal'
 import { TresorZuruecksetzen } from './TresorZuruecksetzen'
+import { MauntingCard } from './MauntingCardView'
 import { TresorDateiBereich } from './TresorDateiBereich'
 import { TresorGalerie } from './TresorGalerie'
 import { TresorZahlung } from './TresorZahlung'
@@ -101,6 +102,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     useShallow((s) => ({
       isInitialized: s.isInitialized,
       isUnlocked: s.isUnlocked,
+      isDeviceAuthorized: s.isDeviceAuthorized,
       isUnlocking: s.isUnlocking,
       unlockError: s.unlockError,
       isBiometricsEnabled: s.isBiometricsEnabled,
@@ -234,6 +236,9 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const zurueckgesetzt = isTeam ? false : personalStore.zurueckgesetzt
   const isBiometricsEnabled = isTeam ? teamStore.isBiometricsEnabled : personalStore.isBiometricsEnabled
   const isBiometricsSupported = isTeam ? teamStore.isBiometricsSupported : personalStore.isBiometricsSupported
+  const isDeviceAuthorized = personalStore.isDeviceAuthorized
+  const [cardUnlockTrigger, setCardUnlockTrigger] = useState(false)
+  const [cardAuthorizeTrigger, setCardAuthorizeTrigger] = useState(false)
 
   // Team-Rotation State
   const [rotationOpen, setRotationOpen] = useState(false)
@@ -1059,164 +1064,179 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     )
   }
 
-  // ── 2. ENTSPERREN (Minimaler, absolut aufgeräumter Standard-Zustand) ──
+  // ── 2. ENTSPERREN MIT MAUNTING CARD ──
   if (!isUnlocked) {
     return (
-      <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
-        <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
+      <div className="flex h-full w-full items-center justify-center p-4 sm:p-6 bg-surface overflow-y-auto">
+        <div className="w-full max-w-xl flex flex-col items-center space-y-6">
           {zuruecksetzen ? (
-            <TresorZuruecksetzen
-              isTeam={isTeam}
-              teamId={team?.id}
-              onAbbrechen={() => setZuruecksetzen(false)}
-              onFertig={() => {
-                setZuruecksetzen(false)
-                if (isTeam && team?.id) {
-                  void teamStore.loadStatus(team.id)
-                } else {
-                  setIsSetupMode(true)
-                }
-              }}
-            />
-          ) : (
-          <>
-          <div className="text-center space-y-1.5">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
-              <Lock className="h-6 w-6" />
+            <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
+              <TresorZuruecksetzen
+                isTeam={isTeam}
+                teamId={team?.id}
+                onAbbrechen={() => setZuruecksetzen(false)}
+                onFertig={() => {
+                  setZuruecksetzen(false)
+                  if (isTeam && team?.id) {
+                    void teamStore.loadStatus(team.id)
+                  } else {
+                    setIsSetupMode(true)
+                  }
+                }}
+              />
             </div>
-            <h2 className="text-base font-bold text-on-surface">
-              {isTeam ? t('teams.vaultUnlock') : t('mss.vault.titelManager')}
-            </h2>
-            {isTeam && (
-              <p className="text-xs text-on-surface-variant">{t('teams.vaultUnlockDesc')}</p>
-            )}
-          </div>
+          ) : (
+            <>
+              {/* Header */}
+              <div className="text-center space-y-2">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <h1 className="text-lg font-bold text-on-surface">
+                  {isTeam ? team?.name || t('teams.vaultUnlock') : t('mss.vault.titelManager')}
+                </h1>
+                <p className="text-xs text-on-surface-variant max-w-md">
+                  {!isDeviceAuthorized && isInitialized
+                    ? t('mss.card.vaultNeedsAuthorization', 'Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet. Bitte bestätige das Gerät einmalig.')
+                    : isTeam
+                      ? t('teams.vaultUnlockDesc')
+                      : t('mss.vault.tresorSchlossHinweis', 'Zero-Knowledge Tresor-Schloss. Klicke auf die Karte oder nutze die Schaltflächen unten zum Entsperren.')}
+                </p>
+              </div>
 
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault()
-              const isBusy = isTeam ? teamBusy : isUnlocking
-              if (!masterPasswordInput || isBusy) return
-              const ok = await activeUnlock(masterPasswordInput)
-              if (ok) {
-                setMasterPasswordInput('')
-                toast.success(t('mss.vault.entsperrt'))
-              }
-            }}
-            className="space-y-3.5"
-          >
-            {isBiometricsEnabled && isBiometricsSupported && (
-              <div className="space-y-2 pb-1">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={async () => {
-                    const ok = isTeam && team
-                      ? await teamStore.unlockWithBiometrics(team.id)
-                      : await personalStore.unlockWithBiometrics()
-                    if (ok) {
-                      toast.success(t('mss.vault.entsperrtBiometrie'))
-                    }
+              {/* Maunting Card als Tresor-Schloss */}
+              <div className="w-full flex justify-center">
+                <MauntingCard
+                  className="w-full"
+                  unlockOverride={activeUnlock}
+                  externalUnlockTrigger={cardUnlockTrigger}
+                  externalAuthorizeTrigger={cardAuthorizeTrigger}
+                  onExternalUnlockHandled={() => setCardUnlockTrigger(false)}
+                  onExternalAuthorizeHandled={() => setCardAuthorizeTrigger(false)}
+                  onUnlockSuccess={() => {
+                    toast.success(t('mss.vault.entsperrt'))
                   }}
-                  disabled={isTeam ? teamBusy : isUnlocking}
-                  className="w-full flex items-center justify-center gap-2 py-2 text-xs border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
-                >
-                  <Fingerprint className="h-4 w-4" />
-                  <span>{t('mss.vault.mitFingerabdruck')}</span>
-                </Button>
-                <div className="relative flex items-center justify-center">
-                  <div className="border-t border-outline-variant/30 w-full" />
-                  <span className="bg-surface-container px-2 text-label-sm text-on-surface-variant uppercase tracking-wider absolute">
-                    {t('mss.vault.oderMasterPasswort')}
-                  </span>
+                  onAuthorizeSuccess={() => {
+                    toast.success(t('mss.card.authorizedErfolg', 'Gerät erfolgreich autorisiert'))
+                  }}
+                />
+              </div>
+
+              {/* Aktionsleiste unter der Karte */}
+              <div className="w-full max-w-sm flex flex-col items-center space-y-3">
+                {!isDeviceAuthorized && isInitialized ? (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={() => setCardAuthorizeTrigger(true)}
+                    className="w-full py-2.5 flex items-center justify-center gap-2 text-xs font-semibold shadow-md"
+                  >
+                    <Shield className="h-4 w-4" />
+                    <span>{t('mss.card.actionAuthorize', 'Gerät autorisieren')}</span>
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => setCardUnlockTrigger(true)}
+                      disabled={isTeam ? teamBusy : isUnlocking}
+                      className="w-full py-2.5 flex items-center justify-center gap-2 text-xs font-semibold shadow-md"
+                    >
+                      {(isTeam ? teamBusy : isUnlocking) ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          <span>{t('mss.vault.entschluessle')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Unlock className="h-4 w-4" />
+                          <span>{t('mss.vault.entsperren')}</span>
+                        </>
+                      )}
+                    </Button>
+
+                    {isBiometricsEnabled && isBiometricsSupported && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={async () => {
+                          const isBusy = isTeam ? teamBusy : isUnlocking
+                          if (isBusy) return
+                          const ok = isTeam && team
+                            ? await teamStore.unlockWithBiometrics(team.id)
+                            : await personalStore.unlockWithBiometrics()
+                          if (ok) {
+                            toast.success(t('mss.vault.entsperrtBiometrie'))
+                          }
+                        }}
+                        disabled={isTeam ? teamBusy : isUnlocking}
+                        className="w-full flex items-center justify-center gap-2 py-2 text-xs border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+                      >
+                        <Fingerprint className="h-4 w-4" />
+                        <span>{t('mss.vault.mitFingerabdruck')}</span>
+                      </Button>
+                    )}
+                  </>
+                )}
+
+                {unlockError && (
+                  <div className="w-full rounded-xl bg-status-destructive/15 border border-status-destructive/30 p-2.5 text-xs text-status-destructive text-center">
+                    {unlockError}
+                  </div>
+                )}
+
+                {/* Sekundäre Aktionen: Hinweis anfordern, Einrichten, Zurücksetzen */}
+                <div className="flex flex-col items-center gap-1.5 pt-1">
+                  {activeHasHint && (
+                    <Button
+                      fingerziel
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRequestHint}
+                      disabled={isRequestingHint}
+                      className="text-on-surface-variant hover:text-primary text-xs"
+                    >
+                      <HelpCircle className="h-3.5 w-3.5 mr-1" />
+                      <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.hinweisPerMail')}</span>
+                    </Button>
+                  )}
+
+                  {!isTeam && !isInitialized && (
+                    <Button
+                      fingerziel
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setIsSetupMode(true)
+                        setMasterPasswordInput('')
+                      }}
+                      className="text-on-surface-variant hover:text-primary text-xs"
+                    >
+                      {t('mss.vault.neuenTresorEinrichten')}
+                    </Button>
+                  )}
+
+                  {isInitialized && isOwner && (
+                    <Button
+                      fingerziel
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setZuruecksetzen(true)
+                        setMasterPasswordInput('')
+                      }}
+                      className="text-on-surface-variant hover:text-status-destructive text-xs"
+                    >
+                      {t('mss.vault.zuruecksetzen.link')}
+                    </Button>
+                  )}
                 </div>
               </div>
-            )}
-
-            <PasswordInput
-              value={masterPasswordInput}
-              onChange={(e) => setMasterPasswordInput(e.target.value)}
-              placeholder={t('mss.vault.masterPasswort')}
-              aria-label={t('mss.vault.masterPasswort')}
-              autoComplete="current-password"
-              autoFocus={!(isBiometricsEnabled && isBiometricsSupported)}
-            />
-
-            {unlockError && (
-              <div className="rounded-xl bg-status-destructive/15 border border-status-destructive/30 p-2.5 text-xs text-status-destructive">
-                {unlockError}
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              disabled={(isTeam ? teamBusy : isUnlocking) || !masterPasswordInput}
-              className="w-full bg-primary text-on-primary hover:bg-primary-hover py-2 flex items-center justify-center gap-1.5 text-xs"
-            >
-              {(isTeam ? teamBusy : isUnlocking) ? (
-                <>
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  <span>{t('mss.vault.entschluessle')}</span>
-                </>
-              ) : (
-                <>
-                  <Unlock className="h-3.5 w-3.5" />
-                  <span>{t('mss.vault.entsperren')}</span>
-                </>
-              )}
-            </Button>
-          </form>
-
-          {/* Hinweis per E-Mail anfordern (nur wenn ein Hinweis hinterlegt ist) */}
-          <div className="flex flex-col items-center gap-1 pt-1">
-            {activeHasHint && (
-              <Button
-                fingerziel
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleRequestHint}
-                disabled={isRequestingHint}
-                className="text-on-surface-variant hover:text-primary"
-              >
-                <HelpCircle className="h-3.5 w-3.5" />
-                <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.hinweisPerMail')}</span>
-              </Button>
-            )}
-
-            {!isTeam && !isInitialized && (
-              <Button
-                fingerziel
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setIsSetupMode(true)
-                  setMasterPasswordInput('')
-                }}
-                className="text-on-surface-variant hover:text-primary"
-              >
-                {t('mss.vault.neuenTresorEinrichten')}
-              </Button>
-            )}
-
-            {isInitialized && isOwner && (
-              <Button
-                fingerziel
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setZuruecksetzen(true)
-                  setMasterPasswordInput('')
-                }}
-                className="text-on-surface-variant hover:text-status-destructive"
-              >
-                {t('mss.vault.zuruecksetzen.link')}
-              </Button>
-            )}
-          </div>
-          </>
+            </>
           )}
         </div>
       </div>

@@ -15,7 +15,6 @@ import { DevicesTab } from './profile/DevicesTab'
 import { CredentialsTab } from './profile/CredentialsTab'
 import { MessengerSicherheitTab } from './profile/MessengerSicherheitTab'
 import { TresorSicherheitTab } from '@/desktop/vault/TresorSicherheitTab'
-import { TeamTresorSicherheitTab } from '@/desktop/vault/TeamTresorSicherheitTab'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { PageHeader } from '@/Singra/UI/PageHeader'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
@@ -98,10 +97,7 @@ export function Profile() {
           {typeof window !== 'undefined' &&
             ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) &&
             publicSettings.vault_enabled && (
-              <>
-                <TresorSicherheitTab />
-                <TeamTresorSicherheitTab />
-              </>
+              <TresorSicherheitTab />
             )}
           <DevicesTab />
         </div>

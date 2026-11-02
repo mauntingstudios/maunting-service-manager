@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   AlertTriangle,
@@ -28,7 +28,6 @@ import { useVaultStore } from './vaultStore'
 import {
   calculateCardExpiry,
   formatCardNumber,
-  formatFingerprint,
   getCardStatus,
   type CardStatus,
 } from './mauntingCard'
@@ -36,6 +35,13 @@ import {
 interface MauntingCardProps {
   className?: string
   onOpenSecurityTab?: () => void
+  unlockOverride?: (password: string) => Promise<boolean>
+  onUnlockSuccess?: () => void
+  onAuthorizeSuccess?: () => void
+  externalUnlockTrigger?: boolean
+  externalAuthorizeTrigger?: boolean
+  onExternalUnlockHandled?: () => void
+  onExternalAuthorizeHandled?: () => void
 }
 
 /**
@@ -45,16 +51,28 @@ interface MauntingCardProps {
  * HTML/CSS-Overlays für Profilbild, Username, Status, Card-ID und Krypto-Aktionen.
  * Per Klick oder Tastatur (Leertaste/Enter) dreht sich die Karte geschmeidig um.
  */
-export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCardProps) {
+export function MauntingCard({
+  className = '',
+  onOpenSecurityTab,
+  unlockOverride,
+  onUnlockSuccess,
+  onAuthorizeSuccess,
+  externalUnlockTrigger,
+  externalAuthorizeTrigger,
+  onExternalUnlockHandled,
+  onExternalAuthorizeHandled,
+}: MauntingCardProps) {
   const { t } = useTranslation()
   const { user } = useAuthStore()
 
   const {
     isInitialized,
     isUnlocked,
+    isDeviceAuthorized,
     unlockError,
     bucketId,
     unlock,
+    authorizeDevice,
     lock,
     rotationState,
   } = useVaultStore()
@@ -64,9 +82,26 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
   const [passwordInput, setPasswordInput] = useState('')
   const [submittingUnlock, setSubmittingUnlock] = useState(false)
 
+  const [authorizeDialogOpen, setAuthorizeDialogOpen] = useState(false)
+  const [authorizePasswordInput, setAuthorizePasswordInput] = useState('')
+  const [submittingAuthorize, setSubmittingAuthorize] = useState(false)
+
+  useEffect(() => {
+    if (externalUnlockTrigger) {
+      setUnlockDialogOpen(true)
+      onExternalUnlockHandled?.()
+    }
+  }, [externalUnlockTrigger, onExternalUnlockHandled])
+
+  useEffect(() => {
+    if (externalAuthorizeTrigger) {
+      setAuthorizeDialogOpen(true)
+      onExternalAuthorizeHandled?.()
+    }
+  }, [externalAuthorizeTrigger, onExternalAuthorizeHandled])
+
   // Berechnete Karten-Attribute
   const cardNumber = useMemo(() => formatCardNumber(bucketId, user?.id ?? 1), [bucketId, user?.id])
-  const fingerprint = useMemo(() => formatFingerprint(bucketId), [bucketId])
 
   const expiry = useMemo(() => {
     // Falls ein Registrierungsdatum existiert, sonst aktuelles Jahr
@@ -77,14 +112,35 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
     return getCardStatus({
       isInitialized,
       isUnlocked,
+      isDeviceAuthorized,
       isExpired: expiry.isExpired,
       needsRotation: rotationState === 'prepared',
     })
-  }, [isInitialized, isUnlocked, expiry.isExpired, rotationState])
+  }, [isInitialized, isUnlocked, isDeviceAuthorized, expiry.isExpired, rotationState])
 
   const handleFlip = useCallback(() => {
     setIsFlipped((prev) => !prev)
   }, [])
+
+  const handleAuthorizeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!authorizePasswordInput.trim() || submittingAuthorize) return
+
+    setSubmittingAuthorize(true)
+    try {
+      const success = await authorizeDevice(authorizePasswordInput)
+      if (success) {
+        toast.success(t('mss.card.authorizedErfolg', 'Gerät erfolgreich autorisiert'))
+        setAuthorizePasswordInput('')
+        setAuthorizeDialogOpen(false)
+        onAuthorizeSuccess?.()
+      } else {
+        toast.error(unlockError || t('mss.vault.falschesPasswort', 'Falsche PIN / Falsches Passwort'))
+      }
+    } finally {
+      setSubmittingAuthorize(false)
+    }
+  }
 
   const handleUnlockSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -92,11 +148,12 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
 
     setSubmittingUnlock(true)
     try {
-      const success = await unlock(passwordInput)
+      const success = unlockOverride ? await unlockOverride(passwordInput) : await unlock(passwordInput)
       if (success) {
         toast.success(t('mss.vault.entsperrtErfolg', 'Maunting Card erfolgreich entsperrt'))
         setPasswordInput('')
         setUnlockDialogOpen(false)
+        onUnlockSuccess?.()
       } else {
         toast.error(unlockError || t('mss.vault.falschesPasswort', 'Falsche PIN / Falsches Passwort'))
       }
@@ -124,6 +181,13 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm backdrop-blur-md">
             <AlertTriangle className="w-3 h-3 text-amber-400" />
             {t('mss.card.statusRotation', 'ERNEUERUNG FÄLLIG')}
+          </span>
+        )
+      case 'unauthorized':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm backdrop-blur-md">
+            <AlertTriangle className="w-3 h-3 text-amber-400" />
+            {t('mss.card.statusUnauthorized', 'GERÄT NICHT AUTORISIERT')}
           </span>
         )
       case 'locked':
@@ -273,7 +337,16 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
               className="absolute bottom-5 inset-x-6 flex items-center justify-center gap-2 z-10"
               onClick={(e) => e.stopPropagation()}
             >
-              {!isUnlocked ? (
+              {status === 'unauthorized' ? (
+                <button
+                  type="button"
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold shadow-lg shadow-amber-500/30 flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
+                  onClick={() => setAuthorizeDialogOpen(true)}
+                >
+                  <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+                  {t('mss.card.actionAuthorize', 'Gerät autorisieren')}
+                </button>
+              ) : !isUnlocked ? (
                 <button
                   type="button"
                   className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold shadow-lg shadow-sky-500/30 flex items-center gap-1.5 text-xs py-1.5 px-3.5 rounded-lg transition-colors"
@@ -368,6 +441,59 @@ export function MauntingCard({ className = '', onOpenSecurityTab }: MauntingCard
                   <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
                 )}
                 {t('mss.card.unlockSubmit', 'Entsperren')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {/* ════════════════════════ AUTORISIERUNGS-MODAL (Design DNA) ════════════════════════ */}
+      <Dialog open={authorizeDialogOpen} onOpenChange={setAuthorizeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-amber-400" aria-hidden="true" />
+              {t('mss.card.authorizeTitle', 'Gerät für Maunting Card autorisieren')}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                'mss.card.authorizeSubtitle',
+                'Bestätige dein Master-Passwort / deine PIN einmalig auf diesem Gerät. Der kryptographische Schlüssel verbleibt nicht im Arbeitsspeicher.'
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleAuthorizeSubmit} className="p-6 space-y-4">
+            <PasswordInput
+              id="card-authorize-password"
+              label={t('mss.card.pinLabel', 'Karten-Passwort / PIN')}
+              value={authorizePasswordInput}
+              onChange={(e) => setAuthorizePasswordInput(e.target.value)}
+              placeholder={t('mss.card.pinPlaceholder', 'Karten-Passwort / PIN')}
+              autoFocus
+              disabled={submittingAuthorize}
+              required
+            />
+
+            <DialogFooter variant="plain" className="px-0 pb-0 mt-6">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setAuthorizeDialogOpen(false)}
+                disabled={submittingAuthorize}
+              >
+                {t('common.cancel', 'Abbrechen')}
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={submittingAuthorize || !authorizePasswordInput.trim()}
+              >
+                {submittingAuthorize ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                )}
+                {t('mss.card.authorizeSubmit', 'Gerät freischalten')}
               </Button>
             </DialogFooter>
           </form>

@@ -7,7 +7,7 @@
  * und liefert den aktuellen Sicherheitsstatus.
  */
 
-export type CardStatus = 'uninitialized' | 'locked' | 'active' | 'rotation_due'
+export type CardStatus = 'uninitialized' | 'unauthorized' | 'locked' | 'active' | 'rotation_due'
 
 /**
  * Erzeugt aus einer Hex-Bucket-ID oder einem Fallback-Seed eine saubere,
@@ -71,11 +71,15 @@ export function calculateCardExpiry(
 export function getCardStatus(opts: {
   isInitialized: boolean
   isUnlocked: boolean
+  isDeviceAuthorized?: boolean
   isExpired?: boolean
   needsRotation?: boolean
 }): CardStatus {
   if (!opts.isInitialized) {
     return 'uninitialized'
+  }
+  if (opts.isDeviceAuthorized === false) {
+    return 'unauthorized'
   }
   if (opts.isExpired || opts.needsRotation) {
     return 'rotation_due'
