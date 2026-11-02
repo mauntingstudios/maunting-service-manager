@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
 from dependencies import require_global, verify_csrf
+from middleware.rate_limit import auth_rate_limit
 from schemas.panel_settings import (
     PanelLanguage,
     PanelSettingsResponse,
@@ -331,7 +332,7 @@ def _validate_imprint_url(value: str) -> str:
 
 
 @router.post("", status_code=200)
-def update_settings(
+async def update_settings(
     req: PanelSettingsUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("panel.settings.write")),
@@ -371,8 +372,26 @@ def update_settings(
                     if not req.confirm_password or not AuthService.verify_password(req.confirm_password, user.password_hash):
                         raise HTTPException(status_code=401, detail="Bitte dein Passwort bestätigen.")
                 else:
-                    # Pure social login: session of authenticated admin user is accepted
-                    pass
+                    # Rein social (kein Passwort, kein 2FA): die Sitzung allein
+                    # schaltet nichts. Der Nachweis kommt per Einmal-Link an die
+                    # bestätigte E-Mail; bis zur Bestätigung bleibt der Schalter
+                    # aus (Befund 46, Muster /auth/password-link).
+                    if not user.email_verified:
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Bitte bestätige zuerst deine E-Mail-Adresse, dann schicken wir dir einen Freigabe-Link.",
+                        )
+                    if not EmailService.is_configured():
+                        raise HTTPException(status_code=503, detail="E-Mail-Versand ist nicht eingerichtet.")
+                    token = PanelSettingsService.localhost_freigabe_anfordern(db, user.id)
+                    await EmailService.send_localhost_freigabe_email(user.email, user.username, token)
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "code": "LOCALHOST_LINK_GESENDET",
+                            "message": "Wir haben dir einen Bestätigungs-Link an deine E-Mail-Adresse geschickt. Erst nach dem Öffnen wird die Freigabe aktiv.",
+                        },
+                    )
             value = "true" if target_val else "false"
             PanelSettingsService.set("allow_localhost_connections", value, db=db)
             continue
@@ -497,6 +516,31 @@ def update_settings(
     if any(key.startswith("season") for key in data):
         SyncEventService.publish({"entity": "theme", "action": "changed"})
     return {"message": "Einstellungen gespeichert"}
+
+
+class LocalhostFreigabeBestaetigen(BaseModel):
+    token: str = Field(..., min_length=16, max_length=128)
+
+
+@router.post("/localhost-connections/confirm", dependencies=[Depends(auth_rate_limit)])
+def localhost_freigabe_bestaetigen(
+    req: LocalhostFreigabeBestaetigen,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("panel.settings.write")),
+    __=Depends(verify_csrf),
+) -> dict:
+    """Schaltet Localhost-Verbindungen per Einmal-Link frei (Befund 46).
+
+    Für Konten ohne Passwort und ohne 2FA: Der Link beweist das Postfach, die
+    Sitzung belegt weiter den Admin — erst beides zusammen stellt um. Der Link
+    gilt genau einmal.
+    """
+    if not PanelSettingsService.localhost_freigabe_bestaetigen(db, user.id, req.token):
+        raise HTTPException(
+            status_code=403,
+            detail="Dieser Freigabe-Link ist ungültig, abgelaufen oder wurde schon benutzt.",
+        )
+    return {"freigeschaltet": True}
 
 
 class TresorSpeicherUpdate(BaseModel):

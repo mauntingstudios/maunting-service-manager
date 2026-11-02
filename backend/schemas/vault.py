@@ -324,4 +324,6 @@ class VaultDeviceAuthSessionCreate(BaseModel):
 class VaultDeviceAuthResolve(BaseModel):
     session_id: str = Field(..., min_length=8, max_length=64)
     encrypted_payload: str = Field(..., min_length=1, max_length=16 * 1024)
+    # Nur im QR-Code enthalten: belegt, dass das Smartphone ihn gescannt hat.
+    resolve_token: str = Field(..., min_length=16, max_length=128)
 

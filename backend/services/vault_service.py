@@ -1177,7 +1177,27 @@ ROTATION_HALTEFRIST = timedelta(days=7)
 
 
 def _staging_loeschen(db: Session, bucket_id: str) -> None:
-    db.query(VaultEntry).filter(VaultEntry.bucket_id == bucket_id.lower()).delete(synchronize_session=False)
+    """Raeumt einen Staging-Bucket restlos, wie `_bucket_entfernen` den aktiven.
+
+    Bislang blieben Dateien, Posteingang, Sicherungszugaenge, Besitznachweis
+    und Formatsperre liegen: ein abgebrochener Upload fuellte die Platte
+    endgueltig, weil kein Aufraeumen je wieder kam. Committet nicht; das tut
+    der Aufrufer (Abbruch, Rollback, erneutes Vorbereiten).
+
+    Auch ein Grabstein auf der Kennung geht mit: Prepare weist beerdigte
+    Kennungen ab, hier kann also nur eine verirrte Zeile stehen — und mit ihr
+    wuerde ein erneutes Vorbereiten derselben Kennung scheitern. Aktive
+    beerdigte Buckets laufen nie hier durch (das Zuruecksetzen ruft diese
+    Funktion nicht auf).
+    """
+    b = bucket_id.lower()
+    vault_blob_service.alle_zur_loeschung(db, b)
+    vault_blob_service.eingang_entfernen(db, b)
+    db.query(VaultSicherungszugang).filter(VaultSicherungszugang.bucket_id == b).delete(synchronize_session=False)
+    db.query(VaultEntry).filter(VaultEntry.bucket_id == b).delete(synchronize_session=False)
+    db.query(VaultBlindBucket).filter(VaultBlindBucket.bucket_id == b).delete(synchronize_session=False)
+    db.query(VaultBucketFormat).filter(VaultBucketFormat.bucket_id == b).delete(synchronize_session=False)
+    db.query(VaultBucketTombstone).filter(VaultBucketTombstone.bucket_id == b).delete(synchronize_session=False)
 
 
 def _blobs_umhaengen(db: Session, alt: str, neu: str) -> None:
@@ -1232,7 +1252,26 @@ def rotation_commit_team(db: Session, team: Team) -> None:
     db.commit()
 
 
+def _rotation_gesperrt_team(db: Session, team: Team) -> Team:
+    """Die Teamzeile unter Sperre neu lesen: abort/rollback pruefen den Stand danach."""
+    gesperrt = db.query(Team).filter(Team.id == team.id).with_for_update().first()
+    return gesperrt if gesperrt is not None else team
+
+
+def _rotation_gesperrt_privat(db: Session, konto: TresorKonto) -> VaultUserSetting | None:
+    """Die private Zeile unter Sperre neu lesen (mit Altbestands-Rueckfall)."""
+    gesperrt = db.scalar(
+        select(VaultUserSetting).where(VaultUserSetting.konto_index == konto.index).with_for_update()
+    )
+    return gesperrt if gesperrt is not None else einstellung(db, konto)
+
+
 def rotation_abbrechen_team(db: Session, team: Team) -> None:
+    team = _rotation_gesperrt_team(db, team)
+    if team.vault_rotation_state == "committed":
+        # Ein Commit danach ein Abbruch: das Staging ist laengst aktiv, der
+        # Abbruch duerfte nur noch den Rollback zerstoeren.
+        raise HTTPException(status_code=409, detail="Kein Abbruch mehr moeglich (Rotation bereits abgeschlossen).")
     if team.vault_pending_bucket_id:
         _staging_loeschen(db, team.vault_pending_bucket_id)
     team.vault_pending_bucket_id = None
@@ -1242,6 +1281,7 @@ def rotation_abbrechen_team(db: Session, team: Team) -> None:
 
 
 def rotation_rollback_team(db: Session, team: Team) -> None:
+    team = _rotation_gesperrt_team(db, team)
     if not team.vault_old_bucket_id or team.vault_rotation_state != "committed":
         raise HTTPException(status_code=409, detail="Kein Rollback mehr moeglich.")
     aktuell, aktuell_salt = team.vault_bucket_id, team.vault_salt
@@ -1346,9 +1386,11 @@ def rotation_commit_privat(db: Session, konto: TresorKonto) -> None:
 
 
 def rotation_abbrechen_privat(db: Session, konto: TresorKonto) -> None:
-    setting = einstellung(db, konto)
+    setting = _rotation_gesperrt_privat(db, konto)
     if setting is None:
         return
+    if setting.rotation_state == "committed":
+        raise HTTPException(status_code=409, detail="Kein Abbruch mehr moeglich (Rotation bereits abgeschlossen).")
     if setting.pending_bucket_id:
         _staging_loeschen(db, setting.pending_bucket_id)
     setting.pending_bucket_id = None
@@ -1359,7 +1401,7 @@ def rotation_abbrechen_privat(db: Session, konto: TresorKonto) -> None:
 
 
 def rotation_rollback_privat(db: Session, konto: TresorKonto) -> None:
-    setting = einstellung(db, konto)
+    setting = _rotation_gesperrt_privat(db, konto)
     if setting is None or not setting.old_bucket_id or setting.rotation_state != "committed":
         raise HTTPException(status_code=409, detail="Kein Rollback mehr moeglich.")
     aktuell = setting.bucket_id

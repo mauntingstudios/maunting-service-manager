@@ -108,6 +108,46 @@ describe('tresorBackup', () => {
     await expect(leseBackupBytes(bytes, 'falsches-passwort-123')).rejects.toThrow()
   })
 
+  it('weist fremde Art und unbekannte Version ab, auch mit Einträgen', async () => {
+    const { argon2idRaw, importAesGcmKey } = await import('@msdis/shield/kdf')
+    const { aesGcmEncrypt } = await import('@msdis/shield/aead')
+    const { BACKUP_MAGIC } = await import('./tresorBackup')
+    const passwort = 'altes-passwort-123'
+    async function mitKopf(kopf: Record<string, unknown>): Promise<Uint8Array> {
+      const salt = new Uint8Array(32)
+      crypto.getRandomValues(salt)
+      const roh = await argon2idRaw({
+        password: passwort,
+        salt,
+        memorySize: 131072,
+        iterations: 3,
+        parallelism: 4,
+        hashLength: 32,
+      })
+      const key = await importAesGcmKey(roh)
+      const klartext = new TextEncoder().encode(JSON.stringify({ ...kopf, eintraege: [{ id: 'a' }] }))
+      const nonce = new Uint8Array(12)
+      crypto.getRandomValues(nonce)
+      const chiffrat = await aesGcmEncrypt(key, nonce, klartext)
+      const einleitung = new TextEncoder().encode(`${BACKUP_MAGIC} ${bytesToBase64(salt)}\n`)
+      const rahmen = new Uint8Array(4 + nonce.length + chiffrat.length)
+      new DataView(rahmen.buffer).setUint32(0, nonce.length + chiffrat.length)
+      rahmen.set(nonce, 4)
+      rahmen.set(chiffrat, 4 + nonce.length)
+      const out = new Uint8Array(einleitung.length + rahmen.length)
+      out.set(einleitung, 0)
+      out.set(rahmen, einleitung.length)
+      return out
+    }
+    await expect(
+      leseBackupBytes(await mitKopf({ art: 'msm-panel-backup', version: 1 }), passwort),
+    ).rejects.toThrow('Ungültiges Backup-Format')
+    await expect(
+      leseBackupBytes(await mitKopf({ art: 'msm-vault-backup', version: 2 }), passwort),
+    ).rejects.toThrow('Ungültiges Backup-Format')
+    await expect(leseBackupBytes(await mitKopf({}), passwort)).rejects.toThrow('Ungültiges Backup-Format')
+  })
+
   it('entschlüsselt statischen Test-Vektor (Cross-Package mit Recovery)', async () => {
     const vectorB64 =
       'TVNNLVZBVUxULUJBQ0tVUC12MSBJYUM0YnpDaHpEdUJJcUphYllsd2cvcDZkUFFUWXh2OUFicEVGQzhER0pvPQoAAACVb27w64zYj7wLvA0hMo5nPcFjKeIqtc1BJESJCwQsAYBjhQv6L13xZjqSi74cZI3GdLzt+B/4l58DGGtl4mhSC7DvljHBE3LzHY0T9cZbjjqDmmTzrpqGtZeAPgktRqv2jSDgsxORjh5fHC3e9S/jFyk389gtIxnCZ1UlhSF/5iZYnKprQgM+a3rpZ1RIai7qYO9LAL8='

@@ -35,6 +35,7 @@ describe('DeviceAuthQrView Component', () => {
     vi.mocked(api.createDeviceAuthSession).mockResolvedValue({
       session_id: 'session-xyz-123',
       session_token: 'token-abc-456',
+      resolve_token: 'resolve-token-789',
       expires_at: '2026-11-02T16:00:00Z',
       purpose: 'authorize',
     })

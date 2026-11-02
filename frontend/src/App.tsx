@@ -21,6 +21,7 @@ const Login = lazy(() => import('./pages/Login').then(module => ({ default: modu
 const Register = lazy(() => import('./pages/Register').then(module => ({ default: module.Register })))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword').then(module => ({ default: module.ForgotPassword })))
 const ResetPassword = lazy(() => import('./pages/ResetPassword').then(module => ({ default: module.ResetPassword })))
+const LocalhostFreigabe = lazy(() => import('./pages/LocalhostFreigabe').then(module => ({ default: module.LocalhostFreigabe })))
 const AiFreigabe = lazy(() => import('./pages/AiFreigabe').then(module => ({ default: module.AiFreigabe })))
 const BrowserBestaetigung = lazy(() => import('./pages/BrowserBestaetigung').then(module => ({ default: module.BrowserBestaetigung })))
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })))
@@ -128,6 +129,10 @@ function App() {
         <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
         <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        {/* Einmal-Link per Mail (Befund 46): ohne `PublicOnlyRoute`, damit er
+            auch bei offener Sitzung funktioniert. Das Token allein genügt
+            nicht — die Sitzung muss weiter einem Admin gehören. */}
+        <Route path="/localhost-freigabe" element={<LocalhostFreigabe />} />
         {/* Ohne Anmeldung, und ohne `PublicOnlyRoute`: der Link kommt per
             Mail und muss auch dann funktionieren, wenn im selben Browser
             noch eine Sitzung offen ist. Das Token im Pfad ist die ganze

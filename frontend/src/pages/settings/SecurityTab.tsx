@@ -93,7 +93,7 @@ export function SecurityTab() {
   const [allowLocalhost, setAllowLocalhost] = useState(false)
   const [localhostBusy, setLocalhostBusy] = useState(false)
   const [showLocalhostModal, setShowLocalhostModal] = useState(false)
-  const [localhostSocialStep, setLocalhostSocialStep] = useState<1 | 2>(1)
+  const [localhostSocialStep, setLocalhostSocialStep] = useState<1 | 2 | 3>(1)
   const [localhostPassword, setLocalhostPassword] = useState('')
   const [localhostTotp, setLocalhostTotp] = useState('')
   const [loading, setLoading] = useState(canReadSettings)
@@ -304,8 +304,17 @@ export function SecurityTab() {
       setShowLocalhostModal(false)
       toast.success(t('security.localhostEnabled'))
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : t('security.localhostSaveFailed')
-      toast.error(msg)
+      // Rein social: Der Server schickt stattdessen einen Einmal-Link an die
+      // bestätigte E-Mail (Befund 46). Der Schalter bleibt aus, bis der Link
+      // geöffnet wird — das steht hier, nicht nur im Toast.
+      const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : null
+      if (code === 'LOCALHOST_LINK_GESENDET') {
+        setLocalhostSocialStep(3)
+        toast.success(t('security.localhostLinkSentTitle'))
+      } else {
+        const msg = err instanceof Error ? err.message : t('security.localhostSaveFailed')
+        toast.error(msg)
+      }
     } finally {
       setLocalhostBusy(false)
     }
@@ -598,9 +607,11 @@ export function SecurityTab() {
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-status-warning shrink-0" />
                 <h3 className="font-headline text-title-md font-semibold text-on-surface">
-                  {isPureSocialLogin && localhostSocialStep === 2
-                    ? t('security.localhostSocialStep2Title')
-                    : t('security.localhostConfirmTitle')}
+                  {isPureSocialLogin && localhostSocialStep === 3
+                    ? t('security.localhostLinkSentTitle')
+                    : isPureSocialLogin && localhostSocialStep === 2
+                      ? t('security.localhostSocialStep2Title')
+                      : t('security.localhostConfirmTitle')}
                 </h3>
               </div>
               <button
@@ -615,7 +626,7 @@ export function SecurityTab() {
             </div>
 
             {/* Risikohinweis */}
-            {!(isPureSocialLogin && localhostSocialStep === 2) && (
+            {!(isPureSocialLogin && localhostSocialStep !== 1) && (
               <div className="space-y-3">
                 <p className="text-sm text-on-surface-variant">
                   {t('security.localhostConfirmBody')}
@@ -733,7 +744,22 @@ export function SecurityTab() {
             {/* Fall 4: Rein Social Login (kein Passwort, kein 2FA) */}
             {isPureSocialLogin && (
               <div className="space-y-4 pt-2">
-                {localhostSocialStep === 1 ? (
+                {localhostSocialStep === 3 ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-on-surface-variant">
+                      {t('security.localhostLinkSentBody')}
+                    </p>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        type="button"
+                        onClick={() => setShowLocalhostModal(false)}
+                        disabled={localhostBusy}
+                      >
+                        {t('common.close')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : localhostSocialStep === 1 ? (
                   <div className="flex justify-end gap-2 pt-2">
                     <Button
                       type="button"

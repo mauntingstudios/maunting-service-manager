@@ -30,9 +30,10 @@ def _anlegen(client: TestClient, cookies: dict, zweck: str = "data_export"):
     )
 
 
-def _im_browser(client: TestClient, geraet, vorgang: str, zahl: int):
+def _im_browser(client: TestClient, geraet, vorgang: str, zahl: int, cookies: dict):
+    # Der Browser ist angemeldet: Herkunft plus CSRF wie im echten Aufruf.
     optionen = client.post(
-        "/api/auth/passkey/browser/optionen", headers={"Origin": HERKUNFT}, json={"vorgang": vorgang}
+        "/api/auth/passkey/browser/optionen", headers=_kopf(cookies), cookies=cookies, json={"vorgang": vorgang}
     )
     assert optionen.status_code == 200, optionen.text
     daten = optionen.json()
@@ -96,7 +97,7 @@ def test_export_aus_der_app_mit_bestaetigung_im_browser(
     # Vor der Bestaetigung nimmt der Export den Vorgang nicht.
     assert _export(client, owner_cookies, vorgang["vorgang"]).status_code == 403
 
-    daten, bestaetigt = _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"])
+    daten, bestaetigt = _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"], owner_cookies)
     assert bestaetigt.status_code == 200, bestaetigt.text
     assert daten["zweck"] == "data_export"
     assert vorgang["zahl"] in daten["auswahl"] and len(daten["auswahl"]) == 3
@@ -117,19 +118,24 @@ def test_falsche_zahl_verbraucht_den_vorgang(client: TestClient, owner_user: Use
     vorgang = _anlegen(client, owner_cookies).json()
     falsch = next(z for z in range(10, 100) if z != vorgang["zahl"])
 
-    _, res = _im_browser(client, geraet, vorgang["vorgang"], falsch)
+    _, res = _im_browser(client, geraet, vorgang["vorgang"], falsch, owner_cookies)
     assert res.status_code == 403
     assert _stand(client, owner_cookies, vorgang["vorgang"]) == "verfallen"
     nochmal = client.post(
-        "/api/auth/passkey/browser/optionen", headers={"Origin": HERKUNFT}, json={"vorgang": vorgang["vorgang"]}
+        "/api/auth/passkey/browser/optionen", headers=_kopf(owner_cookies), cookies=owner_cookies, json={"vorgang": vorgang["vorgang"]}
     )
     assert nochmal.status_code == 400
+    # Ohne CSRF antwortet die Route nicht — auch nicht mit 400.
+    ohne = client.post(
+        "/api/auth/passkey/browser/optionen", headers={"Origin": HERKUNFT}, json={"vorgang": vorgang["vorgang"]}
+    )
+    assert ohne.status_code == 403
 
 
 def test_gilt_nur_fuer_seinen_zweck(client: TestClient, owner_user: User, owner_cookies: dict):
     geraet = _passkey_einrichten(client, owner_cookies)
     vorgang = _anlegen(client, owner_cookies, zweck="device_pairing").json()
-    _, res = _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"])
+    _, res = _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"], owner_cookies)
     assert res.status_code == 200, res.text
 
     assert _export(client, owner_cookies, vorgang["vorgang"]).status_code == 403
@@ -140,7 +146,7 @@ def test_fremdes_konto_loest_nicht_ein(
 ):
     geraet = _passkey_einrichten(client, owner_cookies)
     vorgang = _anlegen(client, owner_cookies).json()
-    _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"])
+    _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"], owner_cookies)
 
     try:
         passkey_service.bestaetigen(
@@ -174,7 +180,7 @@ def test_zwei_gleichzeitige_einloesungen_nur_eine_gilt(
 
     geraet = _passkey_einrichten(client, owner_cookies)
     vorgang = _anlegen(client, owner_cookies).json()
-    _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"])
+    _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"], owner_cookies)
 
     echt = passkey_service._vorgang_umschreiben
     zweite: list[str] = []
@@ -207,7 +213,7 @@ def test_abgelaufen_wird_abgelehnt(client: TestClient, db: Session, owner_user: 
 
     geraet = _passkey_einrichten(client, owner_cookies)
     vorgang = _anlegen(client, owner_cookies).json()
-    _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"])
+    _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"], owner_cookies)
 
     db.query(LoginChallenge).filter(LoginChallenge.purpose == "passkey_browser").update(
         {LoginChallenge.expires_at: datetime.now(timezone.utc) - timedelta(seconds=1)}
@@ -227,6 +233,6 @@ def test_warten_verbraucht_nicht_die_anmeldegrenze(client: TestClient, owner_use
     for _ in range(15):
         assert _stand(client, owner_cookies, vorgang["vorgang"]) == "offen"
 
-    _, bestaetigt = _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"])
+    _, bestaetigt = _im_browser(client, geraet, vorgang["vorgang"], vorgang["zahl"], owner_cookies)
     assert bestaetigt.status_code == 200, bestaetigt.text
     assert _export(client, owner_cookies, vorgang["vorgang"]).status_code == 200

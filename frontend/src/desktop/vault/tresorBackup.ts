@@ -89,7 +89,13 @@ export async function leseBackupBytes(
     klartext.set(t, pos)
     pos += t.length
   }
-  const parsed = JSON.parse(new TextDecoder().decode(klartext)) as { eintraege?: Record<string, unknown>[] }
+  const parsed = JSON.parse(new TextDecoder().decode(klartext)) as {
+    art?: unknown
+    version?: unknown
+    eintraege?: Record<string, unknown>[]
+  }
+  // Wie in der Recovery-App: der innere Kopf entscheidet, was das ist.
+  if (parsed.art !== 'msm-vault-backup' || parsed.version !== 1) throw new Error('Ungültiges Backup-Format')
   if (!Array.isArray(parsed.eintraege)) throw new Error('Ungültiges Backup-Format')
   return parsed.eintraege
 }

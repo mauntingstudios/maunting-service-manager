@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { resolveDeviceAuthSession } from '@/api/vaultDeviceAuth'
 import { useAuthStore } from '@/stores/authStore'
 import { SmartcardWalletModal } from './SmartcardWalletModal'
 import { useVaultStore } from './vaultStore'
@@ -13,17 +14,31 @@ vi.mock('./vaultStore', () => ({
   useVaultStore: vi.fn(),
 }))
 
+let erkannterCode: ((code: string) => void) | null = null
+
 vi.mock('@/hooks/useBackgroundQrScanner', () => ({
-  useBackgroundQrScanner: () => ({
-    videoRef: { current: null },
-    isScanning: true,
-    isDetected: false,
-    error: null,
-    start: vi.fn(),
-    stop: vi.fn(),
-    reset: vi.fn(),
-  }),
+  useBackgroundQrScanner: (opts: { onDetected?: (code: string) => void }) => {
+    erkannterCode = opts.onDetected ?? null
+    return {
+      videoRef: { current: null },
+      isScanning: true,
+      isDetected: false,
+      error: null,
+      start: vi.fn(),
+      stop: vi.fn(),
+      reset: vi.fn(),
+    }
+  },
 }))
+
+vi.mock('@/api/vaultDeviceAuth', () => ({
+  resolveDeviceAuthSession: vi.fn(),
+}))
+
+vi.mock('./deviceAuthCrypto', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('./deviceAuthCrypto')>()
+  return { ...orig, encryptAuthPayload: vi.fn(async () => 'chiffre-aus-test') }
+})
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -74,5 +89,54 @@ describe('SmartcardWalletModal Component', () => {
     const closeBtn = screen.getByRole('button', { name: 'Schließen' })
     fireEvent.click(closeBtn)
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('löst einen gescannten v2-Code mit seinem Aufloese-Token auf', async () => {
+    vi.mocked(resolveDeviceAuthSession).mockResolvedValue({ success: true })
+    render(<SmartcardWalletModal isOpen={true} onClose={vi.fn()} />)
+    expect(erkannterCode).not.toBeNull()
+
+    erkannterCode!(JSON.stringify({
+      v: 2,
+      sid: 'a1b2c3d4e5f67890',
+      pk: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0abcdef1234567890',
+      p: 'authorize',
+      uid: 1,
+      rt: 'aufloese-token-aus-dem-qr-code',
+    }))
+
+    await waitFor(() => {
+      expect(resolveDeviceAuthSession).toHaveBeenCalledWith(
+        'a1b2c3d4e5f67890',
+        'chiffre-aus-test',
+        'aufloese-token-aus-dem-qr-code',
+      )
+    })
+  })
+
+  it('ruft resolve ohne Aufloese-Token nicht auf', async () => {
+    render(<SmartcardWalletModal isOpen={true} onClose={vi.fn()} />)
+    expect(erkannterCode).not.toBeNull()
+
+    // v1-Code von vor dem Fix: kein rt, kein Netzaufruf.
+    erkannterCode!(JSON.stringify({
+      v: 1,
+      sid: 'a1b2c3d4e5f67890',
+      pk: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0abcdef1234567890',
+      p: 'authorize',
+      uid: 1,
+    }))
+    // v2 ohne rt: manipuliert, ebenfalls kein Netzaufruf.
+    erkannterCode!(JSON.stringify({
+      v: 2,
+      sid: 'a1b2c3d4e5f67890',
+      pk: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0abcdef1234567890',
+      p: 'authorize',
+      uid: 1,
+    }))
+
+    await waitFor(() => {
+      expect(resolveDeviceAuthSession).not.toHaveBeenCalled()
+    })
   })
 })

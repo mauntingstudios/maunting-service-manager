@@ -47,8 +47,15 @@ export async function entschluesseleTresorBackup(
     pos += teil.length;
   }
   const parsed = JSON.parse(new TextDecoder().decode(klartext)) as {
+    art?: unknown;
+    version?: unknown;
     eintraege?: Record<string, unknown>[];
   };
+  // Der innere Kopf entscheidet, was das ist: ein fremdes JSON mit
+  // `eintraege`-Liste (falsche Art, unbekannte Version) ist kein Backup.
+  if (parsed.art !== 'msm-vault-backup' || parsed.version !== 1) {
+    throw new Error('Invalid frame format: not a vault backup');
+  }
   if (!Array.isArray(parsed.eintraege)) {
     throw new Error('Invalid frame format: no entries in vault backup');
   }

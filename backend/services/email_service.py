@@ -516,6 +516,28 @@ class EmailService:
         )
 
     @classmethod
+    def _localhost_freigabe_email_html(cls, username: str, url: str) -> str:
+        url_sicher = html.escape(url, quote=True)
+        content = "\n".join([
+            cls._kategorie("Sicherheit"),
+            cls._ueberschrift("Localhost-Freigabe bestätigen"),
+            cls._anrede(cls.html_text(username)),
+            cls._absatz("du hast angefordert, Localhost-Verbindungen auf diesem Panel freizuschalten. Über den Button schaltest du sie frei."),
+            cls._cta_button(url_sicher, "Localhost-Verbindungen freischalten"),
+            cls._kleingedruckt(
+                f'Der Link ist <strong style="color:{cls.SECONDARY_TEXT};">1 Stunde</strong> gültig und nur einmal nutzbar. '
+                "Falls du die Freigabe nicht beantragt hast, ignoriere diese E-Mail — es wurde nichts umgestellt."
+            ),
+            cls._kleingedruckt(
+                "Button funktioniert nicht? Kopiere diesen Link in deinen Browser:<br>"
+                f'<a href="{url_sicher}" style="color:{cls.ACCENT_COLOR};text-decoration:none;word-break:break-all;">{url_sicher}</a>'
+            ),
+        ])
+        return cls._base_template(
+            "Localhost-Freigabe bestätigen", content, "Bestätige die Freischaltung von Localhost-Verbindungen."
+        )
+
+    @classmethod
     def _verification_code_email_html(cls, username: str, code: str) -> str:
         content = "\n".join([
             cls._kategorie("Konto"),
@@ -550,6 +572,30 @@ Dieser Link ist 1 Stunde gültig.
 Maunting Service Manager
 """
         html = EmailService._password_reset_email_html(username, url)
+        return await EmailService.send_email(to, subject, body, html)
+
+    @staticmethod
+    async def send_localhost_freigabe_email(to: str, username: str, token: str) -> bool:
+        """Einmal-Link zur Localhost-Freigabe (Befund 46): Konten ohne Passwort
+        und ohne 2FA schalten den Schalter nicht per Sitzung ein, sondern
+        beweisen ihr Postfach — wie beim Festlegen des Passworts."""
+        url = f"{settings.panel_url}/localhost-freigabe?token={token}"
+        subject = "Maunting Service Manager — Localhost-Freigabe bestätigen"
+        body = f"""Hallo {username},
+
+du hast angefordert, Localhost-Verbindungen auf diesem Panel freizuschalten.
+Bestätige das über diesen Link:
+{url}
+
+Dieser Link ist 1 Stunde gültig und nur einmal nutzbar. Danach bleibt der
+Schalter aus, bis du ihn erneut anforderst.
+
+Falls du die Freigabe nicht beantragt hast, ignoriere diese E-Mail — es wurde
+nichts umgestellt.
+
+Maunting Service Manager
+"""
+        html = EmailService._localhost_freigabe_email_html(username, url)
         return await EmailService.send_email(to, subject, body, html)
 
     @staticmethod

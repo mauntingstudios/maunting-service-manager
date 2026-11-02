@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
@@ -932,8 +932,9 @@ def create_device_auth_session(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    __=Depends(verify_csrf),
 ) -> dict:
-    session_id, token, expires = vault_device_auth_service.create_device_auth_session(
+    session_id, token, resolve_token, expires = vault_device_auth_service.create_device_auth_session(
         db=db,
         user_id=current_user.id,
         public_key=payload.public_key,
@@ -943,6 +944,8 @@ def create_device_auth_session(
     return {
         "session_id": session_id,
         "session_token": token,
+        # Nur hier und im QR-Code: wer auflöst, muss den Code gescannt haben.
+        "resolve_token": resolve_token,
         "expires_at": expires.isoformat(),
         "purpose": payload.purpose,
     }
@@ -952,15 +955,19 @@ def create_device_auth_session(
 @limiter.limit("300/minute")
 def get_device_auth_session_status(
     session_id: str,
-    token: str,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    x_msm_device_token: str | None = Header(default=None),
 ) -> dict:
+    # Das Sitzungs-Token reist im Header, nicht in der URL: Query-Parameter
+    # landen in Verlauf, Logs und Diagnose-Paketen.
+    if not x_msm_device_token:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session nicht gefunden.")
     res = vault_device_auth_service.get_device_auth_session_status(
         db=db,
         session_id=session_id,
-        session_token=token,
+        session_token=x_msm_device_token,
         user_id=current_user.id,
     )
     if res.get("status") == "not_found":
@@ -975,12 +982,14 @@ def resolve_device_auth_session(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    __=Depends(verify_csrf),
 ) -> dict[str, bool]:
     ok = vault_device_auth_service.resolve_device_auth_session(
         db=db,
         session_id=payload.session_id,
         user_id=current_user.id,
         encrypted_payload=payload.encrypted_payload,
+        resolve_token=payload.resolve_token,
     )
     if not ok:
         raise HTTPException(

@@ -302,7 +302,9 @@
     "localhostActiveBadge": "Enabled",
     "localhostInactiveBadge": "Disabled",
     "localhostPasskeyPrompt": "Confirm activation with your registered passkey.",
-    "localhostSaveFailed": "Settings could not be saved."
+    "localhostSaveFailed": "Settings could not be saved.",
+    "localhostLinkSentTitle": "Confirmation link sent",
+    "localhostLinkSentBody": "We sent a link to your verified email address. Sharing only activates once you open it — the link is valid for 1 hour and single-use."
   },
   "aiSettings": {
     "title": "AI quotas by role",
@@ -3371,6 +3373,16 @@
     "noToken": "No reset token found. Please request a new link.",
     "success": "Password successfully reset.",
     "error": "Reset failed. The token is invalid or expired."
+  },
+  "localhostFreigabe": {
+    "title": "Confirm localhost sharing",
+    "description": "Enables connections from localhost across all ports via CORS.",
+    "confirm": "Enable now",
+    "noToken": "No sharing link found. Please request a new one in settings.",
+    "loginRequired": "Please sign in with your admin account first, then open the link again.",
+    "success": "Localhost connections have been enabled.",
+    "error": "Enabling failed. The link is invalid, expired or was already used.",
+    "backToSettings": "Back to settings"
   },
   "mods": {
     "subtitle": "Manage Workshop and CurseForge mods and configure load order.",

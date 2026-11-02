@@ -618,3 +618,99 @@ def test_localhost_connections_lifecycle(
     assert res_off.status_code == 200
     settings_off = client.get("/api/settings", cookies=owner_cookies).json()
     assert settings_off["allow_localhost_connections"] is False
+
+
+class TestLocalhostFreigabeOhneNachweis:
+    """Befund 46: Rein social (kein Passwort, kein 2FA) schaltet die
+    Localhost-Freigabe nicht per Sitzung ein, sondern per Einmal-Link."""
+
+    def _sozialer_admin(self, db, owner_user):
+        owner_user.has_password = False
+        owner_user.two_factor_enabled = False
+        owner_user.email_verified = True
+        db.commit()
+
+    def _schalter_aus(self, db):
+        from services.panel_settings_service import PanelSettingsService
+
+        PanelSettingsService.delete("allow_localhost_connections", db=db)
+        db.commit()
+
+    def test_link_statt_schalter(self, client, db, owner_user, owner_cookies, csrf_token):
+        from unittest.mock import AsyncMock, patch
+
+        self._sozialer_admin(db, owner_user)
+        self._schalter_aus(db)
+        assert owner_user.passkeys == []
+
+        with patch("routers.panel_settings.EmailService.is_configured", return_value=True), patch(
+            "routers.panel_settings.EmailService.send_localhost_freigabe_email", new_callable=AsyncMock
+        ) as send:
+            res = client.post(
+                "/api/settings",
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+                json={"allow_localhost_connections": True},
+            )
+        assert res.status_code == 403
+        assert res.json()["Detail"]["code"] == "LOCALHOST_LINK_GESENDET"
+        send.assert_awaited_once()
+        assert send.await_args.args[0] == owner_user.email
+        assert client.get("/api/settings", cookies=owner_cookies).json()["allow_localhost_connections"] is False
+
+    def test_bestaetigter_link_schaltet_einmal(self, client, db, owner_user, owner_cookies, csrf_token):
+        from unittest.mock import AsyncMock, patch
+
+        self._sozialer_admin(db, owner_user)
+        self._schalter_aus(db)
+
+        with patch("routers.panel_settings.EmailService.is_configured", return_value=True), patch(
+            "routers.panel_settings.EmailService.send_localhost_freigabe_email", new_callable=AsyncMock
+        ) as send:
+            assert client.post(
+                "/api/settings",
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+                json={"allow_localhost_connections": True},
+            ).status_code == 403
+        token = send.await_args.args[2]
+
+        kopf = {"X-CSRF-Token": csrf_token}
+        ok = client.post(
+            "/api/settings/localhost-connections/confirm",
+            cookies=owner_cookies, headers=kopf, json={"token": token},
+        )
+        assert ok.status_code == 200
+        assert ok.json() == {"freigeschaltet": True}
+        assert client.get("/api/settings", cookies=owner_cookies).json()["allow_localhost_connections"] is True
+
+        # Einmal heißt einmal; Raten findet nichts.
+        assert client.post(
+            "/api/settings/localhost-connections/confirm",
+            cookies=owner_cookies, headers=kopf, json={"token": token},
+        ).status_code == 403
+        assert client.post(
+            "/api/settings/localhost-connections/confirm",
+            cookies=owner_cookies, headers=kopf, json={"token": "f" * 43},
+        ).status_code == 403
+
+    def test_ohne_bestaetigte_email_kein_link(self, client, db, owner_user, owner_cookies, csrf_token):
+        from unittest.mock import AsyncMock, patch
+
+        self._sozialer_admin(db, owner_user)
+        owner_user.email_verified = False
+        db.commit()
+        self._schalter_aus(db)
+
+        with patch("routers.panel_settings.EmailService.is_configured", return_value=True), patch(
+            "routers.panel_settings.EmailService.send_localhost_freigabe_email", new_callable=AsyncMock
+        ) as send:
+            res = client.post(
+                "/api/settings",
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+                json={"allow_localhost_connections": True},
+            )
+        assert res.status_code == 403
+        send.assert_not_awaited()
+        assert client.get("/api/settings", cookies=owner_cookies).json()["allow_localhost_connections"] is False

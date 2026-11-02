@@ -67,11 +67,12 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
         setSession(sess)
 
         const qrPayload: DeviceAuthQrPayload = {
-          v: 1,
+          v: 2,
           sid: sess.session_id,
           pk: publicKeyBase64,
           p: purpose,
           uid: user?.id ?? 0,
+          rt: sess.resolve_token,
         }
 
         setQrValue(JSON.stringify(qrPayload))

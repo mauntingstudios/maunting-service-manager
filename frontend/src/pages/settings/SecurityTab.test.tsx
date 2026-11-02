@@ -447,7 +447,8 @@ describe('SecurityTab localhost connections', () => {
 
     vi.mocked(client.api).mockImplementation(async (path: string, options?: any) => {
       if (options?.method === 'POST') {
-        return { allow_localhost_connections: true }
+        // Befund 46: Der Server schickt einen Einmal-Link statt einzuschalten.
+        throw Object.assign(new Error('Link gesendet'), { code: 'LOCALHOST_LINK_GESENDET', status: 403 })
       }
       return {
         rate_limit_auth: 10,
@@ -478,5 +479,9 @@ describe('SecurityTab localhost connections', () => {
         body: JSON.stringify({ allow_localhost_connections: true }),
       })
     })
+
+    // Step 3: Der Dialog nennt den Link — der Schalter bleibt aus.
+    await waitFor(() => expect(screen.getByText(/Bestätigungs-Link gesendet/i)).toBeInTheDocument())
+    expect(screen.getByText(/erst aktiv, wenn du ihn öffnest/i)).toBeInTheDocument()
   })
 })

@@ -37,6 +37,9 @@ class LoginChallenge(Base):
 
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Geräte-Freigabe: wann das Smartphone die Session aufgelöst hat. Unter
+    # Zeilensperre geprüft — eine aufgelöste Session wird nie überschrieben.
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

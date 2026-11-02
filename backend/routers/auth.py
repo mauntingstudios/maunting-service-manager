@@ -1706,6 +1706,7 @@ def passkey_browser_optionen(
     req: BrowserVorgangKennung,
     request: Request,
     db: Session = Depends(get_db),
+    _: None = Depends(verify_csrf),
 ) -> dict:
     try:
         return passkey_service.browser_optionen(db, req.vorgang, request.headers.get("origin"))

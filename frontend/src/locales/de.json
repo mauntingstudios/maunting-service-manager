@@ -302,7 +302,9 @@
     "localhostActiveBadge": "Aktiviert",
     "localhostInactiveBadge": "Deaktiviert",
     "localhostPasskeyPrompt": "Bestätige die Freischaltung mit deinem registrierten Passkey.",
-    "localhostSaveFailed": "Einstellungen konnten nicht gespeichert werden."
+    "localhostSaveFailed": "Einstellungen konnten nicht gespeichert werden.",
+    "localhostLinkSentTitle": "Bestätigungs-Link gesendet",
+    "localhostLinkSentBody": "Wir haben dir einen Link an deine bestätigte E-Mail-Adresse geschickt. Die Freigabe wird erst aktiv, wenn du ihn öffnest — der Link gilt 1 Stunde und nur einmal."
   },
   "aiSettings": {
     "title": "KI-Kontingente pro Rolle",
@@ -3371,6 +3373,16 @@
     "noToken": "Kein Reset-Token gefunden. Bitte fordere einen neuen Link an.",
     "success": "Passwort erfolgreich zurückgesetzt.",
     "error": "Zurücksetzen fehlgeschlagen. Der Token ist ungültig oder abgelaufen."
+  },
+  "localhostFreigabe": {
+    "title": "Localhost-Freigabe bestätigen",
+    "description": "Schaltet Verbindungen von Localhost für alle Ports über CORS frei.",
+    "confirm": "Jetzt freischalten",
+    "noToken": "Kein Freigabe-Link gefunden. Bitte fordere in den Einstellungen einen neuen an.",
+    "loginRequired": "Bitte melde dich zuerst mit deinem Admin-Konto an und öffne den Link dann erneut.",
+    "success": "Localhost-Verbindungen wurden freigeschaltet.",
+    "error": "Freischaltung fehlgeschlagen. Der Link ist ungültig, abgelaufen oder wurde schon benutzt.",
+    "backToSettings": "Zu den Einstellungen"
   },
   "mods": {
     "subtitle": "Workshop- und CurseForge-Mods verwalten und Load-Order festlegen.",

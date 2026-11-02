@@ -462,3 +462,193 @@ def test_rotation_salz_aus_leerzeichen_422(client, owner_cookies):
         cookies=owner_cookies, headers=h,
     )
     assert antwort.status_code == 422
+
+
+# ── Abort/Rollback auf dem gesperrten Stand (Befund 44) ───────────────────
+
+
+def _team_rotation_bis_commit(client, team_id, cookies, alt, neu):
+    h = _headers(cookies)
+    client.post(
+        f"/api/teams/{team_id}/vault/setup",
+        json={"bucket_id": alt, "salt": "altsalt1234567890abcdef"},
+        cookies=cookies, headers=h,
+    )
+    assert client.post(
+        f"/api/teams/{team_id}/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
+        cookies=cookies, headers=h,
+    ).status_code == 200
+    assert client.post(
+        f"/api/teams/{team_id}/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
+        cookies=cookies, headers=h,
+    ).status_code == 200
+
+
+def test_team_abort_nach_commit_409_und_rollback_bleibt(db, client, owner_user, owner_cookies, regular_user):
+    """Befund 44: Ein Abbruch nach Commit zerstoert nicht mehr den Rollback."""
+    team = _team_mit_tresor(db, owner_user, regular_user)
+    alt, neu = _bucket(), _bucket()
+    _team_rotation_bis_commit(client, team.id, owner_cookies, alt, neu)
+    o_h = _headers(owner_cookies)
+
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/abort",
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 409
+
+    # Der Rollback lebt noch: der Abbruch hat den committed-Stand nicht angeruehrt.
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/rollback",
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 200
+    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
+    assert status["bucket_id"] == alt
+
+    # Danach ist Schluss: Rollback ohne Commit ist 409, Abbruch ohne Rotation ok.
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/rollback",
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 409
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/abort",
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 200
+
+
+def test_privat_abort_nach_commit_409(client, owner_cookies):
+    """Befund 44, privat: Abbruch nach Commit ist 409, Rollback bleibt moeglich."""
+    alt, neu = _bucket(), _bucket()
+    h = _headers(owner_cookies)
+    _privat_einrichten(client, owner_cookies, alt)
+    assert client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 200
+    assert client.post(
+        "/api/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 200
+
+    assert client.post(
+        "/api/vault/rotation/abort", cookies=owner_cookies, headers=h
+    ).status_code == 409
+    assert client.post(
+        "/api/vault/rotation/rollback", cookies=owner_cookies, headers=h
+    ).status_code == 200
+    assert client.get("/api/vault/salt", cookies=owner_cookies).json()["bucket_id"] == alt
+
+
+def test_commit_gegen_abort_nur_einer_gewinnt(db, client, owner_user, owner_cookies):
+    """Befund 44: Commit und Abbruch laufen ueber zwei Verbindungen serialisiert.
+
+    Genau einer gewinnt, der Verlierer bekommt 409 — nie 500, nie ein
+    halb umgeschalteter Stand. (Der deterministische Rot-Beweis der
+    Committed-Sperre steht in den beiden Tests darueber; hier geht es um
+    die Sperre unter echter Nebenlaeufigkeit.)
+    """
+    import threading
+
+    from fastapi import HTTPException
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import NullPool
+
+    import database as db_module
+
+    alt, neu = _bucket(), _bucket()
+    h = _headers(owner_cookies)
+    _privat_einrichten(client, owner_cookies, alt)
+    assert client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 200
+
+    engine = create_engine(db_module.engine.url, poolclass=NullPool)
+    sitzung = sessionmaker(bind=engine)
+    barriere = threading.Barrier(2)
+    konto = vault_service.tresor_konto(owner_user.id)
+    ausgang: dict[str, str] = {}
+    fehler: list[Exception] = []
+
+    def lauf(name: str, fn) -> None:
+        s = sitzung()
+        try:
+            try:
+                barriere.wait(timeout=10)
+            except threading.BrokenBarrierError as exc:
+                fehler.append(exc)
+                return
+            fn(s)
+            ausgang[name] = "gewonnen"
+        except HTTPException as exc:
+            ausgang[name] = f"HTTP {exc.status_code}"
+        except Exception as exc:  # noqa: BLE001 — alles ausser 409 ist ein Fehler
+            fehler.append(exc)
+        finally:
+            s.close()
+
+    try:
+        threads = [
+            threading.Thread(target=lauf, args=("commit", lambda s: vault_service.rotation_commit_privat(s, konto))),
+            threading.Thread(target=lauf, args=("abort", lambda s: vault_service.rotation_abbrechen_privat(s, konto))),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert not any(t.is_alive() for t in threads)
+    finally:
+        engine.dispose()
+
+    assert fehler == []
+    assert sorted(ausgang.values()) == ["HTTP 409", "gewonnen"]
+    status = client.get("/api/vault/salt", cookies=owner_cookies).json()
+    if ausgang["commit"] == "gewonnen":
+        assert (status["bucket_id"], status["rotation_state"]) == (neu, "committed")
+    else:
+        assert (status["bucket_id"], status["rotation_state"]) == (alt, None)
+
+
+def test_abort_raeumt_staging_blobs_ab(db, client, owner_user, owner_cookies, tmp_path, monkeypatch):
+    """Befund 44: Nach Abbruch bleiben keine Blob-Zeilen und keine Dateien im Staging."""
+    from config import settings
+    from models import VaultBlob
+    from services import vault_blob_service
+
+    monkeypatch.setattr(settings, "vault_blob_dir", str(tmp_path / "blobs"))
+    alt, neu = _bucket(), _bucket()
+    h = _headers(owner_cookies)
+    _privat_einrichten(client, owner_cookies, alt)
+    assert client.post(
+        "/api/vault/rotation/prepare",
+        json={"bucket_id": neu, "salt": "bmV1c2FsdDEyMzQ1Njc4OTA=", "password": OWNER_PASSWORT},
+        cookies=owner_cookies, headers=h,
+    ).status_code == 200
+
+    # Eine fertige Datei im Staging: Zeile plus Chunks auf der Platte.
+    blob_id = secrets.token_hex(16)
+    db.add(VaultBlob(
+        id=blob_id, bucket_id=neu, chunk_count=1, bytes_total=100,
+        delete_verifier="a" * 64, state="fertig",
+    ))
+    db.commit()
+    verzeichnis = vault_blob_service.blob_verzeichnis(blob_id)
+    verzeichnis.mkdir(parents=True)
+    (verzeichnis / "0").write_bytes(b"x" * 100)
+
+    assert client.post(
+        "/api/vault/rotation/abort", cookies=owner_cookies, headers=h
+    ).status_code == 200
+
+    # Der Abbruch gibt den Blob ohne Haltung frei ...
+    db.expire_all()
+    assert db.get(VaultBlob, blob_id).state == "geloescht"
+    # ... und das naechste Aufraeumen entfernt Zeile und Dateien.
+    assert vault_blob_service.aufraeumen(db)["entfernt"] == 1
+    assert db.get(VaultBlob, blob_id) is None
+    assert not verzeichnis.exists()

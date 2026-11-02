@@ -105,8 +105,14 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
 
         const encryptedPayload = await encryptAuthPayload(parsed.pk, payloadData)
 
-        // Session auf dem Server auflösen
-        await resolveDeviceAuthSession(parsed.sid, encryptedPayload)
+        // Session auf dem Server auflösen — nur mit dem Aufloese-Token aus
+        // dem gescannten Code. Ohne es gäbe es keinen Scan-Beweis, also auch
+        // keinen Netzaufruf (parse verwirft solche Codes ohnehin schon).
+        if (!parsed.rt) {
+          setIsProcessing(false)
+          return
+        }
+        await resolveDeviceAuthSession(parsed.sid, encryptedPayload, parsed.rt)
 
         const msg =
           parsed.p === 'unlock'

@@ -6,11 +6,14 @@
  */
 
 export interface DeviceAuthQrPayload {
-  v: 1
+  /** Format-Version, aktuell immer 2 (v1 kannte kein Aufloese-Token). */
+  v: 2
   sid: string
   pk: string
   p: 'authorize' | 'unlock'
   uid: number
+  /** Aufloese-Token: belegt dem Server, dass der Code gescannt wurde. */
+  rt: string
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -130,6 +133,9 @@ export async function decryptAuthPayload(
 
 /**
  * Parst und validiert den gescannten QR-Code-Inhalt.
+ *
+ * Codes ohne Aufloese-Token (`rt`) stammen von vor dem Fix und lassen sich
+ * nicht mehr einloesen; Sessions leben ohnehin nur 180 Sekunden.
  */
 export function parseDeviceAuthQrCode(rawText: string): DeviceAuthQrPayload | null {
   if (!rawText || typeof rawText !== 'string') return null
@@ -140,13 +146,15 @@ export function parseDeviceAuthQrCode(rawText: string): DeviceAuthQrPayload | nu
     const data = JSON.parse(clean)
     if (
       data &&
-      data.v === 1 &&
+      data.v === 2 &&
       typeof data.sid === 'string' &&
       data.sid.length >= 8 &&
       typeof data.pk === 'string' &&
       data.pk.length >= 32 &&
       (data.p === 'authorize' || data.p === 'unlock') &&
-      typeof data.uid === 'number'
+      typeof data.uid === 'number' &&
+      typeof data.rt === 'string' &&
+      data.rt.length >= 16
     ) {
       return data as DeviceAuthQrPayload
     }

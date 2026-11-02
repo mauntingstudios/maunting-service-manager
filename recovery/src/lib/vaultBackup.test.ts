@@ -5,11 +5,15 @@ import { deriveTestKey, bytesToBase64, base64ToBytes } from './test-fixture';
 import { istTresorBackup, entschluesseleTresorBackup, VAULT_BACKUP_MAGIC } from './vaultBackup';
 
 /** Baut eine .msmvault-Datei exakt wie `tresorBackup.ts` im Frontend. */
-async function baueTresorBackup(eintraege: unknown, passwort: string): Promise<Uint8Array> {
+async function baueTresorBackup(
+  eintraege: unknown,
+  passwort: string,
+  innen?: { art?: unknown; version?: unknown },
+): Promise<Uint8Array> {
   const salt = randomBytes(32);
   const key = await deriveTestKey(passwort, salt);
   const klartext = new TextEncoder().encode(
-    JSON.stringify({ art: 'msm-vault-backup', version: 1, eintraege }),
+    JSON.stringify({ art: 'msm-vault-backup', version: 1, ...innen, eintraege }),
   );
   const nonce = randomBytes(12);
   const chiffrat = await aesGcmEncrypt(key, nonce, klartext);
@@ -36,6 +40,16 @@ describe('vaultBackup', () => {
     const daten = await baueTresorBackup([{ id: 'a' }], 'altes-passwort-123');
     await expect(entschluesseleTresorBackup(daten, 'falsch-falsch-falsch')).rejects.toThrow();
     expect(istTresorBackup(new Uint8Array([0x1f, 0x8b, 1, 2, 3]))).toBe(false);
+  });
+
+  it('weist fremde Art und unbekannte Version ab, auch mit Einträgen', async () => {
+    const passwort = 'altes-passwort-123';
+    const fremd = await baueTresorBackup([{ id: 'a' }], passwort, { art: 'msm-panel-backup' });
+    await expect(entschluesseleTresorBackup(fremd, passwort)).rejects.toThrow('not a vault backup');
+    const neu = await baueTresorBackup([{ id: 'a' }], passwort, { version: 2 });
+    await expect(entschluesseleTresorBackup(neu, passwort)).rejects.toThrow('not a vault backup');
+    const ohne = await baueTresorBackup([{ id: 'a' }], passwort, { art: undefined, version: undefined });
+    await expect(entschluesseleTresorBackup(ohne, passwort)).rejects.toThrow('not a vault backup');
   });
 
   it('entschlüsselt echten Test-Vektor aus tresorBackup (Cross-Package Kompatibilität)', async () => {

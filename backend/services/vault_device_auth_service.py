@@ -44,14 +44,20 @@ def create_device_auth_session(
     purpose: str = "authorize",
     device_info: str | None = None,
     ttl_seconds: int = DEFAULT_DEVICE_AUTH_TTL_SECONDS,
-) -> tuple[str, str, datetime]:
+) -> tuple[str, str, str, datetime]:
     """Erzeugt eine neue ephemere Freigabe-Session.
 
     Returns:
-        tuple (session_id, session_token, expires_at)
+        tuple (session_id, session_token, resolve_token, expires_at)
+
+    Zwei Geheimnisse, zwei Kanaele: das Sitzungs-Token holt der Desktop per
+    Header ab, das Aufloese-Token steht nur im QR-Code. Wer den Code nicht
+    gescannt hat, loest die Session nicht auf — auch nicht mit fremder
+    Anmeldung. Gespeichert wird nur der Hash.
     """
     session_id = secrets.token_hex(8)  # 16-stellige Hex-ID für QR-Code
     session_token = secrets.token_urlsafe(32)  # Geheimer Token für den Desktop zum Abrufen
+    resolve_token = secrets.token_urlsafe(32)  # Nur im QR-Code, nie im Polling
     expires = _now() + timedelta(seconds=ttl_seconds)
 
     payload = {
@@ -59,6 +65,7 @@ def create_device_auth_session(
         "public_key": public_key.strip(),
         "purpose": purpose,
         "device_info": device_info.strip() if device_info else None,
+        "resolve_token_hash": hash_challenge_token(resolve_token),
         "resolved": False,
         "encrypted_payload": None,
     }
@@ -73,7 +80,7 @@ def create_device_auth_session(
     db.add(row)
     db.commit()
 
-    return session_id, session_token, expires
+    return session_id, session_token, resolve_token, expires
 
 
 def get_device_auth_session_status(
@@ -85,7 +92,9 @@ def get_device_auth_session_status(
     """Prüft den Status einer Session für das anfragende Zielgerät.
 
     Liefert 'pending', 'expired' oder 'resolved' (mit `encrypted_payload`).
-    Bei 'resolved' wird die Session sofort konsumiert (single-use).
+    Bei 'resolved' wird die Session sofort konsumiert (single-use) — atomar:
+    nur wer das Flag umlegt, bekommt die Chiffre; ein zweiter Abruf sieht
+    'expired'.
     """
     token_hash = hash_challenge_token(session_token)
     row = (
@@ -95,6 +104,7 @@ def get_device_auth_session_status(
             LoginChallenge.purpose == PURPOSE_VAULT_DEVICE_AUTH,
             LoginChallenge.user_id == user_id,
         )
+        .with_for_update()
         .first()
     )
 
@@ -114,9 +124,19 @@ def get_device_auth_session_status(
         return {"status": "not_found"}
 
     if data.get("resolved") and data.get("encrypted_payload"):
-        # Sofort als konsumiert markieren, damit die Chiffre nur genau einmal ausgeliefert wird
-        row.consumed_at = now
+        # Atomar verbrauchen: zwei Abrufe duerfen die Chiffre nicht doppelt
+        # sehen. Nur wer das Flag umlegt, liefert aus.
+        markiert = (
+            db.query(LoginChallenge)
+            .filter(
+                LoginChallenge.id == row.id,
+                LoginChallenge.consumed_at.is_(None),
+            )
+            .update({"consumed_at": now}, synchronize_session=False)
+        )
         db.commit()
+        if not markiert:
+            return {"status": "expired"}
         return {
             "status": "resolved",
             "encrypted_payload": data["encrypted_payload"],
@@ -134,13 +154,17 @@ def resolve_device_auth_session(
     session_id: str,
     user_id: int,
     encrypted_payload: str,
+    resolve_token: str,
 ) -> bool:
     """Löst die Session durch das autorisierte Smartphone auf.
 
-    Voraussetzung: Die Session existiert, gehört demselben Benutzer und ist nicht abgelaufen.
+    Voraussetzung: Die Session existiert, gehört demselben Benutzer, ist weder
+    abgelaufen noch verbraucht noch aufgelöst — und das Aufloese-Token aus dem
+    QR-Code stimmt. Eine bereits aufgelöste Session wird nie überschrieben.
     """
-    # Finde die aktive Challenge des Nutzers
-    rows = (
+    # Kandidaten ohne Sperre suchen (die Kennung steht im JSON), dann genau
+    # die Zielzeile sperren und alles erneut prüfen.
+    kandidaten = (
         db.query(LoginChallenge)
         .filter(
             LoginChallenge.purpose == PURPOSE_VAULT_DEVICE_AUTH,
@@ -149,28 +173,49 @@ def resolve_device_auth_session(
         )
         .all()
     )
-
-    target_row: LoginChallenge | None = None
-    target_payload: dict | None = None
-
-    for r in rows:
+    kandidat_id: int | None = None
+    for r in kandidaten:
         if _is_expired(r.expires_at):
             continue
         try:
             d = json.loads(r.payload_json or "{}")
             if d.get("session_id") == session_id:
-                target_row = r
-                target_payload = d
+                kandidat_id = r.id
                 break
         except Exception:
             continue
-
-    if not target_row or not target_payload:
+    if kandidat_id is None:
         return False
 
-    target_payload["resolved"] = True
-    target_payload["encrypted_payload"] = encrypted_payload.strip()
-    target_row.payload_json = json.dumps(target_payload)
+    row = (
+        db.query(LoginChallenge)
+        .filter(LoginChallenge.id == kandidat_id)
+        .with_for_update()
+        .first()
+    )
+    if (
+        row is None
+        or row.consumed_at is not None
+        or row.resolved_at is not None
+        or _is_expired(row.expires_at)
+    ):
+        return False
+    try:
+        daten = json.loads(row.payload_json or "{}")
+    except Exception:
+        return False
+    if daten.get("session_id") != session_id or daten.get("resolved"):
+        return False
+    erwartet = daten.get("resolve_token_hash", "")
+    if not erwartet or not secrets.compare_digest(
+        erwartet, hash_challenge_token(resolve_token)
+    ):
+        return False
+
+    daten["resolved"] = True
+    daten["encrypted_payload"] = encrypted_payload.strip()
+    row.payload_json = json.dumps(daten)
+    row.resolved_at = _now(row.expires_at)
     db.commit()
 
     return True
