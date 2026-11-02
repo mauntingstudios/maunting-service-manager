@@ -19,7 +19,6 @@ import {
 import { Badge, Button, Kurzinfo, confirm, prompt } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import {
-  assetUrl,
   createComment,
   getCollabToken,
   undoAiEdit,
@@ -304,7 +303,6 @@ export function DocEditor({
         .insertContent({
           type: 'image',
           attrs: {
-            src: assetUrl(asset.signed_url),
             alt: datei.name,
             assetUid: asset.asset_uid,
           },

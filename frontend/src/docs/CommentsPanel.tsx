@@ -45,7 +45,11 @@ export function CommentsPanel({
     setLaeuft(true)
     try {
       await createComment(uid, body.trim(), parentUid)
-      if (parentUid) setAntwort((alt) => ({ ...alt, [parentUid]: '' }))
+      if (parentUid) setAntwort((alt) => {
+        const neu = { ...alt }
+        delete neu[parentUid]
+        return neu
+      })
       else setNeu('')
       onChanged()
     } catch {
@@ -110,7 +114,12 @@ export function CommentsPanel({
                     variant="ghost"
                     size="sm"
                     aria-label={t('docs.comments.reply')}
-                    onClick={() => setAntwort((alt) => ({ ...alt, [thread.uid]: alt[thread.uid] ? '' : ' ' }))}
+                    onClick={() => setAntwort((alt) => {
+                      const neu = { ...alt }
+                      if (thread.uid in neu) delete neu[thread.uid]
+                      else neu[thread.uid] = ''
+                      return neu
+                    })}
                   >
                     <MessageSquare className="h-3.5 w-3.5" />
                   </Button>
@@ -161,11 +170,11 @@ export function CommentsPanel({
               </div>
             )}
 
-            {antwort[thread.uid] !== undefined && antwort[thread.uid] !== '' && (
+            {antwort[thread.uid] !== undefined && (
               <div className="mt-2 flex gap-2">
                 <Textarea
                   aria-label={t('docs.comments.reply')}
-                  value={antwort[thread.uid].trim()}
+                  value={antwort[thread.uid]}
                   onChange={(event) =>
                     setAntwort((alt) => ({ ...alt, [thread.uid]: event.target.value }))
                   }
@@ -174,7 +183,7 @@ export function CommentsPanel({
                 />
                 <Button
                   size="sm"
-                  disabled={laeuft}
+                  disabled={laeuft || !antwort[thread.uid].trim()}
                   onClick={() => void senden(antwort[thread.uid], thread.uid)}
                 >
                   {t('docs.comments.send')}

@@ -85,6 +85,22 @@ describe('CommentsPanel', () => {
     )
   })
 
+  it('bewahrt Leerzeichen in Antworten und trimmt erst beim Senden', async () => {
+    zeigen([kommentar({})], { canComment: true })
+    fireEvent.click(screen.getByLabelText(i18n.t('docs.comments.reply')))
+    const feld = screen.getByRole('textbox', { name: i18n.t('docs.comments.reply') })
+    expect(feld).toHaveValue('')
+    fireEvent.change(feld, { target: { value: '' } })
+    expect(feld).toBeInTheDocument()
+    fireEvent.change(feld, { target: { value: '  Antwort mit Abstand  ' } })
+    expect(feld).toHaveValue('  Antwort mit Abstand  ')
+    const thread = screen.getByText('Bitte prüfen').closest('article') as HTMLElement
+    fireEvent.click(within(thread).getByRole('button', { name: i18n.t('docs.comments.send') }))
+    await waitFor(() =>
+      expect(docsApi.createComment).toHaveBeenCalledWith('doc-1', 'Antwort mit Abstand', 'c-1'),
+    )
+  })
+
   it('erledigt und löscht nur eigene Threads ohne Moderationsrecht', async () => {
     const { onChanged } = zeigen([kommentar({ author_user_id: 1 })], { canComment: true, userId: 1 })
     fireEvent.click(screen.getByLabelText(i18n.t('docs.comments.resolve')))

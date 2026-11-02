@@ -24,4 +24,23 @@ describe('createDocsExtensions', () => {
     editor.destroy()
     ydoc.destroy()
   })
+
+  it('übernimmt beim Import keine fremde Bildadresse in den Dokumentzustand', () => {
+    const ydoc = new Y.Doc()
+    const editor = new Editor({
+      extensions: createDocsExtensions({
+        ydoc,
+        provider: null,
+        user: { id: 1, name: 'Ada', color: 'hsl(0 0% 0%)' },
+        docUid: 'doc-1',
+      }),
+      content: '<img src="https://tracker.example/bild.png" data-asset-uid="asset-1" alt="Bild">',
+    })
+
+    expect(JSON.stringify(editor.getJSON())).not.toContain('tracker.example')
+    expect(editor.getHTML()).not.toContain('tracker.example')
+    expect(editor.getJSON().content?.[0].attrs?.assetUid).toBe('asset-1')
+    editor.destroy()
+    ydoc.destroy()
+  })
 })

@@ -71,7 +71,7 @@ export const DocImage = Image.extend({
   },
   addAttributes() {
     return {
-      ...(this.parent?.() ?? {}),
+      alt: { default: null },
       assetUid: {
         default: null,
         parseHTML: (element: HTMLElement) => element.getAttribute('data-asset-uid'),
@@ -79,6 +79,9 @@ export const DocImage = Image.extend({
           attributes.assetUid ? { 'data-asset-uid': attributes.assetUid } : {},
       },
     }
+  },
+  parseHTML() {
+    return [{ tag: 'img' }]
   },
   addNodeView() {
     return ReactNodeViewRenderer(DocImageNodeView)
