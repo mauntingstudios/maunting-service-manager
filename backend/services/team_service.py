@@ -19,7 +19,7 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -147,6 +147,45 @@ def get_member_role_ids(db: Session, member_id: int, fallback_role_id: int | Non
     if fallback_role_id is not None:
         role_ids.add(fallback_role_id)
     return sorted(role_ids)
+
+
+def _mitglied_flags_neu(db: Session, member: TeamMember) -> None:
+    """Rechnet die drei Mitgliedsschalter aus allen zugewiesenen Rollen neu.
+
+    ODER ueber Mehrfach- plus Legacy-Rolle; ohne Rollen bleiben die Altflags
+    (Legacy-Mitglieder ausserhalb des Rollenmodells). Senken ist Absicht:
+    wer die Rolle verliert, verliert den Schalter (Befund 15). Committet nicht.
+
+    Der Zustimmungs-Tanz in `update_member` bleibt daneben bestehen: Er regelt
+    direkte Schalterwuensche ohne Rolle. Wer eine Rolle (um-)verteilt, regiert
+    sofort — auch erhoehend; das ist kein Tanz, sondern Rollenverwaltung.
+    """
+    rollen_ids = get_member_role_ids(db, member.id, member.team_role_id)
+    if not rollen_ids:
+        return
+    rollen = db.query(TeamRole).filter(TeamRole.id.in_(rollen_ids)).all()
+    member.can_access_vault = any(r.can_access_vault for r in rollen)
+    member.can_manage_skills = any(r.can_manage_skills for r in rollen)
+    member.can_manage_memory = any(r.can_manage_memory for r in rollen)
+
+
+def _rollen_traeger(db: Session, team_id: int, role_id: int) -> list[TeamMember]:
+    """Alle Mitglieder, die diese Rolle halten — mehrfach oder als Legacy."""
+    return (
+        db.query(TeamMember)
+        .filter(
+            TeamMember.team_id == team_id,
+            or_(
+                TeamMember.team_role_id == role_id,
+                TeamMember.id.in_(
+                    select(TeamMemberRole.team_member_id).where(
+                        TeamMemberRole.team_role_id == role_id
+                    )
+                ),
+            ),
+        )
+        .all()
+    )
 
 
 def has_team_permission(db: Session, team_id: int, user: User, permission_key: str) -> bool:
@@ -623,6 +662,9 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
         bestehend.can_manage_memory = einladung.can_manage_memory
         bestehend.can_access_vault = einladung.can_access_vault
         if einladung.team_role_id is not None:
+            # Das Angebot trug eine Rolle: Sie regiert wie in set_member_roles —
+            # auch senkend (Befund 15). Reine Schalterangebote ohne Rolle
+            # bleiben Wort: angenommen wird genau das Angebot.
             bestehend.team_role_id = einladung.team_role_id
             exists = db.query(TeamMemberRole.id).filter(
                 TeamMemberRole.team_member_id == bestehend.id,
@@ -630,6 +672,7 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
             ).first()
             if exists is None:
                 db.add(TeamMemberRole(team_member_id=bestehend.id, team_role_id=einladung.team_role_id))
+            _mitglied_flags_neu(db, bestehend)
         db.delete(einladung)
         # Kein "joined": beigetreten ist hier niemand. Dieselbe Aktion und
         # dieselben Felder wie in `update_member` — nur steht als Handelnder
@@ -666,6 +709,13 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
     db.flush()
     if einladung.team_role_id is not None:
         db.add(TeamMemberRole(team_member_id=member.id, team_role_id=einladung.team_role_id))
+        standard = db.query(TeamRole.id).filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True)).first()
+        if standard is None or einladung.team_role_id != standard[0]:
+            # Ausdruecklich gewaehlte Rolle: Sie regiert wie in set_member_roles —
+            # auch senkend (Befund 15). Die automatisch substituierte
+            # Standardrolle ist kein Vergabewille: Sonst verlöre jede Einladung
+            # mit Schaltern ihre Schalter schon beim Beitritt.
+            _mitglied_flags_neu(db, member)
     elif not team.is_personal:
         default_role = db.query(TeamRole).filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True)).first()
         if default_role is not None:
@@ -740,7 +790,11 @@ def update_member(
     member.can_manage_memory = neu_memory
     member.can_access_vault = can_access_vault
     if team_role_id is not None:
+        # Die Rolle ist vergeben wie in set_member_roles: ihre Schalter gelten
+        # sofort — auch senkend (Befund 15). Reine Schalterwuensche ohne Rolle
+        # laufen weiter ueber den Tanz oben und bleiben unangetastet.
         member.team_role_id = team_role_id
+        _mitglied_flags_neu(db, member)
 
     offen = invitation(db, team.id, member_user_id)
     if angehoben:
@@ -1273,6 +1327,10 @@ def update_team_role(
     role.can_access_vault = can_access_vault
     role.can_manage_skills = can_manage_skills
     role.can_manage_memory = can_manage_memory
+    # Geaenderte Rolle, neue Schalter: alle Traeger rechnen sofort neu —
+    # senkend wie erhoehend (Befund 15).
+    for traeger in _rollen_traeger(db, team.id, role.id):
+        _mitglied_flags_neu(db, traeger)
 
     if permission_keys is not None:
         desired_keys = {k for k in permission_keys if is_team_key(k)}
@@ -1319,7 +1377,18 @@ def delete_team_role(db: Session, *, team: Team, user: User, role_id: int) -> No
         db, user_id=user.id, action="team.role.deleted", target_type="team_role",
         target_id=role.id, details={"name": role.name, "team_id": team.id}, origin="direct",
     )
+    traeger_ids = [m.id for m in _rollen_traeger(db, team.id, role.id)]
     db.delete(role)
+    # Erst flushen: Die Kaskaden (CASCADE auf Mehrfach-, SET NULL auf
+    # Legacy-Zuweisung) muessen wirken, bevor die Traeger neu rechnen.
+    db.flush()
+    for mitglied_id in traeger_ids:
+        traeger = db.get(TeamMember, mitglied_id)
+        if traeger is not None:
+            # SET NULL steht nur in der Datenbank; das Objekt im Speicher
+            # kennt es erst nach dem Verfall.
+            db.expire(traeger)
+            _mitglied_flags_neu(db, traeger)
     db.commit()
 
 
@@ -1363,12 +1432,9 @@ def set_member_roles(
 
     member.team_role_id = next(iter(valid_role_ids), None)
 
-    if any(r.can_access_vault for r in valid_roles):
-        member.can_access_vault = True
-    if any(r.can_manage_skills for r in valid_roles):
-        member.can_manage_skills = True
-    if any(r.can_manage_memory for r in valid_roles):
-        member.can_manage_memory = True
+    # Rollen-Flags auf Mitglied spiegeln (OR ueber Rollen) — auch senkend:
+    # Wer die Rolle verliert, verliert den Schalter (Befund 15).
+    _mitglied_flags_neu(db, member)
 
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.member.roles.set", target_type="team",

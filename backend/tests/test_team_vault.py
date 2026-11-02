@@ -468,4 +468,93 @@ def test_team_vault_access_barrier_when_disabled(
     assert resp_sync_ok.status_code == 200
 
 
+def _darf_teams_gruenden(db: Session, user: User) -> None:
+    from models import Role, RolePermission
+    from services.role_service import set_user_roles
+
+    rolle = Role(name=f"rolle-{user.username}-15", description="Test")
+    db.add(rolle)
+    db.commit()
+    db.refresh(rolle)
+    db.add(RolePermission(role_id=rolle.id, permission_key="teams.create"))
+    db.commit()
+    set_user_roles(db, user, [rolle.id])
+    db.commit()
+
+
+def test_rollenentzug_senkt_tresorzugriff(
+    db: Session,
+    client,
+    owner_user: User,
+    owner_cookies: dict,
+    regular_user: User,
+    user_cookies: dict,
+) -> None:
+    """Befund 15: Rolle entziehen senkt can_access_vault — Sync antwortet 403.
+
+    Bislang hoben Zuteilungen nur an: Wer die Tresor-Rolle verlor, behielt
+    den Schalter und damit den Tresor. Zuteilen hebt weiter an (Rueckweg).
+    """
+    _darf_teams_gruenden(db, owner_user)
+    team = team_service.create_team(db, user=owner_user, name="Tresor-Team")
+    team_service.invite_member(
+        db, team=team, user=owner_user, new_user_id=regular_user.id,
+        can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.accept_invitation(db, user=regular_user, team_id=team.id)
+
+    tresor_rolle = team_service.create_team_role(
+        db, team=team, user=owner_user, name="Tresor",
+        can_access_vault=True, can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.set_member_roles(
+        db, team=team, user=owner_user,
+        member_user_id=regular_user.id, role_ids=[tresor_rolle.id],
+    )
+    db.expire_all()
+    assert team_service.membership(db, team.id, regular_user.id).can_access_vault is True
+
+    bucket_id = _valid_bucket_id()
+    salt = "somesalt1234567890abcdef"
+    assert client.post(
+        f"/api/teams/{team.id}/vault/setup",
+        json={"bucket_id": bucket_id, "salt": salt},
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
+    ).status_code == 200
+    sync_payload = {"bucket_id": bucket_id, "since_revision": 0, "mutations": []}
+
+    # Entzug: Rolle ohne Tresor — der Schalter faellt, der Sync sperrt.
+    leser_rolle = team_service.create_team_role(
+        db, team=team, user=owner_user, name="Leser",
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.set_member_roles(
+        db, team=team, user=owner_user,
+        member_user_id=regular_user.id, role_ids=[leser_rolle.id],
+    )
+    db.expire_all()
+    assert team_service.membership(db, team.id, regular_user.id).can_access_vault is False
+    assert client.post(
+        f"/api/teams/{team.id}/vault/sync",
+        json=sync_payload,
+        cookies=user_cookies,
+        headers=_headers(user_cookies),
+    ).status_code == 403
+
+    # Rueckweg: Tresor-Rolle zurueck — Anheben geht weiter.
+    team_service.set_member_roles(
+        db, team=team, user=owner_user,
+        member_user_id=regular_user.id, role_ids=[tresor_rolle.id],
+    )
+    db.expire_all()
+    assert team_service.membership(db, team.id, regular_user.id).can_access_vault is True
+    assert client.post(
+        f"/api/teams/{team.id}/vault/sync",
+        json=sync_payload,
+        cookies=user_cookies,
+        headers=_headers(user_cookies),
+    ).status_code == 200
+
+
 

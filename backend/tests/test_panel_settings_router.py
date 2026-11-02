@@ -653,7 +653,7 @@ class TestLocalhostFreigabeOhneNachweis:
                 json={"allow_localhost_connections": True},
             )
         assert res.status_code == 403
-        assert res.json()["Detail"]["code"] == "LOCALHOST_LINK_GESENDET"
+        assert res.json()["detail"]["code"] == "LOCALHOST_LINK_GESENDET"
         send.assert_awaited_once()
         assert send.await_args.args[0] == owner_user.email
         assert client.get("/api/settings", cookies=owner_cookies).json()["allow_localhost_connections"] is False

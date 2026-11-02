@@ -869,3 +869,84 @@ def test_gedaechtnisschluesse_hin_und_zurueck(pg_wegwerf):
     finally:
         engine.dispose()
         settings.database_url = vorher
+
+
+def test_team_schalter_backfill_hin_und_zurueck(pg_wegwerf):
+    """20261103_01: Der Bestand rechnet die Schalter aus den Rollen neu.
+
+    Hinweg: Ein Mitglied mit Rolle, dessen Schalter ueber die Rolle hinaus
+    stehen (entzogene Rolle vor dem Fix), faellt auf das Rollen-ODER zurueck —
+    ueber Mehrfach- wie Legacy-Zuweisung. Ein Mitglied ohne Rolle (Legacy)
+    bleibt unangetastet. Rueckweg: no-op, die Werte bleiben stehen; erneut
+    hoch: idempotent, dieselben Werte.
+    """
+    from pathlib import Path
+
+    from alembic import command
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    import models  # noqa: F401
+    from config import settings
+    from database import Base
+    from models import Team, TeamMember, TeamMemberRole, TeamRole, User
+
+    db_url = pg_wegwerf("team-schalter")
+    vorher = settings.database_url
+    settings.database_url = db_url
+    config = _memory_migration_config(Path(__file__).resolve().parent.parent)
+    engine = create_engine(db_url)
+
+    def schalter():
+        with Session(engine) as db:
+            return {
+                m.user_id: (m.can_access_vault, m.can_manage_skills, m.can_manage_memory)
+                for m in db.query(TeamMember).order_by(TeamMember.user_id).all()
+            }
+
+    try:
+        Base.metadata.create_all(engine)
+        command.stamp(config, "head")
+        command.downgrade(config, "20261103_02")
+
+        with Session(engine) as db:
+            gr = User(username="gr", password_hash="msm-pw-v1:x:y:v2")
+            a = User(username="a", password_hash="msm-pw-v1:x:y:v2")
+            b = User(username="b", password_hash="msm-pw-v1:x:y:v2")
+            db.add_all([gr, a, b])
+            db.flush()
+            team = Team(name="T", owner_user_id=gr.id)
+            db.add(team)
+            db.flush()
+            mit = TeamRole(team_id=team.id, name="Mit", can_access_vault=True,
+                           can_manage_skills=True, can_manage_memory=False)
+            ohne = TeamRole(team_id=team.id, name="Ohne", can_access_vault=False,
+                            can_manage_skills=False, can_manage_memory=False)
+            db.add_all([mit, ohne])
+            db.flush()
+            # A: haelt "Mit" mehrfach und "Ohne" als Legacy, Schalter verdorben.
+            ma = TeamMember(team_id=team.id, user_id=a.id, role="member",
+                            can_access_vault=False, can_manage_skills=False,
+                            can_manage_memory=True, team_role_id=ohne.id)
+            db.add(ma)
+            db.flush()
+            db.add(TeamMemberRole(team_member_id=ma.id, team_role_id=mit.id))
+            # B: ohne Rolle (Legacy) — der Backfill fasst ihn nicht an.
+            db.add(TeamMember(team_id=team.id, user_id=b.id, role="member",
+                              can_access_vault=False, can_manage_skills=True,
+                              can_manage_memory=True, team_role_id=None))
+            db.commit()
+
+        command.upgrade(config, "20261103_01")
+        nachher = schalter()
+        assert nachher[a.id] == (True, True, False)
+        assert nachher[b.id] == (False, True, True)
+
+        command.downgrade(config, "20261103_02")
+        assert schalter() == nachher
+
+        command.upgrade(config, "head")
+        assert schalter() == nachher
+    finally:
+        engine.dispose()
+        settings.database_url = vorher

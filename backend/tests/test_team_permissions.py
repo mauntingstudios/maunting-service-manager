@@ -1703,3 +1703,59 @@ def test_role_ids_in_einladung_und_update_sind_422(
     )
     assert update.status_code == 422
     assert update.json()["detail"]["code"] == "TEAM_ROLE_IDS_UNGUELTIG"
+
+
+def _schalter(db: Session, team: Team, user: User) -> TeamMember:
+    db.expire_all()
+    return team_service.membership(db, team.id, user.id)
+
+
+def test_rollenaenderung_rechnet_alle_traeger_neu(db: Session, regular_user: User) -> None:
+    """Befund 15: Rolle aendern senkt und erhoeht die Schalter aller Traeger."""
+    kollege = _user(db, "kollege15")
+    team = _team_with_member(db, regular_user, kollege)
+    leser = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Leser",
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.set_member_roles(
+        db, team=team, user=regular_user, member_user_id=kollege.id, role_ids=[leser.id]
+    )
+    assert _schalter(db, team, kollege).can_manage_skills is False
+
+    # Erhoehen: Die Rolle bekommt den Schalter — der Traeger folgt sofort.
+    team_service.update_team_role(
+        db, team=team, user=regular_user, role_id=leser.id, name="Leser",
+        can_access_vault=False, can_manage_skills=True, can_manage_memory=False,
+    )
+    assert _schalter(db, team, kollege).can_manage_skills is True
+
+    # Senken: Die Rolle verliert ihn — der Traeger folgt sofort.
+    team_service.update_team_role(
+        db, team=team, user=regular_user, role_id=leser.id, name="Leser",
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+    )
+    assert _schalter(db, team, kollege).can_manage_skills is False
+
+
+def test_rollenloeschung_senkt_die_traeger(db: Session, regular_user: User) -> None:
+    """Befund 15: Wer die einzige Tresor-Rolle verliert, weil sie geloescht
+    wird, verliert den Tresor — uebrige Rollen zaehlen weiter."""
+    kollege = _user(db, "kollege15b")
+    team = _team_with_member(db, regular_user, kollege)
+    tresor = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Tresor",
+        can_access_vault=True, can_manage_skills=False, can_manage_memory=False,
+    )
+    leser = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Leser",
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.set_member_roles(
+        db, team=team, user=regular_user, member_user_id=kollege.id,
+        role_ids=[tresor.id, leser.id],
+    )
+    assert _schalter(db, team, kollege).can_access_vault is True
+
+    team_service.delete_team_role(db, team=team, user=regular_user, role_id=tresor.id)
+    assert _schalter(db, team, kollege).can_access_vault is False
