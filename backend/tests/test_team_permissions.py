@@ -27,6 +27,7 @@ from models import (
     TeamInvitation,
     TeamMember,
     TeamRole,
+    TeamRoleServerGrant,
     TeamServerGrant,
     User,
 )
@@ -1616,6 +1617,102 @@ def test_nicht_gruender_kann_adminrolle_weder_zuteilen_noch_aufwerten(
         db, team=team, user=regular_user, member_user_id=opfer.id, role_ids=[admin.id]
     )
     assert team_service.has_team_permission(db, team.id, opfer, "team.roles.manage") is True
+
+
+# ── Ruhende Server-Grants und Rollen-Fallback ──
+
+
+def test_delegierter_legt_keine_ruhende_zuordnung_an(db: Session, regular_user: User) -> None:
+    """Der Handelnde und der Gruender muessen das Recht selbst halten.
+
+    Sonst legt ein Delegierter eine Zeile an, die erst wirkt, wenn der
+    Gruender das Recht spaeter bekommt.
+    """
+    delegate = _user(db, "zuweiser")
+    team = _team_with_member(db, regular_user, delegate)
+    rolle = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Serverwart",
+        permission_keys=["team.servers.manage"],
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.set_member_roles(
+        db, team=team, user=regular_user, member_user_id=delegate.id, role_ids=[rolle.id]
+    )
+    server = _server(db, "nur-delegiert")
+    _allow(db, delegate, server, "server.view", "server.start")
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.set_server_grants(
+            db, team=team, user=delegate, server_id=server.id,
+            keys=["server.view", "server.start"],
+        )
+    assert exc.value.status_code == 403
+    assert team_service.team_server_keys(db, team.id, server.id) == []
+
+    # Mit dem Recht des Gruenders geht dieselbe Zuordnung durch.
+    _allow(db, regular_user, server, "server.view", "server.start")
+    team_service.set_server_grants(
+        db, team=team, user=delegate, server_id=server.id,
+        keys=["server.view", "server.start"],
+    )
+    assert team_service.team_server_keys(db, team.id, server.id) == [
+        "server.start",
+        "server.view",
+    ]
+
+
+def test_rollen_serverrecht_ohne_gruenderrecht_ist_403(
+    db: Session, regular_user: User
+) -> None:
+    team = _team_with_member(db, regular_user, _user(db, "rollen-kollege"))
+    server = _server(db, "rollen-grenze")
+    _allow(db, regular_user, server, "server.view")
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.create_team_role(
+            db, team=team, user=regular_user, name="Darf-starten",
+            can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+            server_grants=[
+                {
+                    "server_id": server.id,
+                    "permission_keys": ["server.view", "server.start"],
+                }
+            ],
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"
+    assert (
+        db.query(TeamRoleServerGrant)
+        .filter(TeamRoleServerGrant.server_id == server.id)
+        .count()
+        == 0
+    )
+
+
+def test_erster_rollen_grant_schaltet_das_team_um(db: Session, regular_user: User) -> None:
+    """Dokumentiert das heutige Verhalten bis Schritt 2 (Team-Schalter).
+
+    Ohne jede Rollen-Server-Grant-Zeile erben alle Mitglieder die
+    Team-Zuordnung. Eine einzige Zeile, auch auf einer niemandem zugewiesenen
+    Rolle, schaltet fuer das ganze Team auf ausdrueckliche Grants um.
+    """
+    member = _user(db, "fallback-mitglied")
+    team = _team_with_member(db, regular_user, member)
+    server = _server(db, "fallback")
+    _allow(db, regular_user, server, "server.view", "server.start")
+    team_service.set_server_grants(
+        db, team=team, user=regular_user, server_id=server.id,
+        keys=["server.view", "server.start"],
+    )
+    assert permission_service.has_server_permission(db, member, server.id, "server.start")
+
+    team_service.create_team_role(
+        db, team=team, user=regular_user, name="NurSicht",
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+        server_grants=[{"server_id": server.id, "permission_keys": ["server.view"]}],
+    )
+
+    assert not permission_service.has_server_permission(db, member, server.id, "server.start")
 
 
 # ── Standardrolle beim Einladen (Befund N4) ──

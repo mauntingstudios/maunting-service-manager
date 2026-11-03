@@ -307,18 +307,37 @@ def _pruefe_rollen_deckel(
                 )
 
 
-def _pruefe_server_grant_sicht(server_grants: list[dict] | None) -> None:
-    """Ohne `server.view` ergeben weitere Serverrechte keinen Sinn.
+def _pruefe_server_grant_sicht(
+    db: Session, team: Team, server_grants: list[dict] | None
+) -> None:
+    """Serverrechte einer Rolle brauchen Sicht und die Grundlage des Gruenders.
 
-    Dieselbe Regel wie in `set_server_grants`; sie gilt fuer neue und
-    geaenderte Rollen. Bestehende Rollen werden bei der Zuteilung nicht
-    nachtraeglich abgewiesen.
+    Dieselben Regeln wie in `set_server_grants`: ohne `server.view` ergeben
+    weitere Serverrechte keinen Sinn, und niemand vergibt ein Recht, das der
+    Teamgruender nicht selbst direkt haelt. Damit entstehen keine ruhenden
+    Zeilen, die erst lebendig werden, wenn der Gruender spaeter ein Recht
+    erhaelt. Bestehende Rollen werden bei der Zuteilung nicht nachtraeglich
+    abgewiesen.
     """
     from services.permission_catalog import SERVER_KEYS
 
-    for grant in server_grants or []:
+    if not server_grants:
+        return
+    founder = db.get(User, team.owner_user_id)
+    if founder is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "TEAM_ROLE_GRANT_DENIED",
+                "message": "Der Teamgründer ist nicht mehr vorhanden.",
+            },
+        )
+    for grant in server_grants:
+        server_id = int(grant.get("server_id") or 0)
         keys = {key for key in grant.get("permission_keys") or [] if key in SERVER_KEYS}
-        if keys and "server.view" not in keys:
+        if not keys:
+            continue
+        if "server.view" not in keys:
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -326,6 +345,18 @@ def _pruefe_server_grant_sicht(server_grants: list[dict] | None) -> None:
                     "message": 'Ohne "server.view" ergeben die uebrigen Serverrechte keinen Sinn.',
                 },
             )
+        for key in sorted(keys):
+            if not permission_service.direct_server_permission(db, founder, server_id, key):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "TEAM_ROLE_GRANT_DENIED",
+                        "message": (
+                            f'Der Teamgründer hält "{key}" auf diesem Server nicht '
+                            "selbst und kann es deshalb nicht weitergeben."
+                        ),
+                    },
+                )
 
 
 def _pruefe_rollenzuteilung(db: Session, team: Team, user: User, rollen: list[TeamRole]) -> None:
@@ -993,6 +1024,9 @@ def set_server_grants(
         raise HTTPException(status_code=409, detail="Das persoenliche Team teilt keine Server")
 
     desired = {key for key in keys if key in SERVER_KEYS}
+    founder = db.get(User, team.owner_user_id)
+    if founder is None:
+        raise HTTPException(status_code=409, detail="Teamgründer nicht gefunden")
     for key in sorted(desired):
         if not permission_service.direct_server_permission(db, user, server_id, key):
             raise HTTPException(
@@ -1000,6 +1034,18 @@ def set_server_grants(
                 detail=(
                     f"Du haelst \"{key}\" auf diesem Server nicht selbst und "
                     "kannst es deshalb nicht an das Team weitergeben."
+                ),
+            )
+        # Auch der Gruender ist die Obergrenze: sonst legt ein Delegierter
+        # eine ruhende Zeile an, die erst mit dessen spaeterem Recht wirkt.
+        if founder.id != user.id and not permission_service.direct_server_permission(
+            db, founder, server_id, key
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Der Teamgründer hält \"{key}\" auf diesem Server nicht "
+                    "selbst und kann es deshalb nicht weitergeben."
                 ),
             )
     # `server.view` ist die Voraussetzung fuer alles Weitere. Ohne sie sieht das
@@ -1274,7 +1320,7 @@ def create_team_role(
     """Erstellt eine neue Rolle im Team."""
     if not has_team_permission(db, team.id, user, "team.roles.manage"):
         assert_team_owner(db, team, user)
-    _pruefe_server_grant_sicht(server_grants)
+    _pruefe_server_grant_sicht(db, team, server_grants)
     _pruefe_rollen_deckel(
         db, team, user,
         is_admin=is_admin,
@@ -1370,7 +1416,7 @@ def update_team_role(
         assert_team_owner(db, team, user)
 
     role = get_team_role(db, team.id, role_id)
-    _pruefe_server_grant_sicht(server_grants)
+    _pruefe_server_grant_sicht(db, team, server_grants)
     _pruefe_rollen_deckel(
         db, team, user,
         is_admin=is_admin,
