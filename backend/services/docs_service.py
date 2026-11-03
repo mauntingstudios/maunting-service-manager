@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from dataclasses import dataclass
+from collections import deque
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
@@ -33,7 +33,7 @@ from models.doc import (
 from models.team import Team, TeamMember
 from models.user import User
 from services import audit_service, docs_access, team_service
-from services.docs_access import ROLE_RANG, DocAccess
+from services.docs_access import DocAccess
 from services.dis_client import DisSidecarError
 from services.panel_settings_service import docs_enabled
 from services.permission_service import has_global_permission
@@ -152,18 +152,11 @@ def _titel(doc: Document) -> str:
 
 
 def _titel_gebuendelt(docs: list[Document]) -> dict[str, str]:
-    from services.dis_client import DisClient
-
     if not docs:
         return {}
-    try:
-        werte = DisClient.decrypt_many(
-            [(d.title_encrypted, aad_title(d.doc_uid)) for d in docs]
-        )
-    except DisSidecarError as exc:
-        raise fehler(
-            503, "DOCS_STORE_FAILED", "Verschluesselungsdienst nicht erreichbar"
-        ) from exc
+    werte = _texte_entschluesseln(
+        [(d.title_encrypted, aad_title(d.doc_uid)) for d in docs]
+    )
     return {
         d.doc_uid: (wert if wert is not None else "Dokument")
         for d, wert in zip(docs, werte)
@@ -180,23 +173,27 @@ def _inhalt_text(doc: Document) -> str:
 
 
 def _inhalt_gebuendelt(docs: list[Document]) -> dict[str, str]:
-    from services.dis_client import DisClient
-
     mit_inhalt = [d for d in docs if d.content_text_encrypted]
     if not mit_inhalt:
         return {}
-    try:
-        werte = DisClient.decrypt_many(
-            [(d.content_text_encrypted, aad_text(d.doc_uid)) for d in mit_inhalt]
-        )
-    except DisSidecarError as exc:
-        raise fehler(
-            503, "DOCS_STORE_FAILED", "Verschluesselungsdienst nicht erreichbar"
-        ) from exc
+    werte = _texte_entschluesseln(
+        [(d.content_text_encrypted, aad_text(d.doc_uid)) for d in mit_inhalt]
+    )
     return {
         d.doc_uid: (wert if wert is not None else "")
         for d, wert in zip(mit_inhalt, werte)
     }
+
+
+def _texte_entschluesseln(werte: list[tuple[str, str]]) -> list[str | None]:
+    from services.dis_client import DisClient
+
+    try:
+        return DisClient.decrypt_many(werte)
+    except DisSidecarError as exc:
+        raise fehler(
+            503, "DOCS_STORE_FAILED", "Verschluesselungsdienst nicht erreichbar"
+        ) from exc
 
 
 def _publish(action: str, doc: Document, *, user_id: int | None = None, **extra) -> None:
@@ -231,12 +228,6 @@ def _publish(action: str, doc: Document, *, user_id: int | None = None, **extra)
             SyncEventService.publish(payload, user_id=int(link_user_id))
     except Exception:
         pass
-
-
-@dataclass(frozen=True)
-class DocFolderInfo:
-    folder: DocFolder
-    name: str
 
 
 class DocsService:
@@ -774,12 +765,15 @@ class DocsService:
             .all()
         )
         by_id = {o.id: o for o in ordner}
+        namen = _texte_entschluesseln(
+            [(o.name_encrypted, aad_folder(o.team_id, o.folder_uid)) for o in ordner]
+        )
         ergebnis = []
-        for o in ordner:
+        for o, name in zip(ordner, namen):
             ergebnis.append(
                 {
                     "uid": o.folder_uid,
-                    "name": DocsService._folder_name(o),
+                    "name": name if name is not None else "Ordner",
                     "parent_uid": by_id[o.parent_id].folder_uid if o.parent_id else None,
                     "team_id": o.team_id,
                     "created_at": _iso(o.created_at),
@@ -1152,29 +1146,51 @@ class DocsService:
         if status in ("open", "resolved"):
             query = query.filter(DocComment.status == status)
         rows = query.order_by(DocComment.created_at).all()
-        namen = {
-            u.id: u.username
-            for u in db.query(User).filter(User.id.in_({r.author_user_id for r in rows if r.author_user_id}))
+        author_ids = {row.author_user_id for row in rows if row.author_user_id}
+        namen = (
+            {
+                u.id: u.username
+                for u in db.query(User).filter(User.id.in_(author_ids))
+            }
+            if author_ids
+            else {}
+        )
+        kommentarfelder = [
+            (row, feld, encrypted)
+            for row in rows
+            for feld, encrypted in (
+                ("body", row.body_encrypted),
+                ("anchor", row.anchor_encrypted),
+            )
+            if encrypted
+        ]
+        entschluesselt = _texte_entschluesseln(
+            [
+                (
+                    encrypted,
+                    aad_comment(doc.doc_uid, row.comment_uid, feld),
+                )
+                for row, feld, encrypted in kommentarfelder
+            ]
+        )
+        text_werte = {
+            (row.id, feld): wert
+            for (row, feld, _), wert in zip(kommentarfelder, entschluesselt)
         }
         ergebnis = []
         for row in rows:
-            try:
-                body = decrypt_text(row.body_encrypted, aad_comment(doc.doc_uid, row.comment_uid, "body"))
-            except Exception:
-                body = ""
             anchor = None
-            if row.anchor_encrypted:
+            anchor_text = text_werte.get((row.id, "anchor"))
+            if anchor_text is not None:
                 try:
-                    anchor = json.loads(
-                        decrypt_text(row.anchor_encrypted, aad_comment(doc.doc_uid, row.comment_uid, "anchor"))
-                    )
+                    anchor = json.loads(anchor_text)
                 except Exception:
                     anchor = None
             ergebnis.append(
                 {
                     "uid": row.comment_uid,
                     "parent_uid": None,
-                    "body": body,
+                    "body": text_werte.get((row.id, "body")) or "",
                     "anchor": anchor,
                     "status": row.status,
                     "author": namen.get(row.author_user_id),
@@ -1317,16 +1333,43 @@ class DocsService:
             .limit(MAX_REVISIONS)
             .all()
         )
-        namen = {
-            u.id: u.username
-            for u in db.query(User).filter(User.id.in_({r.author_user_id for r in rows if r.author_user_id}))
+        author_ids = {row.author_user_id for row in rows if row.author_user_id}
+        namen = (
+            {
+                u.id: u.username
+                for u in db.query(User).filter(User.id.in_(author_ids))
+            }
+            if author_ids
+            else {}
+        )
+        revision_felder = [
+            (row, feld, encrypted)
+            for row in rows
+            for feld, encrypted in (
+                ("label", row.label_encrypted),
+                ("preview", row.preview_text_encrypted),
+            )
+            if encrypted
+        ]
+        werte = _texte_entschluesseln(
+            [
+                (
+                    encrypted,
+                    aad_revision(doc.doc_uid, row.rev, feld),
+                )
+                for row, feld, encrypted in revision_felder
+            ]
+        )
+        texte = {
+            (row.id, feld): wert
+            for (row, feld, _), wert in zip(revision_felder, werte)
         }
         return [
             {
                 "rev": row.rev,
                 "reason": row.reason,
-                "label": DocsService.revision_label(db, doc, row),
-                "preview": DocsService.revision_vorschau(db, doc, row),
+                "label": texte.get((row.id, "label")),
+                "preview": texte.get((row.id, "preview")) or "",
                 "size_bytes": row.state_bytes,
                 "author": namen.get(row.author_user_id),
                 "author_kind": row.author_kind,
@@ -1381,13 +1424,13 @@ class DocsService:
         doc = _doc(db, doc_uid)
         docs_access.require_role(db, user, doc, "editor")
         if mime not in ERLAUBTE_ASSET_MIMES:
-            raise fehler(422, "DOC_INVALID_TARGET", "Dateityp ist nicht erlaubt")
+            raise fehler(422, "DOC_INVALID_MIME", "Dateityp ist nicht erlaubt")
         try:
             roh = base64.b64decode(data_base64, validate=True)
         except binascii.Error:
             raise fehler(422, "DOC_INVALID_TARGET", "Datei ist nicht base64-kodiert")
         if len(roh) > MAX_ASSET_BYTES:
-            raise fehler(413, "DOC_ASSET_TOO_LARGE", "Anhang ist groesser als 4 MiB")
+            raise fehler(413, "ASSET_BYTES_EXCEEDED", "Anhang ist groesser als 4 MiB")
         if sha256_hex(roh) != sha256.lower():
             raise fehler(422, "DOC_INVALID_TARGET", "Pruefsumme passt nicht zur Datei")
 
@@ -1401,9 +1444,9 @@ class DocsService:
             DocAsset.document_id == doc.id, DocAsset.deleted_at.is_(None)
         ).scalar() or 0
         if anzahl >= MAX_ASSETS_PER_DOC:
-            raise fehler(413, "DOC_QUOTA_EXCEEDED", "Dokument hat die Anhangsgrenze erreicht")
+            raise fehler(413, "ASSET_QUOTA_EXCEEDED", "Dokument hat die Anhangsgrenze erreicht")
         if doc.asset_bytes + len(roh) > MAX_ASSET_BYTES_DOC:
-            raise fehler(413, "DOC_QUOTA_EXCEEDED", "Dokument-Anhaenge sind zu gross")
+            raise fehler(413, "ASSET_BYTES_EXCEEDED", "Dokument-Anhaenge sind zu gross")
         team_bytes = (
             db.query(func.coalesce(func.sum(DocAsset.size_bytes), 0))
             .join(Document, Document.id == DocAsset.document_id)
@@ -1412,7 +1455,7 @@ class DocsService:
             or 0
         )
         if team_bytes + len(roh) > MAX_ASSET_BYTES_TEAM:
-            raise fehler(413, "DOC_QUOTA_EXCEEDED", "Team-Anhaenge sind zu gross")
+            raise fehler(413, "ASSET_BYTES_EXCEEDED", "Team-Anhaenge sind zu gross")
 
         asset = DocAsset(
             asset_uid=_uid(),
@@ -1512,21 +1555,29 @@ class DocsService:
     @staticmethod
     def prune_revisions(db: Session, doc: Document) -> None:
         rows = (
-            db.query(DocRevision)
+            db.query(DocRevision.id, DocRevision.reason, DocRevision.state_bytes)
             .filter(DocRevision.document_id == doc.id)
             .order_by(DocRevision.created_at.desc())
             .all()
         )
-        gesamt = sum(r.state_bytes for r in rows)
-        while len(rows) > MAX_REVISIONS or gesamt > MAX_REVISION_BYTES:
-            opfer = None
-            for row in reversed(rows):
-                if row.reason in ("autosave", "ai_pre_edit", "ai_undo"):
-                    opfer = row
-                    break
-            if opfer is None:
-                opfer = rows[-1]
+        verbleibend = {row.id: row for row in rows}
+        aelteste = deque(reversed(rows))
+        bevorzugt = deque(
+            row for row in reversed(rows)
+            if row.reason in ("autosave", "ai_pre_edit", "ai_undo")
+        )
+        gesamt = sum(row.state_bytes for row in rows)
+        opfer_ids: list[int] = []
+        while len(verbleibend) > MAX_REVISIONS or gesamt > MAX_REVISION_BYTES:
+            warteschlange = bevorzugt if bevorzugt else aelteste
+            opfer = warteschlange.popleft()
+            if opfer.id not in verbleibend:
+                continue
+            del verbleibend[opfer.id]
+            opfer_ids.append(opfer.id)
             gesamt -= opfer.state_bytes
-            rows.remove(opfer)
-            db.delete(opfer)
+        if opfer_ids:
+            db.query(DocRevision).filter(DocRevision.id.in_(opfer_ids)).delete(
+                synchronize_session=False
+            )
         doc.revision_bytes = max(0, gesamt)

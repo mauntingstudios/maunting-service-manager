@@ -35,24 +35,38 @@ _PRIVAT_COLS = [
 
 
 def upgrade() -> None:
-    tables = sa.inspect(op.get_bind()).get_table_names()
+    inspector = sa.inspect(op.get_bind())
+    tables = set(inspector.get_table_names())
     if "teams" in tables:
+        columns = {column["name"] for column in inspector.get_columns("teams")}
         with op.batch_alter_table("teams") as batch:
             for name, typ in _TEAM_COLS:
-                batch.add_column(sa.Column(name, typ, nullable=True))
+                if name not in columns:
+                    batch.add_column(sa.Column(name, typ, nullable=True))
     if "vault_user_settings" in tables:
+        columns = {
+            column["name"] for column in inspector.get_columns("vault_user_settings")
+        }
         with op.batch_alter_table("vault_user_settings") as batch:
             for name, typ in _PRIVAT_COLS:
-                batch.add_column(sa.Column(name, typ, nullable=True))
+                if name not in columns:
+                    batch.add_column(sa.Column(name, typ, nullable=True))
 
 
 def downgrade() -> None:
-    tables = sa.inspect(op.get_bind()).get_table_names()
+    inspector = sa.inspect(op.get_bind())
+    tables = set(inspector.get_table_names())
     if "vault_user_settings" in tables:
+        columns = {
+            column["name"] for column in inspector.get_columns("vault_user_settings")
+        }
         with op.batch_alter_table("vault_user_settings") as batch:
             for name, _ in reversed(_PRIVAT_COLS):
-                batch.drop_column(name)
+                if name in columns:
+                    batch.drop_column(name)
     if "teams" in tables:
+        columns = {column["name"] for column in inspector.get_columns("teams")}
         with op.batch_alter_table("teams") as batch:
             for name, _ in reversed(_TEAM_COLS):
-                batch.drop_column(name)
+                if name in columns:
+                    batch.drop_column(name)

@@ -21,18 +21,29 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    if "teams" not in sa.inspect(op.get_bind()).get_table_names():
+    inspector = sa.inspect(op.get_bind())
+    if "teams" not in inspector.get_table_names():
         return
+    columns = {column["name"] for column in inspector.get_columns("teams")}
     with op.batch_alter_table("teams") as batch:
-        batch.add_column(sa.Column("vault_hint", sa.Text(), nullable=True))
-        batch.add_column(
-            sa.Column("vault_last_hint_requested_at", sa.DateTime(timezone=True), nullable=True)
-        )
+        if "vault_hint" not in columns:
+            batch.add_column(sa.Column("vault_hint", sa.Text(), nullable=True))
+        if "vault_last_hint_requested_at" not in columns:
+            batch.add_column(
+                sa.Column(
+                    "vault_last_hint_requested_at",
+                    sa.DateTime(timezone=True),
+                    nullable=True,
+                )
+            )
 
 
 def downgrade() -> None:
-    if "teams" not in sa.inspect(op.get_bind()).get_table_names():
+    inspector = sa.inspect(op.get_bind())
+    if "teams" not in inspector.get_table_names():
         return
+    columns = {column["name"] for column in inspector.get_columns("teams")}
     with op.batch_alter_table("teams") as batch:
-        batch.drop_column("vault_last_hint_requested_at")
-        batch.drop_column("vault_hint")
+        for column in ("vault_last_hint_requested_at", "vault_hint"):
+            if column in columns:
+                batch.drop_column(column)

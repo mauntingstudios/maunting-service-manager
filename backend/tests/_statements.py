@@ -21,8 +21,8 @@ def count_statements(db: Session) -> Iterator[list[str]]:
     engine = db.get_bind()
     aufrufe: list[str] = []
 
-    def vor(conn, element, mehrzahl, params, optionen) -> None:  # noqa: ANN001, ANN202
-        aufrufe.append(str(element)[:160])
+    def vor(conn, cursor, statement, params, context, executemany) -> None:  # noqa: ANN001, ANN202
+        aufrufe.append(statement[:160])
 
     event.listen(engine, "before_cursor_execute", vor)
     try:

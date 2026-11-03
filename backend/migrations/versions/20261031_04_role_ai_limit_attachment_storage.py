@@ -17,14 +17,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    if "role_ai_limits" not in sa.inspect(op.get_bind()).get_table_names():
+    inspector = sa.inspect(op.get_bind())
+    if "role_ai_limits" not in inspector.get_table_names():
+        return
+    columns = {
+        column["name"] for column in inspector.get_columns("role_ai_limits")
+    }
+    if "max_attachment_storage_mb" in columns:
         return
     with op.batch_alter_table("role_ai_limits") as batch:
         batch.add_column(sa.Column("max_attachment_storage_mb", sa.Integer(), nullable=True))
 
 
 def downgrade() -> None:
-    if "role_ai_limits" not in sa.inspect(op.get_bind()).get_table_names():
+    inspector = sa.inspect(op.get_bind())
+    if "role_ai_limits" not in inspector.get_table_names():
+        return
+    columns = {
+        column["name"] for column in inspector.get_columns("role_ai_limits")
+    }
+    if "max_attachment_storage_mb" not in columns:
         return
     with op.batch_alter_table("role_ai_limits") as batch:
         batch.drop_column("max_attachment_storage_mb")

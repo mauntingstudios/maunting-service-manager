@@ -26,10 +26,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    if "login_challenges" not in inspector.get_table_names():
+        return
+    columns = {
+        column["name"] for column in inspector.get_columns("login_challenges")
+    }
+    if "resolved_at" in columns:
+        return
     with op.batch_alter_table("login_challenges") as batch:
         batch.add_column(sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    if "login_challenges" not in inspector.get_table_names():
+        return
+    columns = {
+        column["name"] for column in inspector.get_columns("login_challenges")
+    }
+    if "resolved_at" not in columns:
+        return
     with op.batch_alter_table("login_challenges") as batch:
         batch.drop_column("resolved_at")

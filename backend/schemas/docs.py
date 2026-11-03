@@ -16,15 +16,6 @@ class DocFolderCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
 
 
-class DocFolderUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=200)
-    parent_uid: str | None = None
-
-
-class DocFolderMove(BaseModel):
-    parent_uid: str | None = None
-
-
 class DocFolderPatch(BaseModel):
     """Ordner-PATCH: Jedes Feld darf fehlen — `model_fields_set` unterscheidet
     "nicht aendern" von einem expliziten `null` (Befund 17)."""
@@ -92,33 +83,6 @@ class AssetUpload(BaseModel):
         if any(z not in "0123456789abcdef" for z in wert):
             raise ValueError("sha256 muss hexadezimal sein")
         return wert
-
-
-class DocSummary(BaseModel):
-    uid: str
-    title: str
-    folder_uid: str | None = None
-    team_id: int
-    team_name: str | None = None
-    role: DocRole
-    can_edit: bool
-    can_comment: bool
-    can_manage: bool = False
-    rev: int
-    archived: bool = False
-    deleted: bool = False
-    content_truncated: bool = False
-    updated_at: str
-    last_edited_at: str
-    owner: str | None = None
-
-
-class DocDetail(DocSummary):
-    default_role: DocRole = "editor"
-    schema_version: int = 1
-    shared: bool = False
-    share_role: ShareRole | None = None
-    share_expires_at: str | None = None
 
 
 # ── Interne Endpunkte (Sidecar → FastAPI) ────────────────────────────

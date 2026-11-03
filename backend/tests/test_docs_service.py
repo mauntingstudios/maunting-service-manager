@@ -20,6 +20,7 @@ from services.auth_service import AuthService
 from services.docs_collab_service import DocsCollabService
 from services.docs_crypto import decrypt_state
 from services.docs_service import DocsService
+from services import docs_service as docs_service_module
 
 
 def _benutzer(db, name: str):
@@ -47,13 +48,14 @@ def _mitglied(db, team, user, role: str = "member") -> None:
 
 def _docs_recht(db, user) -> None:
     """Gibt dem Benutzer den Dokumentzugang (`docs.use`, Befund 42)."""
-    from models.role import Role, RolePermission
+    from models.role import Role
+    from models.role_permission import RolePermission
     from services.role_service import set_user_roles
 
     rolle = Role(name=f"docs-nutzer-{user.username}", description="Dokumentzugang", is_system=False)
     db.add(rolle)
     db.flush()
-    db.add(RolePermission(role_id=rolle.id, permission_key="docs.use", granted=True))
+    db.add(RolePermission(role_id=rolle.id, permission_key="docs.use"))
     db.commit()
     set_user_roles(db, user, [rolle.id])
 
@@ -315,7 +317,15 @@ def test_zwei_stores_gleichzeitig_einer_gewinnt(db):
         try:
             barriere.wait(timeout=10)
             ergebnis = DocsCollabService.store(
-                s, uid, _payload(inhalt, inhalt.decode(), author_user_id=autor_id, expected_rev=1)
+                s,
+                uid,
+                _payload(
+                    inhalt,
+                    inhalt.decode(),
+                    author_user_id=autor_id,
+                    expected_rev=1,
+                    reason="checkpoint",
+                ),
             )
             ausgang.append("stored" if ergebnis["stored"] else "idempotent")
         except HTTPException as exc:
@@ -831,6 +841,35 @@ def test_asset_weist_falsche_pruefsumme_und_svg_ab(db):
             sha256=hashlib.sha256(b"<svg/>").hexdigest(),
         )
     assert svg.value.status_code == 422
+    assert svg.value.detail["code"] == "DOC_INVALID_MIME"
+
+
+def test_asset_quota_fehlercodes_trennen_anzahl_und_bytes(db, monkeypatch):
+    user = _benutzer(db, "docs_asset_quota")
+    daten = DocsService.create_document(db, user)
+    upload = {
+        "file_name": "a.png",
+        "mime": "image/png",
+        "data_base64": base64.b64encode(b"asset").decode(),
+        "sha256": hashlib.sha256(b"asset").hexdigest(),
+    }
+
+    monkeypatch.setattr(docs_service_module, "MAX_ASSETS_PER_DOC", 0)
+    with pytest.raises(HTTPException) as anzahl:
+        DocsService.upload_asset(db, user, daten["uid"], **upload)
+    assert anzahl.value.detail["code"] == "ASSET_QUOTA_EXCEEDED"
+
+    monkeypatch.setattr(docs_service_module, "MAX_ASSETS_PER_DOC", 100)
+    monkeypatch.setattr(docs_service_module, "MAX_ASSET_BYTES_DOC", 0)
+    with pytest.raises(HTTPException) as dokument_bytes:
+        DocsService.upload_asset(db, user, daten["uid"], **upload)
+    assert dokument_bytes.value.detail["code"] == "ASSET_BYTES_EXCEEDED"
+
+    monkeypatch.setattr(docs_service_module, "MAX_ASSET_BYTES_DOC", 100)
+    monkeypatch.setattr(docs_service_module, "MAX_ASSET_BYTES_TEAM", 0)
+    with pytest.raises(HTTPException) as team_bytes:
+        DocsService.upload_asset(db, user, daten["uid"], **upload)
+    assert team_bytes.value.detail["code"] == "ASSET_BYTES_EXCEEDED"
 
 
 def _zwei_verbindungen():
@@ -970,6 +1009,107 @@ def test_kommentare_mit_anker_und_rolle(db):
         db, user, daten["uid"], erstellt["uid"], body=None, status="resolved"
     )
     assert DocsService.list_comments(db, user, daten["uid"])[0]["status"] == "resolved"
+
+
+def test_ordner_kommentare_und_revisionen_entschluesseln_gebuendelt(db, monkeypatch):
+    from services.dis_client import DisClient
+
+    user = _benutzer(db, "docs_bundle_a")
+    folder = DocsService.create_folder(
+        db, user, team_id=None, parent_uid=None, name="Gebundelt"
+    )
+    daten = DocsService.create_document(
+        db, user, folder_uid=folder["uid"], title="Gebündeltes Dokument"
+    )
+    DocsService.create_comment(
+        db,
+        user,
+        daten["uid"],
+        body="Kommentartext",
+        parent_uid=None,
+        anchor={"quote": "Zitat"},
+    )
+    DocsCollabService.store(
+        db, daten["uid"], _payload(b"eins", "Erster Text", author_user_id=user.id)
+    )
+    DocsCollabService.store(
+        db,
+        daten["uid"],
+        _payload(
+            b"zwei",
+            "Zweiter Text",
+            author_user_id=user.id,
+            reason="checkpoint",
+            force_revision=True,
+        ),
+    )
+
+    aufrufe: list[int] = []
+    orig_many = DisClient.decrypt_many
+
+    def zaehle(items):
+        aufrufe.append(len(items))
+        return orig_many(items)
+
+    def kein_einzelwert(*_args, **_kwargs):
+        raise AssertionError("Listen duerfen nicht je Eintrag entschluesseln")
+
+    monkeypatch.setattr(DisClient, "decrypt_many", staticmethod(zaehle))
+    monkeypatch.setattr(DisClient, "decrypt", staticmethod(kein_einzelwert))
+
+    assert DocsService.list_folders(db, user)[0]["name"] == "Gebundelt"
+    comments = DocsService.list_comments(db, user, daten["uid"])
+    assert comments[0]["body"] == "Kommentartext"
+    assert comments[0]["anchor"] == {"quote": "Zitat"}
+    revisions = DocsService.list_revisions(db, user, daten["uid"])
+    assert any("Erster Text" in (row["preview"] or "") for row in revisions)
+    assert len(aufrufe) == 3
+    assert 2 in aufrufe
+
+
+def test_revisionsbereinigung_laesst_chiffrat_ungeladen_und_loescht_einmal(
+    db, monkeypatch
+):
+    from sqlalchemy import event
+
+    user = _benutzer(db, "docs_prune_a")
+    daten = DocsService.create_document(db, user)
+    doc = db.query(Document).filter(Document.doc_uid == daten["uid"]).one()
+    db.add_all(
+        [
+            DocRevision(
+                document_id=doc.id,
+                rev=rev,
+                reason="autosave",
+                state_encrypted="ciphertext",
+                state_bytes=1,
+                state_sha256="a" * 64,
+                author_kind="user",
+            )
+            for rev in range(1, 201)
+        ]
+    )
+    db.commit()
+    db.refresh(doc)
+    statements: list[str] = []
+
+    def track(_conn, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement.lower())
+
+    bind = db.get_bind()
+    event.listen(bind, "before_cursor_execute", track)
+    try:
+        DocsService.prune_revisions(db, doc)
+    finally:
+        event.remove(bind, "before_cursor_execute", track)
+
+    selects = [sql for sql in statements if sql.lstrip().startswith("select")]
+    deletes = [sql for sql in statements if sql.lstrip().startswith("delete")]
+    assert len(selects) == 1
+    assert "state_encrypted" not in selects[0]
+    assert len(deletes) == 1
+    assert " in " in deletes[0]
+    assert doc.revision_bytes == 100
 
 
 def test_ordner_anlegen_verschieben_und_loeschen(db):

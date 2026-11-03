@@ -205,6 +205,68 @@ def test_every_revision_is_reachable_from_the_head() -> None:
     )
 
 
+def test_docs_preview_migration_adds_missing_indexes_to_create_all_table(
+    pg_wegwerf,
+) -> None:
+    db_url = pg_wegwerf("docs-pending-indexes")
+    previous = settings.database_url
+    settings.database_url = db_url
+    backend_dir = Path(__file__).resolve().parent.parent
+    config = _config(backend_dir)
+    engine = create_engine(db_url)
+    try:
+        Base.metadata.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(text("DROP INDEX IF EXISTS ix_doc_pending_document_user"))
+            conn.execute(text("DROP INDEX IF EXISTS uq_doc_pending_offen"))
+            conn.execute(text("DROP INDEX IF EXISTS ix_doc_pending_expires"))
+        command.stamp(config, "20261029_01")
+        command.upgrade(config, "20261030_01")
+
+        indexes = {
+            index["name"] for index in inspect(engine).get_indexes("doc_pending_edits")
+        }
+        assert {
+            "ix_doc_pending_document_user",
+            "uq_doc_pending_offen",
+            "ix_doc_pending_expires",
+        } <= indexes
+        command.downgrade(config, "20261029_01")
+        assert "doc_pending_edits" not in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
+        settings.database_url = previous
+
+
+def test_team_roles_migration_repairs_create_all_columns_and_index(pg_wegwerf) -> None:
+    db_url = pg_wegwerf("team-role-partial")
+    previous = settings.database_url
+    settings.database_url = db_url
+    backend_dir = Path(__file__).resolve().parent.parent
+    config = _config(backend_dir)
+    engine = create_engine(db_url)
+    try:
+        Base.metadata.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(text("DROP INDEX IF EXISTS ix_team_roles_team_id"))
+            for table in ("team_members", "team_invitations"):
+                conn.execute(text(f'ALTER TABLE "{table}" DROP COLUMN team_role_id'))
+                conn.execute(text(f'ALTER TABLE "{table}" DROP COLUMN can_access_vault'))
+        command.stamp(config, "20261102_01")
+        command.upgrade(config, "20261102_02")
+
+        for table in ("team_members", "team_invitations"):
+            columns = {column["name"] for column in inspect(engine).get_columns(table)}
+            assert {"team_role_id", "can_access_vault"} <= columns
+        indexes = {
+            index["name"] for index in inspect(engine).get_indexes("team_roles")
+        }
+        assert "ix_team_roles_team_id" in indexes
+    finally:
+        engine.dispose()
+        settings.database_url = previous
+
+
 def test_downgrade_of_the_newest_revision_is_reversible(tmp_path: Path, pg_wegwerf) -> None:
     """Ein Rollback muss moeglich sein, sonst ist ein Fehlschlag endgueltig."""
     db_url = pg_wegwerf("downgrade")
@@ -253,7 +315,7 @@ def test_main_datenbank_erhaelt_die_messenger_brucke(pg_wegwerf) -> None:
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261031_01"
+        assert version == "20261103_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -303,7 +365,7 @@ def test_docs_revision_ohne_docs_code_kommt_auf_den_main_stand(
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261031_01"
+        assert version == "20261103_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -338,7 +400,7 @@ def test_server_auf_messenger_revision_kommt_wieder_auf_den_head(pg_wegwerf) -> 
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "20261031_01"
+        assert version == "20261103_01"
     finally:
         engine.dispose()
         settings.database_url = previous
@@ -404,7 +466,7 @@ def test_alte_docs_revision_wird_ohne_datenverlust_repariert(pg_wegwerf) -> None
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
             dokumente = conn.execute(text("SELECT count(*) FROM documents")).scalar()
-        assert version == "20261031_01"
+        assert version == "20261103_01"
         assert "user_infos" in inspector.get_table_names()
         assert dokumente == 1
         assert any(
@@ -448,9 +510,8 @@ def test_vorhandene_queue_indizes_blockieren_die_reparatur_nicht(pg_wegwerf) -> 
                     "WHERE indexname = 'ix_e2ee_queue_target_device'"
                 )
             ).scalar()
-        assert version == "20261031_01"
+        assert version == "20261103_01"
         assert indizes == 1
     finally:
         engine.dispose()
         settings.database_url = previous
-
