@@ -238,7 +238,7 @@ export function DocsApp() {
     try {
       await trashDocument(docUid)
       if (user) forgetDocument(user.id, docUid)
-      session.setDocuments((alt) => alt.filter((eintrag) => eintrag.uid !== docUid))
+      session.setDocuments((alt) => (alt ?? []).filter((eintrag) => eintrag.uid !== docUid))
       if (uid === docUid) navigate('/dokumente')
     } catch (error) {
       toast.error(meldung(error, 'update'))
@@ -270,7 +270,7 @@ export function DocsApp() {
   const dokumentWiederherstellen = async (docUid: string) => {
     try {
       const wieder = await restoreDocument(docUid)
-      session.setDocuments((alt) => alt.filter((eintrag) => eintrag.uid !== docUid))
+      session.setDocuments((alt) => (alt ?? []).filter((eintrag) => eintrag.uid !== docUid))
       toast.success(t('docs.tree.restored'))
       if (uid === docUid) setDetail(wieder)
       void session.listeLaden()

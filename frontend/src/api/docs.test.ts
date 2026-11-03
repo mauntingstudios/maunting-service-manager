@@ -221,3 +221,24 @@ it('laedt gueltige Dateien weiter hoch (Befund 32)', async () => {
     vi.unstubAllGlobals()
   }
 })
+
+it('liest eine alte nackte Liste ohne Cursor', async () => {
+  const alt = [{ uid: 'alt-1' }, { uid: 'alt-2' }]
+  vi.spyOn(client, 'api').mockResolvedValue(alt as never)
+
+  await expect(listDocuments({ limit: 50 })).resolves.toEqual({
+    items: alt,
+    next_cursor: null,
+  })
+})
+
+it('liest eine alte Suchliste ohne Suchtiefe', async () => {
+  const alt = [{ uid: 'alt-1' }]
+  vi.spyOn(client, 'api').mockResolvedValue(alt as never)
+
+  await expect(searchDocuments({ search: 'alt' })).resolves.toEqual({
+    items: alt,
+    searched: 1,
+    truncated: false,
+  })
+})

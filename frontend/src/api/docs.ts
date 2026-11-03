@@ -163,7 +163,22 @@ export interface DocListe {
   next_cursor: string | null
 }
 
-export function listDocuments(params: {
+/**
+ * Ein alter Server liefert noch die nackte Liste. Der Client darf daran nicht
+ * scheitern, sonst bricht die Dokumentliste in der Uebergangszeit.
+ */
+function alsListe(daten: unknown): DocListe {
+  if (Array.isArray(daten)) {
+    return { items: daten as DocSummary[], next_cursor: null }
+  }
+  const eintrag = (daten ?? {}) as Partial<DocListe>
+  return {
+    items: Array.isArray(eintrag.items) ? eintrag.items : [],
+    next_cursor: eintrag.next_cursor ?? null,
+  }
+}
+
+export async function listDocuments(params: {
   teamId?: number | null
   folderUid?: string | null
   archived?: boolean
@@ -172,16 +187,18 @@ export function listDocuments(params: {
   limit?: number
   cursor?: string | null
 } = {}): Promise<DocListe> {
-  return api<DocListe>(
-    `/docs${query({
-      team_id: params.teamId ?? undefined,
-      folder_uid: params.folderUid ?? undefined,
-      archived: params.archived || undefined,
-      trash: params.trash || undefined,
-      member: params.member,
-      limit: params.limit,
-      cursor: params.cursor ?? undefined,
-    })}`,
+  return alsListe(
+    await api<DocListe | DocSummary[]>(
+      `/docs${query({
+        team_id: params.teamId ?? undefined,
+        folder_uid: params.folderUid ?? undefined,
+        archived: params.archived || undefined,
+        trash: params.trash || undefined,
+        member: params.member,
+        limit: params.limit,
+        cursor: params.cursor ?? undefined,
+      })}`,
+    ),
   )
 }
 
@@ -198,13 +215,21 @@ export interface DocSearchResult {
  * jüngsten und sagt über `truncated`, wenn ältere außen vor blieben — statt
  * still zu schweigen.
  */
-export function searchDocuments(params: {
+export async function searchDocuments(params: {
   search: string
   limit?: number
 }): Promise<DocSearchResult> {
-  return api<DocSearchResult>(
+  const daten = await api<DocSearchResult | DocSummary[]>(
     `/docs${query({ search: params.search, limit: params.limit })}`,
   )
+  if (Array.isArray(daten)) {
+    return { items: daten, searched: daten.length, truncated: false }
+  }
+  return {
+    items: Array.isArray(daten?.items) ? daten.items : [],
+    searched: typeof daten?.searched === 'number' ? daten.searched : 0,
+    truncated: Boolean(daten?.truncated),
+  }
 }
 
 export function getDocument(uid: string): Promise<DocDetail> {

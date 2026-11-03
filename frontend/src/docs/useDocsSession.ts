@@ -73,8 +73,8 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
               limit: DOKUMENT_SEITENGROESSE,
             })
             return {
-              items: seite.items,
-              nextCursor: seite.next_cursor,
+              items: Array.isArray(seite.items) ? seite.items : [],
+              nextCursor: seite.next_cursor ?? null,
               searched: null,
             }
           }
@@ -90,7 +90,7 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
       setSuchGrenze(dokumente.searched)
       setNextCursor(dokumente.nextCursor)
       setFolders(ordner)
-      setDocuments(dokumente.items)
+      setDocuments(Array.isArray(dokumente.items) ? dokumente.items : [])
       // Nur die ungefilterte Aktivliste ersetzt den Offline-Katalog. Eine
       // Suchtrefferliste oder der Papierkorb wuerde sonst die lokale Kopie
       // aller anderen Dokumente ueberschreiben.
@@ -120,10 +120,12 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
         cursor: nextCursor,
       })
       if (generation !== listGenerationRef.current) return
-      const frischeSeite = new Map(seite.items.map((doc) => [doc.uid, doc]))
+      const frischeSeite = new Map(
+        (Array.isArray(seite.items) ? seite.items : []).map((doc) => [doc.uid, doc]),
+      )
       const bekannt = new Set(documents.map((doc) => doc.uid))
       const aktualisiert = documents.map((doc) => frischeSeite.get(doc.uid) ?? doc)
-      for (const doc of seite.items) {
+      for (const doc of Array.isArray(seite.items) ? seite.items : []) {
         if (!bekannt.has(doc.uid)) aktualisiert.push(doc)
       }
       setDocuments(aktualisiert)
