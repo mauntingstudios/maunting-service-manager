@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeAll, describe, expect, it } from 'vitest'
 import i18n from '@/i18n'
 import { StatusDot } from './StatusIndicator'
@@ -31,5 +31,19 @@ describe('StatusIndicator', () => {
     const punkt = screen.getByRole('img', { name: i18n.t('social.status.online') })
     expect(punkt.parentElement).toHaveClass('absolute', 'bottom-0', 'right-0')
     expect(punkt).not.toHaveClass('absolute')
+  })
+
+  it('zeigt die Blase per Portal an body, wenn overflow sie schnitte', async () => {
+    render(
+      <div style={{ overflow: 'hidden' }}>
+        <StatusDot status="online" portal />
+      </div>,
+    )
+    const punkt = screen.getByRole('img', { name: i18n.t('social.status.online') })
+    fireEvent.pointerEnter(punkt.parentElement!)
+
+    const blase = await screen.findByText(i18n.t('social.status.online'))
+    // Portal heißt: direkt an body, außerhalb jedes Überlauf-Containers.
+    expect(blase.parentElement).toBe(document.body)
   })
 })

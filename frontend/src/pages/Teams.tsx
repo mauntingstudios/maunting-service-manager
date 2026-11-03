@@ -1022,7 +1022,7 @@ function MitgliederReiter({
                     aria-label={t('teams.profilAnsehen', { name: member.username })}
                   >
                     <Avatar src={member.avatar_url} name={member.username} size="sm" />
-                    <StatusDot status={member.presence?.status || 'invisible'} size="sm" className="absolute bottom-0 right-0" />
+                    <StatusDot status={member.presence?.status || 'invisible'} size="sm" className="absolute bottom-0 right-0" portal />
                   </button>
                   <span className="min-w-0">
                     <button

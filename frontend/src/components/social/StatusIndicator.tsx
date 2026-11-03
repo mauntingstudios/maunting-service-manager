@@ -8,9 +8,14 @@ interface StatusDotProps {
   status?: PresenceStatus | string | null
   className?: string
   size?: 'sm' | 'md' | 'lg'
+  /**
+   * Blase per Portal an `body`: nötig in Zeilen mit `overflow-hidden`
+   * (Teamliste), die sie sonst abschneiden — wie bei den Notizen.
+   */
+  portal?: boolean
 }
 
-export function StatusDot({ status = 'invisible', className = '', size = 'md' }: StatusDotProps) {
+export function StatusDot({ status = 'invisible', className = '', size = 'md', portal = false }: StatusDotProps) {
   const { t } = useTranslation()
   const sizeClasses = {
     sm: 'w-2 h-2',
@@ -20,7 +25,7 @@ export function StatusDot({ status = 'invisible', className = '', size = 'md' }:
 
   if (status === 'online') {
     return (
-      <Kurzinfo text={t('social.status.online')} aussen={className}>
+      <Kurzinfo text={t('social.status.online')} aussen={className} portal={portal}>
         <span
           role="img"
           className={`inline-block rounded-full bg-status-success ring-2 ring-surface shadow-[0_0_8px_rgba(16,185,129,0.5)] ${sizeClasses}`}
@@ -32,7 +37,7 @@ export function StatusDot({ status = 'invisible', className = '', size = 'md' }:
 
   if (status === 'away') {
     return (
-      <Kurzinfo text={t('social.status.away')} aussen={className}>
+      <Kurzinfo text={t('social.status.away')} aussen={className} portal={portal}>
         <span
           role="img"
           className={`inline-block rounded-full bg-status-warning ring-2 ring-surface shadow-[0_0_8px_rgba(245,158,11,0.5)] ${sizeClasses}`}
@@ -44,7 +49,7 @@ export function StatusDot({ status = 'invisible', className = '', size = 'md' }:
 
   // Invisible / Offline
   return (
-    <Kurzinfo text={t('social.status.offline')} aussen={className}>
+    <Kurzinfo text={t('social.status.offline')} aussen={className} portal={portal}>
       <span
         role="img"
         className={`inline-block rounded-full bg-on-surface-variant/40 ring-2 ring-surface ${sizeClasses}`}
