@@ -45,6 +45,33 @@ describe('ProfileDropdown', () => {
     expect(screen.getByText('admin@example.test')).toBeInTheDocument()
   })
 
+  it('zeigt bei Automatik den aufgelösten Zustand am Punkt', () => {
+    render(
+      <ProfileDropdown
+        user={dummyUser}
+        items={dummyItems}
+        status="auto"
+        effectiveStatus="online"
+      />
+    )
+
+    const punkt = screen.getByRole('img', { name: i18n.t('social.status.online') })
+    expect(punkt).toHaveClass('bg-status-success')
+  })
+
+  it('fällt ohne aufgelösten Zustand auf die Wahl zurück', () => {
+    render(
+      <ProfileDropdown
+        user={dummyUser}
+        items={dummyItems}
+        status="auto"
+      />
+    )
+
+    const punkt = screen.getByRole('img', { name: i18n.t('social.status.offline') })
+    expect(punkt).not.toHaveClass('bg-status-success')
+  })
+
   it('opens menu on click and displays status options (Online, Abwesend, Unsichtbar)', () => {
     const handleStatusChange = vi.fn()
 

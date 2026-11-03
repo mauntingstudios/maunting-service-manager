@@ -15,10 +15,14 @@ vi.mock('@/api/vaultDeviceAuth', () => ({
   getDeviceAuthSessionStatus: vi.fn(),
 }))
 
-vi.mock('./deviceAuthCrypto', () => ({
-  generateEphemeralAuthKeyPair: vi.fn(),
-  decryptAuthPayload: vi.fn(),
-}))
+vi.mock('./deviceAuthCrypto', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('./deviceAuthCrypto')>()
+  return {
+    ...orig,
+    generateEphemeralAuthKeyPair: vi.fn(),
+    decryptAuthPayload: vi.fn(),
+  }
+})
 
 describe('DeviceAuthQrView Component', () => {
   beforeEach(() => {

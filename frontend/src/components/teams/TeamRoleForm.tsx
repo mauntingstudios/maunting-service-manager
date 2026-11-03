@@ -8,6 +8,7 @@ import {
   type TeamDetail,
   type TeamRole,
   type TeamRoleWritePayload,
+  type TeamServer,
 } from '@/api/teams'
 import {
   Button,
@@ -22,6 +23,7 @@ import {
 } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import {
+  mitServerSicht,
   TEAM_PERMISSION_ABSCHNITTE,
   TEAM_PERMISSION_DEFINITIONS,
 } from './teamPermissionsCatalog'
@@ -31,6 +33,11 @@ export interface TeamRoleFormProps {
   role: TeamRole | null
   onSaved: (role: TeamRole) => void
   onCancel: () => void
+  /**
+   * Server samt Rechten, die der Gründer direkt hält — die einzige Quelle
+   * für Rollen-Freigaben. Keine Team-Freigabe nötig (ADR-0011, F4).
+   */
+  assignable: TeamServer[]
 }
 
 export function TeamRoleForm({
@@ -38,6 +45,7 @@ export function TeamRoleForm({
   role,
   onSaved,
   onCancel,
+  assignable,
 }: TeamRoleFormProps) {
   const { t } = useTranslation()
   const isEditing = role !== null
@@ -93,12 +101,13 @@ export function TeamRoleForm({
   }
 
   const setServerGrantKeys = (serverId: number, keys: string[]) => {
+    const naechste = mitServerSicht(keys).keys
     setServerGrants((prev) => {
       const next = new Map(prev)
-      if (keys.length === 0) {
+      if (naechste.length === 0) {
         next.delete(serverId)
       } else {
-        next.set(serverId, new Set(keys))
+        next.set(serverId, new Set(naechste))
       }
       return next
     })
@@ -108,7 +117,7 @@ export function TeamRoleForm({
     setServerGrants((prev) => {
       const next = new Map(prev)
       if (giveAll) {
-        next.set(serverId, new Set(allKeys))
+        next.set(serverId, new Set(mitServerSicht(allKeys).keys))
       } else {
         next.delete(serverId)
       }
@@ -118,17 +127,36 @@ export function TeamRoleForm({
 
   const canSave = name.trim().length >= 2 && !busy
 
+  /** Was der Gründer je Server direkt hält — die einzige Quelle (F4). */
+  const haltbar = useMemo(
+    () => new Map(assignable.map((s) => [s.server_id, new Set(s.permission_keys)] as const)),
+    [assignable],
+  )
+
+  /** Alte Freigaben, die der Gründer nicht mehr halten kann — sie entfallen. */
+  const entfallen = useMemo(
+    () =>
+      (role?.server_grants || []).some((g) => {
+        const keys = haltbar.get(g.server_id)
+        return !keys || g.permission_keys.some((k) => !keys.has(k))
+      }),
+    [role, haltbar],
+  )
+
   const handleSave = async () => {
     if (!canSave) return
     setBusy(true)
 
     try {
       const grantsPayload = Array.from(serverGrants.entries())
-        .filter(([, keys]) => keys.size > 0)
-        .map(([serverId, keys]) => ({
-          server_id: serverId,
-          permission_keys: Array.from(keys),
-        }))
+        .map(([serverId, keys]) => {
+          const gehalten = haltbar.get(serverId) ?? new Set<string>()
+          return {
+            server_id: serverId,
+            permission_keys: Array.from(keys).filter((k) => gehalten.has(k)),
+          }
+        })
+        .filter((g) => g.permission_keys.length > 0)
 
       const payload: TeamRoleWritePayload = {
         name: name.trim(),
@@ -160,7 +188,7 @@ export function TeamRoleForm({
     }
   }
 
-  const teamServers = useMemo(() => team.servers || [], [team.servers])
+  const serverListe = useMemo(() => assignable, [assignable])
 
   return (
     <div className="rounded-2xl border border-outline-variant/35 bg-surface-container/60 p-5 sm:p-6 shadow-sm space-y-6">
@@ -323,17 +351,26 @@ export function TeamRoleForm({
               <p className="text-xs text-on-surface-variant">
                 {t('teams.serverGrantsDesc')}
               </p>
+              <p className="mt-1 text-xs text-on-surface-variant">
+                {t('teams.serverSichtAuto')}
+              </p>
+              {entfallen && (
+                <p className="mt-1 text-xs text-status-warning">
+                  {t('teams.serverGrantsEntfallen')}
+                </p>
+              )}
             </div>
 
-            {teamServers.length === 0 ? (
+            {serverListe.length === 0 ? (
               <div className="rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/30 p-4 text-center text-xs text-on-surface-variant">
-                {t('teams.noServersAssigned')}
+                {t('teams.noAssignableServers')}
               </div>
             ) : (
               <div className="space-y-3">
-                {teamServers.map((server) => {
+                {serverListe.map((server) => {
                   const currentGranted = serverGrants.get(server.server_id) ?? new Set<string>()
                   const availableKeys = server.permission_keys
+                  const sichtbar = Array.from(currentGranted).filter((k) => availableKeys.includes(k))
 
                   const options = availableKeys.map((key) => ({
                     value: key,
@@ -352,7 +389,7 @@ export function TeamRoleForm({
                             {server.server_name}
                           </span>
                           <span className="text-xs text-on-surface-variant">
-                            ({currentGranted.size} / {availableKeys.length} aktiv)
+                            ({sichtbar.length} / {availableKeys.length} aktiv)
                           </span>
                         </div>
 
@@ -382,7 +419,7 @@ export function TeamRoleForm({
 
                       <MultiSelect
                         options={options}
-                        values={Array.from(currentGranted)}
+                        values={sichtbar}
                         onChange={(keys) => setServerGrantKeys(server.server_id, keys)}
                         disabled={busy}
                         placeholder={t('teams.noAccess')}

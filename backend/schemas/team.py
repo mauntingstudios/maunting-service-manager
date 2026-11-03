@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from schemas.passkey import Zweitnachweis
+from schemas.social import PresenceInfo
 
 
 class TeamCreate(BaseModel):
@@ -102,6 +103,7 @@ class TeamMemberResponse(BaseModel):
     role_ids: list[int] = Field(default_factory=list)
     roles: list[TeamRoleResponse] = Field(default_factory=list)
     joined_at: datetime
+    presence: PresenceInfo | None = None
 
 
 class TeamInvitationResponse(BaseModel):

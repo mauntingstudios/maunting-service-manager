@@ -20,6 +20,15 @@ import {
 /** Die Wahl des Menschen — was der Umschalter im Profil anbietet. */
 export type PresenceStatus = PraesenzWahl
 
+/**
+ * Was andere gerade sehen: die Wahl aufgelöst auf den sichtbaren Zustand.
+ *
+ * `auto` ist keine Anzeige, sondern ein Auftrag — der Punkt am eigenen Avatar
+ * zeigte bis 03.11.2026 die rohe Wahl und stand bei `auto` deshalb dauerhaft
+ * auf Grau („unsichtbar"), obwohl der Server längst „online" meldete.
+ */
+export type EffectivePresenceStatus = 'online' | 'away' | 'invisible'
+
 /** Nach so langer Ruhe gilt „abwesend“ (nur bei `auto`). */
 export const INACTIVITY_TIMEOUT_MS = 300_000
 
@@ -59,6 +68,7 @@ export function usePresenceAndActivity(
   const { user } = useAuthStore()
   const location = useLocation()
   const [wahl, setWahl] = useState<PraesenzWahl>('auto')
+  const [effektiv, setEffektiv] = useState<EffectivePresenceStatus>('online')
 
   const wahlRef = useRef<PraesenzWahl>('auto')
   const kontoRef = useRef<number | null>(null)
@@ -98,6 +108,20 @@ export function usePresenceAndActivity(
     if (!sichtbar()) return 'away'
     return Date.now() - letzteEingabeRef.current >= INACTIVITY_TIMEOUT_MS ? 'away' : 'online'
   }, [])
+
+  const effektivJetzt = useCallback((): EffectivePresenceStatus => {
+    const wahl = wahlRef.current
+    if (wahl === 'invisible') return 'invisible'
+    if (wahl === 'online') return 'online'
+    if (wahl === 'away') return 'away'
+    if (!sichtbar()) return 'away'
+    return Date.now() - letzteEingabeRef.current >= INACTIVITY_TIMEOUT_MS ? 'away' : 'online'
+  }, [])
+
+  /** Gleicht die Anzeige an — gleiche Werte zeichnet React nicht neu. */
+  const syncEffektiv = useCallback(() => {
+    setEffektiv(effektivJetzt())
+  }, [effektivJetzt])
 
   /** Ein Lebenszeichen. `sofort` umgeht die Bündelung (Takt, Sichtbarkeit). */
   const melde = useCallback(
@@ -147,12 +171,13 @@ export function usePresenceAndActivity(
         const neu = stand.manual_status ?? 'auto'
         wahlRef.current = neu
         setWahl(neu)
+        syncEffektiv()
       })
       .catch(() => {})
     return () => {
       aktiv = false
     }
-  }, [socialEnabled, user?.id])
+  }, [socialEnabled, user?.id, syncEffektiv])
 
   // Erste Meldung und jede neue Seite
   useEffect(() => {
@@ -175,11 +200,12 @@ export function usePresenceAndActivity(
         letzteEingabeRef.current = Date.now()
         autoAwayRef.current = false
       }
+      syncEffektiv()
       void melde(true)
     }
     document.addEventListener('visibilitychange', beiSichtbarkeit)
     return () => document.removeEventListener('visibilitychange', beiSichtbarkeit)
-  }, [socialEnabled, user?.id, melde])
+  }, [socialEnabled, user?.id, melde, syncEffektiv])
 
   // Abmelden der Sitzung beim Schließen oder Abmelden
   useEffect(() => {
@@ -204,6 +230,7 @@ export function usePresenceAndActivity(
 
     const registerActivity = () => {
       letzteEingabeRef.current = Date.now()
+      syncEffektiv()
       if (autoAwayRef.current && wahlRef.current === 'auto') {
         autoAwayRef.current = false
         void melde(true)
@@ -244,6 +271,7 @@ export function usePresenceAndActivity(
         !autoAwayRef.current
       ) {
         autoAwayRef.current = true
+        syncEffektiv()
         void melde(true)
       }
 
@@ -285,7 +313,7 @@ export function usePresenceAndActivity(
         activeSecondsRef.current = 0
       }
     }
-  }, [socialEnabled, enableActivityTracking, user, melde])
+  }, [socialEnabled, enableActivityTracking, user, melde, syncEffektiv])
 
   const changeStatus = useCallback(
     async (neu: PraesenzWahl) => {
@@ -293,6 +321,7 @@ export function usePresenceAndActivity(
       setWahl(neu)
       autoAwayRef.current = false
       letzteEingabeRef.current = Date.now()
+      syncEffektiv()
       if (!socialEnabled || !user) return
       try {
         await setPresenceStatus(neu)
@@ -301,12 +330,14 @@ export function usePresenceAndActivity(
       }
       void melde(true)
     },
-    [socialEnabled, user, melde]
+    [socialEnabled, user, melde, syncEffektiv]
   )
 
   return {
     /** Die Wahl: automatisch, online, abwesend oder unsichtbar. */
     status: wahl,
+    /** Was andere gerade sehen: die Wahl aufgelöst auf den sichtbaren Zustand. */
+    effectiveStatus: effektiv,
     changeStatus,
     client: clientRef.current,
     plattform: plattformRef.current,

@@ -327,3 +327,15 @@ class VaultDeviceAuthResolve(BaseModel):
     # Nur im QR-Code enthalten: belegt, dass das Smartphone ihn gescannt hat.
     resolve_token: str = Field(..., min_length=16, max_length=128)
 
+
+class VaultDeviceAuthPublicKey(BaseModel):
+    """Holt den oeffentlichen Schluessel nach dem Scan nach.
+
+    Der QR-Code traegt nur Kennung, Zweck, Aufloese-Token und den
+    Fingerabdruck; der Schluessel selbst waere sonst 400 Zeichen lang und
+    machte den Code unlesbar dicht.
+    """
+
+    session_id: str = Field(..., min_length=8, max_length=64)
+    resolve_token: str = Field(..., min_length=16, max_length=128)
+

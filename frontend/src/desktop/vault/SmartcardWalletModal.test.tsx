@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { resolveDeviceAuthSession } from '@/api/vaultDeviceAuth'
+import { fetchDeviceAuthPublicKey, resolveDeviceAuthSession } from '@/api/vaultDeviceAuth'
 import { useAuthStore } from '@/stores/authStore'
+import { buildDeviceAuthQrValueV3, fingerprintPublicKey } from './deviceAuthCrypto'
 import { SmartcardWalletModal } from './SmartcardWalletModal'
 import { useVaultStore } from './vaultStore'
 
@@ -32,6 +33,7 @@ vi.mock('@/hooks/useBackgroundQrScanner', () => ({
 }))
 
 vi.mock('@/api/vaultDeviceAuth', () => ({
+  fetchDeviceAuthPublicKey: vi.fn(),
   resolveDeviceAuthSession: vi.fn(),
 }))
 
@@ -112,6 +114,57 @@ describe('SmartcardWalletModal Component', () => {
         'aufloese-token-aus-dem-qr-code',
       )
     })
+  })
+
+  it('holt bei einem kurzen v3-Code den Schluessel nach und loest auf', async () => {
+    const schluessel = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0abcdef1234567890'
+    const fp = await fingerprintPublicKey(schluessel)
+    vi.mocked(fetchDeviceAuthPublicKey).mockResolvedValue({ public_key: schluessel, purpose: 'authorize' })
+    vi.mocked(resolveDeviceAuthSession).mockResolvedValue({ success: true })
+    render(<SmartcardWalletModal isOpen={true} onClose={vi.fn()} />)
+    expect(erkannterCode).not.toBeNull()
+
+    erkannterCode!(buildDeviceAuthQrValueV3(
+      'a1b2c3d4e5f67890',
+      'authorize',
+      'aufloese-token-aus-dem-qr-code',
+      fp,
+    ))
+
+    await waitFor(() => {
+      expect(fetchDeviceAuthPublicKey).toHaveBeenCalledWith(
+        'a1b2c3d4e5f67890',
+        'aufloese-token-aus-dem-qr-code',
+      )
+      expect(resolveDeviceAuthSession).toHaveBeenCalledWith(
+        'a1b2c3d4e5f67890',
+        'chiffre-aus-test',
+        'aufloese-token-aus-dem-qr-code',
+      )
+    })
+    expect(await screen.findByText('Zielgerät erfolgreich autorisiert!')).toBeInTheDocument()
+  })
+
+  it('loest bei einem untergeschobenen Schluessel nicht auf', async () => {
+    vi.mocked(fetchDeviceAuthPublicKey).mockResolvedValue({
+      public_key: 'fremder-schluessel-vom-server',
+      purpose: 'authorize',
+    })
+    render(<SmartcardWalletModal isOpen={true} onClose={vi.fn()} />)
+    expect(erkannterCode).not.toBeNull()
+
+    erkannterCode!(buildDeviceAuthQrValueV3(
+      'a1b2c3d4e5f67890',
+      'authorize',
+      'aufloese-token-aus-dem-qr-code',
+      'passtnie1',
+    ))
+
+    await waitFor(() => {
+      expect(fetchDeviceAuthPublicKey).toHaveBeenCalled()
+    })
+    expect(resolveDeviceAuthSession).not.toHaveBeenCalled()
+    expect(await screen.findByText('Sicherheitswarnung: Der Schlüssel passt nicht zum QR-Code.')).toBeInTheDocument()
   })
 
   it('ruft resolve ohne Aufloese-Token nicht auf', async () => {

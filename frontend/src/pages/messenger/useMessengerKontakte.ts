@@ -70,8 +70,10 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
         seen.add(member.user_id)
         list.push({
           listKey: key(member.user_id), id: member.user_id, userId: member.user_id,
-          username: member.username, avatarUrl: member.avatar_url, status: 'invisible',
-          deviceType: null, client: null, activityKey: null, info: null, isFriend: false, teamName,
+          username: member.username, avatarUrl: member.avatar_url,
+          status: (member.presence?.status as PresenceStatus) || 'invisible',
+          deviceType: member.presence?.device_type, client: member.presence?.client ?? null,
+          activityKey: member.presence?.activity_key, info: null, isFriend: false, teamName,
         })
       } else {
         const existing = list.find((c) => c.userId === member.user_id)

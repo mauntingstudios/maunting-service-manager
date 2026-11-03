@@ -7,9 +7,10 @@ import {
   type DeviceAuthSessionResponse,
 } from '@/api/vaultDeviceAuth'
 import {
+  buildDeviceAuthQrValueV3,
   decryptAuthPayload,
+  fingerprintPublicKey,
   generateEphemeralAuthKeyPair,
-  type DeviceAuthQrPayload,
 } from './deviceAuthCrypto'
 import { MauntingQrCard, Spinner } from '@/Singra/UI'
 import { useAuthStore } from '@/stores/authStore'
@@ -27,6 +28,11 @@ export interface DeviceAuthQrViewProps {
  * Erzeugt ein ephemeres RSA-Schlüsselpaar, fordert eine Relais-Session an,
  * rendert den Signatur-`MauntingQrCard`-Code und pollt im Hintergrund nach der
  * Ende-zu-Ende verschlüsselten Freigabe durch das Smartphone.
+ *
+ * Der Code trägt nur Kennung, Zweck, Auflöse-Token und den Fingerabdruck des
+ * Schlüssels (`msm3:…`), nicht den Schlüssel selbst: 503 Zeichen ergaben
+ * 101×101 Module und brauchten Sekunden, 63 ergeben 45×45 wie beim
+ * Kopplungscode. Den Schlüssel holt das Handy nach dem Scan.
  */
 export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrViewProps) {
   const user = useAuthStore((s) => s.user)
@@ -56,6 +62,8 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
         if (!active) return
 
         setPrivateKey(privKey)
+        const abdruck = await fingerprintPublicKey(publicKeyBase64)
+        if (!active) return
 
         const sess = await createDeviceAuthSession(
           publicKeyBase64,
@@ -65,17 +73,7 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
         if (!active) return
 
         setSession(sess)
-
-        const qrPayload: DeviceAuthQrPayload = {
-          v: 2,
-          sid: sess.session_id,
-          pk: publicKeyBase64,
-          p: purpose,
-          uid: user?.id ?? 0,
-          rt: sess.resolve_token,
-        }
-
-        setQrValue(JSON.stringify(qrPayload))
+        setQrValue(buildDeviceAuthQrValueV3(sess.session_id, purpose, sess.resolve_token, abdruck))
         setLoading(false)
       } catch (err: unknown) {
         if (!active) return

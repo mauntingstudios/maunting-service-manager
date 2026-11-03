@@ -5,8 +5,8 @@
  * zwischen dem scannenden Smartphone und dem Zielgerät.
  */
 
-export interface DeviceAuthQrPayload {
-  /** Format-Version, aktuell immer 2 (v1 kannte kein Aufloese-Token). */
+/** Alter Code: der oeffentliche Schluessel steckt komplett im QR (503 Zeichen). */
+export interface DeviceAuthQrPayloadV2 {
   v: 2
   sid: string
   pk: string
@@ -14,6 +14,44 @@ export interface DeviceAuthQrPayload {
   uid: number
   /** Aufloese-Token: belegt dem Server, dass der Code gescannt wurde. */
   rt: string
+}
+
+/**
+ * Kurzer Code: `msm3:<sid>:<purpose>:<rt>:<fp>` (gut 60 Zeichen).
+ *
+ * Der Schluessel kommt erst nach dem Scan vom Server, der Fingerabdruck
+ * bindet ihn an diesen Code. Allein die Laenge entscheidet, wie viele Module
+ * der QR hat: 503 Zeichen ergaben 101x101 und brauchten Sekunden, 63 Zeichen
+ * ergeben 45x45 wie beim Kopplungscode.
+ */
+export interface DeviceAuthQrPayloadV3 {
+  v: 3
+  sid: string
+  p: 'authorize' | 'unlock'
+  rt: string
+  /** Erste 8 Zeichen (base64url) des SHA-256 ueber den Schluesseltext. */
+  fp: string
+}
+
+export type DeviceAuthQrPayload = DeviceAuthQrPayloadV2 | DeviceAuthQrPayloadV3
+
+/** Kennung des kurzen Codes; die Version steckt im Praefix. */
+export const QR_PREFIX_V3 = 'msm3:'
+
+/**
+ * Baut den kurzen Code `msm3:<sid>:<purpose>:<rt>:<fp>` (gut 60 Zeichen).
+ *
+ * Allein die Laenge entscheidet, wie viele Module der QR hat: 503 Zeichen
+ * ergaben 101x101 und brauchten Sekunden, gut 60 ergeben einen groben Code
+ * wie beim Koppeln, den die Kamera in Millisekunden liest.
+ */
+export function buildDeviceAuthQrValueV3(
+  sessionId: string,
+  purpose: 'authorize' | 'unlock',
+  resolveToken: string,
+  fingerprint: string,
+): string {
+  return `${QR_PREFIX_V3}${sessionId}:${purpose}:${resolveToken}:${fingerprint}`
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -132,14 +170,60 @@ export async function decryptAuthPayload(
 }
 
 /**
+ * Fingerabdruck des oeffentlichen Schluessels, gebunden an den QR-Code.
+ *
+ * Der Server liefert den Schluessel erst nach dem Scan. Ohne diesen
+ * Fingerabdruck koennte er einen eigenen unterschieben und die Chiffre
+ * mitlesen.
+ */
+export async function fingerprintPublicKey(publicKeyBase64: string): Promise<string> {
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : null
+  if (!cryptoObj?.subtle) {
+    throw new Error('WebCrypto ist in dieser Umgebung nicht verfügbar.')
+  }
+
+  const digest = await cryptoObj.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(publicKeyBase64.trim()),
+  )
+  return arrayBufferToBase64(digest)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+    .slice(0, 8)
+}
+
+const SID_MUSTER = /^[0-9a-f]{8,64}$/i
+const TOKEN_MUSTER = /^[A-Za-z0-9_-]{16,128}$/
+const ABDRUCK_MUSTER = /^[A-Za-z0-9_-]{8,32}$/
+
+/**
  * Parst und validiert den gescannten QR-Code-Inhalt.
  *
- * Codes ohne Aufloese-Token (`rt`) stammen von vor dem Fix und lassen sich
- * nicht mehr einloesen; Sessions leben ohnehin nur 180 Sekunden.
+ * `msm3:` traegt nur Kennung, Zweck, Aufloese-Token und Fingerabdruck. Das
+ * alte JSON-Format (v2) bleibt lesbar: es traegt den Schluessel selbst und
+ * braucht keinen Abruf. Codes ohne Aufloese-Token (`rt`) lassen sich nicht
+ * einloesen; Sessions leben ohnehin nur 180 Sekunden.
  */
 export function parseDeviceAuthQrCode(rawText: string): DeviceAuthQrPayload | null {
   if (!rawText || typeof rawText !== 'string') return null
   const clean = rawText.trim()
+
+  if (clean.startsWith(QR_PREFIX_V3)) {
+    const teile = clean.slice(QR_PREFIX_V3.length).split(':')
+    if (teile.length !== 4) return null
+    const [sid, p, rt, fp] = teile
+    if (
+      !SID_MUSTER.test(sid) ||
+      (p !== 'authorize' && p !== 'unlock') ||
+      !TOKEN_MUSTER.test(rt) ||
+      !ABDRUCK_MUSTER.test(fp)
+    ) {
+      return null
+    }
+    return { v: 3, sid, p, rt, fp }
+  }
+
   if (!clean.startsWith('{') || !clean.endsWith('}')) return null
 
   try {
@@ -156,7 +240,7 @@ export function parseDeviceAuthQrCode(rawText: string): DeviceAuthQrPayload | nu
       typeof data.rt === 'string' &&
       data.rt.length >= 16
     ) {
-      return data as DeviceAuthQrPayload
+      return data as DeviceAuthQrPayloadV2
     }
     return null
   } catch {

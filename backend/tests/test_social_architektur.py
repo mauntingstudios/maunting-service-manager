@@ -34,6 +34,7 @@ DOMAENEN = {
         {
             "get_presence",
             "get_presence_bulk",
+            "get_presence_for_teammate",
             "set_manual_status",
             "upsert_session",
             "delete_session",
@@ -120,7 +121,7 @@ def test_social_service_setzt_alle_domaenen_zusammen() -> None:
         for name in vars(klasse)
         if not name.startswith("__") and callable(getattr(klasse, name, None))
     }
-    assert len(methoden) == 77, f"Erwartet 77 Domänenmethoden, gefunden {len(methoden)}"
+    assert len(methoden) == 78, f"Erwartet 78 Domänenmethoden, gefunden {len(methoden)}"
     fehlend = sorted(name for name in methoden if not callable(getattr(SocialService, name, None)))
     assert not fehlend, f"SocialService erreicht nicht: {fehlend}"
 

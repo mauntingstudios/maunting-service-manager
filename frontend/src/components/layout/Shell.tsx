@@ -28,7 +28,7 @@ export function Shell() {
   const [walletOpen, setWalletOpen] = useState(false)
   const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null)
 
-  const { status: presenceStatus, changeStatus: handlePresenceChange } = usePresenceAndActivity(socialEnabled, true)
+  const { status: presenceStatus, effectiveStatus: presenceEffektiv, changeStatus: handlePresenceChange } = usePresenceAndActivity(socialEnabled, true)
 
   useEffect(() => {
     const handleOpenWallet = () => setWalletOpen(true)
@@ -116,6 +116,7 @@ export function Shell() {
       {!sidebarHidden && (
         <Sidebar
           presenceStatus={presenceStatus}
+          effectiveStatus={presenceEffektiv}
           onPresenceChange={handlePresenceChange}
         />
       )}
@@ -131,6 +132,7 @@ export function Shell() {
             mobile
             onNavigate={closeMobileNavigation}
             presenceStatus={presenceStatus}
+            effectiveStatus={presenceEffektiv}
             onPresenceChange={handlePresenceChange}
           />
         </div>

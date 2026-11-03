@@ -3,8 +3,8 @@ import { CheckCircle2, X, AlertCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { useBackgroundQrScanner } from '@/hooks/useBackgroundQrScanner'
-import { resolveDeviceAuthSession } from '@/api/vaultDeviceAuth'
-import { encryptAuthPayload, parseDeviceAuthQrCode } from './deviceAuthCrypto'
+import { fetchDeviceAuthPublicKey, resolveDeviceAuthSession } from '@/api/vaultDeviceAuth'
+import { encryptAuthPayload, fingerprintPublicKey, parseDeviceAuthQrCode } from './deviceAuthCrypto'
 import { useVaultStore } from './vaultStore'
 import { useAuthStore } from '@/stores/authStore'
 import { still } from '@/lib/still'
@@ -82,7 +82,10 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         return
       }
 
-      if (user?.id && parsed.uid !== user.id) {
+      // Altes Format (v2): der Schlüssel steckt im Code, das Konto steht dabei.
+      // Der kurze Code (v3) trägt kein Konto; dort prüft der Server beim
+      // Schlüsselabruf und beim Auflösen, dass beide Geräte zusammengehören.
+      if (parsed.v === 2 && user?.id && parsed.uid !== user.id) {
         setErrorMessage('QR-Code gehört zu einem anderen Benutzerkonto.')
         try {
           navigator.vibrate?.([100, 50, 100])
@@ -95,6 +98,21 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
 
       setIsProcessing(true)
       try {
+        // Kurzer Code (v3): nur Kennung, Zweck, Auflöse-Token und Fingerabdruck.
+        // Der Schlüssel kommt erst nach dem Scan vom Server; der Fingerabdruck
+        // bindet ihn an diesen Code und entlarvt einen untergeschobenen Schlüssel.
+        let publicKeyBase64: string
+        if (parsed.v === 3) {
+          const key = await fetchDeviceAuthPublicKey(parsed.sid, parsed.rt)
+          const abdruck = await fingerprintPublicKey(key.public_key)
+          if (abdruck !== parsed.fp || key.purpose !== parsed.p) {
+            throw new Error('Sicherheitswarnung: Der Schlüssel passt nicht zum QR-Code.')
+          }
+          publicKeyBase64 = key.public_key
+        } else {
+          publicKeyBase64 = parsed.pk
+        }
+
         // Zero-Knowledge E2EE Payload verschlüsseln
         const payloadData = {
           action: parsed.p,
@@ -103,15 +121,11 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
           timestamp: Date.now(),
         }
 
-        const encryptedPayload = await encryptAuthPayload(parsed.pk, payloadData)
+        const encryptedPayload = await encryptAuthPayload(publicKeyBase64, payloadData)
 
         // Session auf dem Server auflösen — nur mit dem Aufloese-Token aus
         // dem gescannten Code. Ohne es gäbe es keinen Scan-Beweis, also auch
         // keinen Netzaufruf (parse verwirft solche Codes ohnehin schon).
-        if (!parsed.rt) {
-          setIsProcessing(false)
-          return
-        }
         await resolveDeviceAuthSession(parsed.sid, encryptedPayload, parsed.rt)
 
         const msg =

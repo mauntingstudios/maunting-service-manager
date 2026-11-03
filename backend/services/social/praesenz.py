@@ -270,6 +270,48 @@ class PraesenzMixin:
 
         return None
 
+    @classmethod
+    def get_presence_for_teammate(
+        cls, db: Session, viewer_user_id: int | None, target_user: User | int
+    ) -> dict[str, Any] | None:
+        """Zustand eines Teammitglieds für ein anderes Mitglied desselben Teams.
+
+        Wer zusammenarbeitet, sieht mindestens den reinen Online-Indikator —
+        auch ohne Freundschaft. Unsichtbar bleibt offline, Blockierte sehen
+        nichts, und Gerät, Client und Aktivität gelten nur nach den
+        Betrachter-Regeln (öffentlich oder befreundet).
+
+        Die gemeinsame Mitgliedschaft prüft der Aufrufer; diese Funktion kennt
+        nur Betrachter und Ziel.
+        """
+        pres = cls.get_presence_for_viewer(db, viewer_user_id, target_user)
+        if pres is not None:
+            return pres
+        if viewer_user_id is None:
+            return None
+        target_id = target_user if isinstance(target_user, int) else target_user.id
+        # Nichts heißt zweierlei: blockiert oder Freunde-Privatsphäre ohne
+        # Freundschaft. Nur der zweite Fall bekommt als Teammitglied den
+        # Indikator; die Sperrprüfung steht hier wie in `get_presence_for_viewer`.
+        blocked = (
+            db.query(UserFriend)
+            .filter(
+                or_(
+                    and_(UserFriend.user_id == viewer_user_id, UserFriend.friend_id == target_id),
+                    and_(UserFriend.user_id == target_id, UserFriend.friend_id == viewer_user_id),
+                ),
+                UserFriend.status == "blocked",
+            )
+            .first()
+        )
+        if blocked:
+            return None
+        roh = cls.get_presence(db, target_id)
+        if roh.get("manual_status") == "invisible":
+            return _leer("invisible", "offline")
+        status = roh.get("status", "offline")
+        return _leer("", "offline" if status == "offline" else ("away" if status == "away" else "online"))
+
     # ── Schreiben ─────────────────────────────────────────────────────────
 
     @classmethod

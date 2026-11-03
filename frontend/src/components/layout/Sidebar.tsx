@@ -10,7 +10,7 @@ import type { NavGroupName } from './navigation'
 import { DesktopAppDownloadBadge } from './DesktopAppDownloadBadge'
 import { BrowserDownloadBadge } from './BrowserDownloadBadge'
 import { BenachrichtigungsGlocke, ProfileDropdown, type ProfileDropdownItem, buttonClasses } from '@/Singra/UI'
-import type { PresenceStatus } from '@/hooks/usePresenceAndActivity'
+import type { EffectivePresenceStatus, PresenceStatus } from '@/hooks/usePresenceAndActivity'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
 import { NavBadge } from './NavBadge'
@@ -20,10 +20,11 @@ interface SidebarProps {
   mobile?: boolean
   onNavigate?: () => void
   presenceStatus?: PresenceStatus
+  effectiveStatus?: EffectivePresenceStatus
   onPresenceChange?: (status: PresenceStatus) => void
 }
 
-export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresenceStatus, onPresenceChange }: SidebarProps) {
+export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresenceStatus, effectiveStatus: propEffectiveStatus, onPresenceChange }: SidebarProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
@@ -208,6 +209,7 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
             triggerVariant="full"
             status={socialEnabled ? presenceStatus : undefined}
             onStatusChange={socialEnabled ? handlePresenceChange : undefined}
+            effectiveStatus={socialEnabled ? propEffectiveStatus : undefined}
           />
 
           {/* Notification Bell */}

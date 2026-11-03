@@ -119,3 +119,21 @@ export const TEAM_PERMISSION_ABSCHNITTE: readonly RechteAbschnittDefinition[] = 
     kategorien: ['vault'],
   },
 ] as const
+
+/** Die einzige harte Voraussetzung im Server-Katalog: ohne Sicht gilt nichts. */
+export const SERVER_SICHT_KEY = 'server.view'
+
+/**
+ * Wählt `server.view` sichtbar dazu, sobald weitere Serverrechte stehen.
+ *
+ * Das Backend weist sonst mit 422 ab („ergeben die übrigen Rechte keinen
+ * Sinn"). Leere Auswahl bleibt leer (Entzug); `server.view` allein ist
+ * gültig. Der Rückgabewert sagt, ob die Sicht gerade dazu kam, damit die
+ * Anzeige es erklären kann statt still zu schummeln.
+ */
+export function mitServerSicht(gewaehlt: string[]): { keys: string[]; sichtDazu: boolean } {
+  if (gewaehlt.length === 0 || gewaehlt.includes(SERVER_SICHT_KEY)) {
+    return { keys: gewaehlt, sichtDazu: false }
+  }
+  return { keys: [...gewaehlt, SERVER_SICHT_KEY], sichtDazu: true }
+}

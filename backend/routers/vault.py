@@ -16,6 +16,7 @@ from schemas.vault import (
     VaultBlobLoeschen,
     VaultBlobsKlein,
     VaultBlobStatus,
+    VaultDeviceAuthPublicKey,
     VaultDeviceAuthResolve,
     VaultDeviceAuthSessionCreate,
     VaultEingangAnlegen,
@@ -972,6 +973,35 @@ def get_device_auth_session_status(
     )
     if res.get("status") == "not_found":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session nicht gefunden.")
+    return res
+
+
+@router.post("/device-auth/public-key")
+@limiter.limit("60/minute")
+def read_device_auth_public_key(
+    payload: VaultDeviceAuthPublicKey,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    __=Depends(verify_csrf),
+) -> dict:
+    """Holt den oeffentlichen Schluessel nach dem Scan nach.
+
+    Der QR-Code traegt nur Kennung, Zweck, Aufloese-Token und den
+    Fingerabdruck. Der Schluessel waere allein 392 Zeichen lang und machte
+    den Code so dicht, dass ihn eine Kamera erst nach Sekunden liest.
+    """
+    res = vault_device_auth_service.get_device_auth_public_key(
+        db=db,
+        session_id=payload.session_id,
+        user_id=current_user.id,
+        resolve_token=payload.resolve_token,
+    )
+    if res is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session nicht gefunden, abgelaufen oder gehört zu einem anderen Benutzer.",
+        )
     return res
 
 

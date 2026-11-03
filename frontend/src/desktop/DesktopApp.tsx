@@ -981,7 +981,7 @@ function Hauptseite({
   /* Am Handy beginnt der offene Chat ganz oben: die MSM-Leiste faellt weg,
      der Chat-Kopf traegt den Zurueck-Pfeil. Zurueck fuehrt in die Liste. */
   const chatVollbild = isAndroid && bereich === 'chat' && chatIstOffen(location.search)
-  const { status: presenceStatus, changeStatus: handlePresenceChange } = usePresenceAndActivity(
+  const { status: presenceStatus, effectiveStatus: presenceEffektiv, changeStatus: handlePresenceChange } = usePresenceAndActivity(
     !isOffline && darfMessenger,
     !isOffline && darfMessenger,
   )
@@ -1217,6 +1217,7 @@ function Hauptseite({
               placement="bottom-right"
               status={!isOffline ? presenceStatus : undefined}
               onStatusChange={!isOffline ? handlePresenceChange : undefined}
+              effectiveStatus={!isOffline ? presenceEffektiv : undefined}
             />
 
             {/* Mobile Menü-Knopf */}

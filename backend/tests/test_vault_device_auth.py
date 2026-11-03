@@ -2,7 +2,9 @@
 
 Befunde 11–14: Der Abruf verbraucht atomar (zweiter Abruf sieht `expired`),
 eine aufgeloeste Session wird nie ueberschrieben, das Aufloese-Token steht nur
-im QR-Code, beide POSTs brauchen CSRF, das Sitzungs-Token reist im Header.
+im QR-Code, alle POSTs brauchen CSRF, das Sitzungs-Token reist im Header.
+Stufe B: Der kurze Code traegt nur Kennung, Zweck, Aufloese-Token und
+Fingerabdruck; der Schluessel kommt nach dem Scan ueber `public-key`.
 """
 
 from __future__ import annotations
@@ -172,6 +174,78 @@ def test_device_auth_posts_brauchen_csrf(client, owner_cookies):
         cookies=owner_cookies,
     )
     assert ohne.status_code == 403
+
+    ohne = client.post(
+        "/api/vault/device-auth/public-key",
+        json={"session_id": sitzung["session_id"], "resolve_token": sitzung["resolve_token"]},
+        cookies=owner_cookies,
+    )
+    assert ohne.status_code == 403
+
+
+def test_device_auth_schluessel_nach_scan_abrufbar(client, owner_cookies, user_cookies):
+    """Stufe B: Der QR-Code traegt nur Kennung, Zweck, Aufloese-Token und
+    Fingerabdruck; der Schluessel kommt nach dem Scan von hier. Ohne das
+    Aufloese-Token aus dem Code, nach dem Aufloesen oder fuer ein fremdes
+    Konto gibt es nichts — und der Abruf verbraucht die Session nicht."""
+    schluessel = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0kurz"
+    antwort = client.post(
+        "/api/vault/device-auth/session",
+        json={"public_key": schluessel, "purpose": "unlock"},
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies),
+    )
+    assert antwort.status_code == 201, antwort.text
+    sitzung = antwort.json()
+    sid, rt = sitzung["session_id"], sitzung["resolve_token"]
+
+    falsch = client.post(
+        "/api/vault/device-auth/public-key",
+        json={"session_id": sid, "resolve_token": "falsches-token-aus-dem-nichts"},
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies),
+    )
+    assert falsch.status_code == 404
+
+    fremd = client.post(
+        "/api/vault/device-auth/public-key",
+        json={"session_id": sid, "resolve_token": rt},
+        cookies=user_cookies,
+        headers=_kopf(user_cookies),
+    )
+    assert fremd.status_code == 404
+
+    abruf = client.post(
+        "/api/vault/device-auth/public-key",
+        json={"session_id": sid, "resolve_token": rt},
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies),
+    )
+    assert abruf.status_code == 200
+    assert abruf.json() == {"public_key": schluessel, "purpose": "unlock"}
+
+    abfrage = client.get(
+        f"/api/vault/device-auth/session/{sid}",
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies, sitzung["session_token"]),
+    )
+    assert abfrage.json()["status"] == "pending"
+
+    aufloesen = client.post(
+        "/api/vault/device-auth/resolve",
+        json={"session_id": sid, "encrypted_payload": "chiffre", "resolve_token": rt},
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies),
+    )
+    assert aufloesen.status_code == 200
+
+    spaet = client.post(
+        "/api/vault/device-auth/public-key",
+        json={"session_id": sid, "resolve_token": rt},
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies),
+    )
+    assert spaet.status_code == 404
 
 
 def test_device_auth_abgelaufen(client, db, owner_user, owner_cookies):

@@ -3,6 +3,7 @@ import {
   Brain, Check, Crown, LogOut, Mail, Pencil, Plus, Server, Shield, ShieldCheck, Sparkles, Trash2, UserPlus, Users, UsersRound, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 
 import { api, SanitizedApiError } from '@/api/client'
 import {
@@ -16,8 +17,10 @@ import {
 } from '@/api/teams'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiSkillManager } from '@/components/ai/AiSkillManager'
+import { StatusDot } from '@/components/social/StatusIndicator'
 import type { AiKnowledgeScope, AiSkillScope } from '@/components/ai/knowledgeScope'
 import { TeamRoleForm } from '@/components/teams/TeamRoleForm'
+import { mitServerSicht } from '@/components/teams/teamPermissionsCatalog'
 import { TabBar, type TabDef } from '@/components/ui/TabBar'
 import { TeamVaultView } from '@/desktop/vault/TeamVaultView'
 import { Avatar, Button, Dropdown, Input, MultiSelect, RoleBadge, Switch } from '@/Singra/UI'
@@ -293,8 +296,31 @@ export function Teams() {
     if (!detail) return
     await run(async () => {
       setDetail(await teamsApi.setServerGrants(detail.id, {
-        server_id: serverId, permission_keys: keys,
+        server_id: serverId, permission_keys: mitServerSicht(keys).keys,
       }))
+    }, 'teams.serversSaved')
+  }
+
+  /** Rollenwahl je Server im Rollenmodus — nur Auswahl, kein Speichern. */
+  const [rollenWahl, setRollenWahl] = useState<Record<number, number | null>>({})
+
+  const setRoleServerKeys = async (serverId: number, roleId: number, keys: string[]) => {
+    if (!detail) return
+    const rolle = detail.roles?.find((r) => r.id === roleId)
+    if (!rolle || rolle.is_admin) return
+    const naechste = mitServerSicht(keys).keys
+    await run(async () => {
+      const grants = (rolle.server_grants || [])
+        .filter((g) => g.server_id !== serverId)
+        .map((g) => ({ server_id: g.server_id, permission_keys: g.permission_keys }))
+      if (naechste.length > 0) {
+        grants.push({ server_id: serverId, permission_keys: naechste })
+      }
+      // Nur Name (Pflicht) plus volle Grant-Liste: alles andere bleibt stehen.
+      const gespeichert = await teamsApi.updateRole(detail.id, roleId, {
+        name: rolle.name, server_grants: grants,
+      })
+      onRoleSaved(gespeichert)
     }, 'teams.serversSaved')
   }
 
@@ -723,6 +749,15 @@ export function Teams() {
                         <div className="rounded-xl border border-dashed border-outline-variant/50 p-6 text-center text-sm text-on-surface-variant bg-surface-container-low/30">
                           {t('teams.noAssignableServers')}
                         </div>
+                      ) : team.server_roles_active ? (
+                        <ServerRollenListe
+                          team={team}
+                          assignable={assignable}
+                          rollenWahl={rollenWahl}
+                          busy={busy}
+                          onRollenWahl={(serverId, roleId) => setRollenWahl((prev) => ({ ...prev, [serverId]: roleId }))}
+                          onKeys={(serverId, roleId, keys) => void setRoleServerKeys(serverId, roleId, keys)}
+                        />
                       ) : (
                         <ul className="divide-y divide-outline-variant/30 rounded-xl border border-outline-variant/40 bg-surface">
                           {assignable.map((server) => {
@@ -736,17 +771,20 @@ export function Teams() {
                                   <Server className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
                                   <span className="truncate">{server.server_name}</span>
                                 </span>
-                                <MultiSelect
-                                  options={server.permission_keys.map((key) => ({
-                                    value: key,
-                                    label: t(`permissionDetails.${key.replace(/\./g, '_')}.title`, { defaultValue: key }),
-                                  }))}
-                                  values={current?.permission_keys ?? []}
-                                  onChange={(keys) => void setServerKeys(server.server_id, keys)}
-                                  disabled={busy}
-                                  placeholder={t('teams.noAccess')}
-                                  aria-label={`${t('teams.permissions')}: ${server.server_name}`}
-                                />
+                                <div className="min-w-0">
+                                  <MultiSelect
+                                    options={server.permission_keys.map((key) => ({
+                                      value: key,
+                                      label: t(`permissionDetails.${key.replace(/\./g, '_')}.title`, { defaultValue: key }),
+                                    }))}
+                                    values={current?.permission_keys ?? []}
+                                    onChange={(keys) => void setServerKeys(server.server_id, keys)}
+                                    disabled={busy}
+                                    placeholder={t('teams.noAccess')}
+                                    aria-label={`${t('teams.permissions')}: ${server.server_name}`}
+                                  />
+                                  <p className="mt-1 text-xs text-on-surface-variant">{t('teams.serverSichtAuto')}</p>
+                                </div>
                               </li>
                             )
                           })}
@@ -758,6 +796,7 @@ export function Teams() {
                   {aktiverReiter === 'roles' && (
                     <RollenReiter
                       team={team}
+                      assignable={assignable}
                       busy={busy}
                       isCreatingRole={isCreatingRole}
                       editingRole={editingRole}
@@ -816,6 +855,86 @@ export function Teams() {
   )
 }
 
+/**
+ * Server-Rechte je Rolle (Rollenmodus an).
+ *
+ * Pro Server: Rollenauswahl plus Rechte-Editor für die gewählte Rolle.
+ * Administratoren stehen nicht zur Wahl — sie halten alles von selbst.
+ * Team-Freigaben sind in diesem Modus pausiert und werden nicht gezeigt.
+ */
+function ServerRollenListe({
+  team, assignable, rollenWahl, busy, onRollenWahl, onKeys,
+}: {
+  team: TeamDetail
+  assignable: TeamServer[]
+  rollenWahl: Record<number, number | null>
+  busy: boolean
+  onRollenWahl: (serverId: number, roleId: number | null) => void
+  onKeys: (serverId: number, roleId: number, keys: string[]) => void
+}) {
+  const { t } = useTranslation()
+  const rollen = (team.roles || []).filter((r) => !r.is_admin)
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5 text-sm text-on-surface-variant">
+        {t('teams.serverRollenHinweis')}
+      </div>
+      {rollen.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-outline-variant/50 p-6 text-center text-sm text-on-surface-variant bg-surface-container-low/30">
+          {t('teams.keineRollenFuerServer')}
+        </div>
+      ) : (
+        <ul className="divide-y divide-outline-variant/30 rounded-xl border border-outline-variant/40 bg-surface">
+          {assignable.map((server) => {
+            const gewaehlt = rollen.find((r) => r.id === rollenWahl[server.server_id]) ?? null
+            const grant = gewaehlt?.server_grants?.find((g) => g.server_id === server.server_id)
+            return (
+              <li
+                key={server.server_id}
+                className="grid items-center gap-3 p-4 md:grid-cols-[minmax(0,14rem)_minmax(0,12rem)_minmax(0,1fr)] md:gap-4"
+              >
+                <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-on-surface">
+                  <Server className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                  <span className="truncate">{server.server_name}</span>
+                </span>
+                <Dropdown
+                  value={gewaehlt ? String(gewaehlt.id) : null}
+                  onChange={(val) => onRollenWahl(server.server_id, val ? Number(val) : null)}
+                  options={rollen.map((r) => ({ value: String(r.id), label: r.name }))}
+                  placeholder={t('teams.rolleWaehlen')}
+                  disabled={busy}
+                  aria-label={`${t('teams.roles')}: ${server.server_name}`}
+                />
+                <div className="min-w-0">
+                  {gewaehlt ? (
+                    <>
+                      <MultiSelect
+                        options={server.permission_keys.map((key) => ({
+                          value: key,
+                          label: t(`permissionDetails.${key.replace(/\./g, '_')}.title`, { defaultValue: key }),
+                        }))}
+                        values={grant?.permission_keys ?? []}
+                        onChange={(keys) => onKeys(server.server_id, gewaehlt.id, keys)}
+                        disabled={busy}
+                        placeholder={t('teams.noAccess')}
+                        aria-label={`${t('teams.permissions')}: ${server.server_name}`}
+                      />
+                      <p className="mt-1 text-xs text-on-surface-variant">{t('teams.serverSichtAuto')}</p>
+                    </>
+                  ) : (
+                    <span className="text-xs text-on-surface-variant/70 italic" aria-hidden="true">-</span>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function MitgliederReiter({
   team, benutzerId, kandidaten, newMemberId, busy, offeneBeitritte, offeneAnhebungen,
   onKandidat, onEinladen, onSchalter, onSetMemberRoles, onEntfernen,
@@ -834,6 +953,7 @@ function MitgliederReiter({
   onEntfernen: (member: TeamMember) => void
 }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const spalten = 'md:grid-cols-[minmax(0,1.2fr)_12rem_7rem_7rem_7rem_2.75rem]'
 
   return (
@@ -895,9 +1015,23 @@ function MitgliederReiter({
                 className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3.5 md:gap-4 ${spalten}`}
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <Avatar src={member.avatar_url} name={member.username} size="sm" />
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/user/${member.user_id}`)}
+                    className="relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    aria-label={t('teams.profilAnsehen', { name: member.username })}
+                  >
+                    <Avatar src={member.avatar_url} name={member.username} size="sm" />
+                    <StatusDot status={member.presence?.status || 'invisible'} size="sm" className="absolute bottom-0 right-0" />
+                  </button>
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-on-surface">{member.username}</span>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/user/${member.user_id}`)}
+                      className="block max-w-full truncate rounded text-sm font-semibold text-on-surface hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      {member.username}
+                    </button>
                     <span className="mt-0.5 flex items-center gap-1.5 text-xs text-on-surface-variant font-normal">
                       {member.role === 'owner' ? (
                         <span className="inline-flex items-center gap-1 text-primary font-medium">
@@ -1035,6 +1169,7 @@ function MitgliederReiter({
 
 function RollenReiter({
   team,
+  assignable,
   busy,
   isCreatingRole,
   editingRole,
@@ -1045,6 +1180,7 @@ function RollenReiter({
   onDeleteRole,
 }: {
   team: TeamDetail
+  assignable: TeamServer[]
   busy: boolean
   isCreatingRole: boolean
   editingRole: TeamRole | null
@@ -1081,6 +1217,7 @@ function RollenReiter({
       {isCreatingRole && (
         <TeamRoleForm
           team={team}
+          assignable={assignable}
           role={null}
           onSaved={onRoleSaved}
           onCancel={onCloseRoleForm}
@@ -1091,6 +1228,7 @@ function RollenReiter({
       {editingRole && (
         <TeamRoleForm
           team={team}
+          assignable={assignable}
           role={editingRole}
           onSaved={onRoleSaved}
           onCancel={onCloseRoleForm}

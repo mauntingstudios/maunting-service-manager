@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/api/client'
@@ -630,5 +630,85 @@ describe('Teams', () => {
     fireEvent.click(cancelBtn)
 
     expect(screen.queryByPlaceholderText('z. B. Moderator, Entwickler, Redakteur')).not.toBeInTheDocument()
+  })
+
+  it('zeigt an jedem Mitglied, wer gerade online ist', async () => {
+    vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
+      id === 1 ? personalDetail : {
+        ...realDetail,
+        members: [
+          { ...realDetail.members[0], presence: { status: 'online', device_type: 'web' } },
+          { ...realDetail.members[1], presence: { status: 'away', device_type: 'desktop' } },
+        ],
+      })
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    expect(await screen.findByRole('img', { name: i18n.t('social.status.online') })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: i18n.t('social.status.away') })).toBeInTheDocument()
+  })
+
+  it('öffnet per Klick auf den Namen das Profil des Mitglieds', async () => {
+    render(
+      <MemoryRouter initialEntries={['/teams']}>
+        <Routes>
+          <Route path="/teams" element={<Teams />} />
+          <Route path="/user/:userId" element={<div>Profilseite</div>} />
+        </Routes>
+      </MemoryRouter>
+    )
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'kollege' }))
+    expect(await screen.findByText('Profilseite')).toBeInTheDocument()
+  })
+
+  it('wählt Ansehen automatisch dazu, sobald ein Serverrecht steht', async () => {
+    vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
+      id === 1 ? personalDetail : { ...realDetail, servers: [] })
+    vi.mocked(teamsApi.setServerGrants).mockResolvedValue({ ...realDetail, servers: [] })
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    fireEvent.click(screen.getByRole('tab', { name: /^Server/ }))
+    fireEvent.click(await screen.findByLabelText('Rechte: Valheim'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Server starten' }))
+
+    await waitFor(() => expect(teamsApi.setServerGrants).toHaveBeenCalledWith(2, {
+      server_id: 7,
+      permission_keys: ['server.start', 'server.view'],
+    }))
+  })
+
+  it('zeigt im Rollenmodus je Server Rollenwahl und Rechte-Editor', async () => {
+    const mitglied = realDetail.roles.find((r) => r.name === 'Mitglied')!
+    vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
+      id === 1 ? personalDetail : {
+        ...realDetail,
+        server_roles_active: true,
+        roles: realDetail.roles.map((r) => ({ ...r, server_grants: [] })),
+      })
+    vi.mocked(teamsApi.updateRole).mockResolvedValue({ ...mitglied, server_grants: [] })
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    fireEvent.click(screen.getByRole('tab', { name: /^Server/ }))
+    expect(await screen.findByText(i18n.t('teams.serverRollenHinweis'))).toBeInTheDocument()
+    // Team-Editor ist weg, Rollenwahl ist da (Admin steht nicht zur Wahl).
+    expect(screen.queryByLabelText('Rechte: Valheim')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Rollen & Rechte: Valheim' }))
+    expect(screen.queryByRole('option', { name: 'Admin' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('option', { name: 'Mitglied' }))
+
+    fireEvent.click(await screen.findByLabelText('Rechte: Valheim'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Server starten' }))
+
+    await waitFor(() => expect(teamsApi.updateRole).toHaveBeenCalledWith(2, 11, {
+      name: 'Mitglied',
+      server_grants: [{ server_id: 7, permission_keys: ['server.start', 'server.view'] }],
+    }))
   })
 })

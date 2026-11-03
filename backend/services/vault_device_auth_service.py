@@ -57,7 +57,10 @@ def create_device_auth_session(
     """
     session_id = secrets.token_hex(8)  # 16-stellige Hex-ID für QR-Code
     session_token = secrets.token_urlsafe(32)  # Geheimer Token für den Desktop zum Abrufen
-    resolve_token = secrets.token_urlsafe(32)  # Nur im QR-Code, nie im Polling
+    # 16 Byte sind 128 Bit und damit für einen Einmal-Nachweis mit 180 s Frist
+    # reichlich; im QR-Code zählt jedes Zeichen, weil jedes die Module dicker
+    # macht und den Scan verlangsamt.
+    resolve_token = secrets.token_urlsafe(16)  # Nur im QR-Code, nie im Polling
     expires = _now() + timedelta(seconds=ttl_seconds)
 
     payload = {
@@ -149,6 +152,67 @@ def get_device_auth_session_status(
     }
 
 
+def _offene_zeile(
+    db: Session, session_id: str, user_id: int
+) -> tuple[LoginChallenge | None, dict | None]:
+    """Die offene Session zu einer Kennung, ohne sie zu verbrauchen.
+
+    Die Kennung steht im JSON, deshalb wird ohne Sperre gesucht. Wer
+    anschliessend schreibt, sperrt die gefundene Zeile und prüft erneut.
+    """
+    kandidaten = (
+        db.query(LoginChallenge)
+        .filter(
+            LoginChallenge.purpose == PURPOSE_VAULT_DEVICE_AUTH,
+            LoginChallenge.user_id == user_id,
+            LoginChallenge.consumed_at.is_(None),
+        )
+        .all()
+    )
+    for r in kandidaten:
+        if _is_expired(r.expires_at):
+            continue
+        try:
+            d = json.loads(r.payload_json or "{}")
+        except Exception:
+            continue
+        if d.get("session_id") == session_id:
+            return r, d
+    return None, None
+
+
+def get_device_auth_public_key(
+    db: Session,
+    session_id: str,
+    user_id: int,
+    resolve_token: str,
+) -> dict | None:
+    """Gibt den oeffentlichen Schluessel einer offenen Session heraus.
+
+    Der QR-Code traegt nur Kennung, Zweck, Aufloese-Token und den
+    Fingerabdruck des Schluessels (gut 60 statt gut 500 Zeichen). Der
+    Schluessel kommt hier nach. Geprueft wird derselbe Scan-Nachweis wie
+    beim Aufloesen,
+    verbraucht wird nichts: erst `resolve_device_auth_session` schliesst die
+    Session. Nach dem Aufloesen gibt es nichts mehr zu holen — die Chiffre
+    liegt dann schon bereit.
+    """
+    row, daten = _offene_zeile(db, session_id, user_id)
+    if row is None or daten is None or daten.get("resolved"):
+        return None
+
+    erwartet = daten.get("resolve_token_hash", "")
+    if not erwartet or not secrets.compare_digest(
+        erwartet, hash_challenge_token(resolve_token)
+    ):
+        return None
+
+    return {
+        "public_key": daten.get("public_key", ""),
+        "purpose": daten.get("purpose", "authorize"),
+    }
+
+
 def resolve_device_auth_session(
     db: Session,
     session_id: str,
@@ -164,28 +228,10 @@ def resolve_device_auth_session(
     """
     # Kandidaten ohne Sperre suchen (die Kennung steht im JSON), dann genau
     # die Zielzeile sperren und alles erneut prüfen.
-    kandidaten = (
-        db.query(LoginChallenge)
-        .filter(
-            LoginChallenge.purpose == PURPOSE_VAULT_DEVICE_AUTH,
-            LoginChallenge.user_id == user_id,
-            LoginChallenge.consumed_at.is_(None),
-        )
-        .all()
-    )
-    kandidat_id: int | None = None
-    for r in kandidaten:
-        if _is_expired(r.expires_at):
-            continue
-        try:
-            d = json.loads(r.payload_json or "{}")
-            if d.get("session_id") == session_id:
-                kandidat_id = r.id
-                break
-        except Exception:
-            continue
-    if kandidat_id is None:
+    kandidat, _ = _offene_zeile(db, session_id, user_id)
+    if kandidat is None:
         return False
+    kandidat_id = kandidat.id
 
     row = (
         db.query(LoginChallenge)

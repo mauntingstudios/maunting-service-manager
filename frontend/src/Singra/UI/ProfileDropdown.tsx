@@ -29,6 +29,11 @@ export interface ProfileDropdownProps {
   /** Die Wahl: automatisch, online, abwesend oder unsichtbar. */
   status?: 'auto' | 'online' | 'away' | 'invisible'
   onStatusChange?: (status: 'auto' | 'online' | 'away' | 'invisible') => void
+  /**
+   * Was andere gerade sehen: die Wahl aufgelöst auf den sichtbaren Zustand.
+   * Ohne Angabe fällt der Punkt auf die Wahl zurück (`auto` → grau).
+   */
+  effectiveStatus?: 'online' | 'away' | 'invisible'
 }
 
 /**
@@ -46,11 +51,14 @@ export function ProfileDropdown({
   triggerVariant = 'avatar',
   status,
   onStatusChange,
+  effectiveStatus,
 }: ProfileDropdownProps) {
   const { t } = useTranslation()
   const ausloeserName = triggerAriaLabel ?? t('common.openUserMenu')
   const anzeigename = user?.username || t('messenger.userFallback')
   const statusText = status ? t(`social.status.${status}`) : ''
+  const punkt = effectiveStatus ?? (status === 'online' ? 'online' : status === 'away' ? 'away' : 'invisible')
+  const punktText = t(`social.status.${punkt === 'invisible' ? 'offline' : punkt}`)
 
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -65,9 +73,9 @@ export function ProfileDropdown({
     if (!status) return null
     const sizeClasses = size === 'xs' ? 'w-1.5 h-1.5' : size === 'sm' ? 'w-2 h-2' : 'w-2.5 h-2.5'
     const colorClasses =
-      status === 'online'
+      punkt === 'online'
         ? 'bg-status-success shadow-[0_0_6px_rgba(16,185,129,0.6)]'
-        : status === 'away'
+        : punkt === 'away'
         ? 'bg-status-warning shadow-[0_0_6px_rgba(245,158,11,0.6)]'
         : 'bg-on-surface-variant/50'
 
@@ -75,7 +83,7 @@ export function ProfileDropdown({
       <span
         role="img"
         className={`absolute bottom-0 right-0 inline-block rounded-full ring-2 ring-surface ${sizeClasses} ${colorClasses}`}
-        aria-label={statusText}
+        aria-label={punktText}
       />
     )
   }

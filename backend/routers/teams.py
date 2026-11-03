@@ -69,6 +69,7 @@ from services import (
     vault_service,
 )
 from services.auth_service import AuthService
+from services.social_service import SocialService
 
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
@@ -197,6 +198,7 @@ def _detail(db: Session, team: Team, user: User) -> TeamDetailResponse:
                 role_ids=role_ids,
                 roles=m_roles,
                 joined_at=member.joined_at,
+                presence=SocialService.get_presence_for_teammate(db, user.id, member.user_id),
             )
         )
     servers: list[TeamServerResponse] = []
@@ -463,6 +465,7 @@ def set_member_roles(
         role_ids=[r.id for r in valid_roles],
         roles=role_responses,
         joined_at=member.joined_at,
+        presence=SocialService.get_presence_for_teammate(db, user.id, member_user_id),
     )
 
 

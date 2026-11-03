@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { PresenceItem } from './social'
 
 /**
  * Teams: geteiltes KI-Wissen und gebündelte Serverrechte.
@@ -19,6 +20,8 @@ export interface TeamMember {
   role_ids?: number[]
   roles?: TeamRole[]
   joined_at: string
+  /** Was dieses Mitglied gerade tut — Teammitglieder sehen mindestens den Indikator. */
+  presence?: Omit<PresenceItem, 'user_id' | 'username'> | null
 }
 
 /**

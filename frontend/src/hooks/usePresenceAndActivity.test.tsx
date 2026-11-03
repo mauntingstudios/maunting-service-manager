@@ -122,4 +122,36 @@ describe('usePresenceAndActivity', () => {
     // Die Sitzung läuft weiter; den Schleier zieht der Server.
     expect(api.sendPresenceSession).toHaveBeenCalled()
   })
+
+  it('zeigt bei Automatik den aufgelösten Zustand, nicht die Wahl', async () => {
+    const { result } = starte()
+    await act(async () => {})
+
+    // Die Wahl heißt `auto` — was andere sehen, ist `online`.
+    expect(result.current.status).toBe('auto')
+    expect(result.current.effectiveStatus).toBe('online')
+
+    await act(async () => {
+      vi.advanceTimersByTime(300_000)
+    })
+    expect(result.current.effectiveStatus).toBe('away')
+
+    await act(async () => {
+      window.dispatchEvent(new Event('keydown'))
+      await Promise.resolve()
+    })
+    expect(result.current.effectiveStatus).toBe('online')
+  })
+
+  it('spiegelt eine manuelle Wahl eins zu eins', async () => {
+    const { result } = starte()
+    await act(async () => {})
+
+    for (const wahl of ['away', 'invisible', 'online'] as const) {
+      await act(async () => {
+        await result.current.changeStatus(wahl)
+      })
+      expect(result.current.effectiveStatus).toBe(wahl)
+    }
+  })
 })

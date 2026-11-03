@@ -16,6 +16,11 @@ export interface DeviceAuthStatusResponse {
   expires_in_seconds?: number
 }
 
+export interface DeviceAuthPublicKeyResponse {
+  public_key: string
+  purpose: 'authorize' | 'unlock'
+}
+
 /**
  * Erzeugt auf dem Zielgerät (Desktop/Browser) eine neue ephemere Freigabe-Session.
  */
@@ -46,6 +51,23 @@ export async function getDeviceAuthSessionStatus(
     `/vault/device-auth/session/${encodeURIComponent(sessionId)}`,
     { headers: { 'X-MSM-Device-Token': sessionToken } },
   )
+}
+
+/**
+ * Holt den öffentlichen Schlüssel der Session nach dem Scan.
+ *
+ * Der QR-Code trägt nur Kennung, Zweck, Aufloese-Token und Fingerabdruck.
+ * Der Abruf verbraucht nichts — erst `resolveDeviceAuthSession` schließt die
+ * Session. Ohne den Aufloese-Token aus dem gescannten Code gibt es nichts.
+ */
+export async function fetchDeviceAuthPublicKey(
+  sessionId: string,
+  resolveToken: string,
+): Promise<DeviceAuthPublicKeyResponse> {
+  return await api<DeviceAuthPublicKeyResponse>('/vault/device-auth/public-key', {
+    method: 'POST',
+    body: JSON.stringify({ session_id: sessionId, resolve_token: resolveToken }),
+  })
 }
 
 /**

@@ -19,7 +19,7 @@ describe('MauntingQrCard', () => {
       expect(screen.getByText('Nutze deinen Authenticator')).toBeInTheDocument()
       const img = screen.getByRole('img', { name: 'Mein QR-Code' })
       expect(img).toBeInTheDocument()
-      expect(img.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
+      expect(img.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
     })
   })
 

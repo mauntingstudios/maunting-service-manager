@@ -39,9 +39,11 @@ const SIZE_MAP = {
 /**
  * Signatur-QR-Code der Maunting Design-DNA.
  *
- * Rendert einen hochauflösenden Level-H QR-Code (30 % Fehlertoleranz) mit
+ * Rendert einen scharfen Level-H SVG-QR-Code (30 % Fehlertoleranz) mit
  * minimalem Rand, sanfter Schattierung, glühendem Cyan/Primär-Ring und
- * zentriertem MauntingStudios-Markenemblem.
+ * zentriertem MauntingStudios-Markenemblem. SVG statt PNG wie beim
+ * Kopplungscode: Vektor bleibt bei jeder Anzeigegröße kantenscharf, ein
+ * heruntergerechnetes PNG verwischt genau auf den Modulgrenzen.
  */
 export function MauntingQrCard({
   value,
@@ -61,17 +63,18 @@ export function MauntingQrCard({
     if (qrDataUri) {
       setGeneriertesQr(qrDataUri)
     } else if (value) {
-      QRCode.toDataURL(value.trim(), {
+      QRCode.toString(value.trim(), {
+        type: 'svg',
         errorCorrectionLevel: 'H', // 30% Fehlertoleranz für das zentrierte Logo
         margin: 1, // Minimaler Rand: QR-Code füllt maximalen Raum aus
-        scale: 12,
+        width: 512, // Eigengröße über der Anzeige: kein Hochrechnen nötig
         color: {
           dark: '#020617',
           light: '#ffffff',
         },
       })
-        .then((url) => {
-          if (aktiv) setGeneriertesQr(url)
+        .then((svg) => {
+          if (aktiv) setGeneriertesQr(`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`)
         })
         .catch(() => {
           if (aktiv) setGeneriertesQr(null)
