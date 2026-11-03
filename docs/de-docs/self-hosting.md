@@ -2064,20 +2064,26 @@ interne API unter `/internal/*` spricht ausschließlich mit dem Backend auf
 demselben Server (`MSM_BACKEND_URL=http://127.0.0.1:8000`) und wird von Caddy
 bewusst nicht durchgereicht.
 
-Drei Geheimnisse verbinden Backend und Sidecar; sie müssen in `backend/.env`
+Zwei Geheimnisse verbinden Backend und Sidecar; sie müssen in `backend/.env`
 und `docs-sidecar/.env` übereinstimmen. `install.sh` und `update.sh` erzeugen
 fehlende Werte selbst und lassen bestehende stehen:
 
 - `MSM_DOCS_SIDECAR_TOKEN` — belegt dem Sidecar, dass der Aufruf vom Backend kommt.
 - `MSM_DOCS_COLLAB_SECRET` — signiert die kurzlebigen Collab-Tokens der Clients.
-- `MSM_DOCS_SIGNING_SECRET` — signiert zeitlich begrenzte Bild-URLs im Export.
+
+Das dritte Geheimnis, `MSM_DOCS_SIGNING_SECRET`, signiert zeitlich begrenzte
+Bild-URLs im Export. Es wird ausschließlich vom Backend gelesen und gehört
+deshalb nur in `backend/.env`, nicht in die Datei des Sidecars.
 
 Der Dienst heißt `msm-docs-sidecar.service` und startet vor
 `msm-panel.service`. Installations- und Update-Skript legen dafür
 `$MSM_DIR/data/docs-sidecar` an und setzen `MSM_DOCS_DATA_DIR` in
-`docs-sidecar/.env`. Dort hält `docs-sidecar.lock` mit der PID die exklusive
-Start-Sperre; eine zweite Instanz startet nicht. Der Collab-Zustand lebt im
-Prozess, deshalb ist paralleler Betrieb mit mehreren Instanzen nicht unterstützt.
+`docs-sidecar/.env`. Dort hält `docs-sidecar.lock` die exklusive Start-Sperre
+als Lease: Der laufende Prozess frischt die Datei alle 15 Sekunden auf, nach
+60 Sekunden ohne Lebenszeichen darf eine neue Instanz übernehmen. Auch ein
+hart beendeter Prozess (etwa im Container nach `SIGKILL`) blockiert den
+nächsten Start deshalb nicht dauerhaft. Der Collab-Zustand lebt im Prozess,
+deshalb ist paralleler Betrieb mit mehreren Instanzen nicht unterstützt.
 Rendern und Strukturlesen laufen in höchstens zwei Worker-Threads, jeweils mit
 einer Frist von zehn Sekunden. Im Panel-Tarball liegt der Sidecar unter
 `docs-sidecar/` (`server.mjs`, `package.json`, `package-lock.json`); die

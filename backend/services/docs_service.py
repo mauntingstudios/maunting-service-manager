@@ -17,7 +17,7 @@ import secrets
 import uuid
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, tuple_
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -76,6 +76,41 @@ ERLAUBTE_ASSET_MIMES = {
     "image/avif",
     "application/pdf",
 }
+
+
+def _cursor_kodieren(doc: Document) -> str:
+    """Der Listenstand als opaker String: Zeitpunkt plus Kennung.
+
+    Der Zeitstempel allein reicht nicht — mehrere Dokumente koennen dieselbe
+    Sekunde tragen. Deshalb Mikrosekunden und die Kennung als Tiebreaker.
+    """
+    zeit = doc.updated_at
+    if zeit.tzinfo is None:
+        zeit = zeit.replace(tzinfo=timezone.utc)
+    zeit = zeit.astimezone(timezone.utc)
+    roh = json.dumps(
+        {"u": zeit.isoformat(timespec="microseconds"), "i": int(doc.id)},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(roh).decode("ascii").rstrip("=")
+
+
+def _cursor_lesen(cursor: str) -> tuple[datetime, int]:
+    try:
+        auffuellen = "=" * (-len(cursor) % 4)
+        roh = base64.urlsafe_b64decode(cursor + auffuellen)
+        daten = json.loads(roh)
+        zeit = datetime.fromisoformat(str(daten["u"]))
+        ident = int(daten["i"])
+        if zeit.tzinfo is None:
+            zeit = zeit.replace(tzinfo=timezone.utc)
+        if ident <= 0:
+            raise ValueError("Kennung fehlt")
+        return zeit, ident
+    except (ValueError, KeyError, TypeError, binascii.Error) as exc:
+        raise fehler(
+            422, "DOC_INVALID_CURSOR", "Der Listenstand ist ungueltig"
+        ) from exc
 
 
 def _now() -> datetime:
@@ -356,10 +391,9 @@ class DocsService:
         trash: bool = False,
         member: str | None = None,
         limit: int = 100,
-        cursor: int = 0,
-    ) -> list[dict]:
+        cursor: str | None = None,
+    ) -> dict:
         limit = max(1, min(int(limit), 200))
-        offset = max(0, int(cursor))
 
         team_ids = team_service.user_team_ids(db, user)
         if team_id is not None:
@@ -405,7 +439,13 @@ class DocsService:
             query = query.filter(Document.owner_user_id == user.id)
 
         query = query.order_by(Document.updated_at.desc(), Document.id.desc())
-        kandidaten = query.offset(offset).limit(limit).all()
+        if cursor:
+            zeit, ident = _cursor_lesen(cursor)
+            query = query.filter(tuple_(Document.updated_at, Document.id) < (zeit, ident))
+        # Eine Zeile mehr pruefen: nur so weiss der Client, ob es weitergeht.
+        zeilen = query.limit(limit + 1).all()
+        kandidaten = zeilen[:limit]
+        naechster = _cursor_kodieren(kandidaten[-1]) if len(zeilen) > limit and kandidaten else None
 
         titel = _titel_gebuendelt(kandidaten)
         zugriffe = docs_access.resolve_access_many(db, user, kandidaten, mit_trash=trash)
@@ -426,7 +466,7 @@ class DocsService:
                 db, doc, zugriff, titel[doc.doc_uid],
                 ordner_uid=ordner.get(doc.folder_id), ordner_geloest=True,
             ))
-        return ergebnis
+        return {"items": ergebnis, "next_cursor": naechster}
 
     @staticmethod
     def search_documents(

@@ -5,6 +5,7 @@ import { useNodeStore } from './nodeStore'
 import { useToastStore } from './toastStore'
 import { useConfirmStore } from './confirmStore'
 import { usePromptStore } from './promptStore'
+import { useDocsStore } from '@/docs/docsStore'
 import * as client from '@/api/client'
 import { chatMediaBlobCache, sessionChatCache } from '@/services/klartextSpeicher'
 import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
@@ -27,6 +28,7 @@ describe('authStore', () => {
     useToastStore.setState({ toasts: [] })
     useConfirmStore.setState({ pending: null })
     usePromptStore.setState({ pending: null })
+    useDocsStore.getState().zuruecksetzen()
     localStorage.clear()
     vi.mocked(client.api).mockReset()
     vi.mocked(client.clearCsrfTokenMemory).mockClear()
@@ -413,6 +415,19 @@ describe('authStore', () => {
       useAuthStore.getState().clearSession()
 
       speicherIstLeer()
+    })
+
+    it('nimmt die offene Dokumentauswahl und die Dokumentdialoge mit', () => {
+      useDocsStore.getState().setSelection({ quote: ' streng vertraulich ' })
+      useDocsStore.getState().setTreeOffen(true)
+      useDocsStore.getState().setPanel('singra')
+
+      useAuthStore.getState().clearSession()
+
+      const docs = useDocsStore.getState()
+      expect(docs.selection).toBeNull()
+      expect(docs.treeOffen).toBe(false)
+      expect(docs.panel).toBeNull()
     })
 
     it('gibt offene Dialoge frei, statt sie über der Anmeldeseite stehen zu lassen', async () => {

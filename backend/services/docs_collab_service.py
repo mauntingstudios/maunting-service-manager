@@ -96,20 +96,29 @@ def _call_sidecar(pfad: str, payload: dict, *, timeout: float = 10.0) -> dict:
         raise fehler(503, "DOCS_SIDECAR_UNAVAILABLE", "Dokumentserver nicht erreichbar") from exc
     if antwort.status_code == 404:
         raise fehler(404, "DOCUMENT_NOT_FOUND", "Dokument ist nicht geladen")
-    if antwort.status_code in (409, 422):
+    if antwort.status_code in (409, 413, 422, 503, 504):
         try:
             detail = antwort.json()
         except ValueError:
             detail = {}
         # Nur der Stellenzeiger geht weiter — Textkandidaten bleiben beim
-        # Sidecar im Log und erreichen das Modell nie (Befund 37).
+        # Sidecar im Log und erreichen das Modell nie (Befund 37). Der Code
+        # bleibt erhalten, damit die Oberflaeche den Grund nennen kann
+        # (Befund N12).
         extra: dict[str, object] = {}
         if detail.get("edit_index") is not None:
             extra["edit_index"] = detail["edit_index"]
+        standard = {
+            409: ("AI_EDIT_STALE_SELECTION", "Die Textstelle ist nicht mehr eindeutig"),
+            413: ("DOC_TOO_LARGE", "Inhalt ist zu gross"),
+            422: ("DOC_INVALID_TARGET", "Die Aenderung passt nicht zum Dokument"),
+            503: ("DOCS_STORE_FAILED", "Dokumentserver ist ausgelastet"),
+            504: ("DOC_RENDER_TIMEOUT", "Dokumentserver hat zu lange gebraucht"),
+        }[antwort.status_code]
         raise fehler(
             antwort.status_code,
-            str(detail.get("code") or "AI_EDIT_STALE_SELECTION"),
-            str(detail.get("error") or "Die Textstelle ist nicht mehr eindeutig"),
+            str(detail.get("code") or standard[0]),
+            str(detail.get("message") or standard[1]),
             **extra,
         )
     if antwort.status_code >= 400:

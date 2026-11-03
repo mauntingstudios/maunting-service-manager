@@ -15,6 +15,7 @@ import {
 import { toast } from '@/stores/toastStore'
 import { createShare, deleteShare, type DocDetail, type ShareRole } from '@/api/docs'
 import { docsFehlermeldung } from './docsFehler'
+import { formatZeitpunkt } from '@/lib/format'
 
 interface ShareDialogProps {
   detail: DocDetail
@@ -24,7 +25,7 @@ interface ShareDialogProps {
 }
 
 export function ShareDialog({ detail, open, onOpenChange, onChanged }: ShareDialogProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [role, setRole] = useState<ShareRole>(detail.share_role ?? 'viewer')
   const [tage, setTage] = useState('7')
   const [url, setUrl] = useState('')
@@ -116,7 +117,7 @@ export function ShareDialog({ detail, open, onOpenChange, onChanged }: ShareDial
                 <Link2 className="h-4 w-4" />
                 {t('docs.share.active', {
                   role: t(`docs.roles.${detail.share_role ?? 'viewer'}`),
-                  date: detail.share_expires_at ? new Date(detail.share_expires_at).toLocaleString() : '—',
+                  date: detail.share_expires_at ? formatZeitpunkt(new Date(detail.share_expires_at), i18n.language) : '—',
                 })}
               </p>
             </div>

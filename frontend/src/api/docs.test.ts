@@ -21,11 +21,11 @@ import {
 afterEach(() => vi.restoreAllMocks())
 
 it('baut die Listenabfrage nur aus gesetzten Filtern', async () => {
-  const api = vi.spyOn(client, 'api').mockResolvedValue([])
+  const api = vi.spyOn(client, 'api').mockResolvedValue({ items: [], next_cursor: null })
 
-  await listDocuments({ teamId: 7, trash: true, limit: 50, cursor: 120 })
+  await listDocuments({ teamId: 7, trash: true, limit: 50, cursor: 'c120' })
   expect(api).toHaveBeenLastCalledWith(
-    '/docs?team_id=7&trash=true&limit=50&cursor=120',
+    '/docs?team_id=7&trash=true&limit=50&cursor=c120',
   )
 
   await listDocuments({ teamId: null, archived: false })

@@ -82,6 +82,7 @@ services:
       dockerfile: docs-sidecar/Dockerfile.dev
     container_name: msm-docs-dev
     restart: unless-stopped
+    init: true
     working_dir: /app/docs-sidecar
     ports:
       - "127.0.0.1:8100:8100"

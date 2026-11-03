@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
+import { formatZeitpunkt } from '@/lib/format'
 import * as docsApi from '@/api/docs'
 import type { DocDetail } from '@/api/docs'
 import { ShareDialog } from './ShareDialog'
@@ -78,7 +79,7 @@ describe('ShareDialog', () => {
     expect(screen.getByRole('button', { name: i18n.t('docs.share.replace') })).toBeInTheDocument()
     expect(screen.getByText(i18n.t('docs.share.active', {
       role: i18n.t('docs.roles.commenter'),
-      date: new Date('2026-11-01T10:00:00Z').toLocaleString(),
+      date: formatZeitpunkt(new Date('2026-11-01T10:00:00Z'), i18n.language),
     }))).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('docs.share.disable') }))

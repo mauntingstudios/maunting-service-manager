@@ -19,7 +19,7 @@ vi.mock('@/api/docs', async (importOriginal) => {
       sidecar_version: '1.0.0',
       limits: {},
     })),
-    listDocuments: vi.fn(async () => []),
+    listDocuments: vi.fn(async () => ({ items: [], next_cursor: null })),
     listFolders: vi.fn(async () => []),
     getDocument: vi.fn(),
   }

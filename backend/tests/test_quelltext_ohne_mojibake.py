@@ -27,13 +27,14 @@ MOJIBAKE = re.compile(
 
 ORDNER = (
     "backend/",
+    "docs-sidecar/",
     "frontend/src/",
     "smart-system/src-tauri/src/",
     "smart-system/src-tauri/gen/android/app/src/",
     "scripts/",
     "docs/",
 )
-ENDUNGEN = (".py", ".ts", ".tsx", ".json", ".md", ".rs", ".kt", ".sh", ".css", ".html")
+ENDUNGEN = (".py", ".ts", ".tsx", ".json", ".md", ".rs", ".kt", ".sh", ".mjs", ".css", ".html")
 
 
 def _dateien() -> list[str]:

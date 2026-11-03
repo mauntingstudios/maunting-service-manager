@@ -228,7 +228,7 @@ The self-hosted Weather Sidecar provides hyper-local weather data and official s
 The documents module edits texts together in realtime. The Node process `docs-sidecar` holds the shared Yjs document state (Hocuspocus WebSocket), applies AI edits, and renders exports. Without it the module stays dark.
 
 - **Ports (loopback only):** `8100` WebSocket, proxied by Caddy at `/api/docs/collab`; `8101` internal HTTP API, never proxied (`/internal/*` stays on the server).
-- **Secrets** (must match in `backend/.env` and `docs-sidecar/.env`; install/update generate missing values): `MSM_DOCS_SIDECAR_TOKEN`, `MSM_DOCS_COLLAB_SECRET`, `MSM_DOCS_SIGNING_SECRET`.
+- **Secrets:** `MSM_DOCS_SIDECAR_TOKEN` and `MSM_DOCS_COLLAB_SECRET` must match in `backend/.env` and `docs-sidecar/.env`; install/update generate missing values. `MSM_DOCS_SIGNING_SECRET` is read by the backend only and belongs in `backend/.env`.
 - **Service:** `msm-docs-sidecar.service`, exactly one instance (process-local collab state).
 - **Release:** shipped in the panel tarball under `docs-sidecar/` (`server.mjs`, `package.json`, `package-lock.json`); verified on every build.
 

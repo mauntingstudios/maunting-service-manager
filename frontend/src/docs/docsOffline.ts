@@ -93,6 +93,3 @@ export async function clearLocalDocuments(userId: number | null): Promise<void> 
   }
 }
 
-export function hasLocalCopy(userId: number, docUid: string): boolean {
-  return loadCachedDocuments(userId).some((eintrag) => eintrag.uid === docUid)
-}

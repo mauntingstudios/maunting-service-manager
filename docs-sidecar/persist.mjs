@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import * as Y from "yjs";
 import { schemaVersion } from "@msm/docs-schema/schema";
 
-import { storeState } from "./backend_client.mjs";
+import { loadState, storeState } from "./backend_client.mjs";
 import { assertStateSize, clampText } from "./limits.mjs";
 
 const locks = new Map();
@@ -173,5 +173,30 @@ export async function storeDocumentUnlocked(docName, ydoc, meta = {}) {
 }
 
 export function storeDocument(docName, ydoc, meta = {}) {
-  return withLock(docName, () => storeDocumentUnlocked(docName, ydoc, meta));
+  return withLock(docName, async () => {
+    try {
+      return await storeDocumentUnlocked(docName, ydoc, meta);
+    } catch (error) {
+      if (error?.code !== "DOC_REV_CONFLICT") throw error;
+      // Der Server ist weitergezogen, ohne dass dieser Prozess es merkte
+      // (Neustart, wiederhergestellter Stand, kuenftiger Direktschreiber).
+      // Ein zweiter Versuch mit derselben Rev liefe wieder in den Konflikt:
+      // Zustand holen, als CRDT zusammenfuehren, Rev nachziehen, einmal
+      // wiederholen. Ein erneuter Konflikt bleibt sichtbar.
+      let zustand;
+      try {
+        zustand = await loadState(docName);
+      } catch (ladeFehler) {
+        console.error(
+          `Konflikt in ${docName}, Zustand nicht ladbar: ${ladeFehler.message}`,
+        );
+        throw error;
+      }
+      if (zustand?.state_b64) {
+        Y.applyUpdate(ydoc, new Uint8Array(Buffer.from(zustand.state_b64, "base64")));
+      }
+      rememberRev(docName, zustand?.rev);
+      return await storeDocumentUnlocked(docName, ydoc, meta);
+    }
+  });
 }

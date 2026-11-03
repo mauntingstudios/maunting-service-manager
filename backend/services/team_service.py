@@ -251,14 +251,16 @@ def _pruefe_rollen_deckel(
     is_admin: bool,
     permission_keys: list[str] | None,
     flags: dict[str, bool],
+    server_grants: list[dict] | None = None,
 ) -> None:
     """Der Deckel: wer nicht Gruender ist, vergibt nur, was er selbst haelt.
 
     Bis 11/2026 legte jeder mit `team.roles.manage` Admin-Rollen an und teilte
     sie zu — samt Rechten und Schaltern, die er selbst nicht hatte. Jetzt gilt:
     `is_admin` nur durch den Gruender, jedes Recht nur gehalten
-    (`has_team_permission`), jeder Schalter nur getragen (Mitgliedszeile). Der
-    Gruender bleibt unbeschraenkt; `has_team_permission` selbst ist unveraendert.
+    (`has_team_permission`), jeder Schalter nur getragen (Mitgliedszeile) und
+    jedes Serverrecht nur selbst gehalten (`direct_server_permission`, ohne
+    Teams). Der Gruender bleibt unbeschraenkt.
     """
     if _ist_team_gruender(team, user):
         return
@@ -288,6 +290,21 @@ def _pruefe_rollen_deckel(
                     "message": "Diesen Teamschalter trägst du selbst nicht und kannst ihn nicht vergeben.",
                 },
             )
+    from services.permission_catalog import SERVER_KEYS
+
+    for grant in server_grants or []:
+        server_id = int(grant.get("server_id") or 0)
+        for key in grant.get("permission_keys") or []:
+            if key not in SERVER_KEYS:
+                continue
+            if not permission_service.direct_server_permission(db, user, server_id, key):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "TEAM_ROLE_GRANT_DENIED",
+                        "message": f'Das Serverrecht "{key}" hältst du nicht selbst und kannst es nicht vergeben.',
+                    },
+                )
 
 
 def _pruefe_rollenzuteilung(db: Session, team: Team, user: User, rollen: list[TeamRole]) -> None:
@@ -301,6 +318,13 @@ def _pruefe_rollenzuteilung(db: Session, team: Team, user: User, rollen: list[Te
             .filter(TeamRolePermission.role_id == rolle.id)
             .all()
         ]
+        grants: dict[int, list[str]] = {}
+        for row in (
+            db.query(TeamRoleServerGrant)
+            .filter(TeamRoleServerGrant.role_id == rolle.id)
+            .all()
+        ):
+            grants.setdefault(row.server_id, []).append(row.permission_key)
         _pruefe_rollen_deckel(
             db, team, user,
             is_admin=rolle.is_admin,
@@ -310,6 +334,10 @@ def _pruefe_rollenzuteilung(db: Session, team: Team, user: User, rollen: list[Te
                 "can_manage_skills": rolle.can_manage_skills,
                 "can_manage_memory": rolle.can_manage_memory,
             },
+            server_grants=[
+                {"server_id": server_id, "permission_keys": keys}
+                for server_id, keys in grants.items()
+            ],
         )
 
 
@@ -578,14 +606,17 @@ def invite_member(
     if team_role_id is not None:
         _rolle_im_team(db, team, team_role_id)
 
+    ausdruecklich = team_role_id is not None
     if team_role_id is None and not team.is_personal:
         default_role = db.query(TeamRole.id).filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True)).first()
         if default_role is not None:
             team_role_id = default_role[0]
 
-    # Auch die Einladung vergibt die Rolle: der Deckel gilt hier wie bei der
-    # direkten Zuteilung — einschliesslich der automatisch gewaehlten Standardrolle.
-    if team_role_id is not None:
+    # Der Deckel gilt der ausdruecklichen Rollenwahl. Die automatisch
+    # eingesetzte Standardrolle ist kein Vergabewille des Einladenden; sie ist
+    # die vom Gruender festgelegte Rolle (dieselbe Ausnahme wie in
+    # `accept_invitation`).
+    if ausdruecklich and team_role_id is not None:
         _pruefe_rollenzuteilung(db, team, user, [_rolle_im_team(db, team, team_role_id)])
 
     offen = invitation(db, team.id, new_user_id)
@@ -1221,6 +1252,7 @@ def create_team_role(
             "can_manage_skills": can_manage_skills,
             "can_manage_memory": can_manage_memory,
         },
+        server_grants=server_grants,
     )
 
     safe_name = name.strip()
@@ -1315,6 +1347,7 @@ def update_team_role(
             "can_manage_skills": can_manage_skills,
             "can_manage_memory": can_manage_memory,
         },
+        server_grants=server_grants,
     )
     safe_name = name.strip()
     if not 2 <= len(safe_name) <= 32:

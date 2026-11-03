@@ -1,10 +1,11 @@
-import { useEffect, useState, type MutableRefObject } from 'react'
+import { useState, type MutableRefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 
 import { Button, Dialog, DialogContent, Kurzinfo } from '@/Singra/UI'
 import type { DocComment, DocDetail, DocRevision } from '@/api/docs'
 import { useBreiteZiehen } from '@/hooks/useBreiteZiehen'
+import { useMedienabfrage } from '@/hooks/useMedienabfrage'
 import { CommentsPanel } from './CommentsPanel'
 import { DocsChatPanel } from './DocsChatPanel'
 import { HistoryPanel } from './HistoryPanel'
@@ -13,20 +14,6 @@ import { OutlineList, type OutlineEntry } from './editor/Outline'
 export type DocsPanel = 'comments' | 'history' | 'outline' | 'singra'
 
 /** Unterhalb von `lg` liegt das Panel als Overlay; darüber ist es angedockt. */
-function useMobilAnsicht() {
-  const lesen = () =>
-    typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 1023.98px)').matches
-  const [mobil, setMobil] = useState(lesen)
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const frage = window.matchMedia('(max-width: 1023.98px)')
-    const horchen = () => setMobil(frage.matches)
-    horchen()
-    frage.addEventListener('change', horchen)
-    return () => frage.removeEventListener('change', horchen)
-  }, [])
-  return mobil
-}
 
 interface DocsPanelsProps {
   detail: DocDetail
@@ -58,7 +45,7 @@ export function DocsPanels({
   onAssistantChanged,
 }: DocsPanelsProps) {
   const { t } = useTranslation()
-  const mobil = useMobilAnsicht()
+  const mobil = useMedienabfrage('(max-width: 1023.98px)')
   const title =
     panel === 'comments'
       ? t('docs.comments.title')

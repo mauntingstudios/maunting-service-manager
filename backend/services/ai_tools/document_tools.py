@@ -243,7 +243,7 @@ def execute_document_tool(
         _rechte(db, user)
         docs = DocsService.list_documents(
             db, user, team_id=kontext.team_id if kontext else None, limit=50
-        )
+        )["items"]
         return _untrusted(
             documents=[
                 {

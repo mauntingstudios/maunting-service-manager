@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { X } from 'lucide-react'
@@ -8,6 +9,7 @@ import type { DocFolder, DocSummary } from '@/api/docs'
 import { DocTree } from './DocTree'
 import { useDocsStore } from './docsStore'
 import type { DocsSession } from './useDocsSession'
+import { useMedienabfrage } from '@/hooks/useMedienabfrage'
 
 /** Listenhandlungen, die DocsApp als Komposition aus Sitzung, Detail und Routing stellt. */
 export interface DocsSidebarAktionen {
@@ -16,6 +18,7 @@ export interface DocsSidebarAktionen {
   dokumentInPapierkorb: (docUid: string) => void
   dokumentWiederherstellen: (docUid: string) => void
   archivUmschalten: (doc: DocSummary) => void
+  dokumentDuplizieren: (doc: DocSummary) => void
   ordnerUmbenennen: (ordner: DocFolder) => void
   ordnerLoeschen: (ordner: DocFolder) => void
   verschiebePerDrop: (doc: DocSummary, folderUid: string | null) => void
@@ -39,6 +42,14 @@ export function DocsSidebar({ session, aktionen, selectedUid, canManageFolders }
       setMoveDoc: state.setMoveDoc,
     })),
   )
+
+  const schmal = useMedienabfrage('(max-width: 767.98px)')
+
+  // Auf dem Desktop liegt der Baum fest; ein offenes Overlay aus der schmalen
+  // Ansicht würde ihn ein zweites Mal in den DOM hängen.
+  useEffect(() => {
+    if (!schmal) setTreeOffen(false)
+  }, [schmal, setTreeOffen])
 
   const baum = () => (
     <DocTree
@@ -76,6 +87,7 @@ export function DocsSidebar({ session, aktionen, selectedUid, canManageFolders }
       onRestoreDocument={(docUid) => void aktionen.dokumentWiederherstellen(docUid)}
       onMoveDocument={setMoveDoc}
       onArchiveDocument={(doc) => void aktionen.archivUmschalten(doc)}
+      onDuplicateDocument={(doc) => void aktionen.dokumentDuplizieren(doc)}
       canManageFolders={canManageFolders}
       onRenameFolder={(ordner) => void aktionen.ordnerUmbenennen(ordner)}
       onDeleteFolder={(ordner) => void aktionen.ordnerLoeschen(ordner)}

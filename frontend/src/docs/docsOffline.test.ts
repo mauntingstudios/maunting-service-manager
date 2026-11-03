@@ -3,7 +3,6 @@ import type { DocSummary } from '@/api/docs'
 import {
   cacheDocument,
   clearLocalDocuments,
-  hasLocalCopy,
   loadCachedDocuments,
   metadataKey,
   saveCachedDocuments,
@@ -35,8 +34,7 @@ describe('docsOffline', () => {
     localStorage.clear()
     saveCachedDocuments(7, [dokument('a', 'Erstes')])
     expect(loadCachedDocuments(7)).toHaveLength(1)
-    expect(hasLocalCopy(7, 'a')).toBe(true)
-    expect(hasLocalCopy(7, 'b')).toBe(false)
+    expect(loadCachedDocuments(7).some((eintrag) => eintrag.uid === 'a')).toBe(true)
   })
 
   it('cacheDocument stellt das neueste Dokument nach vorn', () => {

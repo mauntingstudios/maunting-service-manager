@@ -92,7 +92,7 @@ class Document(Base):
         ),
         CheckConstraint("rev >= 0", name="ck_documents_rev"),
         Index("ix_documents_team_folder", "team_id", "folder_id"),
-        Index("ix_documents_team_updated", "team_id", text("updated_at DESC")),
+        Index("ix_documents_team_updated_id", "team_id", text("updated_at DESC"), text("id DESC")),
         Index("ix_documents_owner", "owner_user_id"),
         Index(
             "uq_documents_share_token",

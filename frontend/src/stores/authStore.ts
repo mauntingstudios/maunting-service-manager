@@ -8,6 +8,7 @@ import { useNodeStore } from '@/stores/nodeStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useConfirmStore } from '@/stores/confirmStore'
 import { usePromptStore } from '@/stores/promptStore'
+import { useDocsStore } from '@/docs/docsStore'
 import { clearSqlConsoleHistory } from '@/lib/sqlConsoleStorage'
 import { useVaultStore } from '@/desktop/vault/vaultStore'
 import { clearMemoryKeyStore } from '@/services/e2eeCrypto'
@@ -210,6 +211,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // TLS-Fingerabdruck. Ohne dieses clear() bliebe sie bis zum nächsten
     // Neuladen der Seite im Speicher des Tabs liegen.
     useNodeStore.getState().clear()
+    // Die offene Dokumentauswahl enthält Text aus dem Dokument und die
+    // Dialogzustände des vorigen Kontos. Sie liegt nur im Speicher, muss aber
+    // beim Sitzungsende genauso fallen wie die Knotenliste.
+    useDocsStore.getState().zuruecksetzen()
     useToastStore.getState().clearAll()
     // Toasts, Bestätigungs- und Eingabedialoge hängen am Wurzelelement und
     // überleben den Sprung zur Anmeldeseite. Ein offener Dialog zeigte dort

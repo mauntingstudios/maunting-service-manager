@@ -3,7 +3,7 @@ import test from "node:test";
 
 import * as Y from "yjs";
 
-import { applyAiEdit } from "../ai_edit.mjs";
+import { applyAiEdit } from "./_apply_ai_edit.mjs";
 import { aiUndo, registerDocument } from "../collab.mjs";
 
 function dokument(text) {

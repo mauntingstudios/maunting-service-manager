@@ -14,6 +14,7 @@ interface DocsMainProps {
   uid: string | undefined
   detail: DocDetail | null
   detailFehler: string | null
+  detailFehlerCode: string | null
   fehler: string | null
   online: boolean
   userId: number
@@ -35,6 +36,7 @@ export function DocsMain({
   uid,
   detail,
   detailFehler,
+  detailFehlerCode,
   fehler,
   online,
   userId,
@@ -105,7 +107,13 @@ export function DocsMain({
           <div className="flex flex-1 items-center justify-center p-6">
             <Zustandsflaeche
               art={offlineOhneKopie ? 'offline' : 'fehler'}
-              titel={offlineOhneKopie ? t('docs.offline.noCopyTitle') : t('docs.errors.DOCUMENT_NOT_FOUND')}
+              titel={
+                offlineOhneKopie
+                  ? t('docs.offline.noCopyTitle')
+                  : detailFehlerCode
+                    ? t(`docs.errors.${detailFehlerCode}`, { defaultValue: t('docs.fehler.list') })
+                    : t('docs.fehler.list')
+              }
               text={offlineOhneKopie ? t('docs.offline.noCopyText') : detailFehler}
               erneutLabel={t('common.retry')}
               onErneut={() => void detailLaden(uid)}

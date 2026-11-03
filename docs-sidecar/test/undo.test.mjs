@@ -3,7 +3,8 @@ import test from "node:test";
 
 import * as Y from "yjs";
 
-import { applyAiEdit, markdownToNodes } from "../ai_edit.mjs";
+import { markdownToNodes } from "../ai_edit.mjs";
+import { applyAiEdit } from "./_apply_ai_edit.mjs";
 import { aiUndo, registerDocument, undoAi } from "../collab.mjs";
 
 function dokument(markdown) {

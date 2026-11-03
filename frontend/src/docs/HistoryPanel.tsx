@@ -5,6 +5,7 @@ import { Badge, Button, confirm, prompt } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import { createRevision, restoreRevision, type DocRevision } from '@/api/docs'
 import { docsFehlermeldung } from './docsFehler'
+import { formatZeitpunkt } from '@/lib/format'
 
 interface HistoryPanelProps {
   uid: string
@@ -26,7 +27,7 @@ const GRUENDE: Record<string, string> = {
 }
 
 export function HistoryPanel({ uid, revisions, canEdit, onChanged }: HistoryPanelProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [laeuft, setLaeuft] = useState(false)
 
   const checkpoint = async () => {
@@ -90,7 +91,7 @@ export function HistoryPanel({ uid, revisions, canEdit, onChanged }: HistoryPane
           <article key={revision.rev} className="mb-2 rounded-xl border border-outline-variant/40 bg-surface-container p-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-on-surface">
-                Rev {revision.rev} · {new Date(revision.created_at).toLocaleString()}
+                Rev {revision.rev} · {formatZeitpunkt(new Date(revision.created_at), i18n.language)}
               </span>
               <Badge variant={revision.author_kind === 'ai' ? 'info' : 'default'}>
                 {t(`docs.history.reasons.${GRUENDE[revision.reason] ?? 'autosave'}`)}

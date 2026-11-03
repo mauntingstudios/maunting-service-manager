@@ -21,6 +21,7 @@ from services.docs_collab_service import DocsCollabService
 from services.docs_crypto import decrypt_state
 from services.docs_service import DocsService
 from services import docs_service as docs_service_module
+from services import docs_collab_service as docs_collab_module
 
 
 def _benutzer(db, name: str):
@@ -79,7 +80,7 @@ def test_persoenliches_dokument_anlegen_und_lesen(db):
     assert daten["role"] == "editor"
     assert daten["can_manage"] is True
 
-    liste = DocsService.list_documents(db, user)
+    liste = DocsService.list_documents(db, user)["items"]
     assert [eintrag["uid"] for eintrag in liste] == [daten["uid"]]
     assert DocsService.get_document(db, user, daten["uid"])["title"] == "Notizen"
 
@@ -536,6 +537,37 @@ def test_falsches_service_token_wird_abgewiesen(client, monkeypatch):
     assert antwort.status_code == 401
 
 
+def test_sidecar_codes_bleiben_am_api_rand_erhalten(monkeypatch):
+    """Befund N12: 413/504/503 duerfen nicht zu einem pauschalen 503 werden."""
+
+    class Antwort:
+        def __init__(self, status: int, nutzlast: dict) -> None:
+            self.status_code = status
+            self._nutzlast = nutzlast
+
+        def json(self) -> dict:
+            return self._nutzlast
+
+    faelle = [
+        (413, "DOC_TOO_LARGE"),
+        (504, "DOC_RENDER_TIMEOUT"),
+        (503, "DOC_RENDER_BUSY"),
+        (422, "AI_EDIT_BATCH_TOO_LARGE"),
+    ]
+    for status, code in faelle:
+        monkeypatch.setattr(
+            docs_collab_module.httpx,
+            "post",
+            lambda *args, _status=status, _code=code, **kwargs: Antwort(
+                _status, {"error": _code, "code": _code}
+            ),
+        )
+        with pytest.raises(HTTPException) as exc:
+            docs_collab_module._call_sidecar("/internal/docs/x/render", {})
+        assert exc.value.status_code == status
+        assert exc.value.detail["code"] == code
+
+
 def test_dokument_schnitt_ist_geschlossen_und_kennt_keinen_worker():
     from services.ai_tool_registry import docs_kontext_schnitt
 
@@ -661,7 +693,7 @@ def test_router_legt_dokument_an_und_listet(db):
 
             liste = client.get("/api/docs")
             assert liste.status_code == 200
-            assert any(eintrag["uid"] == doc["uid"] for eintrag in liste.json())
+            assert any(eintrag["uid"] == doc["uid"] for eintrag in liste.json()["items"])
 
             einzeln = client.get(f"/api/docs/{doc['uid']}")
             assert einzeln.status_code == 200
@@ -696,8 +728,8 @@ def test_papierkorb_ist_sichtbar_und_wiederherstellbar(db):
     daten = DocsService.create_document(db, user, title="Weg damit")
     DocsService.trash_document(db, user, daten["uid"])
 
-    assert not any(e["uid"] == daten["uid"] for e in DocsService.list_documents(db, user))
-    assert any(e["uid"] == daten["uid"] for e in DocsService.list_documents(db, user, trash=True))
+    assert not any(e["uid"] == daten["uid"] for e in DocsService.list_documents(db, user)["items"])
+    assert any(e["uid"] == daten["uid"] for e in DocsService.list_documents(db, user, trash=True)["items"])
     detail = DocsService.get_document(db, user, daten["uid"])
     assert detail["deleted"] is True
 
@@ -1121,7 +1153,7 @@ def test_ordner_anlegen_verschieben_und_loeschen(db):
         db, user, folder_uid=ordner["uid"], title="Im Ordner"
     )
     assert daten["folder_uid"] == ordner["uid"]
-    assert DocsService.list_documents(db, user, folder_uid=ordner["uid"])[0]["title"] == "Im Ordner"
+    assert DocsService.list_documents(db, user, folder_uid=ordner["uid"])["items"][0]["title"] == "Im Ordner"
 
     with pytest.raises(HTTPException) as konflikt:
         DocsService.create_folder(db, user, team_id=None, parent_uid=None, name="projekte")
@@ -1457,15 +1489,73 @@ def test_liste_liest_zugriff_und_ordner_gebuendelt(db):
     db.expire_all()
     assert mitglied.is_owner is False
     with count_statements(db) as anweisungen:
-        seite = DocsService.list_documents(db, mitglied, limit=200)
+        seite = DocsService.list_documents(db, mitglied, limit=200)["items"]
     assert len(seite) == 200
     assert len(anweisungen) <= 10
 
     # Stabile Ordnung: zwei Laeufe, eine Reihenfolge; Ordner stimmen.
     db.expire_all()
-    nochmal = DocsService.list_documents(db, mitglied, limit=200)
+    nochmal = DocsService.list_documents(db, mitglied, limit=200)["items"]
     assert [eintrag["uid"] for eintrag in nochmal] == [eintrag["uid"] for eintrag in seite]
     assert {eintrag["folder_uid"] for eintrag in seite} <= {None, ordner_a["uid"]}
     # 70 im Ordner angelegt, 4 davon unter den 10 aeltesten ausserhalb des Limits.
     assert sum(1 for eintrag in seite if eintrag["folder_uid"] == ordner_a["uid"]) == 66
     assert {eintrag["role"] for eintrag in seite} == {"editor"}
+
+
+def test_dokumentliste_blaettert_per_keyset_ohne_luecke(db):
+    """Befund N9: gleiche Sekunde, limit 1 — der Cursor verliert nichts."""
+    from datetime import datetime, timezone
+
+    user = _benutzer(db, "docs_keyset")
+    uid = [
+        DocsService.create_document(db, user, title=f"Seite {index}")["uid"]
+        for index in range(3)
+    ]
+    stamp = datetime(2026, 11, 3, 12, 0, 0, tzinfo=timezone.utc)
+    db.query(Document).filter(Document.doc_uid.in_(uid)).update(
+        {Document.updated_at: stamp}, synchronize_session=False
+    )
+    db.commit()
+
+    gesehen: list[str] = []
+    cursor = None
+    for _ in range(5):
+        seite = DocsService.list_documents(db, user, limit=1, cursor=cursor)
+        gesehen.extend(eintrag["uid"] for eintrag in seite["items"])
+        cursor = seite["next_cursor"]
+        if cursor is None:
+            break
+
+    assert len(gesehen) == 3
+    assert len(set(gesehen)) == 3
+    assert set(gesehen) == set(uid)
+
+
+def test_ungueltiger_cursor_ist_422(db):
+    user = _benutzer(db, "docs_cursor_kaputt")
+    with pytest.raises(HTTPException) as exc:
+        DocsService.list_documents(db, user, cursor="kein-stand")
+    assert exc.value.status_code == 422
+    assert exc.value.detail["code"] == "DOC_INVALID_CURSOR"
+
+
+def test_duplizieren_kopiert_und_prueft_rechte(db, monkeypatch):
+    """Befund 51c: Die Aktion im Baum nutzt den vorhandenen Endpoint."""
+    owner = _benutzer(db, "dup_owner")
+    original = DocsService.create_document(db, owner, title="Original")
+
+    kopie = DocsService.duplicate_document(db, owner, original["uid"])
+    assert kopie["uid"] != original["uid"]
+    assert kopie["title"] == "Original (Kopie)"
+
+    fremd = _benutzer(db, "dup_fremd")
+    with pytest.raises(HTTPException) as exc:
+        DocsService.duplicate_document(db, fremd, original["uid"])
+    assert exc.value.status_code == 404
+
+    monkeypatch.setattr(docs_service_module, "MAX_DOCUMENTS_PER_TEAM", 2)
+    with pytest.raises(HTTPException) as voll:
+        DocsService.duplicate_document(db, owner, original["uid"])
+    assert voll.value.status_code == 413
+    assert voll.value.detail["code"] == "DOC_QUOTA_EXCEEDED"

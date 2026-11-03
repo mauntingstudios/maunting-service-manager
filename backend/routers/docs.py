@@ -187,10 +187,10 @@ def list_documents(
     trash: bool = Query(False),
     member: str | None = Query(None),
     limit: int = Query(100, ge=1, le=200),
-    cursor: int = Query(0, ge=0),
+    cursor: str | None = Query(None, max_length=512),
     db: Session = Depends(get_db),
     user: User = Depends(_docs_user),
-) -> dict | list[dict]:
+) -> dict:
     if search:
         return DocsService.search_documents(db, user, search, limit=limit)
     return DocsService.list_documents(

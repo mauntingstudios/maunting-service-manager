@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
@@ -21,7 +21,8 @@ vi.mock('@/api/docs', async (importOriginal) => {
       sidecar_version: '1.0.0',
       limits: {},
     })),
-    listDocuments: vi.fn(async () => []),
+    listDocuments: vi.fn(async () => ({ items: [], next_cursor: null })),
+    duplicateDocument: vi.fn(),
     listFolders: vi.fn(async () => []),
     getDocument: vi.fn(),
   }
@@ -163,10 +164,12 @@ describe('DocsApp', () => {
   // Rendert drei Seiten mit je 100 Zeilen; unter Vollast braucht das mehr als 5 s.
   it('lädt weitere Dokumentseiten und speichert sie im Offline-Katalog', async () => {
     vi.mocked(docsApi.listDocuments).mockImplementation(async (params) => {
-      const start = params?.cursor ?? 0
-      return Array.from({ length: Math.min(101, 201 - start) }, (_, index) =>
-        zusammenfassung(start + index),
-      )
+      const start = params?.cursor ? Number(String(params.cursor).replace('c', '')) : 0
+      const bis = Math.min(start + 100, 201)
+      return {
+        items: Array.from({ length: bis - start }, (_, index) => zusammenfassung(start + index)),
+        next_cursor: bis < 201 ? `c${bis}` : null,
+      }
     })
     zeigen()
 
@@ -177,7 +180,7 @@ describe('DocsApp', () => {
       teamId: null,
       archived: false,
       trash: false,
-      limit: 101,
+      limit: 100,
     })
 
     screen.getByRole('button', { name: i18n.t('docs.tree.loadMore') }).click()
@@ -189,8 +192,8 @@ describe('DocsApp', () => {
       teamId: null,
       archived: false,
       trash: false,
-      limit: 101,
-      cursor: 100,
+      limit: 100,
+      cursor: 'c100',
     })
     screen.getByRole('button', { name: i18n.t('docs.tree.loadMore') }).click()
     await waitFor(() =>
@@ -205,15 +208,18 @@ describe('DocsApp', () => {
   }, 20000)
 
   it('ignoriert eine verspätete Seite nach dem Wechsel der Dokumentansicht', async () => {
-    let resolveSeite!: (docs: ReturnType<typeof zusammenfassung>[]) => void
+    let resolveSeite!: (seite: { items: ReturnType<typeof zusammenfassung>[]; next_cursor: string | null }) => void
     vi.mocked(docsApi.listDocuments).mockImplementation(async (params) => {
-      if (params?.archived) return []
-      if (params?.cursor === 100) {
+      if (params?.archived) return { items: [], next_cursor: null }
+      if (params?.cursor === 'c100') {
         return new Promise((resolve) => {
           resolveSeite = resolve
         })
       }
-      return Array.from({ length: 101 }, (_, index) => zusammenfassung(index))
+      return {
+        items: Array.from({ length: 100 }, (_, index) => zusammenfassung(index)),
+        next_cursor: 'c100',
+      }
     })
     zeigen()
 
@@ -229,15 +235,73 @@ describe('DocsApp', () => {
         teamId: null,
         archived: true,
         trash: false,
-        limit: 101,
+        limit: 100,
       }),
     )
     await act(async () => {
-      resolveSeite(Array.from({ length: 101 }, (_, index) => zusammenfassung(100 + index)))
+      resolveSeite({
+        items: Array.from({ length: 100 }, (_, index) => zusammenfassung(100 + index)),
+        next_cursor: null,
+      })
     })
 
     await waitFor(() =>
       expect(screen.queryByText('Dokument 100')).not.toBeInTheDocument(),
     )
   }, 20000)
+
+  it('dupliziert ein Dokument über das Baum-Menü und öffnet die Kopie (Befund 51c)', async () => {
+    vi.mocked(docsApi.listDocuments).mockResolvedValue({
+      items: [zusammenfassung(1)],
+      next_cursor: null,
+    })
+    vi.mocked(docsApi.duplicateDocument).mockResolvedValueOnce({ uid: 'copy-1' } as never)
+
+    function Kopie() {
+      const { uid } = useParams()
+      return <div>Editor {uid}</div>
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/dokumente']}>
+        <Routes>
+          <Route path="/dokumente" element={<DocsApp />} />
+          <Route path="/dokumente/:uid" element={<Kopie />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: i18n.t('docs.tree.actionsFor', { name: 'Dokument 1' }),
+      }),
+    )
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: i18n.t('docs.tree.duplicateAction') }),
+    )
+
+    await waitFor(() => expect(docsApi.duplicateDocument).toHaveBeenCalledWith('doc-1'))
+    await waitFor(() => expect(screen.getByText('Editor copy-1')).toBeInTheDocument())
+  })
+
+  it('nennt bei einem Rechtefehler den Grund statt "Dokument nicht gefunden" (Befund N7)', async () => {
+    vi.mocked(docsApi.listDocuments).mockResolvedValueOnce({
+      items: [zusammenfassung(1)],
+      next_cursor: null,
+    })
+    vi.mocked(docsApi.getDocument).mockRejectedValueOnce(
+      new SanitizedApiError('verboten', { status: 403, code: 'DOCS_FORBIDDEN' }),
+    )
+    render(
+      <MemoryRouter initialEntries={['/dokumente/doc-1']}>
+        <Routes>
+          <Route path="/dokumente/:uid" element={<DocsApp />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await waitFor(() =>
+      expect(screen.getAllByText(i18n.t('docs.errors.DOCS_FORBIDDEN')).length).toBeGreaterThan(0),
+    )
+    expect(screen.queryByText(i18n.t('docs.errors.DOCUMENT_NOT_FOUND'))).not.toBeInTheDocument()
+  })
 })

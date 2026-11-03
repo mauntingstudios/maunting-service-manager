@@ -156,3 +156,82 @@ test("decodeState und restoreFragment weisen Zustaende ueber 4 MiB ab", () => {
   const klein = decodeState(Buffer.from("eA==", "base64").toString("base64"));
   assert.equal(klein.byteLength, 1);
 });
+
+function antwort(daten, status = 200) {
+  return new Response(JSON.stringify(daten), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function serverDokument(text) {
+  const doc = new Y.Doc();
+  const absatz = new Y.XmlElement("paragraph");
+  const inhalt = new Y.XmlText();
+  inhalt.insert(0, text);
+  absatz.insert(0, [inhalt]);
+  doc.getXmlFragment("default").insert(0, [absatz]);
+  return doc;
+}
+
+test("holt bei DOC_REV_CONFLICT den Stand, mischt und wiederholt genau einmal", async () => {
+  const server = serverDokument("Vom Server");
+  const zustand = Buffer.from(Y.encodeStateAsUpdate(server)).toString("base64");
+  const aufrufe = [];
+  let speicher = 0;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, optionen) => {
+    if (String(url).endsWith("/state")) {
+      aufrufe.push("state");
+      return antwort({ state_b64: zustand, rev: 9 });
+    }
+    speicher += 1;
+    const body = JSON.parse(optionen.body);
+    aufrufe.push({ expected: body.expected_rev });
+    if (speicher === 1) {
+      return antwort({ detail: { code: "DOC_REV_CONFLICT", current_rev: 9 } }, 409);
+    }
+    return antwort({ stored: true, rev: 10 });
+  };
+  try {
+    rememberRev("doc-konflikt", 8);
+    const lokal = serverDokument("Lokal");
+    const ergebnis = await storeDocument("doc-konflikt", lokal, { reason: "autosave" });
+    assert.equal(ergebnis.rev, 10);
+    assert.equal(speicher, 2);
+    assert.equal(aufrufe.filter((eintrag) => eintrag === "state").length, 1);
+    assert.deepEqual(
+      aufrufe.filter((eintrag) => typeof eintrag === "object").map((eintrag) => eintrag.expected),
+      [8, 9],
+    );
+    assert.match(extractText(lokal), /Lokal/);
+    assert.match(extractText(lokal), /Vom Server/);
+    forgetRev("doc-konflikt");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("ein zweiter Konflikt bleibt sichtbar und haengt nicht", async () => {
+  const aufrufe = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith("/state")) {
+      aufrufe.push("state");
+      return antwort({ state_b64: "", rev: 9 });
+    }
+    aufrufe.push("store");
+    return antwort({ detail: { code: "DOC_REV_CONFLICT", current_rev: 9 } }, 409);
+  };
+  try {
+    await assert.rejects(
+      storeDocument("doc-konflikt-2", serverDokument("Text"), { reason: "autosave" }),
+      (error) => error.code === "DOC_REV_CONFLICT",
+    );
+    assert.equal(aufrufe.filter((eintrag) => eintrag === "store").length, 2);
+    assert.equal(aufrufe.filter((eintrag) => eintrag === "state").length, 1);
+    forgetRev("doc-konflikt-2");
+  } finally {
+    globalThis.fetch = original;
+  }
+});

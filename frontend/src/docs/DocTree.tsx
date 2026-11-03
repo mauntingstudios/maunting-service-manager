@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Archive, ArchiveRestore, FileText, Folder, FolderInput, FolderPlus, Pencil, Plus, Search, Settings2, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Copy, FileText, Folder, FolderInput, FolderPlus, Pencil, Plus, Search, Settings2, Trash2 } from 'lucide-react'
 import { ActionMenu, Button, Dropdown, Input, Kurzinfo } from '@/Singra/UI'
 import type { DocFolder, DocSummary } from '@/api/docs'
 import type { Team } from '@/api/teams'
@@ -30,6 +30,7 @@ interface DocTreeProps {
   onRestoreDocument: (uid: string) => void
   onMoveDocument: (doc: DocSummary) => void
   onArchiveDocument: (doc: DocSummary) => void
+  onDuplicateDocument: (doc: DocSummary) => void
   canManageFolders: boolean
   onRenameFolder: (folder: DocFolder) => void
   onDeleteFolder: (folder: DocFolder) => void
@@ -81,6 +82,7 @@ export function DocTree({
   onRestoreDocument,
   onMoveDocument,
   onArchiveDocument,
+  onDuplicateDocument,
   canManageFolders,
   onRenameFolder,
   onDeleteFolder,
@@ -353,6 +355,12 @@ export function DocTree({
                                   : t('docs.tree.archiveAction'),
                                 icon: <Archive className="h-4 w-4" />,
                                 onSelect: () => onArchiveDocument(doc),
+                              },
+                              {
+                                key: 'duplicate',
+                                label: t('docs.tree.duplicateAction'),
+                                icon: <Copy className="h-4 w-4" />,
+                                onSelect: () => onDuplicateDocument(doc),
                               },
                             ]
                           : []),

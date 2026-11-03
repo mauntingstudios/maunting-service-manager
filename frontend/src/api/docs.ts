@@ -153,6 +153,12 @@ function query(params: Record<string, string | number | boolean | null | undefin
   return text ? `?${text}` : ''
 }
 
+export interface DocListe {
+  items: DocSummary[]
+  /** Opaker Stand für die nächste Seite; `null` heißt: nichts mehr dahinter. */
+  next_cursor: string | null
+}
+
 export function listDocuments(params: {
   teamId?: number | null
   folderUid?: string | null
@@ -160,9 +166,9 @@ export function listDocuments(params: {
   trash?: boolean
   member?: string
   limit?: number
-  cursor?: number
-} = {}): Promise<DocSummary[]> {
-  return api<DocSummary[]>(
+  cursor?: string | null
+} = {}): Promise<DocListe> {
+  return api<DocListe>(
     `/docs${query({
       team_id: params.teamId ?? undefined,
       folder_uid: params.folderUid ?? undefined,
@@ -170,7 +176,7 @@ export function listDocuments(params: {
       trash: params.trash || undefined,
       member: params.member,
       limit: params.limit,
-      cursor: params.cursor,
+      cursor: params.cursor ?? undefined,
     })}`,
   )
 }

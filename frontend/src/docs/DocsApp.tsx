@@ -12,6 +12,8 @@ import {
   createFolder,
   deleteDocumentPermanent,
   deleteFolder,
+  docsErrorCode,
+  duplicateDocument,
   getDocument,
   grenzenAusStatus,
   listComments,
@@ -64,6 +66,7 @@ export function DocsApp() {
 
   const [detail, setDetail] = useState<DocDetail | null>(null)
   const [detailFehler, setDetailFehler] = useState<string | null>(null)
+  const [detailFehlerCode, setDetailFehlerCode] = useState<string | null>(null)
   const [comments, setComments] = useState<DocComment[]>([])
   const [revisions, setRevisions] = useState<DocRevision[]>([])
   const [outlineEntries, setOutlineEntries] = useState<OutlineEntry[]>([])
@@ -77,6 +80,7 @@ export function DocsApp() {
   const detailLaden = useCallback(
     async (docUid: string) => {
       setDetailFehler(null)
+      setDetailFehlerCode(null)
       setDetail((alt) => (alt?.uid === docUid ? alt : null))
       try {
         const daten = await getDocument(docUid)
@@ -97,6 +101,7 @@ export function DocsApp() {
         }
         setDetail(null)
         setDetailFehler(meldung(error, 'list'))
+        setDetailFehlerCode(docsErrorCode(error))
       }
     },
     [meldung, online, user],
@@ -255,6 +260,17 @@ export function DocsApp() {
     }
   }
 
+  const dokumentDuplizieren = async (doc: DocSummary) => {
+    try {
+      const kopie = await duplicateDocument(doc.uid)
+      await session.listeLaden()
+      toast.success(t('docs.tree.duplicated'))
+      navigate(`/dokumente/${kopie.uid}`)
+    } catch (error) {
+      toast.error(meldung(error, 'create'))
+    }
+  }
+
   const dokumentWiederherstellen = async (docUid: string) => {
     try {
       const wieder = await restoreDocument(docUid)
@@ -305,6 +321,7 @@ export function DocsApp() {
     dokumentInPapierkorb: (docUid) => void dokumentInPapierkorb(docUid),
     dokumentWiederherstellen: (docUid) => void dokumentWiederherstellen(docUid),
     archivUmschalten: (doc) => void archivUmschalten(doc),
+    dokumentDuplizieren: (doc) => void dokumentDuplizieren(doc),
     ordnerUmbenennen: (ordner) => void ordnerUmbenennen(ordner),
     ordnerLoeschen: (ordner) => void ordnerLoeschen(ordner),
     verschiebePerDrop: (doc, folderUid) => void verschiebePerDrop(doc, folderUid),
@@ -350,6 +367,7 @@ export function DocsApp() {
           uid={uid}
           detail={detail}
           detailFehler={detailFehler}
+          detailFehlerCode={detailFehlerCode}
           fehler={session.fehler}
           online={online}
           userId={user.id}

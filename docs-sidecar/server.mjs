@@ -284,7 +284,7 @@ async function aktion(name, req, antwort) {
 
   if (was === "ai-preview") {
     // Nur lesen: der Klon nimmt die Aenderungen auf, das Live-Dokument bleibt
-    // unberuehrt. Deshalb hier bewusst **kein** Store â€” sonst entstuende eine
+    // unberuehrt. Deshalb hier bewusst **kein** Store — sonst entstuende eine
     // Revision, die alle Mitarbeiter im Verlauf saehen.
     const edits = editsAusBody(body);
     const ergebnis = await withDocument(
@@ -573,6 +573,10 @@ async function shutdown(signal) {
   if (beendet) return;
   beendet = true;
   console.log(`docs-sidecar beendet (${signal})`);
+  // Ein haengender Flush darf das Ende nicht verhindern; die Lease laeuft
+  // sonst nach 60 s ab und der naechste Start uebernimmt.
+  const zwangsende = setTimeout(() => process.exit(1), 10_000);
+  zwangsende.unref?.();
   try {
     await flushAll();
   } catch (error) {
@@ -595,6 +599,14 @@ async function shutdown(signal) {
 
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("uncaughtException", (error) => {
+  console.error(`Unbehandelter Fehler: ${error?.stack || error}`);
+  void shutdown("uncaughtException");
+});
+process.on("unhandledRejection", (reason) => {
+  console.error(`Unbehandelte Ablehnung: ${reason?.stack || reason}`);
+  void shutdown("unhandledRejection");
+});
 
 start().catch(async (error) => {
   console.error(`Start fehlgeschlagen: ${error.stack || error.message}`);

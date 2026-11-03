@@ -36,6 +36,7 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
   const [folders, setFolders] = useState<DocFolder[]>([])
   const [documents, setDocuments] = useState<DocSummary[]>([])
   const [mehrDokumente, setMehrDokumente] = useState(false)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [ladeMehrDokumente, setLadeMehrDokumente] = useState(false)
   const [folderUid, setFolderUid] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -70,11 +71,12 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
               teamId,
               archived,
               trash,
-              limit: DOKUMENT_SEITENGROESSE + 1,
+              limit: DOKUMENT_SEITENGROESSE,
             })
             return {
-              items: seite.slice(0, DOKUMENT_SEITENGROESSE),
-              hasMore: seite.length > DOKUMENT_SEITENGROESSE,
+              items: seite.items,
+              hasMore: seite.next_cursor !== null,
+              nextCursor: seite.next_cursor,
               searched: null,
             }
           }
@@ -82,6 +84,7 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
           return {
             items: ergebnis.items,
             hasMore: false,
+            nextCursor: null,
             searched: ergebnis.truncated ? ergebnis.searched : null,
           }
         })(),
@@ -89,6 +92,7 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
       if (aktuelleGeneration !== listGenerationRef.current) return
       setSuchGrenze(dokumente.searched)
       setMehrDokumente(dokumente.hasMore)
+      setNextCursor(dokumente.nextCursor)
       setFolders(ordner)
       setDocuments(dokumente.items)
       // Nur die ungefilterte Aktivliste ersetzt den Offline-Katalog. Eine
@@ -107,8 +111,7 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
   }, [archived, meldung, search, teamId, trash, userId])
 
   const weitereDokumenteLaden = useCallback(async () => {
-    if (ladeMehrDokumente || !mehrDokumente || search.trim()) return
-    const angefragterStand = documents.length
+    if (ladeMehrDokumente || !mehrDokumente || !nextCursor || search.trim()) return
     const generation = listGenerationRef.current
     setLadeMehrDokumente(true)
     setFehler(null)
@@ -117,16 +120,22 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
         teamId,
         archived,
         trash,
-        limit: DOKUMENT_SEITENGROESSE + 1,
-        cursor: angefragterStand,
+        limit: DOKUMENT_SEITENGROESSE,
+        cursor: nextCursor,
       })
       if (generation !== listGenerationRef.current) return
-      const weitere = seite
-        .slice(0, DOKUMENT_SEITENGROESSE)
-        .filter((doc) => !documents.some((geladen) => geladen.uid === doc.uid))
-      const aktualisiert = [...documents, ...weitere]
+      const geladen = new Map(documents.map((doc) => [doc.uid, doc]))
+      const bekannt = new Set(geladen.keys())
+      const aktualisiert = documents.map((doc) => {
+        const frisch = seite.items.find((eintrag) => eintrag.uid === doc.uid)
+        return frisch ?? doc
+      })
+      for (const doc of seite.items) {
+        if (!bekannt.has(doc.uid)) aktualisiert.push(doc)
+      }
       setDocuments(aktualisiert)
-      setMehrDokumente(seite.length > DOKUMENT_SEITENGROESSE)
+      setNextCursor(seite.next_cursor)
+      setMehrDokumente(seite.next_cursor !== null)
       if (userId !== undefined && !trash && !archived) {
         saveCachedDocuments(userId, aktualisiert)
       }
@@ -143,6 +152,7 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
     ladeMehrDokumente,
     mehrDokumente,
     meldung,
+    nextCursor,
     search,
     teamId,
     trash,

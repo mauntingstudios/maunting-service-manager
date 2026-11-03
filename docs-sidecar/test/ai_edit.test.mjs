@@ -3,7 +3,8 @@ import test from "node:test";
 
 import * as Y from "yjs";
 
-import { applyAiEdit, AiEditError, markdownToNodes } from "../ai_edit.mjs";
+import { AiEditError, markdownToNodes } from "../ai_edit.mjs";
+import { applyAiEdit } from "./_apply_ai_edit.mjs";
 
 function docMitText(text) {
   const ydoc = new Y.Doc();

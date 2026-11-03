@@ -1618,9 +1618,112 @@ def test_nicht_gruender_kann_adminrolle_weder_zuteilen_noch_aufwerten(
     assert team_service.has_team_permission(db, team.id, opfer, "team.roles.manage") is True
 
 
+# ── Standardrolle beim Einladen (Befund N4) ──
+
+
+def test_einlader_vergibt_die_standardrolle_ohne_eigene_rechte(db: Session, regular_user: User) -> None:
+    """Wer nur einladen darf, vergibt die vom Gruender bestimmte Standardrolle.
+
+    Der Deckel gilt der ausdruecklichen Rollenwahl. Sonst konnte niemand mehr
+    einladen, der die Rechte der Standardrolle (Tresor, Gedaechtnis, Skills)
+    nicht selbst traegt.
+    """
+    einlader = _user(db, "einlader")
+    team = _team_with_member(db, regular_user, einlader)
+    rolle = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Einlader",
+        permission_keys=["team.members.invite"],
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.set_member_roles(
+        db, team=team, user=regular_user, member_user_id=einlader.id, role_ids=[rolle.id]
+    )
+    assert team_service.has_team_permission(db, team.id, einlader, "team.members.invite") is True
+    assert team_service.membership(db, team.id, einlader.id).can_access_vault is False
+
+    gast = _user(db, "gast-standard")
+    einladung = team_service.invite_member(
+        db, team=team, user=einlader, new_user_id=gast.id,
+        can_manage_skills=False, can_manage_memory=False,
+    )
+    standard = (
+        db.query(TeamRole)
+        .filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True))
+        .one()
+    )
+    assert einladung.team_role_id == standard.id
+
+
+def test_einlader_vergibt_keine_adminrolle_ausdruecklich(db: Session, regular_user: User) -> None:
+    einlader = _user(db, "einlader-admin")
+    team = _team_with_member(db, regular_user, einlader)
+    rolle = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Einlader",
+        permission_keys=["team.members.invite"],
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+    )
+    team_service.set_member_roles(
+        db, team=team, user=regular_user, member_user_id=einlader.id, role_ids=[rolle.id]
+    )
+    admin = _admin_rolle(db, team)
+    gast = _user(db, "gast-admin")
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.invite_member(
+            db, team=team, user=einlader, new_user_id=gast.id,
+            can_manage_skills=False, can_manage_memory=False,
+            team_role_id=admin.id,
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_ADMIN_OWNER_ONLY"
+
+
+# ── Server-Grants im Rollen-Deckel (Befund N5) ──
+
+
+def test_nicht_gruender_vergibt_keine_fremden_serverrechte(db: Session, regular_user: User) -> None:
+    verwalter = _user(db, "verwalter-server")
+    team = _team_with_member(db, regular_user, verwalter)
+    _verwalter(db, team, regular_user, verwalter)
+    server = _server(db, "srv-rollen-grant")
+    _allow(db, regular_user, server, "server.view", "server.console.read")
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.create_team_role(
+            db, team=team, user=verwalter, name="Serverrolle",
+            permission_keys=["team.roles.manage"],
+            can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+            server_grants=[{"server_id": server.id, "permission_keys": ["server.view"]}],
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"
+    assert "Serverrecht" in exc.value.detail["message"]
+
+
+def test_nicht_gruender_teilt_keine_fremde_serverrolle_zu(db: Session, regular_user: User) -> None:
+    verwalter = _user(db, "verwalter-zuteilung")
+    team = _team_with_member(db, regular_user, verwalter)
+    _verwalter(db, team, regular_user, verwalter)
+    server = _server(db, "srv-zuteilung")
+    _allow(db, regular_user, server, "server.view")
+    rolle = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Nur-Server",
+        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+        server_grants=[{"server_id": server.id, "permission_keys": ["server.view"]}],
+    )
+    mitglied = team_service.membership(db, team.id, verwalter.id)
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.set_member_roles(
+            db, team=team, user=verwalter, member_user_id=verwalter.id, role_ids=[rolle.id]
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"
+    assert "Serverrecht" in exc.value.detail["message"]
+    assert mitglied is not None
+
+
 # ── Fremde Rollen auf Einladung und Annahme (Befund 3) ──
-
-
 def test_einladung_mit_fremder_rolle_wird_abgelehnt(db: Session, regular_user: User) -> None:
     gast = _user(db, "gast")
     team = _team_with_member(db, regular_user, _user(db, "kollege"))
