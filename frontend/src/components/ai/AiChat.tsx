@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, CalendarClock, Check, HardDrive, Image as ImageIcon, ListPlus, Loader2, Mic, Paperclip, Pencil, RotateCw, Send, ShieldAlert, Sparkles, Square, Trash2, X, Zap } from 'lucide-react'
+import { AudioLines, CalendarClock, Check, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Mic, Paperclip, Pencil, RotateCw, Send, ShieldAlert, Sparkles, Square, Trash2, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -15,10 +15,8 @@ import { api, SanitizedApiError } from '@/api/client'
 import { Ablageflaeche, Button, Dropdown, Avatar, Blatteintrag, Blattknopf, Kurzinfo, VoiceRecordingBar } from '@/Singra/UI'
 import {
   aiChatPreferenceKeys,
-  readClosedGeoAnalysis,
   readAiProviderChoice,
   readAiReasoningChoice,
-  writeClosedGeoAnalysis,
   writeAiProviderChoice,
   writeAiReasoningChoice,
 } from '@/lib/aiChatPreferences'
@@ -43,7 +41,7 @@ import { denkwahlFuer, ReasoningPicker } from './ReasoningPicker'
 // der KI aussieht. Die Schleife hier bleibt: an ihr hängen Bearbeiten und
 import { AiAntwortblase, formatMessageTime, KEINE_AUFRUFE, mergeEntries } from './AiVerlauf'
 import { WorkerLeiste } from './WorkerLeiste'
-import { useAiLauf } from './useAiLauf'
+import { useAiLauf, type Entry } from './useAiLauf'
 import { ActiveProcessesCard } from './geo/ActiveProcessesCard'
 import { RegionalAnalysisLayout } from './geo/RegionalAnalysisLayout'
 import type { NewsItem } from './geo/RegionalInfoPanel'
@@ -511,7 +509,9 @@ export function AiChat({
         // Vorschlaege werden chronologisch zwischen die Nachrichten einsortiert,
         // damit man sieht, auf welche Antwort sie sich beziehen. Vorher standen
         // sie gesammelt am Ende und wirkten losgeloest.
-        setEntries(mergeEntries(conversation.messages, actions))
+        const geladen = mergeEntries(conversation.messages, actions)
+        verlaufEintraegeRef.current = geladen
+        setEntries(geladen)
         setAttachments(attachmentRows)
         setServers(serverRows.map((row) => ({ id: row.id, name: row.name })))
         if (scope.kind === 'docs') {
@@ -624,45 +624,38 @@ export function AiChat({
     setInput((prev) => (prev ? `${prev} [Datei: ${anhang.original_name}]` : `Beziehe dich bitte auf die Datei ${anhang.original_name}: `))
   }, [setInput])
 
-  const manuallyClosedGeoRef = useRef(false)
-  const closedGeoIdRef = useRef(readClosedGeoAnalysis(merkSchluessel.closedGeoAnalysis))
-  const lastSeenGeoIdRef = useRef<string | null>(null)
-  const lastSeenCameraCommandRef = useRef<string | null>(null)
   const wasAnalyzingRegionRef = useRef(false)
+  // Welcher Verlauf zuletzt **geladen** wurde (nicht: aus dem Strom kam). Ein
+  // geladener Stand oeffnet die Karte nie — sonst stuende man beim Betreten
+  // des Chats wieder im Globus, nur weil die letzte Sitzung dort endete.
+  const verlaufEintraegeRef = useRef<Entry[] | null>(null)
+  const letzteGeoKennungRef = useRef<string | null>(null)
 
-  useEffect(() => {
-    closedGeoIdRef.current = readClosedGeoAnalysis(merkSchluessel.closedGeoAnalysis)
-  }, [merkSchluessel.closedGeoAnalysis])
-
-  const geoOpenRef = useRef(geoOpen)
-  useEffect(() => {
-    geoOpenRef.current = geoOpen
-  }, [geoOpen])
-
-  useEffect(() => {
-    return () => {
-      if (!geoOpenRef.current && lastSeenGeoIdRef.current) {
-        writeClosedGeoAnalysis(merkSchluessel.closedGeoAnalysis, lastSeenGeoIdRef.current)
-      }
-    }
-  }, [merkSchluessel.closedGeoAnalysis])
-
-  // Automatische Aktivierung des 3D-Globus bei einer neuen regionalen Analyse
+  // Automatische Aktivierung des 3D-Globus, sobald in diesem Fenster eine
+  // regionale Analyse laeuft. Der Verlauf allein oeffnet sie nicht: wer den
+  // Chat betritt, soll den Chat sehen, auch wenn die letzte Sitzung eine
+  // Kartenanalyse enthielt. Wer sie sehen will, oeffnet sie ueber das Menue.
   useEffect(() => {
     const isAnalyzing = laufendeWerkzeuge.some(
       (w) => w.tool_name === 'analyze_region' || w.tool_name === 'control_region_camera',
     )
     if (isAnalyzing && !wasAnalyzingRegionRef.current) {
-      manuallyClosedGeoRef.current = false
       setGeoOpen(true)
     }
     wasAnalyzingRegionRef.current = isAnalyzing
   }, [laufendeWerkzeuge])
 
-  // Aktualisiert geoData aus der jüngsten Analyse und allen nachfolgenden Kamerabefehlen im Verlauf
+  // Haelt die Daten der Kartenansicht aktuell: die juengste Analyse und alle
+  // nachfolgenden Kamerabefehle im Verlauf.
+  //
+  // Geoeffnet wird sie nur fuer etwas, das **waehrend eines Laufs in diesem
+  // Fenster** dazukommt. Ein geladener Verlauf (Betreten des Chats, Nachladen
+  // im Takt, Aktualisieren) wird still uebernommen. Der Mensch oeffnet eine
+  // alte Analyse ueber das Menue.
   useEffect(() => {
+    const ausVerlauf = verlaufEintraegeRef.current === entries
     let latestAnalysis: AiRegionalAnalysis | null = null
-    let latestAnalysisGeoId = ''
+    let analyseKennung = ''
     let analysisMsgIdx = -1
     let analysisSecIdx = -1
 
@@ -679,7 +672,7 @@ export function AiChat({
             const geo = normalizeRegionalAnalysis(section.werkzeug.geo_analysis)
             if (geo) {
               latestAnalysis = geo
-              latestAnalysisGeoId = geo.camera?.command_id || `${entry.message.id}:${j}`
+              analyseKennung = geo.camera?.command_id || `${entry.message.id}:${j}`
               analysisMsgIdx = i
               analysisSecIdx = j
               break
@@ -690,10 +683,15 @@ export function AiChat({
       }
     }
 
-    if (!latestAnalysis) return
+    if (!latestAnalysis) {
+      // Ohne Analyse gibt es keine Karte — auch keine alte im Menue.
+      letzteGeoKennungRef.current = null
+      setGeoData(null)
+      return
+    }
 
     let combinedGeo = latestAnalysis
-    let latestCameraCommand: AiGeoCameraCommand | null = null
+    let letzterKamerabefehl: AiGeoCameraCommand | null = null
 
     for (let i = Math.max(0, analysisMsgIdx); i < entries.length; i++) {
       const entry = entries[i]
@@ -709,27 +707,21 @@ export function AiChat({
             const command = normalizeGeoCameraCommand(section.werkzeug.geo_camera)
             if (command) {
               combinedGeo = applyGeoCameraCommand(combinedGeo, command) ?? combinedGeo
-              latestCameraCommand = command
+              letzterKamerabefehl = command
             }
           }
         }
       }
     }
 
-    const currentGeoId = latestCameraCommand?.command_id || latestAnalysisGeoId
-
-    if (lastSeenGeoIdRef.current !== currentGeoId) {
-      lastSeenGeoIdRef.current = currentGeoId
-      if (latestCameraCommand) {
-        lastSeenCameraCommandRef.current = latestCameraCommand.command_id
-      }
-      setGeoData(combinedGeo)
-      if (!manuallyClosedGeoRef.current && closedGeoIdRef.current !== currentGeoId) {
+    const kennung = letzterKamerabefehl?.command_id || analyseKennung
+    if (letzteGeoKennungRef.current !== kennung) {
+      if (!ausVerlauf && streaming) {
         setGeoOpen(true)
       }
-    } else {
-      setGeoData(combinedGeo)
+      letzteGeoKennungRef.current = kennung
     }
+    setGeoData(combinedGeo)
   }, [entries, streaming])
 
   const newsFromSearch = useMemo<NewsItem[]>(() => {
@@ -984,7 +976,6 @@ export function AiChat({
   const enqueueMessage = useCallback((content: string) => {
     const text = content.trim()
     if (!text) return
-    manuallyClosedGeoRef.current = false
     setQueuedMessages((q) => [...q, text])
     setInput('')
   }, [])
@@ -994,7 +985,6 @@ export function AiChat({
     const mitAnhaengen = offeneAnhaenge.length > 0
     if ((!text && !mitAnhaengen) || !providerId) return
     window.dispatchEvent(new CustomEvent('msm:ai-message-sent'))
-    manuallyClosedGeoRef.current = false
     setInput('')
     userScrolledUpRef.current = false
     setAmEnde(true)
@@ -1014,7 +1004,6 @@ export function AiChat({
     // Sperre `!content` verhinderte genau das, was der Dateianhang anbietet.
     if (!content && !mitAnhaengen) return
     window.dispatchEvent(new CustomEvent('msm:ai-message-sent'))
-    manuallyClosedGeoRef.current = false
     if (streaming) {
       if (content) enqueueMessage(content)
       return
@@ -1111,7 +1100,9 @@ export function AiChat({
       void Promise.all([chatApi.getConversation(), chatApi.listActions()])
         .then(([conversation, actions]) => {
           if (veraltet || !mountedRef.current) return
-          setEntries(mergeEntries(conversation.messages, actions))
+          const geladen = mergeEntries(conversation.messages, actions)
+          verlaufEintraegeRef.current = geladen
+          setEntries(geladen)
         })
         .catch(() => undefined)
     }
@@ -1142,7 +1133,9 @@ export function AiChat({
         ladeKontext(),
       ])
       if (mountedRef.current && !streaming) {
-        setEntries(mergeEntries(conversation.messages, actions))
+        const geladen = mergeEntries(conversation.messages, actions)
+        verlaufEintraegeRef.current = geladen
+        setEntries(geladen)
       }
     } catch {
       // Fehler still abfangen
@@ -1186,11 +1179,6 @@ export function AiChat({
       news={newsFromSearch}
       loading={streaming && laufendeWerkzeuge.some((w) => w.tool_name === 'analyze_region')}
       onClose={() => {
-        manuallyClosedGeoRef.current = true
-        if (lastSeenGeoIdRef.current) {
-          closedGeoIdRef.current = lastSeenGeoIdRef.current
-          writeClosedGeoAnalysis(merkSchluessel.closedGeoAnalysis, lastSeenGeoIdRef.current)
-        }
         userScrolledUpRef.current = false
         setAmEnde(true)
         setGeoOpen(false)
@@ -1386,6 +1374,16 @@ export function AiChat({
                     void manuellNachladen()
                   }}
                 />
+                {geoData && !geoOpen && (
+                  <Blatteintrag
+                    icon={<Globe2 className="h-4 w-4" aria-hidden="true" />}
+                    label={t('ai.geo.open')}
+                    onClick={() => {
+                      schliessen()
+                      setGeoOpen(true)
+                    }}
+                  />
+                )}
                 <Blatteintrag
                   icon={<ImageIcon className="h-4 w-4" aria-hidden="true" />}
                   label={t('social.wallpaper.title')}

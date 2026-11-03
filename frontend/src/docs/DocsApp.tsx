@@ -33,6 +33,7 @@ import { useDocsSession } from './useDocsSession'
 import { usePendingEdits } from './usePendingEdits'
 import { useDokumentVerschieben } from './useDokumentVerschieben'
 import { DocsDialogs } from './DocsDialogs'
+import { DocsBetaBanner } from './DocsBetaBanner'
 import { DocsMain } from './DocsMain'
 import { DocsPanels } from './DocsPanels'
 import { DocsSidebar, type DocsSidebarAktionen } from './DocsSidebar'
@@ -344,6 +345,7 @@ export function DocsApp() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <DocsBetaBanner />
       {session.sidecarAus && (
         <div role="alert" className="flex items-center gap-2 border-b border-status-warning/40 bg-status-warning/10 px-4 py-2 text-xs text-status-warning">
           <AlertTriangle className="h-4 w-4" />

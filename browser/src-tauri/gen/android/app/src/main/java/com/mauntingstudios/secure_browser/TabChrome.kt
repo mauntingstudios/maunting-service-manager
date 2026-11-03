@@ -195,7 +195,7 @@ class TabChrome(private val plugin: TabsPlugin, private val tab: Tab) : WebChrom
   }
 
   override fun onShowCustomView(ansicht: View, rueckruf: CustomViewCallback) {
-    plugin.vollbildZeigen(ansicht, rueckruf, tab.webView.url)
+    plugin.vollbildZeigen(ansicht, rueckruf, tab.webView.url, tab.id)
   }
 
   override fun onHideCustomView() {

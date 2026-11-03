@@ -30,7 +30,7 @@
     "ai": "Singra",
     "teams": "Teams",
     "chat": "Messenger",
-    "documents": "Documents"
+    "documents": "Maunting Docs"
   },
   "navGroups": {
     "overview": "Overview",
@@ -1669,6 +1669,7 @@
       "panelTitle": "Regional information overview",
       "region": "Region",
       "close": "Close panel",
+      "open": "Open map view",
       "weather": "Weather",
       "satelliteData": "Satellite data",
       "backToChat": "Back to full view",
@@ -2554,7 +2555,10 @@
       "DOC_INVALID_CURSOR": "The list could not be continued. Please reload.",
       "DOC_SCHEMA_UNSUPPORTED": "This document format is newer than this app."
     },
-    "title": "Documents",
+    "title": "Maunting Docs",
+    "betaBadge": "Beta",
+    "betaNotice": "Beta version: Errors may still occur.",
+    "betaNoticeMobile": "Beta: errors possible",
     "new": "New document",
     "roles": {
       "viewer": "View",
@@ -6834,7 +6838,7 @@
       "browserLadenAndroid": "Download Maunting Pontis",
       "browserDownloadSubtext": "Hardened, private web browser for Windows",
       "browserDownloadSubtextAndroid": "Hardened, private web browser for Android",
-      "dokumente": "Documents"
+      "dokumente": "Maunting Docs"
     },
     "dashboard": {
       "bereiche": "Server management",
@@ -9662,7 +9666,7 @@
       "koppeln": "Pair",
       "mitZahl": "{{name}}, {{zahl}} new",
       "menue": "Menu",
-      "dokumente": "Documents",
+      "dokumente": "Maunting Docs",
       "teams": "Teams"
     },
     "panel": {

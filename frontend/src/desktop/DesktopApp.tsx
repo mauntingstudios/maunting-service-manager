@@ -1445,8 +1445,10 @@ function Hauptseite({
           </div>
         </div>
       )}
-      {/* Hauptinhalt — KI, Tresor, Chat, Dokumente und Teams nehmen den ganzen Schirm (p-0), Kalender/Notizen zentrieren */}
-      <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'tresor' || bereich === 'chat' || bereich === 'dokumente' || bereich === 'teams' ? 'p-0 bg-surface' : 'p-margin-mobile md:p-margin-desktop'}`}>
+      {/* Hauptinhalt — KI, Tresor, Chat, Dokumente und Teams nehmen den ganzen Schirm (p-0), Kalender/Notizen zentrieren.
+          Nur KI und Chat tragen eine eigene Fläche (inkl. Hintergrundbild); Tresor, Dokumente und Teams
+          liegen wie Notizen und Kalender auf dem Raster des Fensters. */}
+      <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'chat' ? 'p-0 bg-surface' : bereich === 'tresor' || bereich === 'dokumente' || bereich === 'teams' ? 'p-0' : 'p-margin-mobile md:p-margin-desktop'}`}>
         <div className="relative z-10 flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
           {bereich === 'dashboard' ? (
             <DashboardBereich />

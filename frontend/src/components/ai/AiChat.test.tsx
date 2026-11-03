@@ -19,7 +19,6 @@ import * as client from '@/api/client'
 import i18n from '@/i18n'
 import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
 import { entwurfUebergeben } from '@/lib/aiEntwurf'
-import { aiChatPreferenceKeys } from '@/lib/aiChatPreferences'
 import { useAuthStore } from '@/stores/authStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
 import { AiChat } from './AiChat'
@@ -274,51 +273,100 @@ describe('AiChat', () => {
     expect(aiApi.getConversation).toHaveBeenCalledWith()
   })
 
-  it('öffnet eine bewusst geschlossene alte Kartenanalyse nach dem Neuladen nicht erneut', async () => {
+  it('öffnet beim Betreten nicht die Kartenansicht aus dem Verlauf', async () => {
+    // Eine Kartenanalyse von gestern ist kein Grund, den Chat mit dem Globus
+    // zu beginnen. Die Daten bleiben bereit, das Panel bleibt zu.
     vi.mocked(aiApi.getConversation).mockResolvedValue({
       ...CONVERSATION,
       messages: [eigeneNachricht, geoNachricht, geoKameraNachricht],
     })
 
-    const first = render(<MemoryRouter><AiChat /></MemoryRouter>)
-    expect(await screen.findByRole('button', { name: 'geo-schliessen' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'geo-schliessen' }))
-
-    expect(localStorage.getItem(aiChatPreferenceKeys('anonym').closedGeoAnalysis)).toBe('geo-camera-command-2')
-    first.unmount()
-
     render(<MemoryRouter><AiChat /></MemoryRouter>)
     await screen.findByText('urspruengliche Frage')
+
     await waitFor(() => expect(screen.getByTestId('regional-layout')).toHaveAttribute('data-active', 'false'))
     expect(screen.queryByRole('button', { name: 'geo-schliessen' })).not.toBeInTheDocument()
   })
 
-  it('öffnet die Karte nach einem neuen ausdrücklichen Kamerabefehl wieder', async () => {
-    localStorage.setItem(
-      aiChatPreferenceKeys('anonym').closedGeoAnalysis,
-      'geo-camera-command-2',
-    )
-    const neuerBefehl: AiMessage = {
-      ...geoKameraNachricht,
-      id: 'msg-geo-camera-new',
-      created_at: '2026-08-01T12:03:00Z',
-      sections: [{
-        art: 'tool',
-        werkzeug: {
-          tool_name: 'control_region_camera',
-          server_id: null,
-          geo_camera: { action: 'overview', command_id: 'geo-camera-command-3' },
-        },
-      }],
-    }
+  it('öffnet die Kartenansicht auf Wunsch über das Menü', async () => {
     vi.mocked(aiApi.getConversation).mockResolvedValue({
       ...CONVERSATION,
-      messages: [eigeneNachricht, geoNachricht, geoKameraNachricht, neuerBefehl],
+      messages: [eigeneNachricht, geoNachricht, geoKameraNachricht],
     })
 
     render(<MemoryRouter><AiChat /></MemoryRouter>)
+    await screen.findByText('urspruengliche Frage')
 
-    expect(await screen.findByRole('button', { name: 'geo-schliessen' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Weitere Einstellungen dieses Chats' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Kartenansicht öffnen' }))
+
+    await waitFor(() => expect(screen.getByTestId('regional-layout')).toHaveAttribute('data-active', 'true'))
+    expect(screen.getByRole('button', { name: 'geo-schliessen' })).toBeInTheDocument()
+  })
+
+  it('bietet ohne Kartenanalyse keinen Eintrag für die Kartenansicht an', async () => {
+    render(<MemoryRouter><AiChat /></MemoryRouter>)
+    await screen.findByText('synthetic-note.txt')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Weitere Einstellungen dieses Chats' }))
+
+    expect(screen.queryByRole('button', { name: 'Kartenansicht öffnen' })).not.toBeInTheDocument()
+  })
+
+  it('öffnet die Kartenansicht, wenn in diesem Fenster eine Analyse startet', async () => {
+    const { streamAiMessage } = await import('@/api/ai')
+    vi.mocked(streamAiMessage).mockReset().mockImplementation(async (_payload, onEvent) => {
+      onEvent({ event: 'tool_plan', data: { aufrufe: [
+        { call_id: 'call-geo', tool_name: 'analyze_region', server_id: null },
+      ] } })
+      await new Promise(() => {})
+    })
+    render(<MemoryRouter><AiChat /></MemoryRouter>)
+    await screen.findByText('synthetic-note.txt')
+
+    fireEvent.change(screen.getByLabelText('Nachricht'), { target: { value: 'Wie ist die Lage in Peking?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }))
+
+    await waitFor(() => expect(screen.getByTestId('regional-layout')).toHaveAttribute('data-active', 'true'))
+  })
+
+  it('öffnet die Kartenansicht auch, wenn nur das Ergebnis im Strom eintrifft', async () => {
+    // Der Anstoß ueber `tool_plan` kann fehlen — beim Wiederanhaengen an einen
+    // laufenden Lauf oder wenn die Ereignisse in einem Paket kommen. Dann
+    // oeffnet die eintreffende Analyse selbst.
+    const analyse: AiToolUse = {
+      tool_name: 'analyze_region',
+      server_id: null,
+      skill_key: null,
+      skill_name: null,
+      skill_status: null,
+      skill_learned: false,
+      geo_analysis: {
+        status: 'success',
+        location: 'Peking',
+        country: 'China',
+        coordinates: { latitude: 39.9042, longitude: 116.4074 },
+        camera: { mode: 'focus', command_id: 'geo-command-live' },
+      },
+    }
+    const abzug: AiRunSnapshot = {
+      run_id: 'lauf-geo', status: 'running', message_id: 'msg-live',
+      content: 'Peking ist fokussiert.', reasoning: '',
+      sections: [{ art: 'tool', werkzeug: analyse }],
+      question: null, proposals: [], stop_reason: null,
+    }
+    const { streamAiMessage } = await import('@/api/ai')
+    vi.mocked(streamAiMessage).mockReset().mockImplementation(async (_payload, onEvent) => {
+      onEvent({ event: 'snapshot', data: abzug })
+      await new Promise(() => {})
+    })
+    render(<MemoryRouter><AiChat /></MemoryRouter>)
+    await screen.findByText('synthetic-note.txt')
+
+    fireEvent.change(screen.getByLabelText('Nachricht'), { target: { value: 'Wie ist die Lage in Peking?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }))
+
+    await waitFor(() => expect(screen.getByTestId('regional-layout')).toHaveAttribute('data-active', 'true'))
   })
 
   it('holt die Serverliste nicht ohne Autonomierecht', async () => {

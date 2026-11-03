@@ -415,9 +415,9 @@ export function Teams() {
   const mitListe = echte.length > 0 || canCreate
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden bg-background text-on-surface">
+    <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden text-on-surface">
       {/* ── Executive Dashboard Header ─────────────────────────────────── */}
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-outline-variant/40 bg-surface-container-low px-4 py-3 sm:px-6">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-outline-variant/40 bg-surface-container-low/70 px-4 py-3 backdrop-blur-xl sm:px-6">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl border border-primary/25 bg-primary/10 text-primary shadow-sm">
             <UsersRound className="h-5 w-5" aria-hidden="true" />
@@ -504,7 +504,7 @@ export function Teams() {
       >
           {/* ── Left Rail: Organisations & Teams ───────────────────────── */}
           {mitListe && (
-            <aside className="hidden w-72 shrink-0 flex-col border-r border-outline-variant/40 bg-surface-container-low/40 lg:flex">
+            <aside className="hidden w-72 shrink-0 flex-col border-r border-outline-variant/40 bg-surface-container-low/40 backdrop-blur-xl lg:flex">
               <div className="flex items-center justify-between border-b border-outline-variant/40 px-4 py-3">
                 <h2
                   id="team-list"
@@ -568,7 +568,7 @@ export function Teams() {
 
               {canCreate && (
                 <form
-                  className="border-t border-outline-variant/40 bg-surface-container-low p-4 space-y-2.5 shrink-0"
+                  className="border-t border-outline-variant/40 bg-surface-container-low/70 p-4 backdrop-blur-xl space-y-2.5 shrink-0"
                   aria-labelledby="team-create"
                   onSubmit={(event) => {
                     event.preventDefault()
@@ -599,12 +599,12 @@ export function Teams() {
           )}
 
           {/* ── Main Workspace: KPI Strip & Tabbed Canvas ──────────────── */}
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
             {team ? (
               <>
                 {/* Mobile / Narrow Dropdown Selector */}
                 {echte.length > 1 && (
-                  <div className="border-b border-outline-variant/40 bg-surface-container-low p-3 lg:hidden">
+                  <div className="border-b border-outline-variant/40 bg-surface-container-low/70 p-3 backdrop-blur-xl lg:hidden">
                     <Dropdown
                       value={selectedId ? String(selectedId) : null}
                       onChange={(val) => {
@@ -663,7 +663,7 @@ export function Teams() {
                 </div>
 
                 {/* Modern Tab Bar */}
-                <div className="border-b border-outline-variant/40 bg-surface px-4 pt-3 sm:px-6 shrink-0">
+                <div className="border-b border-outline-variant/40 bg-surface/70 px-4 pt-3 backdrop-blur-xl sm:px-6 shrink-0">
                   <TabBar
                     tabs={teamReiter}
                     active={aktiverReiter}

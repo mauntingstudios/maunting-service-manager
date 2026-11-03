@@ -778,7 +778,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const hasVaultAccess = !isTeam || (team?.can_access_vault !== false && teamStore.canAccessVault !== false)
   if (isTeam && !hasVaultAccess) {
     return (
-      <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
+      <div className="flex h-full w-full items-center justify-center p-4">
         <div className="w-full max-w-sm p-6 space-y-4 rounded-2xl bg-surface-container border border-status-destructive/30 shadow-xl text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-status-destructive/10 text-status-destructive border border-status-destructive/30">
             <Lock className="h-7 w-7" />
@@ -798,7 +798,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   if (isTeam && !isInitialized) {
     if (!isOwner) {
       return (
-        <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
+        <div className="flex h-full w-full items-center justify-center p-4">
           <div className="msm-card p-8 text-center space-y-3 max-w-md">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary mx-auto">
               <Lock className="h-6 w-6" />
@@ -811,7 +811,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     }
 
     return (
-      <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
+      <div className="flex h-full w-full items-center justify-center p-4">
         <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
           <div className="text-center space-y-1.5">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
@@ -946,7 +946,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       !isUnlocking
 
     return (
-      <div className="flex h-full w-full items-center justify-center p-4 bg-surface">
+      <div className="flex h-full w-full items-center justify-center p-4">
         <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
           <div className="text-center space-y-1.5">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
@@ -1081,7 +1081,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   // ── 2. ENTSPERREN MIT MAUNTING CARD ──
   if (!isUnlocked) {
     return (
-      <div className="flex h-full w-full items-center justify-center p-4 sm:p-6 bg-surface overflow-y-auto">
+      <div className="flex h-full w-full items-center justify-center p-4 sm:p-6 overflow-y-auto">
         <div className="w-full max-w-xl flex flex-col items-center space-y-6">
           {zuruecksetzen ? (
             <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
@@ -1500,9 +1500,9 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
   // ── 3. HAUPTANSICHT: RADIKAL AUFGERÄUMT ──
   return (
-    <div className="flex flex-col h-full bg-surface text-on-surface overflow-hidden">
+    <div className="flex flex-col h-full text-on-surface overflow-hidden">
       {/* KOPFZEILE */}
-      <div className="flex items-center justify-between border-b border-outline-variant/20 bg-surface-container-low px-4 py-2.5">
+      <div className="flex items-center justify-between border-b border-outline-variant/20 bg-surface-container-low/70 px-4 py-2.5 backdrop-blur-xl">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
             <Shield className="h-4 w-4" />

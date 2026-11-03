@@ -77,7 +77,7 @@ export function DocsPanels({
 
   const seite = (
     <aside
-      className="relative flex h-full w-full max-w-[92vw] shrink-0 flex-col overflow-hidden border-l border-outline-variant/40 bg-surface-container"
+      className="relative flex h-full w-full max-w-[92vw] shrink-0 flex-col overflow-hidden border-l border-outline-variant/40 bg-surface-container/85 backdrop-blur-xl"
       style={{ width: `min(${breite}px, 92vw)` }}
     >
       <div

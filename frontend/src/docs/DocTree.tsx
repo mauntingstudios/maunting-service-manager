@@ -110,7 +110,7 @@ export function DocTree({
   }, [documents, folderUid, search])
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col border-r border-outline-variant/40 bg-surface-container md:w-72 md:shrink-0">
+    <aside className="flex h-full min-h-0 w-full flex-col border-r border-outline-variant/40 bg-surface-container/85 backdrop-blur-xl md:w-72 md:shrink-0">
       <div className="flex flex-col gap-2 border-b border-outline-variant/40 p-3">
         <Dropdown
           aria-label={t('docs.tree.team')}

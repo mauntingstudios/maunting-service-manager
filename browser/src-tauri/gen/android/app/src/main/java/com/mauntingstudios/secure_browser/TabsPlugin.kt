@@ -96,6 +96,8 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
   private var rahmen = RahmenArgs()
   private var panel: PanelRahmenArgs? = null
   private var vollbild: Pair<View, WebChromeClient.CustomViewCallback>? = null
+  /** Der Tab, dessen Seite gerade im Vollbild läuft; seine WebView füllt dann den Schirm. */
+  private var vollbildTab: String? = null
   private var privatProfil = PRIVAT + UUID.randomUUID()
   private val inhalt: ViewGroup get() = activity.findViewById(android.R.id.content)
   val herunterladen by lazy { Herunterladen(activity) }
@@ -244,14 +246,16 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
     val a = invoke.parseArgs(SplitRahmenArgs::class.java)
     aufUi(activity, invoke) {
       split = a
-      val d = activity.resources.displayMetrics.density
-      tabs[a.primaerId]?.webView?.layoutParams = FrameLayout.LayoutParams((a.primaerBreite * d).toInt(), (a.primaerHoehe * d).toInt()).apply {
-        leftMargin = (a.primaerX * d).toInt()
-        topMargin = (a.primaerY * d).toInt()
-      }
-      tabs[a.sekundaerId]?.webView?.layoutParams = FrameLayout.LayoutParams((a.sekundaerBreite * d).toInt(), (a.sekundaerHoehe * d).toInt()).apply {
-        leftMargin = (a.sekundaerX * d).toInt()
-        topMargin = (a.sekundaerY * d).toInt()
+      if (vollbild == null) {
+        val d = activity.resources.displayMetrics.density
+        tabs[a.primaerId]?.webView?.layoutParams = FrameLayout.LayoutParams((a.primaerBreite * d).toInt(), (a.primaerHoehe * d).toInt()).apply {
+          leftMargin = (a.primaerX * d).toInt()
+          topMargin = (a.primaerY * d).toInt()
+        }
+        tabs[a.sekundaerId]?.webView?.layoutParams = FrameLayout.LayoutParams((a.sekundaerBreite * d).toInt(), (a.sekundaerHoehe * d).toInt()).apply {
+          leftMargin = (a.sekundaerX * d).toInt()
+          topMargin = (a.sekundaerY * d).toInt()
+        }
       }
       null
     }
@@ -261,8 +265,10 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
   fun splitAufheben(invoke: Invoke) {
     aufUi(activity, invoke) {
       split = null
-      for ((id, tab) in tabs) {
-        if (panel?.id != id) tab.webView.layoutParams = platz()
+      if (vollbild == null) {
+        for ((id, tab) in tabs) {
+          if (panel?.id != id) tab.webView.layoutParams = platz()
+        }
       }
       null
     }
@@ -273,7 +279,9 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
     val a = invoke.parseArgs(RahmenArgs::class.java)
     aufUi(activity, invoke) {
       rahmen = a
-      if (split == null) {
+      // Im Vollbild gehört die Fläche der Seite (vollbildZeigen); ein
+      // gemeldeter Seitenbereich darf sie nicht wieder verkleinern.
+      if (split == null && vollbild == null) {
         for ((id, tab) in tabs) {
           if (panel?.id != id) tab.webView.layoutParams = platz()
         }
@@ -283,11 +291,22 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   /** Der Inhaltsbereich in Gerätepixeln. */
-  private fun platz(): FrameLayout.LayoutParams {
+  private fun platz(): FrameLayout.LayoutParams =
+    rahmenPlatz(rahmen.x, rahmen.y, rahmen.breite, rahmen.hoehe)
+
+  /** Der Platz eines Tabs nach dem jetzigen Stand: in einer Teilung seine Hälfte. */
+  private fun tabPlatz(id: String): FrameLayout.LayoutParams {
+    val s = split
+    if (s != null && s.primaerId == id) return rahmenPlatz(s.primaerX, s.primaerY, s.primaerBreite, s.primaerHoehe)
+    if (s != null && s.sekundaerId == id) return rahmenPlatz(s.sekundaerX, s.sekundaerY, s.sekundaerBreite, s.sekundaerHoehe)
+    return platz()
+  }
+
+  private fun rahmenPlatz(x: Double, y: Double, breite: Double, hoehe: Double): FrameLayout.LayoutParams {
     val d = activity.resources.displayMetrics.density
-    return FrameLayout.LayoutParams((rahmen.breite * d).toInt(), (rahmen.hoehe * d).toInt()).apply {
-      leftMargin = (rahmen.x * d).toInt()
-      topMargin = (rahmen.y * d).toInt()
+    return FrameLayout.LayoutParams((breite * d).toInt(), (hoehe * d).toInt()).apply {
+      leftMargin = (x * d).toInt()
+      topMargin = (y * d).toInt()
     }
   }
 
@@ -295,6 +314,7 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
   fun schliessen(invoke: Invoke) {
     val a = invoke.parseArgs(TabArgs::class.java)
     aufUi(activity, invoke) {
+      if (a.id == vollbildTab) vollbildBeenden()
       tabs.remove(a.id)?.let { wegraeumen(it) }
       if (vorne == a.id) vorne = null
       if (panel?.id == a.id) panel = null
@@ -492,7 +512,7 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
    * den ganzen Bildschirm hat, steht deshalb jedes Mal in einem Hinweis, wie in
    * Chrome; Zurück beendet das Vollbild immer (`zurueck`).
    */
-  fun vollbildZeigen(ansicht: View, rueckruf: WebChromeClient.CustomViewCallback, adresse: String?) {
+  fun vollbildZeigen(ansicht: View, rueckruf: WebChromeClient.CustomViewCallback, adresse: String?, tabId: String) {
     vollbild?.let { vollbildBeenden() }
     val host = adresse?.let { Uri.parse(it).host }.orEmpty()
     Toast.makeText(activity, activity.getString(R.string.vollbild_hinweis, host), Toast.LENGTH_LONG).show()
@@ -501,6 +521,12 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
     val leisten = WindowCompat.getInsetsController(activity.window, inhalt)
     leisten.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     leisten.hide(WindowInsetsCompat.Type.systemBars())
+    // Die Seite richtet ihr Vollbild an ihrer eigenen Fläche aus. Bliebe die
+    // WebView auf dem Seitenbereich (ohne Adress- und Fußleiste), stünde unter
+    // dem Video ein schwarzer Streifen, und die Bedienleiste der Seite hinge
+    // darüber. Sie bekommt deshalb für die Dauer des Vollbilds den ganzen Schirm.
+    vollbildTab = tabId
+    tabs[tabId]?.webView?.layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
     zurueckPruefen()
   }
 
@@ -508,6 +534,8 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
     val (ansicht, rueckruf) = vollbild ?: return
     vollbild = null
     inhalt.removeView(ansicht)
+    vollbildTab?.let { id -> tabs[id]?.webView?.layoutParams = tabPlatz(id) }
+    vollbildTab = null
     WindowCompat.getInsetsController(activity.window, inhalt).show(WindowInsetsCompat.Type.systemBars())
     rueckruf.onCustomViewHidden()
     zurueckPruefen()

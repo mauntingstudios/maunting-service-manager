@@ -396,7 +396,7 @@ export function DocEditor({
           : t('docs.status.connecting')
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-surface-container-lowest">
+    <section className="flex h-full min-h-0 flex-col bg-surface-container-lowest/85 backdrop-blur-xl">
       <header className="flex flex-wrap items-center gap-2 border-b border-outline-variant/40 px-3 py-2">
         <Input
           aria-label={t('docs.editor.titleLabel')}

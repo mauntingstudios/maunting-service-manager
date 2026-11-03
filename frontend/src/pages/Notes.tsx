@@ -494,7 +494,7 @@ export function Notes() {
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
-                      <Kurzinfo text={note.is_pinned ? t('notes.unpin') : t('notes.pin')} seite="ende">
+                      <Kurzinfo text={note.is_pinned ? t('notes.unpin') : t('notes.pin')} seite="ende" portal>
                         <button
                           type="button"
                           onClick={(e) => handleTogglePin(note, e)}
@@ -563,7 +563,9 @@ export function Notes() {
                   </span>
 
                   <div className="flex items-center gap-1">
-                    <Kurzinfo text={note.is_archived ? t('notes.unarchive') : t('notes.archive')}>
+                    {/* Die Karte hat `overflow-hidden`; ohne Portal schnitte sie
+                        den Hinweis unten ab, statt ihn ganz zu zeigen. */}
+                    <Kurzinfo text={note.is_archived ? t('notes.unarchive') : t('notes.archive')} portal>
                       <button
                         type="button"
                         onClick={(e) => handleToggleArchive(note, e)}
@@ -574,7 +576,7 @@ export function Notes() {
                       </button>
                     </Kurzinfo>
 
-                    <Kurzinfo text={t('common.delete')} seite="ende">
+                    <Kurzinfo text={t('common.delete')} seite="ende" portal>
                       <button
                         type="button"
                         onClick={(e) => {

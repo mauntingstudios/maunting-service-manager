@@ -122,6 +122,32 @@ describe('Notes Component', () => {
     expect(container.querySelectorAll('[title]')).toHaveLength(0)
   })
 
+  it('zeigt die Hinweise an Archivieren und Löschen außerhalb der überlaufenden Karte', async () => {
+    // Die Karte trägt `overflow-hidden`. Die Blase schnitt dadurch an der
+    // Unterkante ab statt am Knopf zu stehen (gemeldet 03.11.2026); im Portal
+    // liegt sie am `body` und bleibt im Fenster.
+    render(
+      <MemoryRouter>
+        <Notes />
+      </MemoryRouter>
+    )
+    await screen.findByText('Einkaufsliste Supermarkt')
+
+    for (const schluessel of ['notes.archive', 'common.delete']) {
+      const knopf = screen.getAllByRole('button', { name: i18n.t(schluessel) })[0]
+      const huelle = knopf.parentElement!
+
+      fireEvent.pointerEnter(huelle, { pointerType: 'mouse' })
+      const blase = document.body.querySelector(`[data-kurzinfo="${i18n.t(schluessel)}"]`)
+      expect(blase).not.toBeNull()
+      expect(blase).toHaveClass('fixed')
+      expect(blase!.parentElement).toBe(document.body)
+
+      fireEvent.pointerLeave(huelle, { pointerType: 'mouse' })
+      expect(document.body.querySelector(`[data-kurzinfo="${i18n.t(schluessel)}"]`)).toBeNull()
+    }
+  })
+
   it('filters notes when searching in the search bar', async () => {
     render(
       <MemoryRouter>
