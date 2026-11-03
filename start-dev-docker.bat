@@ -31,7 +31,7 @@ if %errorlevel% neq 0 (
 echo.
 
 echo [2/4] Docker-Stack bauen und starten (Backend + Sidecars)...
-docker compose -f docker-compose.dev.yml up -d --build
+docker compose --env-file .env.dev -f docker-compose.dev.yml up -d --build
 if %errorlevel% neq 0 (
     echo [FEHLER] docker compose up ist gescheitert.
     pause
@@ -52,7 +52,7 @@ for /L %%I in (1,1,24) do (
 :backend_ready
 if "%READY%"=="0" (
     echo [WARN] Backend meldet sich noch nicht. Logs:
-    docker compose -f docker-compose.dev.yml logs --tail=40 backend
+    docker compose --env-file .env.dev -f docker-compose.dev.yml logs --tail=40 backend
 ) else (
     echo [OK] Backend bereit: http://localhost:8000
 )
@@ -84,8 +84,8 @@ echo - LiveKit:   ws://localhost:7880
 echo - Panel-DB:  127.0.0.1:15434
 echo.
 echo Nuetzlich:
-echo   docker compose -f docker-compose.dev.yml logs -f backend
-echo   docker compose -f docker-compose.dev.yml ps
-echo   docker compose -f docker-compose.dev.yml down
+echo   docker compose --env-file .env.dev -f docker-compose.dev.yml logs -f backend
+echo   docker compose --env-file .env.dev -f docker-compose.dev.yml ps
+echo   docker compose --env-file .env.dev -f docker-compose.dev.yml down
 echo.
 pause

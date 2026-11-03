@@ -37,6 +37,8 @@ Autonomous monitoring with the Guardian Engine, rootless container security, E2E
 
 MSM separates two primary components: the **Panel**, which you operate via modern web browsers, and the **Nodes**, the physical or virtual machines where your games and services actually run. Every service operates in isolated Docker containers strictly without root privileges.
 
+The Documents module uses a dedicated collaboration sidecar. Production installs keep it to one process and store its startup lock under `$MSM_DIR/data/docs-sidecar`; see the [self-hosting guide](docs/self-hosting.md) for deployment details.
+
 ### What you can use MSM for
 - **Game Servers:** Create, start, stop, and restart instances. MSM handles port allocations automatically. Native support includes Conan Exiles, DayZ, Minecraft, ARK, and more.
 - **Linux Applications:** Deploy databases, web applications, and background workers using blueprint templates.
@@ -297,6 +299,24 @@ sudo systemctl enable --now msm-update.timer
 
 ---
 
+## Local Development Stack
+
+```bash
+bash dev-up.sh -d   # start backend, docs sidecar and dependencies
+```
+
+The dev stack (`docker-compose.dev.yml`) requires real secrets and ships no
+defaults: on first start, `dev-up.sh` (like `install.sh`/`update.sh`)
+generates `MSM_DOCS_SIDECAR_TOKEN`, `MSM_DOCS_COLLAB_SECRET` and
+`MSM_DOCS_SIGNING_SECRET` into `.env.dev` (mode `600`). Existing keys are
+never overwritten. Without them, Compose aborts with a `:?` error naming
+the missing variable.
+
+Rotation: delete the lines from `.env.dev` and restart the stack. Backend
+and sidecar share `SIDECAR_TOKEN` and `COLLAB_SECRET`; rotating
+`SIGNING_SECRET` invalidates old signed asset URLs.
+
+---
 ## Community & Support
 
 - **Documentation:** Review comprehensive guides in [`docs/self-hosting.md`](docs/self-hosting.md) and inside the panel under **Documentation**.

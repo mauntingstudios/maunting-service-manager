@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import jwt from "jsonwebtoken";
 
 import { authorize } from "./backend_client.mjs";
@@ -5,6 +6,14 @@ import { authorize } from "./backend_client.mjs";
 const SECRET = process.env.MSM_DOCS_COLLAB_SECRET || "";
 
 export class AuthError extends Error {}
+
+export function serviceTokenMatches(candidate, expected) {
+  if (typeof candidate !== "string" || typeof expected !== "string") return false;
+  const candidateBytes = Buffer.from(candidate, "utf8");
+  const expectedBytes = Buffer.from(expected, "utf8");
+  return candidateBytes.length === expectedBytes.length
+    && timingSafeEqual(candidateBytes, expectedBytes);
+}
 
 // Aktive Token-Bindungen je Dokument (`${doc} ${jti}`). Ein Token verbindet
 // genau einmal; die Freigabe steht in onDisconnect (Befund 41).

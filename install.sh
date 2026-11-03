@@ -1189,6 +1189,21 @@ fi
 if [[ -z "$DOCS_SIGNING_SECRET" ]]; then
     DOCS_SIGNING_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
 fi
+# Dev-Compose-Geheimnisse (Befund 39): docker-compose.dev.yml verlangt echte
+# Werte und kennt keine Defaults mehr (:?). Fehlende Schluessel in .env.dev
+# werden einmalig ergaenzt, bestehende nie ueberschrieben. Rotation: Zeilen
+# loeschen und Skript erneut laufen lassen (Backend und Sidecar teilen sich
+# SIDECAR_TOKEN und COLLAB_SECRET; ein SIGNING-Wechsel entwertet alte
+# Asset-URLs).
+DEV_ENV_FILE="$MSM_DIR/.env.dev"
+touch "$DEV_ENV_FILE"
+chmod 600 "$DEV_ENV_FILE"
+for DEV_KEY in MSM_DOCS_SIDECAR_TOKEN MSM_DOCS_COLLAB_SECRET MSM_DOCS_SIGNING_SECRET; do
+    if ! grep -qE "^${DEV_KEY}=.+" "$DEV_ENV_FILE"; then
+        DEV_WERT=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+        printf '%s="%s"\n' "$DEV_KEY" "$DEV_WERT" >> "$DEV_ENV_FILE"
+    fi
+done
 if $REINSTALL_MODE && [[ -f "$MSM_DIR/backend/.env" ]]; then
     DIS_SALT=$(grep -E '^MSM_DIS_SALT=' "$MSM_DIR/backend/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
     DIS_TOKEN=$(grep -E '^MSM_DIS_SIDECAR_TOKEN=' "$MSM_DIR/backend/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
@@ -1377,12 +1392,15 @@ chown "$MSM_USER:$MSM_USER" "$DIS_ENV_FILE"
 
 # Dokumente-Sidecar: eigenes Token-Paar, eigener Collab-Schluessel.
 DOCS_ENV_FILE="$MSM_DIR/docs-sidecar/.env"
+DOCS_DATA_DIR="$MSM_DIR/data/docs-sidecar"
+install -d -o "$MSM_USER" -g "$MSM_USER" -m 700 "$DOCS_DATA_DIR"
 cat > "$DOCS_ENV_FILE" <<EOF
 # Automatisch generiert. Dokumentation: $MSM_DIR/docs-sidecar/.env.example
 MSM_DOCS_WS_PORT=8100
 MSM_DOCS_WS_ADDRESS=127.0.0.1
 MSM_DOCS_HTTP_PORT=8101
 MSM_DOCS_HTTP_ADDRESS=127.0.0.1
+MSM_DOCS_DATA_DIR="$DOCS_DATA_DIR"
 MSM_BACKEND_URL=http://127.0.0.1:8000
 MSM_DOCS_SIDECAR_TOKEN="$DOCS_TOKEN"
 MSM_DOCS_COLLAB_SECRET="$DOCS_COLLAB_SECRET"

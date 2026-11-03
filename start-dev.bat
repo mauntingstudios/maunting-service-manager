@@ -150,6 +150,15 @@ if /I "%MSM_DEV_MULTI_NODE%"=="1" (
     echo.
 )
 
+echo Pruefe Dokumente-Sidecar-Geheimnisse...
+python scripts\setup-dev-env.py
+if %errorlevel% neq 0 (
+    echo [FEHLER] Dev-Umgebung konnte nicht eingerichtet werden.
+    pause
+    exit /b 1
+)
+for /f "usebackq tokens=1,* delims==" %%A in (".env.dev") do set "%%A=%%~B"
+
 echo ===================================================
 echo   Freigeben belegter Ports...
 echo ===================================================
@@ -172,14 +181,14 @@ start "MSM - DIS Sidecar" /D "%~dp0dis-sidecar" cmd /k "set NODE_ENV=development
 
 :: Start Dokumente Sidecar in a new window (WS 8100, intern 8101)
 echo Starte Dokumente Sidecar...
-start "MSM - Dokumente Sidecar" /D "%~dp0docs-sidecar" cmd /k "set NODE_ENV=development&& set MSM_BACKEND_URL=http://127.0.0.1:8000&& set MSM_DOCS_SIDECAR_TOKEN=dev-docs-token&& set MSM_DOCS_COLLAB_SECRET=dev-docs-collab-secret-32-characters&& node server.mjs"
+start "MSM - Dokumente Sidecar" /D "%~dp0docs-sidecar" cmd /k "set NODE_ENV=development&& set MSM_BACKEND_URL=http://127.0.0.1:8000&& set MSM_DOCS_SIDECAR_TOKEN=!MSM_DOCS_SIDECAR_TOKEN!&& set MSM_DOCS_COLLAB_SECRET=!MSM_DOCS_COLLAB_SECRET!&& node server.mjs"
 
 :: Start Backend in a new window
 echo Starte Python Backend (Port 8000)...
 :: --timeout-graceful-shutdown: Ohne Frist wartet --reload unbegrenzt auf offene
 :: SSE-/WebSocket-Verbindungen des Browsers. Der alte Prozess endet dann nie,
 :: der neue startet nie, und alle Anfragen laufen in den Timeout.
-start "MSM - FastAPI Backend" /D "%~dp0backend" cmd /k "set NODE_ENV=development&& set MSM_SECRET_KEY=test-secret-key-for-dev-only-32-bytes-long&& set MSM_DIS_SALT=qhCLKLPChabuAqcCOqqxRw==&& set MSM_DOCS_SIDECAR_URL=http://127.0.0.1:8101&& set MSM_DOCS_SIDECAR_TOKEN=dev-docs-token&& set MSM_DOCS_COLLAB_SECRET=dev-docs-collab-secret-32-characters&& set MSM_LOCAL_AGENT_ENV_FILE=../msm-agent/.env&& set MSM_LOG_LEVEL=INFO&& .\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000 --timeout-graceful-shutdown 3"
+start "MSM - FastAPI Backend" /D "%~dp0backend" cmd /k "set NODE_ENV=development&& set MSM_SECRET_KEY=test-secret-key-for-dev-only-32-bytes-long&& set MSM_DIS_SALT=qhCLKLPChabuAqcCOqqxRw==&& set MSM_DOCS_SIDECAR_URL=http://127.0.0.1:8101&& set MSM_DOCS_SIDECAR_TOKEN=!MSM_DOCS_SIDECAR_TOKEN!&& set MSM_DOCS_COLLAB_SECRET=!MSM_DOCS_COLLAB_SECRET!&& set MSM_DOCS_SIGNING_SECRET=!MSM_DOCS_SIGNING_SECRET!&& set MSM_LOCAL_AGENT_ENV_FILE=../msm-agent/.env&& set MSM_LOG_LEVEL=INFO&& .\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000 --timeout-graceful-shutdown 3"
 
 :: Start MSM Agent in a new window
 echo Starte MSM Agent (Port 9000)...

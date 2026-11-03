@@ -7,6 +7,8 @@
 
 This guide is an operational summary for deploying, configuring, and maintaining the Maunting Service Manager (MSM) ecosystem. For the authoritative, comprehensive documentation (including MSS, Pontis, Search, Vault Cloud, DB Encryption, AI, Voice, E2EE, Push Notifications, and Kubernetes), refer to the German canonical manual at [docs/de-docs/self-hosting.md](de-docs/self-hosting.md). While the repository is structured as a monorepo, its architectural components are built and packaged as decoupled, modular deployment artifacts.
 
+The documents sidecar is installed as one process. Its exclusive startup lock is stored in `$MSM_DIR/data/docs-sidecar/docs-sidecar.lock`; collaborative state remains process-local, so running multiple instances is unsupported.
+
 ---
 
 ## Architecture Overview

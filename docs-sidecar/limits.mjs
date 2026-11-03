@@ -1,7 +1,5 @@
 export const STATE_MAX_BYTES = 4 * 1024 * 1024;
 export const TEXT_MAX_CHARS = 1_000_000;
-export const STORE_TIMEOUT_MS = 20_000;
-
 export function assertStateSize(bytes) {
   if (bytes > STATE_MAX_BYTES) {
     const error = new Error(

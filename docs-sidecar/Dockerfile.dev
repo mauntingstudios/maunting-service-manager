@@ -12,9 +12,13 @@ COPY docs-sidecar ./docs-sidecar
 
 WORKDIR /app/docs-sidecar
 
-RUN npm ci --install-links --no-audit --no-fund
+RUN npm ci --install-links --no-audit --no-fund \
+    && mkdir -p /app/docs-sidecar/data \
+    && chown -R node:node /app/docs-sidecar
 
 ENV NODE_ENV=production
 EXPOSE 8100 8101
+
+USER node
 
 CMD ["node", "server.mjs"]

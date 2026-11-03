@@ -1,11 +1,12 @@
 import http from "node:http";
+import path from "node:path";
 import process from "node:process";
 
 import { Server } from "@hocuspocus/server";
 import * as Y from "yjs";
 import { schemaVersion } from "@msm/docs-schema/schema";
 
-import { authenticate, jtiFreigeben } from "./auth.mjs";
+import { authenticate, jtiFreigeben, serviceTokenMatches } from "./auth.mjs";
 import {
   aiUndo,
   contextFor,
@@ -21,7 +22,7 @@ import {
   unregisterDocument,
   withDocument,
 } from "./collab.mjs";
-import { applyEdits, applyEditsAtomically, structureOf } from "./ai_edit.mjs";
+import { applyEdits, applyEditsAtomically } from "./ai_edit.mjs";
 import {
   decodeState,
   extractText,
@@ -31,9 +32,12 @@ import {
   withLock,
   ydocOf,
 } from "./persist.mjs";
-import { clampText } from "./limits.mjs";
-import { renderDocument, renderNodesHtml } from "./render.mjs";
+import { assertStateSize, clampText } from "./limits.mjs";
+import { renderNodesHtml } from "./render.mjs";
 import { aiStoreState, loadState } from "./backend_client.mjs";
+import { configureHttpServer, startServers } from "./runtime.mjs";
+import { createRenderPool } from "./render_pool.mjs";
+import { acquireInstanceLock } from "./instance_lock.mjs";
 
 const VERSION = process.env.npm_package_version || "1.0.0";
 const START = Date.now();
@@ -42,6 +46,9 @@ const WS_PORT = Number(process.env.MSM_DOCS_WS_PORT || 8100);
 const WS_ADDRESS = process.env.MSM_DOCS_WS_ADDRESS || "127.0.0.1";
 const HTTP_PORT = Number(process.env.MSM_DOCS_HTTP_PORT || 8101);
 const HTTP_ADDRESS = process.env.MSM_DOCS_HTTP_ADDRESS || "127.0.0.1";
+const DATA_DIR =
+  process.env.MSM_DOCS_DATA_DIR || path.resolve(process.cwd(), "../data/docs-sidecar");
+const renderPool = createRenderPool();
 
 const hocuspocus = new Server({
   port: WS_PORT,
@@ -134,7 +141,8 @@ function bodyLesen(req) {
 function tokenOk(req) {
   if (!SERVICE_TOKEN) return false;
   const header = req.headers.authorization || "";
-  return header.toLowerCase().startsWith("bearer ") && header.slice(7).trim() === SERVICE_TOKEN;
+  return header.toLowerCase().startsWith("bearer ")
+    && serviceTokenMatches(header.slice(7).trim(), SERVICE_TOKEN);
 }
 
 /** Neuer Batch oder Altaufruf mit genau einer Aenderung. */
@@ -236,45 +244,41 @@ async function aktion(name, req, antwort) {
   }
 
   if (was === "render") {
+    let state;
     if (body.state_b64) {
-      const ydoc = new Y.Doc();
-      Y.applyUpdate(ydoc, decodeState(body.state_b64));
-      const inhalt = renderDocument(ydoc, body.format || "html", body.titel || "Dokument");
-      return json(antwort, 200, {
-        content: inhalt,
-        mime:
-          body.format === "md"
-            ? "text/markdown; charset=utf-8"
-            : body.format === "txt"
-              ? "text/plain; charset=utf-8"
-              : "text/html; charset=utf-8",
-      });
+      state = decodeState(body.state_b64);
+    } else {
+      state = await withDocument(
+        docName,
+        (ydoc) => Uint8Array.from(Y.encodeStateAsUpdate(ydoc)),
+        {},
+      );
     }
-    const ergebnis = await withDocument(
-      docName,
-      (ydoc) => ({
-        content: renderDocument(ydoc, body.format || "html", body.titel || "Dokument"),
-        mime:
-          body.format === "md"
-            ? "text/markdown; charset=utf-8"
-            : body.format === "txt"
-              ? "text/plain; charset=utf-8"
-              : "text/html; charset=utf-8",
-      }),
-      {},
-    );
+    assertStateSize(state.byteLength);
+    const ergebnis = await renderPool.run({
+      operation: "render",
+      state,
+      format: body.format || "html",
+      title: body.titel || "Dokument",
+    });
     return json(antwort, 200, ergebnis);
   }
 
   if (was === "structure") {
     const offset = Math.max(0, Number(body.offset) || 0);
     const limit = Math.min(300, Math.max(1, Number(body.limit) || 120));
-    const ergebnis = await withDocument(
+    const state = await withDocument(
       docName,
-      (ydoc) =>
-        structureOf(ydoc.getXmlFragment("default"), { offset, limit }),
+      (ydoc) => Uint8Array.from(Y.encodeStateAsUpdate(ydoc)),
       { user_id: meta.user_id, fam: meta.family },
     );
+    assertStateSize(state.byteLength);
+    const ergebnis = await renderPool.run({
+      operation: "structure",
+      state,
+      offset,
+      limit,
+    });
     return json(antwort, 200, ergebnis);
   }
 
@@ -494,6 +498,7 @@ const httpServer = http.createServer(async (req, res) => {
   if (req.method !== "POST") {
     return json(res, 405, { error: "Methode nicht erlaubt" });
   }
+  req.setTimeout(30_000, () => req.destroy());
   const name = url === "/internal/docs/flush"
     ? "flush"
     : url === "/internal/docs/disconnect-all"
@@ -517,6 +522,14 @@ const httpServer = http.createServer(async (req, res) => {
       ? 409
       : ungueltig.has(error.code)
         ? 422
+        : error.code === "DOC_TOO_LARGE"
+          ? 413
+          : error.code === "DOC_RENDER_TIMEOUT"
+            ? 504
+            : ["DOC_RENDER_BUSY", "DOC_RENDER_UNAVAILABLE", "DOC_RENDER_WORKER_FAILED"].includes(
+                  error.code,
+                )
+              ? 503
         : 500;
     // Rohtext, Kandidaten und Backend-Status gehoeren ins Log, nicht in die
     // Antwort: Wer den Fehler sieht (Modell, Client), bekommt nur den
@@ -530,19 +543,24 @@ const httpServer = http.createServer(async (req, res) => {
           ? ` | kandidaten: ${JSON.stringify(error.candidates).slice(0, 2000)}`
           : ""),
     );
-    json(res, status, {
-      error: error.code || "DOCS_SIDECAR_ERROR",
-      code: error.code || null,
-      edit_index: error.editIndex ?? undefined,
-    });
+    if (!res.destroyed && !res.writableEnded) {
+      json(res, status, {
+        error: error.code || "DOCS_SIDECAR_ERROR",
+        code: error.code || null,
+        edit_index: error.editIndex ?? undefined,
+      });
+    }
   }
 });
+configureHttpServer(httpServer);
 
 async function start() {
-  await hocuspocus.listen();
-  await new Promise((resolve, reject) => {
-    httpServer.once("error", reject);
-    httpServer.listen(HTTP_PORT, HTTP_ADDRESS, resolve);
+  releaseInstanceLock = await acquireInstanceLock(DATA_DIR);
+  await startServers({
+    httpServer,
+    websocketServer: hocuspocus,
+    httpPort: HTTP_PORT,
+    httpAddress: HTTP_ADDRESS,
   });
   console.log(
     `docs-sidecar ${VERSION} bereit: ws=${WS_ADDRESS}:${WS_PORT} http=${HTTP_ADDRESS}:${HTTP_PORT}`,
@@ -550,6 +568,7 @@ async function start() {
 }
 
 let beendet = false;
+let releaseInstanceLock = null;
 async function shutdown(signal) {
   if (beendet) return;
   beendet = true;
@@ -565,13 +584,21 @@ async function shutdown(signal) {
   } catch (error) {
     console.error(`Hocuspocus beenden fehlgeschlagen: ${error.message}`);
   }
+  await renderPool.close();
+  try {
+    await releaseInstanceLock?.();
+  } catch (error) {
+    console.error(`Sidecar-Sperre konnte nicht freigegeben werden: ${error.message}`);
+  }
   process.exit(0);
 }
 
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
-start().catch((error) => {
+start().catch(async (error) => {
   console.error(`Start fehlgeschlagen: ${error.stack || error.message}`);
+  await renderPool.close();
+  await releaseInstanceLock?.();
   process.exit(1);
 });

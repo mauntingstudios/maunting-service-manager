@@ -4,7 +4,20 @@ import test from "node:test";
 process.env.MSM_DOCS_COLLAB_SECRET = "test-secret-32-characters-long!!!!";
 
 const jwt = await import("jsonwebtoken");
-const { verifyToken, authenticate, jtiFreigeben, AuthError } = await import("../auth.mjs");
+const {
+  verifyToken,
+  authenticate,
+  jtiFreigeben,
+  serviceTokenMatches,
+  AuthError,
+} = await import("../auth.mjs");
+
+test("vergleicht Service-Token nur bei gleicher Byte-Laenge", () => {
+  assert.equal(serviceTokenMatches("secret", "secret"), true);
+  assert.equal(serviceTokenMatches("secreu", "secret"), false);
+  assert.equal(serviceTokenMatches("secret-long", "secret"), false);
+  assert.equal(serviceTokenMatches("secr", "secret"), false);
+});
 
 function token(claims, secret = process.env.MSM_DOCS_COLLAB_SECRET) {
   return jwt.default.sign(

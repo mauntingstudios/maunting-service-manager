@@ -91,11 +91,16 @@ services:
       MSM_DOCS_WS_ADDRESS: 0.0.0.0
       MSM_DOCS_HTTP_ADDRESS: 0.0.0.0
       MSM_BACKEND_URL: http://backend:8000
-      MSM_DOCS_SIDECAR_TOKEN: ${MSM_DOCS_SIDECAR_TOKEN:-dev-docs-token}
-      MSM_DOCS_COLLAB_SECRET: ${MSM_DOCS_COLLAB_SECRET:-dev-docs-collab-secret-change-me}
+      MSM_DOCS_DATA_DIR: /app/docs-sidecar/data
+      MSM_DOCS_SIDECAR_TOKEN: ${MSM_DOCS_SIDECAR_TOKEN:?MSM_DOCS_SIDECAR_TOKEN fehlt - dev-up.sh erzeugt ihn nach .env.dev}
+      MSM_DOCS_COLLAB_SECRET: ${MSM_DOCS_COLLAB_SECRET:?MSM_DOCS_COLLAB_SECRET fehlt - dev-up.sh erzeugt ihn nach .env.dev}
     depends_on:
       backend:
         condition: service_started
+    networks:
+      - docsnet
+    volumes:
+      - docs-sidecar-data:/app/docs-sidecar/data
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8101/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 10s
@@ -129,9 +134,9 @@ services:
       # /me 401). Nur hier: Sitzungscookies ohne Praefix und ohne `Secure`.
       MSM_DEV_HTTP_COOKIES: "true"
       MSM_DOCS_SIDECAR_URL: http://docs:8101
-      MSM_DOCS_SIDECAR_TOKEN: ${MSM_DOCS_SIDECAR_TOKEN:-dev-docs-token}
-      MSM_DOCS_COLLAB_SECRET: ${MSM_DOCS_COLLAB_SECRET:-dev-docs-collab-secret-change-me}
-      MSM_DOCS_SIGNING_SECRET: ${MSM_DOCS_SIGNING_SECRET:-dev-docs-signing-secret-change-me}
+      MSM_DOCS_SIDECAR_TOKEN: ${MSM_DOCS_SIDECAR_TOKEN:?MSM_DOCS_SIDECAR_TOKEN fehlt - dev-up.sh erzeugt ihn nach .env.dev}
+      MSM_DOCS_COLLAB_SECRET: ${MSM_DOCS_COLLAB_SECRET:?MSM_DOCS_COLLAB_SECRET fehlt - dev-up.sh erzeugt ihn nach .env.dev}
+      MSM_DOCS_SIGNING_SECRET: ${MSM_DOCS_SIGNING_SECRET:?MSM_DOCS_SIGNING_SECRET fehlt - dev-up.sh erzeugt ihn nach .env.dev}
       MSM_DOCS_COLLAB_PUBLIC_URL: ws://localhost:8100
     depends_on:
       panel-db:
@@ -141,6 +146,9 @@ services:
     extra_hosts:
       # Backend erreicht den nativ laufenden Agent auf dem Windows-Host
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - docsnet
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)\" || exit 1"]
       interval: 10s
@@ -203,3 +211,8 @@ volumes:
   redis-data:
   backend-servers:
   backend-vault:
+  docs-sidecar-data:
+
+networks:
+  docsnet:
+    internal: true

@@ -2073,10 +2073,15 @@ fehlende Werte selbst und lassen bestehende stehen:
 - `MSM_DOCS_SIGNING_SECRET` — signiert zeitlich begrenzte Bild-URLs im Export.
 
 Der Dienst heißt `msm-docs-sidecar.service` und startet vor
-`msm-panel.service`. Es läuft **genau eine Instanz**: der Collab-Zustand lebt
-im Prozess, eine zweite Instanz sähe fremde Dokumente nicht. Im Panel-Tarball
-liegt der Sidecar unter `docs-sidecar/` (`server.mjs`, `package.json`,
-`package-lock.json`); die Release-Pipeline prüft das bei jedem Build.
+`msm-panel.service`. Installations- und Update-Skript legen dafür
+`$MSM_DIR/data/docs-sidecar` an und setzen `MSM_DOCS_DATA_DIR` in
+`docs-sidecar/.env`. Dort hält `docs-sidecar.lock` mit der PID die exklusive
+Start-Sperre; eine zweite Instanz startet nicht. Der Collab-Zustand lebt im
+Prozess, deshalb ist paralleler Betrieb mit mehreren Instanzen nicht unterstützt.
+Rendern und Strukturlesen laufen in höchstens zwei Worker-Threads, jeweils mit
+einer Frist von zehn Sekunden. Im Panel-Tarball liegt der Sidecar unter
+`docs-sidecar/` (`server.mjs`, `package.json`, `package-lock.json`); die
+Release-Pipeline prüft das bei jedem Build.
 
 ## Messenger: Sprach-, Video- und Gruppenanrufe
 

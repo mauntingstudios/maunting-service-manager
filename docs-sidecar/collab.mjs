@@ -1,10 +1,7 @@
 import * as Y from "yjs";
-import { schemaVersion } from "@msm/docs-schema/schema";
 
-import { loadState } from "./backend_client.mjs";
 import {
   forgetRev,
-  rememberRev,
   restoreFragment,
   storeDocument,
   storeDocumentUnlocked,
@@ -56,23 +53,6 @@ export function rememberContext(name, context) {
   // Sonst ueberschriebe der zuletzt verbundene Betrachter den Editor, und der
   // naechste Autosave liefe mit einer Viewer-Rolle ins 403.
   if (context && !context.readonly) contexts.set(name, context);
-}
-
-export async function loadDocument(name) {
-  const vorhanden = loaded.get(name);
-  if (vorhanden) return vorhanden;
-  const zustand = await loadState(name);
-  if (Number(zustand.schema_version || 1) > schemaVersion) {
-    const error = new Error("Dokumentschema ist neuer als dieser Sidecar");
-    error.code = "DOC_SCHEMA_UNSUPPORTED";
-    throw error;
-  }
-  const ydoc = new Y.Doc();
-  if (zustand.state_b64) {
-    Y.applyUpdate(ydoc, Buffer.from(zustand.state_b64, "base64"));
-  }
-  rememberRev(name, zustand.rev);
-  return registerDocument(name, ydoc, { rev: zustand.rev });
 }
 
 /**
@@ -211,7 +191,6 @@ function direkteVerbindung(name, context) {
 export async function withDocument(name, fn, context = {}) {
   const vorhanden = loaded.get(name);
   if (vorhanden) {
-    contextFor(name);
     return fn(vorhanden);
   }
   const verbindung = direkteVerbindung(name, context);

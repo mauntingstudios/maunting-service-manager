@@ -24,6 +24,7 @@ SEARXNG_ENV = ROOT / "searxng-sidecar" / ".env"
 LIVEKIT_ENV = ROOT / "livekit-sidecar" / ".env"
 AGENT_ENV = ROOT / "msm-agent" / ".env"
 FRONTEND_ENV = ROOT / "frontend" / ".env.local"
+DOCS_ENV_DEV = ROOT / ".env.dev"
 
 DB_PASS = "msm_dev_pass"
 
@@ -61,6 +62,17 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--force", action="store_true", help="Bestehende .env-Dateien neu schreiben")
     args = ap.parse_args()
+
+    docs_lines, docs_values = _read(DOCS_ENV_DEV)
+    for key in (
+        "MSM_DOCS_SIDECAR_TOKEN",
+        "MSM_DOCS_COLLAB_SECRET",
+        "MSM_DOCS_SIGNING_SECRET",
+    ):
+        if args.force or not docs_values.get(key):
+            _set(docs_lines, key, secrets.token_urlsafe(32))
+    _write(DOCS_ENV_DEV, docs_lines)
+    print(f"geschrieben/abgesichert: {DOCS_ENV_DEV.relative_to(ROOT)}")
 
     for p in (BACKEND_ENV, DIS_ENV, SEARXNG_ENV, LIVEKIT_ENV, AGENT_ENV, FRONTEND_ENV):
         if p.exists() and not args.force:

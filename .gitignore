@@ -22,6 +22,7 @@ PATCHNOTES-ms-oauth-feature.md
 .local/
 /backups/
 /servers/
+/data/
 # Chiffrat der Tresor-Cloud (MSM_VAULT_BLOB_DIR)
 /vault-blobs/
 /postgres/
@@ -58,6 +59,7 @@ RELEASE_NOTES_*.md
 
 # Secrets / .env (nur *.example committen)
 backend/.env
+.env.dev
 dis-sidecar/.env
 frontend/.env
 frontend/.env.local
