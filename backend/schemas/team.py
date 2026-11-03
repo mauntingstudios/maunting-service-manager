@@ -80,6 +80,10 @@ class TeamRoleResponse(BaseModel):
     members_count: int = 0
 
 
+class TeamServerRolesWrite(BaseModel):
+    active: bool
+
+
 class TeamServerGrantWrite(BaseModel):
     server_id: int = Field(ge=1)
     # Leere Liste heisst: der Server wird dem Team wieder entzogen.
@@ -138,6 +142,7 @@ class TeamResponse(BaseModel):
     can_manage_skills: bool
     can_manage_memory: bool
     can_access_vault: bool = True
+    server_roles_active: bool = False
     member_count: int
     created_at: datetime
 

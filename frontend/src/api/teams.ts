@@ -60,6 +60,8 @@ export interface Team {
   can_manage_skills: boolean
   can_manage_memory: boolean
   can_access_vault?: boolean
+  /** Ob Serverrechte nach Rollen gelten; Standard aus. */
+  server_roles_active?: boolean
   member_count: number
   created_at: string
 }
@@ -206,6 +208,10 @@ export const teamsApi = {
   }) => api<TeamDetail>(`/teams/${teamId}/servers`, {
     method: 'PUT', body: JSON.stringify(payload),
   }),
+  setServerRolesActive: (teamId: number, active: boolean) =>
+    api<TeamDetail>(`/teams/${teamId}/server-roles`, {
+      method: 'PUT', body: JSON.stringify({ active }),
+    }),
   listRoles: (teamId: number) => api<TeamRole[]>(`/teams/${teamId}/roles`),
   createRole: (teamId: number, payload: TeamRoleWritePayload) =>
     api<TeamRole>(`/teams/${teamId}/roles`, {

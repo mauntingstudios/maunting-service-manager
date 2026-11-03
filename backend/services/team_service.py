@@ -577,6 +577,38 @@ def rename_team(db: Session, *, team: Team, user: User, name: str) -> Team:
     return team
 
 
+def set_server_roles_active(
+    db: Session, *, team: Team, user: User, active: bool
+) -> Team:
+    """Schaltet die rollenbezogenen Serverrechte eines Teams um.
+
+    Aus: die Team-Zuordnung gilt fuer alle Mitglieder. An: nur ausdrueckliche
+    Rollen-Grants zaehlen. Nur der Gruender entscheidet; bestehende Grants
+    bleiben beim Ausschalten erhalten und gelten beim erneuten Einschalten
+    wieder.
+    """
+    assert_team_owner(db, team, user)
+    if team.is_personal:
+        raise HTTPException(status_code=409, detail="Das persoenliche Team kennt keine Rollen")
+    aktiv = bool(active)
+    if team.server_roles_active == aktiv:
+        return team
+    team.server_roles_active = aktiv
+    team.updated_at = _now()
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="team.server_roles.set",
+        target_type="team",
+        target_id=team.id,
+        details={"active": aktiv},
+        origin="direct",
+    )
+    db.commit()
+    db.refresh(team)
+    return team
+
+
 def delete_team(db: Session, *, team: Team, user: User) -> None:
     assert_team_owner(db, team, user)
     if team.is_personal:

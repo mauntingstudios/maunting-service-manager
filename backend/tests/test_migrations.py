@@ -760,8 +760,8 @@ def test_ki_limits_umbau_hin_und_zurueck(pg_wegwerf):
         with engine.begin() as conn:
             for rid, cent in ((1, 0), (2, 500), (3, None)):
                 conn.execute(text(
-                    "INSERT INTO roles (id, name, is_system, created_at) "
-                    "VALUES (:i, :n, false, now())"
+                    "INSERT INTO roles (id, name, color, is_system, created_at) "
+                    "VALUES (:i, :n, '#3b82f6', false, now())"
                 ), {"i": rid, "n": f"rolle-{rid}"})
                 conn.execute(text(
                     "INSERT INTO role_ai_limits (role_id, daily_token_limit, requests_per_minute, "
@@ -770,8 +770,8 @@ def test_ki_limits_umbau_hin_und_zurueck(pg_wegwerf):
             for rid, feld in ((4, "requests_per_minute"), (5, "concurrent_operations"),
                               (6, "monthly_cost_limit_cents")):
                 conn.execute(text(
-                    "INSERT INTO roles (id, name, is_system, created_at) "
-                    "VALUES (:i, :n, false, now())"
+                    "INSERT INTO roles (id, name, color, is_system, created_at) "
+                    "VALUES (:i, :n, '#3b82f6', false, now())"
                 ), {"i": rid, "n": f"rolle-{rid}"})
                 conn.execute(text(
                     f"INSERT INTO role_ai_limits (role_id, daily_token_limit, {feld}, updated_at) "
@@ -883,7 +883,7 @@ def test_team_schalter_backfill_hin_und_zurueck(pg_wegwerf):
     from pathlib import Path
 
     from alembic import command
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, text
     from sqlalchemy.orm import Session
 
     import models  # noqa: F401
@@ -915,38 +915,102 @@ def test_team_schalter_backfill_hin_und_zurueck(pg_wegwerf):
             b = User(username="b", password_hash="msm-pw-v1:x:y:v2")
             db.add_all([gr, a, b])
             db.flush()
-            team = Team(name="T", owner_user_id=gr.id)
-            db.add(team)
+            db.execute(text(
+                "INSERT INTO teams (id, name, owner_user_id, vault_needs_rotation, "
+                "created_at, updated_at) "
+                "VALUES (1, 'T', :owner, false, now(), now())"
+            ), {"owner": gr.id})
             db.flush()
-            mit = TeamRole(team_id=team.id, name="Mit", can_access_vault=True,
+            team_id = 1
+            mit = TeamRole(team_id=team_id, name="Mit", can_access_vault=True,
                            can_manage_skills=True, can_manage_memory=False)
-            ohne = TeamRole(team_id=team.id, name="Ohne", can_access_vault=False,
+            ohne = TeamRole(team_id=team_id, name="Ohne", can_access_vault=False,
                             can_manage_skills=False, can_manage_memory=False)
             db.add_all([mit, ohne])
             db.flush()
             # A: haelt "Mit" mehrfach und "Ohne" als Legacy, Schalter verdorben.
-            ma = TeamMember(team_id=team.id, user_id=a.id, role="member",
+            ma = TeamMember(team_id=team_id, user_id=a.id, role="member",
                             can_access_vault=False, can_manage_skills=False,
                             can_manage_memory=True, team_role_id=ohne.id)
             db.add(ma)
             db.flush()
             db.add(TeamMemberRole(team_member_id=ma.id, team_role_id=mit.id))
             # B: ohne Rolle (Legacy) — der Backfill fasst ihn nicht an.
-            db.add(TeamMember(team_id=team.id, user_id=b.id, role="member",
+            db.add(TeamMember(team_id=team_id, user_id=b.id, role="member",
                               can_access_vault=False, can_manage_skills=True,
                               can_manage_memory=True, team_role_id=None))
+            db.flush()
+            a_id, b_id = a.id, b.id
             db.commit()
 
         command.upgrade(config, "20261103_01")
         nachher = schalter()
-        assert nachher[a.id] == (True, True, False)
-        assert nachher[b.id] == (False, True, True)
+        assert nachher[a_id] == (True, True, False)
+        assert nachher[b_id] == (False, True, True)
 
         command.downgrade(config, "20261103_02")
         assert schalter() == nachher
 
         command.upgrade(config, "head")
         assert schalter() == nachher
+    finally:
+        engine.dispose()
+        settings.database_url = vorher
+
+
+
+def test_team_server_roles_backfill_preserves_existing_strict_teams(pg_wegwerf):
+    """Bestehende Teams mit Rollen-Grants bleiben nach der Migration streng."""
+    from pathlib import Path
+
+    from alembic import command
+    from sqlalchemy import create_engine, inspect
+    from sqlalchemy.orm import Session
+
+    import models  # noqa: F401
+    from config import settings
+    from database import Base
+    from models import Server, Team, TeamRole, TeamRoleServerGrant, User
+
+    db_url = pg_wegwerf("team-server-rollen")
+    vorher = settings.database_url
+    settings.database_url = db_url
+    backend_dir = Path(__file__).resolve().parent.parent
+    config = _memory_migration_config(backend_dir)
+    engine = create_engine(db_url)
+    try:
+        Base.metadata.create_all(engine)
+        command.stamp(config, "head")
+        with Session(engine) as session:
+            owner = User(username="gruender", password_hash="x")
+            session.add(owner)
+            session.flush()
+            mit_rolle = Team(name="Mit-Rolle", owner_user_id=owner.id)
+            ohne_rolle = Team(name="Ohne-Rolle", owner_user_id=owner.id)
+            server = Server(name="srv", game_type="dayz", install_dir="/tmp/srv")
+            session.add_all([mit_rolle, ohne_rolle, server])
+            session.flush()
+            rolle = TeamRole(team_id=mit_rolle.id, name="Rolle")
+            session.add(rolle)
+            session.flush()
+            session.add(TeamRoleServerGrant(
+                role_id=rolle.id, server_id=server.id, permission_key="server.view"
+            ))
+            session.commit()
+            ids = (mit_rolle.id, ohne_rolle.id)
+
+        command.downgrade(config, "20261103_03")
+        spalten = {c["name"] for c in inspect(engine).get_columns("teams")}
+        assert "server_roles_active" not in spalten
+
+        command.upgrade(config, "head")
+
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            werte = dict(conn.execute(text(
+                "SELECT id, server_roles_active FROM teams ORDER BY id"
+            )).all())
+        assert werte == {ids[0]: True, ids[1]: False}
     finally:
         engine.dispose()
         settings.database_url = vorher

@@ -40,6 +40,7 @@ from schemas.team import (
     TeamRoleServerGrantResponse,
     TeamRoleWrite,
     TeamServerGrantWrite,
+    TeamServerRolesWrite,
     TeamServerResponse,
     TeamVaultRotateRequest,
     TeamVaultSaltResponse,
@@ -91,6 +92,7 @@ def _zusammenfassung(
         can_manage_skills=member is not None and member.can_manage_skills,
         can_manage_memory=member is not None and member.can_manage_memory,
         can_access_vault=user.is_owner or (member is not None and (member.role == "owner" or member.can_access_vault)),
+        server_roles_active=team.server_roles_active,
         member_count=count,
         created_at=team.created_at,
     )
@@ -572,6 +574,21 @@ def set_server_grants(
     team_service.set_server_grants(
         db, team=team, user=user, server_id=payload.server_id,
         keys=payload.permission_keys,
+    )
+    return _detail(db, team, user)
+
+
+@router.put("/{team_id}/server-roles", response_model=TeamDetailResponse)
+def set_server_roles(
+    team_id: int,
+    payload: TeamServerRolesWrite,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> TeamDetailResponse:
+    team = team_service.get_team_for_member(db, team_id, user)
+    team = team_service.set_server_roles_active(
+        db, team=team, user=user, active=payload.active
     )
     return _detail(db, team, user)
 

@@ -1689,12 +1689,12 @@ def test_rollen_serverrecht_ohne_gruenderrecht_ist_403(
     )
 
 
-def test_erster_rollen_grant_schaltet_das_team_um(db: Session, regular_user: User) -> None:
-    """Dokumentiert das heutige Verhalten bis Schritt 2 (Team-Schalter).
+def test_serverrechte_nach_rollen_schalter(db: Session, regular_user: User) -> None:
+    """Standard aus: die Team-Zuordnung gilt fuer alle.
 
-    Ohne jede Rollen-Server-Grant-Zeile erben alle Mitglieder die
-    Team-Zuordnung. Eine einzige Zeile, auch auf einer niemandem zugewiesenen
-    Rolle, schaltet fuer das ganze Team auf ausdrueckliche Grants um.
+    Erst der ausdrueckliche Schalter macht Rollen-Grants wirksam. Eine
+    vorhandene, nicht zugewiesene Rolle bleibt dann ohne Wirkung fuer das
+    Mitglied, das sie nicht traegt.
     """
     member = _user(db, "fallback-mitglied")
     team = _team_with_member(db, regular_user, member)
@@ -1704,15 +1704,31 @@ def test_erster_rollen_grant_schaltet_das_team_um(db: Session, regular_user: Use
         db, team=team, user=regular_user, server_id=server.id,
         keys=["server.view", "server.start"],
     )
-    assert permission_service.has_server_permission(db, member, server.id, "server.start")
-
     team_service.create_team_role(
         db, team=team, user=regular_user, name="NurSicht",
         can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
         server_grants=[{"server_id": server.id, "permission_keys": ["server.view"]}],
     )
+    assert team.server_roles_active is False
+    assert permission_service.has_server_permission(db, member, server.id, "server.start")
 
+    team_service.set_server_roles_active(db, team=team, user=regular_user, active=True)
+
+    assert team.server_roles_active is True
     assert not permission_service.has_server_permission(db, member, server.id, "server.start")
+    assert not permission_service.has_server_permission(db, member, server.id, "server.view")
+
+
+def test_nur_gruender_schaltet_serverrechte_nach_rollen(
+    db: Session, regular_user: User
+) -> None:
+    member = _user(db, "schalter-mitglied")
+    team = _team_with_member(db, regular_user, member)
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.set_server_roles_active(db, team=team, user=member, active=True)
+    assert exc.value.status_code == 403
+    assert team.server_roles_active is False
 
 
 # ── Standardrolle beim Einladen (Befund N4) ──

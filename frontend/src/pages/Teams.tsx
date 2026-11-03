@@ -298,6 +298,21 @@ export function Teams() {
     }, 'teams.serversSaved')
   }
 
+  const setServerRolesActive = async (aktiv: boolean) => {
+    if (!detail) return
+    if (aktiv) {
+      const weiter = await confirm({
+        title: t('teams.serverRolesEnableTitle'),
+        message: t('teams.serverRolesEnableText'),
+        confirmText: t('teams.serverRolesEnableConfirm'),
+      })
+      if (!weiter) return
+    }
+    await run(async () => {
+      setDetail(await teamsApi.setServerRolesActive(detail.id, aktiv))
+    }, aktiv ? 'teams.serverRolesOn' : 'teams.serverRolesOff')
+  }
+
   const [editingRole, setEditingRole] = useState<TeamRole | null>(null)
   const [isCreatingRole, setIsCreatingRole] = useState(false)
 
@@ -688,6 +703,21 @@ export function Teams() {
                         </h3>
                         <p className="mt-1 text-sm text-on-surface-variant">{t('teams.serversHint')}</p>
                       </div>
+
+                      {team.is_owner && (
+                        <div className="flex items-start justify-between gap-4 rounded-xl border border-outline-variant/40 bg-surface p-4">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-on-surface">{t('teams.serverRolesTitle')}</p>
+                            <p className="mt-1 text-xs text-on-surface-variant">{t('teams.serverRolesHint')}</p>
+                          </div>
+                          <Switch
+                            checked={team.server_roles_active ?? false}
+                            disabled={busy}
+                            onCheckedChange={(next) => void setServerRolesActive(next)}
+                            aria-label={t('teams.serverRolesTitle')}
+                          />
+                        </div>
+                      )}
 
                       {assignable.length === 0 ? (
                         <div className="rounded-xl border border-dashed border-outline-variant/50 p-6 text-center text-sm text-on-surface-variant bg-surface-container-low/30">

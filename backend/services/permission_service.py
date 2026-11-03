@@ -185,23 +185,17 @@ def direct_server_permission(
 
 
 def _member_has_role_server_grant(
-    db: Session, team_id: int, member_id: int, primary_role_id: int | None, server_id: int, key: str
+    db: Session, team_id: int, member_id: int, primary_role_id: int | None, server_id: int, key: str,
+    *, rollen_aktiv: bool,
 ) -> bool:
-    """Prüft, ob die Rollen des Mitglieds im Team den Zugriff auf diesen Server und Key freigeben.
+    """Prüft, ob die Rollen des Mitglieds den Zugriff auf Server und Key freigeben.
 
-    Gibt True zurück, wenn:
-    - Das Team überhaupt keine TeamRoleServerGrants konfiguriert hat (Fallback / Abwärtskompatibilität).
-    - Mindestens eine Rolle des Mitglieds is_admin ist.
-    - Mindestens eine Rolle des Mitglieds einen expliziten TeamRoleServerGrant für diesen Server und Key hält.
+    Ist der Team-Schalter „Serverrechte nach Rollen“ aus, gilt die
+    Team-Zuordnung fuer alle Mitglieder. Ist er an, gibt es nur:
+    - eine Admin-Rolle des Mitglieds, oder
+    - einen ausdruecklichen TeamRoleServerGrant seiner Rolle.
     """
-    has_any_role_grants = (
-        db.query(TeamRoleServerGrant.id)
-        .join(TeamRole, TeamRole.id == TeamRoleServerGrant.role_id)
-        .filter(TeamRole.team_id == team_id)
-        .first()
-        is not None
-    )
-    if not has_any_role_grants:
+    if not rollen_aktiv:
         return True
 
     # Rollen des Mitglieds ermitteln
@@ -253,7 +247,7 @@ def _team_server_permission(db: Session, user: User, server_id: int, key: str) -
       sich nichts.
     """
     rows = (
-        db.query(Team.id, Team.owner_user_id, TeamMember.id, TeamMember.team_role_id)
+        db.query(Team.id, Team.owner_user_id, Team.server_roles_active, TeamMember.id, TeamMember.team_role_id)
         .join(TeamMember, TeamMember.team_id == Team.id)
         .join(TeamServerGrant, TeamServerGrant.team_id == Team.id)
         .filter(
@@ -264,7 +258,7 @@ def _team_server_permission(db: Session, user: User, server_id: int, key: str) -
         .distinct()
         .all()
     )
-    for team_id, owner_user_id, member_id, team_role_id in rows:
+    for team_id, owner_user_id, rollen_aktiv, member_id, team_role_id in rows:
         # Ein Gruender, der sich selbst ueber sein eigenes Team bedient, waere
         # eine Schleife ohne Erkenntnisgewinn — sein direkter Anspruch wurde
         # oben bereits geprueft.
@@ -272,7 +266,10 @@ def _team_server_permission(db: Session, user: User, server_id: int, key: str) -
             continue
         owner = db.get(User, owner_user_id)
         if owner is not None and direct_server_permission(db, owner, server_id, key):
-            if _member_has_role_server_grant(db, team_id, member_id, team_role_id, server_id, key):
+            if _member_has_role_server_grant(
+                db, team_id, member_id, team_role_id, server_id, key,
+                rollen_aktiv=rollen_aktiv,
+            ):
                 return True
     return False
 
@@ -407,6 +404,7 @@ def rechte_irgendwo(db: Session, user: User, schluessel: set[str]) -> set[str]:
             TeamServerGrant.server_id,
             TeamServerGrant.permission_key,
             Team.owner_user_id,
+            Team.server_roles_active,
             TeamMember.id,
             TeamMember.team_role_id,
         )
@@ -423,7 +421,7 @@ def rechte_irgendwo(db: Session, user: User, schluessel: set[str]) -> set[str]:
     # oder Schluesseln desselben Teams waere das sonst eine Abfrage pro Zeile —
     # genau der Fehler, den diese Funktion behebt.
     gruender_rechte: dict[int, tuple[set[str], set[tuple[int, str]]]] = {}
-    for team_id, server_id, key, owner_user_id, member_id, team_role_id in rows:
+    for team_id, server_id, key, owner_user_id, rollen_aktiv, member_id, team_role_id in rows:
         if key in gefunden:
             continue
         # Ein Gruender, der sich selbst ueber sein eigenes Team bedient, waere
@@ -431,7 +429,10 @@ def rechte_irgendwo(db: Session, user: User, schluessel: set[str]) -> set[str]:
         # oben schon in `pauschal`/`delegiert`.
         if owner_user_id == user.id:
             continue
-        if not _member_has_role_server_grant(db, team_id, member_id, team_role_id, server_id, key):
+        if not _member_has_role_server_grant(
+            db, team_id, member_id, team_role_id, server_id, key,
+            rollen_aktiv=rollen_aktiv,
+        ):
             continue
         if owner_user_id not in gruender_rechte:
             gruender = db.get(User, owner_user_id)
@@ -502,6 +503,7 @@ def _team_visible_server_ids(db: Session, user: User) -> set[int]:
         db.query(
             Team.id,
             Team.owner_user_id,
+            Team.server_roles_active,
             TeamServerGrant.server_id,
             TeamMember.id,
             TeamMember.team_role_id,
@@ -523,7 +525,7 @@ def _team_visible_server_ids(db: Session, user: User) -> set[int]:
     hoster_ids = hoster_customer_server_ids(db)
     owners: dict[int, User | None] = {}
     visible: set[int] = set()
-    for team_id, owner_user_id, server_id, member_id, team_role_id in rows:
+    for team_id, owner_user_id, rollen_aktiv, server_id, member_id, team_role_id in rows:
         if owner_user_id == user.id:
             continue
         if owner_user_id not in owners:
@@ -533,7 +535,8 @@ def _team_visible_server_ids(db: Session, user: User) -> set[int]:
             db, owner, server_id, "server.view", hoster_ids=hoster_ids
         ):
             if _member_has_role_server_grant(
-                db, team_id, member_id, team_role_id, server_id, "server.view"
+                db, team_id, member_id, team_role_id, server_id, "server.view",
+                rollen_aktiv=rollen_aktiv,
             ):
                 visible.add(server_id)
     return visible

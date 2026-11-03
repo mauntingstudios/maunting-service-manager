@@ -22,6 +22,7 @@ vi.mock('@/api/teams', () => ({
     updateMember: vi.fn(),
     removeMember: vi.fn(),
     setServerGrants: vi.fn(),
+    setServerRolesActive: vi.fn(),
     assignableServers: vi.fn(),
     invitations: vi.fn(),
     acceptInvitation: vi.fn(),
@@ -588,6 +589,25 @@ describe('Teams', () => {
 
     await waitFor(() => expect(confirm).toHaveBeenCalled())
     await waitFor(() => expect(teamsApi.deleteRole).toHaveBeenCalledWith(2, 10))
+  })
+
+  it('schaltet Serverrechte nach Rollen als Gründer', async () => {
+    vi.mocked(teamsApi.setServerRolesActive).mockResolvedValue({
+      ...realDetail,
+      server_roles_active: true,
+    } as TeamDetail)
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    fireEvent.click(screen.getByRole('tab', { name: /Server/i }))
+    const schalter = await screen.findByRole('switch', { name: 'Serverrechte nach Rollen' })
+    fireEvent.click(schalter)
+
+    await waitFor(() => expect(confirm).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(teamsApi.setServerRolesActive).toHaveBeenCalledWith(2, true),
+    )
   })
 
   it('öffnet das Rollen-Formular inline beim Klick auf Rolle erstellen und bricht ab', async () => {

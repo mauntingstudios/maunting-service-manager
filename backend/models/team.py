@@ -78,6 +78,11 @@ class Team(Base):
     vault_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     vault_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
     vault_needs_rotation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Ob Serverrechte nach Rollen gelten. Standard aus: die Team-Zuordnung gilt
+    # fuer alle Mitglieder. An: nur ausdrueckliche Rollen-Grants zaehlen.
+    server_roles_active: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     vault_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
     vault_last_hint_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
