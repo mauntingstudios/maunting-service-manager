@@ -25,8 +25,8 @@ import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { Color } from "@tiptap/extension-color";
 import { TextStyle } from "@tiptap/extension-text-style";
 
-export function createCoreExtensions(options = {}) {
-  const { placeholder = "Schreib los …", lowlight = null } = options;
+export function createCoreExtensions(options) {
+  const { placeholder, lowlight = null } = options;
 
   return [
     StarterKit.configure({

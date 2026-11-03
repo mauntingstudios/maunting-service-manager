@@ -16,11 +16,10 @@ import {
   Users,
   WifiOff,
 } from 'lucide-react'
-import { Badge, Button, Kurzinfo, confirm, prompt } from '@/Singra/UI'
+import { Badge, Button, Input, Kurzinfo, confirm, prompt } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import {
   createComment,
-  docsErrorCode,
   getCollabToken,
   undoAiEdit,
   uploadAsset,
@@ -29,6 +28,7 @@ import {
   type UploadGrenzen,
 } from '@/api/docs'
 import { docsCollabUrl } from '@/config/api'
+import { docsFehlermeldung } from './docsFehler'
 import { createDocsExtensions, farbeFuerBenutzer } from './editor/extensions'
 import {
   createPendingEdits,
@@ -190,10 +190,16 @@ export function DocEditor({
 
   const extensions = useMemo(
     () => [
-      ...createDocsExtensions({ ydoc, provider, user, docUid: detail.uid }),
+      ...createDocsExtensions({
+        ydoc,
+        provider,
+        user,
+        docUid: detail.uid,
+        placeholder: t('docs.editor.placeholder'),
+      }),
       createPendingEdits(pendingHandles),
     ],
-    [provider, ydoc, user, detail.uid],
+    [provider, ydoc, user, detail.uid, t],
   )
 
   const editor = useEditor(
@@ -211,7 +217,7 @@ export function DocEditor({
     [provider],
   )
 
-  const outlineEntries = useOutlineEntries(editor)
+  const outlineEntries = useOutlineEntries(editor, activePanel === 'outline')
 
   useEffect(() => {
     onOutlineChange?.(outlineEntries)
@@ -300,7 +306,11 @@ export function DocEditor({
 
   const bildHochladen = async (datei: File) => {
     try {
-      const asset = await uploadAsset(detail.uid, datei, { grenzen })
+      let anzahlAssets = 0
+      editor?.state.doc.descendants((node) => {
+        if (node.type.name === 'image') anzahlAssets += 1
+      })
+      const asset = await uploadAsset(detail.uid, datei, { grenzen, anzahlAssets })
       editor
         ?.chain()
         .focus()
@@ -313,15 +323,7 @@ export function DocEditor({
         })
         .run()
     } catch (error) {
-      // Die Vorpruefung spricht Server-Codes — die Anzeige ebenso (Befund 32).
-      const code = docsErrorCode(error)
-      toast.error(
-        code === 'DOC_QUOTA_EXCEEDED'
-          ? t('docs.errors.DOC_QUOTA_EXCEEDED')
-          : code === 'DOC_INVALID_MIME'
-            ? t('docs.errors.DOC_INVALID_MIME')
-            : t('docs.errors.DOC_ASSET_TOO_LARGE'),
-      )
+      toast.error(docsFehlermeldung(t, error, 'upload'))
     }
   }
 
@@ -350,8 +352,8 @@ export function DocEditor({
       }
       onCommentsChanged()
       onOpenPanel('comments')
-    } catch {
-      toast.error(t('docs.errors.COMMENT_NOT_FOUND'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'update'))
     }
   }
 
@@ -374,8 +376,8 @@ export function DocEditor({
     try {
       await undoAiEdit(detail.uid)
       toast.success(t('docs.singra.undone'))
-    } catch {
-      toast.error(t('docs.errors.AI_UNDO_EMPTY'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'update'))
     }
   }
 
@@ -396,7 +398,7 @@ export function DocEditor({
   return (
     <section className="flex h-full min-h-0 flex-col bg-surface-container-lowest">
       <header className="flex flex-wrap items-center gap-2 border-b border-outline-variant/40 px-3 py-2">
-        <input
+        <Input
           aria-label={t('docs.editor.titleLabel')}
           value={titel}
           disabled={!darfSchreiben}
@@ -406,7 +408,7 @@ export function DocEditor({
             if (neu && neu !== detail.title) void onTitleChanged(neu)
             else setTitel(detail.title)
           }}
-          className="min-w-[10rem] flex-1 bg-transparent font-headline text-lg font-semibold text-on-surface outline-none disabled:opacity-80"
+          className="!h-auto min-w-[10rem] flex-1 border-0 bg-transparent px-0 py-0 font-headline text-lg font-semibold text-on-surface shadow-none outline-none focus:ring-0 disabled:opacity-80"
         />
         <Badge variant="default">{t(`docs.roles.${detail.role}`)}</Badge>
         <span className="hidden text-xs text-on-surface-variant sm:inline">Rev {detail.rev}</span>

@@ -4,6 +4,7 @@ import { Archive, ArchiveRestore, FileText, Folder, FolderInput, FolderPlus, Pen
 import { ActionMenu, Button, Dropdown, Input, Kurzinfo } from '@/Singra/UI'
 import type { DocFolder, DocSummary } from '@/api/docs'
 import type { Team } from '@/api/teams'
+import { formatZeitpunkt } from '@/lib/format'
 import { cx } from '@/utils/classNames'
 
 interface DocTreeProps {
@@ -33,6 +34,9 @@ interface DocTreeProps {
   onRenameFolder: (folder: DocFolder) => void
   onDeleteFolder: (folder: DocFolder) => void
   loading: boolean
+  hasMoreDocuments?: boolean
+  loadingMoreDocuments?: boolean
+  onLoadMoreDocuments?: () => void
   /** Anzahl durchsuchter Dokumente, wenn die Suche ältere außen vor ließ — sonst null. */
   searchHinweis?: number | null
 }
@@ -81,9 +85,12 @@ export function DocTree({
   onRenameFolder,
   onDeleteFolder,
   loading,
+  hasMoreDocuments = false,
+  loadingMoreDocuments = false,
+  onLoadMoreDocuments,
   searchHinweis,
 }: DocTreeProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [dropZiel, setDropZiel] = useState<string | null>(null)
   const ablegen = (event: React.DragEvent, ziel: string | null) => {
     event.preventDefault()
@@ -142,47 +149,50 @@ export function DocTree({
           </Kurzinfo>
         </div>
         <div className="flex gap-1">
-          <button
+          <Button
             type="button"
+            variant={!trash && !archived ? 'primary' : 'ghost'}
             onClick={() => {
               onTrashChange(false)
               onArchiveChange(false)
             }}
+            aria-pressed={!trash && !archived}
             className={cx(
-              'flex-1 rounded-lg px-2 py-1.5 text-xs',
-              !trash && !archived ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:bg-surface-container-high',
+              'min-w-0 flex-1 px-2 text-xs',
             )}
           >
             {t('docs.tree.all')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant={archived ? 'primary' : 'ghost'}
             onClick={() => {
               onArchiveChange(!archived)
               onTrashChange(false)
             }}
+            aria-pressed={archived}
             className={cx(
-              'flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs',
-              archived ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:bg-surface-container-high',
+              'min-w-0 flex-1 gap-1 px-2 text-xs',
             )}
           >
             <Archive className="h-3.5 w-3.5" />
             {t('docs.tree.archive')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant={trash ? 'primary' : 'ghost'}
             onClick={() => {
               onTrashChange(!trash)
               onArchiveChange(false)
             }}
+            aria-pressed={trash}
             className={cx(
-              'flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs',
-              trash ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:bg-surface-container-high',
+              'min-w-0 flex-1 gap-1 px-2 text-xs',
             )}
           >
             <Trash2 className="h-3.5 w-3.5" />
             {t('docs.tree.trash')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -309,7 +319,7 @@ export function DocTree({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm text-on-surface">{doc.title}</span>
                 <span className="block truncate text-label-sm text-on-surface-variant">
-                  {new Date(doc.updated_at).toLocaleDateString()} · {t(`docs.roles.${doc.role}`)}
+                  {formatZeitpunkt(new Date(doc.updated_at), i18n.language)} · {t(`docs.roles.${doc.role}`)}
                 </span>
               </span>
             </button>
@@ -369,6 +379,18 @@ export function DocTree({
             )}
           </div>
         ))}
+        {hasMoreDocuments && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="mt-2 w-full"
+            disabled={loadingMoreDocuments || loading}
+            onClick={onLoadMoreDocuments}
+          >
+            {loadingMoreDocuments ? t('docs.tree.loadingMore') : t('docs.tree.loadMore')}
+          </Button>
+        )}
       </div>
     </aside>
   )

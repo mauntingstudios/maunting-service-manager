@@ -19,6 +19,7 @@ import {
   type DocMemberRow,
   type DocRole,
 } from '@/api/docs'
+import { docsFehlermeldung } from './docsFehler'
 
 interface MembersDialogProps {
   detail: DocDetail
@@ -37,8 +38,8 @@ export function MembersDialog({ detail, open, onOpenChange, onChanged }: Members
     setLaden(true)
     try {
       setRows(await listMembers(detail.uid))
-    } catch {
-      toast.error(t('docs.errors.DOCS_FORBIDDEN'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'list'))
     } finally {
       setLaden(false)
     }
@@ -56,8 +57,8 @@ export function MembersDialog({ detail, open, onOpenChange, onChanged }: Members
       await updateDocument(detail.uid, { default_role: wert as DocRole })
       setDefaultRolle(wert as DocRole)
       onChanged?.()
-    } catch {
-      toast.error(t('docs.errors.DOCS_FORBIDDEN'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'share'))
     }
   }
 
@@ -66,8 +67,8 @@ export function MembersDialog({ detail, open, onOpenChange, onChanged }: Members
       if (wert === 'default') await deleteMember(detail.uid, row.user_id)
       else await putMember(detail.uid, row.user_id, wert as DocRole)
       await neuLaden()
-    } catch {
-      toast.error(t('docs.errors.DOC_INVALID_TARGET'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'share'))
     }
   }
 

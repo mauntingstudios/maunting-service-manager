@@ -54,3 +54,19 @@ describe('DocTree Suchhinweis', () => {
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 })
+
+describe('DocTree Filter', () => {
+  it('kennzeichnet den aktiven Filter barrierefrei', async () => {
+    await i18n.changeLanguage('de')
+    renderBaum()
+
+    expect(screen.getByRole('button', { name: i18n.t('docs.tree.all') })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: i18n.t('docs.tree.archive') })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+  })
+})

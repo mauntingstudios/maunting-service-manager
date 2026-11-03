@@ -196,7 +196,7 @@ describe('SelfHostingDocs', () => {
     expect(screen.getByText(/8100.*\/api\/docs\/collab/)).toBeInTheDocument()
     expect(screen.getByText(/does not proxy \/internal\/\*/)).toBeInTheDocument()
     expect(screen.getByText(/MSM_DOCS_SIDECAR_TOKEN, MSM_DOCS_COLLAB_SECRET/)).toBeInTheDocument()
-    expect(screen.getByText(/msm-docs-sidecar\.service/)).toBeInTheDocument()
+    expect(screen.getByText(/docs-sidecar\.lock prevents a second instance/)).toBeInTheDocument()
     expect(screen.getByText(/server\.mjs, package\.json and package-lock\.json/)).toBeInTheDocument()
 
     await i18n.changeLanguage('de')

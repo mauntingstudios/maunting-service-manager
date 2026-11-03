@@ -99,7 +99,7 @@ export function createDocsExtensions({
   provider: HocuspocusProvider | null
   user: DocsUser
   docUid: string
-  placeholder?: string
+  placeholder: string
 }) {
   const kern = createCoreExtensions({ placeholder, lowlight: createLowlight(common) }).filter(
     (extension) => extension.name !== 'image',

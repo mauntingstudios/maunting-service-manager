@@ -24,7 +24,7 @@ export function loadCachedDocuments(userId: number): DocSummary[] {
 
 export function saveCachedDocuments(userId: number, documents: DocSummary[]): void {
   try {
-    localStorage.setItem(metadataKey(userId), JSON.stringify(documents))
+    localStorage.setItem(metadataKey(userId), JSON.stringify(documents.slice(0, 500)))
   } catch {
     /* Speicher voll oder gesperrt — die Liste kommt beim naechsten REST-Lauf. */
   }

@@ -445,13 +445,13 @@ export async function uploadAsset(
   if (file.size > grenzen.assetBytes) {
     throw new SanitizedApiError('Anhang ist zu gross', {
       status: 413,
-      code: 'DOC_ASSET_TOO_LARGE',
+      code: 'ASSET_BYTES_EXCEEDED',
     })
   }
   if (optionen?.anzahlAssets !== undefined && optionen.anzahlAssets >= grenzen.assetsPerDoc) {
     throw new SanitizedApiError('Anhangsgrenze erreicht', {
       status: 413,
-      code: 'DOC_QUOTA_EXCEEDED',
+      code: 'ASSET_QUOTA_EXCEEDED',
     })
   }
   const buffer = await file.arrayBuffer()

@@ -13,6 +13,7 @@ import {
 import { toast } from '@/stores/toastStore'
 import { listFolders, type DocFolder, type DocSummary } from '@/api/docs'
 import type { Team } from '@/api/teams'
+import { docsFehlermeldung } from './docsFehler'
 import { useDokumentVerschieben } from './useDokumentVerschieben'
 
 interface MoveDialogProps {
@@ -88,8 +89,8 @@ export function MoveDialog({
       })
       onOpenChange(false)
       toast.success(t('docs.move.moved'))
-    } catch {
-      toast.error(t('docs.errors.DOCS_FORBIDDEN'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'update'))
     }
   }
 

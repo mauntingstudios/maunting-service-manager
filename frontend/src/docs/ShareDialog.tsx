@@ -14,6 +14,7 @@ import {
 } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import { createShare, deleteShare, type DocDetail, type ShareRole } from '@/api/docs'
+import { docsFehlermeldung } from './docsFehler'
 
 interface ShareDialogProps {
   detail: DocDetail
@@ -43,8 +44,8 @@ export function ShareDialog({ detail, open, onOpenChange, onChanged }: ShareDial
       setUrl(`${window.location.origin}${ergebnis.url}`)
       onChanged()
       toast.success(t('docs.share.created'))
-    } catch {
-      toast.error(t('docs.errors.DOCS_FORBIDDEN'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'share'))
     } finally {
       setLaeuft(false)
     }
@@ -57,8 +58,8 @@ export function ShareDialog({ detail, open, onOpenChange, onChanged }: ShareDial
       setUrl('')
       onChanged()
       toast.success(t('docs.share.disabled'))
-    } catch {
-      toast.error(t('docs.errors.DOCS_FORBIDDEN'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'share'))
     } finally {
       setLaeuft(false)
     }

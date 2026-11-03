@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { teamsApi } from '@/api/teams'
 import { DocsEmbedded } from './DocsEmbedded'
+import { useDocsStore } from './docsStore'
 
 vi.mock('@/api/docs', async (importOriginal) => {
   const echt = await importOriginal<typeof import('@/api/docs')>()
@@ -27,6 +28,7 @@ vi.mock('@/api/docs', async (importOriginal) => {
 describe('DocsEmbedded', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useDocsStore.getState().zuruecksetzen()
     useAuthStore.setState({
       user: { id: 7, username: 'tester', email: 't@test.de', is_owner: false } as never,
       isAuthenticated: true,

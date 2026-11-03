@@ -46,6 +46,19 @@ describe('docsOffline', () => {
     expect(loadCachedDocuments(7).map((eintrag) => eintrag.uid)).toEqual(['b', 'a'])
   })
 
+  it('begrenzt den Metadatenkatalog auf 500 Dokumente', () => {
+    localStorage.clear()
+    saveCachedDocuments(
+      7,
+      Array.from({ length: 501 }, (_, index) =>
+        dokument(`doc-${index}`, `Dokument ${index}`),
+      ),
+    )
+
+    expect(loadCachedDocuments(7)).toHaveLength(500)
+    expect(loadCachedDocuments(7).at(-1)?.uid).toBe('doc-499')
+  })
+
   it('liest fremde Konten nicht mit', () => {
     localStorage.clear()
     saveCachedDocuments(7, [dokument('a', 'A')])

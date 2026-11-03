@@ -160,7 +160,7 @@ it('lehnt zu grosse Dateien ohne arrayBuffer-Aufruf ab (Befund 32)', async () =>
   const lesen = vi.spyOn(datei, 'arrayBuffer')
 
   await expect(uploadAsset('doc-1', datei, { grenzen: GRENZEN })).rejects.toMatchObject({
-    code: 'DOC_ASSET_TOO_LARGE',
+    code: 'ASSET_BYTES_EXCEEDED',
   })
   expect(lesen).not.toHaveBeenCalled()
   expect(api).not.toHaveBeenCalled()
@@ -185,7 +185,7 @@ it('lehnt volle Anhangsgrenzen ohne arrayBuffer-Aufruf ab (Befund 32)', async ()
 
   await expect(
     uploadAsset('doc-1', datei, { grenzen: GRENZEN, anzahlAssets: 100 }),
-  ).rejects.toMatchObject({ code: 'DOC_QUOTA_EXCEEDED' })
+  ).rejects.toMatchObject({ code: 'ASSET_QUOTA_EXCEEDED' })
   expect(lesen).not.toHaveBeenCalled()
   expect(api).not.toHaveBeenCalled()
 })
@@ -198,7 +198,7 @@ it('laedt die Grenzen selbst, wenn der Aufrufer keine reicht (Befund 32)', async
   const lesen = vi.spyOn(datei, 'arrayBuffer')
 
   await expect(uploadAsset('doc-1', datei)).rejects.toMatchObject({
-    code: 'DOC_ASSET_TOO_LARGE',
+    code: 'ASSET_BYTES_EXCEEDED',
   })
   expect(api).toHaveBeenLastCalledWith('/docs/status')
   expect(lesen).not.toHaveBeenCalled()

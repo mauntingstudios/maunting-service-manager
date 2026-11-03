@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ActionMenu } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import { downloadExport } from '@/api/docs'
+import { docsFehlermeldung } from './docsFehler'
 
 interface ExportMenuProps {
   uid: string
@@ -28,8 +29,8 @@ export function ExportMenu({ uid, rev, disabled }: ExportMenuProps) {
     try {
       const { blob, filename } = await downloadExport(uid, format, rev)
       speichern(blob, filename)
-    } catch {
-      toast.error(t('docs.errors.DOCS_SIDECAR_UNAVAILABLE'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'export'))
     }
   }
 
@@ -51,8 +52,8 @@ export function ExportMenu({ uid, rev, disabled }: ExportMenuProps) {
         }
       }, 600)
       setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    } catch {
-      toast.error(t('docs.errors.DOCS_SIDECAR_UNAVAILABLE'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'export'))
     }
   }
 

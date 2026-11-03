@@ -2306,9 +2306,18 @@
     "slash": {
       "label": "Insert"
     },
+    "fehler": {
+      "create": "This could not be created.",
+      "list": "This could not be loaded.",
+      "update": "This could not be saved.",
+      "upload": "The attachment could not be uploaded.",
+      "share": "The share could not be updated.",
+      "export": "The export could not be created."
+    },
     "editor": {
       "titleLabel": "Document title",
       "contentLabel": "Document content",
+      "placeholder": "Start writing …",
       "peers": "{{count}} people in this document",
       "readOnly": "Read only. You can still comment, but not type.",
       "downgraded": "Read only. Your local changes were not accepted.",
@@ -2343,6 +2352,8 @@
       "trash": "Trash",
       "root": "All documents",
       "loading": "Loading documents …",
+      "loadMore": "Load more",
+      "loadingMore": "Loading more documents …",
       "trashEmpty": "The trash is empty.",
       "archiveEmpty": "No archived documents.",
       "empty": "No documents here yet.",
@@ -2455,8 +2466,6 @@
       "applying": "Applying …",
       "applied": "Suggestion applied.",
       "rejected": "Suggestion discarded.",
-      "applyFailed": "The suggestion could not be applied.",
-      "rejectFailed": "The suggestion could not be discarded.",
       "staleShort": "Suggestion outdated",
       "staleHint": "The target area changed. The suggestion can no longer be applied safely.",
       "rejectStale": "Discard outdated suggestion",
@@ -2518,7 +2527,8 @@
       "AI_EDIT_STALE_SELECTION": "The passage is no longer unambiguous. Please select it again.",
       "AI_UNDO_EMPTY": "There is no AI change to undo.",
       "DOC_TOO_LARGE": "The document is too large.",
-      "DOC_ASSET_TOO_LARGE": "The file is too large. The limit is 4 MiB per attachment.",
+      "ASSET_BYTES_EXCEEDED": "The attachment size or storage limit has been exceeded.",
+      "ASSET_QUOTA_EXCEEDED": "This document has reached its attachment limit.",
       "DOC_INVALID_MIME": "This file type is not allowed. Images and PDF are allowed.",
       "DOC_QUOTA_EXCEEDED": "The quota is exhausted.",
       "DOC_INVALID_TARGET": "That target is invalid.",
@@ -5106,7 +5116,7 @@
       },
       "service": {
         "title": "Service",
-        "body": "msm-docs-sidecar.service starts before msm-panel.service. Exactly one instance runs: the collab state lives in the process."
+        "body": "msm-docs-sidecar.service starts before msm-panel.service. The lock file $MSM_DIR/data/docs-sidecar/docs-sidecar.lock prevents a second instance; collab state lives in the process."
       },
       "release": {
         "title": "Release",

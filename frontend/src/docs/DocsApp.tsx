@@ -1,64 +1,53 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, Menu, Plus, X } from 'lucide-react'
-import { Button, Kurzinfo, Zustandsflaeche, confirm, prompt } from '@/Singra/UI'
+import { AlertTriangle } from 'lucide-react'
+import { Button, Zustandsflaeche, confirm, prompt } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { useIsOnline } from '@/hooks/useIsOnline'
-import { teamsApi, type Team } from '@/api/teams'
 import {
   createDocument,
   createFolder,
-  deleteFolder,
-  updateFolder,
-  applyPendingEdit,
   deleteDocumentPermanent,
-  docsErrorCode,
-  getDocsStatus,
+  deleteFolder,
   getDocument,
   grenzenAusStatus,
   listComments,
-  listDocuments,
-  listFolders,
-  listPendingEdits,
   listRevisions,
-  previewPendingEdit,
-  rejectPendingEdit,
   restoreDocument,
-  searchDocuments,
   trashDocument,
   updateDocument,
+  updateFolder,
   type DocComment,
   type DocDetail,
   type DocFolder,
-  type DocPendingView,
   type DocRevision,
   type DocSummary,
-  type DocsStatus,
 } from '@/api/docs'
-import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
-import { DocTree } from './DocTree'
-import { DocEditor } from './DocEditor'
-import { CommentsPanel } from './CommentsPanel'
-import { HistoryPanel } from './HistoryPanel'
-import { OutlineList, type OutlineEntry } from './editor/Outline'
-import { ShareDialog } from './ShareDialog'
-import { MembersDialog } from './MembersDialog'
-import { MoveDialog } from './MoveDialog'
-import { DocsChatPanel } from './DocsChatPanel'
-import { useBreiteZiehen } from '@/hooks/useBreiteZiehen'
+import { docsFehlermeldung, type DocsFehlerKontext } from './docsFehler'
+import { useDocsStore } from './docsStore'
+import { useDocsSession } from './useDocsSession'
+import { usePendingEdits } from './usePendingEdits'
+import { useDokumentVerschieben } from './useDokumentVerschieben'
+import { DocsDialogs } from './DocsDialogs'
+import { DocsMain } from './DocsMain'
+import { DocsPanels } from './DocsPanels'
+import { DocsSidebar, type DocsSidebarAktionen } from './DocsSidebar'
+import type { OutlineEntry } from './editor/Outline'
 import {
   cacheDocument,
   forgetDocument,
-  hasLocalCopy,
   loadCachedDocuments,
-  saveCachedDocuments,
 } from './docsOffline'
 
-type Panel = 'comments' | 'history' | 'outline' | 'singra' | null
-
+/**
+ * Nur Komposition und Routing (Befund 21): Die Sitzung (Liste, Ordner,
+ * Status) liefert `useDocsSession`, UI-Zustand der Store, Vorschläge
+ * `usePendingEdits`. Diese Komponente hält das offene Dokument, die
+ * listenübergreifenden Handlungen und die globalen Aktualisierungen.
+ */
 export function DocsApp() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -67,113 +56,23 @@ export function DocsApp() {
   const docsEnabled = usePublicSettingsStore((state) => state.docs_enabled)
   const online = useIsOnline()
 
-  const [teams, setTeams] = useState<Team[]>([])
-  const [teamId, setTeamId] = useState<number | null>(null)
-  const [folders, setFolders] = useState<DocFolder[]>([])
-  const [documents, setDocuments] = useState<DocSummary[]>([])
-  const [folderUid, setFolderUid] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [suchGrenze, setSuchGrenze] = useState<number | null>(null)
-  const [trash, setTrash] = useState(false)
-  const [archived, setArchived] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [fehler, setFehler] = useState<string | null>(null)
-  const [status, setStatus] = useState<DocsStatus | null>(null)
-  const [modulAus, setModulAus] = useState(false)
+  const session = useDocsSession({ userId: user?.id, docsEnabled })
+  const panel = useDocsStore((state) => state.panel)
+  const selection = useDocsStore((state) => state.selection)
+  const setPanel = useDocsStore((state) => state.setPanel)
+  const setSelection = useDocsStore((state) => state.setSelection)
+
   const [detail, setDetail] = useState<DocDetail | null>(null)
   const [detailFehler, setDetailFehler] = useState<string | null>(null)
-  const [panel, setPanel] = useState<Panel>(null)
   const [comments, setComments] = useState<DocComment[]>([])
   const [revisions, setRevisions] = useState<DocRevision[]>([])
   const [outlineEntries, setOutlineEntries] = useState<OutlineEntry[]>([])
   const outlineJumpRef = useRef<((pos: number) => void) | null>(null)
-  const [shareOpen, setShareOpen] = useState(false)
-  const [membersOpen, setMembersOpen] = useState(false)
-  const [selection, setSelection] = useState<{ quote: string } | null>(null)
-  const [vorschlag, setVorschlag] = useState<DocPendingView | null>(null)
-  const [vorschlagBusy, setVorschlagBusy] = useState(false)
-  const [moveDoc, setMoveDoc] = useState<DocSummary | null>(null)
-  const [treeOffen, setTreeOffen] = useState(false)
-  const [panelBreite, setPanelBreite] = useState(() => {
-    try {
-      const gespeichert = Number(localStorage.getItem(`docs.chat.breite:${user?.id ?? 'anonym'}`))
-      return Number.isFinite(gespeichert) && gespeichert > 0 ? Math.max(340, Math.min(860, gespeichert)) : 440
-    } catch {
-      return 440
-    }
-  })
-  const searchRef = useRef<number | null>(null)
 
   const meldung = useCallback(
-    (error: unknown, fallback: string) => {
-      const code = docsErrorCode(error)
-      if (code) return t(`docs.errors.${code}`, { defaultValue: fallback })
-      return fallback
-    },
+    (error: unknown, kontext: DocsFehlerKontext) => docsFehlermeldung(t, error, kontext),
     [t],
   )
-
-  const listeLaden = useCallback(async () => {
-    setLoading(true)
-    setFehler(null)
-    try {
-      const begriff = search.trim()
-      const [ordner, docs] = await Promise.all([
-        listFolders(teamId),
-        (async () => {
-          if (!begriff) {
-            setSuchGrenze(null)
-            return listDocuments({ teamId, archived, trash, limit: 200 })
-          }
-          const ergebnis = await searchDocuments({ search: begriff, limit: 200 })
-          setSuchGrenze(ergebnis.truncated ? ergebnis.searched : null)
-          return ergebnis.items
-        })(),
-      ])
-      setFolders(ordner)
-      setDocuments(docs)
-      // Nur die ungefilterte Aktivliste ersetzt den Offline-Katalog. Eine
-      // Suchtrefferliste oder der Papierkorb wuerde sonst die lokale Kopie
-      // aller anderen Dokumente ueberschreiben.
-      if (user && !search.trim() && !trash && !archived) {
-        saveCachedDocuments(user.id, docs)
-      }
-    } catch (error) {
-      setFehler(meldung(error, t('docs.errors.DOCUMENT_NOT_FOUND')))
-    } finally {
-      setLoading(false)
-    }
-  }, [archived, meldung, search, t, teamId, trash, user])
-
-  useEffect(() => {
-    void teamsApi.list().then(setTeams).catch(() => setTeams([]))
-    const statusLaden = () => {
-      void getDocsStatus()
-        .then((daten) => {
-          setStatus(daten)
-          setModulAus(false)
-        })
-        .catch((error) => {
-          setStatus(null)
-          if (docsErrorCode(error) === 'DOCS_DISABLED') setModulAus(true)
-        })
-    }
-    statusLaden()
-    // Der Sidecar kann waehrend einer Sitzung neu starten. Ein Banner, das
-    // nur beim Oeffnen entsteht, bliebe sonst fuer immer stehen.
-    const timer = window.setInterval(statusLaden, 30_000)
-    return () => window.clearInterval(timer)
-  }, [])
-
-  useEffect(() => {
-    if (searchRef.current) window.clearTimeout(searchRef.current)
-    searchRef.current = window.setTimeout(() => {
-      void listeLaden()
-    }, search ? 300 : 0)
-    return () => {
-      if (searchRef.current) window.clearTimeout(searchRef.current)
-    }
-  }, [listeLaden, search])
 
   const detailLaden = useCallback(
     async (docUid: string) => {
@@ -188,7 +87,7 @@ export function DocsApp() {
         if (!online && gecacht) {
           setDetail({
             ...gecacht,
-            default_role: 'editor',
+            default_role: gecacht.role,
             schema_version: 1,
             shared: false,
             share_role: null,
@@ -197,71 +96,11 @@ export function DocsApp() {
           return
         }
         setDetail(null)
-        setDetailFehler(meldung(error, t('docs.errors.DOCUMENT_NOT_FOUND')))
+        setDetailFehler(meldung(error, 'list'))
       }
     },
-    [meldung, online, t, user],
+    [meldung, online, user],
   )
-
-  const vorschlagLaden = useCallback(async (docUid: string) => {
-    try {
-      const { pending_edits } = await listPendingEdits(docUid)
-      const erster =
-        pending_edits.find((eintrag) => eintrag.status !== 'stale') ?? pending_edits[0]
-      if (!erster) {
-        setVorschlag(null)
-        return
-      }
-      try {
-        const vorschau = await previewPendingEdit(docUid, erster.uid)
-        setVorschlag({ ...erster, ...vorschau })
-      } catch (error) {
-        // 409 heisst: Der Anker ist nicht mehr eindeutig oder der Vorschlag
-        // wurde in einem anderen Tab entschieden. Der Geist verschwindet, der
-        // Statuschip bietet noch das Verwerfen an.
-        const code = docsErrorCode(error)
-        if (
-          code === 'DOC_AI_PENDING_NOT_FOUND' ||
-          code === 'DOCS_FORBIDDEN' ||
-          code === 'DOCUMENT_NOT_FOUND'
-        ) {
-          setVorschlag(null)
-        } else {
-          // Auch ein voruebergehend nicht erreichbarer Sidecar soll den
-          // Vorschlag nicht aus der Oberflaeche tilgen: Verwerfen bleibt
-          // moeglich, Uebernehmen wird beim naechsten Versuch erneut geprueft.
-          setVorschlag({
-            ...erster,
-            stale: true,
-            html: '',
-            previews: [],
-            target_block: null,
-            target_index: null,
-          })
-        }
-      }
-    } catch {
-      setVorschlag(null)
-    }
-  }, [])
-
-  useEffect(() => {
-    setSelection(null)
-    setOutlineEntries([])
-    if (uid) {
-      void detailLaden(uid)
-      void vorschlagLaden(uid)
-    } else {
-      setDetail(null)
-      setVorschlag(null)
-    }
-  }, [detailLaden, uid, vorschlagLaden])
-
-  // Nach einem Reconnect die Rolle neu holen. Wurde sie inzwischen gesenkt,
-  // wird der Editor dadurch read-only, bevor die naechste Aenderung entsteht.
-  useEffect(() => {
-    if (online && uid) void detailLaden(uid)
-  }, [online, uid, detailLaden])
 
   const panelDatenLaden = useCallback(async () => {
     if (!uid) return
@@ -273,6 +112,26 @@ export function DocsApp() {
     }
   }, [panel, uid])
 
+  const pending = usePendingEdits({ uid, detailLaden, panelDatenLaden })
+
+  useEffect(() => {
+    setSelection(null)
+    setOutlineEntries([])
+    if (uid) {
+      void detailLaden(uid)
+      void pending.vorschlagLaden(uid)
+    } else {
+      setDetail(null)
+      useDocsStore.getState().setVorschlag(null)
+    }
+  }, [detailLaden, pending.vorschlagLaden, setSelection, uid])
+
+  // Nach einem Reconnect die Rolle neu holen. Wurde sie inzwischen gesenkt,
+  // wird der Editor dadurch read-only, bevor die naechste Aenderung entsteht.
+  useEffect(() => {
+    if (online && uid) void detailLaden(uid)
+  }, [online, uid, detailLaden])
+
   useEffect(() => {
     void panelDatenLaden()
   }, [panelDatenLaden])
@@ -281,88 +140,42 @@ export function DocsApp() {
     const handler = (event: Event) => {
       const daten = (event as CustomEvent<{ entity?: string; id?: string } | undefined>).detail
       if (!daten || daten.entity === 'docs') {
-        void listeLaden()
+        void session.listeLaden()
         if (uid) {
           void detailLaden(uid)
-          void vorschlagLaden(uid)
+          void pending.vorschlagLaden(uid)
         }
         void panelDatenLaden()
       }
     }
-    const kiFertig = () => {
-      if (uid) void vorschlagLaden(uid)
-    }
     window.addEventListener('msm:docs-updated', handler)
-    window.addEventListener(AI_ZUSTELLUNG_EVENT, kiFertig)
     return () => {
       window.removeEventListener('msm:docs-updated', handler)
-      window.removeEventListener(AI_ZUSTELLUNG_EVENT, kiFertig)
     }
-  }, [detailLaden, listeLaden, panelDatenLaden, uid, vorschlagLaden])
+  }, [detailLaden, panelDatenLaden, pending.vorschlagLaden, session.listeLaden, uid])
 
-  const vorschlagAnwenden = useCallback(async () => {
-    if (!uid || !vorschlag || vorschlagBusy) return
-    setVorschlagBusy(true)
-    try {
-      await applyPendingEdit(uid, vorschlag.uid)
-      toast.success(t('docs.pending.applied'))
-      await detailLaden(uid)
-      await vorschlagLaden(uid)
-      await panelDatenLaden()
-    } catch (error) {
-      toast.error(meldung(error, t('docs.pending.applyFailed')))
-      await vorschlagLaden(uid)
-    } finally {
-      setVorschlagBusy(false)
-    }
-  }, [detailLaden, meldung, panelDatenLaden, t, uid, vorschlag, vorschlagBusy, vorschlagLaden])
-
-  const vorschlagVerwerfen = useCallback(async () => {
-    if (!uid || !vorschlag || vorschlagBusy) return
-    setVorschlagBusy(true)
-    try {
-      await rejectPendingEdit(uid, vorschlag.uid)
-      toast.success(t('docs.pending.rejected'))
-      await vorschlagLaden(uid)
-    } catch (error) {
-      toast.error(meldung(error, t('docs.pending.rejectFailed')))
-    } finally {
-      setVorschlagBusy(false)
-    }
-  }, [meldung, t, uid, vorschlag, vorschlagBusy, vorschlagLaden])
-
-  const panelZiehen = useBreiteZiehen({
-    breite: panelBreite,
-    min: 320,
-    max: 720,
-    setzen: (breite) => {
-      setPanelBreite(breite)
-      try {
-        localStorage.setItem(`docs.chat.breite:${user?.id ?? 'anonym'}`, String(breite))
-      } catch {
-        /* Lokaler Speicher gesperrt — die Breite gilt nur für diese Sitzung. */
-      }
-    },
-  })
+  const dokumentVerschoben = useCallback(() => {
+    void session.listeLaden()
+  }, [session.listeLaden])
+  const { verschieben } = useDokumentVerschieben(dokumentVerschoben)
 
   const verschiebePerDrop = async (doc: DocSummary, folderUid: string | null) => {
     if (!doc.can_manage) return
     try {
-      await updateDocument(doc.uid, { folder_uid: folderUid })
-      await listeLaden()
+      await verschieben(doc.uid, { teamId: doc.team_id, folderUid })
       toast.success(t('docs.move.moved'))
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOCS_FORBIDDEN')))
+      toast.error(meldung(error, 'update'))
     }
   }
 
   const neueDokument = async () => {
     try {
-      const neu = await createDocument({ teamId, folderUid })
-      setDocuments((alt) => [neu, ...alt])
+      const neu = await createDocument({ teamId: session.teamId, folderUid: session.folderUid })
+      session.setDocuments((alt) => [neu, ...alt])
       navigate(`/dokumente/${neu.uid}`)
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOC_QUOTA_EXCEEDED')))
+      toast.error(meldung(error, 'create'))
     }
   }
 
@@ -374,10 +187,10 @@ export function DocsApp() {
     })
     if (!name?.trim()) return
     try {
-      const ordner = await createFolder({ teamId, parentUid: folderUid, name: name.trim() })
-      setFolders((alt) => [...alt, ordner])
+      const ordner = await createFolder({ teamId: session.teamId, parentUid: session.folderUid, name: name.trim() })
+      session.setFolders((alt) => [...alt, ordner])
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOC_NAME_CONFLICT')))
+      toast.error(meldung(error, 'create'))
     }
   }
 
@@ -390,9 +203,9 @@ export function DocsApp() {
     if (!name?.trim() || name.trim() === ordner.name) return
     try {
       await updateFolder(ordner.uid, { name: name.trim() })
-      void listeLaden()
+      void session.listeLaden()
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOC_NAME_CONFLICT')))
+      toast.error(meldung(error, 'update'))
     }
   }
 
@@ -406,14 +219,15 @@ export function DocsApp() {
     if (!sicher) return
     try {
       await deleteFolder(ordner.uid)
-      if (folderUid === ordner.uid) setFolderUid(null)
-      void listeLaden()
+      if (session.folderUid === ordner.uid) session.setFolderUid(null)
+      void session.listeLaden()
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOCS_FORBIDDEN')))
+      toast.error(meldung(error, 'update'))
     }
   }
 
-  const dokumentInPapierkorb = async (docUid: string) => {    const sicher = await confirm({
+  const dokumentInPapierkorb = async (docUid: string) => {
+    const sicher = await confirm({
       title: t('docs.tree.trashAction'),
       message: t('docs.tree.trashConfirm'),
       confirmText: t('docs.tree.trashAction'),
@@ -423,10 +237,10 @@ export function DocsApp() {
     try {
       await trashDocument(docUid)
       if (user) forgetDocument(user.id, docUid)
-      setDocuments((alt) => alt.filter((eintrag) => eintrag.uid !== docUid))
+      session.setDocuments((alt) => alt.filter((eintrag) => eintrag.uid !== docUid))
       if (uid === docUid) navigate('/dokumente')
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOCS_FORBIDDEN')))
+      toast.error(meldung(error, 'update'))
     }
   }
 
@@ -434,21 +248,22 @@ export function DocsApp() {
     try {
       await updateDocument(doc.uid, { archived: !doc.archived })
       toast.success(doc.archived ? t('docs.tree.restored') : t('docs.tree.archived'))
-      void listeLaden()
+      void session.listeLaden()
       if (uid === doc.uid) void detailLaden(doc.uid)
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOCS_FORBIDDEN')))
+      toast.error(meldung(error, 'update'))
     }
   }
 
-  const dokumentWiederherstellen = async (docUid: string) => {    try {
+  const dokumentWiederherstellen = async (docUid: string) => {
+    try {
       const wieder = await restoreDocument(docUid)
-      setDocuments((alt) => alt.filter((eintrag) => eintrag.uid !== docUid))
+      session.setDocuments((alt) => alt.filter((eintrag) => eintrag.uid !== docUid))
       toast.success(t('docs.tree.restored'))
       if (uid === docUid) setDetail(wieder)
-      void listeLaden()
+      void session.listeLaden()
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOCUMENT_NOT_FOUND')))
+      toast.error(meldung(error, 'update'))
     }
   }
 
@@ -457,10 +272,10 @@ export function DocsApp() {
     try {
       const neu = await updateDocument(detail.uid, { title: titel })
       setDetail(neu)
-      setDocuments((alt) => alt.map((eintrag) => (eintrag.uid === neu.uid ? { ...eintrag, title: neu.title } : eintrag)))
+      session.setDocuments((alt) => alt.map((eintrag) => (eintrag.uid === neu.uid ? { ...eintrag, title: neu.title } : eintrag)))
       if (user) cacheDocument(user.id, neu)
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOCS_READ_ONLY')))
+      toast.error(meldung(error, 'update'))
     }
   }
 
@@ -478,30 +293,35 @@ export function DocsApp() {
       if (user) forgetDocument(user.id, detail.uid)
       navigate('/dokumente')
       setDetail(null)
-      void listeLaden()
+      void session.listeLaden()
     } catch (error) {
-      toast.error(meldung(error, t('docs.errors.DOCS_FORBIDDEN')))
+      toast.error(meldung(error, 'update'))
     }
   }
 
-  const moduleAus = status && !status.enabled
-  const sidecarAus = status && status.enabled && !status.sidecar_ok
-  const offlineOhneKopie = !online && uid && user && !hasLocalCopy(user.id, uid)
-  const aktuellesTeam = teams.find((team) => team.id === teamId)
-  const canManageFolders =
-    Boolean(user?.is_owner) || teamId === null || Boolean(aktuellesTeam?.is_owner)
+  const aktionen: DocsSidebarAktionen = {
+    neueDokument: () => void neueDokument(),
+    neuerOrdner: () => void neuerOrdner(),
+    dokumentInPapierkorb: (docUid) => void dokumentInPapierkorb(docUid),
+    dokumentWiederherstellen: (docUid) => void dokumentWiederherstellen(docUid),
+    archivUmschalten: (doc) => void archivUmschalten(doc),
+    ordnerUmbenennen: (ordner) => void ordnerUmbenennen(ordner),
+    ordnerLoeschen: (ordner) => void ordnerLoeschen(ordner),
+    verschiebePerDrop: (doc, folderUid) => void verschiebePerDrop(doc, folderUid),
+  }
 
-  const panelTitel = useMemo(() => {
-    if (panel === 'comments') return t('docs.comments.title')
-    if (panel === 'history') return t('docs.history.title')
-    if (panel === 'outline') return t('docs.outline.label')
-    if (panel === 'singra') return t('docs.singra.title')
-    return ''
-  }, [panel, t])
+  const lokaleDokumente = useMemo(
+    () => new Set(user ? loadCachedDocuments(user.id).map((eintrag) => eintrag.uid) : []),
+    [user?.id, session.documents, detail?.uid],
+  )
+  const offlineOhneKopie = !online && uid && user && !lokaleDokumente.has(uid)
+  const aktuellesTeam = session.teams.find((team) => team.id === session.teamId)
+  const canManageFolders =
+    Boolean(user?.is_owner) || session.teamId === null || Boolean(aktuellesTeam?.is_owner)
 
   if (!user) return null
 
-  if (!docsEnabled || modulAus || moduleAus) {
+  if (!docsEnabled || session.modulAus) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <Zustandsflaeche art="leer" titel={t('docs.moduleOff.title')} text={t('docs.moduleOff.text')} />
@@ -511,19 +331,7 @@ export function DocsApp() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b border-outline-variant/40 bg-surface-container px-3 py-2 md:hidden">
-        <Button variant="ghost" size="sm" onClick={() => setTreeOffen(true)} aria-label={t('docs.tree.open')}>
-          <Menu className="h-4 w-4" />
-        </Button>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface">
-          {detail?.title ?? t('docs.title')}
-        </span>
-        <Button variant="primary" size="sm" onClick={() => void neueDokument()}>
-          <Plus className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {sidecarAus && (
+      {session.sidecarAus && (
         <div role="alert" className="flex items-center gap-2 border-b border-status-warning/40 bg-status-warning/10 px-4 py-2 text-xs text-status-warning">
           <AlertTriangle className="h-4 w-4" />
           {t('docs.status.sidecarDown')}
@@ -531,228 +339,74 @@ export function DocsApp() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <div className={`${treeOffen ? 'fixed inset-0 z-40 flex bg-background/70 md:static md:z-auto md:bg-transparent' : 'hidden md:flex'}`}>
-          <div className="relative flex h-full w-72 max-w-[85vw] flex-col">
-            {treeOffen && (
-              <button
-                type="button"
-                aria-label={t('common.close')}
-                className="absolute right-2 top-2 z-10 rounded-full bg-surface-container-high p-1 text-on-surface md:hidden"
-                onClick={() => setTreeOffen(false)}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-            <DocTree
-              teams={teams}
-              teamId={teamId}
-              onTeamChange={(wert) => {
-                setTeamId(wert)
-                setFolderUid(null)
-                setTreeOffen(false)
-                if (uid) navigate('/dokumente')
-              }}
-              folders={folders}
-              documents={documents}
-              folderUid={folderUid}
-              onFolderChange={(wert) => {
-                setFolderUid(wert)
-                setTreeOffen(false)
-              }}
-              selectedUid={uid ?? null}
-              onMoveDocumentToFolder={(doc, folderUid) => void verschiebePerDrop(doc, folderUid)}
-              onSelect={(docUid) => {
-                navigate(`/dokumente/${docUid}`)
-                setTreeOffen(false)
-              }}
-              search={search}
-              onSearch={setSearch}
-              searchHinweis={suchGrenze}
-              trash={trash}
-              archived={archived}
-              onTrashChange={setTrash}
-              onArchiveChange={setArchived}
-              onCreateDocument={() => void neueDokument()}
-              onCreateFolder={() => void neuerOrdner()}
-              onTrashDocument={(docUid) => void dokumentInPapierkorb(docUid)}
-              onRestoreDocument={(docUid) => void dokumentWiederherstellen(docUid)}
-              onMoveDocument={setMoveDoc}
-              onArchiveDocument={(doc) => void archivUmschalten(doc)}
-              canManageFolders={canManageFolders}
-              onRenameFolder={(ordner) => void ordnerUmbenennen(ordner)}
-              onDeleteFolder={(ordner) => void ordnerLoeschen(ordner)}
-              loading={loading}
-            />
-          </div>
-        </div>
+        <DocsSidebar
+          session={session}
+          aktionen={aktionen}
+          selectedUid={uid ?? null}
+          canManageFolders={canManageFolders}
+        />
 
-        <main className="flex min-w-0 flex-1 flex-col">
-          {fehler && (
-            <div className="p-4">
-              <Zustandsflaeche art="fehler" titel={t('docs.list.errorTitle')} text={fehler} erneutLabel={t('common.retry')} onErneut={() => void listeLaden()} />
-            </div>
-          )}
-          {!fehler && !uid && (
-            <div className="flex flex-1 items-center justify-center p-6">
-              <Zustandsflaeche
-                art="leer"
-                titel={t('docs.list.emptyTitle')}
-                text={t('docs.list.emptyText')}
-              >
-                <Button onClick={() => void neueDokument()}>
-                  <Plus className="mr-1 h-4 w-4" />
-                  {t('docs.new')}
-                </Button>
-              </Zustandsflaeche>
-            </div>
-          )}
-          {uid && detailFehler && (
-            <div className="flex flex-1 items-center justify-center p-6">
-              <Zustandsflaeche
-                art={offlineOhneKopie ? 'offline' : 'fehler'}
-                titel={offlineOhneKopie ? t('docs.offline.noCopyTitle') : t('docs.errors.DOCUMENT_NOT_FOUND')}
-                text={offlineOhneKopie ? t('docs.offline.noCopyText') : detailFehler}
-                erneutLabel={t('common.retry')}
-                onErneut={() => void detailLaden(uid)}
-              />
-            </div>
-          )}
-          {uid && detail && (
-            <DocEditor
-              key={detail.uid}
-              detail={detail}
-              userId={user.id}
-              userName={user.username}
-              online={online}
-              activePanel={panel}
-              onOpenPanel={setPanel}
-              onOpenShare={() => setShareOpen(true)}
-              onOpenMembers={() => setMembersOpen(true)}
-              onCommentsChanged={() => void panelDatenLaden()}
-              onTitleChanged={titelAendern}
-              onSelectionChange={setSelection}
-              onOutlineChange={setOutlineEntries}
-              outlineJumpRef={outlineJumpRef}
-              vorschlag={vorschlag}
-              vorschlagBusy={vorschlagBusy}
-              onApplyVorschlag={() => void vorschlagAnwenden()}
-              onRejectVorschlag={() => void vorschlagVerwerfen()}
-              grenzen={status ? grenzenAusStatus(status) : undefined}
-            />
-          )}
-        </main>
+        <DocsMain
+          uid={uid}
+          detail={detail}
+          detailFehler={detailFehler}
+          fehler={session.fehler}
+          online={online}
+          userId={user.id}
+          userName={user.username}
+          offlineOhneKopie={Boolean(offlineOhneKopie)}
+          grenzen={session.status ? grenzenAusStatus(session.status) : undefined}
+          outlineJumpRef={outlineJumpRef}
+          pending={pending}
+          listeLaden={() => void session.listeLaden()}
+          detailLaden={(docUid) => void detailLaden(docUid)}
+          panelDatenLaden={() => void panelDatenLaden()}
+          titelAendern={titelAendern}
+          neueDokument={() => void neueDokument()}
+          onOutlineChange={setOutlineEntries}
+        />
 
         {uid && detail && panel && (
-          <div className="fixed inset-0 z-40 flex justify-end bg-background/70 lg:static lg:z-auto lg:bg-transparent">
-            <aside
-              className="relative flex h-full max-w-[92vw] shrink-0 flex-col overflow-hidden border-l border-outline-variant/40 bg-surface-container"
-              style={{ width: `min(${panelBreite}px, 92vw)` }}
-            >
-              <div
-                role="separator"
-                tabIndex={0}
-                aria-orientation="vertical"
-                aria-valuenow={panelBreite}
-                aria-valuemin={340}
-                aria-valuemax={860}
-                aria-label={t('docs.chat.resize')}
-                className="group/griff absolute inset-y-0 left-0 z-10 flex w-2 cursor-col-resize touch-none items-center justify-center outline-none hover:bg-primary/10 focus-visible:bg-primary/10 active:bg-primary/15"
-                {...panelZiehen}
-              >
-                <span aria-hidden="true" className="h-10 w-1 rounded-full bg-outline transition-colors group-hover/griff:bg-primary group-focus-visible/griff:bg-primary group-active/griff:bg-primary" />
-              </div>
-              <div className="flex items-center justify-between border-b border-outline-variant/40 px-3 py-2">
-                <span className="text-sm font-semibold text-on-surface">{panelTitel}</span>
-                <Kurzinfo text={t('common.close')}>
-                  <Button variant="ghost" size="sm" aria-label={t('common.close')} onClick={() => setPanel(null)}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </Kurzinfo>
-              </div>
-              <div className="min-h-0 flex-1 overflow-hidden">
-                {panel === 'comments' && (
-                  <CommentsPanel
-                    uid={detail.uid}
-                    comments={comments}
-                    canComment={detail.can_comment}
-                    canManage={detail.can_manage}
-                    userId={user.id}
-                    onChanged={() => void panelDatenLaden()}
-                  />
-                )}
-                {panel === 'history' && (
-                  <HistoryPanel
-                    uid={detail.uid}
-                    revisions={revisions}
-                    canEdit={detail.can_edit}
-                    onChanged={() => {
-                      void panelDatenLaden()
-                      void detailLaden(detail.uid)
-                    }}
-                  />
-                )}
-                {panel === 'outline' && (
-                  <div className="h-full overflow-y-auto">
-                    <OutlineList
-                      entries={outlineEntries}
-                      onJump={(pos) => outlineJumpRef.current?.(pos)}
-                    />
-                  </div>
-                )}
-                {panel === 'singra' && (
-                  <DocsChatPanel
-                    uid={detail.uid}
-                    selection={selection}
-                    onChanged={() => {
-                      void detailLaden(detail.uid)
-                      void vorschlagLaden(detail.uid)
-                    }}
-                  />
-                )}
-              </div>
-            </aside>
-          </div>
+          <DocsPanels
+            detail={detail}
+            panel={panel}
+            comments={comments}
+            revisions={revisions}
+            outlineEntries={outlineEntries}
+            outlineJumpRef={outlineJumpRef}
+            selection={selection}
+            userId={user.id}
+            onClose={() => setPanel(null)}
+            onCommentsChanged={() => void panelDatenLaden()}
+            onHistoryChanged={() => {
+              void panelDatenLaden()
+              void detailLaden(detail.uid)
+            }}
+            onAssistantChanged={() => {
+              void detailLaden(detail.uid)
+              void pending.vorschlagLaden(detail.uid)
+            }}
+          />
         )}
       </div>
 
       {detail && (
-        <>
-          <ShareDialog
-            detail={detail}
-            open={shareOpen}
-            onOpenChange={setShareOpen}
-            onChanged={() => void detailLaden(detail.uid)}
-          />
-          <MembersDialog
-            detail={detail}
-            open={membersOpen}
-            onOpenChange={setMembersOpen}
-            onChanged={() => void detailLaden(detail.uid)}
-          />
-          <MoveDialog
-            document={moveDoc}
-            folders={folders}
-            teams={teams}
-            open={moveDoc !== null}
-            onOpenChange={(offen) => {
-              if (!offen) setMoveDoc(null)
-            }}
-            onMoved={() => {
-              void listeLaden()
-              const gleichesTeam = moveDoc?.team_id === teamId
-              if (uid) {
-                if (gleichesTeam) void detailLaden(uid)
-                else {
-                  setDetail(null)
-                  navigate('/dokumente')
-                }
-              }
-            }}
-          />
-        </>
+        <DocsDialogs
+          detail={detail}
+          folders={session.folders}
+          teams={session.teams}
+          teamId={session.teamId}
+          uid={uid}
+          listeLaden={() => void session.listeLaden()}
+          detailLaden={(docUid) => void detailLaden(docUid)}
+          onDetailEntfernt={() => {
+            setDetail(null)
+            navigate('/dokumente')
+          }}
+        />
       )}
 
-      {trash && detail?.deleted && (
+      {session.trash && detail?.deleted && (
         <div className="border-t border-outline-variant/40 p-2">
           <Button variant="destructive" size="sm" onClick={() => void endgueltigLoeschen()}>
             {t('docs.tree.deletePermanent')}

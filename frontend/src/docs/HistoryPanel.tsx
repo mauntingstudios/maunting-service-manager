@@ -4,6 +4,7 @@ import { History, RotateCcw, Save } from 'lucide-react'
 import { Badge, Button, confirm, prompt } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
 import { createRevision, restoreRevision, type DocRevision } from '@/api/docs'
+import { docsFehlermeldung } from './docsFehler'
 
 interface HistoryPanelProps {
   uid: string
@@ -40,8 +41,8 @@ export function HistoryPanel({ uid, revisions, canEdit, onChanged }: HistoryPane
       await createRevision(uid, label.trim() || undefined)
       onChanged()
       toast.success(t('docs.history.checkpointCreated'))
-    } catch {
-      toast.error(t('docs.errors.DOCS_STORE_FAILED'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'create'))
     } finally {
       setLaeuft(false)
     }
@@ -60,8 +61,8 @@ export function HistoryPanel({ uid, revisions, canEdit, onChanged }: HistoryPane
       await restoreRevision(uid, rev)
       onChanged()
       toast.success(t('docs.history.restored'))
-    } catch {
-      toast.error(t('docs.errors.DOC_RESTORE_CONFLICT'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'update'))
     } finally {
       setLaeuft(false)
     }

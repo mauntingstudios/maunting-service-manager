@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { useTranslation } from 'react-i18next'
 
+const OUTLINE_UPDATE_DEBOUNCE_MS = 150
+
 export interface OutlineEntry {
   pos: number
   level: number
@@ -16,7 +18,7 @@ export interface OutlineEntry {
  * oben, damit sie in derselben rechten Seitenleiste wie Kommentare und
  * Verlauf gezeichnet werden kann.
  */
-export function useOutlineEntries(editor: Editor | null): OutlineEntry[] {
+export function useOutlineEntries(editor: Editor | null, enabled = true): OutlineEntry[] {
   const { t } = useTranslation()
   const [eintraege, setEintraege] = useState<OutlineEntry[]>([])
 
@@ -25,6 +27,7 @@ export function useOutlineEntries(editor: Editor | null): OutlineEntry[] {
       setEintraege([])
       return
     }
+    if (!enabled) return
     const lesen = () => {
       const naechste: OutlineEntry[] = []
       editor.state.doc.descendants((node, pos) => {
@@ -35,14 +38,30 @@ export function useOutlineEntries(editor: Editor | null): OutlineEntry[] {
           text: node.textContent || t('docs.tree.untitled'),
         })
       })
-      setEintraege(naechste)
+      setEintraege((vorher) =>
+        vorher.length === naechste.length &&
+        vorher.every(
+          (eintrag, index) =>
+            eintrag.pos === naechste[index].pos &&
+            eintrag.level === naechste[index].level &&
+            eintrag.text === naechste[index].text,
+        )
+          ? vorher
+          : naechste,
+      )
+    }
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const aktualisieren = () => {
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(lesen, OUTLINE_UPDATE_DEBOUNCE_MS)
     }
     lesen()
-    editor.on('update', lesen)
+    editor.on('update', aktualisieren)
     return () => {
-      editor.off('update', lesen)
+      if (timer !== null) clearTimeout(timer)
+      editor.off('update', aktualisieren)
     }
-  }, [editor, t])
+  }, [editor, enabled, t])
 
   return eintraege
 }

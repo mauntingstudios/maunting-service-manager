@@ -9,6 +9,7 @@ import {
   updateComment,
   type DocComment,
 } from '@/api/docs'
+import { docsFehlermeldung } from './docsFehler'
 
 interface CommentsPanelProps {
   uid: string
@@ -52,8 +53,8 @@ export function CommentsPanel({
       })
       else setNeu('')
       onChanged()
-    } catch {
-      toast.error(t('docs.errors.COMMENT_NOT_FOUND'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'update'))
     } finally {
       setLaeuft(false)
     }
@@ -63,8 +64,8 @@ export function CommentsPanel({
     try {
       await updateComment(uid, commentUid, { status })
       onChanged()
-    } catch {
-      toast.error(t('docs.errors.COMMENT_NOT_FOUND'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'update'))
     }
   }
 
@@ -72,8 +73,8 @@ export function CommentsPanel({
     try {
       await deleteComment(uid, commentUid)
       onChanged()
-    } catch {
-      toast.error(t('docs.errors.COMMENT_NOT_FOUND'))
+    } catch (error) {
+      toast.error(docsFehlermeldung(t, error, 'update'))
     }
   }
 

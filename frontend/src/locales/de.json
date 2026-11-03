@@ -2306,9 +2306,18 @@
     "slash": {
       "label": "Einfügen"
     },
+    "fehler": {
+      "create": "Das konnte nicht erstellt werden.",
+      "list": "Das konnte nicht geladen werden.",
+      "update": "Das konnte nicht gespeichert werden.",
+      "upload": "Der Anhang konnte nicht hochgeladen werden.",
+      "share": "Die Freigabe konnte nicht geändert werden.",
+      "export": "Der Export konnte nicht erstellt werden."
+    },
     "editor": {
       "titleLabel": "Dokumenttitel",
       "contentLabel": "Dokumentinhalt",
+      "placeholder": "Schreib los …",
       "peers": "{{count}} Personen im Dokument",
       "readOnly": "Nur Lesen. Kommentieren ist weiterhin möglich, Tippen nicht.",
       "downgraded": "Nur Lesen. Deine lokalen Änderungen wurden nicht übernommen.",
@@ -2343,6 +2352,8 @@
       "trash": "Papierkorb",
       "root": "Alle Dokumente",
       "loading": "Lade Dokumente …",
+      "loadMore": "Weitere laden",
+      "loadingMore": "Lade weitere Dokumente …",
       "trashEmpty": "Der Papierkorb ist leer.",
       "archiveEmpty": "Keine archivierten Dokumente.",
       "empty": "Noch keine Dokumente in diesem Bereich.",
@@ -2455,8 +2466,6 @@
       "applying": "Wird übernommen …",
       "applied": "Vorschlag übernommen.",
       "rejected": "Vorschlag verworfen.",
-      "applyFailed": "Der Vorschlag konnte nicht übernommen werden.",
-      "rejectFailed": "Der Vorschlag konnte nicht verworfen werden.",
       "staleShort": "Vorschlag veraltet",
       "staleHint": "Die Stelle hat sich geändert. Der Vorschlag lässt sich nicht mehr sicher einsetzen.",
       "rejectStale": "Veralteten Vorschlag verwerfen",
@@ -2518,7 +2527,8 @@
       "AI_EDIT_STALE_SELECTION": "Die Textstelle ist nicht mehr eindeutig. Bitte neu auswählen.",
       "AI_UNDO_EMPTY": "Es gibt keine KI-Änderung zum Rückgängigmachen.",
       "DOC_TOO_LARGE": "Das Dokument ist zu groß.",
-      "DOC_ASSET_TOO_LARGE": "Die Datei ist zu groß. Erlaubt sind 4 MiB je Anhang.",
+      "ASSET_BYTES_EXCEEDED": "Die zulässige Anhangsgröße oder das Speicherlimit wurde überschritten.",
+      "ASSET_QUOTA_EXCEEDED": "Die Höchstzahl der Anhänge für dieses Dokument ist erreicht.",
       "DOC_INVALID_MIME": "Dieser Dateityp ist nicht erlaubt. Erlaubt sind Bilder und PDF.",
       "DOC_QUOTA_EXCEEDED": "Das Kontingent ist erschöpft.",
       "DOC_INVALID_TARGET": "Das Ziel ist ungültig.",
@@ -5106,7 +5116,7 @@
       },
       "service": {
         "title": "Dienst",
-        "body": "msm-docs-sidecar.service startet vor msm-panel.service. Es läuft genau eine Instanz: der Collab-Zustand lebt im Prozess."
+        "body": "msm-docs-sidecar.service startet vor msm-panel.service. Die Sperrdatei $MSM_DIR/data/docs-sidecar/docs-sidecar.lock verhindert eine zweite Instanz; der Collab-Zustand lebt im Prozess."
       },
       "release": {
         "title": "Release",

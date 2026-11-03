@@ -5,6 +5,22 @@ import * as Y from 'yjs'
 import { createDocsExtensions } from './extensions'
 
 describe('createDocsExtensions', () => {
+  it('verwendet den vom Aufrufer lokalisierten Pflicht-Platzhalter', () => {
+    const ydoc = new Y.Doc()
+    const extensions = createDocsExtensions({
+      ydoc,
+      provider: null,
+      user: { id: 1, name: 'Ada', color: 'hsl(0 0% 0%)' },
+      docUid: 'doc-1',
+      placeholder: 'Start writing',
+    })
+
+    expect(extensions.find((extension) => extension.name === 'placeholder')?.options.placeholder).toBe(
+      'Start writing',
+    )
+    ydoc.destroy()
+  })
+
   it('liefert schon vor dem ersten Sync ein vollständiges Schema', () => {
     const ydoc = new Y.Doc()
     const editor = new Editor({
@@ -13,6 +29,7 @@ describe('createDocsExtensions', () => {
         provider: null,
         user: { id: 1, name: 'Ada', color: 'hsl(0 0% 0%)' },
         docUid: 'doc-1',
+        placeholder: 'Start writing',
       }),
       content: '<p>Hallo</p>',
     })
@@ -33,6 +50,7 @@ describe('createDocsExtensions', () => {
         provider: null,
         user: { id: 1, name: 'Ada', color: 'hsl(0 0% 0%)' },
         docUid: 'doc-1',
+        placeholder: 'Start writing',
       }),
       content: '<img src="https://tracker.example/bild.png" data-asset-uid="asset-1" alt="Bild">',
     })
