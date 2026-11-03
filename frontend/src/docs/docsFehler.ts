@@ -18,18 +18,34 @@ const KONTEXT_SCHLUESSEL: Record<DocsFehlerKontext, string> = {
   export: 'docs.fehler.export',
 }
 
+export interface DocsFehlerInfo {
+  text: string
+  code: string | null
+}
+
 /**
  * Einzige Stelle, die Server-Codes in Anzeigetexte übersetzt: Meldet der
  * Server einen bekannten Code, gilt dessen Text — sonst der zum Kontext
- * passende Rückfalltext. Kein Aufrufer verzweigt mehr selbst über Codes.
+ * passende Rückfalltext. Text und Code bleiben zusammen, damit eine Anzeige
+ * den Titel aus demselben Befund wählen kann.
  */
+export function docsFehlerInfo(
+  t: TFunction,
+  error: unknown,
+  kontext: DocsFehlerKontext,
+): DocsFehlerInfo {
+  const rueckfall = t(KONTEXT_SCHLUESSEL[kontext])
+  const code = docsErrorCode(error)
+  return {
+    text: code ? t(`docs.errors.${code}`, { defaultValue: rueckfall }) : rueckfall,
+    code,
+  }
+}
+
 export function docsFehlermeldung(
   t: TFunction,
   error: unknown,
   kontext: DocsFehlerKontext,
 ): string {
-  const rueckfall = t(KONTEXT_SCHLUESSEL[kontext])
-  const code = docsErrorCode(error)
-  if (!code) return rueckfall
-  return t(`docs.errors.${code}`, { defaultValue: rueckfall })
+  return docsFehlerInfo(t, error, kontext).text
 }

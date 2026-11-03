@@ -12,7 +12,6 @@ import {
   createFolder,
   deleteDocumentPermanent,
   deleteFolder,
-  docsErrorCode,
   duplicateDocument,
   getDocument,
   grenzenAusStatus,
@@ -28,7 +27,7 @@ import {
   type DocRevision,
   type DocSummary,
 } from '@/api/docs'
-import { docsFehlermeldung, type DocsFehlerKontext } from './docsFehler'
+import { docsFehlerInfo, docsFehlermeldung, type DocsFehlerInfo, type DocsFehlerKontext } from './docsFehler'
 import { useDocsStore } from './docsStore'
 import { useDocsSession } from './useDocsSession'
 import { usePendingEdits } from './usePendingEdits'
@@ -65,8 +64,7 @@ export function DocsApp() {
   const setSelection = useDocsStore((state) => state.setSelection)
 
   const [detail, setDetail] = useState<DocDetail | null>(null)
-  const [detailFehler, setDetailFehler] = useState<string | null>(null)
-  const [detailFehlerCode, setDetailFehlerCode] = useState<string | null>(null)
+  const [detailFehler, setDetailFehler] = useState<DocsFehlerInfo | null>(null)
   const [comments, setComments] = useState<DocComment[]>([])
   const [revisions, setRevisions] = useState<DocRevision[]>([])
   const [outlineEntries, setOutlineEntries] = useState<OutlineEntry[]>([])
@@ -80,7 +78,6 @@ export function DocsApp() {
   const detailLaden = useCallback(
     async (docUid: string) => {
       setDetailFehler(null)
-      setDetailFehlerCode(null)
       setDetail((alt) => (alt?.uid === docUid ? alt : null))
       try {
         const daten = await getDocument(docUid)
@@ -100,11 +97,10 @@ export function DocsApp() {
           return
         }
         setDetail(null)
-        setDetailFehler(meldung(error, 'list'))
-        setDetailFehlerCode(docsErrorCode(error))
+        setDetailFehler(docsFehlerInfo(t, error, 'list'))
       }
     },
-    [meldung, online, user],
+    [online, t, user],
   )
 
   const panelDatenLaden = useCallback(async () => {
@@ -367,7 +363,6 @@ export function DocsApp() {
           uid={uid}
           detail={detail}
           detailFehler={detailFehler}
-          detailFehlerCode={detailFehlerCode}
           fehler={session.fehler}
           online={online}
           userId={user.id}

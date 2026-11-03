@@ -153,6 +153,10 @@ function query(params: Record<string, string | number | boolean | null | undefin
   return text ? `?${text}` : ''
 }
 
+/**
+ * Liste ohne Suche. Die Suche nutzt `DocSearchResult`: Sie blättert nicht,
+ * sondern nennt Suchtiefe und Kürzung.
+ */
 export interface DocListe {
   items: DocSummary[]
   /** Opaker Stand für die nächste Seite; `null` heißt: nichts mehr dahinter. */

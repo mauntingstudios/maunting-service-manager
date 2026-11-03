@@ -386,7 +386,6 @@ class DocsService:
         *,
         team_id: int | None = None,
         folder_uid: str | None = None,
-        search: str | None = None,
         archived: bool = False,
         trash: bool = False,
         member: str | None = None,
@@ -445,7 +444,7 @@ class DocsService:
         # Eine Zeile mehr pruefen: nur so weiss der Client, ob es weitergeht.
         zeilen = query.limit(limit + 1).all()
         kandidaten = zeilen[:limit]
-        naechster = _cursor_kodieren(kandidaten[-1]) if len(zeilen) > limit and kandidaten else None
+        naechster = _cursor_kodieren(kandidaten[-1]) if len(zeilen) > limit else None
 
         titel = _titel_gebuendelt(kandidaten)
         zugriffe = docs_access.resolve_access_many(db, user, kandidaten, mit_trash=trash)

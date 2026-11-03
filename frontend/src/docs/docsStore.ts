@@ -2,6 +2,7 @@ import { create } from 'zustand'
 
 import type { DocPendingView, DocSummary } from '@/api/docs'
 import type { DocsPanel } from './DocsPanels'
+import { beiKontowechsel } from '@/lib/angemeldetesKonto'
 
 /**
  * UI-Zustand des Dokumente-Moduls: Auswahl, offene Panels und
@@ -62,3 +63,9 @@ export const useDocsStore = create<DocsUiState>()((set) => ({
   setVorschlagBusy: (vorschlagBusy) => set({ vorschlagBusy }),
   zuruecksetzen: () => set({ ...ANFANG }),
 }))
+
+// Ein Kontowechsel ohne Abmelden (abgelaufene Sitzung, neue Anmeldung) darf
+// die offene Auswahl des vorigen Kontos nicht mitnehmen.
+beiKontowechsel(() => {
+  useDocsStore.getState().zuruecksetzen()
+})

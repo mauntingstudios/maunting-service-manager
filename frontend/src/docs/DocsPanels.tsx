@@ -13,7 +13,6 @@ import { OutlineList, type OutlineEntry } from './editor/Outline'
 
 export type DocsPanel = 'comments' | 'history' | 'outline' | 'singra'
 
-/** Unterhalb von `lg` liegt das Panel als Overlay; darüber ist es angedockt. */
 
 interface DocsPanelsProps {
   detail: DocDetail

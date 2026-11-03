@@ -307,28 +307,60 @@ def _pruefe_rollen_deckel(
                 )
 
 
+def _pruefe_server_grant_sicht(server_grants: list[dict] | None) -> None:
+    """Ohne `server.view` ergeben weitere Serverrechte keinen Sinn.
+
+    Dieselbe Regel wie in `set_server_grants`; sie gilt fuer neue und
+    geaenderte Rollen. Bestehende Rollen werden bei der Zuteilung nicht
+    nachtraeglich abgewiesen.
+    """
+    from services.permission_catalog import SERVER_KEYS
+
+    for grant in server_grants or []:
+        keys = {key for key in grant.get("permission_keys") or [] if key in SERVER_KEYS}
+        if keys and "server.view" not in keys:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "TEAM_ROLE_GRANT_DENIED",
+                    "message": 'Ohne "server.view" ergeben die uebrigen Serverrechte keinen Sinn.',
+                },
+            )
+
+
 def _pruefe_rollenzuteilung(db: Session, team: Team, user: User, rollen: list[TeamRole]) -> None:
     """Der Deckel fuer die Zuteilung bestehender Rollen: jede Rolle zaehlt wie neu angelegt."""
     if _ist_team_gruender(team, user):
         return
+    rollen_ids = [rolle.id for rolle in rollen]
+    if not rollen_ids:
+        return
+    keys_je_rolle: dict[int, list[str]] = {role_id: [] for role_id in rollen_ids}
+    for role_id, key in (
+        db.query(TeamRolePermission.role_id, TeamRolePermission.permission_key)
+        .filter(TeamRolePermission.role_id.in_(rollen_ids))
+        .all()
+    ):
+        keys_je_rolle[role_id].append(key)
+    grants_je_rolle: dict[int, dict[int, list[str]]] = {
+        role_id: {} for role_id in rollen_ids
+    }
+    for role_id, server_id, key in (
+        db.query(
+            TeamRoleServerGrant.role_id,
+            TeamRoleServerGrant.server_id,
+            TeamRoleServerGrant.permission_key,
+        )
+        .filter(TeamRoleServerGrant.role_id.in_(rollen_ids))
+        .all()
+    ):
+        grants_je_rolle[role_id].setdefault(server_id, []).append(key)
+
     for rolle in rollen:
-        keys = [
-            row[0]
-            for row in db.query(TeamRolePermission.permission_key)
-            .filter(TeamRolePermission.role_id == rolle.id)
-            .all()
-        ]
-        grants: dict[int, list[str]] = {}
-        for row in (
-            db.query(TeamRoleServerGrant)
-            .filter(TeamRoleServerGrant.role_id == rolle.id)
-            .all()
-        ):
-            grants.setdefault(row.server_id, []).append(row.permission_key)
         _pruefe_rollen_deckel(
             db, team, user,
             is_admin=rolle.is_admin,
-            permission_keys=keys,
+            permission_keys=keys_je_rolle[rolle.id],
             flags={
                 "can_access_vault": rolle.can_access_vault,
                 "can_manage_skills": rolle.can_manage_skills,
@@ -336,7 +368,7 @@ def _pruefe_rollenzuteilung(db: Session, team: Team, user: User, rollen: list[Te
             },
             server_grants=[
                 {"server_id": server_id, "permission_keys": keys}
-                for server_id, keys in grants.items()
+                for server_id, keys in grants_je_rolle[rolle.id].items()
             ],
         )
 
@@ -603,10 +635,9 @@ def invite_member(
         raise HTTPException(status_code=409, detail="Benutzer ist bereits im Team")
 
     # Eine Rolle aus einem fremden Team landet nie auf der Einladung.
-    if team_role_id is not None:
-        _rolle_im_team(db, team, team_role_id)
-
-    ausdruecklich = team_role_id is not None
+    ausdrueckliche_rolle = (
+        _rolle_im_team(db, team, team_role_id) if team_role_id is not None else None
+    )
     if team_role_id is None and not team.is_personal:
         default_role = db.query(TeamRole.id).filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True)).first()
         if default_role is not None:
@@ -616,8 +647,8 @@ def invite_member(
     # eingesetzte Standardrolle ist kein Vergabewille des Einladenden; sie ist
     # die vom Gruender festgelegte Rolle (dieselbe Ausnahme wie in
     # `accept_invitation`).
-    if ausdruecklich and team_role_id is not None:
-        _pruefe_rollenzuteilung(db, team, user, [_rolle_im_team(db, team, team_role_id)])
+    if ausdrueckliche_rolle is not None:
+        _pruefe_rollenzuteilung(db, team, user, [ausdrueckliche_rolle])
 
     offen = invitation(db, team.id, new_user_id)
     if offen is None:
@@ -1243,6 +1274,7 @@ def create_team_role(
     """Erstellt eine neue Rolle im Team."""
     if not has_team_permission(db, team.id, user, "team.roles.manage"):
         assert_team_owner(db, team, user)
+    _pruefe_server_grant_sicht(server_grants)
     _pruefe_rollen_deckel(
         db, team, user,
         is_admin=is_admin,
@@ -1338,6 +1370,7 @@ def update_team_role(
         assert_team_owner(db, team, user)
 
     role = get_team_role(db, team.id, role_id)
+    _pruefe_server_grant_sicht(server_grants)
     _pruefe_rollen_deckel(
         db, team, user,
         is_admin=is_admin,

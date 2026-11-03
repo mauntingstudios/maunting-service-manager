@@ -35,7 +35,6 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
   const [teamId, setTeamId] = useState<number | null>(null)
   const [folders, setFolders] = useState<DocFolder[]>([])
   const [documents, setDocuments] = useState<DocSummary[]>([])
-  const [mehrDokumente, setMehrDokumente] = useState(false)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [ladeMehrDokumente, setLadeMehrDokumente] = useState(false)
   const [folderUid, setFolderUid] = useState<string | null>(null)
@@ -75,7 +74,6 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
             })
             return {
               items: seite.items,
-              hasMore: seite.next_cursor !== null,
               nextCursor: seite.next_cursor,
               searched: null,
             }
@@ -83,7 +81,6 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
           const ergebnis = await searchDocuments({ search: begriff, limit: 200 })
           return {
             items: ergebnis.items,
-            hasMore: false,
             nextCursor: null,
             searched: ergebnis.truncated ? ergebnis.searched : null,
           }
@@ -91,7 +88,6 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
       ])
       if (aktuelleGeneration !== listGenerationRef.current) return
       setSuchGrenze(dokumente.searched)
-      setMehrDokumente(dokumente.hasMore)
       setNextCursor(dokumente.nextCursor)
       setFolders(ordner)
       setDocuments(dokumente.items)
@@ -111,7 +107,7 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
   }, [archived, meldung, search, teamId, trash, userId])
 
   const weitereDokumenteLaden = useCallback(async () => {
-    if (ladeMehrDokumente || !mehrDokumente || !nextCursor || search.trim()) return
+    if (ladeMehrDokumente || !nextCursor || search.trim()) return
     const generation = listGenerationRef.current
     setLadeMehrDokumente(true)
     setFehler(null)
@@ -124,18 +120,14 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
         cursor: nextCursor,
       })
       if (generation !== listGenerationRef.current) return
-      const geladen = new Map(documents.map((doc) => [doc.uid, doc]))
-      const bekannt = new Set(geladen.keys())
-      const aktualisiert = documents.map((doc) => {
-        const frisch = seite.items.find((eintrag) => eintrag.uid === doc.uid)
-        return frisch ?? doc
-      })
+      const frischeSeite = new Map(seite.items.map((doc) => [doc.uid, doc]))
+      const bekannt = new Set(documents.map((doc) => doc.uid))
+      const aktualisiert = documents.map((doc) => frischeSeite.get(doc.uid) ?? doc)
       for (const doc of seite.items) {
         if (!bekannt.has(doc.uid)) aktualisiert.push(doc)
       }
       setDocuments(aktualisiert)
       setNextCursor(seite.next_cursor)
-      setMehrDokumente(seite.next_cursor !== null)
       if (userId !== undefined && !trash && !archived) {
         saveCachedDocuments(userId, aktualisiert)
       }
@@ -150,7 +142,6 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
     archived,
     documents,
     ladeMehrDokumente,
-    mehrDokumente,
     meldung,
     nextCursor,
     search,
@@ -201,6 +192,7 @@ export function useDocsSession({ userId, docsEnabled }: DocsSessionOptionen) {
     }
   }, [docsEnabled, listeLaden, search])
 
+  const mehrDokumente = nextCursor !== null
   const modulAus = statusModulAus || status?.enabled === false
   const sidecarAus = status && status.enabled && !status.sidecar_ok
 

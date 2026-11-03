@@ -13,17 +13,13 @@ const LOCK_DATEI = "docs-sidecar.lock";
  * die Lease als verwaist und darf übernommen werden. Der Inhalt nennt PID,
  * Besitzerkennung und Startzeit für Diagnose und Freigabe.
  */
-export const LEASE_MS = 60_000;
-export const HEARTBEAT_MS = 15_000;
+const LEASE_MS = 60_000;
+const HEARTBEAT_MS = 15_000;
 
 function belegt(pfad) {
   const error = new Error(`Eine docs-sidecar-Instanz ist bereits aktiv (Sperre: ${pfad})`);
   error.code = "DOCS_INSTANCE_RUNNING";
   return error;
-}
-
-function unlesbar(pfad) {
-  return new Error(`Die Sidecar-Sperre ist unlesbar und muss geprüft werden: ${pfad}`);
 }
 
 async function anlegen(lockPfad) {
@@ -78,8 +74,15 @@ export async function acquireInstanceLock(
     }
 
     if (lease) {
+      let heartbeatFehler = false;
       const heartbeat = setInterval(() => {
-        void utimes(lockPfad, new Date(), new Date()).catch(() => {});
+        void utimes(lockPfad, new Date(), new Date()).catch((fehler) => {
+          if (heartbeatFehler) return;
+          heartbeatFehler = true;
+          console.error(
+            `Sidecar-Sperre konnte nicht aufgefrischt werden: ${fehler.message}`,
+          );
+        });
       }, heartbeatMs);
       heartbeat.unref?.();
       let freigegeben = false;

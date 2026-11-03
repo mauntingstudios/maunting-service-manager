@@ -1862,3 +1862,21 @@ def test_rollenloeschung_senkt_die_traeger(db: Session, regular_user: User) -> N
 
     team_service.delete_team_role(db, team=team, user=regular_user, role_id=tresor.id)
     assert _schalter(db, team, kollege).can_access_vault is False
+
+
+def test_rollen_serverrechte_ohne_server_view_sind_422(db: Session, regular_user: User) -> None:
+    """Dieselbe Invariante wie in `set_server_grants`: ohne Sicht kein Recht."""
+    team = _team_with_member(db, regular_user, _user(db, "sicht-kollege"))
+    server = _server(db, "srv-ohne-sicht")
+    _allow(db, regular_user, server, "server.console.read")
+
+    with pytest.raises(HTTPException) as exc:
+        team_service.create_team_role(
+            db, team=team, user=regular_user, name="Ohne Sicht",
+            can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+            server_grants=[
+                {"server_id": server.id, "permission_keys": ["server.console.read"]}
+            ],
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"

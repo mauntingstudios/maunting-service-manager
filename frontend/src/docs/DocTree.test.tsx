@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import i18n from '@/i18n'
-import type { DocSummary } from '@/api/docs'
+import type { DocFolder, DocSummary } from '@/api/docs'
 import { DocTree } from './DocTree'
 
 const noop = () => {}
@@ -11,7 +11,7 @@ function renderBaum(
     search?: string
     searchHinweis?: number | null
     documents?: DocSummary[]
-    folders?: Array<{ uid: string; name: string; parent_uid: string | null; team_id: number; created_at: string }>
+    folders?: DocFolder[]
     onDuplicate?: (doc: DocSummary) => void
     onMoveToFolder?: (doc: DocSummary, folderUid: string | null) => void
     hasMoreDocuments?: boolean
@@ -86,28 +86,33 @@ describe('DocTree Filter', () => {
   })
 })
 
+function dokument(over: Partial<DocSummary> = {}): DocSummary {
+  return {
+    uid: 'doc-1',
+    title: 'Protokoll',
+    folder_uid: null,
+    team_id: 1,
+    team_name: null,
+    role: 'editor',
+    can_edit: true,
+    can_comment: true,
+    can_manage: false,
+    rev: 1,
+    archived: false,
+    deleted: false,
+    content_truncated: false,
+    updated_at: '2026-11-03T10:00:00Z',
+    last_edited_at: '2026-11-03T10:00:00Z',
+    owner: null,
+    ...over,
+  }
+}
+
 describe('DocTree Duplizieren', () => {
   it('bietet die Aktion für bearbeitbare Dokumente an', async () => {
     await i18n.changeLanguage('de')
     const onDuplicate = vi.fn()
-    const doc: DocSummary = {
-      uid: 'doc-1',
-      title: 'Protokoll',
-      folder_uid: null,
-      team_id: 1,
-      team_name: null,
-      role: 'editor',
-      can_edit: true,
-      can_comment: true,
-      can_manage: false,
-      rev: 1,
-      archived: false,
-      deleted: false,
-      content_truncated: false,
-      updated_at: '2026-11-03T10:00:00Z',
-      last_edited_at: '2026-11-03T10:00:00Z',
-      owner: null,
-    }
+        const doc = dokument()
     renderBaum({ documents: [doc], onDuplicate })
 
     fireEvent.click(
@@ -131,29 +136,11 @@ describe('DocTree Ablegen und Nachladen', () => {
     team_id: 1,
     created_at: '2026-11-03T10:00:00Z',
   }
-  const doc: DocSummary = {
-    uid: 'doc-drop',
-    title: 'Protokoll',
-    folder_uid: null,
-    team_id: 1,
-    team_name: null,
-    role: 'editor',
-    can_edit: true,
-    can_comment: true,
-    can_manage: true,
-    rev: 1,
-    archived: false,
-    deleted: false,
-    content_truncated: false,
-    updated_at: '2026-11-03T10:00:00Z',
-    last_edited_at: '2026-11-03T10:00:00Z',
-    owner: null,
-  }
 
-  function datenuebergabe() {
+  function datenuebergabe(uid: string) {
     return {
       effectAllowed: '',
-      getData: () => doc.uid,
+      getData: () => uid,
       setData: vi.fn(),
     }
   }
@@ -161,12 +148,13 @@ describe('DocTree Ablegen und Nachladen', () => {
   it('legt ein Dokument per Drag and Drop in einem Ordner ab', async () => {
     await i18n.changeLanguage('de')
     const onMoveToFolder = vi.fn()
+    const doc = dokument({ uid: 'doc-drop', can_manage: true })
     renderBaum({ documents: [doc], folders: [ordner], onMoveToFolder })
 
     const zeile = screen.getByText(doc.title).closest('[draggable="true"]')
     expect(zeile).not.toBeNull()
-    fireEvent.dragStart(zeile!, { dataTransfer: datenuebergabe() })
-    fireEvent.drop(screen.getByText(ordner.name), { dataTransfer: datenuebergabe() })
+    fireEvent.dragStart(zeile!, { dataTransfer: datenuebergabe(doc.uid) })
+    fireEvent.drop(screen.getByText(ordner.name), { dataTransfer: datenuebergabe(doc.uid) })
 
     expect(onMoveToFolder).toHaveBeenCalledWith(doc, ordner.uid)
   })

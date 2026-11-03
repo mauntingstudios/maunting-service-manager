@@ -250,11 +250,30 @@ describe('DocsApp', () => {
     )
   }, 20000)
 
+  it('übernimmt eine geänderte Fassung beim Nachladen einer Seite', async () => {
+    vi.mocked(docsApi.listDocuments)
+      .mockResolvedValueOnce({
+        items: [{ ...zusammenfassung(0), title: 'Alt' }],
+        next_cursor: 'c1',
+      })
+      .mockResolvedValueOnce({
+        items: [{ ...zusammenfassung(0), title: 'Neu' }],
+        next_cursor: null,
+      })
+    zeigen()
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: i18n.t('docs.tree.loadMore') }),
+    )
+
+    await waitFor(() => expect(screen.getByText('Neu')).toBeInTheDocument())
+    expect(screen.queryByText('Alt')).not.toBeInTheDocument()
+  })
+
   it('dupliziert ein Dokument über das Baum-Menü und öffnet die Kopie (Befund 51c)', async () => {
-    vi.mocked(docsApi.listDocuments).mockResolvedValue({
-      items: [zusammenfassung(1)],
-      next_cursor: null,
-    })
+    vi.mocked(docsApi.listDocuments)
+      .mockResolvedValueOnce({ items: [zusammenfassung(1)], next_cursor: null })
+      .mockResolvedValueOnce({ items: [zusammenfassung(1)], next_cursor: null })
     vi.mocked(docsApi.duplicateDocument).mockResolvedValueOnce({ uid: 'copy-1' } as never)
 
     function Kopie() {

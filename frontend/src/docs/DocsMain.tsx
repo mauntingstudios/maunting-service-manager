@@ -9,12 +9,12 @@ import { DocEditor } from './DocEditor'
 import type { OutlineEntry } from './editor/Outline'
 import { useDocsStore } from './docsStore'
 import type { PendingEdits } from './usePendingEdits'
+import type { DocsFehlerInfo } from './docsFehler'
 
 interface DocsMainProps {
   uid: string | undefined
   detail: DocDetail | null
-  detailFehler: string | null
-  detailFehlerCode: string | null
+  detailFehler: DocsFehlerInfo | null
   fehler: string | null
   online: boolean
   userId: number
@@ -36,7 +36,6 @@ export function DocsMain({
   uid,
   detail,
   detailFehler,
-  detailFehlerCode,
   fehler,
   online,
   userId,
@@ -53,6 +52,12 @@ export function DocsMain({
   onOutlineChange,
 }: DocsMainProps) {
   const { t } = useTranslation()
+  const fehlerTitel = offlineOhneKopie
+    ? t('docs.offline.noCopyTitle')
+    : detailFehler?.code
+      ? t(`docs.errors.${detailFehler.code}`, { defaultValue: t('docs.fehler.list') })
+      : t('docs.fehler.list')
+
   const { panel, setPanel, setShareOpen, setMembersOpen, setSelection, setTreeOffen } =
     useDocsStore(
       useShallow((state) => ({
@@ -107,14 +112,8 @@ export function DocsMain({
           <div className="flex flex-1 items-center justify-center p-6">
             <Zustandsflaeche
               art={offlineOhneKopie ? 'offline' : 'fehler'}
-              titel={
-                offlineOhneKopie
-                  ? t('docs.offline.noCopyTitle')
-                  : detailFehlerCode
-                    ? t(`docs.errors.${detailFehlerCode}`, { defaultValue: t('docs.fehler.list') })
-                    : t('docs.fehler.list')
-              }
-              text={offlineOhneKopie ? t('docs.offline.noCopyText') : detailFehler}
+              titel={fehlerTitel}
+              text={offlineOhneKopie ? t('docs.offline.noCopyText') : detailFehler.text}
               erneutLabel={t('common.retry')}
               onErneut={() => void detailLaden(uid)}
             />
