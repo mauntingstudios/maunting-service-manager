@@ -13,7 +13,7 @@ import { PostgresCredentialsDialog } from '@/components/server/PostgresCredentia
 import { Badge } from '@maunting/ui'
 import { Dropdown } from '@maunting/ui'
 import { TabBar } from '@maunting/ui'
-import { PageHeader } from '@maunting/ui'
+import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
 import { Button, Checkbox, Input, Kurzinfo, Switch } from '@maunting/ui'
 import { PasswordInput } from '@maunting/ui'
 import { Spinner } from '@maunting/ui'
@@ -383,17 +383,30 @@ export function Servers() {
 
   return (
     <div className="msm-page">
-      <PageHeader eyebrow={t('pageContext.infrastructure')} title={t('nav.servers')} description={t('servers.subtitle')} status={<span className="msm-badge-info">{servers.length} {t('nav.servers')}</span>} actions={canCreateServer ? (
-          <Button
-            onClick={() => {
-              setShowCreate(true)
-              void loadNodes()
-            }}
-            className="flex min-h-11 items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            {t('servers.create')}
-          </Button>) : undefined} />
+      <TageszeitBanner
+        bereich={t('nav.servers')}
+        icon={<ServerIcon className="h-3.5 w-3.5" aria-hidden="true" />}
+        untertitel={t('servers.subtitle')}
+        actions={
+          <>
+            <span className="msm-badge-info">
+              {servers.length} {t('nav.servers')}
+            </span>
+            {canCreateServer && (
+              <Button
+                onClick={() => {
+                  setShowCreate(true)
+                  void loadNodes()
+                }}
+                className="flex min-h-11 items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                {t('servers.create')}
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {loadError && (
         <div className="msm-card p-12 text-center border-dashed border-2 border-outline-variant">

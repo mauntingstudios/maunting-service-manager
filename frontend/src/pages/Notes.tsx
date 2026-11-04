@@ -26,6 +26,7 @@ import { Button } from '@maunting/ui'
 import { Switch } from '@maunting/ui'
 import { teamsApi, type Team } from '@/api/teams'
 import { Spinner } from '@maunting/ui'
+import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
 import { NotizschluesselHinweis } from '@/components/notes/NotizschluesselHinweis'
 import {
   loadNotesOfflineFirst,
@@ -338,31 +339,26 @@ export function Notes() {
 
   return (
     <div className="space-y-3.5">
-      {/* ── Kopfzeile: Titel, Zähler & Erstellen ── */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center text-primary shadow-sm shrink-0">
-            <StickyNote className="w-4 h-4" />
-          </div>
-          <div className="flex items-center gap-2 min-w-0">
-            <h2 className="font-headline text-base sm:text-lg font-bold text-on-surface tracking-tight truncate">
-              {t('notes.title')}
-            </h2>
-            <span className="text-label-sm font-medium px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant border border-outline-variant/30 shrink-0">
+      {/* ── Kopfzeile: Atmosphärische Tageszeit-Begrüßung, Zähler & Erstellen ── */}
+      <TageszeitBanner
+        bereich={t('notes.title')}
+        icon={<StickyNote className="h-3.5 w-3.5" aria-hidden="true" />}
+        actions={
+          <>
+            <span className="text-label-sm font-medium px-2.5 py-1 rounded-full bg-surface-container-high/85 text-on-surface-variant border border-outline-variant/30 shrink-0 backdrop-blur-md">
               {filteredNotes.length}
             </span>
-          </div>
-        </div>
-
-        <Button
-          onClick={openCreateModal}
-          className="rounded-xl flex items-center gap-1.5 font-medium shadow-sm shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">{t('notes.newNote')}</span>
-          <span className="sm:hidden">{t('notes.newNoteShort')}</span>
-        </Button>
-      </div>
+            <Button
+              onClick={openCreateModal}
+              className="rounded-xl flex items-center gap-1.5 font-medium shadow-sm shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('notes.newNote')}</span>
+              <span className="sm:hidden">{t('notes.newNoteShort')}</span>
+            </Button>
+          </>
+        }
+      />
 
       <NotizschluesselHinweis />
 

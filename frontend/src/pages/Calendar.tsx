@@ -23,7 +23,7 @@ import { FARB_PALETTE, farbwahl } from '@/config/farbpalette'
 import { apiUrl } from '@/config/api'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
-import { PageHeader } from '@maunting/ui'
+import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
 import { DateTimePicker, Dropdown, Kurzinfo, NumberStepper, useZurueckSchliesst } from '@maunting/ui'
 import { Button } from '@maunting/ui'
 import { sendeGeraeteBenachrichtigung, pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
@@ -782,8 +782,9 @@ export function Calendar() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={t('calendar.title')}
+      <TageszeitBanner
+        bereich={t('calendar.title')}
+        icon={<CalendarIcon className="h-3.5 w-3.5" aria-hidden="true" />}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button

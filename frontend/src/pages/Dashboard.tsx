@@ -18,7 +18,7 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import { UptimeDisplay } from '@/components/server/UptimeDisplay'
-import { PageHeader } from '@maunting/ui'
+import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
 import { ProgressBar, StackedProgressBar, Segment } from '@maunting/ui'
 import { Badge } from '@maunting/ui'
 
@@ -320,7 +320,16 @@ export function Dashboard() {
   return (
     <div className="msm-page">
       <UpdateBanner />
-      <PageHeader eyebrow={t('pageContext.overview')} title={t('dashboard.title')} description={t('dashboard.subtitle')} status={<span className={runningCount > 0 ? 'msm-badge-success' : 'msm-badge-info'}>{runningCount} {t('dashboard.running')}</span>} />
+      <TageszeitBanner
+        bereich={t('dashboard.title')}
+        icon={<ServerIcon className="h-3.5 w-3.5" aria-hidden="true" />}
+        untertitel={t('dashboard.subtitle')}
+        actions={
+          <span className={runningCount > 0 ? 'msm-badge-success' : 'msm-badge-info'}>
+            {runningCount} {t('dashboard.running')}
+          </span>
+        }
+      />
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

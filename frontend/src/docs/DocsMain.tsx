@@ -1,9 +1,10 @@
 import type { MutableRefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Menu, Plus } from 'lucide-react'
+import { FileText, Menu, Plus } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 
 import { Button, Kurzinfo, Zustandsflaeche } from '@maunting/ui'
+import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
 import type { DocDetail, UploadGrenzen } from '@/api/docs'
 import { DocEditor } from './DocEditor'
 import type { OutlineEntry } from './editor/Outline'
@@ -95,17 +96,25 @@ export function DocsMain({
           </div>
         )}
         {!fehler && !uid && (
-          <div className="flex flex-1 items-center justify-center p-6">
-            <Zustandsflaeche
-              art="leer"
-              titel={t('docs.list.emptyTitle')}
-              text={t('docs.list.emptyText')}
-            >
-              <Button onClick={() => void neueDokument()}>
-                <Plus className="mr-1 h-4 w-4" />
-                {t('docs.new')}
-              </Button>
-            </Zustandsflaeche>
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
+            <TageszeitBanner
+              kompakt
+              bereich={t('docs.title')}
+              icon={<FileText className="h-3.5 w-3.5" aria-hidden="true" />}
+              untertitel={t('docs.list.emptyText')}
+            />
+            <div className="flex flex-1 items-center justify-center py-4">
+              <Zustandsflaeche
+                art="leer"
+                titel={t('docs.list.emptyTitle')}
+                text={t('docs.list.emptyText')}
+              >
+                <Button onClick={() => void neueDokument()}>
+                  <Plus className="mr-1 h-4 w-4" />
+                  {t('docs.new')}
+                </Button>
+              </Zustandsflaeche>
+            </div>
           </div>
         )}
         {uid && detailFehler && (
