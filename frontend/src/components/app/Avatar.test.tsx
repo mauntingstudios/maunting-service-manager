@@ -1,8 +1,18 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { Avatar } from './Avatar'
 
 describe('Avatar Component', () => {
+  // Die lokale .env.local setzt eine absolute API-Adresse; im Test soll der
+  // relative Pfad gelten, sonst wartet der Desktop-Pfad auf einen Blob.
+  beforeEach(() => {
+    vi.stubEnv('VITE_API_URL', '')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('renders initials when no src is provided', () => {
     render(<Avatar name="Max Mustermann" />)
     expect(screen.getByText('MA')).toBeInTheDocument()

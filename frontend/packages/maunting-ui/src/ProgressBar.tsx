@@ -1,0 +1,153 @@
+/**
+ * ProgressBar — reusable Singra/UI meter for CPU/RAM/resource visualization.
+ * Design DNA: quiet cyan track, no aggressive glow, compact for cards/tables.
+ * When value is null/undefined, the track stays visible (empty) — never fake 0%.
+ */
+import { useTranslation } from 'react-i18next'
+import { cx } from './intern/cx'
+
+interface ProgressBarProps {
+  /** 0–100, or null when usage is unknown */
+  value: number | null | undefined
+  label?: string
+  /**
+   * Zugänglicher Name, wenn der Balken schon eine sichtbare Überschrift daneben
+   * hat. `label` würde diese Überschrift ein zweites Mal rendern; hier steht der
+   * Name nur für Screenreader. Ohne Angabe bleibt es beim `label`.
+   */
+  ariaLabel?: string
+  hint?: string
+  className?: string
+  /** When true, high values use warning/error tint */
+  heat?: boolean
+  'data-testid'?: string
+}
+
+export function ProgressBar({
+  value,
+  label,
+  ariaLabel,
+  hint,
+  className = '',
+  heat = false,
+  'data-testid': testId,
+}: ProgressBarProps) {
+  const { t } = useTranslation()
+  const known = value != null && Number.isFinite(value)
+  const clamped = known ? Math.max(0, Math.min(100, value as number)) : 0
+  let barColor = 'bg-secondary'
+  if (heat && known) {
+    if (clamped >= 90) barColor = 'bg-status-destructive'
+    else if (clamped >= 70) barColor = 'bg-status-warning'
+  }
+
+  return (
+    <div className={cx('w-full', className)} data-testid={testId}>
+      {(label || hint) && (
+        <div className="mb-1 flex items-center justify-between gap-2">
+          {label && (
+            <span className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
+              {label}
+            </span>
+          )}
+          {hint && (
+            <span className="font-mono-sm text-mono-sm text-on-surface-variant">
+              {hint}
+            </span>
+          )}
+        </div>
+      )}
+      <div
+        className={cx(
+          'h-2 w-full overflow-hidden rounded-full border border-outline-variant/40',
+          known ? 'bg-surface-container-highest' : 'bg-surface-container-highest/70',
+        )}
+        role="progressbar"
+        aria-valuenow={known ? Math.round(clamped) : undefined}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={ariaLabel ?? label}
+        aria-valuetext={known ? undefined : t('common.unbekannt')}
+      >
+        {known ? (
+          <div
+            className={cx('h-full rounded-full transition-all duration-300', barColor)}
+            style={{ width: `${clamped}%` }}
+          />
+        ) : (
+          <div
+            className="h-full w-full rounded-full bg-[repeating-linear-gradient(90deg,transparent,transparent_4px,rgba(255,255,255,0.04)_4px,rgba(255,255,255,0.04)_8px)]"
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+export interface Segment {
+  /** Numerical value or percentage weight for this segment */
+  value: number
+  /** Tailwind background color class, e.g. 'bg-primary' */
+  colorClass: string
+  /** Vorgelesen als Teil des Balkens; sichtbar macht es der Aufrufer (Legende). */
+  label?: string
+}
+
+interface StackedProgressBarProps {
+  label?: string
+  hint?: string
+  segments: Segment[]
+  className?: string
+  'data-testid'?: string
+}
+
+export function StackedProgressBar({
+  label,
+  hint,
+  segments,
+  className = '',
+  'data-testid': testId,
+}: StackedProgressBarProps) {
+  const totalWeight = segments.reduce((sum, s) => sum + Math.max(0, s.value || 0), 0)
+
+  return (
+    <div className={cx('w-full', className)} data-testid={testId}>
+      {(label || hint) && (
+        <div className="mb-1 flex items-center justify-between gap-2">
+          {label && (
+            <span className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
+              {label}
+            </span>
+          )}
+          {hint && (
+            <span className="font-mono-sm text-mono-sm text-on-surface-variant">
+              {hint}
+            </span>
+          )}
+        </div>
+      )}
+      <div
+        className="flex h-2.5 w-full overflow-hidden rounded-full border border-outline-variant/40 bg-surface-container-highest"
+        role="progressbar"
+        aria-label={label}
+        aria-valuetext={segments.map((s) => s.label).filter(Boolean).join(', ') || undefined}
+      >
+        {totalWeight > 0 ? (
+          segments.map((seg, i) => {
+            const pct = (Math.max(0, seg.value) / totalWeight) * 100
+            if (pct <= 0) return null
+            return (
+              <div
+                key={i}
+                className={cx('h-full transition-all duration-300', seg.colorClass)}
+                style={{ width: `${pct}%` }}
+              />
+            )
+          })
+        ) : (
+          <div className="h-full w-full rounded-full bg-surface-container-highest" />
+        )}
+      </div>
+    </div>
+  )
+}

@@ -1,7 +1,2 @@
-import { createContext, useContext } from 'react'
-
-export const PrivacyNoticeVisibilityContext = createContext(false)
-
-export function usePrivacyNoticeVisible(): boolean {
-  return useContext(PrivacyNoticeVisibilityContext)
-}
+/** @deprecated Neuer Pfad: @/components/app/PrivacyNoticeVisibility. */
+export * from '@/components/app/PrivacyNoticeVisibility'

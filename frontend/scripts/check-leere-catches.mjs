@@ -11,14 +11,23 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const SRC_DIR = path.resolve(__dirname, '../src')
+const ROOT = path.resolve(__dirname, '..')
+const SRC_DIRS = [
+  path.join(ROOT, 'src'),
+  path.join(ROOT, 'packages', 'maunting-ui', 'src'),
+]
 
 // Baseline gemäß msm-hardening-plan.md WP2.5
 const BASELINE_MAX = 279
 
 function walk(dir) {
   let results = []
-  const list = fs.readdirSync(dir)
+  let list
+  try {
+    list = fs.readdirSync(dir)
+  } catch {
+    return results
+  }
   for (const file of list) {
     const full = path.join(dir, file)
     const stat = fs.statSync(full)
@@ -33,7 +42,7 @@ function walk(dir) {
   return results
 }
 
-const files = walk(SRC_DIR)
+const files = SRC_DIRS.flatMap(walk)
 let emptyCount = 0
 const emptyCatchRegex = /catch\s*(?:\([^)]*\))?\s*\{(?:\s*|\s*\/\/[^\n]*\s*|\s*\/\*[\s\S]*?\*\/\s*)\}/g
 
@@ -44,7 +53,7 @@ for (const file of files) {
   const matches = content.match(emptyCatchRegex)
   if (matches) {
     emptyCount += matches.length
-    findings.push({ file: path.relative(SRC_DIR, file), count: matches.length })
+    findings.push({ file: path.relative(ROOT, file), count: matches.length })
   }
 }
 
