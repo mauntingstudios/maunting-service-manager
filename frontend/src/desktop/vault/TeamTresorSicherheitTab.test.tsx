@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
-import { teamsApi, type Team } from '@/api/teams'
+import { teamsApi } from '@/api/teams'
 import { TeamTresorSicherheitTab } from './TeamTresorSicherheitTab'
 import { useTeamVaultStore } from './teamVaultStore'
 
@@ -22,35 +22,11 @@ vi.mock('../tauri', () => ({
   biometrieLoeschen: vi.fn().mockResolvedValue(undefined),
 }))
 
-const mockTeams: Team[] = [
-  {
-    id: 1,
-    name: 'Persoenlich',
-    is_personal: true,
-    owner_user_id: 1,
-    is_owner: true,
-    can_manage_skills: true,
-    can_manage_memory: true,
-    member_count: 1,
-    created_at: '2026-08-09T10:00:00Z',
-  },
-  {
-    id: 2,
-    name: 'Dev Team',
-    is_personal: false,
-    owner_user_id: 1,
-    is_owner: true,
-    can_manage_skills: true,
-    can_manage_memory: true,
-    member_count: 3,
-    created_at: '2026-08-09T10:00:00Z',
-  },
-]
-
 describe('TeamTresorSicherheitTab', () => {
   beforeEach(() => {
     localStorage.clear()
-    vi.mocked(teamsApi.list).mockResolvedValue(mockTeams)
+    vi.clearAllMocks()
+    vi.mocked(teamsApi.list).mockResolvedValue([])
     vi.mocked(teamsApi.getVaultSalt).mockResolvedValue({
       is_setup: true,
       salt: 'c2FsdA==',
@@ -74,7 +50,7 @@ describe('TeamTresorSicherheitTab', () => {
     vi.restoreAllMocks()
   })
 
-  it('lädt Teams und zeigt das echte Team an', async () => {
+  it('bindet die Sektion an den aktiven Team-Tresor aus dem Store, ohne die Team-Liste zu laden', async () => {
     render(
       <MemoryRouter>
         <TeamTresorSicherheitTab />
@@ -82,8 +58,42 @@ describe('TeamTresorSicherheitTab', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getAllByText('Dev Team')[0]).toBeInTheDocument()
+      expect(teamsApi.getVaultSalt).toHaveBeenCalledWith(2)
     })
+    expect(screen.getByRole('switch', { name: i18n.t('mss.vault.beiFensterwechsel') })).toBeInTheDocument()
+    // Kein Team-Dropdown mehr: die Sektion gilt global für den aktiven Tresor.
+    expect(teamsApi.list).not.toHaveBeenCalled()
+    expect(screen.queryByText(i18n.t('teams.chooseTeam'))).not.toBeInTheDocument()
+  })
+
+  it('zeigt ohne aktiven Team-Tresor einen Hinweis mit Weg zu den Teams', () => {
+    useTeamVaultStore.setState({ teamId: null })
+
+    render(
+      <MemoryRouter>
+        <TeamTresorSicherheitTab />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(i18n.t('teams.vaultSecurityNeedsTeam'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: i18n.t('teams.vaultUnlock') })).toBeInTheDocument()
+    expect(teamsApi.getVaultSalt).not.toHaveBeenCalled()
+    expect(teamsApi.list).not.toHaveBeenCalled()
+  })
+
+  it('zeigt gesperrt denselben Weg zu den Teams wie ohne aktiven Tresor', () => {
+    // Kein Passwortfeld in den Einstellungen: entsperrt wird unter Teams.
+    useTeamVaultStore.setState({ isUnlocked: false })
+
+    render(
+      <MemoryRouter>
+        <TeamTresorSicherheitTab />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(i18n.t('teams.vaultSecurityNeedsTeam'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: i18n.t('teams.vaultUnlock') })).toBeInTheDocument()
+    expect(screen.queryByText(i18n.t('teams.vaultUnlockDesc'))).not.toBeInTheDocument()
   })
 
   it('erlaubt das Umschalten von Fensterwechsel und Leckprüfung', async () => {

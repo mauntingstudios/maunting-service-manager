@@ -57,15 +57,18 @@ export function Profile() {
   const publicSettings = usePublicSettingsStore()
   const social = publicSettings.social_enabled
 
+  // Drei Gruppen plus Gefahrenzone: wer ich bin, was mich schützt, womit
+  // ich arbeite. Nur Trenner in der Leiste — Reihenfolge, Rechte und die
+  // alten `?tab=`-Aliase bleiben.
   const tabs: TabDef<TabId>[] = [
-    { id: 'profile', labelKey: 'profile.tabs.profile', icon: User },
-    { id: 'account', labelKey: 'profile.tabs.account', icon: Mail },
-    { id: 'security', labelKey: 'profile.tabs.security', icon: Shield },
-    ...(social ? [{ id: 'social' as const, labelKey: 'profile.tabs.social', icon: Users }] : []),
-    { id: 'connections', labelKey: 'profile.tabs.connections', icon: Link2 },
-    { id: 'audio', labelKey: 'profile.tabs.audio', icon: Volume2 },
-    ...(canUseAi ? [{ id: 'ai' as const, labelKey: 'profile.tabs.ai', icon: Bot }] : []),
-    { id: 'danger', labelKey: 'profile.tabs.danger', icon: AlertTriangle, variant: 'danger' },
+    { id: 'profile', labelKey: 'profile.tabs.profile', icon: User, group: 'identitaet' },
+    { id: 'account', labelKey: 'profile.tabs.account', icon: Mail, group: 'identitaet' },
+    { id: 'security', labelKey: 'profile.tabs.security', icon: Shield, group: 'schutz' },
+    ...(social ? [{ id: 'social' as const, labelKey: 'profile.tabs.social', icon: Users, group: 'schutz' }] : []),
+    { id: 'connections', labelKey: 'profile.tabs.connections', icon: Link2, group: 'schutz' },
+    { id: 'audio', labelKey: 'profile.tabs.audio', icon: Volume2, group: 'arbeit' },
+    ...(canUseAi ? [{ id: 'ai' as const, labelKey: 'profile.tabs.ai', icon: Bot, group: 'arbeit' }] : []),
+    { id: 'danger', labelKey: 'profile.tabs.danger', icon: AlertTriangle, variant: 'danger', group: 'gefahr' },
   ]
 
   const wunsch = searchParams.get('tab') ?? ''

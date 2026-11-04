@@ -20,6 +20,24 @@ describe('Settings', () => {
     vi.mocked(client.api).mockReset()
   })
 
+  it('ordnet die Reiter in sechs Gruppen: Basis, Kommunikation, Daten, Schutz, Anbindung, Auftritt', async () => {
+    vi.mocked(client.api).mockResolvedValue({} as never)
+    renderSettings()
+
+    // Über die Schlüssel statt festem Text: GeneralTab schaltet beim Laden
+    // auf die Panel-Sprache um, die Reiter sind dann deutsch.
+    const reihenfolge = [
+      'general', 'email',
+      'messenger', 'searchEngine', 'ai',
+      'vaultStorage', 'backup',
+      'security', 'captcha', 'cloudflare',
+      'oauth', 'steam', 'curseforge', 'github', 'hoster',
+      'imprint', 'supportWidget', 'popup',
+    ]
+    const tabs = await screen.findAllByRole('tab')
+    expect(tabs.map((tab) => tab.textContent)).toEqual(reihenfolge.map((id) => i18n.t(`settings.tabs.${id}`)))
+  })
+
   it.each([null, {}, { default_language: null }])(
     'normalizes an incomplete settings response without exposing an exception (%j)',
     async (response) => {

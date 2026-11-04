@@ -66,25 +66,27 @@ export function Settings() {
   // Backup-Tab: panel.settings.write.
   // Security-Tab: immer sichtbar (Rate-Limits für panel.settings.*;
   // Cluster-Rotation bleibt im Tab selbst auf system.secrets.rotate beschränkt).
+  // Sechs Gruppen, nur Reihenfolge und Trenner — Rechte, Inhalte und die
+  // `msm:open-settings-tab`-Namen bleiben.
   const tabs: TabDef<TabId>[] = [
-    { id: 'general', labelKey: 'settings.tabs.general', icon: Globe },
-    { id: 'email', labelKey: 'settings.tabs.email', icon: Mail },
-    { id: 'steam', labelKey: 'settings.tabs.steam', icon: Gamepad2 },
-    { id: 'curseforge', labelKey: 'settings.tabs.curseforge', icon: Flame },
-    { id: 'github', labelKey: 'settings.tabs.github', icon: Github },
-    { id: 'oauth', labelKey: 'settings.tabs.oauth', icon: KeyRound },
-    { id: 'captcha', labelKey: 'settings.tabs.captcha', icon: Shield },
-    { id: 'cloudflare', labelKey: 'settings.tabs.cloudflare', icon: CloudCog },
-    { id: 'imprint', labelKey: 'settings.tabs.imprint', icon: FileText },
-    { id: 'supportWidget', labelKey: 'settings.tabs.supportWidget', icon: LifeBuoy },
-    { id: 'popup', labelKey: 'settings.tabs.popup', icon: Megaphone },
-    ...(canManageBackup ? [{ id: 'backup' as TabId, labelKey: 'settings.tabs.backup', icon: Cloud }] : []),
-    { id: 'security', labelKey: 'settings.tabs.security', icon: ShieldAlert },
-    { id: 'searchEngine', labelKey: 'settings.tabs.searchEngine', icon: Search },
-    { id: 'ai', labelKey: 'settings.tabs.ai', icon: Bot },
-    { id: 'vaultStorage', labelKey: 'settings.tabs.vaultStorage', icon: HardDrive },
-    { id: 'messenger', labelKey: 'settings.tabs.messenger', icon: MessageSquare },
-    ...(canReadHoster ? [{ id: 'hoster' as TabId, labelKey: 'settings.tabs.hoster', icon: Plug }] : []),
+    { id: 'general', labelKey: 'settings.tabs.general', icon: Globe, group: 'basis' },
+    { id: 'email', labelKey: 'settings.tabs.email', icon: Mail, group: 'basis' },
+    { id: 'messenger', labelKey: 'settings.tabs.messenger', icon: MessageSquare, group: 'kommunikation' },
+    { id: 'searchEngine', labelKey: 'settings.tabs.searchEngine', icon: Search, group: 'kommunikation' },
+    { id: 'ai', labelKey: 'settings.tabs.ai', icon: Bot, group: 'kommunikation' },
+    { id: 'vaultStorage', labelKey: 'settings.tabs.vaultStorage', icon: HardDrive, group: 'daten' },
+    ...(canManageBackup ? [{ id: 'backup' as TabId, labelKey: 'settings.tabs.backup', icon: Cloud, group: 'daten' }] : []),
+    { id: 'security', labelKey: 'settings.tabs.security', icon: ShieldAlert, group: 'schutz' },
+    { id: 'captcha', labelKey: 'settings.tabs.captcha', icon: Shield, group: 'schutz' },
+    { id: 'cloudflare', labelKey: 'settings.tabs.cloudflare', icon: CloudCog, group: 'schutz' },
+    { id: 'oauth', labelKey: 'settings.tabs.oauth', icon: KeyRound, group: 'anbindung' },
+    { id: 'steam', labelKey: 'settings.tabs.steam', icon: Gamepad2, group: 'anbindung' },
+    { id: 'curseforge', labelKey: 'settings.tabs.curseforge', icon: Flame, group: 'anbindung' },
+    { id: 'github', labelKey: 'settings.tabs.github', icon: Github, group: 'anbindung' },
+    ...(canReadHoster ? [{ id: 'hoster' as TabId, labelKey: 'settings.tabs.hoster', icon: Plug, group: 'anbindung' }] : []),
+    { id: 'imprint', labelKey: 'settings.tabs.imprint', icon: FileText, group: 'auftritt' },
+    { id: 'supportWidget', labelKey: 'settings.tabs.supportWidget', icon: LifeBuoy, group: 'auftritt' },
+    { id: 'popup', labelKey: 'settings.tabs.popup', icon: Megaphone, group: 'auftritt' },
   ]
 
   return (

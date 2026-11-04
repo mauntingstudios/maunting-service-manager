@@ -4,7 +4,7 @@
  * Kategorien als wischbare Reiterleiste oben. Die Kategorie steht in der
  * Adresse des Tabs, nicht in einem Zustand daneben.
  */
-import { lazy, Suspense } from 'react'
+import { Fragment, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -176,22 +176,30 @@ export function EinstellungenSeite({ teil }: { teil: string | null }) {
       <div className="flex h-full flex-col md:flex-row">
         <nav aria-label={titel} className="hidden w-60 shrink-0 flex-col gap-0.5 overflow-y-auto px-3 py-6 md:flex">
           <h1 className="px-3 pb-4 font-headline text-headline-sm text-on-surface">{titel}</h1>
-          {kategorien.map(({ id, symbol: Symbol, unterpunkt }) => (
-            <button
-              key={id}
-              type="button"
-              aria-current={id === kategorie ? 'page' : undefined}
-              onClick={() => oeffnen(id)}
-              className={`flex h-10 items-center gap-3 rounded-xl px-3 text-left text-label-md transition-colors ${
-                unterpunkt ? 'ml-3' : ''
-              } ${
-                id === kategorie ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-              }`}
-            >
-              <Symbol className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="truncate">{t(`browser.einstellungen.kategorie.${id}`)}</span>
-            </button>
-          ))}
+          {kategorien.map(({ id, symbol: Symbol, unterpunkt }, index) => {
+            const davor = index > 0 ? kategorien[index - 1] : undefined
+            // Trenner vor dem Konto-Block und vor „Über": dieselben drei
+            // Gruppen wie in der mobilen Leiste — nur Linien, kein neuer Text.
+            const trennt = index > 0 && ((unterpunkt && !davor?.unterpunkt) || (id === 'ueber' && davor?.id !== 'ueber'))
+            return (
+              <Fragment key={id}>
+                {trennt && <div aria-hidden="true" className="mx-3 my-1.5 h-px bg-outline-variant/50" />}
+                <button
+                  type="button"
+                  aria-current={id === kategorie ? 'page' : undefined}
+                  onClick={() => oeffnen(id)}
+                  className={`flex h-10 items-center gap-3 rounded-xl px-3 text-left text-label-md transition-colors ${
+                    unterpunkt ? 'ml-3' : ''
+                  } ${
+                    id === kategorie ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                  }`}
+                >
+                  <Symbol className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{t(`browser.einstellungen.kategorie.${id}`)}</span>
+                </button>
+              </Fragment>
+            )
+          })}
         </nav>
         <div className="shrink-0 px-3 pt-3 md:hidden">
           <TabBar
@@ -199,7 +207,7 @@ export function EinstellungenSeite({ teil }: { teil: string | null }) {
             ariaLabel={titel}
             active={kategorie}
             onChange={oeffnen}
-            tabs={kategorien.map((k) => ({ id: k.id, labelKey: `browser.einstellungen.kategorie.${k.id}`, icon: k.symbol }))}
+            tabs={kategorien.map((k) => ({ id: k.id, labelKey: `browser.einstellungen.kategorie.${k.id}`, icon: k.symbol, group: k.id === 'ueber' ? 'ueber' : k.unterpunkt ? 'konto' : 'browser' }))}
           />
         </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">

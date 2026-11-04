@@ -49,6 +49,12 @@ describe('Einstellungsseite', () => {
     await screen.findByText('Kein unterstützter Browser mit einem benutzbaren Profil gefunden.')
   })
 
+  it('gruppiert die mobile Kategorienleiste: ein Trenner vor „Über“, sonst keine', () => {
+    // Ungekoppelt: elf Browser-Kategorien in einer Gruppe, „Über“ allein.
+    const { container } = zeigen()
+    expect(container.querySelectorAll('[data-tab-gruppe]')).toHaveLength(1)
+  })
+
   it('zeigt den Browserimport unter Verlauf und Daten und fragt die Profile ab', async () => {
     useTabsStore.getState().einstellungen('verlauf')
     zeigen()

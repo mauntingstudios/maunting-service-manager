@@ -23,6 +23,12 @@ export interface TabDef<TId extends string> {
   variant?: 'default' | 'danger'
   /** Optionale Zahl hinter dem Namen, etwa die Mitglieder eines Teams. */
   badge?: number
+  /**
+   * Optionale Gruppen-ID. Zwischen zwei aufeinanderfolgenden Reitern mit
+   * verschiedener Gruppe zeigt die Leiste einen schmalen Trenner — ohne
+   * Text, damit lange Reiterlisten lesbar bleiben, ohne länger zu werden.
+   */
+  group?: string
 }
 
 interface TabBarProps<TId extends string> {
@@ -74,11 +80,15 @@ export function TabBar<TId extends string>({ tabs, active, onChange, ariaLabel, 
         einzeilig ? 'max-md:flex max-md:w-full max-md:flex-nowrap max-md:overflow-x-auto msm-ohne-rollbalken' : ''
       }`}
     >
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const Icon = tab.icon
         const isActive = active === tab.id
         const isDanger = tab.variant === 'danger'
         const name = tab.label ?? t(tab.labelKey ?? '')
+        // Trenner nur zwischen zwei gesetzten, verschiedenen Gruppen: Reiter
+        // ohne Gruppe verhalten sich wie bisher.
+        const gruppeDavor = index > 0 ? tabs[index - 1].group : undefined
+        const trennt = index > 0 && tab.group !== undefined && gruppeDavor !== undefined && tab.group !== gruppeDavor
         const nurSymbol = kompakt && !!Icon && !isActive
         const knopf = (
           <button
@@ -117,12 +127,18 @@ export function TabBar<TId extends string>({ tabs, active, onChange, ariaLabel, 
           </button>
         )
         // Die Hülle bleibt beim Wechsel des Reiters dieselbe, sonst verlöre der Knopf den Fokus.
-        return kompakt ? (
-          <Kurzinfo key={tab.id} text={name} className={nurSymbol ? 'md:!hidden' : '!hidden'}>
+        const hülle = kompakt ? (
+          <Kurzinfo text={name} className={nurSymbol ? 'md:!hidden' : '!hidden'}>
             {knopf}
           </Kurzinfo>
         ) : (
-          <Fragment key={tab.id}>{knopf}</Fragment>
+          knopf
+        )
+        return (
+          <Fragment key={tab.id}>
+            {trennt && <span aria-hidden="true" data-tab-gruppe="" className="mx-1 w-px self-stretch bg-outline-variant/50" />}
+            {hülle}
+          </Fragment>
         )
       })}
     </div>

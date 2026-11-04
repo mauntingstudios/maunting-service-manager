@@ -37,6 +37,7 @@ import { ServerConsolePanel } from "@/components/server/ServerConsolePanel";
 import { ServerRestartPanel } from "@/components/server/ServerRestartPanel";
 import { AuthSetupBanner } from "@/components/server/AuthSetupBanner";
 import { ServerCredentialsPanel } from "@/components/server/ServerCredentialsPanel";
+import { ServerDetailTabs } from "@/components/server/ServerDetailTabs";
 import { PageHeader } from "@/Singra/UI/PageHeader";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { ResourceMetricCard } from "@/Singra/UI/ResourceMetricCard";
@@ -845,6 +846,51 @@ export function ServerDetail() {
         </div>
       )}
 
+      {/* Reiter direkt unter dem Header(-bereich): vorher klebte die Leiste
+          erst nach Aktionen, Kennzahlen, Netzwerk und Zugangsdaten — auf dem
+          Handy also mitten im Bild und nur per seitlichem Wischen erreichbar.
+          Die Seiten-Hinweise darüber behalten ihren Platz, die Übersicht mit
+          Aktionen und Kennzahlen folgt darunter. */}
+      <ServerDetailTabs
+        tabs={tabs}
+        activeTab={activeTab}
+        onSelect={setActiveTab}
+        ariaLabel={server.name}
+      />
+
+      <div>
+        {activeTab === "files" && <FileManager serverId={serverId} />}
+        {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
+        {activeTab === "exec" && gameInfo?.enable_exec && (
+          <ServerConsolePanel serverId={serverId} mode="exec" />
+        )}
+        {activeTab === "mods" && showModTab && (
+          <ModManager serverId={serverId} gameInfo={gameInfo} />
+        )}
+        {activeTab === "restarts" && (
+          <ServerRestartPanel
+            server={server}
+            serverId={serverId}
+            onSaved={fetchAll}
+          />
+        )}
+        {activeTab === "backups" && <Backups serverId={serverId} />}
+        {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
+        {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
+        {activeTab === "memory" && showMemoryTab && (
+          <AiMemoryManager
+            scope={{
+              kind: "server_shared",
+              serverId,
+              canManage: canWriteServerConfig,
+            }}
+          />
+        )}
+        {activeTab === "guardian" && (
+          <GuardianTab server={server} onRefreshServer={fetchAll} />
+        )}
+      </div>
+
       <div className={`space-y-6 ${activeTab === "files" && !mobileOverviewOpen ? "hidden md:block" : "block"}`}>
       {/* Actions */}
       <div className="flex gap-3 flex-wrap">
@@ -1107,63 +1153,6 @@ export function ServerDetail() {
       {/* Zugangsdaten: erscheint nur, wenn dieser Server welche braucht
           oder bereits eine eigene Zuordnung hat (Zielpunkt 17.4). */}
       <ServerCredentialsPanel serverId={serverId} canManage={canManageCredentials} />
-
-      {/* Tabs */}
-      <div className="sticky top-12 z-20 -mb-px overflow-x-auto border-b border-outline bg-background/95 backdrop-blur-xl msm-ohne-rollbalken md:static md:bg-transparent md:backdrop-blur-none">
-        <div className="flex gap-1 min-w-max">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2.5 inline-flex items-center gap-2 border-b-2 text-sm font-body-md transition-colors ${
-                  isActive
-                    ? "border-secondary text-primary"
-                    : "border-transparent text-on-surface-variant hover:text-on-surface"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        {activeTab === "files" && <FileManager serverId={serverId} />}
-        {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
-        {activeTab === "exec" && gameInfo?.enable_exec && (
-          <ServerConsolePanel serverId={serverId} mode="exec" />
-        )}
-        {activeTab === "mods" && showModTab && (
-          <ModManager serverId={serverId} gameInfo={gameInfo} />
-        )}
-        {activeTab === "restarts" && (
-          <ServerRestartPanel
-            server={server}
-            serverId={serverId}
-            onSaved={fetchAll}
-          />
-        )}
-        {activeTab === "backups" && <Backups serverId={serverId} />}
-        {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
-        {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
-        {activeTab === "memory" && showMemoryTab && (
-          <AiMemoryManager
-            scope={{
-              kind: "server_shared",
-              serverId,
-              canManage: canWriteServerConfig,
-            }}
-          />
-        )}
-        {activeTab === "guardian" && (
-          <GuardianTab server={server} onRefreshServer={fetchAll} />
-        )}
-      </div>
 
       {/* Edit-Network Modal */}
       {showEditNetwork && (

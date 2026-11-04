@@ -5,22 +5,25 @@
  * privater Tab zeigt nur die Uhr.
  */
 import type { ReactNode } from 'react'
-import { Calendar, Clock, CloudSun, History, Newspaper, StickyNote, type LucideIcon } from 'lucide-react'
+import { Calendar, Clock, CloudSun, CreditCard, History, Newspaper, StickyNote, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useSichtbareModule } from '../../leiste/eintraege'
-import { Button } from '@/Singra/UI'
+import { Avatar, Button } from '@/Singra/UI'
+import { useAuthStore } from '@/stores/authStore'
 import { WIDGETS, useEinstellungenStore, type Widget } from '../../services/einstellungenStore'
 import { seitenHost } from '../../services/geraetKonfig'
+import { istAndroid } from '../../services/plattform'
 import { istGekoppelt, useSitzung } from '../../services/sitzung'
 import { seiteOeffnen, useTabsStore } from '../../services/tabsStore'
 import { useVerlaufStore } from '../../services/verlaufStore'
 import { auswahl, useNachrichten } from './nachrichtenDaten'
+import { walletOeffnenAnfragen } from './walletEinstieg'
 import { useWetter } from './wetterDaten'
 import { ANZAHL, useJetzt, useNotizen, useTermine, type Termin } from './widgetDaten'
 
-export const WIDGET_SYMBOLE: Record<Widget, LucideIcon> = { wetter: CloudSun, uhr: Clock, termine: Calendar, notizen: StickyNote, zuletzt: History, nachrichten: Newspaper }
+export const WIDGET_SYMBOLE: Record<Widget, LucideIcon> = { wetter: CloudSun, uhr: Clock, termine: Calendar, notizen: StickyNote, zuletzt: History, nachrichten: Newspaper, smartcard: CreditCard }
 
 /** Die Widgets in der Reihenfolge des Nutzers; was die Ordnung nicht nennt, folgt in der Grundordnung. */
 export function widgetsGeordnet(ordnung: Widget[]): Widget[] {
@@ -289,17 +292,52 @@ function Wetter() {
   )
 }
 
+/** Der Wallet-Einstieg als Karte: Live-Profilbild aus dem Speicher, sonst nichts — keine Kartennummer, kein Datum. */
+function Smartcard() {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const gekoppelt = istGekoppelt(useSitzung((s) => s.stand))
+  const user = useAuthStore((s) => s.user)
+  return (
+    <Karte titel={t('browser.start.widget.smartcard')} symbol={CreditCard}>
+      {(!gekoppelt || !user) && (
+        <div className="flex flex-col items-start gap-2 px-2">
+          <p className="text-body-sm text-on-surface-variant">{t('browser.start.smartcard.ungekoppelt')}</p>
+          <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/koppeln')}>
+            {t('browser.start.smartcard.koppeln')}
+          </Button>
+        </div>
+      )}
+      {gekoppelt && user && (
+        <div className="flex items-center gap-3 px-2">
+          <Avatar src={user.avatar_url} name={user.username} size="lg" className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-body-sm font-medium text-on-surface">{user.username}</p>
+            <p className="truncate text-label-sm text-on-surface-variant">{t('browser.wallet.untertitel')}</p>
+          </div>
+          <Button type="button" size="sm" variant="secondary" onClick={() => void walletOeffnenAnfragen()}>
+            {t('browser.wallet.oeffnen')}
+          </Button>
+        </div>
+      )}
+    </Karte>
+  )
+}
+
 export function Widgets({ privat }: { privat: boolean }) {  const ordnung = useEinstellungenStore((s) => s.widgetOrdnung)
   const aus = useEinstellungenStore((s) => s.widgetsAus)
   const gekoppelt = istGekoppelt(useSitzung((s) => s.stand))
   const module = useSichtbareModule()
   const jetzt = useJetzt()
+  // Das Wallet gehört ans Handy: dort hält man es ans Zielgerät.
+  const handy = istAndroid()
 
   const da = (w: Widget) => {
     if (aus.includes(w)) return false
     if (privat) return w === 'uhr'
     if (w === 'termine') return gekoppelt && module.has('kalender')
     if (w === 'notizen') return gekoppelt && module.has('notizen')
+    if (w === 'smartcard') return handy
     return true
   }
   const gezeigt = widgetsGeordnet(ordnung).filter(da)
@@ -318,6 +356,8 @@ export function Widgets({ privat }: { privat: boolean }) {  const ordnung = useE
           <Notizen key={w} jetzt={jetzt} />
         ) : w === 'nachrichten' ? (
           <Nachrichten key={w} jetzt={jetzt} />
+        ) : w === 'smartcard' ? (
+          <Smartcard key={w} />
         ) : (
           <Zuletzt key={w} />
         ),

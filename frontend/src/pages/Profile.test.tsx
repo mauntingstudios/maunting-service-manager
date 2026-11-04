@@ -104,6 +104,11 @@ describe('Profile', () => {
     expect(screen.getByText('inhalt:geraete')).toBeInTheDocument()
   })
 
+  it('gruppiert die acht Reiter mit drei Trennern, ohne die Reihenfolge zu ändern', () => {
+    const { container } = renderProfile()
+    expect(container.querySelectorAll('[data-tab-gruppe]')).toHaveLength(3)
+  })
+
   it('ein Klick auf einen Reiter schreibt ihn in die Adresse', () => {
     renderProfile()
     fireEvent.click(screen.getByRole('tab', { name: 'Connections' }))

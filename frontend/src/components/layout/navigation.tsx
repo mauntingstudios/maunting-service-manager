@@ -46,8 +46,12 @@ interface NavigationAccess {
 export function buildNavigation(labels: Record<string, string>, access: NavigationAccess): NavigationItem[] {
   const online = access.isOnline !== false
 
+  // Häufige Ziele zuerst: Messenger direkt nach dem Dashboard, der
+  // KI-Chat am Anfang seiner Gruppe. Nur Reihenfolge — Gruppen, Rechte
+  // und Offline-Regeln bleiben, wie sie sind.
   return [
     { to: '/', icon: LayoutDashboard, label: labels.dashboard, group: 'Overview' },
+    ...(online && access.socialEnabled !== false ? [{ to: '/chat', icon: MessageSquare, label: labels.chat, group: 'Overview' as const }] : []),
     ...(access.calendarEnabled !== false ? [{ to: '/calendar', icon: CalendarIcon, label: labels.calendar, group: 'Overview' as const }] : []),
     ...(access.notesEnabled !== false ? [{ to: '/notes', icon: StickyNote, label: labels.notes, group: 'Overview' as const }] : []),
     // Dokumente sind offline-faehig: kein `online &&`. Wer eine lokale Kopie
@@ -55,10 +59,9 @@ export function buildNavigation(labels: Record<string, string>, access: Navigati
     ...(access.docsEnabled !== false && (access.owner || access.canUseDocs)
       ? [{ to: '/dokumente', icon: FileText, label: labels.documents, group: 'Overview' as const }]
       : []),
-    ...(online && access.socialEnabled !== false ? [{ to: '/chat', icon: MessageSquare, label: labels.chat, group: 'Overview' as const }] : []),
+    ...(online && (access.owner || access.canUseAi) ? [{ to: '/ai', icon: Bot, label: labels.ai, group: 'Infrastructure' as const }] : []),
     ...(online ? [{ to: '/servers', icon: Server, label: labels.servers, group: 'Infrastructure' as const }] : []),
     ...(online && (access.owner || access.canViewNodes) ? [{ to: '/admin/nodes', icon: Network, label: labels.nodes, group: 'Infrastructure' as const }] : []),
-    ...(online && (access.owner || access.canUseAi) ? [{ to: '/ai', icon: Bot, label: labels.ai, group: 'Infrastructure' as const }] : []),
     ...(online && (access.owner || access.canUseAi || access.canUseSkills || access.canCreateTeams || (access.teamInvitationCount ?? 0) > 0) ? [{ to: '/teams', icon: UsersRound, label: labels.teams, group: 'Infrastructure' as const }] : []),
     ...(online && (access.owner || access.canManageUsers) ? [{ to: '/users', icon: Users, label: labels.users, group: 'Administration' as const }] : []),
     ...(online && (access.owner || access.canManageRoles) ? [{ to: '/roles', icon: Shield, label: labels.roles, group: 'Administration' as const }] : []),

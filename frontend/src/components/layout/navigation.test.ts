@@ -245,6 +245,27 @@ describe('buildNavigation', () => {
     expect(routes).toContain('/docs')
   })
 
+  it('stellt häufige Ziele nach vorn: Messenger nach Dashboard, KI-Chat an den Gruppenanfang', () => {
+    const items = buildNavigation(labels, {
+      owner: true,
+      canManageUsers: true,
+      canManageRoles: true,
+      canViewAudit: true,
+      canViewSettings: true,
+      canManagePanelBackups: true,
+      canReadPanelDatabase: true,
+      canViewNodes: true,
+      canUseAi: true,
+      canUseSkills: true,
+      socialEnabled: true,
+    })
+    const routen = items.map((i) => i.to)
+    // Gleiche Gruppen wie bisher, nur näher am Anfang.
+    expect(routen.slice(0, 5)).toEqual(['/', '/chat', '/calendar', '/notes', '/dokumente'])
+    const infra = items.filter((i) => i.group === 'Infrastructure').map((i) => i.to)
+    expect(infra[0]).toBe('/ai')
+  })
+
   it('zeigt Social & Hub nicht mehr, sondern den neuen Chat in der primären Sidebar-Navigation', () => {
     const access = {
       owner: true,

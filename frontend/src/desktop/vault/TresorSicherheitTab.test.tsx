@@ -181,5 +181,16 @@ describe('Tresor-Sicherheit: Leck-Prüfung', () => {
     const pwInputNeu = await screen.findByPlaceholderText(i18n.t('mss.vault.masterPasswort'))
     expect(pwInputNeu).toHaveValue('')
   })
+
+  it('zeigt kein Reset-Menü: „Master-Passwort vergessen?" gehört an das Schloss in der Tresor-Ansicht', () => {
+    useVaultStore.setState({ isInitialized: true, isUnlocked: true })
+    render(
+      <MemoryRouter>
+        <TresorSicherheitTab />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByText(i18n.t('mss.vault.zuruecksetzen.titel'))).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: i18n.t('mss.vault.zuruecksetzen.link') })).not.toBeInTheDocument()
+  })
 })
 

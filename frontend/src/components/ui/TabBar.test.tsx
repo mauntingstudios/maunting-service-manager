@@ -96,3 +96,37 @@ describe('TabBar', () => {
     expect(document.activeElement).toBe(email)
   })
 })
+
+describe('TabBar Gruppen', () => {
+  it('trennt verschiedene Gruppen mit einer Linie, ohne Text hinzuzufügen', () => {
+    const { container } = render(
+      <TabBar
+        active="a"
+        onChange={vi.fn()}
+        tabs={[
+          { id: 'a', label: 'A', group: 'eins' },
+          { id: 'b', label: 'B', group: 'eins' },
+          { id: 'c', label: 'C', group: 'zwei' },
+        ]}
+      />,
+    )
+    const trenner = container.querySelectorAll('[data-tab-gruppe]')
+    expect(trenner).toHaveLength(1)
+    expect(trenner[0]).toHaveAttribute('aria-hidden', 'true')
+    expect(trenner[0]).toBeEmptyDOMElement()
+  })
+
+  it('zeigt ohne Gruppen keine Trenner wie bisher', () => {
+    const { container } = render(
+      <TabBar
+        active="a"
+        onChange={vi.fn()}
+        tabs={[
+          { id: 'a', label: 'A' },
+          { id: 'b', label: 'B' },
+        ]}
+      />,
+    )
+    expect(container.querySelectorAll('[data-tab-gruppe]')).toHaveLength(0)
+  })
+})

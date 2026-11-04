@@ -165,3 +165,4 @@ wetter-sidecar/daten/*
 # Laufzeit-Logdumps gehoeren nicht ins Repository.
 logdump.txt
 /node_modules
+/frontend/.vitest-tmp

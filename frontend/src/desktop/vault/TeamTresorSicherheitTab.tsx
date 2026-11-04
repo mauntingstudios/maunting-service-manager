@@ -2,15 +2,19 @@
  * Team-Tresor Sicherheitseinstellungen (MSS Desktop, Pontis & Profil).
  *
  * Konfiguration der automatischen Sperre, Sperre bei Fensterwechsel,
- * Leak-Prüfung und biometrischem Schnelleinstieg für jedes Team des Benutzers.
+ * Leak-Prüfung und biometrischem Schnelleinstieg für den aktiven Team-Tresor.
+ *
+ * Bis 11/2026 wählte man hier erst ein Team aus einer Liste (`teamsApi.list`).
+ * Die Auswahl ist entfallen: die Sektion gilt für den Team-Tresor, dessen
+ * Status der Store gerade hält (`teamVaultStore.teamId`, gesetzt beim Öffnen
+ * eines Team-Tresors). Die Ablage bleibt je Team (`mss_team_vault_*_<teamId>`).
  */
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Fingerprint, ShieldCheck, Users } from 'lucide-react'
 
-import { teamsApi, type Team } from '@/api/teams'
 import { sperrfristOptionen } from '@/services/autoSperre'
 import { Button, Dialog, DialogContent, Dropdown, type DropdownOption, PasswordInput, Switch } from '@/Singra/UI'
 import { toast } from '@/stores/toastStore'
@@ -21,11 +25,8 @@ export function TeamTresorSicherheitTab() {
   const { t } = useTranslation()
   const navigate = useNavigate()
 
-  const [teams, setTeams] = useState<Team[]>([])
-  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
-  const [loadingTeams, setLoadingTeams] = useState(true)
-
   const {
+    teamId,
     isInitialized,
     isUnlocked,
     autoLockMinutes,
@@ -42,6 +43,7 @@ export function TeamTresorSicherheitTab() {
     disableBiometrics,
   } = useTeamVaultStore(
     useShallow((s) => ({
+      teamId: s.teamId,
       isInitialized: s.isInitialized,
       isUnlocked: s.isUnlocked,
       autoLockMinutes: s.autoLockMinutes,
@@ -63,57 +65,20 @@ export function TeamTresorSicherheitTab() {
   const [masterPasswordInput, setMasterPasswordInput] = useState('')
   const [biometricsLoading, setBiometricsLoading] = useState(false)
 
-  // Teams laden
+  // Status und Biometrie für den aktiven Team-Tresor laden
   useEffect(() => {
-    let active = true
-    setLoadingTeams(true)
-    teamsApi
-      .list()
-      .then((rows) => {
-        if (!active) return
-        const echte = rows.filter((r) => !r.is_personal)
-        setTeams(echte)
-        if (echte.length > 0) {
-          setSelectedTeamId(echte[0].id)
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setLoadingTeams(false)
-      })
-    return () => {
-      active = false
+    if (teamId !== null) {
+      void loadStatus(teamId)
+      void checkBiometricsSupport(teamId)
     }
-  }, [])
-
-  // Sobald Team ausgewählt ist, Status und Biometrie laden
-  useEffect(() => {
-    if (selectedTeamId !== null) {
-      void loadStatus(selectedTeamId)
-      void checkBiometricsSupport(selectedTeamId)
-    }
-  }, [selectedTeamId, loadStatus, checkBiometricsSupport])
-
-  const selectedTeam = useMemo(
-    () => teams.find((item) => item.id === selectedTeamId) ?? null,
-    [teams, selectedTeamId],
-  )
-
-  const teamOptions: DropdownOption[] = useMemo(
-    () =>
-      teams.map((item) => ({
-        value: String(item.id),
-        label: item.name,
-      })),
-    [teams],
-  )
+  }, [teamId, loadStatus, checkBiometricsSupport])
 
   const autoLockOptions: DropdownOption[] = sperrfristOptionen(t)
 
   const handleBiometricsToggle = async (checked: boolean) => {
-    if (!selectedTeamId) return
+    if (teamId === null) return
     if (!checked) {
-      await disableBiometrics(selectedTeamId)
+      await disableBiometrics(teamId)
       toast.success(t('mss.vault.biometrieAusToast'))
       return
     }
@@ -123,10 +88,10 @@ export function TeamTresorSicherheitTab() {
 
   const handleConfirmBiometrics = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedTeamId || !masterPasswordInput) return
+    if (teamId === null || !masterPasswordInput) return
     setBiometricsLoading(true)
     try {
-      const ok = await enableBiometrics(selectedTeamId, masterPasswordInput)
+      const ok = await enableBiometrics(teamId, masterPasswordInput)
       if (ok) {
         toast.success(t('mss.vault.biometrieAn'))
         setBiometricsModalOpen(false)
@@ -141,52 +106,27 @@ export function TeamTresorSicherheitTab() {
     }
   }
 
-  if (loadingTeams) {
+  if (teamId === null) {
     return (
-      <div className="msm-card p-5 text-sm text-on-surface-variant">
-        {t('common.loading')}
-      </div>
-    )
-  }
-
-  if (teams.length === 0) {
-    return (
-      <div className="msm-card p-5 flex items-center gap-3 text-sm text-on-surface-variant">
-        <Users className="h-5 w-5 shrink-0 text-outline" />
-        <span>{t('teams.noTeams')}</span>
+      <div className="msm-card p-5 flex flex-col items-start gap-3 text-sm text-on-surface-variant sm:flex-row sm:items-center">
+        <div className="flex items-center gap-3 flex-1">
+          <Users className="h-5 w-5 shrink-0 text-outline" />
+          <span>{t('teams.vaultSecurityNeedsTeam')}</span>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          onClick={() => navigate('/teams')}
+        >
+          {t('teams.vaultUnlock')}
+        </Button>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Team-Auswahl */}
-      <div className="msm-card p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Users className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-on-surface">{t('teams.chooseTeam')}</h3>
-              <p className="text-label-sm text-on-surface-variant">
-                {selectedTeam ? selectedTeam.name : t('teams.selectUser')}
-              </p>
-            </div>
-          </div>
-          <div className="w-full sm:w-64">
-            <Dropdown
-              options={teamOptions}
-              value={selectedTeamId ? String(selectedTeamId) : null}
-              onChange={(val) => {
-                if (val) setSelectedTeamId(Number(val))
-              }}
-              placeholder={t('teams.chooseTeam')}
-            />
-          </div>
-        </div>
-      </div>
-
       {/* Automatische Sperre */}
       <div className="msm-card p-5 space-y-4">
         <div className="flex items-center gap-3">
@@ -197,9 +137,6 @@ export function TeamTresorSicherheitTab() {
             <h3 className="text-sm font-semibold text-on-surface">
               {t('teams.vault')} – {t('mss.vault.titel')}
             </h3>
-            {selectedTeam && (
-              <p className="text-label-sm text-on-surface-variant">{selectedTeam.name}</p>
-            )}
           </div>
         </div>
 
@@ -210,7 +147,8 @@ export function TeamTresorSicherheitTab() {
             </div>
           ) : !isUnlocked ? (
             <div className="flex flex-col items-start gap-2 p-2.5 rounded-xl bg-surface-container-high border border-outline-variant/30 text-xs text-on-surface-variant sm:flex-row sm:items-center sm:gap-3">
-              <span className="flex-1">{t('teams.vaultUnlockDesc')}</span>
+              {/* Kein Passwortfeld hier: entsperrt wird unter Teams, die Eingabe steht auf der Karte. */}
+              <span className="flex-1">{t('teams.vaultSecurityNeedsTeam')}</span>
               <Button
                 variant="secondary"
                 size="sm"
@@ -231,7 +169,7 @@ export function TeamTresorSicherheitTab() {
                 options={autoLockOptions}
                 value={String(autoLockMinutes)}
                 onChange={(val) => {
-                  if (selectedTeamId) setAutoLockMinutes(selectedTeamId, Number(val))
+                  if (val) setAutoLockMinutes(teamId, Number(val))
                 }}
                 disabled={!isInitialized}
               />
@@ -251,7 +189,7 @@ export function TeamTresorSicherheitTab() {
               aria-labelledby="team-tresor-fensterwechsel"
               checked={lockOnWindowBlur}
               onCheckedChange={(val) => {
-                if (selectedTeamId) setLockOnWindowBlur(selectedTeamId, val)
+                setLockOnWindowBlur(teamId, val)
               }}
               disabled={!isInitialized}
             />
@@ -268,7 +206,7 @@ export function TeamTresorSicherheitTab() {
               aria-labelledby="team-tresor-leckpruefung"
               checked={leakCheckEnabled}
               onCheckedChange={(an) => {
-                if (selectedTeamId) setLeakCheckEnabled(selectedTeamId, an)
+                setLeakCheckEnabled(teamId, an)
               }}
               disabled={!isInitialized}
             />

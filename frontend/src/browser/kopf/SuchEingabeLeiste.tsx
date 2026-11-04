@@ -7,7 +7,7 @@
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, X } from 'lucide-react'
+import { CreditCard, Search, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api } from '@/api/client'
@@ -18,6 +18,7 @@ import { istAndroid } from '../services/plattform'
 import { suchmaschine } from '../services/searchEngines'
 import { istGekoppelt, useSitzung } from '../services/sitzung'
 import { suchName, SuchwahlKnopf } from '../services/suchwahl'
+import { passtZuWallet, walletOeffnenAnfragen } from '../seite/start/walletEinstieg'
 import { SprachsucheKnopf } from './SprachsucheKnopf'
 
 export interface SuchEingabeLeisteProps {
@@ -109,7 +110,9 @@ export function SuchEingabeLeiste({
     }
   }, [text, autocomplete, gekoppelt, offen, sprache])
 
-  const zeigeDropdown = offen && vorschlaege.length > 0
+  // Wer das Wallet meint, bekommt einen Eintrag — auch ohne Servervorschläge.
+  const zeigeWallet = offen && passtZuWallet(text)
+  const zeigeDropdown = offen && (vorschlaege.length > 0 || zeigeWallet)
   const lage = useAnkerLage(zeigeDropdown, huelleRef, listeRef, { abstand: 6, mindestensAnkerbreite: true })
 
   useEffect(() => {
@@ -251,6 +254,23 @@ export function SuchEingabeLeiste({
             data-msm-dropdown-menu=""
             className="max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-high shadow-panel animate-fade-in"
           >
+            {zeigeWallet && (
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  setOffen(false)
+                  void walletOeffnenAnfragen()
+                }}
+                className="flex w-full items-center gap-3 border-b border-outline-variant/25 px-4 py-2.5 text-left text-body-sm text-on-surface transition-colors hover:bg-surface-container-highest/60"
+              >
+                <CreditCard className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{t('browser.wallet.oeffnen')}</span>
+                  <span className="block truncate text-label-sm text-on-surface-variant">{t('browser.wallet.untertitel')}</span>
+                </span>
+              </button>
+            )}
             <div className="divide-y divide-outline-variant/25">
               {vorschlaege.map((v, i) => (
                 <button

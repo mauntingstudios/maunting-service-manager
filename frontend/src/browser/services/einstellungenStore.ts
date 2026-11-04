@@ -69,9 +69,9 @@ export const VORGABE_SCHNELLZUGRIFFE: Schnellzugriff[] = [
   { url: 'https://www.reddit.com/', titel: 'Reddit' },
 ]
 
-/** Kästen unter den Schnellzugriffen; Termine und Notizen nur gekoppelt. */
-export type Widget = 'wetter' | 'uhr' | 'termine' | 'notizen' | 'zuletzt' | 'nachrichten'
-export const WIDGETS: Widget[] = ['wetter', 'uhr', 'termine', 'notizen', 'zuletzt', 'nachrichten']
+/** Kästen unter den Schnellzugriffen; Termine und Notizen nur gekoppelt, die Smartcard nur am Handy. */
+export type Widget = 'wetter' | 'uhr' | 'termine' | 'notizen' | 'zuletzt' | 'nachrichten' | 'smartcard'
+export const WIDGETS: Widget[] = ['wetter', 'uhr', 'termine', 'notizen', 'zuletzt', 'nachrichten', 'smartcard']
 
 /** Gewählter Wetterort; die Koordinaten gehen nur an die eigene MSM-Instanz. */
 export interface WetterOrt {

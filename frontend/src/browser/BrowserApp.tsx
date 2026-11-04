@@ -23,6 +23,7 @@ import { FreundschaftsWache } from '@/components/social/FreundschaftsWache'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { PromptDialog } from '@/components/ui/PromptDialog'
 import { ABGEMELDET } from '@/desktop/auth'
+import { SmartcardWalletModal } from '@/desktop/vault/SmartcardWalletModal'
 import { eingangBeobachten } from '@/desktop/vault/tresorEingang'
 import { tresorAutoSperrQuelle, useVaultStore } from '@/desktop/vault/vaultStore'
 import { teamTresorAutoSperrQuelle, useTeamVaultStore } from '@/desktop/vault/teamVaultStore'
@@ -47,6 +48,7 @@ import { useOhneEdgeMenue } from './seite/EigenesMenue'
 import { FormularLeiste } from './seite/FormularLeiste'
 import { Meldungsleiste } from './seite/Meldungsleiste'
 import { Seitenflaeche } from './seite/Seitenflaeche'
+import { WALLET_EREIGNIS } from './seite/start/walletEinstieg'
 import { useAktualisierung } from './services/aktualisierung'
 import { useDrittanbieterHinweisStore } from './services/drittanbieterHinweisStore'
 import { useEinstellungenStore } from './services/einstellungenStore'
@@ -197,6 +199,14 @@ function Wurzel() {
     window.addEventListener(ABGEMELDET, zurKopplung)
     return () => window.removeEventListener(ABGEMELDET, zurKopplung)
   }, [navigate])
+  // Der Wallet-Einstieg (Suchleiste, Smartcard-Widget) öffnet per Ereignis —
+  // dasselbe wie in MSS, erst nach Geräte-Auth (`walletEinstieg.ts`).
+  const [walletOffen, setWalletOffen] = useState(false)
+  useEffect(() => {
+    const oeffnen = () => setWalletOffen(true)
+    window.addEventListener(WALLET_EREIGNIS, oeffnen)
+    return () => window.removeEventListener(WALLET_EREIGNIS, oeffnen)
+  }, [])
   useEffect(() => {
     let aus: (() => void) | null = null
     let weg = false
@@ -348,6 +358,8 @@ function Wurzel() {
         </div>
       )}
       <SaisonDeko gekoppelt={gekoppelt} />
+      {/* Vollbild Smartcard-Wallet-Modus, wie in MSS — nur per Geräte-Auth. */}
+      <SmartcardWalletModal isOpen={walletOffen} onClose={() => setWalletOffen(false)} />
       <ConfirmDialog />
       <PromptDialog />
       <BrowserBestaetigungDialog />

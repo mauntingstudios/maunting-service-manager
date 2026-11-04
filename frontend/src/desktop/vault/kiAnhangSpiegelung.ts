@@ -1,9 +1,10 @@
 /**
  * Spiegelung von KI-Chat-Dateianhängen in den persönlichen Tresor.
  *
- * Wenn die Option aktiv ist, werden in den Chat hochgeladene Dateien
+ * Wenn die Option aktiv ist, werden im Singra-Chat hochgeladene Dateien
  * automatisch in einen gesonderten Ordner („KI-Anhänge“) im persönlichen
- * Tresor abgelegt.
+ * Tresor abgelegt. Nur der Haupt-Chat spiegelt — der Maunting-Docs-Chat
+ * ruft die Spiegelung nicht auf.
  *
  * Ist der Tresor gerade gesperrt, wandert die Datei in eine lokale Warteschlange
  * (IndexedDB). Sobald der Tresor entsperrt wird, werden die wartenden Dateien

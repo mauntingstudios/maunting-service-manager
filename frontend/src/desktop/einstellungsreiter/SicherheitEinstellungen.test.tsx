@@ -66,6 +66,17 @@ describe('SicherheitEinstellungen', () => {
     expect(screen.queryByTestId('mock-tresor-tab')).not.toBeInTheDocument()
   })
 
+  it('zeigt beide Tresore in einer Tresor-Sektion statt in zwei getrennten', () => {
+    render(
+      <MemoryRouter>
+        <SicherheitEinstellungen />
+      </MemoryRouter>,
+    )
+    // Eine Überschrift für beide Tresore; die Team-Karte hängt darunter.
+    expect(screen.getByRole('heading', { name: 'Tresor' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Team-Tresor' })).not.toBeInTheDocument()
+  })
+
   it('reicht offline an TresorSicherheitTab weiter und blendet Geraete aus', () => {
     render(
       <MemoryRouter>
