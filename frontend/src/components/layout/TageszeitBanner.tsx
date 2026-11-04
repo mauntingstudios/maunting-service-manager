@@ -2,10 +2,8 @@ import { useMemo, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/authStore'
 import { useMedienabfrage } from '@/hooks/useMedienabfrage'
-import {
-  begruessungSchluessel,
-  headerHintergrundWaehlen,
-} from '@/desktop/vault/vaultKennzahlen'
+import { TageszeitHintergrund } from './TageszeitHintergrund'
+import { begruessungSchluessel, headerHintergrundWaehlen } from '@/lib/tageszeit'
 
 export interface TageszeitBannerProps {
   /** Bereichsname über der Begrüßung (z. B. „Dashboard“, „Kalender“, „Notizen“, „Maunting Docs“) */
@@ -53,7 +51,7 @@ export function TageszeitBanner({
 
   const begruessung = angemeldeterName
     ? t(begruessungSchluessel(stunde, istSchmal, zufall.current), { name: angemeldeterName })
-    : t('mss.vault.dashboard.begruessung.ohneName')
+    : t('common.begruessung.ohneName')
 
   const bildHoehe = kompakt ? 'h-48' : 'h-64'
 
@@ -62,26 +60,10 @@ export function TageszeitBanner({
       className={`relative overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container-low/65 ${className}`}
     >
       {/* Tageszeit-Hintergrundbild mit weichem Übergang nach unten */}
-      <div
-        className={`pointer-events-none absolute inset-x-0 top-0 ${bildHoehe} bg-cover opacity-40 transition-opacity duration-700`}
-        style={{
-          backgroundImage: `url('${headerMotiv.pfad}')`,
-          backgroundPosition: headerMotiv.position,
-          maskImage:
-            'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.68) 52%, rgba(0,0,0,0.20) 82%, transparent 100%)',
-          WebkitMaskImage:
-            'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.68) 52%, rgba(0,0,0,0.20) 82%, transparent 100%)',
-        }}
-        aria-hidden="true"
-      />
-      <div
-        className={`pointer-events-none absolute inset-x-0 top-0 ${bildHoehe}`}
-        style={{ background: headerMotiv.ueberlagerung }}
-        aria-hidden="true"
-      />
-      <div
-        className={`pointer-events-none absolute inset-x-0 top-0 ${bildHoehe} bg-gradient-to-b from-surface/10 via-surface/60 to-surface-container-low/95`}
-        aria-hidden="true"
+      <TageszeitHintergrund
+        motiv={headerMotiv}
+        hoehe={bildHoehe}
+        verlauf="bg-gradient-to-b from-surface/10 via-surface/60 to-surface-container-low/95"
       />
 
       <div

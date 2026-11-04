@@ -40,12 +40,13 @@ import {
   Zustandsflaeche,
 } from '@maunting/ui'
 import { formatBytes } from '@/lib/format'
+import { headerHintergrundWaehlen } from '@/lib/tageszeit'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
 import type { VaultItem } from './vaultEintrag'
 import {
   STANDARD_KATEGORIEN,
   TRESOR_FILTER,
   dieseWoche,
-  headerHintergrundWaehlen,
   passwortPunkte,
   passtZumFilter,
   sammlungen,
@@ -407,27 +408,7 @@ export function VaultDashboard({
     <div className="flex-1 overflow-y-auto">
       {/* Atmosphärischer Header-Bereich mit tageszeitabhängigem Motiv & weichem Übergang */}
       <div className="relative overflow-hidden">
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-cover opacity-40 transition-opacity duration-700"
-          style={{
-            backgroundImage: `url('${headerMotiv.pfad}')`,
-            backgroundPosition: headerMotiv.position,
-            maskImage:
-              'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 48%, rgba(0,0,0,0.18) 80%, transparent 100%)',
-            WebkitMaskImage:
-              'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 48%, rgba(0,0,0,0.18) 80%, transparent 100%)',
-          }}
-          aria-hidden="true"
-        />
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-80"
-          style={{ background: headerMotiv.ueberlagerung }}
-          aria-hidden="true"
-        />
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-gradient-to-b from-surface/15 via-surface/65 to-surface"
-          aria-hidden="true"
-        />
+        <TageszeitHintergrund motiv={headerMotiv} hoehe="h-80" />
 
         <div className="relative mx-auto w-full max-w-6xl space-y-6 px-4 py-5 sm:px-6">
           {/* Obere Such- & Statusleiste */}

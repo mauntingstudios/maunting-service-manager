@@ -75,6 +75,8 @@ import { inhaltVon, pfadVon, zielOrdner } from './tresorOrdner'
 import { useMiniatur } from './tresorMiniaturen'
 import { formatBytes } from '@/lib/format'
 import { still } from '@/lib/still'
+import { begruessungSchluessel } from '@/lib/tageszeit'
+import { TageszeitKulisse } from '@/components/layout/TageszeitKulisse'
 import { setzeTresorSchutz } from '../tauri'
 import { useShallow } from 'zustand/react/shallow'
 import { useMedienabfrage } from '@/hooks/useMedienabfrage'
@@ -84,7 +86,6 @@ import { fehlerText } from './tresorFehler'
 import { TransferToTeamVaultModal } from './TransferToTeamVaultModal'
 import type { VaultAnsicht } from './vaultAnsichten'
 import {
-  begruessungSchluessel,
   passtZumFilter,
   sichtbareEintraege,
   zaehleEintraege,
@@ -1122,7 +1123,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
   const begruessung = angemeldeterName
     ? t(begruessungSchluessel(new Date().getHours(), istSchmal, begruessungsZufall.current), { name: angemeldeterName })
-    : t('mss.vault.dashboard.begruessung.ohneName')
+    : t('common.begruessung.ohneName')
 
   const ordnerFilterName = ordnerFilter ? items.find((item) => item.id === ordnerFilter)?.service : undefined
   const ordnerOptionen = [
@@ -1393,6 +1394,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   // ── 2. ENTSPERREN MIT MAUNTING CARD ──
   if (!isUnlocked) {
     return (
+      <TageszeitKulisse>
       <div className="flex h-full w-full flex-col overflow-y-auto">
         <div className="my-auto mx-auto flex w-full max-w-xl flex-col items-center gap-6 px-4 py-6 sm:px-6">
           {zuruecksetzen ? (
@@ -1417,19 +1419,23 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
             <>
               {/* Header */}
               <div className="text-center space-y-2">
-                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20 shadow-sm backdrop-blur-md">
                   <ShieldCheck className="h-6 w-6" />
                 </div>
-                <h1 className="text-lg font-bold text-on-surface">
+                <span className="mx-auto inline-flex items-center gap-1.5 rounded-full border border-outline-variant/25 bg-surface-container/70 px-2.5 py-0.5 text-label-sm font-semibold text-on-surface-variant backdrop-blur-md">
+                  <Lock className="h-3 w-3" aria-hidden="true" />
+                  {t('mss.vault.sperre.marke')}
+                </span>
+                <h1 className="text-lg font-bold text-on-surface sm:text-xl">
                   {isTeam ? team?.name || t('teams.vaultUnlock') : t('mss.vault.titelManager')}
                 </h1>
-                {(!isDeviceAuthorized && isInitialized) || isTeam ? (
-                  <p className="text-xs text-on-surface-variant max-w-md">
-                    {!isDeviceAuthorized && isInitialized
-                      ? t('mss.card.vaultNeedsAuthorization', 'Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet. Bitte bestätige das Gerät einmalig.')
-                      : t('teams.vaultUnlockDesc')}
-                  </p>
-                ) : null}
+                <p className="text-xs text-on-surface-variant max-w-md">
+                  {!isDeviceAuthorized && isInitialized
+                    ? t('mss.card.vaultNeedsAuthorization', 'Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet. Bitte bestätige das Gerät einmalig.')
+                    : isTeam
+                      ? t('teams.vaultUnlockDesc')
+                      : t('mss.vault.sperre.untertitel')}
+                </p>
               </div>
 
               {/* Maunting Card als Tresor-Schloss */}
@@ -1582,8 +1588,9 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                         setZuruecksetzen(true)
                         setMasterPasswordInput('')
                       }}
-                      className="text-on-surface-variant hover:text-status-destructive text-xs"
+                      className="mt-1 border border-status-destructive/25 bg-status-destructive/10 text-xs text-status-destructive/90 backdrop-blur-md hover:border-status-destructive/45 hover:bg-status-destructive/15 hover:text-status-destructive"
                     >
+                      <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
                       {t('mss.vault.zuruecksetzen.link')}
                     </Button>
                   )}
@@ -1593,6 +1600,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
           )}
         </div>
       </div>
+      </TageszeitKulisse>
     )
   }
 
