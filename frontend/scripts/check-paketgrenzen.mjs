@@ -46,6 +46,7 @@ async function files(directory) {
   const found = await Promise.all(entries.map(async entry => {
     const current = path.join(directory, entry.name)
     if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : files(current)
+    if (/\.(?:test|spec)\.(?:ts|tsx)$/.test(entry.name)) return []
     return /\.(?:ts|tsx)$/.test(entry.name) ? [current] : []
   }))
   return found.flat()

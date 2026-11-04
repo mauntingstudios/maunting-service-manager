@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Badge } from './Badge'
 import { Button } from './Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './Card'
@@ -58,6 +58,9 @@ describe('central UI components', () => {
   })
 
   it('Avatar löst relative URLs über Backend-Origin oder Custom-Resolver auf', async () => {
+    // Die lokale .env.local setzt eine absolute API-Adresse; im Test soll der
+    // relative Pfad gelten, sonst wartet der Desktop-Pfad auf einen Blob.
+    vi.stubEnv('VITE_API_URL', '')
     const { Avatar } = await import('@/Singra/UI/Avatar')
     const { rerender } = render(
       <Avatar src="/api/auth/avatar/test.png" name="Max Mustermann" alt="Profil" />,
@@ -78,4 +81,8 @@ describe('central UI components', () => {
     const customImg = screen.getByAltText('Profil') as HTMLImageElement
     expect(customImg.src).toBe('https://custom.example.com/api/auth/avatar/test.png')
   })
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
