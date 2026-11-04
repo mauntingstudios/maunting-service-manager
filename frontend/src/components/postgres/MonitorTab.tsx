@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Activity, Ban, Lock, Octagon, RefreshCw, Wrench } from 'lucide-react'
-import { Badge, Button } from '@/Singra/UI'
+import { Badge, Button } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import { useStudio } from './StudioContext'

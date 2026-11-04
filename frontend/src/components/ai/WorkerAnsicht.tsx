@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiRunInfo } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { ChatHintergrund } from '@/features/chatHintergrund'
 import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
 import { toast } from '@/stores/toastStore'

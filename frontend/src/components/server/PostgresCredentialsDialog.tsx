@@ -1,7 +1,7 @@
 import { Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { PostgresCredential } from "@/types";
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 interface Props {
   credentials: PostgresCredential[];

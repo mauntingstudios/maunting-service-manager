@@ -1,6 +1,6 @@
 import { Loader2, Mic } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 import { useSprachsuche } from '../services/sprachsuche'
 
 interface SprachsucheKnopfProps {

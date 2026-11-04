@@ -10,7 +10,7 @@ import { Link2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { abmelden } from '@/desktop/auth'
 import { SchrittBackend, SchrittKopplung } from '@/desktop/Wizard'
 

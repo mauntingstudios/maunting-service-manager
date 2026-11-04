@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Dialog,
-  DialogContent,
-  Button,
-  Input,
-} from '@/Singra/UI'
+import { Dialog, DialogContent, Button, Input } from '@maunting/ui'
 import {
   RefreshCw,
   SwitchCamera,

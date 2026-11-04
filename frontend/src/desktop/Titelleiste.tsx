@@ -10,7 +10,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Minus, Square, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 type Aktion = 'minimieren' | 'maximieren' | 'schliessen'
 

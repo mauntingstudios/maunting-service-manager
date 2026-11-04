@@ -23,9 +23,9 @@ import { FARB_PALETTE, farbwahl } from '@/config/farbpalette'
 import { apiUrl } from '@/config/api'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
-import { PageHeader } from '@/Singra/UI/PageHeader'
-import { DateTimePicker, Dropdown, Kurzinfo, NumberStepper, useZurueckSchliesst } from '@/Singra/UI'
-import { Button } from '@/components/ui/Button'
+import { PageHeader } from '@maunting/ui'
+import { DateTimePicker, Dropdown, Kurzinfo, NumberStepper, useZurueckSchliesst } from '@maunting/ui'
+import { Button } from '@maunting/ui'
 import { sendeGeraeteBenachrichtigung, pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
 import {
   loadCalendarEventsOfflineFirst,

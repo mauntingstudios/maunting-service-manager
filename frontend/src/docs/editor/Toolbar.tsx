@@ -24,7 +24,8 @@ import {
   Undo2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Dropdown, Kurzinfo, prompt } from '@/Singra/UI'
+import { Dropdown, Kurzinfo } from '@maunting/ui'
+import { prompt } from '@/stores/promptStore'
 import { cx } from '@/utils/classNames'
 
 interface ToolbarProps {

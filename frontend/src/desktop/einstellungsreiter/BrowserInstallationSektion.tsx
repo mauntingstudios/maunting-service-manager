@@ -1,6 +1,6 @@
 import { Globe, Download } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { oeffneBrowser } from '../tauri'
 
 /**

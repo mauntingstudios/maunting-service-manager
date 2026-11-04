@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mic, MicOff, Video, VideoOff, VolumeX } from 'lucide-react'
-import { Avatar } from '@/Singra/UI/Avatar'
+import { Avatar } from '@/components/app/Avatar'
 import type { Track } from 'livekit-client'
 import type { CallParticipant } from '@/stores/useCallStore'
 

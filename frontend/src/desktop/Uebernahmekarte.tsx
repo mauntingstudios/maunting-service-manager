@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { formatDauer } from '@/lib/format'
 import { ergebnisMelden } from './desktopJobs'
 import { KartenHuelle, type KartenHuellenProps } from './KartenHuelle'

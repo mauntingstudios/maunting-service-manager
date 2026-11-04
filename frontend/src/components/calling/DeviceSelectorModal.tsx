@@ -1,7 +1,7 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
-import { Dialog, DialogContent } from '@/Singra/UI'
-import { Dropdown, type DropdownOption } from '@/components/ui/Dropdown'
+import { Dialog, DialogContent } from '@maunting/ui'
+import { Dropdown, DropdownOption } from '@maunting/ui'
 import { Mic, Video, Volume2 } from 'lucide-react'
 
 export interface DeviceSelectorModalProps {

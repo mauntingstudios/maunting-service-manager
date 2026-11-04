@@ -10,16 +10,7 @@ import {
   type AiMemoryImportTarget,
 } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import {
-  Badge,
-  Button,
-  Checkbox,
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/Singra/UI'
+import { Badge, Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { type AiKnowledgeScope, memoryScopeName, scopeServerId, scopeTeamId } from './knowledgeScope'

@@ -20,12 +20,12 @@ import {
   VideoOff,
   Volume2,
 } from 'lucide-react'
-import { Button, Kurzinfo } from '@/Singra/UI'
-import { Avatar } from '@/Singra/UI/Avatar'
+import { Button, Kurzinfo } from '@maunting/ui'
+import { Avatar } from '@/components/app/Avatar'
 import { aktiverRaum, useCallStore, type CallParticipant } from '@/stores/useCallStore'
 import { bildschirmfreigabeMoeglich } from '@/services/livekitRaum'
 import { sendeGeraeteBenachrichtigung } from '@/lib/benachrichtigung'
-import type { DropdownOption } from '@/components/ui/Dropdown'
+import type { DropdownOption } from '@maunting/ui'
 import type { Track } from 'livekit-client'
 import { AddParticipantModal } from './AddParticipantModal'
 import { DeviceSelectorModal } from './DeviceSelectorModal'

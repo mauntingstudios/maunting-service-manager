@@ -12,7 +12,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import {
   deinstallationAufraeumen,
   deinstallationStarten,

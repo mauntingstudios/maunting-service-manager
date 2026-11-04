@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Spinner, Zustandsflaeche } from '@/Singra/UI'
+import { Spinner, Zustandsflaeche } from '@maunting/ui'
 import { claimShare } from '@/api/docs'
 
 export function DocumentShareClaim() {

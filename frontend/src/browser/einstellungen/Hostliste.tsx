@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Input, Kurzinfo } from '@/Singra/UI'
+import { Button, Input, Kurzinfo } from '@maunting/ui'
 
 import { ausnahmeHost } from '../services/leistung'
 import { Abschnitt } from './bausteine'

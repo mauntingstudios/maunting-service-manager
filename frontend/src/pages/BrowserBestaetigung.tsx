@@ -4,7 +4,7 @@ import type { TFunction } from 'i18next'
 import { Check, KeyRound, ShieldAlert } from 'lucide-react'
 import { api } from '@/api/client'
 import { Logo } from '@/components/Logo'
-import { Zahlenwahl } from '@/Singra/UI'
+import { Zahlenwahl } from '@maunting/ui'
 import { passkeyBestaetigen, type PasskeyBestaetigungsOptionen } from '@/services/passkeyService'
 
 /**

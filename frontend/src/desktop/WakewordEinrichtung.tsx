@@ -20,7 +20,7 @@ import { listen } from '@tauri-apps/api/event'
 import { Mic } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, ProgressBar, Slider, Switch } from '@/Singra/UI'
+import { Button, ProgressBar, Slider, Switch } from '@maunting/ui'
 import { KI_NAME } from '@/lib/kiName'
 import {
   konfigAendern,

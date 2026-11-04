@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiActionProposal } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Button } from '@/Singra/UI'
-import { SecretOnce } from '@/components/ui/SecretOnce'
+import { Button } from '@maunting/ui'
+import { SecretOnce } from '@/components/app/SecretOnce'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 

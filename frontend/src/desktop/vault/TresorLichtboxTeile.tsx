@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Versionsliste, Zustandsflaeche } from '@/Singra/UI'
+import { Versionsliste, Zustandsflaeche } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
 import { type VaultItem } from './vaultEintrag'

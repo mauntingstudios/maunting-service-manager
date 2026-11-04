@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { api } from '@/api/client'
-import { Button, FileButton, Input, Kurzinfo, MultiSelect, Slider } from '@/Singra/UI'
+import { Button, FileButton, Input, Kurzinfo, MultiSelect, Slider } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { bildZuWebp, FARB_HINTERGRUENDE, HINTERGRUND_OPTIONEN } from '../seite/hintergruende'

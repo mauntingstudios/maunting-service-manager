@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 import type { PraesenzClient } from '@/api/social'
 
 export type DeviceType = 'web' | 'desktop' | 'mobile'

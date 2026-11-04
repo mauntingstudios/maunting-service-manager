@@ -10,7 +10,7 @@ import { useState, type RefObject } from 'react'
 import { Globe, Lock, LockOpen, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Ankerfenster, Button } from '@/Singra/UI'
+import { Ankerfenster, Button } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { nativ } from '../services/nativ'

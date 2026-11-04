@@ -24,7 +24,7 @@ import {
   type Wischrichtung,
 } from '@/lib/gesten'
 import { useLangdruck } from '@/hooks/useLangdruck'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 export interface ChatZeilenGesteProps {
   angeheftet: boolean

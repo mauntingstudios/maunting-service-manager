@@ -5,15 +5,15 @@ import { notifySupportWidgetUpdated } from '@/lib/supportWidgetLoader'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { Switch } from '@/components/ui/Switch'
-import { Input } from '@/components/ui/Input'
-import { Button } from '@/components/ui/Button'
-import { Dropdown } from '@/components/ui/Dropdown'
-import { PasswordInput } from '@/components/ui/PasswordInput'
+import { Switch } from '@maunting/ui'
+import { Input } from '@maunting/ui'
+import { Button } from '@maunting/ui'
+import { Dropdown } from '@maunting/ui'
+import { PasswordInput } from '@maunting/ui'
 import { PanelSettings, EMPTY_PANEL_SETTINGS, type SupportWidgetProvider } from './types'
 import { API_ORIGIN } from '@/config/api'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 export function SupportWidgetTab() {
   const { t } = useTranslation()
   const canWrite = useHasPermission('panel.settings.write')

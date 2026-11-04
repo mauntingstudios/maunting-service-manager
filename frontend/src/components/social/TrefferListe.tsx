@@ -19,7 +19,7 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Lock, MessageSquare, Users } from 'lucide-react'
 
-import { Avatar } from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
 import type { ChatTreffer, Treffer } from '@/services/verlaufSuche'
 import type { MailboxMeta } from '@/stores/messengerNotificationStore'
 

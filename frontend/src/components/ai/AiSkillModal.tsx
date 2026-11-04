@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Sparkles, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { AiSkillDirectory } from './AiSkillDirectory'
 
 interface AiSkillModalProps {

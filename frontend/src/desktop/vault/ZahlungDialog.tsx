@@ -6,7 +6,7 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Dropdown, Input, PasswordInput, Textarea } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Dropdown, Input, PasswordInput, Textarea } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 

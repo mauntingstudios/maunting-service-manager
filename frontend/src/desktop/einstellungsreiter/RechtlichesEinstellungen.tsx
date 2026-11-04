@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { usePublicLegalSettings } from '@/hooks/usePublicLegalSettings'
 import { DATENSCHUTZ_VERSION } from '@/pages/datenschutzStand'
-import { Badge, Button } from '@/Singra/UI'
+import { Badge, Button } from '@maunting/ui'
 import { oeffneBrowser } from '../tauri'
 
 export function RechtlichesEinstellungen({ offline = false }: { offline?: boolean }) {

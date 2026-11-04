@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, RefreshCw, ShieldCheck } from "lucide-react";
 import { api } from "@/api/client";
-import { Dropdown } from "@/components/ui/Dropdown";
+import { Dropdown } from '@maunting/ui'
 import { toast } from "@/stores/toastStore";
 import type { BlueprintListEntry, Server } from "@/types";
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 interface SwitchBlueprintDialogProps {
   open: boolean;
   onClose: () => void;

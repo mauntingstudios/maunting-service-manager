@@ -5,7 +5,7 @@ import i18n from '@/i18n'
 import { Shell } from './Shell'
 import { useAuthStore } from '@/stores/authStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
-import { PrivacyNoticeVisibilityContext } from '@/components/ui/PrivacyNoticeVisibility'
+import { PrivacyNoticeVisibilityContext } from '@/components/app/PrivacyNoticeVisibility'
 
 // Stabilize Shell.test.tsx timeout (VAL-REL-005):
 // Shell renders VersionFooter → useVersion (fetches GitHub API) and

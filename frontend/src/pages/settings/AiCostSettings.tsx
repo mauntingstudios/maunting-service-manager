@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiCostPolicy } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Dropdown } from '@/Singra/UI'
+import { Dropdown } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { betragFormatieren } from '@/utils/geld'
 

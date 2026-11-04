@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Clock, Globe, Mail, MapPin, Save, ShieldCheck } from 'lucide-react'
 
 import { api } from '@/api/client'
-import { Button, Dropdown, type DropdownOption } from '@/Singra/UI'
+import { Button, Dropdown, DropdownOption } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { getAvailableTimezones } from '@/utils/timeFormat'

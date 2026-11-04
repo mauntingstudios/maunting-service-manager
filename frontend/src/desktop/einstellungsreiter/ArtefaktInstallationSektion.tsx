@@ -3,7 +3,7 @@ import { open as ordnerDialog } from '@tauri-apps/plugin-dialog'
 import { AlertTriangle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Badge, Button, Slider, Switch } from '@/Singra/UI'
+import { Badge, Button, Slider, Switch } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { konfigAendern, konfigLaden, sandboxVerfuegbar, type AppKonfig } from '../tauri'
 

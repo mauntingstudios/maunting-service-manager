@@ -7,7 +7,7 @@ import { useState, type DragEvent, type ElementType } from 'react'
 import { ArrowDown, ArrowUp, GripVertical } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Kurzinfo, Switch } from '@/Singra/UI'
+import { Kurzinfo, Switch } from '@maunting/ui'
 
 export interface Ordnungseintrag {
   schluessel: string

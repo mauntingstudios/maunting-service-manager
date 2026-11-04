@@ -11,10 +11,8 @@ const dialog = vi.hoisted(() => ({
   prompt: vi.fn(async () => 'Vor dem Umbau'),
 }))
 
-vi.mock('@/Singra/UI', async (importOriginal) => {
-  const echt = await importOriginal<typeof import('@/Singra/UI')>()
-  return { ...echt, confirm: dialog.confirm, prompt: dialog.prompt }
-})
+vi.mock('@/stores/confirmStore', () => ({ confirm: dialog.confirm }))
+vi.mock('@/stores/promptStore', () => ({ prompt: dialog.prompt }))
 
 vi.mock('@/api/docs', async (importOriginal) => {
   const echt = await importOriginal<typeof import('@/api/docs')>()

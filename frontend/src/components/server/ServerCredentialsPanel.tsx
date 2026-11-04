@@ -18,7 +18,7 @@ import {
 } from '@/api/credentials'
 import { SanitizedApiError } from '@/api/client'
 import { toast } from '@/stores/toastStore'
-import { Dropdown } from '@/components/ui/Dropdown'
+import { Dropdown } from '@maunting/ui'
 
 export function ServerCredentialsPanel({
   serverId,

@@ -37,7 +37,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: () => Promise.resolve(() => {}
 const { Jugendschutz } = await import('./Jugendschutz')
 const { useTabsStore } = await import('../services/tabsStore')
 const { Sperrseite } = await import('../seite/Sperrseite')
-const { ConfirmDialog } = await import('@/components/ui/ConfirmDialog')
+const { ConfirmDialog } = await import('@/components/app/ConfirmDialog')
 const { useToastStore } = await import('@/stores/toastStore')
 
 const regeln = (teil: Partial<SchutzRegeln> = {}): SchutzRegeln => ({

@@ -9,7 +9,7 @@ import {
   type PendingNodeEnrollment,
 } from '@/services/nodeEnrollmentService'
 import { toast } from '@/stores/toastStore'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 interface NodeEnrollmentDialogProps {
   onClose: () => void

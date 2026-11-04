@@ -38,29 +38,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
-import {
-  ABLAGEZIEL,
-  Ablageflaeche,
-  Auswahlleiste,
-  Blatteintrag,
-  Blattmenue,
-  Button,
-  Checkbox,
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Dropdown,
-  FileButton,
-  Kontextmenue,
-  Pfadleiste,
-  ProgressBar,
-  Zustandsflaeche,
-  useMehrfachauswahl,
-  type ActionMenuItem,
-  type AuswahlAktion,
-} from '@/Singra/UI'
+import { ABLAGEZIEL, Ablageflaeche, Auswahlleiste, Blatteintrag, Blattmenue, Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Dropdown, FileButton, Kontextmenue, Pfadleiste, ProgressBar, Zustandsflaeche, useMehrfachauswahl, ActionMenuItem, AuswahlAktion } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { prompt } from '@/stores/promptStore'
 import { formatBytes, formatZeitpunkt } from '@/lib/format'

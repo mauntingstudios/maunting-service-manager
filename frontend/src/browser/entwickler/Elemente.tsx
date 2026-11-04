@@ -7,7 +7,8 @@ import { useEffect, useId, useState } from 'react'
 import { ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { ActionMenu, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, prompt, TabBar, Textarea, type TabDef } from '@/Singra/UI'
+import { ActionMenu, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, TabBar, Textarea, TabDef } from '@maunting/ui'
+import { prompt } from '@/stores/promptStore'
 import { toast } from '@/stores/toastStore'
 
 import { elementName, selektor, useDom, vorfahren, type Knoten } from './domStore'

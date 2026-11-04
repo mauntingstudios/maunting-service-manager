@@ -103,7 +103,7 @@ describe('AiUsageCard', () => {
     render(<AiUsageCard />)
 
     const bar = await screen.findByRole('progressbar', { name: '24 Stunden' })
-    // Die Ruhefarbe von `Singra/UI/ProgressBar` — dieselbe wie bei den
+    // Die Ruhefarbe von `@maunting/ui/ProgressBar` — dieselbe wie bei den
     // CPU-/RAM-Balken, seit die Karte den Balken nicht mehr selbst nachbaut.
     expect(bar.firstElementChild?.className).toContain('bg-secondary')
   })

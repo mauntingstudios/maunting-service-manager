@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 
 import type { AiAttachment } from '@/api/ai'
-import { Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Kurzinfo } from '@/Singra/UI'
+import { Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Kurzinfo } from '@maunting/ui'
 import { anhangArt, lesbareGroesse } from '@/lib/aiAnhangTypen'
 
 export interface AiSpeicherDrawerProps {

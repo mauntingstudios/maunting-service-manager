@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { nativ } from '../services/nativ'

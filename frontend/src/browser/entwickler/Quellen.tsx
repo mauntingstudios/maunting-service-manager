@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, RotateCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Input, prompt } from '@/Singra/UI'
+import { Input } from '@maunting/ui'
+import { prompt } from '@/stores/promptStore'
 
 import { CodeAnsicht } from './CodeAnsicht'
 import { DebuggerLeiste, DebuggerSeite } from './Debugger'

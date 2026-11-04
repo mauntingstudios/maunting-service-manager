@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiLearningPolicy, type AiSkillManaged } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Button, Dropdown } from '@/Singra/UI'
+import { Button, Dropdown } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 

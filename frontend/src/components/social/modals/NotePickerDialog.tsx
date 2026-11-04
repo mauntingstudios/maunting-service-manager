@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { StickyNote } from 'lucide-react'
-import { Dialog, DialogContent, Input } from '@/Singra/UI'
+import { Dialog, DialogContent, Input } from '@maunting/ui'
 import type { NoteItem } from '@/pages/Notes'
 
 interface NotePickerDialogProps {

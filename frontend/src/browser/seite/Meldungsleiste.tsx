@@ -5,7 +5,7 @@
  * wie die Infoleisten anderer Browser. Derselbe Store wie überall
  * (`toastStore.ts`), nur anders gezeichnet.
  *
- * Gezeichnet wird nur mit Bausteinen der Design-DNA (`Button` aus `Singra/UI`,
+ * Gezeichnet wird nur mit Bausteinen der Design-DNA (`Button` aus `@maunting/ui`,
  * Farb- und Schrift-Token): Typ-Plakette und Tönung sprechen dieselbe
  * Banner-Sprache wie `AiBetaBanner`, Fehlermaschinentext dieselbe Schrift wie
  * im `ToastContainer`.
@@ -13,7 +13,7 @@
 import { AlertCircle, AlertTriangle, CheckCircle, Info, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 import { useToastStore, type ToastTyp } from '@/stores/toastStore'
 
 const STIL: Record<ToastTyp, { leiste: string; plakette: string; symbol: typeof Info }> = {

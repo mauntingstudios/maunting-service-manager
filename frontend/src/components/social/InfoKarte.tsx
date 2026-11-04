@@ -4,7 +4,7 @@ import { Info, MessageSquare, Phone, Save, Trash2, Video } from 'lucide-react'
 
 import { getOwnInfo, setOwnInfo, type UserInfoSichtbarkeit } from '@/api/social'
 import { ProfilKopf } from '@/components/social/ProfilKopf'
-import { Button, Dropdown, Input, Textarea, buttonClasses, type DropdownOption } from '@/Singra/UI'
+import { Button, Dropdown, Input, Textarea, buttonClasses, DropdownOption } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 

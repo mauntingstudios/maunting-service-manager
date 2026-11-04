@@ -7,7 +7,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, confirm, Dropdown, Input } from '@/Singra/UI'
+import { Button, Dropdown, Input } from '@maunting/ui'
+import { confirm } from '@/stores/confirmStore'
 
 import { CacheSpeicher, IndexedDb } from './Datenbanken'
 import { AnwendungLeiste } from './Leiste'

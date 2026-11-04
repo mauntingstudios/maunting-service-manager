@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 import { SCHLAFEN_NACH, useEinstellungenStore, type SchlafenNach } from '../services/einstellungenStore'
 import { useGeraetKonfig } from '../services/geraetKonfig'

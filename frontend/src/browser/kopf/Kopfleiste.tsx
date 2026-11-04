@@ -28,10 +28,11 @@ import { WorkspaceIcon } from './WorkspaceLeiste'
 import { SaisonLogo } from '@/season/SaisonLogo'
 import { STANDARD_WORKSPACE_ID, useWorkspacesStore } from '../services/workspacesStore'
 import { farbwahl } from '@/config/farbpalette'
-import { useAnkerLage } from '@/Singra/UI/Ankerlage'
+import { useAnkerLage } from '@maunting/ui'
 import { createPortal } from 'react-dom'
 
-import { BenachrichtigungsGlocke, Kurzinfo, UpdateBadge } from '@/Singra/UI'
+import { BenachrichtigungsGlocke } from '@/components/notifications/BenachrichtigungsGlocke'
+import { Kurzinfo, UpdateBadge } from '@maunting/ui'
 
 import { useEinstellungenStore } from '../services/einstellungenStore'
 import { istGekoppelt, useSitzung } from '../services/sitzung'

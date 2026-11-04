@@ -4,13 +4,13 @@ import { ExternalLink, Save } from 'lucide-react'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Switch } from '@/components/ui/Switch'
+import { Button } from '@maunting/ui'
+import { Input } from '@maunting/ui'
+import { Switch } from '@maunting/ui'
 import { publishPublicLegalSettings } from '@/hooks/usePublicLegalSettings'
 import { PanelSettings, EMPTY_PANEL_SETTINGS } from './types'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 export function ImprintTab() {
   const { t } = useTranslation()
   const canWrite = useHasPermission('panel.settings.write')

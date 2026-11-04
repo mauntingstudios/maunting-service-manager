@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from 'react'
 import { AlertTriangle, BookOpen, Bot, BrainCircuit, Calendar, CalendarClock, ChevronDown, ChevronRight, Globe2, Loader2, Mail, Monitor, Sparkles, User, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 import type {
   AiActionProposal,

@@ -17,7 +17,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import { apiStream } from '@/api/client'
-import { Badge, Button, Dropdown, Input, Kurzinfo, type DropdownOption } from '@/Singra/UI'
+import { Badge, Button, Dropdown, Input, Kurzinfo, DropdownOption } from '@maunting/ui'
 
 import type { Treffer } from '../MsmSuche'
 import { SeitenSymbol } from '../SeitenSymbol'

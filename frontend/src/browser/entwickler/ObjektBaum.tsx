@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react'
 import { ChevronRight, Crosshair } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 import { hervorheben, rufen, type Eigenschaft, type Objekt, type ObjektVorschau } from './protokoll'
 import { aufdecken } from './werkzeuge'

@@ -4,13 +4,13 @@ import { Save, Send, Mail, Trash2, Undo2 } from 'lucide-react'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { PasswordInput } from '@/components/ui/PasswordInput'
-import { Button } from '@/components/ui/Button'
-import { NumberStepper } from '@/components/ui/NumberStepper'
-import { Switch } from '@/components/ui/Switch'
+import { PasswordInput } from '@maunting/ui'
+import { Button } from '@maunting/ui'
+import { NumberStepper } from '@maunting/ui'
+import { Switch } from '@maunting/ui'
 import { PanelSettings, EMPTY_PANEL_SETTINGS } from './types'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 export function EmailTab() {
   const { t } = useTranslation()
   const canWrite = useHasPermission('panel.settings.write')

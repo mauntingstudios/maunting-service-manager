@@ -35,23 +35,7 @@ import {
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  Dropdown,
-  Input,
-  Kurzinfo,
-  Pagination,
-  Switch,
-  TabBar,
-  Textarea,
-  Versionsliste,
-  type TabDef,
-} from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Dropdown, Input, Kurzinfo, Pagination, Switch, TabBar, Textarea, Versionsliste, TabDef } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 

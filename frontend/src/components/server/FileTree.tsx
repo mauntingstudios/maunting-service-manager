@@ -5,7 +5,7 @@ import type { ContentMatch, FileEntry, SearchResult } from './fileWorkspaceTypes
 import { formatBytes } from '@/lib/format'
 import { joinPath, sortEntries } from './fileHelpers'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 interface FileTreeProps {
   nodes: Record<string, FileEntry[]>
   expanded: Set<string>

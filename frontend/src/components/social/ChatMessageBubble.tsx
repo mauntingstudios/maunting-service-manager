@@ -44,7 +44,8 @@ import {
   Trash2,
 } from 'lucide-react'
 
-import { Avatar, Button, Kurzinfo, RoleBadge } from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
+import { Button, Kurzinfo, RoleBadge } from '@maunting/ui'
 import {
   ChatMediaFile,
   ChatMediaImage,

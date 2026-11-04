@@ -6,7 +6,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, confirm } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
+import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
 import { useEinstellungenStore, type VerlaufFrist } from '../services/einstellungenStore'

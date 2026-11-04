@@ -9,7 +9,7 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import { Loader } from '@/components/ui/Loader'
+import { Loader } from '@/components/app/Loader'
 
 const Docs = lazy(() => import('@/pages/Docs').then((modul) => ({ default: modul.Docs })))
 const BlueprintsDocs = lazy(() => import('@/pages/docs/BlueprintsDocs').then((modul) => ({ default: modul.BlueprintsDocs })))

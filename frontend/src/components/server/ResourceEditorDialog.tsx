@@ -5,7 +5,7 @@ import { api, SanitizedApiError } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import type { Node } from '@/types'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 /**
  * Resource-Limit-Editor für Server-Detail (CPU / RAM / Disk).

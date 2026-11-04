@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { DateTimePicker } from './DateTimePicker'
-import { Dialog, DialogContent } from '@/Singra/UI/Dialog'
+import { Dialog, DialogContent } from './Dialog'
 import { fakeLayout } from '@/test/fakeLayout'
 
 describe('DateTimePicker', () => {

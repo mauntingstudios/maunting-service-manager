@@ -1,6 +1,6 @@
 import { Download, FileCode2, FileText, Printer } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { ActionMenu } from '@/Singra/UI'
+import { ActionMenu } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { downloadExport } from '@/api/docs'
 import { docsFehlermeldung } from './docsFehler'

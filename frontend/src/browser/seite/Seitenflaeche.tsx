@@ -10,7 +10,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 're
 import { Columns2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Zustandsflaeche } from '@/Singra/UI/Zustandsflaeche'
+import { Zustandsflaeche } from '@maunting/ui'
 
 import { useSeitenflaeche } from '../entwickler/werkzeuge'
 import { seitenHost } from '../services/geraetKonfig'

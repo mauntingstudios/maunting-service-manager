@@ -5,16 +5,16 @@ import { api } from '@/api/client'
 import { API_ORIGIN } from '@/config/api'
 import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher'
-import { Button } from '@/components/ui/Button'
-import { Dropdown } from '@/components/ui/Dropdown'
-import { Switch } from '@/components/ui/Switch'
+import { LanguageSwitcher } from '@/components/app/LanguageSwitcher'
+import { Button } from '@maunting/ui'
+import { Dropdown } from '@maunting/ui'
+import { Switch } from '@maunting/ui'
 import { normalizePanelLanguage } from '@/config/panelLocales'
 import { PanelSettings, EMPTY_PANEL_SETTINGS } from './types'
 import { SeasonalSettings } from './SeasonalSettings'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 
 function saisonalAlsStore(settings: PanelSettings) {
   return {

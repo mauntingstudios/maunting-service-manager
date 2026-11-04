@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next'
 import { KeyRound, Info, AlertTriangle, ExternalLink } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { PageHeader } from '@/Singra/UI/PageHeader'
+import { PageHeader } from '@maunting/ui'
 
-import { buttonClasses } from '@/Singra/UI'
+import { buttonClasses } from '@maunting/ui'
 function Alert({ type = 'info', title, children }: { type?: 'info' | 'warning', title: string, children: React.ReactNode }) {
   const styles = {
     info: 'bg-primary/10 text-primary border-primary/20',

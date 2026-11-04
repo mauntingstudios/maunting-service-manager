@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Wand2 } from 'lucide-react'
-import { Button, Checkbox, Dropdown, Input, Textarea } from '@/Singra/UI'
+import { Button, Checkbox, Dropdown, Input, Textarea } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { FormDialog } from './FormDialog'
 import { useStudio } from './StudioContext'

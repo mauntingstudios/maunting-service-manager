@@ -1,5 +1,5 @@
 import { Brain, ShieldCheck, Users } from 'lucide-react'
-import type { RechteAbschnittDefinition, RechteZeile } from '@/Singra/UI'
+import type { RechteAbschnittDefinition, RechteZeile } from '@maunting/ui'
 
 export const ROLE_COLOR_PRESETS = [
   { label: 'Blau', value: '#3b82f6' },

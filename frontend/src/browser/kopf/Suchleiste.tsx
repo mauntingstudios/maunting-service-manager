@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Input, Kurzinfo } from '@/Singra/UI'
+import { Input, Kurzinfo } from '@maunting/ui'
 
 import { nativ } from '../services/nativ'
 import { useSuche } from '../services/suche'

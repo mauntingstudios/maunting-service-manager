@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 import { useToastStore } from '@/stores/toastStore'
 import { usePromptStore } from '@/stores/promptStore'
-import { nachbarKachel } from '@/Singra/UI/Rasterfokus'
+import { nachbarKachel } from '@maunting/ui'
 
 import { TresorGalerie, anDiesemTag } from './TresorGalerie'
 import { useVaultStore } from './vaultStore'

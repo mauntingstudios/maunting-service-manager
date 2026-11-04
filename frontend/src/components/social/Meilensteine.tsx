@@ -4,7 +4,7 @@ import { CheckCircle2, Lock, Trophy } from 'lucide-react'
 
 import type { AchievementItem } from '@/api/social'
 import { renderAchievementIcon } from '@/components/social/achievementIcons'
-import { Badge, Button } from '@/Singra/UI'
+import { Badge, Button } from '@maunting/ui'
 
 type Filter = 'all' | 'unlocked' | 'locked'
 

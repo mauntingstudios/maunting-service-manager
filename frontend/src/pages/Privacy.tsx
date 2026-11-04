@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/authStore'
-import { LegalDocumentViewer, type LegalDocumentData } from '@/components/ui/LegalDocumentViewer'
+import { LegalDocumentViewer, LegalDocumentData } from '@/components/viewer/LegalDocumentViewer'
 import { meldeErrungenschaft } from '@/lib/errungenschaft'
 import { DATENSCHUTZ_STAND, DATENSCHUTZ_VERSION } from './datenschutzStand'
 

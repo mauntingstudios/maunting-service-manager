@@ -8,7 +8,7 @@ import { RegionalAnalysisLayout } from '../geo/RegionalAnalysisLayout'
 import { OffeneKarten } from './OffeneKarten'
 import { Schwarm, schwarmZustand } from './Schwarm'
 import { useSprachsitzung, type Beleg, type Sprachzustand } from './useSprachsitzung'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 /**
  * Der Sprachmodus als eigener Modus — der Chat tritt zurück.

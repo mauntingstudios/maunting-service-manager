@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { KeyRound } from 'lucide-react'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { oeffneBrowser } from '@/desktop/tauri'
 import { istEigenerBestaetigungsClient } from '@/services/passkeyService'
 import { useBrowserBestaetigung } from '@/stores/browserBestaetigung'

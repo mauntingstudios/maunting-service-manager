@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
-import { Button, Dropdown } from '@/Singra/UI'
+import { Button, Dropdown } from '@maunting/ui'
 import { hostVon } from '@/desktop/vault/hostVon'
 import { generateSecurePassword } from '@/desktop/vault/vaultCrypto'
 import { useVaultStore } from '@/desktop/vault/vaultStore'

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle2, KeyRound, RefreshCw, Shield } from 'lucide-react'
 
-import { Button, PasswordInput } from '@/Singra/UI'
+import { Button, PasswordInput } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import type { User } from '@/types'
 import { MauntingCard } from './MauntingCardView'

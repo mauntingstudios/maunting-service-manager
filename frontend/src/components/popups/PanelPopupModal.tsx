@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Megaphone, X, ExternalLink, Check, EyeOff } from 'lucide-react'
 import { getActivePopup, dismissPopup, type PanelPopup } from '@/api/popups'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 
 // Markdown erst laden, wenn ein Pop-up erscheint, nicht auf jeder Seite.

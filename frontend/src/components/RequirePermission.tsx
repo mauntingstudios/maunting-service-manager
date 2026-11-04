@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { usePermissionsStore } from '@/stores/permissionsStore'
-import { Loader } from '@/components/ui/Loader'
+import { Loader } from '@/components/app/Loader'
 import { resolveRouteAccessState } from '@/services/routeAccess'
 
 /** Route-Level-Guard: renders children only for allowed routes.

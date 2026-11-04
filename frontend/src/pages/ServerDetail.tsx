@@ -38,9 +38,9 @@ import { ServerRestartPanel } from "@/components/server/ServerRestartPanel";
 import { AuthSetupBanner } from "@/components/server/AuthSetupBanner";
 import { ServerCredentialsPanel } from "@/components/server/ServerCredentialsPanel";
 import { ServerDetailTabs } from "@/components/server/ServerDetailTabs";
-import { PageHeader } from "@/Singra/UI/PageHeader";
-import { Dropdown } from "@/components/ui/Dropdown";
-import { ResourceMetricCard } from "@/Singra/UI/ResourceMetricCard";
+import { PageHeader } from '@maunting/ui'
+import { Dropdown } from '@maunting/ui'
+import { ResourceMetricCard } from '@maunting/ui'
 import { DatabaseManager } from "@/components/server/DatabaseManager";
 import { OutgoingWebhooksPanel } from "@/components/server/OutgoingWebhooksPanel";
 import { SwitchBlueprintDialog } from "@/components/server/SwitchBlueprintDialog";
@@ -51,9 +51,9 @@ import { AiMemoryManager } from "@/components/ai/AiMemoryManager";
 import type { GameInfo, Server } from "@/types";
 import { labelRole, mapBlueprintPorts } from "@/utils/portRoles";
 import { UptimeDisplay } from "@/components/server/UptimeDisplay";
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 import { meldeErrungenschaft } from "@/lib/errungenschaft";
 type TabKey =
   | "files"

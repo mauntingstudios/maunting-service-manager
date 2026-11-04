@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Users } from 'lucide-react'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { apiUrl } from '@/config/api'
 import { getSafeAttachmentUrl } from '@/lib/sanitizeSvg'
 import { getGroupInviteInfo, type ChatGroupInvitePublic } from '@/api/social'

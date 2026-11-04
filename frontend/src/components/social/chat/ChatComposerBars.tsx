@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Ban, FileText, Pencil, X } from 'lucide-react'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 import { formatBytes } from '@/lib/format'
 import type { FileAttachment, ImageAttachment } from '@/components/social/ChatMediaAttachments'
 

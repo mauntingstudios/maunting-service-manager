@@ -9,8 +9,8 @@ import { Bookmark, Clock, Globe, Lock, LockOpen, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { toast } from '@/stores/toastStore'
-import { useAnkerLage } from '@/Singra/UI/Ankerlage'
-import { Omnibox } from '@/Singra/UI'
+import { useAnkerLage } from '@maunting/ui'
+import { Omnibox } from '@maunting/ui'
 
 import { formatiereAdresseZurAnzeige } from '../services/urlFormat'
 import { useEinstellungenStore, useWirksameSuche } from '../services/einstellungenStore'

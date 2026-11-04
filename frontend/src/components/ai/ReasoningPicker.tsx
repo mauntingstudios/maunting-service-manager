@@ -1,6 +1,6 @@
 import { Brain } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Dropdown, type DropdownOption } from '@/Singra/UI'
+import { Dropdown, DropdownOption } from '@maunting/ui'
 import type { AiProviderAvailable } from '@/api/ai'
 import type { Denkwahl } from '@/lib/aiChatPreferences'
 

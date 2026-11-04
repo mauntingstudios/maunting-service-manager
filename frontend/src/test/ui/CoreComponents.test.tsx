@@ -1,12 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Badge } from './Badge'
-import { Button } from './Button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './Card'
-import { ErrorMessage } from './ErrorMessage'
-import { Input } from './Input'
-import { Loader } from './Loader'
-import { Switch } from './Switch'
+import { Badge } from '@maunting/ui'
+import { Button } from '@maunting/ui'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@maunting/ui'
+import { ErrorMessage } from '@maunting/ui'
+import { Input } from '@maunting/ui'
+import { Loader } from '@/components/app/Loader'
+import { Switch } from '@maunting/ui'
 
 describe('central UI components', () => {
   it('renders button, card and input with reusable MSM classes', () => {
@@ -61,7 +61,7 @@ describe('central UI components', () => {
     // Die lokale .env.local setzt eine absolute API-Adresse; im Test soll der
     // relative Pfad gelten, sonst wartet der Desktop-Pfad auf einen Blob.
     vi.stubEnv('VITE_API_URL', '')
-    const { Avatar } = await import('@/Singra/UI/Avatar')
+    const { Avatar } = await import('@/components/app/Avatar')
     const { rerender } = render(
       <Avatar src="/api/auth/avatar/test.png" name="Max Mustermann" alt="Profil" />,
     )

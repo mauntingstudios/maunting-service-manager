@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mic, Volume2, Radio, Sliders, ShieldAlert, Video } from 'lucide-react'
-import { Button, Dropdown, type DropdownOption, Slider, Switch, ProgressBar } from '@/Singra/UI'
+import { Button, Dropdown, DropdownOption, Slider, Switch, ProgressBar } from '@maunting/ui'
 import { getAudioSettings, saveAudioSettings } from '@/lib/audioSettings'
 import {
   AUFLOESUNGEN as AUFLOESUNG_WERTE,

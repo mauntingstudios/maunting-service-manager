@@ -5,7 +5,7 @@
 import { useEffect, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { nativ } from '../services/nativ'

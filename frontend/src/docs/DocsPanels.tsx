@@ -2,7 +2,7 @@ import { useState, type MutableRefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 
-import { Button, Dialog, DialogContent, Kurzinfo } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, Kurzinfo } from '@maunting/ui'
 import type { DocComment, DocDetail, DocRevision } from '@/api/docs'
 import { useBreiteZiehen } from '@/hooks/useBreiteZiehen'
 import { useMedienabfrage } from '@/hooks/useMedienabfrage'

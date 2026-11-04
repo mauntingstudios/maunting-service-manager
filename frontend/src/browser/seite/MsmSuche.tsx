@@ -25,21 +25,9 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
-import {
-  Badge,
-  Button,
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Dropdown,
-  TabBar,
-  type DropdownOption,
-  type TabDef,
-} from '@/Singra/UI'
-import { useZurueckSchliesst } from '@/Singra/UI/useZurueckSchliesst'
-import { Zustandsflaeche } from '@/Singra/UI/Zustandsflaeche'
+import { Badge, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Dropdown, TabBar, DropdownOption, TabDef } from '@maunting/ui'
+import { useZurueckSchliesst } from '@maunting/ui'
+import { Zustandsflaeche } from '@maunting/ui'
 
 import { SuchEingabeLeiste } from '../kopf/SuchEingabeLeiste'
 import { NACHRICHTEN_THEMEN, useEinstellungenStore } from '../services/einstellungenStore'

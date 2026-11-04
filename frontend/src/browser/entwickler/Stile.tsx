@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Checkbox, Input } from '@/Singra/UI'
+import { Checkbox, Input } from '@maunting/ui'
 
 import { elementName, useDom, vorfahren } from './domStore'
 import { ortText, rufen } from './protokoll'

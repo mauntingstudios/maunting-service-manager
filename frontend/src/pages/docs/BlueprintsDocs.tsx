@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { BookOpen, Check, Copy, Download, ExternalLink, Info, AlertTriangle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { apiUrl } from '@/config/api'
-import { PageHeader } from '@/Singra/UI/PageHeader'
-import { Button, buttonClasses } from '@/Singra/UI'
+import { PageHeader } from '@maunting/ui'
+import { Button, buttonClasses } from '@maunting/ui'
 interface CodeBlockProps {
   example: string | object
 }

@@ -1,14 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Badge,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  Dropdown,
-} from '@/Singra/UI'
+import { Badge, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Dropdown } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import {
   deleteMember,

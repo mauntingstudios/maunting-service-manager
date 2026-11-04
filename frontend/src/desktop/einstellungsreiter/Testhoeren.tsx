@@ -8,7 +8,7 @@ import {
   eingabeGeraetId,
   type AudioVerarbeitung,
 } from '@/components/ai/voice/audioGeraete'
-import { Button, ProgressBar } from '@/Singra/UI'
+import { Button, ProgressBar } from '@maunting/ui'
 
 /**
  * Testhören wie in Discord: das eigene Mikrofon auf den gewählten Lautsprecher

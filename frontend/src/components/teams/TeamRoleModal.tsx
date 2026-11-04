@@ -9,23 +9,7 @@ import {
   type TeamRole,
   type TeamRoleWritePayload,
 } from '@/api/teams'
-import {
-  Button,
-  ColorPicker,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  IconPicker,
-  Input,
-  MultiSelect,
-  RechteAbschnitte,
-  renderRoleIcon,
-  Switch,
-  Textarea,
-} from '@/Singra/UI'
+import { Button, ColorPicker, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, IconPicker, Input, MultiSelect, RechteAbschnitte, renderRoleIcon, Switch, Textarea } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import {
   TEAM_PERMISSION_ABSCHNITTE,

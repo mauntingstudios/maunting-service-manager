@@ -11,7 +11,7 @@ import { CreditCard, Search, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api } from '@/api/client'
-import { useAnkerLage } from '@/Singra/UI/Ankerlage'
+import { useAnkerLage } from '@maunting/ui'
 
 import { useWirksameSuche } from '../services/einstellungenStore'
 import { istAndroid } from '../services/plattform'

@@ -4,10 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { api, SanitizedApiError } from '@/api/client'
 import { Logo } from '@/components/Logo'
 import { VersionFooter } from '@/components/VersionFooter'
-import { ErrorMessage } from '@/components/ui/ErrorMessage'
+import { ErrorMessage } from '@maunting/ui'
 import { Shield, Check, X, ArrowRight } from 'lucide-react'
-import { Button, buttonClasses } from '@/Singra/UI'
-import { Spinner } from '@/components/ui/Spinner'
+import { Button, buttonClasses } from '@maunting/ui'
+import { Spinner } from '@maunting/ui'
 
 /**
  * Bestätigt die Localhost-Freigabe per Einmal-Link (Befund 46).

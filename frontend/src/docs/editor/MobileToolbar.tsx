@@ -24,7 +24,8 @@ import {
   Underline as UnderlineIcon,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Blattmenue, Kurzinfo, buttonClasses, prompt } from '@/Singra/UI'
+import { Blattmenue, Kurzinfo, buttonClasses } from '@maunting/ui'
+import { prompt } from '@/stores/promptStore'
 import { cx } from '@/utils/classNames'
 
 interface MobileToolbarProps {

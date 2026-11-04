@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
-import { Blatteintrag, Blattknopf } from '@/Singra/UI'
+import { Blatteintrag, Blattknopf } from '@maunting/ui'
 import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { schliesseLokaleAblageFuerTest } from '@/services/messengerLocalStore'
 

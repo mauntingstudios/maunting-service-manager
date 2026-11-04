@@ -8,7 +8,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { prompt } from '@/stores/promptStore'
 import { toast } from '@/stores/toastStore'
 import type { PostgresCredential, PostgresDatabase, PostgresPowerUserCredential, PostgresResources } from '@/types'
-import { ActionMenu, Badge, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Dropdown } from '@/Singra/UI'
+import { ActionMenu, Badge, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Dropdown } from '@maunting/ui'
 
 interface Props {
   serverId: number

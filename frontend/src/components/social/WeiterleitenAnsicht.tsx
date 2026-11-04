@@ -23,7 +23,8 @@ import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, Check, Forward, Search, Users } from 'lucide-react'
 
-import { Avatar, Button, Input } from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
+import { Button, Input } from '@maunting/ui'
 import type { Weiterleitungsziel } from '@/services/nachrichtWeiterleiten'
 
 export interface WeiterleitenAnsichtProps {

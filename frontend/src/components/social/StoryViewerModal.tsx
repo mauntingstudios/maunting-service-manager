@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Avatar,
-  Button,
-  Kurzinfo,
-} from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
+import { Button, Kurzinfo } from '@maunting/ui'
 import {
   X,
   Trash2,

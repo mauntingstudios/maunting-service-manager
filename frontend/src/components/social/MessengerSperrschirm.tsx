@@ -14,8 +14,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Fingerprint, Lock } from 'lucide-react'
 
-import { PasswordInput } from '@/components/ui/PasswordInput'
-import { Button } from '@/Singra/UI'
+import { PasswordInput } from '@maunting/ui'
+import { Button } from '@maunting/ui'
 import { useMessengerSperre } from '@/services/messengerSperre'
 
 /**

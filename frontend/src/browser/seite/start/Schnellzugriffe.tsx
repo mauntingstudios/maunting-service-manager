@@ -12,9 +12,9 @@ import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type M
 import { ArrowLeft, ArrowRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Kurzinfo, type ActionMenuItem } from '@/Singra/UI'
-import { Kontextmenue } from '@/Singra/UI/Kontextmenue'
-import { nachbarKachel } from '@/Singra/UI/Rasterfokus'
+import { Kurzinfo, ActionMenuItem } from '@maunting/ui'
+import { Kontextmenue } from '@maunting/ui'
+import { nachbarKachel } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { SCHNELLZUGRIFFE_MAX, useEinstellungenStore, type Schnellzugriff } from '../../services/einstellungenStore'

@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, Pencil, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { prompt } from '@/Singra/UI'
+import { prompt } from '@/stores/promptStore'
 
 import { useVerlaufStore } from '../services/verlaufStore'
 import { Eintragsliste } from './Eintragsliste'

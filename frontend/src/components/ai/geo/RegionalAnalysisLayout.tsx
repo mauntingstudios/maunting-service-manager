@@ -3,7 +3,7 @@ import { Globe2, MessageSquare, Satellite, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { AiRegionalAnalysis } from '@/api/ai'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 import { GlobeViewer } from './GlobeViewer'
 import { RegionalInfoPanel, type NewsItem } from './RegionalInfoPanel'
 import type { RegionalFocus } from '../voice/useSprachsitzung'

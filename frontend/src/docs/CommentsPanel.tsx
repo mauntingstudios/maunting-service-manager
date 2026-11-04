@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, MessageSquare, RotateCcw, Trash2 } from 'lucide-react'
-import { Badge, Button, Kurzinfo, Textarea } from '@/Singra/UI'
+import { Badge, Button, Kurzinfo, Textarea } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import {
   createComment,

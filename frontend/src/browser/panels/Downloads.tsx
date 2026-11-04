@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { FileDown, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Zustandsflaeche } from '@/Singra/UI/Zustandsflaeche'
+import { Zustandsflaeche } from '@maunting/ui'
 
 import { type DownloadKategorie } from '../services/downloadKategorien'
 import { type Download, useDownloadsStore } from '../services/downloadsStore'

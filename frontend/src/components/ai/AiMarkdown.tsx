@@ -2,7 +2,7 @@ import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import { MarkdownBild, MarkdownLink } from '@/Singra/UI/Markdownansicht'
+import { MarkdownBild, MarkdownLink } from '@/components/viewer/Markdownansicht'
 
 /**
  * Rendert Modellausgabe als Markdown.

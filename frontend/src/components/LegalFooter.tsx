@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { DisBadge } from './DisBadge'
-import { usePrivacyNoticeVisible } from './ui/PrivacyNoticeVisibility'
+import { usePrivacyNoticeVisible } from './app/PrivacyNoticeVisibility'
 
 interface LegalFooterProps {
   version?: string

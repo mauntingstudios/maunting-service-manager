@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { PostgresStudio } from '@/components/postgres/PostgresStudio'
 import type { StudioZiel } from '@/components/postgres/studioApi'
-import { PageHeader } from '@/Singra/UI/PageHeader'
+import { PageHeader } from '@maunting/ui'
 import { useHasPermission } from '@/hooks/useHasPermission'
 
 const PANEL: StudioZiel = { art: 'panel' }

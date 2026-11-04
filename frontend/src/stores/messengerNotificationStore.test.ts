@@ -13,6 +13,7 @@ import * as client from '@/api/client'
 import { KONTAKTE_CACHE_KEY, MESSENGER_KEYS, leereOfflineAblage } from '@/lib/offlineAblage'
 import { useAuthStore } from '@/stores/authStore'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
+import { usePermissionsStore } from '@/stores/permissionsStore'
 import type { User } from '@/types'
 
 vi.mock('@/api/client', async (importOriginal) => {
@@ -39,6 +40,9 @@ describe('Messenger-Hinweise je Konto', () => {
     leereOfflineAblage()
     localStorage.clear()
     vi.mocked(client.api).mockReset()
+    // `finishLogin` fragt die Rechte nach; ohne diesen Ersatz würde ein
+    // fehlgeschlagener Abruf die Sitzung schon vor der Prüfung beenden.
+    vi.spyOn(usePermissionsStore.getState(), 'refresh').mockResolvedValue(undefined)
   })
 
   it('zeigt dem nächsten Konto nach abgelaufener Sitzung keine Namen des vorigen', async () => {

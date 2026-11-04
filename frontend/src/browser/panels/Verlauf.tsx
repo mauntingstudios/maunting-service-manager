@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
-import { Button, confirm } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
+import { confirm } from '@/stores/confirmStore'
 
 import { useVerlaufStore, type Eintrag } from '../services/verlaufStore'
 import { Eintragsliste } from './Eintragsliste'

@@ -5,7 +5,7 @@
 import { Languages } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Dropdown, ProgressBar } from '@/Singra/UI'
+import { Button, Dropdown, ProgressBar } from '@maunting/ui'
 import { formatBytes } from '@/lib/format'
 
 import { Leiste } from '../seite/FormularRahmen'

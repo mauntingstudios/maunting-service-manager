@@ -31,7 +31,7 @@ vi.mock('../services/ueberdeckung', () => ({
 vi.mock('../seite/SeitenDialoge', () => ({ SeitenDialoge: () => null }))
 vi.mock('../seite/SeitenMenue', () => ({ SeitenMenue: () => null }))
 vi.mock('../seite/Sperrseite', () => ({ Sperrseite: () => <div>Sperrseite</div> }))
-vi.mock('@/Singra/UI/Zustandsflaeche', () => ({ Zustandsflaeche: ({ titel }: { titel: string }) => <div>{titel}</div> }))
+vi.mock('@maunting/ui', () => ({ Zustandsflaeche: ({ titel }: { titel: string }) => <div>{titel}</div> }))
 
 import { ExternPanel } from './ExternPanel'
 

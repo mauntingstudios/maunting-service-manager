@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Badge, Button, Switch } from '@/Singra/UI'
+import { Badge, Button, Switch } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { konfigAendern, konfigLaden, type AppKonfig } from '../tauri'
 

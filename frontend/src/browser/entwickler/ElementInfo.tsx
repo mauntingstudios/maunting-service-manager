@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Checkbox, Input } from '@/Singra/UI'
+import { Checkbox, Input } from '@maunting/ui'
 
 import { Wert } from './ObjektBaum'
 import { ortText, rufen, type Eigenschaft, type Objekt } from './protokoll'

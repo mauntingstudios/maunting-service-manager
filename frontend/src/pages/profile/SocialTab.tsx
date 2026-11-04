@@ -1,12 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import {
-  Avatar,
-  Button,
-  Input,
-  Kurzinfo,
-} from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
+import { Button, Input, Kurzinfo } from '@maunting/ui'
 import {
   Users,
   UserPlus,

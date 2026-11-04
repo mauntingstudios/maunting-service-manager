@@ -7,7 +7,7 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input } from '@maunting/ui'
 
 import type { Schnellzugriff } from '../../services/einstellungenStore'
 import { baueZielUrl, istAdresse } from '../../services/searchEngines'

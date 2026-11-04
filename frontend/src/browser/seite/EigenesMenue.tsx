@@ -14,8 +14,8 @@ import { useEffect, useState, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, ArrowRight, Copy, Search } from 'lucide-react'
 
-import { Kontextmenue } from '@/Singra/UI'
-import type { ActionMenuItem } from '@/Singra/UI/ActionMenu'
+import { Kontextmenue } from '@maunting/ui'
+import type { ActionMenuItem } from '@maunting/ui'
 
 import { useEinstellungenStore, useWirksameSuche } from '../services/einstellungenStore'
 import { baueZielUrl, suchmaschine } from '../services/searchEngines'

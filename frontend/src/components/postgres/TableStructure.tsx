@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { KeyRound, Link2, Plus, Trash2 } from 'lucide-react'
-import { ActionMenu, Badge, Button, Switch } from '@/Singra/UI'
+import { ActionMenu, Badge, Button, Switch } from '@maunting/ui'
 import { prompt } from '@/stores/promptStore'
 import { useStudio } from './StudioContext'
 import { AddColumnDialog, ColumnTypeDialog, ConstraintDialog, IndexDialog, PartitionDialog, type ConstraintKind } from './StructureDialogs'

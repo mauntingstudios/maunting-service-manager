@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Plus, Share2, UsersRound } from 'lucide-react'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 import type { ChatGroupItem } from '@/api/social'
 
 interface CommunityViewProps {

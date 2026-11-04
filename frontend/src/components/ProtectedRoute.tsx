@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
-import { Loader } from '@/components/ui/Loader'
+import { Loader } from '@/components/app/Loader'
 import { BenutzernameWaehlen } from '@/pages/BenutzernameWaehlen'
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {

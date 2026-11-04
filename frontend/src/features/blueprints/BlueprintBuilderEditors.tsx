@@ -1,7 +1,7 @@
 import { cloneElement, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2 } from 'lucide-react'
-import { Button, Dropdown, Checkbox } from '@/Singra/UI'
+import { Button, Dropdown, Checkbox } from '@maunting/ui'
 import type { BlueprintDraft, BlueprintValidationIssue, GuardianRecoveryAction } from './contract'
 
 interface AccessibleControlProps {

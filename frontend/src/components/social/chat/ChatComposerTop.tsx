@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Bell, X } from 'lucide-react'
-import { Avatar } from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
 import type { AntwortBezug } from '@/components/social/ChatMessageBubble'
 import type { Erwaehnungsvorschlag } from '@/services/erwaehnungen'
 

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Mic, Send, Video } from 'lucide-react'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 interface ComposerSendActionsProps {
   /** Text, Foto oder Datei liegen bereit: dann steht hier Senden. */

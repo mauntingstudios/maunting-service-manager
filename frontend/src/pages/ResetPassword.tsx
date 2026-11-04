@@ -4,12 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/api/client'
 import { Logo } from '@/components/Logo'
 import { VersionFooter } from '@/components/VersionFooter'
-import { ErrorMessage } from '@/components/ui/ErrorMessage'
-import { PasswordInput } from '@/components/ui/PasswordInput'
-import { CaptchaWidget } from '@/components/ui/CaptchaWidget'
+import { ErrorMessage } from '@maunting/ui'
+import { PasswordInput } from '@maunting/ui'
+import { CaptchaWidget } from '@/components/app/CaptchaWidget'
 import { Shield, Check, X, ArrowRight } from 'lucide-react'
-import { Button, buttonClasses } from '@/Singra/UI'
-import { Spinner } from '@/components/ui/Spinner'
+import { Button, buttonClasses } from '@maunting/ui'
+import { Spinner } from '@maunting/ui'
 export function ResetPassword() {
   const { t } = useTranslation()
   const [searchParams] = useSearchParams()

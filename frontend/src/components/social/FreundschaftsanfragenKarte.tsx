@@ -8,7 +8,8 @@ import {
   getFriendRequests,
   type FriendItem,
 } from '@/api/social'
-import { Avatar, Button, Kurzinfo } from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
+import { Button, Kurzinfo } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 /**

@@ -8,9 +8,9 @@ import { Fragment, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
-import { TabBar } from '@/components/ui/TabBar'
-import { Spinner } from '@/components/ui/Spinner'
+import { Button } from '@maunting/ui'
+import { TabBar } from '@maunting/ui'
+import { Spinner } from '@maunting/ui'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 import { istGekoppelt, useSitzung } from '../services/sitzung'

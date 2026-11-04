@@ -11,8 +11,8 @@ import { useRef, useState } from 'react'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns2, EyeOff, Plus, Rows2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Dialog, DialogContent } from '@/Singra/UI/Dialog'
-import { nachbarKachel } from '@/Singra/UI/Rasterfokus'
+import { Dialog, DialogContent } from '@maunting/ui'
+import { nachbarKachel } from '@maunting/ui'
 
 import { useEinstellungenStore } from '../services/einstellungenStore'
 import { useTabsStore, type SplitRichtung } from '../services/tabsStore'

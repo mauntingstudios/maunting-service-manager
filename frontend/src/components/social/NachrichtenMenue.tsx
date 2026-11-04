@@ -23,7 +23,7 @@ import {
   Trash2,
 } from 'lucide-react'
 
-import { Blattmenue, Blatteintrag } from '@/Singra/UI'
+import { Blattmenue, Blatteintrag } from '@maunting/ui'
 import { SCHNELLREAKTIONEN } from '@/services/reaktionen'
 import type { ChatMessage } from './ChatMessageBubble'
 

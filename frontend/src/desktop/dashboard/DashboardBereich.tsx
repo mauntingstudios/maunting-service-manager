@@ -14,9 +14,9 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { RequirePermission } from '@/components/RequirePermission'
 import { usePanelNavigation } from '@/components/layout/usePanelNavigation'
-import { Loader } from '@/components/ui/Loader'
-import { TabBar, type TabDef } from '@/components/ui/TabBar'
-import { ActionMenu, useZurueckSchliesst, type ActionMenuItem } from '@/Singra/UI'
+import { Loader } from '@/components/app/Loader'
+import { TabBar, TabDef } from '@maunting/ui'
+import { ActionMenu, useZurueckSchliesst, ActionMenuItem } from '@maunting/ui'
 import { DASHBOARD_SEITEN, dashboardElternroute } from './dashboardWege'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((modul) => ({ default: modul.Dashboard })))

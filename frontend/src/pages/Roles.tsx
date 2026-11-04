@@ -6,11 +6,11 @@ import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import type { PermissionCatalog, Role } from '@/types/permissions'
-import { PermissionEditor } from '@/Singra/UI/PermissionEditor'
-import { PageHeader } from '@/Singra/UI/PageHeader'
-import { Button, ColorPicker, IconPicker, Kurzinfo, RoleBadge, renderRoleIcon } from '@/Singra/UI'
+import { PermissionEditor } from '@/features/permissions/PermissionEditor'
+import { PageHeader } from '@maunting/ui'
+import { Button, ColorPicker, IconPicker, Kurzinfo, RoleBadge, renderRoleIcon } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 /**
  * Erlaubte Rollennamen — dieselbe Sprache wie `backend/schemas/role.py`.
  *

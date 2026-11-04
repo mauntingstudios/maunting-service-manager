@@ -15,7 +15,7 @@ import {
   UserRound,
   Video,
 } from 'lucide-react'
-import { Blatteintrag } from '@/Singra/UI'
+import { Blatteintrag } from '@maunting/ui'
 
 /** Was das Menü über den offenen Direktchat wissen muss. */
 export interface MenueKontakt {

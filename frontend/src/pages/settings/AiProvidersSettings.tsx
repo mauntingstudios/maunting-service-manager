@@ -14,12 +14,12 @@ import {
 } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
 import i18n from '@/i18n'
-import { Button, Dropdown, Switch } from '@/Singra/UI'
+import { Button, Dropdown, Switch } from '@maunting/ui'
 import { eingabeInMicroUsd, microUsdInEingabe } from '@/utils/geld'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 interface ProviderDraft extends AiProviderWrite {
   id?: number
   operator_key_configured?: boolean

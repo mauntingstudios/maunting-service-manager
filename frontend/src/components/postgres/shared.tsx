@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, Loader2 } from 'lucide-react'
-import { Dropdown, Input, type DropdownOption } from '@/Singra/UI'
+import { Dropdown, Input, DropdownOption } from '@maunting/ui'
 import type { FkAction } from './studioApi'
 
 /** Lädt beim Einhängen und wenn sich `deps` ändern; `reload` lädt erneut. */

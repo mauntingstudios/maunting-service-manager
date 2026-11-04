@@ -2,10 +2,10 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, KeyRound, Link2, ListChecks, Plug, Radio, ShieldCheck, Signature, Table2 } from 'lucide-react'
 import { CodeBlock } from '@/components/docs/CodeBlock'
-import { PageHeader } from '@/Singra/UI/PageHeader'
-import { Sprungleiste, SPRUNGZIEL_ABSTAND } from '@/Singra/UI/Sprungleiste'
+import { PageHeader } from '@maunting/ui'
+import { Sprungleiste, SPRUNGZIEL_ABSTAND } from '@maunting/ui'
 
-import { buttonClasses } from '@/Singra/UI'
+import { buttonClasses } from '@maunting/ui'
 /**
  * Endpunkt- und Webhook-Referenz fuer Shop-Anbindungen.
  *

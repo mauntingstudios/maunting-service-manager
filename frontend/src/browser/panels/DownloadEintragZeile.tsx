@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Kurzinfo, ProgressBar } from '@/Singra/UI'
+import { Kurzinfo, ProgressBar } from '@maunting/ui'
 
 import type { DownloadKategorie } from '../services/downloadKategorien'
 import type { Download } from '../services/downloadsStore'

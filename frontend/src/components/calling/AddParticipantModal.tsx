@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2, UserPlus } from 'lucide-react'
-import { Button, Dialog, DialogContent, Input, Avatar } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, Input } from '@maunting/ui'
+import { Avatar } from '@/components/app/Avatar'
 import { getFriends, type FriendItem } from '@/api/social'
 import { toast } from '@/stores/toastStore'
 

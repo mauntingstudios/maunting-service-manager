@@ -12,17 +12,8 @@ import {
   Unlock,
 } from 'lucide-react'
 
-import {
-  Avatar,
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  PasswordInput,
-} from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, PasswordInput } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import type { User } from '@/types'

@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, EyeOff, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { SaisonLogo } from '@/season/SaisonLogo'
 
 import { istAndroid } from '../services/plattform'

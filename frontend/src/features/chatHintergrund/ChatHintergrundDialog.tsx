@@ -2,17 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, Image as ImageIcon, Layers, RotateCcw, Sliders, Upload } from 'lucide-react'
 
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Kurzinfo,
-} from '@/Singra/UI'
+import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Kurzinfo } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 
 import { bildAlsHintergrund } from './bild'

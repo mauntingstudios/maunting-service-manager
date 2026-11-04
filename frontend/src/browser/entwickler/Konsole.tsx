@@ -6,7 +6,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, CircleAlert, CircleX, Info, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Checkbox, Input } from '@/Singra/UI'
+import { Checkbox, Input } from '@maunting/ui'
 
 import { KonsolenEingabe } from './KonsolenEingabe'
 import { useKonsole, type Eintrag, type Stufe } from './konsoleStore'

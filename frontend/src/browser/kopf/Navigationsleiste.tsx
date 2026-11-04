@@ -11,7 +11,7 @@ import { forwardRef, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, RotateCw, ShieldCheck, ShieldOff, Star, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Ankerfenster, Kurzinfo, Switch } from '@/Singra/UI'
+import { Ankerfenster, Kurzinfo, Switch } from '@maunting/ui'
 
 import { useEinstellungenStore } from '../services/einstellungenStore'
 

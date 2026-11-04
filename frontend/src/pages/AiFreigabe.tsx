@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { api, SanitizedApiError } from '@/api/client'
 import { Logo } from '@/components/Logo'
 import { Bot, Check, X, ShieldAlert } from 'lucide-react'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 /**
  * Die Seite hinter dem Link aus der Freigabemail.

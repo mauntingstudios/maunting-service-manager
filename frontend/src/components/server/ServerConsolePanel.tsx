@@ -6,7 +6,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { toast } from '@/stores/toastStore'
 import { type PanelTimeFormat } from '@/utils/timeFormat'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 import { meldeErrungenschaft } from '@/lib/errungenschaft'
 
 interface Props {

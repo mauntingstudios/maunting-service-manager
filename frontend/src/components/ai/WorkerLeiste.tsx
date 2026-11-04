@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiWorkerInfo } from '@/api/ai'
 import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 /**
  * Dynamischer Takt: Schnell (2s), solange Aufträge aktiv sind; gemächlich (15s) in Ruhe.

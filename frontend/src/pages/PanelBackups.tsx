@@ -4,10 +4,10 @@ import { Database, Plus, Trash2, Cloud, CloudOff, Save, Settings as SettingsIcon
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
-import { PageHeader } from '@/Singra/UI/PageHeader'
-import { Dropdown } from '@/components/ui/Dropdown'
-import { Button, Checkbox, Kurzinfo } from '@/Singra/UI'
-import { Spinner } from '@/components/ui/Spinner'
+import { PageHeader } from '@maunting/ui'
+import { Dropdown } from '@maunting/ui'
+import { Button, Checkbox, Kurzinfo } from '@maunting/ui'
+import { Spinner } from '@maunting/ui'
 /** Panel-Backup-List-Item (GET /api/panel-backups). */
 interface PanelBackupItem {
   id: number

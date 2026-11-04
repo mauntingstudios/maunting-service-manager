@@ -9,7 +9,7 @@ import { Check, ChevronDown } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 
-import { useAnkerLage } from '@/Singra/UI/Ankerlage'
+import { useAnkerLage } from '@maunting/ui'
 import { SuchSymbol } from '../marken'
 import { useEinstellungenStore, useWirksameSuche } from './einstellungenStore'
 import { SUCHMASCHINEN, suchmaschine, wirksameSuche, type Suchmaschine, type SuchmaschinenId } from './searchEngines'

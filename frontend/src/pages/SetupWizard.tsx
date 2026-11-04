@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { Shield, Server, ChevronRight, Check, Mail } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 import { VersionFooter } from '@/components/VersionFooter'
-import { PasswordInput } from '@/components/ui/PasswordInput'
+import { PasswordInput } from '@maunting/ui'
 import { api } from '@/api/client'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 import { benutzernameFehler } from '@/lib/benutzername'
 interface SetupWizardProps {
   onComplete: () => void

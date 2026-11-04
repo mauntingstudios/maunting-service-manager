@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RotateCcw, RotateCw, Undo2 } from 'lucide-react'
-import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
 import { useTeamVaultStore } from './teamVaultStore'

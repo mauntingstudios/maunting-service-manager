@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Play, ShieldAlert } from 'lucide-react'
-import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/Singra/UI'
+import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import type { StudioApi, StudioOperation, StudioOverview, StudioPlan, StudioZiel } from './studioApi'
 

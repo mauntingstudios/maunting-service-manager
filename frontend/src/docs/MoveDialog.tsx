@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Dropdown,
-} from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Dropdown } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { listFolders, type DocFolder, type DocSummary } from '@/api/docs'
 import type { Team } from '@/api/teams'

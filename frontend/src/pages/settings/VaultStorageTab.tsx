@@ -15,8 +15,8 @@ import { HardDrive, Save } from 'lucide-react'
 
 import { api, SanitizedApiError } from '@/api/client'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { Button, Dropdown, NumberStepper } from '@/Singra/UI'
-import { Spinner } from '@/components/ui/Spinner'
+import { Button, Dropdown, NumberStepper } from '@maunting/ui'
+import { Spinner } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 const GIB = 1024 ** 3

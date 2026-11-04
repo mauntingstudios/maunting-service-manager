@@ -28,8 +28,8 @@ import {
   VenetianMask,
 } from 'lucide-react'
 
-import { Kontextmenue } from '@/Singra/UI'
-import type { ActionMenuItem } from '@/Singra/UI/ActionMenu'
+import { Kontextmenue } from '@maunting/ui'
+import type { ActionMenuItem } from '@maunting/ui'
 
 import { useAnsicht } from '../entwickler/werkzeuge'
 import { useEinstellungenStore, useWirksameSuche } from '../services/einstellungenStore'

@@ -18,12 +18,12 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import { UptimeDisplay } from '@/components/server/UptimeDisplay'
-import { PageHeader } from '@/Singra/UI/PageHeader'
-import { ProgressBar, StackedProgressBar, type Segment } from '@/Singra/UI/ProgressBar'
-import { Badge } from '@/components/ui/Badge'
+import { PageHeader } from '@maunting/ui'
+import { ProgressBar, StackedProgressBar, Segment } from '@maunting/ui'
+import { Badge } from '@maunting/ui'
 
-import { buttonClasses, Kurzinfo } from '@/Singra/UI'
-import { Spinner } from '@/components/ui/Spinner'
+import { buttonClasses, Kurzinfo } from '@maunting/ui'
+import { Spinner } from '@maunting/ui'
 interface ServiceStatus {
   status: 'ok' | 'degraded' | 'error'
   detail: string

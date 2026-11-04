@@ -6,16 +6,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/Singra/UI'
+import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 
 interface DownloadLeerenDialogProps {
   offen: boolean

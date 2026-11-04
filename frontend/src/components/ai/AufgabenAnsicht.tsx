@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiTaskEntry, type AiTaskWrite } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Button, DateTimePicker, Dropdown, type DropdownOption, Switch } from '@/Singra/UI'
+import { Button, DateTimePicker, Dropdown, DropdownOption, Switch } from '@maunting/ui'
 import { ChatHintergrund } from '@/features/chatHintergrund'
 import { useAuthStore } from '@/stores/authStore'
 import { confirm } from '@/stores/confirmStore'

@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Monitor } from 'lucide-react'
-import { Button, Checkbox, Dialog, DialogContent, Dropdown } from '@/Singra/UI'
-import type { DropdownOption } from '@/components/ui/Dropdown'
+import { Button, Checkbox, Dialog, DialogContent, Dropdown } from '@maunting/ui'
+import type { DropdownOption } from '@maunting/ui'
 import {
   FREIGABE_STANDARD,
   systemtonMoeglich,

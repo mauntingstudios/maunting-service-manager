@@ -5,7 +5,7 @@
  */
 import { useId, type ReactNode } from 'react'
 
-import { Dropdown, Switch } from '@/Singra/UI'
+import { Dropdown, Switch } from '@maunting/ui'
 
 export function Abschnitt({ titel, children }: { titel: string; children: ReactNode }) {
   return (

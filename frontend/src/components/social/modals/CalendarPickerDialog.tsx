@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Calendar as CalendarIcon, Clock } from 'lucide-react'
-import { Dialog, DialogContent, Input } from '@/Singra/UI'
+import { Dialog, DialogContent, Input } from '@maunting/ui'
 import type { CalendarEventItem } from '@/pages/Calendar'
 
 interface CalendarPickerDialogProps {

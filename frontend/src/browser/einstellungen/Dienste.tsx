@@ -7,7 +7,8 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
 import { api } from '@/api/client'
-import { Button, confirm } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
+import { confirm } from '@/stores/confirmStore'
 import { abmelden } from '@/desktop/auth'
 import { DevicesTab } from '@/pages/profile/DevicesTab'
 

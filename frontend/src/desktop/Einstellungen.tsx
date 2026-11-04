@@ -34,8 +34,8 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { TabBar, type TabDef } from '@/components/ui/TabBar'
-import { Zustandsflaeche } from '@/Singra/UI'
+import { TabBar, TabDef } from '@maunting/ui'
+import { Zustandsflaeche } from '@maunting/ui'
 import { KontoTab } from '@/pages/profile/KontoTab'
 import { ProfilTab } from '@/pages/profile/ProfilTab'
 import { SocialTab } from '@/pages/profile/SocialTab'

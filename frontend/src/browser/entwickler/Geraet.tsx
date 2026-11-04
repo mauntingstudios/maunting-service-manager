@@ -6,7 +6,7 @@
 import { RotateCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Checkbox, Dropdown, NumberStepper } from '@/Singra/UI'
+import { Button, Checkbox, Dropdown, NumberStepper } from '@maunting/ui'
 
 import { rufen } from './protokoll'
 import { OHNE_EMULATION, useAnsicht, useSeitenflaeche, type Emulation } from './werkzeuge'

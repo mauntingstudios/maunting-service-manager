@@ -6,7 +6,7 @@ import {
   registriereAudioGeraete,
   registriereAudioVerarbeitung,
 } from '@/components/ai/voice/audioGeraete'
-import { Button, Dropdown, type DropdownOption, Slider, Switch } from '@/Singra/UI'
+import { Button, Dropdown, DropdownOption, Slider, Switch } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import {
   audioGeraete,

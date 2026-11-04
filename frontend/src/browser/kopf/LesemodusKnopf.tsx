@@ -5,7 +5,7 @@
  */
 import { BookOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 import type { Tab } from '../services/tab'
 import { istWebseite } from '../services/intern'

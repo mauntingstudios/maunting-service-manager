@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Archive, ArchiveRestore, Copy, FileText, Folder, FolderInput, FolderPlus, Pencil, Plus, Search, Settings2, Trash2 } from 'lucide-react'
-import { ActionMenu, Button, Dropdown, Input, Kurzinfo } from '@/Singra/UI'
+import { ActionMenu, Button, Dropdown, Input, Kurzinfo } from '@maunting/ui'
 import type { DocFolder, DocSummary } from '@/api/docs'
 import type { Team } from '@/api/teams'
 import { formatZeitpunkt } from '@/lib/format'

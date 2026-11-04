@@ -16,7 +16,7 @@ import { listen } from '@tauri-apps/api/event'
 import { AppWindow, Eye, FileText, MousePointer, ShieldAlert, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { ergebnisMelden } from './desktopJobs'
 import { KartenHuelle, type KartenHuellenProps } from './KartenHuelle'
 import { karteErledigtMelden, useKarteErledigt, wartetNichts } from './karteErledigt'

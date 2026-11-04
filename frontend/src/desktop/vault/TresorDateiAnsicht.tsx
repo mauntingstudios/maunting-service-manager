@@ -29,7 +29,7 @@ import {
   Presentation,
   Trash2,
 } from 'lucide-react'
-import { Button, Dialog, DialogContent, Lichtbox, ProgressBar } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, Lichtbox, ProgressBar } from '@maunting/ui'
 import { archivInhalt, type ArchivEintrag } from '@/lib/zipLesen'
 import { formatBytes, formatZeitpunkt } from '@/lib/format'
 import { useVaultStore } from './vaultStore'
@@ -44,7 +44,7 @@ import { TresorTexteditor } from './TresorTexteditor'
 import { Archivliste } from './vorschau/Archivliste'
 import { Schriftprobe } from './vorschau/Schriftprobe'
 
-const PdfAnsicht = lazy(() => import('@/Singra/UI/PdfAnsicht').then((m) => ({ default: m.PdfAnsicht })))
+const PdfAnsicht = lazy(() => import('@/components/viewer/PdfAnsicht').then((m) => ({ default: m.PdfAnsicht })))
 
 /** Bis zu dieser Größe öffnet eine Textdatei im Editor, größere werden gespeichert. */
 export const TEXT_HOECHSTENS = 1024 * 1024

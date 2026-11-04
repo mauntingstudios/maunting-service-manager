@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import jsQR from 'jsqr'
 import { Camera, Upload, Keyboard, AlertCircle, CheckCircle2 } from 'lucide-react'
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input } from '@maunting/ui'
 import { parseOtpauthUri } from './totpEngine'
 
 interface QrScannerModalProps {

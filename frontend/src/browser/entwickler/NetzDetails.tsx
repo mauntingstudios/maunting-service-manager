@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { ArrowDown, ArrowUp, Copy, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { ActionMenu, TabBar, type TabDef } from '@/Singra/UI'
+import { ActionMenu, TabBar, TabDef } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { Knopf } from './Leiste'

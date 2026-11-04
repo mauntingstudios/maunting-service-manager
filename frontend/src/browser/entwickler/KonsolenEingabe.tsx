@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Textarea } from '@/Singra/UI'
+import { Textarea } from '@maunting/ui'
 
 import { useKonsole } from './konsoleStore'
 import { rufen, type Objekt } from './protokoll'

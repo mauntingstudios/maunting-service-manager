@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Spinner } from '@/Singra/UI'
+import { Button, Spinner } from '@maunting/ui'
 
 import { kachelnNeuLaden } from '../seite/start/KachelSymbol'
 import { useBildStore } from '../services/bildStore'

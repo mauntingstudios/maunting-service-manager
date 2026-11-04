@@ -19,7 +19,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { saveNoteOffline } from '@/lib/offlineSync'
 import { entwurfUebergeben } from '@/lib/aiEntwurf'

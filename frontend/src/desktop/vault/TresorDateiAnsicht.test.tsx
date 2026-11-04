@@ -27,7 +27,7 @@ vi.mock('./tresorDateien', async (original) => ({
 
 // pdf.js braucht Canvas und Worker; hier zählt nur, dass es die Bytes bekommt.
 const pdfDaten = vi.hoisted(() => ({ zuletzt: null as Uint8Array | null }))
-vi.mock('@/Singra/UI/PdfAnsicht', () => ({
+vi.mock('@/components/viewer/PdfAnsicht', () => ({
   PdfAnsicht: ({ daten, label }: { daten: Uint8Array; label: string }) => {
     pdfDaten.zuletzt = daten
     return <div role="document" aria-label={label} />

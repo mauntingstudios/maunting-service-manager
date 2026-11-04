@@ -5,13 +5,13 @@ import { api } from '@/api/client'
 import { rbacApi } from '@/api/rbac'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
-import { Dropdown } from '@/components/ui/Dropdown'
+import { Dropdown } from '@maunting/ui'
 import type { User } from '@/types'
 import type { PermissionCatalog } from '@/types/permissions'
-import { PermissionEditor } from '@/Singra/UI/PermissionEditor'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { PermissionEditor } from '@/features/permissions/PermissionEditor'
+import { Button, Kurzinfo } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 interface Props {
   serverId: number
 }

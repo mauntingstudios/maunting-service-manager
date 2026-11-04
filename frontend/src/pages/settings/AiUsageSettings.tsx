@@ -3,7 +3,7 @@ import { BarChart3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiUsageEvents, type AiUsageOverview } from '@/api/ai'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { betragFormatieren } from '@/utils/geld'
 

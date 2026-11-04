@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 import { sanitizeSvg } from '@/lib/sanitizeSvg'
 import { CATEGORIZED_EMOJIS, IN_HOUSE_STICKERS, type InHouseSticker } from '@/services/stickerCatalog'
 

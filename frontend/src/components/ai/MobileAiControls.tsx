@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Sparkles, Trash2, Zap } from 'lucide-react'
-import { Button, Dropdown } from '@/Singra/UI'
+import { Button, Dropdown } from '@maunting/ui'
 import { aiApi, type AiProviderAvailable } from '@/api/ai'
 import { api } from '@/api/client'
 import { useHasPermission } from '@/hooks/useHasPermission'

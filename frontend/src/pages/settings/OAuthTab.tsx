@@ -8,12 +8,12 @@ import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { API_ORIGIN } from '@/config/api'
 import { confirm } from '@/stores/confirmStore'
-import { Switch } from '@/components/ui/Switch'
-import { NumberStepper } from '@/components/ui/NumberStepper'
-import { Dropdown } from '@/components/ui/Dropdown'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Switch } from '@maunting/ui'
+import { NumberStepper } from '@maunting/ui'
+import { Dropdown } from '@maunting/ui'
+import { Button, Kurzinfo } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 interface FormState {
   id: number | null
   slug: string

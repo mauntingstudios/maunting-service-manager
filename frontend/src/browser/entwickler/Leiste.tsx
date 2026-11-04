@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { RotateCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 export function Leiste({ children }: { children: ReactNode }) {
   return <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-outline-variant px-2 py-1">{children}</div>

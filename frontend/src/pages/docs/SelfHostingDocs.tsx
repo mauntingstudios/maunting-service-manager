@@ -2,10 +2,10 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, ArrowRightLeft, BellRing, Database, FileArchive, GitBranch, KeyRound, Mic, Globe, Inbox, MonitorSmartphone, Network, PhoneCall, Plug, Server, ShieldCheck, Terminal } from 'lucide-react'
 import { CodeBlock } from '@/components/docs/CodeBlock'
-import { PageHeader } from '@/Singra/UI/PageHeader'
-import { Sprungleiste, SPRUNGZIEL_ABSTAND } from '@/Singra/UI/Sprungleiste'
+import { PageHeader } from '@maunting/ui'
+import { Sprungleiste, SPRUNGZIEL_ABSTAND } from '@maunting/ui'
 
-import { buttonClasses } from '@/Singra/UI'
+import { buttonClasses } from '@maunting/ui'
 export const PANEL_BOOTSTRAP_COMMAND = `curl -fsSL https://raw.githubusercontent.com/mauntingstudios/maunting-service-manager/main/scripts/bootstrap.sh \\
   | sudo bash -s -- --domain panel.example.com`
 export const COMPONENT_MIGRATION_COMMAND = 'sudo /opt/msm/helper-scripts/migrate-panel-components.sh'

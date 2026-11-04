@@ -4,12 +4,12 @@ import { Globe, Trash2, Send, Save, Undo2 } from 'lucide-react'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { PasswordInput } from '@/components/ui/PasswordInput'
-import { Button, Dropdown } from '@/Singra/UI'
+import { PasswordInput } from '@maunting/ui'
+import { Button, Dropdown } from '@maunting/ui'
 import type { PanelSettings } from './types'
 import { EMPTY_PANEL_SETTINGS } from './types'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 export function CloudflareTab() {
   const { t } = useTranslation()
   const canWrite = useHasPermission('panel.settings.write')

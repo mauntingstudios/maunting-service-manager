@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Sparkles, UsersRound } from 'lucide-react'
-import { Button, Dialog, DialogContent, Input } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, Input } from '@maunting/ui'
 
 interface CreateGroupDialogProps {
   open: boolean

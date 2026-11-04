@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react'
 import { Check, Copy, CreditCard, Eye, EyeOff, Landmark, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Badge, Button, Kurzinfo, Zustandsflaeche } from '@/Singra/UI'
+import { Badge, Button, Kurzinfo, Zustandsflaeche } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { fehlerText } from './tresorFehler'

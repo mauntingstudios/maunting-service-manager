@@ -15,7 +15,7 @@ import { useEinstellungenStore, type Leistenziel } from '../services/einstellung
 import { interneSeite } from '../services/intern'
 import { istGekoppelt, useSitzung } from '../services/sitzung'
 import { useTabsStore } from '../services/tabsStore'
-import { istDrittanbieterHinweisBestaetigt } from '@/Singra/UI'
+import { istDrittanbieterHinweisBestaetigt } from '@/features/privacy/ThirdPartyPrivacyDialog'
 import { BROWSER_EINTRAEGE, MSM_EINTRAEGE, panelAusPfad, type Leisteneintrag, type PanelId } from './module'
 
 /** Unter diesem Namen steht ein Eintrag in `anordnung` und `ausgeblendet`. */

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Gauge, History, Play } from 'lucide-react'
-import { Badge, Button, Switch, Textarea } from '@/Singra/UI'
+import { Badge, Button, Switch, Textarea } from '@maunting/ui'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { readSqlConsoleEntries, sqlVerlaufSchluessel, writeSqlConsoleEntries } from '@/lib/sqlConsoleStorage'
 import { useStudio } from './StudioContext'

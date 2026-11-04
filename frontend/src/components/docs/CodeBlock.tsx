@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Terminal } from 'lucide-react'
 import { Check, Clipboard } from 'lucide-react'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 /**
  * Kopierbarer Code- oder Befehlsblock fuer die Doku-Seiten.

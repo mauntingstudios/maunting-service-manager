@@ -4,7 +4,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Server, GuardianIncident } from "../../types";
 import { api } from "@/api/client";
 import { toast } from "@/stores/toastStore";
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 interface GuardianQuarantineBannerProps {
   server: Server;

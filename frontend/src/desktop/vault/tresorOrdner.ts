@@ -4,7 +4,7 @@
  * darf nie in sich selbst oder in einen seiner Unterordner wandern, sonst
  * hinge der Teilbaum an nichts mehr und verschwände aus der Ansicht.
  */
-import type { Fassung } from '@/Singra/UI'
+import type { Fassung } from '@maunting/ui'
 import type { VaultItem } from './vaultEintrag'
 
 /** Höchstens so viele Ebenen werden verfolgt; schützt vor kaputten Ketten. */

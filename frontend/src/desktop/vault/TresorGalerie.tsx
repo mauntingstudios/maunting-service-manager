@@ -15,7 +15,7 @@
 
 import React, { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { nachbarKachel } from '@/Singra/UI/Rasterfokus'
+import { nachbarKachel } from '@maunting/ui'
 import {
   Archive,
   ArrowLeft,
@@ -40,24 +40,7 @@ import {
   Check,
   type LucideIcon,
 } from 'lucide-react'
-import {
-  Ablageflaeche,
-  ActionMenu,
-  Auswahlleiste,
-  Button,
-  Dropdown,
-  FileButton,
-  Kontextmenue,
-  Lichtbox,
-  ProgressBar,
-  Zustandsflaeche,
-  buttonClasses,
-  useMehrfachauswahl,
-  type ActionMenuItem,
-  type AuswahlAktion,
-  type Auswahltasten,
-  type DropdownOption,
-} from '@/Singra/UI'
+import { Ablageflaeche, ActionMenu, Auswahlleiste, Button, Dropdown, FileButton, Kontextmenue, Lichtbox, ProgressBar, Zustandsflaeche, buttonClasses, useMehrfachauswahl, ActionMenuItem, AuswahlAktion, Auswahltasten, DropdownOption } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { prompt } from '@/stores/promptStore'
 import { formatBytes, formatDauer, formatZeitpunkt } from '@/lib/format'

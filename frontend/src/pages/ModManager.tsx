@@ -21,7 +21,7 @@ import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { getModInstallPresentation, hasActiveModInstall } from '@/services/modInstallStatus'
-import { Button, buttonClasses, Kurzinfo } from '@/Singra/UI'
+import { Button, buttonClasses, Kurzinfo } from '@maunting/ui'
 interface Mod {
   id: number
   server_id: number

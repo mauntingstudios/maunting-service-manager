@@ -1,24 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Dialog,
-  DialogContent,
-  Button,
-  Badge,
-  Avatar,
-  ColorPicker,
-  Dropdown,
-  IconPicker,
-  Input,
-  Textarea,
-  Kurzinfo,
-  RoleBadge,
-  renderRoleIcon,
-  type DropdownOption,
-  RechteAbschnitte,
-  type RechteAbschnittDefinition,
-  type RechteZeile,
-} from '@/Singra/UI'
+import { Dialog, DialogContent, Button, Badge, ColorPicker, Dropdown, IconPicker, Input, Textarea, Kurzinfo, RoleBadge, renderRoleIcon, DropdownOption, RechteAbschnitte, RechteAbschnittDefinition, RechteZeile } from '@maunting/ui'
+import { Avatar } from '@/components/app/Avatar'
 import {
   Shield,
   Users,

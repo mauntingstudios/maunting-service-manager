@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowDown, ArrowUp, Copy, Filter, Link2, Plus, RefreshCw, Trash2, Upload, X } from 'lucide-react'
-import { ActionMenu, Badge, Button, Checkbox, Dropdown, Input, Pagination } from '@/Singra/UI'
+import { ActionMenu, Badge, Button, Checkbox, Dropdown, Input, Pagination } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import { useStudio } from './StudioContext'

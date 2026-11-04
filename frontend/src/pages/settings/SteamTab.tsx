@@ -4,11 +4,11 @@ import { Save, Send, Gamepad2, AlertTriangle, Trash2, Undo2 } from 'lucide-react
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { PasswordInput } from '@/components/ui/PasswordInput'
+import { PasswordInput } from '@maunting/ui'
 import { PanelSettings, EMPTY_PANEL_SETTINGS } from './types'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 export function SteamTab() {
   const { t } = useTranslation()
   const canWrite = useHasPermission('panel.settings.write')

@@ -34,7 +34,7 @@ import {
 } from 'lucide-react'
 import { detectLanguage, detectIndentation, fileName } from './fileHelpers'
 import type { EditorTab } from './fileWorkspaceTypes'
-import { Button, Input } from '@/Singra/UI'
+import { Button, Input } from '@maunting/ui'
 
 interface FileEditorWorkspaceProps {
   tabs: EditorTab[]

@@ -13,7 +13,7 @@ import { useEffect } from 'react'
 import { Code2, Database, FileCode, Gauge, MousePointerClick, Network, Smartphone, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { TabBar, Zustandsflaeche, type TabDef } from '@/Singra/UI'
+import { TabBar, Zustandsflaeche, TabDef } from '@maunting/ui'
 
 import { istAndroid } from '../services/plattform'
 import { useAktiverTab } from '../services/tabsStore'

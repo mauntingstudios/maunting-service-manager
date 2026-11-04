@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Copy, Forward, Star, Trash2 } from 'lucide-react'
-import { Auswahlleiste, type AuswahlAktion } from '@/Singra/UI'
+import { Auswahlleiste, AuswahlAktion } from '@maunting/ui'
 
 interface ChatSelectionBarProps {
   anzahl: number

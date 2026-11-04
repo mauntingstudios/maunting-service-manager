@@ -11,7 +11,7 @@ import { useRef, useState } from 'react'
 import { Camera, Crop, FileImage, Monitor, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Ankerfenster } from '@/Singra/UI'
+import { Ankerfenster } from '@maunting/ui'
 
 import { useAnsicht } from '../entwickler/werkzeuge'
 import { Knopf } from '../kopf/knopf'

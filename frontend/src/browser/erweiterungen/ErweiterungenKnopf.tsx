@@ -7,7 +7,7 @@ import { useRef, useState } from 'react'
 import { Pin, PinOff, Puzzle, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Ankerfenster, Kurzinfo, Switch } from '@/Singra/UI'
+import { Ankerfenster, Kurzinfo, Switch } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { Knopf, KNOPF } from '../kopf/knopf'

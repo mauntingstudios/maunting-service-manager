@@ -3,7 +3,7 @@ import { emit } from '@tauri-apps/api/event'
 import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Switch } from '@/Singra/UI'
+import { Button, Switch } from '@maunting/ui'
 import { istAndroid } from '@/lib/istAndroid'
 import { toast } from '@/stores/toastStore'
 import { OVERLAY_ZUSTAND_TEST } from '../sprachKoordination'

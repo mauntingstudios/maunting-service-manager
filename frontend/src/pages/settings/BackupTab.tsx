@@ -4,10 +4,10 @@ import { Cloud, Save, Send, ShieldCheck, KeyRound } from 'lucide-react'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { PasswordInput } from '@/components/ui/PasswordInput'
-import { Button } from '@/Singra/UI'
+import { PasswordInput } from '@maunting/ui'
+import { Button } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 /** S3-Konfiguration aus GET /api/backup-config (Credentials maskiert). */
 interface S3Config {
   endpoint: string

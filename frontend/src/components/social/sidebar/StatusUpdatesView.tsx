@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { Clock, Plus, Sparkles } from 'lucide-react'
-import { Avatar, Button } from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
+import { Button } from '@maunting/ui'
 import type { ChatStoryItem } from '@/api/social'
 import { DeviceBadge } from '@/components/social/DeviceBadge'
 import { aktivitaetText } from '@/services/praesenz/aktivitaeten'

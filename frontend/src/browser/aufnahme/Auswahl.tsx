@@ -9,8 +9,8 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
-import { useZurueckSchliesst } from '@/Singra/UI/useZurueckSchliesst'
+import { Button } from '@maunting/ui'
+import { useZurueckSchliesst } from '@maunting/ui'
 
 import { useAufnahme } from './ablauf'
 

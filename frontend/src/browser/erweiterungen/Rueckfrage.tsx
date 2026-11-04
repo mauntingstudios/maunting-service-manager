@@ -5,7 +5,7 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { alleSeiten, BEKANNTE_RECHTE, erweiterungen, fehlerText, type Angaben, type Vorschau } from './erweiterungen'

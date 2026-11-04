@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Switch } from '@/components/ui/Switch'
+import { Switch } from '@maunting/ui'
 import { SEASON_ASSETS } from '@/season/assets'
 import { istGueltigesFenster, type SeasonId, type SeasonMode } from '@/season/typen'
 import { saisonStatus } from '@/season/zeitfenster'

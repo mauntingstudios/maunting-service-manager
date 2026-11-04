@@ -9,7 +9,7 @@ import {
   StickyNote,
   type LucideIcon,
 } from 'lucide-react'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 interface AttachMenuProps {
   /** Ohne das Recht, Anhänge zu senden, bleibt der Knopf gesperrt. */

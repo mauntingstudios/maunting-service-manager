@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2 } from 'lucide-react'
-import { Button, Checkbox, Dropdown, Input, MultiSelect, NumberStepper, Switch, Textarea } from '@/Singra/UI'
+import { Button, Checkbox, Dropdown, Input, MultiSelect, NumberStepper, Switch, Textarea } from '@maunting/ui'
 import { FormDialog } from './FormDialog'
 import { useStudio } from './StudioContext'
 import { ForeignKeyEditor } from './TableDesigner'

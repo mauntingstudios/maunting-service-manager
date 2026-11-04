@@ -5,11 +5,11 @@ import { api } from "@/api/client";
 import { toast } from "@/stores/toastStore";
 import { confirm } from "@/stores/confirmStore";
 import { useHasPermission } from "@/hooks/useHasPermission";
-import { Dropdown, Kurzinfo, Switch } from "@/Singra/UI";
+import { Dropdown, Kurzinfo, Switch } from '@maunting/ui'
 import { AlertTriangle, Bot, HardDrive, Plus, RotateCcw, Trash2, Settings, Cloud, CloudOff, UploadCloud } from "lucide-react";
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 interface Backup {
   id: number;
   server_id: number;

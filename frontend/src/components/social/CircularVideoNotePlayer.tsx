@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Play, Pause, Volume2, VolumeX, Maximize2, Loader2 } from 'lucide-react'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 import {
   holeAnhangUrl,
   type MedienBindungsKontext,

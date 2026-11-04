@@ -3,16 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Trash2 } from 'lucide-react'
 
 import type { E2eeGeraetItem, EntfernenNachweis } from '@/api/social'
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  PasswordInput,
-} from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, PasswordInput } from '@maunting/ui'
 import { entferneGeraet } from '@/services/e2eeGeraet'
 import { useZweitfaktor, ZweitfaktorFeld } from '@/components/auth/ZweitfaktorNachweis'
 import { useAuthStore } from '@/stores/authStore'

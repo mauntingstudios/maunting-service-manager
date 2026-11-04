@@ -16,8 +16,8 @@ import {
 import { api } from '@/api/client';
 import { toast } from '@/stores/toastStore';
 import { confirm } from '@/stores/confirmStore';
-import { Dropdown } from '@/components/ui/Dropdown';
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Dropdown } from '@maunting/ui'
+import { Button, Kurzinfo } from '@maunting/ui'
 
 interface WebhookSub {
   id: number;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Blocks, FlaskConical, Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import { Badge, Button, Checkbox, Dropdown, Input, MultiSelect, Switch, Textarea } from '@/Singra/UI'
+import { Badge, Button, Checkbox, Dropdown, Input, MultiSelect, Switch, Textarea } from '@maunting/ui'
 import { FormDialog } from './FormDialog'
 import { useStudio } from './StudioContext'
 import { Empty, ErrorBox, Field, Loading, Section, useLoad } from './shared'

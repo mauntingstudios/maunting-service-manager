@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react'
 import { RotateCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Checkbox, Dropdown, Input } from '@/Singra/UI'
+import { Checkbox, Dropdown, Input } from '@maunting/ui'
 
 import { Knopf, Leiste } from './Leiste'
 import { NetzDetails } from './NetzDetails'

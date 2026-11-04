@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Switch } from '@/Singra/UI'
+import { Button, Switch } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { hotkeysSetzen, konfigLaden } from '../tauri'
 import { meldeErrungenschaft } from '@/lib/errungenschaft'

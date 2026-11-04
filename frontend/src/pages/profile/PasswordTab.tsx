@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/authStore'
 import { api } from '@/api/client'
-import { PasswordInput } from '@/components/ui/PasswordInput'
+import { PasswordInput } from '@maunting/ui'
 import { KeyRound, Mail, Save } from 'lucide-react'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { useZweitfaktor, ZweitfaktorFeld } from '@/components/auth/ZweitfaktorNachweis'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 /**
  * Tab: Passwort aendern.
  * Validiert lokal (Laenge, Match), ruft /auth/change-password,

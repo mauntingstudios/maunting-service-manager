@@ -13,7 +13,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }))
 
 const { EinstellungenSeite } = await import('./EinstellungenSeite')
-const { ConfirmDialog } = await import('@/components/ui/ConfirmDialog')
+const { ConfirmDialog } = await import('@/components/app/ConfirmDialog')
 const { useTabsStore } = await import('../services/tabsStore')
 const { useVerlaufStore } = await import('../services/verlaufStore')
 

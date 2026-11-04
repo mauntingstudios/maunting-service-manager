@@ -1,7 +1,8 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { BellOff, ChevronLeft, Search, UserPlus } from 'lucide-react'
-import { Avatar, Blattknopf, Kurzinfo } from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
+import { Blattknopf, Kurzinfo } from '@maunting/ui'
 
 interface ChatHeaderProps {
   /** Der Name des Gesprächs: Kontoname oder Gruppentitel. */

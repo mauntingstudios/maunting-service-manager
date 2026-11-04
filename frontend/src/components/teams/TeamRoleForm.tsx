@@ -10,17 +10,7 @@ import {
   type TeamRoleWritePayload,
   type TeamServer,
 } from '@/api/teams'
-import {
-  Button,
-  ColorPicker,
-  IconPicker,
-  Input,
-  MultiSelect,
-  RechteAbschnitte,
-  renderRoleIcon,
-  Switch,
-  Textarea,
-} from '@/Singra/UI'
+import { Button, ColorPicker, IconPicker, Input, MultiSelect, RechteAbschnitte, renderRoleIcon, Switch, Textarea } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import {
   mitServerSicht,

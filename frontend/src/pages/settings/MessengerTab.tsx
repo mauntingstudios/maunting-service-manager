@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle2, Loader2, PhoneCall, PlugZap, Save, XCircle } from 'lucide-react'
-import { Button, Dropdown, Input } from '@/Singra/UI'
-import { PasswordInput } from '@/components/ui/PasswordInput'
+import { Button, Dropdown, Input } from '@maunting/ui'
+import { PasswordInput } from '@maunting/ui'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { toast } from '@/stores/toastStore'
 import {

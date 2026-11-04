@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Menu, Plus } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 
-import { Button, Kurzinfo, Zustandsflaeche } from '@/Singra/UI'
+import { Button, Kurzinfo, Zustandsflaeche } from '@maunting/ui'
 import type { DocDetail, UploadGrenzen } from '@/api/docs'
 import { DocEditor } from './DocEditor'
 import type { OutlineEntry } from './editor/Outline'

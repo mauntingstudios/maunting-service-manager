@@ -16,7 +16,9 @@ import {
   Users,
   WifiOff,
 } from 'lucide-react'
-import { Badge, Button, Input, Kurzinfo, confirm, prompt } from '@/Singra/UI'
+import { Badge, Button, Input, Kurzinfo } from '@maunting/ui'
+import { confirm } from '@/stores/confirmStore'
+import { prompt } from '@/stores/promptStore'
 import { toast } from '@/stores/toastStore'
 import {
   createComment,

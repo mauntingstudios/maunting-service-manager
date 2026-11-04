@@ -7,7 +7,7 @@ import {
   type E2eeGeraetItem,
   type ReapproveEigenesGeraetInput,
 } from '@/api/social'
-import { Button, Input, PasswordInput } from '@/Singra/UI'
+import { Button, Input, PasswordInput } from '@maunting/ui'
 import {
   eigenesGeraet,
   gebeGeraetFrei,

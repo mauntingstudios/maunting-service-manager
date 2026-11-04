@@ -7,8 +7,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
-import { Zustandsflaeche } from '@/Singra/UI/Zustandsflaeche'
-import { istDrittanbieterHinweisBestaetigt } from '@/Singra/UI'
+import { Zustandsflaeche } from '@maunting/ui'
+import { istDrittanbieterHinweisBestaetigt } from '@/features/privacy/ThirdPartyPrivacyDialog'
 
 import { useDrittanbieterHinweisStore } from '../services/drittanbieterHinweisStore'
 

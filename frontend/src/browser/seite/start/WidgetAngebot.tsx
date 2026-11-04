@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 import { useEinstellungenStore } from '../../services/einstellungenStore'
 import { nativ } from '../../services/nativ'

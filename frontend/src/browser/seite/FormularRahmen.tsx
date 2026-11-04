@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 import { KeyRound, X, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 import { useKlickSperre } from './klickSperre'
 

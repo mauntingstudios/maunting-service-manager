@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Bot, CalendarClock, CheckCircle2, Plus, Save, Trash2, XCircle } from 'lucide-react'
 import { api } from '@/api/client'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { Button, Dropdown, Kurzinfo, Switch } from '@/Singra/UI'
+import { Button, Dropdown, Kurzinfo, Switch } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import type { Server } from '@/types'
 import { formatPanelDateTime, formatPanelTime, type PanelTimeFormat } from '@/utils/timeFormat'
@@ -165,7 +165,7 @@ export function ServerRestartPanel({ server, serverId, onSaved }: Props) {
             liegende <fieldset> dimmt zwar, den Schalter selbst erreicht es nicht,
             denn er steht außerhalb.
 
-            `Switch` aus @/Singra/UI trägt `disabled:opacity-50` und
+            `Switch` aus @maunting/ui trägt `disabled:opacity-50` und
             `disabled:cursor-not-allowed` und meldet sich als `role="switch"` mit
             `aria-checked`. Der gesperrte Zustand ist damit sichtbar UND für
             Bedienungshilfen lesbar — beides hat der Nachbau nicht geleistet.

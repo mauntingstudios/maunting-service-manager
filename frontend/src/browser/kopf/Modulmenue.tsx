@@ -10,7 +10,8 @@ import { useRef, useState } from 'react'
 import { ArrowRight, Bell, Bot, Camera, Languages, Menu, RotateCw, Search, Star, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Ankerfenster, BenachrichtigungenMenue } from '@/Singra/UI'
+import { Ankerfenster } from '@maunting/ui'
+import { BenachrichtigungenMenue } from '@/components/notifications/BenachrichtigungsGlocke'
 
 import { useLeistenEintraege, useLeistenZahlen, useLeistenZiele } from '../leiste/eintraege'
 import { EINSTELLUNGEN_EINTRAG, KOPPELN_EINTRAG, type Leisteneintrag } from '../leiste/module'

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 
-import { Button, Dialog, DialogContent, Kurzinfo } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, Kurzinfo } from '@maunting/ui'
 import type { DocFolder, DocSummary } from '@/api/docs'
 import { DocTree } from './DocTree'
 import { useDocsStore } from './docsStore'

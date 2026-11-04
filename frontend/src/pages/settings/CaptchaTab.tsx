@@ -4,14 +4,14 @@ import { Save } from 'lucide-react'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Switch } from '@/components/ui/Switch'
-import { Dropdown } from '@/components/ui/Dropdown'
-import { PasswordInput } from '@/components/ui/PasswordInput'
+import { Button } from '@maunting/ui'
+import { Input } from '@maunting/ui'
+import { Switch } from '@maunting/ui'
+import { Dropdown } from '@maunting/ui'
+import { PasswordInput } from '@maunting/ui'
 import { PanelSettings, EMPTY_PANEL_SETTINGS } from './types'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 export function CaptchaTab() {
   const { t } = useTranslation()
   const canWrite = useHasPermission('panel.settings.write')

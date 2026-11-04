@@ -8,7 +8,8 @@ import { open as ordnerWaehlen } from '@tauri-apps/plugin-dialog'
 import { Puzzle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, confirm, Input, Switch } from '@/Singra/UI'
+import { Button, Input, Switch } from '@maunting/ui'
+import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
 import { erweiterungen, fehlerText, useErweiterungen, type Erweiterung, type Vorschau } from '../erweiterungen/erweiterungen'

@@ -11,9 +11,9 @@ import { useState, type DragEvent, type ReactNode } from 'react'
 import { Folder, Globe, MoreHorizontal, Search, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Input, Kurzinfo, type ActionMenuItem } from '@/Singra/UI'
-import { Kontextmenue } from '@/Singra/UI/Kontextmenue'
-import { Zustandsflaeche } from '@/Singra/UI/Zustandsflaeche'
+import { Input, Kurzinfo, ActionMenuItem } from '@maunting/ui'
+import { Kontextmenue } from '@maunting/ui'
+import { Zustandsflaeche } from '@maunting/ui'
 
 import { useBildStore } from '../services/bildStore'
 import { herkunft, ordnerPfad } from '../services/importDaten'

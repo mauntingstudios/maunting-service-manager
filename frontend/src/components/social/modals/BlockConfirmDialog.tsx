@@ -1,14 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Ban } from 'lucide-react'
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 
 interface BlockConfirmDialogProps {
   open: boolean

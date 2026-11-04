@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { History, RefreshCw } from 'lucide-react'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
-import { PageHeader } from '@/Singra/UI/PageHeader'
+import { PageHeader } from '@maunting/ui'
 import {
   type AuditLogRow,
   formatAuditTarget,
@@ -15,7 +15,7 @@ import {
   mapAuditApiRows,
   safeAuditDetails,
 } from '@/services/auditPresentation'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 
 export function AdminAudit() {
   const { t, i18n } = useTranslation()

@@ -7,7 +7,7 @@
 import { FolderOpen, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Dropdown, type DropdownOption, Input, Kurzinfo } from '@/Singra/UI'
+import { Button, Dropdown, DropdownOption, Input, Kurzinfo } from '@maunting/ui'
 
 import type { DownloadKategorie } from '../services/downloadKategorien'
 

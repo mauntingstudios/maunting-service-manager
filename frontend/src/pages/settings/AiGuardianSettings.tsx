@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Switch } from '@/Singra/UI'
+import { Switch } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 /**

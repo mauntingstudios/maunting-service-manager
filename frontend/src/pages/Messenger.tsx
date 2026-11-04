@@ -1,19 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate } from 'react-router-dom'
-import {
-  Button,
-  Input,
-  ChatInputBar,
-  VoiceRecordingBar,
-  Blattmenue,
-  Blatteintrag,
-  Kurzinfo,
-  Ablageflaeche,
-  useMehrfachauswahl,
-  useZurueckSchliesst,
-  type ChatInputBarRef,
-} from '@/Singra/UI'
+import { Button, Input, ChatInputBar, VoiceRecordingBar, Blattmenue, Blatteintrag, Kurzinfo, Ablageflaeche, useMehrfachauswahl, useZurueckSchliesst, ChatInputBarRef } from '@maunting/ui'
 import { useWischZurueck } from '@/hooks/useWischZurueck'
 import {
   MessageSquare,

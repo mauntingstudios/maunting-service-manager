@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileUp } from 'lucide-react'
-import { Dropdown, FileButton } from '@/Singra/UI'
+import { Dropdown, FileButton } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { FormDialog } from './FormDialog'
 import { useStudio } from './StudioContext'

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Globe } from 'lucide-react'
-import { Abgleichzahl, Button, Dialog, DialogContent } from '@/Singra/UI'
+import { Abgleichzahl, Button, Dialog, DialogContent } from '@maunting/ui'
 import { oeffneBrowser } from '@/desktop/tauri'
 import { useBrowserBestaetigung } from '@/stores/browserBestaetigung'
 

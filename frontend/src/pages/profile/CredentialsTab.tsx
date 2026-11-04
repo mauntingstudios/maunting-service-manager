@@ -16,11 +16,11 @@ import {
   type UserCredential,
 } from '@/api/credentials'
 import { SanitizedApiError } from '@/api/client'
-import { Button, Dropdown } from '@/Singra/UI'
+import { Button, Dropdown } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 const KINDS: CredentialKind[] = ['steam_account', 'github_token']
 
 export function CredentialsTab() {

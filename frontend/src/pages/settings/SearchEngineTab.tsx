@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { aiApi, type AiWebSearchStatus } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { Badge, Button, Input, Kurzinfo, PasswordInput, Spinner, Switch } from '@/Singra/UI'
+import { Badge, Button, Input, Kurzinfo, PasswordInput, Spinner, Switch } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 

@@ -17,7 +17,7 @@ import { useNavigate } from 'react-router-dom'
 import { Fingerprint, RotateCcw, ShieldCheck } from 'lucide-react'
 
 import { sperrfristOptionen } from '@/services/autoSperre'
-import { Button, Dialog, DialogContent, Dropdown, type DropdownOption, PasswordInput, Switch } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, Dropdown, DropdownOption, PasswordInput, Switch } from '@maunting/ui'
 import { useZweitfaktor, ZweitfaktorFeld } from '@/components/auth/ZweitfaktorNachweis'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'

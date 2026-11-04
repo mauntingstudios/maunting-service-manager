@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Camera, X, AlertCircle, Zap, CheckCircle2 } from 'lucide-react'
 import jsQR from 'jsqr'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 interface QrScannerModalProps {
   offen: boolean

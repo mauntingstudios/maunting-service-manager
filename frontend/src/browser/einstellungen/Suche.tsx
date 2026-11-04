@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Input } from '@/Singra/UI'
+import { Input } from '@maunting/ui'
 
 import { useEinstellungenStore } from '../services/einstellungenStore'
 import { searxngBasis, wirksameSuche } from '../services/searchEngines'

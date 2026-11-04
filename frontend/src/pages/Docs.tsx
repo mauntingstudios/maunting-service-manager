@@ -2,9 +2,9 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { BookOpen, KeyRound, ArrowRight, BookOpenCheck, FileText, ExternalLink, Network, Plug } from 'lucide-react'
 import { usePublicLegalSettings } from '@/hooks/usePublicLegalSettings'
-import { PageHeader } from '@/Singra/UI/PageHeader'
+import { PageHeader } from '@maunting/ui'
 
-import { buttonClasses } from '@/Singra/UI'
+import { buttonClasses } from '@maunting/ui'
 export function Docs() {
   const { t } = useTranslation()
   const legal = usePublicLegalSettings()

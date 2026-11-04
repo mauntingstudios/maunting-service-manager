@@ -15,7 +15,7 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BookOpen, Download, FileText, History, LoaderCircle, Pencil, Table2, X } from 'lucide-react'
-import { Button, Dialog, DialogContent, Tabellenansicht, Versionsliste } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, Tabellenansicht, Versionsliste } from '@maunting/ui'
 import { parseCsv } from '@/lib/csv'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
@@ -30,7 +30,7 @@ import { fassungenVon } from './tresorOrdner'
 import { fehlerText } from './tresorFehler'
 
 const FileEditorWorkspace = lazy(() => import('@/components/server/FileEditorWorkspace').then((m) => ({ default: m.FileEditorWorkspace })))
-const Markdownansicht = lazy(() => import('@/Singra/UI/Markdownansicht').then((m) => ({ default: m.Markdownansicht })))
+const Markdownansicht = lazy(() => import('@/components/viewer/Markdownansicht').then((m) => ({ default: m.Markdownansicht })))
 
 /** Knöpfe der Kopfleiste: am Telefon 44 px, damit der Daumen trifft; `min-*` schlägt die Höhe aus `size`. */
 const KOPFKNOPF = 'min-h-11 min-w-11 sm:min-h-8 sm:min-w-0'

@@ -3,11 +3,11 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Mail, Plus, Trash2, RefreshCw, Star, ShieldCheck, HelpCircle, Info, X } from 'lucide-react'
 import { userIntegrationsApi, type MailboxItem, type MailboxCreateInput } from '@/api/userIntegrations'
-import { Button, Checkbox, Dropdown, Kurzinfo, type DropdownOption } from '@/Singra/UI'
+import { Button, Checkbox, Dropdown, Kurzinfo, DropdownOption } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 export function ConnectedMailboxesSection() {
   const { t } = useTranslation()
   const [mailboxes, setMailboxes] = useState<MailboxItem[]>([])

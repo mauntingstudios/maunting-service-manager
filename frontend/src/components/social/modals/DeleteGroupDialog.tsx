@@ -1,14 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Trash2 } from 'lucide-react'
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 import type { ChatGroupItem } from '@/api/social'
 
 interface DeleteGroupDialogProps {

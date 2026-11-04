@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Search, Settings2 } from 'lucide-react'
-import { Badge, Button, Dropdown, Input } from '@/Singra/UI'
+import { Badge, Button, Dropdown, Input } from '@maunting/ui'
 import { FormDialog } from './FormDialog'
 import { useStudio } from './StudioContext'
 import { ErrorBox, Loading, Section, useLoad } from './shared'

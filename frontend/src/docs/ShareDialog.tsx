@@ -1,17 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Link2, Trash2 } from 'lucide-react'
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Dropdown,
-  Input,
-} from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Dropdown, Input } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { createShare, deleteShare, type DocDetail, type ShareRole } from '@/api/docs'
 import { docsFehlermeldung } from './docsFehler'

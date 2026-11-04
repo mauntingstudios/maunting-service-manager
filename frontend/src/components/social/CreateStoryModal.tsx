@@ -1,12 +1,6 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Dialog,
-  DialogContent,
-  Button,
-  Input,
-  Kurzinfo,
-} from '@/Singra/UI'
+import { Dialog, DialogContent, Button, Input, Kurzinfo } from '@maunting/ui'
 import {
   Sparkles,
   Camera,

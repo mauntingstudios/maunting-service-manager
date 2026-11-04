@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CalendarDays } from 'lucide-react'
 
-import { Avatar } from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
 import { aktivitaetText } from '@/services/praesenz/aktivitaeten'
 import { DeviceBadge } from './DeviceBadge'
 import { StatusDot } from './StatusIndicator'

@@ -10,7 +10,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Flame, Hourglass, RotateCcw, Sparkles } from 'lucide-react'
 
-import { Badge, Blattmenue, Blatteintrag } from '@/Singra/UI'
+import { Badge, Blattmenue, Blatteintrag } from '@maunting/ui'
 
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { STUNDE_MS, TAG_MS, berechneFunkenZustand, type FunkenZustand } from '@/services/funkenService'

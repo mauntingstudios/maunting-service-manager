@@ -13,8 +13,8 @@ import { useEffect, useState } from 'react'
 import { ClipboardPaste, Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Kontextmenue } from '@/Singra/UI'
-import type { ActionMenuItem } from '@/Singra/UI/ActionMenu'
+import { Kontextmenue } from '@maunting/ui'
+import type { ActionMenuItem } from '@maunting/ui'
 
 const FELD = 'input, textarea, [contenteditable=""], [contenteditable="true"]'
 const TEXTFELDER = new Set(['text', 'search', 'url', 'tel', 'email', 'password'])

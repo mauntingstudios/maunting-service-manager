@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Eye, Hash, Layers, ListOrdered, Plus, Search, Table2, Tags } from 'lucide-react'
-import { ActionMenu, Badge, Button, Dropdown, Input } from '@/Singra/UI'
+import { ActionMenu, Badge, Button, Dropdown, Input } from '@maunting/ui'
 import { prompt } from '@/stores/promptStore'
 import { useStudio } from './StudioContext'
 import { DataGrid, type GridJump } from './DataGrid'

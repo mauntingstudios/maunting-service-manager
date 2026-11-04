@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 
-import { Dropdown, Kurzinfo, type DropdownOption } from '@/Singra/UI'
+import { Dropdown, Kurzinfo, DropdownOption } from '@maunting/ui'
 
 export type PresenceStatus = 'online' | 'away' | 'invisible'
 

@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { ArrowDownToLine, ArrowUpFromLine, CornerDownRight, Pause, Play, Plus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Checkbox, Dropdown, Input, TabBar, type TabDef } from '@/Singra/UI'
+import { Checkbox, Dropdown, Input, TabBar, TabDef } from '@maunting/ui'
 
 import { auswerten } from './KonsolenEingabe'
 import { Knopf, Leiste } from './Leiste'

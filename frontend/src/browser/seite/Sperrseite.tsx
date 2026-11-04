@@ -7,7 +7,7 @@
 import { ShieldBan } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Zustandsflaeche } from '@/Singra/UI'
+import { Button, Zustandsflaeche } from '@maunting/ui'
 
 import { seitenHost } from '../services/geraetKonfig'
 import { useTabsStore, type Tab } from '../services/tabsStore'

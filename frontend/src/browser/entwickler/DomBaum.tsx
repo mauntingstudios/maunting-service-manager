@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Input } from '@/Singra/UI'
+import { Input } from '@maunting/ui'
 
 import { useDom, type Knoten } from './domStore'
 import { hervorheben, rufen } from './protokoll'

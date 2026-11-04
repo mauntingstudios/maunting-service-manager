@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ConfirmDialog } from './ConfirmDialog'
-import { Dialog, DialogContent } from '@/Singra/UI/Dialog'
+import { Dialog, DialogContent } from '@maunting/ui'
 import { confirm, useConfirmStore } from '@/stores/confirmStore'
 
 /** Der Fokus ist die einzige Zusage, die dieser Dialog gegenüber der Tastatur

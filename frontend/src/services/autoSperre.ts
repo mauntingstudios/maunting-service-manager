@@ -35,7 +35,7 @@ type Uebersetzer = (schluessel: string, werte?: Record<string, unknown>) => stri
 /**
  * Baut die Auswahl für beide Oberflächen.
  *
- * Absichtlich kein Import aus `components/ui` und kein `TFunction`: ein Dienst,
+ * Absichtlich kein Import aus `@maunting/ui` und kein `TFunction`: ein Dienst,
  * der die Oberfläche kennt, ist keiner mehr. Beide Aufrufer reichen ihr `t`
  * herein und bauen daraus ihre `DropdownOption`s.
  *

@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { formatBytes } from '@/lib/format'
 
 import { Abschnitt, Aktionszeile } from '../einstellungen/bausteine'

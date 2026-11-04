@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { eigenesGeraet, geraetVeroeffentlichen } from '@/services/e2eeGeraet'
 import { useMessengerSperre } from '@/services/messengerSperre'
 import type { GruppenAnsicht } from '@/services/gruppenName'
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 interface CrossDeviceCallBannerProps {
   className?: string

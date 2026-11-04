@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, FileUp, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react'
-import { Badge, Button, Dropdown, FileButton, MultiSelect, Switch } from '@/Singra/UI'
+import { Badge, Button, Dropdown, FileButton, MultiSelect, Switch } from '@maunting/ui'
 import { prompt } from '@/stores/promptStore'
 import { toast } from '@/stores/toastStore'
 import { useStudio } from './StudioContext'

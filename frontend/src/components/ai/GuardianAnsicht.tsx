@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiActionProposal, type AiRunInfo } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 import { ChatHintergrund } from '@/features/chatHintergrund'
 import { toast } from '@/stores/toastStore'
 import { AiVerlauf, mergeEntries } from './AiVerlauf'

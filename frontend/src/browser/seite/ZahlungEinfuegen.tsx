@@ -12,7 +12,7 @@ import { CreditCard, Landmark } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
-import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Dropdown, PasswordInput } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Dropdown, PasswordInput } from '@maunting/ui'
 import { pruefeBiometrieVerfuegbar, verifiziereBiometrie } from '@/desktop/tauri'
 import { hostVon } from '@/desktop/vault/hostVon'
 import { useVaultStore } from '@/desktop/vault/vaultStore'

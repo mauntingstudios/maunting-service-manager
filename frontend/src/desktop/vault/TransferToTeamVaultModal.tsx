@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowRightLeft, Lock, RefreshCw, ShieldCheck } from 'lucide-react'
 
 import { teamsApi, type Team } from '@/api/teams'
-import { Button, Dialog, DialogContent, Dropdown, type DropdownOption } from '@/Singra/UI'
+import { Button, Dialog, DialogContent, Dropdown, DropdownOption } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
 import { useTeamVaultStore } from './teamVaultStore'

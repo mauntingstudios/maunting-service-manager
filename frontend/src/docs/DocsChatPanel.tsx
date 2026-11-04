@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Loader2, MicOff, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-import { Button, buttonClasses } from '@/Singra/UI'
+import { Button, buttonClasses } from '@maunting/ui'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
 import { AiChat } from '@/components/ai/AiChat'

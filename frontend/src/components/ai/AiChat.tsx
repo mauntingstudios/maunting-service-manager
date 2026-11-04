@@ -12,7 +12,8 @@ import {
   type AiRunInfo,
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
-import { Ablageflaeche, Button, Dropdown, Avatar, Blatteintrag, Blattknopf, Kurzinfo, VoiceRecordingBar } from '@/Singra/UI'
+import { Ablageflaeche, Button, Dropdown, Blatteintrag, Blattknopf, Kurzinfo, VoiceRecordingBar } from '@maunting/ui'
+import { Avatar } from '@/components/app/Avatar'
 import {
   aiChatPreferenceKeys,
   readAiProviderChoice,
@@ -53,7 +54,7 @@ import { starteAufnahme, type Aufnahme } from './voice/audioAufnahme'
 import { AI_IS_BETA } from './AiBetaBanner'
 import { chatScopeApi, PRIMARY_CHAT_SCOPE, type AiChatScope } from './chatScope'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 interface ServerOption {
   id: number
   name: string

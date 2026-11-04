@@ -17,7 +17,7 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import type { AiRegionalAnalysis, AiSatelliteLayer } from '@/api/ai'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { MapTilerDetailMap } from './MapTilerDetailMap'
 import { Regionalbild } from './Regionalbild'
 import { hasRegionalCoordinates, regionalbildPfad } from './regionalAnalysis'

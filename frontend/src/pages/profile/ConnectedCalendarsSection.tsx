@@ -3,11 +3,11 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, Plus, Trash2, ShieldCheck, RefreshCw, Star, Info, X } from 'lucide-react'
 import { userIntegrationsApi, type CalendarItem, type CalendarCreateInput } from '@/api/userIntegrations'
-import { Button, Checkbox } from '@/Singra/UI'
+import { Button, Checkbox } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 export function ConnectedCalendarsSection() {
   const { t } = useTranslation()
   const [calendars, setCalendars] = useState<CalendarItem[]>([])

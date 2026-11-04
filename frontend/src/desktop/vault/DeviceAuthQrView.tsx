@@ -12,7 +12,8 @@ import {
   fingerprintPublicKey,
   generateEphemeralAuthKeyPair,
 } from './deviceAuthCrypto'
-import { MauntingQrCard, Spinner } from '@/Singra/UI'
+import { MauntingQrCard } from '@/components/qr/MauntingQrCard'
+import { Spinner } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { still } from '@/lib/still'
 

@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { KI_NAME } from '@/lib/kiName'
 import { wakewordStand } from './tauri'
 

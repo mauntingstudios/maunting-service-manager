@@ -28,13 +28,13 @@ import {
   type PanelPopup,
   type PanelPopupCreateInput,
 } from '@/api/popups'
-import { Button, Switch, DateTimePicker, Kurzinfo } from '@/Singra/UI'
+import { Button, Switch, DateTimePicker, Kurzinfo } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { PanelPopupModal } from '@/components/popups/PanelPopupModal'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 export function PopupTab() {
   const { t, i18n } = useTranslation()
   const canWrite = useHasPermission('panel.settings.write')

@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, confirm, Dropdown } from '@/Singra/UI'
+import { Button, Dropdown } from '@maunting/ui'
+import { confirm } from '@/stores/confirmStore'
 
 import { AnwendungLeiste } from './Leiste'
 import { Wert } from './ObjektBaum'

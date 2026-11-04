@@ -5,7 +5,7 @@
  */
 import { forwardRef, type ReactNode } from 'react'
 
-import { Kurzinfo } from '@/Singra/UI'
+import { Kurzinfo } from '@maunting/ui'
 
 /** Am Finger 44 px (Punkt 86); im MSB nach dem Zeiger, nicht nach der Breite (Punkt 127). */
 export const KNOPF =

@@ -13,7 +13,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { hostVon } from '@/desktop/vault/hostVon'
 import { generateSecurePassword } from '@/desktop/vault/vaultCrypto'
 import { useVaultStore } from '@/desktop/vault/vaultStore'

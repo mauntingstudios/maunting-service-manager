@@ -3,7 +3,7 @@ import { Pencil } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { useBenutzernameSpeichern } from '@/components/BenutzernameFeld'
-import { Button, Input, Kurzinfo } from '@/Singra/UI'
+import { Button, Input, Kurzinfo } from '@maunting/ui'
 import { benutzernameFehler } from '@/lib/benutzername'
 import { useAuthStore } from '@/stores/authStore'
 

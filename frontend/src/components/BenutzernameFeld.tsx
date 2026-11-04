@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { api } from '@/api/client'
-import { Button, Input } from '@/Singra/UI'
+import { Button, Input } from '@maunting/ui'
 import { benutzernameFehler } from '@/lib/benutzername'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'

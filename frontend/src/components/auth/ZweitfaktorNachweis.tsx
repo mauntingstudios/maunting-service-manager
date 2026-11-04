@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Fingerprint, KeyRound } from 'lucide-react'
-import { Button, Input } from '@/Singra/UI'
+import { Button, Input } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { inDerApp, passkeyNachweis, type PasskeyZweck, type Zweitnachweis } from '@/services/passkeyService'
 import type { Zweitfaktor } from '@/types'

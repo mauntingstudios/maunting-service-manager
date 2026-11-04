@@ -6,8 +6,8 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input } from '@/Singra/UI'
-import { PasswordInput } from '@/components/ui/PasswordInput'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input } from '@maunting/ui'
+import { PasswordInput } from '@maunting/ui'
 
 import { herkunftsName, useFrageDesTabs, useRueckfragen, type Rueckfrage } from '../services/rueckfragen'
 import type { Tab } from '../services/tab'

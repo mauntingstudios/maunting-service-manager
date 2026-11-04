@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import { useEinstellungenStore } from '../services/einstellungenStore'

@@ -3,7 +3,7 @@ import { Gauge } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiUsageMine } from '@/api/ai'
-import { ProgressBar } from '@/Singra/UI'
+import { ProgressBar } from '@maunting/ui'
 import { betragFormatieren } from '@/utils/geld'
 
 /**

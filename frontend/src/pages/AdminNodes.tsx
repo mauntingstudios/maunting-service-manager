@@ -18,17 +18,17 @@ import {
 import { useNodeStore } from '@/stores/nodeStore'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
-import { Badge } from '@/components/ui/Badge'
-import { PasswordInput } from '@/components/ui/PasswordInput'
-import { ProgressBar, StackedProgressBar, type Segment } from '@/Singra/UI/ProgressBar'
+import { Badge } from '@maunting/ui'
+import { PasswordInput } from '@maunting/ui'
+import { ProgressBar, StackedProgressBar, Segment } from '@maunting/ui'
 import { NodeEnrollmentDialog } from '@/components/nodes/NodeEnrollmentDialog'
 import type { Node } from '@/types'
 import { api } from '@/api/client'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { PageHeader } from '@/Singra/UI/PageHeader'
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { PageHeader } from '@maunting/ui'
+import { Button, Kurzinfo } from '@maunting/ui'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 function statusVariant(status: string): 'success' | 'destructive' | 'default' | 'warning' {
   switch (status) {
     case 'online':

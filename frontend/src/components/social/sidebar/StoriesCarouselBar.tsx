@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
-import { Avatar } from '@/Singra/UI'
+import { Avatar } from '@/components/app/Avatar'
 import type { ChatStoryItem } from '@/api/social'
 
 /** Die Stories eines Kontakts, so wie Leiste und Statusansicht sie zeigen. */

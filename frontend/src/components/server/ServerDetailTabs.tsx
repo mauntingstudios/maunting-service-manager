@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 
-import { Kurzinfo } from '@/Singra/UI/Kurzinfo'
+import { Kurzinfo } from '@maunting/ui'
 
 /**
  * Ein Reiter der Serverdetail-Seite: Schlüssel, fertiger Name und Symbol.

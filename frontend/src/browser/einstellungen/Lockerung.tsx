@@ -8,7 +8,7 @@ import { Clock } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
 import type { SchutzRegeln, SchutzStand } from '../services/nativ'

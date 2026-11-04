@@ -42,15 +42,15 @@ import {
 import { credentialsApi } from '@/api/credentials'
 import { rbacApi } from '@/api/rbac'
 import { api, SanitizedApiError } from '@/api/client'
-import { Button, NumberStepper, Switch, buttonClasses } from '@/Singra/UI'
-import { Dropdown } from '@/components/ui/Dropdown'
-import { SecretOnce } from '@/components/ui/SecretOnce'
+import { Button, NumberStepper, Switch, buttonClasses } from '@maunting/ui'
+import { Dropdown } from '@maunting/ui'
+import { SecretOnce } from '@/components/app/SecretOnce'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import type { Role } from '@/types/permissions'
 import type { GameInfo, User } from '@/types'
 
-import { Spinner } from '@/components/ui/Spinner'
+import { Spinner } from '@maunting/ui'
 /**
  * Handoff-Link same-origin oeffnen: der absolute Link wird aus MSM_PANEL_URL
  * gebaut und zeigt in der Dev-Umgebung am Frontend vorbei. Der Pfad ueber die

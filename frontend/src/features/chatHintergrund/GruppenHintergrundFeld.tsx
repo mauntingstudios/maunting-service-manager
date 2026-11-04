@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, ImagePlus, Layers, Sliders, Trash2 } from 'lucide-react'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import type { GruppenKontext } from '@/services/gruppenSchluessel'
 import { aendereGruppenHintergrund, ladeGruppenHintergrund } from '@/services/gruppenInfo'
 import { toast } from '@/stores/toastStore'

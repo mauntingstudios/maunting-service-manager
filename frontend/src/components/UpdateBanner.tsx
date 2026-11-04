@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import type { GitUpdateStatus } from '@/types'
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 
 export function UpdateBanner() {
   const { t } = useTranslation()

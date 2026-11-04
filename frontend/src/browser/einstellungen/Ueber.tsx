@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/Singra/UI'
+import { Button } from '@maunting/ui'
 import { DATENSCHUTZ_VERSION } from '@/pages/datenschutzStand'
 
 import { installieren, updatesMoeglich } from '../services/aktualisierung'

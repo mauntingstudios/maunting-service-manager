@@ -16,7 +16,7 @@ import { api } from "@/api/client";
 import { toast } from "@/stores/toastStore";
 import { useHasPermission } from "@/hooks/useHasPermission";
 import { getGuardianDisplayState } from "./GuardianBadge";
-import { Button, Kurzinfo } from '@/Singra/UI'
+import { Button, Kurzinfo } from '@maunting/ui'
 
 /**
  * Was fuer diesen Server abweichend von der Blueprint gilt.

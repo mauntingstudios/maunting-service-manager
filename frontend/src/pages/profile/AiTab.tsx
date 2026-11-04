@@ -7,7 +7,7 @@ import { teamsApi, type Team } from '@/api/teams'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiSkillManager } from '@/components/ai/AiSkillManager'
 import { AiUsageCard } from '@/components/ai/AiUsageCard'
-import { TabBar, type TabDef } from '@/components/ui/TabBar'
+import { TabBar, TabDef } from '@maunting/ui'
 import { useHasPermission } from '@/hooks/useHasPermission'
 
 export type AiTabSection = 'memory' | 'skills'
