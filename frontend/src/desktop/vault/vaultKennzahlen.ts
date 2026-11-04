@@ -126,14 +126,20 @@ export function sortiereEintraege(items: VaultItem[], sortierung: TresorSortieru
 }
 
 export const KATEGORIE_HINTERGRUENDE = [
-  { id: 'bergsee', pfad: '/hintergruende/bergsee.webp', label: 'Bergsee & Konten' },
-  { id: 'bergwald', pfad: '/hintergruende/bergwald.webp', label: 'Arbeit & Studio' },
-  { id: 'sonnensystem', pfad: '/hintergruende/sonnensystem.webp', label: 'Gaming & Kosmos' },
-  { id: 'ozean', pfad: '/hintergruende/ozean.webp', label: 'Finanzen & Ozean' },
-  { id: 'feld', pfad: '/hintergruende/feld.webp', label: 'Persönliches & Weite' },
-  { id: 'wasserfaelle', pfad: '/hintergruende/wasserfaelle.webp', label: 'Wasserfälle & Natur' },
-  { id: 'erde', pfad: '/hintergruende/erde.webp', label: 'Orbit & Cloud' },
-  { id: 'mars', pfad: '/hintergruende/mars.webp', label: 'Horizont & Projekte' },
+  { id: 'accounts', pfad: '/tresor-kategorien/accounts.webp', label: 'Accounts & Logins' },
+  { id: 'arbeit', pfad: '/tresor-kategorien/arbeit.webp', label: 'Arbeit & Projekte' },
+  { id: 'gaming', pfad: '/tresor-kategorien/gaming.webp', label: 'Gaming' },
+  { id: 'finanzen', pfad: '/tresor-kategorien/finanzen.webp', label: 'Finanzen & Karten' },
+  { id: 'persoenliches', pfad: '/tresor-kategorien/persoenliches.webp', label: 'Persönliches' },
+  { id: 'server', pfad: '/tresor-kategorien/server.webp', label: 'Server & Infrastruktur' },
+  { id: 'entwicklung', pfad: '/tresor-kategorien/entwicklung.webp', label: 'Entwicklung & Code' },
+  { id: 'studio', pfad: '/tresor-kategorien/studio.webp', label: 'Studio & Produktion' },
+  { id: 'reisen', pfad: '/tresor-kategorien/reisen.webp', label: 'Reisen & Unterwegs' },
+  { id: 'shopping', pfad: '/tresor-kategorien/shopping.webp', label: 'Shopping & Handel' },
+  { id: 'smarthome', pfad: '/tresor-kategorien/smarthome.webp', label: 'Smart Home & Wohnen' },
+  { id: 'medien', pfad: '/tresor-kategorien/medien.webp', label: 'Medien & Audio' },
+  { id: 'krypto', pfad: '/tresor-kategorien/krypto.webp', label: 'Krypto & Netzwerk' },
+  { id: 'dokumente', pfad: '/tresor-kategorien/dokumente.webp', label: 'Verträge & Dokumente' },
 ] as const
 
 export interface StandardKategorieDef {
@@ -148,35 +154,35 @@ export const STANDARD_KATEGORIEN: StandardKategorieDef[] = [
   {
     schluessel: 'accounts',
     i18nKey: 'mss.vault.dashboard.standardKategorien.accounts',
-    standardBild: '/hintergruende/erde.webp',
+    standardBild: '/tresor-kategorien/accounts.webp',
     akzentFarbe: 'linear-gradient(135deg, rgba(14, 165, 233, 0.28) 0%, rgba(2, 6, 23, 0.88) 100%)',
     suchbegriffe: /google|apple|microsoft|icloud|mail|proton|meta|instagram|facebook|twitter|reddit|amazon|konto|account/i,
   },
   {
     schluessel: 'arbeit',
     i18nKey: 'mss.vault.dashboard.standardKategorien.arbeit',
-    standardBild: '/hintergruende/bergwald.webp',
+    standardBild: '/tresor-kategorien/arbeit.webp',
     akzentFarbe: 'linear-gradient(135deg, rgba(16, 185, 129, 0.26) 0%, rgba(2, 6, 23, 0.88) 100%)',
     suchbegriffe: /github|gitlab|vercel|cloudflare|docker|aws|azure|hetzner|jira|linear|slack|notion|figma|server|projekt|work|arbeit|dev/i,
   },
   {
     schluessel: 'gaming',
     i18nKey: 'mss.vault.dashboard.standardKategorien.gaming',
-    standardBild: '/hintergruende/sonnensystem.webp',
+    standardBild: '/tresor-kategorien/gaming.webp',
     akzentFarbe: 'linear-gradient(135deg, rgba(99, 102, 241, 0.30) 0%, rgba(2, 6, 23, 0.88) 100%)',
     suchbegriffe: /steam|discord|epic|riot|playstation|xbox|nintendo|ubisoft|ea|battlenet|blizzard|twitch|minecraft|game|gaming/i,
   },
   {
     schluessel: 'finanzen',
     i18nKey: 'mss.vault.dashboard.standardKategorien.finanzen',
-    standardBild: '/hintergruende/ozean.webp',
+    standardBild: '/tresor-kategorien/finanzen.webp',
     akzentFarbe: 'linear-gradient(135deg, rgba(6, 182, 212, 0.28) 0%, rgba(2, 6, 23, 0.88) 100%)',
     suchbegriffe: /revolut|paypal|stripe|klarna|wise|sparkasse|ing|dkb|n26|comdirect|trade|scalable|bank|visa|mastercard|finanz/i,
   },
   {
     schluessel: 'persoenliches',
     i18nKey: 'mss.vault.dashboard.standardKategorien.persoenliches',
-    standardBild: '/hintergruende/bergsee.webp',
+    standardBild: '/tresor-kategorien/persoenliches.webp',
     akzentFarbe: 'linear-gradient(135deg, rgba(245, 158, 11, 0.24) 0%, rgba(2, 6, 23, 0.88) 100%)',
     suchbegriffe: /notiz|privat|familie|gesundheit|reise|wohnung|vertrag|id|ausweis|persoenlich|personal/i,
   },
@@ -196,12 +202,14 @@ export interface Sammlung {
 /**
  * Top-Ordner mit Inhalt. Unterordner erscheinen als eigene Sammlung, so wie
  * sie im Tresor liegen; die Auswahl zeigt danach genau ihren Inhalt.
+ * Eigene Ordner haben standardmäßig kein Hintergrundbild — erst wenn der
+ * Nutzer eines auswählt oder hochlädt, wird `titelbild` gesetzt.
  */
 export function sammlungen(items: VaultItem[], jetzt = Date.now()): Sammlung[] {
   const sichtbar = sichtbareEintraege(items)
   return sichtbar
     .filter((item) => item.category === 'ordner')
-    .map((ordner, idx) => {
+    .map((ordner) => {
       const inhalt = sichtbar.filter((item) => item.ordner === ordner.id)
       const neuester = inhalt.reduce<VaultItem | null>(
         (bisher, item) => (!bisher || item.updatedAt > bisher.updatedAt ? item : bisher),
@@ -210,7 +218,7 @@ export function sammlungen(items: VaultItem[], jetzt = Date.now()): Sammlung[] {
       const gespeichertesBild =
         typeof ordner.extra?.titelbild === 'string' && ordner.extra.titelbild.trim().length > 0
           ? ordner.extra.titelbild
-          : KATEGORIE_HINTERGRUENDE[idx % KATEGORIE_HINTERGRUENDE.length].pfad
+          : undefined
       return {
         id: ordner.id,
         name: ordner.service,

@@ -85,7 +85,7 @@ export function TresorKategorieBildDialog({
         if (!open) onSchliessen()
       }}
     >
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-2xl">
         <DialogHeader className="px-5 py-4 pr-14">
           <DialogTitle className="text-sm">
             {t('mss.vault.dashboard.hintergrundWaehlen', { name: kategorieName })}
@@ -95,7 +95,7 @@ export function TresorKategorieBildDialog({
           </p>
         </DialogHeader>
         <div className="space-y-4 p-5">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="max-h-[340px] overflow-y-auto pr-1 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {KATEGORIE_HINTERGRUENDE.map((motiv) => {
               const aktiv = aktuellesBild === motiv.pfad
               return (

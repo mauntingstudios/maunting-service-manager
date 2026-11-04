@@ -954,19 +954,35 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     }
   }
 
-  const handleStandardKategorieBildZuruecksetzen = () => {
-    if (kategorieBildZiel?.typ !== 'standard' || !kategorieBildZiel.standardSchluessel) return
-    const schluessel = kategorieBildZiel.standardSchluessel
-    setStandardKategorieBilder((aktuell) => {
-      const naechste = { ...aktuell }
-      delete naechste[schluessel]
-      try {
-        localStorage.setItem(STANDARD_BILDER_SPEICHER, JSON.stringify(naechste))
-      } catch (err) {
-        still(err, 'VaultView.standardKategorieBilder.zuruecksetzen')
+  const handleStandardKategorieBildZuruecksetzen = async () => {
+    if (!kategorieBildZiel) return
+    if (kategorieBildZiel.typ === 'standard' && kategorieBildZiel.standardSchluessel) {
+      const schluessel = kategorieBildZiel.standardSchluessel
+      setStandardKategorieBilder((aktuell) => {
+        const naechste = { ...aktuell }
+        delete naechste[schluessel]
+        try {
+          localStorage.setItem(STANDARD_BILDER_SPEICHER, JSON.stringify(naechste))
+        } catch (err) {
+          still(err, 'VaultView.standardKategorieBilder.zuruecksetzen')
+        }
+        return naechste
+      })
+      return
+    }
+    try {
+      const ordnerEintrag = items.find((item) => item.id === kategorieBildZiel.id)
+      if (!ordnerEintrag) return
+      const neuesExtra = { ...(ordnerEintrag.extra ?? {}), titelbild: '' }
+      if (isTeam) {
+        await teamStore.saveItem({ ...ordnerEintrag, extra: neuesExtra })
+      } else {
+        await personalStore.aendern(ordnerEintrag.id, { extra: neuesExtra })
       }
-      return naechste
-    })
+      toast.success(t('common.saved'))
+    } catch (err) {
+      toast.error(fehlerText(err, t('mss.vault.speichernFehlgeschlagen')))
+    }
   }
 
   const handleImportEintraege = async (eintraege: ImportierterEintrag[]) => {
@@ -2735,7 +2751,9 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         onSchliessen={() => setKategorieBildZiel(null)}
         onBildWaehlen={(bildQuelle) => void handleKategorieBildSpeichern(bildQuelle)}
         onStandardWiederherstellen={
-          kategorieBildZiel?.typ === 'standard' ? handleStandardKategorieBildZuruecksetzen : undefined
+          kategorieBildZiel?.typ === 'standard' || Boolean(kategorieBildZiel?.aktuellesBild)
+            ? () => void handleStandardKategorieBildZuruecksetzen()
+            : undefined
         }
       />
 

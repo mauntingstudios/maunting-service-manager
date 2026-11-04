@@ -613,93 +613,118 @@ export function VaultDashboard({
 
             {ordner.length > 0 && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {ordner.map((eintrag) => (
-                  <article
-                    key={eintrag.id}
-                    className="group relative h-32 overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container-low transition-all hover:border-primary/40"
-                  >
-                    {eintrag.titelbild && (
-                      <img
-                        src={eintrag.titelbild}
-                        alt=""
-                        loading="lazy"
-                        className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-60 transition-transform duration-500 group-hover:scale-105"
-                      />
-                    )}
-                    <div
-                      className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/15"
-                      aria-hidden="true"
-                    />
-                    <div className="relative flex h-full flex-col justify-between p-3.5">
-                      <div className="flex items-start justify-between gap-2">
+                {ordner.map((eintrag) => {
+                  const hatBild = Boolean(eintrag.titelbild)
+                  return (
+                    <article
+                      key={eintrag.id}
+                      className={`group relative h-32 overflow-hidden rounded-2xl border border-outline-variant/20 transition-all hover:border-primary/40 ${
+                        hatBild
+                          ? 'bg-surface-container-low'
+                          : 'bg-surface-container-low/85 hover:bg-surface-container/80'
+                      }`}
+                    >
+                      {hatBild && (
+                        <>
+                          <img
+                            src={eintrag.titelbild}
+                            alt=""
+                            loading="lazy"
+                            className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-60 transition-transform duration-500 group-hover:scale-105"
+                          />
+                          <div
+                            className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/15"
+                            aria-hidden="true"
+                          />
+                        </>
+                      )}
+                      <div className="relative flex h-full flex-col justify-between p-3.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onSammlung(eintrag.id)}
+                            className={`flex h-8 w-8 items-center justify-center rounded-xl border text-primary ${
+                              hatBild
+                                ? 'border-white/15 bg-black/45 backdrop-blur-md'
+                                : 'border-outline-variant/25 bg-surface-container'
+                            }`}
+                            aria-label={t('mss.vault.dashboard.sammlungOeffnen', { name: eintrag.name })}
+                          >
+                            <Folder className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                          <div className="flex items-center gap-1">
+                            {onSammlungBildAendern && (
+                              <button
+                                type="button"
+                                onClick={() => onSammlungBildAendern(eintrag)}
+                                aria-label={t('mss.vault.dashboard.hintergrundWaehlen', { name: eintrag.name })}
+                                className={`flex h-7 w-7 items-center justify-center rounded-lg border opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 ${
+                                  hatBild
+                                    ? 'border-white/15 bg-black/45 text-white/80 backdrop-blur-md hover:text-white'
+                                    : 'border-outline-variant/25 bg-surface-container text-on-surface-variant hover:text-on-surface'
+                                }`}
+                              >
+                                <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            )}
+                            <ActionMenu
+                              iconOnly
+                              variant="ghost"
+                              label={eintrag.name}
+                              ariaLabel={t('mss.vault.dashboard.sammlungOeffnen', { name: eintrag.name })}
+                              icon={
+                                <MoreVertical
+                                  className={`h-4 w-4 ${hatBild ? 'text-white/80' : 'text-on-surface-variant'}`}
+                                />
+                              }
+                              items={[
+                                {
+                                  key: 'oeffnen',
+                                  label: t('mss.vault.dashboard.alleAnsehen'),
+                                  icon: <Folder className="h-4 w-4" />,
+                                  onSelect: () => onSammlung(eintrag.id),
+                                },
+                                ...(onSammlungBildAendern
+                                  ? [
+                                      {
+                                        key: 'bild',
+                                        label: t('mss.vault.dashboard.hintergrundAendern'),
+                                        icon: <ImageIcon className="h-4 w-4" />,
+                                        onSelect: () => onSammlungBildAendern(eintrag),
+                                      },
+                                    ]
+                                  : []),
+                                {
+                                  key: 'umbenennen',
+                                  label: t('mss.vault.dateien.umbenennen'),
+                                  icon: <FileText className="h-4 w-4" />,
+                                  onSelect: () => onSammlungUmbenennen(eintrag),
+                                },
+                              ]}
+                            />
+                          </div>
+                        </div>
+
                         <button
                           type="button"
                           onClick={() => onSammlung(eintrag.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/15 bg-black/45 text-primary backdrop-blur-md"
-                          aria-label={t('mss.vault.dashboard.sammlungOeffnen', { name: eintrag.name })}
+                          className="flex w-full flex-col items-start text-left"
                         >
-                          <Folder className="h-4 w-4" aria-hidden="true" />
+                          <span
+                            className={`w-full truncate text-sm font-semibold ${
+                              hatBild ? 'text-white' : 'text-on-surface'
+                            }`}
+                          >
+                            {eintrag.name}
+                          </span>
+                          <span className={`text-xs ${hatBild ? 'text-white/75' : 'text-on-surface-variant'}`}>
+                            {t('mss.vault.dashboard.eintraegeAnzahl', { count: eintrag.anzahl })}
+                          </span>
                         </button>
-                        <div className="flex items-center gap-1">
-                          {onSammlungBildAendern && (
-                            <button
-                              type="button"
-                              onClick={() => onSammlungBildAendern(eintrag)}
-                              aria-label={t('mss.vault.dashboard.hintergrundWaehlen', { name: eintrag.name })}
-                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/15 bg-black/45 text-white/80 opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100 hover:text-white focus:opacity-100"
-                            >
-                              <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                          )}
-                          <ActionMenu
-                            iconOnly
-                            variant="ghost"
-                            label={eintrag.name}
-                            ariaLabel={t('mss.vault.dashboard.sammlungOeffnen', { name: eintrag.name })}
-                            icon={<MoreVertical className="h-4 w-4 text-white/80" />}
-                            items={[
-                              {
-                                key: 'oeffnen',
-                                label: t('mss.vault.dashboard.alleAnsehen'),
-                                icon: <Folder className="h-4 w-4" />,
-                                onSelect: () => onSammlung(eintrag.id),
-                              },
-                              ...(onSammlungBildAendern
-                                ? [
-                                    {
-                                      key: 'bild',
-                                      label: t('mss.vault.dashboard.hintergrundAendern'),
-                                      icon: <ImageIcon className="h-4 w-4" />,
-                                      onSelect: () => onSammlungBildAendern(eintrag),
-                                    },
-                                  ]
-                                : []),
-                              {
-                                key: 'umbenennen',
-                                label: t('mss.vault.dateien.umbenennen'),
-                                icon: <FileText className="h-4 w-4" />,
-                                onSelect: () => onSammlungUmbenennen(eintrag),
-                              },
-                            ]}
-                          />
-                        </div>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => onSammlung(eintrag.id)}
-                        className="flex w-full flex-col items-start text-left"
-                      >
-                        <span className="w-full truncate text-sm font-semibold text-white">
-                          {eintrag.name}
-                        </span>
-                        <span className="text-xs text-white/75">
-                          {t('mss.vault.dashboard.eintraegeAnzahl', { count: eintrag.anzahl })}
-                        </span>
-                      </button>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  )
+                })}
               </div>
             )}
           </section>
