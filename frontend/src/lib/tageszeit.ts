@@ -168,7 +168,7 @@ export function headerHintergrundWaehlen(stunde: number, zufall: number): Header
  */
 export function begruessungSchluessel(stunde: number, kurz: boolean, zufall: number): string {
   const zeit = tageszeit(stunde)
-  if (kurz) return `mss.vault.dashboard.begruessung.${zeit}Kurz`
+  if (kurz) return `common.begruessung.${zeit}Kurz`
   const variant = (Math.abs(Math.floor(zufall)) % 5) + 1
-  return `mss.vault.dashboard.begruessung.${zeit}${variant}`
+  return `common.begruessung.${zeit}${variant}`
 }
