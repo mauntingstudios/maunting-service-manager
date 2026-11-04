@@ -43,6 +43,19 @@ export function zurueckSchliessenOffen(): boolean {
   }
   return false
 }
+
+/**
+ * Setzt den gemeinsamen Stapel zurück. Nur für Tests gedacht: jsdom liefert
+ * nach einem eigenen Sprung nicht zuverlässig das Rückereignis; bleibt
+ * `eigenerSprung` stehen, legt kein späterer Test mehr einen Eintrag an.
+ * In der App räumt jeder Baustein seinen Eintrag beim Abbauen selbst ab.
+ */
+export function zurueckStapelLeeren(): void {
+  stapel.length = 0
+  gesetzt = 0
+  geplant = false
+  eigenerSprung = false
+}
 /** Wie viele unserer Einträge über dem Ausgangspunkt liegen. */
 let gesetzt = 0
 /** Ein eigener Sprung zurück läuft; sein `popstate` gehört uns. */

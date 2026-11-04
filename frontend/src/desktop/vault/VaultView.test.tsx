@@ -10,6 +10,8 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { Profiler } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { zurueckStapelLeeren } from '@maunting/ui'
+
 import i18n from '@/i18n'
 import { VaultView, restTageImPapierkorb } from './VaultView'
 import { useConfirmStore } from '@/stores/confirmStore'
@@ -76,9 +78,11 @@ describe('VaultView: Archiv und Papierkorb', () => {
     useVaultStore.setState({
       isInitialized: true,
       isUnlocked: true,
+      isDeviceAuthorized: true,
       hasHint: true,
       searchQuery: '',
       syncWithServer: vi.fn(async () => undefined),
+      fetchVaultSalt: vi.fn(async () => null),
       checkHintStatus: vi.fn(async () => true),
       trashItem,
       restoreItem,
@@ -97,13 +101,20 @@ describe('VaultView: Archiv und Papierkorb', () => {
   })
 
   const reiter = (schluessel: string) => screen.getByRole('tab', { name: new RegExp(i18n.t(schluessel)) })
+  const mitTresor = () => {
+    render(<VaultView />)
+    fireEvent.click(reiter('mss.vault.ansicht.tresor'))
+  }
 
   it('zeigt im Tresor nur, was weder archiviert noch gelöscht ist, und nichts Unbekanntes', () => {
-    render(<VaultView />)
+    mitTresor()
     expect(screen.getByText('Bank')).toBeInTheDocument()
+    // „Alle“ zeigt auch Dateien; der Reiter „Passwörter“ blendet sie aus.
+    expect(screen.getByText('urlaub.jpg')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.dashboard.filterPasswoerter') }))
+    expect(screen.queryByText('urlaub.jpg')).not.toBeInTheDocument()
     expect(screen.queryByText('Altes Forum')).not.toBeInTheDocument()
     expect(screen.queryByText('Weg damit')).not.toBeInTheDocument()
-    expect(screen.queryByText('urlaub.jpg')).not.toBeInTheDocument()
   })
 
   it('zeichnet bei bloßer Aktivität nicht neu', () => {
@@ -154,7 +165,7 @@ describe('VaultView: Archiv und Papierkorb', () => {
   })
 
   it('legt aus dem Bearbeiten-Dialog in den Papierkorb, ohne endgültig zu löschen', async () => {
-    render(<VaultView />)
+    mitTresor()
     const zeile = screen.getByText('Bank').closest('div.group') as HTMLElement
     const knoepfe = within(zeile).getAllByRole('button')
     fireEvent.click(knoepfe[knoepfe.length - 1])
@@ -166,7 +177,7 @@ describe('VaultView: Archiv und Papierkorb', () => {
 
   it('schließt den Bearbeiten-Dialog mit der Zurück-Taste', async () => {
     await vi.waitFor(() => expect(window.history.state?.msmTiefe ?? 0).toBe(0))
-    render(<VaultView />)
+    mitTresor()
     const zeile = screen.getByText('Bank').closest('div.group') as HTMLElement
     const knoepfe = within(zeile).getAllByRole('button')
     fireEvent.click(knoepfe[knoepfe.length - 1])
@@ -178,7 +189,7 @@ describe('VaultView: Archiv und Papierkorb', () => {
 
   it('nimmt das Verschieben in den Papierkorb am Toast zurück', async () => {
     useToastStore.setState({ toasts: [] })
-    render(<VaultView />)
+    mitTresor()
     fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.eintragBearbeiten', { name: 'Bank' }) }))
     fireEvent.click(screen.getByRole('button', { name: new RegExp(i18n.t('mss.vault.inPapierkorb')) }))
     await vi.waitFor(() => expect(trashItem).toHaveBeenCalledWith('a'))
@@ -190,7 +201,7 @@ describe('VaultView: Archiv und Papierkorb', () => {
   })
 
   it('fragt vor dem Schließen, wenn im Dialog schon getippt wurde, und behält die Eingabe', async () => {
-    render(<VaultView />)
+    mitTresor()
     fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.eintragBearbeiten', { name: 'Bank' }) }))
     const dienst = screen.getByLabelText(i18n.t('mss.vault.dienstBezeichnung'))
     fireEvent.change(dienst, { target: { value: 'Bank neu' } })
@@ -211,7 +222,7 @@ describe('VaultView: Archiv und Papierkorb', () => {
 
   it('Tippen im Benutzernamen lässt den Fokus dort', () => {
     // Bis 02.10.2026 sprang der Fokus bei jedem Buchstaben auf „Dienst“.
-    render(<VaultView />)
+    mitTresor()
     const knopf = screen.getByRole('button', { name: i18n.t('mss.vault.eintragBearbeiten', { name: 'Bank' }) })
     knopf.focus()
     fireEvent.click(knopf)
@@ -266,9 +277,11 @@ describe('VaultView: Dateien', () => {
     useVaultStore.setState({
       isInitialized: true,
       isUnlocked: true,
+      isDeviceAuthorized: true,
       hasHint: true,
       searchQuery: '',
       syncWithServer: vi.fn(async () => undefined),
+      fetchVaultSalt: vi.fn(async () => null),
       checkHintStatus: vi.fn(async () => true),
       ordnerAnlegen,
       items: [
@@ -354,10 +367,12 @@ describe('VaultView: Fotos', () => {
       albumAendern,
       isInitialized: true,
       isUnlocked: true,
+      isDeviceAuthorized: true,
       hasHint: true,
       searchQuery: '',
       userKey: {} as CryptoKey,
       syncWithServer: vi.fn(async () => undefined),
+      fetchVaultSalt: vi.fn(async () => null),
       checkHintStatus: vi.fn(async () => true),
       items: [
         eintrag('a', 'Bank'),
@@ -474,12 +489,15 @@ describe('VaultView: Fotos', () => {
   })
 
   it('beendet die Auswahl mit der Zurück-Taste', async () => {
-    await vi.waitFor(() => expect(window.history.state?.msmTiefe ?? 0).toBe(0))
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    zurueckStapelLeeren()
+    window.history.replaceState({}, '')
     render(<VaultView />)
     fireEvent.click(reiter('mss.vault.ansicht.fotos'))
     fireEvent.click(screen.getByRole('button', { name: new RegExp(i18n.t('mss.vault.dateien.auswaehlen')) }))
     fireEvent.click(kachel('strand.jpg')!)
     expect(kachel('strand.jpg')).toHaveAttribute('aria-pressed', 'true')
+
     await vi.waitFor(() => expect(window.history.state?.msmTiefe).toBe(1))
     act(() => window.history.back())
     await vi.waitFor(() => expect(kachel('strand.jpg')).not.toHaveAttribute('aria-pressed', 'true'))
@@ -522,7 +540,7 @@ describe('Tresor-Galerie: Quellen', () => {
 })
 
 describe('VaultView: Gesperrter Zustand & Maunting Card', () => {
-  it('rendert Maunting Card als Tresor-Schloss im gesperrten Zustand', () => {
+  it('zeigt die Maunting Card im gesperrten Zustand', () => {
     useVaultStore.setState({
       isInitialized: true,
       isUnlocked: false,
@@ -531,7 +549,7 @@ describe('VaultView: Gesperrter Zustand & Maunting Card', () => {
     })
 
     render(<VaultView />)
-    expect(screen.getByText(/Zero-Knowledge Tresor-Schloss/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: i18n.t('mss.vault.titelManager') })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: new RegExp(i18n.t('mss.vault.entsperren')) })).toBeInTheDocument()
   })
 

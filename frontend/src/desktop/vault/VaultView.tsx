@@ -16,7 +16,6 @@ import {
   Folder,
   CreditCard,
   Landmark,
-  FolderLock,
   Images,
   HelpCircle,
   KeyRound,
@@ -39,12 +38,27 @@ import {
   X,
 } from 'lucide-react'
 import type { TeamDetail } from '@/api/teams'
+import { getE2eeGeraete } from '@/api/social'
 import { useTeamVaultStore } from './teamVaultStore'
-import { Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Textarea, Zustandsflaeche } from '@maunting/ui'
-import { PasswordInput } from '@maunting/ui'
-import { TabBar, TabDef } from '@maunting/ui'
+import {
+  BrandIcon,
+  Button,
+  Checkbox,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Dropdown,
+  Input,
+  PasswordInput,
+  Textarea,
+  Zustandsflaeche,
+} from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
+import { prompt } from '@/stores/promptStore'
+import { useAuthStore } from '@/stores/authStore'
 import { getBrandIcon } from './brandCatalog'
 import { generateTotpCode, getTotpSecondsRemaining } from './totpEngine'
 import { MASTER_PASSWORT_MINDESTLAENGE, generateSecurePassword } from './vaultCrypto'
@@ -57,29 +71,65 @@ import { TresorGalerie } from './TresorGalerie'
 import { TresorZahlung } from './TresorZahlung'
 import { blobBasisSetzen } from './tresorBlobApi'
 import { verdeckt } from './zahlung'
-import { inhaltVon } from './tresorOrdner'
+import { inhaltVon, pfadVon, zielOrdner } from './tresorOrdner'
 import { useMiniatur } from './tresorMiniaturen'
 import { formatBytes } from '@/lib/format'
+import { still } from '@/lib/still'
 import { setzeTresorSchutz } from '../tauri'
 import { useShallow } from 'zustand/react/shallow'
+import { useMedienabfrage } from '@/hooks/useMedienabfrage'
 import { getLocalVaultSalt, useVaultStore } from './vaultStore'
 import { PAPIERKORB_TAGE, formatTransferBadge, istBekannteKategorie, istPasswortKategorie, type VaultItem } from './vaultEintrag'
 import { fehlerText } from './tresorFehler'
 import { TransferToTeamVaultModal } from './TransferToTeamVaultModal'
+import type { VaultAnsicht } from './vaultAnsichten'
+import {
+  begruessungSchluessel,
+  passtZumFilter,
+  sichtbareEintraege,
+  zaehleEintraege,
+  TRESOR_FILTER,
+  type Sammlung,
+  type StandardKategorieDef,
+  type TresorFilter,
+} from './vaultKennzahlen'
+import { VaultDashboard, type SicherheitscheckStand } from './VaultDashboard'
+import { VaultSidebar } from './VaultSidebar'
+import { TresorUntereLeiste } from './TresorUntereLeiste'
+import { PasswortGeneratorDialog } from './PasswortGeneratorDialog'
+import { SicherheitscheckDialog } from './SicherheitscheckDialog'
+import {
+  TresorNotizDialog,
+  TresorNotizKarte,
+  umschaltenChecklistenEintrag,
+  type TresorNotizDaten,
+} from './TresorNotizDialog'
+import { TresorKategorieBildDialog } from './TresorKategorieBildDialog'
+import { TresorImportExportDialog, type ImportierterEintrag } from './TresorImportExportDialog'
 
-type Ansicht = 'tresor' | 'fotos' | 'dateien' | 'zahlung' | 'archiv' | 'papierkorb'
+type Ansicht = VaultAnsicht
 
 const TAG_MS = 24 * 60 * 60 * 1000
+const STANDARD_BILDER_SPEICHER = 'msm-vault-kategorie-bilder-v1'
 
-/** Miniatur einer Datei im Archiv oder Papierkorb, sonst das Symbol ihrer Art. */
+/** Miniatur einer Datei im Archiv oder Papierkorb, sonst das Marken-/Kategoriesymbol. */
 function ZeilenBild({ item, Symbol }: { item: VaultItem; Symbol: React.ComponentType<{ className?: string }> }) {
   const url = useMiniatur(item.datei?.miniatur, item.id, true)
   if (url) return <img src={url} alt="" className="h-9 w-9 shrink-0 rounded-xl object-cover" />
-  return (
-    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-outline-variant/20 bg-surface p-1.5 shadow-sm">
-      <Symbol className="h-5 w-5" />
-    </div>
-  )
+  if (
+    item.category === 'ordner' ||
+    item.category === 'album' ||
+    item.category === 'datei' ||
+    item.category === 'secure_note' ||
+    item.zahlung
+  ) {
+    return (
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-outline-variant/20 bg-surface-container p-1.5 shadow-sm text-primary">
+        <Symbol className="h-5 w-5" />
+      </div>
+    )
+  }
+  return <BrandIcon name={item.service} domainOrUrl={item.url} size="md" />
 }
 
 /** Ganze Tage, bis ein Eintrag im Papierkorb endgültig gelöscht wird (mindestens 0). */
@@ -95,6 +145,8 @@ export interface VaultViewProps {
 export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const isTeam = mode === 'team'
   const { t } = useTranslation()
+  const angemeldeterName = useAuthStore((s) => s.user?.username)
+  const angemeldeteId = useAuthStore((s) => s.user?.id)
 
   const personalStore = useVaultStore(
     // Nur diese Felder: `lastActivityTime` ändert sich bei jeder Mausbewegung.
@@ -116,6 +168,9 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       lock: s.lock,
       setSearchQuery: s.setSearchQuery,
       saveItem: s.saveItem,
+      aendern: s.aendern,
+      ordnerAnlegen: s.ordnerAnlegen,
+      dateiHinzufuegen: s.dateiHinzufuegen,
       trashItem: s.trashItem,
       restoreItem: s.restoreItem,
       setArchived: s.setArchived,
@@ -154,6 +209,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       lock: s.lock,
       syncWithServer: s.syncWithServer,
       saveItem: s.saveItem,
+      ordnerAnlegen: s.ordnerAnlegen,
+      dateiHinzufuegen: s.dateiHinzufuegen,
       trashItem: s.trashItem,
       restoreItem: s.restoreItem,
       setArchived: s.setArchived,
@@ -186,19 +243,36 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   // Beim Laden Server-Status und Salt nur prüfen, falls lokal noch kein Salt vorliegt (Leck-2-Schutz)
   useEffect(() => {
     if (!isTeam) {
-      if (!getLocalVaultSalt()) {
+      if (!getLocalVaultSalt() && !personalStore.isUnlocked) {
         void personalStore.fetchVaultSalt()
       } else {
         void personalStore.checkHintStatus()
       }
     }
-  }, [isTeam, personalStore.fetchVaultSalt, personalStore.checkHintStatus])
+  }, [isTeam, personalStore.isUnlocked, personalStore.fetchVaultSalt, personalStore.checkHintStatus])
 
   // Biometrie-Verfügbarkeit (Windows Hello / Fingerabdruck) beim Laden abfragen.
   // Eine Anmeldung für beide Tresore: Der Team-Tresor nutzt die des privaten.
   useEffect(() => {
     void personalStore.checkBiometricsSupport()
   }, [personalStore.checkBiometricsSupport])
+
+  // Kennzahl „Geräte“: freigegebene E2EE-Geräte des Kontos. Bleibt der Abruf
+  // aus, zeigt die Übersicht „Nicht ermittelbar“ statt einer erfundenen Zahl.
+  useEffect(() => {
+    if (isTeam || !angemeldeteId) return
+    let abgebrochen = false
+    getE2eeGeraete(angemeldeteId, true)
+      .then((liste) => {
+        if (!abgebrochen) setGeraete(liste.filter((geraet) => geraet.is_approved !== false).length)
+      })
+      .catch(() => {
+        if (!abgebrochen) setGeraete(null)
+      })
+    return () => {
+      abgebrochen = true
+    }
+  }, [isTeam, angemeldeteId])
 
   // Hardware- und Software-Schutz vor Windows Computer-Use KI-Screenshots
   useEffect(() => {
@@ -352,6 +426,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const activeEmptyTrash = isTeam ? teamStore.emptyTrash : personalStore.emptyTrash
   const activeToggleFavorite = isTeam ? teamStore.toggleFavorite : personalStore.toggleFavorite
   const activeMarkUsed = isTeam ? teamStore.markUsed : personalStore.markUsed
+  const activeOrdnerAnlegen = isTeam ? teamStore.ordnerAnlegen : personalStore.ordnerAnlegen
+  const activeDateiHinzufuegen = isTeam ? teamStore.dateiHinzufuegen : personalStore.dateiHinzufuegen
 
   const activeSyncWithServer = async () => {
     if (isTeam) {
@@ -416,7 +492,44 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   // Ersteinrichtung
   const [skipHintSetup, setSkipHintSetup] = useState(false)
 
-  const [ansicht, setAnsicht] = useState<Ansicht>('tresor')
+  const [ansicht, setAnsicht] = useState<Ansicht>('uebersicht')
+  const [filter, setFilter] = useState<TresorFilter>('alle')
+  const [ordnerFilter, setOrdnerFilter] = useState<string | null>(null)
+  const [generatorOffen, setGeneratorOffen] = useState(false)
+  const [checkOffen, setCheckOffen] = useState(false)
+  const [notizDialogOffen, setNotizDialogOffen] = useState(false)
+  const [notizBearbeitet, setNotizBearbeitet] = useState<VaultItem | null>(null)
+  const [notizBusy, setNotizBusy] = useState(false)
+  const [importExportOffen, setImportExportOffen] = useState(false)
+  const [kategorieBildZiel, setKategorieBildZiel] = useState<{
+    typ: 'sammlung' | 'standard'
+    id: string
+    name: string
+    aktuellesBild?: string
+    standardSchluessel?: StandardKategorieDef['schluessel']
+  } | null>(null)
+  const [standardKategorieBilder, setStandardKategorieBilder] = useState<
+    Partial<Record<StandardKategorieDef['schluessel'], string>>
+  >(() => {
+    try {
+      const roh = localStorage.getItem(STANDARD_BILDER_SPEICHER)
+      return roh ? (JSON.parse(roh) as Partial<Record<StandardKategorieDef['schluessel'], string>>) : {}
+    } catch (err) {
+      still(err, 'VaultView.standardKategorieBilder.laden')
+      return {}
+    }
+  })
+  const [checkStand, setCheckStand] = useState<SicherheitscheckStand>({
+    laeuft: false,
+    geprueft: 0,
+    gesamt: 0,
+    gefunden: 0,
+    abgeschlossen: false,
+  })
+  const [geraete, setGeraete] = useState<number | null>(null)
+  const [uploadBusy, setUploadBusy] = useState(0)
+  const istSchmal = useMedienabfrage('(max-width: 767.98px)')
+  const begruessungsZufall = useRef(Math.random() * 5)
 
   // Nachträglicher Hinweis-Modal & Banner
   const [isHintModalOpen, setIsHintModalOpen] = useState(false)
@@ -455,11 +568,12 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const [modalUrl, setModalUrl] = useState('')
   const [modalNotes, setModalNotes] = useState('')
   const [modalTotpSecret, setModalTotpSecret] = useState('')
+  const [modalOrdner, setModalOrdner] = useState('')
   const [showQrScanner, setShowQrScanner] = useState(false)
   // Stand beim Öffnen: Schließen per Tippen daneben oder Zurück fragt nur, wenn
   // seither etwas getippt wurde. Vorher war das Getippte dann kommentarlos weg.
   const [modalAnfang, setModalAnfang] = useState('')
-  const modalStand = JSON.stringify([modalService, modalUsername, modalPassword, modalUrl, modalNotes, modalTotpSecret])
+  const modalStand = JSON.stringify([modalService, modalUsername, modalPassword, modalUrl, modalNotes, modalTotpSecret, modalOrdner])
   const [leakCheckResult, setLeakCheckResult] = useState<LeakCheckResult | null>(null)
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferItem, setTransferItem] = useState<VaultItem | null>(null)
@@ -533,16 +647,17 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   }, [])
 
   // Modal öffnen für neuen Eintrag
-  const openNewEntryModal = () => {
+  const openNewEntryModal = (vorgabe?: string) => {
     setEditingItemId(null)
     setModalService('')
     setModalUsername('')
-    const newPwd = generateSecurePassword(20, true)
+    const newPwd = vorgabe ?? generateSecurePassword(20, true)
     setModalPassword(newPwd)
     setModalUrl('')
     setModalNotes('')
     setModalTotpSecret('')
-    setModalAnfang(JSON.stringify(['', '', newPwd, '', '', '']))
+    setModalOrdner(ordnerFilter ?? '')
+    setModalAnfang(JSON.stringify(['', '', newPwd, '', '', '', ordnerFilter ?? '']))
     setLeakCheckResult(null)
     setIsModalOpen(true)
     debouncedLeakCheck(newPwd)
@@ -557,8 +672,9 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     setModalUrl(item.url || '')
     setModalNotes(item.notes || '')
     setModalTotpSecret(item.totpSecret || '')
+    setModalOrdner(item.ordner ?? '')
     setModalAnfang(
-      JSON.stringify([item.service, item.username, item.password, item.url || '', item.notes || '', item.totpSecret || '']),
+      JSON.stringify([item.service, item.username, item.password, item.url || '', item.notes || '', item.totpSecret || '', item.ordner ?? '']),
     )
     setLeakCheckResult(null)
     setIsModalOpen(true)
@@ -610,6 +726,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         url: modalUrl.trim(),
         notes: modalNotes.trim(),
         totpSecret: modalTotpSecret.trim().toUpperCase(),
+        ordner: modalOrdner || undefined,
       })
       setIsModalOpen(false)
       toast.success(t('common.saved'))
@@ -697,6 +814,196 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     }
   }
 
+  const handleNeueSammlung = async () => {
+    const name = await prompt({
+      message: t('mss.vault.dashboard.sammlungName'),
+      confirmText: t('mss.vault.dashboard.sammlungAnlegen'),
+    })
+    if (!name?.trim()) return
+    try {
+      const id = await activeOrdnerAnlegen(name.trim())
+      toast.success(t('common.saved'))
+      setAnsicht('tresor')
+      setFilter('alle')
+      setOrdnerFilter(id)
+    } catch (err) {
+      toast.error(fehlerText(err, t('mss.vault.speichernFehlgeschlagen')))
+    }
+  }
+
+  const handleSammlungUmbenennen = async (sammlung: Sammlung) => {
+    const name = await prompt({
+      message: t('mss.vault.dateien.neuerName'),
+      defaultValue: sammlung.name,
+      confirmText: t('mss.vault.dateien.umbenennen'),
+    })
+    if (!name?.trim() || name.trim() === sammlung.name) return
+    try {
+      if (isTeam) {
+        const eintrag = teamStore.items.find((item) => item.id === sammlung.id)
+        if (eintrag) await teamStore.saveItem({ ...eintrag, service: name.trim() })
+      } else {
+        await personalStore.aendern(sammlung.id, { service: name.trim() })
+      }
+      toast.success(t('common.saved'))
+    } catch (err) {
+      toast.error(fehlerText(err, t('mss.vault.dateien.umbenennenFehler')))
+    }
+  }
+
+  const handleDateiHochladen = async (datei: File) => {
+    setUploadBusy((zahl) => zahl + 1)
+    try {
+      await activeDateiHinzufuegen(datei)
+      toast.success(t('common.saved'))
+    } catch (err) {
+      toast.error(fehlerText(err, t('mss.vault.dateien.hochladenFehler')))
+    } finally {
+      setUploadBusy((zahl) => Math.max(0, zahl - 1))
+    }
+  }
+
+  const handleDashboardEintrag = (item: VaultItem) => {
+    if (item.zahlung) {
+      setAnsicht('zahlung')
+      return
+    }
+    if (item.category === 'secure_note') {
+      setNotizBearbeitet(item)
+      setNotizDialogOffen(true)
+      return
+    }
+    if (item.category === 'ordner' || item.datei || item.category === 'album') {
+      setAnsicht(item.category === 'album' || item.datei?.typ.startsWith('image/') ? 'fotos' : 'dateien')
+      return
+    }
+    openEditEntryModal(item)
+  }
+
+  const handleNotizSpeichern = async (daten: TresorNotizDaten) => {
+    setNotizBusy(true)
+    try {
+      const bestehend = notizBearbeitet
+      await activeSaveItem({
+        ...(bestehend ? { id: bestehend.id } : {}),
+        service: daten.titel,
+        username: '',
+        password: '',
+        notes: daten.inhalt,
+        category: 'secure_note',
+        ordner: daten.ordner,
+        isFavorite: daten.angepinnt,
+        extra: {
+          ...(bestehend?.extra ?? {}),
+          noteCategory: daten.notizKategorie,
+          color: daten.farbe,
+        },
+      })
+      toast.success(t('common.saved'))
+      setNotizDialogOffen(false)
+      setNotizBearbeitet(null)
+    } catch (err) {
+      toast.error(fehlerText(err, t('mss.vault.speichernFehlgeschlagen')))
+    } finally {
+      setNotizBusy(false)
+    }
+  }
+
+  const handleNotizChecklisteUmschalten = async (item: VaultItem, itemIndex: number) => {
+    const aktualisiert = umschaltenChecklistenEintrag(item.notes || '', itemIndex)
+    try {
+      if (isTeam) {
+        await teamStore.saveItem({ ...item, notes: aktualisiert })
+      } else {
+        await personalStore.aendern(item.id, { notes: aktualisiert })
+      }
+    } catch (err) {
+      toast.error(fehlerText(err, t('mss.vault.speichernFehlgeschlagen')))
+    }
+  }
+
+  const handleKategorieBildSpeichern = async (bildQuelle: string) => {
+    if (!kategorieBildZiel) return
+    if (kategorieBildZiel.typ === 'standard' && kategorieBildZiel.standardSchluessel) {
+      const schluessel = kategorieBildZiel.standardSchluessel
+      setStandardKategorieBilder((aktuell) => {
+        const naechste = { ...aktuell, [schluessel]: bildQuelle }
+        try {
+          localStorage.setItem(STANDARD_BILDER_SPEICHER, JSON.stringify(naechste))
+        } catch (err) {
+          still(err, 'VaultView.standardKategorieBilder.speichern')
+        }
+        return naechste
+      })
+      toast.success(t('common.saved'))
+      return
+    }
+    try {
+      const ordnerEintrag = items.find((item) => item.id === kategorieBildZiel.id)
+      if (!ordnerEintrag) return
+      const neuesExtra = { ...(ordnerEintrag.extra ?? {}), titelbild: bildQuelle }
+      if (isTeam) {
+        await teamStore.saveItem({ ...ordnerEintrag, extra: neuesExtra })
+      } else {
+        await personalStore.aendern(ordnerEintrag.id, { extra: neuesExtra })
+      }
+      toast.success(t('common.saved'))
+    } catch (err) {
+      toast.error(fehlerText(err, t('mss.vault.speichernFehlgeschlagen')))
+    }
+  }
+
+  const handleStandardKategorieBildZuruecksetzen = () => {
+    if (kategorieBildZiel?.typ !== 'standard' || !kategorieBildZiel.standardSchluessel) return
+    const schluessel = kategorieBildZiel.standardSchluessel
+    setStandardKategorieBilder((aktuell) => {
+      const naechste = { ...aktuell }
+      delete naechste[schluessel]
+      try {
+        localStorage.setItem(STANDARD_BILDER_SPEICHER, JSON.stringify(naechste))
+      } catch (err) {
+        still(err, 'VaultView.standardKategorieBilder.zuruecksetzen')
+      }
+      return naechste
+    })
+  }
+
+  const handleImportEintraege = async (eintraege: ImportierterEintrag[]) => {
+    let importiert = 0
+    for (const satz of eintraege) {
+      await activeSaveItem({
+        service: satz.service,
+        username: satz.username,
+        password: satz.password,
+        url: satz.url,
+        notes: satz.notes,
+        category: satz.category ?? 'login',
+      })
+      importiert++
+    }
+    return importiert
+  }
+
+  const sidebarZaehler = useMemo(() => {
+    const sichtbar = sichtbareEintraege(items)
+    const archiviert = items.filter(
+      (item) => istBekannteKategorie(item.category) && !item.trashedAt && Boolean(item.archivedAt),
+    ).length
+    return {
+      passwoerter: sichtbar.filter((i) => (i.category ?? 'login') === 'login' || i.category === 'authenticator').length,
+      karten: sichtbar.filter((i) => i.category === 'zahlung').length,
+      dateien: sichtbar.filter((i) => i.category === 'datei' && !i.datei?.typ.startsWith('image/') && !i.datei?.typ.startsWith('video/')).length,
+      notizen: sichtbar.filter((i) => i.category === 'secure_note').length,
+      fotos: sichtbar.filter((i) => i.category === 'datei' && (i.datei?.typ.startsWith('image/') || i.datei?.typ.startsWith('video/'))).length,
+      archiv: archiviert,
+    }
+  }, [items])
+
+  const pruefKandidaten = useMemo(
+    () => sichtbareEintraege(items).filter((item) => (item.category ?? 'login') === 'login' && item.password),
+    [items],
+  )
+
   // QR-Code Scan Ergebnis übernehmen
   const handleQrDetected = (payload: { secret: string; issuer?: string; account?: string }) => {
     setModalTotpSecret(payload.secret)
@@ -725,6 +1032,11 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     }
   }
 
+  const ordnerListe = useMemo(
+    () => items.filter((item) => item.category === 'ordner' && !item.trashedAt && !item.archivedAt),
+    [items],
+  )
+
   // Einträge unbekannter Art (von einer neueren App) bleiben unsichtbar.
   const ansichtsItems = useMemo(() => {
     const bekannt = items.filter((item) => istBekannteKategorie(item.category))
@@ -736,27 +1048,22 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         .filter((item) => !item.trashedAt && item.archivedAt)
         .sort((a, b) => a.service.localeCompare(b.service))
     }
-    return bekannt.filter((item) => !item.trashedAt && !item.archivedAt && istPasswortKategorie(item.category))
-  }, [items, ansicht])
+    const sichtbar = bekannt.filter((item) => !item.trashedAt && !item.archivedAt)
+    const gefiltert = sichtbar.filter((item) => passtZumFilter(item, filter))
+    if (ordnerFilter) {
+      return gefiltert
+        .filter((item) => item.id !== ordnerFilter && pfadVon(item.ordner, ordnerListe).some((ordner) => ordner.id === ordnerFilter))
+        .sort((a, b) => a.service.localeCompare(b.service))
+    }
+    // In der Übersicht der Sammlungen liegen die Inhalte im Ordner; die Liste
+    // zeigt die oberste Ebene, sonst stünde alles doppelt.
+    return gefiltert.filter((item) => !item.ordner)
+  }, [items, ansicht, filter, ordnerFilter, ordnerListe])
 
   const anzahlImPapierkorb = useMemo(
     () => items.filter((item) => item.trashedAt && istBekannteKategorie(item.category)).length,
     [items],
   )
-
-  const ansichten: TabDef<Ansicht>[] = [
-    { id: 'tresor', labelKey: 'mss.vault.ansicht.tresor', icon: Shield },
-    { id: 'fotos', labelKey: 'mss.vault.ansicht.fotos', icon: Images },
-    { id: 'dateien', labelKey: 'mss.vault.ansicht.dateien', icon: FolderLock },
-    { id: 'zahlung', labelKey: 'mss.vault.ansicht.zahlung', icon: CreditCard },
-    { id: 'archiv', labelKey: 'mss.vault.ansicht.archiv', icon: Archive },
-    {
-      id: 'papierkorb',
-      labelKey: 'mss.vault.ansicht.papierkorb',
-      icon: Trash2,
-      badge: anzahlImPapierkorb > 0 ? anzahlImPapierkorb : undefined,
-    },
-  ]
 
   // Filterung nach Suchbegriff
   const searchedItems = useMemo(() => {
@@ -798,12 +1105,45 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
   const ModalBrandIcon = getBrandIcon(modalService, modalUrl)
 
+  const ansichtsTitel =
+    ansicht === 'uebersicht'
+      ? t('mss.vault.dashboard.uebersicht')
+      : ansicht === 'tresor'
+        ? t('mss.vault.ansicht.tresor')
+        : ansicht === 'fotos'
+          ? t('mss.vault.ansicht.fotos')
+          : ansicht === 'dateien'
+            ? t('mss.vault.ansicht.dateien')
+            : ansicht === 'zahlung'
+              ? t('mss.vault.ansicht.zahlung')
+              : ansicht === 'archiv'
+                ? t('mss.vault.ansicht.archiv')
+                : t('mss.vault.ansicht.papierkorb')
+
+  const begruessung = angemeldeterName
+    ? t(begruessungSchluessel(new Date().getHours(), istSchmal, begruessungsZufall.current), { name: angemeldeterName })
+    : t('mss.vault.dashboard.begruessung.ohneName')
+
+  const ordnerFilterName = ordnerFilter ? items.find((item) => item.id === ordnerFilter)?.service : undefined
+  const ordnerOptionen = [
+    { value: '', label: t('mss.vault.dateien.obersteEbene') },
+    ...zielOrdner([], ordnerListe),
+  ]
+
+  const filterLabels: Record<TresorFilter, string> = {
+    alle: t('mss.vault.dashboard.filterAlle'),
+    passwoerter: t('mss.vault.dashboard.filterPasswoerter'),
+    notizen: t('mss.vault.dashboard.filterNotizen'),
+    karten: t('mss.vault.dashboard.filterKarten'),
+    dateien: t('mss.vault.dashboard.filterDateien'),
+  }
+
   // ── 0. TEAM-TRESOR: ZUTRITT VERWEHRT (Schranke bei fehlender Berechtigung) ──
   const hasVaultAccess = !isTeam || (team?.can_access_vault !== false && teamStore.canAccessVault !== false)
   if (isTeam && !hasVaultAccess) {
     return (
-      <div className="flex h-full w-full items-center justify-center p-4">
-        <div className="w-full max-w-sm p-6 space-y-4 rounded-2xl bg-surface-container border border-status-destructive/30 shadow-xl text-center">
+      <div className="flex h-full w-full overflow-y-auto p-4">
+        <div className="my-auto mx-auto w-full max-w-sm p-6 space-y-4 rounded-2xl bg-surface-container border border-status-destructive/30 shadow-xl text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-status-destructive/10 text-status-destructive border border-status-destructive/30">
             <Lock className="h-7 w-7" />
           </div>
@@ -822,8 +1162,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   if (isTeam && !isInitialized) {
     if (!isOwner) {
       return (
-        <div className="flex h-full w-full items-center justify-center p-4">
-          <div className="msm-card p-8 text-center space-y-3 max-w-md">
+        <div className="flex h-full w-full overflow-y-auto p-4">
+          <div className="my-auto mx-auto msm-card p-8 text-center space-y-3 max-w-md">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary mx-auto">
               <Lock className="h-6 w-6" />
             </div>
@@ -840,8 +1180,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     // Karte-Stecken oder (bei Fehlschlag) Wiederholen.
     const karteSteckt = personalStore.isUnlocked
     return (
-      <div className="flex h-full w-full items-center justify-center p-4">
-        <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
+      <div className="flex h-full w-full overflow-y-auto p-4">
+        <div className="my-auto mx-auto w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
           <div className="text-center space-y-1.5">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
               <ShieldCheck className="h-6 w-6" />
@@ -918,8 +1258,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       !isUnlocking
 
     return (
-      <div className="flex h-full w-full items-center justify-center p-4">
-        <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
+      <div className="flex h-full w-full overflow-y-auto p-4">
+        <div className="my-auto mx-auto w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
           <div className="text-center space-y-1.5">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
               <KeyRound className="h-6 w-6" />
@@ -1053,8 +1393,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   // ── 2. ENTSPERREN MIT MAUNTING CARD ──
   if (!isUnlocked) {
     return (
-      <div className="flex h-full w-full items-center justify-center p-4 sm:p-6 overflow-y-auto">
-        <div className="w-full max-w-xl flex flex-col items-center space-y-6">
+      <div className="flex h-full w-full flex-col overflow-y-auto">
+        <div className="my-auto mx-auto flex w-full max-w-xl flex-col items-center gap-6 px-4 py-6 sm:px-6">
           {zuruecksetzen ? (
             <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
               <TresorZuruecksetzen
@@ -1083,13 +1423,13 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                 <h1 className="text-lg font-bold text-on-surface">
                   {isTeam ? team?.name || t('teams.vaultUnlock') : t('mss.vault.titelManager')}
                 </h1>
-                <p className="text-xs text-on-surface-variant max-w-md">
-                  {!isDeviceAuthorized && isInitialized
-                    ? t('mss.card.vaultNeedsAuthorization', 'Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet. Bitte bestätige das Gerät einmalig.')
-                    : isTeam
-                      ? t('teams.vaultUnlockDesc')
-                      : t('mss.vault.tresorSchlossHinweis', 'Zero-Knowledge Tresor-Schloss. Klicke auf die Karte oder nutze die Schaltflächen unten zum Entsperren.')}
-                </p>
+                {(!isDeviceAuthorized && isInitialized) || isTeam ? (
+                  <p className="text-xs text-on-surface-variant max-w-md">
+                    {!isDeviceAuthorized && isInitialized
+                      ? t('mss.card.vaultNeedsAuthorization', 'Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet. Bitte bestätige das Gerät einmalig.')
+                      : t('teams.vaultUnlockDesc')}
+                  </p>
+                ) : null}
               </div>
 
               {/* Maunting Card als Tresor-Schloss */}
@@ -1483,7 +1823,14 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               variant="ghost"
               size="icon"
               fingerziel
-              onClick={() => openEditEntryModal(item)}
+              onClick={() => {
+                if (item.category === 'secure_note') {
+                  setNotizBearbeitet(item)
+                  setNotizDialogOffen(true)
+                } else {
+                  openEditEntryModal(item)
+                }
+              }}
               aria-label={t('mss.vault.eintragBearbeiten', { name: item.service })}
               className="text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest"
             >
@@ -1497,30 +1844,73 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     )
   }
 
-  // ── 3. HAUPTANSICHT: RADIKAL AUFGERÄUMT ──
+  // ── 3. HAUPTANSICHT ──
   return (
-    <div className="flex flex-col h-full text-on-surface overflow-hidden">
+    <div className="flex h-full min-h-0 text-on-surface overflow-hidden">
+      <VaultSidebar
+        ansicht={ansicht}
+        onAnsicht={(naechste) => {
+          setAnsicht(naechste)
+          if (naechste === 'tresor') setFilter('alle')
+          if (naechste !== 'tresor') setOrdnerFilter(null)
+        }}
+        anzahlImPapierkorb={anzahlImPapierkorb}
+        anzahlEintraege={zaehleEintraege(items)}
+        syncStatus={syncStatus}
+        onSperren={activeLock}
+        tresorName={isTeam && team?.name ? team.name : 'MSM'}
+        notizenAktiv={ansicht === 'tresor' && filter === 'notizen'}
+        zaehler={sidebarZaehler}
+        onNotizen={() => {
+          setAnsicht('tresor')
+          setFilter('notizen')
+          setOrdnerFilter(null)
+        }}
+        onPasswortGenerieren={() => setGeneratorOffen(true)}
+        onSicherheitscheck={() => {
+          setCheckStand((stand) => ({ ...stand, laeuft: true }))
+          setCheckOffen(true)
+        }}
+        onImportExport={() => setImportExportOffen(true)}
+        onHinweisVerwalten={
+          !isTeam
+            ? () => {
+                setEditHintInput('')
+                setIsHintModalOpen(true)
+                void activeCheckHintStatus()
+              }
+            : undefined
+        }
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {/* KOPFZEILE */}
       <div className="flex items-center justify-between border-b border-outline-variant/20 bg-surface-container-low/70 px-4 py-2.5 backdrop-blur-xl">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
             <Shield className="h-4 w-4" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xs font-bold text-on-surface">
-                {isTeam ? (team?.name ? `${team.name} – ${t('teams.vault')}` : t('teams.vault')) : t('mss.vault.titelManager')}
-              </h1>
-            </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-xs font-bold text-on-surface">{ansichtsTitel}</h1>
+            <p className="truncate text-label-sm text-on-surface-variant">
+              {isTeam ? (team?.name ? `${team.name} · ${t('teams.vault')}` : t('teams.vault')) : t('mss.vault.titelManager')}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1">
-          {/* Neue Einträge gibt es nur unter „Tresor“; Archiv und Papierkorb nehmen nur auf, was schon da ist. */}
-          {ansicht === 'tresor' && (
+          {/* Neue Einträge gibt es nur im Tresor und auf der Übersicht; Archiv und Papierkorb nehmen nur auf, was schon da ist. */}
+          {(ansicht === 'tresor' || ansicht === 'uebersicht') && (
           <Button
             fingerziel
-            onClick={openNewEntryModal}
+            onClick={() => {
+              if (ansicht === 'tresor' && filter === 'notizen') {
+                setNotizBearbeitet(null)
+                setNotizDialogOffen(true)
+              } else {
+                openNewEntryModal()
+              }
+            }}
             aria-label={t('mss.vault.neuerEintrag')}
             className="flex items-center gap-1 bg-primary text-on-primary hover:bg-primary-hover shadow-sm px-2.5 py-1.5 text-xs font-medium max-md:w-11 max-md:px-0"
           >
@@ -1539,34 +1929,6 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
             className="text-on-surface-variant hover:text-on-surface"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-          </Button>
-
-          {!isTeam && (
-            <Button
-              fingerziel
-              size="icon"
-              variant="ghost"
-              onClick={() => {
-                setEditHintInput('')
-                setIsHintModalOpen(true)
-                void activeCheckHintStatus()
-              }}
-              aria-label={t('mss.vault.hinweisVerwalten')}
-              className={`${activeHasHint === false ? 'text-status-warning hover:text-status-warning/80' : 'text-on-surface-variant hover:text-on-surface'}`}
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-            </Button>
-          )}
-
-          <Button
-            fingerziel
-            size="icon"
-            variant="ghost"
-            onClick={activeLock}
-            aria-label={t('mss.vault.sperren')}
-            className="text-on-surface-variant hover:text-status-destructive"
-          >
-            <Lock className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
@@ -1610,21 +1972,56 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         </div>
       )}
 
-      {/* SUCH-LEISTE UND ANSICHTEN */}
-      <div className="px-4 py-2 border-b border-outline-variant/15 bg-surface-container-low/40 flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
-        <TabBar tabs={ansichten} active={ansicht} onChange={setAnsicht} embedded einzeilig ariaLabel={t('mss.vault.titelManager')} />
-        <div className="relative w-full md:max-w-md md:flex-1 md:min-w-[12rem]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-on-surface-variant" />
-          <Input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('common.search')}
-            aria-label={t('common.search')}
-            className="pl-8 pr-3"
-          />
+      {/* FILTER, SAMMLUNG UND SUCHE */}
+      {ansicht !== 'uebersicht' && (
+        <div className="flex flex-col gap-2 border-b border-outline-variant/15 bg-surface-container-low/40 px-4 py-2">
+          {ansicht === 'tresor' && (
+            <div className="msm-ohne-rollbalken flex items-center gap-1.5 overflow-x-auto" role="group" aria-label={t('mss.vault.dashboard.werkzeuge')}>
+              {TRESOR_FILTER.map((eintrag) => {
+                const aktiv = filter === eintrag
+                return (
+                  <button
+                    key={eintrag}
+                    type="button"
+                    aria-pressed={aktiv}
+                    onClick={() => setFilter(eintrag)}
+                    className={`shrink-0 rounded-full border px-3 py-1 text-xs transition-colors ${
+                      aktiv
+                        ? 'border-primary/40 bg-primary/15 text-primary'
+                        : 'border-outline-variant/40 text-on-surface-variant hover:bg-surface-container'
+                    }`}
+                  >
+                    {filterLabels[eintrag]}
+                  </button>
+                )
+              })}
+              {ordnerFilter && (
+                <button
+                  type="button"
+                  onClick={() => setOrdnerFilter(null)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-full border border-secondary/40 bg-secondary/15 px-3 py-1 text-xs text-secondary"
+                  aria-label={t('mss.vault.dashboard.alleAnsehen')}
+                >
+                  <Folder className="h-3 w-3" />
+                  <span className="max-w-[10rem] truncate">{ordnerFilterName}</span>
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
+          <div className="relative w-full md:max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-on-surface-variant" />
+            <Input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('common.search')}
+              aria-label={t('common.search')}
+              className="pl-8 pr-3"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {zurueckgesetzt && (
         <div role="alert" className="mx-4 mt-2.5 flex items-start gap-2.5 rounded-2xl border border-status-destructive/30 bg-status-destructive/10 p-3">
@@ -1713,8 +2110,67 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         </div>
       )}
 
-      {/* LISTE / TABELLE */}
-      {ansicht === 'fotos' ? (
+      {/* ÜBERSICHT / LISTE */}
+      {ansicht === 'uebersicht' ? (
+        <VaultDashboard
+          items={items}
+          begruessung={begruessung}
+          isTeam={isTeam}
+          syncStatus={syncStatus}
+          geraete={isTeam ? (team?.members?.length ?? null) : geraete}
+          sicherheitscheck={{ ...checkStand, laeuft: checkOffen && checkStand.laeuft }}
+          onNeuerEintrag={() => openNewEntryModal()}
+          onPasswortGenerieren={() => setGeneratorOffen(true)}
+          onDateiHochladen={(datei) => void handleDateiHochladen(datei)}
+          onSichereNotiz={() => {
+            setNotizBearbeitet(null)
+            setNotizDialogOffen(true)
+          }}
+          onSicherheitscheck={() => {
+            setCheckStand((stand) => ({ ...stand, laeuft: true }))
+            setCheckOffen(true)
+          }}
+          onSammlung={(id) => {
+            setAnsicht('tresor')
+            setFilter('alle')
+            setOrdnerFilter(id)
+          }}
+          onSammlungUmbenennen={(sammlung) => void handleSammlungUmbenennen(sammlung)}
+          onSammlungBildAendern={(sammlung) =>
+            setKategorieBildZiel({
+              typ: 'sammlung',
+              id: sammlung.id,
+              name: sammlung.name,
+              aktuellesBild: sammlung.titelbild,
+            })
+          }
+          onStandardKategorieBildAendern={(schluessel, name, aktuellesBild) =>
+            setKategorieBildZiel({
+              typ: 'standard',
+              id: `std-${schluessel}`,
+              name,
+              aktuellesBild,
+              standardSchluessel: schluessel,
+            })
+          }
+          standardKategorieBilder={standardKategorieBilder}
+          onNeueSammlung={() => void handleNeueSammlung()}
+          onAlleEintraege={() => {
+            setAnsicht('tresor')
+            setFilter('alle')
+            setOrdnerFilter(null)
+          }}
+          onFilterAnsicht={(zielFilter) => {
+            setAnsicht('tresor')
+            setFilter(zielFilter)
+            setOrdnerFilter(null)
+          }}
+          onEintrag={handleDashboardEintrag}
+          suchbegriff={searchQuery}
+          onSucheAendern={setSearchQuery}
+          dateiBusy={uploadBusy > 0}
+        />
+      ) : ansicht === 'fotos' ? (
         <TresorGalerie suche={searchQuery} isTeam={isTeam} />
       ) : ansicht === 'dateien' ? (
         <TresorDateiBereich suche={searchQuery} isTeam={isTeam} />
@@ -1750,15 +2206,46 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         )}
         {ansicht !== 'tresor' && ansichtsItems.length === 0 ? (
           <Zustandsflaeche art="leer" text={t(ansicht === 'archiv' ? 'mss.vault.archivLeer' : 'mss.vault.papierkorbLeer')} />
+        ) : ansichtsItems.length === 0 && (filter !== 'alle' || ordnerFilter) ? (
+          <Zustandsflaeche art="leer" ansagen icon={<SearchX className="h-10 w-10" />} text={t('mss.vault.keineTreffer')}>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="max-sm:min-h-11"
+              onClick={() => {
+                setFilter('alle')
+                setOrdnerFilter(null)
+              }}
+            >
+              {t('mss.vault.dashboard.filterAlle')}
+            </Button>
+          </Zustandsflaeche>
         ) : ansichtsItems.length === 0 ? (
           <Zustandsflaeche art="leer" icon={<KeyRound className="h-10 w-10" />} titel={t('mss.vault.leer')}>
-            <Button size="sm" className="max-sm:min-h-11" onClick={openNewEntryModal}>
+            <Button size="sm" className="max-sm:min-h-11" onClick={() => openNewEntryModal()}>
               <Plus className="h-3.5 w-3.5 mr-1" />
               {t('mss.vault.passwortAnlegen')}
             </Button>
           </Zustandsflaeche>
         ) : searchedItems.length === 0 ? (
           <Zustandsflaeche art="leer" ansagen icon={<SearchX className="h-10 w-10" />} text={t('mss.vault.keineTreffer')} />
+        ) : ansicht === 'tresor' && filter === 'notizen' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+            {[...favoriteItems, ...recentItems, ...otherItems].map((notizItem) => (
+              <TresorNotizKarte
+                key={notizItem.id}
+                item={notizItem}
+                onBearbeiten={(item) => {
+                  setNotizBearbeitet(item)
+                  setNotizDialogOffen(true)
+                }}
+                onPinUmschalten={(item) => void activeToggleFavorite(item.id)}
+                onArchivUmschalten={(item) => void handleArchiv(item, !item.archivedAt)}
+                onPapierkorb={(item) => void handleTrashItem(item)}
+                onChecklisteUmschalten={(item, itemIndex) => void handleNotizChecklisteUmschalten(item, itemIndex)}
+              />
+            ))}
+          </div>
         ) : (
           <>
             {/* FAVORITEN */}
@@ -1801,6 +2288,40 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
           </>
         )}
       </div>
+      )}
+
+      {istSchmal && (
+        <TresorUntereLeiste
+          ansicht={ansicht}
+          onAnsicht={(naechste) => {
+            setAnsicht(naechste)
+            if (naechste === 'tresor') setFilter('alle')
+            if (naechste !== 'tresor') setOrdnerFilter(null)
+          }}
+          onNeuerEintrag={() => openNewEntryModal()}
+          anzahlImPapierkorb={anzahlImPapierkorb}
+          onNotizen={() => {
+            setAnsicht('tresor')
+            setFilter('notizen')
+            setOrdnerFilter(null)
+          }}
+          onPasswortGenerieren={() => setGeneratorOffen(true)}
+          onSicherheitscheck={() => {
+            setCheckStand((stand) => ({ ...stand, laeuft: true }))
+            setCheckOffen(true)
+          }}
+          onImportExport={() => setImportExportOffen(true)}
+          onHinweisVerwalten={
+            !isTeam
+              ? () => {
+                  setEditHintInput('')
+                  setIsHintModalOpen(true)
+                  void activeCheckHintStatus()
+                }
+              : undefined
+          }
+          onSperren={activeLock}
+        />
       )}
 
       {/* ── 4. DIALOG: PASSWORT ANLEGEN / BEARBEITEN ── */}
@@ -1916,6 +2437,17 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                   placeholder={t('mss.vault.zweifaktorPlatzhalter')}
                   autoComplete="off"
                   className="font-mono"
+                />
+              </div>
+
+              <div>
+                <span className="mb-1 block text-sm font-medium text-foreground">{t('mss.vault.dateien.ordner')}</span>
+                <Dropdown
+                  value={modalOrdner}
+                  onChange={setModalOrdner}
+                  options={ordnerOptionen}
+                  aria-label={t('mss.vault.dateien.ordner')}
+                  searchable={ordnerOptionen.length > 6}
                 />
               </div>
 
@@ -2147,6 +2679,67 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
           item={transferItem}
         />
       )}
+
+      <PasswortGeneratorDialog
+        offen={generatorOffen}
+        onSchliessen={() => setGeneratorOffen(false)}
+        onVerwenden={(passwort) => {
+          openNewEntryModal(passwort)
+          setGeneratorOffen(false)
+        }}
+      />
+
+      <SicherheitscheckDialog
+        offen={checkOffen}
+        eintraege={pruefKandidaten}
+        onSchliessen={() => {
+          setCheckOffen(false)
+          setCheckStand((stand) => ({ ...stand, laeuft: false }))
+        }}
+        onFertig={(ergebnis) =>
+          setCheckStand({
+            laeuft: false,
+            geprueft: ergebnis.geprueft,
+            gesamt: pruefKandidaten.length,
+            gefunden: ergebnis.gefunden,
+            abgeschlossen: true,
+          })
+        }
+      />
+
+      <TresorNotizDialog
+        offen={notizDialogOffen}
+        initialNotiz={notizBearbeitet}
+        ordnerOptionen={ordnerOptionen}
+        standardOrdner={ordnerFilter ?? ''}
+        busy={notizBusy}
+        onSchliessen={() => {
+          setNotizDialogOffen(false)
+          setNotizBearbeitet(null)
+        }}
+        onSpeichern={handleNotizSpeichern}
+      />
+
+      <TresorKategorieBildDialog
+        offen={kategorieBildZiel !== null}
+        kategorieName={kategorieBildZiel?.name ?? ''}
+        aktuellesBild={kategorieBildZiel?.aktuellesBild}
+        onSchliessen={() => setKategorieBildZiel(null)}
+        onBildWaehlen={(bildQuelle) => void handleKategorieBildSpeichern(bildQuelle)}
+        onStandardWiederherstellen={
+          kategorieBildZiel?.typ === 'standard' ? handleStandardKategorieBildZuruecksetzen : undefined
+        }
+      />
+
+      <TresorImportExportDialog
+        offen={importExportOffen}
+        items={items}
+        onSchliessen={() => setImportExportOffen(false)}
+        onImportieren={handleImportEintraege}
+        onErfolgMeldung={(text) => toast.success(text)}
+        onFehlerMeldung={(text) => toast.error(text)}
+      />
+      </div>
     </div>
   )
 }
