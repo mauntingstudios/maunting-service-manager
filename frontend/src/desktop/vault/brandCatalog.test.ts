@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import React from 'react'
-import { BRAND_CATALOG, getBrandIcon } from './brandCatalog'
+import { BRAND_CATALOG, getBrandIcon, BrandIcon } from './brandCatalog'
 
 describe('brandCatalog - Multi-Brand Vector Logo System', () => {
   it('contains at least 1000 high-quality brand vector definitions', () => {
@@ -397,6 +397,24 @@ describe('brandCatalog - Multi-Brand Vector Logo System', () => {
     const svg = container.querySelector('svg')
     expect(svg?.getAttribute('aria-label')).toBeFalsy()
     expect(container.querySelector('.lucide-key-round')).toBeTruthy()
+  })
+
+  it('renders BrandIcon with multi-color Google, high-contrast Steam/Revolut/GitHub/OpenChat/Pontis/Meta, and monogram fallback', () => {
+    const { container: googleBox } = render(React.createElement(BrandIcon, { name: 'Google', domainOrUrl: 'google.com' }))
+    expect(googleBox.querySelector('[data-brand="Google"]')).toBeTruthy()
+    expect(googleBox.querySelectorAll('svg path').length).toBe(4)
+
+    const { container: openChatBox } = render(React.createElement(BrandIcon, { name: 'OpenChat', domainOrUrl: 'openchat.de' }))
+    expect(openChatBox.querySelector('[data-brand="OpenChat"]')).toBeTruthy()
+
+    const { container: pontisBox } = render(React.createElement(BrandIcon, { name: 'Pontis', domainOrUrl: 'pontis.dev' }))
+    expect(pontisBox.querySelector('[data-brand="Pontis"]')).toBeTruthy()
+
+    const { container: metaBox } = render(React.createElement(BrandIcon, { name: 'Meta', domainOrUrl: 'meta.com' }))
+    expect(metaBox.querySelector('[data-brand="Meta"]')).toBeTruthy()
+
+    const { container: unknownBox } = render(React.createElement(BrandIcon, { name: 'Heimnetzwerk Knoten', domainOrUrl: 'https://intranet.local' }))
+    expect(unknownBox.querySelector('[data-monogram="HK"]')).toBeTruthy()
   })
 })
 

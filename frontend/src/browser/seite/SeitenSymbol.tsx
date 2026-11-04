@@ -8,6 +8,7 @@
  * DNA-Ton den Anfangsbuchstaben der Domain.
  */
 import { useEffect, useState } from 'react'
+import { BrandIcon, resolveBrandInfo } from '@maunting/ui'
 
 import { nativ } from '../services/nativ'
 
@@ -37,6 +38,13 @@ export function SeitenSymbol({ url, host, className = '' }: { url: string; host:
 
   const bild = symbol?.url === url ? symbol.bild : null
   if (!bild) {
+    if (resolveBrandInfo(host, url)) {
+      return (
+        <span className={`flex h-full w-full items-center justify-center p-1.5 ${className}`} aria-hidden="true">
+          <BrandIcon name={host} domainOrUrl={url} size="sm" bare />
+        </span>
+      )
+    }
     return (
       <span
         className={`flex h-full w-full items-center justify-center bg-primary-container/40 font-semibold uppercase text-primary ${className}`}

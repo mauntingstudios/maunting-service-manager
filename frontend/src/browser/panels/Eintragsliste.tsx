@@ -11,7 +11,7 @@ import { useState, type DragEvent, type ReactNode } from 'react'
 import { Folder, Globe, MoreHorizontal, Search, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Input, Kurzinfo, ActionMenuItem } from '@maunting/ui'
+import { Input, Kurzinfo, ActionMenuItem, BrandIcon, resolveBrandInfo } from '@maunting/ui'
 import { Kontextmenue } from '@maunting/ui'
 import { Zustandsflaeche } from '@maunting/ui'
 
@@ -105,6 +105,10 @@ export function Eintragsliste({ eintraege, leer, entfernen, ueberschrift, kopf, 
                   >
                     {bild ? (
                       <img src={bild} alt="" className="h-4 w-4 shrink-0 rounded-sm object-contain" />
+                    ) : resolveBrandInfo(e.titel || '', e.url) ? (
+                      <span aria-hidden="true" className="inline-flex shrink-0">
+                        <BrandIcon name={e.titel} domainOrUrl={e.url} size="xs" bare />
+                      </span>
                     ) : (
                       <Globe className="h-4 w-4 shrink-0 text-on-surface-variant" aria-hidden="true" />
                     )}

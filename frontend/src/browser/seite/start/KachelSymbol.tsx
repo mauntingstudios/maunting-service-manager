@@ -5,6 +5,7 @@
  * keines hat, steht der Anfangsbuchstabe.
  */
 import { useEffect, useState } from 'react'
+import { BrandIcon, resolveBrandInfo } from '@maunting/ui'
 
 import { nativ } from '../../services/nativ'
 
@@ -38,6 +39,13 @@ export function KachelSymbol({ url, host }: { url: string; host: string }) {
 
   const bild = symbol?.url === url ? symbol.bild : null
   if (!bild) {
+    if (resolveBrandInfo(host, url)) {
+      return (
+        <span className="flex h-full w-full items-center justify-center p-2" aria-hidden="true">
+          <BrandIcon name={host} domainOrUrl={url} size="md" bare />
+        </span>
+      )
+    }
     return (
       <span className="text-title-md uppercase" aria-hidden="true">
         {host.charAt(0)}
