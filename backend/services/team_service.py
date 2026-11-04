@@ -33,6 +33,7 @@ from models import (
     TeamRolePermission,
     TeamRoleServerGrant,
     TeamServerGrant,
+    TeamVaultKey,
     User,
 )
 from services import audit_service, permission_service
@@ -847,6 +848,11 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
             member.team_role_id = default_role.id
             db.add(TeamMemberRole(team_member_id=member.id, team_role_id=default_role.id))
     db.delete(einladung)
+    # Beitritt mit Tresor: Das neue Mitglied braucht eine Schluesselhuelle —
+    # die naechste Rotation (automatisch beim naechsten Oeffnen durch den
+    # Gruender) verpackt den neuen Schluesselstand auch fuer das neue Mitglied.
+    if team.vault_bucket_id:
+        team.vault_needs_rotation = True
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.member.joined", target_type="team",
         target_id=team_id,
@@ -929,6 +935,7 @@ def update_member(
     )
     member.can_manage_skills = neu_skills
     member.can_manage_memory = neu_memory
+    hatte_tresor = member.can_access_vault
     member.can_access_vault = can_access_vault
     if team_role_id is not None:
         # Die Rolle ist vergeben wie in set_member_roles: ihre Schalter gelten
@@ -936,6 +943,8 @@ def update_member(
         # laufen weiter ueber den Tanz oben und bleiben unangetastet.
         member.team_role_id = team_role_id
         _mitglied_flags_neu(db, member)
+    if hatte_tresor and not member.can_access_vault:
+        _tresor_schluessel_entziehen(db, team, member_user_id)
 
     offen = invitation(db, team.id, member_user_id)
     if angehoben:
@@ -977,6 +986,22 @@ def update_member(
     return member
 
 
+def _tresor_schluessel_entziehen(db: Session, team: Team, member_user_id: int) -> None:
+    """Entzieht einem Mitglied den Team-Tresor-Schluessel.
+
+    Loescht alle Schluesselhuellen des Mitglieds und markiert den Tresor zur
+    Rotation: Was es bis hierher lesen konnte, laege mit dem alten DEK noch in
+    seinem Cache — erst die Rotation schliesst die Tuer. Committet nicht.
+    """
+    if not team.vault_bucket_id:
+        return
+    db.query(TeamVaultKey).filter(
+        TeamVaultKey.team_id == team.id,
+        TeamVaultKey.user_id == member_user_id,
+    ).delete(synchronize_session=False)
+    team.vault_needs_rotation = True
+
+
 def remove_member(db: Session, *, team: Team, user: User, member_user_id: int) -> None:
     """Entlaesst ein Mitglied — oder laesst eines selbst gehen.
 
@@ -1007,8 +1032,7 @@ def remove_member(db: Session, *, team: Team, user: User, member_user_id: int) -
         origin="direct",
     )
     db.delete(member)
-    if team.vault_bucket_id:
-        team.vault_needs_rotation = True
+    _tresor_schluessel_entziehen(db, team, member_user_id)
     # Dokument-Freigaben dieses Teams verlieren mit der Mitgliedschaft ihre
     # Grundlage. Die Rollenauflösung verweigert ohnehin schon; die Zeilen
     # werden trotzdem entfernt, damit ein Wiedereintritt nicht stillschweigend
@@ -1595,7 +1619,10 @@ def set_member_roles(
 
     # Rollen-Flags auf Mitglied spiegeln (OR ueber Rollen) — auch senkend:
     # Wer die Rolle verliert, verliert den Schalter (Befund 15).
+    hatte_tresor = member.can_access_vault
     _mitglied_flags_neu(db, member)
+    if hatte_tresor and not member.can_access_vault:
+        _tresor_schluessel_entziehen(db, team, member_user_id)
 
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.member.roles.set", target_type="team",

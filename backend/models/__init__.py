@@ -39,6 +39,7 @@ from .team import (
     TeamRolePermission,
     TeamRoleServerGrant,
     TeamServerGrant,
+    TeamVaultKey,
 )
 from .backup import Backup
 from .panel_backup import PanelBackup

@@ -3,14 +3,12 @@
  *
  * Geteilt zwischen der Desktop-App (MSS) und dem Browser (MSB): Darstellung,
  * Kartenreihenfolge, Texte, Validierung und Store-Aktionen kommen aus denselben
- * Komponenten (`MessengerSicherheitTab`, `TresorSicherheitTab` und
- * `TeamTresorSicherheitTab`).
+ * Komponenten (`MessengerSicherheitTab` und `TresorSicherheitTab`).
  */
 import { useTranslation } from 'react-i18next'
 
 import { MessengerSicherheitTab } from '@/pages/profile/MessengerSicherheitTab'
 import { TresorSicherheitTab } from '../vault/TresorSicherheitTab'
-import { TeamTresorSicherheitTab } from '../vault/TeamTresorSicherheitTab'
 import { DevicesTab } from '@/pages/profile/DevicesTab'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
@@ -51,10 +49,9 @@ export function SicherheitEinstellungen({
         und Geräteliste mit; ohne Messenger bleibt die Kopplung sichtbar.
       */}
       {/*
-        Eine Tresor-Sektion für beide Tresore: zuerst die zentrale Karte,
-        darunter die des aktiven Team-Tresors. Die Team-Karte behält ihren
-        eigenen Titel — ihre Schalter gelten nur für den Team-Tresor, dessen
-        Status der Store gerade hält, nicht für den persönlichen.
+        Eine Tresor-Sektion für beide Tresore: Die Karte gilt zentral für den
+        persönlichen und alle Team-Tresore — Sperrfrist, Fensterwechsel,
+        Leak-Prüfung und Biometrie liest der Team-Tresor aus demselben Store.
       */}
       {tresorAn && (
         <section aria-labelledby="sicherheit-tresor" className="flex flex-col gap-3 pt-2">
@@ -62,7 +59,6 @@ export function SicherheitEinstellungen({
             {t('mss.einstellungen.sicherheit.tresor')}
           </h2>
           <TresorSicherheitTab offline={offline} />
-          <TeamTresorSicherheitTab />
         </section>
       )}
       {!offline && (

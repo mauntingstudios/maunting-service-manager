@@ -115,24 +115,25 @@ export interface TeamDetail extends Team {
   roles?: TeamRole[]
 }
 
-export interface TeamVaultSaltResponse {
+export interface TeamVaultStatusResponse {
   is_setup: boolean
-  salt: string | null
   bucket_id: string | null
+  key_version: number | null
   needs_rotation: boolean
   is_owner: boolean
   can_access_vault?: boolean
-  has_hint?: boolean
   rotation_state?: string | null
   pending_bucket_id?: string | null
-  pending_salt?: string | null
 }
 
-export interface TeamVaultHintStatusResponse {
-  has_hint: boolean
-  last_requested_at: string | null
-  can_request: boolean
-  cooldown_seconds_remaining: number
+export interface TeamVaultKeyslot {
+  user_id: number
+  wrapped_dek: string
+}
+
+export interface TeamVaultKeyslotResponse {
+  key_version: number
+  wrapped_dek: string
 }
 
 export interface TeamVaultMutationItem {
@@ -162,13 +163,6 @@ export interface TeamVaultSyncResult {
   has_more: boolean
   /** IDs, deren Mutation an `expected_revision` gescheitert ist (Backend: Liste von Strings). */
   conflicts?: string[]
-}
-
-/** Frischer Kontonachweis vor prepare/commit der Rotation: Kontopasswort oder zweiter Faktor. */
-export interface RotationNachweis {
-  password?: string | null
-  otp_code?: string
-  passkey?: unknown
 }
 
 export const teamsApi = {
@@ -249,37 +243,27 @@ export const teamsApi = {
   declineInvitation: (teamId: number) => api(
     `/teams/invitations/${teamId}`, { method: 'DELETE' },
   ),
-  getVaultSalt: (teamId: number) => api<TeamVaultSaltResponse>(`/teams/${teamId}/vault/salt`),
-  setupVault: (teamId: number, payload: { bucket_id: string; salt: string; hint?: string }) =>
+  getVaultStatus: (teamId: number) => api<TeamVaultStatusResponse>(`/teams/${teamId}/vault/status`),
+  setupVault: (teamId: number, payload: { bucket_id: string }) =>
     api<{ status: string }>(`/teams/${teamId}/vault/setup`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  getVaultHintStatus: (teamId: number) =>
-    api<TeamVaultHintStatusResponse>(`/teams/${teamId}/vault/hint-status`),
-  setVaultHint: (teamId: number, hint: string) =>
-    api<{ status: string; message?: string }>(`/teams/${teamId}/vault/hint`, {
-      method: 'POST',
-      body: JSON.stringify({ hint }),
-    }),
-  requestVaultHint: (teamId: number) =>
-    api<{ status: string; message?: string }>(`/teams/${teamId}/vault/request-hint`, {
-      method: 'POST',
-    }),
-  rotateVault: (teamId: number, payload: { bucket_id?: string; salt?: string }) =>
-    api<{ status: string }>(`/teams/${teamId}/vault/rotate`, {
+  uploadKeyslots: (teamId: number, payload: { key_version: number; slots: TeamVaultKeyslot[] }) =>
+    api<{ status: string; count: number }>(`/teams/${teamId}/vault/keyslots`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  rotationPrepare: (teamId: number, payload: { bucket_id: string; salt: string } & RotationNachweis) =>
+  getOwnKeyslot: (teamId: number) =>
+    api<TeamVaultKeyslotResponse>(`/teams/${teamId}/vault/keyslot`),
+  rotationPrepare: (teamId: number, payload: { bucket_id: string }) =>
     api<{ status: string }>(`/teams/${teamId}/vault/rotation/prepare`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  rotationCommit: (teamId: number, nachweis: RotationNachweis) =>
+  rotationCommit: (teamId: number) =>
     api<{ status: string }>(`/teams/${teamId}/vault/rotation/commit`, {
       method: 'POST',
-      body: JSON.stringify(nachweis),
     }),
   rotationAbort: (teamId: number) =>
     api<{ status: string }>(`/teams/${teamId}/vault/rotation/abort`, { method: 'POST' }),

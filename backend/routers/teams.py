@@ -42,20 +42,18 @@ from schemas.team import (
     TeamServerGrantWrite,
     TeamServerRolesWrite,
     TeamServerResponse,
-    TeamVaultRotateRequest,
-    TeamVaultSaltResponse,
+    TeamVaultKeyslotResponse,
+    TeamVaultKeyslotsRequest,
+    TeamVaultRotationPrepareRequest,
     TeamVaultSetupRequest,
+    TeamVaultStatusResponse,
 )
 from schemas.vault import (
     VaultBlobAnlegen,
     VaultBlobLoeschen,
     VaultBlobStatus,
     VaultBlobsKlein,
-    VaultHintSetRequest,
-    VaultHintStatusResponse,
     VaultResetRequest,
-    VaultRotationCommitRequest,
-    VaultRotationPrepareRequest,
     VaultSpeicher,
     VaultSyncRequest,
     VaultSyncResponse,
@@ -648,13 +646,13 @@ def assignable_servers(
 
 # ─── Team-Tresor (E2EE Zero-Knowledge) ────────────────────────────────────────
 
-@router.get("/{team_id}/vault/salt", response_model=TeamVaultSaltResponse)
-def get_team_vault_salt(
+@router.get("/{team_id}/vault/status", response_model=TeamVaultStatusResponse)
+def get_team_vault_status(
     team_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> TeamVaultSaltResponse:
-    """Liefert Salz und Bucket-ID des Team-Tresors sowie den Rotations-Hinweis."""
+) -> TeamVaultStatusResponse:
+    """Liefert Bucket-Kennung und Schluesselstand des Team-Tresors."""
     team = team_service.get_team_for_member(db, team_id, user)
     is_owner = bool(user.is_owner or team.owner_user_id == user.id)
     can_access = True
@@ -663,17 +661,16 @@ def get_team_vault_salt(
         if m is not None and not m.can_access_vault:
             can_access = False
 
-    return TeamVaultSaltResponse(
-        is_setup=team.vault_bucket_id is not None,
-        salt=team.vault_salt if can_access else None,
+    eingerichtet = team.vault_bucket_id is not None
+    return TeamVaultStatusResponse(
+        is_setup=eingerichtet,
         bucket_id=team.vault_bucket_id if can_access else None,
+        key_version=((team.vault_key_version or 1) if eingerichtet else None) if can_access else None,
         needs_rotation=bool(team.vault_needs_rotation) if can_access else False,
         is_owner=is_owner,
         can_access_vault=can_access,
-        has_hint=bool(team.vault_hint) if can_access else False,
         rotation_state=team.vault_rotation_state if can_access else None,
         pending_bucket_id=team.vault_pending_bucket_id if can_access else None,
-        pending_salt=team.vault_pending_salt if can_access else None,
     )
 
 
@@ -684,13 +681,15 @@ def setup_team_vault(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:
-    """Richtet den Team-Tresor ein (nur Gruender)."""
+    """Richtet den Team-Tresor ein (nur Gruender).
+
+    Danach hinterlegt der Client die Schluesselhuellen pro Mitglied; erst
+    mit der eigenen Huelle kann ein Mitglied entsperren.
+    """
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
     try:
-        vault_service.setup_team_vault(
-            db, team, user, payload.bucket_id, payload.salt, payload.hint
-        )
+        vault_service.setup_team_vault(db, team, user, payload.bucket_id)
     except vault_service.VaultZurueckgesetzt as exc:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Dieser Tresor wurde zurückgesetzt.") from exc
     except vault_service.VaultBucketAccessDenied as exc:
@@ -698,64 +697,61 @@ def setup_team_vault(
     return {"status": "ok"}
 
 
-@router.post("/{team_id}/vault/rotate", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
-def rotate_team_vault(
+@router.post("/{team_id}/vault/keyslots", dependencies=[Depends(verify_csrf)])
+def upload_team_vault_keyslots(
     team_id: int,
-    payload: TeamVaultRotateRequest,
+    payload: TeamVaultKeyslotsRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> dict[str, str]:
-    """Rotiert das Master-Passwort des Team-Tresors und setzt das Rotations-Flag zurueck (nur Gruender)."""
+) -> dict[str, object]:
+    """Hinterlegt Schluesselhuellen pro Mitglied (nur Gruender).
+
+    Der Gruender-Client verpackt den Team-Schluessel je Mitglied gegen
+    dessen E2EE-Konto-Identitaet; der Server sieht nur opake Huellen und
+    gibt jedem Mitglied spaeter ausschliesslich dessen eigene heraus.
+    """
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
-    _team_rotationsnachweis(db, user, payload)
-    vault_service.rotate_team_vault(db, team, user, payload.bucket_id, payload.salt)
-    audit_service.record_privileged_action(
+    anzahl = vault_service.keyslots_hinterlegen_team(
         db,
-        user_id=user.id,
-        action="team.vault.rotation.commit",
-        target_type="team",
-        target_id=team.id,
-        commit=True,
+        team,
+        payload.key_version,
+        [(slot.user_id, slot.wrapped_dek) for slot in payload.slots],
     )
-    return {"status": "ok"}
+    return {"status": "ok", "count": anzahl}
 
 
-def _team_rotationsnachweis(
-    db: Session,
-    user: User,
-    payload: VaultRotationPrepareRequest | VaultRotationCommitRequest | TeamVaultRotateRequest,
-) -> None:
-    """Frischer Kontonachweis vor prepare/commit der Team-Rotation (wie privat).
-
-    Das Master-Passwort kennt der Server nicht; der Nachweis ist deshalb das
-    Kontopasswort oder ein eingerichteter zweiter Faktor. Auch der Alt-Endpunkt
-    `/rotate` vollendet eine vorbereitete Rotation und braucht ihn.
-    """
-    fehlt = passkey_service.frischer_nachweis_fehlt(
-        db,
-        user,
-        password=payload.password,
-        otp_code=payload.otp_code,
-        passkey=payload.passkey.model_dump() if payload.passkey else None,
-        zweck="vault_rotation",
-    )
-    if fehlt:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=fehlt)
+@router.get("/{team_id}/vault/keyslot", response_model=TeamVaultKeyslotResponse)
+def get_own_team_vault_keyslot(
+    team_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TeamVaultKeyslotResponse:
+    """Liefert die eigene Schluesselhuelle zum aktiven Schluesselstand."""
+    team = team_service.get_team_for_member(db, team_id, user)
+    is_owner = bool(user.is_owner or team.owner_user_id == user.id)
+    if not is_owner:
+        m = team_service.membership(db, team_id, user.id)
+        if m is not None and not m.can_access_vault:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Zutritt zum Team-Tresor verweigert: Deine Team-Rolle hat keinen Tresor-Zugriff.",
+            )
+    zeile = vault_service.eigener_keyslot_team(db, team, user)
+    return TeamVaultKeyslotResponse(key_version=zeile.key_version, wrapped_dek=zeile.wrapped_dek)
 
 
 @router.post("/{team_id}/vault/rotation/prepare", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
 def prepare_team_vault_rotation(
     team_id: int,
-    payload: VaultRotationPrepareRequest,
+    payload: TeamVaultRotationPrepareRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
-    _team_rotationsnachweis(db, user, payload)
     try:
-        vault_service.rotation_vorbereiten_team(db, team, payload.bucket_id, payload.salt)
+        vault_service.rotation_vorbereiten_team(db, team, payload.bucket_id)
     except vault_service.VaultZurueckgesetzt as exc:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Dieser Tresor wurde zurückgesetzt.") from exc
     except vault_service.VaultBucketAccessDenied as exc:
@@ -774,13 +770,11 @@ def prepare_team_vault_rotation(
 @router.post("/{team_id}/vault/rotation/commit", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
 def commit_team_vault_rotation(
     team_id: int,
-    payload: VaultRotationCommitRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
-    _team_rotationsnachweis(db, user, payload)
     vault_service.rotation_commit_team(db, team)
     audit_service.record_privileged_action(
         db,
@@ -857,46 +851,6 @@ def sync_team_vault(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
-@router.get("/{team_id}/vault/hint-status", response_model=VaultHintStatusResponse)
-def get_team_vault_hint_status(
-    team_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> VaultHintStatusResponse:
-    """Prueft den Status des Passwort-Hinweises fuer den Team-Tresor (fuer Teammitglieder)."""
-    team = team_service.get_team_for_member(db, team_id, user)
-    return vault_service.get_team_vault_hint_status(db, team)
-
-
-@router.post("/{team_id}/vault/hint", dependencies=[Depends(verify_csrf)])
-def set_team_vault_hint(
-    team_id: int,
-    payload: VaultHintSetRequest,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> dict[str, str]:
-    """Hinterlegt oder aktualisiert den Passwort-Hinweis fuer den Team-Tresor."""
-    team = team_service.get_team_for_member(db, team_id, user)
-    vault_service.set_team_vault_hint(db, team, user, payload.hint)
-    return {"status": "ok", "message": "Passwort-Hinweis erfolgreich hinterlegt."}
-
-
-@router.post("/{team_id}/vault/request-hint", dependencies=[Depends(verify_csrf)])
-async def request_team_vault_hint(
-    team_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> dict[str, str]:
-    """Sendet den hinterlegten Hinweis des Team-Tresors an die E-Mail des Mitglieds (max. 1x alle 10 Minuten)."""
-    team = team_service.get_team_for_member(db, team_id, user)
-    success, msg = await vault_service.request_team_vault_hint_email(db, team, user)
-    if not success:
-        if "10 Minuten" in msg:
-            raise HTTPException(status_code=429, detail=msg)
-        raise HTTPException(status_code=400, detail=msg)
-    return {"status": "ok", "message": msg}
-
-
 @router.post("/{team_id}/vault/reset", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
 def reset_team_vault(
     team_id: int,
@@ -904,7 +858,7 @@ def reset_team_vault(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:
-    """Setzt den Tresor des Teams zurueck, wenn das Master-Passwort vergessen ist (nur Gruender)."""
+    """Loescht den Team-Tresor samt Schluesselhuellen unwiderruflich (nur Gruender)."""
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
 

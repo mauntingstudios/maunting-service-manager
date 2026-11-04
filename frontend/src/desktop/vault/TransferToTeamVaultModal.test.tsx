@@ -73,11 +73,12 @@ describe('TransferToTeamVaultModal', () => {
     expect(screen.getByText(i18n.t('teams.transferMode'))).toBeInTheDocument()
   })
 
-  it('zeigt Passwort-Eingabe, wenn der Team-Tresor gesperrt ist', async () => {
+  it('zeigt Karten-Hinweis statt Passwort-Eingabe, wenn der Team-Tresor gesperrt ist', async () => {
     useTeamVaultStore.setState({ isUnlocked: false })
 
     render(<TransferToTeamVaultModal open={true} onOpenChange={vi.fn()} item={mockItem} />)
 
-    expect(await screen.findByPlaceholderText(i18n.t('mss.vault.masterPasswort'))).toBeInTheDocument()
+    expect(await screen.findByText(i18n.t('teams.vaultWirdMitKarteEntsperrt'))).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(i18n.t('mss.vault.masterPasswort'))).not.toBeInTheDocument()
   })
 })

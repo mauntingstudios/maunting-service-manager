@@ -25,7 +25,7 @@ export interface RotationSyncErgebnis {
 }
 
 export interface RotationTransport {
-  prepare: (bucketId: string, salt: string) => Promise<void>
+  prepare: (bucketId: string, salt?: string) => Promise<void>
   sync: (bucketId: string, mutations: RotationMutation[]) => Promise<RotationSyncErgebnis>
   commit: () => Promise<void>
   abort: () => Promise<void>
@@ -56,15 +56,20 @@ export async function rotateVaultCore(opts: {
   items: VaultItem[]
   neuerKey: CryptoKey
   neueBucketId: string
-  neuesSalt: string
+  /** Nur privat: Der Team-Schlüssel ist zufällig, kein KDF-Produkt. */
+  neuesSalt?: string
   transport: RotationTransport
-  backup: () => Promise<void>
+  /**
+   * Nur privat: Das Datei-Backup versiegelt das Passwort. Dem Team genügt
+   * das siebentägige Rollback-Fenster des Alt-Buckets auf dem Server.
+   */
+  backup?: () => Promise<void>
   transformItem?: (item: VaultItem) => Promise<VaultItem>
   onPhase?: (phase: RotationPhase) => void
 }): Promise<void> {
   const { transport } = opts
   // 1. Backup zuerst: schlägt es fehl, startet die Rotation gar nicht.
-  await opts.backup()
+  await opts.backup?.()
   opts.onPhase?.('backup')
   rotationJournalSchreiben(opts.scope, {
     phase: 'backup',

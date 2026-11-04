@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
-from models.team import Team
+from models.team import Team, TeamMember, TeamVaultKey
 from models.user import User
 from models.vault_entry import VaultEntry
 from models.vault_hint import VaultHint
@@ -846,14 +846,21 @@ def tresor_zuruecksetzen(db: Session, konto: TresorKonto) -> None:
 
 
 def team_tresor_zuruecksetzen(db: Session, team: Team) -> None:
-    """Loescht den Tresor des Teams ganz: Salz, Hinweis und den Bucket samt Inhalt. Committet nicht."""
+    """Loescht den Tresor des Teams ganz: Schluesselhuellen, Bucket samt Inhalt und Rotationsstand. Committet nicht."""
     if team.vault_bucket_id:
         _bucket_entfernen(db, team.vault_bucket_id)
+    if team.vault_pending_bucket_id:
+        _staging_loeschen(db, team.vault_pending_bucket_id)
+    db.query(TeamVaultKey).filter(TeamVaultKey.team_id == team.id).delete(
+        synchronize_session=False
+    )
     team.vault_bucket_id = None
-    team.vault_salt = None
+    team.vault_key_version = 1
     team.vault_needs_rotation = False
-    team.vault_hint = None
-    team.vault_last_hint_requested_at = None
+    team.vault_pending_bucket_id = None
+    team.vault_rotation_state = None
+    team.vault_old_bucket_id = None
+    team.vault_rotation_cleanup_after = None
     db.flush()
 
 
@@ -1033,144 +1040,129 @@ def setup_team_vault(
     team: Team,
     user: User,
     bucket_id: str,
-    salt: str,
-    hint: str | None = None,
 ) -> None:
-    """Richtet den E2EE-Tresor eines Teams ein."""
+    """Richtet den E2EE-Tresor eines Teams ein.
+
+    Der Client erzeugt einen zufaelligen Team-Schluessel (DEK); die
+    Bucket-Kennung leitet er daraus ab. Schluesselhuellen pro Mitglied legt
+    er danach ueber `keyslots_hinterlegen_team` ab — erst mit der eigenen
+    Huelle kann ein Mitglied entsperren.
+    """
     if team.vault_bucket_id is not None:
         raise HTTPException(status_code=409, detail="Team-Tresor ist bereits eingerichtet.")
     _pruefe_bucket_nicht_vergeben(db, bucket_id, ausgenommen_team_id=team.id)
     team.vault_bucket_id = bucket_id.lower()
-    team.vault_salt = salt
+    team.vault_key_version = 1
     team.vault_needs_rotation = False
-    if hint and hint.strip():
-        team.vault_hint = AuthService.encrypt_secret(
-            hint.strip(), aad=f"msm:team:vault:hint:{team.id}"
-        )
     db.commit()
 
 
-def set_team_vault_hint(db: Session, team: Team, user: User, hint_text: str) -> None:
-    """Hinterlegt oder aktualisiert den Passwort-Hinweis für den Team-Tresor."""
+HYBRID_UMSCHLAG_PRAEFIX = "sv-e2ee-hybrid-v1:"
+
+
+def _pruefe_huelle(wrapped_dek: str) -> None:
+    """Der Server kann die Huelle nicht oeffnen — aber ihren Umschlag pruefen.
+
+    Ohne diese Schranke legte ein Client (oder ein gestohlenes Token)
+    beliebigen Text als "Schluessel" ab, und das Mitglied stuende vor einem
+    unbrauchbaren Tresor, ohne dass jemand saehe, warum.
+    """
+    if not wrapped_dek.startswith(HYBRID_UMSCHLAG_PRAEFIX):
+        raise HTTPException(
+            status_code=422, detail="Schluesselhuelle ist kein gueltiger Hybridumschlag."
+        )
+
+
+def keyslots_hinterlegen_team(
+    db: Session, team: Team, key_version: int, slots: Sequence[tuple[int, str]]
+) -> int:
+    """Legt Schluesselhuellen pro Mitglied ab (Upsert je Stand). Committet.
+
+    Erlaubt ist der aktive Stand und — waehrend einer vorbereiteten
+    Rotation — genau der naechste. Aeltere Staende sind tot, juengere gibt
+    es nicht. Nur Mitglieder bekommen Huellen; Fremde waeren totes Gewicht.
+    """
     if not team.vault_bucket_id:
         raise HTTPException(status_code=400, detail="Team-Tresor ist noch nicht eingerichtet.")
-    encrypted_hint = AuthService.encrypt_secret(
-        hint_text.strip(), aad=f"msm:team:vault:hint:{team.id}"
+    aktuell = team.vault_key_version or 1
+    staging = (
+        team.vault_rotation_state == "prepared"
+        and team.vault_pending_bucket_id is not None
     )
-    team.vault_hint = encrypted_hint
-    db.commit()
-
-
-def get_team_vault_hint_status(db: Session, team: Team) -> VaultHintStatusResponse:
-    """Prüft, ob ein Hinweis für den Team-Tresor hinterlegt ist und ob die 10-Minuten-Sperrfrist aktiv ist."""
-    if not team.vault_hint:
-        return VaultHintStatusResponse(
-            has_hint=False,
-            last_requested_at=None,
-            can_request=False,
-            cooldown_seconds_remaining=0,
+    erlaubt = {aktuell, aktuell + 1} if staging else {aktuell}
+    if key_version not in erlaubt:
+        raise HTTPException(status_code=409, detail="Schluesselstand passt nicht zum Tresor.")
+    mitglieder = {
+        zeile[0]
+        for zeile in db.query(TeamMember.user_id)
+        .filter(TeamMember.team_id == team.id)
+        .all()
+    }
+    mitglieder.add(team.owner_user_id)
+    angelegt = 0
+    for user_id, huelle in slots:
+        if user_id not in mitglieder:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Benutzer {user_id} ist kein Mitglied dieses Teams.",
+            )
+        _pruefe_huelle(huelle)
+        zeile = (
+            db.query(TeamVaultKey)
+            .filter(
+                TeamVaultKey.team_id == team.id,
+                TeamVaultKey.user_id == user_id,
+                TeamVaultKey.key_version == key_version,
+            )
+            .first()
         )
-
-    cooldown = 0
-    can_request = True
-    last_req = _to_utc(team.vault_last_hint_requested_at)
-    if last_req:
-        diff = (_now() - last_req).total_seconds()
-        if diff < HINT_RATE_LIMIT_SECONDS:
-            can_request = False
-            cooldown = int(HINT_RATE_LIMIT_SECONDS - diff)
-
-    return VaultHintStatusResponse(
-        has_hint=True,
-        last_requested_at=team.vault_last_hint_requested_at,
-        can_request=can_request,
-        cooldown_seconds_remaining=cooldown,
-    )
+        if zeile is None:
+            db.add(
+                TeamVaultKey(
+                    team_id=team.id,
+                    user_id=user_id,
+                    key_version=key_version,
+                    wrapped_dek=huelle,
+                )
+            )
+        else:
+            zeile.wrapped_dek = huelle
+        angelegt += 1
+    db.commit()
+    return angelegt
 
 
-def _team_hinweis_vormerken(db: Session, team: Team, user: User) -> _HinweisVersand | str:
-    """Setzt die Sperrfrist des Team-Tresors und liefert, was die Mail braucht."""
-    if not team.vault_hint:
-        return "Für diesen Team-Tresor ist kein Passwort-Hinweis hinterlegt."
+def eigener_keyslot_team(db: Session, team: Team, user: User) -> TeamVaultKey:
+    """Die eigene Schluesselhuelle zum aktiven Stand — oder 404.
 
-    now = _now()
-    grenze = now - timedelta(seconds=HINT_RATE_LIMIT_SECONDS)
-
-    getroffen = (
-        db.query(Team)
+    404 heisst: Tresor nicht eingerichtet oder noch nicht freigeschaltet
+    (keine Huelle). Beides loest der Client gleich auf: einrichten lassen
+    oder auf die Freischaltung warten.
+    """
+    if not team.vault_bucket_id:
+        raise HTTPException(status_code=404, detail="Team-Tresor ist noch nicht eingerichtet.")
+    zeile = (
+        db.query(TeamVaultKey)
         .filter(
-            Team.id == team.id,
-            (Team.vault_last_hint_requested_at.is_(None))
-            | (Team.vault_last_hint_requested_at <= grenze),
+            TeamVaultKey.team_id == team.id,
+            TeamVaultKey.user_id == user.id,
+            TeamVaultKey.key_version == (team.vault_key_version or 1),
         )
-        .update({"vault_last_hint_requested_at": now}, synchronize_session=False)
+        .first()
     )
-    db.commit()
-
-    if not getroffen:
-        db.refresh(team)
-        last_req = _to_utc(team.vault_last_hint_requested_at)
-        diff = (now - last_req).total_seconds() if last_req else 0
-        wait_minutes = max(1, int((HINT_RATE_LIMIT_SECONDS - diff + 59) // 60))
-        return f"Der Hinweis kann nur alle 10 Minuten angefordert werden. Bitte warte noch {wait_minutes} Minute(n)."
-
-    try:
-        raw_hint = AuthService.decrypt_secret(
-            team.vault_hint, aad=f"msm:team:vault:hint:{team.id}"
+    if zeile is None:
+        raise HTTPException(
+            status_code=404, detail="Noch keine Schluesselhuelle fuer dieses Mitglied."
         )
-    except Exception:
-        return "Der hinterlegte Hinweis konnte nicht gelesen werden. Bitte hinterlege ihn erneut."
-
-    return _HinweisVersand(
-        hint_id=team.id, hinweis=raw_hint, name=user.username, adresse=user.email
-    )
+    return zeile
 
 
-def _team_sperrfrist_freigeben(db: Session, team_id: int) -> None:
-    db.query(Team).filter(Team.id == team_id).update(
-        {"vault_last_hint_requested_at": None}, synchronize_session=False
-    )
-    db.commit()
-
-
-async def request_team_vault_hint_email(
-    db: Session, team: Team, user: User
-) -> tuple[bool, str]:
-    """Sendet den hinterlegten Hinweis des Team-Tresors an die E-Mail des anfordernden Mitglieds."""
-    versand = await asyncio.to_thread(_team_hinweis_vormerken, db, team, user)
-    if isinstance(versand, str):
-        return False, versand
-    raw_hint = versand.hinweis
-
-    from services.email_service import EmailService
-
-    team_name = team.name
-    subject = f"Team-Tresor ({team_name}): Passwort-Hinweis"
-    body = f"""Hallo {versand.name},
-
-du hast den Passwort-Hinweis für den Team-Tresor "{team_name}" im Maunting Service Manager angefordert.
-
-Der hinterlegte Hinweis lautet:
-{raw_hint}
-
-Falls du diese Anforderung nicht ausgelöst hast, überprüfe bitte die Sicherheit deines Kontos.
-
-Maunting Service Manager
-"""
-    html_content = EmailService._notification_email_html(
-        versand.name,
-        f"Team-Tresor: {html.escape(team_name)}",
-        "Hier ist die Gedankenstütze für das Master-Passwort des Team-Tresors:",
-        f"<strong>{html.escape(raw_hint)}</strong>",
-        kategorie="Tresor",
-    )
-
-    success = await EmailService.send_email(versand.adresse, subject, body, html_content)
-    if not success:
-        await asyncio.to_thread(_team_sperrfrist_freigeben, db, versand.hint_id)
-        return False, "E-Mail konnte nicht versendet werden. Bitte prüfe die E-Mail-Konfiguration."
-
-    return True, "Der Passwort-Hinweis wurde erfolgreich an deine E-Mail-Adresse gesendet."
+def keyslots_entfernen_team(db: Session, team: Team, member_user_id: int) -> None:
+    """Loescht alle Huellen eines Mitglieds (alle Staende). Committet nicht."""
+    db.query(TeamVaultKey).filter(
+        TeamVaultKey.team_id == team.id,
+        TeamVaultKey.user_id == member_user_id,
+    ).delete(synchronize_session=False)
 
 
 ROTATION_HALTEFRIST = timedelta(days=7)
@@ -1213,7 +1205,7 @@ def _blobs_umhaengen(db: Session, alt: str, neu: str) -> None:
     )
 
 
-def rotation_vorbereiten_team(db: Session, team: Team, bucket_id: str, salt: str) -> None:
+def rotation_vorbereiten_team(db: Session, team: Team, bucket_id: str) -> None:
     gesperrt = db.query(Team).filter(Team.id == team.id).with_for_update().first()
     if gesperrt is not None:
         team = gesperrt
@@ -1228,7 +1220,6 @@ def rotation_vorbereiten_team(db: Session, team: Team, bucket_id: str, salt: str
     if team.vault_pending_bucket_id and team.vault_pending_bucket_id.lower() != neu:
         _staging_loeschen(db, team.vault_pending_bucket_id)
     team.vault_pending_bucket_id = neu
-    team.vault_pending_salt = salt
     team.vault_rotation_state = "prepared"
     db.commit()
 
@@ -1239,14 +1230,21 @@ def rotation_commit_team(db: Session, team: Team) -> None:
         team = gesperrt
     if not team.vault_pending_bucket_id or not team.vault_bucket_id:
         raise HTTPException(status_code=409, detail="Keine vorbereitete Rotation vorhanden.")
-    alt, alt_salt = team.vault_bucket_id, team.vault_salt
-    neu, neu_salt = team.vault_pending_bucket_id, team.vault_pending_salt
+    alt = team.vault_bucket_id
+    neu = team.vault_pending_bucket_id
     _blobs_umhaengen(db, alt, neu)
-    team.vault_bucket_id, team.vault_salt = neu, neu_salt
-    team.vault_old_bucket_id, team.vault_old_salt = alt, alt_salt
+    team.vault_bucket_id = neu
+    team.vault_old_bucket_id = alt
+    team.vault_key_version = (team.vault_key_version or 1) + 1
+    # Nur der Vorgaenger bleibt fuers Rollback-Fenster lesbar; aeltere
+    # Huellen sind totes Gewicht. Der Vorgaenger selbst faellt mit dem
+    # Alt-Bucket in `bereinige_faellige_rotationen`.
+    db.query(TeamVaultKey).filter(
+        TeamVaultKey.team_id == team.id,
+        TeamVaultKey.key_version < team.vault_key_version - 1,
+    ).delete(synchronize_session=False)
     team.vault_rotation_cleanup_after = _now() + ROTATION_HALTEFRIST
     team.vault_pending_bucket_id = None
-    team.vault_pending_salt = None
     team.vault_rotation_state = "committed"
     team.vault_needs_rotation = False
     db.commit()
@@ -1274,8 +1272,12 @@ def rotation_abbrechen_team(db: Session, team: Team) -> None:
         raise HTTPException(status_code=409, detail="Kein Abbruch mehr moeglich (Rotation bereits abgeschlossen).")
     if team.vault_pending_bucket_id:
         _staging_loeschen(db, team.vault_pending_bucket_id)
+        # Staging-Huellen (Stand + 1) sterben mit dem Staging-Bucket.
+        db.query(TeamVaultKey).filter(
+            TeamVaultKey.team_id == team.id,
+            TeamVaultKey.key_version == (team.vault_key_version or 1) + 1,
+        ).delete(synchronize_session=False)
     team.vault_pending_bucket_id = None
-    team.vault_pending_salt = None
     team.vault_rotation_state = None
     db.commit()
 
@@ -1284,25 +1286,22 @@ def rotation_rollback_team(db: Session, team: Team) -> None:
     team = _rotation_gesperrt_team(db, team)
     if not team.vault_old_bucket_id or team.vault_rotation_state != "committed":
         raise HTTPException(status_code=409, detail="Kein Rollback mehr moeglich.")
-    aktuell, aktuell_salt = team.vault_bucket_id, team.vault_salt
+    aktuell = team.vault_bucket_id
     _blobs_umhaengen(db, aktuell, team.vault_old_bucket_id)
     if aktuell:
         _staging_loeschen(db, aktuell)
-    team.vault_bucket_id, team.vault_salt = team.vault_old_bucket_id, team.vault_old_salt
+    team.vault_bucket_id = team.vault_old_bucket_id
+    # Zurueck auf den Vorgaengerstand; dessen Huellen hat der Commit
+    # bewusst behalten. Die Huellen des verworfenen Stands gehen mit.
+    team.vault_key_version = max(1, (team.vault_key_version or 1) - 1)
+    db.query(TeamVaultKey).filter(
+        TeamVaultKey.team_id == team.id,
+        TeamVaultKey.key_version > team.vault_key_version,
+    ).delete(synchronize_session=False)
     team.vault_old_bucket_id = None
-    team.vault_old_salt = None
     team.vault_rotation_cleanup_after = None
     team.vault_rotation_state = None
     db.commit()
-
-
-def rotate_team_vault(db: Session, team: Team, user: User, bucket_id: str | None = None, salt: str | None = None) -> None:
-    """Alt-Endpunkt: committet nur noch eine vorbereitete Rotation."""
-    if not team.vault_pending_bucket_id:
-        raise HTTPException(status_code=409, detail="Rotation zuerst vorbereiten (rotation/prepare).")
-    if bucket_id and bucket_id.lower() != team.vault_pending_bucket_id.lower():
-        raise HTTPException(status_code=409, detail="Bucket entspricht nicht der vorbereiteten Rotation.")
-    rotation_commit_team(db, team)
 
 
 def sync_team_vault(db: Session, team: Team, user: User, request: VaultSyncRequest) -> VaultSyncResponse:
@@ -1427,8 +1426,13 @@ def bereinige_faellige_rotationen(db: Session) -> int:
         Team.vault_rotation_cleanup_after <= jetzt,
     ).all():
         _bucket_entfernen(db, team.vault_old_bucket_id)
+        # Mit dem Alt-Bucket sterben die Huellen des Vorgaengerstands;
+        # uebrig bleibt genau der aktive Stand.
+        db.query(TeamVaultKey).filter(
+            TeamVaultKey.team_id == team.id,
+            TeamVaultKey.key_version < (team.vault_key_version or 1),
+        ).delete(synchronize_session=False)
         team.vault_old_bucket_id = None
-        team.vault_old_salt = None
         team.vault_rotation_cleanup_after = None
         team.vault_rotation_state = None
         geloescht += 1

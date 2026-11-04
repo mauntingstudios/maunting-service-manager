@@ -76,24 +76,27 @@ class Team(Base):
         DateTime(timezone=True), default=_now, onupdate=_now, nullable=False
     )
     vault_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    vault_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Schlüsselstand des Team-Tresors. Seit 11/2026 gibt es kein geteiltes
+    # Team-Passwort mehr: Ein zufälliger Team-Schlüssel (DEK) liegt pro
+    # Mitglied verpackt in `team_vault_keys` (gegen dessen E2EE-Konto-
+    # Identität, Muster `e2ee_chat_keys`). Die Version steigt mit jeder
+    # Rotation; der Server sieht nur opake Hüllen.
+    vault_key_version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
     vault_needs_rotation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Ob Serverrechte nach Rollen gelten. Standard aus: die Team-Zuordnung gilt
     # fuer alle Mitglieder. An: nur ausdrueckliche Rollen-Grants zaehlen.
     server_roles_active: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
-    vault_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
-    vault_last_hint_requested_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
     # Zwei-Phasen-Rotation: pending ist der Staging-Bucket, old der nach
-    # Commit noch 7 Tage gehaltene Vorgaenger (Rollback-Fenster).
+    # Commit noch 7 Tage gehaltene Vorgaenger (Rollback-Fenster). Der
+    # Staging-Schluesselstand ist immer `vault_key_version + 1` und braucht
+    # deshalb keine eigene Spalte.
     vault_pending_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    vault_pending_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
     vault_rotation_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
     vault_old_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    vault_old_salt: Mapped[str | None] = mapped_column(String(128), nullable=True)
     vault_rotation_cleanup_after: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -110,10 +113,52 @@ class Team(Base):
     roles: Mapped[list["TeamRole"]] = relationship(
         "TeamRole", back_populates="team", cascade="all, delete-orphan"
     )
+    vault_keys: Mapped[list["TeamVaultKey"]] = relationship(
+        "TeamVaultKey", back_populates="team", cascade="all, delete-orphan"
+    )
 
     @property
     def is_personal(self) -> bool:
         return self.personal_for_user_id is not None
+
+
+class TeamVaultKey(Base):
+    """Der Team-Tresor-Schluessel (DEK), pro Mitglied verpackt.
+
+    Muster `e2ee_chat_keys`: Der Client erzeugt pro Team einen zufaelligen
+    256-Bit-Schluessel und verpackt ihn je Mitglied gegen dessen oeffentliche
+    E2EE-Konto-Identitaet (Hybridumschlag). Der Server sieht nur Chiffrat und
+    gibt einem Mitglied ausschliesslich dessen eigene Huelle heraus.
+    """
+
+    __tablename__ = "team_vault_keys"
+    __table_args__ = (
+        UniqueConstraint(
+            "team_id", "user_id", "key_version",
+            name="uq_team_vault_key",
+        ),
+        Index("ix_team_vault_key_team", "team_id", "key_version"),
+        Index("ix_team_vault_key_user", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    key_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    wrapped_dek: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+
+    team: Mapped["Team"] = relationship("Team", back_populates="vault_keys")
 
 
 class TeamRole(Base):

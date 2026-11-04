@@ -5,7 +5,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from schemas.passkey import Zweitnachweis
 from schemas.social import PresenceInfo
 
 
@@ -158,31 +157,45 @@ class TeamDetailResponse(TeamResponse):
     roles: list[TeamRoleResponse] = []
 
 
-class TeamVaultSaltResponse(BaseModel):
+class TeamVaultStatusResponse(BaseModel):
     is_setup: bool
-    salt: str | None = None
     bucket_id: str | None = None
+    key_version: int | None = None
     needs_rotation: bool = False
     is_owner: bool = False
     can_access_vault: bool = True
-    has_hint: bool = False
     rotation_state: str | None = None
     pending_bucket_id: str | None = None
-    pending_salt: str | None = None
 
 
 class TeamVaultSetupRequest(BaseModel):
     bucket_id: str = Field(min_length=64, max_length=64)
-    salt: str = Field(min_length=16, max_length=128)
-    hint: str | None = Field(default=None, max_length=512, description="Optionaler Passwort-Hinweis fuer das Master-Passwort")
 
 
-class TeamVaultRotateRequest(BaseModel):
-    bucket_id: str | None = Field(default=None, min_length=64, max_length=64)
-    salt: str | None = Field(default=None, min_length=16, max_length=128)
-    # Alt-Endpunkt: committet eine vorbereitete Rotation und braucht deshalb
-    # denselben frischen Nachweis wie `/rotation/commit`.
-    password: str | None = Field(default=None, max_length=256)
-    otp_code: str | None = Field(default=None, pattern=r"^\d{6}$")
-    passkey: Zweitnachweis | None = None
+class TeamVaultKeyslotUpload(BaseModel):
+    user_id: int = Field(gt=0)
+    wrapped_dek: str = Field(min_length=32, max_length=16384)
+
+
+class TeamVaultKeyslotsRequest(BaseModel):
+    key_version: int = Field(gt=0)
+    slots: list[TeamVaultKeyslotUpload] = Field(min_length=1, max_length=500)
+
+
+class TeamVaultKeyslotResponse(BaseModel):
+    key_version: int
+    wrapped_dek: str
+
+
+class TeamVaultRotationPrepareRequest(BaseModel):
+    """Rotation vorbereiten: nur die neue Bucket-Kennung.
+
+    Anders als privat braucht die Team-Rotation weder Salt (der DEK ist
+    zufaellig, kein KDF-Produkt) noch frischen Kontonachweis: Sie laeuft
+    automatisch nach Mitgliederwechsel, wo kein Nachweis vorliegt. Schranken
+    bleiben Gruenderrecht, CSRF und Rate-Limit; ein Missbrauch endet als
+    temporaere Stoerung mit Rollback-Pfad, nie als Schluesselverlust.
+    """
+
+    bucket_id: str = Field(min_length=64, max_length=64)
 

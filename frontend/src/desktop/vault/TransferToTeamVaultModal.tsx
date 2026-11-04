@@ -12,7 +12,6 @@ import { ArrowRightLeft, Lock, RefreshCw, ShieldCheck } from 'lucide-react'
 
 import { teamsApi, type Team } from '@/api/teams'
 import { Button, Dialog, DialogContent, Dropdown, type DropdownOption } from '@/Singra/UI'
-import { PasswordInput } from '@/components/ui/PasswordInput'
 import { toast } from '@/stores/toastStore'
 import { useVaultStore } from './vaultStore'
 import { useTeamVaultStore } from './teamVaultStore'
@@ -31,8 +30,7 @@ export function TransferToTeamVaultModal({ open, onOpenChange, item }: TransferT
   const [teams, setTeams] = useState<Team[]>([])
   const [zielTeamId, setZielTeamId] = useState<string>('')
   const [modus, setModus] = useState<TransferModus>('kopieren')
-  const [teamPassword, setTeamPassword] = useState('')
-  const [needsPassword, setNeedsPassword] = useState(false)
+  const [needsUnlock, setNeedsUnlock] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const teamUnlocked = useTeamVaultStore((s) => s.isUnlocked)
@@ -53,11 +51,11 @@ export function TransferToTeamVaultModal({ open, onOpenChange, item }: TransferT
 
   useEffect(() => {
     if (!zielTeamId) {
-      setNeedsPassword(false)
+      setNeedsUnlock(false)
       return
     }
     const tid = Number(zielTeamId)
-    setNeedsPassword(!teamUnlocked || currentTeamId !== tid)
+    setNeedsUnlock(!teamUnlocked || currentTeamId !== tid)
   }, [zielTeamId, teamUnlocked, currentTeamId])
 
   const handleTransfer = async (e: React.FormEvent) => {
@@ -67,11 +65,16 @@ export function TransferToTeamVaultModal({ open, onOpenChange, item }: TransferT
     setBusy(true)
 
     try {
-      // Falls Team-Tresor noch gesperrt ist, erst entsperren
-      if (needsPassword) {
-        const ok = await unlockTeam(tid, teamPassword)
+      // Falls Team-Tresor noch gesperrt ist, erst mit der Karte entsperren.
+      // Der private Tresor ist offen (daher kommt der Eintrag), also braucht
+      // es kein weiteres Passwort — nur die Freischaltung durch den Gründer.
+      if (needsUnlock) {
+        const ok = await unlockTeam(tid)
         if (!ok) {
-          toast.error(t('teams.vaultWrongPassword'))
+          const { needsSlot, error } = useTeamVaultStore.getState()
+          toast.error(
+            needsSlot ? t('teams.vaultWartetAufFreischaltung') : error || t('common.error'),
+          )
           setBusy(false)
           return
         }
@@ -118,7 +121,6 @@ export function TransferToTeamVaultModal({ open, onOpenChange, item }: TransferT
 
       toast.success(t('teams.transferSuccess'))
       onOpenChange(false)
-      setTeamPassword('')
     } catch {
       toast.error(t('common.error'))
     } finally {
@@ -169,19 +171,10 @@ export function TransferToTeamVaultModal({ open, onOpenChange, item }: TransferT
               />
             </div>
 
-            {needsPassword && (
-              <div className="space-y-1.5 pt-2 border-t border-outline-variant/20">
-                <div className="flex items-center gap-1.5 text-xs text-warning font-medium">
-                  <Lock className="h-3.5 w-3.5" />
-                  <span>{t('teams.vaultUnlock')}</span>
-                </div>
-                <PasswordInput
-                  value={teamPassword}
-                  onChange={(e) => setTeamPassword(e.target.value)}
-                  placeholder={t('mss.vault.masterPasswort')}
-                  required
-                  disabled={busy}
-                />
+            {needsUnlock && (
+              <div className="flex items-center gap-1.5 pt-2 border-t border-outline-variant/20 text-xs text-on-surface-variant">
+                <Lock className="h-3.5 w-3.5 shrink-0" />
+                <span>{t('teams.vaultWirdMitKarteEntsperrt')}</span>
               </div>
             )}
 
@@ -189,7 +182,7 @@ export function TransferToTeamVaultModal({ open, onOpenChange, item }: TransferT
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" disabled={busy || !zielTeamId || (needsPassword && !teamPassword)}>
+              <Button type="submit" disabled={busy || !zielTeamId}>
                 {busy ? <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-1.5" />}
                 {t('teams.transferToTeam')}
               </Button>

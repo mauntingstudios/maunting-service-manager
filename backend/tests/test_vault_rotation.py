@@ -52,7 +52,7 @@ def test_team_rotation_verliert_nichts_bei_abbruch(db, client, owner_user, owner
     alt, neu = _bucket(), _bucket()
     assert client.post(
         f"/api/teams/{team.id}/vault/setup",
-        json={"bucket_id": alt, "salt": "altsalt1234567890abcdef"},
+        json={"bucket_id": alt},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     ).status_code == 200
     assert _sync(client, team.id, alt, owner_cookies).status_code == 200
@@ -60,10 +60,10 @@ def test_team_rotation_verliert_nichts_bei_abbruch(db, client, owner_user, owner
     # Prepare darf den aktiven Bucket NICHT umschalten (alter Fehler: sofort weg).
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
+        json={"bucket_id": neu},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     ).status_code == 200
-    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
+    status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
     assert status["bucket_id"] == alt
     assert status["rotation_state"] == "prepared"
 
@@ -79,7 +79,7 @@ def test_team_rotation_verliert_nichts_bei_abbruch(db, client, owner_user, owner
     db.expire_all()
     assert db.query(VaultEntry).filter_by(bucket_id=neu).count() == 0
     assert db.query(VaultEntry).filter_by(bucket_id=alt).count() == 1
-    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
+    status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
     assert status["bucket_id"] == alt
     assert status["rotation_state"] is None
 
@@ -89,25 +89,24 @@ def test_team_rotation_commit_und_rollback(db, client, owner_user, owner_cookies
     alt, neu = _bucket(), _bucket()
     client.post(
         f"/api/teams/{team.id}/vault/setup",
-        json={"bucket_id": alt, "salt": "altsalt1234567890abcdef"},
+        json={"bucket_id": alt},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     )
     _sync(client, team.id, alt, owner_cookies)
     client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
+        json={"bucket_id": neu},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     )
     _sync(client, team.id, neu, owner_cookies, "e1", "sv-vault-v2:neu")
 
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
-        json={"password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     ).status_code == 200
-    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
+    status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
     assert status["bucket_id"] == neu
-    assert status["salt"] == "neusalt1234567890abcdef"
+    assert status["key_version"] == 2
     # Altbestand ist NICHT geloescht (7-Tage-Fenster).
     db.expire_all()
     assert db.query(VaultEntry).filter_by(bucket_id=alt).count() == 1
@@ -129,8 +128,9 @@ def test_team_rotation_commit_und_rollback(db, client, owner_user, owner_cookies
         f"/api/teams/{team.id}/vault/rotation/rollback",
         cookies=owner_cookies, headers=_headers(owner_cookies),
     ).status_code == 200
-    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
+    status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
     assert status["bucket_id"] == alt
+    assert status["key_version"] == 1
 
 
 def test_private_rotation_zwei_phasen(client, owner_cookies):
@@ -380,46 +380,51 @@ def test_private_rotation_commit_ohne_nachweis_403(client, owner_cookies):
     ).status_code == 200
 
 
-def test_team_rotation_prepare_ohne_nachweis_403(db, client, owner_user, owner_cookies, regular_user):
+def test_team_rotation_prepare_ohne_nachweis_ok(db, client, owner_user, owner_cookies, regular_user):
+    """Die Team-Rotation laeuft automatisch — kein Kontonachweis noetig.
+
+    Anders als privat aendert sie kein Passwort, sondern tauscht nur den
+    Team-Schluessel. Schranken bleiben Gruenderrecht, CSRF und Rate-Limit.
+    """
     team = _team_mit_tresor(db, owner_user, regular_user)
     alt, neu = _bucket(), _bucket()
     o_h = _headers(owner_cookies)
     assert client.post(
         f"/api/teams/{team.id}/vault/setup",
-        json={"bucket_id": alt, "salt": "altsalt1234567890abcdef"},
+        json={"bucket_id": alt},
         cookies=owner_cookies, headers=o_h,
     ).status_code == 200
     antwort = client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef"},
+        json={"bucket_id": neu},
         cookies=owner_cookies, headers=o_h,
     )
-    assert antwort.status_code == 403
-    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
-    assert status["rotation_state"] is None
+    assert antwort.status_code == 200
+    status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
+    assert status["rotation_state"] == "prepared"
 
 
-def test_team_rotation_commit_ohne_nachweis_403(db, client, owner_user, owner_cookies, regular_user):
+def test_team_rotation_commit_ohne_nachweis_ok(db, client, owner_user, owner_cookies, regular_user):
     team = _team_mit_tresor(db, owner_user, regular_user)
     alt, neu = _bucket(), _bucket()
     o_h = _headers(owner_cookies)
     client.post(
         f"/api/teams/{team.id}/vault/setup",
-        json={"bucket_id": alt, "salt": "altsalt1234567890abcdef"},
+        json={"bucket_id": alt},
         cookies=owner_cookies, headers=o_h,
     )
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
+        json={"bucket_id": neu},
         cookies=owner_cookies, headers=o_h,
     ).status_code == 200
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
-        json={},
         cookies=owner_cookies, headers=o_h,
-    ).status_code == 403
-    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
-    assert status["bucket_id"] == alt
+    ).status_code == 200
+    status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
+    assert status["bucket_id"] == neu
+    assert status["key_version"] == 2
 
 
 def test_rotation_mit_2fa_braucht_den_faktor(db, client, owner_user, owner_cookies):
@@ -471,17 +476,16 @@ def _team_rotation_bis_commit(client, team_id, cookies, alt, neu):
     h = _headers(cookies)
     client.post(
         f"/api/teams/{team_id}/vault/setup",
-        json={"bucket_id": alt, "salt": "altsalt1234567890abcdef"},
+        json={"bucket_id": alt},
         cookies=cookies, headers=h,
     )
     assert client.post(
         f"/api/teams/{team_id}/vault/rotation/prepare",
-        json={"bucket_id": neu, "salt": "neusalt1234567890abcdef", "password": OWNER_PASSWORT},
+        json={"bucket_id": neu},
         cookies=cookies, headers=h,
     ).status_code == 200
     assert client.post(
         f"/api/teams/{team_id}/vault/rotation/commit",
-        json={"password": OWNER_PASSWORT},
         cookies=cookies, headers=h,
     ).status_code == 200
 
@@ -503,7 +507,7 @@ def test_team_abort_nach_commit_409_und_rollback_bleibt(db, client, owner_user, 
         f"/api/teams/{team.id}/vault/rotation/rollback",
         cookies=owner_cookies, headers=o_h,
     ).status_code == 200
-    status = client.get(f"/api/teams/{team.id}/vault/salt", cookies=owner_cookies).json()
+    status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
     assert status["bucket_id"] == alt
 
     # Danach ist Schluss: Rollback ohne Commit ist 409, Abbruch ohne Rotation ok.

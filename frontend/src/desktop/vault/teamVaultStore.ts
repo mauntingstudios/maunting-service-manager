@@ -1,32 +1,34 @@
 /**
  * Team-Tresor Store (E2EE Zero-Knowledge für Teams / Familien).
  *
- * Verwaltet den Status, das gemeinsame Master-Passwort, die Schlüsselableitung
- * via Argon2id, Verschlüsselung via AES-GCM und den deterministischen Revisions-Sync
- * für den Tresor eines Teams.
+ * Seit 11/2026 gibt es kein geteiltes Team-Passwort mehr: Pro Team existiert
+ * ein zufälliger Schlüssel (DEK), der pro Mitglied gegen dessen
+ * E2EE-Konto-Identität verpackt auf dem Server liegt (`teamVaultKeys.ts`).
+ * Entsperren heißt: eigener privater Tresor offen (die Karte steckt),
+ * eigene Hülle holen, mit dem Konto-Schlüssel öffnen. Einstellungen
+ * (Sperrfrist, Fensterwechsel, Leak-Prüfung, Biometrie) gelten zentral aus
+ * dem persönlichen Tresor — dieser Store hält keine eigenen mehr.
  */
 
 import { create } from 'zustand'
 import i18n from '@/i18n'
 import { still } from '@/lib/still'
-import { teamsApi, type RotationNachweis, type TeamVaultMutationItem, type TeamVaultSyncResult } from '@/api/teams'
+import { teamsApi, type TeamVaultMutationItem, type TeamVaultStatusResponse, type TeamVaultSyncResult } from '@/api/teams'
+import { SanitizedApiError } from '@/api/client'
 import {
   base64ToBytes,
-  bytesToBase64,
   decryptVaultEntry,
-  deriveVaultKeys,
   encryptVaultEntry,
-  isBiometricsAvailable,
-  promptBiometricVerification,
 } from './vaultCrypto'
+import { biometrieLoeschen } from '../tauri'
+import { useVaultStore } from './vaultStore'
+import { ensureAccountKeys, kontoOeffentlichViele, KontoSchluesselNichtUebertragenError } from '@/services/accountKeys'
 import {
-  biometrieEntsperren,
-  biometrieLoeschen,
-  biometrieSpeichern,
-  biometrieSpeicherFragtSelbst,
-} from '../tauri'
+  erzeugeTeamSchluessel,
+  teamSchluesselAuspacken,
+  teamSchluesselVerpacken,
+} from './teamVaultKeys'
 import type { AutoSperrQuelle } from '@/services/autoSperre'
-import { fillRandom } from '@msdis/shield/random'
 import { ALBUM_HOECHSTENS, VAULT_TOMBSTONE_MARKER, type VaultItem } from './vaultEintrag'
 import {
   angeheftet,
@@ -48,11 +50,14 @@ import { blobSchluesselNeuWickeln, istBlobKopf } from './tresorDatei'
 export interface TeamVaultState {
   teamId: number | null
   bucketId: string | null
-  salt: string | null
+  /** Aktiver Schlüsselstand des DEK (steigt mit jeder Rotation). */
+  keyVersion: number | null
   isInitialized: boolean
   isUnlocked: boolean
   isUnlocking: boolean
   needsRotation: boolean
+  /** Entsperrt, aber keine eigene Hülle: wartet auf Freischaltung durch den Gründer. */
+  needsSlot: boolean
   isOwner: boolean
   canAccessVault: boolean
   userKey: CryptoKey | null
@@ -60,36 +65,23 @@ export interface TeamVaultState {
   serverRevision: number
   syncStatus: 'idle' | 'syncing' | 'error'
   error: string | null
-  hasHint: boolean | null
   rotationState: string | null
   pendingBucketId: string | null
-
-  // Einstellungen & Sicherheit
-  autoLockMinutes: number
-  lockOnWindowBlur: boolean
-  leakCheckEnabled: boolean
-  isBiometricsSupported: boolean
-  isBiometricsEnabled: boolean
   lastActivityTime: number
 
-  loadStatus: (teamId: number) => Promise<void>
-  loadSettings: (teamId: number) => Promise<void>
-  setAutoLockMinutes: (teamId: number, minutes: number) => void
-  setLockOnWindowBlur: (teamId: number, enabled: boolean) => void
-  setLeakCheckEnabled: (teamId: number, enabled: boolean) => void
-  checkBiometricsSupport: (teamId: number) => Promise<boolean>
-  enableBiometrics: (teamId: number, masterPassword: string) => Promise<boolean>
-  disableBiometrics: (teamId: number) => Promise<void>
-  unlockWithBiometrics: (teamId: number) => Promise<boolean>
+  loadStatus: (teamId: number) => Promise<TeamVaultStatusResponse | null>
   recordActivity: () => void
   checkAutoLock: () => void
 
-  setup: (teamId: number, masterPassword: string, hint?: string) => Promise<boolean>
-  saveHint: (teamId: number, hint: string) => Promise<void>
-  checkHintStatus: (teamId: number) => Promise<boolean>
-  requestHintEmail: (teamId: number) => Promise<{ ok: boolean; message: string }>
-  unlock: (teamId: number, masterPassword: string) => Promise<boolean>
-  rotatePassword: (teamId: number, currentPassword: string, newPassword: string, nachweis?: RotationNachweis) => Promise<boolean>
+  setup: (teamId: number) => Promise<boolean>
+  unlock: (teamId: number) => Promise<boolean>
+  /**
+   * Verpackt den DEK für alle Mitglieder mit Tresor-Zugriff (Upsert).
+   * Gibt zurück, für wen verpackt und wer übersprungen wurde (noch keine
+   * E2EE-Identität). Nur der Gründer ruft das auf.
+   */
+  huellenHinterlegen: (teamId: number, dek: Uint8Array, keyVersion: number) => Promise<{ verpackt: number; uebersprungen: string[] }>
+  rotateVault: (teamId: number) => Promise<boolean>
   abortRotation: (teamId: number) => Promise<void>
   rollbackRotation: (teamId: number) => Promise<boolean>
   resetVault: (teamId: number, nachweis: Record<string, unknown>, bestaetigung: string) => Promise<void>
@@ -115,14 +107,40 @@ export interface TeamVaultState {
 
 const migrierendeDateien = new Set<string>()
 
+/**
+ * Räumt die Reste des geteilten Team-Passworts weg: eigene Sperrfrist,
+ * eigenen Leak-Schalter und das eigene Biometrie-Fach samt Keyring-Eintrag.
+ * Alles davon gilt seit 11/2026 zentral aus dem privaten Tresor.
+ */
+function altlastenAufraeumen(teamId: number): void {
+  if (typeof localStorage === 'undefined') return
+  const schluessel = [
+    `mss_team_vault_auto_lock_${teamId}`,
+    `mss_team_vault_lock_blur_${teamId}`,
+    `mss_team_vault_leak_check_${teamId}`,
+    `mss_team_vault_bio_${teamId}`,
+  ]
+  let hatteBio = false
+  for (const k of schluessel) {
+    if (k.endsWith(`_bio_${teamId}`) && localStorage.getItem(k) === 'true') hatteBio = true
+    localStorage.removeItem(k)
+  }
+  if (hatteBio) {
+    biometrieLoeschen(`team_vault_biometric_key_${teamId}`).catch((err: unknown) => {
+      still(err, 'teamVaultStore:bioAltAufraeumen')
+    })
+  }
+}
+
 export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   teamId: null,
   bucketId: null,
-  salt: null,
+  keyVersion: null,
   isInitialized: false,
   isUnlocked: false,
   isUnlocking: false,
   needsRotation: false,
+  needsSlot: false,
   isOwner: false,
   canAccessVault: true,
   userKey: null,
@@ -130,15 +148,8 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   serverRevision: 0,
   syncStatus: 'idle',
   error: null,
-  hasHint: null,
   rotationState: null,
   pendingBucketId: null,
-
-  autoLockMinutes: 5,
-  lockOnWindowBlur: false,
-  leakCheckEnabled: true,
-  isBiometricsSupported: false,
-  isBiometricsEnabled: false,
   lastActivityTime: Date.now(),
 
   recordActivity: () => {
@@ -146,249 +157,199 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
   },
 
   checkAutoLock: () => {
-    const { isUnlocked, autoLockMinutes, lastActivityTime } = get()
-    if (!isUnlocked || autoLockMinutes <= 0) return
-    const vergangenMs = Date.now() - lastActivityTime
-    if (vergangenMs >= autoLockMinutes * 60 * 1000) {
+    const { isUnlocked, lastActivityTime } = get()
+    if (!isUnlocked) return
+    // Der Team-Tresor folgt der Karte: Ist der private Tresor zu, ist er es auch.
+    const persoenlich = useVaultStore.getState()
+    if (!persoenlich.isUnlocked) {
       get().lock()
+      return
     }
-  },
-
-  loadSettings: async (teamId: number) => {
-    if (typeof localStorage === 'undefined') return
-    const rawAutoLock = localStorage.getItem(`mss_team_vault_auto_lock_${teamId}`)
-    const autoLockMinutes = rawAutoLock !== null ? Number(rawAutoLock) : 5
-    const lockOnWindowBlur = localStorage.getItem(`mss_team_vault_lock_blur_${teamId}`) === 'true'
-    const leakCheckEnabled = localStorage.getItem(`mss_team_vault_leak_check_${teamId}`) !== 'false'
-    const isBiometricsEnabled = localStorage.getItem(`mss_team_vault_bio_${teamId}`) === 'true'
-
-    const isBiometricsSupported = await isBiometricsAvailable()
-    set({
-      autoLockMinutes,
-      lockOnWindowBlur,
-      leakCheckEnabled,
-      isBiometricsSupported,
-      isBiometricsEnabled: isBiometricsSupported && isBiometricsEnabled,
-    })
-  },
-
-  setAutoLockMinutes: (teamId: number, minutes: number) => {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(`mss_team_vault_auto_lock_${teamId}`, String(minutes))
-    }
-    set({ autoLockMinutes: minutes })
-  },
-
-  setLockOnWindowBlur: (teamId: number, enabled: boolean) => {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(`mss_team_vault_lock_blur_${teamId}`, String(enabled))
-    }
-    set({ lockOnWindowBlur: enabled })
-  },
-
-  setLeakCheckEnabled: (teamId: number, enabled: boolean) => {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(`mss_team_vault_leak_check_${teamId}`, String(enabled))
-    }
-    set({ leakCheckEnabled: enabled })
-  },
-
-  checkBiometricsSupport: async (teamId: number) => {
-    const supported = await isBiometricsAvailable()
-    const enabled = typeof localStorage !== 'undefined'
-      ? localStorage.getItem(`mss_team_vault_bio_${teamId}`) === 'true'
-      : false
-    set({ isBiometricsSupported: supported, isBiometricsEnabled: supported && enabled })
-    return supported
-  },
-
-  enableBiometrics: async (teamId: number, masterPassword: string) => {
-    try {
-      const isAvailable = await isBiometricsAvailable()
-      if (!isAvailable) return false
-
-      let { salt, bucketId } = get()
-      if (!salt || !bucketId) {
-        await get().loadStatus(teamId)
-        salt = get().salt
-        bucketId = get().bucketId
-      }
-      if (!salt || !bucketId) return false
-
-      const saltBytes = base64ToBytes(salt)
-      const { bucketId: derivedBucket } = await deriveVaultKeys(masterPassword, saltBytes)
-      if (derivedBucket.toLowerCase() !== bucketId.toLowerCase()) {
-        return false
-      }
-
-      if (!(await biometrieSpeicherFragtSelbst())) {
-        const verified = await promptBiometricVerification(i18n.t('teams.vaultUnlock'))
-        if (!verified) return false
-      }
-
-      await biometrieSpeichern(masterPassword, `team_vault_biometric_key_${teamId}`)
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(`mss_team_vault_bio_${teamId}`, 'true')
-      }
-      set({ isBiometricsEnabled: true })
-      return true
-    } catch {
-      return false
-    }
-  },
-
-  disableBiometrics: async (teamId: number) => {
-    try {
-      await biometrieLoeschen(`team_vault_biometric_key_${teamId}`)
-    } catch {}
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(`mss_team_vault_bio_${teamId}`, 'false')
-    }
-    set({ isBiometricsEnabled: false })
-  },
-
-  unlockWithBiometrics: async (teamId: number) => {
-    set({ isUnlocking: true, error: null })
-    try {
-      const isAvailable = await isBiometricsAvailable()
-      if (!isAvailable) {
-        set({ isUnlocking: false, error: 'Biometrie nicht verfügbar' })
-        return false
-      }
-      const masterPassword = await biometrieEntsperren(i18n.t('teams.vaultUnlock'), `team_vault_biometric_key_${teamId}`)
-      if (!masterPassword) {
-        set({ isUnlocking: false })
-        return false
-      }
-      return await get().unlock(teamId, masterPassword)
-    } catch (err: unknown) {
-      set({ isUnlocking: false, error: err instanceof Error ? err.message : 'Entsperren fehlgeschlagen' })
-      return false
-    } finally {
-      set({ isUnlocking: false })
+    // Die Frist kommt zentral aus dem privaten Tresor.
+    if (persoenlich.autoLockMinutes <= 0) return
+    const vergangenMs = Date.now() - lastActivityTime
+    if (vergangenMs >= persoenlich.autoLockMinutes * 60 * 1000) {
+      get().lock()
     }
   },
 
   loadStatus: async (teamId: number) => {
     try {
-      const res = await teamsApi.getVaultSalt(teamId)
+      const res = await teamsApi.getVaultStatus(teamId)
       if (res.bucket_id) teamFuerBucketMerken(res.bucket_id, teamId)
       if (res.pending_bucket_id) teamFuerBucketMerken(res.pending_bucket_id, teamId)
-      await get().loadSettings(teamId)
+      altlastenAufraeumen(teamId)
       set((state) => ({
         teamId,
         isInitialized: res.is_setup,
-        salt: res.salt,
-        bucketId: res.bucket_id,
+        // Solange entsperrt, gehören Schlüsselstand und Bucket dem DEK im
+        // Speicher — nicht dem Serverstand. So erkennt die Ansicht, wenn
+        // anderswo rotiert wurde, ohne den offenen Tresor zu zerreißen.
+        ...(state.isUnlocked && state.teamId === teamId
+          ? {}
+          : { keyVersion: res.key_version, bucketId: res.bucket_id }),
         needsRotation: res.needs_rotation,
         isOwner: res.is_owner,
         canAccessVault: res.can_access_vault ?? true,
-        hasHint: res.has_hint ?? false,
         rotationState: res.rotation_state ?? null,
         pendingBucketId: res.pending_bucket_id ?? null,
         // Wenn das Team wechselt und vorher ein anderer Tresor offen war:
-        ...(state.teamId !== teamId ? { isUnlocked: false, userKey: null, items: [], serverRevision: 0 } : {}),
+        ...(state.teamId !== teamId ? { isUnlocked: false, userKey: null, items: [], serverRevision: 0, needsSlot: false } : {}),
       }))
+      return res
     } catch (err: unknown) {
       set({ error: err instanceof Error ? err.message : 'Fehler beim Laden des Team-Tresors' })
+      return null
     }
   },
 
-  setup: async (teamId: number, masterPassword: string, hint?: string) => {
+  setup: async (teamId: number) => {
     try {
-      const saltBytes = new Uint8Array(32)
-      fillRandom(saltBytes)
-      const salt = bytesToBase64(saltBytes)
-      const { userKey, bucketId } = await deriveVaultKeys(masterPassword, saltBytes)
-
-      const trimmedHint = hint?.trim() || undefined
-      await teamsApi.setupVault(teamId, { bucket_id: bucketId, salt, hint: trimmedHint })
-      teamFuerBucketMerken(bucketId, teamId)
-      set({
-        teamId,
-        bucketId,
-        salt,
-        isInitialized: true,
-        isUnlocked: true,
-        needsRotation: false,
-        hasHint: !!trimmedHint,
-        userKey,
-        items: [],
-        serverRevision: 0,
-        error: null,
-      })
-      blobBasisSetzen(teamId)
-      await ablageLaden(bucketId).catch(() => {})
-      return true
+      // Die Karte steckt: Ohne offenen privaten Tresor gibt es keinen Team-Tresor.
+      if (!useVaultStore.getState().isUnlocked) {
+        set({ error: i18n.t('teams.vaultBrauchtKarte') })
+        return false
+      }
+      let geraet: Awaited<ReturnType<typeof ensureAccountKeys>>
+      try {
+        geraet = await ensureAccountKeys()
+      } catch (err) {
+        if (err instanceof KontoSchluesselNichtUebertragenError) {
+          set({ error: i18n.t('teams.vaultBrauchtSchluesselUebertragung') })
+          return false
+        }
+        throw err
+      }
+      if (!geraet.kontoPaar) {
+        set({ error: i18n.t('messenger.accountKeyMissing') })
+        return false
+      }
+      const { dek, schluessel, bucketId } = await erzeugeTeamSchluessel()
+      try {
+        await teamsApi.setupVault(teamId, { bucket_id: bucketId })
+        teamFuerBucketMerken(bucketId, teamId)
+        await get().huellenHinterlegen(teamId, dek, 1)
+        try {
+          await teamsApi.getOwnKeyslot(teamId)
+        } catch {
+          // Die eigene Hülle liegt nicht: Ohne sie sperrt sich der Gründer
+          // mit dem frischen Tresor selbst aus. Der Tresor ist leer (niemand
+          // konnte je entsperren), also zurücksetzen und neu anfangen.
+          set({ error: i18n.t('teams.vaultSetupUnvollstaendig') })
+          return false
+        }
+        set({
+          teamId,
+          bucketId,
+          keyVersion: 1,
+          isInitialized: true,
+          isUnlocked: true,
+          needsRotation: false,
+          needsSlot: false,
+          userKey: schluessel,
+          items: [],
+          serverRevision: 0,
+          error: null,
+        })
+        blobBasisSetzen(teamId)
+        await ablageLaden(bucketId).catch(() => {})
+        return true
+      } finally {
+        dek.fill(0)
+      }
     } catch (err: unknown) {
       set({ error: err instanceof Error ? err.message : 'Fehler beim Einrichten des Team-Tresors' })
       return false
     }
   },
 
-  saveHint: async (teamId: number, hint: string) => {
-    if (!hint.trim()) return
-    try {
-      await teamsApi.setVaultHint(teamId, hint.trim())
-      set({ hasHint: true })
-    } catch {
-      throw new Error(i18n.t('mss.vault.hinweisSpeichernFehlgeschlagen'))
-    }
-  },
-
-  checkHintStatus: async (teamId: number) => {
-    try {
-      const res = await teamsApi.getVaultHintStatus(teamId)
-      const has = !!res.has_hint
-      set({ hasHint: has })
-      return has
-    } catch {
-      return false
-    }
-  },
-
-  requestHintEmail: async (teamId: number): Promise<{ ok: boolean; message: string }> => {
-    try {
-      const res = await teamsApi.requestVaultHint(teamId)
-      return { ok: true, message: res.message || i18n.t('mss.vault.hinweisGesendet') }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes('429')) {
-        return { ok: false, message: '' }
+  huellenHinterlegen: async (teamId: number, dek: Uint8Array, keyVersion: number) => {
+    // Alle Mitglieder bekommen eine Hülle — auch ohne Tresor-Recht: Lesen
+    // sperrt der Server (Sync, Blobs und Slot-Abruf sind getrennt verriegelt).
+    // Dafür ist eine spätere Rechtevergabe sofort wirksam, ohne Rotation.
+    const detail = await teamsApi.get(teamId)
+    const mitglieder = detail.members ?? []
+    const oeffentlich = await kontoOeffentlichViele(mitglieder.map((m) => m.user_id))
+    const slots: { user_id: number; wrapped_dek: string }[] = []
+    const uebersprungen: string[] = []
+    for (const m of mitglieder) {
+      const konto = oeffentlich.get(m.user_id)
+      if (!konto) {
+        // Noch keine E2EE-Identität (nie im Messenger gewesen): Die nächste
+        // Rotation holt die Hülle nach, sobald die Identität existiert.
+        uebersprungen.push(m.username)
+        continue
       }
-      return { ok: false, message: i18n.t('mss.vault.hinweisAnfordernFehler') }
+      slots.push({ user_id: m.user_id, wrapped_dek: await teamSchluesselVerpacken(dek, konto.public_key) })
     }
+    if (slots.length > 0) {
+      await teamsApi.uploadKeyslots(teamId, { key_version: keyVersion, slots })
+    }
+    return { verpackt: slots.length, uebersprungen }
   },
 
-  unlock: async (teamId: number, masterPassword: string) => {
-    const { salt, bucketId } = get()
-    if (!salt || !bucketId) {
-      await get().loadStatus(teamId)
-    }
-    const currentSalt = get().salt
-    const currentBucket = get().bucketId
-    if (!currentSalt || !currentBucket) {
-      set({ error: 'Team-Tresor ist noch nicht eingerichtet' })
+  unlock: async (teamId: number) => {
+    // Die Karte steckt: Ohne offenen privaten Tresor öffnet auch der Team-Tresor nicht.
+    if (!useVaultStore.getState().isUnlocked) {
+      set({ error: i18n.t('teams.vaultBrauchtKarte') })
       return false
     }
-
+    set({ isUnlocking: true, error: null, needsSlot: false })
     try {
-      const saltBytes = base64ToBytes(currentSalt)
-      const { userKey, bucketId: derivedBucket } = await deriveVaultKeys(masterPassword, saltBytes)
-
-      if (derivedBucket.toLowerCase() !== currentBucket.toLowerCase()) {
-        set({ error: 'Falsches Master-Passwort' })
+      await get().loadStatus(teamId)
+      const stand = get()
+      if (!stand.isInitialized || !stand.bucketId) {
+        set({ isUnlocking: false, error: 'Team-Tresor ist noch nicht eingerichtet' })
+        return false
+      }
+      if (!stand.canAccessVault) {
+        set({ isUnlocking: false, error: i18n.t('teams.vaultKeinZugriff') })
+        return false
+      }
+      let slot: { key_version: number; wrapped_dek: string }
+      try {
+        slot = await teamsApi.getOwnKeyslot(teamId)
+      } catch (err) {
+        // Nur 404 heißt „noch nicht freigeschaltet“ — alles andere (Netz,
+        // Server) ist ein echter Fehler und läuft in die äußere Behandlung.
+        if (err instanceof SanitizedApiError && err.status === 404) {
+          set({ isUnlocking: false, needsSlot: true })
+          return false
+        }
+        throw err
+      }
+      let geraet: Awaited<ReturnType<typeof ensureAccountKeys>>
+      try {
+        geraet = await ensureAccountKeys()
+      } catch (err) {
+        if (err instanceof KontoSchluesselNichtUebertragenError) {
+          set({ isUnlocking: false, error: i18n.t('teams.vaultBrauchtSchluesselUebertragung') })
+          return false
+        }
+        throw err
+      }
+      if (!geraet.kontoPaar) {
+        set({ isUnlocking: false, error: i18n.t('messenger.accountKeyMissing') })
+        return false
+      }
+      const { schluessel, bucketId: abgeleitet } = await teamSchluesselAuspacken(
+        slot.wrapped_dek,
+        geraet.kontoPaar.privateKeyJwk,
+      )
+      if (abgeleitet.toLowerCase() !== stand.bucketId.toLowerCase()) {
+        set({ isUnlocking: false, error: i18n.t('teams.vaultHuellePasstNicht') })
         return false
       }
 
-      teamFuerBucketMerken(currentBucket, teamId)
+      teamFuerBucketMerken(stand.bucketId, teamId)
 
       // Cached Blobs vorab entschlüsseln für sofortige Anzeige
-      const gespeicherte = blobsLesen(currentBucket)
+      const gespeicherte = blobsLesen(stand.bucketId)
       const vorabItems: VaultItem[] = []
       for (const b of gespeicherte) {
         if (b.is_deleted) continue
         try {
-          const dec = await decryptVaultEntry(b.ciphertext, userKey, b.id)
+          const dec = await decryptVaultEntry(b.ciphertext, schluessel, b.id)
           if (dec && dec[VAULT_TOMBSTONE_MARKER] !== true) {
             vorabItems.push({ ...(dec as unknown as VaultItem), id: b.id, revision: b.revision })
           }
@@ -397,166 +358,129 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
 
       set({
         teamId,
-        userKey,
+        userKey: schluessel,
+        keyVersion: slot.key_version,
+        bucketId: stand.bucketId,
         isUnlocked: true,
+        isUnlocking: false,
+        needsSlot: false,
         items: vorabItems,
         error: null,
       })
       blobBasisSetzen(teamId)
-      await ablageLaden(currentBucket).catch(() => {})
+      await ablageLaden(stand.bucketId).catch(() => {})
       await get().syncWithServer(teamId)
       return true
     } catch (err: unknown) {
-      set({ error: err instanceof Error ? err.message : 'Fehler beim Entsperren des Team-Tresors' })
+      set({ isUnlocking: false, error: err instanceof Error ? err.message : 'Fehler beim Entsperren des Team-Tresors' })
       return false
     }
   },
 
-  rotatePassword: async (teamId: number, currentPassword: string, newPassword: string, nachweis: RotationNachweis = {}) => {
-    const { items, userKey, salt, bucketId } = get()
-    if (!userKey || !salt || !bucketId) return false
+  rotateVault: async (teamId: number) => {
+    const { items, userKey, bucketId } = get()
+    if (!userKey || !bucketId || !useVaultStore.getState().isUnlocked) return false
 
     try {
-      // Aktuelles Passwort prüfen (Bucket muss übereinstimmen) — zugleich
-      // das Passwort, mit dem das Vorab-Backup versiegelt wird.
-      const saltBytesAlt = base64ToBytes(salt)
-      const { bucketId: altBucket } = await deriveVaultKeys(currentPassword, saltBytesAlt)
-      if (altBucket.toLowerCase() !== bucketId.toLowerCase()) {
-        set({ error: 'Falsches aktuelles Master-Passwort' })
-        return false
-      }
+      // Eine hängende Vorbereitung (z. B. nach Absturz) trägt einen verlorenen
+      // Schlüssel: Der DEK liegt nirgends, also Abbruch und von vorn. Der
+      // Abbruch ohne Vorbereitung ist ein harmloser Nullauf.
+      await teamsApi.rotationAbort(teamId).catch(() => {})
+      const { rotationJournalSchreiben } = await import('./vaultRotation')
+      rotationJournalSchreiben(`team-${teamId}`, null)
 
-      const { rotateVaultCore } = await import('./vaultRotation')
-      const { erstelleBackupBytes, speichereBackupImAppOrdner, backupDateiname } = await import('./tresorBackup')
-
-      // Fortsetzen: serverseitig vorbereitete Rotation mit denselben Werten.
-      const status = await teamsApi.getVaultSalt(teamId)
-      let newSalt: string
-      let newSaltBytes: Uint8Array
-      let newBucketId: string
-      let newUserKey: CryptoKey
-      if (status.rotation_state === 'prepared' && status.pending_bucket_id && status.pending_salt) {
-        newSalt = status.pending_salt
-        newSaltBytes = base64ToBytes(newSalt)
-        const abgeleitet = await deriveVaultKeys(newPassword, newSaltBytes)
-        newBucketId = status.pending_bucket_id
-        if (abgeleitet.bucketId.toLowerCase() !== newBucketId.toLowerCase()) {
-          set({ error: 'Neues Passwort passt nicht zur vorbereiteten Rotation' })
-          return false
-        }
-        newUserKey = abgeleitet.userKey
-      } else {
-        newSaltBytes = new Uint8Array(32)
-        fillRandom(newSaltBytes)
-        newSalt = bytesToBase64(newSaltBytes)
-        const abgeleitet = await deriveVaultKeys(newPassword, newSaltBytes)
-        newBucketId = abgeleitet.bucketId
-        newUserKey = abgeleitet.userKey
-      }
-
-      await rotateVaultCore({
-        scope: `team-${teamId}`,
-        items,
-        neuerKey: newUserKey,
-        neueBucketId: newBucketId,
-        neuesSalt: newSalt,
-        backup: async () => {
-          const bytes = await erstelleBackupBytes(
-            items as unknown as Record<string, unknown>[],
-            currentPassword,
-          )
-          await speichereBackupImAppOrdner(bytes, backupDateiname('team'))
-        },
-        transformItem: async (item) => {
-          // Blob-Schluessel auf den neuen Tresor-Schluessel umwickeln; Chunks bleiben.
-          if (!item.datei) return item
-          const wickeln = async (kopf: unknown) =>
-            istBlobKopf(kopf) ? blobSchluesselNeuWickeln(kopf, userKey, newUserKey, item.id) : kopf
-          const datei = { ...item.datei }
-          datei.original = (await wickeln(datei.original)) as typeof datei.original
-          if (datei.vorschau) datei.vorschau = (await wickeln(datei.vorschau)) as typeof datei.vorschau
-          if (datei.miniatur) datei.miniatur = (await wickeln(datei.miniatur)) as typeof datei.miniatur
-          if (datei.frueher) {
-            const frueher = []
-            for (const f of datei.frueher) {
-              const kopf = { ...f }
-              kopf.original = (await wickeln(kopf.original)) as typeof kopf.original
-              if (kopf.vorschau) kopf.vorschau = (await wickeln(kopf.vorschau)) as typeof kopf.vorschau
-              if (kopf.miniatur) kopf.miniatur = (await wickeln(kopf.miniatur)) as typeof kopf.miniatur
-              frueher.push(kopf)
-            }
-            datei.frueher = frueher as typeof datei.frueher
-          }
-          return { ...item, datei }
-        },
-        transport: {
-          prepare: async (b, s) => {
-            if (status.rotation_state !== 'prepared') {
-              await teamsApi.rotationPrepare(teamId, { bucket_id: b, salt: s, ...nachweis })
-            }
-          },
-          sync: async (b, mutationen) => {
-            if (mutationen.length > 0) {
-              const res = await teamsApi.syncVault(teamId, {
-                bucket_id: b,
-                since_revision: 0,
-                mutations: mutationen,
-              })
-              return res
-            }
-            // Alles lesen (Seiten über server_revision).
-            const alle: TeamVaultSyncResult['entries'] = []
-            let seit = 0
-            for (;;) {
-              const res = await teamsApi.syncVault(teamId, { bucket_id: b, since_revision: seit })
-              alle.push(...res.entries)
-              seit = res.server_revision
-              if (!res.has_more) return { server_revision: seit, entries: alle, has_more: false }
-            }
-          },
-          commit: async () => {
-            await teamsApi.rotationCommit(teamId, nachweis)
-          },
-          abort: async () => {
-            await teamsApi.rotationAbort(teamId)
-          },
-        },
-      })
-
-      // Biometrie zeigt sonst weiter aufs alte Passwort.
+      const status = await teamsApi.getVaultStatus(teamId)
+      const naechsterStand = (status.key_version ?? 1) + 1
+      const neu = await erzeugeTeamSchluessel()
       try {
-        if (get().isBiometricsEnabled) {
-          await biometrieSpeichern(newPassword, `team_vault_biometric_key_${teamId}`)
-        }
-      } catch {
-        try { await biometrieLoeschen(`team_vault_biometric_key_${teamId}`) } catch (err) { still(err, 'teamVaultStore:biometrieLoeschen') }
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem(`mss_team_vault_bio_${teamId}`, 'false')
-        }
-        set({ isBiometricsEnabled: false })
+        const { rotateVaultCore } = await import('./vaultRotation')
+        await rotateVaultCore({
+          scope: `team-${teamId}`,
+          items,
+          neuerKey: neu.schluessel,
+          neueBucketId: neu.bucketId,
+          // Kein Salt (kein KDF-Produkt), kein Datei-Backup (Rollback-Fenster genügt).
+          transformItem: async (item) => {
+            // Blob-Schluessel auf den neuen Team-Schluessel umwickeln; Chunks bleiben.
+            if (!item.datei) return item
+            const wickeln = async (kopf: unknown) =>
+              istBlobKopf(kopf) ? blobSchluesselNeuWickeln(kopf, userKey, neu.schluessel, item.id) : kopf
+            const datei = { ...item.datei }
+            datei.original = (await wickeln(datei.original)) as typeof datei.original
+            if (datei.vorschau) datei.vorschau = (await wickeln(datei.vorschau)) as typeof datei.vorschau
+            if (datei.miniatur) datei.miniatur = (await wickeln(datei.miniatur)) as typeof datei.miniatur
+            if (datei.frueher) {
+              const frueher = []
+              for (const f of datei.frueher) {
+                const kopf = { ...f }
+                kopf.original = (await wickeln(kopf.original)) as typeof kopf.original
+                if (kopf.vorschau) kopf.vorschau = (await wickeln(kopf.vorschau)) as typeof kopf.vorschau
+                if (kopf.miniatur) kopf.miniatur = (await wickeln(kopf.miniatur)) as typeof kopf.miniatur
+                frueher.push(kopf)
+              }
+              datei.frueher = frueher as typeof datei.frueher
+            }
+            return { ...item, datei }
+          },
+          transport: {
+            prepare: async (b) => {
+              await teamsApi.rotationPrepare(teamId, { bucket_id: b })
+              // Erst weiter, wenn die Hüllen für den neuen Stand liegen —
+              // sonst sperrt der Commit die Mitglieder aus. Scheitert das,
+              // bricht der Kern ab und raeumt das Staging wieder weg.
+              await get().huellenHinterlegen(teamId, neu.dek, naechsterStand)
+            },
+            sync: async (b, mutationen) => {
+              if (mutationen.length > 0) {
+                const res = await teamsApi.syncVault(teamId, {
+                  bucket_id: b,
+                  since_revision: 0,
+                  mutations: mutationen,
+                })
+                return res
+              }
+              // Alles lesen (Seiten über server_revision).
+              const alle: TeamVaultSyncResult['entries'] = []
+              let seit = 0
+              for (;;) {
+                const res = await teamsApi.syncVault(teamId, { bucket_id: b, since_revision: seit })
+                alle.push(...res.entries)
+                seit = res.server_revision
+                if (!res.has_more) return { server_revision: seit, entries: alle, has_more: false }
+              }
+            },
+            commit: async () => {
+              await teamsApi.rotationCommit(teamId)
+            },
+            abort: async () => {
+              await teamsApi.rotationAbort(teamId)
+            },
+          },
+        })
+
+        teamFuerBucketMerken(neu.bucketId, teamId)
+        try { await ablageLaden(neu.bucketId) } catch (err) { still(err, 'teamVaultStore:ablageLaden') }
+
+        set({
+          bucketId: neu.bucketId,
+          keyVersion: naechsterStand,
+          userKey: neu.schluessel,
+          needsRotation: false,
+          rotationState: 'committed',
+          pendingBucketId: null,
+          serverRevision: 0,
+          error: null,
+        })
+        await get().syncWithServer(teamId)
+        return true
+      } finally {
+        neu.dek.fill(0)
       }
-
-      teamFuerBucketMerken(newBucketId, teamId)
-      try { await ablageLaden(newBucketId) } catch (err) { still(err, 'teamVaultStore:ablageLaden') }
-
-      set({
-        salt: newSalt,
-        bucketId: newBucketId,
-        userKey: newUserKey,
-        needsRotation: false,
-        rotationState: 'committed',
-        pendingBucketId: null,
-        serverRevision: 0,
-        error: null,
-      })
-      await get().syncWithServer(teamId)
-      return true
     } catch (err: unknown) {
-      set({ error: err instanceof Error ? err.message : 'Fehler beim Rotieren des Master-Passworts' })
+      set({ error: err instanceof Error ? err.message : 'Fehler beim Erneuern des Team-Schlüssels' })
       return false
     }
   },
-
   abortRotation: async (teamId: number) => {
     try {
       await teamsApi.rotationAbort(teamId)
@@ -589,9 +513,9 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
       isUnlocked: false,
       userKey: null,
       bucketId: null,
-      salt: null,
+      keyVersion: null,
       needsRotation: false,
-      hasHint: false,
+      needsSlot: false,
       items: [],
       serverRevision: 0,
       error: null,
@@ -989,7 +913,8 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
 export const teamTresorAutoSperrQuelle: AutoSperrQuelle = {
   istEntsperrt: () => useTeamVaultStore.getState().isUnlocked,
   istBeschaeftigt: () => useTeamVaultStore.getState().isUnlocking,
-  sperrtBeiFensterwechsel: () => useTeamVaultStore.getState().lockOnWindowBlur,
+  // Zentral aus dem privaten Tresor: eine Einstellung für beide.
+  sperrtBeiFensterwechsel: () => useVaultStore.getState().lockOnWindowBlur,
   merkeAktivitaet: () => useTeamVaultStore.getState().recordActivity(),
   pruefeFrist: () => {
     useTeamVaultStore.getState().checkAutoLock()

@@ -166,3 +166,4 @@ wetter-sidecar/daten/*
 logdump.txt
 /node_modules
 /frontend/.vitest-tmp
+/.vitest-tmp

@@ -20,7 +20,11 @@ from routers.social.basis import _check_social_enabled
 from schemas.social import validate_ecdsa_public_key_jwk, validate_rsa_public_key_jwk
 from services.social.messages_service import latest_chat_key_version, list_chat_keys, store_chat_keys
 
-router = APIRouter(dependencies=[Depends(_check_social_enabled)])
+# Kein Social-Gate auf Router-Ebene: Die Konto-Identitaet (veroeffentlichen,
+# lesen, nachschlagen, Geraete-Bund holen/uebertragen) ist geteilte
+# Infrastruktur fuer Messenger UND Team-Tresor — Teams funktionieren auch
+# ohne Social. Nur die Chat-Schluessel dahinter bleiben Messenger-Sache.
+router = APIRouter()
 
 
 class AccountPublish(BaseModel):
@@ -233,7 +237,7 @@ def lookup_accounts(
     }
 
 
-@router.get("/e2ee/chat-keys")
+@router.get("/e2ee/chat-keys", dependencies=[Depends(_check_social_enabled)])
 def get_chat_keys(
     chat_type: str = Query(..., pattern="^(direct|group)$"),
     chat_id: int = Query(..., gt=0),
@@ -246,7 +250,7 @@ def get_chat_keys(
     }
 
 
-@router.put("/e2ee/chat-keys")
+@router.put("/e2ee/chat-keys", dependencies=[Depends(_check_social_enabled)])
 def put_chat_keys(
     req: ChatKeysUpload,
     db: Session = Depends(get_db),
