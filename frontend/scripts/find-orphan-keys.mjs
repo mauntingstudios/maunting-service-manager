@@ -23,7 +23,10 @@ import process from 'node:process'
  */
 
 const root = process.cwd()
-const sourceDir = path.join(root, 'src')
+const sourceDirs = [
+  path.join(root, 'src'),
+  path.join(root, 'packages', 'maunting-ui', 'src'),
+]
 // Beide Ordner, nicht nur routers: die Fehlerschlüssel des KI-Streams
 // (`ai.chat.errors.*`) entstehen in services/ai_stream/. Ein erster Anlauf las
 // nur routers/ und hielt neun davon für tot — check-i18n.mjs hat sie gerettet,
@@ -70,7 +73,7 @@ const de = flatten(JSON.parse(await readFile(path.join(root, 'src/locales/de.jso
 // wenn am Ende gelöscht wird.
 const literal = new Set()
 const praefixe = new Set()
-for (const file of await files(sourceDir)) {
+for (const file of (await Promise.all(sourceDirs.map(dir => files(dir)))).flat()) {
   const source = await readFile(file, 'utf8')
   for (const m of source.matchAll(/['"`]([A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)+)['"`]/g)) literal.add(m[1])
   // t(`ai.tools.${name}`) — alles unter dem Präfix gilt als möglicherweise benutzt

@@ -9,11 +9,14 @@ import { describe, expect, it } from 'vitest'
  * den sichtbaren Text oder per `aria-label`, oder er steckt in einem `<label>`
  * bzw. trägt eine `id`, auf die ein `<label htmlFor>` zeigt.
  */
-const quellen = import.meta.glob(['/src/**/*.tsx', '!/src/**/*.test.tsx'], {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
+const quellen = import.meta.glob(
+  ['/src/**/*.tsx', '!/src/**/*.test.tsx', '/packages/maunting-ui/src/**/*.tsx', '!/packages/maunting-ui/src/**/*.test.tsx'],
+  {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  },
+) as Record<string, string>
 
 const NAMEN = new Set(['aria-label', 'aria-labelledby'])
 

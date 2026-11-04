@@ -15,7 +15,9 @@ const config: Config = {
   content: [
     './index.html',
     './desktop.html',
+    './browser.html',
     './src/**/*.{js,ts,jsx,tsx}',
+    './packages/maunting-ui/src/**/*.{js,ts,jsx,tsx}',
   ],
   darkMode: 'class',
   theme: {
@@ -35,19 +37,19 @@ const config: Config = {
         // Content colors
         'on-surface': '#e7f4f7',
         'on-surface-variant': '#a9bdc3',
-        'on-background': 'hsl(var(--dna-foreground) / <alpha-value>)',
-        'background': 'hsl(var(--dna-background) / <alpha-value>)',
+        'on-background': 'hsl(var(--mui-foreground) / <alpha-value>)',
+        'background': 'hsl(var(--mui-background) / <alpha-value>)',
         // Shadcn-compatible aliases used by existing central components
-        'foreground': 'hsl(var(--dna-foreground) / <alpha-value>)',
+        'foreground': 'hsl(var(--mui-foreground) / <alpha-value>)',
         'muted': '#162328',
         'muted-foreground': '#9db3b8',
         'border': '#284147',
         'input': '#284147',
-        'ring': 'hsl(var(--dna-focus) / <alpha-value>)',
+        'ring': 'hsl(var(--mui-focus) / <alpha-value>)',
         'card': '#101b1f',
         'card-foreground': '#e7f4f7',
         // Primary (Logo ice cyan)
-        'primary': 'hsl(var(--dna-primary) / <alpha-value>)',
+        'primary': 'hsl(var(--mui-primary) / <alpha-value>)',
         // DIS Design DNA ice colors
         'ice': {
           100: 'hsl(188 29% 95%)',
@@ -94,9 +96,9 @@ const config: Config = {
         // wieder zweimal. `status-error` und `destructive` waren nur andere
         // Namen für `status-destructive` und sind abgeschafft; wer sie
         // schreibt, bekommt seit 09/2026 keine Farbe mehr.
-        'status-success': 'hsl(var(--dna-success) / <alpha-value>)',
-        'status-warning': 'hsl(var(--dna-warning) / <alpha-value>)',
-        'status-destructive': 'hsl(var(--dna-danger) / <alpha-value>)',
+        'status-success': 'hsl(var(--mui-success) / <alpha-value>)',
+        'status-warning': 'hsl(var(--mui-warning) / <alpha-value>)',
+        'status-destructive': 'hsl(var(--mui-danger) / <alpha-value>)',
         // Infrastructure
         'outline': '#5b737a',
         'outline-variant': '#284147',

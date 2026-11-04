@@ -3,11 +3,14 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const quellen = import.meta.glob(['/src/**/*.{ts,tsx,css}', '!/src/**/*.test.{ts,tsx}'], {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
+const quellen = import.meta.glob(
+  ['/src/**/*.{ts,tsx,css}', '!/src/**/*.test.{ts,tsx}', '/packages/maunting-ui/src/**/*.{ts,tsx,css}', '!/packages/maunting-ui/src/**/*.test.{ts,tsx}'],
+  {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  },
+) as Record<string, string>
 
 const browserCss = readFileSync(resolve(__dirname, '../browser/browser.css'), 'utf-8')
 

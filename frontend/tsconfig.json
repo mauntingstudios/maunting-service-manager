@@ -18,10 +18,12 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@maunting/ui": ["packages/maunting-ui/src/index.ts"],
+      "@maunting/ui/*": ["packages/maunting-ui/src/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "packages/maunting-ui/src"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -6791,6 +6791,7 @@
     "roleSaved": "Role successfully saved.",
     "roleDeleted": "Role successfully deleted.",
     "deleteRoleTitle": "Delete role",
+    "defaultRoleCannotBeDeleted": "The default role cannot be deleted.",
     "deleteRoleConfirm": "Do you really want to delete the role “{{name}}”? Members will lose the associated permissions.",
     "assignRoles": "Assign roles",
     "noRolesYet": "No custom roles created yet.",

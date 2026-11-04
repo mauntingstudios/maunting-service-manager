@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { Swarm, SwarmState } from '@maunting/design-dna/swarm'
+import type { Swarm, SwarmState } from '@maunting/ui/swarm'
 
 import type { Sprachzustand } from './useSprachsitzung'
 
@@ -8,7 +8,7 @@ import type { Sprachzustand } from './useSprachsitzung'
  * Sternenglobus in Ruhe, das MSM-Logo beim Arbeiten, die Erde bei einer
  * Regionalanalyse.
  *
- * Gezeichnet wird er in der Design-DNA (`@maunting/design-dna/swarm`), damit
+ * Gezeichnet wird er in der Maunting-DNA (`@maunting/ui/swarm`), damit
  * Panel, Desktop-Overlay und Android-App denselben Schwarm zeigen und keine
  * eine eigene Fassung pflegt. Hier steht nur, was MSM daraus macht: welcher
  * Sitzungszustand welche Form ist, wann ein Werkzeug einen Lichtring
@@ -115,7 +115,7 @@ export function Schwarm({
     if (!element) return
     let abgebaut = false
     const beginn = performance.now()
-    void import('@maunting/design-dna/swarm')
+    void import('@maunting/ui/swarm')
       .then(({ createSwarm, simulatedSpeech }) => {
         if (abgebaut) return
         const silben = simulatedSpeech(7)

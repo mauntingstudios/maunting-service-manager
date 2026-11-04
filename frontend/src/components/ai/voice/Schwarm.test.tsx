@@ -18,7 +18,7 @@ const modul = vi.hoisted(() => {
   }
 })
 
-vi.mock('@maunting/design-dna/swarm', () => ({
+vi.mock('@maunting/ui/swarm', () => ({
   createSwarm: modul.createSwarm,
   simulatedSpeech: () => modul.silben,
 }))

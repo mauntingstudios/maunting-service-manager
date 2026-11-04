@@ -30,14 +30,25 @@ import process from 'node:process'
  */
 
 const root = process.cwd()
-const sourceDir = path.join(root, 'src')
-const cssFile = path.join(root, 'src', 'index.css')
+const sourceDirs = [
+  path.join(root, 'src'),
+  path.join(root, 'packages', 'maunting-ui', 'src'),
+]
+const cssFiles = [
+  path.join(root, 'src', 'index.css'),
+  path.join(root, 'packages', 'maunting-ui', 'src', 'styles.css'),
+]
 const configFile = path.join(root, 'tailwind.config.ts')
 
 const isTestFile = name => /\.(?:test|spec)\.(?:ts|tsx)$/.test(name)
 
 async function sourceFiles(directory) {
-  const entries = await readdir(directory, { withFileTypes: true })
+  let entries
+  try {
+    entries = await readdir(directory, { withFileTypes: true })
+  } catch {
+    return []
+  }
   const files = await Promise.all(entries.map(entry => {
     const current = path.join(directory, entry.name)
     if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : sourceFiles(current)
@@ -113,7 +124,13 @@ const HALBER_SCHRITT = /(?<![\w-])(?:[wh]|p[xytrbl]?|m[xytrbl]?|gap(?:-[xy])?|sp
 /** `text-<rolle>-<stufe>` — jede Stufe muss in der Config stehen. */
 const SKALA_NAME = /(?<![\w-])text-(display|headline|title|body|label|mono)-([a-z-]+)(?![\w-])/g
 
-const css = await readFile(cssFile, 'utf8')
+const css = (await Promise.all(cssFiles.map(async file => {
+  try {
+    return await readFile(file, 'utf8')
+  } catch {
+    return ''
+  }
+}))).join('\n')
 const config = await readFile(configFile, 'utf8')
 
 // Was `extend.fontSize` definiert.
@@ -137,7 +154,7 @@ const definierteAnimationen = new Set([
 const fehler = []
 const klassenMuster = /class(?:Name)?=(?:"([^"]*)"|'([^']*)'|\{`([^`]*)`\})/g
 
-for (const file of await sourceFiles(sourceDir)) {
+for (const file of (await Promise.all(sourceDirs.map(sourceFiles))).flat()) {
   const source = await readFile(file, 'utf8')
   const relativ = path.relative(root, file).replace(/\\/g, '/')
 

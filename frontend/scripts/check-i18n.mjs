@@ -4,7 +4,10 @@ import process from 'node:process'
 
 const root = process.cwd()
 const localesDir = path.join(root, 'src', 'locales')
-const sourceDir = path.join(root, 'src')
+const sourceDirs = [
+  path.join(root, 'src'),
+  path.join(root, 'packages', 'maunting-ui', 'src'),
+]
 
 function flatten(value, prefix = '', target = new Map()) {
   for (const [key, child] of Object.entries(value)) {
@@ -29,7 +32,12 @@ async function readJson(file) {
 const isTestFile = name => /\.(?:test|spec)\.(?:ts|tsx)$/.test(name)
 
 async function sourceFiles(directory) {
-  const entries = await readdir(directory, { withFileTypes: true })
+  let entries
+  try {
+    entries = await readdir(directory, { withFileTypes: true })
+  } catch {
+    return []
+  }
   const files = await Promise.all(entries.map(entry => {
     const current = path.join(directory, entry.name)
     if (entry.isDirectory()) return entry.name === '__tests__' ? [] : sourceFiles(current)
@@ -77,7 +85,7 @@ if (unerwartet.length) {
 
 const referenced = new Set()
 const literalKeyPattern = /(?:\bt|\bi18n\.t)\(\s*['"]([A-Za-z0-9_.-]+)['"]/g
-for (const file of await sourceFiles(sourceDir)) {
+for (const file of (await Promise.all(sourceDirs.map(sourceFiles))).flat()) {
   const source = await readFile(file, 'utf8')
   for (const match of source.matchAll(literalKeyPattern)) referenced.add(match[1])
 }

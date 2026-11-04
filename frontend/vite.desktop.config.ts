@@ -25,6 +25,7 @@ import { fontsourceWoff2Only } from './vite.fontsource'
 export default defineConfig({
   // Wer meldet: Web-Panel, Pontis oder MSS. Der Praesenz-Client liest das.
   define: { __MSM_APP__: JSON.stringify('mss') },
+  optimizeDeps: { exclude: ['@maunting/ui'] },
   plugins: [fontsourceWoff2Only(), react()],
   resolve: {
     alias: {

@@ -15,11 +15,14 @@ const globalesCss = readFileSync(resolve(__dirname, '../index.css'), 'utf-8')
  * die nirgends definiert war: der Balken blieb sichtbar, ohne Fehler (AGENTS.md
  * Punkt 89). Daneben trug jede andere Stelle ihre eigene Kette.
  */
-const quellen = import.meta.glob(['/src/**/*.{ts,tsx}', '!/src/**/*.test.{ts,tsx}'], {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
+const quellen = import.meta.glob(
+  ['/src/**/*.{ts,tsx}', '!/src/**/*.test.{ts,tsx}', '/packages/maunting-ui/src/**/*.{ts,tsx}', '!/packages/maunting-ui/src/**/*.test.{ts,tsx}'],
+  {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  },
+) as Record<string, string>
 
 const EIGENBAU = /no-scrollbar|scrollbar-hide|\[scrollbar-width:none\]|\[&::-webkit-scrollbar\]:hidden/g
 

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createSwarm } from '@maunting/design-dna/swarm'
-import { isLand } from '../../packages/design-dna/swarm/landmask.js'
-import { Choreography, HISTORY_LENGTH, STATES } from '../../packages/design-dna/swarm/motion.js'
+import { createSwarm } from '@maunting/ui/swarm'
+import { isLand } from '../../packages/maunting-ui/src/swarm/landmask.js'
+import { Choreography, HISTORY_LENGTH, STATES } from '../../packages/maunting-ui/src/swarm/motion.js'
 import {
   POINT_COVER,
   RING_RADIUS,
@@ -13,7 +13,7 @@ import {
   highlights,
   particles,
   placeParticle,
-} from '../../packages/design-dna/swarm/particles.js'
+} from '../../packages/maunting-ui/src/swarm/particles.js'
 
 /**
  * Der Schwarm der Design-DNA ohne Grafikkarte: die Rechnung, die der

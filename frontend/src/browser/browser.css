@@ -57,7 +57,7 @@ body,
  */
 .msb-dialog-scroll {
   scrollbar-width: thin;
-  scrollbar-color: hsl(var(--dna-focus) / 0.35) transparent;
+  scrollbar-color: hsl(var(--mui-focus) / 0.35) transparent;
 }
 
 .msb-dialog-scroll::-webkit-scrollbar {
@@ -69,11 +69,11 @@ body,
 }
 
 .msb-dialog-scroll::-webkit-scrollbar-thumb {
-  background: hsl(var(--dna-focus) / 0.35);
+  background: hsl(var(--mui-focus) / 0.35);
   border-radius: 9999px;
 }
 
 .msb-dialog-scroll::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--dna-focus) / 0.6);
+  background: hsl(var(--mui-focus) / 0.6);
 }
 

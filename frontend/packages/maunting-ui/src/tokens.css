@@ -1,0 +1,81 @@
+/**
+ * Die Farb- und Formwerte der Maunting-DNA — die einzige Stelle, an der sie
+ * stehen. Tailwind liest sie als `hsl(var(--mui-…) / <alpha-value>)`.
+ *
+ * Die Schreibweise ohne `hsl()` ist Absicht: nur so kann Tailwind eine
+ * Deckkraft anhängen und `bg-status-success/40` überhaupt etwas erzeugen.
+ */
+:root {
+  --mui-canvas: 196 41% 5%;
+  --mui-background: var(--mui-canvas);
+  --mui-foreground: 189 43% 94%;
+
+  /* Drei Flächen über dem Canvas. `surface-2` ist das Panel, `surface-3`
+     schwebt darüber (Dialog, Popover), `surface-4` ist der Hover-Stand. */
+  --mui-surface-1: 204 25% 8%;
+  --mui-surface-2: 204 25% 10%;
+  --mui-surface-3: 202 26% 14%;
+  --mui-surface-4: 200 24% 18%;
+  --mui-panel: var(--mui-surface-2);
+  --mui-panel-raised: var(--mui-surface-3);
+
+  --mui-primary: 188 100% 86%;
+  --mui-focus: 190 92% 62%;
+
+  --mui-success: 158 64% 52%;
+  --mui-warning: 38 92% 50%;
+  --mui-danger: 0 70% 55%;
+
+  /* Eine Linie für aktive Bereiche (Signallinie) und eine neutrale Haarlinie. */
+  --mui-line: 190 92% 62%;
+  --mui-line-strong: 198 22% 26%;
+
+  --mui-radius-control: .65rem;
+  --mui-radius-panel: 1rem;
+  --mui-radius-window: .75rem;
+  --mui-radius-omnibox: 9999px;
+  --mui-shadow-panel: 0 20px 48px hsl(0 0% 0% / .38);
+
+  /* Der Sprachschwarm (`@maunting/ui/swarm`). Leuchten und Eis sind Fokus und
+     Primär; Denken, Störung und Ruhe sind seine eigenen Töne. Der Schwarm
+     zeichnet in WebGL und kann keine CSS-Variable lesen — er nimmt dieselben
+     Tripel aus `tokens.ts`, und `src/test/mauntingUiTokens.test.ts` hält beide
+     Stellen gleich. */
+  --mui-voice-glow: 190 92% 62%;
+  --mui-voice-ice: 188 100% 86%;
+  --mui-voice-think: 203 100% 64%;
+  --mui-voice-fault: 38 92% 50%;
+  --mui-voice-rest: 205 18% 40%;
+}
+
+/* Saisonale Event-Tokens. Sie liegen bewusst hier bei den übrigen Farb-Tokens,
+   damit es nur eine Token-Heimat gibt. Die Layout-Regeln, die diese Werte
+   verwenden, stehen in `frontend/src/index.css` und hängen an `data-season`.
+   Ohne Saison bleibt das Standard-Design unberührt. */
+:root {
+  --season-accent: 22 100% 62%;
+  --season-accent-strong: 26 100% 80%;
+  --season-on-accent: 28 45% 7%;
+  --season-glow: 24 100% 55%;
+}
+
+html[data-season="birthday"] {
+  --season-accent: 216 100% 64%;
+  --season-accent-strong: 285 100% 84%;
+  --season-on-accent: 220 50% 8%;
+  --season-glow: 218 100% 55%;
+}
+
+html[data-season="halloween"] {
+  --season-accent: 22 100% 62%;
+  --season-accent-strong: 26 100% 80%;
+  --season-on-accent: 28 45% 7%;
+  --season-glow: 24 100% 55%;
+}
+
+html[data-season="christmas"] {
+  --season-accent: 2 82% 58%;
+  --season-accent-strong: 42 100% 80%;
+  --season-on-accent: 45 100% 94%;
+  --season-glow: 2 85% 50%;
+}

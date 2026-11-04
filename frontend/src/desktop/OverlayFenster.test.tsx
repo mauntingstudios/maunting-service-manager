@@ -314,7 +314,7 @@ describe('OverlayFenster', () => {
     const buehne = container.querySelector('[data-zustand]') as HTMLElement
     expect(buehne.dataset.zustand).toBe('working')
     const marke = buehne.querySelector('span[aria-hidden="true"]') as HTMLElement
-    expect(marke.style.backgroundColor).toContain('--dna-voice-think')
+    expect(marke.style.backgroundColor).toContain('--mui-voice-think')
   })
 
   it('schwebt frei — ohne Kasten und ohne abgedunkelten Hintergrund', async () => {

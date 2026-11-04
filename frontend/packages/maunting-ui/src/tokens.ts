@@ -1,14 +1,17 @@
-/** Stable, repository-contained contract for the MauntingStudios design tokens. */
-export const designDnaVersion = '1.0.0-msm.1'
+/** Stable, repository-contained contract for the Maunting design tokens. */
+export const mauntingUiVersion = '2.0.0'
 
 /**
  * The colour tokens as CSS colours. `tokens.css` holds the same values as HSL
- * triplets; `src/test/designDna.test.ts` keeps both in step.
+ * triplets; `src/test/mauntingUiTokens.test.ts` keeps both in step.
  */
-export const designTokens = Object.freeze({
-  background: 'hsl(196 41% 5%)',
+export const muiTokens = Object.freeze({
+  canvas: 'hsl(196 41% 5%)',
   foreground: 'hsl(189 43% 94%)',
-  panel: 'hsl(204 25% 10%)',
+  'surface-1': 'hsl(204 25% 8%)',
+  'surface-2': 'hsl(204 25% 10%)',
+  'surface-3': 'hsl(202 26% 14%)',
+  'surface-4': 'hsl(200 24% 18%)',
   primary: 'hsl(188 100% 86%)',
   focus: 'hsl(190 92% 62%)',
   success: 'hsl(158 64% 52%)',
@@ -17,9 +20,9 @@ export const designTokens = Object.freeze({
 })
 
 /**
- * The palette of the voice swarm (`@maunting/design-dna/swarm`), as HSL
- * triplets like `tokens.css` (`--dna-voice-*`). Glow and ice are the focus and
- * primary colours; think, fault and rest are the swarm's own.
+ * The palette of the voice swarm (`@maunting/ui/swarm`), as HSL triplets like
+ * `tokens.css` (`--mui-voice-*`). Glow and ice are the focus and primary
+ * colours; think, fault and rest are the swarm's own.
  */
 export const voiceTokens = Object.freeze({
   glow: '190 92% 62%',
@@ -44,4 +47,13 @@ export const voiceStateTones = Object.freeze({
   speaking: 'glow',
   fault: 'fault',
   expired: 'rest',
+})
+
+/** Shared motion values. The CSS side lives in `styles.css`. */
+export const muiMotion = Object.freeze({
+  fast: 120,
+  base: 180,
+  slow: 240,
+  easeOut: [0.22, 1, 0.36, 1] as const,
+  easeIn: [0.4, 0, 1, 1] as const,
 })

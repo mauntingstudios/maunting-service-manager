@@ -1,4 +1,5 @@
-@import '@maunting/design-dna/tokens.css';
+@import '@maunting/ui/tokens.css';
+@import '@maunting/ui/styles.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -14,8 +15,8 @@
 
 @layer base {
   html {
-    background-color: hsl(var(--dna-background));
-    color: hsl(var(--dna-foreground));
+    background-color: hsl(var(--mui-background));
+    color: hsl(var(--mui-foreground));
     color-scheme: dark;
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -36,22 +37,22 @@
     padding: 0;
     overscroll-behavior: none;
     background:
-      radial-gradient(70rem 32rem at 50% -12rem, hsl(var(--dna-focus) / 0.12), transparent 68%),
-      hsl(var(--dna-background));
+      radial-gradient(70rem 32rem at 50% -12rem, hsl(var(--mui-focus) / 0.12), transparent 68%),
+      hsl(var(--mui-background));
   }
 
   ::selection {
-    background: hsl(var(--dna-focus) / 0.28);
-    color: hsl(var(--dna-foreground));
+    background: hsl(var(--mui-focus) / 0.28);
+    color: hsl(var(--mui-foreground));
   }
 
   :focus-visible {
-    outline: 2px solid hsl(var(--dna-focus));
+    outline: 2px solid hsl(var(--mui-focus));
     outline-offset: 2px;
   }
 
   * {
-    scrollbar-color: #284147 hsl(var(--dna-background));
+    scrollbar-color: #284147 hsl(var(--mui-background));
     scrollbar-width: thin;
   }
 
@@ -61,7 +62,7 @@
   }
 
   *::-webkit-scrollbar-track {
-    background: hsl(var(--dna-background));
+    background: hsl(var(--mui-background));
   }
 
   *::-webkit-scrollbar-thumb {
@@ -100,7 +101,7 @@
   .msm-page-header::before {
     content: '';
     @apply absolute inset-x-0 top-0 h-px;
-    background: linear-gradient(90deg, transparent, hsl(var(--dna-focus) / .75), transparent);
+    background: linear-gradient(90deg, transparent, hsl(var(--mui-focus) / .75), transparent);
   }
 
   .msm-field-help {
@@ -484,7 +485,7 @@
 
 /* ── Dokumente: gemeinsame Prosa und Kommentar-Anker ───────────────── */
 .docs-prose {
-  color: hsl(var(--dna-foreground));
+  color: hsl(var(--mui-foreground));
   font-size: 1rem;
   line-height: 1.7;
   overflow-wrap: anywhere;
@@ -500,61 +501,61 @@
 .docs-prose ul[data-type="taskList"] { list-style: none; padding-left: 0.4em; }
 .docs-prose ul[data-type="taskList"] li { display: flex; gap: 0.5em; align-items: flex-start; }
 .docs-prose blockquote {
-  border-left: 3px solid hsl(var(--dna-primary) / 0.45);
+  border-left: 3px solid hsl(var(--mui-primary) / 0.45);
   padding-left: 0.9em;
-  color: hsl(var(--dna-foreground) / 0.75);
+  color: hsl(var(--mui-foreground) / 0.75);
 }
 .docs-prose code {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.9em;
-  background: hsl(var(--dna-panel-raised));
+  background: hsl(var(--mui-panel-raised));
   border-radius: 0.3em;
   padding: 0.1em 0.35em;
 }
 .docs-prose pre {
-  background: hsl(var(--dna-panel));
-  border: 1px solid hsl(var(--dna-foreground) / 0.12);
+  background: hsl(var(--mui-panel));
+  border: 1px solid hsl(var(--mui-foreground) / 0.12);
   border-radius: 0.75rem;
   padding: 0.9em 1em;
   overflow-x: auto;
 }
 .docs-prose pre code { background: transparent; padding: 0; }
-.docs-prose a { color: hsl(var(--dna-primary)); text-decoration: underline; text-underline-offset: 2px; }
-.docs-prose hr { border: 0; border-top: 1px solid hsl(var(--dna-foreground) / 0.18); margin: 1.6em 0; }
+.docs-prose a { color: hsl(var(--mui-primary)); text-decoration: underline; text-underline-offset: 2px; }
+.docs-prose hr { border: 0; border-top: 1px solid hsl(var(--mui-foreground) / 0.18); margin: 1.6em 0; }
 .docs-prose img { max-width: 100%; height: auto; border-radius: 0.6rem; }
 .docs-prose table { border-collapse: collapse; width: 100%; table-layout: fixed; }
 .docs-prose th, .docs-prose td {
-  border: 1px solid hsl(var(--dna-foreground) / 0.18);
+  border: 1px solid hsl(var(--mui-foreground) / 0.18);
   padding: 0.45em 0.6em;
   vertical-align: top;
   position: relative;
 }
-.docs-prose th { background: hsl(var(--dna-panel-raised)); text-align: left; font-weight: 600; }
+.docs-prose th { background: hsl(var(--mui-panel-raised)); text-align: left; font-weight: 600; }
 .docs-prose .selectedCell::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: hsl(var(--dna-primary) / 0.14);
+  background: hsl(var(--mui-primary) / 0.14);
 }
-.docs-prose mark { background: hsl(var(--dna-warning) / 0.28); color: inherit; border-radius: 0.2em; padding: 0 0.1em; }
+.docs-prose mark { background: hsl(var(--mui-warning) / 0.28); color: inherit; border-radius: 0.2em; padding: 0 0.1em; }
 .docs-prose p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
-  color: hsl(var(--dna-foreground) / 0.35);
+  color: hsl(var(--mui-foreground) / 0.35);
   float: left;
   height: 0;
   pointer-events: none;
 }
-.docs-comment-mark { border-bottom: 2px solid hsl(var(--dna-warning) / 0.65); background: hsl(var(--dna-warning) / 0.08); }
+.docs-comment-mark { border-bottom: 2px solid hsl(var(--mui-warning) / 0.65); background: hsl(var(--mui-warning) / 0.08); }
 
 /* KI-Vorschlag: nur in der Ansicht des ausloesenden Nutzers, nie im Yjs-Dokument. */
 .docs-ai-vorschlag {
   margin: 0.75rem 0;
-  border: 1px dashed hsl(var(--dna-primary) / 0.45);
+  border: 1px dashed hsl(var(--mui-primary) / 0.45);
   border-radius: 0.75rem;
-  background: hsl(var(--dna-primary) / 0.06);
+  background: hsl(var(--mui-primary) / 0.06);
   padding: 0.75rem 0.9rem;
-  color: hsl(var(--dna-foreground) / 0.78);
+  color: hsl(var(--mui-foreground) / 0.78);
   animation: docs-ai-vorschlag-ein 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   user-select: none;
 }
@@ -564,7 +565,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: hsl(var(--dna-primary));
+  color: hsl(var(--mui-primary));
 }
 .docs-ai-vorschlag-inhalt { opacity: 0.78; }
 .docs-ai-vorschlag-inhalt > :first-child { margin-top: 0; }
@@ -579,28 +580,28 @@
   transition: background-color 120ms ease, opacity 120ms ease;
 }
 .docs-ai-vorschlag-aktion:disabled { cursor: progress; opacity: 0.55; }
-.docs-ai-vorschlag-uebernehmen { background: hsl(var(--dna-primary)); color: hsl(var(--dna-background)); }
-.docs-ai-vorschlag-uebernehmen:hover:not(:disabled) { background: hsl(var(--dna-primary) / 0.88); }
+.docs-ai-vorschlag-uebernehmen { background: hsl(var(--mui-primary)); color: hsl(var(--mui-background)); }
+.docs-ai-vorschlag-uebernehmen:hover:not(:disabled) { background: hsl(var(--mui-primary) / 0.88); }
 .docs-ai-vorschlag-verwerfen {
-  border: 1px solid hsl(var(--dna-foreground) / 0.22);
+  border: 1px solid hsl(var(--mui-foreground) / 0.22);
   background: transparent;
   color: inherit;
 }
-.docs-ai-vorschlag-verwerfen:hover:not(:disabled) { background: hsl(var(--dna-foreground) / 0.06); }
+.docs-ai-vorschlag-verwerfen:hover:not(:disabled) { background: hsl(var(--mui-foreground) / 0.06); }
 .docs-ai-vorschlag-ziel {
   opacity: 0.45;
   text-decoration: line-through;
-  text-decoration-color: hsl(var(--dna-foreground) / 0.35);
+  text-decoration-color: hsl(var(--mui-foreground) / 0.35);
 }
 .docs-ai-vorschlag-anker {
-  outline: 1px dashed hsl(var(--dna-primary) / 0.5);
+  outline: 1px dashed hsl(var(--mui-primary) / 0.5);
   outline-offset: 3px;
   border-radius: 0.25rem;
 }
 .docs-ai-vorschlag-loeschen {
   opacity: 1;
-  background: hsl(var(--dna-danger) / 0.08);
-  text-decoration-color: hsl(var(--dna-danger) / 0.7);
+  background: hsl(var(--mui-danger) / 0.08);
+  text-decoration-color: hsl(var(--mui-danger) / 0.7);
 }
 .docs-ai-vorschlag-liste {
   margin: 0 0 0.45rem;
@@ -611,12 +612,12 @@
 .docs-ai-vorschlag-hinweis {
   margin: 0.45rem 0 0;
   font-size: 0.78rem;
-  color: hsl(var(--dna-danger));
+  color: hsl(var(--mui-danger));
 }
 .docs-ai-link { text-decoration: underline; text-underline-offset: 2px; }
 .docs-ai-bild {
   display: inline-block;
-  border: 1px dashed hsl(var(--dna-foreground) / 0.25);
+  border: 1px dashed hsl(var(--mui-foreground) / 0.25);
   border-radius: 0.35rem;
   padding: 0.15rem 0.4rem;
   font-size: 0.8rem;
@@ -651,7 +652,7 @@
   font-size: 0.7rem;
   font-weight: 600;
   line-height: 1.2;
-  color: hsl(var(--dna-background));
+  color: hsl(var(--mui-background));
   white-space: nowrap;
   user-select: none;
 }
@@ -675,13 +676,13 @@
    text-primary) uebersteuern, ohne dass jede Komponente einen zweiten
    Klassennamen braucht. Statusfarben (Erfolg, Warnung, Fehler) bleiben
    unangetastet. Die Farbwerte selbst stehen als Tokens in
-   `@maunting/design-dna/tokens.css`. */
+   `@maunting/ui/tokens.css`. */
 
 html[data-season] body {
   background:
     radial-gradient(70rem 32rem at 50% -12rem, hsl(var(--season-glow) / .10), transparent 68%),
     radial-gradient(42rem 26rem at 8% 108%, hsl(var(--season-accent) / .07), transparent 72%),
-    hsl(var(--dna-background));
+    hsl(var(--mui-background));
 }
 
 html[data-season] .msm-deep-grid {
@@ -697,10 +698,10 @@ html[data-season] .msm-page-header::before {
 html[data-season] .msm-page-header {
   background:
     radial-gradient(32rem 14rem at 100% 0%, hsl(var(--season-accent) / .06), transparent 70%),
-    hsl(var(--dna-panel) / .8);
+    hsl(var(--mui-panel) / .8);
   box-shadow:
     inset 0 -1px 0 hsl(var(--season-accent) / .08),
-    var(--dna-shadow-panel);
+    var(--mui-shadow-panel);
 }
 
 html[data-season] .msm-topbar::after {
@@ -846,7 +847,7 @@ html[data-season] .mss-splash-stufe::before {
 }
 
 .msm-logo-bild {
-  filter: drop-shadow(0 0 12px hsl(var(--dna-focus) / .28));
+  filter: drop-shadow(0 0 12px hsl(var(--mui-focus) / .28));
 }
 
 html[data-season] .msm-logo-bild {

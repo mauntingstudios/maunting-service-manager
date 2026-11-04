@@ -1357,8 +1357,11 @@ function RollenReiter({
                       disabled={busy || role.is_default}
                       onClick={() => onDeleteRole(role)}
                       className="text-xs h-7 px-2 text-status-destructive hover:bg-status-destructive/10"
-                      aria-label={`${t('teams.deleteRoleTitle')}: ${role.name}`}
-                      title={role.is_default ? 'Standardrolle kann nicht gelöscht werden' : undefined}
+                      aria-label={
+                        role.is_default
+                          ? `${t('teams.deleteRoleTitle')}: ${role.name} — ${t('teams.defaultRoleCannotBeDeleted')}`
+                          : `${t('teams.deleteRoleTitle')}: ${role.name}`
+                      }
                     >
                       <Trash2 className="h-3.5 w-3.5 mr-1" />
                       {t('common.delete')}

@@ -31,7 +31,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { listen } from '@tauri-apps/api/event'
 import { MapPin, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { voiceStateTones } from '@maunting/design-dna'
+import { voiceStateTones } from '@maunting/ui'
 
 import { Schwarm, schwarmZustand } from '@/components/ai/voice/Schwarm'
 import {
@@ -429,8 +429,8 @@ export function OverlayFenster({ inApp = false }: OverlayFensterProps) {
           <span
             className="h-1.5 w-1.5 shrink-0 rounded-full motion-safe:transition-colors motion-safe:duration-500"
             style={{
-              backgroundColor: `hsl(var(--dna-voice-${ton}))`,
-              boxShadow: `0 0 10px hsl(var(--dna-voice-${ton}) / 0.9)`,
+              backgroundColor: `hsl(var(--mui-voice-${ton}))`,
+              boxShadow: `0 0 10px hsl(var(--mui-voice-${ton}) / 0.9)`,
             }}
             aria-hidden="true"
           />

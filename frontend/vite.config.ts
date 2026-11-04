@@ -8,6 +8,7 @@ import { fontsourceWoff2Only } from './vite.fontsource'
 export default defineConfig({
   // Wer meldet: Web-Panel, Pontis oder MSS. Der Praesenz-Client liest das.
   define: { __MSM_APP__: JSON.stringify('web') },
+  optimizeDeps: { exclude: ['@maunting/ui'] },
   plugins: [fontsourceWoff2Only(), react(), panelCsp()],
   resolve: {
     alias: {
@@ -83,7 +84,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'packages/maunting-ui/src/**/*.test.{ts,tsx}'],
     setupFiles: ['./src/test/setup.ts'],
   },
 })

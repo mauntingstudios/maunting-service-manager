@@ -120,7 +120,6 @@ export function IconPicker({
           aria-checked={currentKey === null}
           disabled={disabled}
           onClick={() => onChange(null)}
-          title="Kein Icon"
           aria-label="Kein Icon"
           className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
             currentKey === null
@@ -144,7 +143,6 @@ export function IconPicker({
               aria-checked={isSelected}
               disabled={disabled}
               onClick={() => onChange(item.key)}
-              title={item.label}
               aria-label={item.label}
               className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                 isSelected

@@ -6791,6 +6791,7 @@
     "roleSaved": "Rolle erfolgreich gespeichert.",
     "roleDeleted": "Rolle erfolgreich gelöscht.",
     "deleteRoleTitle": "Rolle löschen",
+    "defaultRoleCannotBeDeleted": "Die Standardrolle kann nicht gelöscht werden.",
     "deleteRoleConfirm": "Möchtest du die Rolle „{{name}}“ wirklich löschen? Mitglieder verlieren die damit verbundenen Rechte.",
     "assignRoles": "Rollen zuweisen",
     "noRolesYet": "Bisher wurden keine individuellen Rollen erstellt.",

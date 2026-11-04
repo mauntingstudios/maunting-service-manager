@@ -210,7 +210,6 @@ export function ColorPicker({
                   : 'hover:scale-105 opacity-85 hover:opacity-100 disabled:opacity-50'
               }`}
               style={{ backgroundColor: preset.value }}
-              title={preset.label}
               aria-label={preset.label}
             >
               {isSelected && (

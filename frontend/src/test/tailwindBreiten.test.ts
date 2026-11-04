@@ -12,11 +12,14 @@ import tailwindConfig from '../../tailwind.config'
  */
 const BREITEN = new Set(Object.keys(resolveConfig(tailwindConfig).theme.screens))
 
-const quellen = import.meta.glob(['/src/**/*.{ts,tsx}', '!/src/**/*.test.{ts,tsx}'], {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
+const quellen = import.meta.glob(
+  ['/src/**/*.{ts,tsx}', '!/src/**/*.test.{ts,tsx}', '/packages/maunting-ui/src/**/*.{ts,tsx}', '!/packages/maunting-ui/src/**/*.test.{ts,tsx}'],
+  {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  },
+) as Record<string, string>
 
 const PRAEFIX = /(?<![\w:/[-])(?:max-|min-)?(x{1,2}s|sm|md|lg|x{1,2}l|[2-9]xl):(?=[!\w[-])/g
 

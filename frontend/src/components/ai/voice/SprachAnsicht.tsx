@@ -379,7 +379,7 @@ function Werkzeuganzeige({ werkzeug }: { werkzeug: string }) {
   const { t } = useTranslation()
   return (
     <p className="flex items-center gap-2 rounded-full border border-outline-variant/40 bg-surface-container-low/60 px-3.5 py-1 text-xs text-on-surface-variant">
-      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[hsl(var(--dna-voice-think))]" aria-hidden="true" />
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[hsl(var(--mui-voice-think))]" aria-hidden="true" />
       {t(`ai.toolsRunning.${werkzeug}`, { defaultValue: t('ai.voice.werkzeug') })}
     </p>
   )

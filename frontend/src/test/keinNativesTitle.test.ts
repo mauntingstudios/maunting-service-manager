@@ -28,11 +28,14 @@ const UEBERSCHRIFT = new Set([
   'iframe',
 ])
 
-const quellen = import.meta.glob(['/src/**/*.tsx', '!/src/**/*.test.tsx'], {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
+const quellen = import.meta.glob(
+  ['/src/**/*.tsx', '!/src/**/*.test.tsx', '/packages/maunting-ui/src/**/*.tsx', '!/packages/maunting-ui/src/**/*.test.tsx'],
+  {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  },
+) as Record<string, string>
 
 function titelStellen(pfad: string, text: string): string[] {
   const datei = ts.createSourceFile(pfad, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)

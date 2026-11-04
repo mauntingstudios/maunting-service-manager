@@ -119,7 +119,7 @@ export function VoiceRecordingBar({
   const isPrimary = variant === 'primary'
 
   const dotColor = isDanger
-    ? 'bg-status-destructive shadow-[0_0_8px_hsl(var(--dna-danger)/0.6)]'
+    ? 'bg-status-destructive shadow-[0_0_8px_hsl(var(--mui-danger)/0.6)]'
     : isPrimary
     ? 'bg-primary shadow-[0_0_8px_hsl(187_85%_60%/0.6)]'
     : 'bg-status-success shadow-[0_0_8px_hsl(158_64%_52%/0.6)]'
