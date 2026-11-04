@@ -468,7 +468,7 @@ export function AiDevicePairingCard() {
                   ) : (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high px-2 py-0.5 text-xs font-medium text-on-surface-variant border border-outline-variant/30">
                       <span className="h-1.5 w-1.5 rounded-full bg-on-surface-variant/50" />
-                      {t('ai.profile.deviceInactive')}
+                      {t('common.offline')}
                     </span>
                   )}
                 </div>

@@ -134,7 +134,7 @@ export function DataGrid({ table, initialFilters, onJump }: {
         const updated = data.columns.map((name) => result.row![result.columns.indexOf(name)] ?? null)
         setData({ ...data, rows: data.rows.map((r, i) => (i === rowIndex ? updated : r)) })
       }
-      toast.success(t('postgresStudio.data.saved'))
+      toast.success(t('common.saved'))
       setEditing(null)
       setJsonEdit(null)
     } catch (err) {

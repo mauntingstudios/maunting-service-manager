@@ -28,7 +28,7 @@ function ErrorCard({ errorId, compact = false }: { errorId?: string | null; comp
           onClick={() => window.location.reload()}
           className="min-h-11"
         >
-          {t('errorBoundary.reload')}
+          {t('common.reload')}
         </Button>
       </div>
     </div>

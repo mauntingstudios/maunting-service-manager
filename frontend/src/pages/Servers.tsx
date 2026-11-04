@@ -533,7 +533,7 @@ export function Servers() {
               )}
               <div>
                 <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                  {t('servers.name')}
+                  {t('common.name')}
                 </label>
                 <input
                   type="text"

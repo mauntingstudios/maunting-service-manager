@@ -468,11 +468,11 @@ export function SuchzusammenfassungKachel({
               variant="secondary"
               size="sm"
               onClick={kopieren}
-              aria-label={t(kopiert ? 'browser.msmSuche.zusammenfassungKopiert' : 'browser.msmSuche.zusammenfassungKopieren')}
+              aria-label={t(kopiert ? 'common.copied' : 'browser.msmSuche.zusammenfassungKopieren')}
               className="h-8 px-2.5 text-label-sm"
             >
               {kopiert ? <Check className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5 text-primary" aria-hidden="true" />}
-              <span>{t(kopiert ? 'browser.msmSuche.zusammenfassungKopiert' : 'browser.msmSuche.zusammenfassungKopierenKurz')}</span>
+              <span>{t(kopiert ? 'common.copied' : 'common.copy')}</span>
             </Button>
           )}
 
@@ -680,7 +680,7 @@ export function SuchzusammenfassungKachel({
                         disabled={laedt}
                         className="h-8 px-2.5 text-label-sm"
                       >
-                        {t('browser.msmSuche.zusammenfassungWiederholen')}
+                        {t('common.retry')}
                       </Button>
                     </div>
                   ) : nachricht.content ? (
@@ -701,7 +701,7 @@ export function SuchzusammenfassungKachel({
                         disabled={laedt}
                         className="h-8 px-2.5 text-label-sm"
                       >
-                        {t('browser.msmSuche.zusammenfassungWiederholen')}
+                        {t('common.retry')}
                       </Button>
                     </div>
                   )}

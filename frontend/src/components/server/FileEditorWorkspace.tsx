@@ -296,7 +296,7 @@ export function FileEditorWorkspace({
         ? <><AlertTriangle className="h-3.5 w-3.5" /> {t('files.editor.saveError')}</>
         : activeTab?.saveState === 'dirty'
           ? <><span className="h-2 w-2 rounded-full bg-status-warning" /> {t('files.editor.unsaved')}</>
-          : <><Check className="h-3.5 w-3.5" /> {t('files.editor.saved')}</>
+          : <><Check className="h-3.5 w-3.5" /> {t('common.saved')}</>
 
   return (
     <section

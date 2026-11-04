@@ -52,7 +52,7 @@ export function usePanelNavigation(): { items: NavigationItem[]; isOnline: boole
       roles: t('nav.roles'),
       teams: t('nav.teams'),
       audit: t('nav.audit'),
-      settings: t('nav.settings'),
+      settings: t('common.settings'),
       blueprints: t('nav.blueprints'),
       panelBackups: t('nav.panelBackups'),
       panelDatabase: t('nav.panelDatabase'),

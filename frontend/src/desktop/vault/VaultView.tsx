@@ -612,7 +612,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         totpSecret: modalTotpSecret.trim().toUpperCase(),
       })
       setIsModalOpen(false)
-      toast.success(t('mss.vault.gespeichert'))
+      toast.success(t('common.saved'))
     } catch (err) {
       toast.error(fehlerText(err, t('mss.vault.speichernFehlgeschlagen')))
     }
@@ -1791,7 +1791,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
             {otherItems.length > 0 && (
               <div className="space-y-1.5">
                 <div className="text-label-sm font-semibold text-on-surface-variant">
-                  {t('mss.vault.alle')}
+                  {t('common.all')}
                 </div>
                 <div className="grid grid-cols-1 gap-1.5">
                   {otherItems.map(renderItemRow)}
@@ -1843,7 +1843,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label htmlFor="tresor-passwort" className="text-sm font-medium text-foreground">
-                    {t('mss.vault.passwort')}
+                    {t('common.password')}
                   </label>
                   <Button
                     fingerziel
@@ -1869,7 +1869,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                     setModalPassword(e.target.value)
                     debouncedLeakCheck(e.target.value)
                   }}
-                  placeholder={t('mss.vault.passwort')}
+                  placeholder={t('common.password')}
                   autoComplete="new-password"
                   className="font-mono"
                   required

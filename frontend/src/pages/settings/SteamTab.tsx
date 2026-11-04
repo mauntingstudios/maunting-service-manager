@@ -266,7 +266,7 @@ export function SteamTab() {
             </div>
             <div>
               <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                {t('settings.steamAccountPassword')}
+                {t('common.password')}
               </label>
               <PasswordInput
                 value={steamAccountPassword}
@@ -284,7 +284,7 @@ export function SteamTab() {
                 disabled={!canWrite}
                 className="inline-flex items-center gap-2 disabled:opacity-50"
               >
-                {t('settings.steamAccountRemove')}
+                {t('common.remove')}
               </Button>
             )}
             <Button
@@ -298,7 +298,7 @@ export function SteamTab() {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {t('settings.steamAccountSave')}
+              {t('common.save')}
             </Button>
           </div>
         </div>

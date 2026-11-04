@@ -443,7 +443,7 @@ export function Backups({ serverId }: BackupsProps) {
             className={`flex items-center gap-2 ${showSettings ? "bg-surface-container" : ""}`}
           >
             <Settings className="w-4 h-4" />
-            {t("backups.scheduling")}
+            {t("common.settings")}
           </Button>
           <Button
             onClick={() => setShowCreateModal(true)}

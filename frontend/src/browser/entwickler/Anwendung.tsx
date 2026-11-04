@@ -89,7 +89,7 @@ function Neu({ hinzufuegen }: { hinzufuegen: (k: string, w: string) => void }) {
       <Input aria-label={t('browser.entwickler.anwendung.schluessel')} placeholder={t('browser.entwickler.anwendung.schluessel')} value={k} onChange={(e) => setK(e.target.value)} className="h-7 font-mono text-label-sm" />
       <Input aria-label={t('browser.entwickler.anwendung.wert')} placeholder={t('browser.entwickler.anwendung.wert')} value={w} onChange={(e) => setW(e.target.value)} className="h-7 font-mono text-label-sm" />
       <Button size="sm" type="submit" disabled={!k.trim()}>
-        {t('browser.entwickler.anwendung.hinzufuegen')}
+        {t('common.add')}
       </Button>
     </form>
   )

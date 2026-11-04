@@ -119,7 +119,7 @@ export function AiTomTomSettings({ canWrite }: { canWrite: boolean }) {
           <div className="flex items-center gap-2 pt-1">
             <Button type="submit" disabled={busy || !apiKey.trim()}>
               <Save className="h-4 w-4" aria-hidden="true" />
-              {t('settings.save')}
+              {t('common.save')}
             </Button>
             {configured && (
               <Button type="button" variant="secondary" disabled={busy} onClick={() => void testConnection()}>

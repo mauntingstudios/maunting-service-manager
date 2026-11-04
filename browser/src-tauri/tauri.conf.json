@@ -23,6 +23,7 @@
         "resizable": true,
         "center": true,
         "decorations": false,
+        "transparent": false,
         "focus": true,
         "dragDropEnabled": false
       }

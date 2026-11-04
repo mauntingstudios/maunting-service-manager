@@ -227,7 +227,7 @@ export function CredentialsTab() {
               || (kind === 'steam_account' && !username.trim())
             }
           >
-            <Save className="h-4 w-4" aria-hidden="true" />{t('credentials.save')}
+            <Save className="h-4 w-4" aria-hidden="true" />{t('common.save')}
           </Button>
         </div>
       </form>

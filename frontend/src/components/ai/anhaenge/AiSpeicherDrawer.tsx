@@ -174,7 +174,7 @@ export function AiSpeicherDrawer({
                     className="h-8 text-xs shrink-0"
                     onClick={() => setFilter(f)}
                   >
-                    {f === 'alle' && t('ai.attachments.filterAll')}
+                    {f === 'alle' && t('common.all')}
                     {f === 'bilder' && t('ai.attachments.filterImages')}
                     {f === 'dokumente' && t('ai.attachments.filterDocuments')}
                     {f === 'texte' && t('ai.attachments.filterText')}

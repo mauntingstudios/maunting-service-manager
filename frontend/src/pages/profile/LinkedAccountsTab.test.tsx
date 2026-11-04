@@ -59,7 +59,7 @@ describe('LinkedAccountsTab: Verknüpfen nur mit Nachweis', () => {
     expect(oauthApi.startLink).not.toHaveBeenCalled()
 
     fireEvent.change(screen.getByLabelText(t('profile.currentPassword')), { target: { value: 'geheim-123' } })
-    fireEvent.click(screen.getByRole('button', { name: t('profile.linkedAccounts.linkContinue') }))
+    fireEvent.click(screen.getByRole('button', { name: t('common.continue') }))
 
     await waitFor(() => {
       expect(oauthApi.startLink).toHaveBeenCalledWith('google', { password: 'geheim-123' })
@@ -72,7 +72,7 @@ describe('LinkedAccountsTab: Verknüpfen nur mit Nachweis', () => {
     oeffnen()
 
     expect(screen.getByText(t('profile.linkedAccounts.linkNeedsPassword'))).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: t('profile.linkedAccounts.linkContinue') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('common.continue') })).not.toBeInTheDocument()
     expect(oauthApi.startLink).not.toHaveBeenCalled()
   })
 })

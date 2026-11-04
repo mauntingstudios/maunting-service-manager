@@ -55,7 +55,7 @@ export function InstanceTab() {
               <tr className="border-b border-outline-variant">
                 <th className="py-2 pr-3 font-medium">{t('postgresStudio.instance.name')}</th>
                 <th className="py-2 pr-3 font-medium">{t('postgresStudio.instance.value')}</th>
-                <th className="py-2 pr-3 font-medium">{t('postgresStudio.instance.description')}</th>
+                <th className="py-2 pr-3 font-medium">{t('common.description')}</th>
                 <th className="py-2" />
               </tr>
             </thead>

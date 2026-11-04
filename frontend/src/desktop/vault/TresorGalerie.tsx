@@ -342,7 +342,7 @@ function ErinnerungKarte({ jahre, titelbild, anzahl, onOeffnen }: { jahre: numbe
 }
 
 const FILTER: { id: Filter; labelKey: string; icon: LucideIcon }[] = [
-  { id: 'alle', labelKey: 'mss.vault.alle', icon: Images },
+  { id: 'alle', labelKey: 'common.all', icon: Images },
   { id: 'videos', labelKey: 'mss.vault.fotos.videos', icon: Film },
   { id: 'kuerzlich', labelKey: 'mss.vault.fotos.kuerzlich', icon: Clock },
   { id: 'aehnlich', labelKey: 'mss.vault.fotos.aehnlich', icon: Copy },
@@ -804,7 +804,7 @@ export function TresorGalerie({ suche = '', isTeam = false }: { suche?: string; 
     {
       key: 'offline',
       label: t(gewaehlt.length > 0 && gewaehlt.every((i) => i.datei && offline.has(i.datei.original.id)) ? 'mss.vault.dateien.nurOnline' : 'mss.vault.dateien.offlineMachen'),
-      kurz: t(gewaehlt.length > 0 && gewaehlt.every((i) => i.datei && offline.has(i.datei.original.id)) ? 'mss.vault.dateien.kurz.nurOnline' : 'mss.vault.dateien.kurz.offline'),
+      kurz: t(gewaehlt.length > 0 && gewaehlt.every((i) => i.datei && offline.has(i.datei.original.id)) ? 'mss.vault.dateien.kurz.nurOnline' : 'common.offline'),
       icon: <HardDriveDownload className="h-5 w-5 md:h-4 md:w-4" />,
       disabled: leer || beschaeftigt,
       onSelect: () => void offlineSammel(gewaehlt),
@@ -990,7 +990,7 @@ export function TresorGalerie({ suche = '', isTeam = false }: { suche?: string; 
               aktionen={aktionen}
               abbrechenLabel={t('mss.vault.dateien.auswahlBeenden')}
               onAbbrechen={auswahlLeeren}
-              alleLabel={gewaehlt.length < liste.length ? t('mss.vault.alle') : undefined}
+              alleLabel={gewaehlt.length < liste.length ? t('common.all') : undefined}
               onAlle={wahl.alle}
             />
           </div>
@@ -1315,9 +1315,9 @@ function GalerieLichtbox({
     <TresorDateiInfo
       item={item}
       angaben={[
-        [t('mss.vault.fotos.info.name'), item.service],
+        [t('common.name'), item.service],
         [t('mss.vault.fotos.info.aufgenommen'), aufnahme],
-        [t('mss.vault.fotos.info.kamera'), datei.kamera],
+        [t('common.camera'), datei.kamera],
         [t('mss.vault.fotos.info.masse'), datei.breite && datei.hoehe ? `${datei.breite} × ${datei.hoehe}` : null],
         [t('mss.vault.fotos.info.dauer'), datei.dauer ? formatDauer(datei.dauer) : null],
         [t('mss.vault.fotos.info.groesse'), formatBytes(datei.original.echt)],
@@ -1382,7 +1382,7 @@ function GalerieLichtbox({
               variant="ghost"
               size="icon"
               className={knopf}
-              aria-label={t('mss.vault.bearbeiten.knopf')}
+              aria-label={t('common.edit')}
               disabled={!anzeige.url}
               onClick={() => setBearbeiten(true)}
             >

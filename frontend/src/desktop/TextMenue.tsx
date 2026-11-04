@@ -90,7 +90,7 @@ export function TextMenue() {
     const text = offen.text
     items.push({
       key: 'kopieren',
-      label: t('mss.textmenue.kopieren'),
+      label: t('common.copy'),
       icon: <Copy className="h-4 w-4" />,
       onSelect: () => void navigator.clipboard.writeText(text).catch(() => undefined),
     })

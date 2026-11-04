@@ -138,7 +138,7 @@ export function ThirdPartyPrivacyDialog({
 
           <div className="flex flex-col-reverse sm:flex-row items-center sm:justify-end gap-2.5">
             <Button variant="ghost" size="sm" onClick={onCancel}>
-              {t('browser.drittanbieterHinweis.abbrechen')}
+              {t('common.cancel')}
             </Button>
             <Button variant="primary" size="sm" autoFocus onClick={handleConfirm}>
               {t('browser.drittanbieterHinweis.fortfahren')}

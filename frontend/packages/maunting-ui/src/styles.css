@@ -1,7 +1,212 @@
 /*
  * Komponenten-Rezepte der Maunting-DNA.
  *
- * Sie ziehen in Phase 6 aus `frontend/src/index.css` hierher. Bis dahin bleibt
- * die Datei leer, damit die Importreihenfolge und die CSS-Schichten schon jetzt
- * an ihrem endgültigen Platz stehen.
+ * Die Namen bleiben stabil, weil Seiten und Tests sie als Vertrag lesen.
+ * Geändert wird die Form: ruhigere Flächen, eine Signallinie, weniger Schatten.
  */
+@layer components {
+  /* ── Flächen ───────────────────────────────────────────────────────── */
+
+  .msm-panel {
+    @apply relative rounded-panel border border-outline-variant/70 bg-surface-container/80 backdrop-blur-xl;
+    box-shadow: var(--mui-shadow-panel), inset 0 1px 0 hsl(0 0% 100% / 0.05);
+  }
+
+  .msm-panel::before {
+    content: '';
+    @apply pointer-events-none absolute inset-x-6 top-0 h-px;
+    background: linear-gradient(90deg, transparent, hsl(var(--mui-line) / 0.45), transparent);
+  }
+
+  .msm-page {
+    @apply mx-auto w-full max-w-[1440px] space-y-6 px-4 py-5 sm:px-6 lg:px-8;
+  }
+
+  .msm-page-header {
+    @apply relative flex flex-col gap-3 border-b border-outline-variant/55 pb-5;
+  }
+
+  .msm-page-header::before {
+    content: '';
+    @apply absolute -left-4 top-0 h-10 w-0.5 rounded-full;
+    background: linear-gradient(180deg, hsl(var(--mui-line) / 0.9), hsl(var(--mui-line) / 0));
+  }
+
+  .msm-field-help {
+    @apply mt-1.5 text-xs leading-5 text-on-surface-variant;
+  }
+
+  .msm-field-error {
+    @apply mt-1.5 text-xs leading-5 text-status-destructive;
+  }
+
+  .msm-status-rail {
+    @apply relative pl-4;
+  }
+
+  .msm-status-rail::before {
+    content: '';
+    @apply absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary/70;
+  }
+
+  .msm-card {
+    @apply msm-panel rounded-panel;
+  }
+
+  /* ── Knöpfe ────────────────────────────────────────────────────────── */
+
+  .msm-btn-primary {
+    @apply rounded-control bg-primary font-label-md text-on-primary transition-all duration-200
+           hover:brightness-105 active:scale-[0.99]
+           disabled:pointer-events-none disabled:opacity-50;
+    box-shadow: 0 1px 0 hsl(0 0% 100% / 0.35) inset, 0 8px 22px hsl(var(--mui-focus) / 0.18);
+  }
+
+  .msm-btn-secondary {
+    @apply rounded-control border border-outline-variant bg-surface-container-high/55
+           font-label-md text-on-surface-variant transition-all duration-200
+           hover:border-outline hover:bg-surface-container-high hover:text-on-surface
+           active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .msm-btn-ghost {
+    @apply rounded-control border border-transparent bg-transparent
+           font-label-md text-on-surface-variant transition-all duration-200
+           hover:bg-primary/10 hover:text-primary
+           active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .msm-btn-destructive {
+    @apply rounded-control border border-status-destructive/60
+           font-label-md text-status-destructive transition-all duration-200
+           hover:bg-status-destructive/10
+           active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  /* ── Felder ────────────────────────────────────────────────────────── */
+
+  .msm-input {
+    @apply w-full rounded-control border border-outline-variant/75 bg-surface-container-low/70
+           font-body-md text-sm text-on-surface placeholder-on-surface-variant
+           transition-all duration-200
+           focus:border-primary/60 focus:bg-surface-container-low focus:ring-2 focus:ring-primary/15;
+    padding: 0.625rem 0.875rem;
+  }
+
+  .msm-omnibox {
+    @apply relative flex items-center rounded-full border border-transparent bg-surface-container-low
+           transition-all duration-150
+           focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15;
+  }
+
+  /* ── Plaketten ─────────────────────────────────────────────────────── */
+
+  .msm-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2 py-0.5
+           font-mono-sm text-label-sm uppercase tracking-[0.08em];
+  }
+
+  .msm-badge-success {
+    @apply msm-badge border border-status-success/30 bg-status-success/10 text-status-success;
+  }
+
+  .msm-badge-warning {
+    @apply msm-badge border border-status-warning/30 bg-status-warning/10 text-status-warning;
+  }
+
+  .msm-badge-error {
+    @apply msm-badge border border-status-destructive/30 bg-status-destructive/10 text-status-destructive;
+  }
+
+  .msm-badge-info {
+    @apply msm-badge border border-primary/30 bg-primary/10 text-primary;
+  }
+
+  .msm-badge-neutral {
+    @apply msm-badge border border-outline-variant bg-surface-container-high/60 text-on-surface-variant;
+  }
+
+  /* ── Rahmen der App ────────────────────────────────────────────────── */
+
+  .msm-sidebar {
+    @apply border-r border-outline-variant/50 bg-surface-container-lowest/85 backdrop-blur-xl;
+  }
+
+  .msm-topbar {
+    @apply sticky top-0 z-30 border-b border-outline-variant/50 bg-background/75 backdrop-blur-xl;
+  }
+
+  .msm-modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md;
+  }
+
+  /* ── Hinweise ──────────────────────────────────────────────────────── */
+
+  .msm-alert-success {
+    @apply rounded-control border border-status-success/25 border-l-2 border-l-status-success
+           bg-status-success/[0.06] p-3 font-body-md text-sm text-status-success;
+  }
+
+  .msm-alert-warning {
+    @apply rounded-control border border-status-warning/25 border-l-2 border-l-status-warning
+           bg-status-warning/[0.06] p-3 font-body-md text-sm text-status-warning;
+  }
+
+  .msm-alert-error {
+    @apply rounded-control border border-status-destructive/25 border-l-2 border-l-status-destructive
+           bg-status-destructive/[0.06] p-3 font-body-md text-sm text-status-destructive;
+  }
+
+  .msm-alert-info {
+    @apply rounded-control border border-primary/25 border-l-2 border-l-primary
+           bg-primary/[0.06] p-3 font-body-md text-sm text-primary;
+  }
+
+  /* ── Navigation: die Maunting-Rail ─────────────────────────────────── */
+
+  .msm-nav-link {
+    @apply relative mx-2 my-0.5 flex items-center gap-3 rounded-control px-3 py-2.5
+           font-label-md text-label-md text-on-surface-variant
+           transition-colors duration-150
+           hover:bg-surface-container-high/55 hover:text-on-surface;
+  }
+
+  .msm-nav-link-active {
+    @apply msm-nav-link bg-primary/10 font-semibold text-primary;
+  }
+
+  .msm-nav-link-active::before {
+    content: '';
+    @apply absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary;
+  }
+
+  /* ── Einstellungen: Zeilen statt Kärtchen ──────────────────────────── */
+
+  .mui-settings .msm-card {
+    @apply rounded-none border-0 border-t border-outline-variant/45 bg-transparent shadow-none backdrop-blur-none;
+  }
+
+  .mui-settings .msm-card:first-child {
+    border-top: 0;
+  }
+
+  .mui-settings .msm-card::before {
+    content: none;
+  }
+
+  /* ── Fensterrahmen ────────────────────────────────────────────────── */
+
+  .mui-window {
+    border-radius: var(--mui-radius-window);
+    overflow: hidden;
+    background: hsl(var(--mui-canvas));
+  }
+
+  html[data-maximiert] .mui-window {
+    border-radius: 0;
+  }
+
+  .mui-signal {
+    background: linear-gradient(90deg, hsl(var(--mui-line) / 0.9), hsl(var(--mui-line) / 0));
+  }
+}

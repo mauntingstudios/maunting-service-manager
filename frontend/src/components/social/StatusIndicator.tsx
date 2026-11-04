@@ -49,11 +49,11 @@ export function StatusDot({ status = 'invisible', className = '', size = 'md', p
 
   // Invisible / Offline
   return (
-    <Kurzinfo text={t('social.status.offline')} aussen={className} portal={portal}>
+    <Kurzinfo text={t('common.offline')} aussen={className} portal={portal}>
       <span
         role="img"
         className={`inline-block rounded-full bg-on-surface-variant/40 ring-2 ring-surface ${sizeClasses}`}
-        aria-label={t('social.status.offline')}
+        aria-label={t('common.offline')}
       />
     </Kurzinfo>
   )

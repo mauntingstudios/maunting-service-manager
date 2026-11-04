@@ -153,6 +153,12 @@ pub fn run() {
         .manage(tabs::Tabs::default())
         .setup(|app| {
             let handle = app.handle();
+            #[cfg(windows)]
+            if let Some(fenster) = app.get_webview_window("main") {
+                if let Ok(hwnd) = fenster.hwnd() {
+                    fensteroptik::runde_ecken(hwnd.0);
+                }
+            }
             // Die Velopack-Hooks laufen nicht bei jeder Installation (etwa nach
             // dem Wechsel vom NSIS-Installer). Dann zeigt die Anmeldung noch auf
             // den alten Programmpfad, und Windows öffnet Links ins Leere. Der

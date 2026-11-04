@@ -122,7 +122,7 @@ export function ZahlungDialog({ art, item, onSchliessen }: Props) {
       const felder = { service: f.bezeichnung.trim(), notes: f.notizen.trim() || undefined, zahlung: ergebnis.angaben }
       if (item) await vault.aendern(item.id, felder)
       else await vault.saveItem({ ...felder, category: ZAHLUNG_KATEGORIE })
-      toast.success(t('mss.vault.zahlung.gespeichert'))
+      toast.success(t('common.saved'))
       onSchliessen()
     } catch (err) {
       toast.error(fehlerText(err, t('mss.vault.speichernFehlgeschlagen')))

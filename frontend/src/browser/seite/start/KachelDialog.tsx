@@ -83,7 +83,7 @@ export function KachelDialog({
               spellCheck={false}
               autoFocus
             />
-            <Input label={t('browser.start.name')} value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} autoComplete="off" />
+            <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} autoComplete="off" />
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={schliessen}>

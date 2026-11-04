@@ -488,7 +488,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               disabled={adding || isAdded}
               className="flex-1 disabled:opacity-50"
             >
-              {isAdded ? t('mods.added') : t('mods.add')}
+              {isAdded ? t('mods.added') : t('common.add')}
             </Button>
             <Kurzinfo text={ansehenText} seite="ende">
               <a
@@ -698,11 +698,11 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                       </a>
                     </Kurzinfo>
 
-                    <Kurzinfo text={t('mods.remove')} seite="ende">
+                    <Kurzinfo text={t('common.remove')} seite="ende">
                       <button
                         onClick={() => removeMod(mod.id)}
                         className="p-1.5 rounded-md hover:bg-status-destructive/10 transition-colors"
-                        aria-label={t('mods.remove')}
+                        aria-label={t('common.remove')}
                       >
                         <Trash2 className="w-4 h-4 text-status-destructive" />
                       </button>
@@ -743,7 +743,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
-                {t('mods.typeAll', { defaultValue: 'Alle' })}
+                {t('common.all', { defaultValue: 'Alle' })}
               </button>
               <button
                 onClick={() => handleContentTypeChange('mods')}
@@ -899,7 +899,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                 disabled={adding || !newWorkshopId.trim()}
                 className="flex-1 disabled:opacity-50"
               >
-                {adding ? t('common.loading') : t('mods.add')}
+                {adding ? t('common.loading') : t('common.add')}
               </Button>
             </div>
           </div>

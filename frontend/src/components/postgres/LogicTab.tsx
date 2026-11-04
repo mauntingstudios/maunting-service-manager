@@ -186,7 +186,7 @@ function FunctionEditor({ schema, template, onClose }: { schema: string; templat
   return (
     <FormDialog open wide title={title} error={error} onClose={onClose} onSubmit={() => void submit()} testId="function-editor">
       <div className="grid gap-3 md:grid-cols-2">
-        <Input label={t('postgresStudio.columns.name')} value={name} onChange={(e) => setName(e.target.value)} className="font-mono text-xs" />
+        <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} className="font-mono text-xs" />
         <Input label={t('postgresStudio.functions.returns')} value={returns} onChange={(e) => setReturns(e.target.value)} className="font-mono text-xs" />
         <Input label={t('postgresStudio.functions.arguments')} value={args} onChange={(e) => setArgs(e.target.value)} placeholder="p_id bigint, p_name text" className="font-mono text-xs" />
         <div className="grid grid-cols-2 gap-3">
@@ -289,7 +289,7 @@ function TriggerDialog({ schema, tables, functions, onClose }: { schema: string;
         <Field label={t('postgresStudio.triggers.table')}>
           <Dropdown value={table || null} onChange={setTable} options={tables.map((v) => ({ value: v, label: v }))} searchable aria-label={t('postgresStudio.triggers.table')} />
         </Field>
-        <Input label={t('postgresStudio.columns.name')} value={name} onChange={(e) => setName(e.target.value)} />
+        <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} />
         <Field label={t('postgresStudio.triggers.timing')}>
           <Dropdown value={timing} onChange={setTiming} options={[{ value: 'before', label: 'BEFORE' }, { value: 'after', label: 'AFTER' }, { value: 'instead_of', label: 'INSTEAD OF' }]} aria-label={t('postgresStudio.triggers.timing')} />
         </Field>

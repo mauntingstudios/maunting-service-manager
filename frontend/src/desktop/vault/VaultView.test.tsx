@@ -401,7 +401,7 @@ describe('VaultView: Fotos', () => {
     expect(kachel('wellen.mp4')).not.toBeNull()
     expect(kachel('strand.jpg')).toBeNull()
 
-    fireEvent.click(reiter('mss.vault.alle'))
+    fireEvent.click(reiter('common.all'))
     fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.fotos.quelle.titel') }))
     fireEvent.click(screen.getByRole('option', { name: /Screenshots/ }))
     expect(kachel('Screenshot_20260712.png')).not.toBeNull()

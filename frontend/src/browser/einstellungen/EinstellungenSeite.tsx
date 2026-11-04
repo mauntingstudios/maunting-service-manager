@@ -168,7 +168,7 @@ export function EinstellungenSeite({ teil }: { teil: string | null }) {
         ? 'soziales'
         : null
   const kategorie = angefordert ?? kategorien.find((k) => k.id === teil)?.id ?? 'allgemein'
-  const titel = t('browser.einstellungen.titel')
+  const titel = t('common.settings')
 
   return (
     // Eigener Bereich: die Breakpoints richten sich nach der Seitenfläche, nicht nach dem Fenster.

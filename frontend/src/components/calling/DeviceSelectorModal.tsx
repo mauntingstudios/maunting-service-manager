@@ -57,14 +57,14 @@ export const DeviceSelectorModal: React.FC<DeviceSelectorModalProps> = ({
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-on-surface-variant flex items-center gap-1.5">
               <Video className="w-3.5 h-3.5 text-primary" />
-              <span>{t('calls.camera')}</span>
+              <span>{t('common.camera')}</span>
             </label>
             <Dropdown
               options={videoInputs}
               value={selectedVideoInput}
               onChange={(val: string | number) => onSelectVideoInput(String(val))}
               className="w-full"
-              aria-label={t('calls.camera')}
+              aria-label={t('common.camera')}
             />
           </div>
 

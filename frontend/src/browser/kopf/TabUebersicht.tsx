@@ -200,7 +200,7 @@ export function TabUebersicht({ offen, onSchliessen }: { offen: boolean; onSchli
 
         <ul ref={raster} onKeyDown={taste} className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto p-3 sm:grid-cols-3">
           {tabs.map((tab) => {
-            const titel = tabTitel(tab, { neu: t('browser.tabs.neu'), einstellungen: t('browser.einstellungen.titel') })
+            const titel = tabTitel(tab, { neu: t('browser.tabs.neu'), einstellungen: t('common.settings') })
             const aktiv = tab.id === aktivId
             const wirdGezogen = ziehenderTab === tab.id
 

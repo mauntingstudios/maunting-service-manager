@@ -168,7 +168,7 @@ export function VaultStorageTab() {
             <div className="flex flex-wrap gap-2">
               <Button type="button" disabled={speichern} onClick={() => void setzen(exakt ?? gib * GIB)}>
                 <Save className="h-4 w-4" aria-hidden="true" />
-                {t('settings.save')}
+                {t('common.save')}
               </Button>
               {rolle.quota_bytes !== null && (
                 <Button type="button" variant="ghost" disabled={speichern} onClick={() => void setzen(null)}>

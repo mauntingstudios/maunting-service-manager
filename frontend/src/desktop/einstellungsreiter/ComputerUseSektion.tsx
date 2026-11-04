@@ -97,7 +97,7 @@ export function ComputerUseSektion({ onKonfigAenderung }: { onKonfigAenderung?: 
             </p>
             <div className="flex items-center justify-end gap-2 pt-2">
               <Button variant="ghost" size="sm" onClick={() => setDialogOffen(false)}>
-                {t('mss.einstellungen.computerUse.abbrechen')}
+                {t('common.cancel')}
               </Button>
               <Button autoFocus size="sm" onClick={() => void bestaetigenAktivieren()}>
                 {t('mss.einstellungen.computerUse.aktivierenBestaetigen')}

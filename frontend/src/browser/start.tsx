@@ -19,6 +19,7 @@ import '@fontsource/jetbrains-mono/500.css'
 import { textBereit } from '@/i18n'
 import '@/index.css'
 import './browser.css'
+import { MotionProvider } from '@maunting/ui'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { transportEinrichten } from '@/desktop/transport'
@@ -32,9 +33,11 @@ initOfflineSync()
 void textBereit.finally(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <ErrorBoundary>
-        <BrowserApp />
-      </ErrorBoundary>
+      <MotionProvider>
+        <ErrorBoundary>
+          <BrowserApp />
+        </ErrorBoundary>
+      </MotionProvider>
     </StrictMode>,
   )
   cleanupPreloadUrlParam()

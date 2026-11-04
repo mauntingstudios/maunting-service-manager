@@ -175,7 +175,7 @@ describe('ProtectedRoute: Namenswahl', () => {
     expect(feld.value).toBe('')
 
     fireEvent.change(feld, { target: { value: 'maunting' } })
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('benutzername.weiter') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.continue') }))
 
     // Danach steht die Maunting Card. Ohne Tresor gibt es nichts freizuschalten.
     expect(await screen.findByText(i18n.t('mss.card.welcomeTitle'))).toBeInTheDocument()
@@ -185,7 +185,7 @@ describe('ProtectedRoute: Namenswahl', () => {
       body: JSON.stringify({ username: 'maunting' }),
     })
 
-    fireEvent.click(await screen.findByRole('button', { name: i18n.t('mss.card.welcomeContinue') }))
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('common.continue') }))
 
     await screen.findByTestId('protected-content')
   })
@@ -205,7 +205,7 @@ describe('ProtectedRoute: Namenswahl', () => {
     fireEvent.change(feld, { target: { value: 'max@web.de' } })
 
     expect(screen.getByText(i18n.t('benutzername.fehlerForm'))).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: i18n.t('benutzername.weiter') })).toBeDisabled()
+    expect(screen.getByRole('button', { name: i18n.t('common.continue') })).toBeDisabled()
     expect(client.api).not.toHaveBeenCalled()
   })
 })

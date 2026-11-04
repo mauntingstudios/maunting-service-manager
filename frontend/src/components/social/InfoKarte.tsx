@@ -303,7 +303,7 @@ export function InfoKarte({ className = '' }: { className?: string }) {
           <div className="min-w-0">
             <div className="rounded-xl border border-outline-variant/30 bg-surface-container-high/40 p-3">
               <p className="text-label-sm uppercase tracking-wider text-on-surface-variant/70">
-                {t('social.info.preview')}
+                {t('common.preview')}
               </p>
               <p className="mt-1 text-xs text-on-surface-variant">{t('social.info.previewHint')}</p>
               <div

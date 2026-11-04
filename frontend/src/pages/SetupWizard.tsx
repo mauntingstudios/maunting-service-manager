@@ -250,7 +250,7 @@ export function SetupWizard({ onComplete, emailConfigured }: SetupWizardProps) {
 
                 <PasswordInput
                   id="setup-owner-password"
-                  label={t('auth.password') || 'Passwort'}
+                  label={t('common.password') || 'Passwort'}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   placeholder="••••••••"

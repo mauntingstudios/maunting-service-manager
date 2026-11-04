@@ -70,7 +70,7 @@ export function Hostliste({
           />
         </div>
         <Button type="submit" variant="secondary">
-          {t('browser.einstellungen.ausnahmeHinzufuegen')}
+          {t('common.add')}
         </Button>
       </form>
       {eintraege.length > 0 && (
@@ -78,7 +78,7 @@ export function Hostliste({
           {eintraege.map((host) => (
             <li key={host} className="flex items-center justify-between rounded-lg bg-surface-container px-3 py-1.5 text-body-sm">
               <span className="truncate">{host}</span>
-              <Kurzinfo text={t('browser.einstellungen.eintragEntfernen')} seite="ende">
+              <Kurzinfo text={t('common.remove')} seite="ende">
                 <button
                   type="button"
                   onClick={() => setzen(eintraege.filter((h) => h !== host))}

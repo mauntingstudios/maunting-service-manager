@@ -7,7 +7,6 @@
       "error": "Sicherheitsprüfung fehlgeschlagen",
       "expired": "Prüfung abgelaufen, bitte erneut bestätigen",
       "loading": "Lädt …",
-      "reload": "Neu laden",
       "verificationRequired": "Bitte die Sicherheitsprüfung bestätigen",
       "waitAlert": "Sicherheitsprüfung läuft, einen Moment bitte"
     }
@@ -19,7 +18,6 @@
     "servers": "Server",
     "users": "Benutzer",
     "roles": "Rollen",
-    "settings": "Einstellungen",
     "blueprints": "Blueprints",
     "docs": "Hilfe",
     "logout": "Abmelden",
@@ -33,10 +31,10 @@
     "documents": "Maunting Docs"
   },
   "navGroups": {
-    "overview": "Überblick",
-    "infrastructure": "Infrastruktur",
-    "administration": "Administration",
-    "panel": "Panel",
+    "overview": "Arbeit",
+    "infrastructure": "Betrieb",
+    "administration": "Verwaltung",
+    "panel": "System",
     "help": "Hilfe"
   },
   "calendar": {
@@ -79,7 +77,6 @@
     "loadingFeedUrl": "Lade Feed-URL …",
     "feedUrlCopied": "URL in die Zwischenablage kopiert",
     "downloadIcs": ".ics-Datei herunterladen",
-    "filterAll": "Alle",
     "filterPersonal": "Persönlich",
     "filterTeam": "Team",
     "filterServer": "Server-Wartung",
@@ -118,7 +115,6 @@
         "SU": "So"
       },
       "endsLabel": "Endet",
-      "endsNever": "Nie",
       "endsOn": "Am",
       "endsAfter": "Nach",
       "scopeLabel": "Was soll geändert werden?",
@@ -200,7 +196,6 @@
     "emptySearchDesc": "Passe deine Suchbegriffe oder Filter an.",
     "emptyArchivedTitle": "Keine archivierten Notizen",
     "emptyArchivedDesc": "Archivierte Notizen werden hier angezeigt.",
-    "activeView": "Aktiv",
     "archivedView": "Archiviert",
     "contentPlaceholder": "Schreibe deine Notiz, Checkliste [ ] oder formatierten Text …",
     "noTeamsAvailable": "Du bist derzeit in keinem Team Mitglied.",
@@ -231,7 +226,6 @@
     "formType": "Sichtbarkeit / Bereich",
     "formTeam": "Team zuordnen",
     "tabEditor": "Editor",
-    "tabPreview": "Vorschau",
     "previewEmpty": "Noch kein Inhalt zum Anzeigen eingegeben."
   },
   "audit": {
@@ -373,7 +367,6 @@
       "description": "Unterstützten Anbieter und ein Modell aus dessen Katalog wählen. Anbieter und API-Key sind nur für Panel-Administratoren sichtbar.",
       "add": "Provider hinzufügen",
       "empty": "Noch kein KI-Provider konfiguriert.",
-      "name": "Name",
       "model": "Standardmodell",
       "operatorKey": "API-Key",
       "keyConfigured": "Key konfiguriert ({{hint}}); leer lassen, um ihn beizubehalten",
@@ -510,13 +503,12 @@
         "reasoningDefault": "Vorgabe des Backend-Modells",
         "reasoningStale": "Passt nicht zum gewählten Modell",
         "language": "Antwortsprache",
-        "auto": "Automatisch",
         "vad": "Reaktion auf Sprechpausen",
         "vadValues": {
-          "auto": "Automatisch",
           "low": "Ruhig",
           "medium": "Ausgewogen",
-          "high": "Schnell"
+          "high": "Schnell",
+          "auto": "Automatisch"
         },
         "textInputPrice": "Text-Eingabe je 1 Mio. Tokens",
         "textOutputPrice": "Text-Ausgabe je 1 Mio. Tokens",
@@ -569,7 +561,6 @@
       "devicePairTooMany": "Nach dem Einlösen haben sich mehrere Geräte gemeldet. Der Verlauf wird deshalb nicht übergeben. Prüfe die Geräte auf dieser Seite: entziehe jedem, das du nicht kennst, den Zugang und nimm es aus der Zustellung.",
       "devicesUnnamed": "Unbenanntes Gerät",
       "deviceActive": "Online",
-      "deviceInactive": "Offline",
       "deviceLastActive": "Letzte Aktivität",
       "devicePairedAt": "Gekoppelt am"
     },
@@ -601,13 +592,12 @@
       "search": "Erinnerungen durchsuchen",
       "filterOrigin": "Nach Herkunft filtern",
       "origins": {
-        "all": "Alle",
         "user": "Von mir",
-        "ai": "Von der KI"
+        "ai": "Von der KI",
+        "all": "Alle"
       },
       "count": "{{shown}} von {{total}} angezeigt",
       "noMatches": "Kein Eintrag passt zur Suche.",
-      "add": "Hinzufügen",
       "edit": "Erinnerung bearbeiten",
       "clearAll": "Alle löschen",
       "clearTitle": "Gesamtes Gedächtnis löschen?",
@@ -689,7 +679,6 @@
         "copyStep": "1. Prompt kopieren",
         "copyHint": "Bei ChatGPT, Gemini oder Claude einfügen.",
         "copy": "Prompt kopieren",
-        "copied": "Kopiert",
         "copyFailed": "Kopieren nicht möglich. Bitte den Prompt markieren.",
         "showPrompt": "Prompt ansehen",
         "hidePrompt": "Prompt ausblenden",
@@ -700,13 +689,11 @@
         "providerNotice": "Singra liest den Text mit dem Gedächtnis-Modell. Er geht dafür an den KI-Anbieter, ein langer in Teilen, und zählt zu deinem KI-Kontingent.",
         "answerLabel": "Text",
         "answerPlaceholder": "Antwort der anderen KI oder eigenen Text hier einfügen …",
-        "analyze": "Weiter",
         "reading": "Singra liest …",
         "nothingFound": "Im Text steht nichts, was Singra sich merken müsste.",
         "back": "Zurück",
         "found_one": "{{count}} Erinnerung gefunden",
         "found_other": "{{count}} Erinnerungen gefunden",
-        "selectAll": "Alle",
         "selectNone": "Keine",
         "blocked_one": "{{count}} mit Zugangsdaten gesperrt",
         "blocked_other": "{{count}} mit Zugangsdaten gesperrt",
@@ -722,7 +709,6 @@
         "replacesText": "Ersetzt: {{value}}",
         "replacesMore_one": "und {{count}} weiteren",
         "replacesMore_other": "und {{count}} weitere",
-        "edit": "Bearbeiten",
         "editDone": "Fertig",
         "valueLabel": "Erinnerung",
         "select": "Übernehmen: {{title}}",
@@ -755,14 +741,11 @@
       "add": "Neuer Skill",
       "key": "Schlüssel",
       "keyHint": "Kleinbuchstaben, Ziffern, Bindestriche. Zum Beispiel valheim-ram.",
-      "name": "Name",
-      "descriptionLabel": "Beschreibung",
       "descriptionHint": "Was der Skill tut UND wann er passt. Nur diese Zeile entscheidet, ob Singra ihn findet.",
       "body": "Vorgehensweise",
       "bodyHint": "Fließtext, gern mit Markdown. Beschreibe, was zu prüfen ist, in welcher Reihenfolge und woran man die Ursache erkennt.",
       "enabled": "Skill aktiv",
       "empty": "Noch kein eigener Skill. Die mitgelieferten stehen Singra trotzdem zur Verfügung.",
-      "save": "Speichern",
       "saved": "Skill gespeichert.",
       "deleted": "Skill gelöscht.",
       "remove": "Diesen Skill wirklich löschen?",
@@ -809,7 +792,6 @@
       "deleteSelected": "Ausgewählte löschen ({{count}})",
       "storageDescription": "Dateien und Anhänge dieser Unterhaltung, auf die die KI zugreifen kann.",
       "searchPlaceholder": "Dateien durchsuchen …",
-      "filterAll": "Alle",
       "filterImages": "Bilder",
       "filterDocuments": "Dokumente",
       "filterText": "Text & Code",
@@ -1082,7 +1064,6 @@
         "integration": "Integration",
         "memory_keys": "Einträge",
         "memory_scope": "Bereich",
-        "name": "Name",
         "node_id": "Node",
         "permissions": "Rechte der Rolle",
         "ram_limit_mb": "RAM-Limit (MB)",
@@ -1112,7 +1093,8 @@
         "table": "Tabelle",
         "destructive": "Entfernt Daten",
         "vault_storage_gb_before": "Tresorspeicher vorher (GiB)",
-        "vault_storage_gb_after": "Tresorspeicher danach (GiB)"
+        "vault_storage_gb_after": "Tresorspeicher danach (GiB)",
+        "name": "Name"
       },
       "reasonLabel": "Begründung der KI",
       "effectLabel": "Erwartete Wirkung",
@@ -1956,7 +1938,6 @@
       "range": "Zeige {{from}} bis {{to}} von {{total}} Nodes",
       "page": "Seite {{current}} von {{total}}"
     },
-    "name": "Name",
     "host": "Host-URL (HTTPS)",
     "agentToken": "Agent-Token",
     "tokenHint": "Wird im Panel verschlüsselt gespeichert und nie wieder im Klartext angezeigt.",
@@ -2007,11 +1988,8 @@
         "confirm": "Passenden Code bestätigen"
       },
       "commandLabel": "Installationsbefehl",
-      "copy": "Kopieren",
-      "copied": "Kopiert",
       "copyFailed": "Der Befehl konnte nicht kopiert werden.",
       "commandFailed": "Der Installationsbefehl konnte nicht geladen werden.",
-      "retryCommand": "Erneut versuchen",
       "pendingTitle": "Wartende Verbindungen",
       "pendingEmpty": "Noch keine Anfrage",
       "pendingEmptyHint": "Sobald der Befehl auf dem Zielserver läuft, erscheint die Anfrage hier automatisch.",
@@ -2026,8 +2004,8 @@
     },
     "status": {
       "online": "Online",
-      "offline": "Offline",
-      "unknown": "Unbekannt"
+      "unknown": "Unbekannt",
+      "offline": "Offline"
     }
   },
   "routes": {
@@ -2058,14 +2036,11 @@
     "download": "Herunterladen",
     "replace": "Ersetzen",
     "replaceIdMismatch": "Die hochgeladene Datei trägt nicht die ID „{{expected}}“. Beim Ersetzen müssen die meta.id-Werte übereinstimmen.",
-    "delete": "Löschen",
     "deleteConfirmTitle": "Blueprint löschen?",
     "deleteConfirmBody": "Blueprint „{{name}}“ ({{id}}) wirklich löschen? Bereits erstellte Server bleiben unberührt. Neue Server-Instanzen mit dieser Blueprint sind danach nicht mehr möglich.",
-    "deleteConfirm": "Löschen",
     "deleteSuccess": "Blueprint „{{id}}“ gelöscht.",
     "deleteFailed": "Löschen fehlgeschlagen.",
     "search": "Blueprint suchen …",
-    "filterAll": "Alle",
     "filterNative": "Nativ",
     "filterCommunity": "Community",
     "filterCategory": "Kategorie",
@@ -2080,7 +2055,6 @@
     "downloadTemplate": "Blueprint-Template herunterladen",
     "tocTitle": "Inhalt",
     "copyExample": "Beispiel kopieren",
-    "copiedExample": "Kopiert",
     "manageBlueprints": "Zur Blueprint-Verwaltung",
     "manageBlueprintsHint": "Hochladen, Ersetzen und Löschen von Blueprints geschieht auf der Seite „Blueprints“.",
     "toc": {
@@ -2348,7 +2322,6 @@
       "personal": "Persönlich",
       "search": "Dokumente durchsuchen",
       "newFolder": "Neuer Ordner",
-      "all": "Alle",
       "archive": "Archiv",
       "trash": "Papierkorb",
       "root": "Alle Dokumente",
@@ -2395,7 +2368,6 @@
       "reply": "Antworten",
       "reopen": "Wieder öffnen",
       "resolve": "Erledigt",
-      "delete": "Löschen",
       "send": "Senden",
       "new": "Neuer Kommentar",
       "placeholder": "Was ist an dieser Stelle unklar?",
@@ -2417,14 +2389,14 @@
       "systemAuthor": "Server",
       "reasons": {
         "initial": "Erste Fassung",
-        "autosave": "Automatisch",
         "checkpoint": "Manuell",
         "aiPreEdit": "Vor KI-Änderung",
         "aiEdit": "KI-Änderung",
         "aiUndo": "KI rückgängig",
         "beforeRestore": "Vor Wiederherstellung",
         "restore": "Wiederhergestellt",
-        "import": "Import"
+        "import": "Import",
+        "autosave": "Automatisch"
       }
     },
     "share": {
@@ -2435,7 +2407,6 @@
       "boundary": "Zum Bearbeiten braucht es eine Teammitgliedschaft. Editor-Rechte vergibt nur das Team.",
       "active": "Link aktiv: {{role}}, gültig bis {{date}}",
       "link": "Freigabelink",
-      "copy": "Kopieren",
       "copied": "Link kopiert.",
       "copyFailed": "Kopieren war nicht möglich.",
       "create": "Link anlegen",
@@ -2601,7 +2572,6 @@
     "console": "Konsole",
     "consoleConnecting": "Verbinde …",
     "consoleConnectionFailed": "Verbindung fehlgeschlagen",
-    "consoleCopy": "Kopieren",
     "consoleCopyFailed": "Konsolenlog konnte nicht kopiert werden.",
     "consoleCopyTitle": "Sichtbare Konsolenzeilen kopieren",
     "consoleInputFailed": "Eingabe konnte nicht zugestellt werden.",
@@ -2697,9 +2667,9 @@
           "releasePending": "Freigabe ausstehend",
           "quarantined": "Quarantäne",
           "healthy": "Gesund",
-          "offline": "Offline",
           "error": "Fehler",
-          "unknown": "Unbekannt"
+          "unknown": "Unbekannt",
+          "offline": "Offline"
         },
         "resolveAction": "Incident als gelöst markieren",
         "resolvedSuccess": "Incident erfolgreich als gelöst markiert.",
@@ -2731,7 +2701,6 @@
     "killSuccess": "Server wurde erzwungen beendet",
     "loadFailed": "Die Serverliste konnte nicht geladen werden.",
     "mustStopToSwitch": "Der Server muss gestoppt sein, um das Spiel oder den Blueprint zu wechseln.",
-    "name": "Name",
     "network": "Netzwerk",
     "networkEditRequiresStopped": "Der Server muss gestoppt sein, um Netzwerkeinstellungen zu ändern.",
     "networkSaved": "Netzwerk-Einstellungen gespeichert.",
@@ -2816,12 +2785,10 @@
     "subtitle": "Benutzerkonten, Rollen und Status verwalten.",
     "createUser": "User erstellen",
     "confirmDelete": "User wirklich löschen?",
-    "delete": "Löschen",
     "isOwner": "Owner-Rechte",
     "autoVerify": "E-Mail direkt verifizieren",
     "emailVerified": "Verifiziert",
     "emailNotVerified": "Nicht verifiziert",
-    "active": "Aktiv",
     "inactive": "Inaktiv",
     "actions": "Aktionen",
     "role": "Rolle",
@@ -2836,9 +2803,7 @@
     "title": "Rollen",
     "subtitle": "Globale Rollen und Zugriffsrechte konfigurieren.",
     "create": "Rolle erstellen",
-    "name": "Name",
     "namePlaceholder": "z. B. moderator",
-    "description": "Beschreibung",
     "descriptionPlaceholder": "Kurze Beschreibung (optional)",
     "permissions": "Berechtigungen",
     "system": "System-Rolle",
@@ -3270,7 +3235,6 @@
     "registerDescription": "Erstelle ein neues Konto",
     "username": "Benutzername",
     "email": "E-Mail",
-    "password": "Passwort",
     "confirmPassword": "Passwort bestätigen",
     "otpCode": "2FA-Code (6 Ziffern)",
     "useBackupCode": "Backup-Code verwenden",
@@ -3285,7 +3249,6 @@
     "registerFailed": "Registrierung fehlgeschlagen.",
     "registerSuccess": "Registrierung erfolgreich",
     "goToLogin": "Zur Anmeldung",
-    "continue": "Weiter",
     "passwordMismatch": "Passwörter stimmen nicht überein.",
     "passwordTooShort": "Passwort muss mindestens 8 Zeichen haben.",
     "emailNotVerified": "E-Mail nicht verifiziert",
@@ -3421,7 +3384,6 @@
     "searchPlaceholderCurseForge": "CurseForge Mods & Modpacks suchen …",
     "searchPlaceholderCurseForgeModsOnly": "CurseForge-Mods suchen …",
     "curseforgeModId": "CurseForge Mod- oder Modpack-ID",
-    "typeAll": "Alle",
     "typeMods": "Mods",
     "typeModpacks": "Modpacks",
     "viewInCurseForge": "Auf CurseForge anzeigen",
@@ -3452,9 +3414,7 @@
     "confirmReinstall": "{{mod}} jetzt neu installieren?",
     "installActionFailed": "Mod-Aktion fehlgeschlagen",
     "loadOrder": "Load Order",
-    "add": "Hinzufügen",
     "added": "Hinzugefügt",
-    "remove": "Entfernen",
     "viewInWorkshop": "Im Workshop ansehen",
     "steamSearch": "Steam Workshop Suche",
     "loadError": "Konnte Mods nicht laden",
@@ -3524,7 +3484,6 @@
     "searchPlaceholder": "Dateien & Ordner suchen …",
     "searchContentPlaceholder": "In Dateiinhalten suchen …",
     "searchMode": "Suchart",
-    "searchByName": "Name",
     "searchByContent": "Inhalt",
     "searchEmpty": "Keine Treffer",
     "searchTruncated": "Zu viele Treffer. Bitte Suchbegriff verfeinern.",
@@ -3584,7 +3543,6 @@
       "conflict": "Konflikt",
       "saveError": "Speichern fehlgeschlagen",
       "unsaved": "Ungespeichert",
-      "saved": "Gespeichert.",
       "searchAndReplace": "Suchen und ersetzen",
       "conflictNotice": "Die Datei wurde außerhalb dieses Editors geändert. Dein lokaler Inhalt bleibt erhalten und wird nicht überschrieben.",
       "reloadServerVersion": "Server-Version neu laden",
@@ -3616,7 +3574,6 @@
     "loadFailed": "Die Backups konnten nicht geladen werden.",
     "createHint": "Erstelle ein manuelles Backup oder richte automatische Backups ein.",
     "settingsSaved": "Einstellungen gespeichert",
-    "scheduling": "Einstellungen",
     "schedulingTitle": "Backup-Einstellungen",
     "backupOnStart": "Backup vor dem Start erstellen",
     "interval": "Intervall",
@@ -3687,7 +3644,6 @@
     "aiManagedHint": "Dieser Neustart-Zeitplan wurde von der KI eingerichtet. Bei manuellen Änderungen übernimmst du die Verwaltung und der KI-Auftrag wird pausiert."
   },
   "settings": {
-    "title": "Einstellungen",
     "subtitle": "Panel-Einstellungen",
     "panelUrl": "Panel-URL",
     "panelUrlHint": "Kommt automatisch aus der aktuellen Adresse.",
@@ -3720,11 +3676,8 @@
     "steamAccountTitle": "Steam Account (für Spiele wie DayZ)",
     "steamAccountWarning": "Nimm einen EXTRA Steam-Account fürs Panel und deaktiviere Steam Guard, sonst arbeitet SteamCMD nicht autonom.",
     "steamAccountUsername": "Username",
-    "steamAccountPassword": "Passwort",
     "steamAccountConfigured": "Konfiguriert",
     "steamAccountNotConfigured": "Nicht konfiguriert",
-    "steamAccountSave": "Speichern",
-    "steamAccountRemove": "Entfernen",
     "steamAccountSaved": "Steam-Account gespeichert",
     "steamAccountRemoved": "Steam-Account entfernt",
     "curseforgeApiKey": "CurseForge API",
@@ -3736,7 +3689,6 @@
     "curseforgeDeleteKey": "Schlüssel entfernen",
     "curseforgeRemoved": "CurseForge API-Key entfernt",
     "curseforgeTest": "Verbindung testen",
-    "save": "Speichern",
     "saved": "Einstellungen gespeichert",
     "updatesAutomatic": "Automatische Updates",
     "updatesAutomaticHint": "Panel und Remote-Nodes aktualisieren sich bei neuem GitHub-Commit automatisch.",
@@ -3760,6 +3712,14 @@
     "emailConfigured": "E-Mail-Dienst konfiguriert",
     "emailNotConfigured": "E-Mail-Dienst nicht konfiguriert",
     "panelConfig": "Panel-Konfiguration",
+    "groups": {
+      "basis": "Grundlagen",
+      "sicherheit": "Sicherheit",
+      "verbindungen": "Verbindungen",
+      "kommunikation": "Kommunikation",
+      "daten": "Speicher & Daten",
+      "erweitert": "Erweitert"
+    },
     "tabs": {
       "general": "Allgemein",
       "email": "E-Mail",
@@ -3797,7 +3757,6 @@
       "unreachable": "Anrufserver nicht erreichbar",
       "activeRooms_one": "{{count}} aktiver Raum",
       "activeRooms_other": "{{count}} aktive Räume",
-      "saved": "Gespeichert.",
       "metadataHint": "Der Medienserver sieht keine Inhalte, aber er weiß, welche Kennungen wann in welchem Raum waren — bei externen Anbietern liegt das dort.",
       "errors": {
         "load": "Der Anruf-Status konnte nicht geladen werden."
@@ -3867,7 +3826,6 @@
       "installIdPlaceholder": "Aus dem Singra-Panel kopieren",
       "installIdSave": "Installations-ID speichern",
       "installIdSaved": "Installations-ID gespeichert",
-      "installIdRemove": "Entfernen",
       "installIdRemoved": "Installations-ID entfernt",
       "crispWebsiteId": "Crisp Website-ID",
       "crispHint": "Aus Crisp → Website Settings → Setup.",
@@ -3928,12 +3886,9 @@
       "providerClaims": "Claim-Mapping (JSON)",
       "providerClaimsHint": "Optionales Override: {\"id\":\"sub\",\"email\":\"email\",\"username\":\"preferred_username\",\"email_verified\":\"email_verified\"}",
       "providerPosition": "Reihenfolge",
-      "save": "Speichern",
       "saved": "OAuth-Provider gespeichert",
       "updated": "OAuth-Provider aktualisiert",
       "deleted": "OAuth-Provider gelöscht",
-      "edit": "Bearbeiten",
-      "delete": "Löschen",
       "deleteConfirmBody": "„{{name}}“ ({{slug}}) wirklich löschen? Verknüpfte Accounts bleiben, verlieren aber den Login via {{slug}}.",
       "test": "Verbindung testen",
       "testOk": "Konfiguration sieht konsistent aus.",
@@ -4002,7 +3957,6 @@
       "christmas": "Weihnachten",
       "mode": "Modus",
       "modeOff": "Aus",
-      "modeAuto": "Automatisch",
       "modeOn": "Immer an",
       "from": "Von",
       "to": "Bis",
@@ -4012,16 +3966,20 @@
       "timePlaceholder": "HH:MM",
       "statusOff": "Aus",
       "statusAlways": "Immer an",
-      "statusActive": "Aktiv",
       "statusInactive": "Inaktiv",
       "scheduleHint": "Beide Grenzen sind einschließlich. Fenster über den Jahreswechsel sind erlaubt.",
-      "invalidDate": "Bitte TT.MM. und eine Uhrzeit angeben.",
-      "preview": "Vorschau"
+      "invalidDate": "Bitte TT.MM. und eine Uhrzeit angeben."
     }
   },
   "profile": {
     "title": "Profil",
     "subtitle": "Dein Konto",
+    "groups": {
+      "identitaet": "Identität",
+      "schutz": "Schutz",
+      "arbeit": "Arbeit",
+      "gefahr": "Gefahr"
+    },
     "tabs": {
       "profile": "Profil",
       "account": "Konto",
@@ -4074,7 +4032,6 @@
     "privacySaveFailed": "Einstellungen konnten nicht gespeichert werden.",
     "uploadAvatar": "Profilbild hochladen",
     "changeAvatar": "Profilbild ändern",
-    "removeAvatar": "Entfernen",
     "avatarHint": "PNG, JPG, WebP oder GIF (max. 5 MB).",
     "avatarSizeLimit": "Das Profilbild darf maximal 5 MB groß sein.",
     "avatarInvalidType": "Erlaubte Formate sind JPEG, PNG, WebP und GIF.",
@@ -4164,7 +4121,6 @@
       "linkTitle": "Mit {{provider}} verknüpfen",
       "linkProofHint": "Über eine Verknüpfung meldest du dich ohne Ablauf an. Deshalb bestätigst du vorher, dass du es bist.",
       "linkNeedsPassword": "Ohne Passwort und 2FA geht das nicht: Lege zuerst unter „Passwort festlegen“ eins fest, dann kannst du Konten verknüpfen.",
-      "linkContinue": "Weiter",
       "unlink": "Verknüpfung aufheben",
       "unlinkConfirm": "Verknüpfung mit {{provider}} aufheben? Danach geht der Login über {{provider}} nicht mehr.",
       "unlinkSuccess": "Verknüpfung aufgehoben",
@@ -4182,7 +4138,6 @@
       "title": "Verknüpfte Postfächer (E-Mail)",
       "empty": "Keine verknüpften Postfächer vorhanden.",
       "add": "Postfach hinzufügen",
-      "delete": "Entfernen",
       "deleteConfirm": "Möchtest du das Postfach {{email}} wirklich entfernen?",
       "test": "Verbindung testen",
       "testSuccess": "Verbindungstest erfolgreich!",
@@ -4218,7 +4173,6 @@
       "title": "Verknüpfte Kalender (CalDAV)",
       "empty": "Keine verknüpften Kalender vorhanden.",
       "add": "Kalender hinzufügen",
-      "delete": "Entfernen",
       "deleteConfirm": "Möchtest du den Kalender {{name}} wirklich entfernen?",
       "test": "Verbindung testen",
       "testSuccess": "Verbindungstest erfolgreich!",
@@ -4246,13 +4200,11 @@
       "unnamed": "Unbenanntes Gerät",
       "empty": "Kein Gerät angemeldet.",
       "loadFailed": "Die Liste konnte nicht geladen werden.",
-      "remove": "Entfernen",
       "removeTitle": "Gerät aus der Zustellung nehmen?",
       "removeMessage": "Das Gerät wird sofort abgemeldet und bekommt nichts Neues mehr. Bei Neuanmeldung mit deinem Passwort braucht es erneut eine Freigabe auf einem deiner Geräte.",
       "removeStepUpHelp": "Zum Entfernen bestätige, dass du es bist — mit dem Nachweis, den dein Konto verlangt.",
       "removePendingHelp": "Dieses Gerät wartet noch auf Freigabe und hat nie Nachrichten bekommen. Es wird sofort entfernt.",
       "removeTotp": "6-stelliger Authenticator-Code",
-      "removePassword": "Passwort",
       "removeSessionHelp": "Dein Konto hat weder ein Passwort noch einen zweiten Faktor. Mit dieser Anmeldung bestätigst du das Entfernen.",
       "removed": "Gerät entfernt.",
       "pending": "Wartet auf Freigabe",
@@ -4270,7 +4222,6 @@
       "thisDevicePending": "Dieses Gerät wartet auf Freigabe: Auf einem anderen Gerät Profil → Geräte öffnen, Sicherheitsnummer vergleichen, „Freigeben“ tippen.",
       "resetTitle": "Alle anderen Geräte verloren?",
       "resetHelp": "Neu beginnen: Alle anderen Geräte werden entfernt, dieses wird dein erstes. Alte Nachrichten bleiben unlesbar, Kontakte sehen eine Warnung.",
-      "resetPassword": "Passwort",
       "resetButton": "Neu beginnen",
       "resetDone": "Neu begonnen. Dieses Gerät ist jetzt freigegeben.",
       "resetPasskey": "Mit Passkey / Biometrie bestätigen",
@@ -4306,7 +4257,6 @@
       "autoSubtitle": "Gilt nur für den Messenger. Der Tresor hat eine eigene Frist.",
       "autoNeedsPin": "Ohne PIN gibt es nichts zu sperren. Die Einstellung greift, sobald einer eingerichtet ist.",
       "afterIdle": "Bei Untätigkeit",
-      "never": "Nie",
       "afterHour": "Nach einer Stunde",
       "afterMinute": "Nach einer Minute",
       "afterMinutes": "Nach {{count}} Minuten",
@@ -4402,7 +4352,6 @@
       "passkeyGespeichert": "Passkey gespeichert.",
       "passkeyEntfernen": "Passkey {{name}} entfernen",
       "passkeyEntfernt": "Passkey entfernt.",
-      "entfernen": "Entfernen",
       "appTitel": "Authenticator-App",
       "appAktiv": "Eingerichtet",
       "appInaktiv": "Nicht eingerichtet",
@@ -4420,8 +4369,7 @@
   },
   "errorBoundary": {
     "title": "Diese Ansicht konnte nicht geladen werden",
-    "hint": "Ein Neuladen der Seite hilft meistens (z. B. nach einem Panel-Update). Bei anhaltenden Problemen wende dich an deinen Administrator.",
-    "reload": "Neu laden"
+    "hint": "Ein Neuladen der Seite hilft meistens (z. B. nach einem Panel-Update). Bei anhaltenden Problemen wende dich an deinen Administrator."
   },
   "errors": {
     "RATE_LIMITED": "Zu viele Anfragen. Bitte warte einen Moment.",
@@ -4479,10 +4427,10 @@
         "unbekannt": "Eine Eingabe",
         "email": "E-Mail-Adresse",
         "username": "Benutzername",
-        "password": "Passwort",
-        "name": "Name",
         "code": "Code",
-        "otp_code": "Code"
+        "otp_code": "Code",
+        "name": "Name",
+        "password": "Passwort"
       },
       "missing": "{{feld}} fehlt.",
       "string_too_short": "{{feld}} ist zu kurz, mindestens {{min}} Zeichen.",
@@ -4553,7 +4501,6 @@
   "databases": {
     "database": "Datenbank",
     "user": "User",
-    "password": "Passwort",
     "connectionUrl": "Connection-URL",
     "host": "Host",
     "port": "Port"
@@ -4609,7 +4556,6 @@
       "page": "Seite {{page}} von {{pages}}"
     },
     "autoLock": {
-      "never": "Nie",
       "afterHour": "Nach einer Stunde",
       "afterMinutes_one": "Nach einer Minute",
       "afterMinutes_other": "Nach {{count}} Minuten"
@@ -4673,7 +4619,20 @@
     "unbekannt": "unbekannt",
     "auswaehlen": "Auswählen",
     "suchenPunkte": "Suchen …",
-    "keineEintraege": "Keine Einträge"
+    "keineEintraege": "Keine Einträge",
+    "name": "Name",
+    "password": "Passwort",
+    "settings": "Einstellungen",
+    "active": "Aktiv",
+    "description": "Beschreibung",
+    "all": "Alle",
+    "preview": "Vorschau",
+    "saved": "Gespeichert.",
+    "camera": "Kamera",
+    "reload": "Neu laden",
+    "never": "Nie",
+    "auto": "Automatisch",
+    "continue": "Weiter"
   },
   "serverDetail": {
     "showServerOverview": "Server-Übersicht",
@@ -4750,7 +4709,6 @@
       "description": "Richte eine HTTPS-Domain auf den frischen Ubuntu- oder Debian-Host und führe anschließend den öffentlichen Bootstrap als Root aus. Ersetze panel.example.com durch deine echte Panel-Domain.",
       "commandLabel": "Öffentlicher Bootstrap",
       "copy": "Befehl kopieren",
-      "copied": "Kopiert",
       "releaseNote": "Der Bootstrap bevorzugt das getestete msm-panel-Artefakt des neuesten GitHub-Releases. install.sh bleibt für Bootstrap, Simple- und interaktiven Modus der zentrale Installer: Er installiert auf Minimal-Systemen alle benötigten Basispakete und repariert eine unvollständige Caddy-Paketquelle sicher, ohne eine vorhandene Caddyfile zu ersetzen.",
       "caddyUpdate": "Seit 09/2026 schreibt install.sh Cache-Regeln in die Caddy-Site: Die gehashten Assets bleiben ein Jahr im Browser, die Seite selbst lädt bei jedem Aufruf neu, und ein fehlender Chunk bleibt ein 404. Ohne diese Regeln konnte ein Browser nach einem Update eine alte, leere Seite festhalten. update.sh schreibt eine vorhandene Site nicht neu, sondern meldet eine ohne diese Regeln. Dann install.sh erneut ausführen: Es übernimmt die vorhandenen Einstellungen und schreibt die Site neu."
     },
@@ -5312,7 +5270,6 @@
     "filter": "Event-Filter (leer = alle)",
     "filterAll": "Alle Events",
     "filterOnly": "Filter",
-    "active": "Aktiv",
     "inactive": "Pausiert",
     "created": "Webhook angelegt",
     "rotate": "Secret rotieren",
@@ -5336,8 +5293,7 @@
     "feedAuto": "Auto-Refresh alle 5s",
     "feedEmpty": "Noch keine Zustellungen. Wenn der Server startet/stoppt oder ein Spielerzahl-Update eintrifft, erscheinen sie hier.",
     "feedPayload": "Payload anzeigen",
-    "attempt": "Versuch",
-    "copied": "Kopiert"
+    "attempt": "Versuch"
   },
   "panelBackups": {
     "title": "Panel-Backups",
@@ -5346,7 +5302,6 @@
     "created": "Panel-Backup erfolgreich erstellt",
     "confirmDelete": "Panel-Backup wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
     "deleted": "Panel-Backup gelöscht",
-    "settingsButton": "Einstellungen",
     "settingsTitle": "Panel-Backup-Einstellungen",
     "enabled": "Automatische Backups aktivieren",
     "interval": "Intervall",
@@ -5365,7 +5320,6 @@
     "restoreModalScriptPath": "Skript-Pfad",
     "restoreModalInstructions": "Anleitung",
     "restoreModalCopyScript": "Skript-Pfad kopieren",
-    "restoreModalClose": "Schließen",
     "restoreModalWarning": "WARNUNG: Dieses Skript stoppt den MSM-Panel-Dienst und überschreibt die Datenbank und Konfigurationsdateien! Die Dateien im Tresor (/opt/msm/vault-blobs) sind nicht im Backup. Stammt das Verzeichnis von einem anderen Stand, gehen Tresor-Dateien verloren."
   },
   "privacyNotice": {
@@ -5765,7 +5719,6 @@
       "title": "Post-Install-Dateien",
       "add": "Aktion hinzufügen",
       "operationLabel": "Dateiaktion {{index}}",
-      "copy": "Kopieren",
       "symlink": "Symlink",
       "sourceLabel": "Quelle {{index}}",
       "targetLabel": "Ziel {{index}}",
@@ -6197,7 +6150,6 @@
     "authSetup": {
       "required": "Setup-Autorisierung erforderlich",
       "instructions": "Im Konsolen-Tab erscheint ein Autorisierungs-Link. Bitte im Browser öffnen und die Anmeldung abschließen. Der Server startet danach automatisch.",
-      "cancel": "Abbrechen",
       "cancelled": "Auth-Setup abgebrochen",
       "cancelFailed": "Auth-Setup konnte nicht abgebrochen werden"
     }
@@ -6209,7 +6161,6 @@
     "add": "Integration hinzufügen",
     "empty": "Noch keine Hoster-Integration angelegt. Der reguläre Betrieb funktioniert ohne diesen Bereich.",
     "integration": "Integration",
-    "name": "Name",
     "nameHint": "Anzeigename für die Liste im Panel. Rein beschreibend — technisch wirkt er nirgends.",
     "slug": "Kurzname (Slug)",
     "slugHint": "Panelweit eindeutige technische Kennung. Sie steht in jedem Audit-Eintrag und jeder Webhook-Nutzlast, und daraus entsteht der Benutzername-Präfix angelegter Kunden (<slug>-kunde- …). Nachträglich geändert bricht sie die Zuordnung in bestehenden Protokollen.",
@@ -6263,9 +6214,9 @@
     "secretOnceHint": "MSM speichert diesen Wert nicht im Klartext. Nach dem Schließen ist er nicht mehr abrufbar — dann hilft nur eine Rotation.",
     "secretUnderstood": "Verstanden",
     "states": {
-      "active": "Aktiv",
       "suspended": "Gesperrt",
-      "terminated": "Beendet"
+      "terminated": "Beendet",
+      "active": "Aktiv"
     },
     "products": {
       "title": "Produktzuordnung",
@@ -6322,7 +6273,6 @@
       "steam_account": "Anmeldename und Passwort deines Steam-Kontos, nicht der Anzeigename. Verschlüsselt gespeichert; sichtbar bleiben nur die letzten 4 Zeichen.",
       "github_token": "Klassisches Token (ghp_ …) mit 'repo'-Scope oder Fine-grained (github_pat_ …) mit 'Contents: read'. Verschlüsselt gespeichert; sichtbar bleiben nur die letzten 4 Zeichen."
     },
-    "save": "Speichern",
     "saved": "Zugangsdaten gespeichert",
     "deleted": "Zugangsdaten entfernt",
     "deleteTitle": "Zugangsdaten entfernen",
@@ -6357,10 +6307,7 @@
       "bind": "Zuordnung konnte nicht gespeichert werden"
     }
   },
-  "docsCommon": {
-    "copy": "Kopieren",
-    "copied": "Kopiert"
-  },
+  "docsCommon": {},
   "docsHosterApi": {
     "eyebrow": "Integration",
     "title": "Hoster-API",
@@ -6693,7 +6640,6 @@
     "pendingUpgrades": "Offene Rechteanfragen",
     "upgradePending": "wartet auf Zustimmung",
     "pendingUpgradesHint": "Diese Mitglieder sind längst im Team; angefragt ist nur ein Verwaltungsschalter. Anheben kannst du ihn nicht allein — erst ihre Zusage stellt ihn um. Zurücknehmen dagegen kannst du ihn jederzeit ohne Rückfrage.",
-    "memberSaved": "Gespeichert.",
     "memberConsentPending": "Zustimmung angefragt — {{name}} muss annehmen.",
     "memberRemoved": "Mitglied entfernt.",
     "removeMember": "Mitglied entfernen",
@@ -6780,7 +6726,6 @@
     "editRole": "Rolle bearbeiten",
     "roleName": "Rollenname",
     "roleColor": "Farbe",
-    "roleDescription": "Beschreibung",
     "roleDescriptionPlaceholder": "Optionale Beschreibung der Aufgaben und Zugriffe dieser Rolle …",
     "isAdmin": "Administrator",
     "isAdminDesc": "Volle Berechtigungen auf alle Team-Funktionen und Server-Rechte des Gründers.",
@@ -6795,7 +6740,7 @@
     "deleteRoleConfirm": "Möchtest du die Rolle „{{name}}“ wirklich löschen? Mitglieder verlieren die damit verbundenen Rechte.",
     "assignRoles": "Rollen zuweisen",
     "noRolesYet": "Bisher wurden keine individuellen Rollen erstellt.",
-    "roleMembersCount": "{{count}} Mitglied",
+    "roleMembersCount_one": "{{count}} Mitglied",
     "roleMembersCount_other": "{{count}} Mitglieder",
     "manageRoles": "Rollen verwalten",
     "serverGrantsTitle": "Server-Berechtigungen",
@@ -6822,12 +6767,10 @@
   "mss": {
     "fenster": {
       "minimieren": "Minimieren",
-      "maximieren": "Maximieren",
-      "schliessen": "Schließen"
+      "maximieren": "Maximieren"
     },
     "textmenue": {
       "name": "Textmenü",
-      "kopieren": "Kopieren",
       "einfuegen": "Einfügen"
     },
     "app": {
@@ -6841,7 +6784,6 @@
       "messenger": "Messenger",
       "kalender": "Kalender",
       "notizen": "Notizen",
-      "einstellungen": "Einstellungen",
       "abmelden": "Abmelden",
       "menueOeffnen": "Menü öffnen",
       "keinChatrecht": "Dein Konto besitzt kein Recht für den KI-Chat (ai.chat.use). Wende dich an deinen Administrator, um die Berechtigung zu erhalten.",
@@ -6893,7 +6835,6 @@
       "welcomeAuthorized": "Dieses Gerät ist für deine Maunting Card freigegeben.",
       "welcomePasswordLabel": "Master-Passwort (optional)",
       "welcomeChecking": "Tresor wird geprüft …",
-      "welcomeContinue": "Weiter",
       "welcomeSkip": "Später"
     },
     "vault": {
@@ -6945,7 +6886,6 @@
       "neuerEintrag": "Neues Passwort",
       "passwortAnlegen": "Passwort anlegen",
       "dienstnamePflicht": "Gib einen Dienstnamen an.",
-      "gespeichert": "Gespeichert.",
       "speichernFehlgeschlagen": "Das Speichern hat nicht geklappt.",
       "loeschenTitel": "Eintrag löschen",
       "loeschenFrage": "Möchtest du „{{name}}“ wirklich unwiderruflich aus dem Tresor löschen?",
@@ -6957,7 +6897,6 @@
       "keineTreffer": "Keine Treffer",
       "favoriten": "Favoriten",
       "zuletztVerwendet": "Zuletzt verwendet",
-      "alle": "Alle",
       "hinweisBezeichnung": "Passwort-Hinweis",
       "hinweisWozu": "Geht per E-Mail an dich, wenn du das Passwort vergisst",
       "einrichten": "Einrichten",
@@ -6979,7 +6918,6 @@
       "dienstPlatzhalter": "z. B. Google, Steam, Discord",
       "benutzernameBezeichnung": "Benutzername / E-Mail",
       "benutzernamePlatzhalter": "name@domain.de",
-      "passwort": "Passwort",
       "generieren": "Generieren",
       "zweifaktorBezeichnung": "2FA-Schlüssel (optional)",
       "zweifaktorPlatzhalter": "Base32-Schlüssel",
@@ -7026,7 +6964,6 @@
       "hinweisErklaerungLang": "Falls du dein Master-Passwort vergisst, schickt dir das Panel diesen Hinweis per E-Mail. Das Panel kann ihn lesen, schreib also nichts hinein, was das Passwort verrät.",
       "qr": {
         "scannen": "QR-Code scannen",
-        "reiterKamera": "Kamera",
         "reiterBild": "Bild hochladen",
         "reiterCode": "Code eingeben",
         "keineKamera": "Dieses Gerät erlaubt keinen Kamerazugriff.",
@@ -7152,7 +7089,6 @@
         "keinSpeicher": "Dein Konto hat keinen Tresorspeicher. Den vergibt der Betreiber über eine Rolle.",
         "oeffnen": "Öffnen",
         "aktionenFuer": "Aktionen für {{name}}",
-        "spalteName": "Name",
         "spalteGroesse": "Größe",
         "geaendert": "Geändert",
         "ort": "Ort",
@@ -7222,7 +7158,6 @@
         "papierkorbMehrere_one": "{{count}} Eintrag liegt im Papierkorb.",
         "papierkorbMehrere_other": "{{count}} Einträge liegen im Papierkorb.",
         "kurz": {
-          "offline": "Offline",
           "nurOnline": "Nur online",
           "speichern": "Aufs Gerät",
           "papierkorb": "Papierkorb"
@@ -7254,9 +7189,7 @@
         "leerFilter": "Nichts gefunden.",
         "abspielen": "Video abspielen",
         "info": {
-          "name": "Name",
           "aufgenommen": "Aufgenommen",
-          "kamera": "Kamera",
           "masse": "Abmessungen",
           "dauer": "Länge",
           "groesse": "Größe",
@@ -7282,11 +7215,11 @@
         "quelle": {
           "titel": "Quelle",
           "alle": "Alle Quellen",
-          "kamera": "Kamera",
           "screenshot": "Screenshots",
           "whatsapp": "WhatsApp",
           "ki": "KI-Bilder",
-          "sonstige": "Sonstige"
+          "sonstige": "Sonstige",
+          "kamera": "Kamera"
         },
         "aehnlich": "Ähnliche",
         "aehnlicheGruppe_one": "{{count}} ähnliches Foto",
@@ -7319,7 +7252,6 @@
         }
       },
       "bearbeiten": {
-        "knopf": "Bearbeiten",
         "titel": "{{name}} bearbeiten",
         "gespeichert": "Neue Fassung gespeichert. Die vorige bleibt erhalten.",
         "fehler": "Die Änderung ließ sich nicht speichern.",
@@ -7432,7 +7364,6 @@
           "ablauf": "Monat und Jahr gehören zusammen.",
           "pruefnummer": "Die Prüfnummer hat 3 oder 4 Ziffern."
         },
-        "gespeichert": "Gespeichert.",
         "leer": "Noch keine Karten oder Konten. Lege eine Karte oder ein Konto an, damit der Browser sie in Bezahlformulare einfügen kann.",
         "abgelaufen": "Abgelaufen",
         "aufdecken": "Anzeigen",
@@ -7470,8 +7401,7 @@
       "warnungGemischt": "{{anzahl}} als „sofort weg“ markierte Einträge sind Zwischenspeicher und werden direkt gelöscht — dort brächte der Papierkorb keinen Platz. Alles Übrige lässt sich von dort zurückholen.",
       "warnungHart": "Das ist nicht rückgängig zu machen.",
       "jaWeich": "In den Papierkorb",
-      "jaHart": "Endgültig löschen",
-      "nein": "Abbrechen"
+      "jaHart": "Endgültig löschen"
     },
     "overlay": {
       "schliessen": "Overlay schließen",
@@ -7550,7 +7480,6 @@
       "mikrofon": "Mikrofon: {{name}}",
       "kalibrierungStarten": "Kalibrierung starten",
       "weiterKalibrieren": "Weiter kalibrieren",
-      "abbrechen": "Abbrechen",
       "sprichJetzt": "Aufnahme {{nummer}} von {{gesamt}} — sprich das Wort.",
       "kalibrierungFertig": "Aufnahmen vollständig. Jetzt trainieren.",
       "trainieren": "Trainieren",
@@ -7571,7 +7500,6 @@
       "deinstallieren": "Smart System deinstallieren",
       "sicherheitsfrage": "Alle lokalen Einstellungen und Stimmaufnahmen werden unwiderruflich gelöscht.",
       "allesEntfernen": "Ja, alles entfernen",
-      "abbrechen": "Abbrechen",
       "konfiguration": "Einstellungen entfernt",
       "stimmaufnahmen": "Stimmaufnahmen gelöscht",
       "anmeldung": "Gespeicherte Anmeldung entfernt",
@@ -7589,8 +7517,7 @@
         "androidHinweis": "Reine Desktop-Funktion.",
         "aktivierenTitel": "Computer-Use aktivieren?",
         "aktivierenWarnung": "Erlaubt der KI Maus-, Tastatur- und Bildschirmaktionen. Aktionen erfordern deine Bestätigung.",
-        "aktivierenBestaetigen": "Ja, Computer-Use aktivieren",
-        "abbrechen": "Abbrechen"
+        "aktivierenBestaetigen": "Ja, Computer-Use aktivieren"
       },
       "artefakte": {
         "titel": "Artefakt-Installationen & Quarantäne",
@@ -7606,7 +7533,6 @@
         "ordnerFehler": "Ordner konnte nicht ausgewählt werden.",
         "aktivierenTitel": "Artefakt-Installationen aktivieren?",
         "aktivierenWarnung": "Downloads durchlaufen Quarantäne, Defender-Prüfung und Sandbox vor der Ausführung.",
-        "abbrechen": "Abbrechen",
         "aktivierenBestaetigen": "Aktivieren"
       },
       "banner": {
@@ -7644,6 +7570,13 @@
         "tresor": "Tresor",
         "geraete": "Geräte"
       },
+      "groups": {
+        "identitaet": "Identität",
+        "schutz": "Schutz",
+        "arbeit": "Arbeit",
+        "app": "App",
+        "erweitert": "Erweitert"
+      },
       "tab": {
         "desktop": "Desktop-Integration",
         "app": "App-Status",
@@ -7676,8 +7609,7 @@
       "titel": "MSS schließen?",
       "frage": "In den Hintergrund heißt: das Fenster verschwindet, Wake-Word und Aufträge laufen weiter. Beenden stoppt alles.",
       "hintergrund": "In den Hintergrund",
-      "beenden": "Beenden",
-      "abbrechen": "Abbrechen"
+      "beenden": "Beenden"
     },
     "audio": {
       "titel": "Audio",
@@ -7749,7 +7681,6 @@
     "fieldIsActive": "Pop-up aktivieren",
     "fieldIsActiveHint": "Wenn aktiv, wird das Pop-up berechtigten Nutzern im Panel angezeigt.",
     "preview": "Live-Vorschau",
-    "previewBtn": "Vorschau",
     "saved": "Pop-up erfolgreich aktualisiert.",
     "created": "Pop-up erfolgreich erstellt.",
     "deleted": "Pop-up gelöscht.",
@@ -7759,7 +7690,6 @@
     "listTitle": "Angelegte Ankündigungen",
     "empty": "Keine Pop-ups oder Ankündigungen vorhanden.",
     "emptyHint": "Klicke oben auf „Neues Pop-up anlegen“, um eine Ankündigung zu erstellen.",
-    "statusActive": "Aktiv",
     "statusScheduled": "Geplant",
     "statusExpired": "Abgelaufen",
     "statusInactive": "Inaktiv",
@@ -7808,7 +7738,6 @@
     "activeGroupCall": "Aktiver Gruppenanruf",
     "activeOnOtherDevice": "Aktiver Anruf auf anderem Gerät",
     "microphone": "Mikrofon",
-    "camera": "Kamera",
     "speaker": "Lautsprecher",
     "micOn": "Mikrofon an",
     "micOff": "Mikrofon aus",
@@ -7920,8 +7849,8 @@
       "away": "Abwesend",
       "invisible": "Unsichtbar",
       "titel": "Status",
-      "offline": "Offline",
-      "auto": "Automatisch"
+      "auto": "Automatisch",
+      "offline": "Offline"
     },
     "device": {
       "desktop": "Desktop-App",
@@ -7967,7 +7896,6 @@
       "removePhoto": "Foto entfernen",
       "tapForText": "Tippe unten, um Text hinzuzufügen",
       "imageTooLarge": "Das Bild ist zu groß. Erlaubt sind höchstens 3 MB.",
-      "camera": "Kamera",
       "pickImage": "Bild wählen",
       "contentPlaceholder": "Was machst du gerade? Text oder Bildunterschrift",
       "colour": "Farbe:",
@@ -8138,13 +8066,10 @@
       "generalHeading": "Gruppeninfo",
       "generalHint": "Name, Beschreibung und Bild gelten für alle Mitglieder. Rollen ändern sich hier nicht mit.",
       "generalNoRight": "Du kannst die Gruppeninfo lesen, aber nicht ändern.",
-      "generalName": "Name",
-      "generalDescription": "Beschreibung",
       "generalLogoChoose": "Bild wählen",
       "generalLogoRemove": "Bild entfernen",
       "generalMembersHint": "{{count}} Mitglieder. Die Liste steht unter „Mitglieder“.",
       "generalLoading": "Die Gruppeninfo wird geladen …",
-      "generalSave": "Speichern",
       "generalSaved": "Gruppeninfo gespeichert.",
       "generalSaveFailed": "Die Gruppeninfo konnte nicht gespeichert werden.",
       "backgroundHeading": "Geteilter Hintergrund",
@@ -8155,7 +8080,6 @@
       "backgroundOwn": "Eigenes Bild",
       "backgroundChoose": "Bild wählen",
       "backgroundReplace": "Anderes Bild",
-      "backgroundRemove": "Entfernen",
       "backgroundShared": "Sichtbar für alle Mitglieder, verschlüsselt auf dem Server.",
       "backgroundLoading": "Der bestehende Hintergrund wird geladen …",
       "backgroundSave": "Hintergrund speichern",
@@ -8193,7 +8117,6 @@
       "saveRole": "Rolle speichern",
       "nameLabel": "Rollen-Name",
       "namePlaceholder": "z. B. Event-Leiter",
-      "descLabel": "Beschreibung",
       "descPlaceholder": "Aufgaben und Verantwortungsbereich",
       "ownerLocked": "Die Eigentümer-Rolle hat feste Vollberechtigung und lässt sich nicht einschränken.",
       "permissionsCount": "Berechtigungen ({{selected}} von {{total}})",
@@ -8380,7 +8303,6 @@
         "customLabel": "Stunden",
         "forever": "Für immer"
       },
-      "preview": "Vorschau",
       "previewHint": "So sehen dich Freunde",
       "previewHidden": "Deine Info sieht gerade niemand.",
       "previewEmpty": "Noch keine Info",
@@ -8930,7 +8852,6 @@
       "identityAlways": "GENERATED ALWAYS",
       "identityByDefault": "GENERATED BY DEFAULT",
       "identityNone": "Keine",
-      "name": "Name",
       "notNull": "Pflicht (NOT NULL)",
       "primary": "Primärschlüssel",
       "type": "Typ"
@@ -9028,7 +8949,6 @@
       "perPage": "{{count}} je Seite",
       "readOnlyNoKey": "Nur lesbar: Diese Relation hat keinen Schlüssel, über den sich Zeilen sicher ändern lassen.",
       "rows": "Zeilen: {{formatted}}",
-      "saved": "Gespeichert.",
       "selectAll": "Alle auswählen",
       "selectRow": "Zeile {{row}} auswählen",
       "useDefault": "Standard: {{value}}"
@@ -9211,7 +9131,6 @@
       "category": "Kategorie",
       "changed": "Geändert",
       "default": "Standard: {{value}}",
-      "description": "Beschreibung",
       "edit": "{{name}} ändern",
       "hint": "Änderungen landen per ALTER SYSTEM in postgresql.auto.conf. Parameter, die das Panel selbst verwaltet, sind gesperrt.",
       "locked": "gesperrt",
@@ -9308,7 +9227,6 @@
       "managed": "vom Panel verwaltet",
       "memberOf": "Mitglied von",
       "name": "Rollenname",
-      "password": "Passwort",
       "passwordKeep": "Leer lassen, um das Passwort zu behalten.",
       "pickRoles": "Rollen wählen",
       "sharedHint": "Im gemeinsamen Cluster verwaltest du Benutzer im Reiter „Verbindung“. Eigene Rollen gibt es auf einem Datenbankserver.",
@@ -9441,7 +9359,6 @@
     "hinweis": "Mit diesem Namen meldest du dich an, und unter ihm finden dich andere im Panel und im Messenger. Du kannst ihn später im Profil ändern.",
     "label": "Benutzername",
     "regel": "3–12 Zeichen: Buchstaben, Ziffern, Unterstrich, Punkt oder Bindestrich",
-    "weiter": "Weiter",
     "gespeichert": "Benutzername gespeichert.",
     "fehlerForm": "3–12 Zeichen: Buchstaben, Ziffern, Unterstrich, Punkt oder Bindestrich. Punkt und Bindestrich nicht am Anfang oder Ende.",
     "fehlerReserviert": "„{{name}}“ ist reserviert.",
@@ -9497,8 +9414,6 @@
       "farbe": "Farbe",
       "symbol": "Symbol",
       "anlegen": "Erstellen",
-      "speichern": "Speichern",
-      "abbrechen": "Abbrechen",
       "bearbeiten": "Bereich bearbeiten",
       "loeschen": "Bereich löschen",
       "loeschenBestaetigen": "Möchtest du den Arbeitsbereich „{{name}}“ wirklich löschen? Die enthaltenen Tabs werden in den Standardbereich verschoben.",
@@ -9528,13 +9443,11 @@
     },
     "fenster": {
       "minimieren": "Minimieren",
-      "maximieren": "Maximieren",
-      "schliessen": "Schließen"
+      "maximieren": "Maximieren"
     },
     "nav": {
       "zurueck": "Zurück",
       "vor": "Vor",
-      "neuLaden": "Neu laden",
       "anhalten": "Laden abbrechen",
       "lesezeichenSetzen": "Lesezeichen setzen (Strg+D)",
       "lesezeichenEntfernen": "Lesezeichen entfernen"
@@ -9599,10 +9512,8 @@
       "privatTitel": "Privater Tab",
       "privatText": "Seiten aus privaten Tabs landen nicht im Verlauf. Cookies und Cache liegen nur im Speicher und verschwinden, wenn der letzte private Tab geschlossen ist. Downloads und Lesezeichen bleiben.",
       "hinzufuegenTitel": "Schnellzugriff hinzufügen",
-      "bearbeiten": "Bearbeiten",
       "bearbeitenTitel": "Schnellzugriff bearbeiten",
       "adresse": "Adresse",
-      "name": "Name",
       "adresseUngueltig": "Das ist keine Webadresse.",
       "entfernt": "„{{name}}“ entfernt",
       "nachVorn": "Nach vorn",
@@ -9687,7 +9598,6 @@
       "discord": "Discord",
       "telegram": "Telegram",
       "instagram": "Instagram",
-      "einstellungen": "Einstellungen",
       "koppeln": "Koppeln",
       "mitZahl": "{{name}}, {{zahl}} neu",
       "menue": "Menü",
@@ -9703,7 +9613,6 @@
     "liste": {
       "suchen": "Durchsuchen",
       "keineTreffer": "Keine Treffer",
-      "entfernen": "Entfernen",
       "entfernenName": "{{titel}} entfernen",
       "aktionen": "Aktionen",
       "aktionenName": "Aktionen für {{titel}}"
@@ -9853,7 +9762,6 @@
       "trennen": "Kopplung aufheben",
       "trennenTitel": "Kopplung aufheben?",
       "trennenText": "Meldet den Browser beim Panel ab. Singra, Messenger, Notizen, Kalender und Tresor brauchen danach eine neue Kopplung.",
-      "titel": "Einstellungen",
       "kategorie": {
         "allgemein": "Allgemein",
         "suche": "Suche",
@@ -9883,7 +9791,6 @@
         "hinweis": "Lesezeichen mit Ordnern, Verlauf, Top-Sites und Symbole aus einem installierten Browser übernehmen — der darf geöffnet bleiben.",
         "laden": "Installierte Browser werden gesucht …",
         "ladeFehler": "Die installierten Browser ließen sich nicht ermitteln.",
-        "erneut": "Erneut versuchen",
         "keine": "Kein unterstützter Browser mit einem benutzbaren Profil gefunden.",
         "profil": "Browser und Profil",
         "importName": "Import",
@@ -9947,7 +9854,6 @@
       "rechtZuruecksetzenName": "{{recht}} für {{herkunft}} zurücksetzen",
       "rechtName": {
         "mikrofon": "Mikrofon",
-        "kamera": "Kamera",
         "standort": "Standort",
         "benachrichtigungen": "Benachrichtigungen",
         "zwischenablage": "Zwischenablage lesen",
@@ -9956,16 +9862,17 @@
         "sensoren": "Bewegungssensoren",
         "midi": "MIDI-Geräte",
         "fenster": "Fensterverwaltung",
-        "schriften": "Lokale Schriften"
+        "schriften": "Lokale Schriften",
+        "kamera": "Kamera"
       },
       "verlaufBehalten": "Verlauf automatisch löschen",
       "verlaufBehaltenHinweis": "Älteres fällt beim Start und stündlich weg.",
       "frist": {
-        "immer": "Nie",
         "woche": "Älter als eine Woche",
         "monat": "Älter als einen Monat",
         "halbjahr": "Älter als 6 Monate",
-        "jahr": "Älter als ein Jahr"
+        "jahr": "Älter als ein Jahr",
+        "immer": "Nie"
       },
       "datenLoeschenHinweis": "Cookies, Cache, Website-Daten und Verlauf. Lesezeichen bleiben.",
       "datenLoeschenAndroid": "Android löscht Cookies, Website-Speicher und Cache immer ganz, nie ab Zeitpunkt. Browserverlauf wird mit gelöscht.",
@@ -9976,7 +9883,6 @@
         "monat": "Letzte 4 Wochen",
         "alles": "Gesamte Zeit"
       },
-      "loeschen": "Löschen",
       "brauchtKopplung": "Braucht die Kopplung mit MSM und den Tresor.",
       "ausfuellen": "Anmeldungen einfügen und speichern anbieten",
       "erzeugen": "Starke Passwörter selbst einsetzen",
@@ -10006,7 +9912,6 @@
       "wetterSucheLaeuft": "Suche läuft …",
       "wetterSucheFehler": "Ortssuche nicht erreichbar. Prüfe die Verbindung zu MSM und den Wetterdienst.",
       "wetterKeineTreffer": "Keine Orte gefunden.",
-      "wetterErneut": "Erneut versuchen",
       "wetterEinheit": "Temperatureinheit",
       "wetterEinheitC": "Celsius (°C)",
       "wetterEinheitF": "Fahrenheit (°F)",
@@ -10035,12 +9940,12 @@
       "eintraege": "Einträge",
       "knoepfe": "Knöpfe",
       "knopf": {
-        "neuLaden": "Neu laden",
         "schild": "Werbe- und Trackerschutz",
         "stern": "Lesezeichen-Stern",
         "privaterTab": "Privater Tab",
         "screenshot": "Screenshot",
-        "erweiterungen": "Erweiterungen"
+        "erweiterungen": "Erweiterungen",
+        "neuLaden": "Neu laden"
       },
       "nachObenName": "{{name}} nach oben",
       "nachUntenName": "{{name}} nach unten",
@@ -10056,16 +9961,13 @@
       "schlafenHinweis": "Ein schlafender Tab ist eingefroren und braucht weniger Speicher. Tabs mit Ton schlafen nie.",
       "minuten_one": "{{count}} Minute",
       "minuten_other": "{{count}} Minuten",
-      "nie": "Nie",
       "speicherSparen": "Speicher sparen",
       "speicherSparenHinweis": "Tabs nach einer Stunde im Hintergrund geben ihren Speicher frei und laden neu. Eingaben darin gehen verloren; private Tabs ausgenommen.",
       "wachBleiben": "Immer wach",
       "wachBleibenHinweis": "Tabs dieser Seiten schlafen nie.",
       "ausnahmeSeite": "Seite",
-      "ausnahmeHinzufuegen": "Hinzufügen",
       "listeVoll": "Die Liste ist voll ({{max}} Einträge). Entferne erst einen.",
       "ausnahmeUngueltig": "Das ist keine Domain.",
-      "eintragEntfernen": "Entfernen",
       "eintragEntfernenName": "{{host}} entfernen",
       "downloadFragen": "Bei jedem Download fragen",
       "downloadFragenHinweis": "Vor dem Laden fragt der Browser, wo die Datei hin soll.",
@@ -10102,9 +10004,7 @@
       "name": "Menü der Seite",
       "back": "Zurück",
       "forward": "Vor",
-      "reload": "Neu laden",
       "cut": "Ausschneiden",
-      "copy": "Kopieren",
       "paste": "Einfügen",
       "pasteAndMatchStyle": "Als reinen Text einfügen",
       "selectAll": "Alles markieren",
@@ -10121,7 +10021,9 @@
       "drucken": "Drucken …",
       "untersuchen": "Untersuchen",
       "anSingra": "An Singra übergeben",
-      "uebersetzen": "Übersetzen"
+      "uebersetzen": "Übersetzen",
+      "copy": "Kopieren",
+      "reload": "Neu laden"
     },
     "aufnahme": {
       "knopf": "Screenshot",
@@ -10131,7 +10033,6 @@
       "auswahlName": "Bereich für den Screenshot wählen",
       "auswahlHinweis": "Zieh einen Rahmen um den Bereich.",
       "alles": "Alles",
-      "abbrechen": "Abbrechen",
       "titel": "Screenshot",
       "vorschau": "Vorschau des Screenshots",
       "abgeschnitten": "Die Seite ist länger, als sich auf einmal aufnehmen lässt. Das Bild zeigt ihren oberen Teil.",
@@ -10142,7 +10043,8 @@
       "zeigen": "Zeigen",
       "fehler": "Der Screenshot ließ sich nicht aufnehmen.",
       "kopierFehler": "Das Bild ließ sich nicht kopieren.",
-      "speicherFehler": "Das Bild ließ sich nicht speichern."
+      "speicherFehler": "Das Bild ließ sich nicht speichern.",
+      "abbrechen": "Abbrechen"
     },
     "erweiterungen": {
       "knopf": "Erweiterungen",
@@ -10172,7 +10074,6 @@
       "optionen": "Optionen",
       "anheften": "An die Leiste heften",
       "losloesen": "Von der Leiste lösen",
-      "entfernen": "Entfernen",
       "entfernenTitel": "„{{name}}“ entfernen?",
       "entfernenText": "Die Erweiterung und alles, was sie gespeichert hat, werden gelöscht.",
       "schalterName": "{{name}} an oder aus",
@@ -10248,7 +10149,6 @@
       "laeuft_other": "Übersetzt die Seite … {{count}} Texte fertig",
       "fertig": "Von {{von}} nach {{nach}} übersetzt",
       "original": "Original anzeigen",
-      "nochmal": "Erneut versuchen",
       "spracheNichtErkannt": "Die Sprache der Seite wurde nicht erkannt. Wähle sie selbst.",
       "spracheNichtVerfuegbar": "Für {{sprache}} gibt es keine Sprachdaten. Übersetzen ist für diese Seite nicht möglich.",
       "zielGleich": "Wähle eine andere Zielsprache.",
@@ -10269,7 +10169,6 @@
       "erklaerung": "Seiten werden auf dem Gerät übersetzt, ihr Text geht an keinen Dienst. Die Sprachdaten lädt der Browser beim ersten Übersetzen einer Sprache von Mozilla.",
       "keine": "Noch keine Sprachdaten geladen.",
       "paar": "{{von}} → {{nach}}",
-      "entfernen": "Entfernen",
       "entfernenName": "{{paar}} entfernen",
       "alle": "Alle Sprachdaten",
       "alleEntfernen": "Alle entfernen"
@@ -10306,7 +10205,6 @@
       "text": "Die Seite verlangt Benutzername und Passwort.",
       "bereich": "Die Seite nennt den Bereich „{{bereich}}“.",
       "benutzer": "Benutzername",
-      "passwort": "Passwort",
       "anmelden": "Anmelden"
     },
     "fehlerseite": {
@@ -10345,7 +10243,6 @@
       "keineTreffer": "Keine Treffer",
       "keineEigenschaften": "Keine Eigenschaften",
       "imDomZeigen": "In den Elementen zeigen",
-      "kopieren": "Kopieren",
       "kopiert": "In die Zwischenablage kopiert",
       "kopierenFehler": "Kopieren hat nicht geklappt.",
       "neuLaden": "Seite neu laden",
@@ -10384,8 +10281,6 @@
         "keineListener": "Keine Ereignis-Listener an diesem Element.",
         "ax": {
           "rolle": "Rolle",
-          "name": "Name",
-          "beschreibung": "Beschreibung",
           "ignoriert": "Ausgeblendet"
         },
         "alleZeigen": "Alle zeigen"
@@ -10490,7 +10385,6 @@
           "offline": "Offline"
         },
         "typ": {
-          "alle": "Alle",
           "fetch": "Fetch/XHR",
           "doc": "Dokument",
           "css": "CSS",
@@ -10499,15 +10393,16 @@
           "bild": "Bild",
           "medien": "Medien",
           "ws": "WS",
-          "sonst": "Sonstige"
+          "sonst": "Sonstige",
+          "alle": "Alle"
         },
         "spalte": {
-          "name": "Name",
           "status": "Status",
           "typ": "Typ",
           "groesse": "Größe",
           "zeit": "Zeit",
-          "verlauf": "Verlauf"
+          "verlauf": "Verlauf",
+          "name": "Name"
         },
         "fehlgeschlagen": "Fehler",
         "cacheKurz": "Cache",
@@ -10516,7 +10411,6 @@
         "schliessen": "Einzelheiten schließen",
         "koepfe": "Kopfzeilen",
         "nutzlast": "Nutzlast",
-        "vorschau": "Vorschau",
         "antwort": "Antwort",
         "cookies": "Cookies",
         "zeit": "Zeitablauf",
@@ -10578,7 +10472,6 @@
         "wertVon": "Wert von {{name}}",
         "schluessel": "Schlüssel",
         "wert": "Wert",
-        "hinzufuegen": "Hinzufügen",
         "sitzung": "Sitzung",
         "datenbank": "Datenbank",
         "keineDb": "Keine Datenbanken",
@@ -10698,7 +10591,6 @@
       "aendern": "Aktualisieren",
       "geaendert": "Passwort im Tresor aktualisiert",
       "speichernFrage": "Anmeldung {{name}} für {{host}} im Tresor speichern?",
-      "speichern": "Speichern",
       "gespeichert": "Im Tresor gespeichert",
       "speichernEinrichten": "Um die Anmeldung für {{host}} zu speichern, den Tresor in diesem Browser einmal entsperren. Danach geht es auch, wenn er gesperrt ist.",
       "speichernGesperrt": "Anmeldung {{name}} für {{host}} speichern? Der Tresor bleibt gesperrt; sie erscheint dort beim nächsten Entsperren.",
@@ -10827,7 +10719,6 @@
       "fehlerTitel": "Suche fehlgeschlagen",
       "fehlerText": "Der Suchdienst auf deinem Server konnte gerade nicht antworten.",
       "zuVieleText": "Zu viele Suchen in kurzer Zeit. In einer Minute geht es weiter.",
-      "erneut": "Erneut versuchen",
       "nichtEingerichtetTitel": "Suche nicht verfügbar",
       "nichtEingerichtetText": "Auf deinem Server antwortet der Suchdienst gerade nicht.",
       "mitDuckDuckGo": "Mit DuckDuckGo suchen",
@@ -10864,7 +10755,6 @@
       "zusammenfassungTitel": "Singra AI Überblick",
       "zusammenfassungLaedt": "Antwort wird generiert …",
       "zusammenfassungFehler": "Die Antwort konnte nicht erzeugt werden. Bitte erneut versuchen.",
-      "zusammenfassungWiederholen": "Erneut versuchen",
       "zusammenfassungRecherche": "Sucht weiter",
       "zusammenfassungSchliessen": "Ausblenden",
       "zusammenfassungEinklappen": "Einklappen",
@@ -10873,8 +10763,6 @@
       "zusammenfassungSenden": "Senden",
       "zusammenfassungEphemerHinweis": "Nur in diesem Tab aktiv. Keine Speicherung.",
       "zusammenfassungKopieren": "Antwort kopieren",
-      "zusammenfassungKopiert": "Kopiert",
-      "zusammenfassungKopierenKurz": "Kopieren",
       "zusammenfassungSynthese": "Singra Synthese",
       "zusammenfassungDisclaimer": "KI-generierte Übersicht • Bitte Angaben anhand der Quellen prüfen",
       "zusammenfassungDenkprozess": "Denkprozess",
@@ -10893,14 +10781,11 @@
       "quelle": "Quelle {{nr}}",
       "direktAntwortBadge": "Direktantwort",
       "imKiChatWeiter": "Im Singra-Chat vertiefen",
-      "vorschauBadge": "Vorschau",
       "zurQuelle": "Original öffnen",
-      "schliessen": "Schließen",
       "imChatWeiterfuehren": "Im Singra-Chat weiterführen",
       "imChatWeiterKopiert": "Kopiert – im Singra-Chat einfügen",
       "medienVorschauTitel": "Medien-Vorschau",
-      "medienVorschauOeffnen": "Seite öffnen",
-      "medienVorschauSchliessen": "Schließen"
+      "medienVorschauOeffnen": "Seite öffnen"
     },
     "lesemodus": {
       "titel": "Lesemodus",
@@ -10945,8 +10830,7 @@
       "whatsapp": "WhatsApp: Zwar standardmäßig mit dem Signal-Protokoll Ende-zu-Ende verschlüsselt, aber eine proprietäre Closed-Source-Anwendung auf der Infrastruktur von Meta.",
       "fazit": "Gehe bewusst mit deinen Daten um. Für sensible Kommunikation empfehlen wir Messenger mit durchgehender Verschlüsselung auf überprüfbarer Infrastruktur.",
       "nichtMehrAnzeigen": "Diesen Hinweis nicht mehr anzeigen",
-      "fortfahren": "Verstanden & fortfahren",
-      "abbrechen": "Abbrechen"
+      "fortfahren": "Verstanden & fortfahren"
     }
   },
   "searchEngineSettings": {

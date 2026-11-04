@@ -9,9 +9,11 @@
   --mui-canvas: 196 41% 5%;
   --mui-background: var(--mui-canvas);
   --mui-foreground: 189 43% 94%;
+  --mui-foreground-muted: 192 20% 68%;
 
-  /* Drei Flächen über dem Canvas. `surface-2` ist das Panel, `surface-3`
-     schwebt darüber (Dialog, Popover), `surface-4` ist der Hover-Stand. */
+  /* Flächen über dem Canvas. `surface-2` ist das Panel, `surface-3` schwebt
+     darüber (Dialog, Popover), `surface-4` ist der Hover-Stand. */
+  --mui-surface-0: 198 38% 3.5%;
   --mui-surface-1: 204 25% 8%;
   --mui-surface-2: 204 25% 10%;
   --mui-surface-3: 202 26% 14%;
@@ -30,11 +32,30 @@
   --mui-line: 190 92% 62%;
   --mui-line-strong: 198 22% 26%;
 
-  --mui-radius-control: .65rem;
+  --mui-radius-sm: .5rem;
+  --mui-radius-md: .75rem;
+  --mui-radius-lg: 1rem;
+  --mui-radius-xl: 1.25rem;
+  --mui-radius-2xl: 1.5rem;
+  --mui-radius-control: .625rem;
   --mui-radius-panel: 1rem;
-  --mui-radius-window: .75rem;
+  /* Windows zeichnet die äußere Rundung mit DWMWCP_ROUND (8 px). */
+  --mui-radius-window: .5rem;
   --mui-radius-omnibox: 9999px;
-  --mui-shadow-panel: 0 20px 48px hsl(0 0% 0% / .38);
+
+  --mui-shadow-panel: 0 18px 44px hsl(0 0% 0% / .34);
+  --mui-shadow-float: 0 12px 32px hsl(0 0% 0% / .28);
+  --mui-shadow-dialog: 0 28px 72px hsl(0 0% 0% / .5);
+
+  --mui-font-display: 'Manrope', system-ui, sans-serif;
+  --mui-font-body: 'Inter', system-ui, sans-serif;
+  --mui-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --mui-motion-fast: 120ms;
+  --mui-motion-base: 180ms;
+  --mui-motion-slow: 240ms;
+  --mui-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --mui-ease-in: cubic-bezier(0.4, 0, 1, 1);
 
   /* Der Sprachschwarm (`@maunting/ui/swarm`). Leuchten und Eis sind Fokus und
      Primär; Denken, Störung und Ruhe sind seine eigenen Töne. Der Schwarm

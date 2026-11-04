@@ -26,7 +26,7 @@ function Eintrag({ e, gesperrt }: { e: Erweiterung; gesperrt: boolean }) {
     const ja = await confirm({
       title: t('browser.erweiterungen.entfernenTitel', { name: e.angaben.name }),
       message: t('browser.erweiterungen.entfernenText'),
-      confirmText: t('browser.erweiterungen.entfernen'),
+      confirmText: t('common.remove'),
       danger: true,
     })
     if (ja) ausfuehren(erweiterungen.entfernen(e.id))
@@ -65,7 +65,7 @@ function Eintrag({ e, gesperrt }: { e: Erweiterung; gesperrt: boolean }) {
           {e.angeheftet ? t('browser.erweiterungen.losloesen') : t('browser.erweiterungen.anheften')}
         </Button>
         <Button variant="ghost" size="sm" onClick={() => void entfernen()}>
-          {t('browser.erweiterungen.entfernen')}
+          {t('common.remove')}
         </Button>
       </div>
       {rechte && <Rechte angaben={e.angaben} />}

@@ -175,7 +175,7 @@ export function Users() {
             </div>
             <div>
               <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                {t('auth.password')}
+                {t('common.password')}
               </label>
               <PasswordInput
                 value={createForm.password}
@@ -432,7 +432,7 @@ export function Users() {
                         user.is_active ? 'bg-status-success' : 'bg-on-surface-variant/45'
                       }`}
                     />
-                    {user.is_active ? t('users.active') : t('users.inactive')}
+                    {user.is_active ? t('common.active') : t('users.inactive')}
                   </span>
 
                   <div className="col-span-2 min-w-0 md:col-span-1">
@@ -460,12 +460,12 @@ export function Users() {
 
                   <div className="col-start-2 row-start-1 flex justify-end md:col-auto md:row-auto">
                     {canManageUsers && user.id !== currentUser?.id && (!user.is_owner || currentUser?.is_owner) && (
-                      <Kurzinfo text={t('users.delete')} seite="ende">
+                      <Kurzinfo text={t('common.delete')} seite="ende">
                         <button
                           type="button"
                           onClick={() => handleDelete(user.id)}
                           className="grid h-10 w-10 place-items-center rounded-lg text-status-destructive transition-colors hover:bg-status-destructive/10 hover:text-status-destructive/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-destructive/60"
-                          aria-label={`${t('users.delete')}: ${user.username}`}
+                          aria-label={`${t('common.delete')}: ${user.username}`}
                         >
                           <Trash2 aria-hidden="true" className="h-4 w-4" />
                         </button>

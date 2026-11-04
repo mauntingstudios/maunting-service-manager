@@ -45,23 +45,22 @@ describe('Profile', () => {
     usePublicSettingsStore.setState({ social_enabled: true })
   })
 
-  it('trägt dieselbe Seitenhülle wie /settings: msm-page plus PageHeader', () => {
+  it('trägt dieselbe Seitenhülle wie /settings: msm-page plus Abschnittsleiste', () => {
     const { container } = renderProfile()
 
     // Ohne msm-page verliert die Seite die Breitenbegrenzung aller anderen Panelseiten.
     expect(container.querySelector('.msm-page')).not.toBeNull()
 
-    const header = screen.getByRole('banner')
-    expect(within(header).getByRole('heading', { level: 1 })).toHaveTextContent('Profile')
-    expect(within(header).getByText('Panel')).toBeInTheDocument()
-    expect(within(header).getByText('Your account')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Profile' })).toBeInTheDocument()
+    expect(screen.getByText('Your account')).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: 'Profile' })
+    expect(within(nav).getByText('Identity')).toBeInTheDocument()
   })
 
-  it('zeigt den aktiven Tab als Status-Badge im Kopf', () => {
+  it('zeigt den aktiven Abschnitt in der Leiste', () => {
     renderProfile()
 
-    const badge = within(screen.getByRole('banner')).getByText('Profile', { selector: '.msm-badge-info' })
-    expect(badge).toHaveClass('msm-badge-info')
+    expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('hat acht Reiter in der neuen Reihenfolge und startet im Profil', () => {
@@ -104,9 +103,12 @@ describe('Profile', () => {
     expect(screen.getByText('inhalt:geraete')).toBeInTheDocument()
   })
 
-  it('gruppiert die acht Reiter mit drei Trennern, ohne die Reihenfolge zu ändern', () => {
-    const { container } = renderProfile()
-    expect(container.querySelectorAll('[data-tab-gruppe]')).toHaveLength(3)
+  it('gruppiert die Abschnitte in Identität, Schutz, Arbeit und Gefahr', () => {
+    renderProfile()
+    const nav = screen.getByRole('navigation', { name: 'Profile' })
+    for (const gruppe of ['Identity', 'Protection', 'Work', 'Danger']) {
+      expect(within(nav).getByText(gruppe)).toBeInTheDocument()
+    }
   })
 
   it('ein Klick auf einen Reiter schreibt ihn in die Adresse', () => {

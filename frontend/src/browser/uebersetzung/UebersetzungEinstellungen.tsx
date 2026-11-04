@@ -37,7 +37,7 @@ export function UebersetzungEinstellungen() {
       {liste?.map(({ paar, groesse }) => (
         <Aktionszeile key={paar} name={paarName(paar)} hinweis={formatBytes(groesse)}>
           <Button variant="secondary" size="sm" onClick={() => void weg(paar)} aria-label={t('browser.uebersetzung.entfernenName', { paar: paarName(paar) })}>
-            {t('browser.uebersetzung.entfernen')}
+            {t('common.remove')}
           </Button>
         </Aktionszeile>
       ))}

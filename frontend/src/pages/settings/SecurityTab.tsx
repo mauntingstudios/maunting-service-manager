@@ -492,7 +492,7 @@ export function SecurityTab() {
                   ) : (
                     <Save className="h-4 w-4" />
                   )}
-                  {t('settings.save', { defaultValue: 'Speichern' })}
+                  {t('common.save', { defaultValue: 'Speichern' })}
                 </Button>
               </div>
             )}

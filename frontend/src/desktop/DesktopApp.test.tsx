@@ -1101,7 +1101,7 @@ describe('DesktopApp', () => {
       await erwarteOffline()
 
       fireEvent.click(screen.getAllByRole('button', { name: i18n.t('common.openUserMenu') })[0])
-      fireEvent.click(await screen.findByRole('menuitem', { name: i18n.t('mss.app.einstellungen') }))
+      fireEvent.click(await screen.findByRole('menuitem', { name: i18n.t('common.settings') }))
 
       await waitFor(() => {
         expect(screen.getByTestId('einstellungen-seite')).toHaveAttribute('data-offline', 'true')

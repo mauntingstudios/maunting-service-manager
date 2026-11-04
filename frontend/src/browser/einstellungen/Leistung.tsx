@@ -74,7 +74,7 @@ export function Leistung() {
           name={t('browser.einstellungen.schlafenNach')}
           hinweis={t('browser.einstellungen.schlafenHinweis')}
           wert={String(schlafenNach)}
-          optionen={SCHLAFEN_NACH.map((m) => ({ value: String(m), label: m ? t('browser.einstellungen.minuten', { count: m }) : t('browser.einstellungen.nie') }))}
+          optionen={SCHLAFEN_NACH.map((m) => ({ value: String(m), label: m ? t('browser.einstellungen.minuten', { count: m }) : t('common.never') }))}
           aendern={(v) => setzen({ schlafenNach: Number(v) as SchlafenNach })}
         />
         <Schalterzeile

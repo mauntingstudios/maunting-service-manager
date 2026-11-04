@@ -59,7 +59,7 @@ export function useEigenesMenue(tab: Tab | undefined) {
       items.push({ key, label, icon: symbol(icon), separatorBefore, onSelect: tun })
     if (menue.auswahl) {
       const auswahl = menue.auswahl
-      eintrag('copy', t('browser.menue.copy'), <Copy />, () => void navigator.clipboard.writeText(auswahl).catch(() => null))
+      eintrag('copy', t('common.copy'), <Copy />, () => void navigator.clipboard.writeText(auswahl).catch(() => null))
       const ziel = baueZielUrl(auswahl, maschine, searxng ?? undefined)
       if (ziel) {
         const kurz = auswahl.length > 24 ? `${auswahl.slice(0, 24)}…` : auswahl

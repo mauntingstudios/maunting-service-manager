@@ -35,7 +35,7 @@ export const HandyLeiste = forwardRef<AdresszeileGriff>(function HandyLeiste(_, 
             <X className="h-4 w-4" aria-hidden="true" />
           </Knopf>
         ) : (
-          <Knopf name={t('browser.nav.neuLaden')} onClick={() => aktion('neu_laden')} disabled={!tab?.url || istIntern(tab.url)}>
+          <Knopf name={t('common.reload')} onClick={() => aktion('neu_laden')} disabled={!tab?.url || istIntern(tab.url)}>
             <RotateCw className="h-4 w-4" aria-hidden="true" />
           </Knopf>
         )}

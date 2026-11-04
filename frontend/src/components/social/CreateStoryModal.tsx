@@ -178,7 +178,7 @@ export function CreateStoryModal({
                 className="h-9 text-xs gap-2 font-medium justify-center bg-surface-container hover:bg-surface-container-high border border-outline-variant/30"
               >
                 <Camera className="w-4 h-4 text-primary" />
-                <span>{t('social.story.camera')}</span>
+                <span>{t('common.camera')}</span>
               </Button>
 
               <Button

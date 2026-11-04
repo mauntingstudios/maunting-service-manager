@@ -174,7 +174,7 @@ function Speichern({ tab, a }: { tab: string; a: Abgeschickt }) {
             )
           }
         >
-          {t('browser.formular.speichern')}
+          {t('common.save')}
         </Button>
       </Leiste>
     )
@@ -192,7 +192,7 @@ function Speichern({ tab, a }: { tab: string; a: Abgeschickt }) {
   return (
     <Leiste text={t('browser.formular.speichernGesperrt', { name, host })} onSchliessen={() => weg(tab)}>
       <Button size="sm" disabled={laeuft} onClick={() => void ausfuehren(() => gesperrtSpeichern(a.url, a.benutzer, a.passwort), t('browser.formular.imEingang'))}>
-        {t('browser.formular.speichern')}
+        {t('common.save')}
       </Button>
     </Leiste>
   )

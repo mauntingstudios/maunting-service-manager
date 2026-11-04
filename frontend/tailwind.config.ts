@@ -1,16 +1,12 @@
 import type { Config } from 'tailwindcss'
 
 /**
- * MSM Design System — Tailwind Configuration
- * Based on: Design idee für mssm / maunting_server_manager_msm/DESIGN.md
+ * Maunting UI — Tailwind Configuration
  *
- * Key Principles:
- * - Technical Calm: deep neutral surfaces for long monitoring sessions
- * - Precision: Fine lines and monospaced accents
- * - Glassmorphism: Strategic elevation and focus
- * - Infrastructure-First: Dense layouts for logs/metrics
+ * Alle Farben, Radien, Schatten und Schriften kommen aus
+ * `packages/maunting-ui/src/tokens.css`. Hier stehen nur die Namen, die die
+ * Oberfläche benutzt; die Werte gibt es genau einmal.
  */
-
 const config: Config = {
   content: [
     './index.html',
@@ -20,203 +16,184 @@ const config: Config = {
     './packages/maunting-ui/src/**/*.{js,ts,jsx,tsx}',
   ],
   darkMode: 'class',
+  // `msm-panel` wird nur über `@apply` in `.msm-card` benutzt; ohne Eintrag
+  // erzeugt Tailwind die eigenständige Klasse nicht.
+  safelist: ['msm-panel'],
   theme: {
     extend: {
       colors: {
-        // MSM Surface Elevation
-        'surface': '#071013',
-        'surface-dim': '#04090b',
-        'surface-bright': '#253238',
-        'surface-container-lowest': '#03080a',
-        'surface-container-low': '#0b1518',
-        'surface-container': '#101b1f',
-        'surface-container-high': '#162328',
-        'surface-container-highest': '#203038',
-        'surface-variant': '#22343b',
-        'surface-tint': '#9deeff',
-        // Content colors
-        'on-surface': '#e7f4f7',
-        'on-surface-variant': '#a9bdc3',
+        surface: 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'surface-dim': 'hsl(var(--mui-surface-0) / <alpha-value>)',
+        'surface-bright': 'hsl(var(--mui-surface-4) / <alpha-value>)',
+        'surface-container-lowest': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'surface-container-low': 'hsl(var(--mui-surface-1) / <alpha-value>)',
+        'surface-container': 'hsl(var(--mui-surface-2) / <alpha-value>)',
+        'surface-container-high': 'hsl(var(--mui-surface-3) / <alpha-value>)',
+        'surface-container-highest': 'hsl(var(--mui-surface-4) / <alpha-value>)',
+        'surface-variant': 'hsl(var(--mui-surface-4) / <alpha-value>)',
+        'surface-tint': 'hsl(var(--mui-primary) / <alpha-value>)',
+        'on-surface': 'hsl(var(--mui-foreground) / <alpha-value>)',
+        'on-surface-variant': 'hsl(var(--mui-foreground-muted) / <alpha-value>)',
         'on-background': 'hsl(var(--mui-foreground) / <alpha-value>)',
-        'background': 'hsl(var(--mui-background) / <alpha-value>)',
-        // Shadcn-compatible aliases used by existing central components
-        'foreground': 'hsl(var(--mui-foreground) / <alpha-value>)',
-        'muted': '#162328',
-        'muted-foreground': '#9db3b8',
-        'border': '#284147',
-        'input': '#284147',
-        'ring': 'hsl(var(--mui-focus) / <alpha-value>)',
-        'card': '#101b1f',
-        'card-foreground': '#e7f4f7',
-        // Primary (Logo ice cyan)
-        'primary': 'hsl(var(--mui-primary) / <alpha-value>)',
-        // DIS Design DNA ice colors
-        'ice': {
-          100: 'hsl(188 29% 95%)',
-          200: 'hsl(196 19% 67%)',
-          300: 'hsl(194 44% 68%)',
-          500: 'hsl(193 45% 86%)',
+        background: 'hsl(var(--mui-canvas) / <alpha-value>)',
+        foreground: 'hsl(var(--mui-foreground) / <alpha-value>)',
+        muted: 'hsl(var(--mui-surface-2) / <alpha-value>)',
+        'muted-foreground': 'hsl(var(--mui-foreground-muted) / <alpha-value>)',
+        border: 'hsl(var(--mui-line-strong) / <alpha-value>)',
+        input: 'hsl(var(--mui-line-strong) / <alpha-value>)',
+        ring: 'hsl(var(--mui-focus) / <alpha-value>)',
+        card: 'hsl(var(--mui-surface-2) / <alpha-value>)',
+        'card-foreground': 'hsl(var(--mui-foreground) / <alpha-value>)',
+        primary: 'hsl(var(--mui-primary) / <alpha-value>)',
+        ice: {
+          100: 'hsl(var(--mui-foreground) / <alpha-value>)',
+          200: 'hsl(var(--mui-foreground-muted) / <alpha-value>)',
+          300: 'hsl(var(--mui-focus) / <alpha-value>)',
+          500: 'hsl(var(--mui-primary) / <alpha-value>)',
         },
-        'primary-foreground': '#031316',
-        'on-primary': '#031316',
-        'primary-container': '#0c3b45',
-        'on-primary-container': '#d9fbff',
-        'primary-fixed': '#b9f6ff',
-        'primary-fixed-dim': '#67e8f9',
-        'on-primary-fixed': '#031316',
-        'on-primary-fixed-variant': '#0f3f47',
-        'inverse-primary': '#0e7490',
-        // Secondary (controlled teal/mint accent)
-        'secondary': '#5eead4',
-        'secondary-foreground': '#031316',
-        'on-secondary': '#031316',
-        'secondary-container': '#0f766e',
-        'on-secondary-container': '#ecfeff',
-        'secondary-fixed': '#5eead4',
-        'secondary-fixed-dim': '#2dd4bf',
-        'on-secondary-fixed': '#031316',
-        'on-secondary-fixed-variant': '#134e4a',
-        'mint-accent': '#86efac',
-        // Tertiary (Ice Blue)
-        'tertiary': '#d9f7ff',
-        'on-tertiary': '#06222a',
-        'tertiary-container': '#12323b',
-        'on-tertiary-container': '#d9f7ff',
-        'tertiary-fixed': '#d9f7ff',
-        'tertiary-fixed-dim': '#9deeff',
-        'on-tertiary-fixed': '#06222a',
-        'on-tertiary-fixed-variant': '#164653',
-        // Error / Status
-        'error': '#ffb4ab',
-        'on-error': '#690005',
-        'error-container': '#93000a',
-        'on-error-container': '#ffdad6',
-        // Ein Token je Bedeutung. Die Werte stehen in
-        // `packages/design-dna/tokens.css`, nicht hier — sonst gibt es sie
-        // wieder zweimal. `status-error` und `destructive` waren nur andere
-        // Namen für `status-destructive` und sind abgeschafft; wer sie
-        // schreibt, bekommt seit 09/2026 keine Farbe mehr.
+        'primary-foreground': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'on-primary': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'primary-container': 'hsl(var(--mui-primary) / 0.16)',
+        'on-primary-container': 'hsl(var(--mui-primary) / <alpha-value>)',
+        'primary-fixed': 'hsl(var(--mui-primary) / <alpha-value>)',
+        'primary-fixed-dim': 'hsl(var(--mui-primary) / 0.8)',
+        'on-primary-fixed': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'on-primary-fixed-variant': 'hsl(var(--mui-canvas) / 0.8)',
+        'inverse-primary': 'hsl(var(--mui-primary) / <alpha-value>)',
+        secondary: 'hsl(var(--mui-focus) / <alpha-value>)',
+        'secondary-foreground': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'on-secondary': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'secondary-container': 'hsl(var(--mui-focus) / 0.16)',
+        'on-secondary-container': 'hsl(var(--mui-foreground) / <alpha-value>)',
+        'secondary-fixed': 'hsl(var(--mui-focus) / <alpha-value>)',
+        'secondary-fixed-dim': 'hsl(var(--mui-focus) / 0.8)',
+        'on-secondary-fixed': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'on-secondary-fixed-variant': 'hsl(var(--mui-canvas) / 0.8)',
+        'mint-accent': 'hsl(var(--mui-success) / <alpha-value>)',
+        tertiary: 'hsl(var(--mui-primary) / <alpha-value>)',
+        'on-tertiary': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'tertiary-container': 'hsl(var(--mui-primary) / 0.12)',
+        'on-tertiary-container': 'hsl(var(--mui-primary) / <alpha-value>)',
+        'tertiary-fixed': 'hsl(var(--mui-primary) / <alpha-value>)',
+        'tertiary-fixed-dim': 'hsl(var(--mui-primary) / 0.8)',
+        'on-tertiary-fixed': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'on-tertiary-fixed-variant': 'hsl(var(--mui-canvas) / 0.8)',
+        error: 'hsl(var(--mui-danger) / <alpha-value>)',
+        'on-error': 'hsl(var(--mui-canvas) / <alpha-value>)',
+        'error-container': 'hsl(var(--mui-danger) / 0.16)',
+        'on-error-container': 'hsl(var(--mui-danger) / <alpha-value>)',
         'status-success': 'hsl(var(--mui-success) / <alpha-value>)',
         'status-warning': 'hsl(var(--mui-warning) / <alpha-value>)',
         'status-destructive': 'hsl(var(--mui-danger) / <alpha-value>)',
-        // Infrastructure
-        'outline': '#5b737a',
-        'outline-variant': '#284147',
-        'infrastructure-slate': '#475569',
-        'cyan-glow': 'hsl(190 92% 62% / 0.16)',
-        // Inverse
-        'inverse-surface': '#e7f4f7',
-        'inverse-on-surface': '#0b1518',
+        outline: 'hsl(var(--mui-line-strong) / <alpha-value>)',
+        'outline-variant': 'hsl(var(--mui-line-strong) / 0.6)',
+        'infrastructure-slate': 'hsl(var(--mui-surface-4) / <alpha-value>)',
+        'cyan-glow': 'hsl(var(--mui-focus) / 0.16)',
+        'inverse-surface': 'hsl(var(--mui-foreground) / <alpha-value>)',
+        'inverse-on-surface': 'hsl(var(--mui-canvas) / <alpha-value>)',
       },
       borderRadius: {
-        'sm': '0.25rem',
-        'DEFAULT': '0.25rem',
-        'md': '0.5rem',
-        'lg': '0.5rem',
-        'xl': '0.75rem',
-        '2xl': '1rem',
-        '3xl': '1.25rem',
-        'full': '9999px',
+        sm: 'var(--mui-radius-sm)',
+        DEFAULT: '0.5rem',
+        md: 'var(--mui-radius-md)',
+        lg: 'var(--mui-radius-lg)',
+        xl: 'var(--mui-radius-xl)',
+        '2xl': 'var(--mui-radius-2xl)',
+        '3xl': '1.5rem',
+        full: '9999px',
+        control: 'var(--mui-radius-control)',
+        panel: 'var(--mui-radius-panel)',
+        window: 'var(--mui-radius-window)',
       },
       boxShadow: {
-        'panel': '0 20px 48px hsl(0 0% 0% / 0.38)',
-        'panel-strong': '0 24px 56px hsl(0 0% 0% / 0.45)',
-        'accent-cta': '0 14px 30px hsl(190 92% 62% / 0.22)',
-        'primary-glow': '0 0 20px hsl(190 92% 62% / 0.18)',
-        'primary-glow-hover': '0 0 30px hsl(190 92% 62% / 0.28)',
+        panel: 'var(--mui-shadow-panel)',
+        float: 'var(--mui-shadow-float)',
+        dialog: 'var(--mui-shadow-dialog)',
+        'panel-strong': 'var(--mui-shadow-dialog)',
+        'accent-cta': '0 10px 28px hsl(var(--mui-focus) / 0.22)',
+        'primary-glow': '0 0 20px hsl(var(--mui-focus) / 0.18)',
+        'primary-glow-hover': '0 0 30px hsl(var(--mui-focus) / 0.28)',
+        hairline: 'inset 0 1px 0 hsl(0 0% 100% / 0.06)',
       },
       fontFamily: {
-        'headline': ['Manrope', 'system-ui', 'sans-serif'],
-        'headline-md': ['Manrope', 'system-ui', 'sans-serif'],
-        'headline-lg': ['Manrope', 'system-ui', 'sans-serif'],
-        'headline-lg-mobile': ['Manrope', 'system-ui', 'sans-serif'],
-        'body-md': ['Inter', 'system-ui', 'sans-serif'],
-        'body-lg': ['Inter', 'system-ui', 'sans-serif'],
-        'label-md': ['IBM Plex Sans', 'system-ui', 'sans-serif'],
-        'mono-sm': ['JetBrains Mono', 'monospace'],
-        'sans': ['Inter', 'system-ui', 'sans-serif'],
-        'mono': ['JetBrains Mono', 'monospace'],
+        sans: ['var(--mui-font-body)'],
+        headline: ['var(--mui-font-display)'],
+        'headline-md': ['var(--mui-font-display)'],
+        'headline-lg': ['var(--mui-font-display)'],
+        'headline-lg-mobile': ['var(--mui-font-display)'],
+        'body-md': ['var(--mui-font-body)'],
+        'body-lg': ['var(--mui-font-body)'],
+        'label-md': ['var(--mui-font-body)'],
+        mono: ['var(--mui-font-mono)'],
+        'mono-sm': ['var(--mui-font-mono)'],
       },
-      /**
-       * Die Typo-Skala. Sie hatte Luecken, die niemandem auffielen, weil eine
-       * undefinierte Stufe kein CSS erzeugt und die Schrift einfach so bleibt,
-       * wie sie war: `body-sm` (20x), `title-md` (3x) und `label-lg` (3x)
-       * standen im Quelltext, aber nicht hier.
-       *
-       * `label-sm` ist die Untergrenze. Darunter lagen 388 feste Pixelwerte
-       * zwischen 8 und 11 px — unter jeder definierten Stufe und an der Grenze
-       * des Lesbaren.
-       */
       fontSize: {
-        'display-sm': ['36px', { lineHeight: '1.15', fontWeight: '700' }],
-        'headline-lg': ['32px', { lineHeight: '1.2', letterSpacing: '0', fontWeight: '700' }],
-        'headline-lg-mobile': ['26px', { lineHeight: '1.2', fontWeight: '700' }],
-        'headline-md': ['24px', { lineHeight: '1.3', fontWeight: '600' }],
-        'headline-sm': ['20px', { lineHeight: '1.3', fontWeight: '600' }],
-        'title-lg': ['18px', { lineHeight: '1.4', fontWeight: '600' }],
+        'display-sm': ['36px', { lineHeight: '1.1', letterSpacing: '-0.03em', fontWeight: '700' }],
+        'headline-lg': ['32px', { lineHeight: '1.15', letterSpacing: '-0.02em', fontWeight: '700' }],
+        'headline-lg-mobile': ['26px', { lineHeight: '1.18', letterSpacing: '-0.02em', fontWeight: '700' }],
+        'headline-md': ['24px', { lineHeight: '1.25', letterSpacing: '-0.01em', fontWeight: '600' }],
+        'headline-sm': ['20px', { lineHeight: '1.3', letterSpacing: '-0.01em', fontWeight: '600' }],
+        'title-lg': ['18px', { lineHeight: '1.35', fontWeight: '600' }],
         'title-md': ['16px', { lineHeight: '1.4', fontWeight: '600' }],
         'title-sm': ['14px', { lineHeight: '1.4', fontWeight: '600' }],
-        'body-lg': ['18px', { lineHeight: '1.6', fontWeight: '400' }],
+        'body-lg': ['18px', { lineHeight: '1.55', fontWeight: '400' }],
         'body-md': ['16px', { lineHeight: '1.5', fontWeight: '400' }],
         'body-sm': ['14px', { lineHeight: '1.5', fontWeight: '400' }],
-        'label-lg': ['16px', { lineHeight: '1.4', letterSpacing: '0', fontWeight: '500' }],
-        'label-md': ['14px', { lineHeight: '1.4', letterSpacing: '0', fontWeight: '500' }],
-        'label-sm': ['12px', { lineHeight: '1.4', letterSpacing: '0', fontWeight: '500' }],
+        'label-lg': ['16px', { lineHeight: '1.4', fontWeight: '500' }],
+        'label-md': ['14px', { lineHeight: '1.4', fontWeight: '500' }],
+        'label-sm': ['12px', { lineHeight: '1.4', letterSpacing: '0.02em', fontWeight: '500' }],
         'mono-sm': ['13px', { lineHeight: '1.5', fontWeight: '400' }],
       },
       spacing: {
-        'unit': '4px',
-        'gutter': '1.25rem',
+        unit: '4px',
+        gutter: '1.25rem',
         'margin-mobile': '1rem',
         'margin-desktop': '2.5rem',
         'panel-padding': '1.5rem',
         'stack-compact': '0.5rem',
         'stack-default': '1rem',
       },
-      /*
-       * Ein- und Ausblenden von Overlays.
-       *
-       * Vorher standen im Quelltext sechs Schreibweisen für vier Effekte, und
-       * keine davon erzeugte CSS: `animate-in fade-in slide-in-from-bottom-2`
-       * ist das Vokabular des Plugins `tailwindcss-animate`, das nie
-       * eingebunden war (`plugins: []`), und `animate-[fadeIn_.15s_ease-out]`
-       * verwies auf Keyframes, die es nicht gibt. Dialoge, Menüs und die
-       * mobile Sidebar erschienen deshalb hart, ohne dass es jemandem auffiel —
-       * eine fehlende Animation sieht aus wie eine schnelle.
-       *
-       * Vier Keyframes statt eines Plugins: das Plugin bringt ein volles
-       * Vokabular für Ein- und Ausblendungen mit, benutzt würden vier Varianten.
-       * Die Dauer steckt in der Definition, weil Tailwinds `duration-*` nur
-       * `transition-duration` setzt und Animationen gar nicht erreicht — die
-       * `duration-200` neben den alten `animate-in` waren wirkungslos.
-       */
+      transitionTimingFunction: {
+        out: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        in: 'cubic-bezier(0.4, 0, 1, 1)',
+      },
+      transitionDuration: {
+        fast: '120ms',
+        base: '180ms',
+        slow: '240ms',
+      },
       keyframes: {
         'fade-in': {
           from: { opacity: '0' },
           to: { opacity: '1' },
         },
         'scale-in': {
-          from: { opacity: '0', transform: 'scale(0.96)' },
+          from: { opacity: '0', transform: 'scale(0.97)' },
           to: { opacity: '1', transform: 'scale(1)' },
         },
         'slide-up': {
-          from: { opacity: '0', transform: 'translateY(0.5rem)' },
+          from: { opacity: '0', transform: 'translateY(6px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
         'slide-in-left': {
           from: { opacity: '0', transform: 'translateX(-100%)' },
           to: { opacity: '1', transform: 'translateX(0)' },
         },
+        'signal-in': {
+          from: { opacity: '0', transform: 'scaleX(0.4)' },
+          to: { opacity: '1', transform: 'scaleX(1)' },
+        },
       },
       animation: {
-        'fade-in': 'fade-in 150ms ease-out both',
-        'scale-in': 'scale-in 150ms ease-out both',
-        'slide-up': 'slide-up 180ms ease-out both',
-        'slide-in-left': 'slide-in-left 180ms ease-out both',
+        'fade-in': 'fade-in 150ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'scale-in': 'scale-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'slide-up': 'slide-up 180ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'slide-in-left': 'slide-in-left 200ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'signal-in': 'signal-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both',
       },
       backgroundImage: {
-        'deep-grid': `linear-gradient(to right, rgba(65, 72, 73, 0.1) 1px, transparent 1px),
-                       linear-gradient(to bottom, rgba(65, 72, 73, 0.1) 1px, transparent 1px)`,
+        'deep-grid': `linear-gradient(to right, rgba(103, 232, 249, 0.05) 1px, transparent 1px),
+                       linear-gradient(to bottom, rgba(103, 232, 249, 0.05) 1px, transparent 1px)`,
       },
       backgroundSize: {
         'deep-grid': '40px 40px',

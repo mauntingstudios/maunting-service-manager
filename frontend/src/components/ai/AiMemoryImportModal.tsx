@@ -295,7 +295,7 @@ export function AiMemoryImportModal({ open, onOpenChange, scope, onImported }: P
             variant="ghost"
             disabled={busy}
             onClick={() => setBearbeitet(offen ? null : index)}
-            aria-label={offen ? t('ai.memory.import.editDone') : t('ai.memory.import.edit')}
+            aria-label={offen ? t('ai.memory.import.editDone') : t('common.edit')}
           >
             {offen ? <Check className="h-4 w-4" aria-hidden="true" /> : <Pencil className="h-4 w-4" aria-hidden="true" />}
           </Button>
@@ -329,7 +329,7 @@ export function AiMemoryImportModal({ open, onOpenChange, scope, onImported }: P
                     {kopiert
                       ? <Check className="h-4 w-4" aria-hidden="true" />
                       : <ClipboardCopy className="h-4 w-4" aria-hidden="true" />}
-                    {kopiert ? t('ai.memory.import.copied') : t('ai.memory.import.copy')}
+                    {kopiert ? t('common.copied') : t('ai.memory.import.copy')}
                   </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => setPromptSichtbar((wert) => !wert)}>
                     {promptSichtbar ? t('ai.memory.import.hidePrompt') : t('ai.memory.import.showPrompt')}
@@ -376,7 +376,7 @@ export function AiMemoryImportModal({ open, onOpenChange, scope, onImported }: P
                 </p>
                 {zeilen.length > 1 && (
                   <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={alleUmschalten}>
-                    {alleGewaehlt ? t('ai.memory.import.selectNone') : t('ai.memory.import.selectAll')}
+                    {alleGewaehlt ? t('ai.memory.import.selectNone') : t('common.all')}
                   </Button>
                 )}
               </div>
@@ -429,7 +429,7 @@ export function AiMemoryImportModal({ open, onOpenChange, scope, onImported }: P
               </Button>
               <Button type="button" disabled={busy || !rohtext.trim()} onClick={() => void pruefen()}>
                 {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                {busy ? t('ai.memory.import.reading') : t('ai.memory.import.analyze')}
+                {busy ? t('ai.memory.import.reading') : t('common.continue')}
               </Button>
             </>
           ) : (

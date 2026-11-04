@@ -144,11 +144,11 @@ export function CommentsPanel({
                       )}
                     </Button>
                   </Kurzinfo>
-                  <Kurzinfo text={t('docs.comments.delete')}>
+                  <Kurzinfo text={t('common.delete')}>
                     <Button
                       variant="ghost"
                       size="sm"
-                      aria-label={t('docs.comments.delete')}
+                      aria-label={t('common.delete')}
                       onClick={() => void loeschen(thread.uid)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />

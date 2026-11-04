@@ -82,7 +82,7 @@ export function MembersDialog({ detail, open, onOpenChange, onChanged }: Members
               options={[
                 { value: 'viewer', label: t('docs.roles.viewer') },
                 { value: 'commenter', label: t('docs.roles.commenter') },
-                { value: 'editor', label: t('docs.roles.editor') },
+                { value: 'editor', label: t('common.edit') },
               ]}
               buttonClassName="min-w-[10rem]"
             />
@@ -102,7 +102,7 @@ export function MembersDialog({ detail, open, onOpenChange, onChanged }: Members
                 {row.is_team_owner && <Badge variant="info">{t('docs.members.teamOwner')}</Badge>}
                 {row.is_doc_owner && <Badge variant="success">{t('docs.members.docOwner')}</Badge>}
                 {row.is_team_owner ? (
-                  <Badge variant="info">{t('docs.roles.editor')}</Badge>
+                  <Badge variant="info">{t('common.edit')}</Badge>
                 ) : (
                   <Dropdown
                     aria-label={t('docs.members.roleFor', { name: row.username })}
@@ -112,7 +112,7 @@ export function MembersDialog({ detail, open, onOpenChange, onChanged }: Members
                       { value: 'default', label: t('docs.members.teamDefault', { role: t(`docs.roles.${detail.default_role}`) }) },
                       { value: 'viewer', label: t('docs.roles.viewer') },
                       { value: 'commenter', label: t('docs.roles.commenter') },
-                      { value: 'editor', label: t('docs.roles.editor') },
+                      { value: 'editor', label: t('common.edit') },
                     ]}
                     buttonClassName="min-w-[10rem] sm:min-w-[12rem]"
                   />

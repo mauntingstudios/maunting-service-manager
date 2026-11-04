@@ -39,7 +39,7 @@ export function LesezeichenPanel() {
         },
         {
           key: 'weg',
-          label: t('browser.liste.entfernen'),
+          label: t('common.remove'),
           icon: <Trash2 className="h-4 w-4" />,
           destructive: true,
           separatorBefore: true,

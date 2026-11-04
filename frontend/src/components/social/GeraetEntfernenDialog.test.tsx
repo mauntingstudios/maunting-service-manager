@@ -47,7 +47,7 @@ describe('GeraetEntfernenDialog', () => {
       i18n.t('profile.e2eeDevices.lastKeyHolderRemoveWarning'),
     )
     expect(
-      screen.getByRole('button', { name: i18n.t('profile.e2eeDevices.remove') }),
+      screen.getByRole('button', { name: i18n.t('common.remove') }),
     ).toBeDisabled()
   })
 
@@ -62,7 +62,7 @@ describe('GeraetEntfernenDialog', () => {
 
     expect(screen.queryByRole('alert')).toBeNull()
     expect(
-      screen.getByRole('button', { name: i18n.t('profile.e2eeDevices.remove') }),
+      screen.getByRole('button', { name: i18n.t('common.remove') }),
     ).toBeDisabled() // ohne Passwort noch nicht bereit
   })
 })

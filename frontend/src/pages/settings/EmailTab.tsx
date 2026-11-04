@@ -309,7 +309,7 @@ export function EmailTab() {
                   ) : (
                     <Save className="w-4 h-4" />
                   )}
-                  {t('settings.save', { defaultValue: 'Speichern' })}
+                  {t('common.save', { defaultValue: 'Speichern' })}
                 </Button>
               </div>
             </div>
@@ -354,7 +354,7 @@ export function EmailTab() {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {t('settings.save')}
+              {t('common.save')}
             </Button>
           </div>
         )}

@@ -108,7 +108,7 @@ describe('CommentsPanel', () => {
       expect(docsApi.updateComment).toHaveBeenCalledWith('doc-1', 'c-1', { status: 'resolved' }),
     )
 
-    fireEvent.click(screen.getByLabelText(i18n.t('docs.comments.delete')))
+    fireEvent.click(screen.getByLabelText(i18n.t('common.delete')))
     await waitFor(() => expect(docsApi.deleteComment).toHaveBeenCalledWith('doc-1', 'c-1'))
     expect(onChanged).toHaveBeenCalledTimes(2)
   })

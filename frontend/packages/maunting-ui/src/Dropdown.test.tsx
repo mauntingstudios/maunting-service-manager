@@ -19,7 +19,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { Dropdown } from './Dropdown'
-import { Dialog, DialogContent } from '@/Singra/UI/Dialog'
+import { Dialog, DialogContent } from './Dialog'
 
 const OPTIONEN = [
   { value: 'a', label: 'Minecraft Forge' },

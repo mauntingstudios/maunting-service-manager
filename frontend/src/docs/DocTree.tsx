@@ -163,7 +163,7 @@ export function DocTree({
               'min-w-0 flex-1 px-2 text-xs',
             )}
           >
-            {t('docs.tree.all')}
+            {t('common.all')}
           </Button>
           <Button
             type="button"

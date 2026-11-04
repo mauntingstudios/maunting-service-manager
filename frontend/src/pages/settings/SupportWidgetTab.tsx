@@ -228,7 +228,7 @@ export function SupportWidgetTab() {
                 {settings.singra_widget_install_source === 'panel' && (
                   <Button type="button" variant="ghost" onClick={() => void removeInstallId()} className="gap-2 text-status-destructive">
                     <Trash2 className="h-4 w-4" />
-                    {t('settings.supportWidget.installIdRemove')}
+                    {t('common.remove')}
                   </Button>
                 )}
               </div>
@@ -340,7 +340,7 @@ export function SupportWidgetTab() {
           <div className="flex justify-end">
             <Button type="submit" disabled={saving}>
               {saving ? <Spinner /> : <Save className="h-4 w-4" />}
-              {t('settings.save')}
+              {t('common.save')}
             </Button>
           </div>
         )}

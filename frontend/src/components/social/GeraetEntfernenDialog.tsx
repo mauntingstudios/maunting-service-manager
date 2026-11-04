@@ -136,7 +136,7 @@ export function GeraetEntfernenDialog({
               </p>
               <PasswordInput
                 id={feldId}
-                label={t('profile.e2eeDevices.removePassword')}
+                label={t('common.password')}
                 autoComplete="current-password"
                 value={passwort}
                 onChange={(e) => setPasswort(e.target.value)}
@@ -160,7 +160,7 @@ export function GeraetEntfernenDialog({
             onClick={() => void bestaetigen()}
           >
             <Trash2 className="h-4 w-4 mr-1" aria-hidden="true" />
-            {t('profile.e2eeDevices.remove')}
+            {t('common.remove')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -58,7 +58,7 @@ function EinzelInhalt({ tab, aktion }: { tab?: Tab; aktion: (a: 'zurueck' | 'vor
           art="fehler"
           titel={t('browser.seite.abgestuerztTitel')}
           text={t('browser.seite.abgestuerztText')}
-          erneutLabel={t('browser.nav.neuLaden')}
+          erneutLabel={t('common.reload')}
           onErneut={() => aktion('neu_laden', tab.id)}
         />
       </div>
@@ -77,7 +77,7 @@ function EinzelInhalt({ tab, aktion }: { tab?: Tab; aktion: (a: 'zurueck' | 'vor
             defaultValue: t('browser.fehlerseite.unbekanntText'),
             host: seitenHost(tab.url) ?? tab.url,
           })}
-          erneutLabel={t('browser.nav.neuLaden')}
+          erneutLabel={t('common.reload')}
           onErneut={() => aktion('neu_laden', tab.id)}
         />
       </div>

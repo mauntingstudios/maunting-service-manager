@@ -303,24 +303,24 @@ export function AiSkillManager({ scope }: Props) {
             </label>
             <label className="min-w-[10rem] flex-1 space-y-1.5">
               <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                {t('ai.skills.name')}
+                {t('common.name')}
               </span>
               <input
                 className="msm-input" maxLength={100} value={draft.name} disabled={busy}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                aria-label={t('ai.skills.name')}
+                aria-label={t('common.name')}
               />
             </label>
           </div>
 
           <label className="block space-y-1.5">
             <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              {t('ai.skills.descriptionLabel')}
+              {t('common.description')}
             </span>
             <input
               className="msm-input" maxLength={500} value={draft.description} disabled={busy}
               onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-              aria-label={t('ai.skills.descriptionLabel')}
+              aria-label={t('common.description')}
             />
             <span className="block text-xs text-on-surface-variant">{t('ai.skills.descriptionHint')}</span>
           </label>
@@ -343,7 +343,7 @@ export function AiSkillManager({ scope }: Props) {
               {editingId === null
                 ? <Plus className="h-4 w-4" aria-hidden="true" />
                 : <Save className="h-4 w-4" aria-hidden="true" />}
-              {editingId === null ? t('ai.skills.add') : t('ai.skills.save')}
+              {editingId === null ? t('ai.skills.add') : t('common.save')}
             </Button>
             {editingId !== null && (
               <Button

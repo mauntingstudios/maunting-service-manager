@@ -105,7 +105,7 @@ export function Schnellzugriffe() {
   }
 
   const menuePunkte = (index: number): ActionMenuItem[] => [
-    { key: 'bearbeiten', label: t('browser.start.bearbeiten'), icon: <Pencil className="h-4 w-4" />, onSelect: () => setBearbeiten({ art: 'aendern', index }) },
+    { key: 'bearbeiten', label: t('common.edit'), icon: <Pencil className="h-4 w-4" />, onSelect: () => setBearbeiten({ art: 'aendern', index }) },
     { key: 'vor', label: t('browser.start.nachVorn'), icon: <ArrowLeft className="h-4 w-4" />, disabled: index === 0, onSelect: () => verschieben(index, index - 1) },
     {
       key: 'zurueck',
@@ -114,7 +114,7 @@ export function Schnellzugriffe() {
       disabled: index === liste.length - 1,
       onSelect: () => verschieben(index, index + 1),
     },
-    { key: 'weg', label: t('browser.liste.entfernen'), icon: <Trash2 className="h-4 w-4" />, destructive: true, separatorBefore: true, onSelect: () => entfernen(index) },
+    { key: 'weg', label: t('common.remove'), icon: <Trash2 className="h-4 w-4" />, destructive: true, separatorBefore: true, onSelect: () => entfernen(index) },
   ]
 
   const vorlage = bearbeiten?.art === 'aendern' ? liste[bearbeiten.index] : undefined

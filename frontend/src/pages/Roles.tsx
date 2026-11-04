@@ -117,7 +117,7 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-            {t('roles.name')}
+            {t('common.name')}
           </label>
           <input
             type="text"
@@ -157,7 +157,7 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
 
       <div>
         <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-          {t('roles.description')}
+          {t('common.description')}
         </label>
         <input
           type="text"
@@ -319,10 +319,10 @@ export function Roles() {
           <thead>
             <tr className="border-b border-outline-variant/50">
               <th className="text-left font-label-md text-label-md text-on-surface-variant p-4 uppercase tracking-wider">
-                {t('roles.name')}
+                {t('common.name')}
               </th>
               <th className="text-left font-label-md text-label-md text-on-surface-variant p-4 uppercase tracking-wider">
-                {t('roles.description')}
+                {t('common.description')}
               </th>
               <th className="text-left font-label-md text-label-md text-on-surface-variant p-4 uppercase tracking-wider">
                 {t('roles.permissions')}

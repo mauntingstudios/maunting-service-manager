@@ -167,3 +167,9 @@ logdump.txt
 /node_modules
 /frontend/.vitest-tmp
 /.vitest-tmp
+
+/frontend/packages/maunting-ui/storybook-static
+
+/crates/fensteroptik/target
+
+/frontend/packages/*/node_modules

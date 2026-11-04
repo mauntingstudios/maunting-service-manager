@@ -32,7 +32,7 @@ function CodeBlock({ example }: CodeBlockProps) {
         className="absolute top-2 right-2 inline-flex items-center gap-1.5"
       >
         {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-        {copied ? t('docs.copiedExample') : t('docs.copyExample')}
+        {copied ? t('common.copied') : t('docs.copyExample')}
       </Button>
       <pre className="bg-surface-container-lowest border border-outline rounded-md p-4 overflow-auto font-mono text-xs text-on-surface whitespace-pre">
         {text}

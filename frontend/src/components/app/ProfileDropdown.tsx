@@ -226,7 +226,7 @@ export function ProfileDropdown({
                     }`}
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                    {t('social.status.auto')}
+                    {t('common.auto')}
                   </button>
                   <button
                     type="button"

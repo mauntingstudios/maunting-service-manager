@@ -31,7 +31,7 @@ export function PostgresCredentialsDialog({ credentials, onClose }: Props) {
                   <div>{t("databases.user")}: {cred.username}</div>
                   <div>{t("databases.host")}: {cred.host}</div>
                   <div>{t("databases.port")}: {cred.port}</div>
-                  <div className="md:col-span-2">{t("databases.password")}: {cred.password}</div>
+                  <div className="md:col-span-2">{t("common.password")}: {cred.password}</div>
                   <div className="md:col-span-2 break-all">
                     {t("databases.connectionUrl")}: {dsn}
                   </div>

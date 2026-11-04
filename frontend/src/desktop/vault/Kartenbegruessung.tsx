@@ -88,7 +88,7 @@ export function Kartenbegruessung({ user, onFertig }: Props) {
             {t('mss.card.welcomeAuthorized')}
           </p>
           <Button className="w-full" onClick={onFertig}>
-            {t('mss.card.welcomeContinue')}
+            {t('common.continue')}
           </Button>
         </div>
       ) : isInitialized ? (
@@ -136,7 +136,7 @@ export function Kartenbegruessung({ user, onFertig }: Props) {
         </form>
       ) : (
         <Button className="w-full" onClick={onFertig}>
-          {t('mss.card.welcomeContinue')}
+          {t('common.continue')}
         </Button>
       )}
     </div>

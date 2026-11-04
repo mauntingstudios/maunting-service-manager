@@ -265,7 +265,7 @@ export function Teams() {
       const angefragt = aktualisiert.invitations.some((row) => row.user_id === member.user_id)
       toast.success(angefragt
         ? t('teams.memberConsentPending', { name: member.username })
-        : t('teams.memberSaved'))
+        : t('common.saved'))
     })
   }
 
@@ -400,7 +400,7 @@ export function Teams() {
           members: prev.members.map((m) => (m.user_id === member.user_id ? { ...m, ...updatedMember } : m)),
         }
       })
-    }, 'teams.memberSaved')
+    }, 'common.saved')
   }
 
   if (loading) {

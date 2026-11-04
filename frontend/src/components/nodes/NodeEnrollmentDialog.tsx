@@ -228,7 +228,7 @@ export function NodeEnrollmentDialog({
                     className="shrink-0"
                     onClick={() => void loadCommand()}
                   >
-                    {t('nodes.enrollment.retryCommand')}
+                    {t('common.retry')}
                   </Button>
                 </div>
               ) : (
@@ -239,16 +239,16 @@ export function NodeEnrollmentDialog({
                   <Button variant="secondary"
                     type="button"
                     className="inline-flex shrink-0 items-center gap-2"
-                    aria-label={copied ? t('nodes.enrollment.copied') : t('nodes.enrollment.copy')}
+                    aria-label={copied ? t('common.copied') : t('common.copy')}
                     onClick={() => void copyCommand()}
                   >
                     {copied ? <Check className="h-4 w-4 text-status-success" /> : <Clipboard className="h-4 w-4" />}
                     <span className="hidden sm:inline">
-                      {copied ? t('nodes.enrollment.copied') : t('nodes.enrollment.copy')}
+                      {copied ? t('common.copied') : t('common.copy')}
                     </span>
                   </Button>
                   <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-                    {copied ? t('nodes.enrollment.copied') : ''}
+                    {copied ? t('common.copied') : ''}
                   </span>
                 </>
               )}

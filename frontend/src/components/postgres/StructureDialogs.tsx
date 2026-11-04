@@ -71,7 +71,7 @@ export function AddColumnDialog({ open, onClose, table, enums }: {
         )
       }
     >
-      <Input label={t('postgresStudio.columns.name')} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+      <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
       <Field label={t('postgresStudio.columns.type')}>
         <TypePicker value={type} onChange={setType} enums={enums} />
       </Field>
@@ -249,7 +249,7 @@ export function IndexDialog({ open, onClose, table }: { open: boolean; onClose: 
   return (
     <FormDialog open={open} onClose={onClose} title={title} error={error} wide onSubmit={() => void submit(build, title)} testId="index-dialog">
       <div className="grid gap-4 md:grid-cols-2">
-        <Input label={t('postgresStudio.columns.name')} value={name} onChange={(e) => setName(e.target.value)} />
+        <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} />
         <Field label={t('postgresStudio.indexes.method')}>
           <Dropdown value={method} onChange={setMethod} options={['btree', 'hash', 'gin', 'gist', 'brin', 'spgist'].map((m) => ({ value: m, label: m }))} aria-label={t('postgresStudio.indexes.method')} />
         </Field>
@@ -342,7 +342,7 @@ export function PartitionDialog({ open, onClose, table }: { open: boolean; onClo
 
   return (
     <FormDialog open={open} onClose={onClose} title={title} description={table.partition_key || ''} error={error} onSubmit={() => void submit(build, title)} testId="partition-dialog">
-      <Input label={t('postgresStudio.columns.name')} value={name} onChange={(e) => setName(e.target.value)} />
+      <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} />
       {strategy !== 'hash' && (
         <label className="flex items-center gap-2 text-sm text-on-surface">
           <Switch checked={isDefault} onCheckedChange={setIsDefault} />
@@ -407,7 +407,7 @@ export function ViewDialog({ open, onClose, schema }: { open: boolean; onClose: 
         )
       }
     >
-      <Input label={t('postgresStudio.columns.name')} value={name} onChange={(e) => setName(e.target.value)} />
+      <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} />
       <Textarea mono label={t('postgresStudio.views.query')} value={query} onChange={(e) => setQuery(e.target.value)} rows={8} />
       <label className="flex items-center gap-2 text-sm text-on-surface">
         <Switch checked={materialized} onCheckedChange={setMaterialized} />
@@ -442,7 +442,7 @@ export function SequenceDialog({ open, onClose, schema }: { open: boolean; onClo
       error={error}
       onSubmit={() => void submit(() => (!name.trim() ? t('postgresStudio.validation.emptyName') : { op: 'create_sequence', schema_name: schema, name: name.trim(), start, increment, cycle }), title)}
     >
-      <Input label={t('postgresStudio.columns.name')} value={name} onChange={(e) => setName(e.target.value)} />
+      <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} />
       <div className="grid grid-cols-2 gap-3">
         <Field label={t('postgresStudio.sequences.start')}>
           <NumberStepper value={start} onValueChange={(v) => setStart(Number(v))} min={-2147483648} max={2147483647} />
@@ -486,7 +486,7 @@ export function EnumDialog({ open, onClose, schema }: { open: boolean; onClose: 
         )
       }
     >
-      <Input label={t('postgresStudio.columns.name')} value={name} onChange={(e) => setName(e.target.value)} />
+      <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} />
       <Textarea mono label={t('postgresStudio.enums.values')} value={values} onChange={(e) => setValues(e.target.value)} rows={5} placeholder={'aktiv\npausiert\ngelöscht'} />
     </FormDialog>
   )

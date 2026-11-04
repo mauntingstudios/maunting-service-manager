@@ -78,7 +78,7 @@ describe('Kartenbegruessung', () => {
     render(<Kartenbegruessung user={KONTO} onFertig={onFertig} />)
 
     expect(await screen.findByText(i18n.t('mss.card.welcomeNotSetUp'))).toBeInTheDocument()
-    fireEvent.click(await screen.findByRole('button', { name: i18n.t('mss.card.welcomeContinue') }))
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('common.continue') }))
     expect(screen.queryByLabelText(i18n.t('mss.card.welcomePasswordLabel'))).not.toBeInTheDocument()
     expect(onFertig).toHaveBeenCalledTimes(1)
   })

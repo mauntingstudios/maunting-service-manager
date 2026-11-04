@@ -60,7 +60,7 @@ export function ConnectedCalendarsSection() {
     const ok = await confirm({
       message: t('profile.calendars.deleteConfirm', { name: cal.name, defaultValue: `Möchtest du den Kalender ${cal.name} wirklich entfernen?` }),
       danger: true,
-      confirmText: t('profile.calendars.delete'),
+      confirmText: t('common.remove'),
     })
     if (!ok) return
     try {
@@ -173,7 +173,7 @@ export function ConnectedCalendarsSection() {
                   className="inline-flex items-center gap-1"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  {t('profile.calendars.delete')}
+                  {t('common.remove')}
                 </Button>
               </div>
             </li>

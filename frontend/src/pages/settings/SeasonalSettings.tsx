@@ -210,7 +210,7 @@ function SaisonZeile({
   const statusText = {
     aus: t('settings.seasonal.statusOff'),
     immer: t('settings.seasonal.statusAlways'),
-    aktiv: t('settings.seasonal.statusActive'),
+    aktiv: t('common.active'),
     inaktiv: t('settings.seasonal.statusInactive'),
   }[status]
   const sofortAktiv = mode === 'on'
@@ -239,11 +239,11 @@ function SaisonZeile({
             />
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-on-surface-variant">{t('settings.seasonal.modeAuto')}</span>
+            <span className="text-xs text-on-surface-variant">{t('common.auto')}</span>
             <Switch
               checked={zeitplanAktiv}
               onCheckedChange={(an) => onMode(an ? 'auto' : 'off')}
-              aria-label={`${titel} ${t('settings.seasonal.modeAuto')}`}
+              aria-label={`${titel} ${t('common.auto')}`}
             />
           </div>
         </div>

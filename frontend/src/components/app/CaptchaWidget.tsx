@@ -154,7 +154,7 @@ export function CaptchaWidget({ onVerify, onStatusChange, resetKey }: CaptchaWid
             error: t('captcha.altcha.error'),
             expired: t('captcha.altcha.expired'),
             loading: t('captcha.altcha.loading'),
-            reload: t('captcha.altcha.reload'),
+            reload: t('common.reload'),
             verificationRequired: t('captcha.altcha.verificationRequired'),
             waitAlert: t('captcha.altcha.waitAlert'),
           })

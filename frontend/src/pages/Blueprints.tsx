@@ -174,7 +174,7 @@ export function Blueprints() {
     const ok = await confirm({
       title: t('blueprints.deleteConfirmTitle'),
       message: t('blueprints.deleteConfirmBody', { name: entry.name, id: entry.id }),
-      confirmText: t('blueprints.deleteConfirm'),
+      confirmText: t('common.delete'),
       danger: true,
     })
     if (!ok) return
@@ -274,17 +274,17 @@ export function Blueprints() {
         )}
 
         <details className="rounded-lg border border-outline-variant/50 bg-surface-container p-2 md:hidden">
-          <summary className="flex min-h-9 cursor-pointer items-center font-label-md text-sm font-semibold">{t('blueprints.filterSummary', { value: originFilter === 'all' ? t('blueprints.filterAll') : originFilter === 'native' ? t('blueprints.filterNative') : t('blueprints.filterCommunity') })}</summary>
+          <summary className="flex min-h-9 cursor-pointer items-center font-label-md text-sm font-semibold">{t('blueprints.filterSummary', { value: originFilter === 'all' ? t('common.all') : originFilter === 'native' ? t('blueprints.filterNative') : t('blueprints.filterCommunity') })}</summary>
           <div className="mt-2 grid gap-3 border-t border-outline-variant/40 pt-3">
             <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-outline-variant/50 text-sm">
-              {(['all', 'native', 'community'] as const).map((f) => <button key={f} type="button" onClick={() => setOriginFilter(f)} className={`min-h-11 px-2 font-label-md ${originFilter === f ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'}`}>{f === 'all' ? t('blueprints.filterAll') : f === 'native' ? t('blueprints.filterNative') : t('blueprints.filterCommunity')}</button>)}
+              {(['all', 'native', 'community'] as const).map((f) => <button key={f} type="button" onClick={() => setOriginFilter(f)} className={`min-h-11 px-2 font-label-md ${originFilter === f ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'}`}>{f === 'all' ? t('common.all') : f === 'native' ? t('blueprints.filterNative') : t('blueprints.filterCommunity')}</button>)}
             </div>
             {categories.length > 1 && (
               <Dropdown
                 value={categoryFilter}
                 onChange={(value) => setCategoryFilter(value)}
                 options={[
-                  { value: 'all', label: `${t('blueprints.filterCategory')}: ${t('blueprints.filterAll')}` },
+                  { value: 'all', label: `${t('blueprints.filterCategory')}: ${t('common.all')}` },
                   ...categories.map((c) => ({ value: c, label: categoryLabel(c) })),
                 ]}
                 aria-label={t('blueprints.filterCategory')}
@@ -307,7 +307,7 @@ export function Blueprints() {
                   : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-highest'
               }`}
             >
-              {f === 'all' ? t('blueprints.filterAll') : f === 'native' ? t('blueprints.filterNative') : t('blueprints.filterCommunity')}
+              {f === 'all' ? t('common.all') : f === 'native' ? t('blueprints.filterNative') : t('blueprints.filterCommunity')}
             </button>
           ))}
         </div>
@@ -319,7 +319,7 @@ export function Blueprints() {
               value={categoryFilter}
               onChange={(value) => setCategoryFilter(value)}
               options={[
-                { value: 'all', label: `${t('blueprints.filterCategory')}: ${t('blueprints.filterAll')}` },
+                { value: 'all', label: `${t('blueprints.filterCategory')}: ${t('common.all')}` },
                 ...categories.map((c) => ({ value: c, label: categoryLabel(c) })),
               ]}
               aria-label={t('blueprints.filterCategory')}
@@ -458,7 +458,7 @@ export function Blueprints() {
                           ) : (
                             <Trash2 className="w-3.5 h-3.5" />
                           )}
-                          {t('blueprints.delete')}
+                          {t('common.delete')}
                         </button>
                       </>
                     )}

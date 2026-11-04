@@ -302,7 +302,7 @@ export function SearchEngineTab() {
             <>
               <Button type="submit" disabled={busy || searxngUrl.trim() === currentSearxngUrl}>
                 <Save className="h-4 w-4" aria-hidden="true" />
-                {t('settings.save')}
+                {t('common.save')}
               </Button>
               {Boolean(currentSearxngUrl) && (
                 <Kurzinfo text={t('ai.webSearch.resetToDefault')}>
@@ -409,7 +409,7 @@ export function SearchEngineTab() {
               <>
                 <Button type="submit" disabled={busy || !braveKey.trim()}>
                   <Save className="h-4 w-4" aria-hidden="true" />
-                  {t('settings.save')}
+                  {t('common.save')}
                 </Button>
                 {hasBraveKey && (
                   <Button type="button" variant="destructive" disabled={busy} onClick={() => void removeBraveKey()}>
@@ -470,7 +470,7 @@ export function SearchEngineTab() {
                   }
                 >
                   <Save className="h-4 w-4" aria-hidden="true" />
-                  {t('settings.save')}
+                  {t('common.save')}
                 </Button>
                 {hasGoogleCse && (
                   <Button type="button" variant="destructive" disabled={busy} onClick={() => void removeGoogleCse()}>

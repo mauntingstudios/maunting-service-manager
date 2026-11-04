@@ -146,8 +146,8 @@ function RoleDialog({ roles, role, onClose }: { roles: StudioRole[]; role: Studi
     <FormDialog open wide title={title} description={t('postgresStudio.roles.dialogHint')} error={error} onClose={onClose} onSubmit={() => void submit()} testId="role-dialog">
       <div className="grid gap-3 md:grid-cols-2">
         <Input label={t('postgresStudio.roles.name')} value={name} onChange={(e) => setName(e.target.value)} disabled={Boolean(role)} className="font-mono text-xs" />
-        <Field label={t('postgresStudio.roles.password')} hint={role ? t('postgresStudio.roles.passwordKeep') : undefined}>
-          <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" aria-label={t('postgresStudio.roles.password')} />
+        <Field label={t('common.password')} hint={role ? t('postgresStudio.roles.passwordKeep') : undefined}>
+          <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" aria-label={t('common.password')} />
         </Field>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
@@ -417,7 +417,7 @@ function PolicyDialog({ schema, table, roles, onClose }: { schema: string; table
         ))}
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        <Input label={t('postgresStudio.columns.name')} value={name} onChange={(e) => setName(e.target.value)} />
+        <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} />
         <Field label={t('postgresStudio.rls.command')}>
           <Dropdown value={command} onChange={setCommand} options={['all', 'select', 'insert', 'update', 'delete'].map((v) => ({ value: v, label: v.toUpperCase() }))} aria-label={t('postgresStudio.rls.command')} />
         </Field>

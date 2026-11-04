@@ -212,7 +212,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             }`}
           >
             <Camera className="h-3.5 w-3.5" />
-            <span>{t('mss.vault.qr.reiterKamera')}</span>
+            <span>{t('common.camera')}</span>
           </button>
           <button
             type="button"

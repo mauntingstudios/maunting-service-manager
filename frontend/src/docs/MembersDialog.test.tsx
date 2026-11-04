@@ -83,7 +83,7 @@ describe('MembersDialog', () => {
     await waitFor(() => expect(docsApi.listMembers).toHaveBeenCalled())
 
     fireEvent.click(screen.getByLabelText(i18n.t('docs.members.defaultRole')))
-    fireEvent.click(await screen.findByRole('option', { name: i18n.t('docs.roles.editor') }))
+    fireEvent.click(await screen.findByRole('option', { name: i18n.t('common.edit') }))
     await waitFor(() =>
       expect(docsApi.updateDocument).toHaveBeenCalledWith('doc-1', { default_role: 'editor' }),
     )
@@ -97,7 +97,7 @@ describe('MembersDialog', () => {
     expect(await screen.findByText('bob')).toBeInTheDocument()
 
     fireEvent.click(screen.getByLabelText(i18n.t('docs.members.roleFor', { name: 'bob' })))
-    fireEvent.click(await screen.findByRole('option', { name: i18n.t('docs.roles.editor') }))
+    fireEvent.click(await screen.findByRole('option', { name: i18n.t('common.edit') }))
     await waitFor(() =>
       expect(docsApi.putMember).toHaveBeenCalledWith('doc-1', 2, 'editor'),
     )

@@ -346,7 +346,7 @@ function GroupRoleForm({ initial, onSubmit, onCancel, disabled }: GroupRoleFormP
 
       <div>
         <label className="block text-xs font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">
-          {t('social.groupRoles.descLabel')}
+          {t('common.description')}
         </label>
         <Input
           type="text"
@@ -1305,7 +1305,7 @@ export function GroupPermissionsModal({
 
                 <div className="flex-1 space-y-3 min-w-0">
                   <Input
-                    label={t('social.groupRoles.generalName')}
+                    label={t('common.name')}
                     value={infoName}
                     maxLength={64}
                     disabled={!kannInfoSchreiben}
@@ -1316,7 +1316,7 @@ export function GroupPermissionsModal({
                     }}
                   />
                   <Textarea
-                    label={t('social.groupRoles.generalDescription')}
+                    label={t('common.description')}
                     value={infoBeschreibung}
                     maxLength={256}
                     rows={3}
@@ -1345,7 +1345,7 @@ export function GroupPermissionsModal({
                   >
                     <Check className="w-4 h-4" />
                     <span>
-                      {infoSpeichert ? t('common.saving') : t('social.groupRoles.generalSave')}
+                      {infoSpeichert ? t('common.saving') : t('common.save')}
                     </span>
                   </Button>
                 </div>

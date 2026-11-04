@@ -380,7 +380,7 @@ export function AdminNodes() {
           <form onSubmit={handleSave} className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1.5 block font-label-md text-label-md uppercase tracking-wider text-on-surface-variant">
-                {t('nodes.name')}
+                {t('common.name')}
               </label>
               <input
                 className="msm-input"

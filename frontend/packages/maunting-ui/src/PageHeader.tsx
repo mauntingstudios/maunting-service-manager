@@ -12,15 +12,15 @@ export function PageHeader({ eyebrow, title, description, status, actions }: Pag
   return (
     <header className="msm-page-header">
       <div className="relative flex min-w-0 flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="msm-status-rail min-w-0 max-w-3xl">
+        <div className="min-w-0 max-w-3xl">
           {eyebrow && (
-            <p className="mb-2 font-label-md text-xs font-semibold uppercase tracking-[0.16em] text-primary/75">
+            <p className="mb-2 font-label-md text-label-sm font-semibold uppercase tracking-[0.12em] text-primary/75">
               {eyebrow}
             </p>
           )}
-          <h1 className="font-headline text-2xl font-bold text-on-surface md:text-[2rem]">{title}</h1>
+          <h1 className="font-headline text-headline-sm text-on-surface md:text-headline-lg">{title}</h1>
           {description && (
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant md:text-base">{description}</p>
+            <p className="mt-2 max-w-2xl text-body-sm leading-6 text-on-surface-variant md:text-body-md">{description}</p>
           )}
         </div>
         {(status || actions) && (

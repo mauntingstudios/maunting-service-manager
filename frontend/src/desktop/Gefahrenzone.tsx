@@ -76,7 +76,7 @@ export function Gefahrenzone() {
               {t('mss.gefahrenzone.allesEntfernen')}
             </Button>
             <Button variant="secondary" onClick={() => setSchritt('ruhe')}>
-              {t('mss.gefahrenzone.abbrechen')}
+              {t('common.cancel')}
             </Button>
           </div>
         </div>

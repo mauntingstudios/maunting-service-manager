@@ -39,7 +39,7 @@ describe('AiTomTomSettings', () => {
 
     const input = await screen.findByPlaceholderText(i18n.t('ai.tomtom.placeholder'))
     fireEvent.change(input, { target: { value: 'tomtom-test-key' } })
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.save') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.save') }))
 
     await waitFor(() => expect(api).toHaveBeenCalledWith(
       '/ai/settings/tomtom',

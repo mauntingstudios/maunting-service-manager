@@ -22,7 +22,7 @@ describe('StatusIndicator', () => {
 
   it('renders invisible dot by default', () => {
     render(<StatusDot status="invisible" />)
-    expect(screen.getByRole('img', { name: i18n.t('social.status.offline') })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: i18n.t('common.offline') })).toBeInTheDocument()
   })
 
   it('setzt kein natives title und legt die Lage an die Hülle', () => {

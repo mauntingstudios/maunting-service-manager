@@ -222,7 +222,7 @@ export function TeamRoleModal({
 
             <div>
               <label className="block text-xs font-semibold text-on-surface mb-1.5">
-                {t('teams.roleDescription')}
+                {t('common.description')}
               </label>
               <Textarea
                 value={description}
@@ -231,7 +231,7 @@ export function TeamRoleModal({
                 rows={2}
                 maxLength={255}
                 disabled={busy}
-                aria-label={t('teams.roleDescription')}
+                aria-label={t('common.description')}
               />
             </div>
           </div>

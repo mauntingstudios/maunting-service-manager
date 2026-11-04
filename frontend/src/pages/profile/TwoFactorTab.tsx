@@ -111,7 +111,7 @@ export function TwoFactorTab() {
     confirm({
       title: t('profile.zweitfaktoren.letzterTitel'),
       message: t('profile.zweitfaktoren.letzterText'),
-      confirmText: t('profile.zweitfaktoren.entfernen'),
+      confirmText: t('common.remove'),
       danger: true,
     })
 
@@ -299,7 +299,7 @@ export function TwoFactorTab() {
                   className="text-error hover:bg-error/10 hover:text-error"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  {t('profile.zweitfaktoren.entfernen')}
+                  {t('common.remove')}
                 </Button>
               </li>
             ))}

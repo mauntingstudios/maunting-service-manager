@@ -62,7 +62,7 @@ export const BROWSER_EINTRAEGE: Leisteneintrag[] = [
 ]
 
 /** Kein Panel: die Einstellungen sind eine eigene Seite im Tab (`msb://einstellungen`). */
-export const EINSTELLUNGEN_EINTRAG = { symbol: Settings, name: 'browser.leiste.einstellungen' }
+export const EINSTELLUNGEN_EINTRAG = { symbol: Settings, name: 'common.settings' }
 
 export const KOPPELN_EINTRAG: Leisteneintrag = { id: 'koppeln', symbol: Link2, name: 'browser.leiste.koppeln' }
 

@@ -656,7 +656,7 @@ export function MsmSuche({ tab }: { tab: Tab }) {
         art="fehler"
         titel={t('browser.msmSuche.fehlerTitel')}
         text={t(stand.zuViele ? 'browser.msmSuche.zuVieleText' : 'browser.msmSuche.fehlerText')}
-        erneutLabel={t('browser.msmSuche.erneut')}
+        erneutLabel={t('common.retry')}
         onErneut={() => setVersuch((v) => v + 1)}
       />
     )
@@ -1228,7 +1228,7 @@ function MedienVorschauDialog({
         )}
         <DialogFooter>
           <Button type="button" variant="secondary" onClick={onSchliessen}>
-            {t('browser.msmSuche.medienVorschauSchliessen')}
+            {t('common.close')}
           </Button>
           {vorschau && (
             <Button type="button" variant="primary" onClick={() => onOeffnen(vorschau.treffer.url)}>

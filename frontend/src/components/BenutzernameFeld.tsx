@@ -101,7 +101,7 @@ export function BenutzernameFeld({ start, uebernehmen = true, onGespeichert }: P
         )}
       </div>
       <Button type="submit" className="mt-7" disabled={speichert || Boolean(fehler)}>
-        {t('benutzername.weiter')}
+        {t('common.continue')}
       </Button>
     </form>
   )

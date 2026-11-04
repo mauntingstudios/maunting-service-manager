@@ -116,7 +116,7 @@ export function ShareDialog({ detail, open, onOpenChange, onChanged }: ShareDial
           {url && (
             <div className="flex items-center gap-2">
               <Input readOnly value={url} aria-label={t('docs.share.link')} onFocus={(event) => event.target.select()} />
-              <Button variant="secondary" size="sm" onClick={() => void kopieren()} aria-label={t('docs.share.copy')}>
+              <Button variant="secondary" size="sm" onClick={() => void kopieren()} aria-label={t('common.copy')}>
                 <Copy className="h-4 w-4" />
               </Button>
             </div>

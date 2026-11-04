@@ -20,19 +20,19 @@ describe('Settings', () => {
     vi.mocked(client.api).mockReset()
   })
 
-  it('ordnet die Reiter in sechs Gruppen: Basis, Kommunikation, Daten, Schutz, Anbindung, Auftritt', async () => {
+  it('ordnet die Abschnitte in Grundlagen, Sicherheit, Verbindungen, Kommunikation, Speicher und Erweitert', async () => {
     vi.mocked(client.api).mockResolvedValue({} as never)
     renderSettings()
 
     // Über die Schlüssel statt festem Text: GeneralTab schaltet beim Laden
-    // auf die Panel-Sprache um, die Reiter sind dann deutsch.
+    // auf die Panel-Sprache um, die Abschnitte sind dann deutsch.
     const reihenfolge = [
-      'general', 'email',
-      'messenger', 'searchEngine', 'ai',
-      'vaultStorage', 'backup',
+      'general', 'imprint',
       'security', 'captcha', 'cloudflare',
       'oauth', 'steam', 'curseforge', 'github', 'hoster',
-      'imprint', 'supportWidget', 'popup',
+      'email', 'messenger', 'searchEngine', 'ai',
+      'vaultStorage', 'backup',
+      'supportWidget', 'popup',
     ]
     const tabs = await screen.findAllByRole('tab')
     expect(tabs.map((tab) => tab.textContent)).toEqual(reihenfolge.map((id) => i18n.t(`settings.tabs.${id}`)))

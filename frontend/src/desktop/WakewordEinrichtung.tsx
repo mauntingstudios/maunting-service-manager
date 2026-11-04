@@ -272,7 +272,7 @@ export function WakewordEinrichtung() {
               abbruch.current = true
             }}
           >
-            {t('mss.wakeword.abbrechen')}
+            {t('common.cancel')}
           </Button>
         ) : (
           <Button

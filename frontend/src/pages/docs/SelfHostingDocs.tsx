@@ -26,7 +26,7 @@ function CommandBlock({ command, label, testId }: { command: string; label: stri
       label={label}
       testId={testId}
       copyLabel={t('docsSelfHosting.install.copy')}
-      copiedLabel={t('docsSelfHosting.install.copied')}
+      copiedLabel={t('common.copied')}
     />
   )
 }

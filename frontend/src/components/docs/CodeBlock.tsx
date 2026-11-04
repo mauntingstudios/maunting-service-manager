@@ -27,8 +27,8 @@ export function CodeBlock({
 }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
-  const copyText = copyLabel ?? t('docsCommon.copy')
-  const copiedText = copiedLabel ?? t('docsCommon.copied')
+  const copyText = copyLabel ?? t('common.copy')
+  const copiedText = copiedLabel ?? t('common.copied')
 
   const copy = async () => {
     try {

@@ -718,7 +718,7 @@ export function AiMemoryManager({ scope = { kind: 'user' } }: Props) {
                 ) : (
                   <Save className="h-4 w-4" aria-hidden="true" />
                 )}
-                {bearbeitet === null ? t('ai.memory.add') : t('settings.save')}
+                {bearbeitet === null ? t('common.add') : t('common.save')}
               </Button>
               {bearbeitet !== null && (
                 <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={formLeeren}>

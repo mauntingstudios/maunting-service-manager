@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { User, Users, Shield, Link2, AlertTriangle, Bot, Mail, Volume2 } from 'lucide-react'
-import { TabBar, TabDef } from '@maunting/ui'
+import { SettingsLayout, type SettingsSectionEintrag } from '@maunting/ui'
 import { ProfilTab } from './profile/ProfilTab'
 import { KontoTab } from './profile/KontoTab'
 import { SocialTab } from './profile/SocialTab'
@@ -16,16 +16,10 @@ import { CredentialsTab } from './profile/CredentialsTab'
 import { MessengerSicherheitTab } from './profile/MessengerSicherheitTab'
 import { TresorSicherheitTab } from '@/desktop/vault/TresorSicherheitTab'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { PageHeader } from '@maunting/ui'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 type TabId = 'profile' | 'account' | 'security' | 'social' | 'connections' | 'audio' | 'ai' | 'danger'
 
-/**
- * Frühere Reiter, die in einem anderen aufgegangen sind. Alte Links und
- * Lesezeichen (`?tab=2fa`, `?tab=devices`) landen so am richtigen Ort statt
- * auf „Profil".
- */
 const FRUEHERE_REITER: Record<string, TabId> = {
   password: 'security',
   '2fa': 'security',
@@ -35,21 +29,6 @@ const FRUEHERE_REITER: Record<string, TabId> = {
   credentials: 'connections',
 }
 
-/**
- * Profil-Orchestrator.
- *
- * Nur eine dünne Hülle: TabBar oben, Tab-Content unten. Die schwere Logik
- * (Forms, API-Calls) liegt in den einzelnen Tab-Komponenten; zusammengelegte
- * Reiter zeigen ihre Teile als Karten untereinander.
- *
- * Die Reiter trennen zwei Fragen: „Profil" ist, was andere sehen (Bild, Name,
- * Info, Sichtbarkeit); „Konto" ist, was nur dieses Konto betrifft (E-Mail,
- * Zeitzone, Standortfreigabe, Datenexport). Geräte gehören zu „Sicherheit":
- * dort entscheidet man, wer Zugriff hat.
- *
- * Der aktive Reiter steht nur in `?tab=`. So führen Links, Zurück-Knopf und
- * Weiterleitungen (OAuth-Verknüpfung) an denselben Ort.
- */
 export function Profile() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -57,64 +36,56 @@ export function Profile() {
   const publicSettings = usePublicSettingsStore()
   const social = publicSettings.social_enabled
 
-  // Drei Gruppen plus Gefahrenzone: wer ich bin, was mich schützt, womit
-  // ich arbeite. Nur Trenner in der Leiste — Reihenfolge, Rechte und die
-  // alten `?tab=`-Aliase bleiben.
-  const tabs: TabDef<TabId>[] = [
-    { id: 'profile', labelKey: 'profile.tabs.profile', icon: User, group: 'identitaet' },
-    { id: 'account', labelKey: 'profile.tabs.account', icon: Mail, group: 'identitaet' },
-    { id: 'security', labelKey: 'profile.tabs.security', icon: Shield, group: 'schutz' },
-    ...(social ? [{ id: 'social' as const, labelKey: 'profile.tabs.social', icon: Users, group: 'schutz' }] : []),
-    { id: 'connections', labelKey: 'profile.tabs.connections', icon: Link2, group: 'schutz' },
-    { id: 'audio', labelKey: 'profile.tabs.audio', icon: Volume2, group: 'arbeit' },
-    ...(canUseAi ? [{ id: 'ai' as const, labelKey: 'profile.tabs.ai', icon: Bot, group: 'arbeit' }] : []),
-    { id: 'danger', labelKey: 'profile.tabs.danger', icon: AlertTriangle, variant: 'danger', group: 'gefahr' },
+  const sections: SettingsSectionEintrag<TabId>[] = [
+    { id: 'profile', label: t('profile.tabs.profile'), icon: User, group: t('profile.groups.identitaet') },
+    { id: 'account', label: t('profile.tabs.account'), icon: Mail, group: t('profile.groups.identitaet') },
+    { id: 'security', label: t('profile.tabs.security'), icon: Shield, group: t('profile.groups.schutz') },
+    ...(social ? [{ id: 'social' as const, label: t('profile.tabs.social'), icon: Users, group: t('profile.groups.schutz') }] : []),
+    { id: 'connections', label: t('profile.tabs.connections'), icon: Link2, group: t('profile.groups.schutz') },
+    { id: 'audio', label: t('profile.tabs.audio'), icon: Volume2, group: t('profile.groups.arbeit') },
+    ...(canUseAi ? [{ id: 'ai' as const, label: t('profile.tabs.ai'), icon: Bot, group: t('profile.groups.arbeit') }] : []),
+    { id: 'danger', label: t('profile.tabs.danger'), icon: AlertTriangle, tone: 'danger', group: t('profile.groups.gefahr') },
   ]
 
   const wunsch = searchParams.get('tab') ?? ''
   const aufgeloest = FRUEHERE_REITER[wunsch] ?? wunsch
-  const activeTab: TabId = tabs.some((tab) => tab.id === aufgeloest) ? (aufgeloest as TabId) : 'profile'
+  const activeTab: TabId = sections.some((section) => section.id === aufgeloest) ? (aufgeloest as TabId) : 'profile'
 
-  const waehle = (tab: TabId) => {
-    setSearchParams({ tab }, { replace: true })
-  }
+  const waehle = (tab: TabId) => setSearchParams({ tab }, { replace: true })
 
   return (
     <div className="msm-page">
-      <PageHeader eyebrow={t('pageContext.panel')} title={t('profile.title')} description={t('profile.subtitle')} status={<span className="msm-badge-info">{t(`profile.tabs.${activeTab}`)}</span>} />
-
-      <TabBar
-        tabs={tabs}
+      <SettingsLayout
+        sections={sections}
         active={activeTab}
         onChange={waehle}
-        ariaLabel={t('profile.title')}
-      />
-
-      {activeTab === 'profile' && <ProfilTab social={social} />}
-      {activeTab === 'account' && <KontoTab />}
-      {activeTab === 'security' && (
-        <div className="space-y-6">
-          <PasswordTab />
-          <TwoFactorTab />
-          {social && <MessengerSicherheitTab />}
-          {typeof window !== 'undefined' &&
-            ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) &&
-            publicSettings.vault_enabled && (
-              <TresorSicherheitTab />
-            )}
-          <DevicesTab />
-        </div>
-      )}
-      {activeTab === 'social' && <SocialTab />}
-      {activeTab === 'connections' && (
-        <div className="space-y-6">
-          <LinkedAccountsTab />
-          <CredentialsTab />
-        </div>
-      )}
-      {activeTab === 'audio' && <AudioTab />}
-      {activeTab === 'ai' && <AiTab />}
-      {activeTab === 'danger' && <DangerZoneTab />}
+        title={t('profile.title')}
+        description={t('profile.subtitle')}
+      >
+        {activeTab === 'profile' && <ProfilTab social={social} />}
+        {activeTab === 'account' && <KontoTab />}
+        {activeTab === 'security' && (
+          <div className="space-y-6">
+            <PasswordTab />
+            <TwoFactorTab />
+            {social && <MessengerSicherheitTab />}
+            {typeof window !== 'undefined' &&
+              ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) &&
+              publicSettings.vault_enabled && <TresorSicherheitTab />}
+            <DevicesTab />
+          </div>
+        )}
+        {activeTab === 'social' && <SocialTab />}
+        {activeTab === 'connections' && (
+          <div className="space-y-6">
+            <LinkedAccountsTab />
+            <CredentialsTab />
+          </div>
+        )}
+        {activeTab === 'audio' && <AudioTab />}
+        {activeTab === 'ai' && <AiTab />}
+        {activeTab === 'danger' && <DangerZoneTab />}
+      </SettingsLayout>
     </div>
   )
 }

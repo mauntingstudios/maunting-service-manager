@@ -45,7 +45,7 @@ export function VerlaufDaten() {
     const ja = await confirm({
       title: t('browser.einstellungen.datenLoeschenTitel'),
       message: t('browser.einstellungen.datenLoeschenText', { zeitraum: t(`browser.einstellungen.zeitraum.${zeitraum}`) }),
-      confirmText: t('browser.einstellungen.loeschen'),
+      confirmText: t('common.delete'),
       danger: true,
     })
     if (!ja) return
@@ -81,7 +81,7 @@ export function VerlaufDaten() {
           />
         )}
         <Button variant="secondary" size="sm" className="self-end" onClick={() => void loeschen()}>
-          {t('browser.einstellungen.loeschen')}
+          {t('common.delete')}
         </Button>
       </Abschnitt>
       {istTauri() && !android && <BrowserImport />}

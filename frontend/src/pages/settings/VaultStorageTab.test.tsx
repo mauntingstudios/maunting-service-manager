@@ -40,7 +40,7 @@ describe('VaultStorageTab', () => {
     const feld = await screen.findByRole('textbox', { name: /kunde/ })
     expect(feld).toHaveValue('20')
     fireEvent.change(feld, { target: { value: '50' } })
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.save') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.save') }))
 
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith('/settings/tresor-speicher/5', {
@@ -60,13 +60,13 @@ describe('VaultStorageTab', () => {
     expect(screen.getByText(i18n.t('vaultStorage.exactHint', { wert: '1,5 GiB' }))).toBeInTheDocument()
 
     // Unverändert gespeichert bleibt es genau 1,5 GiB, nicht die gerundeten 2.
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.save') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.save') }))
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith('/settings/tresor-speicher/5', { method: 'PUT', body: JSON.stringify({ quota_bytes: 1.5 * GIB }) }),
     )
 
     fireEvent.change(feld, { target: { value: '3' } })
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.save') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.save') }))
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith('/settings/tresor-speicher/5', { method: 'PUT', body: JSON.stringify({ quota_bytes: 3 * GIB }) }),
     )
@@ -97,7 +97,7 @@ describe('VaultStorageTab', () => {
     usePermissionsStore.setState({ me: rechte(['panel.settings.read']), isLoading: false, error: null })
     const { unmount } = render(<VaultStorageTab />)
     expect(await screen.findByRole('textbox', { name: /kunde/ })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: i18n.t('settings.save') })).toBeNull()
+    expect(screen.queryByRole('button', { name: i18n.t('common.save') })).toBeNull()
     unmount()
 
     usePermissionsStore.setState({ me: rechte([]), isLoading: false, error: null })

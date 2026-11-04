@@ -903,7 +903,7 @@ function ProviderForm({
       <fieldset disabled={disabled} className="space-y-5 border-0 p-0">
         {/* Name und Anbietertyp */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <ProviderInput label={t('ai.providers.name')} value={draft.name} onChange={(name) => change({ name })} />
+          <ProviderInput label={t('common.name')} value={draft.name} onChange={(name) => change({ name })} />
           <div className="space-y-1.5">
             <label htmlFor={kindId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
               {t('ai.providers.kind')}
@@ -1369,7 +1369,7 @@ function ProviderForm({
               <div className="space-y-1.5">
                 <label htmlFor={realtimeLanguageId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">{t('ai.providers.realtime.language')}</label>
                 <Dropdown id={realtimeLanguageId} value={draft.realtime_language || 'auto'} onChange={(value) => change({ realtime_language: value as AiProviderAdmin['realtime_language'] })} options={[
-                  { value: 'auto', label: t('ai.providers.realtime.auto') },
+                  { value: 'auto', label: t('common.auto') },
                   { value: 'de', label: 'Deutsch' },
                   { value: 'en', label: 'English' },
                 ]} />
@@ -1928,7 +1928,7 @@ function ProviderForm({
           </Button>
         )}
         {onCancel && <Button type="button" variant="ghost" disabled={disabled} onClick={onCancel}>{t('common.cancel')}</Button>}
-        <Button type="submit" disabled={disabled || !valid}><Save className="h-4 w-4" aria-hidden="true" />{saving ? t('common.loading') : t('settings.save')}</Button>
+        <Button type="submit" disabled={disabled || !valid}><Save className="h-4 w-4" aria-hidden="true" />{saving ? t('common.loading') : t('common.save')}</Button>
       </div>
     </form>
   )

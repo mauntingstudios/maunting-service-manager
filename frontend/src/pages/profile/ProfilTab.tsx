@@ -168,7 +168,7 @@ export function ProfilTab({ social = true }: { social?: boolean }) {
                   className="flex items-center gap-1.5 text-status-destructive hover:bg-status-destructive/10"
                 >
                   <Trash2 className="w-4 h-4" aria-hidden="true" />
-                  {t('profile.removeAvatar')}
+                  {t('common.remove')}
                 </Button>
               )}
             </div>

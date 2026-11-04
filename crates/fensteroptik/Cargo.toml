@@ -1,0 +1,11 @@
+[package]
+name = "fensteroptik"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Gemeinsame Fensteroptik für Maunting Smart System und Pontis"
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }

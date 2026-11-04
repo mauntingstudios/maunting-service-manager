@@ -211,7 +211,7 @@ export function PanelBackups() {
             className={`flex min-h-11 items-center gap-2 ${showSettings ? 'bg-surface-container' : ''}`}
           >
             <SettingsIcon className="w-4 h-4" />
-            {t('panelBackups.settingsButton')}
+            {t('common.settings')}
           </Button>
           <Button
             onClick={createBackup}
@@ -425,7 +425,7 @@ export function PanelBackups() {
               </div>
               <Button variant="secondary" size="icon"
                 onClick={closeRestoreModal}
-                aria-label={t('panelBackups.restoreModalClose')}
+                aria-label={t('common.close')}
               >
                 <X className="w-4 h-4" />
               </Button>
@@ -478,7 +478,7 @@ export function PanelBackups() {
               <Button
                 onClick={closeRestoreModal}
               >
-                {t('panelBackups.restoreModalClose')}
+                {t('common.close')}
               </Button>
             </div>
           </div>

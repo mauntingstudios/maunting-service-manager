@@ -119,7 +119,7 @@ export function AiWorkerSettings({ canWrite }: { canWrite: boolean }) {
 
       {canWrite && (
         <Button type="button" disabled={busy || !veraendert} onClick={() => void speichern()}>
-          {busy ? t('common.loading') : t('settings.save')}
+          {busy ? t('common.loading') : t('common.save')}
         </Button>
       )}
     </section>

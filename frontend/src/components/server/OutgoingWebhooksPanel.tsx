@@ -94,7 +94,7 @@ export function OutgoingWebhooksPanel({ serverId }: { serverId: number }) {
 
   const copyToClipboard = (text: string, label: string) => {
     void navigator.clipboard.writeText(text);
-    toast.success(t('webhook.copied', { defaultValue: `${label} kopiert` }));
+    toast.success(t('common.copied', { defaultValue: `${label} kopiert` }));
   };
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -357,7 +357,7 @@ export function OutgoingWebhooksPanel({ serverId }: { serverId: number }) {
               }`}
             >
               {sub.enabled
-                ? t('webhook.active', { defaultValue: 'Aktiv' })
+                ? t('common.active', { defaultValue: 'Aktiv' })
                 : t('webhook.inactive', { defaultValue: 'Pausiert' })}
             </span>
             <span className="font-medium text-title-sm text-on-surface">

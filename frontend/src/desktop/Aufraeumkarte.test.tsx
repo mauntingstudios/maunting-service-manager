@@ -137,7 +137,7 @@ describe('Aufraeumkarte', () => {
 
   it('fasst bei Ablehnung nichts an und meldet trotzdem', async () => {
     await zeigen()
-    const knopf = await screen.findByRole('button', { name: /aufraeumen\.nein/i })
+    const knopf = await screen.findByRole('button', { name: /common\.cancel/i })
     fireEvent.click(knopf)
 
     await waitFor(() => expect(ablehnenMock).toHaveBeenCalledTimes(1))

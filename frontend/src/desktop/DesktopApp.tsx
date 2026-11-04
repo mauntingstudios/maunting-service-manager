@@ -53,6 +53,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useAutoSperre } from '@/hooks/useAutoSperre'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { useKontoBundNachholen } from '@/hooks/useKontoBundNachholen'
+import { useFensterRahmen } from '@/hooks/useFensterRahmen'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
@@ -153,6 +154,7 @@ function getInitialRoute(offline = false): string {
 }
 
 export function DesktopApp() {
+  useFensterRahmen()
   const { t } = useTranslation()
   const [phase, setPhase] = useState<Phase>('laedt')
   const [konfig, setKonfig] = useState<AppKonfig | null>(null)
@@ -678,7 +680,7 @@ export function DesktopApp() {
   return (
     <MemoryRouter initialEntries={[getInitialRoute(isOffline)]}>
       <NavigationEmpfaenger isOffline={isOffline} />
-      <div className="relative h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-background text-on-surface pb-[var(--msm-unten-sicher)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)] flex flex-col">
+      <div className={`${isAndroid ? '' : 'mui-window'} relative h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-background text-on-surface pb-[var(--msm-unten-sicher)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)] flex flex-col`}>
         <Titelleiste />
         <div className="msm-deep-grid pointer-events-none absolute inset-0 opacity-30" />
         {phase === 'bereit' && publicSettings.social_enabled && <CrossDeviceCallBanner />}
@@ -817,7 +819,7 @@ function SchliessenDialog() {
         <p className="mt-1 text-xs text-on-surface-variant">{t('mss.schliessen.frage')}</p>
         <div className="mt-4 flex items-center justify-between gap-2">
           <Button variant="ghost" size="sm" onClick={() => setOffen(false)}>
-            {t('mss.schliessen.abbrechen')}
+            {t('common.cancel')}
           </Button>
           <Button variant="destructive" size="sm" onClick={() => void appBeenden()}>
             {t('mss.schliessen.beenden')}
@@ -992,7 +994,7 @@ function Hauptseite({
   const profileItems: ProfileDropdownItem[] = [
     {
       key: 'settings',
-      label: t('mss.app.einstellungen'),
+      label: t('common.settings'),
       icon: <SettingsIcon className="h-4 w-4" />,
       onClick: () => navigate('/einstellungen'),
     },
@@ -1418,7 +1420,7 @@ function Hauptseite({
                 }`}
               >
                 <SettingsIcon className="h-4 w-4" />
-                <span>{t('mss.app.einstellungen')}</span>
+                <span>{t('common.settings')}</span>
               </button>
             </nav>
 
@@ -1546,7 +1548,7 @@ const BEREICH_TITEL = {
   tresor: 'mss.app.tresor',
   teams: 'teams.title',
   hilfe: 'nav.docs',
-  einstellungen: 'mss.app.einstellungen',
+  einstellungen: 'common.settings',
 } as const
 
 /** Segmented Reiter mit ruhiger Optik: Aktiver Tab hebt sich soft ab, Inaktive bleiben dezent */

@@ -91,7 +91,7 @@ describe('ShareDialog', () => {
     zeigen()
     fireEvent.click(screen.getByRole('button', { name: i18n.t('docs.share.create') }))
     const feld = await screen.findByLabelText(i18n.t('docs.share.link'))
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('docs.share.copy') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.copy') }))
     await waitFor(() =>
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
         `${window.location.origin}/teilen/token-1`,

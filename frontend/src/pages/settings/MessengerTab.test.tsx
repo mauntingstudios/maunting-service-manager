@@ -306,7 +306,6 @@ describe('Übersetzungen', () => {
     'unreachable',
     'activeRooms_one',
     'activeRooms_other',
-    'saved',
     'metadataHint',
   ]
 
@@ -317,5 +316,7 @@ describe('Übersetzungen', () => {
     }
     expect(quelle.settings.messenger.errors.load).toBeTruthy()
     expect(quelle.settings.tabs.messenger).toBeTruthy()
+    // Der Speichern-Hinweis ist seit dem i18n-Umbau ein gemeinsamer Text.
+    expect(quelle.common.saved).toBeTruthy()
   })
 })

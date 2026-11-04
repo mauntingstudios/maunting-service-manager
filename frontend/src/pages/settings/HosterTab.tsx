@@ -418,7 +418,7 @@ function IntegrationForm({
       }}
     >
       <fieldset disabled={disabled || saving} className="grid grid-cols-1 gap-4 border-0 p-0 md:grid-cols-2">
-        <Field label={t('hoster.name')} value={name} onChange={setName} hint={t('hoster.nameHint')} />
+        <Field label={t('common.name')} value={name} onChange={setName} hint={t('hoster.nameHint')} />
         <Field label={t('hoster.slug')} value={slug} onChange={setSlug} hint={t('hoster.slugHint')} />
         <label className="space-y-1.5 block">
           <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
@@ -462,7 +462,7 @@ function IntegrationForm({
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>{t('common.cancel')}</Button>
         <Button type="submit" disabled={disabled || saving || !valid}>
-          <Save className="h-4 w-4" aria-hidden="true" />{saving ? t('common.loading') : t('settings.save')}
+          <Save className="h-4 w-4" aria-hidden="true" />{saving ? t('common.loading') : t('common.save')}
         </Button>
       </div>
     </form>
@@ -555,7 +555,7 @@ function IntegrationEditForm({
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>{t('common.cancel')}</Button>
         <Button type="submit" disabled={disabled || saving}>
-          <Save className="h-4 w-4" aria-hidden="true" />{saving ? t('common.loading') : t('settings.save')}
+          <Save className="h-4 w-4" aria-hidden="true" />{saving ? t('common.loading') : t('common.save')}
         </Button>
       </div>
     </form>

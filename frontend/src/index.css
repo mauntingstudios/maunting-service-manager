@@ -15,14 +15,23 @@
 
 @layer base {
   html {
-    background-color: hsl(var(--mui-background));
+    background-color: hsl(var(--mui-canvas));
     color: hsl(var(--mui-foreground));
     color-scheme: dark;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--mui-font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     height: 100%;
     overscroll-behavior: none;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--mui-font-display);
+    letter-spacing: -0.01em;
   }
 
   body {
@@ -37,8 +46,9 @@
     padding: 0;
     overscroll-behavior: none;
     background:
-      radial-gradient(70rem 32rem at 50% -12rem, hsl(var(--mui-focus) / 0.12), transparent 68%),
-      hsl(var(--mui-background));
+      radial-gradient(58rem 27rem at 12% -10rem, hsl(var(--mui-focus) / 0.1), transparent 62%),
+      radial-gradient(46rem 24rem at 100% 112%, hsl(var(--mui-primary) / 0.05), transparent 60%),
+      hsl(var(--mui-canvas));
   }
 
   ::selection {
@@ -52,241 +62,51 @@
   }
 
   * {
-    scrollbar-color: #284147 hsl(var(--mui-background));
+    scrollbar-color: hsl(var(--mui-line-strong)) transparent;
     scrollbar-width: thin;
   }
 
   *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
 
   *::-webkit-scrollbar-track {
-    background: hsl(var(--mui-background));
+    background: transparent;
   }
 
   *::-webkit-scrollbar-thumb {
-    background: #284147;
-    border: 2px solid #071013;
+    background: hsl(var(--mui-line-strong) / 0.9);
+    border: 2px solid transparent;
+    background-clip: content-box;
     border-radius: 9999px;
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background: #3a5a63;
+    background: hsl(var(--mui-focus) / 0.55);
+    background-clip: content-box;
   }
 }
 
 @layer components {
-  /*
-   * MSM Design System Component Patterns
-   * Based on: Design idee für mssm / maunting_server_manager_msm/DESIGN.md
-   *
-   * Surface Elevation: surface-container/70 + backdrop-blur-xl + ring-1 ring-white/10
-   */
-
-  /* Glass Panel - core container pattern */
-  .msm-panel {
-    @apply bg-surface-container/85 backdrop-blur-xl border border-outline-variant/70;
-    box-shadow: 0 20px 48px hsl(0 0% 0% / 0.34);
-  }
-
-  .msm-page {
-    @apply mx-auto w-full max-w-[1500px] space-y-6;
-  }
-
-  .msm-page-header {
-    @apply relative overflow-hidden rounded-2xl border border-outline-variant/70 bg-surface-container-low/80 px-5 py-5 shadow-panel md:px-7 md:py-6;
-  }
-
-  .msm-page-header::before {
-    content: '';
-    @apply absolute inset-x-0 top-0 h-px;
-    background: linear-gradient(90deg, transparent, hsl(var(--mui-focus) / .75), transparent);
-  }
-
-  .msm-field-help {
-    @apply mt-1.5 text-xs leading-5 text-on-surface-variant;
-  }
-
-  .msm-field-error {
-    @apply mt-1.5 text-xs leading-5 text-status-destructive;
-  }
-
-  .msm-status-rail {
-    @apply relative pl-4;
-  }
-
-  .msm-status-rail::before {
-    content: '';
-    @apply absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary/70 shadow-primary-glow;
-  }
-
-  .msm-card {
-    @apply msm-panel rounded-2xl;
-  }
-
-  .msm-database-console-grid {
+.msm-database-console-grid {
     display: grid;
     gap: 1rem;
   }
 
-  @media (min-width: 1024px) {
+@media (min-width: 1024px) {
     .msm-database-console-grid {
       grid-template-columns: 240px minmax(0, 1fr) 250px;
     }
   }
 
-  @media (min-width: 1536px) {
+@media (min-width: 1536px) {
     .msm-database-console-grid {
       grid-template-columns: 340px minmax(0, 1fr) 320px;
     }
   }
 
-  /* Primary Button - controlled logo cyan, high contrast on dark */
-  /*
-   * Kein eigener focus-visible-Ring in den Button-Klassen: der globale
-   * :focus-visible-Outline weiter oben liegt zwei Pixel weiter außen und
-   * verdeckt jeden Ring vollständig. Eine Quelle für den Fokus, nicht zwei.
-   */
-  .msm-btn-primary {
-    @apply bg-primary text-on-primary font-label-md text-label-md rounded-md
-           hover:shadow-primary-glow-hover active:scale-[0.98]
-           disabled:pointer-events-none disabled:opacity-50
-           transition-all duration-200;
-    box-shadow: 0 12px 28px hsl(190 92% 62% / 0.18);
-  }
-
-  /* Secondary Button - quiet glass panel with border */
-  .msm-btn-secondary {
-    @apply bg-surface-container-high/50 border border-outline-variant
-           text-on-surface-variant hover:text-on-surface
-           hover:bg-surface-variant hover:border-outline
-           font-label-md text-label-md rounded-md
-           disabled:pointer-events-none disabled:opacity-50
-           active:scale-[0.98] transition-all duration-200;
-  }
-
-  /* Ghost Button - nur Text, bis die Maus kommt */
-  .msm-btn-ghost {
-    @apply bg-transparent border border-transparent text-on-surface-variant
-           hover:text-primary hover:bg-primary/10 hover:border-primary/20
-           font-label-md text-label-md rounded-md
-           disabled:pointer-events-none disabled:opacity-50
-           active:scale-[0.98] transition-all duration-200;
-  }
-
-  /* Destructive Button - red only for destructive actions */
-  .msm-btn-destructive {
-    @apply border border-status-destructive text-status-destructive
-           hover:bg-status-destructive hover:text-on-error
-           font-label-md text-label-md rounded-md
-           disabled:pointer-events-none disabled:opacity-50
-           active:scale-[0.98] transition-all duration-200;
-  }
-
-  /* Input Field - dark recessed surface */
-  .msm-input {
-    @apply w-full bg-surface-container-high border border-outline-variant
-           text-on-surface placeholder-on-surface-variant
-           font-body-md text-sm rounded-md
-           focus:ring-2 focus:ring-primary focus:border-transparent
-           focus:bg-surface-container
-           transition-all duration-200;
-    padding: 0.625rem 0.875rem;
-  }
-
-  /* Browser Omnibox — Pille für Adress- und Suchleisten */
-  .msm-omnibox {
-    @apply relative flex items-center rounded-full bg-surface-container-low
-           border border-transparent
-           focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20
-           transition-all duration-150;
-  }
-
-  /* Status Badges — Pill-shaped indicators */
-  .msm-badge {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full
-           font-mono-sm text-xs uppercase tracking-wider;
-  }
-
-  .msm-badge-success {
-    @apply msm-badge bg-status-success/10 text-status-success border border-status-success/30;
-  }
-
-  .msm-badge-warning {
-    @apply msm-badge bg-status-warning/10 text-status-warning border border-status-warning/30;
-  }
-
-  .msm-badge-error {
-    @apply msm-badge bg-status-destructive/10 text-status-destructive border border-status-destructive/30;
-  }
-
-  .msm-badge-info {
-    @apply msm-badge bg-cyan-glow text-primary-fixed border border-primary-fixed/30;
-  }
-
-  /* Ruhender Zustand: abgeschaltet, abgelaufen, nicht zutreffend. Kein Erfolg,
-     keine Warnung — und deshalb auch keine Farbe, die zum Hinsehen auffordert.
-     PopupTab benutzte diesen Namen, bevor es ihn gab: die Marke „Inaktiv"
-     stand dort als nackter Text zwischen lauter farbigen Pillen. */
-  .msm-badge-neutral {
-    @apply msm-badge bg-surface-variant/60 text-on-surface-variant border border-outline-variant;
-  }
-
-  /* Sidebar Navigation */
-  .msm-sidebar {
-    @apply bg-surface-container-low/90 backdrop-blur-xl
-           border-r border-outline-variant;
-  }
-
-  /* Top Bar / Header */
-  .msm-topbar {
-    @apply bg-background/80 backdrop-blur-xl
-           border-b border-outline-variant
-           sticky top-0 z-30;
-  }
-
-  /* Modal Overlay */
-  .msm-modal-overlay {
-    @apply fixed inset-0 bg-black/60 backdrop-blur-sm
-           flex items-center justify-center p-4 z-50;
-  }
-
-  /* Alert Patterns */
-  .msm-alert-success {
-    @apply bg-status-success/10 border border-status-success/30
-           text-status-success p-3 rounded-lg font-body-md text-sm;
-  }
-
-  .msm-alert-warning {
-    @apply bg-status-warning/10 border border-status-warning/30
-           text-status-warning p-3 rounded-lg font-body-md text-sm;
-  }
-
-  .msm-alert-error {
-    @apply bg-status-destructive/10 border border-status-destructive/30
-           text-status-destructive p-3 rounded-lg font-body-md text-sm;
-  }
-
-  .msm-alert-info {
-    @apply bg-primary/10 border border-primary/30
-           text-primary p-3 rounded-lg font-body-md text-sm;
-  }
-
-  /* Navigation Link */
-  .msm-nav-link {
-    @apply flex items-center gap-3 px-4 py-3 mx-2 my-1
-           text-on-surface-variant hover:text-on-surface
-           hover:bg-surface-variant/30
-           rounded-lg font-label-md text-label-md
-           active:scale-[0.98] transition-all duration-200;
-  }
-
-  .msm-nav-link-active {
-    @apply msm-nav-link bg-primary/10 text-primary border border-primary/20 font-bold;
-  }
-
-  /* Deep Grid Background */
+/* Deep Grid Background */
   .msm-deep-grid {
     background-image:
       linear-gradient(to right, rgba(103, 232, 249, 0.06) 1px, transparent 1px),
@@ -294,7 +114,7 @@
     background-size: 40px 40px;
   }
 
-  /* MSS (Desktop-App): Boot-Sequenz und Statuspuls.
+/* MSS (Desktop-App): Boot-Sequenz und Statuspuls.
 
      Diese Klassen nutzt nur der Desktop-Einstieg (src/desktop/) — sie liegen
      trotzdem hier, weil es genau ein Stylesheet gibt und ein zweites nur eine
@@ -303,7 +123,7 @@
     animation: mss-puls 2.4s ease-in-out infinite;
   }
 
-  /* Jedes Logo blendet weich ein, steht und blendet aus — wie die
+/* Jedes Logo blendet weich ein, steht und blendet aus — wie die
      Studio-Logos beim Start eines Spiels. Das Stehen ist der längste Teil:
      ein Logo, das nur durchhuscht, hat man nicht gesehen. Die Dauer setzt
      Splash.tsx per animationDuration; der Wert hier ist nur der Rückfall. */
@@ -311,33 +131,37 @@
     animation: mss-splash-stufe 3200ms ease-in-out both;
   }
 
-  /* CodeMirror Search Panel (Maunting DNA) */
+/* CodeMirror Search Panel (Maunting DNA) */
   .cm-panel.cm-search {
     @apply bg-surface-container-high border-b border-outline-variant text-on-surface p-2.5 flex flex-wrap items-center gap-2.5 z-10 !important;
   }
-  .cm-panel.cm-search input.cm-textfield {
+
+.cm-panel.cm-search input.cm-textfield {
     @apply bg-surface-container border border-outline-variant text-on-surface placeholder-on-surface-variant rounded-md px-3 py-1.5 text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all min-w-[180px] !important;
   }
-  .cm-panel.cm-search button.cm-button {
+
+.cm-panel.cm-search button.cm-button {
     @apply bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface hover:bg-surface-variant rounded-md px-3 py-1.5 text-sm capitalize cursor-pointer transition-all active:scale-[0.98] !important;
     background-image: none !important;
   }
-  .cm-panel.cm-search label {
+
+.cm-panel.cm-search label {
     @apply text-on-surface-variant text-sm flex items-center gap-1.5 cursor-pointer ml-1 !important;
   }
-  
-  /* Match Highlighting in CodeMirror */
+
+/* Match Highlighting in CodeMirror */
   .cm-searchMatch {
     background-color: hsl(194 44% 68% / 0.3) !important;
     border-radius: 2px;
   }
-  .cm-searchMatch.cm-searchMatch-selected {
+
+.cm-searchMatch.cm-searchMatch-selected {
     background-color: hsl(194 44% 68% / 0.6) !important;
     box-shadow: 0 0 0 1px hsl(194 44% 68%) !important;
     border-radius: 2px;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       scroll-behavior: auto !important;
       animation-duration: 0.01ms !important;
@@ -359,12 +183,11 @@
     display: none;
   }
 
-  /* Design-DNA Rollbalken für abgerundete Such- und Eingabeleisten:
-     Transparentes Gleis, schlanker 6px abgerundeter Daumen (#284147),
-     mit vertikalem Randabstand für perfekte Einbettung in gerundete Container. */
+  /* Rollbalken für abgerundete Such- und Eingabeleisten: transparentes Gleis,
+     schlanker Daumen aus der Linienfarbe, mit vertikalem Randabstand. */
   .msm-suchleiste-rollbalken {
     scrollbar-width: thin;
-    scrollbar-color: #284147 transparent;
+    scrollbar-color: hsl(var(--mui-line-strong)) transparent;
   }
   .msm-suchleiste-rollbalken::-webkit-scrollbar {
     width: 6px;
@@ -374,12 +197,12 @@
     margin: 8px 0;
   }
   .msm-suchleiste-rollbalken::-webkit-scrollbar-thumb {
-    background: #284147;
+    background: hsl(var(--mui-line-strong));
     border: none !important;
     border-radius: 9999px;
   }
   .msm-suchleiste-rollbalken::-webkit-scrollbar-thumb:hover {
-    background: #3a5a63;
+    background: hsl(var(--mui-focus) / 0.55);
   }
 }
 

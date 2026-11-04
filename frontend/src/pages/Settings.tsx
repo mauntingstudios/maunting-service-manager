@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Globe, Mail, Gamepad2, Flame, KeyRound, Shield, Github, Cloud, FileText, LifeBuoy, ShieldAlert, Bot, Plug, Megaphone, CloudCog, MessageSquare, HardDrive, Search } from 'lucide-react'
-import { TabBar, TabDef } from '@maunting/ui'
-import { PageHeader } from '@maunting/ui'
+import { SettingsLayout, type SettingsSectionEintrag } from '@maunting/ui'
 import { GeneralTab } from './settings/GeneralTab'
 import { EmailTab } from './settings/EmailTab'
 import { SteamTab } from './settings/SteamTab'
@@ -46,8 +45,6 @@ type TabId =
 export function Settings() {
   const { t } = useTranslation()
   const canManageBackup = useHasPermission('panel.settings.write')
-  // Der Hoster-Tab erscheint nur, wenn die Anbindung ueberhaupt sichtbar ist.
-  // Self-Hosted-Betreiber ohne Shop sollen den Bereich gar nicht erst sehen.
   const canReadHoster = useHasPermission('panel.hoster.read')
   const canWriteHoster = useHasPermission('panel.hoster.write')
   const [activeTab, setActiveTab] = useState<TabId>('general')
@@ -55,69 +52,67 @@ export function Settings() {
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ tab?: TabId }>).detail
-      if (detail?.tab) {
-        setActiveTab(detail.tab)
-      }
+      if (detail?.tab) setActiveTab(detail.tab)
     }
     window.addEventListener('msm:open-settings-tab', handler)
     return () => window.removeEventListener('msm:open-settings-tab', handler)
   }, [])
 
-  // Backup-Tab: panel.settings.write.
-  // Security-Tab: immer sichtbar (Rate-Limits für panel.settings.*;
-  // Cluster-Rotation bleibt im Tab selbst auf system.secrets.rotate beschränkt).
-  // Sechs Gruppen, nur Reihenfolge und Trenner — Rechte, Inhalte und die
-  // `msm:open-settings-tab`-Namen bleiben.
-  const tabs: TabDef<TabId>[] = [
-    { id: 'general', labelKey: 'settings.tabs.general', icon: Globe, group: 'basis' },
-    { id: 'email', labelKey: 'settings.tabs.email', icon: Mail, group: 'basis' },
-    { id: 'messenger', labelKey: 'settings.tabs.messenger', icon: MessageSquare, group: 'kommunikation' },
-    { id: 'searchEngine', labelKey: 'settings.tabs.searchEngine', icon: Search, group: 'kommunikation' },
-    { id: 'ai', labelKey: 'settings.tabs.ai', icon: Bot, group: 'kommunikation' },
-    { id: 'vaultStorage', labelKey: 'settings.tabs.vaultStorage', icon: HardDrive, group: 'daten' },
-    ...(canManageBackup ? [{ id: 'backup' as TabId, labelKey: 'settings.tabs.backup', icon: Cloud, group: 'daten' }] : []),
-    { id: 'security', labelKey: 'settings.tabs.security', icon: ShieldAlert, group: 'schutz' },
-    { id: 'captcha', labelKey: 'settings.tabs.captcha', icon: Shield, group: 'schutz' },
-    { id: 'cloudflare', labelKey: 'settings.tabs.cloudflare', icon: CloudCog, group: 'schutz' },
-    { id: 'oauth', labelKey: 'settings.tabs.oauth', icon: KeyRound, group: 'anbindung' },
-    { id: 'steam', labelKey: 'settings.tabs.steam', icon: Gamepad2, group: 'anbindung' },
-    { id: 'curseforge', labelKey: 'settings.tabs.curseforge', icon: Flame, group: 'anbindung' },
-    { id: 'github', labelKey: 'settings.tabs.github', icon: Github, group: 'anbindung' },
-    ...(canReadHoster ? [{ id: 'hoster' as TabId, labelKey: 'settings.tabs.hoster', icon: Plug, group: 'anbindung' }] : []),
-    { id: 'imprint', labelKey: 'settings.tabs.imprint', icon: FileText, group: 'auftritt' },
-    { id: 'supportWidget', labelKey: 'settings.tabs.supportWidget', icon: LifeBuoy, group: 'auftritt' },
-    { id: 'popup', labelKey: 'settings.tabs.popup', icon: Megaphone, group: 'auftritt' },
+  const sections: SettingsSectionEintrag<TabId>[] = [
+    { id: 'general', label: t('settings.tabs.general'), icon: Globe, group: t('settings.groups.basis') },
+    { id: 'imprint', label: t('settings.tabs.imprint'), icon: FileText, group: t('settings.groups.basis') },
+    { id: 'security', label: t('settings.tabs.security'), icon: ShieldAlert, group: t('settings.groups.sicherheit') },
+    { id: 'captcha', label: t('settings.tabs.captcha'), icon: Shield, group: t('settings.groups.sicherheit') },
+    { id: 'cloudflare', label: t('settings.tabs.cloudflare'), icon: CloudCog, group: t('settings.groups.sicherheit') },
+    { id: 'oauth', label: t('settings.tabs.oauth'), icon: KeyRound, group: t('settings.groups.verbindungen') },
+    { id: 'steam', label: t('settings.tabs.steam'), icon: Gamepad2, group: t('settings.groups.verbindungen') },
+    { id: 'curseforge', label: t('settings.tabs.curseforge'), icon: Flame, group: t('settings.groups.verbindungen') },
+    { id: 'github', label: t('settings.tabs.github'), icon: Github, group: t('settings.groups.verbindungen') },
+    ...(canReadHoster
+      ? [{ id: 'hoster' as const, label: t('settings.tabs.hoster'), icon: Plug, group: t('settings.groups.verbindungen') }]
+      : []),
+    { id: 'email', label: t('settings.tabs.email'), icon: Mail, group: t('settings.groups.kommunikation') },
+    { id: 'messenger', label: t('settings.tabs.messenger'), icon: MessageSquare, group: t('settings.groups.kommunikation') },
+    { id: 'searchEngine', label: t('settings.tabs.searchEngine'), icon: Search, group: t('settings.groups.kommunikation') },
+    { id: 'ai', label: t('settings.tabs.ai'), icon: Bot, group: t('settings.groups.kommunikation') },
+    { id: 'vaultStorage', label: t('settings.tabs.vaultStorage'), icon: HardDrive, group: t('settings.groups.daten') },
+    ...(canManageBackup
+      ? [{ id: 'backup' as const, label: t('settings.tabs.backup'), icon: Cloud, group: t('settings.groups.daten') }]
+      : []),
+    { id: 'supportWidget', label: t('settings.tabs.supportWidget'), icon: LifeBuoy, group: t('settings.groups.erweitert') },
+    { id: 'popup', label: t('settings.tabs.popup'), icon: Megaphone, group: t('settings.groups.erweitert') },
   ]
+
+  const aktiv = sections.some((section) => section.id === activeTab) ? activeTab : 'general'
 
   return (
     <div className="msm-page">
-      <PageHeader eyebrow={t('pageContext.panel')} title={t('settings.title')} description={t('settings.subtitle')} status={<span className="msm-badge-info">{t(`settings.tabs.${activeTab}`)}</span>} />
-
-      <TabBar
-        tabs={tabs}
-        active={activeTab}
+      <SettingsLayout
+        sections={sections}
+        active={aktiv}
         onChange={setActiveTab}
-        ariaLabel={t('settings.title')}
-      />
-
-      {activeTab === 'general' && <GeneralTab />}
-      {activeTab === 'email' && <EmailTab />}
-      {activeTab === 'steam' && <SteamTab />}
-      {activeTab === 'curseforge' && <CurseForgeTab />}
-      {activeTab === 'github' && <GitHubTab />}
-      {activeTab === 'oauth' && <OAuthTab />}
-      {activeTab === 'captcha' && <CaptchaTab />}
-      {activeTab === 'cloudflare' && <CloudflareTab />}
-      {activeTab === 'imprint' && <ImprintTab />}
-      {activeTab === 'supportWidget' && <SupportWidgetTab />}
-      {activeTab === 'popup' && <PopupTab />}
-      {activeTab === 'backup' && <BackupTab />}
-      {activeTab === 'security' && <SecurityTab />}
-      {activeTab === 'searchEngine' && <SearchEngineTab />}
-      {activeTab === 'ai' && <AiTab />}
-      {activeTab === 'vaultStorage' && <VaultStorageTab />}
-      {activeTab === 'messenger' && <MessengerTab />}
-      {activeTab === 'hoster' && canReadHoster && <HosterTab canWrite={canWriteHoster} />}
+        title={t('common.settings')}
+        description={t('settings.subtitle')}
+      >
+        {aktiv === 'general' && <GeneralTab />}
+        {aktiv === 'email' && <EmailTab />}
+        {aktiv === 'steam' && <SteamTab />}
+        {aktiv === 'curseforge' && <CurseForgeTab />}
+        {aktiv === 'github' && <GitHubTab />}
+        {aktiv === 'oauth' && <OAuthTab />}
+        {aktiv === 'captcha' && <CaptchaTab />}
+        {aktiv === 'cloudflare' && <CloudflareTab />}
+        {aktiv === 'imprint' && <ImprintTab />}
+        {aktiv === 'supportWidget' && <SupportWidgetTab />}
+        {aktiv === 'popup' && <PopupTab />}
+        {aktiv === 'backup' && <BackupTab />}
+        {aktiv === 'security' && <SecurityTab />}
+        {aktiv === 'searchEngine' && <SearchEngineTab />}
+        {aktiv === 'ai' && <AiTab />}
+        {aktiv === 'vaultStorage' && <VaultStorageTab />}
+        {aktiv === 'messenger' && <MessengerTab />}
+        {aktiv === 'hoster' && canReadHoster && <HosterTab canWrite={canWriteHoster} />}
+      </SettingsLayout>
     </div>
   )
 }

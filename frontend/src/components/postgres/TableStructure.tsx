@@ -77,7 +77,7 @@ export function TableStructure({ table, relations, enums, onOpenTable }: {
           <table className="w-full text-left text-xs">
             <thead className="text-on-surface-variant">
               <tr className="border-b border-outline-variant">
-                <th className="py-2 pr-3 font-medium">{t('postgresStudio.columns.name')}</th>
+                <th className="py-2 pr-3 font-medium">{t('common.name')}</th>
                 <th className="py-2 pr-3 font-medium">{t('postgresStudio.columns.type')}</th>
                 <th className="py-2 pr-3 font-medium">{t('postgresStudio.columns.notNull')}</th>
                 <th className="py-2 pr-3 font-medium">{t('postgresStudio.columns.default')}</th>

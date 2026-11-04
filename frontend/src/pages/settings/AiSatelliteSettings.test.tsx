@@ -48,7 +48,7 @@ describe('AiSatelliteSettings', () => {
 
     const clientInput = await screen.findByPlaceholderText(i18n.t('ai.satellite.clientIdPlaceholder'))
     const secretInput = screen.getByPlaceholderText(i18n.t('ai.satellite.clientSecretPlaceholder'))
-    const saveBtn = screen.getByRole('button', { name: i18n.t('settings.save') })
+    const saveBtn = screen.getByRole('button', { name: i18n.t('common.save') })
 
     fireEvent.change(clientInput, { target: { value: 'client_xyz' } })
     fireEvent.change(secretInput, { target: { value: 'secret_123' } })

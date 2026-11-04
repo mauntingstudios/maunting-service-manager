@@ -239,7 +239,7 @@ function VerknuepfenDialog({ provider, onClose }: { provider: OAuthProviderPubli
               </Button>
               <Button type="submit" disabled={laeuft} className="inline-flex items-center gap-2">
                 {laeuft ? <Spinner /> : faktor.wahl === 'passkey' ? <Fingerprint className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
-                {t('profile.linkedAccounts.linkContinue')}
+                {t('common.continue')}
               </Button>
             </DialogFooter>
           </form>

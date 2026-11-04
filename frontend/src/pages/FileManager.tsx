@@ -727,7 +727,7 @@ export function FileManager({ serverId }: FileManagerProps) {
                   onClick={() => setSearchMode(mode)}
                   className={`px-2 py-1 text-label-sm ${searchMode === mode ? 'bg-secondary text-on-secondary' : 'text-on-surface-variant hover:bg-surface-container-highest'}`}
                 >
-                  {mode === 'name' ? t('files.searchByName') : t('files.searchByContent')}
+                  {mode === 'name' ? t('common.name') : t('files.searchByContent')}
                 </button>
               ))}
             </div>

@@ -112,7 +112,7 @@ export function ConnectedMailboxesSection() {
     const ok = await confirm({
       message: t('profile.mailboxes.deleteConfirm', { email: mb.email, defaultValue: `Möchtest du das Postfach ${mb.email} wirklich entfernen?` }),
       danger: true,
-      confirmText: t('profile.mailboxes.delete'),
+      confirmText: t('common.remove'),
     })
     if (!ok) return
     try {
@@ -242,7 +242,7 @@ export function ConnectedMailboxesSection() {
                   className="inline-flex items-center gap-1"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  {t('profile.mailboxes.delete')}
+                  {t('common.remove')}
                 </Button>
               </div>
             </li>

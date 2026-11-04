@@ -163,7 +163,7 @@ export function ExternPanel({ id, voll }: { id: ExterneId; voll: boolean }) {
             art="fehler"
             titel={t('browser.seite.abgestuerztTitel')}
             text={t('browser.seite.abgestuerztText')}
-            erneutLabel={t('browser.nav.neuLaden')}
+            erneutLabel={t('common.reload')}
             onErneut={laden}
           />
         </div>
@@ -178,7 +178,7 @@ export function ExternPanel({ id, voll }: { id: ExterneId; voll: boolean }) {
               defaultValue: t('browser.fehlerseite.unbekanntText'),
               host: seitenHost(stand.url) ?? stand.url,
             })}
-            erneutLabel={t('browser.nav.neuLaden')}
+            erneutLabel={t('common.reload')}
             onErneut={laden}
           />
         </div>

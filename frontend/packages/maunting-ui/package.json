@@ -4,6 +4,10 @@
   "private": true,
   "description": "MauntingStudios design system: tokens, primitives and navigation for the MSM ecosystem.",
   "type": "module",
+  "scripts": {
+    "storybook": "storybook dev -p 6006 -c .storybook",
+    "storybook:build": "storybook build -c .storybook -o storybook-static"
+  },
   "sideEffects": ["./src/tokens.css", "./src/styles.css"],
   "exports": {
     ".": {
@@ -33,5 +37,9 @@
     "react-i18next": "^14.0.0 || ^15.0.0",
     "tailwind-merge": "^2.5.4"
   },
-  "files": ["src", "README.md"]
+  "files": ["src", "README.md"],
+  "devDependencies": {
+    "@storybook/react-vite": "^10.6.5",
+    "storybook": "^10.6.5"
+  }
 }

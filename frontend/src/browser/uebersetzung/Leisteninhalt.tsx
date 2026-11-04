@@ -63,7 +63,7 @@ export function Leisteninhalt({ tab, e }: { tab: string; e: Eintrag }) {
       return leiste(
         t(`browser.uebersetzung.fehler.${e.stand.grund}`),
         <Button size="sm" variant="secondary" onClick={() => void starten(tab)}>
-          {t('browser.uebersetzung.nochmal')}
+          {t('common.retry')}
         </Button>,
       )
     case 'wahl': {

@@ -60,7 +60,7 @@ export function AuthSetupBanner({ serverId }: Props) {
       <button
         type="button"
         onClick={cancel}
-        aria-label={t('server.authSetup.cancel', { defaultValue: 'Abbrechen' })}
+        aria-label={t('common.cancel', { defaultValue: 'Abbrechen' })}
         className="text-secondary hover:text-on-surface shrink-0"
       >
         <X className="w-4 h-4" />

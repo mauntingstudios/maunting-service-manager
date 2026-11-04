@@ -122,7 +122,7 @@ function HandyAktionen({ schliessen }: { schliessen: () => void }) {
           <X className="h-5 w-5" aria-hidden="true" />
         </Knopf>
       ) : (
-        <Knopf name={t('browser.nav.neuLaden')} onClick={und(() => aktion('neu_laden'))} disabled={!tab?.url || istIntern(tab.url)}>
+        <Knopf name={t('common.reload')} onClick={und(() => aktion('neu_laden'))} disabled={!tab?.url || istIntern(tab.url)}>
           <RotateCw className="h-5 w-5" aria-hidden="true" />
         </Knopf>
       )}

@@ -117,7 +117,7 @@ export function TableDesignerDialog({ open, onClose, schema, relations, enums }:
             </div>
             <div className="space-y-2">
               <div className="hidden grid-cols-[1.2fr_1.6fr_1.2fr_1fr_auto_auto_auto] gap-2 px-1 text-xs text-on-surface-variant lg:grid">
-                <span>{t('postgresStudio.columns.name')}</span>
+                <span>{t('common.name')}</span>
                 <span>{t('postgresStudio.columns.type')}</span>
                 <span>{t('postgresStudio.columns.default')}</span>
                 <span>{t('postgresStudio.columns.identity')}</span>
@@ -127,7 +127,7 @@ export function TableDesignerDialog({ open, onClose, schema, relations, enums }:
               </div>
               {columns.map((column) => (
                 <div key={column.key} className="grid items-center gap-2 rounded-lg border border-outline-variant p-2 lg:grid-cols-[1.2fr_1.6fr_1.2fr_1fr_auto_auto_auto] lg:border-0 lg:p-0">
-                  <Input value={column.name} onChange={(e) => updateColumn(column.key, { name: e.target.value })} aria-label={t('postgresStudio.columns.name')} className="font-mono text-xs" />
+                  <Input value={column.name} onChange={(e) => updateColumn(column.key, { name: e.target.value })} aria-label={t('common.name')} className="font-mono text-xs" />
                   <TypePicker value={column.type} onChange={(type) => updateColumn(column.key, { type })} enums={enums} />
                   <Input
                     value={column.default || ''}

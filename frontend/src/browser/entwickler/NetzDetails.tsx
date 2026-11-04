@@ -101,7 +101,7 @@ export function NetzDetails({ tab, a, schliessen }: { tab: string; a: Anfrage; s
     ...(ws
       ? [{ id: 'nachrichten' as const, labelKey: 'browser.entwickler.netz.nachrichten' }]
       : [
-          { id: 'vorschau' as const, labelKey: 'browser.entwickler.netz.vorschau' },
+          { id: 'vorschau' as const, labelKey: 'common.preview' },
           { id: 'antwort' as const, labelKey: 'browser.entwickler.netz.antwort' },
         ]),
     { id: 'cookies', labelKey: 'browser.entwickler.netz.cookies' },
@@ -255,7 +255,7 @@ export function NetzDetails({ tab, a, schliessen }: { tab: string; a: Anfrage; s
         </Knopf>
         <span className="min-w-0 flex-1 truncate font-mono text-label-sm">{a.url}</span>
         <ActionMenu
-          label={t('browser.entwickler.kopieren')}
+          label={t('common.copy')}
           icon={<Copy className="h-4 w-4" aria-hidden="true" />}
           compact
           align="end"

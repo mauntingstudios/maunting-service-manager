@@ -472,7 +472,7 @@ export function PopupTab() {
                       {p.is_active && !isExpired && !isFuture && (
                         <span className="msm-badge-success flex items-center gap-1 text-xs">
                           <CheckCircle className="w-3 h-3" />
-                          {t('popups.statusActive')}
+                          {t('common.active')}
                         </span>
                       )}
                       {p.is_active && isFuture && (
@@ -523,7 +523,7 @@ export function PopupTab() {
                       onClick={() => setPreviewPopup(p)}
                     >
                       <Eye className="w-4 h-4 mr-1" />
-                      {t('popups.previewBtn')}
+                      {t('common.preview')}
                     </Button>
                     {canWrite && (
                       <>

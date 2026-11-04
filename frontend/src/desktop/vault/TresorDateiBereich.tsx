@@ -359,7 +359,7 @@ export function TresorDateiBereich({ suche = '', isTeam = false }: Props) {
       {
         key: 'offline',
         label: t(alleAngeheftet ? 'mss.vault.dateien.nurOnline' : 'mss.vault.dateien.offlineMachen'),
-        kurz: t(alleAngeheftet ? 'mss.vault.dateien.kurz.nurOnline' : 'mss.vault.dateien.kurz.offline'),
+        kurz: t(alleAngeheftet ? 'mss.vault.dateien.kurz.nurOnline' : 'common.offline'),
         icon: <HardDriveDownload className="h-5 w-5 md:h-4 md:w-4" />,
         disabled: leer || beschaeftigt,
         onSelect: () => void offlineSammel(liste),
@@ -620,7 +620,7 @@ export function TresorDateiBereich({ suche = '', isTeam = false }: Props) {
               aktionen={sammelAktionen(gewaehlt)}
               abbrechenLabel={t('mss.vault.dateien.auswahlBeenden')}
               onAbbrechen={auswahlLeeren}
-              alleLabel={gewaehlt.length < inhalt.length ? t('mss.vault.alle') : undefined}
+              alleLabel={gewaehlt.length < inhalt.length ? t('common.all') : undefined}
               onAlle={wahl.alle}
             />
           </div>
@@ -693,7 +693,7 @@ export function TresorDateiBereich({ suche = '', isTeam = false }: Props) {
               )}
               <div className={cx('hidden px-2 pb-1.5 text-label-sm text-on-surface-variant', SPALTEN)} aria-hidden>
                 <span />
-                <span className="pl-9">{t('mss.vault.dateien.spalteName')}</span>
+                <span className="pl-9">{t('common.name')}</span>
                 <span className="text-right">{t('mss.vault.dateien.spalteGroesse')}</span>
                 <span>{t('mss.vault.dateien.geaendert')}</span>
                 <span />

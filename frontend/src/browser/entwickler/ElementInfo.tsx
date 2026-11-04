@@ -249,8 +249,8 @@ export function Barrierefreiheit({ tab, nodeId }: { tab: string; nodeId: number 
     ? [[t('browser.entwickler.elemente.ax.ignoriert'), 'true']]
     : [
         [t('browser.entwickler.elemente.ax.rolle'), ax.role?.value ?? ''],
-        [t('browser.entwickler.elemente.ax.name'), ax.name?.value ?? ''],
-        ...(ax.description?.value ? [[t('browser.entwickler.elemente.ax.beschreibung'), ax.description.value] as [string, string]] : []),
+        [t('common.name'), ax.name?.value ?? ''],
+        ...(ax.description?.value ? [[t('common.description'), ax.description.value] as [string, string]] : []),
         ...(ax.properties ?? []).map((p) => [p.name, String(p.value?.value ?? '')] as [string, string]),
       ]
   return (

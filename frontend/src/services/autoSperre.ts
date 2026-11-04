@@ -49,7 +49,7 @@ export function sperrfristOptionen(t: Uebersetzer): Array<{ value: string; label
     value: String(minuten),
     label:
       minuten === 0
-        ? t('common.autoLock.never')
+        ? t('common.never')
         : minuten === 60
           ? t('common.autoLock.afterHour')
           : t('common.autoLock.afterMinutes', { count: minuten }),

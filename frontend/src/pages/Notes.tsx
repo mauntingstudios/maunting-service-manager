@@ -420,7 +420,7 @@ export function Notes() {
             }`}
           >
             <Archive className="w-3.5 h-3.5" />
-            <span>{showArchived ? t('notes.archivedView') : t('notes.activeView')}</span>
+            <span>{showArchived ? t('notes.archivedView') : t('common.active')}</span>
           </button>
         </div>
       </div>
@@ -752,7 +752,7 @@ export function Notes() {
                       }`}
                     >
                       <Eye className="w-3 h-3" />
-                      {t('notes.tabPreview')}
+                      {t('common.preview')}
                     </button>
                   </div>
                 </div>

@@ -120,7 +120,7 @@ export function ResetPassword() {
           {(status === 'idle' || status === 'submitting') && (
             <form onSubmit={handleSubmit} className="space-y-4">
               <PasswordInput
-                label={t('auth.password') || 'Passwort'}
+                label={t('common.password') || 'Passwort'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"

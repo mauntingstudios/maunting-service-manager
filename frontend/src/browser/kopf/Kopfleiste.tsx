@@ -303,7 +303,7 @@ interface TabReiterProps {
 function TabReiter({ tab, aktiv, index: _index, onHoverZieh, onDropTab }: TabReiterProps) {
   const { t } = useTranslation()
   const { aktivieren, schliessen } = useTabsStore.getState()
-  const titel = tabTitel(tab, { neu: t('browser.tabs.neu'), einstellungen: t('browser.einstellungen.titel') })
+  const titel = tabTitel(tab, { neu: t('browser.tabs.neu'), einstellungen: t('common.settings') })
 
   const dragStart = (e: DragEvent<HTMLDivElement>) => {
     const onKey = (ev: KeyboardEvent) => {
@@ -950,7 +950,7 @@ export function Kopfleiste() {
       onDrop={(e) => {
         behandleDrop(e, dropZielIndex ?? sichtbareTabs.length)
       }}
-      className={`relative flex h-10 shrink-0 select-none gap-1 bg-surface-container-low pl-2 ${
+      className={`relative flex h-10 shrink-0 select-none gap-1 border-b border-outline-variant/50 bg-surface-container-lowest/85 pl-2 backdrop-blur-xl ${
         tabAusrichtung === 'vertikal' ? 'items-center' : 'items-end'
       }`}
     >
@@ -1144,12 +1144,12 @@ export function Kopfleiste() {
             </button>
           </Kurzinfo>
         ))}
-        <Kurzinfo text={t('browser.fenster.schliessen')} seite="ende" aussen="h-full">
+        <Kurzinfo text={t('common.close')} seite="ende" aussen="h-full">
           <button
             type="button"
             onClick={() => void nativ.fensterAktion('schliessen')}
             className="flex w-11 items-center justify-center text-on-surface-variant hover:bg-status-destructive hover:text-white"
-            aria-label={t('browser.fenster.schliessen')}
+            aria-label={t('common.close')}
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>

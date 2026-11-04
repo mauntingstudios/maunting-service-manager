@@ -137,7 +137,7 @@ export function Eintragsliste({ eintraege, leer, entfernen, ueberschrift, kopf, 
                       </button>
                     </Kurzinfo>
                   ) : (
-                    <Kurzinfo text={t('browser.liste.entfernen')} seite="ende">
+                    <Kurzinfo text={t('common.remove')} seite="ende">
                       <button
                         type="button"
                         onClick={() => entfernen(e)}

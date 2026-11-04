@@ -197,7 +197,7 @@ export function BrowserImport() {
         <div role="alert" className="flex flex-wrap items-center gap-2 text-label-sm text-status-destructive">
           <span>{t('browser.einstellungen.import.ladeFehler')}</span>
           <Button type="button" size="sm" variant="secondary" onClick={laden}>
-            {t('browser.einstellungen.import.erneut')}
+            {t('common.retry')}
           </Button>
         </div>
       )}

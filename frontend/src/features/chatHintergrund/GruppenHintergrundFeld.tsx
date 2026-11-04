@@ -223,7 +223,7 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
                 setPreset(null)
               }}
             >
-              {t('social.groupRoles.backgroundRemove')}
+              {t('common.remove')}
             </Button>
           )}
         </div>

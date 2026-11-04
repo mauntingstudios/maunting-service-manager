@@ -399,8 +399,8 @@ export function E2eeGeraeteCard() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center pt-2">
                 <PasswordInput
                   autoComplete="current-password"
-                  aria-label={t('profile.e2eeDevices.resetPassword')}
-                  placeholder={t('profile.e2eeDevices.resetPassword')}
+                  aria-label={t('common.password')}
+                  placeholder={t('common.password')}
                   value={passwort}
                   onChange={(e) => setPasswort(e.target.value)}
                   className="min-w-0 flex-1"
@@ -541,7 +541,7 @@ export function E2eeGeraeteCard() {
                       className="text-error hover:bg-error/10 hover:text-error"
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      {t('profile.e2eeDevices.remove')}
+                      {t('common.remove')}
                     </Button>
                   )}
                 </div>

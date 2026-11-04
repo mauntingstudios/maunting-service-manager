@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { textBereit } from './i18n'
+import { MotionProvider } from '@maunting/ui'
 
 /*
  * Schriften: lokal aus dem Build, nicht von Google.
@@ -58,9 +59,11 @@ registerServiceWorker()
 void textBereit.finally(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <MotionProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </MotionProvider>
     </React.StrictMode>
   )
   cleanupPreloadUrlParam()

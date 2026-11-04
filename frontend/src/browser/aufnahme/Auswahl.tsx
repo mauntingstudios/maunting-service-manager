@@ -91,7 +91,7 @@ export function Auswahl({ adresse }: { adresse: string }) {
             {t('browser.aufnahme.alles')}
           </Button>
           <Button size="sm" variant="ghost" onClick={schliessen}>
-            {t('browser.aufnahme.abbrechen')}
+            {t('common.cancel')}
           </Button>
         </div>
       )}

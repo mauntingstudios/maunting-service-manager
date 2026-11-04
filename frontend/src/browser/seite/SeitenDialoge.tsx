@@ -101,7 +101,7 @@ function Frage({ frage }: { frage: Exclude<Rueckfrage, { art: 'kontextmenue' }> 
           {frage.art === 'anmeldung' && (
             <div className="flex flex-col gap-3 px-5 py-4">
               <Input label={t('browser.anmeldung.benutzer')} value={benutzer} onChange={(e) => setBenutzer(e.target.value)} autoComplete="off" autoFocus />
-              <PasswordInput label={t('browser.anmeldung.passwort')} value={passwort} onChange={(e) => setPasswort(e.target.value)} autoComplete="off" />
+              <PasswordInput label={t('common.password')} value={passwort} onChange={(e) => setPasswort(e.target.value)} autoComplete="off" />
             </div>
           )}
           <DialogFooter>

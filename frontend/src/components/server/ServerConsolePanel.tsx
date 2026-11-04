@@ -617,7 +617,7 @@ export function ServerConsolePanel({ serverId, mode = 'console' }: Props) {
               aria-description={t('servers.consoleCopyTitle')}
             >
               {copiedLogs ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copiedLogs ? t('common.copied') : t('servers.consoleCopy')}
+              {copiedLogs ? t('common.copied') : t('common.copy')}
             </Button>
           </Kurzinfo>
         </div>

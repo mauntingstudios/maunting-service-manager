@@ -307,7 +307,7 @@ export function TresorDateiAnsicht({ item: anfang, ort, folge, onWechseln, onSch
     <TresorDateiInfo
       item={item}
       angaben={[
-        [t('mss.vault.fotos.info.name'), item.service],
+        [t('common.name'), item.service],
         [t('mss.vault.dateien.ort'), ort],
         [t('mss.vault.fotos.info.groesse'), formatBytes(datei.original.echt)],
         [t('mss.vault.dateien.geaendert'), datum(datei.geaendert ?? item.updatedAt)],
@@ -336,12 +336,12 @@ export function TresorDateiAnsicht({ item: anfang, ort, folge, onWechseln, onSch
               variant="ghost"
               size="sm"
               className={KNOPF}
-              aria-label={t('mss.vault.bearbeiten.knopf')}
+              aria-label={t('common.edit')}
               disabled={!anzeige.url}
               onClick={() => setBildBearbeiten(true)}
             >
               <Crop className="h-4 w-4" />
-              <span className="ml-1.5 hidden sm:inline">{t('mss.vault.bearbeiten.knopf')}</span>
+              <span className="ml-1.5 hidden sm:inline">{t('common.edit')}</span>
             </Button>
           )}
           <Button type="button" variant="ghost" size="sm" className={KNOPF} aria-label={t('mss.vault.dateien.speichern')} onClick={() => void aufGeraet()}>

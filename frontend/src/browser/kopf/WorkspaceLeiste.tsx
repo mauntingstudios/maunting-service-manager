@@ -143,7 +143,7 @@ function WorkspaceModal({ offen, initial, onSchliessen, onSpeichern }: Workspace
             type="button"
             onClick={onSchliessen}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
-            aria-label={t('browser.workspaces.abbrechen')}
+            aria-label={t('common.cancel')}
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -217,14 +217,14 @@ function WorkspaceModal({ offen, initial, onSchliessen, onSpeichern }: Workspace
               onClick={onSchliessen}
               className="msm-btn-secondary px-3.5 py-1.5"
             >
-              {t('browser.workspaces.abbrechen')}
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={!name.trim()}
               className="msm-btn-primary px-4 py-1.5"
             >
-              {initial ? t('browser.workspaces.speichern') : t('browser.workspaces.anlegen')}
+              {initial ? t('common.save') : t('browser.workspaces.anlegen')}
             </button>
           </div>
         </form>

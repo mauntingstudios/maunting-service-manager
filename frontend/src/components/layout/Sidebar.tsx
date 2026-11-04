@@ -123,15 +123,16 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
       role={mobile ? 'dialog' : undefined}
       aria-modal={mobile || undefined}
       aria-label={mobile ? t('shell.mainNavigation') : undefined}
-      className={`msm-sidebar fixed left-0 top-0 z-40 flex flex-col ${mobile ? 'h-[100dvh] w-full !bg-surface-container-low animate-slide-in-left' : 'hidden h-screen w-64 lg:flex'}`}
+      className={`msm-sidebar fixed left-0 top-0 z-40 flex flex-col ${mobile ? 'h-[100dvh] w-full !bg-surface-container-low animate-slide-in-left' : 'hidden h-screen w-60 lg:flex'}`}
     >
-      {/* Brand */}
-      <div className="px-5 pt-5 pb-6 flex items-center gap-3 shrink-0">
+      {/* Marke */}
+      <div className="flex shrink-0 items-center gap-3 px-5 pb-6 pt-5">
         <Logo size="md" />
         <div>
-          <h1 className="font-headline text-body-lg font-extrabold text-primary leading-tight">
-            MSM
+          <h1 className="font-headline text-body-lg font-extrabold leading-tight text-primary">
+            Maunting
           </h1>
+          <p className="text-label-sm text-on-surface-variant/60">Studios</p>
         </div>
         {mobile && <button type="button" onClick={onNavigate} className="ml-auto grid min-h-11 min-w-11 place-items-center rounded-lg hover:bg-surface-container-high" aria-label={t('shell.closeNavigation')}><X className="h-5 w-5" /></button>}
       </div>
@@ -154,7 +155,7 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
       <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label={t('shell.areas')}>
         {groups.map(({ group, items }) => (
           <section key={group} className="mb-3" aria-labelledby={`nav-${group}`}>
-            <h2 id={`nav-${group}`} className="px-4 pb-1 pt-2 font-label-md text-label-sm font-semibold uppercase tracking-[.16em] text-on-surface-variant/55">{groupLabels[group]}</h2>
+            <h2 id={`nav-${group}`} className="px-3 pb-1 pt-2 font-label-md text-label-sm font-semibold uppercase tracking-[0.12em] text-on-surface-variant/55">{groupLabels[group]}</h2>
             {items.map((item) => {
               const isChat = item.to === '/chat'
               const showChatBadge = isChat && totalMessengerUnread > 0

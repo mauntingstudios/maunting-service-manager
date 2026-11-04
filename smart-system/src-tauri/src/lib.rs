@@ -947,6 +947,12 @@ pub fn run() {
                     let _ = fenster.hide();
                 }
             }
+            #[cfg(windows)]
+            if let Some(fenster) = app.get_webview_window("main") {
+                if let Ok(hwnd) = fenster.hwnd() {
+                    fensteroptik::runde_ecken(hwnd.0);
+                }
+            }
             Ok(())
         })
         // Das X entscheidet nicht selbst: das Fenster wird angehalten und

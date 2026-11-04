@@ -182,7 +182,7 @@ describe('TresorGalerie', () => {
       expect(kachel('b.jpg')).toHaveAttribute('aria-pressed', 'true')
       expect(kopfleiste()).toHaveAccessibleName(i18n.t('mss.vault.dateien.ausgewaehlt', { count: 3 }))
 
-      fireEvent.click(within(kopfleiste()).getByRole('button', { name: new RegExp(i18n.t('mss.vault.alle')) }))
+      fireEvent.click(within(kopfleiste()).getByRole('button', { name: new RegExp(i18n.t('common.all')) }))
       expect(kopfleiste()).toHaveAccessibleName(i18n.t('mss.vault.dateien.ausgewaehlt', { count: 4 }))
     })
 
@@ -396,7 +396,7 @@ describe('TresorGalerie', () => {
     it('zeigt die Filter als Reiter mit Auswahlzustand', () => {
       render(<TresorGalerie />)
       const filter = screen.getByRole('tablist', { name: i18n.t('mss.vault.fotos.filter') })
-      expect(within(filter).getByRole('tab', { name: new RegExp(i18n.t('mss.vault.alle')) })).toHaveAttribute('aria-selected', 'true')
+      expect(within(filter).getByRole('tab', { name: new RegExp(i18n.t('common.all')) })).toHaveAttribute('aria-selected', 'true')
       fireEvent.click(within(filter).getByRole('tab', { name: new RegExp(i18n.t('mss.vault.fotos.videos')) }))
       expect(screen.queryByRole('button', { name: 'a.jpg' })).toBeNull()
       expect(kachel('clip.mp4')).toBeInTheDocument()

@@ -189,7 +189,7 @@ export function Aufraeumkarte({
           {t(hart || leeren ? 'mss.aufraeumen.jaHart' : 'mss.aufraeumen.jaWeich')}
         </Button>
         <Button variant="secondary" disabled={laeuft} onClick={() => void entscheiden(false)}>
-          {t('mss.aufraeumen.nein')}
+          {t('common.cancel')}
         </Button>
       </div>
     </KartenHuelle>

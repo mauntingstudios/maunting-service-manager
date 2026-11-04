@@ -119,7 +119,7 @@ export function ImprintTab() {
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              {t('settings.save')}
+              {t('common.save')}
             </Button>
           </div>
         )}

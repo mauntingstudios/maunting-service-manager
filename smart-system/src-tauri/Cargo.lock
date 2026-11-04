@@ -1646,6 +1646,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fensteroptik"
+version = "0.1.0"
+dependencies = [
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "field-offset"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3063,6 +3070,7 @@ dependencies = [
  "cpal",
  "dunce",
  "enigo",
+ "fensteroptik",
  "hound",
  "image",
  "jni 0.21.1",

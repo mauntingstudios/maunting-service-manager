@@ -29,6 +29,7 @@ import { tresorAutoSperrQuelle, useVaultStore } from '@/desktop/vault/vaultStore
 import { teamTresorAutoSperrQuelle, useTeamVaultStore } from '@/desktop/vault/teamVaultStore'
 import { useAutoSperre } from '@/hooks/useAutoSperre'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
+import { useFensterRahmen } from '@/hooks/useFensterRahmen'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
@@ -81,6 +82,7 @@ declare global {
 }
 
 export function BrowserApp() {
+  useFensterRahmen()
   return (
     <MemoryRouter initialEntries={['/']}>
       <Wurzel />
@@ -307,7 +309,7 @@ function Wurzel() {
 
   return (
     <div
-      className={`flex h-dvh flex-col overflow-hidden bg-background text-on-surface ${handy && !imVollbild ? 'pl-[var(--msm-links-sicher)] pr-[var(--msm-rechts-sicher)]' : ''}`}
+      className={`${handy ? '' : 'mui-window'} flex h-dvh flex-col overflow-hidden bg-background text-on-surface ${handy && !imVollbild ? 'pl-[var(--msm-links-sicher)] pr-[var(--msm-rechts-sicher)]' : ''}`}
     >
       {/* Dieselbe Meldestelle wie in Web und MSS: Zahl, Ton und Toast. */}
       {angemeldet && <ServerIncidentNotifier />}

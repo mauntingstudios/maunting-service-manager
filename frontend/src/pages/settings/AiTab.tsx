@@ -384,10 +384,10 @@ export function AiTab() {
                     type="button"
                     disabled={saving}
                     onClick={() => void save(selected)}
-                    aria-label={`${t('settings.save')}: ${selected.role_name}`}
+                    aria-label={`${t('common.save')}: ${selected.role_name}`}
                   >
                     <Save className="h-4 w-4" aria-hidden="true" />
-                    {saving ? t('common.loading') : t('settings.save')}
+                    {saving ? t('common.loading') : t('common.save')}
                   </Button>
                 )}
               </div>

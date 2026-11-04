@@ -822,7 +822,7 @@ export function Calendar() {
           }`}
         >
           <CalendarIcon className="w-3.5 h-3.5" />
-          <span>{t('calendar.filterAll')}</span>
+          <span>{t('common.all')}</span>
           <span className="text-label-sm opacity-80 font-mono">({events.length})</span>
         </button>
         <button
@@ -1652,7 +1652,7 @@ export function Calendar() {
                             value={formEndeArt}
                             onChange={(val) => setFormEndeArt(val as typeof formEndeArt)}
                             options={[
-                              { value: 'nie', label: t('calendar.recurrence.endsNever') },
+                              { value: 'nie', label: t('common.never') },
                               { value: 'bis', label: t('calendar.recurrence.endsOn') },
                               { value: 'anzahl', label: t('calendar.recurrence.endsAfter') },
                             ]}

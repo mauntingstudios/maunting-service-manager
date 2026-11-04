@@ -8,6 +8,7 @@
  * Gekoppelt fällt weg, was das Panel abgeschaltet hat oder wofür das Konto
  * kein Recht hat, wie in MSS.
  */
+import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { istGekoppelt, useSitzung } from '../services/sitzung'
@@ -72,10 +73,20 @@ export function Seitenleiste({ seite }: { seite: 'links' | 'rechts' }) {
   useLeistennameAufraeumen()
 
   return (
-    <nav aria-label={t('browser.leiste.name')} className="flex w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto bg-surface-container py-2 msm-ohne-rollbalken">
-      {eintraege.map((e) => (
-        <Eintrag key={e.id} eintrag={e} offen={ziele.offen === e.id} zahl={zahlen[e.id]} richtung={richtung} beiKlick={() => ziele.panel(e.id)} />
-      ))}
+    <nav
+      aria-label={t('browser.leiste.name')}
+      className={`flex w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto bg-surface-container-lowest/70 py-2 msm-ohne-rollbalken ${seite === 'links' ? 'border-r' : 'border-l'} border-outline-variant/40`}
+    >
+      {eintraege.map((e, index) => {
+        const vorher = eintraege[index - 1]
+        const neueGruppe = vorher && Boolean(vorher.modul) !== Boolean(e.modul)
+        return (
+          <Fragment key={e.id}>
+            {neueGruppe && <span className="my-1 h-px w-6 rounded-full bg-outline-variant/60" aria-hidden="true" />}
+            <Eintrag eintrag={e} offen={ziele.offen === e.id} zahl={zahlen[e.id]} richtung={richtung} beiKlick={() => ziele.panel(e.id)} />
+          </Fragment>
+        )
+      })}
       <div className="flex-1" />
       {!istGekoppelt(stand) && stand !== 'pruefen' && (
         <Eintrag eintrag={KOPPELN_EINTRAG} offen={ziele.offen === 'koppeln'} richtung={richtung} beiKlick={() => ziele.panel('koppeln')} />

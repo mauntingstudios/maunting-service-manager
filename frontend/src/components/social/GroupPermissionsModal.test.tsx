@@ -170,7 +170,7 @@ describe('GroupPermissionsModal — Allgemein', () => {
 
     const name = await screen.findByDisplayValue('Testgruppe')
     fireEvent.change(name, { target: { value: 'Neue Küche' } })
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('social.groupRoles.generalSave') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.save') }))
 
     await waitFor(() =>
       expect(ansichtDienst.sichereGruppenAnsicht).toHaveBeenCalledWith(
@@ -195,11 +195,11 @@ describe('GroupPermissionsModal — Allgemein', () => {
       />,
     )
 
-    const feld = await screen.findByLabelText(i18n.t('social.groupRoles.generalName'))
+    const feld = await screen.findByLabelText(i18n.t('common.name'))
     fireEvent.change(feld, { target: { value: 'Während des Ladens' } })
 
     const knopf = await screen.findByRole('button', {
-      name: i18n.t('social.groupRoles.generalSave'),
+      name: i18n.t('common.save'),
     })
     expect(knopf).not.toBeDisabled()
   })
@@ -223,6 +223,6 @@ describe('GroupPermissionsModal — Allgemein', () => {
     )
 
     expect(await screen.findByDisplayValue('Testgruppe')).toBeDisabled()
-    expect(screen.queryByRole('button', { name: i18n.t('social.groupRoles.generalSave') })).toBeNull()
+    expect(screen.queryByRole('button', { name: i18n.t('common.save') })).toBeNull()
   })
 })

@@ -75,7 +75,7 @@ describe('DocTree Filter', () => {
     await i18n.changeLanguage('de')
     renderBaum()
 
-    expect(screen.getByRole('button', { name: i18n.t('docs.tree.all') })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: i18n.t('common.all') })).toHaveAttribute(
       'aria-pressed',
       'true',
     )

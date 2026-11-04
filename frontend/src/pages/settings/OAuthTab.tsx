@@ -178,7 +178,7 @@ export function OAuthTab() {
     const ok = await confirm({
       message: t('settings.oauth.deleteConfirmBody', { name: p.name, slug: p.slug }),
       danger: true,
-      confirmText: t('settings.oauth.delete'),
+      confirmText: t('common.delete'),
     })
     if (!ok) return
     try {
@@ -316,22 +316,22 @@ export function OAuthTab() {
                         )}
                         {t('settings.oauth.test')}
                       </Button>
-                      <Kurzinfo text={t('settings.oauth.edit')}>
+                      <Kurzinfo text={t('common.edit')}>
                         <Button variant="secondary" size="sm"
                           type="button"
                           onClick={() => openEdit(p)}
                           className="inline-flex items-center gap-1.5"
-                          aria-label={t('settings.oauth.edit')}
+                          aria-label={t('common.edit')}
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
                       </Kurzinfo>
-                      <Kurzinfo text={t('settings.oauth.delete')} seite="ende">
+                      <Kurzinfo text={t('common.delete')} seite="ende">
                         <Button variant="secondary" size="sm"
                           type="button"
                           onClick={() => handleDelete(p)}
                           className="inline-flex items-center gap-1.5 text-status-destructive hover:bg-status-destructive/10"
-                          aria-label={t('settings.oauth.delete')}
+                          aria-label={t('common.delete')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
@@ -667,7 +667,7 @@ function ProviderDialog({
             ) : (
               <Save className="w-4 h-4" />
             )}
-            {t('settings.oauth.save')}
+            {t('common.save')}
           </Button>
         </div>
       </div>

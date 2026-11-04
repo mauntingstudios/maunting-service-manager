@@ -126,7 +126,7 @@ export function Register() {
               }}
               className="inline-flex items-center gap-2"
             >
-              {t('auth.continue')}
+              {t('common.continue')}
               <ArrowRight className="w-4 h-4" />
             </Button>
           </div>
@@ -255,7 +255,7 @@ export function Register() {
             </div>
 
             <PasswordInput
-              label={t('auth.password') || 'Passwort'}
+              label={t('common.password') || 'Passwort'}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               placeholder="••••••••"

@@ -68,7 +68,7 @@ describe('ProfileDropdown', () => {
       />
     )
 
-    const punkt = screen.getByRole('img', { name: i18n.t('social.status.offline') })
+    const punkt = screen.getByRole('img', { name: i18n.t('common.offline') })
     expect(punkt).not.toHaveClass('bg-status-success')
   })
 

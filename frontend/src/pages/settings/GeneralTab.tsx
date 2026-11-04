@@ -432,7 +432,7 @@ export function GeneralTab() {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {t('settings.save')}
+              {t('common.save')}
             </Button>
           </div>
         )}

@@ -96,7 +96,7 @@ export function MessengerTab() {
         api_secret: modus === 'extern' ? apiSecret.trim() || undefined : undefined,
       })
       uebernehme(neu)
-      toast.success(t('settings.messenger.saved'))
+      toast.success(t('common.saved'))
     } catch (fehler: unknown) {
       toast.error(fehler instanceof Error ? fehler.message : String(fehler))
     } finally {
@@ -289,7 +289,7 @@ export function MessengerTab() {
               ) : (
                 <Save className="h-4 w-4" aria-hidden="true" />
               )}
-              {t('settings.save')}
+              {t('common.save')}
             </Button>
           </div>
         )}
