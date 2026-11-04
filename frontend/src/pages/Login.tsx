@@ -541,8 +541,9 @@ function LoginShell({ children }: { children: React.ReactNode }) {
           <Logo size="md" />
           <div>
             <h1 className="font-headline text-body-lg font-extrabold text-primary leading-tight">
-              MSM
+              Maunting
             </h1>
+            <p className="text-label-sm text-on-surface-variant/60">Studios</p>
           </div>
         </div>
 
