@@ -16,6 +16,7 @@ export interface SettingsSectionEintrag<T extends string = string> {
   icon?: LucideIcon
   group?: string
   tone?: 'default' | 'danger'
+  indent?: boolean
 }
 
 export interface SettingsLayoutProps<T extends string> {
@@ -24,6 +25,7 @@ export interface SettingsLayoutProps<T extends string> {
   onChange: (id: T) => void
   title: string
   description?: string
+  showGroupHeaders?: boolean
   children: ReactNode
 }
 
@@ -33,22 +35,26 @@ export function SettingsLayout<T extends string>({
   onChange,
   title,
   description,
+  showGroupHeaders = true,
   children,
 }: SettingsLayoutProps<T>) {
   const gruppen = [...new Set(sections.map((section) => section.group ?? ''))]
 
   return (
-    <div className="mui-settings grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+    <div className="mui-settings grid gap-6 lg:grid-cols-[17.5rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)] lg:gap-8">
       <aside className="hidden lg:block">
         <div className="sticky top-6 space-y-5">
           <div>
             <h1 className="font-headline text-headline-sm text-on-surface">{title}</h1>
             {description && <p className="mt-1 text-body-sm text-on-surface-variant">{description}</p>}
           </div>
-          <nav aria-label={title} className="space-y-4">
-            {gruppen.map((gruppe) => (
+          <nav aria-label={title} className={showGroupHeaders ? 'space-y-4' : 'space-y-1'}>
+            {gruppen.map((gruppe, gruppenIndex) => (
               <div key={gruppe || 'allgemein'}>
-                {gruppe && (
+                {!showGroupHeaders && gruppenIndex > 0 && (
+                  <div aria-hidden="true" className="mx-3 my-1.5 h-px bg-outline-variant/50" />
+                )}
+                {showGroupHeaders && gruppe && (
                   <p className="px-3 pb-1 text-label-sm font-medium uppercase tracking-[0.14em] text-on-surface-variant/60">
                     {gruppe}
                   </p>
@@ -66,6 +72,8 @@ export function SettingsLayout<T extends string>({
                           onClick={() => onChange(section.id)}
                           aria-current={istAktiv ? 'page' : undefined}
                           className={`flex w-full items-center gap-3 rounded-control px-3 py-2 text-left text-label-md transition-colors ${
+                            section.indent ? 'ml-3' : ''
+                          } ${
                             istAktiv
                               ? 'bg-primary/10 font-semibold text-primary'
                               : section.tone === 'danger'
@@ -87,21 +95,31 @@ export function SettingsLayout<T extends string>({
 
       <div className="min-w-0">
         <div className="mb-4 flex gap-1 overflow-x-auto pb-1 msm-ohne-rollbalken lg:hidden" role="tablist" aria-label={title}>
-          {sections.map((section) => {
+          {sections.map((section, index) => {
             const istAktiv = section.id === active
+            const davor = index > 0 ? sections[index - 1] : undefined
+            const trenner = !showGroupHeaders && index > 0 && section.group !== davor?.group
             return (
-              <button
-                key={section.id}
-                type="button"
-                role="tab"
-                aria-selected={istAktiv}
-                onClick={() => onChange(section.id)}
-                className={`flex min-h-11 shrink-0 items-center gap-2 rounded-control px-3 text-label-md transition-colors ${
-                  istAktiv ? 'bg-primary/10 text-primary' : 'text-on-surface-variant hover:bg-surface-container-high/50'
-                }`}
-              >
-                {section.label}
-              </button>
+              <span key={section.id} className="contents">
+                {trenner && (
+                  <span
+                    data-tab-gruppe={section.group}
+                    aria-hidden="true"
+                    className="mx-1 my-2 w-px shrink-0 bg-outline-variant/50"
+                  />
+                )}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={istAktiv}
+                  onClick={() => onChange(section.id)}
+                  className={`flex min-h-11 shrink-0 items-center gap-2 rounded-control px-3 text-label-md transition-colors ${
+                    istAktiv ? 'bg-primary/10 text-primary' : 'text-on-surface-variant hover:bg-surface-container-high/50'
+                  }`}
+                >
+                  {section.label}
+                </button>
+              </span>
             )
           })}
         </div>

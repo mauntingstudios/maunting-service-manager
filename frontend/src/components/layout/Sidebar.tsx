@@ -130,9 +130,8 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
         <Logo size="md" />
         <div>
           <h1 className="font-headline text-body-lg font-extrabold leading-tight text-primary">
-            Maunting
+            MSM
           </h1>
-          <p className="text-label-sm text-on-surface-variant/60">Studios</p>
         </div>
         {mobile && <button type="button" onClick={onNavigate} className="ml-auto grid min-h-11 min-w-11 place-items-center rounded-lg hover:bg-surface-container-high" aria-label={t('shell.closeNavigation')}><X className="h-5 w-5" /></button>}
       </div>

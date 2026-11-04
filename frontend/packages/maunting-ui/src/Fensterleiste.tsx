@@ -45,7 +45,7 @@ export function Fensterleiste({
   return (
     <header
       data-tauri-drag-region
-      className={`relative flex h-10 shrink-0 select-none items-stretch border-b border-outline-variant/50 bg-surface-container-lowest/85 backdrop-blur-xl ${className}`}
+      className={`relative z-30 flex h-10 shrink-0 select-none items-stretch border-b border-outline-variant/50 bg-surface-container-lowest/85 backdrop-blur-xl ${className}`}
     >
       {(marke || titel) && (
         <div className="flex shrink-0 items-center gap-2.5 pl-3 pr-1">
@@ -72,17 +72,17 @@ export function Fensterleiste({
       {werkzeuge && <div className="flex shrink-0 items-center gap-0.5 px-1">{werkzeuge}</div>}
 
       <div className="flex shrink-0 items-stretch">
-        <Kurzinfo text={beschriftungen.minimieren} seite="ende" aussen="h-full">
+        <Kurzinfo text={beschriftungen.minimieren} seite="ende" aussen="h-full" portal>
           <button type="button" onClick={steuerung.minimieren} className={knopf} aria-label={beschriftungen.minimieren}>
             <Minus className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </Kurzinfo>
-        <Kurzinfo text={beschriftungen.maximieren} seite="ende" aussen="h-full">
+        <Kurzinfo text={beschriftungen.maximieren} seite="ende" aussen="h-full" portal>
           <button type="button" onClick={steuerung.maximieren} className={knopf} aria-label={beschriftungen.maximieren}>
             <Square className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </Kurzinfo>
-        <Kurzinfo text={beschriftungen.schliessen} seite="ende" aussen="h-full">
+        <Kurzinfo text={beschriftungen.schliessen} seite="ende" aussen="h-full" portal>
           <button
             type="button"
             onClick={steuerung.schliessen}

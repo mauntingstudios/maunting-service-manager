@@ -950,7 +950,7 @@ export function Kopfleiste() {
       onDrop={(e) => {
         behandleDrop(e, dropZielIndex ?? sichtbareTabs.length)
       }}
-      className={`relative flex h-10 shrink-0 select-none gap-1 border-b border-outline-variant/50 bg-surface-container-lowest/85 pl-2 backdrop-blur-xl ${
+      className={`relative z-30 flex h-10 shrink-0 select-none gap-1 border-b border-outline-variant/50 bg-surface-container-lowest/85 pl-2 backdrop-blur-xl ${
         tabAusrichtung === 'vertikal' ? 'items-center' : 'items-end'
       }`}
     >
@@ -961,7 +961,7 @@ export function Kopfleiste() {
 
           {/* Mittig platziertes Logo: Klick führt zur Startseite */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
-            <Kurzinfo text={t('browser.start.titel')} lage="unten">
+            <Kurzinfo text={t('browser.start.titel')} lage="unten" portal>
               <button
                 type="button"
                 onClick={() => startseite()}
@@ -1072,7 +1072,7 @@ export function Kopfleiste() {
               behandleDrop(e, sichtbareTabs.length)
             }}
           >
-            <Kurzinfo text={t('browser.tabs.neuKuerzel')} seite="anfang">
+            <Kurzinfo text={t('browser.tabs.neuKuerzel')} seite="anfang" portal>
               <button
                 type="button"
                 onClick={() => neuerTab()}
@@ -1083,7 +1083,7 @@ export function Kopfleiste() {
               </button>
             </Kurzinfo>
             {!privatAus && (
-              <Kurzinfo text={t('browser.tabs.privatKuerzel')} seite="anfang">
+              <Kurzinfo text={t('browser.tabs.privatKuerzel')} seite="anfang" portal>
                 <button
                   type="button"
                   onClick={() => neuerTab(undefined, { privat: true })}
@@ -1133,7 +1133,7 @@ export function Kopfleiste() {
             ['maximieren', Square, t('browser.fenster.maximieren')],
           ] as const
         ).map(([aktion, Symbol, name]) => (
-          <Kurzinfo key={aktion} text={name} seite="ende" aussen="h-full">
+          <Kurzinfo key={aktion} text={name} seite="ende" aussen="h-full" portal>
             <button
               type="button"
               onClick={() => void nativ.fensterAktion(aktion)}
@@ -1144,7 +1144,7 @@ export function Kopfleiste() {
             </button>
           </Kurzinfo>
         ))}
-        <Kurzinfo text={t('common.close')} seite="ende" aussen="h-full">
+        <Kurzinfo text={t('common.close')} seite="ende" aussen="h-full" portal>
           <button
             type="button"
             onClick={() => void nativ.fensterAktion('schliessen')}

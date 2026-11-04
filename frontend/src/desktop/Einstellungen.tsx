@@ -106,7 +106,7 @@ export function Einstellungen({
   }, [tab, sections])
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="mx-auto w-full max-w-[1440px]">
       <SettingsLayout
         sections={sections}
         active={tab}

@@ -109,9 +109,6 @@ export function Shell() {
     // Leiste einblendet — also genau beim Tippen. `dvh` folgt dem wirklich
     // sichtbaren Bereich. Die mobile Navigation unten macht es schon so.
     <div className={`bg-background text-on-surface flex relative overflow-x-clip ${isFullHeightPage ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
-      {/* Deep Grid Background */}
-      <div className="absolute inset-0 msm-deep-grid opacity-30 pointer-events-none" />
-
       {/* Sidebar */}
       {!sidebarHidden && (
         <Sidebar

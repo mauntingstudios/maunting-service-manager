@@ -173,3 +173,5 @@ logdump.txt
 /crates/fensteroptik/target
 
 /frontend/packages/*/node_modules
+/vault-dashboard-template*
+vault-dashboard-template*/

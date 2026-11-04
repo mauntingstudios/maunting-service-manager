@@ -534,16 +534,14 @@ export function Login() {
 function LoginShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-on-surface flex items-center justify-center p-margin-mobile md:p-margin-desktop relative overflow-hidden">
-      <div className="absolute inset-0 msm-deep-grid opacity-50" />
       <div className="relative z-10 w-full max-w-md">
 
         <div className="flex items-center justify-center gap-3 mb-8">
           <Logo size="md" />
           <div>
             <h1 className="font-headline text-body-lg font-extrabold text-primary leading-tight">
-              Maunting
+              MSM
             </h1>
-            <p className="text-label-sm text-on-surface-variant/60">Studios</p>
           </div>
         </div>
 

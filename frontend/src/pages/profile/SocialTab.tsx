@@ -263,7 +263,7 @@ export function SocialTab() {
         </p>
 
         {/* Freund hinzufügen Formular */}
-        <div className="max-w-md mb-6 p-4 rounded-xl bg-surface-container-high/40 border border-outline-variant/30">
+        <div className="max-w-2xl mb-6 p-4 rounded-xl bg-surface-container-high/40 border border-outline-variant/30">
           <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-2.5">
             {t('social.contacts.addFriend')}
           </h3>
@@ -289,7 +289,7 @@ export function SocialTab() {
 
         {/* Ausstehende Anfragen */}
         {incomingRequests.length > 0 && (
-          <div className="mb-6 space-y-2 max-w-xl">
+          <div className="mb-6 space-y-2 w-full">
             <h3 className="text-xs font-bold uppercase tracking-wider text-status-warning flex items-center gap-1.5">
               <span>{t('social.contacts.pendingRequests', { count: incomingRequests.length })}</span>
             </h3>
@@ -365,7 +365,7 @@ export function SocialTab() {
         {/* 1A. Tab: Deine Freunde */}
         {contactSubTab === 'friends' && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3 max-w-xl">
+            <div className="flex items-center justify-between gap-3 w-full">
               <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                 {t('social.contacts.myContacts', { count: acceptedFriends.length })}
               </h3>
@@ -588,7 +588,7 @@ export function SocialTab() {
         </p>
 
         <div className="flex items-center justify-between p-4 rounded-xl bg-surface-container-high/40 border border-outline-variant/30">
-          <div className="space-y-0.5 max-w-md">
+          <div className="space-y-0.5 max-w-2xl">
             <span className="text-xs font-bold text-on-surface">
               {t('social.privacy.receipts')}
             </span>

@@ -106,12 +106,9 @@
     }
   }
 
-/* Deep Grid Background */
+/* Calm Maunting Surface Background (Grid pattern removed) */
   .msm-deep-grid {
-    background-image:
-      linear-gradient(to right, rgba(103, 232, 249, 0.06) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(103, 232, 249, 0.06) 1px, transparent 1px);
-    background-size: 40px 40px;
+    background-image: none;
   }
 
 /* MSS (Desktop-App): Boot-Sequenz und Statuspuls.
@@ -509,9 +506,7 @@ html[data-season] body {
 }
 
 html[data-season] .msm-deep-grid {
-  background-image:
-    linear-gradient(to right, hsl(var(--season-accent) / .055) 1px, transparent 1px),
-    linear-gradient(to bottom, hsl(var(--season-accent) / .055) 1px, transparent 1px);
+  background-image: none;
 }
 
 html[data-season] .msm-page-header::before {

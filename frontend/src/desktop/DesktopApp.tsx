@@ -682,7 +682,6 @@ export function DesktopApp() {
       <NavigationEmpfaenger isOffline={isOffline} />
       <div className={`${isAndroid ? '' : 'mui-window'} relative h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-background text-on-surface pb-[var(--msm-unten-sicher)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)] flex flex-col`}>
         <Titelleiste />
-        <div className="msm-deep-grid pointer-events-none absolute inset-0 opacity-30" />
         {phase === 'bereit' && publicSettings.social_enabled && <CrossDeviceCallBanner />}
         <div className="relative z-10 flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden">{inhalt}</div>
 
@@ -1514,7 +1513,7 @@ function Hauptseite({
               <DocsEmbedded />
             </div>
           ) : bereich === 'gedaechtnis' ? (
-            <div className="mx-auto w-full max-w-3xl flex-1 min-h-0 overflow-y-auto pb-8">
+            <div className="mx-auto w-full max-w-6xl flex-1 min-h-0 overflow-y-auto px-4 py-5 pb-8 sm:px-6 lg:px-8">
               <AiTab />
             </div>
           ) : bereich === 'tresor' ? (
@@ -1528,7 +1527,7 @@ function Hauptseite({
           ) : bereich === 'hilfe' ? (
             <HilfeBereich />
           ) : (
-            <div className="mx-auto w-full max-w-3xl flex-1 min-h-0 overflow-y-auto pb-8">
+            <div className="mx-auto w-full max-w-[1440px] flex-1 min-h-0 overflow-y-auto px-4 py-5 pb-8 sm:px-6 lg:px-8">
               <Einstellungen onKonfigAenderung={onKonfigAenderung} offline={isOffline} />
             </div>
           )}

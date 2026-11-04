@@ -4,13 +4,11 @@
  * Kategorien als wischbare Reiterleiste oben. Die Kategorie steht in der
  * Adresse des Tabs, nicht in einem Zustand daneben.
  */
-import { Fragment, lazy, Suspense } from 'react'
+import { lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@maunting/ui'
-import { TabBar } from '@maunting/ui'
-import { Spinner } from '@maunting/ui'
+import { Button, SettingsLayout, Spinner, type SettingsSectionEintrag } from '@maunting/ui'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 import { istGekoppelt, useSitzung } from '../services/sitzung'
@@ -169,61 +167,36 @@ export function EinstellungenSeite({ teil }: { teil: string | null }) {
         : null
   const kategorie = angefordert ?? kategorien.find((k) => k.id === teil)?.id ?? 'allgemein'
   const titel = t('common.settings')
+  const sections: SettingsSectionEintrag<Kategorie>[] = kategorien.map((k) => ({
+    id: k.id,
+    label: t(`browser.einstellungen.kategorie.${k.id}`),
+    icon: k.symbol,
+    group: k.id === 'ueber' ? 'ueber' : k.unterpunkt ? 'konto' : 'browser',
+    indent: k.unterpunkt,
+  }))
 
   return (
     // Eigener Bereich: die Breakpoints richten sich nach der Seitenfläche, nicht nach dem Fenster.
-    <div className="msb-bereich h-full bg-surface">
-      <div className="flex h-full flex-col md:flex-row">
-        <nav aria-label={titel} className="hidden w-60 shrink-0 flex-col gap-0.5 overflow-y-auto px-3 py-6 md:flex">
-          <h1 className="px-3 pb-4 font-headline text-headline-sm text-on-surface">{titel}</h1>
-          {kategorien.map(({ id, symbol: Symbol, unterpunkt }, index) => {
-            const davor = index > 0 ? kategorien[index - 1] : undefined
-            // Trenner vor dem Konto-Block und vor „Über": dieselben drei
-            // Gruppen wie in der mobilen Leiste — nur Linien, kein neuer Text.
-            const trennt = index > 0 && ((unterpunkt && !davor?.unterpunkt) || (id === 'ueber' && davor?.id !== 'ueber'))
-            return (
-              <Fragment key={id}>
-                {trennt && <div aria-hidden="true" className="mx-3 my-1.5 h-px bg-outline-variant/50" />}
-                <button
-                  type="button"
-                  aria-current={id === kategorie ? 'page' : undefined}
-                  onClick={() => oeffnen(id)}
-                  className={`flex h-10 items-center gap-3 rounded-xl px-3 text-left text-label-md transition-colors ${
-                    unterpunkt ? 'ml-3' : ''
-                  } ${
-                    id === kategorie ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                  }`}
-                >
-                  <Symbol className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{t(`browser.einstellungen.kategorie.${id}`)}</span>
-                </button>
-              </Fragment>
-            )
-          })}
-        </nav>
-        <div className="shrink-0 px-3 pt-3 md:hidden">
-          <TabBar
-            einzeilig
-            ariaLabel={titel}
-            active={kategorie}
-            onChange={oeffnen}
-            tabs={kategorien.map((k) => ({ id: k.id, labelKey: `browser.einstellungen.kategorie.${k.id}`, icon: k.symbol, group: k.id === 'ueber' ? 'ueber' : k.unterpunkt ? 'konto' : 'browser' }))}
-          />
-        </div>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-4 md:px-8 md:py-6">
-            {kategorie === 'sicherheit' ? (
-              <SicherheitSeite offline={stand === 'offline'} />
-            ) : kategorie === 'profil' || kategorie === 'konto' || kategorie === 'soziales' || kategorie === 'ki' ? (
-              <GekoppelteSeite teil={kategorie} />
-            ) : (
-              (() => {
-                const Inhalt = INHALT[kategorie]
-                return Inhalt ? <Inhalt /> : null
-              })()
-            )}
-          </div>
-        </div>
+    <div className="msb-bereich h-full overflow-y-auto bg-surface">
+      <div className="msm-page">
+        <SettingsLayout
+          sections={sections}
+          active={kategorie}
+          onChange={oeffnen}
+          title={titel}
+          showGroupHeaders={false}
+        >
+          {kategorie === 'sicherheit' ? (
+            <SicherheitSeite offline={stand === 'offline'} />
+          ) : kategorie === 'profil' || kategorie === 'konto' || kategorie === 'soziales' || kategorie === 'ki' ? (
+            <GekoppelteSeite teil={kategorie} />
+          ) : (
+            (() => {
+              const Inhalt = INHALT[kategorie]
+              return Inhalt ? <Inhalt /> : null
+            })()
+          )}
+        </SettingsLayout>
       </div>
     </div>
   )
