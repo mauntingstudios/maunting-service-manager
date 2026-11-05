@@ -26,6 +26,7 @@
     "nodes": "Nodes",
     "audit": "Audit",
     "ai": "Singra",
+    "aiProviders": "KI-Provider",
     "teams": "Teams",
     "chat": "Messenger",
     "documents": "Maunting Docs"
@@ -1247,9 +1248,11 @@
       "edit_document": "Dokumentänderung",
       "add_document_comment": "Kommentar geschrieben",
       "undo_ai_edit": "KI-Änderung zurückgenommen",
-      "update_document_title": "Titel geändert"
+      "update_document_title": "Titel geändert",
+      "project_create": "Projekt erstellt"
     },
     "toolsRunning": {
+      "project_create": "Ich erstelle das Projekt",
       "ask_user": "Ich frage kurz nach",
       "check_server_reachability": "Ich prüfe, ob der Server erreichbar ist",
       "desktop_dateien": "Ich arbeite in deiner Sandbox",
@@ -1369,6 +1372,10 @@
       "add_document_comment": "Ich schreibe einen Kommentar",
       "undo_ai_edit": "Ich nehme die KI-Änderung zurück",
       "update_document_title": "Ich ändere den Titel"
+    },
+    "projects": {
+      "statusReady": "Projekt bereit",
+      "openProject": "Projekt öffnen"
     },
     "errors": {
       "codes": {
@@ -8107,6 +8114,17 @@
       "applyAllConfirm": "Für alle anwenden",
       "presets": "Design-Hintergründe",
       "default": "Standard",
+      "dynamicTime": "Automatisch nach Tageszeit",
+      "dynamicTimeHint": "Wechselt nach Uhrzeit zwischen Morgen, Tag, Abend und Nacht",
+      "singraMorning": "Morgenstimmung",
+      "singraMorningHint": "Sonnenaufgang in den Bergen",
+      "singraDay": "Alpiner Tag",
+      "singraDayHint": "Klares Bergpanorama am Tag",
+      "singraEvening": "Gipfel-Sonnenuntergang",
+      "singraEveningHint": "Warme Abendsonne und Berghütte",
+      "singraNight": "Sternennacht",
+      "singraNightHint": "Sternenhimmel über den Nadelwäldern",
+      "kiPresets": "Singra Landschaften",
       "cyber": "Cyber Grid",
       "cyberHint": "Feines Datenraster",
       "petrol": "Deep Petrol",

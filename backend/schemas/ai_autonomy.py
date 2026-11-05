@@ -15,6 +15,7 @@ class AiAutonomyGrantWrite(BaseModel):
     # aber sie ist die groessere Entscheidung — deshalb muss sie hier bewusst
     # als `null` gesendet werden und entsteht nicht als Nebenwirkung.
     server_id: int | None = Field(default=None, ge=1)
+    project_id: str | None = Field(default=None, max_length=36)
     enabled: bool = True
     max_actions_per_hour: int = Field(
         default=DEFAULT_MAX_ACTIONS_PER_HOUR, ge=0, le=MAX_ACTIONS_PER_HOUR_LIMIT
@@ -24,6 +25,7 @@ class AiAutonomyGrantWrite(BaseModel):
 class AiAutonomyGrantResponse(BaseModel):
     id: int
     server_id: int | None
+    project_id: str | None = None
     enabled: bool
     max_actions_per_hour: int
     # Wieviel des Stundenbudgets in den letzten 60 Minuten verbraucht wurde.

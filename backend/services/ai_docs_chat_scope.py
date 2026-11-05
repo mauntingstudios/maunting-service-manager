@@ -17,10 +17,29 @@ from services.ai_chat_service import get_or_create_docs_conversation
 from services.docs_service import DocsService
 
 
+class DocsScopeResult(tuple):
+    """Rueckgabe von resolve(): Abwaertskompatibel als 3-Tupel (Unterhaltung, Dokument, Team-ID)
+    mit zusaetzlichen Attributen wie is_link_guest.
+    """
+    conversation: object
+    document: Document
+    team_id: int | None
+    is_link_guest: bool
+
+    def __new__(cls, conversation: object, document: Document, team_id: int | None, is_link_guest: bool = False):
+        return super().__new__(cls, (conversation, document, team_id))
+
+    def __init__(self, conversation: object, document: Document, team_id: int | None, is_link_guest: bool = False):
+        self.conversation = conversation
+        self.document = document
+        self.team_id = team_id
+        self.is_link_guest = is_link_guest
+
+
 def resolve(
     db: Session, user: User, document_uid: str
-) -> tuple[object, Document, int | None]:
-    """Liefert (Unterhaltung, Dokument, Team-ID) oder wirft 403/404.
+) -> DocsScopeResult:
+    """Liefert DocsScopeResult (Unterhaltung, Dokument, Team-ID) oder wirft 403/404.
 
     Die Team-ID ist ``None`` fuer Link-Gaeste und persoenliche Dokumente:
     Beide haben kein Teamwissen, das die KI lesen duerfte.
@@ -51,8 +70,10 @@ def resolve(
         and not team.is_personal
         and team_service.membership(db, team.id, user.id) is not None
     )
-    return (
+    is_link_guest = getattr(zugriff, "via_link", False)
+    return DocsScopeResult(
         conversation,
         zugriff.document,
         zugriff.document.team_id if team_mitglied else None,
+        is_link_guest=is_link_guest,
     )

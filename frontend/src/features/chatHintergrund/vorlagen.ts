@@ -1,4 +1,4 @@
-import { Compass, Layers, RotateCcw, Sparkles } from 'lucide-react'
+import { Compass, Layers, Moon, RotateCcw, Sparkles, Sun, SunMoon, Sunrise, Sunset } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -16,7 +16,16 @@ import type { LucideIcon } from 'lucide-react'
  * Eine neue Vorlage ist damit ein Eintrag in dieser Liste, sonst nichts:
  * Auswahlfenster und Chat kennen sie beide sofort.
  */
-export type HintergrundVorlageId = 'cyber' | 'petrol' | 'midnight' | 'minimal'
+export type HintergrundVorlageId =
+  | 'cyber'
+  | 'petrol'
+  | 'midnight'
+  | 'minimal'
+  | 'dynamic_time'
+  | 'singra_morning'
+  | 'singra_day'
+  | 'singra_evening'
+  | 'singra_night'
 
 /** Die Vorlagen plus „eigenes Bild" — alles, was als Hintergrund stehen kann. */
 export type HintergrundId = HintergrundVorlageId | 'custom'
@@ -47,9 +56,50 @@ export interface HintergrundVorlage {
   klassen: string
   /** Was sich nicht als Klasse schreiben lässt — heute nur das Datenraster. */
   stil?: CSSProperties
+  /** Ob die Vorlage ein Bild verwendet */
+  bildUrl?: string
 }
 
 export const HINTERGRUND_VORLAGEN: readonly HintergrundVorlage[] = [
+  {
+    id: 'dynamic_time',
+    nameKey: 'social.wallpaper.dynamicTime',
+    hinweisKey: 'social.wallpaper.dynamicTimeHint',
+    icon: SunMoon,
+    klassen: 'object-cover object-center',
+  },
+  {
+    id: 'singra_morning',
+    nameKey: 'social.wallpaper.singraMorning',
+    hinweisKey: 'social.wallpaper.singraMorningHint',
+    icon: Sunrise,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/singra-bg-morning.jpg',
+  },
+  {
+    id: 'singra_day',
+    nameKey: 'social.wallpaper.singraDay',
+    hinweisKey: 'social.wallpaper.singraDayHint',
+    icon: Sun,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/singra-bg-day.jpg',
+  },
+  {
+    id: 'singra_evening',
+    nameKey: 'social.wallpaper.singraEvening',
+    hinweisKey: 'social.wallpaper.singraEveningHint',
+    icon: Sunset,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/singra-bg-evening.jpg',
+  },
+  {
+    id: 'singra_night',
+    nameKey: 'social.wallpaper.singraNight',
+    hinweisKey: 'social.wallpaper.singraNightHint',
+    icon: Moon,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/singra-bg-night.jpg',
+  },
   {
     id: 'cyber',
     nameKey: 'social.wallpaper.cyber',
@@ -87,6 +137,22 @@ export const HINTERGRUND_VORLAGEN: readonly HintergrundVorlage[] = [
 
 /** Welche Vorlage steht, wenn niemand etwas gewählt hat. */
 export const STANDARD_VORLAGE: HintergrundVorlageId = 'cyber'
+export const STANDARD_VORLAGE_KI: HintergrundVorlageId = 'dynamic_time'
+
+export const MESSENGER_VORLAGEN_IDS: readonly HintergrundVorlageId[] = [
+  'cyber',
+  'petrol',
+  'midnight',
+  'minimal',
+]
+
+export const KI_VORLAGEN_IDS: readonly HintergrundVorlageId[] = [
+  'dynamic_time',
+  'singra_morning',
+  'singra_day',
+  'singra_evening',
+  'singra_night',
+]
 
 export function vorlageMitId(id: HintergrundId): HintergrundVorlage | undefined {
   return HINTERGRUND_VORLAGEN.find((vorlage) => vorlage.id === id)

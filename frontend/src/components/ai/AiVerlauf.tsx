@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from 'react'
-import { AlertTriangle, BookOpen, Bot, BrainCircuit, Calendar, CalendarClock, ChevronDown, ChevronRight, Globe2, Loader2, Mail, Monitor, Sparkles, User, Wrench } from 'lucide-react'
+import { AlertTriangle, BookOpen, Bot, BrainCircuit, Calendar, CalendarClock, ChevronDown, ChevronRight, FolderGit2, Globe2, Loader2, Mail, Monitor, Sparkles, User, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Kurzinfo } from '@maunting/ui'
+import { Button, Kurzinfo } from '@maunting/ui'
 
 import type {
   AiActionProposal,
@@ -208,15 +208,23 @@ export const AiAntwortblase = memo(function AiAntwortblase({
           <div className="space-y-3">
             {teile.map((teil, stelle) => (
               teil.art === 'tools' ? (
-                <AiWerkzeuggruppe
-                  key={stelle}
-                  werkzeuge={teil.werkzeuge}
-                  // Während die Antwort entsteht, ist das Aufgeklappte die
-                  // Antwort: der Benutzer sieht, dass gearbeitet wird. Ist sie
-                  // fertig, ist es ein Beleg, den man nachschlagen kann — und
-                  // der den Verlauf nicht zustellen soll.
-                  offenVoreingestellt={isStreaming}
-                />
+                <div key={stelle} className="space-y-2">
+                  <AiWerkzeuggruppe
+                    werkzeuge={teil.werkzeuge}
+                    // Während die Antwort entsteht, ist das Aufgeklappte die
+                    // Antwort: der Benutzer sieht, dass gearbeitet wird. Ist sie
+                    // fertig, ist es ein Beleg, den man nachschlagen kann — und
+                    // der den Verlauf nicht zustellen soll.
+                    offenVoreingestellt={isStreaming}
+                  />
+                  {teil.werkzeuge.map((w, wIdx) => {
+                    const proj = w.project_created || (w.tool_name === 'project_create' && (w.ergebnis as any)?.created ? (w.ergebnis as any) : null)
+                    if (!proj) return null
+                    return (
+                      <AiProjectHandoffCard key={wIdx} project={proj} />
+                    )
+                  })}
+                </div>
               ) : teil.art === 'denken' ? (
                 <AiReasoningBlock
                   key={stelle}
@@ -270,6 +278,71 @@ export const AiAntwortblase = memo(function AiAntwortblase({
   )
 })
 
+/** Projekt-Handoff-Karte, wenn die KI autonom ein neues Projekt angelegt hat. */
+export function AiProjectHandoffCard({
+  project,
+}: {
+  project: {
+    project_id?: string
+    name: string
+    created?: boolean
+    status?: string
+    repo_url?: string | null
+    sandbox_path?: string | null
+  }
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="mt-2.5 max-w-md rounded-2xl border border-white/10 bg-surface-container-high/80 p-3.5 shadow-lg backdrop-blur-md transition-all hover:border-primary/40">
+      <div className="flex items-start gap-3">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
+          <FolderGit2 className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h4 className="truncate text-sm font-semibold text-on-surface">
+              {project.name}
+            </h4>
+            <span className="rounded-full bg-status-success/15 px-2 py-0.5 text-label-sm font-medium text-status-success">
+              {t('ai.projects.statusReady', { defaultValue: 'Projekt bereit' })}
+            </span>
+          </div>
+          {project.repo_url && (
+            <p className="mt-0.5 truncate text-xs font-mono text-on-surface-variant">
+              {project.repo_url}
+            </p>
+          )}
+          {project.sandbox_path && !project.repo_url && (
+            <p className="mt-0.5 truncate text-xs font-mono text-on-surface-variant">
+              {project.sandbox_path}
+            </p>
+          )}
+          {project.project_id && (
+            <div className="mt-2.5 flex items-center gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent('singra-open-project', {
+                      detail: { projectId: project.project_id },
+                    }),
+                  )
+                }}
+                className="h-8 gap-1.5 text-xs font-medium"
+              >
+                <FolderGit2 className="h-3.5 w-3.5" aria-hidden="true" />
+                {t('ai.projects.openProject', { defaultValue: 'Projekt öffnen' })}
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Eine einzelne Werkzeugzeile: Symbol, Bezeichnung, ggf. ausklappbarer Fehlschlag. */
 function AiWerkzeugzeile({ tool }: { tool: AiToolUse }) {
   const { t } = useTranslation()
@@ -299,7 +372,9 @@ function AiWerkzeugzeile({ tool }: { tool: AiToolUse }) {
           ? <Sparkles className="h-3.5 w-3.5 shrink-0 text-tertiary" aria-hidden="true" />
           : gruppe === 'memory'
             ? <BrainCircuit className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-            : gruppe === 'docs'
+            : gruppe === 'projects'
+              ? <FolderGit2 className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+              : gruppe === 'docs'
               ? <BookOpen className="h-3.5 w-3.5 shrink-0 text-secondary" aria-hidden="true" />
               : gruppe === 'tasks'
                 ? <CalendarClock className="h-3.5 w-3.5 shrink-0 text-secondary" aria-hidden="true" />

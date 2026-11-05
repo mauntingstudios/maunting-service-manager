@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
@@ -43,7 +44,9 @@ class AiProject(Base):
         Index("ix_ai_projects_team_updated", "team_id", "updated_at"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -100,6 +103,21 @@ class AiProject(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+    @property
+    def sandbox_path(self) -> str:
+        if self.workspace_mode == "desktop" and self.local_path:
+            return self.local_path
+        from services.ai_project_service import _sandbox_base_dir
+        return str(_sandbox_base_dir() / f"proj_{self.id}")
+
+    @property
+    def sandbox_mode(self) -> str:
+        return self.workspace_mode
+
+    @property
+    def system_prompt(self) -> str | None:
+        return self.instructions
 
 
 class AiProjectFile(Base):

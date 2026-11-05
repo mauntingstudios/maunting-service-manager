@@ -22,9 +22,15 @@ import {
   speichereChatHintergrund,
   speichereHintergrundFuerScope,
   STANDARD_HINTERGRUND,
+  STANDARD_HINTERGRUND_KI,
   wendeAufAlleDirektchatsAn,
 } from './speicher'
-import { HINTERGRUND_VORLAGEN } from './vorlagen'
+import {
+  HINTERGRUND_VORLAGEN,
+  KI_VORLAGEN_IDS,
+  MESSENGER_VORLAGEN_IDS,
+  vorlageMitId,
+} from './vorlagen'
 
 beforeAll(async () => {
   await i18n.changeLanguage('de')
@@ -61,7 +67,7 @@ describe('Speicher', () => {
     await speichereChatHintergrund('messenger', { preset: 'midnight', dimLevel: 40 })
 
     expect((await ladeChatHintergrund('messenger')).preset).toBe('midnight')
-    expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND)
+    expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND_KI)
   })
 
   it('übernimmt den alten Messenger-Schlüssel einmalig', async () => {
@@ -100,17 +106,17 @@ describe('Speicher', () => {
 
   it('fällt auf den Standard zurück, wo nichts Brauchbares steht', async () => {
     localStorage.setItem(hintergrundSchluessel('ki'), '{kein json')
-    expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND)
+    expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND_KI)
 
     localStorage.setItem(hintergrundSchluessel('ki'), JSON.stringify({ preset: 'neon' }))
-    expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND.preset)
+    expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND_KI.preset)
 
     // Ein „eigenes Bild" ohne Bild ist kein Hintergrund, sondern ein Loch.
     localStorage.setItem(
       hintergrundSchluessel('ki'),
       JSON.stringify({ preset: 'custom', dimLevel: 25 }),
     )
-    expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND.preset)
+    expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND_KI.preset)
   })
 
   it('lässt einen Direktchat auf die globale Vorgabe zurückfallen', async () => {
@@ -145,7 +151,7 @@ describe('Speicher', () => {
 
     setzeAngemeldetesKonto(2)
     schliesseLokaleAblageFuerTest()
-    expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND)
+    expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND_KI)
 
     setzeAngemeldetesKonto(1)
     schliesseLokaleAblageFuerTest()
@@ -172,7 +178,7 @@ describe('Schicht', () => {
       </>,
     )
     await waitFor(() =>
-      expect(container.querySelectorAll('[data-chat-hintergrund="cyber"]')).toHaveLength(2),
+      expect(container.querySelectorAll('[data-chat-hintergrund="dynamic_time"]')).toHaveLength(2),
     )
 
     await act(async () => {
@@ -201,10 +207,20 @@ describe('Schicht', () => {
 
 describe('Einstellungsfenster', () => {
   it('bietet jede Vorlage des Katalogs an', async () => {
+    const { unmount } = render(<Probeflaeche bereich="messenger" />)
+    fireEvent.click(screen.getByText('einstellen'))
+
+    for (const id of MESSENGER_VORLAGEN_IDS) {
+      const vorlage = vorlageMitId(id)!
+      expect(await screen.findByText(i18n.t(vorlage.nameKey))).toBeInTheDocument()
+    }
+    unmount()
+
     render(<Probeflaeche bereich="ki" />)
     fireEvent.click(screen.getByText('einstellen'))
 
-    for (const vorlage of HINTERGRUND_VORLAGEN) {
+    for (const id of KI_VORLAGEN_IDS) {
+      const vorlage = vorlageMitId(id)!
       expect(await screen.findByText(i18n.t(vorlage.nameKey))).toBeInTheDocument()
     }
   })
@@ -214,11 +230,11 @@ describe('Einstellungsfenster', () => {
 
     render(<Probeflaeche bereich="ki" />)
     fireEvent.click(screen.getByText('einstellen'))
-    fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.midnight')))
+    fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.singraMorning')))
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.apply') }))
 
     await waitFor(async () =>
-      expect((await ladeChatHintergrund('ki')).preset).toBe('midnight'),
+      expect((await ladeChatHintergrund('ki')).preset).toBe('singra_morning'),
     )
     expect((await ladeChatHintergrund('messenger')).preset).toBe('petrol')
   })
@@ -236,7 +252,7 @@ describe('Einstellungsfenster', () => {
   })
 
   it('beginnt jedes Mal bei dem, was gespeichert ist', async () => {
-    render(<Probeflaeche bereich="ki" />)
+    render(<Probeflaeche bereich="messenger" />)
 
     fireEvent.click(screen.getByText('einstellen'))
     fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.petrol')))
@@ -249,14 +265,14 @@ describe('Einstellungsfenster', () => {
   })
 
   it('setzt auf den Standard zurück', async () => {
-    await speichereChatHintergrund('ki', { preset: 'midnight', dimLevel: 70 })
+    await speichereChatHintergrund('ki', { preset: 'singra_night', dimLevel: 70 })
 
     render(<Probeflaeche bereich="ki" />)
     fireEvent.click(screen.getByText('einstellen'))
     fireEvent.click(await screen.findByRole('button', { name: i18n.t('common.reset') }))
 
     await waitFor(async () =>
-      expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND),
+      expect(await ladeChatHintergrund('ki')).toEqual(STANDARD_HINTERGRUND_KI),
     )
   })
 
@@ -300,7 +316,7 @@ describe('Einstellungsfenster', () => {
     })
 
     expect(await screen.findByText(i18n.t('social.wallpaper.badType'))).toBeInTheDocument()
-    expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND.preset)
+    expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND_KI.preset)
   })
 })
 
@@ -330,7 +346,7 @@ describe('Einstieg über das Blattmenü', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Weitere Einstellungen' }))
     fireEvent.click(screen.getByText(i18n.t('social.wallpaper.title')))
 
-    expect(await screen.findByText(i18n.t('social.wallpaper.presets'))).toBeInTheDocument()
+    expect(await screen.findByText(i18n.t('social.wallpaper.kiPresets'))).toBeInTheDocument()
     expect(screen.getAllByText(i18n.t('social.wallpaper.title'))).toHaveLength(1)
   })
 })

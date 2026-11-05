@@ -31,6 +31,7 @@ vi.mock('@/pages/Blueprints', () => ({ Blueprints: () => <div data-testid="bluep
 vi.mock('@/pages/AdminNodes', () => ({ AdminNodes: () => <div data-testid="nodes-seite" /> }))
 vi.mock('@/pages/AdminAudit', () => ({ AdminAudit: () => <div data-testid="audit-seite" /> }))
 vi.mock('@/pages/Settings', () => ({ Settings: () => <div data-testid="panel-einstellungen-seite" /> }))
+vi.mock('@/pages/settings/AiTab', () => ({ AiTab: () => <div data-testid="ai-settings-seite" /> }))
 vi.mock('@/pages/PanelBackups', () => ({ PanelBackups: () => <div data-testid="panel-backups-seite" /> }))
 vi.mock('@/pages/PanelDatabase', () => ({ PanelDatabase: () => <div data-testid="panel-datenbank-seite" /> }))
 
@@ -80,6 +81,7 @@ describe('DashboardBereich', () => {
     expect(screen.getByRole('tab', { name: i18n.t('nav.dashboard') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: i18n.t('nav.servers') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: i18n.t('nav.nodes') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: i18n.t('nav.aiProviders') })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.dashboard.mehr') }))
     for (const key of ['nav.users', 'nav.roles', 'nav.audit', 'mss.dashboard.panelEinstellungen', 'nav.blueprints', 'nav.panelBackups', 'nav.panelDatabase']) {

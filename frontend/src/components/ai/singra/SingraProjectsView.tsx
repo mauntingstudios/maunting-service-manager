@@ -109,8 +109,51 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
     team_id: null,
   })
   const [savingProject, setSavingProject] = useState(false)
+  const [projectAutonomy, setProjectAutonomy] = useState(false)
+  const [savingAutonomy, setSavingAutonomy] = useState(false)
 
   const selectedProject = projects.find((p) => p.id === selectedId) ?? null
+
+  useEffect(() => {
+    if (!selectedId) {
+      setProjectAutonomy(false)
+      return
+    }
+    let active = true
+    aiApi
+      .listAutonomyGrants()
+      .then((grants) => {
+        if (!active) return
+        const g = grants.find((x) => x.project_id === selectedId)
+        setProjectAutonomy(Boolean(g?.enabled))
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [selectedId])
+
+  const handleToggleAutonomy = async (enabled: boolean) => {
+    if (!selectedId || savingAutonomy) return
+    setSavingAutonomy(true)
+    try {
+      await aiApi.saveAutonomyGrant({
+        project_id: selectedId,
+        enabled,
+        max_actions_per_hour: 100,
+      })
+      setProjectAutonomy(enabled)
+      toast.success(
+        enabled
+          ? 'Autonomie für dieses Projekt aktiviert.'
+          : 'Autonomie für dieses Projekt deaktiviert.',
+      )
+    } catch {
+      toast.error('Autonomie-Einstellung konnte nicht gespeichert werden.')
+    } finally {
+      setSavingAutonomy(false)
+    }
+  }
 
   const loadProjects = useCallback(async () => {
     setLoading(true)
@@ -1065,6 +1108,22 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                           }
                         }}
                         aria-label="Git Personal Access Token"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl border border-outline-variant/30 bg-surface-container p-3.5 mt-2">
+                      <div>
+                        <div className="text-xs font-semibold text-on-surface">
+                          Autonome Ausführung für dieses Projekt
+                        </div>
+                        <p className="text-xs text-on-surface-variant mt-0.5">
+                          Erlaubt Singra, Dateien, Ordner und Befehle in diesem Projekt ohne Einzelrückfrage zu bearbeiten.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={projectAutonomy}
+                        disabled={savingAutonomy}
+                        onCheckedChange={handleToggleAutonomy}
+                        aria-label="Autonome Ausführung für dieses Projekt"
                       />
                     </div>
                   </div>

@@ -20,6 +20,7 @@ export const DASHBOARD_SEITEN: DashboardSeite[] = [
   { to: '/', labelKey: 'nav.dashboard', gruppe: 'Overview' },
   { to: '/servers', labelKey: 'nav.servers', gruppe: 'Infrastructure' },
   { to: '/admin/nodes', labelKey: 'nav.nodes', gruppe: 'Infrastructure' },
+  { to: '/admin/ai-providers', labelKey: 'nav.aiProviders', gruppe: 'Infrastructure' },
   { to: '/users', labelKey: 'nav.users', gruppe: 'Administration' },
   { to: '/roles', labelKey: 'nav.roles', gruppe: 'Administration' },
   { to: '/admin/audit', labelKey: 'nav.audit', gruppe: 'Administration' },

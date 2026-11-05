@@ -741,12 +741,15 @@ async def stream_message(
             conversation.title = erste_zeile[:80]
     docs_document_uid: str | None = None
     docs_team_id: int | None = None
+    docs_is_link_guest: bool = False
     if payload.document_uid:
         from services.ai_docs_chat_scope import resolve as docs_scope
 
-        conversation, dokument, team_id = docs_scope(db, user, payload.document_uid)
-        docs_document_uid = dokument.doc_uid
-        docs_team_id = team_id
+        scope_res = docs_scope(db, user, payload.document_uid)
+        conversation = scope_res.conversation
+        docs_document_uid = scope_res.document.doc_uid
+        docs_team_id = scope_res.team_id
+        docs_is_link_guest = scope_res.is_link_guest
     db.commit()
     provider = db.get(AiProvider, payload.provider_id)
     if provider is None or not provider.enabled or not _fuer_chat(provider):
@@ -832,6 +835,7 @@ async def stream_message(
             familie=familie,
             docs_document_uid=docs_document_uid,
             docs_team_id=docs_team_id,
+            docs_is_link_guest=docs_is_link_guest,
             # Ob das Modell Bilder liest, kommt aus demselben Katalog wie das
             # Fenster. `None` heisst unbekannt; nur ein ausdrueckliches False
             # ersetzt das Bild durch einen Hinweis.

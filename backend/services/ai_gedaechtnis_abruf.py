@@ -103,6 +103,7 @@ def sichtbare_bereiche(
     persoenlich: bool,
     anlage: int | bool | None,
     nur_team_id: int | None = None,
+    nur_persoenlich: bool = False,
 ) -> list[str]:
     """Die Bereiche, aus denen dieser Benutzer gerade etwas wissen darf.
 
@@ -123,6 +124,10 @@ def sichtbare_bereiche(
         # Dokument-Lauf: ausschliesslich das Gedaechtnis des Dokumentteams.
         # Kein panel, kein user, kein server, keine anderen Teams.
         return [f"team:{nur_team_id}"]
+
+    if nur_persoenlich:
+        # Dokument-Lauf fuer persoenliche Notizen: ausschliesslich persoenliche Erinnerungen
+        return [f"user:{user.id}"] if persoenlich else []
 
     kennungen = {"panel"}
     if persoenlich:
@@ -622,6 +627,7 @@ def abrufen(
     budget: int | None = None,
     *,
     nur_team_id: int | None = None,
+    nur_persoenlich: bool = False,
 ) -> Abruf:
     """Das Gedächtnis für eine Anfrage: was im Kopf steht und was zur Frage passt.
 
@@ -641,6 +647,7 @@ def abrufen(
         persoenlich=ai_memory_service.preference(db, user.id),
         anlage=server_id,
         nur_team_id=nur_team_id,
+        nur_persoenlich=nur_persoenlich,
     )
     kopf, kopf_zeichen, ausgelassen = _kopf(db, kennungen, zeichen)
     frage = query.strip()

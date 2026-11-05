@@ -467,6 +467,15 @@ export interface AiToolUse {
   web_results?: Array<{ title?: string; url?: string; snippet?: string; description?: string }> | null
   /** Generisches Werkzeugergebnis für erweiterte Anzeigen. */
   ergebnis?: unknown
+  /** Wenn ein Projekt autonom angelegt wurde. */
+  project_created?: {
+    project_id: string
+    name: string
+    created: boolean
+    status: string
+    repo_url?: string | null
+    sandbox_path?: string | null
+  } | null
 }
 
 /**
@@ -784,6 +793,7 @@ export interface AiAutonomyGrant {
   id: number
   /** Null = panelweit. */
   server_id: number | null
+  project_id?: string | null
   enabled: boolean
   max_actions_per_hour: number
   used_last_hour: number
@@ -1933,7 +1943,12 @@ export const aiApi = {
    * wird über `enabled: false` (AiAutonomyButton), damit die einmal erteilte
    * Freigabe samt Stundenlimit sichtbar bleibt, statt spurlos zu verschwinden.
    */
-  saveAutonomyGrant: (payload: { server_id: number | null; enabled: boolean; max_actions_per_hour: number }) =>
+  saveAutonomyGrant: (payload: {
+    server_id?: number | null
+    project_id?: string | null
+    enabled: boolean
+    max_actions_per_hour: number
+  }) =>
     api<AiAutonomyGrant>('/ai/autonomy', { method: 'PUT', body: JSON.stringify(payload) }),
   /**
    * Ein ganzer Bereich auf einmal. Die Oberfläche liest so nicht mehr — sie

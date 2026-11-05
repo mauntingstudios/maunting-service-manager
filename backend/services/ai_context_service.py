@@ -216,6 +216,7 @@ def _skill_index_block(
     unbeaufsichtigt: bool = False,
     *,
     nur_team_id: int | None = None,
+    nur_persoenlich: bool = False,
 ) -> str:
     if user is None or unbeaufsichtigt:
         return ""
@@ -225,7 +226,9 @@ def _skill_index_block(
         return ""
     from services import ai_skill_service
 
-    views = ai_skill_service.skill_index(db, user, query, nur_team_id=nur_team_id)
+    views = ai_skill_service.skill_index(
+        db, user, query, nur_team_id=nur_team_id, nur_persoenlich=nur_persoenlich
+    )
     if not views:
         return ""
     lines = [
@@ -254,9 +257,15 @@ def _skill_index_message(
     unbeaufsichtigt: bool = False,
     *,
     nur_team_id: int | None = None,
+    nur_persoenlich: bool = False,
 ) -> dict[str, Any] | None:
     block = _skill_index_block(
-        db, user, query, unbeaufsichtigt, nur_team_id=nur_team_id
+        db,
+        user,
+        query,
+        unbeaufsichtigt,
+        nur_team_id=nur_team_id,
+        nur_persoenlich=nur_persoenlich,
     )
     if not block:
         return None
@@ -517,6 +526,7 @@ def build_provider_messages(
     herkunft: str = "panel",
     docs: bool = False,
     docs_team_id: int | None = None,
+    docs_is_link_guest: bool = False,
     modell_sieht: bool | None = None,
     computer_use_aktiv: bool | None = None,
     provider_protokoll: str | None = None,
@@ -577,25 +587,27 @@ def build_provider_messages(
             docs=docs,
         )}
     ]
-    # Ein Dokument-Lauf ohne Team-ID ist ein Link-Gast: Er darf das Dokument
-    # bearbeiten, aber kein Teamwissen sehen. `nur_team_id=None` bedeutet im
-    # Abruf „keine Einschraenkung“ und wuerde ihm persoenliches, server- und
-    # teambezogenes Wissen in den Prompt legen. Deshalb wird hier nicht
-    # abgerufen statt falsch eingeschraenkt.
-    teamwissen_erlaubt = (not docs) or docs_team_id is not None
+    # Gedaechtnis- und Skill-Trennung fuer Maunting Docs:
+    # 1. Link-Gaeste (docs_is_link_guest): keinerlei Zugriff auf Gedaechtnis oder Skills.
+    # 2. Team-Dokument (docs and docs_team_id is not None): strikt nur Teamwissen (nur_team_id=docs_team_id).
+    # 3. Persoenliche Notiz (docs and docs_team_id is None): persoenliche Erinnerungen & Skills (nur_persoenlich=True).
+    # 4. Normaler Chat (not docs): alle zulaessigen Bereiche (persoenlich, server, teams).
+    wissen_erlaubt = not (docs and docs_is_link_guest)
+    nur_persoenlich = bool(docs and docs_team_id is None)
     skill_verzeichnis = None
-    if teamwissen_erlaubt:
+    if wissen_erlaubt:
         skill_verzeichnis = _skill_index_message(
             db,
             user,
             query,
             unbeaufsichtigt and rolle != "worker",
             nur_team_id=docs_team_id if docs else None,
+            nur_persoenlich=nur_persoenlich,
         )
     if skill_verzeichnis is not None:
         result.append(skill_verzeichnis)
     gedaechtnis_passend: str | None = None
-    if user is not None and rolle != "worker" and teamwissen_erlaubt:
+    if user is not None and rolle != "worker" and wissen_erlaubt:
         from services import ai_gedaechtnis_abruf, permission_service
 
         if permission_service.has_global_permission(db, user, "ai.memory.use"):
@@ -606,6 +618,7 @@ def build_provider_messages(
                 server_id,
                 budget=grenzen.gedaechtnis_zeichen,
                 nur_team_id=docs_team_id if docs else None,
+                nur_persoenlich=nur_persoenlich,
             )
             if abruf.kopf:
                 result.append(_memory_message(abruf.kopf))

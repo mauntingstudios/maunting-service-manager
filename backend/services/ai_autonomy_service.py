@@ -26,9 +26,13 @@ def _now() -> datetime:
 
 
 def resolve_grant(
-    db: Session, *, user_id: int, server_id: int | None
+    db: Session,
+    *,
+    user_id: int,
+    server_id: int | None = None,
+    project_id: str | None = None,
 ) -> AiAutonomyGrant | None:
-    """Sucht die zutreffende Freigabe: erst der Server, dann panelweit.
+    """Sucht die zutreffende Freigabe: erst Projekt, dann Server, dann panelweit.
 
     Die spezifischere Angabe gewinnt — **auch wenn sie abschaltet**. Deshalb
     wird hier bewusst nicht nach `enabled` gefiltert: sonst waere ein gezielt
@@ -43,7 +47,11 @@ def resolve_grant(
         .filter(AiAutonomyGrant.user_id == user_id)
         .all()
     )
-    by_scope = {row.server_id: row for row in rows}
+    if project_id is not None:
+        for r in rows:
+            if getattr(r, "project_id", None) == str(project_id):
+                return r
+    by_scope = {row.server_id: row for row in rows if getattr(row, "project_id", None) is None}
     if server_id is not None and server_id in by_scope:
         return by_scope[server_id]
     return by_scope.get(None)
@@ -107,29 +115,21 @@ def hourly_usage(db: Session, *, user_id: int, now: datetime | None = None) -> i
 
 
 def autonomie_grundlage(
-    db: Session, *, user: User, server_id: int | None, tool_name: str
+    db: Session,
+    *,
+    user: User,
+    server_id: int | None = None,
+    tool_name: str,
+    project_id: str | None = None,
 ) -> AiAutonomyGrant | None:
-    """Die Freigabe, die diese Aktion trägt — oder ``None``, wenn keine sie trägt.
-
-    Hier stehen genau die Bedingungen, die **dauerhaft** gelten müssen:
-    erlaubtes Werkzeug, `ai.autonomous.use` und eine aktive Freigabe mit einem
-    Budget größer Null. Sie sind Zusagen, die ein Betreiber jederzeit
-    zurückziehen kann, und ein Widerruf muss sofort wirken — deshalb werden sie
-    nicht nur beim Anlegen eines Vorschlags gefragt, sondern auch unmittelbar
-    vor seiner Ausführung.
-
-    Das Stundenbudget steht bewusst **nicht** hier, sondern nur in
-    `autonomy_allows`: der Vorschlag selbst zählt bereits in `hourly_usage` mit,
-    und eine zweite Zählung vor der Ausführung würde bei
-    ``max_actions_per_hour = 1`` die eigene Aktion verweigern.
-    """
+    """Die Freigabe, die diese Aktion trägt — oder ``None``, wenn keine sie trägt."""
     from services.ai_tool_registry import ALWAYS_CONFIRM_TOOLS
 
     if tool_name in ALWAYS_CONFIRM_TOOLS:
         return None
     if not permission_service.has_global_permission(db, user, "ai.autonomous.use"):
         return None
-    grant = resolve_grant(db, user_id=user.id, server_id=server_id)
+    grant = resolve_grant(db, user_id=user.id, server_id=server_id, project_id=project_id)
     if grant is None or not grant.enabled:
         return None
     if grant.max_actions_per_hour <= 0:
@@ -141,34 +141,29 @@ def autonomy_allows(
     db: Session,
     *,
     user: User,
-    server_id: int | None,
+    server_id: int | None = None,
     tool_name: str,
+    project_id: str | None = None,
     now: datetime | None = None,
 ) -> bool:
     """Entscheidet, ob dieser eine Vorschlag ohne Bestaetigung laufen darf."""
     grant = autonomie_grundlage(
-        db, user=user, server_id=server_id, tool_name=tool_name
+        db, user=user, server_id=server_id, tool_name=tool_name, project_id=project_id
     )
     if grant is None:
         return False
-    # Persönliche Kalender-, Notiz- und Domain-Operationen des Nutzers unterliegen bei erteilter
+    # Persönliche Kalender-, Notiz-, Projekt- und Domain-Operationen des Nutzers unterliegen bei erteilter
     # Autonomie-Freigabe nicht dem strikten Server-Stundenkontingent.
-    #
-    # Die Löschwerkzeuge standen bis zum 23.09.2026 mit in dieser Liste. Sie
-    # kommen hier gar nicht mehr an: `autonomie_grundlage` verneint jedes
-    # Werkzeug aus `ALWAYS_CONFIRM_TOOLS`, und Löschen gehört dazu.
     if tool_name in (
         "propose_calendar_event_create",
         "propose_calendar_event_update",
         "propose_note_create",
         "propose_note_update",
         "propose_cloudflare_dns_record",
+        "project_workspace",
+        "project_create",
     ):
         return True
-    # Die Obergrenze begrenzt nicht die Berechtigung, sondern die Menge: ein in
-    # eine Schleife geratenes Modell soll nicht in einer Minute vierzig Backups
-    # anstossen. Bei Erreichen faellt die Aktion zurueck auf Bestaetigungspflicht
-    # statt zu scheitern — der Benutzer verliert nur die Bequemlichkeit.
     return hourly_usage(db, user_id=user.id, now=now) < grant.max_actions_per_hour
 
 
@@ -176,7 +171,8 @@ def set_grant(
     db: Session,
     *,
     user: User,
-    server_id: int | None,
+    server_id: int | None = None,
+    project_id: str | None = None,
     enabled: bool,
     max_actions_per_hour: int,
     granted_by: int | None,
@@ -185,18 +181,20 @@ def set_grant(
 
     if not 0 <= max_actions_per_hour <= MAX_ACTIONS_PER_HOUR_LIMIT:
         raise ValueError("Stundenbudget liegt ausserhalb des erlaubten Bereichs")
-    row = (
-        db.query(AiAutonomyGrant)
-        .filter(
-            AiAutonomyGrant.user_id == user.id,
-            AiAutonomyGrant.server_id.is_(None)
-            if server_id is None
-            else AiAutonomyGrant.server_id == server_id,
-        )
-        .first()
-    )
+    query = db.query(AiAutonomyGrant).filter(AiAutonomyGrant.user_id == user.id)
+    if project_id is not None:
+        query = query.filter(AiAutonomyGrant.project_id == str(project_id))
+    elif server_id is not None:
+        query = query.filter(AiAutonomyGrant.server_id == server_id, AiAutonomyGrant.project_id.is_(None))
+    else:
+        query = query.filter(AiAutonomyGrant.server_id.is_(None), AiAutonomyGrant.project_id.is_(None))
+    row = query.first()
     if row is None:
-        row = AiAutonomyGrant(user_id=user.id, server_id=server_id)
+        row = AiAutonomyGrant(
+            user_id=user.id,
+            server_id=server_id if project_id is None else None,
+            project_id=str(project_id) if project_id else None,
+        )
         db.add(row)
     row.enabled = enabled
     row.max_actions_per_hour = max_actions_per_hour
@@ -206,17 +204,21 @@ def set_grant(
     return row
 
 
-def clear_grant(db: Session, *, user_id: int, server_id: int | None) -> bool:
-    row = (
-        db.query(AiAutonomyGrant)
-        .filter(
-            AiAutonomyGrant.user_id == user_id,
-            AiAutonomyGrant.server_id.is_(None)
-            if server_id is None
-            else AiAutonomyGrant.server_id == server_id,
-        )
-        .first()
-    )
+def clear_grant(
+    db: Session,
+    *,
+    user_id: int,
+    server_id: int | None = None,
+    project_id: str | None = None,
+) -> bool:
+    query = db.query(AiAutonomyGrant).filter(AiAutonomyGrant.user_id == user_id)
+    if project_id is not None:
+        query = query.filter(AiAutonomyGrant.project_id == str(project_id))
+    elif server_id is not None:
+        query = query.filter(AiAutonomyGrant.server_id == server_id, AiAutonomyGrant.project_id.is_(None))
+    else:
+        query = query.filter(AiAutonomyGrant.server_id.is_(None), AiAutonomyGrant.project_id.is_(None))
+    row = query.first()
     if row is None:
         return False
     db.delete(row)

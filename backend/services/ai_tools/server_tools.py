@@ -240,6 +240,19 @@ def _global_tool_definitions() -> list[dict]:
         },
         ["action"],
     ))
+    optional.append(_function(
+        "project_create",
+        "Erstellt autonom ein neues KI-Projekt fuer Code, allgemeine Aufgaben oder ein Git-Repo und verknuepft die Unterhaltung.",
+        {
+            "name": {"type": "string", "maxLength": 160},
+            "description": {"type": "string", "maxLength": 500},
+            "git_repo_url": {"type": "string", "maxLength": 1024},
+            "git_branch": {"type": "string", "maxLength": 120},
+            "system_instructions": {"type": "string", "maxLength": 4000},
+            "sandbox_mode": {"type": "string", "enum": ["server", "local", "none"]},
+        },
+        ["name"],
+    ))
     optional.append(_function("search_curseforge_modpacks", "Sucht Modpacks auf CurseForge fuer ein Spiel nach Name oder Thema (etwa 'Tech', 'Magic', 'Dinos'). Liefert id, name, downloads.", {"query": {"type": "string", "maxLength": 128}, "game_id": {"type": "string", "maxLength": 64, "description": "Game-ID oder Spielname/Slug, etwa 'minecraft'."}, "game": {"type": "string", "maxLength": 64, "description": "Spielname, wenn die game_id fehlt."}, "server_id": {"type": "integer", "description": "Spiel aus diesem Server."}, "page": {"type": "integer", "minimum": 1, "maximum": 50}}, ["query"]))
     optional.append(_function("search_curseforge_mods", "Sucht Einzelmods auf CurseForge fuer ein Spiel nach Name oder Thema (etwa 'Minimap', 'Storage'). Liefert id, name, downloads, author.", {"query": {"type": "string", "maxLength": 128}, "game_id": {"type": "string", "maxLength": 64, "description": "Game-ID oder Spielname/Slug, etwa 'minecraft'."}, "game": {"type": "string", "maxLength": 64, "description": "Spielname, wenn die game_id fehlt."}, "server_id": {"type": "integer", "description": "Spiel aus diesem Server."}, "class_id": {"type": "string", "maxLength": 32, "description": "Klassen-ID oder 'mods'/'modpacks'."}, "page": {"type": "integer", "minimum": 1, "maximum": 50}}, ["query"]))
 
@@ -1759,11 +1772,13 @@ def _execute_global_read_tool(
     if tool_name == "forget_skill":
         return _execute_forget_skill(db, user=user, arguments=arguments)
 
-    if tool_name == "project_workspace":
+    if tool_name in ("project_workspace", "project_create"):
         from services import ai_project_service
         from services.ai_project_service import AiProjectError
 
         action = str(arguments.get("action") or "").strip()
+        if tool_name == "project_create":
+            action = "create_project"
         proj_id_raw = arguments.get("project_id")
         try:
             if action == "list_projects":
@@ -1782,17 +1797,54 @@ def _execute_global_read_tool(
                     ]
                 }
             if action == "create_project":
+                name = str(arguments.get("name") or "Neues Projekt").strip()
+                description = str(arguments.get("description") or "").strip() or None
+                repo_url = str(arguments.get("repo_url") or arguments.get("git_repo_url") or "").strip() or None
+                branch = str(arguments.get("branch") or arguments.get("git_branch") or "main").strip() or "main"
+                system_prompt = str(arguments.get("system_instructions") or arguments.get("system_prompt") or "").strip() or None
+                sandbox_mode = str(arguments.get("sandbox_mode") or "server")
+                local_path = str(arguments.get("local_path") or "").strip() or None
+
                 p = ai_project_service.create_project(
                     db,
                     user,
-                    name=str(arguments.get("name") or "Neues Projekt"),
-                    git_repo_url=str(arguments.get("repo_url") or "") or None,
-                    git_branch=str(arguments.get("branch") or "main"),
+                    name=name,
+                    description=description,
+                    system_prompt=system_prompt,
+                    sandbox_mode=sandbox_mode,
+                    local_path=local_path,
+                    git_repo_url=repo_url,
+                    git_branch=branch,
                 )
-                return {"project_id": p.id, "name": p.name, "workspace": p.sandbox_path}
+                if repo_url:
+                    try:
+                        ai_project_service.git_clone_or_pull(db, user, p.id, repo_url=repo_url, branch=branch)
+                    except Exception:
+                        pass
+
+                conv_id = getattr(kontext, "conversation_id", None) or (
+                    kontext.get("conversation_id") if isinstance(kontext, dict) else None
+                )
+                if conv_id:
+                    from models.ai_conversation import AiConversation
+                    conv = db.get(AiConversation, str(conv_id))
+                    if conv is not None and not conv.project_id:
+                        conv.project_id = p.id
+                        db.commit()
+
+                return {
+                    "project_id": p.id,
+                    "name": p.name,
+                    "description": p.description,
+                    "workspace": p.sandbox_path,
+                    "git_repo_url": p.git_repo_url,
+                    "git_branch": p.git_branch,
+                    "status": "ready",
+                    "created": True,
+                }
             if not proj_id_raw:
                 raise AiActionValidationError("project_id ist für diese Aktion erforderlich")
-            pid = int(proj_id_raw)
+            pid = str(proj_id_raw)
             if action == "list_files":
                 files = ai_project_service.list_project_files(db, user, pid)
                 return {"files": [{"path": f.path, "size_bytes": f.size_bytes} for f in files]}

@@ -148,6 +148,7 @@ export function DocsChatPanel({ uid, selection, onChanged }: DocsChatPanelProps)
       key={uid}
       scope={scope}
       eingebettet
+      singraShell
       showTasks={false}
       showGuardian={false}
       showWorkers={false}

@@ -271,6 +271,15 @@ def _anzeigeeintrag(call, wert, fehlgeschlagen: str | None) -> dict:
         eintrag["web_results"] = wert["results"]
     if call.name == "read_web_page" and isinstance(wert, dict):
         eintrag["web_page"] = {"url": wert.get("url"), "title": wert.get("title")}
+    if (
+        call.name == "project_create"
+        or (
+            call.name == "project_workspace"
+            and isinstance(call.arguments, dict)
+            and call.arguments.get("action") == "create_project"
+        )
+    ) and isinstance(wert, dict) and wert.get("project_id"):
+        eintrag["project_created"] = wert
     return eintrag
 
 
@@ -505,6 +514,12 @@ def voice_werkzeug_ausfuehren(
             conversation_id=conversation_id,
             document_uid=docs_document_uid,
             team_id=docs_team_id,
+        )
+    elif conversation_id:
+        from services.ai_tools.document_tools import ToolKontext
+
+        docs_kontext = ToolKontext(
+            conversation_id=conversation_id,
         )
     wert, fehler = _werkzeug_ausfuehren(
         user_id,
@@ -1403,6 +1418,14 @@ async def _leserunde_ausfuehren(
             document_uid=str(docs_state["document_uid"]),
             team_id=docs_state.get("team_id"),
             selection=ai_docs_selection.lesen(run_id),
+            rolle=rolle,
+        )
+    elif conversation_id:
+        from services.ai_tools.document_tools import ToolKontext
+
+        docs_kontext = ToolKontext(
+            run_id=run_id,
+            conversation_id=conversation_id,
             rolle=rolle,
         )
 

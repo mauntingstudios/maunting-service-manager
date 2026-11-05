@@ -1278,11 +1278,10 @@ export function AiChat({
         void uploadFiles(dateien)
       }}
     >
-      {/* ── Der Hintergrund: im leeren Singra-Chat atmosphärisches Landschaftsbild, sonst Chat-Hintergrund ── */}
-      {singraShell && empty && !inlineVoiceActive ? (
+      {/* ── Der Hintergrund: atmosphärisches Landschaftsbild oder Chat-Hintergrund ── */}
+      <ChatHintergrund bereich="ki" />
+      {singraShell && empty && !inlineVoiceActive && (
         <SingraScenicBackground visible />
-      ) : (
-        <ChatHintergrund bereich="ki" />
       )}
 
       {/* ── Kopfzeile: Provider, Denkschritte, Autonomie, Skills ─────────

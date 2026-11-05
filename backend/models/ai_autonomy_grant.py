@@ -22,6 +22,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    String,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -50,6 +51,10 @@ class AiAutonomyGrant(Base):
     # NULL = panelweit.
     server_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("servers.id", ondelete="CASCADE"), nullable=True
+    )
+    # Optionale Bindung an ein Projekt
+    project_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("ai_projects.id", ondelete="CASCADE"), nullable=True, index=True
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     max_actions_per_hour: Mapped[int] = mapped_column(

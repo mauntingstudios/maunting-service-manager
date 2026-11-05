@@ -17,6 +17,7 @@ import { usePanelNavigation } from '@/components/layout/usePanelNavigation'
 import { Loader } from '@/components/app/Loader'
 import { TabBar, TabDef } from '@maunting/ui'
 import { ActionMenu, useZurueckSchliesst, ActionMenuItem } from '@maunting/ui'
+import { Bot } from 'lucide-react'
 import { DASHBOARD_SEITEN, dashboardElternroute } from './dashboardWege'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((modul) => ({ default: modul.Dashboard })))
@@ -28,6 +29,7 @@ const Blueprints = lazy(() => import('@/pages/Blueprints').then((modul) => ({ de
 const AdminNodes = lazy(() => import('@/pages/AdminNodes').then((modul) => ({ default: modul.AdminNodes })))
 const AdminAudit = lazy(() => import('@/pages/AdminAudit').then((modul) => ({ default: modul.AdminAudit })))
 const Settings = lazy(() => import('@/pages/Settings').then((modul) => ({ default: modul.Settings })))
+const AiSettings = lazy(() => import('@/pages/settings/AiTab').then((modul) => ({ default: modul.AiTab })))
 const PanelBackups = lazy(() => import('@/pages/PanelBackups').then((modul) => ({ default: modul.PanelBackups })))
 const PanelDatabase = lazy(() => import('@/pages/PanelDatabase').then((modul) => ({ default: modul.PanelDatabase })))
 
@@ -51,10 +53,13 @@ export function DashboardBereich() {
 
   const seiten = useMemo(() => {
     const erlaubt = new Set(items.map((eintrag) => eintrag.to))
+    if (erlaubt.has('/settings')) {
+      erlaubt.add('/admin/ai-providers')
+    }
     return DASHBOARD_SEITEN.filter((seite) => erlaubt.has(seite.to)).map((seite) => ({
       ...seite,
       label: t(seite.labelKey),
-      icon: items.find((eintrag) => eintrag.to === seite.to)?.icon,
+      icon: items.find((eintrag) => eintrag.to === seite.to)?.icon ?? (seite.to === '/admin/ai-providers' ? Bot : undefined),
     }))
   }, [items, t])
 
@@ -164,6 +169,14 @@ export function DashboardBereich() {
                 element={
                   <RequirePermission routeKey="panelDatabase">
                     <PanelDatabase />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/admin/ai-providers"
+                element={
+                  <RequirePermission routeKey="settings">
+                    <AiSettings />
                   </RequirePermission>
                 }
               />

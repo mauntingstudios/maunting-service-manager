@@ -26,6 +26,7 @@
     "nodes": "Nodes",
     "audit": "Audit",
     "ai": "Singra",
+    "aiProviders": "AI Providers",
     "teams": "Teams",
     "chat": "Messenger",
     "documents": "Maunting Docs"
@@ -1247,9 +1248,11 @@
       "edit_document": "Document change",
       "add_document_comment": "Comment written",
       "undo_ai_edit": "AI change undone",
-      "update_document_title": "Title changed"
+      "update_document_title": "Title changed",
+      "project_create": "Project created"
     },
     "toolsRunning": {
+      "project_create": "I am creating the project",
       "ask_user": "Asking a quick question",
       "check_server_reachability": "Checking whether the server is reachable",
       "desktop_dateien": "Working in your sandbox",
@@ -1369,6 +1372,10 @@
       "add_document_comment": "Writing a comment",
       "undo_ai_edit": "Undoing the AI change",
       "update_document_title": "Changing the title"
+    },
+    "projects": {
+      "statusReady": "Project ready",
+      "openProject": "Open project"
     },
     "errors": {
       "codes": {
@@ -8107,6 +8114,17 @@
       "applyAllConfirm": "Apply to all",
       "presets": "Design backgrounds",
       "default": "Default",
+      "dynamicTime": "Automatic by time of day",
+      "dynamicTimeHint": "Smoothly transitions between morning, day, evening, and night",
+      "singraMorning": "Morning Atmosphere",
+      "singraMorningHint": "Sunrise over the mountain range",
+      "singraDay": "Alpine Day",
+      "singraDayHint": "Clear mountain panorama by day",
+      "singraEvening": "Sunset Summit",
+      "singraEveningHint": "Warm sunset and mountain cabin",
+      "singraNight": "Starry Night",
+      "singraNightHint": "Night sky over pine forests",
+      "kiPresets": "Singra Landscapes",
       "cyber": "Cyber Grid",
       "cyberHint": "Fine data grid",
       "petrol": "Deep Petrol",

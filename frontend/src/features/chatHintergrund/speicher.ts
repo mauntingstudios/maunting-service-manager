@@ -28,7 +28,12 @@ import {
   loescheHintergrundAblage,
   schreibeHintergrundAblage,
 } from './ablage'
-import { HINTERGRUND_VORLAGEN, STANDARD_VORLAGE, type HintergrundId } from './vorlagen'
+import {
+  HINTERGRUND_VORLAGEN,
+  STANDARD_VORLAGE,
+  STANDARD_VORLAGE_KI,
+  type HintergrundId,
+} from './vorlagen'
 
 export type ChatHintergrundBereich = 'messenger' | 'ki'
 
@@ -48,6 +53,20 @@ export type ChatHintergrundScope =
 export const STANDARD_HINTERGRUND: ChatHintergrundKonfiguration = {
   preset: STANDARD_VORLAGE,
   dimLevel: 25,
+}
+
+export const STANDARD_HINTERGRUND_KI: ChatHintergrundKonfiguration = {
+  preset: STANDARD_VORLAGE_KI,
+  dimLevel: 25,
+}
+
+export function standardHintergrundFuerScope(
+  scope: ChatHintergrundScope,
+): ChatHintergrundKonfiguration {
+  if (scope.art === 'global' && scope.bereich === 'ki') {
+    return STANDARD_HINTERGRUND_KI
+  }
+  return STANDARD_HINTERGRUND
 }
 
 export const CHAT_HINTERGRUND_EVENT = 'msm:chat-hintergrund'
@@ -207,14 +226,15 @@ async function lesePlatz(
   return null
 }
 
-/** Der Hintergrund dieses Platzes, mit Rückfall auf die Messenger-Vorgabe. */
+/** Der Hintergrund dieses Platzes, mit Rückfall auf die Vorgabe des Bereichs. */
 export async function ladeHintergrundFuerScope(
   scope: ChatHintergrundScope,
 ): Promise<ChatHintergrundKonfiguration> {
+  const standard = standardHintergrundFuerScope(scope)
   try {
-    return (await lesePlatz(scope)) ?? STANDARD_HINTERGRUND
+    return (await lesePlatz(scope)) ?? standard
   } catch {
-    return STANDARD_HINTERGRUND
+    return standard
   }
 }
 

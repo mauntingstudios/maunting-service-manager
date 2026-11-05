@@ -26,6 +26,10 @@ import { GuardianAnsicht } from '@/components/ai/GuardianAnsicht'
 import { WorkerAnsicht } from '@/components/ai/WorkerAnsicht'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import {
+  SINGRA_MCP_PRESETS,
+  type SingraMcpPreset,
+} from './singraTemplates'
+import {
   Button,
   Dialog,
   DialogContent,
@@ -141,6 +145,22 @@ export function SingraToolsView({
   useEffect(() => {
     void loadToolsData()
   }, [loadToolsData])
+
+  const handleApplyPreset = (preset: SingraMcpPreset) => {
+    setMcpDraft({
+      name: preset.name,
+      description: preset.description,
+      transport: preset.transport,
+      endpoint_url: preset.endpoint_url || '',
+      command: preset.command || '',
+      args: preset.args || [],
+      auth_header: preset.auth_header || '',
+      enabled: true,
+      scopeChoice: 'personal',
+    })
+    setArgsInput((preset.args || []).join(' '))
+    setMcpModalOpen(true)
+  }
 
   const handleCreateMcp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -384,6 +404,53 @@ export function SingraToolsView({
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 MCP-Server verbinden
               </Button>
+            </div>
+
+            {/* 1-Klick MCP Vorlagen */}
+            <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/30 p-4">
+              <div className="mb-3">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-primary">
+                  1-Klick Vorlagen
+                </h4>
+                <p className="text-xs text-on-surface-variant">
+                  Wähle einen beliebten Konnektor aus, um ihn direkt mit deinen Zugangsdaten zu verbinden.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {SINGRA_MCP_PRESETS.map((preset) => (
+                  <div
+                    key={preset.id}
+                    className="flex flex-col justify-between rounded-xl border border-outline-variant/20 bg-surface-container-low/60 p-3 hover:border-primary/40 transition-colors"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-1.5 mb-1">
+                        <span className="text-xs font-semibold text-on-surface truncate">
+                          {preset.name}
+                        </span>
+                        <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-label-sm font-medium text-primary shrink-0">
+                          {preset.badge}
+                        </span>
+                      </div>
+                      <p className="text-xs text-on-surface-variant line-clamp-2">
+                        {preset.description}
+                      </p>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between pt-2 border-t border-outline-variant/15">
+                      <span className="text-label-sm font-mono text-on-surface-variant">
+                        {preset.transport}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleApplyPreset(preset)}
+                      >
+                        Hinzufügen
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {loadingMcp ? (

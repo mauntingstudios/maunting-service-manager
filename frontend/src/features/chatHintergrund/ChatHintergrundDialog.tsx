@@ -10,6 +10,7 @@ import {
   hatDirekteHintergruende,
   ladeHintergrundFuerScope,
   speichereHintergrundFuerScope,
+  standardHintergrundFuerScope,
   STANDARD_HINTERGRUND,
   wendeAufAlleDirektchatsAn,
   type ChatHintergrundBereich,
@@ -17,7 +18,14 @@ import {
   type ChatHintergrundScope,
 } from './speicher'
 import { HintergrundFlaeche } from './ChatHintergrund'
-import { HINTERGRUND_VORLAGEN, STANDARD_VORLAGE, type HintergrundId } from './vorlagen'
+import {
+  HINTERGRUND_VORLAGEN,
+  KI_VORLAGEN_IDS,
+  MESSENGER_VORLAGEN_IDS,
+  STANDARD_VORLAGE,
+  STANDARD_VORLAGE_KI,
+  type HintergrundId,
+} from './vorlagen'
 
 /** Was der Browser als eigenes Bild annimmt, und wie gross es werden darf. */
 const ERLAUBTE_TYPEN = 'image/png,image/jpeg,image/webp'
@@ -80,8 +88,16 @@ function DialogInhalt({
     [bereich, peerId],
   )
 
+  const standardPreset = bereich === 'ki' ? STANDARD_VORLAGE_KI : STANDARD_VORLAGE
+  const relevanteVorlagen = useMemo(() => {
+    if (bereich === 'ki') {
+      return HINTERGRUND_VORLAGEN.filter((v) => KI_VORLAGEN_IDS.includes(v.id))
+    }
+    return HINTERGRUND_VORLAGEN.filter((v) => MESSENGER_VORLAGEN_IDS.includes(v.id))
+  }, [bereich])
+
   const [gespeichert, setzeGespeichert] = useState<ChatHintergrundKonfiguration | null>(null)
-  const [gewaehlt, setzeGewaehlt] = useState<HintergrundId>(STANDARD_HINTERGRUND.preset)
+  const [gewaehlt, setzeGewaehlt] = useState<HintergrundId>(standardPreset)
   const [eigenesBild, setzeEigenesBild] = useState<string | undefined>(undefined)
   const [abdunkeln, setzeAbdunkeln] = useState<number>(STANDARD_HINTERGRUND.dimLevel)
   const [fuerAlle, setzeFuerAlle] = useState(false)
@@ -162,10 +178,11 @@ function DialogInhalt({
   }
 
   const zuruecksetzen = async () => {
-    setzeGewaehlt(STANDARD_HINTERGRUND.preset)
+    const standard = standardHintergrundFuerScope(scope)
+    setzeGewaehlt(standard.preset)
     setzeEigenesBild(undefined)
-    setzeAbdunkeln(STANDARD_HINTERGRUND.dimLevel)
-    const ok = await speichereHintergrundFuerScope(scope, STANDARD_HINTERGRUND)
+    setzeAbdunkeln(standard.dimLevel)
+    const ok = await speichereHintergrundFuerScope(scope, standard)
     if (!ok) {
       setzeFehler('social.wallpaper.saveFailed')
       return
@@ -208,13 +225,14 @@ function DialogInhalt({
         <div className="space-y-3">
           <label className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
             <Layers className="w-3.5 h-3.5 text-primary" />
-            <span>{t('social.wallpaper.presets')}</span>
+            <span>{bereich === 'ki' ? t('social.wallpaper.kiPresets') : t('social.wallpaper.presets')}</span>
           </label>
 
           <div className="grid grid-cols-2 gap-2.5">
-            {HINTERGRUND_VORLAGEN.map((vorlage) => {
+            {relevanteVorlagen.map((vorlage) => {
               const aktiv = gewaehlt === vorlage.id
               const Zeichen = vorlage.icon
+              const isFullWidth = vorlage.id === 'dynamic_time'
               return (
                 <button
                   key={vorlage.id}
@@ -225,6 +243,8 @@ function DialogInhalt({
                   // „Farbverlauf von Maunting Studios" auf drei Zeilen um, und
                   // eine feste Höhe schnitt sie mitten im Wort ab.
                   className={`group relative p-3 rounded-xl border text-left flex flex-col justify-between gap-2 min-h-24 overflow-hidden transition-all ${
+                    isFullWidth ? 'col-span-2' : ''
+                  } ${
                     aktiv
                       ? 'border-primary ring-2 ring-primary/40 bg-primary/10'
                       : 'border-outline-variant/30 bg-surface-container-low hover:border-outline-variant/60'
@@ -249,7 +269,7 @@ function DialogInhalt({
                   <div className="relative z-10">
                     <p className="text-xs font-bold text-on-surface flex flex-wrap items-center gap-1">
                       <span>{t(vorlage.nameKey)}</span>
-                      {vorlage.id === STANDARD_VORLAGE && (
+                      {vorlage.id === standardPreset && (
                         <span className="text-label-sm px-1 py-0.2 rounded bg-primary/20 text-primary font-mono">
                           {t('social.wallpaper.default')}
                         </span>

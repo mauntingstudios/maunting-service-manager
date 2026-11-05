@@ -262,7 +262,11 @@ def _overlay(by_key: dict[str, SkillView], rows: list[AiSkill]) -> None:
 
 
 def visible_skills(
-    db: Session, user: User, *, nur_team_id: int | None = None
+    db: Session,
+    user: User,
+    *,
+    nur_team_id: int | None = None,
+    nur_persoenlich: bool = False,
 ) -> list[SkillView]:
     """Das vollstaendige Skill-Verzeichnis fuer diesen Benutzer.
 
@@ -312,6 +316,23 @@ def visible_skills(
             scope="shipped", origin="shipped", team_id=None, status="active",
             enabled=True, editable=False,
         )
+
+    if nur_persoenlich:
+        # Dokument-Lauf fuer persoenliche Notizen: mitgelieferte, globale und persoenliche Skills
+        rows = (
+            db.query(AiSkill)
+            .filter(
+                AiSkill.status == "active",
+                AiSkill.enabled.is_(True),
+                or_(
+                    AiSkill.scope_identity == "global",
+                    AiSkill.scope_identity == f"user:{user.id}",
+                ),
+            )
+            .all()
+        )
+        _overlay(by_key, rows)
+        return sorted(by_key.values(), key=lambda item: item.skill_key)
 
     team_ids = team_service.user_team_ids(db, user)
     scopes = ["global", *[f"team:{team_id}" for team_id in team_ids]]
@@ -508,7 +529,12 @@ def _neueste_zuerst(views: list[SkillView]) -> list[SkillView]:
 
 
 def skill_index(
-    db: Session, user: User, query: str = "", *, nur_team_id: int | None = None
+    db: Session,
+    user: User,
+    query: str = "",
+    *,
+    nur_team_id: int | None = None,
+    nur_persoenlich: bool = False,
 ) -> list[SkillView]:
     """Die Skills, die in das Skill-Verzeichnis kommen — eine eigene, als Daten
     gekennzeichnete Nachricht direkt hinter dem Systemprompt
@@ -548,7 +574,7 @@ def skill_index(
     Die Reservierung wäre selbst wieder eine Auswahl, sobald mehr als
     `MAX_INDEXED_SKILLS` Dateien mitgeliefert werden; bei neun ist das weit weg.
     """
-    views = visible_skills(db, user, nur_team_id=nur_team_id)
+    views = visible_skills(db, user, nur_team_id=nur_team_id, nur_persoenlich=nur_persoenlich)
     if len(views) <= MAX_INDEXED_SKILLS or not query.strip():
         return _neueste_zuerst(views)
 

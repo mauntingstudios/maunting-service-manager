@@ -966,6 +966,10 @@ WERKZEUGE: dict[str, Werkzeug] = {
         "global_read",
         gruppe="projects",
     ),
+    "project_create": Werkzeug(
+        "global_read",
+        gruppe="projects",
+    ),
 }
 
 

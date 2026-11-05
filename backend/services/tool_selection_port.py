@@ -23,10 +23,11 @@ HOTSET = frozenset({
     "worker_start",
     "execute_server_action",
     "project_workspace",
+    "project_create",
 })
 
 DOMAIN_PACKS: dict[str, frozenset[str]] = {
-    "coding_git": frozenset({"project_workspace"}),
+    "coding_git": frozenset({"project_workspace", "project_create"}),
     "server_ops": frozenset({
         "list_my_servers",
         "read_server_status",
@@ -47,6 +48,7 @@ DOMAIN_PACKS: dict[str, frozenset[str]] = {
         "read_document_selection",
         "edit_document",
         "project_workspace",
+        "project_create",
     }),
     "office_comms": frozenset({
         "email_search",

@@ -224,6 +224,20 @@ export function Ai({
   }
 
   useEffect(() => {
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{ projectId?: string }>
+      if (custom.detail?.projectId) {
+        setActiveProjectId(custom.detail.projectId)
+        setActiveSection('projekte')
+      }
+    }
+    window.addEventListener('singra-open-project', handler)
+    return () => {
+      window.removeEventListener('singra-open-project', handler)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!canSpeak) return
     let lebt = true
     aiApi

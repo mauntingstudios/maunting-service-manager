@@ -5,7 +5,7 @@ import { ladeGruppenHintergrund } from '@/services/gruppenInfo'
 import {
   beobachteChatHintergrund,
   ladeHintergrundFuerScope,
-  STANDARD_HINTERGRUND,
+  standardHintergrundFuerScope,
   type ChatHintergrundBereich,
   type ChatHintergrundKonfiguration,
   type ChatHintergrundScope,
@@ -55,8 +55,8 @@ export function useChatHintergrund(
         : { art: 'global', bereich },
     [bereich, peerId],
   )
-  const [konfiguration, setzeKonfiguration] = useState<ChatHintergrundKonfiguration>(
-    STANDARD_HINTERGRUND,
+  const [konfiguration, setzeKonfiguration] = useState<ChatHintergrundKonfiguration>(() =>
+    standardHintergrundFuerScope(scope),
   )
 
   useEffect(() => {
@@ -136,6 +136,14 @@ export function useGruppenHintergrund(
   return konfiguration
 }
 
+function ermittleTageszeitBild(): string {
+  const stunde = new Date().getHours()
+  if (stunde >= 5 && stunde < 11) return '/assets/singra/singra-bg-morning.jpg'
+  if (stunde >= 11 && stunde < 17) return '/assets/singra/singra-bg-day.jpg'
+  if (stunde >= 17 && stunde < 22) return '/assets/singra/singra-bg-evening.jpg'
+  return '/assets/singra/singra-bg-night.jpg'
+}
+
 /**
  * Die Fläche einer einzelnen Vorlage — dieselbe im Chat wie auf der
  * Auswahlkachel. Positioniert sich selbst über dem nächsten `relative`-Kasten.
@@ -159,8 +167,31 @@ export function HintergrundFlaeche({
     )
   }
 
+  if (vorlage === 'dynamic_time') {
+    return (
+      <img
+        src={ermittleTageszeitBild()}
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 h-full w-full object-cover object-center"
+      />
+    )
+  }
+
   const gefunden = vorlageMitId(vorlage)
   if (!gefunden) return null
+
+  if (gefunden.bildUrl) {
+    return (
+      <img
+        src={gefunden.bildUrl}
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 h-full w-full object-cover object-center"
+      />
+    )
+  }
+
   return <div className={`absolute inset-0 ${gefunden.klassen}`} style={gefunden.stil} />
 }
 

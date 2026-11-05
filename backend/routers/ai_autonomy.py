@@ -24,6 +24,7 @@ def _response(db: Session, row: AiAutonomyGrant) -> AiAutonomyGrantResponse:
     return AiAutonomyGrantResponse(
         id=row.id,
         server_id=row.server_id,
+        project_id=row.project_id,
         enabled=row.enabled,
         max_actions_per_hour=row.max_actions_per_hour,
         used_last_hour=ai_autonomy_service.hourly_usage(db, user_id=row.user_id),
@@ -32,16 +33,18 @@ def _response(db: Session, row: AiAutonomyGrant) -> AiAutonomyGrantResponse:
     )
 
 
-def _require_server_access(db: Session, user: User, server_id: int | None) -> None:
-    """Eine Freigabe fuer einen Server, den man nicht sehen darf, waere sinnlos.
-
-    Sie wuerde ohnehin nichts bewirken — jede Aktion prueft ihr eigenes Recht —
-    aber sie wuerde dem Benutzer die Existenz eines fremden Servers verraten.
-    """
-    if server_id is None:
-        return
-    if not permission_service.has_server_permission(db, user, server_id, "server.view"):
-        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+def _require_scope_access(
+    db: Session, user: User, server_id: int | None, project_id: str | None = None
+) -> None:
+    if server_id is not None:
+        if not permission_service.has_server_permission(db, user, server_id, "server.view"):
+            raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    if project_id is not None:
+        from services import ai_project_service
+        try:
+            ai_project_service.get_project(db, user, project_id)
+        except Exception:
+            raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
 
 
 @router.get("", response_model=list[AiAutonomyGrantResponse])
@@ -52,7 +55,11 @@ def list_grants(
     rows = (
         db.query(AiAutonomyGrant)
         .filter(AiAutonomyGrant.user_id == user.id)
-        .order_by(AiAutonomyGrant.server_id.is_(None).desc(), AiAutonomyGrant.server_id)
+        .order_by(
+            AiAutonomyGrant.project_id.is_(None).asc(),
+            AiAutonomyGrant.server_id.is_(None).desc(),
+            AiAutonomyGrant.server_id,
+        )
         .all()
     )
     return [_response(db, row) for row in rows]
@@ -65,12 +72,13 @@ def upsert_grant(
     user: User = Depends(require_global("ai.autonomous.use")),
     _: None = Depends(verify_csrf),
 ) -> AiAutonomyGrantResponse:
-    _require_server_access(db, user, payload.server_id)
+    _require_scope_access(db, user, payload.server_id, payload.project_id)
     try:
         row = ai_autonomy_service.set_grant(
             db,
             user=user,
             server_id=payload.server_id,
+            project_id=payload.project_id,
             enabled=payload.enabled,
             max_actions_per_hour=payload.max_actions_per_hour,
             granted_by=user.id,
@@ -85,10 +93,11 @@ def upsert_grant(
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 def delete_grant(
     server_id: int | None = None,
+    project_id: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.autonomous.use")),
     _: None = Depends(verify_csrf),
 ) -> None:
-    _require_server_access(db, user, server_id)
-    if ai_autonomy_service.clear_grant(db, user_id=user.id, server_id=server_id):
+    _require_scope_access(db, user, server_id, project_id)
+    if ai_autonomy_service.clear_grant(db, user_id=user.id, server_id=server_id, project_id=project_id):
         db.commit()

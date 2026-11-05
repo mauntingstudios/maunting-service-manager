@@ -84,8 +84,8 @@ def _can_access_project(db: Session, user: User, project: AiProject) -> bool:
     return False
 
 
-def get_project(db: Session, user: User, project_id: int) -> AiProject:
-    project = db.get(AiProject, project_id)
+def get_project(db: Session, user: User, project_id: str | int) -> AiProject:
+    project = db.get(AiProject, str(project_id))
     if project is None or not _can_access_project(db, user, project):
         raise AiProjectError("Projekt nicht gefunden oder kein Zugriff")
     return project
@@ -135,15 +135,19 @@ def create_project(
         )
         if member is None:
             raise AiProjectError("Kein Zugriff auf dieses Team")
+    ws_mode = "sandbox" if sandbox_mode in ("server", "sandbox", "code") else ("desktop" if sandbox_mode == "local" else "docs")
+    from uuid import uuid4
+
     project = AiProject(
+        id=str(uuid4()),
         user_id=user.id,
         team_id=team_id,
         name=clean_name[:160],
         description=(description or "").strip() or None,
-        system_prompt=(system_prompt or "").strip() or None,
-        icon=(icon or "folder-code").strip()[:48],
+        instructions=(system_prompt or "").strip() or None,
+        icon=(icon or "folder-code").strip()[:32],
         color=(color or "emerald").strip()[:32],
-        sandbox_mode=sandbox_mode if sandbox_mode in ("server", "local", "none") else "server",
+        workspace_mode=ws_mode,
         local_path=(local_path or "").strip() or None,
         git_provider=git_provider if git_provider in ("github", "gitlab", None) else None,
         git_repo_url=(git_repo_url or "").strip() or None,
@@ -151,8 +155,7 @@ def create_project(
     )
     db.add(project)
     db.flush()
-    ws = ensure_project_workspace(project)
-    project.sandbox_path = str(ws)
+    ensure_project_workspace(project)
     db.commit()
     db.refresh(project)
     return project
