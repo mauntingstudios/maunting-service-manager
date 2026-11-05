@@ -329,6 +329,9 @@ export function useAiLauf({
         if (ruht) {
           setStreaming(false)
           setLaufendeWerkzeuge([])
+          if (conversationId) {
+            useAiGenerationStore.getState().finishGeneration(conversationId, data.status !== 'failed')
+          }
         }
         return
       }
@@ -483,7 +486,7 @@ export function useAiLauf({
       }
     }
     return { verarbeite, spuele, istGescheitert: () => gescheitert }
-  }, [aendere, api, canAttach, ladeKontext, merkeVorschlag, providerId, setAttachments, t])
+  }, [aendere, api, canAttach, conversationId, ladeKontext, merkeVorschlag, providerId, setAttachments, t])
 
   /**
    * Verfolgt einen Lauf, bis er ruht — oder bis der Benutzer weggeht.
@@ -530,9 +533,15 @@ export function useAiLauf({
         // `error` und kein ruhendes `run`, und die Ankündigung bliebe stehen.
         setLaufendeWerkzeuge([])
         if (istGescheitert()) markiereGescheitert()
+        if (conversationId) {
+          const info = useAiGenerationStore.getState().generations[conversationId]
+          if (info && info.status === 'generating') {
+            useAiGenerationStore.getState().finishGeneration(conversationId, !istGescheitert() && !abgebrochen)
+          }
+        }
       }
     }
-  }, [machVerarbeiter, t])
+  }, [conversationId, machVerarbeiter, t])
 
   /** Hängt sich an einen Lauf, der schon arbeitet. */
   const haengeAn = useCallback(async (id: string) => {

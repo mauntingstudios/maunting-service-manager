@@ -28,6 +28,7 @@ import {
 import { browserWahlInsKontoUebernehmen } from '@/lib/aiProviderKonto'
 import { ChatHintergrund, ChatHintergrundDialog } from '@/features/chatHintergrund'
 import { useAuthStore } from '@/stores/authStore'
+import { useAiGenerationStore } from '@/stores/aiGenerationStore'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import { AiActionProposalCard } from './AiActionProposalCard'
@@ -652,6 +653,15 @@ export function AiChat({
     appFaehigkeiten,
     api: chatApi,
   })
+
+  useEffect(() => {
+    if (!streaming && scope.kind === 'primary' && scope.conversationId) {
+      const cur = useAiGenerationStore.getState().generations[scope.conversationId]
+      if (cur && cur.status === 'generating') {
+        useAiGenerationStore.getState().finishGeneration(scope.conversationId, true)
+      }
+    }
+  }, [streaming, scope])
 
   const meldeAnhangFehler = useCallback((text: string) => {
     toast.error(text)
@@ -1945,9 +1955,7 @@ export function AiChat({
           <form
             className={`relative shrink-0 px-2.5 py-2 sm:px-4 sm:py-3 transition-colors ${
               singraShell
-                ? empty
-                  ? 'bg-gradient-to-t from-black/80 via-black/45 to-transparent border-t-0'
-                  : 'border-t border-white/10 bg-black/45 backdrop-blur-xl'
+                ? 'border-t-0 bg-transparent'
                 : 'border-t border-outline-variant/40 bg-surface/85 backdrop-blur-md'
             }`}
             onSubmit={send}

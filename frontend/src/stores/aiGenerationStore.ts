@@ -17,10 +17,21 @@ interface AiGenerationState {
   clearGeneration: (conversationId: string) => void
 }
 
+const completionTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+
+function cancelCompletionTimer(conversationId: string) {
+  const existing = completionTimers[conversationId]
+  if (existing) {
+    clearTimeout(existing)
+    delete completionTimers[conversationId]
+  }
+}
+
 export const useAiGenerationStore = create<AiGenerationState>((set) => ({
   generations: {},
   startGeneration: (conversationId, runId) => {
     if (!conversationId) return
+    cancelCompletionTimer(conversationId)
     set((state) => ({
       generations: {
         ...state.generations,
@@ -34,6 +45,7 @@ export const useAiGenerationStore = create<AiGenerationState>((set) => ({
   },
   finishGeneration: (conversationId, success) => {
     if (!conversationId) return
+    cancelCompletionTimer(conversationId)
     set((state) => ({
       generations: {
         ...state.generations,
@@ -45,13 +57,19 @@ export const useAiGenerationStore = create<AiGenerationState>((set) => ({
         },
       },
     }))
+    // Abgeschlossene Generationen nach 3 Sekunden automatisch aufraeumen
+    completionTimers[conversationId] = setTimeout(() => {
+      delete completionTimers[conversationId]
+      useAiGenerationStore.getState().clearGeneration(conversationId)
+    }, 3000)
   },
   markConversationSeen: (conversationId) => {
     if (!conversationId) return
+    cancelCompletionTimer(conversationId)
     set((state) => {
       const cur = state.generations[conversationId]
       // Wenn der Lauf noch aktiv generiert, lassen wir den Zustand bestehen.
-      // Nur abgeschlossene oder fehlgeschlagene Meldungen werden als gesehen geräumt.
+      // Nur abgeschlossene oder fehlgeschlagene Meldungen werden als gesehen geraeumt.
       if (!cur || cur.status === 'generating') return state
       const next = { ...state.generations }
       delete next[conversationId]
@@ -60,6 +78,7 @@ export const useAiGenerationStore = create<AiGenerationState>((set) => ({
   },
   clearGeneration: (conversationId) => {
     if (!conversationId) return
+    cancelCompletionTimer(conversationId)
     set((state) => {
       const next = { ...state.generations }
       delete next[conversationId]
