@@ -35,7 +35,8 @@ export function CredentialsTab() {
 
   const load = useCallback(async () => {
     try {
-      setCredentials(await credentialsApi.listMine())
+      const list = await credentialsApi.listMine()
+      setCredentials(Array.isArray(list) ? list : [])
     } catch (error: unknown) {
       toast.error(
         error instanceof SanitizedApiError ? error.message : t('credentials.errors.load'),

@@ -473,6 +473,37 @@ def provision_server(
         )
         db.commit()
 
+        # Benutzereigene Zugangsdaten binden (z. B. GitHub-PAT fuer Blueprint-Clone)
+        try:
+            from services.credential_service import (
+                required_kinds_for_server,
+                list_user_credentials,
+                set_binding,
+            )
+
+            required_kinds = required_kinds_for_server(db, server.id)
+            for kind in required_kinds:
+                chosen_id = (req.credential_ids or {}).get(kind) if getattr(req, "credential_ids", None) else None
+                if chosen_id is not None:
+                    set_binding(db, server_id=server.id, kind=kind, credential_id=chosen_id, actor=actor.user)
+                else:
+                    user_creds = list_user_credentials(db, actor.user.id, kind=kind)
+                    if user_creds:
+                        # Automatisch das aktuellste eigene Credential des Erstellers binden
+                        set_binding(
+                            db,
+                            server_id=server.id,
+                            kind=kind,
+                            credential_id=user_creds[-1].id,
+                            actor=actor.user,
+                        )
+            db.commit()
+        except Exception:
+            logger.warning(
+                "Automatisches Credential-Binding bei Server-Provisionierung fehlgeschlagen (server_id=%s)",
+                server.id,
+            )
+
         if plugin:
             set_phase(db, task, "installing")
             server.status = "installing"

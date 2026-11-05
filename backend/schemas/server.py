@@ -155,6 +155,7 @@ class ServerCreate(BaseModel):
     postgres_database_count: int | None = Field(None, ge=1, le=20)
     # Phase 3: optional target node. None → default local node.
     node_id: int | None = Field(None, ge=1)
+    credential_ids: dict[str, int] | None = None
 
     @field_validator("public_bind_ip")
     @classmethod

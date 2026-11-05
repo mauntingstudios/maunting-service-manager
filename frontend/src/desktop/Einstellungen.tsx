@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Bot,
   FileSignature,
+  Link2,
   Mail,
   MonitorCog,
   Shield,
@@ -24,6 +25,8 @@ import { KontoTab } from '@/pages/profile/KontoTab'
 import { ProfilTab } from '@/pages/profile/ProfilTab'
 import { SocialTab } from '@/pages/profile/SocialTab'
 import { AiTab } from '@/pages/profile/AiTab'
+import { LinkedAccountsTab } from '@/pages/profile/LinkedAccountsTab'
+import { CredentialsTab } from '@/pages/profile/CredentialsTab'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { SYSTEM_KATEGORIE } from './vault/vaultEintrag'
 import { useVaultStore } from './vault/vaultStore'
@@ -37,9 +40,25 @@ import {
   SicherheitEinstellungen,
 } from './einstellungsreiter'
 
-type EinstellungsTab = 'profil' | 'konto' | 'sicherheit' | 'social' | 'ki' | 'desktop' | 'audio' | 'rechtliches' | 'gefahr'
+type EinstellungsTab =
+  | 'profil'
+  | 'konto'
+  | 'sicherheit'
+  | 'social'
+  | 'verbindungen'
+  | 'ki'
+  | 'desktop'
+  | 'audio'
+  | 'rechtliches'
+  | 'gefahr'
 
-const BRAUCHT_SERVER: ReadonlySet<EinstellungsTab> = new Set(['profil', 'konto', 'social', 'ki'])
+const BRAUCHT_SERVER: ReadonlySet<EinstellungsTab> = new Set([
+  'profil',
+  'konto',
+  'social',
+  'verbindungen',
+  'ki',
+])
 
 const FRUEHERE_REITER: Record<string, EinstellungsTab> = {
   account: 'konto',
@@ -48,6 +67,9 @@ const FRUEHERE_REITER: Record<string, EinstellungsTab> = {
   wakeword: 'audio',
   gedaechtnis: 'ki',
   ai: 'ki',
+  connections: 'verbindungen',
+  credentials: 'verbindungen',
+  linked: 'verbindungen',
 }
 
 const isAndroidClient = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
@@ -75,6 +97,7 @@ export function Einstellungen({
       ? [{ id: 'sicherheit' as const, label: t('profile.tabs.security'), icon: Shield, group: t('mss.einstellungen.groups.schutz') }]
       : []),
     ...(social ? [{ id: 'social' as const, label: t('profile.tabs.social'), icon: offline ? WifiOff : Users, group: t('mss.einstellungen.groups.schutz') }] : []),
+    { id: 'verbindungen' as const, label: t('profile.tabs.connections'), icon: offline ? WifiOff : Link2, group: t('mss.einstellungen.groups.schutz') },
     ...(canUseAi || offline
       ? [{ id: 'ki' as const, label: t('profile.tabs.ai'), icon: offline ? WifiOff : Bot, group: t('mss.einstellungen.groups.arbeit') }]
       : []),
@@ -134,6 +157,12 @@ export function Einstellungen({
         )}
         {tab === 'sicherheit' && <SicherheitEinstellungen offline={offline} social={social} tresorAn={tresorAn} />}
         {tab === 'social' && !offline && <SocialTab />}
+        {tab === 'verbindungen' && !offline && (
+          <div className="space-y-6">
+            <LinkedAccountsTab />
+            <CredentialsTab />
+          </div>
+        )}
         {tab === 'ki' && !offline && <AiTab />}
         {tab === 'desktop' && <DesktopIntegration onKonfigAenderung={onKonfigAenderung} offline={offline} />}
         {tab === 'audio' && (

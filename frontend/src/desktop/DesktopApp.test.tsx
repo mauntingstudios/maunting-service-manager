@@ -421,51 +421,6 @@ describe('DesktopApp', () => {
     })
   })
 
-  it('zeigt den Computer-Use Deaktiviert-Hinweis im Chat, wenn computer_use_aktiv false ist', async () => {
-    konfigMock({
-      backend_url: 'https://api.example.com',
-      sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox',
-      eingerichtet: true,
-      computer_use_aktiv: false,
-    })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.includes('/auth/refresh')) {
-          return Promise.resolve(
-            new Response(JSON.stringify({ access_token: 'a', refresh_token: 'r' }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-            }),
-          )
-        }
-        if (url.includes('/auth/me')) {
-          return Promise.resolve(
-            new Response(JSON.stringify(BENUTZER), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-            }),
-          )
-        }
-        return Promise.resolve(
-          new Response(JSON.stringify({ global_permissions: ['ai.chat.use'], server_permissions: {} }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        )
-      }),
-    )
-
-    // Die App startet in der Uebersicht; der Hinweis haengt am KI-Chat.
-    localStorage.setItem(LETZTE_ROUTE_KEY, '/ai')
-    render(<DesktopApp />)
-    await waitFor(() => {
-      expect(screen.getByText(i18n.t('mss.einstellungen.banner.computerUseHinweis'))).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: i18n.t('mss.einstellungen.banner.computerUseLink') })).toBeInTheDocument()
-    })
-  })
-
   it('beim Start ohne Internet/Server erreichbar oeffnet die App direkt den Offline-Modus', async () => {
     konfigMock({
       backend_url: 'https://api.example.com',

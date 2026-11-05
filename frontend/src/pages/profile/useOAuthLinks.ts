@@ -27,8 +27,8 @@ export function useOAuthLinks(): OAuthLinksState {
         oauthApi.listMyLinks(),
         oauthApi.listPublicProviders(),
       ])
-      setOauthLinks(links)
-      setOauthAvailable(publicProviders)
+      setOauthLinks(Array.isArray(links) ? links : [])
+      setOauthAvailable(Array.isArray(publicProviders) ? publicProviders : [])
     } catch (err: any) {
       toast.error(err.message)
     } finally {

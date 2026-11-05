@@ -28,7 +28,7 @@ export function ConnectedCalendarsSection() {
     try {
       setLoading(true)
       const list = await userIntegrationsApi.getCalendars()
-      setCalendars(list)
+      setCalendars(Array.isArray(list) ? list : [])
     } catch (err: any) {
       toast.error(err.message || 'Fehler beim Laden der Kalender')
     } finally {

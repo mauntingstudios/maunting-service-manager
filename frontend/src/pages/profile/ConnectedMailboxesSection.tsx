@@ -79,7 +79,7 @@ export function ConnectedMailboxesSection() {
     try {
       setLoading(true)
       const list = await userIntegrationsApi.getMailboxes()
-      setMailboxes(list)
+      setMailboxes(Array.isArray(list) ? list : [])
     } catch (err: any) {
       toast.error(err.message || 'Fehler beim Laden der Postfächer')
     } finally {

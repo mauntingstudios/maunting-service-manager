@@ -43,6 +43,7 @@ import {
   type AiProjectWrite,
 } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
+import { still } from '@/lib/still'
 import { teamsApi, type Team } from '@/api/teams'
 import {
   Button,
@@ -569,8 +570,8 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
             { type: 'SINGRA_SET_INSPECT', active: false },
             '*',
           )
-        } catch {
-          // Cross-origin fallback
+        } catch (err) {
+          still(err, 'singra:preview:postMessage:deactivate')
         }
       }
     }
@@ -584,8 +585,8 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
         { type: 'SINGRA_SET_INSPECT', active: inspectMode },
         '*',
       )
-    } catch {
-      // Cross-origin fallback
+    } catch (err) {
+      still(err, 'singra:preview:postMessage:toggle')
     }
   }, [inspectMode])
 

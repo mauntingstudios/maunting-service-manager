@@ -137,6 +137,7 @@ describe('Einstellungen Component', () => {
     expect(await screen.findByRole('tab', { name: txt('profile.tabs.profile') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: txt('profile.tabs.account') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: txt('profile.tabs.social') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: txt('profile.tabs.connections') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: txt('mss.einstellungen.tab.desktop') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: txt('profile.tabs.security') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: txt('mss.einstellungen.tab.audio') })).toBeInTheDocument()
@@ -159,6 +160,16 @@ describe('Einstellungen Component', () => {
     const impressumBtn = screen.getByRole('button', { name: /Impressum im Browser öffnen/i })
     fireEvent.click(impressumBtn)
     expect(oeffneBrowserMock).toHaveBeenCalledWith('https://example.com/impressum')
+  })
+
+  it('wechselt zum Verbindungen-Tab', async () => {
+    render(
+      <MemoryRouter initialEntries={['/einstellungen?tab=verbindungen']}>
+        <Einstellungen />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('tab', { name: txt('profile.tabs.connections'), selected: true })).toBeInTheDocument()
   })
 
   it('öffnet Bestätigungsdialog bei Aktivierung von Computer-Use', async () => {
