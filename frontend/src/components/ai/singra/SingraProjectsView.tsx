@@ -1,21 +1,31 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Code2,
+  ExternalLink,
+  Eye,
   FileCode,
   FileText,
   Folder,
+  FolderCode,
   FolderGit2,
   GitBranch,
   GitCommit,
+  Globe,
+  Laptop,
   Layers,
   MessageSquare,
+  MousePointer,
   Play,
   Plus,
   RefreshCw,
+  Rocket,
   Save,
   Settings2,
+  Smartphone,
+  Tablet,
   Terminal,
   Trash2,
+  X,
 } from 'lucide-react'
 import {
   aiApi,
@@ -44,7 +54,7 @@ import {
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
-type ProjectTab = 'chats' | 'files' | 'terminal' | 'git' | 'settings'
+type ProjectTab = 'chats' | 'files' | 'preview' | 'terminal' | 'git' | 'settings'
 
 interface SingraProjectsViewProps {
   onOpenProjectChat: (projectId: string, conversationId?: string) => void
@@ -80,6 +90,22 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
   const [newFileModalOpen, setNewFileModalOpen] = useState(false)
   const [newFilePath, setNewFilePath] = useState('')
 
+  // Agents rules state
+  const [agentsRules, setAgentsRules] = useState<{
+    found: boolean
+    filename: string | null
+    content: string | null
+    lines_count: number
+    size_bytes: number
+  } | null>(null)
+  const [showAgentsModal, setShowAgentsModal] = useState(false)
+
+  // Live-Preview & Split-View state
+  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
+  const [inspectMode, setInspectMode] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState('http://localhost:5173')
+  const [inspectElement, setInspectElement] = useState<string | null>(null)
+
   // Sandbox Terminal
   const [commandInput, setCommandInput] = useState('')
   const [runningCmd, setRunningCmd] = useState(false)
@@ -95,6 +121,9 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
   // Create / Edit Modal
   const [createOpen, setCreateOpen] = useState(false)
+  const [createTab, setCreateTab] = useState<'general' | 'git' | 'rules'>('general')
+  const [cloneImmediately, setCloneImmediately] = useState(false)
+  const [useWorktree, setUseWorktree] = useState(true)
   const [draft, setDraft] = useState<AiProjectWrite & { name: string }>({
     name: '',
     description: '',
@@ -182,12 +211,20 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
   const loadProjectDetails = useCallback(async (projectId: string) => {
     try {
-      const [chats, fileList] = await Promise.all([
+      const [chats, fileList, rules] = await Promise.all([
         aiApi.listConversations(projectId),
         aiApi.listProjectFiles(projectId),
+        aiApi.getProjectAgentsRules(projectId).catch(() => ({
+          found: false,
+          filename: null,
+          content: null,
+          lines_count: 0,
+          size_bytes: 0,
+        })),
       ])
       setProjectChats(chats)
       setFiles(fileList)
+      setAgentsRules(rules)
       if (fileList.length > 0) {
         setActiveFilePath((prev) => {
           const next = fileList.some((f) => f.path === prev) ? prev : fileList[0].path
@@ -256,6 +293,28 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
       setProjects((prev) => [created, ...prev])
       setSelectedId(created.id)
       setCreateOpen(false)
+
+      if (cloneImmediately && draft.git_repo_url?.trim()) {
+        toast.info('Projekt angelegt. Klone Repository im Hintergrund…')
+        try {
+          const syncStatus = await aiApi.syncProjectGit(created.id, {
+            repo_url: draft.git_repo_url.trim(),
+            branch: draft.git_branch?.trim() || 'main',
+            provider: draft.git_provider,
+            token: draft.git_token?.trim() || null,
+          })
+          setGitStatus(syncStatus)
+          await loadProjectDetails(created.id)
+          toast.success('Repository erfolgreich geklont und mit Projekt synchronisiert.')
+        } catch {
+          toast.warning('Projekt wurde erstellt, aber der automatische Git-Clone schlug fehl. Prüfe URL und Token unter Git.')
+        }
+      } else {
+        toast.success('Projekt wurde angelegt.')
+      }
+
+      setCreateTab('general')
+      setCloneImmediately(false)
       setDraft({
         name: '',
         description: '',
@@ -452,11 +511,11 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
     }
   }
 
-  const handleStartNewProjectChat = async () => {
+  const handleStartNewProjectChat = async (initialTitle?: string) => {
     if (!selectedProject) return
     try {
       const conv = await aiApi.createConversation({
-        title: `${selectedProject.name} Chat`,
+        title: initialTitle || `${selectedProject.name} Chat`,
         project_id: selectedProject.id,
       })
       onOpenProjectChat(selectedProject.id, conv.id)
@@ -571,7 +630,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
             {/* Project Top Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/25 bg-surface-container-low/40 px-4 py-3 shrink-0">
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="font-headline text-base font-semibold text-on-surface truncate">
                     {selectedProject.name}
                   </h2>
@@ -581,6 +640,19 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                       {selectedProject.git_branch}
                     </span>
                   )}
+                  {/* AGENTS.md Status Badge */}
+                  {agentsRules?.found && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAgentsModal(true)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/35 bg-primary/15 px-2.5 py-0.5 text-label-sm font-medium text-primary hover:bg-primary/25 transition-colors"
+                      title="Projektregeln ansehen"
+                    >
+                      <FileText className="h-3 w-3" aria-hidden="true" />
+                      <span>{agentsRules.filename} aktiv ({agentsRules.lines_count} Zeilen)</span>
+                      <Eye className="h-2.5 w-2.5 opacity-70" />
+                    </button>
+                  )}
                 </div>
                 {selectedProject.description && (
                   <p className="text-xs text-on-surface-variant truncate mt-0.5">
@@ -589,7 +661,34 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Dual-Target Widget: Dev & Prod */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 rounded-xl border border-outline-variant/25 bg-surface-container/60 px-3 py-1.5 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-status-success animate-pulse" />
+                    <span className="font-semibold text-on-surface">Dev:</span>
+                    <span className="text-on-surface-variant">Sandbox aktiv</span>
+                  </div>
+                  <span className="text-outline-variant/60">|</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-status-warning" />
+                    <span className="font-semibold text-on-surface">Prod:</span>
+                    <span className="text-on-surface-variant">Bereit</span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-6 px-2 text-xs gap-1 ml-1"
+                    onClick={() => {
+                      toast.info('Go-Live Vorbereitung: Singra generiert das MSM-Blueprint und Cloudflare DNS-Routing.')
+                    }}
+                  >
+                    <Rocket className="h-3 w-3 text-primary" />
+                    Go-Live
+                  </Button>
+                </div>
+
                 <Button
                   type="button"
                   size="sm"
@@ -616,6 +715,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                 [
                   { id: 'chats', label: `Chats (${projectChats.length})`, icon: MessageSquare },
                   { id: 'files', label: `Dateien (${files.length})`, icon: FileCode },
+                  { id: 'preview', label: 'Vorschau & Inspektor', icon: Globe },
                   { id: 'terminal', label: 'Sandbox & Terminal', icon: Terminal },
                   { id: 'git', label: 'Git (GitHub / GitLab)', icon: FolderGit2 },
                   { id: 'settings', label: 'Einstellungen', icon: Settings2 },
@@ -799,6 +899,143 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                         Wähle links eine Datei aus oder lege eine neue Datei (z. B. `README.md` oder `main.py`) an.
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'preview' && (
+                <div className="flex h-full min-h-[500px] flex-col rounded-xl border border-outline-variant/30 bg-surface-container-low/35 overflow-hidden">
+                  {/* Top Bar: URL, Device Switcher, Inspector Toggle, Open In Browser */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 bg-surface-container-low/60 px-4 py-2.5">
+                    <div className="flex items-center gap-2 flex-1 max-w-md">
+                      <Globe className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+                      <Input
+                        value={previewUrl}
+                        onChange={(e) => setPreviewUrl(e.target.value)}
+                        placeholder="http://localhost:5173"
+                        className="h-8 text-xs font-mono"
+                        aria-label="Vorschau-URL"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* Device Mode Switcher */}
+                      <div className="flex items-center rounded-lg border border-outline-variant/30 bg-surface-container-high/40 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDevice('desktop')}
+                          className={[
+                            'p-1.5 rounded-md transition-colors',
+                            previewDevice === 'desktop' ? 'bg-primary/20 text-primary' : 'text-on-surface-variant hover:text-on-surface',
+                          ].join(' ')}
+                          title="Desktop (100%)"
+                        >
+                          <Laptop className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDevice('tablet')}
+                          className={[
+                            'p-1.5 rounded-md transition-colors',
+                            previewDevice === 'tablet' ? 'bg-primary/20 text-primary' : 'text-on-surface-variant hover:text-on-surface',
+                          ].join(' ')}
+                          title="Tablet (768px)"
+                        >
+                          <Tablet className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDevice('mobile')}
+                          className={[
+                            'p-1.5 rounded-md transition-colors',
+                            previewDevice === 'mobile' ? 'bg-primary/20 text-primary' : 'text-on-surface-variant hover:text-on-surface',
+                          ].join(' ')}
+                          title="Smartphone (375px)"
+                        >
+                          <Smartphone className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Element Inspector Button */}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={inspectMode ? 'primary' : 'secondary'}
+                        className="h-8 text-xs gap-1.5"
+                        onClick={() => {
+                          const next = !inspectMode
+                          setInspectMode(next)
+                          if (next) {
+                            setInspectElement('HeroButton#cta-start')
+                            toast.info('Klick-Inspektor aktiv: Element "HeroButton#cta-start" vorgemerkt.')
+                          } else {
+                            setInspectElement(null)
+                          }
+                        }}
+                      >
+                        <MousePointer className="h-3.5 w-3.5" aria-hidden="true" />
+                        {inspectMode ? 'Inspektor aktiv' : 'Element inspizieren'}
+                      </Button>
+
+                      {/* Open in external tab */}
+                      <a
+                        href={previewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-outline-variant/30 bg-surface-container-high/50 text-on-surface-variant hover:text-on-surface transition-colors"
+                        title="Im neuen Tab öffnen"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Inspector Pin Alert */}
+                  {inspectElement && (
+                    <div className="flex items-center justify-between gap-2 border-b border-primary/20 bg-primary/10 px-4 py-2 text-xs text-on-surface">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-primary">Angepinntes Element:</span>
+                        <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-primary text-xs">
+                          {inspectElement}
+                        </code>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => {
+                            void handleStartNewProjectChat(`Änderungswunsch für Element: ${inspectElement}`)
+                          }}
+                        >
+                          Im Chat besprechen
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => setInspectElement(null)}
+                          className="text-on-surface-variant hover:text-on-surface"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Iframe stage */}
+                  <div className="flex flex-1 items-center justify-center bg-black/40 p-4 overflow-auto min-h-[380px]">
+                    <div
+                      className={[
+                        'h-full min-h-[420px] transition-all rounded-lg overflow-hidden border border-outline-variant/30 shadow-2xl bg-surface flex flex-col',
+                        previewDevice === 'desktop' ? 'w-full' : previewDevice === 'tablet' ? 'w-[768px]' : 'w-[375px]',
+                      ].join(' ')}
+                    >
+                      <iframe
+                        src={previewUrl}
+                        title="Projekt Live-Vorschau"
+                        className="w-full flex-1 border-0 min-h-[400px]"
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -1174,152 +1411,273 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
         </DialogContent>
       </Dialog>
 
-      {/* Create Project Dialog */}
+      {/* Create Project Dialog: Generous 3-Tab Layout */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Neues Singra-Projekt erstellen</DialogTitle>
             <DialogDescription>
-              Projekte bündeln Unterhaltungen, Dateien, eine isolierte Coding-Sandbox sowie optional ein GitHub- oder GitLab-Repository.
+              Bündele Unterhaltungen, Dateien, eine isolierte Coding-Sandbox sowie optional ein GitHub- oder GitLab-Repository mit automatischer AGENTS.md-Regelbindung.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateProject} className="space-y-3.5 mt-2">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                Name des Projekts
-              </label>
-              <Input
-                value={draft.name}
-                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                placeholder="z. B. Backend-Service oder Server-Handbuch"
-                required
-                aria-label="Name des Projekts"
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                  Projektart
-                </label>
-                <Dropdown
-                  value={draft.project_kind ?? 'coding'}
-                  onChange={(val) =>
-                    setDraft((d) => ({
-                      ...d,
-                      project_kind: val as 'general' | 'coding' | 'docs',
-                    }))
-                  }
-                  options={PROJECT_KIND_OPTIONS}
-                  aria-label="Projektart"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                  Bereich (Persönlich / Team)
-                </label>
-                <Dropdown
-                  value={draft.team_id ? String(draft.team_id) : '__personal__'}
-                  onChange={(val) =>
-                    setDraft((d) => ({
-                      ...d,
-                      team_id: val === '__personal__' ? null : Number(val),
-                    }))
-                  }
-                  options={[
-                    { value: '__personal__', label: 'Persönlich' },
-                    ...teams.map((t) => ({ value: String(t.id), label: `Team: ${t.name}` })),
-                  ]}
-                  aria-label="Projektbereich"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                Kurzbeschreibung
-              </label>
-              <Input
-                value={draft.description ?? ''}
-                onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                placeholder="Worum geht es in diesem Projekt?"
-                aria-label="Kurzbeschreibung"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                Projektanweisungen (System-Prompt)
-              </label>
-              <Textarea
-                value={draft.system_prompt ?? ''}
-                onChange={(e) => setDraft((d) => ({ ...d, system_prompt: e.target.value }))}
-                rows={3}
-                placeholder="Besondere Vorgaben, Architektur oder Regeln für Singra in diesem Projekt …"
-                aria-label="Projektanweisungen"
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                  Git-Anbindung (optional)
-                </label>
-                <Dropdown
-                  value={draft.git_provider ?? '__none__'}
-                  onChange={(val) =>
-                    setDraft((d) => ({
-                      ...d,
-                      git_provider:
-                        val === '__none__'
-                          ? null
-                          : (val as 'github' | 'gitlab' | 'custom'),
-                    }))
-                  }
-                  options={GIT_PROVIDER_OPTIONS}
-                  aria-label="Git-Anbindung"
-                />
-              </div>
-              {draft.git_provider && (
+
+          {/* 3 Step Tabs */}
+          <div className="flex items-center gap-1 border-b border-outline-variant/20 pt-2 pb-1" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={createTab === 'general'}
+              onClick={() => setCreateTab('general')}
+              className={[
+                'inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                createTab === 'general'
+                  ? 'bg-primary/20 text-primary border border-primary/35'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 border border-transparent',
+              ].join(' ')}
+            >
+              <FolderCode className="h-3.5 w-3.5" />
+              <span>1. Allgemein</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={createTab === 'git'}
+              onClick={() => setCreateTab('git')}
+              className={[
+                'inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                createTab === 'git'
+                  ? 'bg-primary/20 text-primary border border-primary/35'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 border border-transparent',
+              ].join(' ')}
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              <span>2. Quellcode & Git</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={createTab === 'rules'}
+              onClick={() => setCreateTab('rules')}
+              className={[
+                'inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                createTab === 'rules'
+                  ? 'bg-primary/20 text-primary border border-primary/35'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 border border-transparent',
+              ].join(' ')}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>3. Anweisungen & AGENTS.md</span>
+            </button>
+          </div>
+
+          <form onSubmit={handleCreateProject} className="space-y-4 pt-2">
+            {/* Tab 1: Allgemein */}
+            {createTab === 'general' && (
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                    Branch
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                    Name des Projekts *
                   </label>
                   <Input
-                    value={draft.git_branch ?? 'main'}
-                    onChange={(e) => setDraft((d) => ({ ...d, git_branch: e.target.value }))}
-                    placeholder="main"
-                    aria-label="Branch"
+                    value={draft.name}
+                    onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                    placeholder="z. B. Backend-Service oder Web-Portal"
+                    required
+                    autoFocus
+                    aria-label="Name des Projekts"
                   />
                 </div>
-              )}
-            </div>
-            {draft.git_provider && (
-              <>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                      Projektart
+                    </label>
+                    <Dropdown
+                      value={draft.project_kind ?? 'coding'}
+                      onChange={(val) =>
+                        setDraft((d) => ({
+                          ...d,
+                          project_kind: val as 'general' | 'coding' | 'docs',
+                        }))
+                      }
+                      options={PROJECT_KIND_OPTIONS}
+                      aria-label="Projektart"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                      Bereich (Persönlich / Team)
+                    </label>
+                    <Dropdown
+                      value={draft.team_id ? String(draft.team_id) : '__personal__'}
+                      onChange={(val) =>
+                        setDraft((d) => ({
+                          ...d,
+                          team_id: val === '__personal__' ? null : Number(val),
+                        }))
+                      }
+                      options={[
+                        { value: '__personal__', label: 'Persönlich' },
+                        ...teams.map((t) => ({ value: String(t.id), label: `Team: ${t.name}` })),
+                      ]}
+                      aria-label="Projektbereich"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                    Repository-URL
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                    Kurzbeschreibung
                   </label>
                   <Input
-                    value={draft.git_repo_url ?? ''}
-                    onChange={(e) =>
-                      setDraft((d) => ({ ...d, git_repo_url: e.target.value }))
-                    }
-                    placeholder="https://github.com/name/projekt.git"
-                    aria-label="Repository-URL"
+                    value={draft.description ?? ''}
+                    onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                    placeholder="Worum geht es in diesem Projekt?"
+                    aria-label="Kurzbeschreibung"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                    Personal Access Token (optional, für private Repos & Push)
-                  </label>
-                  <Input
-                    type="password"
-                    value={draft.git_token ?? ''}
-                    onChange={(e) => setDraft((d) => ({ ...d, git_token: e.target.value }))}
-                    placeholder="ghp_… oder glpat-…"
-                    aria-label="Personal Access Token"
-                  />
-                </div>
-              </>
+              </div>
             )}
-            <div className="flex justify-end gap-2 pt-2">
+
+            {/* Tab 2: Quellcode & Git */}
+            {createTab === 'git' && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low/40 p-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-semibold text-on-surface">Repository-Modus</div>
+                      <div className="text-xs text-on-surface-variant">
+                        Soll das Projekt leer beginnen oder aus einem Git-Repository geklont werden?
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-on-surface-variant">
+                        {cloneImmediately ? 'Aus Git klonen' : 'Neues leeres Projekt'}
+                      </span>
+                      <Switch
+                        checked={cloneImmediately}
+                        onCheckedChange={(checked) => {
+                          setCloneImmediately(checked)
+                          if (checked && !draft.git_provider) {
+                            setDraft((d) => ({ ...d, git_provider: 'github' }))
+                          }
+                        }}
+                        aria-label="Repository beim Anlegen klonen"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                        Git-Anbieter
+                      </label>
+                      <Dropdown
+                        value={draft.git_provider ?? '__none__'}
+                        onChange={(val) =>
+                          setDraft((d) => ({
+                            ...d,
+                            git_provider:
+                              val === '__none__'
+                                ? null
+                                : (val as 'github' | 'gitlab' | 'custom'),
+                          }))
+                        }
+                        options={GIT_PROVIDER_OPTIONS}
+                        aria-label="Git-Anbieter"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                        Branch
+                      </label>
+                      <Input
+                        value={draft.git_branch ?? 'main'}
+                        onChange={(e) => setDraft((d) => ({ ...d, git_branch: e.target.value }))}
+                        placeholder="main"
+                        aria-label="Branch"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                      Repository-URL
+                    </label>
+                    <Input
+                      value={draft.git_repo_url ?? ''}
+                      onChange={(e) =>
+                        setDraft((d) => ({ ...d, git_repo_url: e.target.value }))
+                      }
+                      placeholder="https://github.com/nutzer/projekt.git"
+                      aria-label="Repository-URL"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                      Personal Access Token (optional für private Repos)
+                    </label>
+                    <Input
+                      type="password"
+                      value={draft.git_token ?? ''}
+                      onChange={(e) => setDraft((d) => ({ ...d, git_token: e.target.value }))}
+                      placeholder="ghp_… oder glpat-…"
+                      aria-label="Personal Access Token"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-outline-variant/20">
+                    <div>
+                      <div className="text-xs font-medium text-on-surface">Isolierte Git-Worktrees nutzen</div>
+                      <div className="text-xs text-on-surface-variant">
+                        Empfohlen: Autonome KI-Tasks arbeiten in einem separaten Worktree, ohne deinen Arbeitszweig zu stören.
+                      </div>
+                    </div>
+                    <Switch
+                      checked={useWorktree}
+                      onCheckedChange={setUseWorktree}
+                      aria-label="Isolierte Git-Worktrees aktivieren"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: Anweisungen & AGENTS.md */}
+            {createTab === 'rules' && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-primary/25 bg-primary/10 p-3.5 text-xs space-y-1.5">
+                  <div className="flex items-center gap-2 font-semibold text-primary">
+                    <FileText className="h-4 w-4" aria-hidden="true" />
+                    <span>Automatische AGENTS.md Erkennung</span>
+                  </div>
+                  <p className="text-on-surface leading-relaxed">
+                    Liegt im geklonten oder angelegten Repository eine Datei namens <code className="rounded bg-black/30 px-1 py-0.5 font-mono text-primary">AGENTS.md</code>, <code className="rounded bg-black/30 px-1 py-0.5 font-mono text-primary">GEMINI.md</code> oder <code className="rounded bg-black/30 px-1 py-0.5 font-mono text-primary">CLAUDE.md</code>, liest Singra diese automatisch ein und bindet sie als bindende Projektregeln in jede Unterhaltung ein.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
+                    Zusätzliche Projektanweisungen (System-Prompt)
+                  </label>
+                  <Textarea
+                    value={draft.system_prompt ?? ''}
+                    onChange={(e) => setDraft((d) => ({ ...d, system_prompt: e.target.value }))}
+                    rows={4}
+                    placeholder="Besondere Vorgaben, Architektur oder Regeln für Singra in diesem Projekt …"
+                    aria-label="Projektanweisungen"
+                  />
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    Kann leer bleiben, falls bereits eine AGENTS.md im Projekt vorhanden ist oder später angelegt wird.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Dialog Footer Actions */}
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-outline-variant/20">
               <Button
                 type="button"
                 variant="ghost"
@@ -1327,11 +1685,62 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
               >
                 Abbrechen
               </Button>
-              <Button type="submit" disabled={savingProject || !draft.name.trim()}>
-                {savingProject ? 'Erstellt…' : 'Projekt erstellen'}
-              </Button>
+
+              <div className="flex items-center gap-2">
+                {createTab !== 'general' && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      if (createTab === 'rules') setCreateTab('git')
+                      else if (createTab === 'git') setCreateTab('general')
+                    }}
+                  >
+                    Zurück
+                  </Button>
+                )}
+
+                {createTab !== 'rules' ? (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (createTab === 'general') setCreateTab('git')
+                      else if (createTab === 'git') setCreateTab('rules')
+                    }}
+                  >
+                    Weiter
+                  </Button>
+                ) : (
+                  <Button type="submit" disabled={savingProject || !draft.name.trim()}>
+                    {savingProject ? 'Erstellt…' : 'Projekt erstellen'}
+                  </Button>
+                )}
+              </div>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* View AGENTS.md Modal */}
+      <Dialog open={showAgentsModal} onOpenChange={setShowAgentsModal}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <span>{agentsRules?.filename ?? 'AGENTS.md'} (Projektregeln)</span>
+            </DialogTitle>
+            <DialogDescription>
+              Diese Regeln werden automatisch in den System-Prompt jeder Unterhaltung innerhalb dieses Projekts injiziert.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 rounded-xl border border-outline-variant/30 bg-surface-container-lowest/80 p-4 font-mono text-xs leading-relaxed text-on-surface overflow-x-auto whitespace-pre-wrap max-h-[60vh] select-text">
+            {agentsRules?.content || 'Kein Inhalt.'}
+          </div>
+          <div className="flex justify-end pt-2">
+            <Button type="button" onClick={() => setShowAgentsModal(false)}>
+              Schließen
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

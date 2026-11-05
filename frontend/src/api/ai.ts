@@ -2183,14 +2183,33 @@ export const aiApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  getProjectAgentsRules: (projectId: string) =>
+    api<{
+      found: boolean
+      filename: string | null
+      content: string | null
+      lines_count: number
+      size_bytes: number
+    }>(`/ai/projects/${encodeURIComponent(projectId)}/agents-rules`),
   getProjectGitStatus: (projectId: string) =>
     api<AiProjectGitStatus>(
       `/ai/projects/${encodeURIComponent(projectId)}/git/status`,
     ),
-  syncProjectGit: (projectId: string) =>
+  syncProjectGit: (
+    projectId: string,
+    payload?: {
+      repo_url?: string | null
+      branch?: string | null
+      provider?: string | null
+      token?: string | null
+    },
+  ) =>
     api<AiProjectGitStatus>(
       `/ai/projects/${encodeURIComponent(projectId)}/git/sync`,
-      { method: 'POST' },
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      },
     ),
   commitProjectGit: (
     projectId: string,

@@ -688,3 +688,51 @@ def git_commit_and_push(
     status["commit_output"] = ((commit_res.stdout or "") + "\n" + (commit_res.stderr or "")).strip()[:4000]
     status["push_output"] = push_output[:4000]
     return status
+
+
+def get_project_agents_rules(
+    db: Session,
+    user: User,
+    project_id: str | int,
+) -> dict[str, object]:
+    """Prüft, ob im Projekt eine AGENTS.md, agents.md, GEMINI.md oder CLAUDE.md existiert."""
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    candidates = ("AGENTS.md", "agents.md", "GEMINI.md", "CLAUDE.md", ".cursorrules")
+    for name in candidates:
+        target = ws / name
+        if target.is_file():
+            try:
+                content = target.read_text(encoding="utf-8", errors="replace")
+                return {
+                    "found": True,
+                    "filename": name,
+                    "content": content,
+                    "lines_count": len(content.splitlines()),
+                    "size_bytes": len(content.encode("utf-8")),
+                }
+            except Exception:
+                pass
+    # Falls physisch noch nicht materialisiert, in der DB nachschauen
+    for name in candidates:
+        db_file = (
+            db.query(AiProjectFile)
+            .filter(AiProjectFile.project_id == str(project.id), AiProjectFile.path == name)
+            .first()
+        )
+        if db_file is not None and db_file.content:
+            return {
+                "found": True,
+                "filename": name,
+                "content": db_file.content,
+                "lines_count": len(db_file.content.splitlines()),
+                "size_bytes": db_file.size_bytes,
+            }
+    return {
+        "found": False,
+        "filename": None,
+        "content": None,
+        "lines_count": 0,
+        "size_bytes": 0,
+    }
+

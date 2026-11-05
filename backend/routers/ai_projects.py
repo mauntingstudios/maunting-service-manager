@@ -247,6 +247,18 @@ def execute_project_command(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/{project_id}/agents-rules")
+def get_project_agents_rules(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.chat.use")),
+) -> dict[str, object]:
+    try:
+        return ai_project_service.get_project_agents_rules(db, user, project_id)
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/{project_id}/git/status")
 def get_project_git_status(
     project_id: int,

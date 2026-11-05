@@ -212,6 +212,14 @@ def lauf_beginnen(
                         proj_lines.append(f"Projektbeschreibung: {proj.description}")
                     if proj.system_prompt:
                         proj_lines.append(f"Projektanweisungen:\n{proj.system_prompt}")
+                    try:
+                        rules = ai_project_service.get_project_agents_rules(db, user, proj.id)
+                        if rules.get("found") and rules.get("content"):
+                            proj_lines.append(
+                                f"Projektregeln aus {rules['filename']} (zwingend zu beachten):\n{rules['content']}"
+                            )
+                    except Exception:
+                        pass
                     if proj.sandbox_enabled and proj.sandbox_path:
                         proj_lines.append(f"Server-Sandbox aktiv: {proj.sandbox_path}")
                     if proj.local_directory:
