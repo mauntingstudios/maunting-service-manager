@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import {
   EDITOR_BASIC_SETUP,
@@ -112,6 +112,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
   const [previewUrl, setPreviewUrl] = useState('http://localhost:5173')
   const [previewMode, setPreviewMode] = useState<'bundle' | 'url'>('bundle')
   const [inspectElement, setInspectElement] = useState<string | null>(null)
+  const previewIframeRef = useRef<HTMLIFrameElement | null>(null)
 
   // Sandbox Terminal
   const [commandInput, setCommandInput] = useState('')
@@ -458,6 +459,88 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
         }
       })
 
+    // Inspektor-Bridge und Link-Schutz injizieren
+    const bridgeScript = `
+<script>
+(function() {
+  // Verhindere Navigationen außerhalb der Sandbox
+  document.addEventListener('click', function(e) {
+    var target = e.target;
+    while (target && target.tagName !== 'A') {
+      target = target.parentElement;
+    }
+    if (target && target.tagName === 'A') {
+      var href = target.getAttribute('href') || '';
+      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.warn('Navigation im Vorschau-Frame abgefangen:', href);
+      }
+    }
+  }, true);
+
+  // Inspektor
+  var activeHover = null;
+  var style = document.createElement('style');
+  style.id = '__singra_inspector_style__';
+  style.textContent = '.singra-inspect-hover { outline: 2px dashed #06b6d4 !important; outline-offset: -2px !important; cursor: crosshair !important; background-color: rgba(6,182,212,0.1) !important; }';
+  document.head.appendChild(style);
+
+  window.__singra_inspect_active__ = false;
+
+  window.addEventListener('message', function(ev) {
+    if (ev.data && ev.data.type === 'SINGRA_SET_INSPECT') {
+      window.__singra_inspect_active__ = !!ev.data.active;
+      if (!window.__singra_inspect_active__ && activeHover) {
+        activeHover.classList.remove('singra-inspect-hover');
+        activeHover = null;
+      }
+    }
+  });
+
+  document.addEventListener('mouseover', function(e) {
+    if (!window.__singra_inspect_active__) return;
+    if (activeHover && activeHover !== e.target) {
+      activeHover.classList.remove('singra-inspect-hover');
+    }
+    activeHover = e.target;
+    if (activeHover) {
+      activeHover.classList.add('singra-inspect-hover');
+    }
+  }, true);
+
+  document.addEventListener('click', function(e) {
+    if (!window.__singra_inspect_active__) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var el = e.target;
+    if (!el) return;
+    var tag = el.tagName.toLowerCase();
+    var id = el.id ? '#' + el.id : '';
+    var cls = (typeof el.className === 'string' && el.className.trim())
+      ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.')
+      : '';
+    var textSnippet = (el.innerText || el.textContent || '').trim().slice(0, 40);
+    var desc = tag + id + cls + (textSnippet ? ' ("' + textSnippet + '")' : '');
+
+    window.parent.postMessage({
+      type: 'SINGRA_ELEMENT_SELECTED',
+      selector: desc,
+      tag: tag,
+      id: el.id || null,
+      classes: el.className || null,
+      text: textSnippet
+    }, '*');
+  }, true);
+})();
+</script>
+`
+    if (doc.includes('</body>')) {
+      doc = doc.replace('</body>', `${bridgeScript}</body>`)
+    } else {
+      doc += bridgeScript
+    }
+
     return doc
   }, [files, previewMode])
 
@@ -473,6 +556,38 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [activeTab, activeFilePath, fileContent, savingFile])
+
+  useEffect(() => {
+    const handleMsg = (ev: MessageEvent) => {
+      if (ev.data && ev.data.type === 'SINGRA_ELEMENT_SELECTED') {
+        const selector = String(ev.data.selector || 'Element')
+        setInspectElement(selector)
+        setInspectMode(false)
+        toast.success(`Element ausgewählt: ${selector}`)
+        try {
+          previewIframeRef.current?.contentWindow?.postMessage(
+            { type: 'SINGRA_SET_INSPECT', active: false },
+            '*',
+          )
+        } catch {
+          // Cross-origin fallback
+        }
+      }
+    }
+    window.addEventListener('message', handleMsg)
+    return () => window.removeEventListener('message', handleMsg)
+  }, [])
+
+  useEffect(() => {
+    try {
+      previewIframeRef.current?.contentWindow?.postMessage(
+        { type: 'SINGRA_SET_INSPECT', active: inspectMode },
+        '*',
+      )
+    } catch {
+      // Cross-origin fallback
+    }
+  }, [inspectMode])
 
   const handleDeleteFile = async (path: string) => {
     if (!selectedProject) return
@@ -1075,8 +1190,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                           const next = !inspectMode
                           setInspectMode(next)
                           if (next) {
-                            setInspectElement('HeroButton#cta-start')
-                            toast.info('Klick-Inspektor aktiv: Element "HeroButton#cta-start" vorgemerkt.')
+                            toast.info('Klick-Inspektor aktiv: Fahre über ein Element und klicke darauf.')
                           } else {
                             setInspectElement(null)
                           }
@@ -1150,12 +1264,13 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                         </div>
                       ) : (
                         <iframe
+                          ref={previewIframeRef}
                           key={previewMode === 'bundle' ? 'bundle-preview' : previewUrl}
                           src={previewMode === 'url' ? previewUrl : undefined}
                           srcDoc={previewMode === 'bundle' ? (previewSrcDoc ?? undefined) : undefined}
                           title="Projekt Live-Vorschau"
                           className="w-full flex-1 border-0 min-h-[400px] bg-white"
-                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                          sandbox="allow-scripts allow-forms allow-modals"
                         />
                       )}
                     </div>
