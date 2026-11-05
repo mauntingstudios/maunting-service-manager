@@ -81,6 +81,7 @@ describe('Speicher', () => {
       preset: 'petrol',
       customDataUrl: undefined,
       dimLevel: 10,
+      blurLevel: 0,
     })
     expect(localStorage.getItem('msm_chat_wallpaper_config')).toBeNull()
     expect((await ladeChatHintergrund('messenger')).preset).toBe('petrol')

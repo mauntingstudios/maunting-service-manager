@@ -16,6 +16,7 @@ function alsKonfiguration(roh: {
   preset?: string | null
   bild?: string | null
   dim: number
+  blur?: number
 }): ChatHintergrundKonfiguration | null {
   const bild =
     typeof roh.bild === 'string' &&
@@ -35,6 +36,7 @@ function alsKonfiguration(roh: {
     preset,
     customDataUrl: preset === 'custom' ? bild : undefined,
     dimLevel: Math.min(75, Math.max(0, Math.round(roh.dim))),
+    blurLevel: typeof roh.blur === 'number' ? Math.min(100, Math.max(0, Math.round(roh.blur))) : 0,
   }
 }
 
@@ -151,10 +153,21 @@ function ermittleTageszeitBild(): string {
 export function HintergrundFlaeche({
   vorlage,
   eigenesBild,
+  blurLevel = 0,
 }: {
   vorlage: HintergrundId
   eigenesBild?: string
+  blurLevel?: number
 }) {
+  const blurPx = blurLevel > 0 ? (blurLevel / 100) * 24 : 0
+  const bildStil: React.CSSProperties | undefined =
+    blurPx > 0
+      ? {
+          filter: `blur(${blurPx}px)`,
+          transform: 'scale(1.06)',
+        }
+      : undefined
+
   if (vorlage === 'custom') {
     if (!eigenesBild) return null
     return (
@@ -162,7 +175,8 @@ export function HintergrundFlaeche({
         src={eigenesBild}
         alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover"
+        style={bildStil}
+        className="absolute inset-0 h-full w-full object-cover transition-all duration-300"
       />
     )
   }
@@ -173,7 +187,8 @@ export function HintergrundFlaeche({
         src={ermittleTageszeitBild()}
         alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover object-center"
+        style={bildStil}
+        className="absolute inset-0 h-full w-full object-cover object-center transition-all duration-300"
       />
     )
   }
@@ -187,7 +202,8 @@ export function HintergrundFlaeche({
         src={gefunden.bildUrl}
         alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover object-center"
+        style={bildStil}
+        className="absolute inset-0 h-full w-full object-cover object-center transition-all duration-300"
       />
     )
   }
@@ -238,6 +254,7 @@ export function ChatHintergrund({
       <HintergrundFlaeche
         vorlage={konfiguration.preset}
         eigenesBild={konfiguration.customDataUrl}
+        blurLevel={konfiguration.blurLevel ?? 0}
       />
 
       {/* Abdunkeln, damit der Text auch auf einem hellen Foto lesbar bleibt. */}

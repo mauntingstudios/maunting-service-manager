@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 
-import type { AiAttachment } from '@/api/ai'
+import { aiApi, type AiAttachment } from '@/api/ai'
 import { Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Kurzinfo } from '@maunting/ui'
 import { anhangArt, lesbareGroesse } from '@/lib/aiAnhangTypen'
 
@@ -254,9 +254,22 @@ export function AiSpeicherDrawer({
                           onCheckedChange={() => toggleSelect(item.id)}
                           aria-label={`${t('common.select', 'Auswählen')}: ${item.original_name}`}
                         />
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface border border-outline-variant/30 text-on-surface-variant">
+                        <div className="flex h-9 w-9 shrink-0 overflow-hidden items-center justify-center rounded-lg bg-surface border border-outline-variant/30 text-on-surface-variant">
                           {art === 'image' ? (
-                            <ImageIcon className="h-4 w-4" aria-hidden="true" />
+                            <>
+                              <img
+                                src={aiApi.attachmentContentUrl(item.id)}
+                                alt=""
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none'
+                                  const fallback = e.currentTarget.nextElementSibling as HTMLElement | null
+                                  if (fallback) fallback.classList.remove('hidden')
+                                }}
+                              />
+                              <ImageIcon className="h-4 w-4 hidden" aria-hidden="true" />
+                            </>
                           ) : art === 'document' ? (
                             <FileText className="h-4 w-4" aria-hidden="true" />
                           ) : art === 'text' ? (

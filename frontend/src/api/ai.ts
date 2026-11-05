@@ -2145,6 +2145,7 @@ export const aiApi = {
     )
   },
   deleteAttachment: (id: string) => api(`/ai/attachments/${id}`, { method: 'DELETE' }),
+  attachmentContentUrl: (id: string) => `/api/ai/attachments/${encodeURIComponent(id)}/content`,
   listProjects: () => api<AiProject[]>('/ai/projects'),
   createProject: (payload: AiProjectWrite & { name: string }) =>
     api<AiProject>('/ai/projects', { method: 'POST', body: JSON.stringify(payload) }),

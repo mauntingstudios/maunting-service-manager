@@ -188,10 +188,10 @@ export const AiAntwortblase = memo(function AiAntwortblase({
     : null
   return (
     <article className="flex gap-3">
-      <span className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+      <span className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/15 text-primary border border-primary/25 shadow-sm">
         <Bot className="h-3.5 w-3.5" aria-hidden="true" />
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-surface-container-lowest/85 backdrop-blur-xl p-4 sm:p-5 shadow-lg text-on-surface">
         {/* Nachrichten aus der Zeit vor den Denkabschnitten: dort gibt es die
             Gedanken nur am Stück, ohne jede Stelle. Dann steht der Kasten wie
             früher oben — besser als gar nicht, und es ist die einzige

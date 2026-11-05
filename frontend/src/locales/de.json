@@ -8140,6 +8140,7 @@
       "activate": "Aktivieren",
       "coverHint": "Verzerrungsfrei eingepasst",
       "dim": "Hintergrund abdunkeln",
+      "blur": "Hintergrund-Unschärfe",
       "dimLight": "Hell",
       "dimReadable": "Optimal lesbar",
       "dimDark": "Sehr dunkel",

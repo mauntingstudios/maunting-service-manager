@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { MessageSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { aiApi, type AiConversationSummary, type AiVoiceConfig } from '@/api/ai'
+import { aiApi, type AiAttachment, type AiConversationSummary, type AiVoiceConfig } from '@/api/ai'
 import { api } from '@/api/client'
 import { AiAutonomyButton } from '@/components/ai/AiAutonomyButton'
 import { AiBetaBanner } from '@/components/ai/AiBetaBanner'
@@ -113,6 +113,7 @@ export function Ai({
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [activeProjectId, setActiveProjectId] = useState<string | undefined>(undefined)
   const [activeProjectName, setActiveProjectName] = useState<string | undefined>(undefined)
+  const [pendingAttachmentToChat, setPendingAttachmentToChat] = useState<AiAttachment | null>(null)
 
   const providerId =
     user?.ai_provider_id
@@ -359,7 +360,13 @@ export function Ai({
             ) : activeSection === 'erinnerungen' ? (
               <SingraMemoryView />
             ) : activeSection === 'dateien' ? (
-              <SingraFilesView />
+              <SingraFilesView
+                activeConversationId={activeConversationId}
+                onUseFileInChat={(att) => {
+                  setPendingAttachmentToChat(att)
+                  setActiveSection('chat')
+                }}
+              />
             ) : activeSection === 'tools' ? (
               <SingraToolsView
                 appFaehigkeiten={appFaehigkeiten}
@@ -392,6 +399,9 @@ export function Ai({
                 onOpenHistorySearch={() => setActiveSection('verlauf')}
                 activeProjectName={activeProjectName}
                 voiceConfig={sprachkonfiguration}
+                onNewChat={() => void handleNewChat()}
+                initialAttachment={pendingAttachmentToChat}
+                onConsumeInitialAttachment={() => setPendingAttachmentToChat(null)}
               />
             )}
 

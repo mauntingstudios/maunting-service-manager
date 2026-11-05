@@ -1,6 +1,6 @@
 """Upload-Rand fuer begrenzte, isoliert validierte AI-Anhaenge."""
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -97,6 +97,35 @@ def list_attachments(
     return [_response(row) for row in ai_attachment_service.list_owned(
         db, user, conversation.id
     )]
+
+
+@router.get("/attachments/{attachment_id}/content")
+def get_attachment_content(
+    attachment_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.attachments.use")),
+) -> Response:
+    _require_chat(db, user)
+    row = ai_attachment_service.get_owned(db, user, attachment_id)
+    if row.status != "ready" or not row.content_encrypted:
+        raise HTTPException(status_code=404, detail="Anhang nicht bereit")
+    import base64
+    from services.dis_client import DisClient
+    try:
+        b64_str = DisClient.decrypt(
+            row.content_encrypted, aad=ai_attachment_service._aad(row.id, "content")
+        )
+        raw_bytes = base64.b64decode(b64_str)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Entschlüsselung fehlgeschlagen") from exc
+    return Response(
+        content=raw_bytes,
+        media_type=row.media_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'inline; filename="{row.original_name}"',
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
 
 
 @router.delete("/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)

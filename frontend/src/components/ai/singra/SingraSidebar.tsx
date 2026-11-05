@@ -35,7 +35,7 @@ export const SINGRA_MAIN_NAV: SingraNavDef[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
   { id: 'projekte', label: 'Projekte', icon: Layers },
   { id: 'wissen', label: 'Wissen', icon: BookOpen },
-  { id: 'dateien', label: 'Dateien', icon: Folder },
+  { id: 'dateien', label: 'KI-Speicher', icon: Folder },
   { id: 'erinnerungen', label: 'Erinnerungen', icon: Bookmark },
   { id: 'tools', label: 'Tools', icon: LayoutGrid },
 ]

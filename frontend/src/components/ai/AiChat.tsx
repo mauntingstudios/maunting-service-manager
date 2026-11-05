@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, CalendarClock, Check, Globe2, HardDrive, Image as ImageIcon, Leaf, ListPlus, Loader2, Menu, Mic, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Trash2, X, Zap } from 'lucide-react'
+import { AudioLines, CalendarClock, Camera, Check, Globe2, HardDrive, Image as ImageIcon, Leaf, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Trash2, Upload, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -10,6 +10,7 @@ import {
   type AiProviderAvailable,
   type AiRegionalAnalysis,
   type AiRunInfo,
+  type AiSkillSummary,
   type AiVoiceConfig,
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
@@ -54,6 +55,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { starteAufnahme, type Aufnahme } from './voice/audioAufnahme'
 import { SprachAnsicht } from './voice/SprachAnsicht'
 import { SingraEmptyState, SingraScenicBackground } from './singra/SingraEmptyState'
+import { CameraSnapshotModal } from '@/components/social/CameraSnapshotModal'
 import { AI_IS_BETA } from './AiBetaBanner'
 import { chatScopeApi, PRIMARY_CHAT_SCOPE, type AiChatScope } from './chatScope'
 
@@ -151,6 +153,11 @@ export interface AiChatProps {
   voiceConfig?: AiVoiceConfig | null
   /** Meldet die Modellwahl nach aussen, damit der eingebettete Sprachmodus sie nutzt. */
   onProviderChange?: (providerId: number | null) => void
+  /** Neuer Chat über Menü oder Slash-Befehl */
+  onNewChat?: () => void
+  /** Datei sofort an den Chat binden (z. B. aus KI-Speicher) */
+  initialAttachment?: AiAttachment | null
+  onConsumeInitialAttachment?: () => void
   /** Beispielschlüssel für den leeren Chat; Standard bleibt der Serverchat. */
   beispielSchluessel?: readonly string[]
   /** Nur die App. Das Panel laesst das Feld weg. */
@@ -177,6 +184,9 @@ export function AiChat({
   activeProjectName,
   voiceConfig,
   onProviderChange,
+  onNewChat,
+  initialAttachment,
+  onConsumeInitialAttachment,
   beispielSchluessel = SERVER_BEISPIELE,
   appFaehigkeiten,
 }: AiChatProps = {}) {
@@ -624,6 +634,52 @@ export function AiChat({
   })
 
   const [speicherOffen, setSpeicherOffen] = useState(false)
+  const [kameraOffen, setKameraOffen] = useState(false)
+  const [plusMenuOffen, setPlusMenuOffen] = useState(false)
+  const [slashMenuAbgewiesen, setSlashMenuAbgewiesen] = useState(false)
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [skills, setSkills] = useState<AiSkillSummary[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (initialAttachment) {
+      setAttachments((prev) => {
+        if (prev.some((a) => a.id === initialAttachment.id)) return prev
+        return [{ ...initialAttachment, message_id: null }, ...prev]
+      })
+      onConsumeInitialAttachment?.()
+    }
+  }, [initialAttachment, onConsumeInitialAttachment])
+
+  useEffect(() => {
+    if (typeof aiApi.listSkills === 'function') {
+      aiApi
+        .listSkills()
+        .then((data) => {
+          if (mountedRef.current) setSkills(data)
+        })
+        .catch(() => undefined)
+    }
+  }, [])
+
+  const handleCameraCapture = useCallback((dataUrl: string) => {
+    setKameraOffen(false)
+    try {
+      const parts = dataUrl.split(',')
+      const mimeMatch = parts[0].match(/:(.*?);/)
+      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg'
+      const binary = atob(parts[1])
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i)
+      }
+      const dateiname = `kamera_${Date.now()}.jpg`
+      const file = new File([bytes], dateiname, { type: mime })
+      void uploadFiles([file])
+    } catch (err) {
+      console.error('Kamerafoto konnte nicht verarbeitet werden:', err)
+    }
+  }, [uploadFiles])
 
   const handleStorageDelete = useCallback(async (anhang: AiAttachment, auchAusTresor: boolean) => {
     await removeAttachment(anhang)
@@ -644,6 +700,11 @@ export function AiChat({
   }, [removeAttachment])
 
   const handleInsertIntoPrompt = useCallback((anhang: AiAttachment) => {
+    setAttachments((prev) =>
+      prev.some((a) => a.id === anhang.id)
+        ? prev
+        : [{ ...anhang, message_id: null }, ...prev],
+    )
     setInput((prev) => (prev ? `${prev} [Datei: ${anhang.original_name}]` : `Beziehe dich bitte auf die Datei ${anhang.original_name}: `))
   }, [setInput])
 
@@ -1011,6 +1072,96 @@ export function AiChat({
       toast.error(error instanceof SanitizedApiError ? error.message : t('ai.chat.errors.delete'))
     }
   }
+
+  const slashBefehle = useMemo(() => {
+    const aktionen = [
+      {
+        id: '/foto',
+        label: '/foto',
+        beschreibung: 'Foto mit Kamera aufnehmen und anfügen',
+        icon: Camera,
+        art: 'aktion' as const,
+        ausfuehren: () => {
+          setInput('')
+          setKameraOffen(true)
+        },
+      },
+      {
+        id: '/speicher',
+        label: '/speicher',
+        beschreibung: 'KI-Speicher öffnen und Datei wählen',
+        icon: HardDrive,
+        art: 'aktion' as const,
+        ausfuehren: () => {
+          setInput('')
+          setSpeicherOffen(true)
+        },
+      },
+      {
+        id: '/datei',
+        label: '/datei',
+        beschreibung: 'Datei von deinem Gerät hochladen',
+        icon: Upload,
+        art: 'aktion' as const,
+        ausfuehren: () => {
+          setInput('')
+          fileInputRef.current?.click()
+        },
+      },
+      {
+        id: '/neu',
+        label: '/neu',
+        beschreibung: 'Neue frische Unterhaltung beginnen',
+        icon: MessageSquarePlus,
+        art: 'aktion' as const,
+        ausfuehren: () => {
+          setInput('')
+          if (onNewChat) {
+            onNewChat()
+          } else {
+            void clearHistory()
+          }
+        },
+      },
+    ]
+
+    const skillBefehle = skills.map((s) => ({
+      id: `/${s.skill_key}`,
+      label: `/${s.skill_key}`,
+      beschreibung: s.description || s.name,
+      icon: Sparkles,
+      art: 'skill' as const,
+      ausfuehren: () => {
+        setInput(`/${s.skill_key} `)
+        requestAnimationFrame(() => inputRef.current?.focus())
+      },
+    }))
+
+    return [...aktionen, ...skillBefehle]
+  }, [skills, onNewChat, clearHistory])
+
+  const zeigeSlashMenu =
+    singraShell &&
+    input.startsWith('/') &&
+    !input.includes(' ') &&
+    !slashMenuAbgewiesen
+
+  const gefilterteSlashBefehle = useMemo(() => {
+    if (!zeigeSlashMenu) return []
+    const suchText = input.toLowerCase()
+    return slashBefehle
+      .filter(
+        (b) =>
+          b.id.toLowerCase().startsWith(suchText) ||
+          b.beschreibung.toLowerCase().includes(suchText.slice(1)) ||
+          b.label.toLowerCase().includes(suchText.slice(1)),
+      )
+      .slice(0, 7)
+  }, [zeigeSlashMenu, input, slashBefehle])
+
+  useEffect(() => {
+    setSlashIndex(0)
+  }, [gefilterteSlashBefehle.length])
 
   // Abarbeiten der Warteschlange, sobald der vorherige Lauf beendet ist
   useEffect(() => {
@@ -1699,7 +1850,7 @@ export function AiChat({
                             >
                               <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
-                            <div className="flex max-w-[85%] flex-col items-end rounded-2xl rounded-br-md border border-primary/25 bg-primary/10 px-4 py-2.5">
+                            <div className="flex max-w-[85%] flex-col items-end rounded-2xl rounded-tr-sm border border-primary/35 bg-surface-container-high/95 text-on-surface px-4 py-3 shadow-md backdrop-blur-xl">
                               {message.content && (
                                 <p className="w-full whitespace-pre-wrap break-words text-base sm:text-sm leading-relaxed sm:leading-6 text-on-surface">
                                   {message.content}
@@ -1816,6 +1967,58 @@ export function AiChat({
                 </div>
               )}
 
+              {/* Autovervollständigung für Slash-Befehle und Skills */}
+              {zeigeSlashMenu && gefilterteSlashBefehle.length > 0 && (
+                <div
+                  role="listbox"
+                  aria-label="Verfügbare Befehle und Skills"
+                  className="mb-2 max-h-64 overflow-y-auto rounded-2xl border border-white/20 bg-[#0f1311]/95 p-2 shadow-2xl backdrop-blur-xl animate-fade-in"
+                >
+                  <div className="px-2.5 py-1 text-label-sm font-semibold uppercase tracking-wider text-white/50">
+                    Befehle & Skills ({gefilterteSlashBefehle.length})
+                  </div>
+                  <div className="space-y-1 mt-1">
+                    {gefilterteSlashBefehle.map((befehl, idx) => {
+                      const aktiv = idx === slashIndex
+                      const Icon = befehl.icon
+                      return (
+                        <button
+                          key={befehl.id}
+                          type="button"
+                          role="option"
+                          aria-selected={aktiv}
+                          className={[
+                            'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-xs transition-colors',
+                            aktiv
+                              ? 'bg-primary/25 border border-primary/45 text-white'
+                              : 'text-white/85 hover:bg-white/10 hover:text-white border border-transparent',
+                          ].join(' ')}
+                          onMouseEnter={() => setSlashIndex(idx)}
+                          onClick={() => befehl.ausfuehren()}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                                aktiv ? 'bg-primary/30 text-primary' : 'bg-white/10 text-white/70'
+                              }`}
+                            >
+                              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="font-semibold text-white">{befehl.label}</span>
+                              <span className="ml-2 truncate text-white/60">{befehl.beschreibung}</span>
+                            </div>
+                          </div>
+                          <span className="text-label-sm text-white/40 shrink-0 font-mono">
+                            {befehl.art === 'skill' ? 'Skill' : 'Aktion'}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div
                 className={
                   dictating
@@ -1873,32 +2076,125 @@ export function AiChat({
                 ) : (
                   <>
                     {canAttach && (
-                      <Kurzinfo text={t('ai.attachments.add')} lage="oben" seite="anfang" aussen="shrink-0">
-                      <label
-                        className={`grid h-9 w-9 place-items-center rounded-full transition-colors ${
-                          singraShell
-                            ? 'border border-white/15 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white'
-                            : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                        } ${
-                          busy ? 'pointer-events-none opacity-50' : 'cursor-pointer'
-                        }`}
-                      >
-                        {uploading
-                          ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                          : singraShell
-                            ? <Plus className="h-4 w-4" aria-hidden="true" />
-                            : <Paperclip className="h-4 w-4" aria-hidden="true" />}
-                        <input
-                          type="file" className="sr-only" disabled={busy}
-                          accept={ATTACHMENT_ACCEPT} multiple
-                          aria-label={t('ai.attachments.add')}
-                          onChange={(event) => {
-                            void uploadFiles(event.target.files)
-                            event.target.value = ''
-                          }}
-                        />
-                      </label>
-                      </Kurzinfo>
+                      singraShell ? (
+                        <div className="relative shrink-0">
+                          <Kurzinfo text="Aktionen & Anhänge" lage="oben" seite="anfang">
+                            <button
+                              type="button"
+                              onClick={() => setPlusMenuOffen((v) => !v)}
+                              className={`grid h-9 w-9 place-items-center rounded-full transition-colors border border-white/15 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white ${
+                                busy ? 'pointer-events-none opacity-50' : 'cursor-pointer'
+                              }`}
+                              aria-label="Aktionen und Anhänge"
+                              aria-expanded={plusMenuOffen}
+                            >
+                              {uploading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Plus
+                                  className={`h-4 w-4 transition-transform duration-200 ${
+                                    plusMenuOffen ? 'rotate-45' : ''
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                              )}
+                            </button>
+                          </Kurzinfo>
+
+                          {plusMenuOffen && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-40"
+                                onClick={() => setPlusMenuOffen(false)}
+                                aria-hidden="true"
+                              />
+                              <div
+                                role="menu"
+                                className="absolute bottom-12 left-0 z-50 w-56 rounded-2xl border border-white/20 bg-[#0f1311]/95 p-1.5 shadow-2xl backdrop-blur-xl animate-fade-in text-white text-xs"
+                              >
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-white/90 hover:bg-white/10 hover:text-white transition-colors"
+                                  onClick={() => {
+                                    setPlusMenuOffen(false)
+                                    fileInputRef.current?.click()
+                                  }}
+                                >
+                                  <Upload className="h-4 w-4 text-primary" aria-hidden="true" />
+                                  <span className="font-medium">Datei hochladen</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-white/90 hover:bg-white/10 hover:text-white transition-colors"
+                                  onClick={() => {
+                                    setPlusMenuOffen(false)
+                                    setKameraOffen(true)
+                                  }}
+                                >
+                                  <Camera className="h-4 w-4 text-primary" aria-hidden="true" />
+                                  <span className="font-medium">Foto aufnehmen</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-white/90 hover:bg-white/10 hover:text-white transition-colors"
+                                  onClick={() => {
+                                    setPlusMenuOffen(false)
+                                    setSpeicherOffen(true)
+                                  }}
+                                >
+                                  <HardDrive className="h-4 w-4 text-primary" aria-hidden="true" />
+                                  <span className="font-medium">Aus KI-Speicher wählen</span>
+                                </button>
+                              </div>
+                            </>
+                          )}
+
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            className="sr-only"
+                            disabled={busy}
+                            accept={ATTACHMENT_ACCEPT}
+                            multiple
+                            aria-label={t('ai.attachments.add')}
+                            onChange={(event) => {
+                              void uploadFiles(event.target.files)
+                              event.target.value = ''
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <Kurzinfo text={t('ai.attachments.add')} lage="oben" seite="anfang" aussen="shrink-0">
+                          <label
+                            className={`grid h-9 w-9 place-items-center rounded-full transition-colors text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface ${
+                              busy ? 'pointer-events-none opacity-50' : 'cursor-pointer'
+                            }`}
+                          >
+                            {uploading ? (
+                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Paperclip className="h-4 w-4" aria-hidden="true" />
+                            )}
+                            <input
+                              type="file"
+                              className="sr-only"
+                              disabled={busy}
+                              accept={ATTACHMENT_ACCEPT}
+                              multiple
+                              aria-label={t('ai.attachments.add')}
+                              onChange={(event) => {
+                                void uploadFiles(event.target.files)
+                                event.target.value = ''
+                              }}
+                            />
+                          </label>
+                        </Kurzinfo>
+                      )
                     )}
                     {canAttach && !singraShell && (
                       <Kurzinfo text={t('ai.attachments.storageTitle')} lage="oben" seite="anfang" aussen="shrink-0">
@@ -1925,12 +2221,44 @@ export function AiChat({
                       maxLength={16000}
                       value={input}
                       onChange={(event) => {
-                        setInput(event.target.value)
-                        if (event.target.value.trim()) tippSignal()
+                        const val = event.target.value
+                        setInput(val)
+                        if (!val.startsWith('/')) {
+                          setSlashMenuAbgewiesen(false)
+                        }
+                        if (val.trim()) tippSignal()
                         event.target.style.height = 'auto'
                         event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`
                       }}
                       onKeyDown={(event) => {
+                        if (zeigeSlashMenu && gefilterteSlashBefehle.length > 0) {
+                          if (event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            setSlashIndex((i) => (i + 1) % gefilterteSlashBefehle.length)
+                            return
+                          }
+                          if (event.key === 'ArrowUp') {
+                            event.preventDefault()
+                            setSlashIndex(
+                              (i) => (i - 1 + gefilterteSlashBefehle.length) % gefilterteSlashBefehle.length,
+                            )
+                            return
+                          }
+                          if (event.key === 'Enter' || event.key === 'Tab') {
+                            event.preventDefault()
+                            const befehl = gefilterteSlashBefehle[slashIndex]
+                            if (befehl) {
+                              befehl.ausfuehren()
+                            }
+                            return
+                          }
+                          if (event.key === 'Escape') {
+                            event.preventDefault()
+                            setSlashMenuAbgewiesen(true)
+                            return
+                          }
+                        }
+
                         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                           event.preventDefault()
                           if (event.altKey && streaming) {
@@ -2074,6 +2402,14 @@ export function AiChat({
       onLoeschen={handleStorageDelete}
       onInPromptEinfuegen={handleInsertIntoPrompt}
       tresorSpiegelungAktiv={Boolean(localStorage.getItem('msm_vault_mirror_chat_attachments') === 'true')}
+    />
+    <CameraSnapshotModal
+      open={kameraOffen}
+      onOpenChange={setKameraOffen}
+      onCapture={handleCameraCapture}
+      titel="Foto für Singra aufnehmen"
+      bestaetigen="Foto anfügen"
+      nurKamera
     />
     </RegionalAnalysisLayout>
   )

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Image as ImageIcon, Layers, RotateCcw, Sliders, Upload } from 'lucide-react'
+import { Check, Image as ImageIcon, Layers, RotateCcw, Sliders, Sparkles, Upload } from 'lucide-react'
 
 import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Kurzinfo } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
@@ -100,6 +100,7 @@ function DialogInhalt({
   const [gewaehlt, setzeGewaehlt] = useState<HintergrundId>(standardPreset)
   const [eigenesBild, setzeEigenesBild] = useState<string | undefined>(undefined)
   const [abdunkeln, setzeAbdunkeln] = useState<number>(STANDARD_HINTERGRUND.dimLevel)
+  const [blur, setzeBlur] = useState<number>(bereich === 'ki' ? 30 : 0)
   const [fuerAlle, setzeFuerAlle] = useState(false)
   const [speichert, setzeSpeichert] = useState(false)
   // Schlüssel, kein fertiger Satz — sonst bliebe die Meldung nach einem
@@ -116,12 +117,13 @@ function DialogInhalt({
       setzeGewaehlt(konfiguration.preset)
       setzeEigenesBild(konfiguration.customDataUrl)
       setzeAbdunkeln(konfiguration.dimLevel)
+      setzeBlur(konfiguration.blurLevel ?? (bereich === 'ki' ? 30 : 0))
       setzeFuerAlle(false)
     })
     return () => {
       abgebrochen = true
     }
-  }, [scope])
+  }, [scope, bereich])
 
   const nimmDatei = async (ereignis: React.ChangeEvent<HTMLInputElement>) => {
     setzeFehler(null)
@@ -151,6 +153,7 @@ function DialogInhalt({
       preset: gewaehlt,
       customDataUrl: gewaehlt === 'custom' ? eigenesBild : undefined,
       dimLevel: abdunkeln,
+      blurLevel: blur,
     }
     setzeSpeichert(true)
     try {
@@ -182,6 +185,7 @@ function DialogInhalt({
     setzeGewaehlt(standard.preset)
     setzeEigenesBild(undefined)
     setzeAbdunkeln(standard.dimLevel)
+    setzeBlur(standard.blurLevel ?? (bereich === 'ki' ? 30 : 0))
     const ok = await speichereHintergrundFuerScope(scope, standard)
     if (!ok) {
       setzeFehler('social.wallpaper.saveFailed')
@@ -253,29 +257,31 @@ function DialogInhalt({
                   {/* Dieselbe Fläche, die nachher im Chat steht — keine
                       nachgebaute Vorschau, die auseinanderlaufen könnte. */}
                   <div className="absolute inset-0 pointer-events-none">
-                    <HintergrundFlaeche vorlage={vorlage.id} />
+                    <HintergrundFlaeche vorlage={vorlage.id} blurLevel={blur} />
+                    {/* Dunkler Scrim, damit Text und Symbole vor jedem Foto gestochen scharf bleiben */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/55 to-black/35" />
                   </div>
 
                   <div className="relative z-10 flex items-center justify-between w-full">
-                    <div className={`p-1 rounded-md ${vorlage.iconKlassen ?? 'bg-primary/15 text-primary'}`}>
+                    <div className="p-1.5 rounded-lg bg-black/60 border border-white/20 text-white shadow-sm">
                       <Zeichen className="w-3.5 h-3.5" />
                     </div>
                     {aktiv && (
-                      <div className="w-4 h-4 rounded-full bg-primary text-on-primary flex items-center justify-center">
+                      <div className="w-4 h-4 rounded-full bg-primary text-on-primary ring-2 ring-black/40 flex items-center justify-center">
                         <Check className="w-2.5 h-2.5 stroke-[3]" />
                       </div>
                     )}
                   </div>
                   <div className="relative z-10">
-                    <p className="text-xs font-bold text-on-surface flex flex-wrap items-center gap-1">
+                    <p className="text-xs font-bold text-white drop-shadow flex flex-wrap items-center gap-1">
                       <span>{t(vorlage.nameKey)}</span>
                       {vorlage.id === standardPreset && (
-                        <span className="text-label-sm px-1 py-0.2 rounded bg-primary/20 text-primary font-mono">
+                        <span className="text-label-sm px-1.5 py-0.5 rounded bg-primary text-on-primary font-mono">
                           {t('social.wallpaper.default')}
                         </span>
                       )}
                     </p>
-                    <p className="text-label-sm text-on-surface-variant/80">{t(vorlage.hinweisKey)}</p>
+                    <p className="text-label-sm text-white/85 drop-shadow">{t(vorlage.hinweisKey)}</p>
                   </div>
                 </button>
               )
@@ -343,6 +349,32 @@ function DialogInhalt({
           )}
 
           {fehler && <p className="text-label-sm text-error">{t(fehler)}</p>}
+        </div>
+
+        {/* Unschärfe (wie im Pontis Browser) */}
+        <div className="space-y-1.5 pt-1 border-t border-outline-variant/20">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-on-surface flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-primary" />
+              <span>{t('social.wallpaper.blur', { defaultValue: 'Hintergrund-Unschärfe' })}</span>
+            </span>
+            <span className="font-mono text-label-sm text-primary">{blur}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="5"
+            value={blur}
+            onChange={(ereignis) => setzeBlur(Number(ereignis.target.value))}
+            aria-label={t('social.wallpaper.blur', { defaultValue: 'Hintergrund-Unschärfe' })}
+            className="w-full accent-primary h-1.5 bg-surface-container-highest rounded-lg cursor-pointer"
+          />
+          <div className="flex justify-between text-label-sm text-on-surface-variant/60 font-mono">
+            <span>0% (Scharf)</span>
+            <span>30% (Standard)</span>
+            <span>100% (Sanft)</span>
+          </div>
         </div>
 
         {/* Abdunkeln */}

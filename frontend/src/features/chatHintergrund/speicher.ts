@@ -43,6 +43,8 @@ export interface ChatHintergrundKonfiguration {
   customDataUrl?: string
   /** 0–75 Prozent Abdunkelung, damit Text auf jedem Bild lesbar bleibt. */
   dimLevel: number
+  /** 0–100 Prozent Unschärfe nach Pontis-Art, Standard 30% im KI-Bereich. */
+  blurLevel?: number
 }
 
 /** Der Platz, dessen Hintergrund eine Fläche zeigt. */
@@ -53,11 +55,13 @@ export type ChatHintergrundScope =
 export const STANDARD_HINTERGRUND: ChatHintergrundKonfiguration = {
   preset: STANDARD_VORLAGE,
   dimLevel: 25,
+  blurLevel: 0,
 }
 
 export const STANDARD_HINTERGRUND_KI: ChatHintergrundKonfiguration = {
   preset: STANDARD_VORLAGE_KI,
   dimLevel: 25,
+  blurLevel: 30,
 }
 
 export function standardHintergrundFuerScope(
@@ -128,10 +132,15 @@ function ausRohdaten(roh: unknown): ChatHintergrundKonfiguration {
     typeof gelesen.dimLevel === 'number' && Number.isFinite(gelesen.dimLevel)
       ? gelesen.dimLevel
       : STANDARD_HINTERGRUND.dimLevel
+  const blurWert =
+    typeof gelesen.blurLevel === 'number' && Number.isFinite(gelesen.blurLevel)
+      ? Math.min(100, Math.max(0, Math.round(gelesen.blurLevel)))
+      : (preset.startsWith('singra_') || preset === 'dynamic_time' ? 30 : 0)
   return {
     preset: preset === 'custom' && !customDataUrl ? STANDARD_VORLAGE : preset,
     customDataUrl,
     dimLevel: Math.min(75, Math.max(0, Math.round(dimWert))),
+    blurLevel: blurWert,
   }
 }
 
@@ -139,7 +148,8 @@ function istStandard(konfiguration: ChatHintergrundKonfiguration): boolean {
   return (
     konfiguration.preset === STANDARD_HINTERGRUND.preset &&
     !konfiguration.customDataUrl &&
-    konfiguration.dimLevel === STANDARD_HINTERGRUND.dimLevel
+    konfiguration.dimLevel === STANDARD_HINTERGRUND.dimLevel &&
+    (konfiguration.blurLevel ?? 0) === 0
   )
 }
 

@@ -188,6 +188,19 @@ def list_owned(db: Session, user: User, conversation_id: str) -> list[AiAttachme
     ).order_by(AiAttachment.created_at).all()
 
 
+def get_owned(db: Session, user: User, attachment_id: str) -> AiAttachment:
+    try:
+        canonical = str(UUID(attachment_id))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise HTTPException(status_code=404, detail="Anhang nicht gefunden") from exc
+    row = db.query(AiAttachment).filter(
+        AiAttachment.id == canonical, AiAttachment.user_id == user.id
+    ).first()
+    if row is None or get_owned_conversation(db, row.conversation_id, user) is None:
+        raise HTTPException(status_code=404, detail="Anhang nicht gefunden")
+    return row
+
+
 def delete_owned(db: Session, user: User, attachment_id: str) -> None:
     try:
         canonical = str(UUID(attachment_id))

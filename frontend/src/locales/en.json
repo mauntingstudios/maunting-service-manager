@@ -8140,6 +8140,7 @@
       "activate": "Activate",
       "coverHint": "Fitted without distortion",
       "dim": "Dim background",
+      "blur": "Background blur",
       "dimLight": "Light",
       "dimReadable": "Best readability",
       "dimDark": "Very dark",

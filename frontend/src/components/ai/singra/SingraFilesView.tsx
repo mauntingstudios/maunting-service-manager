@@ -6,7 +6,7 @@ import {
   Folder,
   HardDrive,
   Image as ImageIcon,
-  MessageSquarePlus,
+  Paperclip,
   Plus,
   Search,
   Trash2,
@@ -147,7 +147,7 @@ export function SingraFilesView({
             </div>
             <div>
               <h2 className="font-headline text-lg font-semibold text-on-surface">
-                Dateien & KI-Speicher
+                KI-Speicher
               </h2>
               <p className="text-xs text-on-surface-variant">
                 {attachments.length} Dateien gespeichert • Belegter Speicher:{' '}
@@ -240,9 +240,23 @@ export function SingraFilesView({
                   className="flex flex-col justify-between rounded-xl border border-outline-variant/30 bg-surface-container-low/40 p-3.5 hover:border-primary/35 transition-colors"
                 >
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
-                      <Icon className="h-4 w-4" aria-hidden="true" />
-                    </div>
+                    {kind === 'image' ? (
+                      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-outline-variant/30 bg-black/20">
+                        <img
+                          src={aiApi.attachmentContentUrl(item.id)}
+                          alt={item.original_name}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
+                        <Icon className="h-5 w-5" aria-hidden="true" />
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
                       <div
                         className="truncate text-sm font-medium text-on-surface"
@@ -263,11 +277,11 @@ export function SingraFilesView({
                         type="button"
                         size="sm"
                         variant="ghost"
-                        className="h-7 px-2 text-xs"
+                        className="h-7 px-2.5 text-xs flex items-center gap-1.5"
                         onClick={() => onUseFileInChat(item)}
                       >
-                        <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden="true" />
-                        Im Chat erwähnen
+                        <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
+                        An Chat anhängen
                       </Button>
                     )}
                     <button
