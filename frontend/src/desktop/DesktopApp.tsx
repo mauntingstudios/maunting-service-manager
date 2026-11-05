@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { listen } from '@tauri-apps/api/event'
-import { ArrowLeft, BookOpen, Bot, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, QrCode, Settings as SettingsIcon, ShieldAlert, StickyNote, Users, WifiOff, X } from 'lucide-react'
+import { ArrowLeft, BookOpen, Bot, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, QrCode, Settings as SettingsIcon, StickyNote, Users, WifiOff, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
@@ -1496,21 +1496,6 @@ function Hauptseite({
               </div>
             ) : darfChatten ? (
               <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden bg-surface">
-                {konfig && !isAndroid && !konfig.computer_use_aktiv && (
-                  <div className="m-2 sm:m-3 mb-0 shrink-0 flex items-center justify-between rounded-lg border border-outline-variant/40 bg-surface-container-low/60 p-3 text-xs">
-                    <div className="flex items-center gap-2 text-on-surface-variant">
-                      <ShieldAlert className="h-4 w-4 shrink-0 text-status-warning" aria-hidden="true" />
-                      <span>{t('mss.einstellungen.banner.computerUseHinweis')}</span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigate('/einstellungen?tab=desktop')}
-                    >
-                      {t('mss.einstellungen.banner.computerUseLink')}
-                    </Button>
-                  </div>
-                )}
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <Ai
                     appFaehigkeiten={{

@@ -45,8 +45,10 @@ ARTEN = ("primary", "guardian", "worker", "docs")
 
 #: Die Arten, von denen es je Benutzer hoechstens **eine** Unterhaltung gibt.
 #: Der eindeutige Index unten wird aus dieser Aufzaehlung erzeugt; ``worker``
-#: steht bewusst nicht darin — mehrere gleichzeitige Auftraege sind der Zweck.
-EINZELFENSTER = ("primary", "guardian")
+#: und ``primary`` (Multi-Chat) stehen nicht mehr darin — ein Benutzer kann
+#: beliebig viele eigene Chat-Unterhaltungen und Projekt-Chats fuehren, waehrend
+#: das ``guardian``-Hintergrundfenster weiterhin eindeutig je Benutzer bleibt.
+EINZELFENSTER = ("guardian",)
 
 
 class AiConversation(Base):
@@ -125,6 +127,13 @@ class AiConversation(Base):
     # generisch, damit kein Dokumenttitel im Klartext in dieser Tabelle steht.
     document_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # Optionale Zuordnung zu einem AI-Projekt (Wissens- oder Code-Projekt).
+    project_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("ai_projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
     )
     title: Mapped[str] = mapped_column(ai_text("ai_conversations.title"), nullable=False)
     # Nur eine spaetere, explizit minimierte Zusammenfassung; nie Provider-Interna.

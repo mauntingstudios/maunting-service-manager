@@ -254,7 +254,7 @@ def _segment_beginnen(db, run: AiRun, zustand: dict) -> tuple[str, int, str] | N
         return None
     # Das Modell der Rolle, nicht pauschal `default_model`: ein Worker-Segment
     # bucht und beschriftet mit dem Arbeitsmodell des Betreibers.
-    modell = _modell_fuer(provider, rolle_aus_zustand(zustand))
+    modell = _modell_fuer(provider, rolle_aus_zustand(zustand), zustand)
     request_id = str(uuid4())
     usage_event = ai_stream.reserve_ai_usage(
         db,
@@ -935,6 +935,13 @@ async def _werkzeuge_und_grenze(
             hat_anhaenge=hat_anhaenge, query=letzte,
             desktop_intent=desktop_intent if isinstance(desktop_intent, bool) else None,
         )
+        if docs_kontext:
+            pflicht = pflicht | (
+                frozenset({"read_document", "read_document_selection", "edit_document"})
+                & frozenset(erlaubt)
+            )
+        if isinstance(zustand, dict) and zustand.get("project_id"):
+            pflicht = pflicht | (frozenset({"project_workspace"}) & frozenset(erlaubt))
         hot = [n for n in HOTSET if n in erlaubt]
         hot_and_topk = len(set(hot) | pflicht) + 5
         if letzte and len(erlaubt) > hot_and_topk:
@@ -1007,7 +1014,7 @@ async def _werkzeuge_und_grenze(
         # Das Modell der Rolle: ein Worker-Segment fragt den Katalog nach dem
         # Arbeitsmodell — Cache-Marke und Denkstufen-Klemme gehoeren zu dem
         # Modell, das gleich wirklich antwortet.
-        _modell_fuer(vorbereitung.provider, rolle),
+        _modell_fuer(vorbereitung.provider, rolle, zustand),
         schluessel=vorbereitung.api_key,
     )
     cache_marke = modell is not None and modell.cache_marke_noetig

@@ -135,13 +135,28 @@ export interface AiProviderAdmin {
   search_summary_enabled?: boolean
   transcription_enabled?: boolean
   realtime_enabled?: boolean
+  enabled_models?: string[]
+  allow_all_models?: boolean
   updated_at: string
+}
+
+export interface AiProviderModelOption {
+  model_id: string
+  name: string
+  reasoning: boolean
+  efforts: string[]
+  can_disable: boolean
+  default_effort: string | null
+  vision: boolean | null
 }
 
 export interface AiProviderAvailable {
   id: number
   name: string
   default_model: string
+  enabled_models?: string[]
+  allow_all_models?: boolean
+  models?: AiProviderModelOption[]
   requires_api_key: boolean
   operator_key_available: boolean
   available: boolean
@@ -308,6 +323,18 @@ export interface AiConversation {
   id: string
   kind: AiConversationKind
   title: string
+  project_id?: string | null
+  pinned?: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AiConversationSummary {
+  id: string
+  kind: AiConversationKind
+  title: string
+  project_id: string | null
+  pinned: boolean
   created_at: string
   updated_at: string
 }
@@ -1408,8 +1435,110 @@ export interface AiProviderWrite {
    */
   azure_resource_name?: string | null
   disable_safety?: boolean
+  enabled_models?: string[] | null
+  allow_all_models?: boolean
   operator_api_key?: string
   clear_operator_api_key?: boolean
+}
+
+export interface AiProject {
+  id: string
+  owner_user_id: number
+  team_id: number | null
+  name: string
+  description: string | null
+  system_prompt: string | null
+  icon: string
+  color: string
+  project_kind: 'general' | 'coding' | 'docs'
+  sandbox_enabled: boolean
+  sandbox_path: string | null
+  local_directory: string | null
+  git_provider: 'github' | 'gitlab' | 'custom' | null
+  git_repo_url: string | null
+  git_branch: string
+  git_token_configured: boolean
+  file_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AiProjectWrite {
+  name?: string
+  description?: string | null
+  system_prompt?: string | null
+  icon?: string
+  color?: string
+  project_kind?: 'general' | 'coding' | 'docs'
+  team_id?: number | null
+  sandbox_enabled?: boolean
+  local_directory?: string | null
+  git_provider?: 'github' | 'gitlab' | 'custom' | null
+  git_repo_url?: string | null
+  git_branch?: string
+  git_token?: string | null
+  clear_git_token?: boolean
+}
+
+export interface AiProjectFile {
+  id: string
+  project_id: string
+  path: string
+  content: string
+  mime_type: string
+  size_bytes: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AiProjectExecResult {
+  exit_code: number
+  stdout: string
+  stderr: string
+  cwd: string
+  duration_ms: number
+}
+
+export interface AiProjectGitStatus {
+  initialized: boolean
+  branch: string | null
+  remote_url: string | null
+  clean: boolean
+  changed_files: string[]
+  ahead: number
+  behind: number
+  last_commit: string | null
+}
+
+export interface AiMcpServer {
+  id: string
+  owner_user_id: number | null
+  team_id: number | null
+  is_global: boolean
+  name: string
+  description: string | null
+  transport: 'http' | 'sse' | 'stdio'
+  endpoint_url: string | null
+  command: string | null
+  args: string[]
+  auth_header_configured: boolean
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AiMcpServerWrite {
+  name?: string
+  description?: string | null
+  transport?: 'http' | 'sse' | 'stdio'
+  endpoint_url?: string | null
+  command?: string | null
+  args?: string[]
+  auth_header?: string | null
+  clear_auth_header?: boolean
+  team_id?: number | null
+  is_global?: boolean
+  enabled?: boolean
 }
 
 /**
@@ -1632,39 +1761,85 @@ export const aiApi = {
     kind: AiConversationKind = 'primary',
     before?: string,
     documentUid?: string,
+    conversationId?: string,
   ) => {
     const suche = new URLSearchParams({ kind })
     if (before) suche.set('before', before)
     if (documentUid) suche.set('document_uid', documentUid)
+    if (conversationId) suche.set('conversation_id', conversationId)
     return api<AiConversationDetail>(`/ai/conversation?${suche.toString()}`)
   },
+  listConversations: (projectId?: string) =>
+    api<AiConversationSummary[]>(
+      projectId
+        ? `/ai/conversation/list?project_id=${encodeURIComponent(projectId)}`
+        : '/ai/conversation/list',
+    ),
+  createConversation: (
+    payload: { title?: string; project_id?: string | null } = {},
+  ) =>
+    api<AiConversationSummary>('/ai/conversation/new', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateConversation: (
+    conversationId: string,
+    payload: { title?: string; pinned?: boolean; project_id?: string | null },
+  ) =>
+    api<AiConversationSummary>(
+      `/ai/conversation/item/${encodeURIComponent(conversationId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      },
+    ),
+  deleteConversation: (conversationId: string) =>
+    api<{ deleted: boolean }>(
+      `/ai/conversation/item/${encodeURIComponent(conversationId)}`,
+      { method: 'DELETE' },
+    ),
   /** Bricht den aktiven Lauf der Unterhaltung serverseitig kontrolliert ab. */
-  stopRun: (kind: AiConversationKind = 'primary', documentUid?: string) => {
+  stopRun: (
+    kind: AiConversationKind = 'primary',
+    documentUid?: string,
+    conversationId?: string,
+  ) => {
     const suche = new URLSearchParams({ kind })
     if (documentUid) suche.set('document_uid', documentUid)
+    if (conversationId) suche.set('conversation_id', conversationId)
     return api<{ ok: boolean; stopped: boolean }>(`/ai/conversation/stop?${suche.toString()}`, {
       method: 'POST',
     })
   },
-  clearHistory: (documentUid?: string) =>
-    api(
-      `/ai/conversation/messages${
-        documentUid ? `?document_uid=${encodeURIComponent(documentUid)}` : ''
-      }`,
-      { method: 'DELETE' },
-    ),
+  clearHistory: (documentUid?: string, conversationId?: string) => {
+    const suche = new URLSearchParams()
+    if (documentUid) suche.set('document_uid', documentUid)
+    if (conversationId) suche.set('conversation_id', conversationId)
+    const rest = suche.toString()
+    return api(`/ai/conversation/messages${rest ? `?${rest}` : ''}`, {
+      method: 'DELETE',
+    })
+  },
   /**
    * Nimmt eine eigene Nachricht zurück: sie und alles Spätere verschwinden.
    * Gesendet wird **nicht** — das übernimmt danach der gewohnte Streamweg.
    * Zwei Schritte, weil das Senden Kontingent, Anbieterwahl und Stream braucht.
    */
-  editMessage: (messageId: string, content: string, documentUid?: string) =>
-    api<{ removed: number }>(
-      `/ai/conversation/messages/${messageId}${
-        documentUid ? `?document_uid=${encodeURIComponent(documentUid)}` : ''
-      }`,
+  editMessage: (
+    messageId: string,
+    content: string,
+    documentUid?: string,
+    conversationId?: string,
+  ) => {
+    const suche = new URLSearchParams()
+    if (documentUid) suche.set('document_uid', documentUid)
+    if (conversationId) suche.set('conversation_id', conversationId)
+    const rest = suche.toString()
+    return api<{ removed: number }>(
+      `/ai/conversation/messages/${messageId}${rest ? `?${rest}` : ''}`,
       { method: 'PUT', body: JSON.stringify({ content }) },
-    ),
+    )
+  },
   /**
    * Die Vorschläge eines Fensters. Ohne `kind` die des Dauerchats.
    *
@@ -1673,9 +1848,14 @@ export const aiApi = {
    * sehen, und die Karte, auf deren Klick der Lauf wartet, wäre im ganzen
    * Panel nirgends.
    */
-  listActions: (kind: AiConversationKind = 'primary', documentUid?: string) => {
+  listActions: (
+    kind: AiConversationKind = 'primary',
+    documentUid?: string,
+    conversationId?: string,
+  ) => {
     const suche = new URLSearchParams({ kind })
     if (documentUid) suche.set('document_uid', documentUid)
+    if (conversationId) suche.set('conversation_id', conversationId)
     return api<AiActionProposal[]>(`/ai/conversation/actions?${suche.toString()}`)
   },
   /**
@@ -1916,28 +2096,106 @@ export const aiApi = {
    * beantwortet sein muss — und weil ein Modellwechsel die Antwort sofort
    * ändert, ohne dass jemand etwas gesendet hätte.
    */
-  getContextStatus: (providerId: number, documentUid?: string) => api<AiContextStatus>(
-    `/ai/conversation/context?provider_id=${providerId}${
-      documentUid ? `&document_uid=${encodeURIComponent(documentUid)}` : ''
-    }`,
-  ),
-  listAttachments: (documentUid?: string) =>
-    api<AiAttachment[]>(
-      `/ai/conversation/attachments${
-        documentUid ? `?document_uid=${encodeURIComponent(documentUid)}` : ''
-      }`,
-    ),
-  uploadAttachment: (file: File, documentUid?: string) => {
+  getContextStatus: (
+    providerId: number,
+    documentUid?: string,
+    conversationId?: string,
+    model?: string | null,
+  ) => {
+    const suche = new URLSearchParams({ provider_id: String(providerId) })
+    if (documentUid) suche.set('document_uid', documentUid)
+    if (conversationId) suche.set('conversation_id', conversationId)
+    if (model) suche.set('model', model)
+    return api<AiContextStatus>(`/ai/conversation/context?${suche.toString()}`)
+  },
+  listAttachments: (documentUid?: string, conversationId?: string) => {
+    const suche = new URLSearchParams()
+    if (documentUid) suche.set('document_uid', documentUid)
+    if (conversationId) suche.set('conversation_id', conversationId)
+    const rest = suche.toString()
+    return api<AiAttachment[]>(
+      `/ai/conversation/attachments${rest ? `?${rest}` : ''}`,
+    )
+  },
+  uploadAttachment: (file: File, documentUid?: string, conversationId?: string) => {
     const body = new FormData()
     body.append('file', file)
+    const suche = new URLSearchParams()
+    if (documentUid) suche.set('document_uid', documentUid)
+    if (conversationId) suche.set('conversation_id', conversationId)
+    const rest = suche.toString()
     return api<AiAttachment>(
-      `/ai/conversation/attachments${
-        documentUid ? `?document_uid=${encodeURIComponent(documentUid)}` : ''
-      }`,
+      `/ai/conversation/attachments${rest ? `?${rest}` : ''}`,
       { method: 'POST', body },
     )
   },
   deleteAttachment: (id: string) => api(`/ai/attachments/${id}`, { method: 'DELETE' }),
+  listProjects: () => api<AiProject[]>('/ai/projects'),
+  createProject: (payload: AiProjectWrite & { name: string }) =>
+    api<AiProject>('/ai/projects', { method: 'POST', body: JSON.stringify(payload) }),
+  getProject: (projectId: string) =>
+    api<AiProject>(`/ai/projects/${encodeURIComponent(projectId)}`),
+  updateProject: (projectId: string, payload: AiProjectWrite) =>
+    api<AiProject>(`/ai/projects/${encodeURIComponent(projectId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteProject: (projectId: string) =>
+    api<{ deleted: boolean }>(`/ai/projects/${encodeURIComponent(projectId)}`, {
+      method: 'DELETE',
+    }),
+  listProjectFiles: (projectId: string) =>
+    api<AiProjectFile[]>(`/ai/projects/${encodeURIComponent(projectId)}/files`),
+  saveProjectFile: (
+    projectId: string,
+    payload: { path: string; content: string; mime_type?: string },
+  ) =>
+    api<AiProjectFile>(`/ai/projects/${encodeURIComponent(projectId)}/files`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  deleteProjectFile: (projectId: string, path: string) =>
+    api<{ deleted: boolean }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}`,
+      { method: 'DELETE' },
+    ),
+  execProjectCommand: (
+    projectId: string,
+    payload: { command: string; timeout_seconds?: number },
+  ) =>
+    api<AiProjectExecResult>(`/ai/projects/${encodeURIComponent(projectId)}/exec`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getProjectGitStatus: (projectId: string) =>
+    api<AiProjectGitStatus>(
+      `/ai/projects/${encodeURIComponent(projectId)}/git/status`,
+    ),
+  syncProjectGit: (projectId: string) =>
+    api<AiProjectGitStatus>(
+      `/ai/projects/${encodeURIComponent(projectId)}/git/sync`,
+      { method: 'POST' },
+    ),
+  commitProjectGit: (
+    projectId: string,
+    payload: { message: string; push?: boolean },
+  ) =>
+    api<AiProjectGitStatus>(
+      `/ai/projects/${encodeURIComponent(projectId)}/git/commit`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  listMcpServers: () => api<AiMcpServer[]>('/ai/mcp'),
+  createMcpServer: (payload: AiMcpServerWrite & { name: string }) =>
+    api<AiMcpServer>('/ai/mcp', { method: 'POST', body: JSON.stringify(payload) }),
+  updateMcpServer: (serverId: string, payload: AiMcpServerWrite) =>
+    api<AiMcpServer>(`/ai/mcp/${encodeURIComponent(serverId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteMcpServer: (serverId: string) =>
+    api<{ deleted: boolean }>(`/ai/mcp/${encodeURIComponent(serverId)}`, {
+      method: 'DELETE',
+    }),
   /**
    * Laeuft gerade noch etwas von vorhin? `null`, wenn nicht.
    *
@@ -1972,6 +2230,9 @@ export async function streamAiMessage(
   payload: {
     content: string
     provider_id: number
+    model?: string | null
+    conversation_id?: string | null
+    project_id?: string | null
     request_id: string
     reasoning: boolean
     /** Die gewuenschte Denkstufe. Der Server klemmt sie auf Modell und Rolle. */

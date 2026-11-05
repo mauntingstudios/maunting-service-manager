@@ -209,6 +209,37 @@ def _global_tool_definitions() -> list[dict]:
         optional.append(_function("cloudflare_list_dns_records", "Listet die DNS-Records einer Zone (zone_id oder Domain, leer = Standardzone). Vor dem Anlegen auf Kollision pruefen.", {"zone_id": {"type": "string", "maxLength": 128}}, []))
 
     optional.append(_function("advise_node_placement", "Empfiehlt einen Host fuer einen neuen Server. Nutze vor propose_server_create um RAM/Disk bewusst zu waehlen. Unterscheidet gebucht vs wirklich belegt.", {"ram_need_mb": {"type": "integer", "minimum": 512}, "disk_need_gb": {"type": "integer", "minimum": 1}}, ["ram_need_mb"]))
+    optional.append(_function(
+        "project_workspace",
+        "Arbeitet in KI-Projekten (Wissen, Dateien, Coding-Sandbox, GitHub/GitLab Git): Projekte/Dateien lesen & schreiben, Befehle ausfuehren, Git-Status/Sync/Commit.",
+        {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "list_projects",
+                    "create_project",
+                    "list_files",
+                    "read_file",
+                    "write_file",
+                    "delete_file",
+                    "run_command",
+                    "git_status",
+                    "git_sync",
+                    "git_commit",
+                ],
+            },
+            "project_id": {"type": "integer", "minimum": 1},
+            "name": {"type": "string", "maxLength": 160},
+            "path": {"type": "string", "maxLength": 240},
+            "content": {"type": "string", "maxLength": 200000},
+            "command": {"type": "string", "maxLength": 2000},
+            "repo_url": {"type": "string", "maxLength": 1024},
+            "branch": {"type": "string", "maxLength": 120},
+            "message": {"type": "string", "maxLength": 500},
+            "push": {"type": "boolean"},
+        },
+        ["action"],
+    ))
     optional.append(_function("search_curseforge_modpacks", "Sucht Modpacks auf CurseForge fuer ein Spiel nach Name oder Thema (etwa 'Tech', 'Magic', 'Dinos'). Liefert id, name, downloads.", {"query": {"type": "string", "maxLength": 128}, "game_id": {"type": "string", "maxLength": 64, "description": "Game-ID oder Spielname/Slug, etwa 'minecraft'."}, "game": {"type": "string", "maxLength": 64, "description": "Spielname, wenn die game_id fehlt."}, "server_id": {"type": "integer", "description": "Spiel aus diesem Server."}, "page": {"type": "integer", "minimum": 1, "maximum": 50}}, ["query"]))
     optional.append(_function("search_curseforge_mods", "Sucht Einzelmods auf CurseForge fuer ein Spiel nach Name oder Thema (etwa 'Minimap', 'Storage'). Liefert id, name, downloads, author.", {"query": {"type": "string", "maxLength": 128}, "game_id": {"type": "string", "maxLength": 64, "description": "Game-ID oder Spielname/Slug, etwa 'minecraft'."}, "game": {"type": "string", "maxLength": 64, "description": "Spielname, wenn die game_id fehlt."}, "server_id": {"type": "integer", "description": "Spiel aus diesem Server."}, "class_id": {"type": "string", "maxLength": 32, "description": "Klassen-ID oder 'mods'/'modpacks'."}, "page": {"type": "integer", "minimum": 1, "maximum": 50}}, ["query"]))
 
@@ -1727,6 +1758,84 @@ def _execute_global_read_tool(
 
     if tool_name == "forget_skill":
         return _execute_forget_skill(db, user=user, arguments=arguments)
+
+    if tool_name == "project_workspace":
+        from services import ai_project_service
+        from services.ai_project_service import AiProjectError
+
+        action = str(arguments.get("action") or "").strip()
+        proj_id_raw = arguments.get("project_id")
+        try:
+            if action == "list_projects":
+                rows = ai_project_service.list_projects(db, user)
+                return {
+                    "projects": [
+                        {
+                            "id": r.id,
+                            "name": r.name,
+                            "description": r.description,
+                            "sandbox_mode": r.sandbox_mode,
+                            "git_repo_url": r.git_repo_url,
+                            "git_branch": r.git_branch,
+                        }
+                        for r in rows
+                    ]
+                }
+            if action == "create_project":
+                p = ai_project_service.create_project(
+                    db,
+                    user,
+                    name=str(arguments.get("name") or "Neues Projekt"),
+                    git_repo_url=str(arguments.get("repo_url") or "") or None,
+                    git_branch=str(arguments.get("branch") or "main"),
+                )
+                return {"project_id": p.id, "name": p.name, "workspace": p.sandbox_path}
+            if not proj_id_raw:
+                raise AiActionValidationError("project_id ist für diese Aktion erforderlich")
+            pid = int(proj_id_raw)
+            if action == "list_files":
+                files = ai_project_service.list_project_files(db, user, pid)
+                return {"files": [{"path": f.path, "size_bytes": f.size_bytes} for f in files]}
+            if action == "read_file":
+                f = ai_project_service.read_project_file(db, user, pid, str(arguments.get("path") or ""))
+                return {"path": f.path, "content": f.content, "size_bytes": f.size_bytes}
+            if action == "write_file":
+                f = ai_project_service.write_project_file(
+                    db,
+                    user,
+                    pid,
+                    str(arguments.get("path") or ""),
+                    str(arguments.get("content") or ""),
+                )
+                return {"path": f.path, "size_bytes": f.size_bytes, "saved": True}
+            if action == "delete_file":
+                ai_project_service.delete_project_file(db, user, pid, str(arguments.get("path") or ""))
+                return {"deleted": True}
+            if action == "run_command":
+                return ai_project_service.run_project_command(
+                    db, user, pid, str(arguments.get("command") or "")
+                )
+            if action == "git_status":
+                return ai_project_service.git_status(db, user, pid)
+            if action == "git_sync":
+                return ai_project_service.git_clone_or_pull(
+                    db,
+                    user,
+                    pid,
+                    repo_url=str(arguments.get("repo_url") or "") or None,
+                    branch=str(arguments.get("branch") or "") or None,
+                )
+            if action == "git_commit":
+                return ai_project_service.git_commit_and_push(
+                    db,
+                    user,
+                    pid,
+                    message=str(arguments.get("message") or "Update"),
+                    push=bool(arguments.get("push", False)),
+                )
+            raise AiActionValidationError(f"Unbekannte project_workspace-Aktion: {action}")
+        except AiProjectError as exc:
+            raise AiActionValidationError(str(exc)) from exc
 
     # **Die drei Postfach- und Kalenderwerkzeuge pruefen ihr Recht hier.** Bis
     # hierher taten sie es nirgends: `ai.mailbox.use` und `ai.calendar.use`

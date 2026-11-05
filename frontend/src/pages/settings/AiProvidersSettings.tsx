@@ -254,6 +254,8 @@ const EMPTY_PROVIDER: ProviderDraft = {
   name: '',
   provider_kind: '',
   default_model: '',
+  enabled_models: [],
+  allow_all_models: false,
   enabled: true,
   requires_api_key: true,
   token_price_micro_usd_per_million: null,
@@ -321,6 +323,8 @@ function toDraft(provider: AiProviderAdmin): ProviderDraft {
     name: provider.name,
     provider_kind: provider.provider_kind,
     default_model: provider.default_model,
+    enabled_models: provider.enabled_models ?? [],
+    allow_all_models: provider.allow_all_models ?? false,
     enabled: provider.enabled,
     requires_api_key: provider.requires_api_key,
     token_price_micro_usd_per_million: provider.token_price_micro_usd_per_million,
@@ -394,6 +398,7 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | 'new' | null>(null)
   const [kinds, setKinds] = useState<AiProviderKind[]>([])
+  const [selectedIndex, setSelectedIndex] = useState(0)
   // Waehrung und Kurs fuer das Preisfeld. Einmal fuer die ganze Seite und
   // nicht je Formular: die Politik ist panelweit, und drei Anbieter wuerden
   // sonst dreimal dasselbe fragen.
@@ -446,6 +451,8 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
       name: draft.name.trim(),
       provider_kind: draft.provider_kind,
       default_model: draft.default_model?.trim() || null,
+      enabled_models: draft.enabled_models ?? [],
+      allow_all_models: Boolean(draft.allow_all_models),
       enabled: draft.enabled,
       disable_safety: Boolean(draft.disable_safety),
       requires_api_key: draft.requires_api_key,
@@ -582,20 +589,58 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
         )}
       </div>
 
-      {providers.map((provider, index) => (
-        <ProviderForm
-          key={provider.id}
-          draft={provider}
-          kinds={kinds}
-          costPolicy={costPolicy}
-          disabled={!canWrite || busyId !== null}
-          saving={busyId === provider.id}
-          onChange={(patch) => update(index, patch)}
-          onSave={() => void save(provider, index)}
-          onDelete={() => void remove(provider)}
-          onTest={provider.id === undefined ? undefined : () => aiApi.testProvider(provider.id as number)}
-        />
-      ))}
+      {providers.length > 1 && !creating && (
+        <div className="msm-card p-3 flex flex-wrap items-center gap-2" role="tablist" aria-label="Eingerichtete KI-Zugänge">
+          {providers.map((item, idx) => {
+            const active = Math.min(selectedIndex, providers.length - 1) === idx
+            const modelCount = item.allow_all_models
+              ? 'Alle Modelle'
+              : `${1 + (item.enabled_models?.length ?? 0)} Modell(e)`
+            return (
+              <button
+                key={item.id ?? idx}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setSelectedIndex(idx)}
+                className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2 text-left text-xs transition-colors ${
+                  active
+                    ? 'border-primary/50 bg-primary/15 text-on-surface font-semibold shadow-sm'
+                    : 'border-outline-variant/30 bg-surface-container-low/50 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60'
+                }`}
+              >
+                <span className={`h-2 w-2 rounded-full ${item.enabled ? 'bg-status-success' : 'bg-outline-variant'}`} />
+                <div>
+                  <div className="font-medium text-on-surface">{item.name || 'Unbenannter Zugang'}</div>
+                  <div className="text-label-sm text-on-surface-variant">
+                    {item.provider_kind || 'Anbieter'} · {modelCount}
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {!creating && providers.map((provider, index) => {
+        if (providers.length > 1 && index !== Math.min(selectedIndex, providers.length - 1)) {
+          return null
+        }
+        return (
+          <ProviderForm
+            key={provider.id}
+            draft={provider}
+            kinds={kinds}
+            costPolicy={costPolicy}
+            disabled={!canWrite || busyId !== null}
+            saving={busyId === provider.id}
+            onChange={(patch) => update(index, patch)}
+            onSave={() => void save(provider, index)}
+            onDelete={() => void remove(provider)}
+            onTest={provider.id === undefined ? undefined : () => aiApi.testProvider(provider.id as number)}
+          />
+        )
+      })}
       {providers.length === 0 && !creating && (
         <div className="msm-card p-6 text-sm text-on-surface-variant">{t('ai.providers.empty')}</div>
       )}
@@ -1131,6 +1176,51 @@ function ProviderForm({
                   </p>
                 )}
                 {gewaehltesModell && <ModelCapabilities model={gewaehltesModell} />}
+                <div className="mt-3 rounded-xl border border-outline-variant/30 bg-surface-container/40 p-3 space-y-2.5">
+                  <Toggle
+                    label="Alle verfügbaren Modelle dieses Anbieters im Chat erlauben"
+                    checked={Boolean(draft.allow_all_models)}
+                    onChange={(allow_all_models) => change({ allow_all_models })}
+                  />
+                  {!draft.allow_all_models && models && models.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                        Zusätzliche Modelle im Chat freigeben
+                      </span>
+                      <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1">
+                        {[...models]
+                          .sort(sortiereModelleAlphabetisch)
+                          .slice(0, 40)
+                          .map((m) => {
+                            const selected = (draft.enabled_models ?? []).includes(m.model_id) || m.model_id === draft.default_model
+                            const isDefault = m.model_id === draft.default_model
+                            return (
+                              <button
+                                key={m.model_id}
+                                type="button"
+                                disabled={isDefault}
+                                onClick={() => {
+                                  const current = draft.enabled_models ?? []
+                                  const next = current.includes(m.model_id)
+                                    ? current.filter((id) => id !== m.model_id)
+                                    : [...current, m.model_id]
+                                  change({ enabled_models: next })
+                                }}
+                                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                                  selected
+                                    ? 'border-primary/50 bg-primary/15 text-primary font-medium'
+                                    : 'border-outline-variant/40 bg-surface-container-low text-on-surface-variant hover:text-on-surface'
+                                }`}
+                              >
+                                <span>{m.model_id}</span>
+                                {isDefault && <span className="text-label-sm opacity-75">(Standard)</span>}
+                              </button>
+                            )
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <ModellPreisPaar
                   policy={waehrung}
                   inputValue={draft.standard_input_price_micro_usd_per_million ?? null}

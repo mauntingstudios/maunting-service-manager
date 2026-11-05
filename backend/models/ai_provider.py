@@ -57,6 +57,17 @@ class AiProvider(Base):
     default_model: Mapped[str | None] = mapped_column(
         String(256), nullable=True, default=None
     )
+    # Optionale Multi-Modell-Freigabe je Anbieter-Zugang:
+    # - `enabled_models_json`: JSON-Array der zusätzlich/ausgewählt freigegebenen
+    #   Modell-IDs dieses Anbieters (z. B. ["gpt-5", "gpt-5-mini", "o4-mini"]).
+    # - `allow_all_models`: Wenn True, stehen im Chat alle Katalog-Modelle dieses
+    #   Anbieters zur Auswahl bereit.
+    enabled_models_json: Mapped[str | None] = mapped_column(
+        String(16384), nullable=True, default=None
+    )
+    allow_all_models: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
     # Die Stimme, mit der der Sprachmodus vorliest — eine Kennung aus dem
     # ElevenLabs-Konto des Betreibers. Sie steht hier und nicht im Katalog, weil
     # sie keine Eigenschaft des Modells ist, sondern eine Wahl: jede Stimme kann

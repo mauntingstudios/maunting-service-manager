@@ -59,6 +59,8 @@ from routers import (
     ai_tasks_router,
     ai_skills_router,
     ai_attachments_router,
+    ai_projects_router,
+    ai_mcp_router,
     credentials_router,
     teams_router,
     hoster_admin_router,
@@ -1221,6 +1223,8 @@ app.include_router(ai_tasks_router)
 app.include_router(ai_autonomy_router)
 app.include_router(ai_skills_router)
 app.include_router(ai_attachments_router)
+app.include_router(ai_projects_router)
+app.include_router(ai_mcp_router)
 app.include_router(tasks_router)
 # Hoster-Anbindung (Phase 6). Panel-Verwaltung mit Cookie-Auth + CSRF,
 # externe Shop-API ausschliesslich per API-Key, Handoff-Einloesung per

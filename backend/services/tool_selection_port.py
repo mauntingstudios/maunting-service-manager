@@ -18,24 +18,57 @@ HOTSET = frozenset({
     "read_docs",
     "calendar_read",
     "notes_read",
-    # Dokumente: lesen und die eine Aenderung, die den Lauf ausmacht.
-    "read_document",
-    "read_document_selection",
-    "edit_document",
-    "propose_calendar_event_create",
-    "propose_note_create",
     "search_memory",
     "learn_skill",
     "worker_start",
     "execute_server_action",
-    "cloudflare_list_zones",
-    "cloudflare_list_dns_records",
-    "propose_cloudflare_dns_record",
-    "propose_cloudflare_dns_delete",
-    "search_curseforge_modpacks",
-    "search_curseforge_mods",
-    "advise_node_placement",
+    "project_workspace",
 })
+
+DOMAIN_PACKS: dict[str, frozenset[str]] = {
+    "coding_git": frozenset({"project_workspace"}),
+    "server_ops": frozenset({
+        "list_my_servers",
+        "read_server_status",
+        "read_server_logs",
+        "read_config",
+        "propose_server_lifecycle",
+        "propose_backup",
+        "propose_config_patch",
+        "propose_config_set",
+        "propose_mod_install",
+        "propose_mod_toggle",
+        "search_curseforge_modpacks",
+        "search_curseforge_mods",
+    }),
+    "docs_projects": frozenset({
+        "list_documents",
+        "read_document",
+        "read_document_selection",
+        "edit_document",
+        "project_workspace",
+    }),
+    "office_comms": frozenset({
+        "email_search",
+        "email_read",
+        "calendar_read",
+        "notes_read",
+        "propose_calendar_event_create",
+        "propose_note_create",
+        "propose_email_send",
+    }),
+    "infra_network": frozenset({
+        "cloudflare_list_zones",
+        "cloudflare_list_dns_records",
+        "propose_cloudflare_dns_record",
+        "propose_cloudflare_dns_delete",
+        "advise_node_placement",
+    }),
+    "geo_satellite": frozenset({
+        "analyze_region",
+        "control_region_camera",
+    }),
+}
 
 
 #: Wann ein Anhang-Turn doch ein Rechnerauftrag ist. Bewusst eng: „Was steht

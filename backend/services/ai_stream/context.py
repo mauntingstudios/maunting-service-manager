@@ -162,7 +162,9 @@ def worker_aus_zustand(zustand: dict) -> dict | None:
     return roh if isinstance(roh, dict) else None
 
 
-def _modell_fuer(provider: AiProvider, rolle: str) -> str:
+def _modell_fuer(
+    provider: AiProvider, rolle: str, zustand: dict | None = None
+) -> str:
     """Das Modell dieses Laufs: Worker arbeiten auf dem Arbeitsmodell.
 
     `worker_model` ist die vierte Funktion eines Zugangs (docs/agentic-
@@ -174,6 +176,10 @@ def _modell_fuer(provider: AiProvider, rolle: str) -> str:
     """
     if rolle == "worker" and provider.worker_model:
         return str(provider.worker_model)
+    if isinstance(zustand, dict):
+        gewuenscht = str(zustand.get("requested_model") or "").strip()
+        if gewuenscht:
+            return gewuenscht
     return str(provider.default_model)
 
 

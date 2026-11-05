@@ -83,9 +83,10 @@ function mitWerkzeug(
  * räumt ab). Eine Zwischenschicht dafür wäre die nächste Abstraktion ohne
  * Nutzen.
  */
-export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten, api = primaryChatApi }: {
+export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten, api = primaryChatApi }: {
   api?: ChatScopeApi
   providerId: number | null
+  selectedModel?: string | null
   canAttach: boolean
   /**
    * Dieselben zwei Felder, die auf der Leitung stehen und in `ai_runs` landen:
@@ -562,6 +563,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
           request_id: crypto.randomUUID(),
           reasoning: denken.an,
           reasoning_effort: denken.stufe,
+          ...(selectedModel ? { model: selectedModel } : {}),
           ...(appFaehigkeiten ? { app_faehigkeiten: appFaehigkeiten } : {}),
         }, verarbeite, signal),
         assistantId,
@@ -570,7 +572,7 @@ export function useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttac
     } finally {
       streamingRef.current = false
     }
-  }, [api, appFaehigkeiten, denken.an, denken.stufe, providerId, streaming, verfolge])
+  }, [api, appFaehigkeiten, denken.an, denken.stufe, providerId, selectedModel, streaming, verfolge])
 
   /** Bricht den laufenden Strom und den serverseitigen Lauf kontrolliert ab. */
   const stoppeLauf = useCallback(async () => {

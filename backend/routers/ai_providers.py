@@ -25,6 +25,7 @@ from schemas.ai_provider import (
     AiProviderAvailableResponse,
     AiProviderCreate,
     AiProviderKindResponse,
+    AiProviderModelOption,
     AiProviderResponse,
     AiProviderTestResponse,
     AiProviderUpdate,
@@ -89,6 +90,8 @@ def _admin_response(provider: AiProvider) -> AiProviderResponse:
         provider_kind=provider.provider_kind,
         base_url=_adresse_zum_anzeigen(provider),
         default_model=provider.default_model,
+        enabled_models=ai_provider_service.freigegebene_modelle(provider),
+        allow_all_models=bool(getattr(provider, "allow_all_models", False)),
         default_voice=provider.default_voice,
         transcription_model=provider.transcription_model,
         realtime_default=provider.realtime_default,
@@ -638,10 +641,16 @@ async def list_available_providers(
 
     antworten: list[AiProviderAvailableResponse] = []
     for provider in providers:
+        freigegeben = ai_provider_service.freigegebene_modelle(provider)
+        allow_all = bool(getattr(provider, "allow_all_models", False))
+        std_model = provider.default_model or (freigegeben[0] if freigegeben else "")
         antwort = AiProviderAvailableResponse(
             id=provider.id,
             name=provider.name,
-            default_model=provider.default_model,
+            provider_kind=provider.provider_kind,
+            default_model=std_model,
+            enabled_models=freigegeben,
+            allow_all_models=allow_all,
             requires_api_key=provider.requires_api_key,
             operator_key_available=bool(provider.operator_api_key_encrypted),
             available=(
@@ -649,25 +658,6 @@ async def list_available_providers(
                 or bool(provider.operator_api_key_encrypted)
             ),
         )
-        # Der Schluessel gehoert zum Katalogabruf, sobald der Anbieter seine
-        # Liste nur gegen einen herausgibt. Hier stand der Aufruf ohne — und
-        # das war fuer OpenRouter folgenlos (dessen Liste liegt offen), fuer
-        # OpenAI aber der Grund, warum die Denkstufen in der Oberflaeche
-        # fehlten: `finde` lief ins 401, gab `None` zurueck, und die drei
-        # Felder darunter blieben auf ihren Vorgaben stehen. Sichtbar war davon
-        # nichts — kein Fehler, nur eine Auswahl, die es nicht gab.
-        #
-        # `run_in_threadpool`, weil `resolve_api_key` ueber den DIS-Sidecar geht
-        # und das ein **synchrones** `httpx.post` ist; direkt aufgerufen stuende
-        # die Ereignisschleife des Panels so lange still (dieselbe Naht wie in
-        # `ai_run_service.lauf_beginnen_nebenher` und `_segment_anlaufen`).
-        # Genommen wird derselbe Weg wie beim Katalogendpunkt oben, nicht
-        # `asyncio.to_thread` — zwei Wege in einer Datei fuer dieselbe Sache
-        # sind eine Frage mehr, als der Leser beantworten muss.
-        #
-        # Nur wenn der Anbieter ihn wirklich braucht: fuer die uebrigen bleibt
-        # es beim schluessellosen Abruf, und ein Zugang ohne hinterlegten
-        # Schluessel laeuft weiter wie bisher — `finde` vertraegt `None`.
         schluessel: str | None = None
         if ai_provider_registry.anbieter(
             provider.provider_kind
@@ -678,7 +668,7 @@ async def list_available_providers(
         modell = await ai_model_catalog.finde(
             request.app.state.ai_http_client,
             provider.provider_kind,
-            provider.default_model,
+            std_model,
             schluessel=schluessel,
         )
         if modell is not None:
@@ -688,5 +678,71 @@ async def list_available_providers(
             antwort.default_effort = (
                 modell.standard_stufe if modell.standard_stufe in antwort.efforts else None
             )
+        model_options: list[AiProviderModelOption] = []
+        if allow_all:
+            try:
+                katalog_modelle = await ai_model_catalog.modelle(
+                    request.app.state.ai_http_client,
+                    provider.provider_kind,
+                    erzwingen=False,
+                    schluessel=schluessel,
+                )
+            except Exception:
+                katalog_modelle = []
+            for km in katalog_modelle[:80]:
+                effs = ai_reasoning.waehlbare_stufen(km, deckel)
+                model_options.append(
+                    AiProviderModelOption(
+                        model_id=km.model_id,
+                        name=km.name or km.model_id,
+                        reasoning=ai_reasoning.darf_nachdenken(km, deckel),
+                        efforts=effs,
+                        can_disable=ai_reasoning.darf_abschalten(km),
+                        default_effort=km.standard_stufe if km.standard_stufe in effs else None,
+                    )
+                )
+        else:
+            for mid in freigegeben:
+                km = await ai_model_catalog.finde(
+                    request.app.state.ai_http_client,
+                    provider.provider_kind,
+                    mid,
+                    schluessel=schluessel,
+                )
+                if km is not None:
+                    effs = ai_reasoning.waehlbare_stufen(km, deckel)
+                    model_options.append(
+                        AiProviderModelOption(
+                            model_id=km.model_id,
+                            name=km.name or km.model_id,
+                            reasoning=ai_reasoning.darf_nachdenken(km, deckel),
+                            efforts=effs,
+                            can_disable=ai_reasoning.darf_abschalten(km),
+                            default_effort=km.standard_stufe if km.standard_stufe in effs else None,
+                        )
+                    )
+                else:
+                    model_options.append(
+                        AiProviderModelOption(
+                            model_id=mid,
+                            name=mid,
+                            reasoning=False,
+                            efforts=[],
+                            can_disable=True,
+                            default_effort=None,
+                        )
+                    )
+        if not model_options and std_model:
+            model_options.append(
+                AiProviderModelOption(
+                    model_id=std_model,
+                    name=std_model,
+                    reasoning=antwort.reasoning,
+                    efforts=antwort.efforts,
+                    can_disable=antwort.can_disable,
+                    default_effort=antwort.default_effort,
+                )
+            )
+        antwort.models = model_options
         antworten.append(antwort)
     return antworten

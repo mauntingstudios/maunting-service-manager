@@ -39,10 +39,11 @@ wieder eine Prüfung nach der Namensauflösung.
 
 from __future__ import annotations
 
+import json
+import re
 from sqlalchemy.orm import Session
 
 from models import AiProvider, AiRun, User
-import re
 
 from services import ai_provider_registry, ai_model_price_service
 from services.ai_reasoning import RANGFOLGE
@@ -108,12 +109,55 @@ def spricht(provider: AiProvider, protokoll: str) -> bool:
     return ai_provider_registry.spricht(provider.provider_kind, protokoll)
 
 
+def freigegebene_modelle(provider: AiProvider) -> list[str]:
+    """Liefert die Liste der fuer diesen Provider explizit freigegebenen Modelle."""
+    raw = getattr(provider, "enabled_models_json", None) or "[]"
+    try:
+        items = json.loads(raw)
+        if not isinstance(items, list):
+            items = []
+    except Exception:
+        items = []
+    result: list[str] = []
+    seen: set[str] = set()
+    default_m = (provider.default_model or "").strip()
+    if default_m:
+        result.append(default_m)
+        seen.add(default_m)
+    for item in items:
+        m = str(item or "").strip()
+        if m and m not in seen:
+            result.append(m)
+            seen.add(m)
+    return result
+
+
+def _normalisiere_modellliste(models: list[str] | None, default_model: str | None = None) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    if default_model and default_model.strip():
+        dm = default_model.strip()
+        result.append(dm)
+        seen.add(dm)
+    for item in models or []:
+        m = str(item or "").strip()
+        if m and m not in seen:
+            result.append(m)
+            seen.add(m)
+    return result
+
+
 def fuer_chat(provider: AiProvider) -> bool:
+    hat_modell = bool(
+        (provider.default_model or "").strip()
+        or freigegebene_modelle(provider)
+        or getattr(provider, "allow_all_models", False)
+    )
     return bool(
         provider.enabled
         and spricht(provider, ai_provider_registry.CHAT)
         and bool(getattr(provider, "standard_enabled", True))
-        and bool((provider.default_model or "").strip())
+        and hat_modell
     )
 
 
@@ -631,6 +675,8 @@ def create_provider(
     name: str,
     provider_kind: str,
     default_model: str | None = None,
+    enabled_models: list[str] | None = None,
+    allow_all_models: bool = False,
     enabled: bool,
     requires_api_key: bool,
     operator_api_key: str | None,
@@ -709,9 +755,12 @@ def create_provider(
     if not (name or "").strip():
         raise AiProviderConfigurationError("Provider-Name darf nicht leer sein")
     modell = (default_model or "").strip() or None
+    modellliste = _normalisiere_modellliste(enabled_models, modell)
+    if not modell and modellliste:
+        modell = modellliste[0]
     gehoer = (transcription_model or "").strip() or None
     stimme = _assert_stimme(default_voice)
-    if not (modell or gehoer or stimme or (realtime_model or "").strip()):
+    if not (modell or modellliste or allow_all_models or gehoer or stimme or (realtime_model or "").strip()):
         raise AiProviderConfigurationError(
             "Mindestens eine Funktion (Standardmodell, Modell für Gesprochenes oder Stimme) muss hinterlegt sein"
         )
@@ -759,6 +808,8 @@ def create_provider(
         name=name.strip(),
         provider_kind=kind,
         default_model=modell,
+        enabled_models_json=json.dumps(modellliste),
+        allow_all_models=bool(allow_all_models),
         enabled=enabled,
         requires_api_key=requires_api_key,
         token_price_micro_usd_per_million=token_price_micro_usd_per_million,
@@ -874,10 +925,17 @@ def update_provider(
     schluessel = _assert_key_passt(provider.provider_kind, operator_api_key)
     new_name = values["name"].strip() if "name" in values else provider.name
     new_default_model = (values["default_model"] or "").strip() or None if "default_model" in values else provider.default_model
+    new_allow_all = bool(values["allow_all_models"]) if "allow_all_models" in values and values["allow_all_models"] is not None else bool(getattr(provider, "allow_all_models", False))
+    if "enabled_models" in values and values["enabled_models"] is not None:
+        new_enabled_models = _normalisiere_modellliste(values["enabled_models"], new_default_model)
+    else:
+        new_enabled_models = _normalisiere_modellliste(freigegebene_modelle(provider), new_default_model)
+    if not new_default_model and new_enabled_models:
+        new_default_model = new_enabled_models[0]
     new_default_voice = _assert_stimme(values["default_voice"]) if "default_voice" in values else provider.default_voice
     new_transcription_model = (values["transcription_model"] or "").strip() or None if "transcription_model" in values else provider.transcription_model
     new_realtime_model = (values.get("realtime_model") or "").strip() or None if "realtime_model" in values else provider.realtime_model
-    if not (new_default_model or new_transcription_model or new_default_voice or new_realtime_model):
+    if not (new_default_model or new_enabled_models or new_allow_all or new_transcription_model or new_default_voice or new_realtime_model):
         raise AiProviderConfigurationError(
             "Mindestens eine Funktion (Standardmodell, Modell für Gesprochenes oder Stimme) muss hinterlegt sein"
         )
@@ -923,6 +981,8 @@ def update_provider(
     ai_model_price_service.fill_missing_role_prices(provider.provider_kind, price_values)
     provider.name = new_name
     provider.default_model = new_default_model
+    provider.enabled_models_json = json.dumps(new_enabled_models)
+    provider.allow_all_models = new_allow_all
     provider.default_voice = new_default_voice
     provider.transcription_model = new_transcription_model
     _realtime_felder_setzen(provider, values)

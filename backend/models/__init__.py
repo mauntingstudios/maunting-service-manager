@@ -6,6 +6,8 @@ from .ai_usage_event import AiUsageEvent
 from .operation_task import OperationTask
 from .ai_provider import AiProvider
 from .ai_conversation import AiConversation, AiMessage
+from .ai_project import AiProject, AiProjectFile
+from .ai_mcp_server import AiMcpServer
 from .ai_run import AiRun
 from .ai_action_proposal import AiActionProposal
 from .ai_autonomy_grant import AiAutonomyGrant
@@ -130,7 +132,7 @@ from .chat_media import ChatMedia
 
 __all__ = [
     "User", "UserRole", "RoleAiLimit", "RoleVaultQuota", "AiUsageEvent", "OperationTask",
-    "AiProvider", "AiConversation", "AiMessage", "AiActionProposal",
+    "AiProvider", "AiConversation", "AiMessage", "AiProject", "AiProjectFile", "AiMcpServer", "AiActionProposal",
     "AiMemoryBegriff", "AiMemoryBeleg", "AiMemoryEntry", "AiMemoryPflege", "AiMemoryPreference", "AiMemoryTopic", "AiMemoryVersion",
     "AiSkill", "AiAttachment",
     "AiAutonomyGrant", "AiToolResult", "AiRun", "AiGuardianNotice",

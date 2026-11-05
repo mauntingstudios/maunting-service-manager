@@ -62,6 +62,8 @@ def lauf_beginnen(
     docs_team_id: int | None = None,
     modell_sieht: bool | None = None,
     app_faehigkeiten: dict[str, Any] | None = None,
+    requested_model: str | None = None,
+    project_id: str | None = None,
 ) -> tuple[AiRun | None, tuple[str, str] | None]:
     """Legt einen Lauf an: Benutzernachricht, Kontingent, Antwortnachricht.
 
@@ -194,6 +196,37 @@ def lauf_beginnen(
         # uebernommen werden. Das Modell braucht sie trotzdem im naechsten
         # Sprachzug, damit es nicht bei einem bereits gehoerten Satz wieder
         # einsetzt. Der Hinweis lebt darum nur in dieser Provider-Anfrage.
+        effective_project_id = project_id or getattr(conversation, "project_id", None)
+        if effective_project_id:
+            try:
+                from services import ai_project_service
+
+                proj = ai_project_service.get_project(db, user, str(effective_project_id))
+                if proj is not None:
+                    proj_lines = [
+                        f"Aktives Singra-Projekt: {proj.name} (project_id: {proj.id})",
+                    ]
+                    if proj.description:
+                        proj_lines.append(f"Projektbeschreibung: {proj.description}")
+                    if proj.system_prompt:
+                        proj_lines.append(f"Projektanweisungen:\n{proj.system_prompt}")
+                    if proj.sandbox_enabled and proj.sandbox_path:
+                        proj_lines.append(f"Server-Sandbox aktiv: {proj.sandbox_path}")
+                    if proj.local_directory:
+                        proj_lines.append(f"Lokaler Projektordner: {proj.local_directory}")
+                    if proj.git_repo_url:
+                        proj_lines.append(
+                            f"Git-Repository ({proj.git_provider or 'git'}): {proj.git_repo_url} (Branch: {proj.git_branch})"
+                        )
+                    proj_lines.append(
+                        "Nutze das Werkzeug `project_workspace` mit dieser `project_id`, um Dateien zu lesen/schreiben, Befehle in der Sandbox auszuführen oder Git-Aktionen durchzuführen."
+                    )
+                    provider_messages.append({
+                        "role": "system",
+                        "content": "\n".join(proj_lines),
+                    })
+            except Exception as exc:
+                logger.debug("Projektkontext konnte nicht geladen werden: %s", type(exc).__name__)
         if voice_output_checkpoint:
             provider_messages.append({
                 "role": "system",
@@ -223,7 +256,8 @@ def lauf_beginnen(
         estimated_tokens = estimate_reserved_tokens(provider_messages)
         # Das Modell der Rolle — ein Worker bucht und beschriftet mit dem
         # Arbeitsmodell des Betreibers, nicht mit `default_model`.
-        modell = _modell_fuer(provider, rolle)
+        vorab_zustand = {"requested_model": requested_model} if requested_model else None
+        modell = _modell_fuer(provider, rolle, vorab_zustand)
         usage_event = ai_stream.reserve_ai_usage(
             db,
             user,
@@ -292,6 +326,11 @@ def lauf_beginnen(
         # gilt, darf sich nicht aendern, weil jemand zwischendurch das Modell
         # umgestellt hat.
         zustand["context_chars"] = context_chars
+        if requested_model:
+            zustand["requested_model"] = str(requested_model).strip()
+        effective_project_id = project_id or getattr(conversation, "project_id", None)
+        if effective_project_id:
+            zustand["project_id"] = str(effective_project_id)
         run = ai_run_service.lauf_anlegen(
             db,
             conversation_id=conversation.id,
@@ -411,6 +450,8 @@ def _anlauf_im_thread(
     docs_team_id: int | None = None,
     modell_sieht: bool | None = None,
     app_faehigkeiten: dict[str, Any] | None = None,
+    requested_model: str | None = None,
+    project_id: str | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """Der Anlauf mit **eigener** Sitzung — das ist der ganze Zweck.
 
@@ -455,6 +496,8 @@ def _anlauf_im_thread(
             docs_team_id=docs_team_id,
             modell_sieht=modell_sieht,
             app_faehigkeiten=app_faehigkeiten,
+            requested_model=requested_model,
+            project_id=project_id,
         )
         # Nur die Kennung verlaesst den Thread. Ein ORM-Objekt aus einer gleich
         # geschlossenen Sitzung ist eine Falle: nach dem Commit sind seine
@@ -481,6 +524,8 @@ async def lauf_beginnen_nebenher(
     docs_team_id: int | None = None,
     modell_sieht: bool | None = None,
     app_faehigkeiten: dict[str, Any] | None = None,
+    requested_model: str | None = None,
+    project_id: str | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """`lauf_beginnen`, aber **neben** der Ereignisschleife statt auf ihr.
 
@@ -511,5 +556,7 @@ async def lauf_beginnen_nebenher(
             docs_team_id=docs_team_id,
             modell_sieht=modell_sieht,
             app_faehigkeiten=app_faehigkeiten,
+            requested_model=requested_model,
+            project_id=project_id,
         )
 

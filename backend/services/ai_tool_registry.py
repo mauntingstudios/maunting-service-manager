@@ -961,6 +961,11 @@ WERKZEUGE: dict[str, Werkzeug] = {
         gruppe="desktop",
         angebot=("ai.desktop.install", "ai.desktop.use"),
     ),
+    # Universeller Projekt-, Coding-Sandbox- und Git-Arbeitsbereich (GitHub/GitLab).
+    "project_workspace": Werkzeug(
+        "global_read",
+        gruppe="projects",
+    ),
 }
 
 

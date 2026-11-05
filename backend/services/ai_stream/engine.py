@@ -362,7 +362,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
         )
         # Das Modell dieses Laufs — je Rolle, siehe `_modell_fuer`. Einmal je
         # Segment: dieselbe Lebensdauer wie der Katalogzuschnitt darueber.
-        modellname = _modell_fuer(vorbereitung.provider, rolle)
+        modellname = _modell_fuer(vorbereitung.provider, rolle, zustand)
         # Ist die nächste Runde die abschließende? Dann darf das Modell keine
         # Werkzeuge mehr aufrufen — der Katalog geht aber weiter mit.
         #

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bot, Brain, Sparkles } from 'lucide-react'
+import { ArrowUpRight, Bot, Brain, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { teamsApi, type Team } from '@/api/teams'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
@@ -71,11 +71,29 @@ export function AiTab() {
   return (
     <section className="space-y-6" aria-labelledby="ai-profile-title">
       <div className="msm-card p-6">
-        <div className="flex items-center gap-2">
-          <Bot className="h-5 w-5 text-secondary" aria-hidden="true" />
-          <h2 id="ai-profile-title" className="font-headline text-title-lg font-semibold text-on-surface">
-            {t('ai.profile.title')}
-          </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Bot className="h-5 w-5 text-secondary" aria-hidden="true" />
+            <h2 id="ai-profile-title" className="font-headline text-title-lg font-semibold text-on-surface">
+              {t('ai.profile.title')}
+            </h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/ai?bereich=wissen"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface hover:border-primary/40 transition-colors"
+            >
+              <span>In Singra Wissen öffnen</span>
+              <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
+            </Link>
+            <Link
+              to="/ai?bereich=erinnerungen"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface hover:border-primary/40 transition-colors"
+            >
+              <span>In Singra Erinnerungen öffnen</span>
+              <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
+            </Link>
+          </div>
         </div>
         <p className="mt-2 max-w-3xl text-sm text-on-surface-variant">
           {t('ai.profile.description')}

@@ -30,8 +30,22 @@ class AiConversationResponse(BaseModel):
     #: Reparaturen im Hintergrund). Siehe `models.ai_conversation.ARTEN`.
     kind: str = "primary"
     title: str
+    project_id: str | None = None
+    pinned: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class AiConversationCreate(BaseModel):
+    title: str | None = Field(default=None, max_length=160)
+    project_id: str | None = Field(default=None, max_length=36)
+
+
+class AiConversationUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=160)
+    pinned: bool | None = None
+    project_id: str | None = Field(default=None, max_length=36)
+    clear_project: bool = False
 
 
 class AiSection(BaseModel):
@@ -136,6 +150,9 @@ class AiChatRequest(BaseModel):
     # mit den ungebundenen Anhaengen.
     content: str = Field(min_length=0, max_length=16_000)
     provider_id: int = Field(ge=1)
+    model: str | None = Field(default=None, max_length=256)
+    conversation_id: str | None = Field(default=None, max_length=36)
+    project_id: str | None = Field(default=None, max_length=36)
     request_id: UUID
     # Dokument-Chat: das Dokument kommt aus der Oberflaeche, nicht aus dem
     # Modelltext. Die Auswahl ist fluechtig und landet nie im Laufzustand.

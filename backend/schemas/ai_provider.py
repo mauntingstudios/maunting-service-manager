@@ -147,6 +147,8 @@ class AiProviderCreate(BaseModel):
     # dahinter gehoert dem Programm — hier steht nur noch, *welcher* Anbieter.
     provider_kind: str = Field(min_length=1, max_length=32)
     default_model: Modellkennung = Field(default=None, max_length=256)
+    enabled_models: list[str] = Field(default_factory=list)
+    allow_all_models: bool = False
     enabled: bool = True
     requires_api_key: bool = True
     # Rueckfallpreis je eine Million Tokens, in US-Cent-Microunits (1 Cent =
@@ -234,6 +236,8 @@ class AiProviderUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     provider_kind: str | None = Field(default=None, min_length=1, max_length=32)
     default_model: Modellkennung = Field(default=None, max_length=256)
+    enabled_models: list[str] | None = None
+    allow_all_models: bool | None = None
     enabled: bool | None = None
     requires_api_key: bool | None = None
     # Siehe `AiProviderCreate`: Rueckfallpreis in US-Cent-Microunits je Million.
@@ -314,6 +318,8 @@ class AiProviderResponse(BaseModel):
     # sie soll trotzdem in der Liste erscheinen.
     base_url: str | None = None
     default_model: str | None = None
+    enabled_models: list[str] = Field(default_factory=list)
+    allow_all_models: bool = False
     #: Bewusst ohne die Pruefung aus `Stimme`: gelesen wird hier, was in der
     #: Zeile steht. Loescht der Betreiber eine Stimme in seinem Konto, soll er
     #: sie in der Liste sehen und aendern koennen — eine 500 beim blossen
@@ -513,6 +519,15 @@ class AiCatalogModelResponse(BaseModel):
     shutdown_date: str | None = None
 
 
+class AiProviderModelOption(BaseModel):
+    model_id: str
+    name: str
+    reasoning: bool = False
+    efforts: list[str] = Field(default_factory=list)
+    can_disable: bool = True
+    default_effort: str | None = None
+
+
 class AiProviderAvailableResponse(BaseModel):
     """Ein Provider, wie ihn der Chat zur Auswahl anbietet.
 
@@ -529,7 +544,11 @@ class AiProviderAvailableResponse(BaseModel):
 
     id: int
     name: str
+    provider_kind: str | None = None
     default_model: str
+    enabled_models: list[str] = Field(default_factory=list)
+    allow_all_models: bool = False
+    models: list[AiProviderModelOption] = Field(default_factory=list)
     requires_api_key: bool
     operator_key_available: bool
     available: bool

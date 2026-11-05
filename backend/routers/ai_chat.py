@@ -30,8 +30,10 @@ from models.dis_text import vorab_entschluesselt
 from schemas.ai_chat import (
     AiChatRequest,
     AiContextStatus,
+    AiConversationCreate,
     AiConversationDetail,
     AiConversationResponse,
+    AiConversationUpdate,
     AiMessageEdit,
     AiMessageEditResponse,
     AiMessageResponse,
@@ -100,6 +102,8 @@ def _conversation_response(conversation) -> AiConversationResponse:
         id=conversation.id,
         kind=conversation.kind,
         title=conversation.title,
+        project_id=getattr(conversation, "project_id", None),
+        pinned=bool(getattr(conversation, "pinned", False)),
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
     )
@@ -181,9 +185,86 @@ def _message_response(message: AiMessage) -> AiMessageResponse:
     )
 
 
+@router.get("/list", response_model=list[AiConversationResponse])
+def list_conversations(
+    project_id: str | None = Query(None, max_length=36),
+    limit: int = Query(100, ge=1, le=250),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.chat.use")),
+) -> list[AiConversationResponse]:
+    """Listet die Chat-Unterhaltungen des Benutzers (Multi-Chat & Projekt-Chats)."""
+    eintraege = ai_chat_service.list_user_conversations(
+        db, user, project_id=project_id, limit=limit
+    )
+    if not eintraege and project_id is None:
+        erste = ai_chat_service.get_or_create_primary_conversation(db, user)
+        db.commit()
+        db.refresh(erste)
+        eintraege = [erste]
+    return [_conversation_response(c) for c in eintraege]
+
+
+@router.post("/new", response_model=AiConversationDetail, status_code=status.HTTP_201_CREATED)
+def create_conversation(
+    payload: AiConversationCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.chat.use")),
+    _: None = Depends(verify_csrf),
+) -> AiConversationDetail:
+    """Legt eine neue Chat-Unterhaltung an (optional an ein Projekt gebunden)."""
+    conversation = ai_chat_service.create_user_conversation(
+        db, user, title=payload.title, project_id=payload.project_id
+    )
+    db.commit()
+    db.refresh(conversation)
+    return _verlauf_seite(db, conversation, None)
+
+
+@router.patch("/item/{conversation_id}", response_model=AiConversationResponse)
+def update_conversation_item(
+    conversation_id: str,
+    payload: AiConversationUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.chat.use")),
+    _: None = Depends(verify_csrf),
+) -> AiConversationResponse:
+    """Benennt eine Unterhaltung um, pinnt sie oder ordnet sie einem Projekt zu."""
+    conversation = ai_chat_service.get_owned_conversation(db, conversation_id, user)
+    if conversation is None or conversation.kind != "primary":
+        raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
+    ai_chat_service.update_user_conversation(
+        db,
+        conversation,
+        title=payload.title,
+        pinned=payload.pinned,
+        project_id=payload.project_id,
+        clear_project=payload.clear_project,
+    )
+    db.commit()
+    db.refresh(conversation)
+    return _conversation_response(conversation)
+
+
+@router.delete("/item/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_conversation_item(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.chat.use")),
+    _: None = Depends(verify_csrf),
+) -> Response:
+    """Loescht eine einzelne Chat-Unterhaltung samt Verlauf."""
+    conversation = ai_chat_service.get_owned_conversation(db, conversation_id, user)
+    if conversation is None or conversation.kind != "primary":
+        raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
+    ai_chat_service.delete_user_conversation(db, conversation)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("", response_model=AiConversationDetail)
 def get_conversation(
     kind: str = Query("primary"),
+    conversation_id: str | None = Query(None, max_length=36),
     document_uid: str | None = Query(None, max_length=36),
     before: str | None = Query(
         None,
@@ -195,22 +276,8 @@ def get_conversation(
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
 ) -> AiConversationDetail:
-    """Liefert eine Unterhaltung des Benutzers und legt sie beim ersten Aufruf an.
-
-    ``kind`` waehlt das Fenster und ist ``primary``, wenn nichts dabeisteht —
-    die vorhandene Oberflaeche fragt ohne Angabe und bekommt weiterhin den
-    Dauerchat.
-
-    ``before`` blaettert zurueck. Der Schnitt laeuft ueber ``(created_at, id)``
-    und nicht ueber einen Zaehler: waehrend jemand blaettert, schreibt ein Lauf
-    unter Umstaenden weiter, und ein Versatz haette dann Zeilen doppelt
-    geliefert und andere ausgelassen. Der Index
-    ``ix_ai_messages_conversation_created`` traegt genau diese Ordnung.
-    """
+    """Liefert eine Unterhaltung des Benutzers und legt sie beim ersten Aufruf an."""
     if kind == "worker":
-        # Worker-Fenster gibt es viele je Benutzer — "das" Worker-Fenster
-        # existiert nicht, und diese Fabrik legte sonst eines an. Gelesen
-        # werden sie ueber ihre Kennung (`GET /conversation/worker/{id}`).
         raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
     if kind == "docs":
         if not document_uid:
@@ -218,6 +285,11 @@ def get_conversation(
         from services.ai_docs_chat_scope import resolve as docs_scope
 
         conversation, _, _ = docs_scope(db, user, document_uid)
+        return _verlauf_seite(db, conversation, before)
+    if conversation_id:
+        conversation = ai_chat_service.get_owned_conversation(db, conversation_id, user)
+        if conversation is None or conversation.kind != _art(kind):
+            raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
         return _verlauf_seite(db, conversation, before)
     conversation = ai_chat_service.get_or_create_conversation(db, user, _art(kind))
     db.commit()
@@ -374,22 +446,12 @@ def typing_signal(
 async def get_context_status(
     request: Request,
     provider_id: int,
+    conversation_id: str | None = Query(None, max_length=36),
     document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
 ) -> AiContextStatus:
-    """Wie voll der Kontext ist, gemessen am Fenster des gewaehlten Modells.
-
-    Der Provider steht im Query und nicht im Lauf, weil die Frage schon **vor**
-    der ersten Nachricht beantwortet werden muss: die Oberflaeche zeigt den Ring
-    von Anfang an, und beim Umschalten des Modells aendert sich die Antwort
-    sofort, ohne dass jemand etwas gesendet haette.
-
-    Die Belegung kommt aus ``geschaetzte_belegung`` und nicht aus einem echten
-    Kontextaufbau. Ein Aufbau zoege Redaction, Memory-Auswahl und
-    Skill-Verzeichnis ueber den ganzen Verlauf — bei jedem Blick auf den Ring,
-    und der wird nach jeder Antwort neu geholt.
-    """
+    """Wie voll der Kontext ist, gemessen am Fenster des gewaehlten Modells."""
     provider = db.get(AiProvider, provider_id)
     if provider is None or not provider.enabled or not _fuer_chat(provider):
         raise HTTPException(status_code=404, detail="Provider nicht gefunden")
@@ -397,6 +459,10 @@ async def get_context_status(
         from services.ai_docs_chat_scope import resolve as docs_scope
 
         conversation, _, _ = docs_scope(db, user, document_uid)
+    elif conversation_id:
+        conversation = ai_chat_service.get_owned_conversation(db, conversation_id, user)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
     else:
         conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
         db.commit()
@@ -420,35 +486,25 @@ async def get_context_status(
 
 @router.delete("/messages", status_code=status.HTTP_204_NO_CONTENT)
 def clear_conversation_history(
+    conversation_id: str | None = Query(None, max_length=36),
     document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
     _: None = Depends(verify_csrf),
 ) -> Response:
-    """Leert den Verlauf. Die Unterhaltung und das Audit bleiben bestehen.
-
-    **Offene Läufe enden mit.** Wer den Verlauf leert, erwartet, dass nichts
-    Lesbares zurückbleibt — und ein geparkter Lauf hielt genau das Gegenteil
-    fest: in `ai_runs.state_json` stehen seine vollständigen
-    `provider_messages`, darin der gesamte soeben gelöschte Verlauf und der
-    entschlüsselte Gedächtnisblock im Klartext, in einer gewöhnlichen
-    Textspalte. `arbeitsspeicher_leeren` räumt ihn nur bei einem Endzustand,
-    und ein `waiting_confirmation` ist keiner: der Klartext lag dort so lange,
-    bis irgendwann jemand die Karte anklickte.
-
-    Ein *laufender* Lauf ist der zweite Grund. Er schriebe nach dem Leeren
-    weiter in den geleerten Chat — dieselbe Geistersituation, gegen die eine
-    getippte Nachricht längst `vorgaenger_abloesen` ruft. Genau diese
-    vorhandene Maschinerie wird hier benutzt: sie beendet die offenen Läufe,
-    hält ihre asyncio-Aufgabe an und leert dabei den Arbeitsspeicher.
-
-    Erst ablösen, dann löschen: so ist im Moment, in dem die Zeilen
-    verschwinden, kein Lauf mehr da, der sie noch für seine gehalten hätte.
-    """
+    """Leert den Verlauf. Die Unterhaltung und das Audit bleiben bestehen."""
     if document_uid:
         from services.ai_docs_chat_scope import resolve as docs_scope
 
         conversation, _, _ = docs_scope(db, user, document_uid)
+        ai_run_service.vorgaenger_abloesen(db, conversation_id=conversation.id)
+        ai_chat_service.clear_history(
+            db, conversation, user_weit=False, worker_weit=False
+        )
+    elif conversation_id:
+        conversation = ai_chat_service.get_owned_conversation(db, conversation_id, user)
+        if conversation is None or conversation.kind != "primary":
+            raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
         ai_run_service.vorgaenger_abloesen(db, conversation_id=conversation.id)
         ai_chat_service.clear_history(
             db, conversation, user_weit=False, worker_weit=False
@@ -465,23 +521,13 @@ def clear_conversation_history(
 def edit_message(
     message_id: str,
     payload: AiMessageEdit,
+    conversation_id: str | None = Query(None, max_length=36),
     document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
     _: None = Depends(verify_csrf),
 ) -> AiMessageEditResponse:
-    """Nimmt eine eigene Nachricht zurueck, damit sie neu gestellt werden kann.
-
-    Der Endpunkt sendet **nicht**. Er raeumt nur auf: die Nachricht und alles
-    Spaetere verschwinden, danach schickt die Oberflaeche den neuen Text ueber
-    den gewohnten Streamweg. Zwei Schritte statt einem, weil das Senden eine
-    Kontingentreservierung, eine Anbieterwahl und einen Stream braucht — all
-    das haette hier nichts verloren.
-
-    Der neue Text wird trotzdem entgegengenommen und geprueft: eine Bearbeitung
-    abzulehnen, *nachdem* der halbe Verlauf weg ist, waere die schlechtere
-    Reihenfolge.
-    """
+    """Nimmt eine eigene Nachricht zurueck, damit sie neu gestellt werden kann."""
     safe_content = redact_sensitive_text(payload.content).strip()
     if not safe_content:
         raise HTTPException(status_code=422, detail="Nachricht ist leer")
@@ -490,6 +536,10 @@ def edit_message(
         from services.ai_docs_chat_scope import resolve as docs_scope
 
         conversation, _, _ = docs_scope(db, user, document_uid)
+    elif conversation_id:
+        conversation = ai_chat_service.get_owned_conversation(db, conversation_id, user)
+        if conversation is None or conversation.kind != "primary":
+            raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
     else:
         conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
     message = ai_chat_service.owned_message(db, conversation, message_id)
@@ -619,6 +669,7 @@ def guardian_uebernehmen(
 @router.post("/stop")
 def stop_active_run(
     kind: str = Query("primary"),
+    conversation_id: str | None = Query(None, max_length=36),
     document_uid: str | None = Query(None, max_length=36),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
@@ -629,6 +680,10 @@ def stop_active_run(
         from services.ai_docs_chat_scope import resolve as docs_scope
 
         conversation, _, _ = docs_scope(db, user, document_uid)
+    elif conversation_id:
+        conversation = ai_chat_service.get_owned_conversation(db, conversation_id, user)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
     else:
         fenster_art = _art(kind)
         conversation = ai_chat_service.get_or_create_conversation(db, user, fenster_art)
@@ -669,7 +724,21 @@ async def stream_message(
     familie: str | None = Depends(session_familie),
     _: None = Depends(verify_csrf),
 ) -> StreamingResponse:
-    conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
+    if payload.conversation_id:
+        conversation = ai_chat_service.get_owned_conversation(
+            db, payload.conversation_id, user
+        )
+        if conversation is None or conversation.kind != "primary":
+            raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
+    else:
+        conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
+    if payload.project_id and not conversation.project_id:
+        conversation.project_id = payload.project_id
+    # Automatischer Titel beim ersten Zug in einer neuen Unterhaltung
+    if conversation.title == ai_chat_service.DEFAULT_TITLE and payload.content.strip():
+        erste_zeile = redact_sensitive_text(payload.content).strip().splitlines()[0]
+        if erste_zeile:
+            conversation.title = erste_zeile[:80]
     docs_document_uid: str | None = None
     docs_team_id: int | None = None
     if payload.document_uid:
@@ -684,6 +753,13 @@ async def stream_message(
         raise HTTPException(status_code=404, detail="Provider nicht gefunden")
     if provider.requires_api_key and not provider.operator_api_key_encrypted:
         raise HTTPException(status_code=409, detail="Fuer diesen Provider ist kein API-Key konfiguriert")
+
+    requested_model: str | None = None
+    if payload.model and payload.model.strip():
+        candidate = payload.model.strip()
+        erlaubte = ai_provider_service.freigegebene_modelle(provider)
+        if getattr(provider, "allow_all_models", False) or candidate in erlaubte or candidate == provider.default_model:
+            requested_model = candidate
 
     existing = db.query(AiMessage).filter(AiMessage.request_id == str(payload.request_id)).first()
     if existing is not None:
@@ -766,6 +842,8 @@ async def stream_message(
                 payload.app_faehigkeiten.model_dump()
                 if payload.app_faehigkeiten is not None else None
             ),
+            requested_model=requested_model,
+            project_id=payload.project_id or conversation.project_id,
         )
         if run_id is None:
             code, message_key = fehler or ("AI_PREPARATION_FAILED", "ai.chat.errors.unavailable")

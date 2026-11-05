@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, CalendarClock, Check, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Mic, Paperclip, Pencil, RotateCw, Send, ShieldAlert, Sparkles, Square, Trash2, X, Zap } from 'lucide-react'
+import { AudioLines, CalendarClock, Check, Globe2, HardDrive, Image as ImageIcon, Leaf, ListPlus, Loader2, Menu, Mic, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Trash2, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -10,6 +10,7 @@ import {
   type AiProviderAvailable,
   type AiRegionalAnalysis,
   type AiRunInfo,
+  type AiVoiceConfig,
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
 import { Ablageflaeche, Button, Dropdown, Blatteintrag, Blattknopf, Kurzinfo, VoiceRecordingBar } from '@maunting/ui'
@@ -51,6 +52,8 @@ import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
 import { AI_ENTWURF_EVENT, entwurfNehmen } from '@/lib/aiEntwurf'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { starteAufnahme, type Aufnahme } from './voice/audioAufnahme'
+import { SprachAnsicht } from './voice/SprachAnsicht'
+import { SingraEmptyState, SingraScenicBackground } from './singra/SingraEmptyState'
 import { AI_IS_BETA } from './AiBetaBanner'
 import { chatScopeApi, PRIMARY_CHAT_SCOPE, type AiChatScope } from './chatScope'
 
@@ -140,6 +143,12 @@ export interface AiChatProps {
   showTasks?: boolean
   showGuardian?: boolean
   showWorkers?: boolean
+  /** Aktiviert die ruhige Singra-Oberfläche mit Tageszeit-Kulisse, Starter-Karten und Inline-Sprachmodus. */
+  singraShell?: boolean
+  onOpenMobileMenu?: () => void
+  onOpenHistorySearch?: () => void
+  activeProjectName?: string | null
+  voiceConfig?: AiVoiceConfig | null
   /** Meldet die Modellwahl nach aussen, damit der eingebettete Sprachmodus sie nutzt. */
   onProviderChange?: (providerId: number | null) => void
   /** Beispielschlüssel für den leeren Chat; Standard bleibt der Serverchat. */
@@ -162,6 +171,11 @@ export function AiChat({
   showTasks = true,
   showGuardian = true,
   showWorkers = true,
+  singraShell = false,
+  onOpenMobileMenu,
+  onOpenHistorySearch,
+  activeProjectName,
+  voiceConfig,
   onProviderChange,
   beispielSchluessel = SERVER_BEISPIELE,
   appFaehigkeiten,
@@ -179,14 +193,20 @@ export function AiChat({
   const merkSchluessel = useMemo(() => aiChatPreferenceKeys(userId), [userId])
   const scopeRef = useRef(scope)
   scopeRef.current = scope
+  const scopeIdentityKey =
+    scope.kind === 'docs'
+      ? `docs:${scope.documentUid}`
+      : `primary:${scope.conversationId ?? ''}:${scope.projectId ?? ''}`
   const chatApi = useMemo(
     () => chatScopeApi(scopeRef.current, () => scopeRef.current.kind === 'docs' ? scopeRef.current.selection : undefined),
-    [scope.kind, scope.kind === 'docs' ? scope.documentUid : ''],
+    [scopeIdentityKey],
   )
   const [skillsModalOpen, setSkillsModalOpen] = useState(false)
   const [hintergrundOffen, setzeHintergrundOffen] = useState(false)
   const [providers, setProviders] = useState<AiProviderAvailable[]>([])
   const [providerId, setProviderId] = useState<number | null>(null)
+  const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  const [inlineVoiceActive, setInlineVoiceActive] = useState(false)
   useEffect(() => {
     onProviderChange?.(providerId)
   }, [onProviderChange, providerId])
@@ -552,7 +572,9 @@ export function AiChat({
       return
     }
     try {
-      const status = await chatApi.getContextStatus(providerId)
+      const status = selectedModel
+        ? await chatApi.getContextStatus(providerId, selectedModel)
+        : await chatApi.getContextStatus(providerId)
       // Nur übernehmen, wenn die Wahl seither dieselbe geblieben ist. Zwei
       // Modellwechsel kurz hintereinander können sich überholen — die Auskunft
       // ist bei kaltem Modellkatalog ein externer Abruf. Der Ring zeigte dann
@@ -564,7 +586,7 @@ export function AiChat({
       // ein Fehlertoast fuer eine Anzeige waere laestiger als die fehlende Zahl.
       if (mountedRef.current) setContextStatus(null)
     }
-  }, [chatApi, providerId])
+  }, [chatApi, providerId, selectedModel])
 
   useEffect(() => { void ladeKontext() }, [ladeKontext])
 
@@ -579,7 +601,7 @@ export function AiChat({
   const {
     entries, setEntries, streaming, laufendeWerkzeuge, runId, setRunId,
     merkeVorschlag, sendContent, haengeAn, stoppeLauf,
-  } = useAiLauf({ providerId, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten, api: chatApi })
+  } = useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten, api: chatApi })
 
   const meldeAnhangFehler = useCallback((text: string) => {
     toast.error(text)
@@ -881,12 +903,37 @@ export function AiChat({
     [availableProviders, providerId],
   )
 
+  useEffect(() => {
+    if (!aktiverProvider) {
+      setSelectedModel(null)
+      return
+    }
+    setSelectedModel((prev) => {
+      if (prev && aktiverProvider.models?.some((m) => m.model_id === prev)) return prev
+      return aktiverProvider.default_model
+    })
+  }, [aktiverProvider])
+
+  const aktiverProviderMitModell = useMemo(() => {
+    if (!aktiverProvider) return null
+    const modelEntry = aktiverProvider.models?.find((m) => m.model_id === (selectedModel || aktiverProvider.default_model))
+    if (!modelEntry) return aktiverProvider
+    return {
+      ...aktiverProvider,
+      default_model: modelEntry.model_id,
+      reasoning: modelEntry.reasoning,
+      efforts: modelEntry.efforts,
+      can_disable: modelEntry.can_disable,
+      default_effort: modelEntry.default_effort,
+    }
+  }, [aktiverProvider, selectedModel])
+
   // Beim Providerwechsel die Wahl auf etwas Gueltiges bringen. Warum das noetig
   // ist, steht bei `denkwahlFuer`.
   useEffect(() => {
-    if (!aktiverProvider) return
-    setDenken((jetzt) => denkwahlFuer(jetzt, aktiverProvider))
-  }, [aktiverProvider])
+    if (!aktiverProviderMitModell) return
+    setDenken((jetzt) => denkwahlFuer(jetzt, aktiverProviderMitModell))
+  }, [aktiverProviderMitModell])
 
   /**
    * Die Wahl merken — aber nur die **gewaehlte**, nicht die zurechtgebogene.
@@ -1231,14 +1278,22 @@ export function AiChat({
         void uploadFiles(dateien)
       }}
     >
-      {/* ── Der Hintergrund: dieselbe Schicht wie im Messenger ─────────── */}
-      <ChatHintergrund bereich="ki" />
+      {/* ── Der Hintergrund: im leeren Singra-Chat atmosphärisches Landschaftsbild, sonst Chat-Hintergrund ── */}
+      {singraShell && empty && !inlineVoiceActive ? (
+        <SingraScenicBackground visible />
+      ) : (
+        <ChatHintergrund bereich="ki" />
+      )}
 
       {/* ── Kopfzeile: Provider, Denkschritte, Autonomie, Skills ─────────
           `sticky` ist eine Position und liegt damit von selbst über der
           Schicht; ihr undurchsichtiger Grund deckt sie dort ab. */}
       <header
-        className={`flex items-center justify-between border-b border-outline-variant/30 bg-surface-container-low px-2 py-1.5 sm:px-4 sm:py-2.5 shrink-0 sticky top-0 z-20 gap-1 min-w-0 ${
+        className={`flex items-center justify-between border-b px-2 py-1.5 sm:px-4 sm:py-2.5 shrink-0 sticky top-0 z-20 gap-1 min-w-0 transition-colors ${
+          singraShell
+            ? 'pt-[calc(var(--msm-oben-sicher,0px)+0.375rem)] sm:pt-2.5 border-white/10 bg-surface-container-lowest/75 backdrop-blur-xl'
+            : 'border-outline-variant/30 bg-surface-container-low'
+        } ${
           eingebettet ? 'flex-wrap gap-y-1' : ''
         }`}
       >
@@ -1247,8 +1302,26 @@ export function AiChat({
             eingebettet ? 'flex-wrap' : 'overflow-x-auto msm-ohne-rollbalken'
           }`}
         >
+          {singraShell && onOpenMobileMenu && (
+            <button
+              type="button"
+              onClick={onOpenMobileMenu}
+              className="lg:hidden flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+              aria-label="Singra Navigation öffnen"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          )}
+
+          {singraShell && (
+            <div className="hidden sm:flex items-center gap-1.5 pl-1 pr-1.5 text-xs font-semibold text-primary shrink-0">
+              <Leaf className="h-4 w-4 text-primary" aria-hidden="true" />
+              <span>Singra</span>
+            </div>
+          )}
+
           {/* Schrumpft im schmalen Browser-Panel, damit die Knöpfe daneben Platz haben. */}
-          <div className="min-w-24 flex-1 max-w-56 sm:w-56 sm:flex-none shrink-0">
+          <div className="min-w-24 flex-1 max-w-52 sm:w-52 sm:flex-none shrink-0">
             <Dropdown
               value={providerId ? String(providerId) : null}
               onChange={waehleProvider}
@@ -1263,16 +1336,38 @@ export function AiChat({
             />
           </div>
 
+          {aktiverProvider?.models && aktiverProvider.models.length > 1 && (
+            <div className="min-w-28 max-w-48 sm:w-44 shrink-0">
+              <Dropdown
+                value={selectedModel ?? aktiverProvider.default_model}
+                onChange={(val) => setSelectedModel(val)}
+                options={aktiverProvider.models.map((m) => ({
+                  value: m.model_id,
+                  label: m.name || m.model_id,
+                }))}
+                placeholder="Modell"
+                disabled={busy}
+                aria-label="Modell auswählen"
+              />
+            </div>
+          )}
+
           <div className="shrink-0">
             <ReasoningPicker
-              provider={aktiverProvider}
+              provider={aktiverProviderMitModell}
               wahl={denken}
               onChange={waehleDenken}
               disabled={busy}
             />
           </div>
 
-          {canUseAutonomy && (
+          {activeProjectName && (
+            <span className="hidden md:inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary shrink-0">
+              Projekt: {activeProjectName}
+            </span>
+          )}
+
+          {!singraShell && canUseAutonomy && (
             <div className="shrink-0">
               <AiAutonomyButton
                 servers={servers}
@@ -1282,7 +1377,7 @@ export function AiChat({
             </div>
           )}
 
-          {canUseSkills && (
+          {!singraShell && canUseSkills && (
             <Kurzinfo text={t('ai.skills.directoryTitle')} className="xl:!hidden" aussen="shrink-0">
               <Button
                 type="button"
@@ -1298,7 +1393,7 @@ export function AiChat({
             </Kurzinfo>
           )}
 
-          {((showTasks && canTasks) || (showGuardian && onSwitchMode)) && (
+          {!singraShell && ((showTasks && canTasks) || (showGuardian && onSwitchMode)) && (
             <div className="flex items-center rounded-lg border border-outline-variant/30 bg-surface-container/50 p-0.5 shrink-0">
               {showTasks && canTasks && onSwitchMode && (
                 <Kurzinfo text={t('ai.tasks.toTasks')} className="xl:!hidden">
@@ -1330,7 +1425,7 @@ export function AiChat({
             </div>
           )}
 
-          {hasVoice && onSwitchMode && (
+          {hasVoice && (onSwitchMode || voiceConfig) && (
             <Kurzinfo
               text={t('ai.voice.toVoiceMode')}
               className={eingebettet ? undefined : 'sm:!hidden'}
@@ -1338,19 +1433,42 @@ export function AiChat({
             >
               <button
                 type="button"
-                onClick={() => onSwitchMode('sprache')}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+                onClick={() => {
+                  if (singraShell && voiceConfig) {
+                    setInlineVoiceActive((v) => !v)
+                  } else if (onSwitchMode) {
+                    onSwitchMode('sprache')
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  inlineVoiceActive
+                    ? 'border-primary bg-primary text-on-primary shadow-sm'
+                    : 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20'
+                }`}
                 aria-label={t('ai.voice.toVoiceMode')}
               >
                 <AudioLines className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span className="hidden sm:inline">Realtime</span>
+                <span className="hidden sm:inline">{inlineVoiceActive ? 'Zum Text-Chat' : 'Realtime'}</span>
               </button>
             </Kurzinfo>
           )}
         </div>
 
-        {/* Feststehende Aktionen rechts: Neuladen und Blattmenü bleiben immer sichtbar, auch auf schmalen Bildschirmen */}
+        {/* Feststehende Aktionen rechts: Suche, Neuladen und Blattmenü bleiben immer sichtbar */}
         <div className="flex items-center gap-1 shrink-0 ml-1">
+          {singraShell && onOpenHistorySearch && (
+            <Kurzinfo text="Unterhaltungen durchsuchen">
+              <button
+                type="button"
+                onClick={onOpenHistorySearch}
+                className="flex h-8 w-8 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10 shrink-0 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+                aria-label="Unterhaltungen durchsuchen"
+              >
+                <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+              </button>
+            </Kurzinfo>
+          )}
+
           <Kurzinfo text={t('common.refresh', 'Aktualisieren')}>
             <button
               type="button"
@@ -1410,7 +1528,7 @@ export function AiChat({
       </header>
 
       {/* ── Die Worker-Leiste: lebende Hintergrund-Aufträge, einsehbar ── */}
-      {showWorkers && <WorkerLeiste />}
+      {showWorkers && !singraShell && <WorkerLeiste />}
 
       {/* ── Aktive Prozesse im 3-Spalten-Kommandozentrum ── */}
       {geoOpen && (
@@ -1419,471 +1537,526 @@ export function AiChat({
         </div>
       )}
 
-      {/* ── Verlauf ───────────────────────────────────────────────────── */}
-      <div
-        ref={verlaufRef}
-        // Ohne eigenen Grund: hier scheint der Chat-Hintergrund durch.
-        className="relative min-h-0 flex-1 overflow-y-auto"
-        aria-live="polite"
-        onScroll={(event) => {
-          const { scrollTop, scrollHeight, clientHeight } = event.currentTarget
-          const isAtBottom = scrollHeight - scrollTop - clientHeight < 60
-          setAmEnde(isAtBottom)
-          if (isAtBottom) {
-            userScrolledUpRef.current = false
-          } else if (scrollHeight - scrollTop - clientHeight > 120) {
-            userScrolledUpRef.current = true
-          }
-        }}
-      >
-
-        <div
-          ref={messagesContainerRef}
-          className="mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl px-3 py-6 sm:px-6"
-        >
-          {empty && (
-            <div className="py-16 text-center">
-              <Sparkles className="mx-auto h-10 w-10 text-primary/70" aria-hidden="true" />
-              <div className="mt-4 flex items-center justify-center gap-2">
-                <h2 className="font-headline text-xl font-semibold text-on-surface">
-                  {t('ai.chat.emptyTitle')}
-                </h2>
-                {AI_IS_BETA && (
-                  <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider">
-                    {t('ai.betaBadge', 'Beta')}
-                  </span>
-                )}
-              </div>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-on-surface-variant">
-                {t('ai.chat.emptyDescription')}
-              </p>
-              <ul className="mx-auto mt-6 grid max-w-lg gap-2 text-left">
-                {beispielSchluessel.map((key) => (
-                  <li key={key}>
-                    <button
-                      type="button"
-                      className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low/40 px-4 py-3 text-sm text-on-surface-variant transition-colors hover:border-primary/40 hover:text-on-surface"
-                      onClick={() => setInput(t(`ai.chat.examples.${key}`))}
-                    >
-                      {t(`ai.chat.examples.${key}`)}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            {entries.map((entry, index) => {
-              if (entry.kind === 'compacted') {
-                return (
-                  <div key={entry.id} className="flex items-center gap-3 py-2">
-                    <span className="h-px flex-1 bg-outline-variant/40" />
-                    <span className="text-xs text-on-surface-variant">{t('ai.chat.compacted')}</span>
-                    <span className="h-px flex-1 bg-outline-variant/40" />
-                  </div>
-                )
+      {/* ── Singra Inline-Sprachmodus: nahtloser Übergang in derselben Bühne ── */}
+      {singraShell && inlineVoiceActive && voiceConfig ? (
+        <div className="relative min-h-0 flex-1 overflow-hidden animate-fade-in">
+          <SprachAnsicht
+            konfiguration={voiceConfig}
+            aufChat={() => setInlineVoiceActive(false)}
+            providerId={providerId}
+          />
+        </div>
+      ) : (
+        <>
+          {/* ── Verlauf ───────────────────────────────────────────────────── */}
+          <div
+            ref={verlaufRef}
+            // Ohne eigenen Grund: hier scheint der Chat-Hintergrund durch.
+            className="relative min-h-0 flex-1 overflow-y-auto"
+            aria-live="polite"
+            onScroll={(event) => {
+              const { scrollTop, scrollHeight, clientHeight } = event.currentTarget
+              const isAtBottom = scrollHeight - scrollTop - clientHeight < 60
+              setAmEnde(isAtBottom)
+              if (isAtBottom) {
+                userScrolledUpRef.current = false
+              } else if (scrollHeight - scrollTop - clientHeight > 120) {
+                userScrolledUpRef.current = true
               }
-              if (entry.kind === 'proposal') {
-                return (
-                  <AiActionProposalCard
-                    key={entry.id}
-                    proposal={entry.proposal}
-                    onChange={(updated) => {
-                      merkeVorschlag(updated)
-                      // **Hier ging es frueher nicht weiter.** Die Aktion lief,
-                      // und der Chat blieb stumm — man musste eine neue
-                      // Nachricht schreiben, damit die KI ueberhaupt erfuhr,
-                      // wie ihr eigener Vorschlag ausgegangen ist.
-                      const lauf = updated.run_id ?? runId
-                      if (lauf && updated.status !== 'proposed') {
-                        void haengeAn(lauf)
-                      }
+            }}
+          >
+
+            <div
+              ref={messagesContainerRef}
+              className="mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl px-3 py-6 sm:px-6"
+            >
+              {empty && (
+                singraShell ? (
+                  <SingraEmptyState
+                    userName={currentUser?.username}
+                    activeProjectName={activeProjectName}
+                    onSelectPrompt={(promptText) => {
+                      setInput(promptText)
+                      requestAnimationFrame(() => inputRef.current?.focus())
                     }}
                   />
+                ) : (
+                  <div className="py-16 text-center">
+                    <Sparkles className="mx-auto h-10 w-10 text-primary/70" aria-hidden="true" />
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                      <h2 className="font-headline text-xl font-semibold text-on-surface">
+                        {t('ai.chat.emptyTitle')}
+                      </h2>
+                      {AI_IS_BETA && (
+                        <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider">
+                          {t('ai.betaBadge', 'Beta')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-on-surface-variant">
+                      {t('ai.chat.emptyDescription')}
+                    </p>
+                    <ul className="mx-auto mt-6 grid max-w-lg gap-2 text-left">
+                      {beispielSchluessel.map((key) => (
+                        <li key={key}>
+                          <button
+                            type="button"
+                            className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low/40 px-4 py-3 text-sm text-on-surface-variant transition-colors hover:border-primary/40 hover:text-on-surface"
+                            onClick={() => setInput(t(`ai.chat.examples.${key}`))}
+                          >
+                            {t(`ai.chat.examples.${key}`)}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )
-              }
+              )}
 
-              const { message } = entry
-              if (message.role === 'user') {
-                const isEditing = editingId === message.id
-                return (
-                  <article key={entry.id} className="group flex justify-end gap-3">
-                    {isEditing ? (
-                      <div className="w-full max-w-[85%] space-y-2">
-                        <textarea
-                          className="msm-input min-h-[4.5rem] w-full text-sm"
-                          value={editDraft}
-                          maxLength={16_000}
-                          autoFocus
-                          disabled={busy}
-                          onChange={(event) => setEditDraft(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') { setEditingId(null); setEditDraft('') }
-                            if (event.key === 'Enter' && !event.shiftKey) {
-                              event.preventDefault()
-                              void submitEdit(message.id)
-                            }
-                          }}
-                          aria-label={t('ai.chat.edit')}
-                        />
-                        {/* Der Hinweis gehoert hierher, nicht in eine Rueckfrage
-                            danach: wer bearbeitet, soll vorher wissen, dass der
-                            Verlauf ab hier verschwindet. */}
-                        <p className="text-xs text-on-surface-variant">{t('ai.chat.editHint')}</p>
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            type="button" size="sm" variant="secondary" disabled={busy}
-                            onClick={() => { setEditingId(null); setEditDraft('') }}
-                          >
-                            <X className="h-4 w-4" aria-hidden="true" />
-                            {t('common.cancel')}
-                          </Button>
-                          <Button
-                            type="button" size="sm"
-                            disabled={busy || !editDraft.trim()}
-                            onClick={() => void submitEdit(message.id)}
-                          >
-                            <Check className="h-4 w-4" aria-hidden="true" />
-                            {t('ai.chat.editSend')}
-                          </Button>
-                        </div>
+              <div className="space-y-4">
+                {entries.map((entry, index) => {
+                  if (entry.kind === 'compacted') {
+                    return (
+                      <div key={entry.id} className="flex items-center gap-3 py-2">
+                        <span className="h-px flex-1 bg-outline-variant/40" />
+                        <span className="text-xs text-on-surface-variant">{t('ai.chat.compacted')}</span>
+                        <span className="h-px flex-1 bg-outline-variant/40" />
                       </div>
-                    ) : (
-                      <>
+                    )
+                  }
+                  if (entry.kind === 'proposal') {
+                    return (
+                      <AiActionProposalCard
+                        key={entry.id}
+                        proposal={entry.proposal}
+                        onChange={(updated) => {
+                          merkeVorschlag(updated)
+                          // **Hier ging es frueher nicht weiter.** Die Aktion lief,
+                          // und der Chat blieb stumm — man musste eine neue
+                          // Nachricht schreiben, damit die KI ueberhaupt erfuhr,
+                          // wie ihr eigener Vorschlag ausgegangen ist.
+                          const lauf = updated.run_id ?? runId
+                          if (lauf && updated.status !== 'proposed') {
+                            void haengeAn(lauf)
+                          }
+                        }}
+                      />
+                    )
+                  }
+
+                  const { message } = entry
+                  if (message.role === 'user') {
+                    const isEditing = editingId === message.id
+                    return (
+                      <article key={entry.id} className="group flex justify-end gap-3">
+                        {isEditing ? (
+                          <div className="w-full max-w-[85%] space-y-2">
+                            <textarea
+                              className="msm-input min-h-[4.5rem] w-full text-sm"
+                              value={editDraft}
+                              maxLength={16_000}
+                              autoFocus
+                              disabled={busy}
+                              onChange={(event) => setEditDraft(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') { setEditingId(null); setEditDraft('') }
+                                if (event.key === 'Enter' && !event.shiftKey) {
+                                  event.preventDefault()
+                                  void submitEdit(message.id)
+                                }
+                              }}
+                              aria-label={t('ai.chat.edit')}
+                            />
+                            {/* Der Hinweis gehoert hierher, nicht in eine Rueckfrage
+                                danach: wer bearbeitet, soll vorher wissen, dass der
+                                Verlauf ab hier verschwindet. */}
+                            <p className="text-xs text-on-surface-variant">{t('ai.chat.editHint')}</p>
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                type="button" size="sm" variant="secondary" disabled={busy}
+                                onClick={() => { setEditingId(null); setEditDraft('') }}
+                              >
+                                <X className="h-4 w-4" aria-hidden="true" />
+                                {t('common.cancel')}
+                              </Button>
+                              <Button
+                                type="button" size="sm"
+                                disabled={busy || !editDraft.trim()}
+                                onClick={() => void submitEdit(message.id)}
+                              >
+                                <Check className="h-4 w-4" aria-hidden="true" />
+                                {t('ai.chat.editSend')}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => { setEditingId(message.id); setEditDraft(message.content) }}
+                              className="mt-1 self-start rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-opacity hover:text-on-surface focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-0"
+                              aria-label={t('ai.chat.edit')}
+                            >
+                              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                            <div className="flex max-w-[85%] flex-col items-end rounded-2xl rounded-br-md border border-primary/25 bg-primary/10 px-4 py-2.5">
+                              {message.content && (
+                                <p className="w-full whitespace-pre-wrap break-words text-base sm:text-sm leading-relaxed sm:leading-6 text-on-surface">
+                                  {message.content}
+                                </p>
+                              )}
+                              {/* Die Anhaenge stehen **in** der Nachricht, mit der
+                                  sie gesendet wurden. Vorher hingen sie nur an der
+                                  Unterhaltung: nach einem Neuladen war nicht mehr
+                                  erkennbar, zu welcher Frage sie gehoerten. */}
+                              <AiAnhangListe
+                                anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
+                              />
+                              {message.created_at && (
+                                <span className="mt-1 text-label-sm text-on-surface-variant/70">
+                                  {formatMessageTime(message.created_at)}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
+                        <Avatar
+                          src={currentUser?.avatar_url}
+                          name={currentUser?.username}
+                          size="xs"
+                          className="mt-1 shrink-0"
+                        />
+                      </article>
+                    )
+                  }
+
+                  return (
+                    <AiAntwortblase
+                      key={entry.id}
+                      message={message}
+                      // Beantwortet ist eine Rückfrage, sobald irgendein späterer
+                      // Eintrag existiert: dann hat der Benutzer geschrieben, ob
+                      // per Knopf oder frei getippt. Damit überlebt der Zustand
+                      // auch ein Neuladen der Seite, ohne dass er irgendwo
+                      // gespeichert werden müsste.
+                      beantwortet={index < entries.length - 1}
+                      busy={busy}
+                      // Nur die noch schreibende Blase bekommt den Plan. Alle
+                      // anderen bekommen immer dieselbe leere Liste — sonst
+                      // entwertete eine je Runde neue Eigenschaft den `memo`
+                      // Vergleich für den ganzen Verlauf.
+                      laufendeWerkzeuge={
+                        message.status === 'streaming' ? laufendeWerkzeuge : KEINE_AUFRUFE
+                      }
+                      onAnswer={sendContent}
+                    />
+                  )
+                })}
+              </div>
+              <div ref={bottomMarkerRef} className="h-0 w-0 pointer-events-none" aria-hidden="true" />
+            </div>
+          </div>
+
+          {/* ── Eingabe ───────────────────────────────────────────────────── */}
+          <form
+            className={`relative shrink-0 px-2.5 py-2 sm:px-4 sm:py-3 ${
+              singraShell && empty
+                ? 'bg-gradient-to-t from-black/80 via-black/45 to-transparent border-t-0'
+                : 'border-t border-outline-variant/40 bg-surface'
+            }`}
+            onSubmit={send}
+          >
+            {/* Der Hinweis steht ueber dem Eingabefeld, nicht in einer
+                Einstellungsseite: er soll dort auftauchen, wo die Entscheidung
+                Folgen hat — bevor jemand etwas Persoenliches tippt. */}
+            {memoryNoticeDue && scope.kind !== 'docs' && (
+              <AiMemoryNotice onAnswered={() => setMemoryNoticeDue(false)} />
+            )}
+            <div ref={eingabeRef} className="mx-auto w-full max-w-3xl xl:max-w-4xl">
+              {/* Nur Ungesendetes: alles Uebrige steht in seiner Nachricht. Vorher
+                  blieb jeder Anhang hier stehen und ging bei jeder Folgefrage
+                  erneut an den Anbieter. */}
+              <AiAnhangLeiste
+                anhaenge={offeneAnhaenge}
+                vorschauen={vorschauen}
+                onRemove={(anhang) => void removeAttachment(anhang)}
+                disabled={busy}
+              />
+
+              {queuedMessages.length > 0 && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-outline-variant/30 bg-surface-container-high/60 px-2.5 py-1.5 text-xs text-on-surface-variant">
+                  <span className="flex items-center gap-1 font-medium text-on-surface">
+                    <ListPlus className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                    Warteschlange ({queuedMessages.length}):
+                  </span>
+                  {queuedMessages.map((msg, idx) => (
+                    <Kurzinfo key={idx} text={msg} aussen="max-w-[220px]">
+                      <span className="inline-flex max-w-[220px] items-center gap-1 rounded bg-surface-container-highest px-2 py-0.5 text-on-surface border border-outline-variant/40">
+                        <span className="truncate">{msg}</span>
                         <button
                           type="button"
-                          disabled={busy}
-                          onClick={() => { setEditingId(message.id); setEditDraft(message.content) }}
-                          className="mt-1 self-start rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-opacity hover:text-on-surface focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-0"
-                          aria-label={t('ai.chat.edit')}
+                          className="text-on-surface-variant hover:text-status-destructive transition-colors"
+                          onClick={() => setQueuedMessages((q) => q.filter((_, i) => i !== idx))}
+                          aria-label="Aus Warteschlange entfernen"
                         >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                          <X className="h-3 w-3" />
                         </button>
-                        <div className="flex max-w-[85%] flex-col items-end rounded-2xl rounded-br-md border border-primary/25 bg-primary/10 px-4 py-2.5">
-                          {message.content && (
-                            <p className="w-full whitespace-pre-wrap break-words text-base sm:text-sm leading-relaxed sm:leading-6 text-on-surface">
-                              {message.content}
-                            </p>
-                          )}
-                          {/* Die Anhaenge stehen **in** der Nachricht, mit der
-                              sie gesendet wurden. Vorher hingen sie nur an der
-                              Unterhaltung: nach einem Neuladen war nicht mehr
-                              erkennbar, zu welcher Frage sie gehoerten. */}
-                          <AiAnhangListe
-                            anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
-                          />
-                          {message.created_at && (
-                            <span className="mt-1 text-label-sm text-on-surface-variant/70">
-                              {formatMessageTime(message.created_at)}
-                            </span>
-                          )}
-                        </div>
-                      </>
-                    )}
-                    <Avatar
-                      src={currentUser?.avatar_url}
-                      name={currentUser?.username}
-                      size="xs"
-                      className="mt-1 shrink-0"
-                    />
-                  </article>
-                )
-              }
-
-              return (
-                <AiAntwortblase
-                  key={entry.id}
-                  message={message}
-                  // Beantwortet ist eine Rückfrage, sobald irgendein späterer
-                  // Eintrag existiert: dann hat der Benutzer geschrieben, ob
-                  // per Knopf oder frei getippt. Damit überlebt der Zustand
-                  // auch ein Neuladen der Seite, ohne dass er irgendwo
-                  // gespeichert werden müsste.
-                  beantwortet={index < entries.length - 1}
-                  busy={busy}
-                  // Nur die noch schreibende Blase bekommt den Plan. Alle
-                  // anderen bekommen immer dieselbe leere Liste — sonst
-                  // entwertete eine je Runde neue Eigenschaft den `memo`
-                  // Vergleich für den ganzen Verlauf.
-                  laufendeWerkzeuge={
-                    message.status === 'streaming' ? laufendeWerkzeuge : KEINE_AUFRUFE
-                  }
-                  onAnswer={sendContent}
-                />
-              )
-            })}
-          </div>
-          <div ref={bottomMarkerRef} className="h-0 w-0 pointer-events-none" aria-hidden="true" />
-        </div>
-      </div>
-
-      {/* ── Eingabe ───────────────────────────────────────────────────── */}
-      <form className="relative shrink-0 border-t border-outline-variant/40 px-2.5 py-2 sm:px-4 sm:py-3 bg-surface" onSubmit={send}>
-        {/* Der Hinweis steht ueber dem Eingabefeld, nicht in einer
-            Einstellungsseite: er soll dort auftauchen, wo die Entscheidung
-            Folgen hat — bevor jemand etwas Persoenliches tippt. */}
-        {memoryNoticeDue && scope.kind !== 'docs' && (
-          <AiMemoryNotice onAnswered={() => setMemoryNoticeDue(false)} />
-        )}
-        <div ref={eingabeRef} className="mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl">
-          {/* Nur Ungesendetes: alles Uebrige steht in seiner Nachricht. Vorher
-              blieb jeder Anhang hier stehen und ging bei jeder Folgefrage
-              erneut an den Anbieter. */}
-          <AiAnhangLeiste
-            anhaenge={offeneAnhaenge}
-            vorschauen={vorschauen}
-            onRemove={(anhang) => void removeAttachment(anhang)}
-            disabled={busy}
-          />
-
-          {queuedMessages.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-outline-variant/30 bg-surface-container-high/60 px-2.5 py-1.5 text-xs text-on-surface-variant">
-              <span className="flex items-center gap-1 font-medium text-on-surface">
-                <ListPlus className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                Warteschlange ({queuedMessages.length}):
-              </span>
-              {queuedMessages.map((msg, idx) => (
-                <Kurzinfo key={idx} text={msg} aussen="max-w-[220px]">
-                  <span className="inline-flex max-w-[220px] items-center gap-1 rounded bg-surface-container-highest px-2 py-0.5 text-on-surface border border-outline-variant/40">
-                    <span className="truncate">{msg}</span>
+                      </span>
+                    </Kurzinfo>
+                  ))}
+                  {queuedMessages.length > 1 && (
                     <button
                       type="button"
-                      className="text-on-surface-variant hover:text-status-destructive transition-colors"
-                      onClick={() => setQueuedMessages((q) => q.filter((_, i) => i !== idx))}
-                      aria-label="Aus Warteschlange entfernen"
+                      className="ml-auto text-label-sm text-on-surface-variant hover:text-status-destructive underline transition-colors"
+                      onClick={() => setQueuedMessages([])}
                     >
-                      <X className="h-3 w-3" />
+                      Alle leeren
                     </button>
-                  </span>
-                </Kurzinfo>
-              ))}
-              {queuedMessages.length > 1 && (
-                <button
-                  type="button"
-                  className="ml-auto text-label-sm text-on-surface-variant hover:text-status-destructive underline transition-colors"
-                  onClick={() => setQueuedMessages([])}
-                >
-                  Alle leeren
-                </button>
-              )}
-            </div>
-          )}
-
-          <div
-            className={
-              dictating
-                ? 'w-full rounded-2xl border border-outline-variant/50 bg-surface-container-low/50 p-2'
-                : 'flex items-end gap-2 rounded-2xl border border-outline-variant/50 bg-surface-container-low/50 p-2 focus-within:border-primary/50'
-            }
-          >
-            {dictating ? (
-              <VoiceRecordingBar
-                durationSeconds={dictationElapsed}
-                statusLabel="Jetzt sprechen …"
-                variant="danger"
-                kompakt={eingabeKompakt}
-                className="w-full border-0 bg-transparent"
-                extraInfo={
-                  <Kurzinfo
-                    text={
-                      dictationQuota?.monthly_limit_minutes != null
-                        ? t('ai.chat.dictationMonthlyLimit', { min: dictationQuota.monthly_limit_minutes })
-                        : t('ai.chat.dictationUnlimitedHint')
-                    }
-                    lage="oben"
-                    aussen={eingabeKompakt ? 'inline-flex shrink-0' : 'hidden sm:inline-flex shrink-0'}
-                  >
-                  <div className="flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low/60 px-2 py-0.5 text-xs text-on-surface-variant">
-                    <span className="tabular-nums font-medium text-on-surface">
-                      {dictationQuota?.monthly_limit_minutes != null
-                        ? t('ai.chat.dictationRemaining', {
-                            min: Math.max(
-                              0,
-                              Math.ceil(
-                                ((dictationQuota.remaining_seconds ?? 0) - dictationElapsed) / 60,
-                              ),
-                            ),
-                          })
-                        : t('ai.chat.dictationUnlimited')}
-                    </span>
-                  </div>
-                  </Kurzinfo>
-                }
-                onCancel={diktatAbbrechen}
-                onConfirm={() => void diktatUmschalten()}
-                audioLevel={dictationAudioLevel}
-                cancelLabel={t(
-                  eingabeKompakt ? 'ai.chat.dictationCancelShort' : 'ai.chat.dictationCancel',
-                )}
-                confirmLabel={t(
-                  eingabeKompakt ? 'ai.chat.dictationStopShort' : 'ai.chat.dictationStop',
-                )}
-                cancelIcon={<X className="h-4 w-4" aria-hidden="true" />}
-                confirmIcon={<Check className="h-3.5 w-3.5" aria-hidden="true" />}
-              />
-            ) : (
-              <>
-                {canAttach && (
-                  <Kurzinfo text={t('ai.attachments.add')} lage="oben" seite="anfang" aussen="shrink-0">
-                  <label
-                    className={`grid h-9 w-9 place-items-center rounded-full text-on-surface-variant transition-colors ${
-                      busy ? 'pointer-events-none opacity-50' : 'cursor-pointer hover:bg-surface-container-high hover:text-on-surface'
-                    }`}
-                  >
-                    {uploading
-                      ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      : <Paperclip className="h-4 w-4" aria-hidden="true" />}
-                    <input
-                      type="file" className="sr-only" disabled={busy}
-                      accept={ATTACHMENT_ACCEPT} multiple
-                      aria-label={t('ai.attachments.add')}
-                      onChange={(event) => {
-                        void uploadFiles(event.target.files)
-                        event.target.value = ''
-                      }}
-                    />
-                  </label>
-                  </Kurzinfo>
-                )}
-                {canAttach && (
-                  <Kurzinfo text={t('ai.attachments.storageTitle')} lage="oben" seite="anfang" aussen="shrink-0">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                      aria-label={t('ai.attachments.storageTitle')}
-                      onClick={() => setSpeicherOffen(true)}
-                    >
-                      <HardDrive className="h-4 w-4" aria-hidden="true" />
-                    </Button>
-                  </Kurzinfo>
-                )}
-                <textarea
-                  ref={inputRef}
-                  className="max-h-40 min-h-9 flex-1 resize-none border-0 bg-transparent py-1.5 text-sm leading-6 text-on-surface placeholder:text-on-surface-variant focus:outline-none"
-                  rows={1}
-                  maxLength={16000}
-                  value={input}
-                  onChange={(event) => {
-                    setInput(event.target.value)
-                    if (event.target.value.trim()) tippSignal()
-                    event.target.style.height = 'auto'
-                    event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                      event.preventDefault()
-                      if (event.altKey && streaming) {
-                        void sendImmediatelyAndInterrupt(input)
-                      } else {
-                        void send(event as unknown as React.FormEvent)
-                      }
-                    }
-                  }}
-                  placeholder={streaming ? 'Nachricht in Warteschlange einreihen oder mit Alt+Enter sofort senden…' : t('ai.chat.placeholder')}
-                  disabled={uploading || availableProviders.length === 0}
-                  aria-label={t('ai.chat.message')}
-                />
-                {dictationAvailable && (
-                  <Kurzinfo text={t('ai.chat.dictationStart')} lage="oben" aussen="shrink-0">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-9 w-9 rounded-full p-0"
-                      disabled={transcribing || uploading || !providerId}
-                      onClick={() => void diktatUmschalten()}
-                      aria-label={t('ai.chat.dictationStart')}
-                    >
-                      {transcribing
-                        ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        : <Mic className="h-4 w-4" aria-hidden="true" />}
-                    </Button>
-                  </Kurzinfo>
-                )}
-              </>
-            )}
-            {!dictating && (
-              <>
-                {/* Direkt neben dem Absenden, weil dort die Entscheidung faellt:
-                    wer sieht, dass der Kontext gleich zusammengefasst wird, formuliert
-                    die naechste Frage anders. In einer Einstellungsseite haette
-                    dieselbe Zahl niemanden erreicht. */}
-                <AiContextMeter status={contextStatus} />
-                {streaming ? (
-              !input.trim() ? (
-                <Kurzinfo text={t('ai.chat.stopRun')} lage="oben" seite="ende" aussen="shrink-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="destructive"
-                    className="h-9 w-9 rounded-full p-0 flex items-center justify-center bg-status-destructive/15 text-status-destructive hover:bg-status-destructive/25 border border-status-destructive/30 transition-colors"
-                    onClick={() => void stoppeLauf()}
-                    aria-label={t('ai.chat.stopRun')}
-                  >
-                    <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
-                  </Button>
-                </Kurzinfo>
-              ) : (
-                <div className="flex items-center gap-1 shrink-0">
-                  <Kurzinfo text={`${t('ai.chat.enqueue')} (Enter)`} lage="oben" aussen="shrink-0">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-9 rounded-full px-2.5 text-xs flex items-center gap-1"
-                      onClick={() => enqueueMessage(input)}
-                      aria-label={t('ai.chat.enqueue')}
-                      aria-keyshortcuts="Enter"
-                    >
-                      <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                      <span className="hidden sm:inline">Einreihen</span>
-                    </Button>
-                  </Kurzinfo>
-                  <Kurzinfo text={`${t('ai.chat.sendNowInterrupt')} (Alt+Enter)`} lage="oben" seite="ende" aussen="shrink-0">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      className="h-9 w-9 rounded-full p-0 flex items-center justify-center bg-status-destructive/15 text-status-destructive hover:bg-status-destructive/25 border border-status-destructive/30"
-                      onClick={() => void sendImmediatelyAndInterrupt(input)}
-                      aria-label={t('ai.chat.sendNowInterrupt')}
-                      aria-keyshortcuts="Alt+Enter"
-                    >
-                      <Zap className="h-4 w-4" aria-hidden="true" />
-                    </Button>
-                  </Kurzinfo>
+                  )}
                 </div>
-              )
-            ) : (
-              <Button
-                type="submit"
-                size="sm"
-                className="h-9 w-9 shrink-0 rounded-full p-0"
-                disabled={
-                  uploading
-                  || (!input.trim() && offeneAnhaenge.length === 0)
-                  || !providerId
-                }
-                aria-label={t('ai.chat.send')}
-              >
-                <Send className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            )}
-              </>
-            )}
-          </div>
+              )}
 
-          {availableProviders.length === 0 && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-status-warning">
-              <Zap className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {t('ai.chat.noProvider')}
-            </p>
-          )}
-          <p className="mt-2 text-center text-xs text-on-surface-variant hidden sm:block">{t('ai.chat.privacyHint')}</p>
-        </div>
-      </form>
+              <div
+                className={
+                  dictating
+                    ? 'w-full rounded-2xl border border-outline-variant/50 bg-surface-container-low/50 p-2'
+                    : singraShell
+                      ? 'flex items-end gap-2 rounded-3xl border border-white/15 bg-black/55 backdrop-blur-xl px-2.5 py-2 shadow-[0_14px_40px_rgba(0,0,0,0.45)] focus-within:border-primary/55 transition-colors'
+                      : 'flex items-end gap-2 rounded-2xl border border-outline-variant/50 bg-surface-container-low/50 p-2 focus-within:border-primary/50'
+                }
+              >
+                {dictating ? (
+                  <VoiceRecordingBar
+                    durationSeconds={dictationElapsed}
+                    statusLabel="Jetzt sprechen …"
+                    variant="danger"
+                    kompakt={eingabeKompakt}
+                    className="w-full border-0 bg-transparent"
+                    extraInfo={
+                      <Kurzinfo
+                        text={
+                          dictationQuota?.monthly_limit_minutes != null
+                            ? t('ai.chat.dictationMonthlyLimit', { min: dictationQuota.monthly_limit_minutes })
+                            : t('ai.chat.dictationUnlimitedHint')
+                        }
+                        lage="oben"
+                        aussen={eingabeKompakt ? 'inline-flex shrink-0' : 'hidden sm:inline-flex shrink-0'}
+                      >
+                      <div className="flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low/60 px-2 py-0.5 text-xs text-on-surface-variant">
+                        <span className="tabular-nums font-medium text-on-surface">
+                          {dictationQuota?.monthly_limit_minutes != null
+                            ? t('ai.chat.dictationRemaining', {
+                                min: Math.max(
+                                  0,
+                                  Math.ceil(
+                                    ((dictationQuota.remaining_seconds ?? 0) - dictationElapsed) / 60,
+                                  ),
+                                ),
+                              })
+                            : t('ai.chat.dictationUnlimited')}
+                        </span>
+                      </div>
+                      </Kurzinfo>
+                    }
+                    onCancel={diktatAbbrechen}
+                    onConfirm={() => void diktatUmschalten()}
+                    audioLevel={dictationAudioLevel}
+                    cancelLabel={t(
+                      eingabeKompakt ? 'ai.chat.dictationCancelShort' : 'ai.chat.dictationCancel',
+                    )}
+                    confirmLabel={t(
+                      eingabeKompakt ? 'ai.chat.dictationStopShort' : 'ai.chat.dictationStop',
+                    )}
+                    cancelIcon={<X className="h-4 w-4" aria-hidden="true" />}
+                    confirmIcon={<Check className="h-3.5 w-3.5" aria-hidden="true" />}
+                  />
+                ) : (
+                  <>
+                    {canAttach && (
+                      <Kurzinfo text={t('ai.attachments.add')} lage="oben" seite="anfang" aussen="shrink-0">
+                      <label
+                        className={`grid h-9 w-9 place-items-center rounded-full transition-colors ${
+                          singraShell
+                            ? 'border border-white/15 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white'
+                            : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                        } ${
+                          busy ? 'pointer-events-none opacity-50' : 'cursor-pointer'
+                        }`}
+                      >
+                        {uploading
+                          ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          : singraShell
+                            ? <Plus className="h-4 w-4" aria-hidden="true" />
+                            : <Paperclip className="h-4 w-4" aria-hidden="true" />}
+                        <input
+                          type="file" className="sr-only" disabled={busy}
+                          accept={ATTACHMENT_ACCEPT} multiple
+                          aria-label={t('ai.attachments.add')}
+                          onChange={(event) => {
+                            void uploadFiles(event.target.files)
+                            event.target.value = ''
+                          }}
+                        />
+                      </label>
+                      </Kurzinfo>
+                    )}
+                    {canAttach && !singraShell && (
+                      <Kurzinfo text={t('ai.attachments.storageTitle')} lage="oben" seite="anfang" aussen="shrink-0">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                          aria-label={t('ai.attachments.storageTitle')}
+                          onClick={() => setSpeicherOffen(true)}
+                        >
+                          <HardDrive className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                      </Kurzinfo>
+                    )}
+                    <textarea
+                      ref={inputRef}
+                      className={`max-h-40 min-h-9 flex-1 resize-none border-0 bg-transparent py-1.5 text-sm leading-6 focus:outline-none ${
+                        singraShell
+                          ? 'text-white placeholder:text-white/55 px-1'
+                          : 'text-on-surface placeholder:text-on-surface-variant'
+                      }`}
+                      rows={1}
+                      maxLength={16000}
+                      value={input}
+                      onChange={(event) => {
+                        setInput(event.target.value)
+                        if (event.target.value.trim()) tippSignal()
+                        event.target.style.height = 'auto'
+                        event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                          event.preventDefault()
+                          if (event.altKey && streaming) {
+                            void sendImmediatelyAndInterrupt(input)
+                          } else {
+                            void send(event as unknown as React.FormEvent)
+                          }
+                        }
+                      }}
+                      placeholder={
+                        streaming
+                          ? 'Nachricht in Warteschlange einreihen oder mit Alt+Enter sofort senden…'
+                          : singraShell
+                            ? 'Schreib eine Nachricht …'
+                            : t('ai.chat.placeholder')
+                      }
+                      disabled={uploading || availableProviders.length === 0}
+                      aria-label={t('ai.chat.message')}
+                    />
+                    {dictationAvailable && (
+                      <Kurzinfo text={t('ai.chat.dictationStart')} lage="oben" aussen="shrink-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className={`h-9 w-9 rounded-full p-0 ${
+                            singraShell ? 'text-white/75 hover:bg-white/10 hover:text-white' : ''
+                          }`}
+                          disabled={transcribing || uploading || !providerId}
+                          onClick={() => void diktatUmschalten()}
+                          aria-label={t('ai.chat.dictationStart')}
+                        >
+                          {transcribing
+                            ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            : <Mic className="h-4 w-4" aria-hidden="true" />}
+                        </Button>
+                      </Kurzinfo>
+                    )}
+                  </>
+                )}
+                {!dictating && (
+                  <>
+                    {/* Direkt neben dem Absenden, weil dort die Entscheidung faellt:
+                        wer sieht, dass der Kontext gleich zusammengefasst wird, formuliert
+                        die naechste Frage anders. In einer Einstellungsseite haette
+                        dieselbe Zahl niemanden erreicht. */}
+                    <AiContextMeter status={contextStatus} />
+                    {streaming ? (
+                  !input.trim() ? (
+                    <Kurzinfo text={t('ai.chat.stopRun')} lage="oben" seite="ende" aussen="shrink-0">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        className="h-9 w-9 rounded-full p-0 flex items-center justify-center bg-status-destructive/15 text-status-destructive hover:bg-status-destructive/25 border border-status-destructive/30 transition-colors"
+                        onClick={() => void stoppeLauf()}
+                        aria-label={t('ai.chat.stopRun')}
+                      >
+                        <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+                      </Button>
+                    </Kurzinfo>
+                  ) : (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Kurzinfo text={`${t('ai.chat.enqueue')} (Enter)`} lage="oben" aussen="shrink-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-9 rounded-full px-2.5 text-xs flex items-center gap-1"
+                          onClick={() => enqueueMessage(input)}
+                          aria-label={t('ai.chat.enqueue')}
+                          aria-keyshortcuts="Enter"
+                        >
+                          <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                          <span className="hidden sm:inline">Einreihen</span>
+                        </Button>
+                      </Kurzinfo>
+                      <Kurzinfo text={`${t('ai.chat.sendNowInterrupt')} (Alt+Enter)`} lage="oben" seite="ende" aussen="shrink-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          className="h-9 w-9 rounded-full p-0 flex items-center justify-center bg-status-destructive/15 text-status-destructive hover:bg-status-destructive/25 border border-status-destructive/30"
+                          onClick={() => void sendImmediatelyAndInterrupt(input)}
+                          aria-label={t('ai.chat.sendNowInterrupt')}
+                          aria-keyshortcuts="Alt+Enter"
+                        >
+                          <Zap className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                      </Kurzinfo>
+                    </div>
+                  )
+                ) : (
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className={`h-9 w-9 shrink-0 rounded-full p-0 ${
+                      singraShell ? 'bg-primary text-on-primary shadow-md hover:brightness-110' : ''
+                    }`}
+                    disabled={
+                      uploading
+                      || (!input.trim() && offeneAnhaenge.length === 0)
+                      || !providerId
+                    }
+                    aria-label={t('ai.chat.send')}
+                  >
+                    <Send className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                )}
+                  </>
+                )}
+              </div>
+
+              {availableProviders.length === 0 && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-status-warning">
+                  <Zap className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  {t('ai.chat.noProvider')}
+                </p>
+              )}
+              <p className={`mt-2 text-center text-xs hidden sm:block ${singraShell && empty ? 'text-white/55' : 'text-on-surface-variant'}`}>
+                {t('ai.chat.privacyHint')}
+              </p>
+            </div>
+          </form>
+        </>
+      )}
       {/* Über der ganzen Fläche statt im Verlauf: dort rollte sie mit und sprach über `aria-live` mit. */}
       {dragging && <Ablageflaeche icon={<Paperclip className="h-4 w-4" />} text={t('ai.attachments.drop')} />}
     </section>

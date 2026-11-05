@@ -96,7 +96,7 @@ def get_or_create_conversation(
     Wiedereinstieg wuerfe ``MultipleResultsFound``. Wer ein Worker-Fenster
     braucht, ruft `worker_unterhaltung_anlegen`.
     """
-    if kind not in EINZELFENSTER:
+    if kind not in EINZELFENSTER and kind != "primary":
         if kind in ARTEN:
             raise ValueError(
                 f"Unterhaltungsart {kind!r} ist kein Einzelfenster — "
@@ -104,11 +104,12 @@ def get_or_create_conversation(
             )
         raise ValueError(f"Unbekannte Unterhaltungsart: {kind!r}")
 
-    existing = (
-        db.query(AiConversation)
-        .filter(AiConversation.user_id == user.id, AiConversation.kind == kind)
-        .first()
+    query = db.query(AiConversation).filter(
+        AiConversation.user_id == user.id, AiConversation.kind == kind
     )
+    if kind == "primary":
+        query = query.order_by(AiConversation.updated_at.desc())
+    existing = query.first()
     if existing is not None:
         return existing
 
@@ -127,9 +128,98 @@ def get_or_create_conversation(
         conversation = (
             db.query(AiConversation)
             .filter(AiConversation.user_id == user.id, AiConversation.kind == kind)
-            .one()
+            .order_by(AiConversation.updated_at.desc())
+            .first()
         )
+        if conversation is None:
+            raise
     return conversation
+
+
+def create_user_conversation(
+    db: Session,
+    user: User,
+    *,
+    title: str | None = None,
+    project_id: str | None = None,
+) -> AiConversation:
+    """Legt eine neue Chat-Unterhaltung (Multi-Chat) fuer den Benutzer an."""
+    from services.ai_redaction import redact_sensitive_text
+
+    clean_title = redact_sensitive_text(title or DEFAULT_TITLE).strip()[:160] or DEFAULT_TITLE
+    conversation = AiConversation(
+        id=str(uuid4()),
+        user_id=user.id,
+        server_id=None,
+        project_id=project_id,
+        kind="primary",
+        title=clean_title,
+        pinned=False,
+    )
+    db.add(conversation)
+    db.flush()
+    return conversation
+
+
+def list_user_conversations(
+    db: Session,
+    user: User,
+    *,
+    project_id: str | None = None,
+    limit: int = 100,
+) -> list[AiConversation]:
+    """Listet alle Chat-Unterhaltungen des Benutzers, sortiert nach Pin und Aktivitaet."""
+    from models.dis_text import vorab_entschluesselt
+
+    query = db.query(AiConversation).filter(
+        AiConversation.user_id == user.id,
+        AiConversation.kind == "primary",
+    )
+    if project_id is not None:
+        query = query.filter(AiConversation.project_id == project_id)
+    query = query.order_by(
+        AiConversation.pinned.desc(),
+        AiConversation.updated_at.desc(),
+    ).limit(max(1, min(limit, 250)))
+    with vorab_entschluesselt(db, query, AiConversation.title):
+        return query.all()
+
+
+def update_user_conversation(
+    db: Session,
+    conversation: AiConversation,
+    *,
+    title: str | None = None,
+    pinned: bool | None = None,
+    project_id: str | None = None,
+    clear_project: bool = False,
+) -> AiConversation:
+    """Aktualisiert Titel, Pin-Status oder Projekt-Zuordnung einer Unterhaltung."""
+    from services.ai_redaction import redact_sensitive_text
+
+    if title is not None:
+        clean_title = redact_sensitive_text(title).strip()[:160]
+        if clean_title:
+            conversation.title = clean_title
+    if pinned is not None:
+        conversation.pinned = bool(pinned)
+    if clear_project:
+        conversation.project_id = None
+    elif project_id is not None:
+        conversation.project_id = project_id
+    conversation.updated_at = datetime.now(timezone.utc)
+    db.flush()
+    return conversation
+
+
+def delete_user_conversation(db: Session, conversation: AiConversation) -> None:
+    """Loescht eine einzelne Unterhaltung samt Verlauf und offenen Laeufen."""
+    from services import ai_run_service
+
+    ai_run_service.vorgaenger_abloesen(db, conversation_id=conversation.id)
+    clear_history(db, conversation, user_weit=False, worker_weit=False)
+    db.delete(conversation)
+    db.flush()
 
 
 def get_or_create_docs_conversation(
