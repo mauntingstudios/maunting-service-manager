@@ -228,7 +228,10 @@ def _global_tool_definitions() -> list[dict]:
                     "git_commit",
                 ],
             },
-            "project_id": {"type": "integer", "minimum": 1},
+            "project_id": {
+                "type": "string",
+                "description": "Projekt-ID (UUID oder Zahl)",
+            },
             "name": {"type": "string", "maxLength": 160},
             "path": {"type": "string", "maxLength": 240},
             "content": {"type": "string", "maxLength": 200000},
