@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Code2,
   Folder,
-  Leaf,
   Lightbulb,
   PenLine,
   Server,
@@ -94,9 +93,13 @@ export function SingraEmptyState({
 
   return (
     <div className="relative z-10 flex flex-col items-center justify-center px-3 py-8 sm:px-6 sm:py-14 text-center">
-      {/* Glowing Emblem */}
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/40 bg-primary/15 text-primary shadow-[0_0_32px_rgba(74,222,128,0.28)] backdrop-blur-md">
-        <Leaf className="h-7 w-7 text-primary drop-shadow-[0_0_10px_rgba(74,222,128,0.65)]" aria-hidden="true" />
+      {/* Glowing Singra Logo Emblem */}
+      <div className="mb-5 flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-full border border-primary/40 bg-black/70 shadow-[0_0_36px_rgba(56,189,248,0.35)] backdrop-blur-md overflow-hidden p-1.5">
+        <img
+          src="/singra-logo.png"
+          alt="Singra Logo"
+          className="h-full w-full object-contain rounded-full drop-shadow-[0_0_20px_rgba(56,189,248,0.65)]"
+        />
       </div>
 
       {/* Personal Time-of-Day Greeting */}

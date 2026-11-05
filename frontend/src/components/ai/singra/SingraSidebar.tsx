@@ -5,7 +5,6 @@ import {
   History,
   Layers,
   LayoutGrid,
-  Leaf,
   MessageSquare,
   Pin,
   Plus,
@@ -91,8 +90,12 @@ function SidebarContent({
       <div className="flex flex-col gap-3 px-3.5 pt-4 pb-2">
         <div className="flex items-center justify-between gap-2 px-1">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/35 bg-primary/15 text-primary shadow-[0_0_18px_rgba(74,222,128,0.18)]">
-              <Leaf className="h-5 w-5" aria-hidden="true" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-primary/35 bg-black/60 shadow-[0_0_16px_rgba(56,189,248,0.3)] overflow-hidden">
+              <img
+                src="/singra-logo.png"
+                alt="Singra Logo"
+                className="h-full w-full object-contain rounded-full"
+              />
             </div>
             <div className="min-w-0">
               <div className="font-headline text-base font-semibold tracking-tight text-on-surface leading-tight">

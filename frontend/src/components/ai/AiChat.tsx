@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, CalendarClock, Camera, Check, Globe2, HardDrive, Image as ImageIcon, Leaf, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Trash2, Upload, X, Zap } from 'lucide-react'
+import { AudioLines, CalendarClock, Camera, Check, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Trash2, Upload, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -1494,8 +1494,12 @@ export function AiChat({
           )}
 
           {singraShell && (
-            <div className="hidden sm:flex items-center gap-1.5 pl-1 pr-1.5 text-xs font-semibold text-primary shrink-0">
-              <Leaf className="h-4 w-4 text-primary" aria-hidden="true" />
+            <div className="hidden sm:flex items-center gap-2 pl-1 pr-1.5 text-xs font-semibold text-primary shrink-0">
+              <img
+                src="/singra-logo.png"
+                alt="Singra Logo"
+                className="h-5 w-5 rounded-full object-contain drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]"
+              />
               <span>Singra</span>
             </div>
           )}
