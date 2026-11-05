@@ -43,7 +43,7 @@ def _sandbox_base_dir() -> Path:
 
 def ensure_project_workspace(project: AiProject) -> Path:
     """Stellt sicher, dass das Arbeitsverzeichnis fuer das Projekt existiert."""
-    if project.sandbox_mode == "local" and project.local_path:
+    if project.workspace_mode == "desktop" and project.local_path:
         local = Path(project.local_path).expanduser().resolve()
         if local.exists() and local.is_dir():
             return local
@@ -101,11 +101,15 @@ def list_projects(db: Session, user: User, *, team_id: int | None = None) -> lis
         )
         if member is None:
             return []
-        q = q.filter(AiProject.team_id == team_id)
+        q = q.filter(AiProject.team_id == team_id, AiProject.archived.is_(False))
     else:
-        q = q.filter(AiProject.user_id == user.id, AiProject.team_id.is_(None))
+        q = q.filter(
+            AiProject.user_id == user.id,
+            AiProject.team_id.is_(None),
+            AiProject.archived.is_(False),
+        )
     q = q.order_by(AiProject.pinned.desc(), AiProject.updated_at.desc(), AiProject.id.desc())
-    with vorab_entschluesselt(db, q, AiProject.name, AiProject.description, AiProject.system_prompt):
+    with vorab_entschluesselt(db, q, AiProject.name, AiProject.description, AiProject.instructions):
         return q.all()
 
 
@@ -165,7 +169,7 @@ def create_project(
 def update_project(
     db: Session,
     user: User,
-    project_id: int,
+    project_id: str,
     *,
     name: str | None = None,
     description: str | None = None,
@@ -188,7 +192,7 @@ def update_project(
     if description is not None:
         project.description = description.strip() or None
     if system_prompt is not None:
-        project.system_prompt = system_prompt.strip() or None
+        project.instructions = system_prompt.strip() or None
     if icon is not None:
         project.icon = icon.strip()[:48] or "folder-code"
     if color is not None:
@@ -196,7 +200,9 @@ def update_project(
     if pinned is not None:
         project.pinned = bool(pinned)
     if sandbox_mode is not None and sandbox_mode in ("server", "local", "none"):
-        project.sandbox_mode = sandbox_mode
+        project.workspace_mode = (
+            "sandbox" if sandbox_mode == "server" else ("desktop" if sandbox_mode == "local" else "docs")
+        )
     if local_path is not None:
         project.local_path = local_path.strip() or None
     if git_provider is not None:
@@ -211,7 +217,7 @@ def update_project(
     return project
 
 
-def delete_project(db: Session, user: User, project_id: int) -> None:
+def delete_project(db: Session, user: User, project_id: str) -> None:
     project = get_project(db, user, project_id)
     sandbox_dir = _sandbox_base_dir() / f"proj_{project.id}"
     db.delete(project)
@@ -220,7 +226,7 @@ def delete_project(db: Session, user: User, project_id: int) -> None:
         shutil.rmtree(sandbox_dir, ignore_errors=True)
 
 
-def list_project_files(db: Session, user: User, project_id: int) -> list[AiProjectFile]:
+def list_project_files(db: Session, user: User, project_id: str) -> list[AiProjectFile]:
     project = get_project(db, user, project_id)
     ws = ensure_project_workspace(project)
     _sync_workspace_files_to_db(db, project, ws)
@@ -277,7 +283,7 @@ def _sync_workspace_files_to_db(db: Session, project: AiProject, ws: Path) -> No
         db.commit()
 
 
-def read_project_file(db: Session, user: User, project_id: int, rel_path: str) -> AiProjectFile:
+def read_project_file(db: Session, user: User, project_id: str, rel_path: str) -> AiProjectFile:
     project = get_project(db, user, project_id)
     norm = normalize_rel_path(rel_path)
     ws = ensure_project_workspace(project)
@@ -319,7 +325,7 @@ def read_project_file(db: Session, user: User, project_id: int, rel_path: str) -
 def write_project_file(
     db: Session,
     user: User,
-    project_id: int,
+    project_id: str,
     rel_path: str,
     content: str,
     mime_type: str = "text/plain",
@@ -366,7 +372,7 @@ def write_project_file(
     return row
 
 
-def delete_project_file(db: Session, user: User, project_id: int, rel_path: str) -> None:
+def delete_project_file(db: Session, user: User, project_id: str, rel_path: str) -> None:
     project = get_project(db, user, project_id)
     norm = normalize_rel_path(rel_path)
     ws = ensure_project_workspace(project)
@@ -407,7 +413,7 @@ def _materialize_db_files_to_workspace(db: Session, project: AiProject, ws: Path
 def run_project_command(
     db: Session,
     user: User,
-    project_id: int,
+    project_id: str,
     command: str,
     *,
     timeout_seconds: int = 25,
@@ -479,7 +485,7 @@ def _inject_git_token(repo_url: str, token: str | None, provider: str | None) ->
     return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
 
-def git_status(db: Session, user: User, project_id: int) -> dict[str, object]:
+def git_status(db: Session, user: User, project_id: str) -> dict[str, object]:
     project = get_project(db, user, project_id)
     ws = ensure_project_workspace(project)
     git_dir = ws / ".git"
@@ -532,7 +538,7 @@ def git_status(db: Session, user: User, project_id: int) -> dict[str, object]:
 def git_clone_or_pull(
     db: Session,
     user: User,
-    project_id: int,
+    project_id: str,
     *,
     repo_url: str | None = None,
     branch: str | None = None,
@@ -629,7 +635,7 @@ def git_clone_or_pull(
 def git_commit_and_push(
     db: Session,
     user: User,
-    project_id: int,
+    project_id: str,
     *,
     message: str,
     push: bool = False,

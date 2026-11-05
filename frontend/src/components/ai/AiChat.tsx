@@ -1503,19 +1503,6 @@ export function AiChat({
             </button>
           )}
 
-          {singraShell && (
-            <div className="hidden sm:flex items-center gap-2 pl-1 pr-1.5 text-xs font-semibold text-primary shrink-0 select-none">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full border border-primary/35 bg-black/60 shadow-[0_0_10px_rgba(56,189,248,0.35)] overflow-hidden">
-                <img
-                  src="/singra-logo.png"
-                  alt="Singra Logo"
-                  className="h-full w-full object-contain rounded-full"
-                />
-              </div>
-              <span className="tracking-wide">Singra</span>
-            </div>
-          )}
-
           {/* Schrumpft im schmalen Browser-Panel, damit die Knöpfe daneben Platz haben. */}
           <div className="min-w-24 flex-1 max-w-52 sm:w-52 sm:flex-none shrink-0">
             <Dropdown

@@ -45,7 +45,7 @@ class AiProjectUpdatePayload(BaseModel):
 
 
 class AiProjectResponse(BaseModel):
-    id: int
+    id: str
     user_id: int
     team_id: int | None = None
     name: str
@@ -73,8 +73,8 @@ class AiProjectFileWritePayload(BaseModel):
 
 
 class AiProjectFileResponse(BaseModel):
-    id: int
-    project_id: int
+    id: str
+    project_id: str
     path: str
     content: str
     mime_type: str
@@ -132,7 +132,7 @@ def create_project(
 
 @router.get("/{project_id}", response_model=AiProjectResponse)
 def get_project(
-    project_id: int,
+    project_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
 ) -> AiProjectResponse:
@@ -145,7 +145,7 @@ def get_project(
 
 @router.patch("/{project_id}", response_model=AiProjectResponse)
 def update_project(
-    project_id: int,
+    project_id: str,
     payload: AiProjectUpdatePayload,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
@@ -165,7 +165,7 @@ def update_project(
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(
-    project_id: int,
+    project_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
     _: None = Depends(verify_csrf),
@@ -179,7 +179,7 @@ def delete_project(
 
 @router.get("/{project_id}/files", response_model=list[AiProjectFileResponse])
 def list_project_files(
-    project_id: int,
+    project_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
 ) -> list[AiProjectFileResponse]:
@@ -192,7 +192,7 @@ def list_project_files(
 
 @router.post("/{project_id}/files", response_model=AiProjectFileResponse)
 def write_project_file(
-    project_id: int,
+    project_id: str,
     payload: AiProjectFileWritePayload,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
@@ -214,7 +214,7 @@ def write_project_file(
 
 @router.delete("/{project_id}/files", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project_file(
-    project_id: int,
+    project_id: str,
     path: str = Query(..., min_length=1),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
@@ -229,7 +229,7 @@ def delete_project_file(
 
 @router.post("/{project_id}/exec")
 def execute_project_command(
-    project_id: int,
+    project_id: str,
     payload: AiProjectCommandPayload,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
@@ -249,7 +249,7 @@ def execute_project_command(
 
 @router.get("/{project_id}/agents-rules")
 def get_project_agents_rules(
-    project_id: int,
+    project_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
 ) -> dict[str, object]:
@@ -261,7 +261,7 @@ def get_project_agents_rules(
 
 @router.get("/{project_id}/git/status")
 def get_project_git_status(
-    project_id: int,
+    project_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
 ) -> dict[str, object]:
@@ -273,7 +273,7 @@ def get_project_git_status(
 
 @router.post("/{project_id}/git/sync")
 def sync_project_git(
-    project_id: int,
+    project_id: str,
     payload: AiProjectGitClonePayload,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
@@ -295,7 +295,7 @@ def sync_project_git(
 
 @router.post("/{project_id}/git/commit")
 def commit_project_git(
-    project_id: int,
+    project_id: str,
     payload: AiProjectGitCommitPayload,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),

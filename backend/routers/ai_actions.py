@@ -161,7 +161,7 @@ def list_conversation_actions(
         if (
             conversation is None
             or conversation.user_id != user.id
-            or conversation.kind != "worker"
+            or conversation.kind not in ("worker", "primary")
         ):
             raise HTTPException(
                 status_code=404, detail="ai.errors.codes.AI_ACTION_NOT_FOUND"
