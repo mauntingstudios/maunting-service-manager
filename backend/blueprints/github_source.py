@@ -17,7 +17,6 @@ import time
 from pathlib import Path
 
 from .schema import Blueprint, BlueprintSourceType
-from services.github_token_service import resolve_token as _resolve_github_token
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +90,7 @@ def _build_git_env(cwd: Path | None = None, token: str | None = None) -> dict[st
     import base64
 
     base = _git_env()
-    effective_token = (token.strip() if token is not None else _resolve_github_token()) or None
+    effective_token = (token.strip() if token else None) or None
 
     entries: list[tuple[str, str]] = []
     if cwd is not None:

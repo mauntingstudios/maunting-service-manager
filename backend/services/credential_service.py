@@ -352,13 +352,8 @@ def resolve_panel_default(kind: str) -> ResolvedCredential | None:
     if not panel_fallback_allowed():
         return None
     if kind == KIND_GITHUB_TOKEN:
-        from services.github_token_service import current_source, resolve_token
-
-        token = resolve_token()
-        if not token:
-            return None
-        source: CredentialSource = "env" if current_source() == "env" else "panel"
-        return ResolvedCredential(kind=kind, secret=token, username=None, source=source)
+        # Panel-weites GitHub-PAT wurde entfernt. Jeder Benutzer hinterlegt sein eigenes Token.
+        return None
 
     from services.steam_account_service import SteamAccountService
 

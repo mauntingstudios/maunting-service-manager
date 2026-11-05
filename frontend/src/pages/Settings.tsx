@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Globe, Mail, Gamepad2, Flame, KeyRound, Shield, Github, Cloud, FileText, LifeBuoy, ShieldAlert, Bot, Plug, Megaphone, CloudCog, MessageSquare, HardDrive, Search } from 'lucide-react'
+import { Globe, Mail, Gamepad2, Flame, KeyRound, Shield, Cloud, FileText, LifeBuoy, ShieldAlert, Bot, Plug, Megaphone, CloudCog, MessageSquare, HardDrive, Search } from 'lucide-react'
 import { SettingsLayout, type SettingsSectionEintrag } from '@maunting/ui'
 import { GeneralTab } from './settings/GeneralTab'
 import { EmailTab } from './settings/EmailTab'
 import { SteamTab } from './settings/SteamTab'
 import { CurseForgeTab } from './settings/CurseForgeTab'
 import { OAuthTab } from './settings/OAuthTab'
-import { GitHubTab } from './settings/GitHubTab'
 import { BackupTab } from './settings/BackupTab'
 import { ImprintTab } from './settings/ImprintTab'
 import { SupportWidgetTab } from './settings/SupportWidgetTab'
@@ -27,7 +26,6 @@ type TabId =
   | 'email'
   | 'steam'
   | 'curseforge'
-  | 'github'
   | 'oauth'
   | 'imprint'
   | 'captcha'
@@ -67,7 +65,6 @@ export function Settings() {
     { id: 'oauth', label: t('settings.tabs.oauth'), icon: KeyRound, group: t('settings.groups.verbindungen') },
     { id: 'steam', label: t('settings.tabs.steam'), icon: Gamepad2, group: t('settings.groups.verbindungen') },
     { id: 'curseforge', label: t('settings.tabs.curseforge'), icon: Flame, group: t('settings.groups.verbindungen') },
-    { id: 'github', label: t('settings.tabs.github'), icon: Github, group: t('settings.groups.verbindungen') },
     ...(canReadHoster
       ? [{ id: 'hoster' as const, label: t('settings.tabs.hoster'), icon: Plug, group: t('settings.groups.verbindungen') }]
       : []),
@@ -98,7 +95,6 @@ export function Settings() {
         {aktiv === 'email' && <EmailTab />}
         {aktiv === 'steam' && <SteamTab />}
         {aktiv === 'curseforge' && <CurseForgeTab />}
-        {aktiv === 'github' && <GitHubTab />}
         {aktiv === 'oauth' && <OAuthTab />}
         {aktiv === 'captcha' && <CaptchaTab />}
         {aktiv === 'cloudflare' && <CloudflareTab />}

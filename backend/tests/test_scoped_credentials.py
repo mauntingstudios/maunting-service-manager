@@ -240,22 +240,15 @@ def test_server_binding_wins_over_the_panel_default(
     assert resolved.source == "server"
 
 
-def test_without_a_binding_the_panel_default_is_used_unchanged(
+def test_without_a_binding_github_has_no_panel_fallback(
     db: Session,
 ) -> None:
-    """Self-Hosted bleibt unberuehrt: ohne Bindung gilt weiter der Panel-Zugang."""
+    """GitHub-Tokens sind benutzergebunden: ohne Bindung gibt es keinen panelweiten Rueckfall mehr."""
     server = _server(db)
-
-    with patch(
-        "services.github_token_service.resolve_token", return_value="panel-token-0000"
-    ), patch("services.github_token_service.current_source", return_value="panel"):
-        resolved = credential_service.resolve_for_server(
-            db, server.id, KIND_GITHUB_TOKEN
-        )
-
-    assert resolved is not None
-    assert resolved.secret == "panel-token-0000"
-    assert resolved.source == "panel"
+    resolved = credential_service.resolve_for_server(
+        db, server.id, KIND_GITHUB_TOKEN
+    )
+    assert resolved is None
 
 
 def test_operator_can_switch_off_the_central_fallback(db: Session) -> None:
