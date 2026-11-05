@@ -107,21 +107,23 @@ export function DocsSidebar({ session, aktionen, selectedUid, canManageFolders }
           size="voll"
           showCloseButton={false}
           overlayClassName="!justify-start md:hidden"
-          className="!mr-auto !w-[min(18rem,85vw)] !max-w-none !rounded-none p-0"
+          className="!mr-auto !w-[min(18rem,85vw)] !max-w-none !rounded-none p-0 pt-[var(--msm-oben-sicher)] pb-[var(--msm-unten-sicher)] pl-[var(--msm-links-sicher)]"
         >
-          <Kurzinfo text={t('common.close')}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={t('common.close')}
-              className="absolute right-2 top-2 z-10"
-              onClick={() => setTreeOffen(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </Kurzinfo>
-          {baum()}
+          <div className="flex items-center justify-between border-b border-outline-variant/40 bg-surface-container/85 px-3 py-2 backdrop-blur-xl">
+            <span className="truncate text-sm font-semibold text-on-surface">{t('docs.title')}</span>
+            <Kurzinfo text={t('common.close')}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={t('common.close')}
+                onClick={() => setTreeOffen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </Kurzinfo>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">{baum()}</div>
         </DialogContent>
       </Dialog>
     </>

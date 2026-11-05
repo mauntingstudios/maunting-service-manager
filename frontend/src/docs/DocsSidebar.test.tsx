@@ -1,7 +1,8 @@
-import { act, render } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import i18n from '@/i18n'
 import { DocsSidebar } from './DocsSidebar'
 import { useDocsStore } from './docsStore'
 import type { DocsSession } from './useDocsSession'
@@ -89,6 +90,9 @@ describe('DocsSidebar', () => {
       </MemoryRouter>,
     )
     expect(useDocsStore.getState().treeOffen).toBe(true)
+    const dialog = screen.getByRole('dialog', { name: i18n.t('docs.tree.open') }).firstElementChild as HTMLElement
+    expect(dialog.className).toContain('pt-[var(--msm-oben-sicher)]')
+    expect(dialog.className).toContain('pb-[var(--msm-unten-sicher)]')
 
     abfrage.setze(false)
 

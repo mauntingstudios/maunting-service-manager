@@ -148,7 +148,7 @@ export function DocsPanels({
           size="voll"
           showCloseButton={false}
           overlayClassName="!justify-end lg:hidden"
-          className="!ml-auto !w-auto !max-w-[92vw] p-0"
+          className="!ml-auto !w-auto !max-w-[92vw] p-0 pt-[var(--msm-oben-sicher)] pb-[var(--msm-unten-sicher)] pr-[var(--msm-rechts-sicher)]"
         >
           {seite}
         </DialogContent>

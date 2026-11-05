@@ -80,9 +80,11 @@ describe('DocsPanels', () => {
   it('zeigt das mobile Panel als benannten Dialog', async () => {
     await waitFor(() => expect(window.history.state?.msmTiefe ?? 0).toBe(0))
     render(<Aufbau start="comments" />)
-    expect(
-      screen.getByRole('dialog', { name: i18n.t('docs.comments.title') }),
-    ).toBeInTheDocument()
+    const overlay = screen.getByRole('dialog', { name: i18n.t('docs.comments.title') })
+    expect(overlay).toBeInTheDocument()
+    const karte = overlay.firstElementChild as HTMLElement
+    expect(karte.className).toContain('pt-[var(--msm-oben-sicher)]')
+    expect(karte.className).toContain('pb-[var(--msm-unten-sicher)]')
   })
 
   it('schließt mit Escape und gibt den Fokus an den Auslöser zurück', async () => {
