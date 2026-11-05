@@ -98,11 +98,14 @@ def _art(kind: str) -> str:
 
 
 def _conversation_response(conversation) -> AiConversationResponse:
+    raw_title = getattr(conversation, "title", None)
+    if not raw_title or not str(raw_title).strip():
+        raw_title = "Hauptchat" if getattr(conversation, "kind", "primary") == "primary" else "Unterhaltung"
     return AiConversationResponse(
-        id=conversation.id,
-        kind=conversation.kind,
-        title=conversation.title,
-        project_id=getattr(conversation, "project_id", None),
+        id=str(conversation.id),
+        kind=str(getattr(conversation, "kind", "primary")),
+        title=str(raw_title),
+        project_id=str(conversation.project_id) if getattr(conversation, "project_id", None) else None,
         pinned=bool(getattr(conversation, "pinned", False)),
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,

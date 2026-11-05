@@ -158,6 +158,8 @@ export interface AiChatProps {
   onProviderChange?: (providerId: number | null) => void
   /** Neuer Chat über Menü oder Slash-Befehl */
   onNewChat?: () => void
+  /** Wird gefeuert, wenn die Unterhaltungs-ID vom Server aufgelöst wurde */
+  onResolveConversationId?: (id: string) => void
   /** Datei sofort an den Chat binden (z. B. aus KI-Speicher) */
   initialAttachment?: AiAttachment | null
   onConsumeInitialAttachment?: () => void
@@ -171,6 +173,8 @@ export interface AiChatProps {
 }
 
 const SERVER_BEISPIELE = ['logs', 'network', 'mods'] as const
+
+let cachedProviders: AiProviderAvailable[] | null = null
 
 export function AiChat({
   onSwitchMode,
@@ -188,6 +192,7 @@ export function AiChat({
   voiceConfig,
   onProviderChange,
   onNewChat,
+  onResolveConversationId,
   initialAttachment,
   onConsumeInitialAttachment,
   beispielSchluessel = SERVER_BEISPIELE,
@@ -216,8 +221,14 @@ export function AiChat({
   )
   const [skillsModalOpen, setSkillsModalOpen] = useState(false)
   const [hintergrundOffen, setzeHintergrundOffen] = useState(false)
-  const [providers, setProviders] = useState<AiProviderAvailable[]>([])
-  const [providerId, setProviderId] = useState<number | null>(null)
+  const [providers, setProviders] = useState<AiProviderAvailable[]>(() => cachedProviders ?? [])
+  const [providerId, setProviderId] = useState<number | null>(() => {
+    const kontoWahl = useAuthStore.getState().user?.ai_provider_id ?? null
+    return providerBeimOeffnen(
+      cachedProviders ?? [],
+      kontoWahl ?? (currentUser?.id ? readAiProviderChoice(merkSchluessel.provider) : null),
+    )
+  })
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [inlineVoiceActive, setInlineVoiceActive] = useState(false)
   useEffect(() => {
@@ -535,6 +546,7 @@ export function AiChat({
         setLaufBeimOeffnen(aktiverLauf)
         setMemoryNoticeDue(Boolean(memoryPreference?.notice_due))
         if (providerRows && providerRows.length > 0) {
+          cachedProviders = providerRows
           setProviders(providerRows)
           // Die Wahl am Konto schlägt die im Browser: sie ist die eine Quelle,
           // die auch Overlay und Desktop-App sehen. Der localStorage bleibt als
@@ -551,6 +563,9 @@ export function AiChat({
           // das Overlay bis zum nächsten manuellen Modellwechsel weiter mit dem
           // erstbesten Zugang — und der kann beliebig langsam sein.
           void browserWahlInsKontoUebernehmen()
+        }
+        if (scope.kind === 'primary' && !scope.conversationId && conversation?.id) {
+          onResolveConversationId?.(conversation.id)
         }
         // Vorschlaege werden chronologisch zwischen die Nachrichten einsortiert,
         // damit man sieht, auf welche Antwort sie sich beziehen. Vorher standen

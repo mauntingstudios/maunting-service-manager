@@ -182,7 +182,11 @@ def list_user_conversations(
         AiConversation.updated_at.desc(),
     ).limit(max(1, min(limit, 250)))
     with vorab_entschluesselt(db, query, AiConversation.title):
-        return query.all()
+        results = query.all()
+    for c in results:
+        if not getattr(c, "title", None) or not str(c.title).strip():
+            c.title = "Hauptchat"
+    return results
 
 
 def update_user_conversation(

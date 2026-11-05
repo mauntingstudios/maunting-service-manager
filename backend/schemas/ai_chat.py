@@ -29,7 +29,7 @@ class AiConversationResponse(BaseModel):
     #: Welches Fenster — ``primary`` (der Dauerchat) oder ``guardian`` (die
     #: Reparaturen im Hintergrund). Siehe `models.ai_conversation.ARTEN`.
     kind: str = "primary"
-    title: str
+    title: str = "Hauptchat"
     project_id: str | None = None
     pinned: bool = False
     created_at: datetime

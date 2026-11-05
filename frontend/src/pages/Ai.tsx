@@ -155,6 +155,10 @@ export function Ai({
     try {
       const list = await aiApi.listConversations()
       setConversations(list)
+      setActiveConversationId((prev) => {
+        if (prev) return prev
+        return list.length > 0 ? list[0].id : null
+      })
     } catch (err) {
       still(err, 'ai.listConversations')
     }
@@ -400,6 +404,7 @@ export function Ai({
                 activeProjectName={activeProjectName}
                 voiceConfig={sprachkonfiguration}
                 onNewChat={() => void handleNewChat()}
+                onResolveConversationId={(resolvedId) => setActiveConversationId((prev) => prev ?? resolvedId)}
                 initialAttachment={pendingAttachmentToChat}
                 onConsumeInitialAttachment={() => setPendingAttachmentToChat(null)}
               />

@@ -918,7 +918,17 @@ class DynamicCORSMiddleware(CORSMiddleware):
         return is_localhost_origin_allowed(origin)
 
 
-# ── CORS: Explizite Origins (panel_url + MSM_CORS_ALLOWED_ORIGINS + Dev + dynamisches Localhost) ──
+# ── Rate Limiting (slowapi) & Request-ID (WP1.1 & 1.3) ──
+from fastapi.exceptions import RequestValidationError
+from errors import status_to_error_code
+from middleware.request_id import RequestIDMiddleware, get_request_id
+
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+# RequestIDMiddleware als Schicht unter CORS
+app.add_middleware(RequestIDMiddleware)
+
+# ── CORS: Äußerste Schicht für alle Requests und Fehlerantworten ──
 _cors_origins = get_cors_origins()
 
 app.add_middleware(
@@ -934,16 +944,10 @@ app.add_middleware(
         "Idempotency-Key",
         "X-Task-Retry-Of",
         "X-Provider-Api-Key",
-        # Der Besitznachweis einer Mailbox (Chatgeheimnis, Gruppengeheimnis).
-        # Fehlte er hier, scheiterte in der App jede Vorabfrage mit 400.
         "X-Mailbox-Token",
-        # Der Bucket des offenen Tresors an den Datei-Routen (`routers/vault.py`).
         "X-MSM-Vault-Bucket",
         "X-Request-ID",
     ],
-    # Was das Frontend aus einer Antwort liest. Die App spricht von fremder
-    # Herkunft und sähe alles andere als `null` (Dateiname und Prüfsumme der
-    # Studio-Downloads, Hinweis auf einen gekürzten Export).
     expose_headers=[
         "X-CSRF-Token",
         "Content-Disposition",
@@ -955,15 +959,17 @@ app.add_middleware(
 )
 
 
-# ── Rate Limiting (slowapi) & Request-ID (WP1.1 & 1.3) ──
-from fastapi.exceptions import RequestValidationError
-from errors import status_to_error_code
-from middleware.request_id import RequestIDMiddleware, get_request_id
-
-app.state.limiter = limiter
-app.add_middleware(SlowAPIMiddleware)
-# RequestIDMiddleware als äußerste Schicht
-app.add_middleware(RequestIDMiddleware)
+def _cors_headers_for_request(request: Request) -> dict[str, str]:
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    if origin in _cors_origins or is_localhost_origin_allowed(origin):
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Expose-Headers": "X-CSRF-Token, Content-Disposition, X-MSM-Dump-Size, X-Request-ID",
+        }
+    return {}
 
 
 @app.exception_handler(Exception)
@@ -973,6 +979,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     logging.getLogger("msm.error").exception(
         "Unerwarteter interner Fehler [%s]: %s", req_id, exc.__class__.__name__, exc_info=exc
     )
+    headers = _cors_headers_for_request(request)
+    if req_id:
+        headers["X-Request-ID"] = req_id
     return JSONResponse(
         status_code=500,
         content={
@@ -982,7 +991,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
                 "request_id": req_id,
             }
         },
-        headers={"X-Request-ID": req_id} if req_id else None,
+        headers=headers,
     )
 
 
@@ -1003,6 +1012,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         if ctx:
             entry["ctx"] = ctx
         sanitized_errors.append(entry)
+    headers = _cors_headers_for_request(request)
+    if req_id:
+        headers["X-Request-ID"] = req_id
     return JSONResponse(
         status_code=422,
         content={
@@ -1012,7 +1024,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                 "errors": sanitized_errors,
             }
         },
-        headers={"X-Request-ID": req_id} if req_id else None,
+        headers=headers,
     )
 
 
@@ -1057,6 +1069,7 @@ async def starlette_http_exception_handler(request: Request, exc: StarletteHTTPE
         # damit der bisherige API-Vertrag (z. B. detail="Nicht da") nicht bricht.
         content = {"detail": detail}
     headers = dict(exc.headers or {})
+    headers.update(_cors_headers_for_request(request))
     if req_id and "X-Request-ID" not in headers:
         headers["X-Request-ID"] = req_id
     return JSONResponse(
