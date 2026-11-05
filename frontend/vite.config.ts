@@ -2,8 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
-import { panelCsp } from './vite.csp'
-import { fontsourceWoff2Only } from './vite.fontsource'
+import { panelCsp } from './vite.csp.ts'
+import { fontsourceWoff2Only } from './vite.fontsource.ts'
 
 export default defineConfig({
   // Wer meldet: Web-Panel, Pontis oder MSS. Der Praesenz-Client liest das.
@@ -12,7 +12,7 @@ export default defineConfig({
   plugins: [fontsourceWoff2Only(), react(), panelCsp()],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
+      '@': resolve(import.meta.dirname, 'src'),
     },
   },
   server: {

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import CodeMirror from '@uiw/react-codemirror'
+import {
+  EDITOR_BASIC_SETUP,
+  EDITOR_THEME,
+  languageExtension,
+} from '@/components/server/FileEditorWorkspace'
 import {
   Code2,
   ExternalLink,
@@ -410,6 +416,23 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
       setSavingFile(false)
     }
   }
+
+  const activeFileExtension = useMemo(() => {
+    return activeFilePath ? languageExtension(activeFilePath) : null
+  }, [activeFilePath])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        if (activeTab === 'files' && activeFilePath && !savingFile) {
+          e.preventDefault()
+          void handleSaveFile(activeFilePath, fileContent)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeTab, activeFilePath, fileContent, savingFile])
 
   const handleDeleteFile = async (path: string) => {
     if (!selectedProject) return
@@ -887,12 +910,18 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                             {savingFile ? 'Speichert…' : 'Speichern'}
                           </Button>
                         </div>
-                        <textarea
-                          value={fileContent}
-                          onChange={(e) => setFileContent(e.target.value)}
-                          className="msm-input flex-1 min-h-[320px] w-full font-mono text-xs leading-relaxed resize-y"
-                          aria-label={`Dateiinhalt von ${activeFilePath}`}
-                        />
+                        <div className="flex-1 min-h-[360px] overflow-hidden rounded-lg border border-outline-variant/30 bg-[#071013]">
+                          <CodeMirror
+                            value={fileContent}
+                            height="100%"
+                            minHeight="360px"
+                            theme={EDITOR_THEME}
+                            basicSetup={EDITOR_BASIC_SETUP}
+                            extensions={activeFileExtension ? [activeFileExtension] : []}
+                            onChange={(val) => setFileContent(val)}
+                            aria-label={`Dateiinhalt von ${activeFilePath}`}
+                          />
+                        </div>
                       </>
                     ) : (
                       <div className="flex flex-1 flex-col items-center justify-center p-6 text-center text-xs text-on-surface-variant">

@@ -5,8 +5,8 @@ import { resolve } from 'path'
 import autoprefixer from 'autoprefixer'
 import tailwindcss from 'tailwindcss'
 
-import { breitenAlsContainer } from './vite.breitenAlsContainer'
-import { fontsourceWoff2Only } from './vite.fontsource'
+import { breitenAlsContainer } from './vite.breitenAlsContainer.ts'
+import { fontsourceWoff2Only } from './vite.fontsource.ts'
 
 /**
  * Der Browser-Bau (Maunting Pontis).
@@ -24,7 +24,7 @@ export default defineConfig({
   plugins: [fontsourceWoff2Only(), react()],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
+      '@': resolve(import.meta.dirname, 'src'),
     },
   },
   css: {
@@ -44,7 +44,7 @@ export default defineConfig({
     assetsInlineLimit: (filePath: string) =>
       /\.(woff2?|ttf|otf|eot)$/i.test(filePath) ? false : undefined,
     rollupOptions: {
-      input: resolve(__dirname, 'browser.html'),
+      input: resolve(import.meta.dirname, 'browser.html'),
       output: {
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',

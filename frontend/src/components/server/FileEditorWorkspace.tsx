@@ -56,7 +56,7 @@ interface FileEditorWorkspaceProps {
   vollbild?: boolean
 }
 
-function languageExtension(path: string): LanguageSupport | ReturnType<typeof StreamLanguage.define> | null {
+export function languageExtension(path: string): LanguageSupport | ReturnType<typeof StreamLanguage.define> | null {
   switch (detectLanguage(path)) {
     case 'json': return json()
     case 'yaml': return yaml()
@@ -82,7 +82,7 @@ function languageExtension(path: string): LanguageSupport | ReturnType<typeof St
   }
 }
 
-const EDITOR_THEME = EditorView.theme({
+export const EDITOR_THEME = EditorView.theme({
   '&': { backgroundColor: '#071013', color: '#e7f4f7', fontSize: '13px', height: '100%' },
   '.cm-content': { caretColor: '#67e8f9', fontFamily: 'JetBrains Mono, monospace' },
   '.cm-gutters': { backgroundColor: '#071013', borderRight: '1px solid #203038', color: '#5b737a' },
@@ -92,7 +92,7 @@ const EDITOR_THEME = EditorView.theme({
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(103, 232, 249, 0.22)' },
 })
 
-const EDITOR_BASIC_SETUP = {
+export const EDITOR_BASIC_SETUP = {
   lineNumbers: true,
   highlightActiveLine: true,
   foldGutter: true,
