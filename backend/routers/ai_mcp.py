@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import require_global, verify_csrf
 from models import AiMcpServer, TeamMember, User
-from models._ai_verschluesselung import vorab_entschluesselt
+from models.dis_text import vorab_entschluesselt
 from services import permission_service
 
 router = APIRouter(prefix="/api/ai/mcp", tags=["ai-mcp"])

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from models import AiProject, AiProjectFile, TeamMember, User
-from models._ai_verschluesselung import vorab_entschluesselt
+from models.dis_text import vorab_entschluesselt
 
 logger = logging.getLogger(__name__)
 
