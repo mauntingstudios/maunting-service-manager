@@ -17,6 +17,7 @@ import { toast } from '@/stores/toastStore'
 import { KI_NAME } from '@/lib/kiName'
 import { sendeGeraeteBenachrichtigung } from '@/lib/benachrichtigung'
 import { zustellungMelden } from '@/lib/aiZustellung'
+import { useAiGenerationStore } from '@/stores/aiGenerationStore'
 import { primaryChatApi, type ChatScopeApi } from './chatScope'
 
 /** Ein Eintrag im sichtbaren Verlauf — chronologisch, nicht nach Typ sortiert. */
@@ -83,7 +84,18 @@ function mitWerkzeug(
  * räumt ab). Eine Zwischenschicht dafür wäre die nächste Abstraktion ohne
  * Nutzen.
  */
-export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten, api = primaryChatApi }: {
+export function useAiLauf({
+  conversationId,
+  providerId,
+  selectedModel,
+  canAttach,
+  denken,
+  ladeKontext,
+  setAttachments,
+  appFaehigkeiten,
+  api = primaryChatApi,
+}: {
+  conversationId?: string | null
   api?: ChatScopeApi
   providerId: number | null
   selectedModel?: string | null
@@ -131,7 +143,10 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      abortRef.current?.abort()
+      // Bewusst kein abortRef.current?.abort() hier:
+      // Verlässt der Nutzer den Chat oder wechselt die Ansicht, wird die Antwort
+      // im Hintergrund weiter generiert und über den useAiGenerationStore gemeldet.
+      // Nur explizites Drücken auf 'stoppeLauf' bricht den Vorgang ab.
     }
   }, [])
 
@@ -303,6 +318,9 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
           offeneOptimistische = false
         }
         data.proposals.forEach(merkeVorschlag)
+        if (conversationId) {
+          useAiGenerationStore.getState().startGeneration(conversationId, data.run_id)
+        }
         return
       }
       if (name === 'run') {
@@ -401,8 +419,11 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
           return { ...message, question: data }
         })
       } else if (name === 'done') {
+        if (conversationId) {
+          useAiGenerationStore.getState().finishGeneration(conversationId, true)
+        }
         aendere(aktuell!, (message) => {
-          if (typeof document !== 'undefined' && document.hidden) {
+          if (typeof document !== 'undefined' && (!mountedRef.current || document.hidden)) {
             const titel = KI_NAME
             const vorschau = (message.content || 'Antwort bereit').slice(0, 160)
             void sendeGeraeteBenachrichtigung({
@@ -441,6 +462,9 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
       } else if (name === 'proposal' || name === 'action') {
         merkeVorschlag(data)
       } else if (name === 'error') {
+        if (conversationId) {
+          useAiGenerationStore.getState().finishGeneration(conversationId, false)
+        }
         gescheitert = true
         // Der stabile Code sagt konkret, was fehlt (falscher Key, falsches
         // Modell, falsche Basis-URL). Der allgemeine `message_key` bleibt
@@ -513,8 +537,14 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
   /** Hängt sich an einen Lauf, der schon arbeitet. */
   const haengeAn = useCallback(async (id: string) => {
     if (streamingRef.current) return
+    if (conversationId) {
+      useAiGenerationStore.getState().startGeneration(conversationId, id)
+    }
     setStreaming(true)
     streamingRef.current = true
+    if (conversationId) {
+      useAiGenerationStore.getState().startGeneration(conversationId)
+    }
     try {
       await verfolge(
         (verarbeite, signal) => attachAiRun(id, verarbeite, signal),
@@ -523,7 +553,7 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
     } finally {
       streamingRef.current = false
     }
-  }, [verfolge])
+  }, [conversationId, verfolge])
 
   /**
    * Eine Frage abschicken.
@@ -555,6 +585,9 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
     ])
     setStreaming(true)
     streamingRef.current = true
+    if (conversationId) {
+      useAiGenerationStore.getState().startGeneration(conversationId)
+    }
     try {
       await verfolge(
         (verarbeite, signal) => api.stream({
@@ -572,7 +605,7 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
     } finally {
       streamingRef.current = false
     }
-  }, [api, appFaehigkeiten, denken.an, denken.stufe, providerId, selectedModel, streaming, verfolge])
+  }, [api, appFaehigkeiten, conversationId, denken.an, denken.stufe, providerId, selectedModel, streaming, verfolge])
 
   /** Bricht den laufenden Strom und den serverseitigen Lauf kontrolliert ab. */
   const stoppeLauf = useCallback(async () => {
@@ -581,6 +614,9 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
     setStreaming(false)
     streamingRef.current = false
     setLaufendeWerkzeuge([])
+    if (conversationId) {
+      useAiGenerationStore.getState().clearGeneration(conversationId)
+    }
     setEntries((current) => current.map((entry) => (
       entry.kind === 'message' && entry.message.status === 'streaming'
         ? { ...entry, message: { ...entry.message, status: 'complete' } }
@@ -591,7 +627,7 @@ export function useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKo
     } catch {
       // Stoppen schlägt fehl, wenn der Lauf bereits ruht — harmlos
     }
-  }, [api])
+  }, [api, conversationId])
 
   return {
     entries, setEntries, streaming, laufendeWerkzeuge, runId, setRunId,

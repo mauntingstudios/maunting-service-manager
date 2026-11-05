@@ -170,11 +170,39 @@ def list_user_conversations(
 ) -> list[AiConversation]:
     """Listet alle Chat-Unterhaltungen des Benutzers, sortiert nach Pin und Aktivitaet."""
     from models.dis_text import vorab_entschluesselt
+    from models import AiMessage
+
+    # Leere Unterhaltungen (0 Nachrichten), die nicht angeheftet sind und keinem
+    # Projekt angehoeren, belasten den Verlauf nicht. Existieren echte Gespraeche,
+    # werden verwaiste Rumpf-Chats ohne Inhalt bereinigt.
+    conv_with_msgs = (
+        db.query(AiMessage.conversation_id)
+        .join(AiConversation, AiMessage.conversation_id == AiConversation.id)
+        .filter(AiConversation.user_id == user.id, AiConversation.kind == "primary")
+        .distinct()
+    )
+    msg_conv_ids = [row[0] for row in conv_with_msgs.all() if row[0]]
+    if msg_conv_ids:
+        try:
+            db.query(AiConversation).filter(
+                AiConversation.user_id == user.id,
+                AiConversation.kind == "primary",
+                AiConversation.pinned == False,
+                AiConversation.project_id.is_(None),
+                ~AiConversation.id.in_(msg_conv_ids),
+            ).delete(synchronize_session=False)
+            db.commit()
+        except Exception:
+            db.rollback()
 
     query = db.query(AiConversation).filter(
         AiConversation.user_id == user.id,
         AiConversation.kind == "primary",
     )
+    if msg_conv_ids:
+        query = query.filter(
+            (AiConversation.pinned == True) | (AiConversation.id.in_(msg_conv_ids))
+        )
     if project_id is not None:
         query = query.filter(AiConversation.project_id == project_id)
     query = query.order_by(

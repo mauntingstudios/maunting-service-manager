@@ -14,6 +14,7 @@ import {
 import { type AiConversationSummary } from '@/api/ai'
 import { Avatar } from '@/components/app/Avatar'
 import { useAuthStore } from '@/stores/authStore'
+import { AiGenerationBadge } from './AiGenerationBadge'
 
 export type SingraSection =
   | 'chat'
@@ -234,6 +235,7 @@ function SidebarContent({
                     <MessageSquare className="h-3 w-3 shrink-0 opacity-60" aria-hidden="true" />
                   )}
                   <span className="truncate">{conv.title || 'Unterhaltung'}</span>
+                  <AiGenerationBadge conversationId={conv.id} className="ml-auto shrink-0" />
                 </button>
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                   {onTogglePinConversation && (

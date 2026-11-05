@@ -29,6 +29,7 @@ import { aiChatPreferenceKeys, readAiProviderChoice } from '@/lib/aiChatPreferen
 import { browserWahlInsKontoUebernehmen } from '@/lib/aiProviderKonto'
 import { still } from '@/lib/still'
 import { useAuthStore } from '@/stores/authStore'
+import { useAiGenerationStore } from '@/stores/aiGenerationStore'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
@@ -167,6 +168,12 @@ export function Ai({
   useEffect(() => {
     void loadConversations()
   }, [loadConversations])
+
+  useEffect(() => {
+    if (activeConversationId) {
+      useAiGenerationStore.getState().markConversationSeen(activeConversationId)
+    }
+  }, [activeConversationId])
 
   const handleNewChat = async () => {
     setActiveProjectId(undefined)

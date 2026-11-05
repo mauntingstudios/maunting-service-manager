@@ -1442,23 +1442,25 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
       {/* Create Project Dialog: Generous 3-Tab Layout */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Neues Singra-Projekt erstellen</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8">
+          <DialogHeader className="space-y-2 pb-2">
+            <DialogTitle className="text-xl font-headline font-bold text-on-surface">
+              Neues Singra-Projekt erstellen
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-on-surface-variant leading-relaxed">
               Bündele Unterhaltungen, Dateien, eine isolierte Coding-Sandbox sowie optional ein GitHub- oder GitLab-Repository mit automatischer AGENTS.md-Regelbindung.
             </DialogDescription>
           </DialogHeader>
 
           {/* 3 Step Tabs */}
-          <div className="flex items-center gap-1 border-b border-outline-variant/20 pt-2 pb-1" role="tablist">
+          <div className="flex items-center gap-1.5 border-b border-outline-variant/20 pt-2 pb-3 mb-2" role="tablist">
             <button
               type="button"
               role="tab"
               aria-selected={createTab === 'general'}
               onClick={() => setCreateTab('general')}
               className={[
-                'inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                'inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors',
                 createTab === 'general'
                   ? 'bg-primary/20 text-primary border border-primary/35'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 border border-transparent',
@@ -1473,7 +1475,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
               aria-selected={createTab === 'git'}
               onClick={() => setCreateTab('git')}
               className={[
-                'inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                'inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors',
                 createTab === 'git'
                   ? 'bg-primary/20 text-primary border border-primary/35'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 border border-transparent',
@@ -1488,7 +1490,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
               aria-selected={createTab === 'rules'}
               onClick={() => setCreateTab('rules')}
               className={[
-                'inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                'inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors',
                 createTab === 'rules'
                   ? 'bg-primary/20 text-primary border border-primary/35'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 border border-transparent',
@@ -1499,10 +1501,10 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
             </button>
           </div>
 
-          <form onSubmit={handleCreateProject} className="space-y-4 pt-2">
+          <form onSubmit={handleCreateProject} className="space-y-5 pt-1">
             {/* Tab 1: Allgemein */}
             {createTab === 'general' && (
-              <div className="space-y-4">
+              <div className="space-y-4 px-1 py-1">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
                     Name des Projekts *
@@ -1571,8 +1573,8 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
             {/* Tab 2: Quellcode & Git */}
             {createTab === 'git' && (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low/40 p-3.5 space-y-3">
+              <div className="space-y-4 px-1 py-1">
+                <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low/40 p-4 sm:p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-xs font-semibold text-on-surface">Repository-Modus</div>
@@ -1676,8 +1678,8 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
             {/* Tab 3: Anweisungen & AGENTS.md */}
             {createTab === 'rules' && (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-primary/25 bg-primary/10 p-3.5 text-xs space-y-1.5">
+              <div className="space-y-4 px-1 py-1">
+                <div className="rounded-xl border border-primary/25 bg-primary/10 p-4 sm:p-5 text-xs space-y-2">
                   <div className="flex items-center gap-2 font-semibold text-primary">
                     <FileText className="h-4 w-4" aria-hidden="true" />
                     <span>Automatische AGENTS.md Erkennung</span>
@@ -1706,7 +1708,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
             )}
 
             {/* Dialog Footer Actions */}
-            <div className="flex items-center justify-between gap-2 pt-3 border-t border-outline-variant/20">
+            <div className="flex items-center justify-between gap-3 pt-4 mt-2 border-t border-outline-variant/20 px-1">
               <Button
                 type="button"
                 variant="ghost"

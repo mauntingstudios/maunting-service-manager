@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { type AiConversationSummary } from '@/api/ai'
 import { Button, Input } from '@maunting/ui'
+import { AiGenerationBadge } from './AiGenerationBadge'
 
 interface SingraHistoryViewProps {
   conversations: AiConversationSummary[]
@@ -169,6 +170,7 @@ export function SingraHistoryView({
                             <span className="truncate text-sm font-medium text-on-surface">
                               {conv.title || 'Unterhaltung'}
                             </span>
+                            <AiGenerationBadge conversationId={conv.id} />
                             {isSelected && (
                               <span className="rounded-full bg-primary/20 px-2 py-0.5 text-label-sm font-medium text-primary">
                                 Aktiv

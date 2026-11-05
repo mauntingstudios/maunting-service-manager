@@ -1603,6 +1603,7 @@ def _execute_global_read_tool(
     fast_region: bool = False,
     docs_document_uid: str | None = None,
     docs_team_id: int | None = None,
+    kontext: Any = None,
 ) -> dict:
     """Werkzeuge ohne Serverbezug.
 
@@ -1822,8 +1823,14 @@ def _execute_global_read_tool(
                     except Exception:
                         pass
 
-                conv_id = getattr(kontext, "conversation_id", None) or (
-                    kontext.get("conversation_id") if isinstance(kontext, dict) else None
+                conv_id = (
+                    getattr(kontext, "conversation_id", None)
+                    if kontext is not None
+                    else None
+                ) or (
+                    kontext.get("conversation_id")
+                    if isinstance(kontext, dict)
+                    else None
                 )
                 if conv_id:
                     from models.ai_conversation import AiConversation
@@ -2889,6 +2896,7 @@ def execute_read_tool(
             docs_team_id=(
                 getattr(kontext, "team_id", None) if tool_name == "worker_start" else None
             ),
+            kontext=kontext,
         )
     server, arguments = _resolve_server(db, user, arguments)
     context = _execute_server_context_tool(

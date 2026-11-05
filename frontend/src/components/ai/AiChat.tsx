@@ -641,7 +641,17 @@ export function AiChat({
   const {
     entries, setEntries, streaming, laufendeWerkzeuge, runId, setRunId,
     merkeVorschlag, sendContent, haengeAn, stoppeLauf,
-  } = useAiLauf({ providerId, selectedModel, canAttach, denken, ladeKontext, setAttachments, appFaehigkeiten, api: chatApi })
+  } = useAiLauf({
+    conversationId: scope.kind === 'primary' ? (scope.conversationId ?? null) : null,
+    providerId,
+    selectedModel,
+    canAttach,
+    denken,
+    ladeKontext,
+    setAttachments,
+    appFaehigkeiten,
+    api: chatApi,
+  })
 
   const meldeAnhangFehler = useCallback((text: string) => {
     toast.error(text)
@@ -1494,13 +1504,15 @@ export function AiChat({
           )}
 
           {singraShell && (
-            <div className="hidden sm:flex items-center gap-2 pl-1 pr-1.5 text-xs font-semibold text-primary shrink-0">
-              <img
-                src="/singra-logo.png"
-                alt="Singra Logo"
-                className="h-5 w-5 rounded-full object-contain drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]"
-              />
-              <span>Singra</span>
+            <div className="hidden sm:flex items-center gap-2 pl-1 pr-1.5 text-xs font-semibold text-primary shrink-0 select-none">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full border border-primary/35 bg-black/60 shadow-[0_0_10px_rgba(56,189,248,0.35)] overflow-hidden">
+                <img
+                  src="/singra-logo.png"
+                  alt="Singra Logo"
+                  className="h-full w-full object-contain rounded-full"
+                />
+              </div>
+              <span className="tracking-wide">Singra</span>
             </div>
           )}
 
