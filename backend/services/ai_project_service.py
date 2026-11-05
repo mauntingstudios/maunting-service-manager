@@ -269,6 +269,7 @@ def _sync_workspace_files_to_db(db: Session, project: AiProject, ws: Path) -> No
                 if rel not in existing:
                     text = fpath.read_text(encoding="utf-8", errors="replace")
                     row = AiProjectFile(
+                        id=str(uuid4()),
                         project_id=project.id,
                         path=rel,
                         content=text,
@@ -303,6 +304,7 @@ def read_project_file(db: Session, user: User, project_id: str, rel_path: str) -
     )
     if row is None and disk_content is not None:
         row = AiProjectFile(
+            id=str(uuid4()),
             project_id=project.id,
             path=norm,
             content=disk_content,
@@ -354,6 +356,7 @@ def write_project_file(
     now = datetime.now(timezone.utc)
     if row is None:
         row = AiProjectFile(
+            id=str(uuid4()),
             project_id=project.id,
             path=norm,
             content=content or "",

@@ -133,7 +133,9 @@ class AiProjectFile(Base):
         Index("ix_ai_project_files_project_path", "project_id", "path", unique=True),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
     project_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("ai_projects.id", ondelete="CASCADE"),
