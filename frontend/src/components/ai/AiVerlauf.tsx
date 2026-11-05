@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from 'react'
-import { AlertTriangle, BookOpen, Bot, BrainCircuit, Calendar, CalendarClock, ChevronDown, ChevronRight, FolderGit2, Globe2, Loader2, Mail, Monitor, Sparkles, User, Wrench } from 'lucide-react'
+import { AlertTriangle, BookOpen, BrainCircuit, Calendar, CalendarClock, ChevronDown, ChevronRight, FolderGit2, Globe2, Loader2, Mail, Monitor, Sparkles, User, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button, Kurzinfo } from '@maunting/ui'
 
@@ -188,8 +188,12 @@ export const AiAntwortblase = memo(function AiAntwortblase({
     : null
   return (
     <article className="flex gap-3">
-      <span className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/15 text-primary border border-primary/25 shadow-sm">
-        <Bot className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-black/60 shadow-[0_0_10px_rgba(56,189,248,0.35)] overflow-hidden">
+        <img
+          src="/singra-logo.png"
+          alt="Singra"
+          className="h-full w-full object-contain rounded-full"
+        />
       </span>
       <div className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-surface-container-lowest/85 backdrop-blur-xl p-4 sm:p-5 shadow-lg text-on-surface">
         {/* Nachrichten aus der Zeit vor den Denkabschnitten: dort gibt es die
