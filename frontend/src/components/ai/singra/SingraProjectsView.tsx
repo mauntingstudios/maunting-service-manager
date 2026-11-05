@@ -110,6 +110,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
   const [inspectMode, setInspectMode] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('http://localhost:5173')
+  const [previewMode, setPreviewMode] = useState<'bundle' | 'url'>('bundle')
   const [inspectElement, setInspectElement] = useState<string | null>(null)
 
   // Sandbox Terminal
@@ -420,6 +421,45 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
   const activeFileExtension = useMemo(() => {
     return activeFilePath ? languageExtension(activeFilePath) : null
   }, [activeFilePath])
+
+  // Automatischer srcDoc-Bundle für HTML/CSS/JS-Projekte direkt im Browser
+  const previewSrcDoc = useMemo(() => {
+    if (previewMode !== 'bundle') return null
+    const htmlFile =
+      files.find((f) => f.path.toLowerCase() === 'index.html') ||
+      files.find((f) => f.path.toLowerCase().endsWith('.html'))
+    if (!htmlFile) return null
+
+    let doc = htmlFile.content || '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body></body></html>'
+
+    // Ersetze verlinkte CSS-Dateien inline
+    files
+      .filter((f) => f.path.toLowerCase().endsWith('.css'))
+      .forEach((css) => {
+        const baseName = css.path.split('/').pop() || css.path
+        const linkRegex = new RegExp(`<link[^>]+href=["'][^"']*${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`, 'gi')
+        if (linkRegex.test(doc)) {
+          doc = doc.replace(linkRegex, `<style>/* ${css.path} */\n${css.content}</style>`)
+        } else {
+          doc = doc.replace('</head>', `<style>/* ${css.path} */\n${css.content}</style></head>`)
+        }
+      })
+
+    // Ersetze verlinkte JS-Dateien inline
+    files
+      .filter((f) => f.path.toLowerCase().endsWith('.js') && !f.path.toLowerCase().endsWith('.json'))
+      .forEach((js) => {
+        const baseName = js.path.split('/').pop() || js.path
+        const scriptRegex = new RegExp(`<script[^>]+src=["'][^"']*${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>\\s*</script>`, 'gi')
+        if (scriptRegex.test(doc)) {
+          doc = doc.replace(scriptRegex, `<script>/* ${js.path} */\n${js.content}</script>`)
+        } else {
+          doc = doc.replace('</body>', `<script>/* ${js.path} */\n${js.content}</script></body>`)
+        }
+      })
+
+    return doc
+  }, [files, previewMode])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -934,17 +974,57 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
               {activeTab === 'preview' && (
                 <div className="flex h-full min-h-[500px] flex-col rounded-xl border border-outline-variant/30 bg-surface-container-low/35 overflow-hidden">
-                  {/* Top Bar: URL, Device Switcher, Inspector Toggle, Open In Browser */}
+                  {/* Top Bar: Mode Switcher, URL, Device Switcher, Inspector Toggle, Open In Browser */}
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 bg-surface-container-low/60 px-4 py-2.5">
-                    <div className="flex items-center gap-2 flex-1 max-w-md">
-                      <Globe className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
-                      <Input
-                        value={previewUrl}
-                        onChange={(e) => setPreviewUrl(e.target.value)}
-                        placeholder="http://localhost:5173"
-                        className="h-8 text-xs font-mono"
-                        aria-label="Vorschau-URL"
-                      />
+                    <div className="flex items-center gap-2 flex-1 max-w-lg">
+                      {/* Quelle: Live-Bundle (Dateien) vs. URL (Dev-Server) */}
+                      <div className="flex items-center rounded-lg border border-outline-variant/30 bg-surface-container-high/40 p-0.5 shrink-0 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewMode('bundle')}
+                          className={[
+                            'px-2 py-1 rounded-md transition-colors font-medium',
+                            previewMode === 'bundle'
+                              ? 'bg-primary/20 text-primary'
+                              : 'text-on-surface-variant hover:text-on-surface',
+                          ].join(' ')}
+                          title="Rendert die Projektdateien (HTML/CSS/JS) direkt"
+                        >
+                          Projektdateien
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewMode('url')}
+                          className={[
+                            'px-2 py-1 rounded-md transition-colors font-medium',
+                            previewMode === 'url'
+                              ? 'bg-primary/20 text-primary'
+                              : 'text-on-surface-variant hover:text-on-surface',
+                          ].join(' ')}
+                          title="Verbindet mit einem laufenden Dev-Server (z. B. Vite/Next/Flask)"
+                        >
+                          Server-URL
+                        </button>
+                      </div>
+
+                      {previewMode === 'url' ? (
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <Globe className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+                          <Input
+                            value={previewUrl}
+                            onChange={(e) => setPreviewUrl(e.target.value)}
+                            placeholder="http://localhost:5173"
+                            className="h-8 text-xs font-mono"
+                            aria-label="Vorschau-URL"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-on-surface-variant truncate font-mono">
+                          {files.some((f) => f.path.toLowerCase().endsWith('.html'))
+                            ? `Live-Rendering: ${files.find((f) => f.path.toLowerCase() === 'index.html')?.path || files.find((f) => f.path.toLowerCase().endsWith('.html'))?.path}`
+                            : 'Keine HTML-Datei gefunden'}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -1006,16 +1086,18 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                         {inspectMode ? 'Inspektor aktiv' : 'Element inspizieren'}
                       </Button>
 
-                      {/* Open in external tab */}
-                      <a
-                        href={previewUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-outline-variant/30 bg-surface-container-high/50 text-on-surface-variant hover:text-on-surface transition-colors"
-                        title="Im neuen Tab öffnen"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
+                      {/* Open in external tab (nur bei URL sinnvoll) */}
+                      {previewMode === 'url' && (
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-outline-variant/30 bg-surface-container-high/50 text-on-surface-variant hover:text-on-surface transition-colors"
+                          title="Im neuen Tab öffnen"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
                     </div>
                   </div>
 
@@ -1058,12 +1140,24 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                         previewDevice === 'desktop' ? 'w-full' : previewDevice === 'tablet' ? 'w-[768px]' : 'w-[375px]',
                       ].join(' ')}
                     >
-                      <iframe
-                        src={previewUrl}
-                        title="Projekt Live-Vorschau"
-                        className="w-full flex-1 border-0 min-h-[400px]"
-                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                      />
+                      {previewMode === 'bundle' && !previewSrcDoc ? (
+                        <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-on-surface-variant">
+                          <Globe className="h-10 w-10 text-primary/40 mb-3" />
+                          <p className="text-sm font-medium text-on-surface">Keine HTML-Datei vorhanden</p>
+                          <p className="text-xs text-on-surface-variant max-w-sm mt-1">
+                            Sobald eine <code>index.html</code> (oder andere HTML-Datei) im Projekt existiert, wird sie hier automatisch mit verlinktem CSS und JS gerendert.
+                          </p>
+                        </div>
+                      ) : (
+                        <iframe
+                          key={previewMode === 'bundle' ? 'bundle-preview' : previewUrl}
+                          src={previewMode === 'url' ? previewUrl : undefined}
+                          srcDoc={previewMode === 'bundle' ? (previewSrcDoc ?? undefined) : undefined}
+                          title="Projekt Live-Vorschau"
+                          className="w-full flex-1 border-0 min-h-[400px] bg-white"
+                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
