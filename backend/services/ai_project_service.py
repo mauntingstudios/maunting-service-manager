@@ -105,7 +105,8 @@ def list_projects(db: Session, user: User, *, team_id: int | None = None) -> lis
     else:
         q = q.filter(AiProject.user_id == user.id, AiProject.team_id.is_(None))
     q = q.order_by(AiProject.pinned.desc(), AiProject.updated_at.desc(), AiProject.id.desc())
-    return vorab_entschluesselt(db, q, AiProject.name, AiProject.description, AiProject.system_prompt)
+    with vorab_entschluesselt(db, q, AiProject.name, AiProject.description, AiProject.system_prompt):
+        return q.all()
 
 
 def create_project(
@@ -228,7 +229,8 @@ def list_project_files(db: Session, user: User, project_id: int) -> list[AiProje
         .filter(AiProjectFile.project_id == project.id)
         .order_by(AiProjectFile.path.asc())
     )
-    return vorab_entschluesselt(db, q, AiProjectFile.content)
+    with vorab_entschluesselt(db, q, AiProjectFile.content):
+        return q.all()
 
 
 def _sync_workspace_files_to_db(db: Session, project: AiProject, ws: Path) -> None:
@@ -386,8 +388,9 @@ def delete_project_file(db: Session, user: User, project_id: int, rel_path: str)
 
 
 def _materialize_db_files_to_workspace(db: Session, project: AiProject, ws: Path) -> None:
-    rows = db.query(AiProjectFile).filter(AiProjectFile.project_id == project.id).all()
-    vorab_entschluesselt(db, rows, AiProjectFile.content)
+    q = db.query(AiProjectFile).filter(AiProjectFile.project_id == project.id)
+    with vorab_entschluesselt(db, q, AiProjectFile.content):
+        rows = q.all()
     for row in rows:
         try:
             norm = normalize_rel_path(row.path)

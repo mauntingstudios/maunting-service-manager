@@ -113,7 +113,7 @@ def list_mcp_servers(
         .filter(or_(*filters))
         .order_by(AiMcpServer.scope.asc(), AiMcpServer.id.asc())
     )
-    rows = vorab_entschluesselt(
+    with vorab_entschluesselt(
         db,
         q,
         AiMcpServer.name,
@@ -122,7 +122,8 @@ def list_mcp_servers(
         AiMcpServer.command_json,
         AiMcpServer.auth_header,
         AiMcpServer.tools_cache_json,
-    )
+    ):
+        rows = q.all()
     return [_to_response(r) for r in rows]
 
 
