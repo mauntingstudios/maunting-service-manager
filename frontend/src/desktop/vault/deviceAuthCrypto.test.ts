@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDeviceAuthQrValueV3,
   decryptAuthPayload,
+  DEVICE_AUTH_ENVELOPE_V2_PREFIX,
   encryptAuthPayload,
   fingerprintPublicKey,
   generateEphemeralAuthKeyPair,
@@ -28,6 +29,25 @@ describe('deviceAuthCrypto', () => {
 
     const decrypted = await decryptAuthPayload(privateKey, ciphertext)
     expect(decrypted).toEqual(payload)
+  })
+
+  it('verschlüsselt und entschlüsselt große Unlock-Payloads mit keyBase64 hybrid über sv-device-auth-v2:', async () => {
+    const { publicKeyBase64, privateKey } = await generateEphemeralAuthKeyPair()
+
+    const unlockPayload = {
+      action: 'unlock',
+      bucketId: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      bucketAuthToken: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+      keyBase64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+      authorizedBy: 'MaikMobile',
+      timestamp: Date.now(),
+    }
+
+    const ciphertext = await encryptAuthPayload(publicKeyBase64, unlockPayload)
+    expect(ciphertext.startsWith(DEVICE_AUTH_ENVELOPE_V2_PREFIX)).toBe(true)
+
+    const decrypted = await decryptAuthPayload(privateKey, ciphertext)
+    expect(decrypted).toEqual(unlockPayload)
   })
 
   it('parst und validiert gültige QR-Code-Payloads', () => {

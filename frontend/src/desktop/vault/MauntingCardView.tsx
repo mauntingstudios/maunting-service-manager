@@ -93,14 +93,18 @@ export function MauntingCard({
   const handleDeviceAuthQrSuccess = useCallback(
     (payload: Record<string, unknown>) => {
       if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('mss:vault_device_authorized', 'true')
+        localStorage.setItem('mss:vault_setup_done', 'true')
         localStorage.setItem('msm_vault_device_authorized', 'true')
         localStorage.setItem('msm_vault_setup_done', 'true')
         if (typeof payload.bucketId === 'string' && payload.bucketId) {
+          localStorage.setItem('mss:vault_server_bucket', payload.bucketId)
           localStorage.setItem('msm_vault_server_bucket', payload.bucketId)
         }
       }
       useVaultStore.setState((prev) => ({
         ...prev,
+        isInitialized: true,
         isDeviceAuthorized: true,
         bucketId: typeof payload.bucketId === 'string' && payload.bucketId ? payload.bucketId : prev.bucketId,
         failedUnlockAttempts: 0,
@@ -114,16 +118,34 @@ export function MauntingCard({
   )
 
   const handleUnlockQrSuccess = useCallback(
-    () => {
-      useVaultStore.setState((prev) => ({
-        ...prev,
-        isUnlocked: true,
-        failedUnlockAttempts: 0,
-        unlockError: null,
-      }))
-      toast.success(t('mss.vault.entsperrtErfolg', 'Maunting Card via Smartcard-Wallet erfolgreich entsperrt'))
-      setUnlockDialogOpen(false)
-      onUnlockSuccess?.()
+    (payload: Record<string, unknown>) => {
+      void (async () => {
+        if (
+          typeof payload?.keyBase64 === 'string' &&
+          typeof payload?.bucketId === 'string' &&
+          typeof payload?.bucketAuthToken === 'string'
+        ) {
+          const ok = await useVaultStore.getState().unlockWithTransferredKey({
+            keyBase64: payload.keyBase64,
+            bucketId: payload.bucketId,
+            bucketAuthToken: payload.bucketAuthToken,
+          })
+          if (!ok) {
+            toast.error(t('mss.vault.errors.unlockFailed', 'Entsperren fehlgeschlagen.'))
+            return
+          }
+        } else {
+          useVaultStore.setState((prev) => ({
+            ...prev,
+            isUnlocked: true,
+            failedUnlockAttempts: 0,
+            unlockError: null,
+          }))
+        }
+        toast.success(t('mss.vault.entsperrtErfolg', 'Maunting Card via Smartcard-Wallet erfolgreich entsperrt'))
+        setUnlockDialogOpen(false)
+        onUnlockSuccess?.()
+      })()
     },
     [t, onUnlockSuccess],
   )

@@ -16,11 +16,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { listen } from '@tauri-apps/api/event'
-import { ArrowLeft, BookOpen, Bot, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, Settings as SettingsIcon, ShieldAlert, StickyNote, Users, WifiOff, X } from 'lucide-react'
+import { ArrowLeft, BookOpen, Bot, Calendar as CalendarIcon, Eye, FileText, Globe, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, QrCode, Settings as SettingsIcon, ShieldAlert, StickyNote, Users, WifiOff, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
 import { istAbbruch } from '@/lib/networkErrors'
+import { still } from '@/lib/still'
 import { AiTab } from '@/pages/profile/AiTab'
 import { AiRunNotice } from '@/components/ai/AiRunNotice'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
@@ -71,6 +72,7 @@ import { DashboardBereich } from './dashboard/DashboardBereich'
 import { dashboardElternroute, dashboardTitelKey, istDashboardRoute } from './dashboard/dashboardWege'
 import { HilfeBereich, istHilfeRoute } from './hilfe/HilfeBereich'
 import { VaultView } from './vault/VaultView'
+import { SmartcardWalletModal } from './vault/SmartcardWalletModal'
 import { kameraBeobachten } from './vault/kameraSicherung'
 import { eingangBeobachten } from './vault/tresorEingang'
 import { tresorAutoSperrQuelle, useVaultStore } from './vault/vaultStore'
@@ -173,6 +175,21 @@ export function DesktopApp() {
 
   const isUnlocked = useVaultStore((s) => s.isUnlocked)
   const isTeamVaultUnlocked = useTeamVaultStore((s) => s.isUnlocked)
+  const [walletOffen, setWalletOffen] = useState(false)
+
+  useEffect(() => {
+    const oeffneWallet = () => setWalletOffen(true)
+    window.addEventListener('msm:open-wallet', oeffneWallet)
+    try {
+      const msmRand = (window as unknown as { MsmRand?: { walletAngefordertVerbrauchen?: () => boolean } }).MsmRand
+      if (msmRand?.walletAngefordertVerbrauchen?.()) {
+        setWalletOffen(true)
+      }
+    } catch (err) {
+      still(err, 'DesktopApp.walletAngefordertVerbrauchen')
+    }
+    return () => window.removeEventListener('msm:open-wallet', oeffneWallet)
+  }, [])
 
   // Automatische Sperre bei Inaktivität oder Fensterwechsel. Tresor und
   // Messenger haben eigene Fristen und eigene Schlösser, aber dieselbe
@@ -706,6 +723,7 @@ export function DesktopApp() {
         <BrowserBestaetigungDialog />
         <PasskeyFernBestaetigung />
         <PromptDialog />
+        <SmartcardWalletModal isOpen={walletOffen} onClose={() => setWalletOffen(false)} />
         {splash && <Splash onFertig={splashBeenden} />}
       </div>
     </MemoryRouter>
@@ -1360,18 +1378,31 @@ function Hauptseite({
               )}
 
               {darfTresor && (
-                <button
-                  type="button"
-                  onClick={() => { navigate('/tresor'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'tresor'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <KeyRound className="h-4 w-4" />
-                  <span>{t('mss.app.tresor')}</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { navigate('/tresor'); setMobileMenuOffen(false); }}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                      bereich === 'tresor'
+                        ? 'bg-primary/15 text-primary border border-primary/30'
+                        : 'text-on-surface hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    <span>{t('mss.app.tresor')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOffen(false)
+                      window.dispatchEvent(new Event('msm:open-wallet'))
+                    }}
+                    className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-high"
+                  >
+                    <QrCode className="h-4 w-4 text-primary" />
+                    <span>{t('mss.vault.walletModus', 'Smartcard-Wallet')}</span>
+                  </button>
+                </>
               )}
 
               {!isOffline && (

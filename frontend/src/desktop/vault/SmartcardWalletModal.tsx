@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, X, AlertCircle } from 'lucide-react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { CheckCircle2, X, AlertCircle, Fingerprint, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Button, PasswordInput } from '@maunting/ui'
 
 import { useBackgroundQrScanner } from '@/hooks/useBackgroundQrScanner'
 import { fetchDeviceAuthPublicKey, resolveDeviceAuthSession } from '@/api/vaultDeviceAuth'
@@ -8,6 +9,7 @@ import { encryptAuthPayload, fingerprintPublicKey, parseDeviceAuthQrCode } from 
 import { useVaultStore } from './vaultStore'
 import { useAuthStore } from '@/stores/authStore'
 import { still } from '@/lib/still'
+import { FACH_TRESOR, biometrieEntsperren } from '../tauri'
 import { MauntingCard } from './MauntingCardView'
 
 export interface SmartcardWalletModalProps {
@@ -15,26 +17,64 @@ export interface SmartcardWalletModalProps {
   onClose: () => void
 }
 
+interface PendingUnlockTarget {
+  sid: string
+  rt: string
+  publicKeyBase64: string
+}
+
 /**
  * Smartcard-Wallet-Modus für Smartphones.
  *
  * Zeigt die Maunting Smartcard im vollflächigen Querformat. Im Hintergrund läuft
  * eine unsichtbare High-Speed-Kamera, die das Zielgerät (Desktop/Browser) innerhalb
- * von < 0,5 Sekunden scannt und per Zero-Knowledge E2EE Session-Relay autorisiert.
+ * von < 0,5 Sekunden scannt und per Zero-Knowledge E2EE Session-Relay autorisiert
+ * oder entsperrt.
  */
 export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalProps) {
   const { t } = useTranslation()
   const user = useAuthStore((s) => s.user)
-  const { bucketId } = useVaultStore()
+  const {
+    bucketId,
+    isDeviceAuthorized,
+    isBiometricsEnabled,
+    isBiometricsSupported,
+    getKnownBucketId,
+    deriveWalletUnlockPayload,
+  } = useVaultStore()
 
   const [isPortrait, setIsPortrait] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [pendingUnlock, setPendingUnlock] = useState<PendingUnlockTarget | null>(null)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [isSubmittingPassword, setIsSubmittingPassword] = useState(false)
 
-  // Bildschirm-Orientierung überwachen
+  const knownBucketId =
+    bucketId ||
+    getKnownBucketId?.() ||
+    (typeof localStorage !== 'undefined'
+      ? localStorage.getItem('mss:vault_server_bucket') || localStorage.getItem('msm_vault_server_bucket')
+      : null)
+
+  const isCardConfirmedOnPhone =
+    isDeviceAuthorized !== false ||
+    Boolean(knownBucketId) ||
+    (typeof localStorage !== 'undefined' &&
+      (localStorage.getItem('mss:vault_device_authorized') === 'true' ||
+        localStorage.getItem('msm_vault_device_authorized') === 'true'))
+
+  // Bildschirm-Orientierung überwachen & Android-Activity ins Querformat drehen
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) {
+      setPendingUnlock(null)
+      setPasswordInput('')
+      setErrorMessage(null)
+      setSuccessMessage(null)
+      setIsProcessing(false)
+      return
+    }
 
     const checkOrientation = () => {
       const portrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth
@@ -45,7 +85,12 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
     window.addEventListener('resize', checkOrientation)
     window.addEventListener('orientationchange', checkOrientation)
 
-    // Versuche Screen-Orientation API für natives Querformat zu sperren
+    try {
+      ;(window as unknown as { MsmRand?: { querformat?: (aktiv: boolean) => void } }).MsmRand?.querformat?.(true)
+    } catch (err) {
+      still(err, 'SmartcardWalletModal.MsmRand.querformat.true')
+    }
+
     try {
       const anyScreen = window.screen as any
       if (anyScreen?.orientation?.lock) {
@@ -61,6 +106,11 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
       window.removeEventListener('resize', checkOrientation)
       window.removeEventListener('orientationchange', checkOrientation)
       try {
+        ;(window as unknown as { MsmRand?: { querformat?: (aktiv: boolean) => void } }).MsmRand?.querformat?.(false)
+      } catch (err) {
+        still(err, 'SmartcardWalletModal.MsmRand.querformat.false')
+      }
+      try {
         const anyScreen = window.screen as any
         if (anyScreen?.orientation?.unlock) {
           anyScreen.orientation.unlock()
@@ -71,14 +121,49 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
     }
   }, [isOpen])
 
+  const completeUnlockWithPassword = useCallback(
+    async (target: PendingUnlockTarget, masterPassword: string) => {
+      const transfer = await deriveWalletUnlockPayload(masterPassword)
+      const payloadData = {
+        action: 'unlock' as const,
+        bucketId: transfer.bucketId,
+        bucketAuthToken: transfer.bucketAuthToken,
+        keyBase64: transfer.keyBase64,
+        authorizedBy: user?.username || 'Mobile Smartcard',
+        timestamp: Date.now(),
+      }
+      const encryptedPayload = await encryptAuthPayload(target.publicKeyBase64, payloadData)
+      await resolveDeviceAuthSession(target.sid, encryptedPayload, target.rt)
+
+      setPendingUnlock(null)
+      setPasswordInput('')
+      setSuccessMessage('Zielgerät erfolgreich entsperrt!')
+      try {
+        navigator.vibrate?.([60, 40, 120])
+      } catch (err) {
+        still(err, 'SmartcardWalletModal.vibrateSuccess')
+      }
+      setTimeout(() => {
+        onClose()
+      }, 1400)
+    },
+    [deriveWalletUnlockPayload, user?.username, onClose],
+  )
+
   // Behandlung des gescannten QR-Codes
   const handleQrDetected = useCallback(
     async (rawCode: string) => {
-      if (isProcessing || successMessage) return
+      if (isProcessing || successMessage || pendingUnlock) return
 
       const parsed = parseDeviceAuthQrCode(rawCode)
       if (!parsed) {
         // Nicht unser QR-Code-Format; weiter scannen
+        return
+      }
+
+      if (!isCardConfirmedOnPhone) {
+        setErrorMessage('Bitte bestätige zuerst deine Maunting Card auf diesem Smartphone.')
+        setTimeout(() => setErrorMessage(null), 3500)
         return
       }
 
@@ -113,19 +198,55 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
           publicKeyBase64 = parsed.pk
         }
 
-        // Zero-Knowledge E2EE Payload verschlüsseln
+        const hasLocalKeyMaterial =
+          typeof deriveWalletUnlockPayload === 'function' &&
+          (Boolean(isBiometricsEnabled) ||
+            (typeof localStorage !== 'undefined' &&
+              Boolean(
+                localStorage.getItem('mss:vault_salt') ||
+                  localStorage.getItem('mss:vault_canary') ||
+                  localStorage.getItem('mss:vault_server_bucket') ||
+                  localStorage.getItem('msm_vault_server_bucket'),
+              )))
+
+        // Stufe 2 (Tresor entsperren): Biometrie oder Master-Passwort verlangen,
+        // damit der abgeleitete Tresorschlüssel E2EE an das Zielgerät übertragen wird.
+        if (parsed.p === 'unlock' && hasLocalKeyMaterial) {
+          const target: PendingUnlockTarget = {
+            sid: parsed.sid,
+            rt: parsed.rt,
+            publicKeyBase64,
+          }
+
+          if (isBiometricsEnabled && isBiometricsSupported) {
+            try {
+              const masterPw = await biometrieEntsperren(
+                t('mss.vault.walletEntsperrenGrund', 'Tresor am Zielgerät entsperren'),
+                FACH_TRESOR,
+              )
+              if (masterPw) {
+                await completeUnlockWithPassword(target, masterPw)
+                return
+              }
+            } catch (bioErr) {
+              still(bioErr, 'SmartcardWalletModal.biometricsFallbackToPassword')
+            }
+          }
+
+          // Biometrie nicht aktiv oder abgebrochen -> Master-Passwort direkt im Wallet abfragen
+          setPendingUnlock(target)
+          return
+        }
+
+        // Stufe 1 (Karte bestätigen / Gerät autorisieren): Sofort ohne Abfrage freigeben
         const payloadData = {
           action: parsed.p,
-          bucketId: bucketId || null,
+          bucketId: knownBucketId || null,
           authorizedBy: user?.username || 'Mobile Smartcard',
           timestamp: Date.now(),
         }
 
         const encryptedPayload = await encryptAuthPayload(publicKeyBase64, payloadData)
-
-        // Session auf dem Server auflösen — nur mit dem Aufloese-Token aus
-        // dem gescannten Code. Ohne es gäbe es keinen Scan-Beweis, also auch
-        // keinen Netzaufruf (parse verwirft solche Codes ohnehin schon).
         await resolveDeviceAuthSession(parsed.sid, encryptedPayload, parsed.rt)
 
         const msg =
@@ -140,7 +261,6 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
           still(err, 'SmartcardWalletModal.vibrateSuccess')
         }
 
-        // Nach kurzem Feedback-Puls Wallet-Modus schließen
         setTimeout(() => {
           onClose()
         }, 1400)
@@ -152,12 +272,61 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         setIsProcessing(false)
       }
     },
-    [isProcessing, successMessage, user?.id, user?.username, bucketId, onClose],
+    [
+      isProcessing,
+      successMessage,
+      pendingUnlock,
+      isCardConfirmedOnPhone,
+      user?.id,
+      user?.username,
+      knownBucketId,
+      deriveWalletUnlockPayload,
+      isBiometricsEnabled,
+      isBiometricsSupported,
+      completeUnlockWithPassword,
+      onClose,
+      t,
+    ],
   )
+
+  const handlePasswordUnlockSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!pendingUnlock || !passwordInput.trim() || isSubmittingPassword) return
+    setIsSubmittingPassword(true)
+    setErrorMessage(null)
+    try {
+      await completeUnlockWithPassword(pendingUnlock, passwordInput)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Master-Passwort ungültig.'
+      setErrorMessage(msg)
+    } finally {
+      setIsSubmittingPassword(false)
+    }
+  }
+
+  const handleRetryBiometrics = async () => {
+    if (!pendingUnlock || isSubmittingPassword) return
+    setIsSubmittingPassword(true)
+    setErrorMessage(null)
+    try {
+      const masterPw = await biometrieEntsperren(
+        t('mss.vault.walletEntsperrenGrund', 'Tresor am Zielgerät entsperren'),
+        FACH_TRESOR,
+      )
+      if (masterPw) {
+        await completeUnlockWithPassword(pendingUnlock, masterPw)
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Biometrie fehlgeschlagen.'
+      setErrorMessage(msg)
+    } finally {
+      setIsSubmittingPassword(false)
+    }
+  }
 
   // Unsichtbare Hintergrundkamera mit High-Speed Scanner Hook
   const { videoRef, error: cameraError } = useBackgroundQrScanner({
-    enabled: isOpen && !successMessage,
+    enabled: isOpen && !successMessage && !pendingUnlock,
     onDetected: (code) => void handleQrDetected(code),
     vibrateOnDetect: true,
   })
@@ -217,14 +386,107 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
           className={`w-full transition-all duration-300 rounded-2xl ${
             successMessage
               ? 'ring-4 ring-status-success shadow-[0_0_80px_rgba(52,211,153,0.55)] scale-[1.02]'
-              : isProcessing
-              ? 'ring-4 ring-primary shadow-[0_0_70px_rgba(56,189,248,0.5)] animate-pulse'
+              : isProcessing || pendingUnlock
+              ? 'ring-4 ring-primary shadow-[0_0_70px_rgba(56,189,248,0.5)]'
               : 'shadow-[0_0_50px_rgba(56,189,248,0.22)] ring-2 ring-primary/40'
           }`}
         >
           <MauntingCard className="w-full !max-w-none" />
         </div>
       </div>
+
+      {/* ── Stufe-2-Bestätigung: Master-Passwort / Fingerabdruck für Tresor-Entsperrung ── */}
+      {pendingUnlock && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
+          <form
+            onSubmit={handlePasswordUnlockSubmit}
+            className="w-full max-w-sm rounded-2xl border border-primary/30 bg-surface-container-low p-5 shadow-2xl space-y-3.5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary border border-primary/25">
+                  <KeyRound className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-bold text-on-surface">
+                    {t('mss.vault.walletUnlockTitle', 'Tresor am Zielgerät entsperren')}
+                  </h2>
+                  <p className="text-xs text-on-surface-variant">
+                    {t('mss.vault.walletUnlockSubtitle', 'Master-Passwort zur Schlüsselableitung bestätigen')}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingUnlock(null)
+                  setPasswordInput('')
+                  setErrorMessage(null)
+                }}
+                className="rounded-lg p-1 text-on-surface-variant hover:text-on-surface"
+                aria-label={t('common.cancel', 'Abbrechen')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <PasswordInput
+              id="wallet-unlock-master-password"
+              label={t('mss.vault.masterPasswort', 'Master-Passwort')}
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              placeholder={t('mss.vault.masterPasswortPlatzhalter', 'Master-Passwort eingeben')}
+              autoFocus
+              disabled={isSubmittingPassword}
+              required
+            />
+
+            {errorMessage && (
+              <div className="rounded-xl border border-status-destructive/30 bg-status-destructive/15 px-3 py-2 text-xs text-status-destructive">
+                {errorMessage}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              {isBiometricsEnabled && isBiometricsSupported && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void handleRetryBiometrics()}
+                  disabled={isSubmittingPassword}
+                  className="mr-auto flex items-center gap-1.5 text-xs"
+                >
+                  <Fingerprint className="h-3.5 w-3.5 text-primary" />
+                  <span>{t('mss.vault.mitFingerabdruck', 'Fingerabdruck')}</span>
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setPendingUnlock(null)
+                  setPasswordInput('')
+                  setErrorMessage(null)
+                }}
+                disabled={isSubmittingPassword}
+              >
+                {t('common.cancel', 'Abbrechen')}
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isSubmittingPassword || !passwordInput.trim()}
+              >
+                {isSubmittingPassword
+                  ? t('mss.vault.entschluessle', 'Entschlüsselt…')
+                  : t('mss.vault.entsperren', 'Entsperren')}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* ── Status-Leiste & Feedback unten ────────────────────────────── */}
       <div className="absolute bottom-5 inset-x-4 z-40 flex flex-col items-center justify-center pointer-events-none">

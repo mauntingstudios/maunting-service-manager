@@ -13,8 +13,10 @@ import {
   base64ToBytes,
   decryptVaultEntry,
   deriveVaultKeys,
+  deriveVaultTransferMaterial,
   encryptVaultEntry,
   generateSecurePassword,
+  importVaultTransferKey,
   isBiometricsAvailable,
   promptBiometricVerification,
 } from './vaultCrypto'
@@ -474,10 +476,21 @@ interface VaultState {
 
   // Aktionen
   fetchVaultSalt: () => Promise<string | null>
+  getKnownBucketId: () => string | null
   initializeVault: (masterPassword: string) => Promise<boolean>
   authorizeDevice: (masterPassword: string) => Promise<boolean>
   unlock: (masterPassword: string) => Promise<boolean>
   unlockWithBiometrics: () => Promise<boolean>
+  deriveWalletUnlockPayload: (masterPassword: string) => Promise<{
+    keyBase64: string
+    bucketId: string
+    bucketAuthToken: string
+  }>
+  unlockWithTransferredKey: (transfer: {
+    keyBase64: string
+    bucketId: string
+    bucketAuthToken: string
+  }) => Promise<boolean>
   /**
    * Bestätigt bei offenem Tresor, dass hier jemand das Master-Passwort kennt
    * (Einfügen einer Karte ohne Windows Hello). Nach {@link BESTAETIGEN_FEHLVERSUCHE}
@@ -1727,6 +1740,160 @@ export const useVaultStore = create<VaultState>((set, get) => {
         lockedUntilMs: Date.now() + backoffMs,
         unlockError: msg,
       })
+      return false
+    }
+  },
+
+  getKnownBucketId: () => {
+    const active = get().bucketId
+    if (active) return active
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(VAULT_SERVER_BUCKET_KEY) || localStorage.getItem('msm_vault_server_bucket')
+    }
+    return null
+  },
+
+  deriveWalletUnlockPayload: async (masterPassword: string) => {
+    const now = Date.now()
+    const { lockedUntilMs, failedUnlockAttempts } = get()
+    if (lockedUntilMs > now) {
+      const waitSeconds = Math.ceil((lockedUntilMs - now) / 1000)
+      throw new TresorFehler(`Zu viele Fehlversuche. Bitte warte noch ${waitSeconds} Sekunde(n).`)
+    }
+
+    try {
+      let salt = getLocalVaultSalt()
+      if (!salt) {
+        await get().fetchVaultSalt()
+        salt = getLocalVaultSalt()
+      }
+      if (!salt) {
+        throw new TresorFehler(i18n.t('mss.vault.errors.keysMissing'))
+      }
+
+      const { userKey, keyBase64, bucketId, bucketAuthToken } = await deriveVaultTransferMaterial(
+        masterPassword,
+        salt,
+      )
+
+      const knownBucket =
+        get().bucketId ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem(VAULT_SERVER_BUCKET_KEY) : null)
+      if (knownBucket && bucketId !== knownBucket) {
+        throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+      }
+
+      const canaryCiphertext =
+        typeof localStorage !== 'undefined'
+          ? localStorage.getItem(VAULT_CANARY_KEY) ||
+            localStorage.getItem(`${VAULT_CANARY_PREFIX}${bucketId}`)
+          : null
+
+      let matchedCanary = false
+      if (canaryCiphertext) {
+        try {
+          await decryptVaultEntry(canaryCiphertext, userKey, 'vault-canary')
+          matchedCanary = true
+        } catch {
+          throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+        }
+      }
+
+      if (!matchedCanary && !knownBucket) {
+        const passt = await blindVaultCheck(bucketId, bucketAuthToken)
+        if (!passt) {
+          throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+        }
+      }
+
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(VAULT_DEVICE_AUTHORIZED_KEY, 'true')
+        localStorage.setItem(VAULT_SETUP_DONE_KEY, 'true')
+        localStorage.setItem(VAULT_SERVER_BUCKET_KEY, bucketId)
+      }
+
+      set({
+        isDeviceAuthorized: true,
+        failedUnlockAttempts: 0,
+        lockedUntilMs: 0,
+        unlockError: null,
+      })
+
+      return { keyBase64, bucketId, bucketAuthToken }
+    } catch (err: unknown) {
+      const attempts = failedUnlockAttempts + 1
+      const backoffMs = attempts >= 3 ? Math.min(60000, Math.pow(2, attempts - 3) * 1000) : 0
+      set({
+        failedUnlockAttempts: attempts,
+        lockedUntilMs: Date.now() + backoffMs,
+      })
+      throw err instanceof Error ? err : new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+    }
+  },
+
+  unlockWithTransferredKey: async ({ keyBase64, bucketId, bucketAuthToken }) => {
+    set({ isUnlocking: true, unlockError: null })
+    try {
+      if (!keyBase64 || !bucketId || !bucketAuthToken) {
+        throw new TresorFehler(i18n.t('mss.vault.errors.unlockFailed'))
+      }
+
+      const userKey = await importVaultTransferKey(keyBase64)
+
+      const canaryCiphertext =
+        typeof localStorage !== 'undefined'
+          ? localStorage.getItem(VAULT_CANARY_KEY) ||
+            localStorage.getItem(`${VAULT_CANARY_PREFIX}${bucketId}`)
+          : null
+      if (canaryCiphertext) {
+        try {
+          await decryptVaultEntry(canaryCiphertext, userKey, 'vault-canary')
+        } catch {
+          throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
+        }
+      }
+
+      await ablageLaden(bucketId)
+      const cachedBlobs = getStoredBlobs(bucketId)
+      const decryptedItems: VaultItem[] = []
+      for (const blob of cachedBlobs) {
+        if (blob.is_deleted || blob.id === 'vault-canary') continue
+        try {
+          const payload = await decryptVaultEntry(blob.ciphertext, userKey, blob.id)
+          if (payload?.[VAULT_TOMBSTONE_MARKER] === true) continue
+          decryptedItems.push(itemAusUmschlag(blob.id, blob.revision, payload))
+        } catch (err) {
+          still(err, 'vaultStore.unlockWithTransferredKey.decryptItem')
+        }
+      }
+
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(VAULT_SETUP_DONE_KEY, 'true')
+        localStorage.setItem(VAULT_SERVER_BUCKET_KEY, bucketId)
+        localStorage.setItem(VAULT_DEVICE_AUTHORIZED_KEY, 'true')
+      }
+
+      blobBasisSetzen(null)
+      set({
+        isInitialized: true,
+        isUnlocked: true,
+        isDeviceAuthorized: true,
+        isUnlocking: false,
+        failedUnlockAttempts: 0,
+        lockedUntilMs: 0,
+        lastActivityTime: Date.now(),
+        userKey,
+        bucketId,
+        bucketAuthToken,
+        items: decryptedItems,
+        selectedItemId: decryptedItems.length > 0 ? decryptedItems[0].id : null,
+      })
+
+      void get().syncWithServer()
+      return true
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : i18n.t('mss.vault.errors.unlockFailed')
+      set({ isUnlocking: false, unlockError: msg })
       return false
     }
   },

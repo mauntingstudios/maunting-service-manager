@@ -1,8 +1,5 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "build": {
-    "devUrl": "http://localhost:1430"
-  },
   "bundle": {
     "android": {
       "debugApplicationIdSuffix": ".dev"
@@ -12,7 +9,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "MSS — Maunting Smart System",
+        "title": "MSS – Maunting Smart System",
         "url": "desktop.html",
         "resizable": true
       }

@@ -5,6 +5,10 @@
  * zwischen dem scannenden Smartphone und dem Zielgerät.
  */
 
+import { importAesGcmKey } from '@msdis/shield/kdf'
+import { fillRandom } from '@msdis/shield/random'
+import { SecureBuffer } from '@msdis/shield/secure-memory'
+
 /** Alter Code: der oeffentliche Schluessel steckt komplett im QR (503 Zeichen). */
 export interface DeviceAuthQrPayloadV2 {
   v: 2
@@ -37,6 +41,9 @@ export type DeviceAuthQrPayload = DeviceAuthQrPayloadV2 | DeviceAuthQrPayloadV3
 
 /** Kennung des kurzen Codes; die Version steckt im Praefix. */
 export const QR_PREFIX_V3 = 'msm3:'
+
+/** Hybrider E2EE-Umschlag (RSA-OAEP-2048 + AES-256-GCM) fuer Schluesseluebertragung. */
+export const DEVICE_AUTH_ENVELOPE_V2_PREFIX = 'sv-device-auth-v2:'
 
 /**
  * Baut den kurzen Code `msm3:<sid>:<purpose>:<rt>:<fp>` (gut 60 Zeichen).
@@ -135,18 +142,54 @@ export async function encryptAuthPayload(
   const encoder = new TextEncoder()
   const dataBytes = encoder.encode(JSON.stringify(payload))
 
-  const encryptedBuffer = await cryptoObj.subtle.encrypt(
-    { name: 'RSA-OAEP' },
-    publicKey,
-    dataBytes,
-  )
+  // RSA-OAEP-2048 mit SHA-256 fasst direkt maximal 190 Bytes. Sobald ein
+  // Tresorschlüssel (`keyBase64`) mitreist oder die Nutzlast größer wird,
+  // verschlüsselt ein ephemerer AES-256-GCM-Schlüssel die Daten und RSA-OAEP
+  // verpackt nur die 32 Schlüsselbytes (`sv-device-auth-v2:`).
+  if (dataBytes.byteLength <= 180 && !('keyBase64' in payload)) {
+    const encryptedBuffer = await cryptoObj.subtle.encrypt(
+      { name: 'RSA-OAEP' },
+      publicKey,
+      dataBytes,
+    )
+    return arrayBufferToBase64(encryptedBuffer)
+  }
 
-  return arrayBufferToBase64(encryptedBuffer)
+  const aesKeyBuf = new SecureBuffer(32)
+  try {
+    return await aesKeyBuf.useAsync(async (rawAesKey) => {
+      fillRandom(rawAesKey)
+      const iv = new Uint8Array(12)
+      fillRandom(iv)
+
+      const aesKey = await importAesGcmKey(rawAesKey)
+      const aesCipherBuffer = await cryptoObj.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        aesKey,
+        dataBytes,
+      )
+      const wrappedKeyBuffer = await cryptoObj.subtle.encrypt(
+        { name: 'RSA-OAEP' },
+        publicKey,
+        rawAesKey as unknown as BufferSource,
+      )
+
+      const cipherBytes = new Uint8Array(aesCipherBuffer)
+      const ivAndCipher = new Uint8Array(iv.byteLength + cipherBytes.byteLength)
+      ivAndCipher.set(iv, 0)
+      ivAndCipher.set(cipherBytes, iv.byteLength)
+
+      return `${DEVICE_AUTH_ENVELOPE_V2_PREFIX}${arrayBufferToBase64(wrappedKeyBuffer)}.${arrayBufferToBase64(ivAndCipher.buffer)}`
+    })
+  } finally {
+    aesKeyBuf.destroy()
+  }
 }
 
 /**
  * Entschlüsselt auf dem Zielgerät die vom Smartphone eingereichte Chiffre
- * mit dem ephemeren privaten Schlüssel.
+ * mit dem ephemeren privaten Schlüssel. Unterstützt sowohl v1 (direktes
+ * RSA-OAEP) als auch `sv-device-auth-v2:` (RSA-OAEP + AES-256-GCM).
  */
 export async function decryptAuthPayload(
   privateKey: CryptoKey,
@@ -155,6 +198,45 @@ export async function decryptAuthPayload(
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : null
   if (!cryptoObj?.subtle) {
     throw new Error('WebCrypto ist in dieser Umgebung nicht verfügbar.')
+  }
+
+  if (ciphertextBase64.startsWith(DEVICE_AUTH_ENVELOPE_V2_PREFIX)) {
+    const rest = ciphertextBase64.slice(DEVICE_AUTH_ENVELOPE_V2_PREFIX.length)
+    const parts = rest.split('.')
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      throw new Error('Ungültiges Format der Gerätefreigabe.')
+    }
+    const [wrappedKeyB64, ivAndCipherB64] = parts
+    const wrappedKeyBuffer = base64ToArrayBuffer(wrappedKeyB64)
+    const rawAesKeyBuffer = await cryptoObj.subtle.decrypt(
+      { name: 'RSA-OAEP' },
+      privateKey,
+      wrappedKeyBuffer,
+    )
+    const rawAesBytes = new Uint8Array(rawAesKeyBuffer)
+    const aesKeyBuf = SecureBuffer.fromBytes(rawAesBytes)
+    rawAesBytes.fill(0)
+
+    try {
+      return await aesKeyBuf.useAsync(async (keyBytes) => {
+        const aesKey = await importAesGcmKey(keyBytes)
+        const ivAndCipherBytes = new Uint8Array(base64ToArrayBuffer(ivAndCipherB64))
+        if (ivAndCipherBytes.byteLength <= 12) {
+          throw new Error('Ungültige Chiffre der Gerätefreigabe.')
+        }
+        const iv = ivAndCipherBytes.slice(0, 12)
+        const cipherBytes = ivAndCipherBytes.slice(12)
+        const decryptedBuffer = await cryptoObj.subtle.decrypt(
+          { name: 'AES-GCM', iv },
+          aesKey,
+          cipherBytes,
+        )
+        const jsonStr = new TextDecoder().decode(decryptedBuffer)
+        return JSON.parse(jsonStr) as Record<string, unknown>
+      })
+    } finally {
+      aesKeyBuf.destroy()
+    }
   }
 
   const encryptedBuffer = base64ToArrayBuffer(ciphertextBase64)

@@ -7415,6 +7415,12 @@
       "nurPrivat": "Privater Tresor",
       "tresorSchlossHinweis": "Zero-Knowledge Tresor-Schloss. Klicke auf die Karte oder nutze die Schaltflächen unten zum Entsperren.",
       "zurueckgesetztErfolg": "Tresor wurde erfolgreich zurückgesetzt",
+      "masterPasswortPlatzhalter": "Master-Passwort eingeben",
+      "walletEntsperrenGrund": "Tresor am Zielgerät entsperren",
+      "walletModus": "Smartcard-Wallet",
+      "walletModusOeffnen": "Smartcard-Wallet öffnen",
+      "walletUnlockSubtitle": "Master-Passwort zur Schlüsselableitung bestätigen",
+      "walletUnlockTitle": "Tresor am Zielgerät entsperren",
       "dashboard": {
         "uebersicht": "Übersicht",
         "tresorSicherheit": "Tresor-Sicherheit",

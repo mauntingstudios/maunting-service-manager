@@ -192,4 +192,57 @@ describe('SmartcardWalletModal Component', () => {
       expect(resolveDeviceAuthSession).not.toHaveBeenCalled()
     })
   })
+
+  it('fragt bei Stufe-2-Entsperrung (unlock) ohne aktive Biometrie das Master-Passwort ab und überträgt den Schlüssel', async () => {
+    const schluessel = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0abcdef1234567890'
+    const fp = await fingerprintPublicKey(schluessel)
+    const deriveWalletUnlockPayload = vi.fn().mockResolvedValue({
+      keyBase64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+      bucketId: 'bucket-123',
+      bucketAuthToken: 'auth-token-123',
+    })
+
+    localStorage.setItem('mss:vault_server_bucket', 'bucket-123')
+    vi.mocked(useVaultStore).mockReturnValue({
+      isInitialized: true,
+      isUnlocked: false,
+      isDeviceAuthorized: true,
+      isBiometricsEnabled: false,
+      isBiometricsSupported: false,
+      bucketId: null,
+      getKnownBucketId: () => 'bucket-123',
+      deriveWalletUnlockPayload,
+      unlock: vi.fn(),
+      lock: vi.fn(),
+      rotationState: null,
+    } as any)
+
+    vi.mocked(fetchDeviceAuthPublicKey).mockResolvedValue({ public_key: schluessel, purpose: 'unlock' })
+    vi.mocked(resolveDeviceAuthSession).mockResolvedValue({ success: true })
+
+    render(<SmartcardWalletModal isOpen={true} onClose={vi.fn()} />)
+    erkannterCode!(buildDeviceAuthQrValueV3(
+      'a1b2c3d4e5f67890',
+      'unlock',
+      'aufloese-token-aus-dem-qr-code',
+      fp,
+    ))
+
+    const pwInput = await screen.findByLabelText('Master-Passwort')
+    expect(resolveDeviceAuthSession).not.toHaveBeenCalled()
+
+    fireEvent.change(pwInput, { target: { value: 'mein-sicheres-passwort-123' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Entsperren' }))
+
+    await waitFor(() => {
+      expect(deriveWalletUnlockPayload).toHaveBeenCalledWith('mein-sicheres-passwort-123')
+      expect(resolveDeviceAuthSession).toHaveBeenCalledWith(
+        'a1b2c3d4e5f67890',
+        'chiffre-aus-test',
+        'aufloese-token-aus-dem-qr-code',
+      )
+    })
+    expect(await screen.findByText('Zielgerät erfolgreich entsperrt!')).toBeInTheDocument()
+    localStorage.removeItem('mss:vault_server_bucket')
+  })
 })

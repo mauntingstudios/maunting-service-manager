@@ -179,6 +179,7 @@ webview2-com = "0.38"
 windows-strings = "0.4"
 
 [features]
+default = ["custom-protocol"]
 # This feature is used for production builds or when a dev server is not
 # specified, DO NOT REMOVE!!
 custom-protocol = ["tauri/custom-protocol"]

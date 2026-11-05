@@ -7,8 +7,11 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
-import android.os.Build
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.webkit.JavascriptInterface
@@ -21,6 +24,10 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
+  companion object {
+    const val ACTION_OPEN_WALLET = "com.mauntingstudios.smart_system.OPEN_WALLET"
+  }
+
   /**
    * Ränder in CSS-Pixeln, die ältere WebViews nicht als env(safe-area-inset-*)
    * melden: unten die Gesten- bzw. Navigationsleiste, oben Statusleiste und
@@ -28,9 +35,12 @@ class MainActivity : TauriActivity() {
    * das Größere von beiden (`--msm-*-sicher`, lib/gestenleiste.ts).
    */
   @Volatile private var rand = mapOf("oben" to 0f, "links" to 0f, "rechts" to 0f, "unten" to 0f)
+  @Volatile private var walletAngefordert = false
+  private var hauptWebView: WebView? = null
 
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
+    hauptWebView = webView
     // Erst hier: Rust setzt die WebView nach onCreate als Inhalt und überdeckte
     // einen früher gesetzten Hinweis. `post` kommt nach diesem Setzen.
     val kennung = webView.settings.userAgentString.orEmpty()
@@ -44,6 +54,20 @@ class MainActivity : TauriActivity() {
       @JavascriptInterface fun oben(): Float = rand.getValue("oben")
       @JavascriptInterface fun links(): Float = rand.getValue("links")
       @JavascriptInterface fun rechts(): Float = rand.getValue("rechts")
+      @JavascriptInterface fun querformat(aktiv: Boolean) {
+        runOnUiThread {
+          requestedOrientation = if (aktiv) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+          } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+          }
+        }
+      }
+      @JavascriptInterface fun walletAngefordertVerbrauchen(): Boolean {
+        val war = walletAngefordert
+        walletAngefordert = false
+        return war
+      }
     }, "MsmRand")
     // Nur lesen, kein eigener OnApplyWindowInsetsListener: der ersetzt den des
     // WebViews, und env(safe-area-inset-top) fiel auf 0, die Statusleiste lag
@@ -72,6 +96,43 @@ class MainActivity : TauriActivity() {
     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     super.onCreate(savedInstanceState)
     createNotificationChannels()
+    registriereWalletShortcut()
+    pruefeWalletIntent(intent)
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    pruefeWalletIntent(intent)
+  }
+
+  private fun pruefeWalletIntent(intent: Intent?) {
+    if (intent?.action == ACTION_OPEN_WALLET) {
+      walletAngefordert = true
+      hauptWebView?.post {
+        hauptWebView?.evaluateJavascript("window.dispatchEvent(new Event('msm:open-wallet'))", null)
+      }
+    }
+  }
+
+  private fun registriereWalletShortcut() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+      try {
+        val shortcutManager = getSystemService(ShortcutManager::class.java) ?: return
+        val walletIntent = Intent(this, MainActivity::class.java).apply {
+          action = ACTION_OPEN_WALLET
+          flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val shortcut = ShortcutInfo.Builder(this, "smartcard_wallet")
+          .setShortLabel("Smartcard-Wallet")
+          .setLongLabel("Smartcard-Wallet öffnen")
+          .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
+          .setIntent(walletIntent)
+          .build()
+        shortcutManager.dynamicShortcuts = listOf(shortcut)
+      } catch (_: Throwable) {
+      }
+    }
   }
 
   /** Statt einer weißen Seite: was fehlt und ein Weg dorthin (`WebviewPruefung`). */
@@ -154,4 +215,3 @@ class MainActivity : TauriActivity() {
     }
   }
 }
-

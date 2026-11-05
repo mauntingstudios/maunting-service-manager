@@ -1546,6 +1546,19 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                         <span>{t('mss.vault.mitFingerabdruck')}</span>
                       </Button>
                     )}
+
+                    {!isTeam && isDeviceAuthorized && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => window.dispatchEvent(new Event('msm:open-wallet'))}
+                        disabled={isUnlocking}
+                        className="w-full flex items-center justify-center gap-2 py-2 text-xs border border-outline-variant/40 bg-surface-container-high/70 text-on-surface hover:border-primary/40 hover:text-primary"
+                      >
+                        <QrCode className="h-4 w-4 text-primary" />
+                        <span>{t('mss.vault.walletModusOeffnen', 'Smartcard-Wallet öffnen')}</span>
+                      </Button>
+                    )}
                   </>
                 )}
 
@@ -1870,7 +1883,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
   // ── 3. HAUPTANSICHT ──
   return (
-    <div className="flex h-full min-h-0 text-on-surface overflow-hidden">
+    <div className="flex flex-col md:flex-row h-full min-h-0 text-on-surface overflow-hidden">
       <VaultSidebar
         ansicht={ansicht}
         onAnsicht={(naechste) => {
@@ -1936,10 +1949,10 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
               }
             }}
             aria-label={t('mss.vault.neuerEintrag')}
-            className="flex items-center gap-1 bg-primary text-on-primary hover:bg-primary-hover shadow-sm px-2.5 py-1.5 text-xs font-medium max-md:w-11 max-md:px-0"
+            className="hidden md:flex items-center gap-1 bg-primary text-on-primary hover:bg-primary-hover shadow-sm px-2.5 py-1.5 text-xs font-medium"
           >
             <Plus className="h-3.5 w-3.5" />
-            <span className="max-md:hidden">{t('mss.vault.neuerEintrag')}</span>
+            <span>{t('mss.vault.neuerEintrag')}</span>
           </Button>
           )}
 
@@ -2322,13 +2335,26 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
             if (naechste === 'tresor') setFilter('alle')
             if (naechste !== 'tresor') setOrdnerFilter(null)
           }}
-          onNeuerEintrag={() => openNewEntryModal()}
+          onNeuerEintrag={() => {
+            if (ansicht === 'tresor' && filter === 'notizen') {
+              setNotizBearbeitet(null)
+              setNotizDialogOffen(true)
+            } else {
+              openNewEntryModal()
+            }
+          }}
           anzahlImPapierkorb={anzahlImPapierkorb}
+          notizenAktiv={ansicht === 'tresor' && filter === 'notizen'}
           onNotizen={() => {
             setAnsicht('tresor')
             setFilter('notizen')
             setOrdnerFilter(null)
           }}
+          onWallet={
+            !isTeam && isDeviceAuthorized
+              ? () => window.dispatchEvent(new Event('msm:open-wallet'))
+              : undefined
+          }
           onPasswortGenerieren={() => setGeneratorOffen(true)}
           onSicherheitscheck={() => {
             setCheckStand((stand) => ({ ...stand, laeuft: true }))

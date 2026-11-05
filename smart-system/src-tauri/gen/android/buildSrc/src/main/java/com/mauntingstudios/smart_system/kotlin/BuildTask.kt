@@ -41,15 +41,6 @@ open class BuildTask : DefaultTask() {
         jniDir.mkdirs()
         val targetSo = File(jniDir, "libmaunting_smart_system_lib.so")
 
-        if (builtSo.exists()) {
-            project.logger.lifecycle("Found existing built library at ${builtSo.absolutePath}, copying to JNI...")
-            if (targetSo.exists()) {
-                targetSo.delete()
-            }
-            builtSo.copyTo(targetSo, overwrite = true)
-            return
-        }
-
         val userHome = System.getProperty("user.home") ?: ""
         val isWindows = System.getProperty("os.name")?.lowercase()?.contains("win") == true
         val cargoExeCandidate = File(userHome, ".cargo/bin/cargo" + if (isWindows) ".exe" else "")

@@ -12,6 +12,7 @@ import {
   Lock,
   MoreHorizontal,
   Plus,
+  QrCode,
   Shield,
   ShieldCheck,
   Sparkles,
@@ -25,7 +26,9 @@ export interface TresorUntereLeisteProps {
   onAnsicht: (ansicht: VaultAnsicht) => void
   onNeuerEintrag: () => void
   anzahlImPapierkorb: number
+  notizenAktiv?: boolean
   onNotizen?: () => void
+  onWallet?: () => void
   onPasswortGenerieren?: () => void
   onSicherheitscheck?: () => void
   onImportExport?: () => void
@@ -41,7 +44,9 @@ export function TresorUntereLeiste({
   onAnsicht,
   onNeuerEintrag,
   anzahlImPapierkorb,
+  notizenAktiv = false,
   onNotizen,
+  onWallet,
   onPasswortGenerieren,
   onSicherheitscheck,
   onImportExport,
@@ -51,24 +56,21 @@ export function TresorUntereLeiste({
   const { t } = useTranslation()
   const [mehrOffen, setMehrOffen] = useState(false)
 
-  const reiter = (id: VaultAnsicht, labelKey: string, icon: ReactNode) => {
-    const aktiv = ansicht === id
-    return (
-      <button
-        key={id}
-        type="button"
-        role="tab"
-        aria-selected={aktiv}
-        onClick={() => onAnsicht(id)}
-        className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[0.65rem] font-medium transition-colors ${
-          aktiv ? 'text-primary' : 'text-on-surface-variant'
-        }`}
-      >
-        {icon}
-        <span className="max-w-full truncate">{t(labelKey)}</span>
-      </button>
-    )
-  }
+  const reiter = (id: string, aktiv: boolean, labelKey: string, icon: ReactNode, onClick: () => void) => (
+    <button
+      key={id}
+      type="button"
+      role="tab"
+      aria-selected={aktiv}
+      onClick={onClick}
+      className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[0.65rem] font-medium transition-colors ${
+        aktiv ? 'text-primary' : 'text-on-surface-variant'
+      }`}
+    >
+      {icon}
+      <span className="max-w-full truncate">{t(labelKey)}</span>
+    </button>
+  )
 
   const mehrAktiv = ansicht !== 'uebersicht' && ansicht !== 'tresor'
   const darfNeuAnlegen = ansicht === 'uebersicht' || ansicht === 'tresor'
@@ -80,10 +82,10 @@ export function TresorUntereLeiste({
           role="tablist"
           aria-orientation="horizontal"
           aria-label={t('mss.vault.titelManager')}
-          className="grid grid-cols-4 items-center px-2 py-1"
+          className="grid grid-cols-5 items-center px-2 py-1"
         >
-          {reiter('uebersicht', 'mss.vault.dashboard.uebersicht', <LayoutGrid className={SYMBOL} />)}
-          {reiter('tresor', 'mss.vault.ansicht.tresor', <Shield className={SYMBOL} />)}
+          {reiter('uebersicht', ansicht === 'uebersicht', 'mss.vault.dashboard.uebersicht', <LayoutGrid className={SYMBOL} />, () => onAnsicht('uebersicht'))}
+          {reiter('tresor', ansicht === 'tresor' && !notizenAktiv, 'mss.vault.ansicht.tresor', <Shield className={SYMBOL} />, () => onAnsicht('tresor'))}
           <button
             type="button"
             onClick={onNeuerEintrag}
@@ -96,6 +98,13 @@ export function TresorUntereLeiste({
           >
             <Plus className="h-5 w-5" aria-hidden="true" />
           </button>
+          {reiter(
+            'notizen',
+            Boolean(notizenAktiv),
+            'mss.vault.dashboard.filterNotizen',
+            <FileText className={SYMBOL} />,
+            () => (onNotizen ? onNotizen() : onAnsicht('tresor')),
+          )}
           <button
             type="button"
             role="tab"
@@ -112,13 +121,13 @@ export function TresorUntereLeiste({
       </div>
 
       <Blattmenue offen={mehrOffen} onSchliessen={() => setMehrOffen(false)} titel={t('mss.vault.dashboard.mehr')}>
-        {onNotizen && (
+        {onWallet && (
           <Blatteintrag
-            icon={<FileText className={SYMBOL} />}
-            label={t('mss.vault.dashboard.filterNotizen')}
+            icon={<QrCode className={SYMBOL} />}
+            label={t('mss.vault.walletModus', 'Smartcard-Wallet')}
             onClick={() => {
               setMehrOffen(false)
-              onNotizen()
+              onWallet()
             }}
           />
         )}

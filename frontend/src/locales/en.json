@@ -7415,6 +7415,12 @@
       "nurPrivat": "Personal vault",
       "tresorSchlossHinweis": "Zero-knowledge vault lock. Click the card or use the buttons below to unlock.",
       "zurueckgesetztErfolg": "Vault was successfully reset",
+      "masterPasswortPlatzhalter": "Enter master password",
+      "walletEntsperrenGrund": "Unlock vault on target device",
+      "walletModus": "Smartcard Wallet",
+      "walletModusOeffnen": "Open Smartcard Wallet",
+      "walletUnlockSubtitle": "Confirm master password to derive key",
+      "walletUnlockTitle": "Unlock vault on target device",
       "dashboard": {
         "uebersicht": "Overview",
         "tresorSicherheit": "Vault security",

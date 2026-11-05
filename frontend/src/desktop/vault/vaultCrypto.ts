@@ -194,6 +194,77 @@ export async function deriveVaultKeys(
 }
 
 /**
+ * Leitet für die kurzlebige Smartcard-Fernentsperrung neben dem `userKey`
+ * (für die lokale Canary-Prüfung) auch das Base64-kodierte 32-Byte-Schlüsselmaterial
+ * ab, das E2EE-verschlüsselt an das Zielgerät übertragen wird.
+ */
+export async function deriveVaultTransferMaterial(
+  masterPassword: string,
+  saltBytes: Uint8Array,
+): Promise<{ userKey: CryptoKey; keyBase64: string; bucketId: string; bucketAuthToken: string }> {
+  if (!masterPassword || masterPassword.length === 0) {
+    throw new Error(i18n.t('mss.vault.errors.emptyPassword'))
+  }
+  if (!saltBytes || saltBytes.byteLength < 16) {
+    throw new Error(i18n.t('mss.vault.errors.invalidSalt'))
+  }
+
+  const rawBytes = await argon2idRaw({
+    password: masterPassword,
+    salt: saltBytes,
+    memorySize: 65536,
+    iterations: 3,
+    parallelism: 4,
+    hashLength: 64,
+  })
+
+  const secureBuf = SecureBuffer.fromBytes(rawBytes)
+  rawBytes.fill(0)
+
+  try {
+    return await secureBuf.useAsync(async (bytes) => {
+      const keyBytes = bytes.slice(0, 32)
+      const bucketSeed = bytes.slice(32, 64)
+
+      const userKey = await importAesGcmKey(keyBytes)
+      const keyBase64 = bytesToBase64(keyBytes)
+      const bucketId = await sha256Hex(bucketSeed)
+
+      const authSuffix = new TextEncoder().encode(':msm-vault-auth-v1')
+      const authMaterial = concatBytes(bucketSeed, authSuffix)
+      const bucketAuthToken = await sha256Hex(authMaterial)
+
+      keyBytes.fill(0)
+      authMaterial.fill(0)
+      bucketSeed.fill(0)
+
+      return { userKey, keyBase64, bucketId, bucketAuthToken }
+    })
+  } finally {
+    secureBuf.destroy()
+  }
+}
+
+/**
+ * Importiert einen per E2EE übertragenen 32-Byte-Tresorschlüssel als
+ * nicht-extrahierbaren AES-256-GCM `CryptoKey` und nullt die Rohbytes sofort.
+ */
+export async function importVaultTransferKey(keyBase64: string): Promise<CryptoKey> {
+  const raw = base64ToBytes(keyBase64)
+  if (raw.byteLength !== 32) {
+    raw.fill(0)
+    throw new Error(i18n.t('mss.vault.errors.decryptionFailed'))
+  }
+  const secureBuf = SecureBuffer.fromBytes(raw)
+  raw.fill(0)
+  try {
+    return await secureBuf.useAsync(async (bytes) => importAesGcmKey(bytes))
+  } finally {
+    secureBuf.destroy()
+  }
+}
+
+/**
  * Verschlüsselt eine Tresor-Nutzlast gebunden an `entryId` als AAD.
  * Verwendet padPayload zur Normalisierung der Ciphertext-Länge gegen Traffic-Analyse.
  */
