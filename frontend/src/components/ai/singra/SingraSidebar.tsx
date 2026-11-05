@@ -86,7 +86,7 @@ function SidebarContent({
   const recentConversations = conversations.slice(0, 8)
 
   return (
-    <div className="flex h-full w-full flex-col justify-between bg-[#0f1311]/95 text-on-surface select-none">
+    <div className="flex h-full w-full flex-col justify-between bg-surface-container-low text-on-surface select-none">
       {/* Top Brand + New Chat */}
       <div className="flex flex-col gap-3 px-3.5 pt-4 pb-2">
         <div className="flex items-center justify-between gap-2 px-1">
@@ -304,7 +304,7 @@ export function SingraSidebar(props: SingraSidebarProps) {
     <>
       {/* Desktop Left Sidebar */}
       <aside
-        className="hidden lg:flex lg:w-60 xl:w-64 shrink-0 flex-col border-r border-outline-variant/25 bg-[#0f1311]"
+        className="hidden lg:flex lg:w-60 xl:w-64 shrink-0 flex-col border-r border-outline-variant/40 bg-surface-container-low"
         aria-label="Singra Seitenleiste"
       >
         <SidebarContent {...props} />
@@ -319,7 +319,7 @@ export function SingraSidebar(props: SingraSidebarProps) {
             aria-hidden="true"
           />
           <div
-            className="relative z-10 flex h-full w-72 max-w-[84vw] flex-col border-r border-outline-variant/30 bg-[#0f1311] shadow-2xl"
+            className="relative z-10 flex h-full w-72 max-w-[84vw] flex-col border-r border-outline-variant/40 bg-surface-container-low shadow-2xl"
             style={{
               paddingTop: 'max(0px, var(--msm-oben-sicher, 0px))',
               paddingBottom: 'max(0px, var(--msm-unten-sicher, 0px))',
@@ -343,7 +343,7 @@ export function SingraMobileBottomBar({
   return (
     <nav
       aria-label="Singra Schnellnavigation"
-      className="flex lg:hidden shrink-0 items-center justify-around border-t border-outline-variant/25 bg-[#0f1311]/95 backdrop-blur-md px-2 pt-1.5"
+      className="flex lg:hidden shrink-0 items-center justify-around border-t border-outline-variant/40 bg-surface-container-low/95 backdrop-blur-md px-2 pt-1.5"
       style={{
         paddingBottom: 'max(0.45rem, var(--msm-unten-sicher, 0.45rem))',
       }}

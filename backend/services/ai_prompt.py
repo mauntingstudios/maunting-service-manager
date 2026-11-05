@@ -979,6 +979,38 @@ vorkommt — eine ganze Zeile oder das umschliessende Element. Wird er als nicht
 eindeutig abgewiesen, nimm mehr Umgebung dazu und versuch es erneut."""
 
 
+# Der Betriebsanlass: Die KI erstellte Projekte ohne fundierte Systemanweisung
+# und legte Code unstrukturiert im Stammverzeichnis ab. Fuer Software-Projekte
+# gelten strikte Architektur-, Qualitaets- und Dokumentationsstandards.
+PROJEKTE_UND_CODING = """\
+Projekte & Coding: Arbeitest du an einem KI-Projekt (`project_workspace`), \
+gilt strikte Software-Disziplin:
+- KISS-Prinzip (Keep It Simple, Stupid): Halte Loesungen einfach, direkt und \
+nachvollziehbar. Vermeide unnoetige Ueberkomplexitaet, verfruehte Abstraktionen \
+oder kuenstliche Zwischenschichten.
+- Zwingende Ordnerstruktur: Lege niemals Dateien unstrukturiert flach im \
+Stammverzeichnis ab. Nutze immer eine saubere, modulare Hierarchie (z. B. \
+`src/`, `components/`, `styles/`, `assets/`, `docs/`, `lib/`, `tests/` oder \
+die fuer die Programmiersprache uebliche Struktur). Lege bei neuen Projekten oder \
+Dateien vorausschauend passende Unterordner an.
+- Sauberer, wartbarer und sicherer Code: Durchgaengige Typisierung, defensive \
+Eingabevalidierung, sauberes Fehler-Handling. Keine Passwoerter, API-Keys oder \
+Secrets im Quellcode hinterlegen.
+- Wahrhaftige Code-Kommentare: Kommentare muessen zwingend exakt mit der tatsaechlichen \
+Funktionsweise des Codes uebereinstimmen. Keine veralteten, irrefuehrenden oder falschen \
+Aussagen. Selbstbeschreibender Code mit sprechenden Namen hat Vorrang; Kommentare \
+erklaeren das "Warum" hinter nichttrivialen Entscheidungen.
+- System- und Architekturdokumentation: Jedes Projekt braucht eine aussagekraeftige \
+`README.md` (und bei Bedarf `docs/`) mit Zweck, Ordnerstruktur, Setup, Befehlen \
+und Schnittstellen, damit Entwickler und andere Agenten jederzeit autonom \
+weiterarbeiten koennen.
+- Neues Projekt anlegen: Wenn du ein Projekt anlegst (`project_create` oder \
+`project_workspace` mit `action: "create_project"`), formulierst du die \
+Systemanweisung (`system_instructions`) nach etabliertem Prompt Engineering \
+(Projektziel & Rolle, KISS & Architektur, Ordnerstruktur, Qualitaet & Sicherheit, \
+wahrhaftige Kommentare & Dokumentation) statt eines unbedachten Einzeilers."""
+
+
 # Der Betriebsanlass: "kannst du die Minecraft-Version aendern?" — die KI sah
 # die Version nicht einmal und haette sie auch nicht aendern koennen. Sie steht
 # im Blueprint, nicht am Server, und Blueprints gelten fuer alle Server ihres
@@ -1490,6 +1522,7 @@ BLOECKE = (
     WERKZEUGE,
     DOKUMENTATION,
     DATEIEN,
+    PROJEKTE_UND_CODING,
     BLUEPRINTS,
     MODS,
     ERREICHBARKEIT,
@@ -1540,6 +1573,7 @@ GEHIRN_BLOECKE = (
     WERKZEUGE,
     DOKUMENTATION,
     DATEIEN,
+    PROJEKTE_UND_CODING,
     BLUEPRINTS,
     MODS,
     ERREICHBARKEIT,

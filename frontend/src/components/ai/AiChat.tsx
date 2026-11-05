@@ -1943,10 +1943,12 @@ export function AiChat({
 
           {/* ── Eingabe ───────────────────────────────────────────────────── */}
           <form
-            className={`relative shrink-0 px-2.5 py-2 sm:px-4 sm:py-3 ${
-              singraShell && empty
-                ? 'bg-gradient-to-t from-black/80 via-black/45 to-transparent border-t-0'
-                : 'border-t border-outline-variant/40 bg-surface'
+            className={`relative shrink-0 px-2.5 py-2 sm:px-4 sm:py-3 transition-colors ${
+              singraShell
+                ? empty
+                  ? 'bg-gradient-to-t from-black/80 via-black/45 to-transparent border-t-0'
+                  : 'border-t border-white/10 bg-black/45 backdrop-blur-xl'
+                : 'border-t border-outline-variant/40 bg-surface/85 backdrop-blur-md'
             }`}
             onSubmit={send}
           >
@@ -2005,7 +2007,7 @@ export function AiChat({
                 <div
                   role="listbox"
                   aria-label="Verfügbare Befehle und Skills"
-                  className="mb-2 max-h-64 overflow-y-auto rounded-2xl border border-white/20 bg-[#0f1311]/95 p-2 shadow-2xl backdrop-blur-xl animate-fade-in"
+                  className="mb-2 max-h-64 overflow-y-auto rounded-2xl border border-outline-variant/40 bg-surface-container-high/95 p-2 shadow-2xl backdrop-blur-xl animate-fade-in"
                 >
                   <div className="px-2.5 py-1 text-label-sm font-semibold uppercase tracking-wider text-white/50">
                     Befehle & Skills ({gefilterteSlashBefehle.length})
@@ -2143,7 +2145,7 @@ export function AiChat({
                               />
                               <div
                                 role="menu"
-                                className="absolute bottom-12 left-0 z-50 w-56 rounded-2xl border border-white/20 bg-[#0f1311]/95 p-1.5 shadow-2xl backdrop-blur-xl animate-fade-in text-white text-xs"
+                                className="absolute bottom-12 left-0 z-50 w-56 rounded-2xl border border-outline-variant/40 bg-surface-container-high/95 p-1.5 shadow-2xl backdrop-blur-xl animate-fade-in text-on-surface text-xs"
                               >
                                 <button
                                   type="button"

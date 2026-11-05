@@ -1900,18 +1900,58 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1.5">
-                    Zusätzliche Projektanweisungen (System-Prompt)
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                      Projektanweisungen (System-Prompt)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft((d) => ({
+                          ...d,
+                          system_prompt: `# Systemanweisung: ${d.name?.trim() || 'Software-Projekt'}
+
+## 1. Rolle & Projektziel
+Ziel: ${d.description?.trim() || 'Entwicklung einer modularen, sicheren und wartbaren Softwarelösung.'}
+Du agierst als fokussierter Software-Architekt und Entwickler für dieses Projekt. Du setzt Anforderungen zielgerichtet, überlegt und mit hoher technischer Präzision um.
+
+## 2. Architektur & KISS-Prinzip
+- KISS-Prinzip (Keep It Simple, Stupid): Halte Lösungen einfach, elegant und leicht nachvollziehbar. Vermeide unnötige Überkomplexität, verfrühte Abstraktionen oder aufgeblähte Hilfsschichten.
+- Modulare Trennung: Logik, Datenzugriff, Schnittstellen und Darstellung bleiben klar getrennt.
+- Klare Verantwortlichkeiten: Jede Funktion, jedes Modul und jede Komponente erfüllt genau eine klar definierte Aufgabe.
+
+## 3. Zwingende Ordnerstruktur & Datei-Organisation
+- Niemals alle Dateien flach im Stammverzeichnis ablegen.
+- Verwende immer eine saubere, modulare Verzeichnishierarchie (z. B. src/, components/, styles/, lib/, docs/, tests/ oder sprachspezifische Standards).
+- Neue Dateien werden von Beginn an im passenden Unterordner platziert.
+- Im Stammverzeichnis verbleiben ausschließlich übergeordnete Konfigurationen (z. B. Konfigurationsdateien, README.md, package.json).
+
+## 4. Code-Qualität, Sicherheit & Robustheit
+- Vollständige Typisierung, strenge Validierung und saubere Schnittstellendefinitionen.
+- Defensive Programmierung: Fehlerfälle aktiv abfangen, verständliche Fehlermeldungen liefern und fehlschlagende Operationen sicher behandeln.
+- Sicherheit: Keine Passwörter, API-Keys, Tokens oder sensiblen Daten im Quellcode hinterlegen; stets Umgebungsvariablen oder sichere Konfigurationen verwenden.
+- Skalierbarkeit: Vermeide Flaschenhälse und unbedachte synchrone Blockaden bei I/O- und Netzwerkoperationen.
+
+## 5. Wahrhaftige Kommentare & Dokumentation
+- Wahrhaftige Code-Kommentare: Jeder Kommentar im Code muss zwingend exakt der tatsächlichen Funktionsweise entsprechen. Veraltete, irreführende oder falsche Kommentare sind streng verboten.
+- Selbsterklärender Code hat Vorrang: Bevorzuge sprechende Variablen- und Funktionsnamen. Kommentare erklären das "Warum" hinter nichttrivialen Architekturentscheidungen, keine offensichtlichen Trivialitäten.
+- Systemdokumentation: Halte eine aussagekräftige README.md (und bei Bedarf docs/) aktuell, die Projektzweck, Architekturübersicht, Ordnerstruktur, Setup-Schritte und Bedienung dokumentiert, damit Entwickler und Agenten jederzeit nahtlos weiterarbeiten können.`,
+                        }))
+                      }
+                      className="text-xs text-primary hover:underline font-medium"
+                    >
+                      Prompt-Vorlage einfügen
+                    </button>
+                  </div>
                   <Textarea
                     value={draft.system_prompt ?? ''}
                     onChange={(e) => setDraft((d) => ({ ...d, system_prompt: e.target.value }))}
-                    rows={4}
-                    placeholder="Besondere Vorgaben, Architektur oder Regeln für Singra in diesem Projekt …"
+                    rows={6}
+                    placeholder="Wird bei Leerlassen automatisch nach etabliertem Prompt-Engineering-Standard generiert …"
                     aria-label="Projektanweisungen"
                   />
                   <p className="mt-1 text-xs text-on-surface-variant">
-                    Kann leer bleiben, falls bereits eine AGENTS.md im Projekt vorhanden ist oder später angelegt wird.
+                    Wird bei Leerlassen automatisch nach etabliertem Prompt-Engineering-Standard (KISS, modulare Ordnerstruktur, Code-Qualität, wahrhaftige Kommentare und Dokumentation) generiert.
                   </p>
                 </div>
               </div>

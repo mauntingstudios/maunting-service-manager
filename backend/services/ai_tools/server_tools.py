@@ -251,7 +251,11 @@ def _global_tool_definitions() -> list[dict]:
             "description": {"type": "string", "maxLength": 500},
             "git_repo_url": {"type": "string", "maxLength": 1024},
             "git_branch": {"type": "string", "maxLength": 120},
-            "system_instructions": {"type": "string", "maxLength": 4000},
+            "system_instructions": {
+                "type": "string",
+                "maxLength": 4000,
+                "description": "Fundierte Systemanweisung nach etabliertem Prompt Engineering (Projektziel, KISS-Prinzip, zwingende Ordnerstruktur, Code-Qualität, wahrhaftige Kommentare, Doku). Wird bei Leerlassen automatisch erzeugt.",
+            },
             "sandbox_mode": {"type": "string", "enum": ["server", "local", "none"]},
         },
         ["name"],

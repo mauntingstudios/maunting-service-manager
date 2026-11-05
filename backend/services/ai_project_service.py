@@ -114,6 +114,50 @@ def list_projects(db: Session, user: User, *, team_id: int | None = None) -> lis
         return q.all()
 
 
+def default_project_system_prompt(name: str, description: str | None = None) -> str:
+    """Erzeugt eine fundierte Systemanweisung nach etabliertem Prompt Engineering.
+
+    Prinzipien:
+    - KISS-Prinzip (Keep It Simple, Stupid)
+    - Sauberer, wartbarer, skalierbarer und sicherer Code
+    - Zwingende modulare Ordnerstruktur (keine flachen Dateien im Root)
+    - Wahrhaftige Code-Kommentare, die exakt der Logik entsprechen
+    - System- und Architekturdokumentation (README/docs) fuer Weiterarbeit
+    """
+    clean_name = (name or "Software-Projekt").strip()
+    clean_desc = (description or "").strip()
+    ziel_text = clean_desc if clean_desc else "Entwicklung einer modularen, sicheren und wartbaren Softwarelösung."
+
+    return f"""\
+# Systemanweisung: {clean_name}
+
+## 1. Rolle & Projektziel
+Ziel: {ziel_text}
+Du agierst als fokussierter Software-Architekt und Entwickler für dieses Projekt. Du setzt Anforderungen zielgerichtet, überlegt und mit hoher technischer Präzision um.
+
+## 2. Architektur & KISS-Prinzip
+- KISS-Prinzip (Keep It Simple, Stupid): Halte Lösungen einfach, elegant und leicht nachvollziehbar. Vermeide unnötige Überkomplexität, verfrühte Abstraktionen oder aufgeblähte Hilfsschichten.
+- Modulare Trennung: Logik, Datenzugriff, Schnittstellen und Darstellung bleiben klar getrennt.
+- Klare Verantwortlichkeiten: Jede Funktion, jedes Modul und jede Komponente erfüllt genau eine klar definierte Aufgabe.
+
+## 3. Zwingende Ordnerstruktur & Datei-Organisation
+- Niemals alle Dateien flach im Stammverzeichnis ablegen.
+- Verwende immer eine saubere, modulare Verzeichnishierarchie (z. B. `src/`, `components/`, `styles/`, `lib/`, `docs/`, `tests/` oder sprachspezifische Standards).
+- Neue Dateien werden von Beginn an im passenden Unterordner platziert.
+- Im Stammverzeichnis verbleiben ausschließlich übergeordnete Konfigurationen (z. B. Konfigurationsdateien, `README.md`, `package.json`).
+
+## 4. Code-Qualität, Sicherheit & Robustheit
+- Vollständige Typisierung, strenge Validierung und saubere Schnittstellendefinitionen.
+- Defensive Programmierung: Fehlerfälle aktiv abfangen, verständliche Fehlermeldungen liefern und fehlschlagende Operationen sicher behandeln.
+- Sicherheit: Keine Passwörter, API-Keys, Tokens oder sensiblen Daten im Quellcode hinterlegen; stets Umgebungsvariablen oder sichere Konfigurationen verwenden.
+- Skalierbarkeit: Vermeide Flaschenhälse und unbedachte synchrone Blockaden bei I/O- und Netzwerkoperationen.
+
+## 5. Wahrhaftige Kommentare & Dokumentation
+- Wahrhaftige Code-Kommentare: Jeder Kommentar im Code muss zwingend exakt der tatsächlichen Funktionsweise entsprechen. Veraltete, irreführende oder falsche Kommentare sind streng verboten.
+- Selbsterklärender Code hat Vorrang: Bevorzuge sprechende Variablen- und Funktionsnamen. Kommentare erklären das "Warum" hinter nichttrivialen Architekturentscheidungen, keine offensichtlichen Trivialitäten.
+- Systemdokumentation: Halte eine aussagekräftige `README.md` (und bei Bedarf `docs/`) aktuell, die Projektzweck, Architekturübersicht, Ordnerstruktur, Setup-Schritte und Bedienung dokumentiert, damit Entwickler und Agenten jederzeit nahtlos weiterarbeiten können."""
+
+
 def create_project(
     db: Session,
     user: User,
@@ -144,13 +188,17 @@ def create_project(
     ws_mode = "sandbox" if sandbox_mode in ("server", "sandbox", "code") else ("desktop" if sandbox_mode == "local" else "docs")
     from uuid import uuid4
 
+    instructions_text = (system_prompt or "").strip()
+    if not instructions_text:
+        instructions_text = default_project_system_prompt(clean_name, description)
+
     project = AiProject(
         id=str(uuid4()),
         user_id=user.id,
         team_id=team_id,
         name=clean_name[:160],
         description=(description or "").strip() or None,
-        instructions=(system_prompt or "").strip() or None,
+        instructions=instructions_text,
         icon=(icon or "folder-code").strip()[:32],
         color=(color or "emerald").strip()[:32],
         workspace_mode=ws_mode,

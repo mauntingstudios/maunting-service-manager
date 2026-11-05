@@ -258,7 +258,11 @@ export function AiSpeicherDrawer({
                           {art === 'image' ? (
                             <>
                               <img
-                                src={aiApi.attachmentContentUrl(item.id)}
+                                src={
+                                  typeof aiApi.attachmentContentUrl === 'function'
+                                    ? aiApi.attachmentContentUrl(item.id)
+                                    : `/api/ai/attachments/${encodeURIComponent(item.id)}/content`
+                                }
                                 alt=""
                                 className="h-full w-full object-cover"
                                 loading="lazy"
