@@ -962,6 +962,12 @@ WERKZEUGE: dict[str, Werkzeug] = {
         angebot=("ai.desktop.install", "ai.desktop.use"),
     ),
     # Universeller Projekt-, Coding-Sandbox- und Git-Arbeitsbereich (GitHub/GitLab).
+    #
+    # Die Sicherheitsgrenze ist die isolierte Sandbox des jeweiligen Projekts:
+    # Lese- und Schreibvorgänge operieren strikt innerhalb von `proj_<id>` im
+    # dedizierten Sandbox-Basisverzeichnis. Befehle (`run_command`) sind durch
+    # eine Dev-Tool-Allowlist und strikte Pfadprüfungen gegen Host-Eskalation
+    # abgesichert. Git-Tokens werden über den AskPass-Mechanismus geschützt.
     "project_workspace": Werkzeug(
         "global_read",
         gruppe="projects",

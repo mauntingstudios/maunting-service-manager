@@ -43,20 +43,19 @@ def _sandbox_base_dir() -> Path:
 
 
 def ensure_project_workspace(project: AiProject) -> Path:
-    """Stellt sicher, dass das Arbeitsverzeichnis fuer das Projekt existiert."""
-    if project.workspace_mode == "desktop" and project.local_path:
-        local = Path(project.local_path).expanduser().resolve()
-        if local.exists() and local.is_dir():
-            return local
-    if project.sandbox_path:
-        p = Path(project.sandbox_path)
-        try:
-            p.mkdir(parents=True, exist_ok=True)
-            return p
-        except OSError:
-            pass
-    ws = _sandbox_base_dir() / f"proj_{project.id}"
+    """Stellt sicher, dass das Arbeitsverzeichnis fuer das Projekt existiert.
+
+    Aus Sicherheitsgruenden verbleibt das serverseitige Arbeitsverzeichnis
+    ausnahmslos innerhalb des dedizierten Sandbox-Basisordners. Beliebige
+    Host-Pfade koennen die Server-Sandbox nicht verschieben.
+    """
+    base = _sandbox_base_dir().resolve()
+    ws = (base / f"proj_{project.id}").resolve()
+    if not ws.is_relative_to(base):
+        raise AiProjectError("Ungültiger Sandbox-Pfad für dieses Projekt")
     ws.mkdir(parents=True, exist_ok=True)
+    if project.sandbox_path != str(ws):
+        project.sandbox_path = str(ws)
     return ws
 
 
@@ -338,7 +337,7 @@ def read_project_file(db: Session, user: User, project_id: str, rel_path: str) -
     norm = normalize_rel_path(rel_path)
     ws = ensure_project_workspace(project)
     disk_file = (ws / norm).resolve()
-    if str(disk_file).startswith(str(ws.resolve())) and disk_file.is_file():
+    if disk_file.is_relative_to(ws.resolve()) and disk_file.is_file():
         try:
             disk_content = disk_file.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -389,7 +388,7 @@ def write_project_file(
 
     ws = ensure_project_workspace(project)
     disk_file = (ws / norm).resolve()
-    if not str(disk_file).startswith(str(ws.resolve())):
+    if not disk_file.is_relative_to(ws.resolve()):
         raise AiProjectError("Ungültiger Dateipfad außerhalb des Projektordners")
     try:
         disk_file.parent.mkdir(parents=True, exist_ok=True)
@@ -429,7 +428,7 @@ def delete_project_file(db: Session, user: User, project_id: str, rel_path: str)
     norm = normalize_rel_path(rel_path)
     ws = ensure_project_workspace(project)
     disk_file = (ws / norm).resolve()
-    if str(disk_file).startswith(str(ws.resolve())) and disk_file.is_file():
+    if disk_file.is_relative_to(ws.resolve()) and disk_file.is_file():
         try:
             disk_file.unlink()
         except OSError:
@@ -462,6 +461,115 @@ def _materialize_db_files_to_workspace(db: Session, project: AiProject, ws: Path
             continue
 
 
+_ALLOWED_DEV_BINARIES = frozenset({
+    "npm", "npx", "yarn", "pnpm", "node", "python", "python3",
+    "pip", "pip3", "pytest", "tsc", "vite", "git", "cargo",
+    "rustc", "go", "deno", "bun", "make", "gcc", "g++", "clang",
+    "echo", "ls", "dir", "cat", "type", "find", "grep", "mkdir",
+    "cp", "mv", "rm", "touch", "head", "tail", "wc", "sed", "awk", "diff",
+})
+
+_DANGEROUS_PATTERNS = [
+    re.compile(r"\b(sudo|su|doas|pkexec|useradd|userdel|usermod|passwd|groupadd)\b", re.I),
+    re.compile(r"\b(chmod|chown|chgrp)\b", re.I),
+    re.compile(r"\b(shutdown|reboot|poweroff|halt|systemctl|service)\b", re.I),
+    re.compile(r"\b(mkfs|fdisk|parted|dd)\b", re.I),
+    re.compile(r"\b(nc|netcat|ncat|socat)\b", re.I),
+    re.compile(r"\|\s*(ba|z)?sh", re.I),
+    re.compile(r"\|\s*(cmd|powershell)", re.I),
+    re.compile(r"\b(curl|wget)\b.*\|", re.I),
+    re.compile(r"(/etc/|/root/|/proc/|/sys/|/dev/|/boot/|/var/run|C:\\Windows|C:\\Program Files)", re.I),
+    re.compile(r"\.\./\.\.", re.I),
+    re.compile(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f?\s+/\s*$", re.I),
+]
+
+
+def _validate_project_command(cmd: str, ws: Path) -> None:
+    trimmed = (cmd or "").strip()
+    if not trimmed:
+        raise AiProjectError("Befehl darf nicht leer sein")
+    for pattern in _DANGEROUS_PATTERNS:
+        if pattern.search(trimmed):
+            raise AiProjectError("Befehl enthält nicht zugelassene System-Operationen oder Pfade")
+
+    segments = re.split(r"[;&|]+", trimmed)
+    for seg in segments:
+        seg_clean = seg.strip()
+        if not seg_clean:
+            continue
+        first_token = seg_clean.split()[0].lower()
+        binary_name = Path(first_token).name.replace(".exe", "").replace(".cmd", "").replace(".bat", "")
+        if binary_name not in _ALLOWED_DEV_BINARIES:
+            raise AiProjectError(f"Das Programm '{binary_name}' ist in der Projekt-Sandbox nicht zugelassen")
+
+
+def _clean_git_remote_url(repo_url: str, provider: str | None) -> str:
+    """Erzeugt eine sichere HTTPS-URL mit Benutzer-Präfix aber ohne Passwort/Token."""
+    parsed = urlparse(repo_url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return repo_url
+    user_part = "oauth2" if provider == "gitlab" else "x-access-token"
+    netloc = f"{user_part}@{parsed.hostname}"
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+
+
+def _prepare_git_askpass_env(env: dict[str, str], token: str | None) -> tuple[dict[str, str], Path | None]:
+    """Konfiguriert GIT_ASKPASS und MSM_GIT_TOKEN, damit Tokens nie in argv oder procfs auftauchen."""
+    if not token or not token.strip():
+        return env, None
+    clean_token = token.strip()
+    is_windows = os.name == "nt"
+    tmp_dir = Path(tempfile.gettempdir())
+    if is_windows:
+        helper = tmp_dir / "msm_git_askpass.cmd"
+        if not helper.exists():
+            helper.write_text("@echo %MSM_GIT_TOKEN%\n", encoding="utf-8")
+    else:
+        helper = tmp_dir / "msm_git_askpass.sh"
+        if not helper.exists():
+            helper.write_text("#!/bin/sh\necho \"$MSM_GIT_TOKEN\"\n", encoding="utf-8")
+            try:
+                helper.chmod(0o700)
+            except OSError:
+                pass
+
+    new_env = dict(env)
+    new_env["GIT_ASKPASS"] = str(helper)
+    new_env["MSM_GIT_TOKEN"] = clean_token
+    new_env["GIT_TERMINAL_PROMPT"] = "0"
+    return new_env, helper
+
+
+def resolve_git_token_for_user(db: Session, user: User, provider: str | None = "github") -> str | None:
+    """Ermittelt das persönliche Git-Token des Benutzers sicher aus dem Tresor."""
+    try:
+        from services import credential_service
+        from services.auth_service import AuthService
+        from models.credential import KIND_GITHUB_TOKEN
+
+        creds = credential_service.list_user_credentials(db, user.id, kind=KIND_GITHUB_TOKEN)
+        for cred in creds:
+            try:
+                secret = AuthService.decrypt_secret(db, cred.encrypted_secret, aad=credential_service._aad(cred.id))
+                if secret and secret.strip():
+                    return secret.strip()
+            except Exception:
+                continue
+
+        try:
+            resolved = credential_service.resolve_panel_default(KIND_GITHUB_TOKEN)
+            if resolved and resolved.secret and resolved.secret.strip():
+                return resolved.secret.strip()
+        except Exception:
+            pass
+    except Exception as exc:
+        logger.debug("Konnte Git-Token für Benutzer %s nicht auflösen: %s", user.id, exc)
+
+    return None
+
+
 def run_project_command(
     db: Session,
     user: User,
@@ -470,12 +578,13 @@ def run_project_command(
     *,
     timeout_seconds: int = 25,
 ) -> dict[str, object]:
-    """Fuehrt einen Shell-Befehl isoliert im Projekt-Arbeitsverzeichnis aus."""
+    """Fuehrt einen Shell-Befehl isoliert und geprueft im Projekt-Arbeitsverzeichnis aus."""
     project = get_project(db, user, project_id)
     cmd = (command or "").strip()
     if not cmd:
         raise AiProjectError("Befehl darf nicht leer sein")
     ws = ensure_project_workspace(project)
+    _validate_project_command(cmd, ws)
     _materialize_db_files_to_workspace(db, project, ws)
 
     safe_env = {
@@ -522,19 +631,6 @@ def run_project_command(
         }
     except OSError as exc:
         raise AiProjectError(f"Ausführung fehlgeschlagen: {exc}") from exc
-
-
-def _inject_git_token(repo_url: str, token: str | None, provider: str | None) -> str:
-    if not token or not token.strip():
-        return repo_url
-    parsed = urlparse(repo_url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        return repo_url
-    user_part = "oauth2" if provider == "gitlab" else "x-access-token"
-    netloc = f"{user_part}:{token.strip()}@{parsed.hostname}"
-    if parsed.port:
-        netloc = f"{netloc}:{parsed.port}"
-    return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
 
 def git_status(db: Session, user: User, project_id: str) -> dict[str, object]:
@@ -613,20 +709,22 @@ def git_clone_or_pull(
     if parsed.scheme not in ("https", "http") or not parsed.hostname:
         raise AiProjectError("Nur HTTPS/HTTP Git-Repository-URLs werden unterstützt")
 
-    auth_url = _inject_git_token(target_url, token, project.git_provider)
+    effective_token = token or resolve_git_token_for_user(db, user, project.git_provider)
+    clean_auth_url = _clean_git_remote_url(target_url, project.git_provider) if effective_token else target_url
     ws = ensure_project_workspace(project)
     git_dir = ws / ".git"
-    env = {
+    base_env = {
         **os.environ,
         "GIT_TERMINAL_PROMPT": "0",
     }
+    env, _ = _prepare_git_askpass_env(base_env, effective_token)
     target_branch = project.git_branch or "main"
     if not git_dir.exists():
         # Klonen in ein temporäres Unterverzeichnis und Inhalt verschieben, falls ws bereits existiert
         tmp_clone = ws.parent / f"clone_{project.id}_{int(datetime.now(timezone.utc).timestamp())}"
         try:
             res = subprocess.run(
-                ["git", "clone", "--depth", "50", "--branch", target_branch, auth_url, str(tmp_clone)],
+                ["git", "clone", "--depth", "50", "--branch", target_branch, clean_auth_url, str(tmp_clone)],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -636,7 +734,7 @@ def git_clone_or_pull(
             )
             if res.returncode != 0:
                 res = subprocess.run(
-                    ["git", "clone", "--depth", "50", auth_url, str(tmp_clone)],
+                    ["git", "clone", "--depth", "50", clean_auth_url, str(tmp_clone)],
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -645,7 +743,9 @@ def git_clone_or_pull(
                     timeout=45,
                 )
             if res.returncode != 0:
-                stderr_clean = (res.stderr or "").replace(token or "___", "***")
+                stderr_clean = (res.stderr or "")
+                if effective_token:
+                    stderr_clean = stderr_clean.replace(effective_token, "***")
                 raise AiProjectError(f"Git-Clone fehlgeschlagen: {stderr_clean[:400]}")
             for item in tmp_clone.iterdir():
                 dest = ws / item.name
@@ -655,7 +755,7 @@ def git_clone_or_pull(
                     else:
                         dest.unlink(missing_ok=True)
                 shutil.move(str(item), str(dest))
-            # Token aus .git/config entfernen
+            # Remote-URL immer sauber ohne Authentifizierungsteile hinterlegen
             subprocess.run(
                 ["git", "remote", "set-url", "origin", target_url],
                 cwd=str(ws),
@@ -667,7 +767,7 @@ def git_clone_or_pull(
                 shutil.rmtree(tmp_clone, ignore_errors=True)
     else:
         res = subprocess.run(
-            ["git", "pull", auth_url, target_branch],
+            ["git", "pull", clean_auth_url, target_branch],
             cwd=str(ws),
             capture_output=True,
             text=True,
@@ -677,7 +777,9 @@ def git_clone_or_pull(
             timeout=45,
         )
         if res.returncode != 0:
-            stderr_clean = (res.stderr or "").replace(token or "___", "***")
+            stderr_clean = (res.stderr or "")
+            if effective_token:
+                stderr_clean = stderr_clean.replace(effective_token, "***")
             raise AiProjectError(f"Git-Pull fehlgeschlagen: {stderr_clean[:400]}")
 
     _sync_workspace_files_to_db(db, project, ws)
@@ -700,7 +802,9 @@ def git_commit_and_push(
     ws = ensure_project_workspace(project)
     _materialize_db_files_to_workspace(db, project, ws)
     git_dir = ws / ".git"
-    env = {
+
+    effective_token = token or resolve_git_token_for_user(db, user, project.git_provider)
+    base_env = {
         **os.environ,
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_AUTHOR_NAME": user.username or "Singra AI",
@@ -708,6 +812,8 @@ def git_commit_and_push(
         "GIT_COMMITTER_NAME": user.username or "Singra AI",
         "GIT_COMMITTER_EMAIL": user.email or "singra@mauntingstudios.de",
     }
+    env, _ = _prepare_git_askpass_env(base_env, effective_token)
+
     if not git_dir.exists():
         subprocess.run(["git", "init", "-b", project.git_branch or "main"], cwd=str(ws), capture_output=True, env=env, timeout=10)
         if project.git_repo_url:
@@ -726,10 +832,10 @@ def git_commit_and_push(
     )
     push_output = ""
     if push and project.git_repo_url:
-        auth_url = _inject_git_token(project.git_repo_url, token, project.git_provider)
+        clean_auth_url = _clean_git_remote_url(project.git_repo_url, project.git_provider) if effective_token else project.git_repo_url
         target_branch = project.git_branch or "main"
         push_res = subprocess.run(
-            ["git", "push", auth_url, f"HEAD:{target_branch}"],
+            ["git", "push", clean_auth_url, f"HEAD:{target_branch}"],
             cwd=str(ws),
             capture_output=True,
             text=True,
@@ -738,12 +844,17 @@ def git_commit_and_push(
             env=env,
             timeout=45,
         )
-        push_output = ((push_res.stdout or "") + "\n" + (push_res.stderr or "")).replace(token or "___", "***").strip()
+        push_output = ((push_res.stdout or "") + "\n" + (push_res.stderr or "")).strip()
+        if effective_token:
+            push_output = push_output.replace(effective_token, "***")
         if push_res.returncode != 0:
             raise AiProjectError(f"Git-Push fehlgeschlagen: {push_output[:400]}")
 
     status = git_status(db, user, project.id)
-    status["commit_output"] = ((commit_res.stdout or "") + "\n" + (commit_res.stderr or "")).strip()[:4000]
+    commit_clean = ((commit_res.stdout or "") + "\n" + (commit_res.stderr or "")).strip()[:4000]
+    if effective_token:
+        commit_clean = commit_clean.replace(effective_token, "***")
+    status["commit_output"] = commit_clean
     status["push_output"] = push_output[:4000]
     return status
 

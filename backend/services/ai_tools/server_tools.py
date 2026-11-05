@@ -1884,20 +1884,24 @@ def _execute_global_read_tool(
             if action == "git_status":
                 return ai_project_service.git_status(db, user, pid)
             if action == "git_sync":
+                token = str(arguments.get("token") or arguments.get("git_token") or "").strip() or None
                 return ai_project_service.git_clone_or_pull(
                     db,
                     user,
                     pid,
                     repo_url=str(arguments.get("repo_url") or "") or None,
                     branch=str(arguments.get("branch") or "") or None,
+                    token=token,
                 )
             if action == "git_commit":
+                token = str(arguments.get("token") or arguments.get("git_token") or "").strip() or None
                 return ai_project_service.git_commit_and_push(
                     db,
                     user,
                     pid,
                     message=str(arguments.get("message") or "Update"),
                     push=bool(arguments.get("push", False)),
+                    token=token,
                 )
             raise AiActionValidationError(f"Unbekannte project_workspace-Aktion: {action}")
         except AiProjectError as exc:
