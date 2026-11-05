@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next'
 
 import {
   aiApi,
+  type AiActionProposal,
   type AiAttachment,
   type AiContextStatus,
+  type AiConversationDetail,
   type AiGeoCameraCommand,
   type AiProviderAvailable,
   type AiRegionalAnalysis,
@@ -60,6 +62,7 @@ import { AI_IS_BETA } from './AiBetaBanner'
 import { chatScopeApi, PRIMARY_CHAT_SCOPE, type AiChatScope } from './chatScope'
 
 import { Spinner } from '@maunting/ui'
+import { still } from '@/lib/still'
 interface ServerOption {
   id: number
   name: string
@@ -497,10 +500,20 @@ export function AiChat({
   useEffect(() => {
     let active = true
     Promise.all([
-      aiApi.listProviders(),
-      chatApi.getConversation(),
-      chatApi.listActions(),
-      canAttach ? chatApi.listAttachments() : Promise.resolve([] as AiAttachment[]),
+      aiApi.listProviders().catch((err) => {
+        still(err, 'ai.listProviders')
+        return [] as AiProviderAvailable[]
+      }),
+      chatApi.getConversation().catch((err) => {
+        still(err, 'ai.getConversation')
+        return {
+          id: scope.kind === 'primary' ? (scope.conversationId ?? 'primary') : 'docs',
+          kind: scope.kind,
+          messages: [],
+        } as unknown as AiConversationDetail
+      }),
+      chatApi.listActions().catch(() => [] as AiActionProposal[]),
+      canAttach ? chatApi.listAttachments().catch(() => [] as AiAttachment[]) : Promise.resolve([] as AiAttachment[]),
       // Nur für den Autonomie-Knopf, und nur dort wird die Liste gebraucht.
       // Ohne das Recht holte jedes Öffnen der Seite alle sichtbaren Server
       // samt Bind-IP, Spiel-, Query- und RCON-Port in den Browser — für eine
@@ -521,31 +534,33 @@ export function AiChat({
         if (!active) return
         setLaufBeimOeffnen(aktiverLauf)
         setMemoryNoticeDue(Boolean(memoryPreference?.notice_due))
-        setProviders(providerRows)
-        // Die Wahl am Konto schlägt die im Browser: sie ist die eine Quelle,
-        // die auch Overlay und Desktop-App sehen. Der localStorage bleibt als
-        // Rückfall für Konten, die noch nie hier gewählt haben. Bewusst
-        // `getState()` statt Abo — die gespeicherte Wahl ändert sich beim
-        // Wechseln unten, und ein Abo lüde dann den ganzen Chat neu.
-        const kontoWahl = useAuthStore.getState().user?.ai_provider_id ?? null
-        setProviderId(providerBeimOeffnen(
-          providerRows,
-          kontoWahl ?? readAiProviderChoice(merkSchluessel.provider),
-        ))
-        // Einmalige Übernahme: eine Browser-Wahl aus der Zeit vor dem
-        // Konto-Feld wandert beim ersten Öffnen ans Konto. Ohne das spräche
-        // das Overlay bis zum nächsten manuellen Modellwechsel weiter mit dem
-        // erstbesten Zugang — und der kann beliebig langsam sein.
-        void browserWahlInsKontoUebernehmen()
+        if (providerRows && providerRows.length > 0) {
+          setProviders(providerRows)
+          // Die Wahl am Konto schlägt die im Browser: sie ist die eine Quelle,
+          // die auch Overlay und Desktop-App sehen. Der localStorage bleibt als
+          // Rückfall für Konten, die noch nie hier gewählt haben. Bewusst
+          // `getState()` statt Abo — die gespeicherte Wahl ändert sich beim
+          // Wechseln unten, und ein Abo lüde dann den ganzen Chat neu.
+          const kontoWahl = useAuthStore.getState().user?.ai_provider_id ?? null
+          setProviderId(providerBeimOeffnen(
+            providerRows,
+            kontoWahl ?? readAiProviderChoice(merkSchluessel.provider),
+          ))
+          // Einmalige Übernahme: eine Browser-Wahl aus der Zeit vor dem
+          // Konto-Feld wandert beim ersten Öffnen ans Konto. Ohne das spräche
+          // das Overlay bis zum nächsten manuellen Modellwechsel weiter mit dem
+          // erstbesten Zugang — und der kann beliebig langsam sein.
+          void browserWahlInsKontoUebernehmen()
+        }
         // Vorschlaege werden chronologisch zwischen die Nachrichten einsortiert,
         // damit man sieht, auf welche Antwort sie sich beziehen. Vorher standen
         // sie gesammelt am Ende und wirkten losgeloest.
-        const geladen = mergeEntries(conversation.messages, actions)
+        const geladen = mergeEntries(conversation?.messages ?? [], actions ?? [])
         verlaufEintraegeRef.current = geladen
         setEntries(geladen)
-        setAttachments(attachmentRows)
-        setServers(serverRows.map((row) => ({ id: row.id, name: row.name })))
-        if (scope.kind === 'docs') {
+        setAttachments(attachmentRows ?? [])
+        setServers((serverRows ?? []).map((row: ServerOption) => ({ id: row.id, name: row.name })))
+        if (scope.kind === 'docs' && conversation?.id) {
           // Beim Primaerchat steht der Lauf schon im Promise.all; im
           // Dokumentfenster braucht die Frage die Kennung dieses Fensters.
           void chatApi

@@ -65,7 +65,7 @@ export function SingraHistoryView({
                 Unterhaltungsverlauf
               </h2>
               <p className="text-xs text-on-surface-variant">
-                {conversations.length} gespeicherte Unterhaltungen — durchsuche, benenne um oder hefte wichtige Gespräche oben an.
+                {conversations.length} gespeicherte Unterhaltungen: durchsuche, benenne um oder hefte wichtige Gespräche oben an.
               </p>
             </div>
           </div>

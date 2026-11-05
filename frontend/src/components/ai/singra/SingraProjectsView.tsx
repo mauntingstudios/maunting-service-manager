@@ -164,9 +164,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
       ])
       setProjects(projRows)
       setTeams(teamRows.filter((t) => !t.is_personal))
-      if (projRows.length > 0 && !selectedId) {
-        setSelectedId(projRows[0].id)
-      }
+      setSelectedId((prev) => prev || (projRows.length > 0 ? projRows[0].id : null))
     } catch (err: unknown) {
       toast.error(
         err instanceof SanitizedApiError
@@ -176,7 +174,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
     } finally {
       setLoading(false)
     }
-  }, [selectedId])
+  }, [])
 
   useEffect(() => {
     void loadProjects()
@@ -191,11 +189,12 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
       setProjectChats(chats)
       setFiles(fileList)
       if (fileList.length > 0) {
-        setActiveFilePath((prev) =>
-          fileList.some((f) => f.path === prev) ? prev : fileList[0].path,
-        )
-        const target = fileList.find((f) => f.path === activeFilePath) ?? fileList[0]
-        setFileContent(target.content)
+        setActiveFilePath((prev) => {
+          const next = fileList.some((f) => f.path === prev) ? prev : fileList[0].path
+          const target = fileList.find((f) => f.path === next) ?? fileList[0]
+          setFileContent(target.content)
+          return next
+        })
       } else {
         setActiveFilePath('')
         setFileContent('')
@@ -207,7 +206,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
           : 'Projektdaten konnten nicht geladen werden.',
       )
     }
-  }, [activeFilePath])
+  }, [])
 
   useEffect(() => {
     if (!selectedId) return
