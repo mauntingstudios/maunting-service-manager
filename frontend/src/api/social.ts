@@ -608,6 +608,10 @@ export async function startDirectChat(targetUserId: number): Promise<DirectChatI
   })
 }
 
+export async function getDirectChats(): Promise<DirectChatItem[]> {
+  return api<DirectChatItem[]>('/social/chat/conversations')
+}
+
 /**
  * Hinterlegt den blinden Besitznachweis einer Mailbox.
  *

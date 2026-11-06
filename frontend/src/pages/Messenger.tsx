@@ -10,7 +10,6 @@ import {
   X,
   RefreshCw,
   Trash2,
-  Plus,
   Smile,
   UserCheck,
   Bell,
@@ -148,11 +147,10 @@ import { MessengerBottomNav } from '@/components/social/sidebar/MessengerModeNav
 import { MessengerRail } from '@/components/social/sidebar/MessengerRail'
 import { FunkenEmpfaengerModal } from '@/components/social/modals/FunkenEmpfaengerModal'
 import { MessengerEmptyState } from '@/components/social/chat/MessengerEmptyState'
-import { ContactFilterTabs } from '@/components/social/sidebar/ContactFilterTabs'
 import { StoriesCarouselBar } from '@/components/social/sidebar/StoriesCarouselBar'
 import { StatusUpdatesView } from '@/components/social/sidebar/StatusUpdatesView'
 import { CommunityView } from '@/components/social/sidebar/CommunityView'
-import { GroupListItem, ContactListItem, type ChatContact } from '@/components/social/sidebar/ConversationListItem'
+import { ContactListItem, type ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import { ChatSelectionBar } from '@/components/social/chat/ChatSelectionBar'
 import { ChatHeader } from '@/components/social/chat/ChatHeader'
 import { ChatActionsMenu } from '@/components/social/chat/ChatActionsMenu'
@@ -249,8 +247,6 @@ function MessengerSeite() {
     kontakteGeladen,
     contactsList,
     filteredContacts,
-    filteredGroups,
-    gruppenNachArchiv,
     kontakteNachArchiv,
     archivZahl,
     archivUngelesen,
@@ -259,7 +255,6 @@ function MessengerSeite() {
     storyAnsicht,
     searchQuery,
     setSearchQuery,
-    filterTab,
     setFilterTab,
     mobileNavTab,
     setMobileNavTab,
@@ -415,6 +410,7 @@ function MessengerSeite() {
   const [augenblickModus, setAugenblickModus] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [funkenFoto, setFunkenFoto] = useState<string | null>(null)
+  const [funkeModus, setFunkeModus] = useState<'blast' | null>(null)
   const [isFunkenEmpfaengerOpen, setIsFunkenEmpfaengerOpen] = useState(false)
   const [isFunkenSending, setIsFunkenSending] = useState(false)
   /** Die offene Rückfrage vor einer Wiederherstellung des Funkens. */
@@ -2114,28 +2110,6 @@ function MessengerSeite() {
     markAsRead(mid)
   }
 
-  const zeichneGruppe = (g: ChatGroupItem) => {
-    const gmid = groupMailboxMap[g.id]
-    return (
-      <GroupListItem
-        key={`g-${g.id}`}
-        gruppe={g}
-        titel={gruppenTitel(g)}
-        mid={gmid}
-        ausgewaehlt={activeGroup?.id === g.id}
-        entwurf={gmid ? entwuerfe.vorschau[gmid] || '' : ''}
-        onOeffnen={() => {
-          setActiveGroup(g)
-          setActiveContact(null)
-          oeffneAusListe(gmid)
-        }}
-        onAnheften={handleAnheftenChat}
-        onArchivieren={handleArchivieren}
-        onMenue={(mid, name) => setZeilenMenue({ mid, name })}
-      />
-    )
-  }
-
   const zeichneKontakt = (c: ChatContact) => {
     const cmid = contactMailboxMap[c.userId]
     return (
@@ -2349,11 +2323,11 @@ function MessengerSeite() {
   const partnerMitFunken = contactsList.filter((c) => {
     if (!c.isFriend) return false
     const kern = useFunkenStore.getState().kernVon(c.userId, Date.now())
-    return kern && kern.tage > 0
+    return kern && kern.stand > 0
   })
   const funkeGesamt = partnerMitFunken.reduce((sum, c) => {
     const kern = useFunkenStore.getState().kernVon(c.userId, Date.now())
-    return sum + (kern?.tage ?? 0)
+    return sum + (kern?.stand ?? 0)
   }, 0)
 
   const ungelesenCommunity = useMemo(
@@ -2361,17 +2335,14 @@ function MessengerSeite() {
     [groups, groupMailboxMap, unreadCounts],
   )
   const ungelesenChats = useMemo(
-    () => contactsList.reduce((sum, c) => sum + (unreadCounts[c.mailbox_id] || 0), 0),
-    [contactsList, unreadCounts],
+    () => contactsList.reduce((sum, c) => sum + (unreadCounts[contactMailboxMap[c.userId]] || 0), 0),
+    [contactsList, contactMailboxMap, unreadCounts],
   )
 
   const handleFunkeTrigger = () => {
-    if (activeContact) {
-      oeffneAugenblick()
-    } else {
-      setAugenblickModus(true)
-      setIsCameraModalOpen(true)
-    }
+    setFunkeModus('blast')
+    setAugenblickModus(true)
+    setIsCameraModalOpen(true)
   }
 
   const handleSendFunkenBlast = async (empfaengerUserIds: number[]) => {
@@ -2381,7 +2352,8 @@ function MessengerSeite() {
     try {
       for (const uid of empfaengerUserIds) {
         const targetContact = contactsList.find((c) => c.userId === uid)
-        if (!targetContact?.mailbox_id) continue
+        const mid = targetContact ? contactMailboxMap[targetContact.userId] : undefined
+        if (!mid || !targetContact) continue
         try {
           await handleSendMessage({
             text: '',
@@ -2389,7 +2361,7 @@ function MessengerSeite() {
             augenblick: true,
             antwortAuf: null,
             ziel: {
-              blindMailboxId: targetContact.mailbox_id,
+              blindMailboxId: mid,
               recipientId: targetContact.userId,
             },
           })
@@ -2407,26 +2379,6 @@ function MessengerSeite() {
       setFunkenFoto(null)
     } finally {
       setIsFunkenSending(false)
-    }
-  }
-
-  const handleFunkeKlick = () => {
-    if (partnerMitFunken.length > 0) {
-      const naechster = partnerMitFunken.find((c) => c.userId !== activeContact?.userId) || partnerMitFunken[0]
-      setActiveContact(naechster)
-      setActiveGroup(null)
-      setFilterTab('friends')
-      toast.success(`Funke mit ${naechster.username} geöffnet! 🔥`)
-    } else {
-      setFilterTab('friends')
-      const ersterFreund = contactsList.find((c) => c.isFriend)
-      if (ersterFreund) {
-        setActiveContact(ersterFreund)
-        setActiveGroup(null)
-        toast.info(`Schreib ${ersterFreund.username}, um einen Funken zu starten! ✨`)
-      } else {
-        toast.info(t('messenger.streak.restoreUnavailable'))
-      }
     }
   }
 
@@ -2763,9 +2715,19 @@ function MessengerSeite() {
                   onSeitenleisteUmschalten={() => setIsSidebarCollapsed((v) => !v)}
                   seitenleisteEingeklappt={isSidebarCollapsed}
                   onSprachanruf={
-                    activeContact?.isFriend ? () => void starteAnruf('audio') : undefined
+                    activeContact?.isFriend
+                      ? () => void starteAnruf('audio')
+                      : activeGroup && groupCallPermissions.canStart
+                        ? () => handleStartGroupCall(false)
+                        : undefined
                   }
-                  onVideoanruf={() => void starteAnruf('video')}
+                  onVideoanruf={
+                    activeContact?.isFriend
+                      ? () => void starteAnruf('video')
+                      : activeGroup && groupCallPermissions.canStart
+                        ? () => handleStartGroupCall(true)
+                        : undefined
+                  }
                   onAnheften={
                     angeheftet && darfAnheften ? () => void handleAnheften(angeheftet) : undefined
                   }
@@ -3409,6 +3371,12 @@ function MessengerSeite() {
         augenblickModus={augenblickModus}
         setAugenblickModus={setAugenblickModus}
         onCameraCapture={(dataUrl) => {
+          if (funkeModus === 'blast') {
+            setFunkeModus(null)
+            setFunkenFoto(dataUrl)
+            setIsFunkenEmpfaengerOpen(true)
+            return
+          }
           if (augenblickModus && activeContact) {
             void handleSendMessage({
               text: '',

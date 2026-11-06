@@ -4,7 +4,6 @@ import {
   Bell,
   BellOff,
   Camera,
-  Image as ImageIcon,
   LogOut,
   Phone,
   Share2,
@@ -13,7 +12,6 @@ import {
   Timer,
   Trash2,
   UserRound,
-  Video,
 } from 'lucide-react'
 import { Blatteintrag } from '@maunting/ui'
 
@@ -51,7 +49,7 @@ interface ChatActionsMenuProps {
   onGruppenanruf?: { erlaubt: boolean; onStarten: () => void }
   /** Kamera für einen Augenblick; nur bei Freunden. */
   onAugenblick?: () => void
-  onHintergrund: () => void
+  onHintergrund?: () => void
   onEinladung: () => void
   /** Öffnet die Gruppen-Einstellungen: Allgemein, Mitglieder, Rollen, Hintergrund. */
   onEinstellungen: () => void
@@ -85,131 +83,109 @@ export function ChatActionsMenu({
   }
 
   return (
-    <>
-      {stumm !== null && (
-        <Blatteintrag
-          icon={stumm ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
-          label={stumm ? t('messenger.unmute') : t('messenger.mute')}
-          onClick={tu(aktion.onStumm)}
-        />
-      )}
+    <div className="space-y-0.5">
+      {/* 1. Bereich: Profil, Identität & Gruppe */}
       {kontakt && (
         <Blatteintrag
-          icon={<UserRound className="w-4 h-4" />}
+          icon={<UserRound className="w-4 h-4 text-on-surface-variant" />}
           label={t('social.profile.show')}
           onClick={tu(aktion.onProfil)}
         />
       )}
       {kontakt && (
         <Blatteintrag
-          icon={<ShieldCheck className="w-4 h-4" />}
+          icon={<ShieldCheck className="w-4 h-4 text-on-surface-variant" />}
           label={t('messenger.verifySafetyNumber')}
           onClick={tu(aktion.onSicherheitsnummer)}
         />
       )}
-      {/* Die aktuelle Frist steht auch ohne das Recht da — wissen, wann die
-          eigenen Nachrichten verschwinden, darf jedes Mitglied. */}
-      <Blatteintrag
-        icon={<Timer className="w-4 h-4" />}
-        label={t('messenger.disappearingMessages')}
-        hinweis={verfallErlaubt ? verfallStufe : `${verfallStufe} · ${t('messenger.retentionNoRight')}`}
-        disabled={!verfallErlaubt}
-        onClick={tu(aktion.onVerfall)}
-      />
-      {kontakt?.istFreund && (
+      {gruppe && (
         <Blatteintrag
-          icon={<Video className="w-4 h-4" />}
-          label={t('messenger.videoCall')}
-          onClick={tu(aktion.onVideoanruf)}
+          icon={<Settings2 className="w-4 h-4 text-on-surface-variant" />}
+          label={t('messenger.groupSettings')}
+          onClick={tu(aktion.onEinstellungen)}
         />
       )}
-      {/* Anruf und Augenblick standen bis 27.10.2026 als eigene Knöpfe im Kopf.
-          Dort nahmen sie dem Namen den Platz; hier bleiben sie erreichbar. */}
-      {aktion.onSprachanruf && (
+      {gruppe && gruppe.hatEinladung && (
         <Blatteintrag
-          icon={<Phone className="w-4 h-4" />}
-          label={t('messenger.startVoiceCall')}
-          onClick={tu(aktion.onSprachanruf)}
+          icon={<Share2 className="w-4 h-4 text-on-surface-variant" />}
+          label={t('messenger.copyInvite')}
+          onClick={tu(aktion.onEinladung)}
         />
       )}
-      {aktion.onGruppenanruf && (
+
+      {/* Trennlinie */}
+      <div className="my-1 border-t border-outline-variant/20" />
+
+      {/* 2. Bereich: Medien & Anrufe */}
+      {kontakt?.istFreund && aktion.onAugenblick && (
         <Blatteintrag
-          icon={<Phone className="w-4 h-4" />}
+          icon={<Camera className="w-4 h-4 text-on-surface-variant" />}
+          label={t('messenger.moment.take')}
+          onClick={tu(aktion.onAugenblick)}
+        />
+      )}
+      {gruppe && aktion.onGruppenanruf && (
+        <Blatteintrag
+          icon={<Phone className="w-4 h-4 text-on-surface-variant" />}
           label={t('messenger.startGroupCall')}
           hinweis={aktion.onGruppenanruf.erlaubt ? undefined : t('messenger.noStartCallRight')}
           disabled={!aktion.onGruppenanruf.erlaubt}
           onClick={tu(aktion.onGruppenanruf.onStarten)}
         />
       )}
-      {aktion.onAugenblick && (
+
+      {/* 3. Bereich: Chat-Einstellungen & Benachrichtigungen */}
+      <Blatteintrag
+        icon={<Timer className="w-4 h-4 text-on-surface-variant" />}
+        label={t('messenger.disappearingMessages')}
+        hinweis={verfallErlaubt ? verfallStufe : `${verfallStufe} · ${t('messenger.retentionNoRight')}`}
+        disabled={!verfallErlaubt}
+        onClick={tu(aktion.onVerfall)}
+      />
+      {stumm !== null && (
         <Blatteintrag
-          icon={<Camera className="w-4 h-4" />}
-          label={t('messenger.moment.take')}
-          onClick={tu(aktion.onAugenblick)}
+          icon={stumm ? <Bell className="w-4 h-4 text-status-warning" /> : <BellOff className="w-4 h-4 text-on-surface-variant" />}
+          label={stumm ? t('messenger.unmute') : t('messenger.mute')}
+          onClick={tu(aktion.onStumm)}
         />
       )}
-      <Blatteintrag
-        icon={<ImageIcon className="w-4 h-4" />}
-        label={
-          gruppe
-            ? t('social.groupRoles.backgroundHeading')
-            : t('social.wallpaper.title')
-        }
-        onClick={tu(aktion.onHintergrund)}
-      />
 
-      {gruppe && (
-        <>
-          {gruppe.hatEinladung && (
-            <Blatteintrag
-              icon={<Share2 className="w-4 h-4" />}
-              label={t('messenger.copyInvite')}
-              onClick={tu(aktion.onEinladung)}
-            />
-          )}
-          {/* Für alle Mitglieder: was sie nicht ändern dürfen, ist im Dialog
-              deaktiviert. Wer nichts darf, sieht trotzdem Mitglieder, Rollen
-              und den geteilten Hintergrund. */}
-          <Blatteintrag
-            icon={<Settings2 className="w-4 h-4" />}
-            label={t('messenger.groupSettings')}
-            onClick={tu(aktion.onEinstellungen)}
-          />
-          {gruppe.istEigentuemer ? (
-            <Blatteintrag
-              icon={<Trash2 className="w-4 h-4" />}
-              label={t('messenger.deleteGroup')}
-              gefahr
-              onClick={tu(aktion.onLoeschen)}
-            />
-          ) : (
-            <Blatteintrag
-              icon={<LogOut className="w-4 h-4" />}
-              label={t('messenger.leaveGroup')}
-              gefahr
-              onClick={tu(aktion.onVerlassen)}
-            />
-          )}
-        </>
-      )}
+      {/* Trennlinie vor Gefahrenzone */}
+      <div className="my-1 border-t border-outline-variant/20" />
 
+      {/* 4. Bereich: Entfernen & Gefahrenzone */}
       {kontakt && (
         <Blatteintrag
-          icon={<Trash2 className="w-4 h-4" />}
+          icon={<Trash2 className="w-4 h-4 text-status-destructive" />}
           label={t('messenger.removeChatFromList')}
           gefahr
           onClick={tu(aktion.onChatEntfernen)}
         />
       )}
-
       {kontakt && (
         <Blatteintrag
-          icon={<Ban className="w-4 h-4" />}
+          icon={<Ban className="w-4 h-4 text-status-destructive" />}
           label={kontakt.blockiert ? t('messenger.unblockContact') : t('messenger.blockContact')}
           gefahr={!kontakt.blockiert}
           onClick={tu(aktion.onBlockieren)}
         />
       )}
-    </>
+      {gruppe && (gruppe.istEigentuemer ? (
+        <Blatteintrag
+          icon={<Trash2 className="w-4 h-4 text-status-destructive" />}
+          label={t('messenger.deleteGroup')}
+          gefahr
+          onClick={tu(aktion.onLoeschen)}
+        />
+      ) : (
+        <Blatteintrag
+          icon={<LogOut className="w-4 h-4 text-status-destructive" />}
+          label={t('messenger.leaveGroup')}
+          gefahr
+          onClick={tu(aktion.onVerlassen)}
+        />
+      ))}
+    </div>
   )
 }

@@ -159,7 +159,7 @@ export function ChatZeilenGeste({
           transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto
           focus-within:opacity-100 focus-within:pointer-events-auto"
       >
-        <Kurzinfo text={t('messenger.chatActions')} seite="ende">
+        <Kurzinfo text={t('messenger.chatActions')} seite="anfang" portal>
           <button
             type="button"
             onPointerDown={(e) => e.stopPropagation()}

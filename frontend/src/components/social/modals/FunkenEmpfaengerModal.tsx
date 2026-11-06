@@ -180,7 +180,7 @@ export function FunkenEmpfaengerModal({
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <div className="relative shrink-0">
-                      <Avatar src={k.avatar_url} name={k.username} size="sm" />
+                      <Avatar src={k.avatarUrl} name={k.username} size="sm" />
                       {k.status === 'online' && (
                         <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-status-success ring-1 ring-black" />
                       )}

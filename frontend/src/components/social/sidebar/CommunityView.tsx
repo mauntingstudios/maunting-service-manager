@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MessageSquare, Plus, Search, Share2, UsersRound } from 'lucide-react'
+import { Plus, Search, Share2, UsersRound } from 'lucide-react'
 import { Button, Input, Kurzinfo } from '@maunting/ui'
 import type { ChatGroupItem } from '@/api/social'
 
@@ -84,7 +84,7 @@ export function CommunityView({
             {!suche.trim() && (
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 onClick={onNeueGruppe}
                 className="rounded-full text-xs"

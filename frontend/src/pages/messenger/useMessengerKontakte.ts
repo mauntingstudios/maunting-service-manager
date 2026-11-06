@@ -8,6 +8,7 @@ import { useStoryAnsicht } from '@/hooks/useStoryAnsicht'
 // Chat-Kennungen werden lokal aus peerId/groupId gebildet.
 import { fuelleNamenNach, zeigeGespraech } from '@/services/gespraechsListe'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
+import { still } from '@/lib/still'
 
 export type MessengerFilterTab = 'all' | 'groups' | 'friends' | 'teams' | 'public'
 export type MessengerNavTab = 'chats' | 'updates' | 'community'
@@ -135,7 +136,6 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
    * `alleKontakte` entsteht.
    */
   useEffect(() => {
-    if (versteckt.size === 0) return
     const beiEreignis = (e: Event) => {
       const detail = (e as CustomEvent<{
         type?: string
@@ -145,10 +145,13 @@ export function useMessengerKontakte({ currentUserId, messengerGesperrt, gruppen
       if (detail?.type !== 'message_created' || detail.chat_type !== 'direct') return
       const sender = Number(detail.sender_user_id)
       if (!sender || sender === Number(currentUserId)) return
-      if (!versteckt.has(sender)) return
-      void zeigeGespraech(sender)
-        .then(() => loadData())
-        .catch(() => {})
+      if (versteckt.has(sender)) {
+        void zeigeGespraech(sender)
+          .then(() => loadData())
+          .catch((err) => still(err, 'useMessengerKontakte:zeigeGespraech'))
+      } else {
+        void loadData().catch((err) => still(err, 'useMessengerKontakte:loadData'))
+      }
     }
     window.addEventListener('msm:sync-event', beiEreignis)
     return () => window.removeEventListener('msm:sync-event', beiEreignis)

@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import {
+  getDirectChats,
   getFriends,
   getGroups,
   getPublicProfiles,
@@ -99,18 +100,15 @@ export function useKontaktdaten(currentUserId: number, messengerGesperrt: boolea
 
   const laden = async () => {
     try {
-      const [friendsData, groupsData, teamsData, storiesData, publicData, directChatsData, versteckteData] =
+      const [friendsData, groupsData, teamsData, storiesData, publicData, directChatsData, localChatsData, versteckteData] =
         await Promise.all([
           getFriends().catch(() => []),
           getGroups().catch(() => []),
           teamsApi.list().catch(() => []),
           getStories().catch(() => []),
           getPublicProfiles().catch(() => []),
-          // Kein Netzaufruf mehr: seit Stufe 6b weiss der Server nicht, mit wem
-          // dieses Konto schreibt. Die Liste liegt versiegelt auf diesem Gerät.
+          getDirectChats().catch(() => []),
           gespraechsListe().catch(() => []),
-          // Aus der Liste genommen ist nicht gelöscht: Freunde, Teammitglieder
-          // und öffentliche Profile stünden sonst sofort wieder da.
           versteckteGespraeche().catch(() => new Set<number>()),
         ])
       setFriends(behalteGleiches(friendsData))
@@ -120,7 +118,10 @@ export function useKontaktdaten(currentUserId: number, messengerGesperrt: boolea
       setGroups(behalteGleiches(await benenneGruppen(groupsData).catch(() => groupsData)))
       setStories(behalteGleiches(storiesData))
       setPublicUsers(behalteGleiches(publicData))
-      setDirectChats(behalteGleiches(directChatsData))
+      const alleDirectChatsMap = new Map<number, DirectChatItem>()
+      for (const dc of localChatsData) alleDirectChatsMap.set(dc.other_user_id, dc)
+      for (const dc of directChatsData) alleDirectChatsMap.set(dc.other_user_id, dc)
+      setDirectChats(behalteGleiches(Array.from(alleDirectChatsMap.values())))
       setVersteckte([...versteckteData].sort((a, b) => a - b))
 
       // Die Mitglieder je Team nur jede Minute oder wenn sich die Teams ändern.

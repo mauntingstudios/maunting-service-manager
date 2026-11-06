@@ -1,8 +1,8 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { BellOff, ChevronLeft, PanelLeftClose, PanelLeftOpen, Phone, Pin, Search, UserPlus, Video } from 'lucide-react'
+import { BellOff, ChevronLeft, ChevronRight, MoreHorizontal, Phone, Pin, Search, UserPlus, Video } from 'lucide-react'
 import { Avatar } from '@/components/app/Avatar'
-import { Blattknopf, Kurzinfo } from '@maunting/ui'
+import { Blattmenue, Kurzinfo } from '@maunting/ui'
 
 interface ChatHeaderProps {
   /** Der Name des Gesprächs: Kontoname oder Gruppentitel. */
@@ -38,9 +38,9 @@ interface ChatHeaderProps {
   seitenleisteEingeklappt?: boolean
 }
 
-// Runder Button mit Glassmorphism-Ästhetik für Desktop und Mobilgeräte
+// Runder Button mit Design-DNA / KI-Chat Ästhetik für Desktop und Mobilgeräte
 const rundknopf =
-  'flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-white/5 hover:bg-white/15 text-white/80 hover:text-white border border-white/15 backdrop-blur-md shadow-sm transition-all active:scale-95'
+  'flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95'
 
 /**
  * Die Kopfleiste des offenen Chats.
@@ -76,13 +76,15 @@ export function ChatHeader({
   seitenleisteEingeklappt = false,
 }: ChatHeaderProps) {
   const { t } = useTranslation()
+  const [menueOffen, setMenueOffen] = useState(false)
 
   return (
-    <header className="relative z-30 flex min-h-16 shrink-0 items-center gap-2 border-b border-white/10 bg-black/40 px-3 pt-[var(--msm-oben-sicher)] backdrop-blur-xl sm:gap-3 sm:px-4">
+    <header className="relative z-30 flex min-h-16 shrink-0 items-center gap-2 border-b border-outline-variant/30 bg-surface-container-lowest/80 px-3 pt-[var(--msm-oben-sicher)] backdrop-blur-xl sm:gap-3 sm:px-4">
       {onSeitenleisteUmschalten && (
         <Kurzinfo
           text={seitenleisteEingeklappt ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
           seite="anfang"
+          portal
           aussen="shrink-0 hidden md:inline-flex"
         >
           <button
@@ -92,9 +94,9 @@ export function ChatHeader({
             aria-label={seitenleisteEingeklappt ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
           >
             {seitenleisteEingeklappt ? (
-              <PanelLeftOpen className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4" />
             ) : (
-              <PanelLeftClose className="w-4 h-4" />
+              <ChevronLeft className="w-4 h-4" />
             )}
           </button>
         </Kurzinfo>
@@ -104,7 +106,7 @@ export function ChatHeader({
         <button
           type="button"
           onClick={onZurueck}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 hover:text-white border border-white/10"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface border border-outline-variant/30"
           aria-label={t('messenger.backToContacts')}
         >
           <ChevronLeft className="w-5 h-5" />
@@ -115,7 +117,7 @@ export function ChatHeader({
         <Avatar src={bild} name={titel} size="md" />
         {online && (
           <span
-            className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-status-success ring-2 ring-black shadow-sm"
+            className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-status-success ring-2 ring-surface shadow-sm"
             aria-hidden="true"
           />
         )}
@@ -128,14 +130,14 @@ export function ChatHeader({
             <button
               type="button"
               onClick={onProfil}
-              className="min-w-0 truncate text-base sm:text-lg font-semibold text-white tracking-tight hover:text-primary transition-colors"
+              className="min-w-0 truncate text-base sm:text-lg font-semibold text-on-surface tracking-tight hover:text-primary transition-colors"
               aria-description={t('social.profile.open', { name: titel })}
             >
               {titel}
             </button>
           </Kurzinfo>
         ) : (
-          <span className="min-w-0 truncate text-base sm:text-lg font-semibold text-white tracking-tight">{titel}</span>
+          <span className="min-w-0 truncate text-base sm:text-lg font-semibold text-on-surface tracking-tight">{titel}</span>
         )}
         {funke}
         {stumm && (
@@ -156,7 +158,7 @@ export function ChatHeader({
         )}
         </div>
         {(info || online) && (
-          <p className="truncate text-xs text-white/70 flex items-center gap-1.5 font-normal">
+          <p className="truncate text-xs text-on-surface-variant flex items-center gap-1.5 font-normal">
             {online && <span className="w-1.5 h-1.5 rounded-full bg-status-success shrink-0" />}
             <span>{online ? 'Online' : info}</span>
           </p>
@@ -227,14 +229,34 @@ export function ChatHeader({
           </Kurzinfo>
         )}
 
-        <Blattknopf
-          variante="schwebend"
-          label={t('messenger.moreChatSettings')}
+        <Kurzinfo text={t('messenger.moreChatSettings')} seite="ende" portal>
+          <button
+            type="button"
+            onClick={() => setMenueOffen(true)}
+            className={rundknopf}
+            aria-haspopup="dialog"
+            aria-expanded={menueOffen}
+            aria-label={t('messenger.moreChatSettings')}
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+        </Kurzinfo>
+
+        <Blattmenue
+          offen={menueOffen}
+          onSchliessen={() => setMenueOffen(false)}
           titel={titel || t('messenger.chat')}
-          ueberschrift={titel || undefined}
+          className="bg-surface-container-high/95 backdrop-blur-2xl border border-outline-variant/30 text-on-surface shadow-2xl"
         >
-          {menue}
-        </Blattknopf>
+          {titel && (
+            <div className="px-4 pt-3 pb-2 text-xs font-semibold text-on-surface-variant truncate border-b border-outline-variant/20">
+              {titel}
+            </div>
+          )}
+          <div className="py-1">
+            {menue(() => setMenueOffen(false))}
+          </div>
+        </Blattmenue>
       </div>
     </header>
   )
