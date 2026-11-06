@@ -8720,6 +8720,7 @@
     "contactBlocked": "You have blocked this contact.",
     "contactBlockedToast": "{{name}} is blocked.",
     "noContactsOrGroups": "No contacts or groups found.",
+    "noContacts": "No contacts found.",
     "noStatusUpdates": "No status updates from friends yet.",
     "contactActivity": "What your contacts are up to",
     "communitySubtitle": "Public and private groups with an invite link",

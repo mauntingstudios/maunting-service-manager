@@ -17,6 +17,8 @@ interface MessengerRailProps {
   onModus: (modus: MessengerModus) => void
   hatStories: boolean
   ungelesenGesamt?: number
+  ungelesenChats?: number
+  ungelesenCommunity?: number
   funkeZahl?: number
   onMarkierteNachrichten: () => void
   onAntwortenAnMich?: () => void
@@ -35,6 +37,8 @@ export function MessengerRail({
   onModus,
   hatStories,
   ungelesenGesamt = 0,
+  ungelesenChats,
+  ungelesenCommunity = 0,
   funkeZahl = 0,
   onMarkierteNachrichten,
   onAntwortenAnMich,
@@ -43,17 +47,18 @@ export function MessengerRail({
   onEinstellungen,
 }: MessengerRailProps) {
   const { t } = useTranslation()
+  const ungelesenChatsZahl = ungelesenChats ?? ungelesenGesamt
 
   const buttonKlasse = (aktiv: boolean) =>
     `relative flex items-center justify-center w-11 h-11 rounded-2xl transition-all ${
       aktiv
         ? 'bg-primary text-on-primary shadow-md shadow-primary/30 scale-105'
-        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/70'
+        : 'text-white/70 hover:text-white hover:bg-white/10'
     }`
 
   return (
     <aside
-      className="hidden md:flex flex-col items-center justify-between py-3 px-2 w-16 shrink-0 bg-surface-container-lowest/80 border-r border-outline-variant/20 backdrop-blur-md z-20 select-none"
+      className="hidden md:flex flex-col items-center justify-between py-3 px-2 w-16 shrink-0 bg-transparent border-r border-white/5 z-20 select-none"
       aria-label="Messenger Navigation"
     >
       {/* Oben: Logo und Haupt-Modi */}
@@ -70,9 +75,9 @@ export function MessengerRail({
             aria-label={t('messenger.nav.chats')}
           >
             <MessageSquare className="w-5 h-5" />
-            {ungelesenGesamt > 0 && modus !== 'chats' && (
-              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-on-primary text-label-sm font-bold flex items-center justify-center ring-2 ring-surface">
-                {ungelesenGesamt > 99 ? '99+' : ungelesenGesamt}
+            {ungelesenChatsZahl > 0 && modus !== 'chats' && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-on-primary text-label-sm font-bold flex items-center justify-center ring-2 ring-black">
+                {ungelesenChatsZahl > 99 ? '99+' : ungelesenChatsZahl}
               </span>
             )}
           </button>
@@ -86,6 +91,11 @@ export function MessengerRail({
             aria-label={t('messenger.nav.community')}
           >
             <UsersRound className="w-5 h-5" />
+            {ungelesenCommunity > 0 && modus !== 'community' && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-on-primary text-label-sm font-bold flex items-center justify-center ring-2 ring-black">
+                {ungelesenCommunity > 99 ? '99+' : ungelesenCommunity}
+              </span>
+            )}
           </button>
         </Kurzinfo>
 

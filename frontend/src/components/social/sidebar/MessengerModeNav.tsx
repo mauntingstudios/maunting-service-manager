@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { MessageSquare, Sparkles, UsersRound } from 'lucide-react'
+import { MessageSquare, Sparkles, User, UsersRound, Zap } from 'lucide-react'
 
 export type MessengerModus = 'chats' | 'updates' | 'community'
 
@@ -58,28 +58,45 @@ export function MessengerModeNav({
   )
 }
 
-import { Zap } from 'lucide-react'
+export interface MessengerBottomNavProps {
+  modus: MessengerModus
+  onModus: (modus: MessengerModus) => void
+  onFunke?: () => void
+  ungelesenChats?: number
+  ungelesenCommunity?: number
+  hatStories?: boolean
+  onProfil?: () => void
+}
 
-/** Dieselbe Wahl als Leiste am unteren Rand, nur auf schmalen Bildschirmen. */
+/** Dieselbe Wahl als Leiste am unteren Rand auf Mobilgeräten mit Snapchat-Style Funke-Aktion. */
 export function MessengerBottomNav({
   modus,
   onModus,
   onFunke,
-}: MessengerModeNavProps & { onFunke?: () => void }) {
+  ungelesenChats = 0,
+  ungelesenCommunity = 0,
+  hatStories = false,
+  onProfil,
+}: MessengerBottomNavProps) {
   const { t } = useTranslation()
 
   return (
-    <nav className="md:hidden shrink-0 h-16 box-content pb-[var(--msm-unten-sicher)] border-t border-outline-variant/20 bg-surface-container/95 backdrop-blur-md flex items-center justify-around px-2 z-10">
+    <nav className="md:hidden shrink-0 h-16 box-content pb-[var(--msm-unten-sicher)] border-t border-white/10 bg-black/75 backdrop-blur-xl flex items-center justify-around px-2 z-10 select-none">
       <button
         type="button"
         onClick={() => onModus('chats')}
-        className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
-          modus === 'chats' ? 'text-primary font-bold' : 'text-on-surface-variant/70 hover:text-on-surface'
+        className={`relative flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+          modus === 'chats' ? 'text-primary font-bold' : 'text-white/60 hover:text-white'
         }`}
         aria-label={t('messenger.nav.chats')}
       >
-        <div className={`p-1.5 rounded-full ${modus === 'chats' ? 'bg-primary/15' : ''}`}>
+        <div className={`relative p-1.5 rounded-full ${modus === 'chats' ? 'bg-primary/20 text-primary' : ''}`}>
           <MessageSquare className="w-5 h-5" />
+          {ungelesenChats > 0 && modus !== 'chats' && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-primary text-on-primary text-label-sm font-bold flex items-center justify-center ring-1 ring-black">
+              {ungelesenChats > 99 ? '99+' : ungelesenChats}
+            </span>
+          )}
         </div>
         <span className="text-label-sm mt-0.5">{t('messenger.nav.chats')}</span>
       </button>
@@ -87,24 +104,29 @@ export function MessengerBottomNav({
       <button
         type="button"
         onClick={() => onModus('community')}
-        className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
-          modus === 'community' ? 'text-primary font-bold' : 'text-on-surface-variant/70 hover:text-on-surface'
+        className={`relative flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+          modus === 'community' ? 'text-primary font-bold' : 'text-white/60 hover:text-white'
         }`}
         aria-label={t('messenger.nav.community')}
       >
-        <div className={`p-1.5 rounded-full ${modus === 'community' ? 'bg-primary/15' : ''}`}>
+        <div className={`relative p-1.5 rounded-full ${modus === 'community' ? 'bg-primary/20 text-primary' : ''}`}>
           <UsersRound className="w-5 h-5" />
+          {ungelesenCommunity > 0 && modus !== 'community' && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-primary text-on-primary text-label-sm font-bold flex items-center justify-center ring-1 ring-black">
+              {ungelesenCommunity > 99 ? '99+' : ungelesenCommunity}
+            </span>
+          )}
         </div>
         <span className="text-label-sm mt-0.5">{t('messenger.nav.community')}</span>
       </button>
 
-      {/* Prominenter, erhoehter Funke-Aktionsknopf in der Mitte (wie in der Referenz) */}
-      <div className="flex flex-col items-center justify-center px-1 -translate-y-3">
+      {/* Prominenter, erhoehter Funke-Aktionsknopf in der Mitte (wie Snapchat) */}
+      <div className="flex flex-col items-center justify-center px-1 -translate-y-3.5">
         <button
           type="button"
           onClick={onFunke || (() => onModus('chats'))}
-          className="w-12 h-12 rounded-full bg-primary text-on-primary shadow-lg shadow-primary/40 flex items-center justify-center border-2 border-surface active:scale-95 transition-transform"
-          aria-label="Funke"
+          className="w-13 h-13 rounded-full bg-gradient-to-tr from-primary to-accent text-on-primary shadow-lg shadow-primary/40 flex items-center justify-center border-2 border-black active:scale-95 transition-transform"
+          aria-label="Funken aufnehmen"
         >
           <Zap className="w-6 h-6 fill-white" />
         </button>
@@ -113,15 +135,30 @@ export function MessengerBottomNav({
       <button
         type="button"
         onClick={() => onModus('updates')}
-        className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
-          modus === 'updates' ? 'text-primary font-bold' : 'text-on-surface-variant/70 hover:text-on-surface'
+        className={`relative flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+          modus === 'updates' ? 'text-primary font-bold' : 'text-white/60 hover:text-white'
         }`}
         aria-label={t('messenger.nav.updates')}
       >
-        <div className={`p-1.5 rounded-full ${modus === 'updates' ? 'bg-primary/15' : ''}`}>
+        <div className={`relative p-1.5 rounded-full ${modus === 'updates' ? 'bg-primary/20 text-primary' : ''}`}>
           <Sparkles className="w-5 h-5" />
+          {hatStories && (
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-status-success ring-1 ring-black animate-pulse" />
+          )}
         </div>
         <span className="text-label-sm mt-0.5">{t('messenger.nav.updates')}</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={onProfil}
+        className="flex flex-col items-center justify-center flex-1 py-1 text-white/60 hover:text-white transition-colors"
+        aria-label="Profil und Einstellungen"
+      >
+        <div className="p-1.5 rounded-full">
+          <User className="w-5 h-5" />
+        </div>
+        <span className="text-label-sm mt-0.5">Profil</span>
       </button>
     </nav>
   )

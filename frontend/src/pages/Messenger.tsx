@@ -146,6 +146,7 @@ import { CalendarPickerDialog } from '@/components/social/modals/CalendarPickerD
 import { ChatEntfernenDialog } from '@/components/social/modals/ChatEntfernenDialog'
 import { MessengerBottomNav } from '@/components/social/sidebar/MessengerModeNav'
 import { MessengerRail } from '@/components/social/sidebar/MessengerRail'
+import { FunkenEmpfaengerModal } from '@/components/social/modals/FunkenEmpfaengerModal'
 import { MessengerEmptyState } from '@/components/social/chat/MessengerEmptyState'
 import { ContactFilterTabs } from '@/components/social/sidebar/ContactFilterTabs'
 import { StoriesCarouselBar } from '@/components/social/sidebar/StoriesCarouselBar'
@@ -166,6 +167,7 @@ import { ChatHintergrund } from '@/features/chatHintergrund'
 import { MessengerDialoge } from '@/components/social/modals/MessengerDialoge'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
+import { still } from '@/lib/still'
 import { useMessengerNotificationStore, PINS_MAX } from '@/stores/messengerNotificationStore'
 import { MessengerBetaBanner } from '@/components/social/MessengerBetaBanner'
 
@@ -411,6 +413,10 @@ function MessengerSeite() {
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false)
   /** Die Kamera nimmt einen Augenblick auf: Auslösen heißt Senden. */
   const [augenblickModus, setAugenblickModus] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [funkenFoto, setFunkenFoto] = useState<string | null>(null)
+  const [isFunkenEmpfaengerOpen, setIsFunkenEmpfaengerOpen] = useState(false)
+  const [isFunkenSending, setIsFunkenSending] = useState(false)
   /** Die offene Rückfrage vor einer Wiederherstellung des Funkens. */
   const [funkenRettung, setFunkenRettung] = useState<{ partnerId: number; name: string; anzahl: number } | null>(
     null,
@@ -2350,6 +2356,60 @@ function MessengerSeite() {
     return sum + (kern?.tage ?? 0)
   }, 0)
 
+  const ungelesenCommunity = useMemo(
+    () => groups.reduce((sum, g) => sum + (unreadCounts[groupMailboxMap[g.id]] || 0), 0),
+    [groups, groupMailboxMap, unreadCounts],
+  )
+  const ungelesenChats = useMemo(
+    () => contactsList.reduce((sum, c) => sum + (unreadCounts[c.mailbox_id] || 0), 0),
+    [contactsList, unreadCounts],
+  )
+
+  const handleFunkeTrigger = () => {
+    if (activeContact) {
+      oeffneAugenblick()
+    } else {
+      setAugenblickModus(true)
+      setIsCameraModalOpen(true)
+    }
+  }
+
+  const handleSendFunkenBlast = async (empfaengerUserIds: number[]) => {
+    if (!funkenFoto || empfaengerUserIds.length === 0) return
+    setIsFunkenSending(true)
+    let erfolgCount = 0
+    try {
+      for (const uid of empfaengerUserIds) {
+        const targetContact = contactsList.find((c) => c.userId === uid)
+        if (!targetContact?.mailbox_id) continue
+        try {
+          await handleSendMessage({
+            text: '',
+            img: { dataUrl: funkenFoto, name: 'augenblick.jpg' },
+            augenblick: true,
+            antwortAuf: null,
+            ziel: {
+              blindMailboxId: targetContact.mailbox_id,
+              recipientId: targetContact.userId,
+            },
+          })
+          erfolgCount++
+        } catch (err) {
+          still(err, 'messenger.funkenBlast')
+        }
+      }
+      toast.success(
+        erfolgCount === 1
+          ? 'Funke erfolgreich gesendet!'
+          : `Funke erfolgreich an ${erfolgCount} Kontakte gesendet!`,
+      )
+      setIsFunkenEmpfaengerOpen(false)
+      setFunkenFoto(null)
+    } finally {
+      setIsFunkenSending(false)
+    }
+  }
+
   const handleFunkeKlick = () => {
     if (partnerMitFunken.length > 0) {
       const naechster = partnerMitFunken.find((c) => c.userId !== activeContact?.userId) || partnerMitFunken[0]
@@ -2418,8 +2478,10 @@ function MessengerSeite() {
           onModus={setMobileNavTab}
           hatStories={stories.length > 0}
           ungelesenGesamt={Object.values(unreadCounts).reduce((a, b) => a + b, 0)}
+          ungelesenChats={ungelesenChats}
+          ungelesenCommunity={ungelesenCommunity}
           funkeZahl={funkeGesamt}
-          onFunke={handleFunkeKlick}
+          onFunke={handleFunkeTrigger}
           onMarkierteNachrichten={() => void ueberall.oeffne('markiert')}
           onAntwortenAnMich={() => void ueberall.oeffne('anMich')}
           onHintergrund={() => setIsWallpaperModalOpen(true)}
@@ -2428,34 +2490,13 @@ function MessengerSeite() {
 
         {/* Left Column: Modern Contacts & Groups List */}
         <div
-          className={`w-full md:w-80 lg:w-96 shrink-0 flex flex-col min-h-0 border-r border-outline-variant/20 bg-surface-container-low/60 ${
+          className={`w-full md:w-80 lg:w-96 shrink-0 flex flex-col min-h-0 border-r border-white/10 bg-surface-container-lowest/80 backdrop-blur-xl ${
             isChatOpen ? 'hidden md:flex' : 'flex'
-          }`}
+          } ${isSidebarCollapsed ? 'md:hidden' : ''}`}
         >
           <FreundschaftsanfragenKarte />
 
-          {/* Top Search & Category Tabs */}
-          <div className="p-2.5 border-b border-outline-variant/15 space-y-2 bg-surface-container/40">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60" />
-              <Input
-                value={searchQuery}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-                placeholder={t('messenger.searchPlaceholder')}
-                className="text-xs pl-8 h-8 rounded-full bg-surface-container-high/60 border-outline-variant/30 focus:border-primary/50 text-on-surface transition-all"
-              />
-            </div>
-
-            {mobileNavTab === 'chats' && (
-              <ContactFilterTabs
-                filter={filterTab}
-                onFilter={setFilterTab}
-                gruppenAnzahl={groups.length}
-                kontakte={contactsList}
-              />
-            )}
-          </div>
-
+          {/* Stories Bar direkt oben über den Kontakten */}
           {mobileNavTab === 'chats' && !searchQuery.trim() && (
             <StoriesCarouselBar
               ich={storyIch}
@@ -2464,6 +2505,21 @@ function MessengerSeite() {
               onOeffnen={(s) => storyAnsicht.betrachter.oeffne(s)}
               onErstellen={storyAnsicht.erstellung.mitText}
             />
+          )}
+
+          {/* Suchleiste für Kontakte */}
+          {mobileNavTab === 'chats' && (
+            <div className="p-2.5 border-b border-white/10 bg-transparent">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+                  placeholder={t('messenger.searchPlaceholder')}
+                  className="text-xs pl-8 h-8 rounded-full bg-white/5 border-white/10 text-white placeholder:text-white/40 focus:border-primary/50 transition-all"
+                />
+              </div>
+            </div>
           )}
 
           {/* Der Rückweg nach einer Wischgeste. Unten, weil dort der Daumen ist. */}
@@ -2485,73 +2541,39 @@ function MessengerSeite() {
 
           {/* List Scroll Area */}
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {/* View 1: Standard Chats Mode */}
+            {/* View 1: Standard Chats Mode - Nur Direktnachrichten, keine Gruppen */}
             {mobileNavTab === 'chats' && (
               <>
-                {/* Das Archiv. Ein weggeräumter Chat bleibt weggeräumt, auch
-                    wenn neue Nachrichten kommen; sein Ungelesen-Zähler steht
-                    deshalb hier und nicht in der Hauptliste. */}
+                {/* Das Archiv */}
                 {archivZahl > 0 && (
                   <button
                     type="button"
                     onClick={() => setArchivOffen((offen) => !offen)}
-                    className="w-full min-h-11 px-2.5 py-2 mb-1 flex items-center gap-2.5 rounded-xl text-left hover:bg-surface-container-high/60 transition-colors"
+                    className="w-full min-h-11 px-2.5 py-2 mb-1 flex items-center gap-2.5 rounded-xl text-left hover:bg-white/5 transition-colors"
                     aria-expanded={archivOffen}
                   >
-                    <span className="w-9 h-9 rounded-full bg-surface-container-high text-on-surface-variant flex items-center justify-center shrink-0">
+                    <span className="w-9 h-9 rounded-full bg-white/10 text-white/70 flex items-center justify-center shrink-0">
                       <Archive className="w-4 h-4" />
                     </span>
-                    <span className="min-w-0 flex-1 text-xs font-semibold text-on-surface-variant">
+                    <span className="min-w-0 flex-1 text-xs font-semibold text-white/80">
                       Archiviert ({archivZahl})
                     </span>
                     {archivUngelesen > 0 && (
-                      <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-label-sm font-bold rounded-full bg-on-surface-variant/20 text-on-surface-variant min-w-[18px]">
+                      <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-label-sm font-bold rounded-full bg-primary text-on-primary min-w-[18px]">
                         {archivUngelesen > 99 ? '99+' : archivUngelesen}
                       </span>
                     )}
                     <ChevronDown
-                      className={`w-4 h-4 text-on-surface-variant/70 shrink-0 transition-transform ${
+                      className={`w-4 h-4 text-white/50 shrink-0 transition-transform ${
                         archivOffen ? 'rotate-180' : ''
                       }`}
                     />
                   </button>
                 )}
 
-                {/* Groups Section */}
-                {(filteredGroups.length > 0 || filterTab === 'all' || filterTab === 'groups') && (
-                  <div className="space-y-1 mb-2">
-                    <div className="px-2 py-1 text-label-sm font-semibold text-on-surface-variant/70 uppercase tracking-wider flex items-center justify-between">
-                      <span>{t('messenger.sectionGroups')}</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-label-sm">{filteredGroups.length}</span>
-                        <Kurzinfo text={t('messenger.newGroup')} seite="ende" className="normal-case tracking-normal">
-                          <button
-                            type="button"
-                            onClick={() => setIsCreateGroupOpen(true)}
-                            className="p-0.5 rounded text-on-surface-variant hover:text-primary transition-colors"
-                            aria-label={t('messenger.newGroup')}
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </Kurzinfo>
-                      </div>
-                    </div>
-                    {(archivOffen
-                      ? [...gruppenNachArchiv.sichtbar, ...gruppenNachArchiv.imArchiv]
-                      : gruppenNachArchiv.sichtbar
-                    ).map((g) => zeichneGruppe(g))}
-                  </div>
-                )}
-
-                {/* Contacts Section */}
+                {/* Reine Kontaktliste */}
                 {filteredContacts.length > 0 && (
                   <div className="space-y-1">
-                    {filteredGroups.length > 0 && (
-                      <div className="px-2 py-1 text-label-sm font-semibold text-on-surface-variant/70 uppercase tracking-wider flex items-center justify-between">
-                        <span>Direktnachrichten</span>
-                        <span className="text-label-sm">{filteredContacts.length}</span>
-                      </div>
-                    )}
                     {(archivOffen
                       ? [...kontakteNachArchiv.sichtbar, ...kontakteNachArchiv.imArchiv]
                       : kontakteNachArchiv.sichtbar
@@ -2559,9 +2581,9 @@ function MessengerSeite() {
                   </div>
                 )}
 
-                {filteredContacts.length === 0 && filteredGroups.length === 0 && (
-                  <p className="py-12 text-center text-xs text-on-surface-variant/70">
-                    {t('messenger.noContactsOrGroups')}
+                {filteredContacts.length === 0 && (
+                  <p className="py-12 text-center text-xs text-white/50">
+                    {searchQuery.trim() ? 'Keine Kontakte gefunden.' : t('messenger.noContacts')}
                   </p>
                 )}
 
@@ -2597,6 +2619,21 @@ function MessengerSeite() {
               </>
             )}
 
+            {mobileNavTab === 'community' && (
+              <CommunityView
+                gruppen={groups}
+                onGruppe={(g) => {
+                  setActiveGroup(g)
+                  setActiveContact(null)
+                }}
+                onNeueGruppe={() => setIsCreateGroupOpen(true)}
+                onEinladungKopieren={handleCopyInviteLink}
+                aktiveGruppeId={activeGroup?.id}
+                ungeleseneNachrichten={unreadCounts}
+                gruppenMailboxMap={groupMailboxMap}
+              />
+            )}
+
             {mobileNavTab === 'updates' && (
               <StatusUpdatesView
                 ich={storyIch}
@@ -2611,25 +2648,17 @@ function MessengerSeite() {
                 }}
               />
             )}
-
-            {mobileNavTab === 'community' && (
-              <CommunityView
-                gruppen={groups}
-                onGruppe={(g) => {
-                  setActiveGroup(g)
-                  setActiveContact(null)
-                }}
-                onNeueGruppe={() => setIsCreateGroupOpen(true)}
-                onEinladungKopieren={handleCopyInviteLink}
-              />
-            )}
           </div>
 
           {!isChatOpen && (
             <MessengerBottomNav
               modus={mobileNavTab}
               onModus={setMobileNavTab}
-              onFunke={handleFunkeKlick}
+              ungelesenChats={ungelesenChats}
+              ungelesenCommunity={ungelesenCommunity}
+              hatStories={stories.length > 0}
+              onFunke={handleFunkeTrigger}
+              onProfil={() => navigate('/einstellungen')}
             />
           )}
         </div>
@@ -2731,6 +2760,8 @@ function MessengerSeite() {
                   stumm={Boolean(blindMailboxId && isChatMuted(blindMailboxId))}
                   blockiert={Boolean(activeContact && isBlocked(activeContact.userId))}
                   onZurueck={handleZurueckZurListe}
+                  onSeitenleisteUmschalten={() => setIsSidebarCollapsed((v) => !v)}
+                  seitenleisteEingeklappt={isSidebarCollapsed}
                   onSprachanruf={
                     activeContact?.isFriend ? () => void starteAnruf('audio') : undefined
                   }
@@ -3387,6 +3418,11 @@ function MessengerSeite() {
             })
             return
           }
+          if (augenblickModus && !activeContact) {
+            setFunkenFoto(dataUrl)
+            setIsFunkenEmpfaengerOpen(true)
+            return
+          }
           setSelectedImage({ dataUrl, name: 'kamera-aufnahme.jpg' })
         }}
         isGroupPermissionsOpen={isGroupPermissionsOpen}
@@ -3414,6 +3450,16 @@ function MessengerSeite() {
         setIsBlockConfirmOpen={setIsBlockConfirmOpen}
         blocked={Boolean(activeContact && isBlocked(activeContact.userId))}
         onBlockConfirm={handleBlockConfirm}
+      />
+
+      <FunkenEmpfaengerModal
+        open={isFunkenEmpfaengerOpen}
+        onOpenChange={setIsFunkenEmpfaengerOpen}
+        fotoDataUrl={funkenFoto}
+        kontakte={contactsList.filter((c) => c.isFriend)}
+        funkenPartnerIds={partnerMitFunken.map((c) => c.userId)}
+        onSenden={handleSendFunkenBlast}
+        sendet={isFunkenSending}
       />
 
       {/* Circular Video Note Recorder (R2) */}
