@@ -47,6 +47,7 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
   const unmountedRef = useRef(false)
+  const consecutiveErrorsRef = useRef(0)
 
   // 1. Ephemeres Schlüsselpaar & Session anfordern
   useEffect(() => {
@@ -105,16 +106,22 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
       try {
         const status = await getDeviceAuthSessionStatus(session.session_id, session.session_token)
         if (unmountedRef.current) return
+        consecutiveErrorsRef.current = 0
 
         if (status.status === 'resolved' && status.encrypted_payload) {
           if (pollingRef.current) {
             clearInterval(pollingRef.current)
             pollingRef.current = null
           }
-          setResolved(true)
 
-          const decrypted = await decryptAuthPayload(privateKey, status.encrypted_payload)
-          onSuccess(decrypted)
+          try {
+            const decrypted = await decryptAuthPayload(privateKey, status.encrypted_payload)
+            setResolved(true)
+            onSuccess(decrypted)
+          } catch (decErr) {
+            still(decErr, 'DeviceAuthQrView.poll.decrypt')
+            setErrorMsg('Fehler beim Entschlüsseln der Freigabe-Daten.')
+          }
         } else if (status.status === 'expired') {
           if (pollingRef.current) {
             clearInterval(pollingRef.current)
@@ -124,6 +131,14 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
         }
       } catch (err) {
         still(err, 'DeviceAuthQrView.poll')
+        consecutiveErrorsRef.current += 1
+        if (consecutiveErrorsRef.current >= 15) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current)
+            pollingRef.current = null
+          }
+          setErrorMsg('Verbindung zum Server verloren oder Sitzung ungültig.')
+        }
       }
     }
 

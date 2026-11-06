@@ -51,6 +51,7 @@ vi.mock('react-i18next', () => ({
 describe('SmartcardWalletModal Component', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     vi.mocked(useAuthStore).mockReturnValue({
       user: {
         id: 1,
@@ -68,6 +69,10 @@ describe('SmartcardWalletModal Component', () => {
       unlock: vi.fn().mockResolvedValue(true),
       lock: vi.fn(),
       rotationState: null,
+      fetchVaultSalt: vi.fn().mockResolvedValue({ salt: 'mock-salt', bucket_id: 'mock-bucket' }),
+      checkBiometricsSupport: vi.fn().mockResolvedValue(false),
+      deriveWalletUnlockPayload: vi.fn(),
+      unlockWithBiometrics: vi.fn(),
     } as any)
   })
 
@@ -215,6 +220,9 @@ describe('SmartcardWalletModal Component', () => {
       unlock: vi.fn(),
       lock: vi.fn(),
       rotationState: null,
+      fetchVaultSalt: vi.fn().mockResolvedValue({ salt: 'mock-salt', bucket_id: 'bucket-123' }),
+      checkBiometricsSupport: vi.fn().mockResolvedValue(false),
+      unlockWithBiometrics: vi.fn(),
     } as any)
 
     vi.mocked(fetchDeviceAuthPublicKey).mockResolvedValue({ public_key: schluessel, purpose: 'unlock' })
@@ -244,5 +252,81 @@ describe('SmartcardWalletModal Component', () => {
     })
     expect(await screen.findByText('Zielgerät erfolgreich entsperrt!')).toBeInTheDocument()
     localStorage.removeItem('mss:vault_server_bucket')
+  })
+
+  it('fragt bei unbestätigtem Smartphone das Master-Passwort ab, um Smartphone und Zielgerät zu autorisieren', async () => {
+    const schluessel = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0abcdef1234567890'
+    const fp = await fingerprintPublicKey(schluessel)
+    const unlockMock = vi.fn().mockResolvedValue(true)
+    const deriveWalletUnlockPayload = vi.fn().mockResolvedValue({
+      keyBase64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+      bucketId: 'bucket-xyz',
+      bucketAuthToken: 'token-xyz',
+    })
+
+    vi.mocked(useVaultStore).mockReturnValue({
+      isInitialized: true,
+      isUnlocked: false,
+      isDeviceAuthorized: false,
+      isBiometricsEnabled: false,
+      isBiometricsSupported: false,
+      bucketId: 'bucket-xyz',
+      getKnownBucketId: () => 'bucket-xyz',
+      deriveWalletUnlockPayload,
+      unlock: unlockMock,
+      lock: vi.fn(),
+      rotationState: null,
+      fetchVaultSalt: vi.fn().mockResolvedValue({ salt: 'mock-salt', bucket_id: 'bucket-xyz' }),
+      checkBiometricsSupport: vi.fn().mockResolvedValue(false),
+      unlockWithBiometrics: vi.fn(),
+    } as any)
+
+    vi.mocked(fetchDeviceAuthPublicKey).mockResolvedValue({ public_key: schluessel, purpose: 'authorize' })
+    vi.mocked(resolveDeviceAuthSession).mockResolvedValue({ success: true })
+
+    render(<SmartcardWalletModal isOpen={true} onClose={vi.fn()} />)
+    erkannterCode!(buildDeviceAuthQrValueV3(
+      'a1b2c3d4e5f67890',
+      'authorize',
+      'aufloese-token-aus-dem-qr-code',
+      fp,
+    ))
+
+    // Sollte nicht mehr blockieren mit "Bitte bestätige zuerst...", sondern nach Master-Passwort fragen!
+    const pwInput = await screen.findByLabelText('Master-Passwort')
+    expect(screen.getByText('Zielgerät & Smartphone autorisieren')).toBeInTheDocument()
+
+    fireEvent.change(pwInput, { target: { value: 'master-geheim' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Autorisieren' }))
+
+    await waitFor(() => {
+      expect(unlockMock).toHaveBeenCalledWith('master-geheim')
+      expect(resolveDeviceAuthSession).toHaveBeenCalledWith(
+        'a1b2c3d4e5f67890',
+        'chiffre-aus-test',
+        'aufloese-token-aus-dem-qr-code',
+      )
+    })
+    expect(await screen.findByText('Zielgerät erfolgreich autorisiert!')).toBeInTheDocument()
+  })
+
+  it('meldet Server-Mismatch, wenn die Sitzung auf dem Server nicht gefunden wird (404)', async () => {
+    const schluessel = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0abcdef1234567890'
+    const fp = await fingerprintPublicKey(schluessel)
+
+    const notFoundErr: any = new Error('Not found')
+    notFoundErr.response = { status: 404 }
+    vi.mocked(fetchDeviceAuthPublicKey).mockRejectedValue(notFoundErr)
+
+    render(<SmartcardWalletModal isOpen={true} onClose={vi.fn()} />)
+    erkannterCode!(buildDeviceAuthQrValueV3(
+      'deadbeef12345678',
+      'authorize',
+      'aufloese-token-aus-dem-qr-code',
+      fp,
+    ))
+
+    expect(await screen.findByText(/Bitte prüfe, ob PC und Smartphone mit demselben Server verbunden sind/i)).toBeInTheDocument()
+    expect(resolveDeviceAuthSession).not.toHaveBeenCalled()
   })
 })

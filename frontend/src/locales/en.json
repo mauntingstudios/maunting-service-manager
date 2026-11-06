@@ -6889,7 +6889,11 @@
       "welcomeAuthorized": "This device is authorized for your Maunting Card.",
       "welcomePasswordLabel": "Master password (optional)",
       "welcomeChecking": "Checking vault …",
-      "welcomeSkip": "Later"
+      "welcomeSkip": "Later",
+      "freigabeFehlgeschlagen": "Authorization via Smartcard failed",
+      "qrKeyMismatch": "Security warning: Key does not match the QR code.",
+      "qrSessionNotFound": "Session not found. Please check if PC and smartphone are connected to the same server.",
+      "qrWrongUser": "QR code belongs to a different user account."
     },
     "vault": {
       "titel": "Vault security",
@@ -7577,7 +7581,13 @@
         "kopiert": "Copied",
         "verwenden": "Use as entry",
         "hinweis": "The password stays on this device until you copy it."
-      }
+      },
+      "biometrieFehlgeschlagen": "Biometric authentication failed.",
+      "walletAuthorizeGrund": "Authorize devices with Smartcard",
+      "walletAuthorizeSubtitle": "Enter master password to confirm Smartcard",
+      "walletAuthorizeTitle": "Authorize target device & smartphone",
+      "walletZielgeraetAutorisiert": "Target device authorized successfully!",
+      "walletZielgeraetEntsperrt": "Target device unlocked successfully!"
     },
     "aktion": {
       "freigabeErforderlich": "Confirmation required",

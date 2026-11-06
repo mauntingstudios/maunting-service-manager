@@ -135,12 +135,8 @@ export function MauntingCard({
             return
           }
         } else {
-          useVaultStore.setState((prev) => ({
-            ...prev,
-            isUnlocked: true,
-            failedUnlockAttempts: 0,
-            unlockError: null,
-          }))
+          toast.error(t('mss.vault.errors.unlockFailed', 'Entsperren fehlgeschlagen: Kein Schlüssel empfangen.'))
+          return
         }
         toast.success(t('mss.vault.entsperrtErfolg', 'Maunting Card via Smartcard-Wallet erfolgreich entsperrt'))
         setUnlockDialogOpen(false)
@@ -152,6 +148,7 @@ export function MauntingCard({
 
   useEffect(() => {
     if (externalUnlockTrigger) {
+      setUnlockTab('qr')
       setUnlockDialogOpen(true)
       onExternalUnlockHandled?.()
     }
@@ -159,6 +156,7 @@ export function MauntingCard({
 
   useEffect(() => {
     if (externalAuthorizeTrigger) {
+      setAuthorizeTab('qr')
       setAuthorizeDialogOpen(true)
       onExternalAuthorizeHandled?.()
     }

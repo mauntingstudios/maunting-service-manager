@@ -100,4 +100,25 @@ describe('DeviceAuthQrView Component', () => {
 
     expect(await screen.findByText('Erfolgreich freigegeben!')).toBeInTheDocument()
   })
+
+  it('zeigt Fehler an und ruft onSuccess nicht auf, wenn decryptAuthPayload fehlschlägt', async () => {
+    const onSuccess = vi.fn()
+    vi.mocked(crypto.decryptAuthPayload).mockRejectedValue(new Error('Decryption failed'))
+
+    vi.mocked(api.getDeviceAuthSessionStatus).mockResolvedValueOnce({
+      status: 'resolved',
+      encrypted_payload: 'manipulierter-payload',
+      purpose: 'authorize',
+    })
+
+    render(
+      <DeviceAuthQrView
+        purpose="authorize"
+        onSuccess={onSuccess}
+      />,
+    )
+
+    expect(await screen.findByText('Fehler beim Entschlüsseln der Freigabe-Daten.')).toBeInTheDocument()
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
 })

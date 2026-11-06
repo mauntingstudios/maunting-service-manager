@@ -897,7 +897,7 @@ export const useVaultStore = create<VaultState>((set, get) => {
         localStorage.setItem(VAULT_SERVER_BUCKET_KEY, res.bucket_id)
       }
       if (res.has_vault) {
-        set({ isInitialized: true })
+        set({ isInitialized: true, bucketId: res.bucket_id ?? get().bucketId })
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem(VAULT_SETUP_DONE_KEY, 'true')
         }
@@ -1764,8 +1764,22 @@ export const useVaultStore = create<VaultState>((set, get) => {
     try {
       let salt = getLocalVaultSalt()
       if (!salt) {
-        await get().fetchVaultSalt()
+        const fetched = await get().fetchVaultSalt()
         salt = getLocalVaultSalt()
+        if (!salt && fetched) {
+          if (/^[0-9a-fA-F]+$/.test(fetched) && fetched.length % 2 === 0) {
+            salt = new Uint8Array(fetched.length / 2)
+            for (let i = 0; i < salt.length; i++) {
+              salt[i] = parseInt(fetched.substr(i * 2, 2), 16)
+            }
+          } else {
+            try {
+              salt = base64ToBytes(fetched)
+            } catch {
+              salt = null
+            }
+          }
+        }
       }
       if (!salt) {
         throw new TresorFehler(i18n.t('mss.vault.errors.keysMissing'))

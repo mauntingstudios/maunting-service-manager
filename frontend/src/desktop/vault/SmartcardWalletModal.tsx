@@ -17,10 +17,11 @@ export interface SmartcardWalletModalProps {
   onClose: () => void
 }
 
-interface PendingUnlockTarget {
+interface PendingTarget {
   sid: string
   rt: string
   publicKeyBase64: string
+  purpose: 'authorize' | 'unlock'
 }
 
 /**
@@ -36,20 +37,32 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
   const user = useAuthStore((s) => s.user)
   const {
     bucketId,
+    isUnlocked,
     isDeviceAuthorized,
     isBiometricsEnabled,
     isBiometricsSupported,
     getKnownBucketId,
     deriveWalletUnlockPayload,
+    fetchVaultSalt,
+    checkBiometricsSupport,
+    unlock,
   } = useVaultStore()
 
   const [isPortrait, setIsPortrait] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [pendingUnlock, setPendingUnlock] = useState<PendingUnlockTarget | null>(null)
+  const [pendingTarget, setPendingTarget] = useState<PendingTarget | null>(null)
   const [passwordInput, setPasswordInput] = useState('')
   const [isSubmittingPassword, setIsSubmittingPassword] = useState(false)
+
+  // Beim Öffnen Tresor-Metadaten & Biometrie vorladen
+  useEffect(() => {
+    if (isOpen) {
+      void fetchVaultSalt().catch((err) => still(err, 'SmartcardWalletModal.fetchVaultSalt'))
+      void checkBiometricsSupport().catch((err) => still(err, 'SmartcardWalletModal.checkBiometricsSupport'))
+    }
+  }, [isOpen, fetchVaultSalt, checkBiometricsSupport])
 
   const knownBucketId =
     bucketId ||
@@ -59,8 +72,8 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
       : null)
 
   const isCardConfirmedOnPhone =
-    isDeviceAuthorized !== false ||
-    Boolean(knownBucketId) ||
+    isUnlocked ||
+    Boolean(isDeviceAuthorized) ||
     (typeof localStorage !== 'undefined' &&
       (localStorage.getItem('mss:vault_device_authorized') === 'true' ||
         localStorage.getItem('msm_vault_device_authorized') === 'true'))
@@ -68,7 +81,7 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
   // Bildschirm-Orientierung überwachen & Android-Activity ins Querformat drehen
   useEffect(() => {
     if (!isOpen) {
-      setPendingUnlock(null)
+      setPendingTarget(null)
       setPasswordInput('')
       setErrorMessage(null)
       setSuccessMessage(null)
@@ -121,23 +134,44 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
     }
   }, [isOpen])
 
-  const completeUnlockWithPassword = useCallback(
-    async (target: PendingUnlockTarget, masterPassword: string) => {
-      const transfer = await deriveWalletUnlockPayload(masterPassword)
-      const payloadData = {
-        action: 'unlock' as const,
-        bucketId: transfer.bucketId,
-        bucketAuthToken: transfer.bucketAuthToken,
-        keyBase64: transfer.keyBase64,
-        authorizedBy: user?.username || 'Mobile Smartcard',
-        timestamp: Date.now(),
+  const completeWithPassword = useCallback(
+    async (target: PendingTarget, masterPassword: string) => {
+      if (!isCardConfirmedOnPhone) {
+        try {
+          await unlock(masterPassword)
+        } catch (err) {
+          still(err, 'SmartcardWalletModal.localUnlockFailed')
+        }
       }
-      const encryptedPayload = await encryptAuthPayload(target.publicKeyBase64, payloadData)
-      await resolveDeviceAuthSession(target.sid, encryptedPayload, target.rt)
 
-      setPendingUnlock(null)
+      const transfer = await deriveWalletUnlockPayload(masterPassword)
+
+      if (target.purpose === 'unlock') {
+        const payloadData = {
+          action: 'unlock' as const,
+          bucketId: transfer.bucketId,
+          bucketAuthToken: transfer.bucketAuthToken,
+          keyBase64: transfer.keyBase64,
+          authorizedBy: user?.username || 'Mobile Smartcard',
+          timestamp: Date.now(),
+        }
+        const encryptedPayload = await encryptAuthPayload(target.publicKeyBase64, payloadData)
+        await resolveDeviceAuthSession(target.sid, encryptedPayload, target.rt)
+        setSuccessMessage(t('mss.vault.walletZielgeraetEntsperrt', 'Zielgerät erfolgreich entsperrt!'))
+      } else {
+        const payloadData = {
+          action: 'authorize' as const,
+          bucketId: transfer.bucketId,
+          authorizedBy: user?.username || 'Mobile Smartcard',
+          timestamp: Date.now(),
+        }
+        const encryptedPayload = await encryptAuthPayload(target.publicKeyBase64, payloadData)
+        await resolveDeviceAuthSession(target.sid, encryptedPayload, target.rt)
+        setSuccessMessage(t('mss.vault.walletZielgeraetAutorisiert', 'Zielgerät erfolgreich autorisiert!'))
+      }
+
+      setPendingTarget(null)
       setPasswordInput('')
-      setSuccessMessage('Zielgerät erfolgreich entsperrt!')
       try {
         navigator.vibrate?.([60, 40, 120])
       } catch (err) {
@@ -147,13 +181,13 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         onClose()
       }, 1400)
     },
-    [deriveWalletUnlockPayload, user?.username, onClose],
+    [deriveWalletUnlockPayload, user?.username, onClose, t, isCardConfirmedOnPhone, unlock],
   )
 
   // Behandlung des gescannten QR-Codes
   const handleQrDetected = useCallback(
     async (rawCode: string) => {
-      if (isProcessing || successMessage || pendingUnlock) return
+      if (isProcessing || successMessage || pendingTarget) return
 
       const parsed = parseDeviceAuthQrCode(rawCode)
       if (!parsed) {
@@ -161,17 +195,11 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         return
       }
 
-      if (!isCardConfirmedOnPhone) {
-        setErrorMessage('Bitte bestätige zuerst deine Maunting Card auf diesem Smartphone.')
-        setTimeout(() => setErrorMessage(null), 3500)
-        return
-      }
-
       // Altes Format (v2): der Schlüssel steckt im Code, das Konto steht dabei.
       // Der kurze Code (v3) trägt kein Konto; dort prüft der Server beim
       // Schlüsselabruf und beim Auflösen, dass beide Geräte zusammengehören.
       if (parsed.v === 2 && user?.id && parsed.uid !== user.id) {
-        setErrorMessage('QR-Code gehört zu einem anderen Benutzerkonto.')
+        setErrorMessage(t('mss.card.qrWrongUser', 'QR-Code gehört zu einem anderen Benutzerkonto.'))
         try {
           navigator.vibrate?.([100, 50, 100])
         } catch (err) {
@@ -188,36 +216,45 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         // bindet ihn an diesen Code und entlarvt einen untergeschobenen Schlüssel.
         let publicKeyBase64: string
         if (parsed.v === 3) {
-          const key = await fetchDeviceAuthPublicKey(parsed.sid, parsed.rt)
-          const abdruck = await fingerprintPublicKey(key.public_key)
-          if (abdruck !== parsed.fp || key.purpose !== parsed.p) {
-            throw new Error('Sicherheitswarnung: Der Schlüssel passt nicht zum QR-Code.')
+          try {
+            const key = await fetchDeviceAuthPublicKey(parsed.sid, parsed.rt)
+            const abdruck = await fingerprintPublicKey(key.public_key)
+            if (abdruck !== parsed.fp || key.purpose !== parsed.p) {
+              throw new Error(t('mss.card.qrKeyMismatch', 'Sicherheitswarnung: Der Schlüssel passt nicht zum QR-Code.'))
+            }
+            publicKeyBase64 = key.public_key
+          } catch (keyErr: unknown) {
+            const errStr = String(keyErr).toLowerCase()
+            const status = (keyErr as { response?: { status?: number }; status?: number })?.response?.status ?? (keyErr as { status?: number })?.status
+            if (
+              status === 404 ||
+              errStr.includes('404') ||
+              errStr.includes('nicht gefunden') ||
+              errStr.includes('not found')
+            ) {
+              throw new Error(
+                t(
+                  'mss.card.qrSessionNotFound',
+                  'Sitzung nicht gefunden. Bitte prüfe, ob PC und Smartphone mit demselben Server verbunden sind.',
+                ),
+              )
+            }
+            throw keyErr
           }
-          publicKeyBase64 = key.public_key
         } else {
           publicKeyBase64 = parsed.pk
         }
 
-        const hasLocalKeyMaterial =
-          typeof deriveWalletUnlockPayload === 'function' &&
-          (Boolean(isBiometricsEnabled) ||
-            (typeof localStorage !== 'undefined' &&
-              Boolean(
-                localStorage.getItem('mss:vault_salt') ||
-                  localStorage.getItem('mss:vault_canary') ||
-                  localStorage.getItem('mss:vault_server_bucket') ||
-                  localStorage.getItem('msm_vault_server_bucket'),
-              )))
+        const target: PendingTarget = {
+          sid: parsed.sid,
+          rt: parsed.rt,
+          publicKeyBase64,
+          purpose: parsed.p,
+        }
 
         // Stufe 2 (Tresor entsperren): Biometrie oder Master-Passwort verlangen,
         // damit der abgeleitete Tresorschlüssel E2EE an das Zielgerät übertragen wird.
-        if (parsed.p === 'unlock' && hasLocalKeyMaterial) {
-          const target: PendingUnlockTarget = {
-            sid: parsed.sid,
-            rt: parsed.rt,
-            publicKeyBase64,
-          }
-
+        if (parsed.p === 'unlock') {
           if (isBiometricsEnabled && isBiometricsSupported) {
             try {
               const masterPw = await biometrieEntsperren(
@@ -225,7 +262,7 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
                 FACH_TRESOR,
               )
               if (masterPw) {
-                await completeUnlockWithPassword(target, masterPw)
+                await completeWithPassword(target, masterPw)
                 return
               }
             } catch (bioErr) {
@@ -234,14 +271,43 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
           }
 
           // Biometrie nicht aktiv oder abgebrochen -> Master-Passwort direkt im Wallet abfragen
-          setPendingUnlock(target)
+          setPendingTarget(target)
           return
         }
 
-        // Stufe 1 (Karte bestätigen / Gerät autorisieren): Sofort ohne Abfrage freigeben
+        // Stufe 1 (Karte bestätigen / Gerät autorisieren)
+        // Falls dieses Smartphone die Karte selbst noch nicht bestätigt hat,
+        // fragen wir ebenfalls das Master-Passwort ab, um BEIDE Geräte in einem Schritt freizuschalten.
+        if (!isCardConfirmedOnPhone) {
+          if (isBiometricsEnabled && isBiometricsSupported) {
+            try {
+              const masterPw = await biometrieEntsperren(
+                t('mss.vault.walletAuthorizeGrund', 'Geräte mit Smartcard freischalten'),
+                FACH_TRESOR,
+              )
+              if (masterPw) {
+                await completeWithPassword(target, masterPw)
+                return
+              }
+            } catch (bioErr) {
+              still(bioErr, 'SmartcardWalletModal.biometricsFallbackToPassword')
+            }
+          }
+
+          setPendingTarget(target)
+          return
+        }
+
+        // Smartphone ist bereits bestätigt: Sofort ohne Abfrage freigeben
+        let currentBucket = knownBucketId
+        if (!currentBucket) {
+          const saltRes = await fetchVaultSalt()
+          currentBucket = saltRes ? useVaultStore.getState().bucketId : null
+        }
+
         const payloadData = {
-          action: parsed.p,
-          bucketId: knownBucketId || null,
+          action: 'authorize' as const,
+          bucketId: currentBucket || null,
           authorizedBy: user?.username || 'Mobile Smartcard',
           timestamp: Date.now(),
         }
@@ -249,12 +315,7 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
         const encryptedPayload = await encryptAuthPayload(publicKeyBase64, payloadData)
         await resolveDeviceAuthSession(parsed.sid, encryptedPayload, parsed.rt)
 
-        const msg =
-          parsed.p === 'unlock'
-            ? 'Zielgerät erfolgreich entsperrt!'
-            : 'Zielgerät erfolgreich autorisiert!'
-
-        setSuccessMessage(msg)
+        setSuccessMessage(t('mss.vault.walletZielgeraetAutorisiert', 'Zielgerät erfolgreich autorisiert!'))
         try {
           navigator.vibrate?.([60, 40, 120])
         } catch (err) {
@@ -265,9 +326,9 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
           onClose()
         }, 1400)
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Freigabe fehlgeschlagen.'
+        const msg = err instanceof Error ? err.message : t('mss.card.freigabeFehlgeschlagen', 'Freigabe fehlgeschlagen.')
         setErrorMessage(msg)
-        setTimeout(() => setErrorMessage(null), 3500)
+        setTimeout(() => setErrorMessage(null), 4000)
       } finally {
         setIsProcessing(false)
       }
@@ -275,29 +336,29 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
     [
       isProcessing,
       successMessage,
-      pendingUnlock,
+      pendingTarget,
       isCardConfirmedOnPhone,
       user?.id,
       user?.username,
       knownBucketId,
-      deriveWalletUnlockPayload,
+      fetchVaultSalt,
       isBiometricsEnabled,
       isBiometricsSupported,
-      completeUnlockWithPassword,
+      completeWithPassword,
       onClose,
       t,
     ],
   )
 
-  const handlePasswordUnlockSubmit = async (e: FormEvent) => {
+  const handlePasswordSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!pendingUnlock || !passwordInput.trim() || isSubmittingPassword) return
+    if (!pendingTarget || !passwordInput.trim() || isSubmittingPassword) return
     setIsSubmittingPassword(true)
     setErrorMessage(null)
     try {
-      await completeUnlockWithPassword(pendingUnlock, passwordInput)
+      await completeWithPassword(pendingTarget, passwordInput)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Master-Passwort ungültig.'
+      const msg = err instanceof Error ? err.message : t('mss.vault.falschesPasswort', 'Master-Passwort ungültig.')
       setErrorMessage(msg)
     } finally {
       setIsSubmittingPassword(false)
@@ -305,19 +366,21 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
   }
 
   const handleRetryBiometrics = async () => {
-    if (!pendingUnlock || isSubmittingPassword) return
+    if (!pendingTarget || isSubmittingPassword) return
     setIsSubmittingPassword(true)
     setErrorMessage(null)
     try {
       const masterPw = await biometrieEntsperren(
-        t('mss.vault.walletEntsperrenGrund', 'Tresor am Zielgerät entsperren'),
+        pendingTarget.purpose === 'unlock'
+          ? t('mss.vault.walletEntsperrenGrund', 'Tresor am Zielgerät entsperren')
+          : t('mss.vault.walletAuthorizeGrund', 'Geräte mit Smartcard freischalten'),
         FACH_TRESOR,
       )
       if (masterPw) {
-        await completeUnlockWithPassword(pendingUnlock, masterPw)
+        await completeWithPassword(pendingTarget, masterPw)
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Biometrie fehlgeschlagen.'
+      const msg = err instanceof Error ? err.message : t('mss.vault.biometrieFehlgeschlagen', 'Biometrie fehlgeschlagen.')
       setErrorMessage(msg)
     } finally {
       setIsSubmittingPassword(false)
@@ -326,7 +389,7 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
 
   // Unsichtbare Hintergrundkamera mit High-Speed Scanner Hook
   const { videoRef, error: cameraError } = useBackgroundQrScanner({
-    enabled: isOpen && !successMessage && !pendingUnlock,
+    enabled: isOpen && !successMessage && !pendingTarget,
     onDetected: (code) => void handleQrDetected(code),
     vibrateOnDetect: true,
   })
@@ -386,7 +449,7 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
           className={`w-full transition-all duration-300 rounded-2xl ${
             successMessage
               ? 'ring-4 ring-status-success shadow-[0_0_80px_rgba(52,211,153,0.55)] scale-[1.02]'
-              : isProcessing || pendingUnlock
+              : isProcessing || pendingTarget
               ? 'ring-4 ring-primary shadow-[0_0_70px_rgba(56,189,248,0.5)]'
               : 'shadow-[0_0_50px_rgba(56,189,248,0.22)] ring-2 ring-primary/40'
           }`}
@@ -396,10 +459,10 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
       </div>
 
       {/* ── Stufe-2-Bestätigung: Master-Passwort / Fingerabdruck für Tresor-Entsperrung ── */}
-      {pendingUnlock && (
+      {pendingTarget && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
           <form
-            onSubmit={handlePasswordUnlockSubmit}
+            onSubmit={handlePasswordSubmit}
             className="w-full max-w-sm rounded-2xl border border-primary/30 bg-surface-container-low p-5 shadow-2xl space-y-3.5"
           >
             <div className="flex items-center justify-between gap-2">
@@ -409,17 +472,21 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
                 </span>
                 <div>
                   <h2 className="text-sm font-bold text-on-surface">
-                    {t('mss.vault.walletUnlockTitle', 'Tresor am Zielgerät entsperren')}
+                    {pendingTarget.purpose === 'unlock'
+                      ? t('mss.vault.walletUnlockTitle', 'Tresor am Zielgerät entsperren')
+                      : t('mss.vault.walletAuthorizeTitle', 'Zielgerät & Smartphone autorisieren')}
                   </h2>
                   <p className="text-xs text-on-surface-variant">
-                    {t('mss.vault.walletUnlockSubtitle', 'Master-Passwort zur Schlüsselableitung bestätigen')}
+                    {pendingTarget.purpose === 'unlock'
+                      ? t('mss.vault.walletUnlockSubtitle', 'Master-Passwort zur Schlüsselableitung bestätigen')
+                      : t('mss.vault.walletAuthorizeSubtitle', 'Master-Passwort zur Bestätigung der Smartcard eingeben')}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  setPendingUnlock(null)
+                  setPendingTarget(null)
                   setPasswordInput('')
                   setErrorMessage(null)
                 }}
@@ -466,7 +533,7 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  setPendingUnlock(null)
+                  setPendingTarget(null)
                   setPasswordInput('')
                   setErrorMessage(null)
                 }}
@@ -481,7 +548,9 @@ export function SmartcardWalletModal({ isOpen, onClose }: SmartcardWalletModalPr
               >
                 {isSubmittingPassword
                   ? t('mss.vault.entschluessle', 'Entschlüsselt…')
-                  : t('mss.vault.entsperren', 'Entsperren')}
+                  : pendingTarget.purpose === 'unlock'
+                  ? t('mss.vault.entsperren', 'Entsperren')
+                  : t('mss.card.actionAuthorize', 'Autorisieren')}
               </Button>
             </div>
           </form>

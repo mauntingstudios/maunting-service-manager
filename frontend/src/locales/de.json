@@ -6889,7 +6889,11 @@
       "welcomeAuthorized": "Dieses Gerät ist für deine Maunting Card freigegeben.",
       "welcomePasswordLabel": "Master-Passwort (optional)",
       "welcomeChecking": "Tresor wird geprüft …",
-      "welcomeSkip": "Später"
+      "welcomeSkip": "Später",
+      "freigabeFehlgeschlagen": "Freigabe über Smartcard fehlgeschlagen",
+      "qrKeyMismatch": "Sicherheitswarnung: Der Schlüssel passt nicht zum QR-Code.",
+      "qrSessionNotFound": "Sitzung nicht gefunden. Bitte prüfe, ob PC und Smartphone mit demselben Server verbunden sind.",
+      "qrWrongUser": "QR-Code gehört zu einem anderen Benutzerkonto."
     },
     "vault": {
       "titel": "Tresor-Sicherheit",
@@ -7577,7 +7581,13 @@
         "kopiert": "Kopiert",
         "verwenden": "Als Eintrag verwenden",
         "hinweis": "Das Passwort bleibt auf diesem Gerät, bis du es kopierst."
-      }
+      },
+      "biometrieFehlgeschlagen": "Biometrische Authentifizierung fehlgeschlagen.",
+      "walletAuthorizeGrund": "Geräte mit Smartcard freischalten",
+      "walletAuthorizeSubtitle": "Master-Passwort zur Bestätigung der Smartcard eingeben",
+      "walletAuthorizeTitle": "Zielgerät & Smartphone autorisieren",
+      "walletZielgeraetAutorisiert": "Zielgerät erfolgreich autorisiert!",
+      "walletZielgeraetEntsperrt": "Zielgerät erfolgreich entsperrt!"
     },
     "aktion": {
       "freigabeErforderlich": "Bestätigung erforderlich",
