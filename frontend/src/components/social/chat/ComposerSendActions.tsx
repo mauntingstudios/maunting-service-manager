@@ -29,10 +29,10 @@ export function ComposerSendActions({ hatInhalt, sendet, onVideonotiz, onSprachn
         <button
           type="submit"
           disabled={sendet}
-          className="msm-btn-primary w-11 h-11 sm:w-8 sm:h-8 rounded-full flex items-center justify-center"
+          className="grid h-9 w-9 place-items-center rounded-full bg-primary text-on-primary hover:bg-primary-hover shadow-sm transition-transform active:scale-95 disabled:opacity-50"
           aria-label={t('messenger.send')}
         >
-          <Send className="w-3.5 h-3.5" />
+          <Send className="w-4 h-4" />
         </button>
       </Kurzinfo>
     )
@@ -44,7 +44,7 @@ export function ComposerSendActions({ hatInhalt, sendet, onVideonotiz, onSprachn
         <button
           type="button"
           onClick={onVideonotiz}
-          className="w-11 h-11 sm:w-8 sm:h-8 flex items-center justify-center text-on-surface-variant hover:text-status-success hover:bg-status-success/10 rounded-full transition-colors"
+          className="grid h-9 w-9 place-items-center rounded-full text-white/70 hover:text-status-success hover:bg-white/10 transition-colors"
           aria-label={t('messenger.recordVideoNote')}
         >
           <Video className="w-4 h-4" />
@@ -54,7 +54,7 @@ export function ComposerSendActions({ hatInhalt, sendet, onVideonotiz, onSprachn
         <button
           type="button"
           onClick={onSprachnachricht}
-          className="w-11 h-11 sm:w-8 sm:h-8 flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 rounded-full transition-colors"
+          className="grid h-9 w-9 place-items-center rounded-full text-white/70 hover:text-primary hover:bg-white/10 transition-colors"
           aria-label={t('messenger.recordVoice')}
         >
           <Mic className="w-4 h-4" />

@@ -2981,6 +2981,15 @@ function MessengerSeite() {
                         }
                         leftActions={
                           <>
+                            <AttachMenu
+                              erlaubt={darfAnhaengen}
+                              onKamera={() => setIsCameraModalOpen(true)}
+                              onFoto={() => fileInputRef.current?.click()}
+                              onDokument={() => docInputRef.current?.click()}
+                              onNotiz={() => void handleOpenNotePicker()}
+                              onTermin={() => void handleOpenCalendarPicker()}
+                            />
+
                             {/* Bei offener Auswahl läge die Kurzinfo über ihr. */}
                             <Kurzinfo
                               text={t('messenger.stickers')}
@@ -2992,25 +3001,16 @@ function MessengerSeite() {
                               <button
                                 type="button"
                                 onClick={() => setIsStickerPickerOpen((prev) => !prev)}
-                                className={`w-11 h-11 sm:w-8 sm:h-8 flex items-center justify-center rounded-full transition-colors ${
+                                className={`grid h-9 w-9 place-items-center rounded-full transition-colors ${
                                   isStickerPickerOpen
-                                    ? 'bg-surface-container-highest text-status-warning'
-                                    : 'text-on-surface-variant hover:text-status-warning'
+                                    ? 'bg-primary/20 text-white border border-primary/50'
+                                    : 'text-white/70 hover:text-white hover:bg-white/10'
                                 }`}
                                 aria-label={t('messenger.pickSticker')}
                               >
                                 <Smile className="w-4 h-4" />
                               </button>
                             </Kurzinfo>
-
-                            <AttachMenu
-                              erlaubt={darfAnhaengen}
-                              onKamera={() => setIsCameraModalOpen(true)}
-                              onFoto={() => fileInputRef.current?.click()}
-                              onDokument={() => docInputRef.current?.click()}
-                              onNotiz={() => void handleOpenNotePicker()}
-                              onTermin={() => void handleOpenCalendarPicker()}
-                            />
                           </>
                         }
                         rightActions={
