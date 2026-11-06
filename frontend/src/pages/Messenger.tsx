@@ -2437,7 +2437,6 @@ function MessengerSeite() {
           onMarkierteNachrichten={() => void ueberall.oeffne('markiert')}
           onAntwortenAnMich={() => void ueberall.oeffne('anMich')}
           onHintergrund={() => setIsWallpaperModalOpen(true)}
-          onEinstellungen={() => navigate('/einstellungen')}
         />
 
         {/* Left Column: Modern Contacts & Groups List */}

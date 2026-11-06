@@ -4,7 +4,6 @@ import {
   Bookmark,
   MessageSquare,
   Palette,
-  Settings,
   Sparkles,
   UsersRound,
   Zap,
@@ -24,7 +23,6 @@ interface MessengerRailProps {
   onAntwortenAnMich?: () => void
   onFunke?: () => void
   onHintergrund: () => void
-  onEinstellungen: () => void
 }
 
 /**
@@ -44,7 +42,6 @@ export function MessengerRail({
   onAntwortenAnMich,
   onFunke,
   onHintergrund,
-  onEinstellungen,
 }: MessengerRailProps) {
   const { t } = useTranslation()
   const ungelesenChatsZahl = ungelesenChats ?? ungelesenGesamt
@@ -172,17 +169,6 @@ export function MessengerRail({
             aria-label="Chat-Hintergrund"
           >
             <Palette className="w-5 h-5" />
-          </button>
-        </Kurzinfo>
-
-        <Kurzinfo text="Einstellungen" lage="rechts">
-          <button
-            type="button"
-            onClick={onEinstellungen}
-            className={buttonKlasse(false)}
-            aria-label="Einstellungen"
-          >
-            <Settings className="w-5 h-5" />
           </button>
         </Kurzinfo>
       </div>
