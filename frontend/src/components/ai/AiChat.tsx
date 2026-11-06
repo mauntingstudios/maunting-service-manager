@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, CalendarClock, Camera, Check, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Trash2, Upload, X, Zap } from 'lucide-react'
+import { AudioLines, CalendarClock, Camera, Check, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, MoreHorizontal, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Trash2, Upload, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -16,7 +16,7 @@ import {
   type AiVoiceConfig,
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
-import { Ablageflaeche, Button, Dropdown, Blatteintrag, Blattknopf, Kurzinfo, VoiceRecordingBar } from '@maunting/ui'
+import { Ablageflaeche, Button, Dropdown, Blatteintrag, Blattmenue, Kurzinfo, VoiceRecordingBar } from '@maunting/ui'
 import { Avatar } from '@/components/app/Avatar'
 import {
   aiChatPreferenceKeys,
@@ -284,6 +284,7 @@ export function AiChat({
   // Regionale Analyse & Globus-Zustand
   const [geoData, setGeoData] = useState<AiRegionalAnalysis | null>(null)
   const [geoOpen, setGeoOpen] = useState(false)
+  const [menueOffen, setMenueOffen] = useState(false)
 
   const verlaufRef = useRef<HTMLDivElement | null>(null)
   const mountedRef = useRef(true)
@@ -1648,13 +1649,13 @@ export function AiChat({
         </div>
 
         {/* Feststehende Aktionen rechts: Suche, Neuladen und Blattmenü bleiben immer sichtbar */}
-        <div className="flex items-center gap-1 shrink-0 ml-1">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-1">
           {singraShell && onOpenHistorySearch && (
             <Kurzinfo text="Unterhaltungen durchsuchen">
               <button
                 type="button"
                 onClick={onOpenHistorySearch}
-                className="flex h-8 w-8 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10 shrink-0 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+                className="flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                 aria-label="Unterhaltungen durchsuchen"
               >
                 <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -1667,56 +1668,75 @@ export function AiChat({
               type="button"
               onClick={() => void manuellNachladen()}
               disabled={busy || streaming}
-              className="flex h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 shrink-0 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-40 transition-colors"
+              className="flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95 disabled:opacity-40"
               aria-label={t('common.refresh', 'Aktualisieren')}
             >
               <RotateCw className={`h-4 w-4 shrink-0 ${reloading ? 'animate-spin' : ''}`} aria-hidden="true" />
             </button>
           </Kurzinfo>
 
-          <Blattknopf label={t('ai.chat.moreSettings')} titel={t('ai.chat.title')}>
-            {(schliessen) => (
-              <>
+          <Kurzinfo text={t('ai.chat.moreSettings')} seite="ende" portal>
+            <button
+              type="button"
+              onClick={() => setMenueOffen(true)}
+              className="flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+              aria-haspopup="dialog"
+              aria-expanded={menueOffen}
+              aria-label={t('ai.chat.moreSettings')}
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+          </Kurzinfo>
+
+          <Blattmenue
+            offen={menueOffen}
+            onSchliessen={() => setMenueOffen(false)}
+            titel={t('ai.chat.title')}
+            className="bg-surface-container-high/95 backdrop-blur-2xl border border-outline-variant/30 text-on-surface shadow-2xl"
+          >
+            <div className="px-4 pt-3 pb-2 text-xs font-semibold text-on-surface-variant truncate border-b border-outline-variant/20">
+              {t('ai.chat.title')}
+            </div>
+            <div className="py-1">
+              <Blatteintrag
+                icon={<RotateCw className="h-4 w-4" aria-hidden="true" />}
+                label={t('common.refresh', 'Aktualisieren')}
+                disabled={busy || streaming}
+                onClick={() => {
+                  setMenueOffen(false)
+                  void manuellNachladen()
+                }}
+              />
+              {geoData && !geoOpen && (
                 <Blatteintrag
-                  icon={<RotateCw className="h-4 w-4" aria-hidden="true" />}
-                  label={t('common.refresh', 'Aktualisieren')}
-                  disabled={busy || streaming}
+                  icon={<Globe2 className="h-4 w-4" aria-hidden="true" />}
+                  label={t('ai.geo.open')}
                   onClick={() => {
-                    schliessen()
-                    void manuellNachladen()
+                    setMenueOffen(false)
+                    setGeoOpen(true)
                   }}
                 />
-                {geoData && !geoOpen && (
-                  <Blatteintrag
-                    icon={<Globe2 className="h-4 w-4" aria-hidden="true" />}
-                    label={t('ai.geo.open')}
-                    onClick={() => {
-                      schliessen()
-                      setGeoOpen(true)
-                    }}
-                  />
-                )}
-                <Blatteintrag
-                  icon={<ImageIcon className="h-4 w-4" aria-hidden="true" />}
-                  label={t('social.wallpaper.title')}
-                  onClick={() => {
-                    schliessen()
-                    setzeHintergrundOffen(true)
-                  }}
-                />
-                <Blatteintrag
-                  icon={<Trash2 className="h-4 w-4" aria-hidden="true" />}
-                  label={t('ai.chat.clear')}
-                  gefahr
-                  disabled={busy || empty}
-                  onClick={() => {
-                    schliessen()
-                    void clearHistory()
-                  }}
-                />
-              </>
-            )}
-          </Blattknopf>
+              )}
+              <Blatteintrag
+                icon={<ImageIcon className="h-4 w-4" aria-hidden="true" />}
+                label={t('social.wallpaper.title')}
+                onClick={() => {
+                  setMenueOffen(false)
+                  setzeHintergrundOffen(true)
+                }}
+              />
+              <Blatteintrag
+                icon={<Trash2 className="h-4 w-4 text-status-destructive" aria-hidden="true" />}
+                label={t('ai.chat.clear')}
+                gefahr
+                disabled={busy || empty}
+                onClick={() => {
+                  setMenueOffen(false)
+                  void clearHistory()
+                }}
+              />
+            </div>
+          </Blattmenue>
         </div>
       </header>
 
