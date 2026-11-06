@@ -58,16 +58,8 @@ export function MessengerRail({
       className="hidden md:flex flex-col items-center justify-between py-3 px-2 w-16 shrink-0 bg-transparent border-r border-white/5 z-20 select-none"
       aria-label="Messenger Navigation"
     >
-      {/* Oben: Logo und Haupt-Modi */}
+      {/* Oben: Haupt-Modi */}
       <div className="flex flex-col items-center gap-3 w-full">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-1 overflow-hidden shadow-sm">
-          <img
-            src="/singra-logo-128.png"
-            alt="Singra"
-            className="h-7 w-7 object-contain"
-          />
-        </div>
-
         <Kurzinfo text={t('messenger.nav.chats')} lage="rechts">
           <button
             type="button"
