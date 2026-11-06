@@ -122,6 +122,17 @@ describe('PermissionEditor', () => {
     expect(screen.queryByRole('switch', { name: 'KI-Chat verwenden erlauben' })).toBeNull()
   })
 
+  it('findet Schlüssel auch bei Eingabe mit Unterstrichen statt Punkten', () => {
+    zeichne()
+
+    fireEvent.change(screen.getByPlaceholderText(i18n.t('permissionEditor.searchPlaceholder')), {
+      target: { value: 'ai_chat_use' },
+    })
+
+    expect(screen.getByRole('switch', { name: 'KI-Chat verwenden erlauben' })).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Gesamte KI-Nutzung einsehen erlauben' })).toBeNull()
+  })
+
   it('meldet eine leere Suche als leer statt als leere Abschnitte', () => {
     zeichne()
 

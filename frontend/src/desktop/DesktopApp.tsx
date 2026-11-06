@@ -625,7 +625,6 @@ export function DesktopApp() {
             />
           }
         />
-        <Route path="/settings" element={<Navigate to="/einstellungen" replace />} />
         <Route path="/profile" element={<Navigate to="/einstellungen" replace />} />
         <Route
           path="/tresor"

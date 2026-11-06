@@ -48,12 +48,12 @@ const SUBGROUPS = [
   {
     id: 'panel',
     keys: [
+      'calendar.use',
+      'notes.use',
       'panel.settings.read',
       'panel.settings.write',
       'panel.database.read',
       'panel.database.admin',
-      'calendar.use',
-      'notes.use',
       'panel.oauth.read',
       'panel.oauth.create',
       'panel.oauth.update',
@@ -206,9 +206,12 @@ export function PermissionEditor({
   const filteredDefs = useMemo(() => {
     if (!search.trim()) return permissions
     const query = search.toLowerCase()
+    const queryNormalized = query.replace(/[._]/g, ' ')
     return permissions.filter((p) => {
+      const keyNormalized = p.key.toLowerCase().replace(/[._]/g, ' ')
       return (
         p.key.toLowerCase().includes(query) ||
+        keyNormalized.includes(queryNormalized) ||
         titelVon(t, p).toLowerCase().includes(query) ||
         beschreibungVon(t, p).toLowerCase().includes(query) ||
         p.label.toLowerCase().includes(query)
