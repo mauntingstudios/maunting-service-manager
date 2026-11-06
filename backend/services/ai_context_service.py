@@ -579,12 +579,17 @@ def build_provider_messages(
     """
     grenzen = teilbudgets(context_chars)
     user = db.get(User, conversation.user_id)
+    coding_erlaubt = True
+    if user is not None:
+        from services import permission_service
+        coding_erlaubt = permission_service.has_global_permission(db, user, "ai.coding.use")
     result: list[dict[str, Any]] = [
         {"role": "system", "content": ai_prompt.build(
             gesprochen=gesprochen, rolle=rolle,
             desktop=herkunft == "desktop" and computer_use_aktiv is not False,
             db=db,
             docs=docs,
+            coding_erlaubt=coding_erlaubt,
         )}
     ]
     # Gedaechtnis- und Skill-Trennung fuer Maunting Docs:

@@ -93,6 +93,17 @@ def _check_calendar_enabled() -> None:
         )
 
 
+def _check_calendar_access(db: Session, user: User) -> None:
+    """Prüft Panel-Einstellung und Benutzerberechtigung."""
+    _check_calendar_enabled()
+    from services import permission_service
+    if not permission_service.has_global_permission(db, user, "calendar.use"):
+        raise HTTPException(
+            status_code=403,
+            detail="Sie haben keine Berechtigung für das Kalendermodul (calendar.use).",
+        )
+
+
 @router.get("/status")
 def get_calendar_status(
     _: User = Depends(get_current_user),
@@ -114,7 +125,7 @@ def list_events(
     user: User = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """Gibt Termine des Benutzers im angegebenen Zeitraum zurück."""
-    _check_calendar_enabled()
+    _check_calendar_access(db, user)
     return CalendarService.get_events(
         db=db,
         user=user,
@@ -134,7 +145,7 @@ def create_event(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Erstellt einen neuen Termin im Kalender des Benutzers."""
-    _check_calendar_enabled()
+    _check_calendar_access(db, user)
     try:
         return CalendarService.create_event(
             db=db,
@@ -165,7 +176,7 @@ def update_event(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Aktualisiert einen bestehenden Termin."""
-    _check_calendar_enabled()
+    _check_calendar_access(db, user)
     try:
         return CalendarService.update_event(
             db=db,
@@ -198,7 +209,7 @@ def neu_verschluesseln(
     __=Depends(verify_csrf),
 ) -> dict[str, Any]:
     """Tauscht Chiffrate gegen solche unter dem Kontoschluessel — je Termin nur beim unveraenderten Stand."""
-    _check_calendar_enabled()
+    _check_calendar_access(db, user)
     auftraege = [
         (
             e.event_id,
@@ -224,7 +235,7 @@ def delete_event(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Löscht einen Termin aus dem Kalender."""
-    _check_calendar_enabled()
+    _check_calendar_access(db, user)
     try:
         return CalendarService.delete_event(
             db=db,
@@ -267,10 +278,11 @@ def get_calendar_feed_user(
 
 @router.get("/feed-url")
 def get_calendar_feed_url(
+    db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     """Liefert die signierte Feed-URL für externe Kalender-Abonnements (z. B. Google Kalender, Apple, Outlook)."""
-    _check_calendar_enabled()
+    _check_calendar_access(db, user)
     token = CalendarService.generate_feed_token(user)
     encoded_token = urllib.parse.quote(token, safe="")
     return {"feed_url": f"/api/calendar/feed.ics?token={encoded_token}", "token": token}
@@ -283,7 +295,7 @@ def export_ical_feed(
     user: User = Depends(get_calendar_feed_user),
 ) -> Response:
     """Exportiert alle Termine als iCal (.ics) zur Einbindung in externe Kalender-Apps."""
-    _check_calendar_enabled()
+    _check_calendar_access(db, user)
     ical_content = CalendarService.export_ical(db, user, calendar_id)
     return Response(
         content=ical_content,
@@ -302,7 +314,7 @@ async def test_calendar_reminder(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Sendet eine Test-Terminerinnerung per E-Mail und gibt die Push-Payload zurück."""
-    _check_calendar_enabled()
+    _check_calendar_access(db, user)
     return await CalendarService.send_test_reminder(db=db, user=user)
 
 
@@ -312,7 +324,7 @@ def get_due_calendar_reminders(
     user: User = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """Gibt anstehende Termine zurück, die für Push-Benachrichtigungen relevant sind."""
-    _check_calendar_enabled()
+    _check_calendar_access(db, user)
     return CalendarService.get_due_reminders(db=db, user=user)
 
 

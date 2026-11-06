@@ -86,7 +86,7 @@ def _can_manage_mcp(db: Session, user: User, row: AiMcpServer) -> bool:
             .first()
         )
         return member is not None
-    return row.user_id == user.id
+    return row.user_id == user.id and permission_service.has_global_permission(db, user, "ai.mcp.manage")
 
 
 @router.get("", response_model=list[AiMcpServerResponse])
@@ -147,6 +147,9 @@ def create_mcp_server(
         )
         if member is None:
             raise HTTPException(status_code=403, detail="Kein Zugriff auf dieses Team")
+    elif payload.scope == "user":
+        if not permission_service.has_global_permission(db, user, "ai.mcp.manage"):
+            raise HTTPException(status_code=403, detail="Keine Berechtigung zum Verwalten von MCP-Servern (ai.mcp.manage)")
 
     if payload.transport in ("http", "sse") and not (payload.endpoint_url or "").strip():
         raise HTTPException(status_code=400, detail="Endpunkt-URL ist fuer HTTP/SSE MCP-Server erforderlich")

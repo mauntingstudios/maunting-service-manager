@@ -945,8 +945,8 @@ function Hauptseite({
   // aendert sich beim Netzwechsel die Zahl der Hooks, React bricht ab und
   // uebrig bleibt nur die Karte "Neu laden".
   const hasPermissionChat = useHasPermission('ai.chat.use')
-  const hasPermissionKalender = useHasPermission('ai.calendar.use')
-  const hasPermissionNotizen = useHasPermission('ai.notes.use')
+  const hasPermissionKalender = useHasPermission('calendar.use')
+  const hasPermissionNotizen = useHasPermission('notes.use')
   const hasPermissionDokumente = useHasPermission('docs.use')
   const darfChatten = !isOffline && hasPermissionChat
   const darfKalender = publicSettings.calendar_enabled && (isOffline || hasPermissionKalender)

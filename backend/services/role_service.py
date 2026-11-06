@@ -241,7 +241,26 @@ def ensure_system_roles(db: Session) -> tuple[Role, Role]:
 
     # admin-Rolle auf den aktuellen Katalog syncen
     _sync_role_permissions(db, admin.id, admin_role_keys())
+    # Sanfte Migration: Rollen mit ai.calendar.use / ai.notes.use erhalten calendar.use / notes.use
+    _migrate_calendar_notes_permissions(db)
     return admin, user
+
+
+def _migrate_calendar_notes_permissions(db: Session) -> None:
+    all_role_perms = db.query(RolePermission).all()
+    roles_with_ai_cal = {p.role_id for p in all_role_perms if p.permission_key == "ai.calendar.use"}
+    roles_with_ai_notes = {p.role_id for p in all_role_perms if p.permission_key == "ai.notes.use"}
+    existing_cal = {p.role_id for p in all_role_perms if p.permission_key == "calendar.use"}
+    existing_notes = {p.role_id for p in all_role_perms if p.permission_key == "notes.use"}
+    changed = False
+    for r_id in (roles_with_ai_cal - existing_cal):
+        db.add(RolePermission(role_id=r_id, permission_key="calendar.use"))
+        changed = True
+    for r_id in (roles_with_ai_notes - existing_notes):
+        db.add(RolePermission(role_id=r_id, permission_key="notes.use"))
+        changed = True
+    if changed:
+        db.commit()
 
 
 def _sync_role_permissions(db: Session, role_id: int, target_keys: frozenset[str]) -> None:

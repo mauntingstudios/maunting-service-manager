@@ -17,6 +17,7 @@ from models.user_calendar import UserCalendar
 from models.user_mailbox import UserMailbox
 from services.calendar_service import CalendarService
 from services.mailbox_service import MailboxService
+from services import permission_service
 
 router = APIRouter(prefix="/api/user/integrations", tags=["user_integrations"])
 
@@ -310,11 +311,20 @@ def test_mailbox(
 # ── Calendar Endpunkte ────────────────────────────────────────────────────────
 
 
+def _require_calendar_permission(db: Session, user: User) -> None:
+    if not permission_service.has_global_permission(db, user, "calendar.use"):
+        raise HTTPException(
+            status_code=403,
+            detail="Sie haben keine Berechtigung für das Kalendermodul (calendar.use).",
+        )
+
+
 @router.get("/calendars", response_model=list[CalendarOut])
 def list_calendars(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[CalendarOut]:
+    _require_calendar_permission(db, user)
     rows = db.scalars(
         select(UserCalendar).where(UserCalendar.user_id == user.id).order_by(UserCalendar.id.asc())
     ).all()
@@ -340,6 +350,7 @@ def create_calendar(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CalendarOut:
+    _require_calendar_permission(db, user)
     if payload.is_default:
         db.query(UserCalendar).filter(UserCalendar.user_id == user.id).update({"is_default": False})
 
@@ -381,6 +392,7 @@ def update_calendar(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CalendarOut:
+    _require_calendar_permission(db, user)
     row = db.scalar(
         select(UserCalendar).where(UserCalendar.id == calendar_id, UserCalendar.user_id == user.id)
     )
@@ -422,6 +434,7 @@ def delete_calendar(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
+    _require_calendar_permission(db, user)
     row = db.scalar(
         select(UserCalendar).where(UserCalendar.id == calendar_id, UserCalendar.user_id == user.id)
     )
@@ -438,6 +451,7 @@ def test_calendar(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_calendar_permission(db, user)
     row = db.scalar(
         select(UserCalendar).where(UserCalendar.id == calendar_id, UserCalendar.user_id == user.id)
     )

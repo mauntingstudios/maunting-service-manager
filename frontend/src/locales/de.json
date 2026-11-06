@@ -2979,12 +2979,24 @@
       "desc": "E-Mail-Postfächer zur Bearbeitung durch Singra verknüpfen."
     },
     "ai_calendar_use": {
-      "title": "Kalender anbinden",
-      "desc": "Kalender zur Termin- und Aufgabenplanung verbinden."
+      "title": "Kalender über KI verwenden",
+      "desc": "Erlaubt der KI, Termine im Kalender zu lesen, anzulegen und zu bearbeiten (setzt Kalender-Berechtigung voraus)."
     },
     "ai_notes_use": {
-      "title": "Notizen verwalten",
-      "desc": "Notizen, Checklisten und Aufgaben über Singra erstellen und organisieren."
+      "title": "Notizen über KI verwalten",
+      "desc": "Erlaubt der KI, Notizen zu lesen, anzulegen und zu bearbeiten (setzt Notizen-Berechtigung voraus)."
+    },
+    "ai_coding_use": {
+      "title": "KI-Programmierung verwenden",
+      "desc": "Erlaubt der KI, Programmiercode zu schreiben, Projekte zu erstellen und Sandbox-Befehle auszuführen."
+    },
+    "ai_projects_manage": {
+      "title": "KI-Projekte & Sandboxes verwalten",
+      "desc": "Erlaubt das Anlegen, Konfigurieren und Löschen von Singra-Projekten sowie das Verwalten von Projektdateien."
+    },
+    "ai_mcp_manage": {
+      "title": "Eigene MCP-Server verwalten",
+      "desc": "Erlaubt das Einbinden benutzerdefinierter MCP-Server (Model Context Protocol) und eigener KI-Werkzeuge."
     },
     "ai_usage_read_all": {
       "title": "Gesamte KI-Nutzung einsehen",
@@ -3029,6 +3041,14 @@
     "ai_popups_manage": {
       "title": "KI-gestützte Pop-ups",
       "desc": "Erlaubt der KI, bestehende Ankündigungen zu lesen sowie neue und geänderte vorzuschlagen."
+    },
+    "calendar_use": {
+      "title": "Kalender verwenden",
+      "desc": "Ermöglicht den Zugriff auf das Kalender-Modul zur manuellen Terminverwaltung und für Kalender-Abonnements."
+    },
+    "notes_use": {
+      "title": "Notizen verwenden",
+      "desc": "Ermöglicht den Zugriff auf das Notizmodul zum Erstellen, Bearbeiten und Organisieren von Notizen."
     },
     "server_view": {
       "title": "Server anzeigen",

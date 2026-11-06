@@ -42,8 +42,8 @@ export function useSichtbareModule(): Set<PanelId> {
   const einstellungen = usePublicSettingsStore()
   // Rechteabfragen immer, nie hinter einer Bedingung (AGENTS.md Punkt 26).
   const chat = useHasPermission('ai.chat.use')
-  const kalender = useHasPermission('ai.calendar.use')
-  const notizen = useHasPermission('ai.notes.use')
+  const kalender = useHasPermission('calendar.use')
+  const notizen = useHasPermission('notes.use')
   const dokumente = useHasPermission('docs.use')
   const teams = useHasPermission('teams.read')
 

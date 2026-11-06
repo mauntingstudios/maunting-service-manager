@@ -2979,12 +2979,24 @@
       "desc": "Link email mailboxes for processing by Singra."
     },
     "ai_calendar_use": {
-      "title": "Connect calendars",
-      "desc": "Link calendars for automated scheduling and reminders."
+      "title": "Use calendar via AI",
+      "desc": "Allow the AI to read, create, and update calendar events (requires user calendar permission)."
     },
     "ai_notes_use": {
-      "title": "Manage notes",
-      "desc": "Create and manage personal or team notes, checklists, and tasks through Singra."
+      "title": "Use notes via AI",
+      "desc": "Allow the AI to read, create, and edit notes (requires user notes permission)."
+    },
+    "ai_coding_use": {
+      "title": "Use AI coding",
+      "desc": "Allow the AI to write program code, generate projects, and run commands in the sandbox."
+    },
+    "ai_projects_manage": {
+      "title": "Manage AI projects & sandboxes",
+      "desc": "Create, configure, and delete Singra projects and manage project files."
+    },
+    "ai_mcp_manage": {
+      "title": "Manage custom MCP servers",
+      "desc": "Connect custom MCP servers (Model Context Protocol) and custom AI tools."
     },
     "ai_usage_read_all": {
       "title": "View all users' AI usage",
@@ -3029,6 +3041,14 @@
     "ai_popups_manage": {
       "title": "AI-assisted pop-ups",
       "desc": "Let the AI read existing announcements and propose new or edited ones."
+    },
+    "calendar_use": {
+      "title": "Use calendar",
+      "desc": "Enables access to the calendar module for manual event management and calendar subscriptions."
+    },
+    "notes_use": {
+      "title": "Use notes",
+      "desc": "Enables access to the notes module for creating, editing, and organizing notes."
     },
     "server_view": {
       "title": "View server",

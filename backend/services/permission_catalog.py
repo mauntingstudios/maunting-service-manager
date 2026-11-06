@@ -139,8 +139,11 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("ai.desktop.use",            "ai",      "KI-Werkzeuge auf dem eigenen Rechner (Smart System)"),
     PermissionDef("ai.desktop.install",        "ai",      "Desktop-Artefakte (Software, Mods, Installer) über das Smart System herunterladen, prüfen und installieren"),
     PermissionDef("ai.mailbox.use",            "ai",      "Eigenes Postfach über die KI verwenden (Mails lesen/entwerfen)"),
-    PermissionDef("ai.calendar.use",           "ai",      "Eigenen Kalender über die KI verwenden (Termine lesen/erstellen)"),
-    PermissionDef("ai.notes.use",              "ai",      "Eigene Notizen über die KI verwenden (Notizen lesen/erstellen/bearbeiten)"),
+    PermissionDef("ai.calendar.use",           "ai",      "Eigenen Kalender über die KI verwenden (Termine durch KI lesen/erstellen)"),
+    PermissionDef("ai.notes.use",              "ai",      "Eigene Notizen über die KI verwenden (Notizen durch KI lesen/erstellen/bearbeiten)"),
+    PermissionDef("ai.coding.use",             "ai",      "KI-Programmierung verwenden (Code generieren und in der Sandbox ausführen)"),
+    PermissionDef("ai.projects.manage",        "ai",      "KI-Projekte und Sandboxes verwalten"),
+    PermissionDef("ai.mcp.manage",             "ai",      "Eigene MCP-Server und externe KI-Werkzeuge verwalten"),
     # Dokumente: Modulzugang und KI-Freigabe sind getrennte Entscheidungen.
     # `docs.use` oeffnet das Modul; `ai.docs.use` erlaubt Singra zusaetzlich,
     # im Rahmen der Dokumentrolle zu lesen und zu schreiben. Beide werden bei
@@ -163,6 +166,8 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     # oder Produkte umkonfigurieren zu duerfen.
     PermissionDef("panel.hoster.read",          "panel",   "Hoster-Integrationen und Verträge einsehen"),
     PermissionDef("panel.hoster.write",         "panel",   "Hoster-Integrationen, Produkte und Schlüssel verwalten"),
+    PermissionDef("calendar.use",               "panel",   "Kalender verwenden"),
+    PermissionDef("notes.use",                  "panel",   "Notizen verwenden"),
     PermissionDef("cloudflare.manage",          "system",  "Cloudflare DNS verwalten"),
     # Dokumente-Modul (Rich-Text, Kollaboration). Die Feinrechte je Dokument
     # stehen nicht hier: die Dokumentrolle ist die einzige Wahrheit.

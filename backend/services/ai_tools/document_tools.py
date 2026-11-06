@@ -390,7 +390,7 @@ def execute_document_tool(
     if tool_name == "read_team_calendar":
         _rechte(db, user)
         _zugriff_doc, team_id = _team_mitgliedschaft(db, user, kontext)
-        if not permission_service.has_global_permission(db, user, "ai.calendar.use"):
+        if not (permission_service.has_global_permission(db, user, "calendar.use") and permission_service.has_global_permission(db, user, "ai.calendar.use")):
             raise AiActionValidationError("Kalender-Einsicht ist nicht erlaubt")
         from datetime import date as _datum, datetime as _zeit, timedelta as _spanne, timezone as _zone
 

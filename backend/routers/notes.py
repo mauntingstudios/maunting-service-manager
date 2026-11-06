@@ -33,6 +33,17 @@ def _check_notes_enabled() -> None:
         )
 
 
+def _check_notes_access(db: Session, user: User) -> None:
+    """Prüft Panel-Einstellung und Benutzerberechtigung."""
+    _check_notes_enabled()
+    from services import permission_service
+    if not permission_service.has_global_permission(db, user, "notes.use"):
+        raise HTTPException(
+            status_code=403,
+            detail="Sie haben keine Berechtigung für das Notizmodul (notes.use).",
+        )
+
+
 @router.get("/status")
 def get_notes_status(
     _: User = Depends(get_current_user),
@@ -80,7 +91,7 @@ def neu_verschluesseln(
     __=Depends(verify_csrf),
 ) -> dict[str, Any]:
     """Tauscht Chiffrate gegen solche unter dem Kontoschluessel — je Notiz nur beim unveraenderten Stand."""
-    _check_notes_enabled()
+    _check_notes_access(db, user)
     auftraege = [
         (
             e.note_uid,
@@ -117,7 +128,7 @@ def list_notes(
     App und trennt selbst nach Aktiv/Archiviert. Bis 5.0.3 kannte der Server
     den Parameter nicht, und eine archivierte Notiz verschwand ganz.
     """
-    _check_notes_enabled()
+    _check_notes_access(db, user)
     if include_archived:
         is_archived = None
     return NotesService.get_notes(
@@ -141,7 +152,7 @@ def create_note(
     __=Depends(verify_csrf),
 ) -> dict[str, Any]:
     """Erstellt eine neue Notiz."""
-    _check_notes_enabled()
+    _check_notes_access(db, user)
     try:
         return NotesService.create_note(
             db=db,
@@ -166,7 +177,7 @@ def get_note(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Liest eine einzelne Notiz."""
-    _check_notes_enabled()
+    _check_notes_access(db, user)
     try:
         return NotesService.get_note(db=db, user=user, note_id_or_uid=id_or_uid)
     except ValueError as e:
@@ -183,7 +194,7 @@ def update_note(
     __=Depends(verify_csrf),
 ) -> dict[str, Any]:
     """Aktualisiert eine Notiz."""
-    _check_notes_enabled()
+    _check_notes_access(db, user)
     try:
         return NotesService.update_note(
             db=db,
@@ -210,7 +221,7 @@ def delete_note(
     __=Depends(verify_csrf),
 ) -> dict[str, Any]:
     """Löscht eine Notiz."""
-    _check_notes_enabled()
+    _check_notes_access(db, user)
     try:
         return NotesService.delete_note(db=db, user=user, note_id_or_uid=id_or_uid)
     except ValueError as e:
@@ -225,7 +236,7 @@ def toggle_note_pin(
     __=Depends(verify_csrf),
 ) -> dict[str, Any]:
     """Schaltet den Pin-Status einer Notiz um."""
-    _check_notes_enabled()
+    _check_notes_access(db, user)
     try:
         return NotesService.toggle_pin(db=db, user=user, note_id_or_uid=id_or_uid)
     except ValueError as e:
@@ -240,7 +251,7 @@ def toggle_note_archive(
     __=Depends(verify_csrf),
 ) -> dict[str, Any]:
     """Schaltet den Archiv-Status einer Notiz um."""
-    _check_notes_enabled()
+    _check_notes_access(db, user)
     try:
         return NotesService.toggle_archive(db=db, user=user, note_id_or_uid=id_or_uid)
     except ValueError as e:

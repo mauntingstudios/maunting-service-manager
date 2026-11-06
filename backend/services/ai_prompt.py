@@ -1925,7 +1925,27 @@ dessen Inhalt fragt, antworte daraus; greife nicht zum Bildschirm oder zur \
 Datei auf dem Rechner, um denselben Anhang noch einmal zu oeffnen."""
 
 
-def build(*, gesprochen: bool = False, rolle: str = "voll", desktop: bool = False, db: Any = None, docs: bool = False) -> str:
+KEIN_CODING: str = (
+    "PROGRAMMIERARBEITEN GESPERRT:\n"
+    "Der aktuelle Benutzer verfügt über keine Berechtigung für Programmierarbeiten (ai.coding.use).\n"
+    "Du darfst KEINEN vollständigen Quellcode, keine Skripte, keine Webseiten, keine Programme und "
+    "keine umfangreichen Implementierungen schreiben oder in Dateien ablegen. "
+    "Du darfst dem Benutzer Programmierkonzepte abstrakt erklären, logische Abläufe erläutern oder "
+    "sehr kurze Minimal-Snippets und Pseudocode (maximal 3 bis 5 Zeilen) zur Veranschaulichung zeigen.\n"
+    "Lehne Anfragen nach vollständigem Code, Programmierung oder Implementierung freundlich und bestimmt "
+    "mit dem Hinweis ab, dass Programmierarbeiten für dieses Konto nicht freigeschaltet sind, um Tokens zu sparen."
+)
+
+
+def build(
+    *,
+    gesprochen: bool = False,
+    rolle: str = "voll",
+    desktop: bool = False,
+    db: Any = None,
+    docs: bool = False,
+    coding_erlaubt: bool = True,
+) -> str:
     """Setzt den Systemprompt zusammen — byteweise statisch.
     ...
     """
@@ -1949,6 +1969,8 @@ def build(*, gesprochen: bool = False, rolle: str = "voll", desktop: bool = Fals
         teile.append(DESKTOP)
     if docs:
         teile.append(DOKUMENTE)
+    if not coding_erlaubt:
+        teile.append(KEIN_CODING)
     if gesprochen:
         # Ganz ans Ende, und das ist seit dem Wegfall des Widerrufs eine
         # harmlose Entscheidung: es steht nichts mehr darueber, dem dieser Text

@@ -23,8 +23,10 @@ from services.ai_action_errors import (
 from services.ai_redaction import redact_sensitive_text
 from services.server_file_access_service import read_server_text
 from services.ai_tool_registry import (
+    CALENDAR_TOOLS,
     DOCUMENTS_TOOLS,
     GLOBAL_READ_TOOLS,
+    NOTES_TOOLS,
     SERVER_READ_TOOLS,
     READ_TOOLS,
     WERKZEUGE,
@@ -1376,6 +1378,10 @@ def angebotene_werkzeuge(db: Session, user: User) -> frozenset[str]:
     )
     if not docs_ok:
         verfuegbar -= DOCUMENTS_TOOLS
+    if not permission_service.has_global_permission(db, user, "calendar.use"):
+        verfuegbar -= CALENDAR_TOOLS
+    if not permission_service.has_global_permission(db, user, "notes.use"):
+        verfuegbar -= NOTES_TOOLS
     return frozenset(verfuegbar)
 
 
@@ -1805,6 +1811,8 @@ def _execute_global_read_tool(
                     ]
                 }
             if action == "create_project":
+                if not permission_service.has_global_permission(db, user, "ai.projects.manage"):
+                    raise AiActionValidationError("Projektverwaltung ist für diesen Benutzer nicht freigegeben (ai.projects.manage)")
                 name = str(arguments.get("name") or "Neues Projekt").strip()
                 description = str(arguments.get("description") or "").strip() or None
                 repo_url = str(arguments.get("repo_url") or arguments.get("git_repo_url") or "").strip() or None
@@ -1866,6 +1874,8 @@ def _execute_global_read_tool(
                 f = ai_project_service.read_project_file(db, user, pid, str(arguments.get("path") or ""))
                 return {"path": f.path, "content": f.content, "size_bytes": f.size_bytes}
             if action == "write_file":
+                if not permission_service.has_global_permission(db, user, "ai.coding.use"):
+                    raise AiActionValidationError("Programmierarbeiten und Code-Änderungen sind für diesen Benutzer nicht freigegeben (ai.coding.use)")
                 f = ai_project_service.write_project_file(
                     db,
                     user,
@@ -1875,9 +1885,13 @@ def _execute_global_read_tool(
                 )
                 return {"path": f.path, "size_bytes": f.size_bytes, "saved": True}
             if action == "delete_file":
+                if not (permission_service.has_global_permission(db, user, "ai.projects.manage") or permission_service.has_global_permission(db, user, "ai.coding.use")):
+                    raise AiActionValidationError("Dateien löschen ist für diesen Benutzer nicht freigegeben")
                 ai_project_service.delete_project_file(db, user, pid, str(arguments.get("path") or ""))
                 return {"deleted": True}
             if action == "run_command":
+                if not permission_service.has_global_permission(db, user, "ai.coding.use"):
+                    raise AiActionValidationError("Programmierarbeiten und Befehlsausführung sind für diesen Benutzer nicht freigegeben (ai.coding.use)")
                 return ai_project_service.run_project_command(
                     db, user, pid, str(arguments.get("command") or "")
                 )
@@ -1894,6 +1908,8 @@ def _execute_global_read_tool(
                     token=token,
                 )
             if action == "git_commit":
+                if not permission_service.has_global_permission(db, user, "ai.coding.use"):
+                    raise AiActionValidationError("Programmierarbeiten und Git-Commit sind für diesen Benutzer nicht freigegeben (ai.coding.use)")
                 token = str(arguments.get("token") or arguments.get("git_token") or "").strip() or None
                 return ai_project_service.git_commit_and_push(
                     db,
@@ -1963,7 +1979,7 @@ def _execute_global_read_tool(
         return msg
 
     if tool_name == "calendar_read":
-        if not permission_service.has_global_permission(db, user, "ai.calendar.use"):
+        if not (permission_service.has_global_permission(db, user, "calendar.use") and permission_service.has_global_permission(db, user, "ai.calendar.use")):
             raise AiActionValidationError("Kalender-Einsicht ist nicht erlaubt")
         from services.calendar_service import CalendarService
 
@@ -2015,7 +2031,7 @@ def _execute_global_read_tool(
         return ergebnis
 
     if tool_name == "notes_read":
-        if not permission_service.has_global_permission(db, user, "ai.notes.use"):
+        if not (permission_service.has_global_permission(db, user, "notes.use") and permission_service.has_global_permission(db, user, "ai.notes.use")):
             raise AiActionValidationError("Notiz-Einsicht ist nicht erlaubt")
         from services.notes_service import NotesService
 
@@ -2861,10 +2877,10 @@ def execute_read_tool(
         if not permission_service.has_global_permission(db, user, "ai.web_search.use"):
             raise AiActionValidationError("Websuche ist fuer diesen Benutzer nicht freigegeben")
     elif prefetch_session_id and tool_name == "calendar_read":
-        if not permission_service.has_global_permission(db, user, "ai.calendar.use"):
+        if not (permission_service.has_global_permission(db, user, "calendar.use") and permission_service.has_global_permission(db, user, "ai.calendar.use")):
             raise AiActionValidationError("Kalender ist fuer diesen Benutzer nicht freigegeben")
     elif prefetch_session_id and tool_name == "notes_read":
-        if not permission_service.has_global_permission(db, user, "ai.notes.use"):
+        if not (permission_service.has_global_permission(db, user, "notes.use") and permission_service.has_global_permission(db, user, "ai.notes.use")):
             raise AiActionValidationError("Notizen sind fuer diesen Benutzer nicht freigegeben")
     elif prefetch_session_id and tool_name == "search_memory":
         if not permission_service.has_global_permission(db, user, "ai.memory.use"):

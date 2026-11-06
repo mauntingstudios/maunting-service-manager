@@ -106,7 +106,7 @@ class AiProjectGitCommitPayload(BaseModel):
 def list_projects(
     team_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
 ) -> list[AiProjectResponse]:
     rows = ai_project_service.list_projects(db, user, team_id=team_id)
     return [AiProjectResponse.model_validate(r) for r in rows]
@@ -116,7 +116,7 @@ def list_projects(
 def create_project(
     payload: AiProjectCreatePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
     _: None = Depends(verify_csrf),
 ) -> AiProjectResponse:
     try:
@@ -134,7 +134,7 @@ def create_project(
 def get_project(
     project_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
 ) -> AiProjectResponse:
     try:
         row = ai_project_service.get_project(db, user, project_id)
@@ -148,7 +148,7 @@ def update_project(
     project_id: str,
     payload: AiProjectUpdatePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
     _: None = Depends(verify_csrf),
 ) -> AiProjectResponse:
     try:
@@ -167,7 +167,7 @@ def update_project(
 def delete_project(
     project_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
     _: None = Depends(verify_csrf),
 ) -> Response:
     try:
@@ -181,7 +181,7 @@ def delete_project(
 def list_project_files(
     project_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
 ) -> list[AiProjectFileResponse]:
     try:
         rows = ai_project_service.list_project_files(db, user, project_id)
@@ -195,7 +195,7 @@ def write_project_file(
     project_id: str,
     payload: AiProjectFileWritePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.coding.use")),
     _: None = Depends(verify_csrf),
 ) -> AiProjectFileResponse:
     try:
@@ -217,7 +217,7 @@ def delete_project_file(
     project_id: str,
     path: str = Query(..., min_length=1),
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
     _: None = Depends(verify_csrf),
 ) -> Response:
     try:
@@ -232,7 +232,7 @@ def execute_project_command(
     project_id: str,
     payload: AiProjectCommandPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.coding.use")),
     _: None = Depends(verify_csrf),
 ) -> dict[str, object]:
     try:
@@ -251,7 +251,7 @@ def execute_project_command(
 def get_project_agents_rules(
     project_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
 ) -> dict[str, object]:
     try:
         return ai_project_service.get_project_agents_rules(db, user, project_id)
@@ -263,7 +263,7 @@ def get_project_agents_rules(
 def get_project_git_status(
     project_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
 ) -> dict[str, object]:
     try:
         return ai_project_service.git_status(db, user, project_id)
@@ -276,7 +276,7 @@ def sync_project_git(
     project_id: str,
     payload: AiProjectGitClonePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.projects.manage")),
     _: None = Depends(verify_csrf),
 ) -> dict[str, object]:
     try:
@@ -298,7 +298,7 @@ def commit_project_git(
     project_id: str,
     payload: AiProjectGitCommitPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    user: User = Depends(require_global("ai.coding.use")),
     _: None = Depends(verify_csrf),
 ) -> dict[str, object]:
     try:

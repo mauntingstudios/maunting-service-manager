@@ -547,7 +547,7 @@ describe('DesktopApp', () => {
           )
         }
         return Promise.resolve(
-          new Response(JSON.stringify({ global_permissions: ['ai.calendar.use'], server_permissions: {} }), {
+          new Response(JSON.stringify({ global_permissions: ['calendar.use', 'ai.calendar.use'], server_permissions: {} }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           }),

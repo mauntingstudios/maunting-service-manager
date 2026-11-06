@@ -971,10 +971,12 @@ WERKZEUGE: dict[str, Werkzeug] = {
     "project_workspace": Werkzeug(
         "global_read",
         gruppe="projects",
+        angebot=("ai.projects.manage", "ai.coding.use"),
     ),
     "project_create": Werkzeug(
         "global_read",
         gruppe="projects",
+        angebot=("ai.projects.manage",),
     ),
 }
 
@@ -1035,6 +1037,9 @@ SERVER_READ_TOOLS = _mit_art("server_read")
 # bleibt davon getrennt: Es ist ausschließlich ein Realtime-Sitzungsbefehl und
 # hat keinen Handler im allgemeinen Chatlauf.
 GLOBAL_READ_TOOLS = _mit_art("global_read", "ask", "delegation")
+CALENDAR_TOOLS = _mit_gruppe("calendar")
+NOTES_TOOLS = _mit_gruppe("notes")
+PROJECTS_TOOLS = _mit_gruppe("projects")
 DOCUMENTS_TOOLS = _mit_gruppe("dokumente")
 DOCUMENTS_WRITE_TOOLS = _mit_art("docs_write")
 DOCUMENTS_READ_TOOLS = DOCUMENTS_TOOLS - DOCUMENTS_WRITE_TOOLS
