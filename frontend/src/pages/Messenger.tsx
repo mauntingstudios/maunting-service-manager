@@ -2387,7 +2387,7 @@ function MessengerSeite() {
       {/* Im offenen Chat hat der Hinweis keinen Platz: der Chat soll oben
           beginnen. In der Liste bleibt er sichtbar. */}
       {!isChatOpen && <MessengerBetaBanner />}
-      {geraetWartet && (
+      {!isChatOpen && geraetWartet && (
         <button
           type="button"
           onClick={() => navigate('/profile?tab=security')}
@@ -2812,6 +2812,16 @@ function MessengerSeite() {
                   onOeffnen={() => angeheftet.clientUuid && springeZu(angeheftet.clientUuid)}
                   onLoesen={darfAnheften ? () => void handleAnheften(angeheftet) : undefined}
                 />
+              )}
+
+              {geraetWartet && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/profile?tab=security')}
+                  className="shrink-0 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-left text-xs sm:text-sm text-status-warning flex items-center justify-between transition-colors hover:bg-status-warning/15"
+                >
+                  <span>{t('messenger.thisDevicePending')}</span>
+                </button>
               )}
 
               {verlauf}

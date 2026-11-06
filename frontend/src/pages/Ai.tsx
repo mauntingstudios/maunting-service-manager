@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { MessageSquare } from 'lucide-react'
+import { Menu, MessageSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiAttachment, type AiConversationSummary, type AiVoiceConfig } from '@/api/ai'
@@ -15,7 +15,6 @@ import { WorkerAnsicht } from '@/components/ai/WorkerAnsicht'
 import { SprachAnsicht } from '@/components/ai/voice/SprachAnsicht'
 import {
   SingraSidebar,
-  SingraMobileBottomBar,
   type SingraSection,
 } from '@/components/ai/singra/SingraSidebar'
 import { SingraProjectsView } from '@/components/ai/singra/SingraProjectsView'
@@ -310,7 +309,7 @@ export function Ai({
 
   return (
     <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
-      <AiBetaBanner />
+      <AiBetaBanner className={activeSection === 'chat' ? 'hidden sm:flex' : ''} />
       {ansicht !== 'text' && (
         <div className="flex shrink-0 items-center justify-between sm:justify-end gap-1.5 sm:gap-2 px-3 py-2 border-b border-outline-variant/30 bg-surface-container-low/40">
           <div className="flex items-center justify-between w-full sm:w-auto gap-2">
@@ -358,6 +357,42 @@ export function Ai({
           />
 
           <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden">
+            {activeSection !== 'chat' && (
+              <div className="flex lg:hidden shrink-0 items-center justify-between border-b border-outline-variant/30 bg-surface-container-low px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+                  aria-label="Singra Navigation öffnen"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+                <span className="font-semibold text-sm text-on-surface capitalize">
+                  {activeSection === 'projekte'
+                    ? 'Projekte'
+                    : activeSection === 'wissen'
+                      ? 'Wissen'
+                      : activeSection === 'tools'
+                        ? 'Tools'
+                        : activeSection === 'dateien'
+                          ? 'KI-Speicher'
+                          : activeSection === 'erinnerungen'
+                            ? 'Erinnerungen'
+                            : activeSection === 'verlauf'
+                              ? 'Verlauf'
+                              : activeSection}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('chat')}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline px-2.5 py-1 rounded-lg bg-primary/10 transition-colors"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  <span>Chat</span>
+                </button>
+              </div>
+            )}
+
             {activeSection === 'projekte' ? (
               <SingraProjectsView
                 onOpenProjectChat={(projectId, conversationId) => {
@@ -416,11 +451,6 @@ export function Ai({
                 onConsumeInitialAttachment={() => setPendingAttachmentToChat(null)}
               />
             )}
-
-            <SingraMobileBottomBar
-              activeSection={activeSection}
-              onSelectSection={setActiveSection}
-            />
           </div>
         </div>
       )}

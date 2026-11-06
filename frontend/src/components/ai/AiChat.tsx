@@ -1493,7 +1493,7 @@ export function AiChat({
       <header
         className={`flex items-center justify-between border-b px-2 py-1.5 sm:px-4 sm:py-2.5 shrink-0 sticky top-0 z-20 gap-1 min-w-0 transition-colors ${
           singraShell
-            ? 'pt-[calc(var(--msm-oben-sicher,0px)+0.375rem)] sm:pt-2.5 border-white/10 bg-surface-container-lowest/75 backdrop-blur-xl'
+            ? 'py-1.5 sm:py-2.5 border-white/10 bg-surface-container-lowest/75 backdrop-blur-xl'
             : 'border-outline-variant/30 bg-surface-container-low'
         } ${
           eingebettet ? 'flex-wrap gap-y-1' : ''
@@ -1982,7 +1982,7 @@ export function AiChat({
 
           {/* ── Eingabe ───────────────────────────────────────────────────── */}
           <form
-            className={`relative shrink-0 px-2.5 py-2 sm:px-4 sm:py-3 transition-colors ${
+            className={`relative shrink-0 px-2.5 py-2 pb-[max(0.5rem,var(--msm-unten-sicher))] sm:px-4 sm:py-3 transition-colors ${
               singraShell
                 ? 'border-t-0 bg-transparent'
                 : 'border-t border-outline-variant/40 bg-surface/85 backdrop-blur-md'

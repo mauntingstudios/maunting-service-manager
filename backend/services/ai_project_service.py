@@ -642,45 +642,70 @@ def git_status(db: Session, user: User, project_id: str) -> dict[str, object]:
             "initialized": False,
             "branch": project.git_branch or "main",
             "repo_url": project.git_repo_url,
+            "remote_url": project.git_repo_url,
             "provider": project.git_provider,
+            "clean": True,
+            "changed_files": [],
+            "ahead": 0,
+            "behind": 0,
+            "last_commit": None,
             "status_short": "",
             "diff_stat": "",
         }
-    branch_res = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=str(ws),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=10,
-    )
-    status_res = subprocess.run(
-        ["git", "status", "--short"],
-        cwd=str(ws),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=10,
-    )
-    diff_res = subprocess.run(
-        ["git", "diff", "--stat"],
-        cwd=str(ws),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=10,
-    )
-    return {
-        "initialized": True,
-        "branch": (branch_res.stdout or "").strip() or project.git_branch or "main",
-        "repo_url": project.git_repo_url,
-        "provider": project.git_provider,
-        "status_short": (status_res.stdout or "")[:8000],
-        "diff_stat": (diff_res.stdout or "")[:8000],
-    }
+    try:
+        branch_res = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(ws),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+        status_res = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=str(ws),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+        diff_res = subprocess.run(
+            ["git", "diff", "--stat"],
+            cwd=str(ws),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+        log_res = subprocess.run(
+            ["git", "log", "-1", "--format=%h %s (%cr)"],
+            cwd=str(ws),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+        changed_files = [line.strip() for line in (status_res.stdout or "").splitlines() if line.strip()]
+        return {
+            "initialized": True,
+            "branch": (branch_res.stdout or "").strip() or project.git_branch or "main",
+            "repo_url": project.git_repo_url,
+            "remote_url": project.git_repo_url,
+            "provider": project.git_provider,
+            "clean": len(changed_files) == 0,
+            "changed_files": changed_files,
+            "ahead": 0,
+            "behind": 0,
+            "last_commit": (log_res.stdout or "").strip() or None,
+            "status_short": (status_res.stdout or "")[:8000],
+            "diff_stat": (diff_res.stdout or "")[:8000],
+        }
+    except OSError as exc:
+        raise AiProjectError(f"Git-Befehl fehlgeschlagen: {exc}") from exc
 
 
 def git_clone_or_pull(

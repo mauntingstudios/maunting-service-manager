@@ -1401,13 +1401,13 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                             </span>
                           )}
                         </div>
-                        {gitStatus.changed_files.length > 0 ? (
+                        {(gitStatus.changed_files?.length ?? 0) > 0 ? (
                           <div className="mt-2">
                             <div className="font-medium text-on-surface mb-1">
-                              Geänderte Dateien ({gitStatus.changed_files.length}):
+                              Geänderte Dateien ({gitStatus.changed_files?.length ?? 0}):
                             </div>
                             <ul className="font-mono text-label-sm text-on-surface-variant space-y-0.5 max-h-36 overflow-y-auto">
-                              {gitStatus.changed_files.map((line, i) => (
+                              {gitStatus.changed_files?.map((line, i) => (
                                 <li key={i}>{line}</li>
                               ))}
                             </ul>
