@@ -689,7 +689,10 @@ async def list_available_providers(
                 )
             except Exception:
                 katalog_modelle = []
-            for km in katalog_modelle[:80]:
+            for km in katalog_modelle:
+                m_low = km.model_id.lower()
+                if any(x in m_low for x in ("embedding", "dall-e", "tts-", "text-moderation")):
+                    continue
                 effs = ai_reasoning.waehlbare_stufen(km, deckel)
                 model_options.append(
                     AiProviderModelOption(
@@ -701,6 +704,8 @@ async def list_available_providers(
                         default_effort=km.standard_stufe if km.standard_stufe in effs else None,
                     )
                 )
+                if len(model_options) >= 120:
+                    break
         else:
             for mid in freigegeben:
                 km = await ai_model_catalog.finde(

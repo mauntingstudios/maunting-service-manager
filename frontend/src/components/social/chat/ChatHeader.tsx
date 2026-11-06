@@ -79,7 +79,7 @@ export function ChatHeader({
   const [menueOffen, setMenueOffen] = useState(false)
 
   return (
-    <header className="relative z-30 flex min-h-16 shrink-0 items-center gap-2 border-b border-outline-variant/30 bg-surface-container-lowest/80 px-3 pt-[var(--msm-oben-sicher)] backdrop-blur-xl sm:gap-3 sm:px-4">
+    <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-outline-variant/30 bg-surface-container-lowest/80 px-3 pt-[calc(var(--msm-oben-sicher,0px)+0.5rem)] pb-2.5 sm:pt-[calc(var(--msm-oben-sicher,0px)+0.625rem)] sm:pb-3 backdrop-blur-xl sm:gap-3 sm:px-4">
       {onSeitenleisteUmschalten && (
         <Kurzinfo
           text={seitenleisteEingeklappt ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
@@ -106,7 +106,7 @@ export function ChatHeader({
         <button
           type="button"
           onClick={onZurueck}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface border border-outline-variant/30"
+          className={rundknopf}
           aria-label={t('messenger.backToContacts')}
         >
           <ChevronLeft className="w-5 h-5" />

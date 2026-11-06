@@ -88,6 +88,47 @@ export function writeAiProviderChoice(key: string, providerId: number): void {
 }
 
 /**
+ * Schluessel fuer die Denkstufe eines ganz konkreten KI-Modells.
+ * Damit behaelt jedes Modell (z.B. o3-mini vs. GPT-4o vs. Gemini 2.5 Flash)
+ * seine eigene praeferierte Denkstufe, unabhaengig vom Provider.
+ */
+export function aiModelReasoningKey(
+  userId: number | string,
+  providerId: number | string,
+  modelId: string
+): string {
+  return `${AI_CHAT_PREFERENCE_PREFIX}:model_reasoning:${userId}:${providerId}:${modelId}`
+}
+
+export function readAiModelReasoningChoice(key: string): GespeicherteDenkwahl | null {
+  return readAiReasoningChoice(key)
+}
+
+export function writeAiModelReasoningChoice(key: string, wahl: GespeicherteDenkwahl): void {
+  writeAiReasoningChoice(key, wahl)
+}
+
+/**
+ * Schluessel fuer das zuletzt gewaehlte Modell eines Providers.
+ */
+export function aiModelChoiceKey(userId: number | string, providerId: number | string): string {
+  return `${AI_CHAT_PREFERENCE_PREFIX}:model_choice:${userId}:${providerId}`
+}
+
+export function readAiModelChoice(key: string): string | null {
+  try {
+    const saved = localStorage.getItem(key)
+    return saved && typeof saved === 'string' && saved.trim() ? saved.trim() : null
+  } catch {
+    return null
+  }
+}
+
+export function writeAiModelChoice(key: string, modelId: string): void {
+  schreibe(key, modelId)
+}
+
+/**
  * Speicher voll oder gesperrt (privates Fenster): dann merkt sich der Browser
  * die Wahl eben nicht. Der Chat funktioniert unveraendert weiter — an diesen
  * beiden Werten haengt nur der Komfort.

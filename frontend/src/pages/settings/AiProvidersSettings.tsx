@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, KeyRound, PlugZap, Plus, RefreshCw, Save, Star, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -695,7 +695,27 @@ function ProviderForm({
   const [testing, setTesting] = useState(false)
   const [models, setModels] = useState<AiCatalogModel[] | null>(null)
   const [loadingModels, setLoadingModels] = useState(false)
+  const [modelFilterQuery, setModelFilterQuery] = useState('')
+  const [modelFilterCategory, setModelFilterCategory] = useState<'all' | 'chat' | 'reasoning' | 'vision'>('chat')
   const draft = localDraft ? local : initialDraft
+
+  const gefilterteModelle = useMemo(() => {
+    if (!models) return []
+    return models
+      .filter((m) => {
+        const id = m.model_id.toLowerCase()
+        const isNonChat = id.includes('embedding') || id.includes('dall-e') || id.startsWith('tts-') || id.includes('text-moderation')
+        if (modelFilterCategory === 'chat' && isNonChat) return false
+        if (modelFilterCategory === 'reasoning' && !m.reasoning) return false
+        if (modelFilterCategory === 'vision' && !m.vision) return false
+        if (modelFilterQuery.trim()) {
+          const q = modelFilterQuery.trim().toLowerCase()
+          return id.includes(q) || (m.name && m.name.toLowerCase().includes(q))
+        }
+        return true
+      })
+      .sort(sortiereModelleAlphabetisch)
+  }, [models, modelFilterQuery, modelFilterCategory])
   const spec = kinds.find((item) => item.kind === draft.provider_kind) ?? null
   // Als eigener Wert und nicht als `spec?.…` in der Abhaengigkeitsliste: `spec`
   // ist bei jedem Rendern ein neues Objekt und loeste den Effekt endlos aus.
@@ -1183,15 +1203,78 @@ function ProviderForm({
                     onChange={(allow_all_models) => change({ allow_all_models })}
                   />
                   {!draft.allow_all_models && models && models.length > 0 && (
-                    <div className="space-y-1.5 pt-1">
-                      <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                        Zusätzliche Modelle im Chat freigeben
-                      </span>
-                      <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1">
-                        {[...models]
-                          .sort(sortiereModelleAlphabetisch)
-                          .slice(0, 40)
-                          .map((m) => {
+                    <div className="space-y-2 pt-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                          Zusätzliche Modelle im Chat freigeben
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-primary font-medium">
+                            {(draft.enabled_models ?? []).length} freigegeben
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const alleChat = models
+                                .filter((m) => {
+                                  const id = m.model_id.toLowerCase()
+                                  return !id.includes('embedding') && !id.includes('dall-e') && !id.startsWith('tts-')
+                                })
+                                .map((m) => m.model_id)
+                              change({ enabled_models: alleChat })
+                            }}
+                            className="text-label-sm text-primary hover:underline font-medium"
+                          >
+                            Alle Chat-Modelle
+                          </button>
+                          {(draft.enabled_models ?? []).length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => change({ enabled_models: [] })}
+                              className="text-label-sm text-on-surface-variant hover:text-on-surface hover:underline"
+                            >
+                              Zurücksetzen
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Filter-Leiste: Suche und Kategorien */}
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            value={modelFilterQuery}
+                            onChange={(e) => setModelFilterQuery(e.target.value)}
+                            placeholder="Modelle filtern (z. B. gpt, gemini, claude, flash)..."
+                            className="w-full h-8 px-2.5 text-xs rounded-lg border border-outline-variant/30 bg-surface-container-low text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {(['chat', 'reasoning', 'vision', 'all'] as const).map((kat) => (
+                            <button
+                              key={kat}
+                              type="button"
+                              onClick={() => setModelFilterCategory(kat)}
+                              className={`px-2 py-1 rounded-md text-label-sm font-medium transition-colors ${
+                                modelFilterCategory === kat
+                                  ? 'bg-primary/15 text-primary border border-primary/30 font-semibold'
+                                  : 'bg-surface-container-low text-on-surface-variant hover:text-on-surface border border-outline-variant/20'
+                              }`}
+                            >
+                              {kat === 'chat' ? '💬 Chat' : kat === 'reasoning' ? '🧠 Denken' : kat === 'vision' ? '👁️ Sehen' : 'Alle'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-2 rounded-xl border border-outline-variant/20 bg-surface-container-low/40">
+                        {gefilterteModelle.length === 0 ? (
+                          <span className="text-xs text-on-surface-variant py-2 px-1">
+                            Keine Modelle für diesen Filter gefunden.
+                          </span>
+                        ) : (
+                          gefilterteModelle.map((m) => {
                             const selected = (draft.enabled_models ?? []).includes(m.model_id) || m.model_id === draft.default_model
                             const isDefault = m.model_id === draft.default_model
                             return (
@@ -1214,9 +1297,12 @@ function ProviderForm({
                               >
                                 <span>{m.model_id}</span>
                                 {isDefault && <span className="text-label-sm opacity-75">(Standard)</span>}
+                                {m.reasoning && <span className="text-label-sm opacity-80">🧠</span>}
+                                {m.vision && <span className="text-label-sm opacity-80">👁️</span>}
                               </button>
                             )
-                          })}
+                          })
+                        )}
                       </div>
                     </div>
                   )}
@@ -1265,8 +1351,9 @@ function ProviderForm({
                       ...[...models]
                         .filter((item) => {
                           const lower = item.model_id.toLowerCase()
-                          if (draft.provider_kind === 'google') return lower.includes('gemini') || lower.includes('flash')
-                          if (draft.provider_kind === 'openai') return lower.includes('whisper') || lower.includes('audio') || lower.includes('gpt-4o')
+                          if (lower.includes('embedding') || lower.includes('dall-e') || lower.startsWith('tts-')) return false
+                          if (draft.provider_kind === 'google') return lower.includes('gemini') || lower.includes('flash') || lower.includes('audio')
+                          if (draft.provider_kind === 'openai') return lower.includes('whisper') || lower.includes('audio') || lower.includes('gpt-4o') || lower.includes('transcribe')
                           return true
                         })
                         .sort(sortiereModelleAlphabetisch)
