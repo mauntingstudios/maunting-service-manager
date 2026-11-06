@@ -2874,7 +2874,8 @@ function MessengerSeite() {
                   damit unter dem Home-Balken, und jeder Griff dorthin wischte
                   die App weg, statt zu tippen. */}
               <div className="p-2.5 pb-[calc(0.625rem+var(--msm-unten-sicher))] bg-transparent relative z-10">
-                {activeContact && isBlocked(activeContact.userId) ? (
+                <div className="mx-auto w-full max-w-3xl xl:max-w-4xl">
+                  {activeContact && isBlocked(activeContact.userId) ? (
                   <BlockedNotice onAufheben={() => void unblockUser(activeContact.userId)} />
                 ) : aufnahme.laeuft ? (
                   <VoiceRecordingBar
@@ -2937,7 +2938,7 @@ function MessengerSeite() {
 
                       <ChatInputBar
                         ref={chatInputRef}
-                        className="border border-outline-variant/40 bg-surface-container/70 backdrop-blur-xl shadow-lg shadow-black/20 focus-within:border-primary/60"
+                        variant="glass"
                         value={inputText}
                         onChange={handleInputChange}
                         topSlot={
@@ -3024,6 +3025,7 @@ function MessengerSeite() {
                     </form>
                   </>
                 )}
+                </div>
               </div>
 
             </>

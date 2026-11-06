@@ -12,13 +12,17 @@ export interface ChatInputBarProps {
   leftActions?: React.ReactNode
   rightActions?: React.ReactNode
   /**
-   * Was über dem Eingabefeld steht: ein Zitatkopf beim Antworten, die
+   * Was ueber dem Eingabefeld steht: ein Zitatkopf beim Antworten, die
    * Vorschlagsliste beim Tippen von `@`, ein Entwurfshinweis.
-   *
-   * **Über** dem Feld und nicht darunter, weil darunter am Telefon die
-   * Tastatur ist. Was dort läge, sähe niemand, der gerade schreibt.
    */
   topSlot?: React.ReactNode
+  /**
+   * Stilvariante der Eingabeleiste:
+   * - 'glass': Dunkles, durchscheinendes Acrylglas (bg-black/55 backdrop-blur-xl),
+   *   ideal fuer stimmungsvolle Chathintergruende (Singra AI Chat, Messenger).
+   * - 'default': Solide Container-Oberflaeche (bg-surface-container-low).
+   */
+  variant?: 'glass' | 'default'
   className?: string
   textareaClassName?: string
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
@@ -32,10 +36,10 @@ export interface ChatInputBarRef {
 }
 
 /**
- * ChatInputBar - Projektübergreifende, hochwertige Input-Leiste (Design-DNA)
- * für Chat, Messenger und KI-Assistent.
- * Bietet dynamisch mitwachsende Textarea, dezente Oberflächenverläufe, saubere Fokus-Zustände
- * und Slots für Anhänge, Sprachaufnahme und Sende-Buttons.
+ * ChatInputBar: Projektuebergreifende, modulare Input-Leiste (Design-DNA)
+ * fuer Chat, Messenger und KI-Assistent.
+ * Bietet dynamisch mitwachsende Textarea, dezente Oberflaechenverlaeufe, saubere Fokus-Zustaende,
+ * Acrylglas-Blur ('glass') und Slots fuer Anhaenge, Sprachaufnahme und Sende-Buttons.
  */
 export const ChatInputBar = forwardRef<ChatInputBarRef, ChatInputBarProps>(
   (
@@ -51,6 +55,7 @@ export const ChatInputBar = forwardRef<ChatInputBarRef, ChatInputBarProps>(
       leftActions,
       rightActions,
       topSlot,
+      variant = 'glass',
       className = '',
       textareaClassName = '',
       onKeyDown,
@@ -93,39 +98,47 @@ export const ChatInputBar = forwardRef<ChatInputBarRef, ChatInputBarProps>(
       }
     }
 
+    const isGlass = variant === 'glass'
+
     return (
       <div
-        className={`rounded-2xl border border-outline-variant/50 bg-surface-container-low transition-all focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 ${
-          disabled ? 'opacity-60 pointer-events-none' : ''
-        } ${className}`}
+        className={`${
+          isGlass
+            ? 'rounded-3xl border border-white/15 bg-black/55 backdrop-blur-xl shadow-[0_14px_40px_rgba(0,0,0,0.45)] focus-within:border-primary/55 transition-colors'
+            : 'rounded-2xl border border-outline-variant/50 bg-surface-container-low transition-all focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20'
+        } ${disabled ? 'opacity-60 pointer-events-none' : ''} ${className}`}
       >
         {topSlot}
         <div className="flex items-end gap-2 p-2">
-        {leftActions && (
-          <div className="flex items-center gap-1 shrink-0">
-            {leftActions}
-          </div>
-        )}
+          {leftActions && (
+            <div className="flex items-center gap-1 shrink-0">
+              {leftActions}
+            </div>
+          )}
 
-        <textarea
-          ref={internalTextareaRef}
-          value={value}
-          onChange={handleTextChange}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          maxLength={maxLength}
-          aria-label={ariaLabel}
-          rows={1}
-          style={{ minHeight: `${minHeight}px`, maxHeight: `${maxHeight}px` }}
-          className={`flex-1 resize-none border-0 bg-transparent py-1.5 text-sm leading-6 text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-0 ${textareaClassName}`}
-        />
+          <textarea
+            ref={internalTextareaRef}
+            value={value}
+            onChange={handleTextChange}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            disabled={disabled}
+            maxLength={maxLength}
+            aria-label={ariaLabel}
+            rows={1}
+            style={{ minHeight: `${minHeight}px`, maxHeight: `${maxHeight}px` }}
+            className={`flex-1 resize-none border-0 bg-transparent py-1.5 text-sm leading-6 focus:outline-none focus:ring-0 ${
+              isGlass
+                ? 'text-white placeholder:text-white/55 px-1'
+                : 'text-on-surface placeholder:text-on-surface-variant/60'
+            } ${textareaClassName}`}
+          />
 
-        {rightActions && (
-          <div className="flex items-center gap-1 shrink-0">
-            {rightActions}
-          </div>
-        )}
+          {rightActions && (
+            <div className="flex items-center gap-1 shrink-0">
+              {rightActions}
+            </div>
+          )}
         </div>
       </div>
     )
