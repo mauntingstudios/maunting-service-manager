@@ -60,8 +60,12 @@ export function MessengerRail({
     >
       {/* Oben: Logo und Haupt-Modi */}
       <div className="flex flex-col items-center gap-3 w-full">
-        <div className="w-10 h-10 rounded-2xl bg-primary text-on-primary flex items-center justify-center shadow-md shadow-primary/25 mb-1">
-          <MessageSquare className="w-5 h-5" />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 mb-1 overflow-hidden shadow-sm">
+          <img
+            src="/singra-logo-128.png"
+            alt="Singra"
+            className="h-7 w-7 object-contain"
+          />
         </div>
 
         <Kurzinfo text={t('messenger.nav.chats')} lage="rechts">
