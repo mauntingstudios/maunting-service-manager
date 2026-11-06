@@ -47,7 +47,10 @@ export function mergeEntries(
       id: message.id,
       message:
         message.role === 'user' && !message.deliveryStatus
-          ? { ...message, deliveryStatus: message.status === 'failed' ? 'failed' : 'read' }
+          ? {
+              ...message,
+              deliveryStatus: (message.status === 'failed' ? 'failed' : 'read') as AiMessage['deliveryStatus'],
+            }
           : message,
     })),
     ...proposals.map((proposal) => ({ kind: 'proposal' as const, id: proposal.id, proposal })),

@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 
 import {
   Calendar as CalendarIcon,
+  Check,
   Clock,
   Download,
   Forward,
