@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import {
+  AtSign,
   Bookmark,
   MessageSquare,
   Palette,
@@ -18,6 +19,8 @@ interface MessengerRailProps {
   ungelesenGesamt?: number
   funkeZahl?: number
   onMarkierteNachrichten: () => void
+  onAntwortenAnMich?: () => void
+  onFunke?: () => void
   onHintergrund: () => void
   onEinstellungen: () => void
 }
@@ -34,6 +37,8 @@ export function MessengerRail({
   ungelesenGesamt = 0,
   funkeZahl = 0,
   onMarkierteNachrichten,
+  onAntwortenAnMich,
+  onFunke,
   onHintergrund,
   onEinstellungen,
 }: MessengerRailProps) {
@@ -42,7 +47,7 @@ export function MessengerRail({
   const buttonKlasse = (aktiv: boolean) =>
     `relative flex items-center justify-center w-11 h-11 rounded-2xl transition-all ${
       aktiv
-        ? 'bg-primary text-white shadow-md shadow-primary/30 scale-105'
+        ? 'bg-primary text-on-primary shadow-md shadow-primary/30 scale-105'
         : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/70'
     }`
 
@@ -53,7 +58,7 @@ export function MessengerRail({
     >
       {/* Oben: Logo und Haupt-Modi */}
       <div className="flex flex-col items-center gap-3 w-full">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-primary to-purple-500 text-white flex items-center justify-center shadow-md shadow-primary/25 mb-1">
+        <div className="w-10 h-10 rounded-2xl bg-primary text-on-primary flex items-center justify-center shadow-md shadow-primary/25 mb-1">
           <MessageSquare className="w-5 h-5" />
         </div>
 
@@ -66,7 +71,7 @@ export function MessengerRail({
           >
             <MessageSquare className="w-5 h-5" />
             {ungelesenGesamt > 0 && modus !== 'chats' && (
-              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-label-sm font-bold flex items-center justify-center ring-2 ring-surface">
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-on-primary text-label-sm font-bold flex items-center justify-center ring-2 ring-surface">
                 {ungelesenGesamt > 99 ? '99+' : ungelesenGesamt}
               </span>
             )}
@@ -108,15 +113,44 @@ export function MessengerRail({
             <Bookmark className="w-5 h-5" />
           </button>
         </Kurzinfo>
+
+        {onAntwortenAnMich && (
+          <Kurzinfo text={t('messenger.mentionsAndReplies')} lage="rechts">
+            <button
+              type="button"
+              onClick={onAntwortenAnMich}
+              className={buttonKlasse(false)}
+              aria-label={t('messenger.mentionsAndReplies')}
+            >
+              <AtSign className="w-5 h-5" />
+            </button>
+          </Kurzinfo>
+        )}
       </div>
 
       {/* Unten: Funke, Wallpaper & Einstellungen */}
       <div className="flex flex-col items-center gap-2.5 w-full">
-        {funkeZahl > 0 && (
-          <Kurzinfo text={`Funken: ${funkeZahl}`} lage="rechts">
-            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-status-warning/15 text-status-warning border border-status-warning/30">
+        {funkeZahl > 0 ? (
+          <Kurzinfo text={`Funken: ${funkeZahl} (Klicken zum Chat)`} lage="rechts">
+            <button
+              type="button"
+              onClick={onFunke}
+              className="flex items-center justify-center w-11 h-11 rounded-2xl bg-status-warning/15 text-status-warning border border-status-warning/30 hover:bg-status-warning/25 hover:scale-105 active:scale-95 transition-all shadow-sm"
+              aria-label={`Funken: ${funkeZahl}`}
+            >
               <Zap className="w-5 h-5 fill-status-warning" />
-            </div>
+            </button>
+          </Kurzinfo>
+        ) : (
+          <Kurzinfo text="Funken mit Freunden" lage="rechts">
+            <button
+              type="button"
+              onClick={onFunke}
+              className="flex items-center justify-center w-11 h-11 rounded-2xl text-on-surface-variant hover:text-status-warning hover:bg-surface-container-high/70 hover:scale-105 active:scale-95 transition-all"
+              aria-label="Funken mit Freunden"
+            >
+              <Zap className="w-5 h-5" />
+            </button>
           </Kurzinfo>
         )}
 

@@ -176,6 +176,7 @@ function App() {
             }
           />
           <Route path="profile" element={<Profile />} />
+          <Route path="einstellungen" element={<Navigate to="/profile" replace />} />
           <Route path="calendar" element={calendarEnabled ? <Calendar /> : <Navigate to="/" replace />} />
           <Route path="notes" element={notesEnabled ? <Notes /> : <Navigate to="/" replace />} />
           <Route

@@ -103,7 +103,7 @@ export function MessengerBottomNav({
         <button
           type="button"
           onClick={onFunke || (() => onModus('chats'))}
-          className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary to-purple-500 text-white shadow-lg shadow-primary/40 flex items-center justify-center border-2 border-surface active:scale-95 transition-transform"
+          className="w-12 h-12 rounded-full bg-primary text-on-primary shadow-lg shadow-primary/40 flex items-center justify-center border-2 border-surface active:scale-95 transition-transform"
           aria-label="Funke"
         >
           <Zap className="w-6 h-6 fill-white" />

@@ -529,7 +529,7 @@ function ChatMessageBubbleContent({
       <div
         className={`max-w-[85%] md:max-w-[70%] px-3.5 py-2 rounded-2xl text-xs break-words shadow-sm space-y-2 ${
           msg.isSelf
-            ? 'bg-gradient-to-br from-primary to-[#6d28d9] text-on-primary rounded-br-xs border border-primary-hover/30 shadow-md shadow-primary/20'
+            ? 'bg-primary text-on-primary rounded-br-xs border border-primary-hover/30 shadow-md shadow-primary/20'
             : 'bg-surface-container-high/85 text-on-surface backdrop-blur-md rounded-bl-xs border border-outline-variant/30 shadow-sm'
         } ${michGemeint ? 'ring-1 ring-primary/70 border-primary/40' : ''}`}
       >

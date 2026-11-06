@@ -42,7 +42,7 @@ export function StoriesCarouselBar({ ich, eigeneStories, freunde, onOeffnen, onE
             <div
               className={`w-12 h-12 rounded-full p-0.5 shrink-0 transition-transform group-hover:scale-105 flex items-center justify-center ${
                 eigeneStories.length > 0
-                  ? 'bg-gradient-to-tr from-primary via-purple-500 to-amber-400 ring-2 ring-primary/40 ring-offset-2 ring-offset-surface shadow-md shadow-primary/25'
+                  ? 'bg-gradient-to-tr from-primary to-accent ring-2 ring-primary/40 ring-offset-2 ring-offset-surface shadow-md shadow-primary/25'
                   : 'border-2 border-dashed border-primary/40 group-hover:border-primary'
               }`}
             >
@@ -73,7 +73,7 @@ export function StoriesCarouselBar({ ich, eigeneStories, freunde, onOeffnen, onE
               <div
                 className={`w-12 h-12 rounded-full p-0.5 shrink-0 transition-all duration-300 group-hover:scale-105 flex items-center justify-center ${
                   gruppe.hasUnseen
-                    ? 'bg-gradient-to-tr from-primary via-purple-500 to-amber-400 ring-2 ring-primary ring-offset-2 ring-offset-surface shadow-[0_0_12px_rgba(124,58,237,0.5)]'
+                    ? 'bg-gradient-to-tr from-primary to-accent ring-2 ring-primary ring-offset-2 ring-offset-surface shadow-md shadow-primary/30'
                     : 'bg-surface-container-highest ring-1 ring-outline-variant/50 opacity-85'
                 }`}
               >

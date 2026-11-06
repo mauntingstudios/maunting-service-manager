@@ -31,7 +31,7 @@ export function MessengerEmptyState({
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center relative z-10 select-none">
       <div className="max-w-md w-full p-8 rounded-3xl bg-surface-container/70 backdrop-blur-xl border border-outline-variant/30 shadow-2xl space-y-5 transition-all">
-        <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-tr from-primary to-purple-500 text-white flex items-center justify-center shadow-lg shadow-primary/30">
+        <div className="w-16 h-16 mx-auto rounded-3xl bg-primary text-on-primary flex items-center justify-center shadow-lg shadow-primary/30">
           <MessageSquare className="w-8 h-8" />
         </div>
 

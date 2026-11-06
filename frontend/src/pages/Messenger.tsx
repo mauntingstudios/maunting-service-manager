@@ -2340,6 +2340,36 @@ function MessengerSeite() {
     blasenAktionen,
   ])
 
+  const partnerMitFunken = contactsList.filter((c) => {
+    if (!c.isFriend) return false
+    const kern = useFunkenStore.getState().kernVon(c.userId, Date.now())
+    return kern && kern.tage > 0
+  })
+  const funkeGesamt = partnerMitFunken.reduce((sum, c) => {
+    const kern = useFunkenStore.getState().kernVon(c.userId, Date.now())
+    return sum + (kern?.tage ?? 0)
+  }, 0)
+
+  const handleFunkeKlick = () => {
+    if (partnerMitFunken.length > 0) {
+      const naechster = partnerMitFunken.find((c) => c.userId !== activeContact?.userId) || partnerMitFunken[0]
+      setActiveContact(naechster)
+      setActiveGroup(null)
+      setFilterTab('friends')
+      toast.success(`Funke mit ${naechster.username} geöffnet! 🔥`)
+    } else {
+      setFilterTab('friends')
+      const ersterFreund = contactsList.find((c) => c.isFriend)
+      if (ersterFreund) {
+        setActiveContact(ersterFreund)
+        setActiveGroup(null)
+        toast.info(`Schreib ${ersterFreund.username}, um einen Funken zu starten! ✨`)
+      } else {
+        toast.info(t('messenger.streak.restoreUnavailable'))
+      }
+    }
+  }
+
   return (
     <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
       {/* Im offenen Chat hat der Hinweis keinen Platz: der Chat soll oben
@@ -2388,10 +2418,12 @@ function MessengerSeite() {
           onModus={setMobileNavTab}
           hatStories={stories.length > 0}
           ungelesenGesamt={Object.values(unreadCounts).reduce((a, b) => a + b, 0)}
-          funkeZahl={activeContact?.isFriend ? 1 : 0}
+          funkeZahl={funkeGesamt}
+          onFunke={handleFunkeKlick}
           onMarkierteNachrichten={() => void ueberall.oeffne('markiert')}
+          onAntwortenAnMich={() => void ueberall.oeffne('anMich')}
           onHintergrund={() => setIsWallpaperModalOpen(true)}
-          onEinstellungen={() => navigate('/profile?tab=security')}
+          onEinstellungen={() => navigate('/einstellungen')}
         />
 
         {/* Left Column: Modern Contacts & Groups List */}
@@ -2533,8 +2565,8 @@ function MessengerSeite() {
                   </p>
                 )}
 
-                {/* Über alle Chats hinweg suchen, Markiertes und „an mich". */}
-                <div className="pt-2 mt-1 border-t border-outline-variant/20 space-y-0.5">
+                {/* Über alle Chats hinweg suchen, Markiertes und „an mich" (auf Desktop direkt in der linken Leiste). */}
+                <div className="md:hidden pt-2 mt-1 border-t border-outline-variant/20 space-y-0.5">
                   <button
                     type="button"
                     onClick={() => void ueberall.oeffne('markiert')}
@@ -2597,15 +2629,7 @@ function MessengerSeite() {
             <MessengerBottomNav
               modus={mobileNavTab}
               onModus={setMobileNavTab}
-              onFunke={() => {
-                const hatFreunde = contactsList.some((c) => c.isFriend)
-                if (hatFreunde) {
-                  setFilterTab('friends')
-                  setMobileNavTab('chats')
-                } else {
-                  setMobileNavTab('community')
-                }
-              }}
+              onFunke={handleFunkeKlick}
             />
           )}
         </div>
@@ -2849,7 +2873,7 @@ function MessengerSeite() {
                   Inhalt bis an den Rand — auf einem iPhone lag die Eingabeleiste
                   damit unter dem Home-Balken, und jeder Griff dorthin wischte
                   die App weg, statt zu tippen. */}
-              <div className="p-2.5 pb-[calc(0.625rem+var(--msm-unten-sicher))] border-t border-outline-variant/30 bg-surface-container/75 backdrop-blur-xl relative z-10">
+              <div className="p-2.5 pb-[calc(0.625rem+var(--msm-unten-sicher))] bg-transparent relative z-10">
                 {activeContact && isBlocked(activeContact.userId) ? (
                   <BlockedNotice onAufheben={() => void unblockUser(activeContact.userId)} />
                 ) : aufnahme.laeuft ? (
@@ -2913,6 +2937,7 @@ function MessengerSeite() {
 
                       <ChatInputBar
                         ref={chatInputRef}
+                        className="border border-outline-variant/40 bg-surface-container/70 backdrop-blur-xl shadow-lg shadow-black/20 focus-within:border-primary/60"
                         value={inputText}
                         onChange={handleInputChange}
                         topSlot={
