@@ -42,7 +42,14 @@ export function mergeEntries(
   proposals: AiActionProposal[],
 ): Entry[] {
   const merged: Entry[] = [
-    ...messages.map((message) => ({ kind: 'message' as const, id: message.id, message })),
+    ...messages.map((message) => ({
+      kind: 'message' as const,
+      id: message.id,
+      message:
+        message.role === 'user' && !message.deliveryStatus
+          ? { ...message, deliveryStatus: message.status === 'failed' ? 'failed' : 'read' }
+          : message,
+    })),
     ...proposals.map((proposal) => ({ kind: 'proposal' as const, id: proposal.id, proposal })),
   ]
   return merged.sort((a, b) => entryTimestamp(a).localeCompare(entryTimestamp(b)))

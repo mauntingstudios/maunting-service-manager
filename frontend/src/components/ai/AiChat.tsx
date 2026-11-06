@@ -16,7 +16,7 @@ import {
   type AiVoiceConfig,
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
-import { Ablageflaeche, Button, Dropdown, Blatteintrag, Blattmenue, Kurzinfo, VoiceRecordingBar } from '@maunting/ui'
+import { Ablageflaeche, Button, Dropdown, Blatteintrag, Blattmenue, Kurzinfo, NachrichtStatus, VoiceRecordingBar } from '@maunting/ui'
 import { Avatar } from '@/components/app/Avatar'
 import {
   aiChatPreferenceKeys,
@@ -64,6 +64,7 @@ import { chatScopeApi, PRIMARY_CHAT_SCOPE, type AiChatScope } from './chatScope'
 
 import { Spinner } from '@maunting/ui'
 import { still } from '@/lib/still'
+import { KI_NAME } from '@/lib/kiName'
 interface ServerOption {
   id: number
   name: string
@@ -1926,11 +1927,19 @@ export function AiChat({
                               <AiAnhangListe
                                 anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
                               />
-                              {message.created_at && (
-                                <span className="mt-1 text-label-sm text-on-surface-variant/70">
-                                  {formatMessageTime(message.created_at)}
-                                </span>
-                              )}
+                              <div className="mt-1 flex items-center gap-1.5 text-label-sm text-on-surface-variant/70">
+                                {message.created_at && (
+                                  <span>
+                                    {formatMessageTime(message.created_at)}
+                                  </span>
+                                )}
+                                <NachrichtStatus
+                                  status={message.deliveryStatus ?? (message.status === 'failed' ? 'failed' : 'read')}
+                                  empfaengerName={KI_NAME}
+                                  seite="ende"
+                                  lage="oben"
+                                />
+                              </div>
                             </div>
                           </>
                         )}

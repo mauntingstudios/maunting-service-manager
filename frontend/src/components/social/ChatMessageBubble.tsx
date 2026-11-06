@@ -23,9 +23,6 @@ import { useTranslation } from 'react-i18next'
 
 import {
   Calendar as CalendarIcon,
-  AlertCircle,
-  Check,
-  CheckCheck,
   Clock,
   Download,
   Forward,
@@ -45,7 +42,7 @@ import {
 } from 'lucide-react'
 
 import { Avatar } from '@/components/app/Avatar'
-import { Button, Kurzinfo, RoleBadge } from '@maunting/ui'
+import { Button, Kurzinfo, NachrichtStatus, RoleBadge } from '@maunting/ui'
 import {
   ChatMediaFile,
   ChatMediaImage,
@@ -1107,63 +1104,46 @@ function ChatMessageBubbleContent({
         </span>
         {msg.isSelf &&
           (msg.status === 'failed' ? (
-            <Kurzinfo text={t('messenger.stateFailedRetry')} seite="ende" lage="oben">
-              {aktionen.onErneutSenden ? (
-                /* Der gemeinsame Knopf trägt das Fingerziel: unter `md` wird er
-                   44 px breit und hoch, statt ein 14-px-Symbol zu treffen. */
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  fingerziel
-                  onClick={() => aktionen.onErneutSenden!(msg)}
-                  aria-label={t('messenger.stateFailedRetry')}
-                  className="text-status-destructive hover:opacity-70"
-                >
-                  <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
-                </Button>
-              ) : (
-                <span
-                  role="img"
-                  aria-label={t('messenger.stateFailed')}
-                  className="inline-flex items-center text-status-destructive"
-                >
-                  <AlertCircle className="w-3.5 h-3.5" />
-                </span>
-              )}
-            </Kurzinfo>
+            <NachrichtStatus
+              status="failed"
+              label={aktionen.onErneutSenden ? t('messenger.stateFailedRetry') : t('messenger.stateFailed')}
+              onErneutSenden={aktionen.onErneutSenden ? () => aktionen.onErneutSenden!(msg) : undefined}
+              erneutSendenLabel={t('messenger.stateFailedRetry')}
+              seite="ende"
+              lage="oben"
+            />
           ) : msg.status === 'queued' ? (
-            <Kurzinfo text={t('messenger.stateQueued')} seite="ende" lage="oben">
-              <span role="img" aria-label={t('messenger.stateQueued')} className="inline-flex items-center">
-                <Clock className="w-3.5 h-3.5 opacity-60 animate-pulse" />
-              </span>
-            </Kurzinfo>
+            <NachrichtStatus
+              status="queued"
+              label={t('messenger.stateQueued')}
+              seite="ende"
+              lage="oben"
+            />
           ) : activeGroup ? (
             // Gruppen verschicken keine Quittungen. Ein einzelner Haken hiesse
             // hier „noch nicht zugestellt“, und das stimmt nicht.
             null
           ) : msg.isRead && readReceiptsEnabled ? (
-            <Kurzinfo text={t('messenger.stateRead')} seite="ende" lage="oben">
-              <span role="img" aria-label={t('messenger.stateRead')} className="inline-flex items-center">
-                <CheckCheck className="w-3.5 h-3.5 text-primary" />
-              </span>
-            </Kurzinfo>
+            <NachrichtStatus
+              status="read"
+              label={t('messenger.stateRead')}
+              seite="ende"
+              lage="oben"
+            />
           ) : msg.isDelivered ? (
-            <Kurzinfo text={t('messenger.stateDelivered')} seite="ende" lage="oben">
-              <span role="img" aria-label={t('messenger.stateDelivered')} className="inline-flex items-center">
-                <CheckCheck className="w-3.5 h-3.5 opacity-60" />
-              </span>
-            </Kurzinfo>
+            <NachrichtStatus
+              status="delivered"
+              label={t('messenger.stateDelivered')}
+              seite="ende"
+              lage="oben"
+            />
           ) : (
-            <Kurzinfo text={t('messenger.stateUndelivered')} seite="ende" lage="oben">
-              <span
-                role="img"
-                aria-label={t('messenger.stateUndelivered')}
-                className="inline-flex items-center"
-              >
-                <Check className="w-3.5 h-3.5 opacity-60" />
-              </span>
-            </Kurzinfo>
+            <NachrichtStatus
+              status="sent"
+              label={t('messenger.stateUndelivered')}
+              seite="ende"
+              lage="oben"
+            />
           ))}
       </div>
     </div>

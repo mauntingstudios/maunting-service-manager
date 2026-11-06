@@ -189,6 +189,16 @@ export function useAiLauf({
     let offeneOptimistische = optimistischeId !== null
     let offeneBenutzerblase = optimistischeBenutzerId
     let gescheitert = false
+    let benutzerGelesen = false
+
+    const markiereBenutzerGelesen = () => {
+      if (benutzerGelesen) return
+      benutzerGelesen = true
+      const zielId = offeneBenutzerblase ?? optimistischeBenutzerId
+      if (zielId) {
+        aendere(zielId, (message) => ({ ...message, deliveryStatus: 'read' }))
+      }
+    }
     // Hier wurden einmal Kennungen für Werkzeugzeilen vergeben, damit eine live
     // gemeldete Zeile und dieselbe Zeile aus einem späteren Abzug als **eine**
     // erkannt wurden — sonst stand nach dem Wiederanhängen jede doppelt da.
@@ -236,6 +246,7 @@ export function useAiLauf({
     const verarbeite = ({ event: name, data }: AiStreamEvent) => {
       if (!mountedRef.current) return
       if (name !== 'delta' && name !== 'reasoning') spuele()
+      if (name !== 'run' && name !== 'error') markiereBenutzerGelesen()
       // Ganz oben und nicht bei den anderen Zweigen: das Leeren muss auch dann
       // geschehen, wenn `aktuell` noch leer ist und der `tool`-Zweig weiter
       // unten deshalb gar nicht erreicht wird. Sonst bliebe „Ich lese die
@@ -351,7 +362,7 @@ export function useAiLauf({
           const alteId = offeneBenutzerblase
           setEntries((current) => current.map((entry) => (
             entry.kind === 'message' && entry.id === alteId
-              ? { ...entry, id: echteId, message: { ...entry.message, id: echteId } }
+              ? { ...entry, id: echteId, message: { ...entry.message, id: echteId, deliveryStatus: 'read' } }
               : entry
           )))
           offeneBenutzerblase = null
@@ -507,13 +518,29 @@ export function useAiLauf({
     // behauptet die halb geschriebene Blase sonst eine Antwort, die nie fertig
     // wurde — dieselbe Markierung, deshalb eine Funktion.
     const markiereGescheitert = () => {
-      setEntries((current) => current.map((entry) => (
-        entry.kind === 'message' && entry.message.status === 'streaming'
-          ? { ...entry, message: { ...entry.message, status: 'failed' } }
-          : entry
-      )))
+      setEntries((current) => current.map((entry) => {
+        if (entry.kind === 'message' && entry.message.status === 'streaming') {
+          return { ...entry, message: { ...entry.message, status: 'failed' } }
+        }
+        if (
+          entry.kind === 'message' &&
+          entry.message.role === 'user' &&
+          optimistischeBenutzerId !== null &&
+          entry.id === optimistischeBenutzerId &&
+          entry.message.deliveryStatus !== 'read'
+        ) {
+          return { ...entry, message: { ...entry.message, deliveryStatus: 'failed' } }
+        }
+        return entry
+      }))
     }
     let abgebrochen = false
+    if (optimistischeBenutzerId) {
+      aendere(optimistischeBenutzerId, (msg) => ({
+        ...msg,
+        deliveryStatus: msg.deliveryStatus === 'read' ? 'read' : 'delivered',
+      }))
+    }
     try {
       await beginne(verarbeite, controller.signal)
     } catch (error: unknown) {
@@ -581,7 +608,7 @@ export function useAiLauf({
     const assistantId = crypto.randomUUID()
     const optimisticUser: AiMessage = {
       id: crypto.randomUUID(), role: 'user', content, reasoning: null, question: null,
-      status: 'complete', provider_id: null, model: null, created_at: now,
+      status: 'complete', deliveryStatus: 'queued', provider_id: null, model: null, created_at: now,
     }
     const optimisticAssistant: AiMessage = {
       id: assistantId, role: 'assistant', content: '', reasoning: null, question: null,

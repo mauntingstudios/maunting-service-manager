@@ -1524,4 +1524,12 @@ describe('AiChat', () => {
     fireEvent.click(refreshButton)
     expect(aiApi.getConversation).toHaveBeenCalled()
   })
+
+  it('zeigt für archivierte Benutzernachrichten den Status Von Singra gelesen an', async () => {
+    render(<MemoryRouter><AiChat /></MemoryRouter>)
+    await screen.findByText('synthetic-note.txt')
+
+    const statusIcon = screen.getByRole('img', { name: 'Von Singra gelesen' })
+    expect(statusIcon).toBeInTheDocument()
+  })
 })

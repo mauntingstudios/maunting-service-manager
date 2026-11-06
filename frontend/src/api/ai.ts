@@ -376,6 +376,14 @@ export interface AiMessage {
    */
   sections?: AiSection[] | null
   status: 'complete' | 'streaming' | 'failed'
+  /**
+   * Status der Übermittlung und Verarbeitung durch die KI (für Benutzernachrichten).
+   * 'queued': Wird versendet
+   * 'delivered': An KI übergeben / Stream verbunden
+   * 'read': Von KI gelesen / antwortet
+   * 'failed': Übermittlung fehlgeschlagen
+   */
+  deliveryStatus?: 'queued' | 'sent' | 'delivered' | 'read' | 'failed'
   provider_id: number | null
   model: string | null
   created_at: string
