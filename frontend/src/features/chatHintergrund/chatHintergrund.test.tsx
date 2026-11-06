@@ -195,14 +195,14 @@ describe('Schicht', () => {
   it('lässt einen fremden Bereich in Ruhe', async () => {
     const { container } = render(<ChatHintergrund bereich="messenger" />)
     await waitFor(() =>
-      expect(container.querySelector('[data-chat-hintergrund="cyber"]')).not.toBeNull(),
+      expect(container.querySelector('[data-chat-hintergrund="dynamic_time"]')).not.toBeNull(),
     )
 
     await act(async () => {
       await speichereChatHintergrund('ki', { preset: 'midnight', dimLevel: 0 })
     })
 
-    expect(container.querySelector('[data-chat-hintergrund="cyber"]')).not.toBeNull()
+    expect(container.querySelector('[data-chat-hintergrund="dynamic_time"]')).not.toBeNull()
   })
 })
 
@@ -243,11 +243,11 @@ describe('Einstellungsfenster', () => {
   it('zeigt die neue Wahl sofort auf der Fläche', async () => {
     const { container } = render(<Probeflaeche bereich="messenger" />)
     fireEvent.click(screen.getByText('einstellen'))
-    fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.minimal')))
+    fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.singraNight')))
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.apply') }))
 
     await waitFor(() =>
-      expect(container.querySelector('[data-chat-hintergrund="minimal"]')).not.toBeNull(),
+      expect(container.querySelector('[data-chat-hintergrund="singra_night"]')).not.toBeNull(),
     )
     expect(screen.queryByText(i18n.t('social.wallpaper.presets'))).not.toBeInTheDocument()
   })
@@ -256,13 +256,13 @@ describe('Einstellungsfenster', () => {
     render(<Probeflaeche bereich="messenger" />)
 
     fireEvent.click(screen.getByText('einstellen'))
-    fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.petrol')))
+    fireEvent.click(await screen.findByText(i18n.t('social.wallpaper.singraMorning')))
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.cancel') }))
     fireEvent.click(screen.getByText('einstellen'))
 
     const kacheln = await screen.findAllByRole('button', { pressed: true })
     expect(kacheln).toHaveLength(1)
-    expect(kacheln[0]).toHaveTextContent(i18n.t('social.wallpaper.cyber'))
+    expect(kacheln[0]).toHaveTextContent(i18n.t('social.wallpaper.dynamicTime'))
   })
 
   it('setzt auf den Standard zurück', async () => {
@@ -299,11 +299,11 @@ describe('Einstellungsfenster', () => {
     await screen.findByText(i18n.t('social.wallpaper.applyAll'))
 
     fireEvent.click(screen.getByText(i18n.t('social.wallpaper.applyAll')))
-    fireEvent.click(screen.getByText(i18n.t('social.wallpaper.minimal')))
+    fireEvent.click(screen.getByText(i18n.t('social.wallpaper.singraNight')))
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.apply') }))
 
     await waitFor(async () => expect(await hatDirekteHintergruende()).toBe(false))
-    expect((await ladeChatHintergrund('messenger')).preset).toBe('minimal')
+    expect((await ladeChatHintergrund('messenger')).preset).toBe('singra_night')
   })
 
   it('weist eine Datei ab, die kein Bild ist', async () => {

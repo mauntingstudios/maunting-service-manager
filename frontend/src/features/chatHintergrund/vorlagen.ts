@@ -136,14 +136,15 @@ export const HINTERGRUND_VORLAGEN: readonly HintergrundVorlage[] = [
 ]
 
 /** Welche Vorlage steht, wenn niemand etwas gewählt hat. */
-export const STANDARD_VORLAGE: HintergrundVorlageId = 'cyber'
+export const STANDARD_VORLAGE: HintergrundVorlageId = 'dynamic_time'
 export const STANDARD_VORLAGE_KI: HintergrundVorlageId = 'dynamic_time'
 
 export const MESSENGER_VORLAGEN_IDS: readonly HintergrundVorlageId[] = [
-  'cyber',
-  'petrol',
-  'midnight',
-  'minimal',
+  'dynamic_time',
+  'singra_morning',
+  'singra_day',
+  'singra_evening',
+  'singra_night',
 ]
 
 export const KI_VORLAGEN_IDS: readonly HintergrundVorlageId[] = [

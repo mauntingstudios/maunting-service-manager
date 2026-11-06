@@ -1,6 +1,6 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
-import { BellOff, ChevronLeft, Search, UserPlus } from 'lucide-react'
+import { BellOff, ChevronLeft, Phone, Pin, Search, UserPlus, Video } from 'lucide-react'
 import { Avatar } from '@/components/app/Avatar'
 import { Blattknopf, Kurzinfo } from '@maunting/ui'
 
@@ -25,13 +25,21 @@ interface ChatHeaderProps {
   onSuche: () => void
   /** Der Inhalt des Chatmenüs; `schliessen` klappt das Blatt zu. */
   menue: (schliessen: () => void) => React.ReactNode
+  /** Schnellauswahl fuer Audioanruf am Desktop */
+  onSprachanruf?: () => void
+  /** Schnellauswahl fuer Videoanruf am Desktop */
+  onVideoanruf?: () => void
+  /** Schnellauswahl fuer Anheften am Desktop */
+  onAnheften?: () => void
+  angeheftet?: boolean
+  online?: boolean
 }
 
 // Schlichte <button> statt der Button-Komponente: deren size="icon" setzt
 // h-8 w-8 fest, und weil die Klassen nur aneinandergehängt werden, gewinnt im
 // CSS die feste Größe gegen jede mitgegebene. Am Telefon braucht es 44 px.
 const rundknopf =
-  'flex items-center justify-center rounded-md h-11 w-11 sm:h-8 sm:w-8 bg-surface-container-high/85 hover:bg-surface-container-high backdrop-blur-md border border-outline-variant/30 shadow-sm'
+  'flex items-center justify-center rounded-xl h-11 w-11 sm:h-8 sm:w-8 bg-surface-container-high/85 hover:bg-surface-container-high backdrop-blur-md border border-outline-variant/30 shadow-sm text-on-surface-variant hover:text-primary transition-all'
 
 /**
  * Die Kopfleiste des offenen Chats.
@@ -58,6 +66,11 @@ export function ChatHeader({
   anfrageGesendet = false,
   onSuche,
   menue,
+  onSprachanruf,
+  onVideoanruf,
+  onAnheften,
+  angeheftet = false,
+  online,
 }: ChatHeaderProps) {
   const { t } = useTranslation()
 
@@ -74,7 +87,15 @@ export function ChatHeader({
         </button>
       </Kurzinfo>
 
-      <Avatar src={bild} name={titel} size="md" className="shrink-0" />
+      <div className="relative shrink-0">
+        <Avatar src={bild} name={titel} size="md" />
+        {online && (
+          <span
+            className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-status-success ring-2 ring-surface shadow-sm"
+            aria-hidden="true"
+          />
+        )}
+      </div>
 
       <div className="flex min-w-0 flex-1 flex-col justify-center">
         <div className="flex min-w-0 items-center gap-1.5">
@@ -83,7 +104,7 @@ export function ChatHeader({
             <button
               type="button"
               onClick={onProfil}
-              className="min-w-0 truncate text-sm font-semibold text-on-surface hover:underline"
+              className="min-w-0 truncate text-sm font-semibold text-on-surface hover:underline hover:text-primary transition-colors"
               aria-description={t('social.profile.open', { name: titel })}
             >
               {titel}
@@ -110,12 +131,65 @@ export function ChatHeader({
           </span>
         )}
         </div>
-        {info && (
-          <p className="truncate text-label-sm text-on-surface-variant/80">{info}</p>
+        {(info || online) && (
+          <p className="truncate text-label-sm text-on-surface-variant/80 flex items-center gap-1.5">
+            {online && <span className="w-1.5 h-1.5 rounded-full bg-status-success shrink-0" />}
+            <span>{online ? 'Online' : info}</span>
+          </p>
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+        <Kurzinfo text={t('messenger.searchInChat')} seite="ende">
+          <button
+            type="button"
+            onClick={onSuche}
+            className={`${rundknopf} text-on-surface-variant hover:text-primary`}
+            aria-label={t('messenger.searchInChat')}
+          >
+            <Search className="w-4 h-4" />
+          </button>
+        </Kurzinfo>
+
+        {onSprachanruf && (
+          <Kurzinfo text="Sprachanruf" seite="ende" aussen="hidden md:inline-flex">
+            <button
+              type="button"
+              onClick={onSprachanruf}
+              className={`${rundknopf} text-on-surface-variant hover:text-primary`}
+              aria-label="Sprachanruf"
+            >
+              <Phone className="w-4 h-4" />
+            </button>
+          </Kurzinfo>
+        )}
+
+        {onVideoanruf && (
+          <Kurzinfo text="Videoanruf" seite="ende" aussen="hidden md:inline-flex">
+            <button
+              type="button"
+              onClick={onVideoanruf}
+              className={`${rundknopf} text-on-surface-variant hover:text-primary`}
+              aria-label="Videoanruf"
+            >
+              <Video className="w-4 h-4" />
+            </button>
+          </Kurzinfo>
+        )}
+
+        {onAnheften && (
+          <Kurzinfo text={angeheftet ? 'Chat lösen' : 'Chat anheften'} seite="ende" aussen="hidden md:inline-flex">
+            <button
+              type="button"
+              onClick={onAnheften}
+              className={`${rundknopf} ${angeheftet ? 'text-primary bg-primary/10 border-primary/30' : 'text-on-surface-variant hover:text-primary'}`}
+              aria-label={angeheftet ? 'Chat lösen' : 'Chat anheften'}
+            >
+              <Pin className="w-4 h-4" />
+            </button>
+          </Kurzinfo>
+        )}
+
         {onFreundschaftsanfrage && !anfrageGesendet && (
           <Kurzinfo text={t('messenger.sendFriendRequest')} seite="ende">
             <button
@@ -128,17 +202,6 @@ export function ChatHeader({
             </button>
           </Kurzinfo>
         )}
-
-        <Kurzinfo text={t('messenger.searchInChat')} seite="ende">
-          <button
-            type="button"
-            onClick={onSuche}
-            className={`${rundknopf} text-on-surface-variant hover:text-primary`}
-            aria-label={t('messenger.searchInChat')}
-          >
-            <Search className="w-4 h-4" />
-          </button>
-        </Kurzinfo>
 
         <Blattknopf
           variante="schwebend"

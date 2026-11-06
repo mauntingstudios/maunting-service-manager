@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Lock, Mic, Shield, Sparkles } from 'lucide-react'
 import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 import { parseMessageTimestamp } from '@/services/messengerLocalStore'
+import { ChatEmptyWelcome } from './ChatEmptyWelcome'
 
 export interface PartnerAktivitaet {
   status: 'typing' | 'recording'
@@ -20,6 +21,12 @@ interface ChatTimelineProps {
   istGruppe: boolean
   /** Die Sprechblase selbst; ihre vielen Angaben kennt nur die Seite. */
   zeichneNachricht: (msg: ChatMessage) => React.ReactNode
+  /** Name des Partners oder der Gruppe fuer die Begruessung */
+  partnerName?: string
+  /** Profilbild oder Gruppenlogo */
+  partnerAvatar?: string | null
+  /** Aktion fuer Begruessungs-Chips */
+  onSchnellNachricht?: (text: string) => void
 }
 
 /**
@@ -114,6 +121,9 @@ export function ChatTimeline({
   aktivitaet,
   istGruppe,
   zeichneNachricht,
+  partnerName,
+  partnerAvatar,
+  onSchnellNachricht,
 }: ChatTimelineProps) {
   const { t, i18n } = useTranslation()
   // Ein Durchgang für alle Tage; die Zeile selbst weiß dann nur noch, ob sie
@@ -155,9 +165,12 @@ export function ChatTimeline({
       )}
 
       {nachrichten.length === 0 && !laedt && (
-        <div className="py-16 text-center text-xs text-on-surface-variant/70">
-          {t('messenger.noMessagesYet')}
-        </div>
+        <ChatEmptyWelcome
+          name={partnerName}
+          avatarUrl={partnerAvatar}
+          istGruppe={istGruppe}
+          onSchnellNachricht={onSchnellNachricht}
+        />
       )}
 
       {nachrichten.map((msg, idx) => {

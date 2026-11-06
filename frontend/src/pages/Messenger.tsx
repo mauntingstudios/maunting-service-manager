@@ -144,7 +144,9 @@ import { StoryViewerModal, type StoryReplyContext } from '@/components/social/St
 import { NotePickerDialog } from '@/components/social/modals/NotePickerDialog'
 import { CalendarPickerDialog } from '@/components/social/modals/CalendarPickerDialog'
 import { ChatEntfernenDialog } from '@/components/social/modals/ChatEntfernenDialog'
-import { MessengerModeNav, MessengerBottomNav } from '@/components/social/sidebar/MessengerModeNav'
+import { MessengerBottomNav } from '@/components/social/sidebar/MessengerModeNav'
+import { MessengerRail } from '@/components/social/sidebar/MessengerRail'
+import { MessengerEmptyState } from '@/components/social/chat/MessengerEmptyState'
 import { ContactFilterTabs } from '@/components/social/sidebar/ContactFilterTabs'
 import { StoriesCarouselBar } from '@/components/social/sidebar/StoriesCarouselBar'
 import { StatusUpdatesView } from '@/components/social/sidebar/StatusUpdatesView'
@@ -2282,6 +2284,9 @@ function MessengerSeite() {
         trennerId={trennerId}
         aktivitaet={partnerActivity}
         istGruppe={Boolean(activeGroup)}
+        partnerName={activeGroup ? gruppenTitel(activeGroup) : activeContact?.username}
+        partnerAvatar={activeGroup ? activeGroup.avatar_url : activeContact?.avatarUrl}
+        onSchnellNachricht={(text) => setInputText(text)}
         zeichneNachricht={(msg) => (
           <ChatMessageBubble
             msg={msg}
@@ -2349,15 +2354,14 @@ function MessengerSeite() {
           {t('messenger.thisDevicePending')}
         </button>
       )}
-      {/* Slim, Compact Header - Only shown in overview mode when no chat is open, maximizing chat space */}
+      {/* Schlanker Kopfbereich nur mobil in der Uebersicht */}
       {!isChatOpen && (
-        <header className="h-12 shrink-0 border-b border-outline-variant/20 bg-surface-container/70 backdrop-blur px-3 sm:px-4 flex items-center justify-between z-10">
+        <header className="md:hidden h-12 shrink-0 border-b border-outline-variant/20 bg-surface-container/70 backdrop-blur px-3 sm:px-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+            <div className="w-7 h-7 rounded-xl bg-primary/15 flex items-center justify-center text-primary">
               <MessageSquare className="w-4 h-4" />
             </div>
             <span className="font-headline text-body-md font-bold text-primary">Messenger</span>
-            <span className="text-label-sm text-on-surface-variant/60 hidden md:inline">{t('messenger.headerSubtitle')}</span>
           </div>
 
           <div className="flex items-center gap-1">
@@ -2376,26 +2380,37 @@ function MessengerSeite() {
         </header>
       )}
 
-      {/* Main Split Layout: Left Contact/Group List, Right Chat Area */}
+      {/* Main Split Layout: Left Rail + Contacts & Groups List, Right Chat Area */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Left Column: WhatsApp-style Contacts & Groups List */}
+        {/* Desktop Navigation Rail */}
+        <MessengerRail
+          modus={mobileNavTab}
+          onModus={setMobileNavTab}
+          hatStories={stories.length > 0}
+          ungelesenGesamt={Object.values(unreadCounts).reduce((a, b) => a + b, 0)}
+          funkeZahl={activeContact?.isFriend ? 1 : 0}
+          onMarkierteNachrichten={() => void ueberall.oeffne('markiert')}
+          onHintergrund={() => setIsWallpaperModalOpen(true)}
+          onEinstellungen={() => navigate('/profile?tab=security')}
+        />
+
+        {/* Left Column: Modern Contacts & Groups List */}
         <div
           className={`w-full md:w-80 lg:w-96 shrink-0 flex flex-col min-h-0 border-r border-outline-variant/20 bg-surface-container-low/60 ${
             isChatOpen ? 'hidden md:flex' : 'flex'
           }`}
         >
-          <MessengerModeNav modus={mobileNavTab} onModus={setMobileNavTab} hatStories={stories.length > 0} />
           <FreundschaftsanfragenKarte />
 
           {/* Top Search & Category Tabs */}
           <div className="p-2.5 border-b border-outline-variant/15 space-y-2 bg-surface-container/40">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant/60" />
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60" />
               <Input
                 value={searchQuery}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                 placeholder={t('messenger.searchPlaceholder')}
-                className="text-xs pl-8 h-8 bg-surface-container-high/60 border-outline-variant/30 focus:border-primary/50 text-on-surface"
+                className="text-xs pl-8 h-8 rounded-full bg-surface-container-high/60 border-outline-variant/30 focus:border-primary/50 text-on-surface transition-all"
               />
             </div>
 
@@ -2578,7 +2593,21 @@ function MessengerSeite() {
             )}
           </div>
 
-          {!isChatOpen && <MessengerBottomNav modus={mobileNavTab} onModus={setMobileNavTab} />}
+          {!isChatOpen && (
+            <MessengerBottomNav
+              modus={mobileNavTab}
+              onModus={setMobileNavTab}
+              onFunke={() => {
+                const hatFreunde = contactsList.some((c) => c.isFriend)
+                if (hatFreunde) {
+                  setFilterTab('friends')
+                  setMobileNavTab('chats')
+                } else {
+                  setMobileNavTab('community')
+                }
+              }}
+            />
+          )}
         </div>
 
         {/* Right Column: Chat Thread & Input Area */}
@@ -2678,6 +2707,15 @@ function MessengerSeite() {
                   stumm={Boolean(blindMailboxId && isChatMuted(blindMailboxId))}
                   blockiert={Boolean(activeContact && isBlocked(activeContact.userId))}
                   onZurueck={handleZurueckZurListe}
+                  onSprachanruf={
+                    activeContact?.isFriend ? () => void starteAnruf('audio') : undefined
+                  }
+                  onVideoanruf={() => void starteAnruf('video')}
+                  onAnheften={
+                    angeheftet && darfAnheften ? () => void handleAnheften(angeheftet) : undefined
+                  }
+                  angeheftet={Boolean(angeheftet)}
+                  online={activeContact?.status === 'online'}
                   funke={
                     activeContact?.isFriend ? (
                       <FunkenAbzeichen
@@ -2811,7 +2849,7 @@ function MessengerSeite() {
                   Inhalt bis an den Rand — auf einem iPhone lag die Eingabeleiste
                   damit unter dem Home-Balken, und jeder Griff dorthin wischte
                   die App weg, statt zu tippen. */}
-              <div className="p-2.5 pb-[calc(0.625rem+var(--msm-unten-sicher))] border-t border-outline-variant/20 bg-surface-container-low relative">
+              <div className="p-2.5 pb-[calc(0.625rem+var(--msm-unten-sicher))] border-t border-outline-variant/30 bg-surface-container/75 backdrop-blur-xl relative z-10">
                 {activeContact && isBlocked(activeContact.userId) ? (
                   <BlockedNotice onAufheben={() => void unblockUser(activeContact.userId)} />
                 ) : aufnahme.laeuft ? (
@@ -2965,17 +3003,14 @@ function MessengerSeite() {
 
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-              <div className="p-4 rounded-2xl bg-primary/10 border border-primary/20 text-primary mb-3">
-                <MessageSquare className="w-8 h-8" />
-              </div>
-              <h3 className="font-headline text-body-lg font-bold text-primary mb-1">
-                Deine Konversationen
-              </h3>
-              <p className="max-w-sm font-body text-xs text-on-surface-variant">
-                {t('messenger.pickChatHint')}
-              </p>
-            </div>
+            <MessengerEmptyState
+              onNeueGruppe={() => setIsCreateGroupOpen(true)}
+              onHintergrund={() => setIsWallpaperModalOpen(true)}
+              onNeuerChat={() => {
+                setFilterTab('all')
+                setMobileNavTab('chats')
+              }}
+            />
           )}
         </div>
       </div>

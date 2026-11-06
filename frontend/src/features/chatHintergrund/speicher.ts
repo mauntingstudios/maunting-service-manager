@@ -55,7 +55,7 @@ export type ChatHintergrundScope =
 export const STANDARD_HINTERGRUND: ChatHintergrundKonfiguration = {
   preset: STANDARD_VORLAGE,
   dimLevel: 25,
-  blurLevel: 0,
+  blurLevel: 20,
 }
 
 export const STANDARD_HINTERGRUND_KI: ChatHintergrundKonfiguration = {

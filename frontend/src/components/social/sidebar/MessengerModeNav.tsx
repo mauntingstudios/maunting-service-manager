@@ -58,34 +58,71 @@ export function MessengerModeNav({
   )
 }
 
-/** Dieselbe Wahl als Leiste am unteren Rand, nur auf schmalen Bildschirmen. */
-export function MessengerBottomNav({ modus, onModus }: MessengerModeNavProps) {
-  const { t } = useTranslation()
-  const eintraege = [
-    { wert: 'chats', label: t('messenger.nav.chats'), Icon: MessageSquare },
-    { wert: 'updates', label: t('messenger.nav.updates'), Icon: Sparkles },
-    { wert: 'community', label: t('messenger.nav.community'), Icon: UsersRound },
-  ] as const
+import { Zap } from 'lucide-react'
 
-  // Höhe plus sichere Fläche, siehe die Eingabeleiste im Chat.
+/** Dieselbe Wahl als Leiste am unteren Rand, nur auf schmalen Bildschirmen. */
+export function MessengerBottomNav({
+  modus,
+  onModus,
+  onFunke,
+}: MessengerModeNavProps & { onFunke?: () => void }) {
+  const { t } = useTranslation()
+
   return (
-    <nav className="md:hidden shrink-0 h-14 box-content pb-[var(--msm-unten-sicher)] border-t border-outline-variant/20 bg-surface-container/95 backdrop-blur flex items-center justify-around px-2 z-10">
-      {eintraege.map(({ wert, label, Icon }) => (
+    <nav className="md:hidden shrink-0 h-16 box-content pb-[var(--msm-unten-sicher)] border-t border-outline-variant/20 bg-surface-container/95 backdrop-blur-md flex items-center justify-around px-2 z-10">
+      <button
+        type="button"
+        onClick={() => onModus('chats')}
+        className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+          modus === 'chats' ? 'text-primary font-bold' : 'text-on-surface-variant/70 hover:text-on-surface'
+        }`}
+        aria-label={t('messenger.nav.chats')}
+      >
+        <div className={`p-1.5 rounded-full ${modus === 'chats' ? 'bg-primary/15' : ''}`}>
+          <MessageSquare className="w-5 h-5" />
+        </div>
+        <span className="text-label-sm mt-0.5">{t('messenger.nav.chats')}</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => onModus('community')}
+        className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+          modus === 'community' ? 'text-primary font-bold' : 'text-on-surface-variant/70 hover:text-on-surface'
+        }`}
+        aria-label={t('messenger.nav.community')}
+      >
+        <div className={`p-1.5 rounded-full ${modus === 'community' ? 'bg-primary/15' : ''}`}>
+          <UsersRound className="w-5 h-5" />
+        </div>
+        <span className="text-label-sm mt-0.5">{t('messenger.nav.community')}</span>
+      </button>
+
+      {/* Prominenter, erhoehter Funke-Aktionsknopf in der Mitte (wie in der Referenz) */}
+      <div className="flex flex-col items-center justify-center px-1 -translate-y-3">
         <button
-          key={wert}
           type="button"
-          onClick={() => onModus(wert)}
-          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
-            modus === wert ? 'text-primary font-semibold' : 'text-on-surface-variant/70 hover:text-on-surface'
-          }`}
-          aria-label={label}
+          onClick={onFunke || (() => onModus('chats'))}
+          className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary to-purple-500 text-white shadow-lg shadow-primary/40 flex items-center justify-center border-2 border-surface active:scale-95 transition-transform"
+          aria-label="Funke"
         >
-          <div className={`p-1 rounded-full ${modus === wert ? 'bg-primary/15' : ''}`}>
-            <Icon className="w-4 h-4" />
-          </div>
-          <span className="text-label-sm mt-0.5">{label}</span>
+          <Zap className="w-6 h-6 fill-white" />
         </button>
-      ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onModus('updates')}
+        className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+          modus === 'updates' ? 'text-primary font-bold' : 'text-on-surface-variant/70 hover:text-on-surface'
+        }`}
+        aria-label={t('messenger.nav.updates')}
+      >
+        <div className={`p-1.5 rounded-full ${modus === 'updates' ? 'bg-primary/15' : ''}`}>
+          <Sparkles className="w-5 h-5" />
+        </div>
+        <span className="text-label-sm mt-0.5">{t('messenger.nav.updates')}</span>
+      </button>
     </nav>
   )
 }

@@ -119,9 +119,9 @@ function Zeile({
       <button
         type="button"
         onClick={onOeffnen}
-        className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left transition-all ${
+        className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-left transition-all ${
           ausgewaehlt
-            ? 'bg-primary/15 border border-primary/30 shadow-sm'
+            ? 'bg-primary/20 border border-primary/40 shadow-sm text-primary'
             : 'hover:bg-surface-container-high/60 border border-transparent'
         } ${imArchiv ? 'opacity-60' : ''}`}
       >
@@ -137,16 +137,16 @@ export function GroupListItem({ gruppe, titel, entwurf, ...zeile }: ZeileProps &
   const { t } = useTranslation()
   return (
     <Zeile name={titel} {...zeile}>
-      <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+      <div className="w-10 h-10 rounded-2xl bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0 border border-primary/25 shadow-sm">
         {gruppe.avatar_url ? (
-          <img src={gruppe.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
+          <img src={gruppe.avatar_url} alt="" className="w-full h-full rounded-2xl object-cover" />
         ) : (
           <UsersRound className="w-4 h-4" />
         )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-1">
-          <span className="text-xs font-semibold text-primary truncate">{titel}</span>
+          <span className={`text-xs font-semibold truncate ${zeile.ausgewaehlt ? 'text-primary font-bold' : 'text-on-surface'}`}>{titel}</span>
           <span className="text-label-sm text-on-surface-variant/60 shrink-0">{gruppe.member_count} M.</span>
         </div>
         <ZeilenVorschau entwurf={entwurf}>
@@ -168,11 +168,11 @@ export function ContactListItem({ kontakt: c, entwurf, ...zeile }: ZeileProps & 
     <Zeile name={c.username} {...zeile}>
       <div className="relative shrink-0">
         <Avatar src={c.avatarUrl} name={c.username} size="sm" />
-        <StatusDot status={c.status} size="sm" className="absolute bottom-0 right-0" />
+        <StatusDot status={c.status} size="sm" className="absolute bottom-0 right-0 ring-2 ring-surface" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs font-semibold text-primary truncate">{c.username}</span>
+          <span className={`text-xs font-semibold truncate ${zeile.ausgewaehlt ? 'text-primary font-bold' : 'text-on-surface'}`}>{c.username}</span>
           {c.isFriend && !blockiert && <FunkenAbzeichen partnerId={c.userId} name={c.username} />}
           {blockiert && (
             <span className="text-label-sm px-1 rounded bg-status-destructive/15 text-status-destructive font-medium">

@@ -529,8 +529,8 @@ function ChatMessageBubbleContent({
       <div
         className={`max-w-[85%] md:max-w-[70%] px-3.5 py-2 rounded-2xl text-xs break-words shadow-sm space-y-2 ${
           msg.isSelf
-            ? 'bg-[#0c2e35] text-[#f0fdfa] rounded-br-xs border border-[#164e5c]/60 shadow-sm'
-            : 'bg-surface-container-high text-on-surface rounded-bl-xs border border-outline-variant/20 shadow-sm'
+            ? 'bg-gradient-to-br from-primary to-[#6d28d9] text-on-primary rounded-br-xs border border-primary-hover/30 shadow-md shadow-primary/20'
+            : 'bg-surface-container-high/85 text-on-surface backdrop-blur-md rounded-bl-xs border border-outline-variant/30 shadow-sm'
         } ${michGemeint ? 'ring-1 ring-primary/70 border-primary/40' : ''}`}
       >
         {/* Group sender name if in group and not self */}
@@ -637,7 +637,7 @@ function ChatMessageBubbleContent({
                   onClick={ton.onCycleRate}
                   className={`w-10 h-10 rounded-full font-bold text-xs shadow-sm flex items-center justify-center hover:scale-105 active:scale-95 transition-all ${
                     msg.isSelf
-                      ? 'bg-white text-[#0c2e35] hover:bg-white/90'
+                      ? 'bg-white text-primary hover:bg-white/90 shadow-sm'
                       : 'bg-primary text-on-primary hover:opacity-90'
                   }`}
                   aria-label={t('messenger.playbackSpeed')}
@@ -661,7 +661,7 @@ function ChatMessageBubbleContent({
                     type="button"
                     onClick={ton.onCycleRate}
                     className={`px-1 py-0.5 rounded-full font-bold text-label-sm shadow-sm border border-surface leading-none hover:scale-110 transition-transform ${
-                      msg.isSelf ? 'bg-white text-[#0c2e35]' : 'bg-primary text-on-primary'
+                      msg.isSelf ? 'bg-white text-primary' : 'bg-primary text-on-primary'
                     }`}
                     aria-label={t('messenger.playbackSpeed')}
                   >
@@ -677,7 +677,7 @@ function ChatMessageBubbleContent({
               onClick={() => ton.onTogglePlay(msg.id, msg.audioAttachment!, medienBindung(msg))}
               className={`w-8 h-8 rounded-full shrink-0 shadow-sm flex items-center justify-center transition-all ${
                 msg.isSelf
-                  ? 'bg-white text-[#0c2e35] hover:bg-white/90'
+                  ? 'bg-white text-primary hover:bg-white/90 shadow-sm'
                   : 'bg-primary text-on-primary hover:opacity-90'
               }`}
               aria-label={ton.playingAudioId === msg.id ? 'Pause' : 'Abspielen'}
