@@ -1570,25 +1570,26 @@ export function AiChat({
         <SingraScenicBackground visible />
       )}
 
-      {/* ── Kopfzeile: Provider, Denkschritte, Autonomie, Skills ─────────
-          `sticky` ist eine Position und liegt damit von selbst über der
-          Schicht; ihr undurchsichtiger Grund deckt sie dort ab. */}
+      {/* ── Kopfzeile / Schwebende Aktionen ────────────────────────────────
+          In der Singra-Shell entfällt die zweite horizontale Kopfzeile komplett
+          (Titel + Beta-Badge stehen bereits in der globalen App-Leiste). Stattdessen
+          schweben links und rechts dezente runde Glass-Buttons direkt über dem Chat. */}
       <header
-        className={`flex items-center justify-between border-b px-3 py-2 sm:px-4 sm:py-2.5 shrink-0 sticky top-0 z-20 gap-2 min-w-0 transition-colors ${
+        className={`flex items-center justify-between z-20 gap-2 min-w-0 transition-colors ${
           singraShell
-            ? 'border-white/10 bg-surface-container-lowest/75 backdrop-blur-xl'
-            : 'border-outline-variant/30 bg-surface-container-low'
+            ? 'pointer-events-none absolute inset-x-0 top-0 px-3 pt-2.5 sm:px-4'
+            : 'border-b px-3 py-2 sm:px-4 sm:py-2.5 shrink-0 sticky top-0 border-outline-variant/30 bg-surface-container-low'
         } ${
           eingebettet ? 'flex-wrap gap-y-1' : ''
         }`}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2 py-0.5">
+        <div className={`flex min-w-0 flex-1 items-center gap-2 py-0.5 ${singraShell ? 'pointer-events-auto' : ''}`}>
           {singraShell && onOpenMobileMenu && (
             <Kurzinfo text="Navigation öffnen">
               <button
                 type="button"
                 onClick={onOpenMobileMenu}
-                className="lg:hidden flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+                className="lg:hidden flex h-10 w-10 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                 aria-label="Singra Navigation öffnen"
               >
                 <Menu className="h-5 w-5" />
@@ -1596,16 +1597,24 @@ export function AiChat({
             </Kurzinfo>
           )}
 
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="font-semibold text-sm text-on-surface truncate">
-              {activeProjectName ? `Projekt: ${activeProjectName}` : (singraShell ? 'Singra' : t('ai.chat.title'))}
-            </span>
-            {AI_IS_BETA && (
-              <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
-                {t('ai.betaBadge', 'Beta')}
+          {(!singraShell || activeProjectName) && (
+            <div
+              className={`flex items-center gap-2 min-w-0 ${
+                singraShell
+                  ? 'rounded-full bg-surface-container-high/85 border border-outline-variant/30 backdrop-blur-md px-3 py-1 shadow-sm'
+                  : ''
+              }`}
+            >
+              <span className="font-semibold text-xs sm:text-sm text-on-surface truncate">
+                {activeProjectName ? `Projekt: ${activeProjectName}` : t('ai.chat.title')}
               </span>
-            )}
-          </div>
+              {!singraShell && AI_IS_BETA && (
+                <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
+                  {t('ai.betaBadge', 'Beta')}
+                </span>
+              )}
+            </div>
+          )}
 
           {!singraShell && availableProviders.length > 0 && (
             <div className="shrink-0 min-w-[7rem] max-w-[11rem]">
@@ -1689,7 +1698,7 @@ export function AiChat({
         </div>
 
         {/* Feststehende Aktionen rechts: Suche (Desktop), 1-Tap Neuer Chat (Mobil) und Blattmenü */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-1">
+        <div className={`flex items-center gap-1.5 shrink-0 ml-1 ${singraShell ? 'pointer-events-auto' : ''}`}>
           {!singraShell && (
             <Kurzinfo text={t('common.refresh', 'Aktualisieren')}>
               <Button
@@ -1712,7 +1721,7 @@ export function AiChat({
               <button
                 type="button"
                 onClick={onNewChat}
-                className="lg:hidden flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+                className="lg:hidden flex h-10 w-10 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                 aria-label="Neuer Chat"
               >
                 <Plus className="h-4 w-4" />
@@ -1725,7 +1734,7 @@ export function AiChat({
               <button
                 type="button"
                 onClick={onOpenHistorySearch}
-                className="hidden sm:flex items-center justify-center rounded-full h-9 w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95 shrink-0"
+                className="hidden sm:flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95 shrink-0"
                 aria-label="Unterhaltungen durchsuchen"
               >
                 <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -1737,7 +1746,7 @@ export function AiChat({
             <button
               type="button"
               onClick={() => setMenueOffen(true)}
-              className="flex items-center justify-center rounded-full h-9 w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95 shrink-0"
+              className="flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95 shrink-0"
               aria-haspopup="dialog"
               aria-expanded={menueOffen}
               aria-label={t('ai.chat.moreSettings')}
@@ -1859,7 +1868,9 @@ export function AiChat({
 
             <div
               ref={messagesContainerRef}
-              className="mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl px-3 py-6 sm:px-6"
+              className={`mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl px-3 sm:px-6 ${
+                singraShell ? 'pt-14 pb-6 lg:py-6' : 'py-6'
+              }`}
             >
               {empty && (
                 singraShell ? (

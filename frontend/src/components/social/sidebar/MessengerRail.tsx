@@ -19,6 +19,8 @@ interface MessengerRailProps {
   ungelesenChats?: number
   ungelesenCommunity?: number
   funkeZahl?: number
+  hatNeueMarkierung?: boolean
+  ungeleseneErwaehnungen?: number
   onMarkierteNachrichten: () => void
   onAntwortenAnMich?: () => void
   onFunke?: () => void
@@ -38,6 +40,8 @@ export function MessengerRail({
   ungelesenChats,
   ungelesenCommunity = 0,
   funkeZahl = 0,
+  hatNeueMarkierung = false,
+  ungeleseneErwaehnungen = 0,
   onMarkierteNachrichten,
   onAntwortenAnMich,
   onFunke,
@@ -114,6 +118,9 @@ export function MessengerRail({
             aria-label={t('messenger.markedMessages')}
           >
             <Bookmark className="w-5 h-5" />
+            {hatNeueMarkierung && (
+              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-status-warning ring-2 ring-surface animate-pulse" />
+            )}
           </button>
         </Kurzinfo>
 
@@ -126,6 +133,11 @@ export function MessengerRail({
               aria-label={t('messenger.mentionsAndReplies')}
             >
               <AtSign className="w-5 h-5" />
+              {ungeleseneErwaehnungen > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-on-primary text-label-sm font-bold flex items-center justify-center ring-2 ring-black">
+                  {ungeleseneErwaehnungen > 99 ? '99+' : ungeleseneErwaehnungen}
+                </span>
+              )}
             </button>
           </Kurzinfo>
         )}

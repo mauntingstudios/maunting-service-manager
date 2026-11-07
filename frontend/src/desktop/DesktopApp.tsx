@@ -42,7 +42,9 @@ import { ProfileDropdown, ProfileDropdownItem } from '@/components/app/ProfileDr
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { KI_NAME } from '@/lib/kiName'
 import { Ai } from '@/pages/Ai'
+import { AI_IS_BETA } from '@/components/ai/AiBetaBanner'
 import { Messenger } from '@/pages/Messenger'
+import { MESSENGER_IS_BETA } from '@/components/social/MessengerBetaBanner'
 import { chatIstOffen } from '@/lib/chatVollbild'
 import { Benutzerprofil } from '@/pages/Benutzerprofil'
 import { Calendar } from '@/pages/Calendar'
@@ -178,6 +180,7 @@ export function DesktopApp() {
   const [walletOffen, setWalletOffen] = useState(false)
 
   useEffect(() => {
+    if (!isAndroid) return
     const oeffneWallet = () => setWalletOffen(true)
     window.addEventListener('msm:open-wallet', oeffneWallet)
     try {
@@ -724,7 +727,7 @@ export function DesktopApp() {
         <BrowserBestaetigungDialog />
         <PasskeyFernBestaetigung />
         <PromptDialog />
-        <SmartcardWalletModal isOpen={walletOffen} onClose={() => setWalletOffen(false)} />
+        {isAndroid && <SmartcardWalletModal isOpen={walletOffen} onClose={() => setWalletOffen(false)} />}
         {splash && <Splash onFertig={splashBeenden} />}
       </div>
     </MemoryRouter>
@@ -1119,8 +1122,13 @@ function Hauptseite({
                 </button>
               </Kurzinfo>
             )}
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
               <h1 className="truncate font-headline text-base sm:text-title-lg font-bold text-on-surface">{kopfTitel}</h1>
+              {((bereich === 'ki' && AI_IS_BETA) || ((bereich === 'chat' || bereich === 'profil') && MESSENGER_IS_BETA)) && (
+                <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
+                  {t('ai.betaBadge', 'Beta')}
+                </span>
+              )}
             </div>
             {isOffline && (
               <div className="flex items-center gap-1 rounded-full border border-outline-variant/50 bg-surface-container-high/60 px-2 py-0.5 text-label-sm font-medium text-on-surface-variant">
@@ -1219,8 +1227,8 @@ function Hauptseite({
             )}
           </nav>
 
-          {/* Rechte Seite: UpdateBadge + Glocke + Profil-Avatar mit Dropdown-Menü */}
-          <div className="flex items-center gap-2">
+          {/* Rechte Seite: UpdateBadge + 1-Tap Smartcard (Android) + Glocke + Profil-Avatar + Menü */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {updateInfo && (isAndroid || updatePhase === 'bereit') && (
               <UpdateBadge
                 neueVersion={updateInfo.version}
@@ -1229,6 +1237,19 @@ function Hauptseite({
                 fehlerText={updateFehler}
                 onInstallieren={() => void handleUpdateClick()}
               />
+            )}
+
+            {isAndroid && darfTresor && (
+              <Kurzinfo text={t('mss.vault.walletModus', 'Smartcard-Wallet')} seite="ende">
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new Event('msm:open-wallet'))}
+                  className="grid h-9 w-9 place-items-center rounded-xl border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-all active:scale-95"
+                  aria-label={t('mss.vault.walletModus', 'Smartcard-Wallet')}
+                >
+                  <QrCode className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </Kurzinfo>
             )}
 
             <BenachrichtigungsGlocke placement="bottom" align="right" />
@@ -1261,8 +1282,8 @@ function Hauptseite({
       {mobileMenuOffen && (
         <div className="fixed inset-0 z-50 flex flex-col justify-end bg-background/80 backdrop-blur-sm md:hidden animate-fade-in">
           <div className="fixed inset-0" onClick={() => setMobileMenuOffen(false)} />
-          <div className="relative z-10 w-full max-h-[85vh] overflow-y-auto overscroll-contain rounded-t-2xl border-t border-outline-variant/50 bg-surface-container-low p-4 pb-8 shadow-2xl space-y-3">
-            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40">
+          <div className="relative z-10 w-full max-h-[85vh] overflow-y-auto overscroll-contain rounded-t-3xl border-t border-outline-variant/40 bg-surface-container-low/95 backdrop-blur-2xl p-4 pb-8 shadow-2xl space-y-3.5">
+            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/30">
               <div className="flex items-center gap-3 min-w-0">
                 <Avatar
                   src={user?.avatar_url}
@@ -1277,185 +1298,205 @@ function Hauptseite({
               <button
                 type="button"
                 onClick={() => setMobileMenuOffen(false)}
-                className="p-1 rounded-lg text-on-surface-variant hover:text-on-surface"
+                className="grid h-9 w-9 place-items-center rounded-full bg-surface-container-high/80 text-on-surface-variant hover:text-on-surface transition-colors"
+                aria-label={t('common.close', 'Schließen')}
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <nav className="flex flex-col gap-1 pt-1" aria-label={t('mss.app.bereiche')}>
-              {!isOffline && (
-                <button
-                  type="button"
-                  onClick={() => { navigate('/'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'dashboard'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <LayoutDashboard className="h-4 w-4" />
-                  <span>{t('nav.dashboard')}</span>
-                </button>
-              )}
-              {!isOffline && (
-                <button
-                  type="button"
-                  onClick={() => { navigate('/ai'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'ki'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <Bot className="h-4 w-4" />
-                  <span>{t('mss.app.ki', t('nav.ai'))}</span>
-                </button>
-              )}
+            {/* Hauptmodule als übersichtliches 2×3-Kachel-Raster */}
+            <nav aria-label={t('mss.app.bereiche')} className="space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {!isOffline && (
+                  <button
+                    type="button"
+                    onClick={() => { navigate('/'); setMobileMenuOffen(false); }}
+                    className={`flex flex-col items-start gap-2 rounded-2xl p-3 text-left transition-all active:scale-95 border ${
+                      bereich === 'dashboard'
+                        ? 'bg-primary/15 text-primary border-primary/40 shadow-sm'
+                        : 'bg-surface-container/70 text-on-surface border-outline-variant/25 hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <div className={`grid h-9 w-9 place-items-center rounded-xl ${bereich === 'dashboard' ? 'bg-primary/20 text-primary' : 'bg-surface-container-high text-on-surface-variant'}`}>
+                      <LayoutDashboard className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold truncate w-full">{t('nav.dashboard')}</span>
+                  </button>
+                )}
 
-              {!isOffline && darfMessenger && (
-                <button
-                  type="button"
-                  onClick={() => { navigate('/chat'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'chat'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <MessageSquare className="h-4 w-4" />
-                  <span>{t('mss.app.messenger', t('nav.chat'))}</span>
-                  {totalMessengerUnread > 0 && (
-                    <span className="ml-auto inline-flex items-center justify-center px-1.5 py-0.5 text-label-sm font-bold rounded-full bg-primary text-on-primary">
-                      {totalMessengerUnread > 99 ? '99+' : totalMessengerUnread}
-                    </span>
-                  )}
-                </button>
-              )}
+                {!isOffline && (
+                  <button
+                    type="button"
+                    onClick={() => { navigate('/ai'); setMobileMenuOffen(false); }}
+                    className={`flex flex-col items-start gap-2 rounded-2xl p-3 text-left transition-all active:scale-95 border ${
+                      bereich === 'ki'
+                        ? 'bg-primary/15 text-primary border-primary/40 shadow-sm'
+                        : 'bg-surface-container/70 text-on-surface border-outline-variant/25 hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <div className={`grid h-9 w-9 place-items-center rounded-xl ${bereich === 'ki' ? 'bg-primary/20 text-primary' : 'bg-surface-container-high text-on-surface-variant'}`}>
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      {AI_IS_BETA && (
+                        <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider">
+                          {t('ai.betaBadge', 'Beta')}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs font-semibold truncate w-full">{t('mss.app.ki', t('nav.ai'))}</span>
+                  </button>
+                )}
 
-              {darfKalender && (
-                <button
-                  type="button"
-                  onClick={() => { navigate('/kalender'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'kalender'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <CalendarIcon className="h-4 w-4" />
-                  <span>{t('mss.app.kalender')}</span>
-                </button>
-              )}
+                {!isOffline && darfMessenger && (
+                  <button
+                    type="button"
+                    onClick={() => { navigate('/chat'); setMobileMenuOffen(false); }}
+                    className={`flex flex-col items-start gap-2 rounded-2xl p-3 text-left transition-all active:scale-95 border ${
+                      bereich === 'chat'
+                        ? 'bg-primary/15 text-primary border-primary/40 shadow-sm'
+                        : 'bg-surface-container/70 text-on-surface border-outline-variant/25 hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <div className={`grid h-9 w-9 place-items-center rounded-xl ${bereich === 'chat' ? 'bg-primary/20 text-primary' : 'bg-surface-container-high text-on-surface-variant'}`}>
+                        <MessageSquare className="h-4 w-4" />
+                      </div>
+                      {totalMessengerUnread > 0 ? (
+                        <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-label-sm font-bold rounded-full bg-primary text-on-primary">
+                          {totalMessengerUnread > 99 ? '99+' : totalMessengerUnread}
+                        </span>
+                      ) : MESSENGER_IS_BETA ? (
+                        <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider">
+                          {t('messenger.betaBadge', 'Beta')}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="text-xs font-semibold truncate w-full">{t('mss.app.messenger', t('nav.chat'))}</span>
+                  </button>
+                )}
 
-              {darfNotizen && (
-                <button
-                  type="button"
-                  onClick={() => { navigate('/notizen'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'notizen'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <StickyNote className="h-4 w-4" />
-                  <span>{t('mss.app.notizen')}</span>
-                </button>
-              )}
+                {darfKalender && (
+                  <button
+                    type="button"
+                    onClick={() => { navigate('/kalender'); setMobileMenuOffen(false); }}
+                    className={`flex flex-col items-start gap-2 rounded-2xl p-3 text-left transition-all active:scale-95 border ${
+                      bereich === 'kalender'
+                        ? 'bg-primary/15 text-primary border-primary/40 shadow-sm'
+                        : 'bg-surface-container/70 text-on-surface border-outline-variant/25 hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <div className={`grid h-9 w-9 place-items-center rounded-xl ${bereich === 'kalender' ? 'bg-primary/20 text-primary' : 'bg-surface-container-high text-on-surface-variant'}`}>
+                      <CalendarIcon className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold truncate w-full">{t('mss.app.kalender')}</span>
+                  </button>
+                )}
 
-              {darfDokumente && (
-                <button
-                  type="button"
-                  onClick={() => { navigate('/dokumente'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'dokumente'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>{t('mss.app.dokumente')}</span>
-                </button>
-              )}
+                {darfNotizen && (
+                  <button
+                    type="button"
+                    onClick={() => { navigate('/notizen'); setMobileMenuOffen(false); }}
+                    className={`flex flex-col items-start gap-2 rounded-2xl p-3 text-left transition-all active:scale-95 border ${
+                      bereich === 'notizen'
+                        ? 'bg-primary/15 text-primary border-primary/40 shadow-sm'
+                        : 'bg-surface-container/70 text-on-surface border-outline-variant/25 hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <div className={`grid h-9 w-9 place-items-center rounded-xl ${bereich === 'notizen' ? 'bg-primary/20 text-primary' : 'bg-surface-container-high text-on-surface-variant'}`}>
+                      <StickyNote className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold truncate w-full">{t('mss.app.notizen')}</span>
+                  </button>
+                )}
 
-              {darfTresor && (
-                <>
+                {darfTresor && (
                   <button
                     type="button"
                     onClick={() => { navigate('/tresor'); setMobileMenuOffen(false); }}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                    className={`flex flex-col items-start gap-2 rounded-2xl p-3 text-left transition-all active:scale-95 border ${
                       bereich === 'tresor'
-                        ? 'bg-primary/15 text-primary border border-primary/30'
-                        : 'text-on-surface hover:bg-surface-container-high'
+                        ? 'bg-primary/15 text-primary border-primary/40 shadow-sm'
+                        : 'bg-surface-container/70 text-on-surface border-outline-variant/25 hover:bg-surface-container-high'
                     }`}
                   >
-                    <KeyRound className="h-4 w-4" />
-                    <span>{t('mss.app.tresor')}</span>
+                    <div className={`grid h-9 w-9 place-items-center rounded-xl ${bereich === 'tresor' ? 'bg-primary/20 text-primary' : 'bg-surface-container-high text-on-surface-variant'}`}>
+                      <KeyRound className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold truncate w-full">{t('mss.app.tresor')}</span>
                   </button>
+                )}
+              </div>
+
+              {/* Sekundäre Bereiche kompakt in 2 Spalten */}
+              <div className="grid grid-cols-2 gap-1.5 pt-2.5 border-t border-outline-variant/30">
+                {darfDokumente && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setMobileMenuOffen(false)
-                      window.dispatchEvent(new Event('msm:open-wallet'))
-                    }}
-                    className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-high"
+                    onClick={() => { navigate('/dokumente'); setMobileMenuOffen(false); }}
+                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors border ${
+                      bereich === 'dokumente'
+                        ? 'bg-primary/15 text-primary border-primary/30'
+                        : 'bg-surface-container/40 text-on-surface border-outline-variant/20 hover:bg-surface-container-high'
+                    }`}
                   >
-                    <QrCode className="h-4 w-4 text-primary" />
-                    <span>{t('mss.vault.walletModus', 'Smartcard-Wallet')}</span>
+                    <FileText className="h-4 w-4 shrink-0 text-on-surface-variant" />
+                    <span className="truncate">{t('mss.app.dokumente')}</span>
                   </button>
-                </>
-              )}
+                )}
 
-              {!isOffline && (
+                {!isOffline && darfTeams && (
+                  <button
+                    type="button"
+                    onClick={() => { navigate('/teams'); setMobileMenuOffen(false); }}
+                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors border ${
+                      bereich === 'teams'
+                        ? 'bg-primary/15 text-primary border-primary/30'
+                        : 'bg-surface-container/40 text-on-surface border-outline-variant/20 hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <Users className="h-4 w-4 shrink-0 text-on-surface-variant" />
+                    <span className="truncate">{t('teams.title', 'Team')}</span>
+                    {teamInvitationCount > 0 && (
+                      <span className="ml-auto inline-flex items-center justify-center px-1.5 py-0.5 text-label-sm font-bold rounded-full bg-primary text-on-primary">
+                        {teamInvitationCount > 99 ? '99+' : teamInvitationCount}
+                      </span>
+                    )}
+                  </button>
+                )}
+
+                {!isOffline && (
+                  <button
+                    type="button"
+                    onClick={() => { navigate('/docs'); setMobileMenuOffen(false); }}
+                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors border ${
+                      bereich === 'hilfe'
+                        ? 'bg-primary/15 text-primary border-primary/30'
+                        : 'bg-surface-container/40 text-on-surface border-outline-variant/20 hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <BookOpen className="h-4 w-4 shrink-0 text-on-surface-variant" />
+                    <span className="truncate">{t('nav.docs')}</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => { navigate('/teams'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'teams'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
+                  onClick={() => { navigate('/einstellungen'); setMobileMenuOffen(false); }}
+                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors border ${
+                    bereich === 'einstellungen'
+                      ? 'bg-primary/15 text-primary border-primary/30'
+                      : 'bg-surface-container/40 text-on-surface border-outline-variant/20 hover:bg-surface-container-high'
                   }`}
                 >
-                  <Users className="h-4 w-4" />
-                  <span>{t('teams.title', 'Team')}</span>
-                  {teamInvitationCount > 0 && (
-                    <span className="ml-auto inline-flex items-center justify-center px-1.5 py-0.5 text-label-sm font-bold rounded-full bg-primary text-on-primary">
-                      {teamInvitationCount > 99 ? '99+' : teamInvitationCount}
-                    </span>
-                  )}
+                  <SettingsIcon className="h-4 w-4 shrink-0 text-on-surface-variant" />
+                  <span className="truncate">{t('common.settings')}</span>
                 </button>
-              )}
-
-              {!isOffline && (
-                <button
-                  type="button"
-                  onClick={() => { navigate('/docs'); setMobileMenuOffen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                    bereich === 'hilfe'
-                      ? 'bg-primary/15 text-primary border border-primary/30'
-                      : 'text-on-surface hover:bg-surface-container-high'
-                  }`}
-                >
-                  <BookOpen className="h-4 w-4" />
-                  <span>{t('nav.docs')}</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => { navigate('/einstellungen'); setMobileMenuOffen(false); }}
-                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                  bereich === 'einstellungen'
-                    ? 'bg-primary/15 text-primary border border-primary/30'
-                    : 'text-on-surface hover:bg-surface-container-high'
-                }`}
-              >
-                <SettingsIcon className="h-4 w-4" />
-                <span>{t('common.settings')}</span>
-              </button>
+              </div>
             </nav>
 
-            <div className="pt-2 border-t border-outline-variant/40 space-y-1">
+            <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-outline-variant/30">
               <button
                 type="button"
                 onClick={() => {
@@ -1465,17 +1506,17 @@ function Hauptseite({
                     : 'https://github.com/mauntingstudios/maunting-service-manager/releases/latest/download/MauntingPontis-Setup.exe'
                   void oeffneBrowser(downloadUrl)
                 }}
-                className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container-high transition-colors"
+                className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors truncate"
               >
-                <Globe className="h-4 w-4 text-primary" />
-                <span>{isAndroid ? t('mss.app.browserLadenAndroid') : t('mss.app.browserInstallieren')}</span>
+                <Globe className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="truncate">{isAndroid ? t('mss.app.browserLadenAndroid') : t('mss.app.browserInstallieren')}</span>
               </button>
               <button
                 type="button"
                 onClick={() => { setMobileMenuOffen(false); void abmelden(); }}
-                className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-status-destructive hover:bg-status-destructive/10 transition-colors"
+                className="flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-status-destructive hover:bg-status-destructive/10 transition-colors"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-3.5 w-3.5" />
                 <span>{t('mss.app.abmelden')}</span>
               </button>
             </div>

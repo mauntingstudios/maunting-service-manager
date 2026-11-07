@@ -1,20 +1,17 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Button, Input, ChatInputBar, VoiceRecordingBar, Blattmenue, Blatteintrag, Kurzinfo, Ablageflaeche, useMehrfachauswahl, useZurueckSchliesst, ChatInputBarRef } from '@maunting/ui'
+import { Input, ChatInputBar, VoiceRecordingBar, Blattmenue, Blatteintrag, Kurzinfo, Ablageflaeche, useMehrfachauswahl, useZurueckSchliesst, ChatInputBarRef } from '@maunting/ui'
 import { useWischZurueck } from '@/hooks/useWischZurueck'
 import {
-  MessageSquare,
   Send,
   Search,
   X,
-  RefreshCw,
   Trash2,
   Smile,
   UserCheck,
   Bell,
   BellOff,
-  Star,
   Pin,
   PinOff,
   Archive,
@@ -22,7 +19,6 @@ import {
   ChevronDown,
   Timer,
   ArrowDown,
-  AtSign,
 } from 'lucide-react'
 import { useCallStore } from '@/stores/useCallStore'
 import {
@@ -167,7 +163,6 @@ import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { still } from '@/lib/still'
 import { useMessengerNotificationStore, PINS_MAX } from '@/stores/messengerNotificationStore'
-import { MessengerBetaBanner } from '@/components/social/MessengerBetaBanner'
 
 /**
  * Was gesendet werden soll.
@@ -373,7 +368,9 @@ function MessengerSeite() {
   const mailboxDirectory = useMessengerNotificationStore((s) => s.mailboxDirectory)
   const pinnedChats = useMessengerNotificationStore((s) => s.pinnedChats)
   const archivedChats = useMessengerNotificationStore((s) => s.archivedChats)
+  const mentionedChats = useMessengerNotificationStore((s) => s.mentionedChats)
   const merkeErwaehnung = useMessengerNotificationStore((s) => s.merkeErwaehnung)
+  const [hatNeueMarkierung, setHatNeueMarkierung] = useState(false)
 
   // Mute & Block modals
   const [isMuteModalOpen, setIsMuteModalOpen] = useState(false)
@@ -826,6 +823,7 @@ function MessengerSeite() {
     })
     void updateMessageInLocalStore(blindMailboxId, msg.id, { istMarkiert: neu }).catch(() => {})
     vergissMailbox(blindMailboxId)
+    if (neu) setHatNeueMarkierung(true)
     toast.success(neu ? 'Markiert.' : 'Markierung entfernt.')
   }
 
@@ -2384,9 +2382,6 @@ function MessengerSeite() {
 
   return (
     <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
-      {/* Im offenen Chat hat der Hinweis keinen Platz: der Chat soll oben
-          beginnen. In der Liste bleibt er sichtbar. */}
-      {!isChatOpen && <MessengerBetaBanner />}
       {!isChatOpen && geraetWartet && (
         <button
           type="button"
@@ -2395,31 +2390,6 @@ function MessengerSeite() {
         >
           {t('messenger.thisDevicePending')}
         </button>
-      )}
-      {/* Schlanker Kopfbereich nur mobil in der Uebersicht */}
-      {!isChatOpen && (
-        <header className="md:hidden h-12 shrink-0 border-b border-outline-variant/20 bg-surface-container/70 backdrop-blur px-3 sm:px-4 flex items-center justify-between z-10">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-primary/15 flex items-center justify-center text-primary">
-              <MessageSquare className="w-4 h-4" />
-            </div>
-            <span className="font-headline text-body-md font-bold text-primary">Messenger</span>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <Kurzinfo text={t('common.refresh')} seite="ende">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => loadData()}
-                className="h-8 w-8 text-on-surface-variant"
-                aria-label={t('common.refresh')}
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </Button>
-            </Kurzinfo>
-          </div>
-        </header>
       )}
 
       {/* Main Split Layout: Left Rail + Contacts & Groups List, Right Chat Area */}
@@ -2433,8 +2403,13 @@ function MessengerSeite() {
           ungelesenChats={ungelesenChats}
           ungelesenCommunity={ungelesenCommunity}
           funkeZahl={funkeGesamt}
+          hatNeueMarkierung={hatNeueMarkierung}
+          ungeleseneErwaehnungen={mentionedChats.length}
           onFunke={handleFunkeTrigger}
-          onMarkierteNachrichten={() => void ueberall.oeffne('markiert')}
+          onMarkierteNachrichten={() => {
+            setHatNeueMarkierung(false)
+            void ueberall.oeffne('markiert')
+          }}
           onAntwortenAnMich={() => void ueberall.oeffne('anMich')}
           onHintergrund={() => setIsWallpaperModalOpen(true)}
         />
@@ -2538,25 +2513,9 @@ function MessengerSeite() {
                   </p>
                 )}
 
-                {/* Über alle Chats hinweg suchen, Markiertes und „an mich" (auf Desktop direkt in der linken Leiste). */}
-                <div className="md:hidden pt-2 mt-1 border-t border-outline-variant/20 space-y-0.5">
-                  <button
-                    type="button"
-                    onClick={() => void ueberall.oeffne('markiert')}
-                    className="w-full min-h-11 px-2.5 flex items-center gap-2.5 rounded-xl text-left text-xs text-on-surface-variant hover:bg-surface-container-high/60 transition-colors"
-                  >
-                    <Star className="w-4 h-4 text-status-warning shrink-0" />
-                    <span>{t('messenger.markedMessages')}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void ueberall.oeffne('anMich')}
-                    className="w-full min-h-11 px-2.5 flex items-center gap-2.5 rounded-xl text-left text-xs text-on-surface-variant hover:bg-surface-container-high/60 transition-colors"
-                  >
-                    <AtSign className="w-4 h-4 text-primary shrink-0" />
-                    <span>{t('messenger.mentionsAndReplies')}</span>
-                  </button>
-                  {searchQuery.trim().length > 1 && (
+                {/* Volltextsuche über alle Chats, wenn ein Suchbegriff eingegeben wurde */}
+                {searchQuery.trim().length > 1 && (
+                  <div className="pt-2 mt-1 border-t border-outline-variant/20">
                     <button
                       type="button"
                       onClick={() => void ueberall.oeffne('suche', searchQuery)}
@@ -2565,8 +2524,8 @@ function MessengerSeite() {
                       <Search className="w-4 h-4 shrink-0" />
                       <span className="truncate">{t('messenger.searchInMessages', { query: searchQuery.trim() })}</span>
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </>
             )}
 
@@ -2608,8 +2567,16 @@ function MessengerSeite() {
               ungelesenChats={ungelesenChats}
               ungelesenCommunity={ungelesenCommunity}
               hatStories={stories.length > 0}
+              hatNeueMarkierung={hatNeueMarkierung}
+              ungeleseneErwaehnungen={mentionedChats.length}
               onFunke={handleFunkeTrigger}
-              onProfil={() => navigate('/einstellungen')}
+              onMarkierteNachrichten={() => {
+                setHatNeueMarkierung(false)
+                void ueberall.oeffne('markiert')
+              }}
+              onAntwortenAnMich={() => void ueberall.oeffne('anMich')}
+              onHintergrund={() => setIsWallpaperModalOpen(true)}
+              onAktualisieren={() => void loadData()}
             />
           )}
         </div>

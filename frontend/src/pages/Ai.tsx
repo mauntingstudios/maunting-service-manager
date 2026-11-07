@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next'
 import { aiApi, type AiAttachment, type AiConversationSummary, type AiVoiceConfig } from '@/api/ai'
 import { api } from '@/api/client'
 import { AiAutonomyButton } from '@/components/ai/AiAutonomyButton'
-import { AiBetaBanner } from '@/components/ai/AiBetaBanner'
 import { AiChat } from '@/components/ai/AiChat'
 import { PRIMARY_CHAT_SCOPE, type AiChatScope } from '@/components/ai/chatScope'
 import { AufgabenAnsicht } from '@/components/ai/AufgabenAnsicht'
@@ -309,7 +308,6 @@ export function Ai({
 
   return (
     <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
-      <AiBetaBanner className={activeSection === 'chat' ? 'hidden sm:flex' : ''} />
       {ansicht !== 'text' && (
         <div className="flex shrink-0 items-center justify-between sm:justify-end gap-1.5 sm:gap-2 px-3 py-2 border-b border-outline-variant/30 bg-surface-container-low/40">
           <div className="flex items-center justify-between w-full sm:w-auto gap-2">

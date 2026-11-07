@@ -112,6 +112,7 @@ type Ansicht = VaultAnsicht
 
 const TAG_MS = 24 * 60 * 60 * 1000
 const STANDARD_BILDER_SPEICHER = 'msm-vault-kategorie-bilder-v1'
+const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
 
 /** Miniatur einer Datei im Archiv oder Papierkorb, sonst das Marken-/Kategoriesymbol. */
 function ZeilenBild({ item, Symbol }: { item: VaultItem; Symbol: React.ComponentType<{ className?: string }> }) {
@@ -1547,7 +1548,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
                       </Button>
                     )}
 
-                    {!isTeam && isDeviceAuthorized && (
+                    {!isTeam && isAndroid && isDeviceAuthorized && (
                       <Button
                         type="button"
                         variant="secondary"
@@ -2351,7 +2352,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
             setOrdnerFilter(null)
           }}
           onWallet={
-            !isTeam && isDeviceAuthorized
+            !isTeam && isAndroid && isDeviceAuthorized
               ? () => window.dispatchEvent(new Event('msm:open-wallet'))
               : undefined
           }

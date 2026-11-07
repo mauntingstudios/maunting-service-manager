@@ -33,18 +33,23 @@ export function StatusUpdatesView({
   const eigeneOeffnen = () => (eigeneStories.length > 0 ? onOeffnen(eigeneStories) : onErstellen())
 
   return (
-    <div className="space-y-4 p-1">
-      <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-primary" />
-          <span className="text-sm font-headline font-bold text-on-surface">Status</span>
+    <div className="space-y-3.5 p-2">
+      <div className="flex items-center justify-between px-1 pt-1">
+        <div>
+          <div className="text-xs font-headline font-bold text-white flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span>{t('messenger.nav.updates', 'Aktuelles')}</span>
+          </div>
+          <p className="text-label-sm text-white/60">
+            {t('social.story.badge24h', '24h Status & Aktivität')}
+          </p>
         </div>
         <Button
           type="button"
           variant="primary"
           size="sm"
           onClick={onErstellen}
-          className="h-8 text-xs gap-1.5 px-3 rounded-xl font-medium"
+          className="h-8 text-xs gap-1.5 px-3 rounded-full shadow-sm"
           aria-label={t('messenger.addStatus')}
         >
           <Plus className="w-3.5 h-3.5" />
@@ -53,18 +58,23 @@ export function StatusUpdatesView({
       </div>
 
       {/* Eigener Status */}
-      <div className="p-3.5 rounded-2xl bg-surface-container/70 border border-outline-variant/35 shadow-sm transition-colors hover:bg-surface-container/90">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-headline font-bold text-on-surface">{t('messenger.myStatus')}</span>
-          <span className="text-label-sm text-on-surface-variant font-medium">{t('social.story.badge24h')}</span>
+      <div
+        onClick={eigeneOeffnen}
+        className="p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 shadow-sm transition-all cursor-pointer active:scale-[0.99]"
+      >
+        <div className="flex items-center justify-between mb-2.5">
+          <span className="text-xs font-headline font-semibold text-white/90">{t('messenger.myStatus')}</span>
+          <span className="text-label-sm px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/60 font-medium">
+            {t('social.story.badge24h')}
+          </span>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="relative cursor-pointer shrink-0" onClick={eigeneOeffnen}>
+          <div className="relative shrink-0">
             <div className={`w-12 h-12 rounded-full p-0.5 shrink-0 flex items-center justify-center ${
               eigeneStories.length > 0
                 ? 'bg-gradient-to-tr from-cyan-400 via-sky-500 to-indigo-500 ring-2 ring-primary/40 ring-offset-2 ring-offset-surface'
-                : 'border-2 border-dashed border-outline-variant/80'
+                : 'border-2 border-dashed border-white/25'
             }`}>
               <Avatar src={ich.avatarUrl} name={ich.username || 'Ich'} size="md" />
             </div>
@@ -72,11 +82,11 @@ export function StatusUpdatesView({
               <Plus className="w-3 h-3" />
             </div>
           </div>
-          <div className="min-w-0 flex-1 cursor-pointer" onClick={eigeneOeffnen}>
-            <div className="text-xs font-semibold text-on-surface truncate">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-white truncate">
               {eigeneStories.length > 0 ? t('messenger.viewStatus') : t('social.story.share')}
             </div>
-            <p className="text-label-sm text-on-surface-variant truncate">
+            <p className="text-label-sm text-white/60 truncate">
               {eigeneStories.length > 0
                 ? t('messenger.activeStories', { count: eigeneStories.length })
                 : t('messenger.statusHint')}
@@ -87,15 +97,15 @@ export function StatusUpdatesView({
 
       {/* Stories der Freunde */}
       <div className="space-y-2">
-        <div className="px-1 text-label-sm font-semibold text-on-surface-variant/80 uppercase tracking-wider flex items-center justify-between">
+        <div className="px-1 text-label-sm font-semibold text-white/60 uppercase tracking-wider flex items-center justify-between">
           <span>{t('messenger.recentUpdates')}</span>
-          <span className="text-label-sm px-1.5 py-0.5 rounded-full bg-surface-container font-mono text-on-surface-variant">
+          <span className="text-label-sm px-1.5 py-0.5 rounded-full bg-white/5 border border-white/10 font-mono text-white/70">
             {freunde.length}
           </span>
         </div>
 
         {freunde.length === 0 ? (
-          <div className="p-4 rounded-xl bg-surface-container/40 border border-outline-variant/25 text-center text-xs text-on-surface-variant">
+          <div className="py-6 px-4 rounded-2xl bg-white/[0.03] border border-white/10 text-center text-xs text-white/50">
             {t('messenger.noStatusUpdates')}
           </div>
         ) : (
@@ -104,14 +114,14 @@ export function StatusUpdatesView({
               <div
                 key={`story-grp-${grp.userId}`}
                 onClick={() => onOeffnen(grp.stories)}
-                className="flex items-center gap-3 p-2.5 rounded-xl border border-outline-variant/30 bg-surface-container/60 hover:bg-surface-container-high/80 cursor-pointer transition-colors"
+                className="flex items-center gap-3 p-2.5 rounded-2xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] cursor-pointer transition-all active:scale-[0.99]"
               >
                 <div className="relative shrink-0">
                   <div
-                    className={`w-12 h-12 rounded-full p-0.5 shrink-0 transition-all duration-300 flex items-center justify-center ${
+                    className={`w-11 h-11 rounded-full p-0.5 shrink-0 transition-all duration-300 flex items-center justify-center ${
                       grp.hasUnseen
                         ? 'bg-gradient-to-tr from-cyan-400 via-indigo-500 to-fuchsia-500 ring-2 ring-primary ring-offset-2 ring-offset-surface shadow-[0_0_14px_rgba(99,102,241,0.65)] animate-pulse'
-                        : 'bg-surface-container-highest ring-1 ring-outline-variant/50 opacity-85'
+                        : 'bg-white/10 ring-1 ring-white/20 opacity-85'
                     }`}
                   >
                     <Avatar src={grp.avatarUrl} name={grp.username} size="md" />
@@ -123,10 +133,10 @@ export function StatusUpdatesView({
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-on-surface truncate">
+                  <div className="text-xs font-semibold text-white truncate">
                     {grp.username}
                   </div>
-                  <div className="text-label-sm text-on-surface-variant flex items-center gap-1">
+                  <div className="text-label-sm text-white/60 flex items-center gap-1">
                     <Clock className="w-3 h-3" />
                     <span>
                       {grp.latestStory
@@ -137,7 +147,7 @@ export function StatusUpdatesView({
                         : ''}
                     </span>
                     {grp.stories.length > 1 && (
-                      <span className="text-on-surface-variant/70">• {grp.stories.length} Updates</span>
+                      <span className="text-white/50">• {grp.stories.length} Updates</span>
                     )}
                   </div>
                 </div>
@@ -148,15 +158,16 @@ export function StatusUpdatesView({
       </div>
 
       {/* Wer gerade da ist */}
-      <div className="space-y-2 pt-2 border-t border-outline-variant/20">
-        <div className="px-1 text-label-sm font-semibold text-on-surface-variant/70 uppercase tracking-wider">
+      <div className="space-y-2 pt-2 border-t border-white/10">
+        <div className="px-1 text-label-sm font-semibold text-white/60 uppercase tracking-wider">
           {t('messenger.contactActivity')}
         </div>
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           {kontakte.map((c) => (
             <div
               key={c.listKey}
-              className="flex items-center justify-between p-2.5 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/60"
+              onClick={() => onChat(c)}
+              className="flex items-center justify-between p-2.5 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] cursor-pointer transition-colors"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="relative shrink-0">
@@ -164,13 +175,13 @@ export function StatusUpdatesView({
                   <StatusDot status={c.status} size="sm" className="absolute bottom-0 right-0" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-primary truncate flex items-center gap-1.5">
+                  <div className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
                     <span>{c.username}</span>
                     {(c.status === 'online' || c.status === 'away') && (
                       <DeviceBadge client={c.client} deviceType={c.deviceType} />
                     )}
                   </div>
-                  <div className="text-label-sm text-on-surface-variant/80 truncate">
+                  <div className="text-label-sm text-white/60 truncate">
                     {((c.status === 'online' || c.status === 'away') &&
                       aktivitaetText(c.activityKey, t)) ||
                       t(`social.status.${c.status === 'online' || c.status === 'away' ? c.status : 'offline'}`)}
@@ -182,8 +193,11 @@ export function StatusUpdatesView({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => onChat(c)}
-                className="text-xs h-7 px-2 text-primary"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onChat(c)
+                }}
+                className="text-xs h-7 px-2.5 rounded-full text-primary hover:bg-primary/15"
               >
                 Chat
               </Button>
