@@ -1760,7 +1760,7 @@ def publish_project_to_production(
     release_notes: str | None = None,
 ) -> dict[str, object]:
     """Veröffentlicht den aktuellen Dev-Stand auf Produktion (inkl. PostgreSQL-Migration & Server-Dashboard-Eintrag)."""
-    from models import Node, Server, UserServerPermission
+    from models import Node, Server, ServerPermission
 
     project = get_project(db, user, project_id)
     ws = ensure_project_workspace(project)
@@ -1822,19 +1822,19 @@ def publish_project_to_production(
         db.flush()
         # Besitzer-Berechtigung für den User eintragen, damit der Produktions-Server im Dashboard sichtbar ist
         has_perm = (
-            db.query(UserServerPermission)
+            db.query(ServerPermission)
             .filter(
-                UserServerPermission.user_id == user.id,
-                UserServerPermission.server_id == prod_server.id,
+                ServerPermission.user_id == user.id,
+                ServerPermission.server_id == prod_server.id,
             )
             .first()
         )
         if has_perm is None:
             db.add(
-                UserServerPermission(
+                ServerPermission(
                     user_id=user.id,
                     server_id=prod_server.id,
-                    permission="*",
+                    permission_key="*",
                 )
             )
     else:

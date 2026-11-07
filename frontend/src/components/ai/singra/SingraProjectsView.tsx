@@ -2976,7 +2976,7 @@ export function SingraProjectsView({
 
       {/* Publish to Production (Online schalten) Modal */}
       <Dialog open={publishModalOpen} onOpenChange={setPublishModalOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Rocket className="h-5 w-5 text-primary" />
@@ -2990,7 +2990,7 @@ export function SingraProjectsView({
               Übernimmt deinen aktuellen Entwicklungsstand auf eine Node, führt ausstehende PostgreSQL-Migrationen aus und stellt das Projekt im Server-Dashboard bereit.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handlePublishToProduction} className="space-y-4 px-6 pb-6 pt-5">
+          <form onSubmit={handlePublishToProduction} className="space-y-4 p-6">
             <div className="rounded-xl border border-outline-variant/25 bg-surface-container-low/50 p-3.5 space-y-2 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant flex items-center gap-1.5">
@@ -3087,14 +3087,14 @@ export function SingraProjectsView({
               </p>
             </div>
 
-            <div className="flex flex-col-reverse gap-2 pt-3 border-t border-outline-variant/20 sm:flex-row sm:justify-end">
-              <Button type="button" variant="ghost" onClick={() => setPublishModalOpen(false)}>
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-3 border-t border-outline-variant/20">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setPublishModalOpen(false)}>
                 Abbrechen
               </Button>
-              <Button type="submit" variant="secondary" disabled={publishing}>
+              <Button type="submit" variant="secondary" size="sm" disabled={publishing}>
                 <span>{publishing ? 'Veröffentlicht…' : 'Direkt veröffentlichen'}</span>
               </Button>
-              <Button type="button" disabled={publishing} onClick={() => void handleGuidedPublish()}>
+              <Button type="button" size="sm" disabled={publishing} onClick={() => void handleGuidedPublish()}>
                 <Rocket className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Mit Singra online schalten</span>
               </Button>

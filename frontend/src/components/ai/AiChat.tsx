@@ -2248,9 +2248,9 @@ export function AiChat({
                     return (
                       <article
                         key={entry.id}
-                        className={`group flex flex-col items-end rounded-xl transition-colors ${
-                          isSelected ? 'bg-primary/10' : ''
-                        } ${editingMessage?.id === message.id ? 'ring-1 ring-primary/60 bg-primary/5' : ''}`}
+                        className={`group flex flex-col items-end transition-colors ${
+                          auswahlModus ? 'cursor-pointer' : ''
+                        }`}
                         onClick={auswahlModus ? () => handleToggleSelectMessage(message) : undefined}
                       >
                         {auswahlModus && (
@@ -2267,16 +2267,26 @@ export function AiChat({
                             </span>
                           </div>
                         )}
-                        <ChatBubbleSurface isSelf>
-                          {message.content && (
-                            <p className="w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface">
-                              {message.content}
-                            </p>
-                          )}
-                          <AiAnhangListe
-                            anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
-                          />
-                        </ChatBubbleSurface>
+                        <div
+                          className={`w-fit max-w-full rounded-2xl transition-all ${
+                            editingMessage?.id === message.id
+                              ? 'ring-2 ring-primary/70 bg-primary/10 p-0.5'
+                              : isSelected
+                                ? 'ring-2 ring-primary bg-primary/15 p-0.5'
+                                : ''
+                          }`}
+                        >
+                          <ChatBubbleSurface isSelf>
+                            {message.content && (
+                              <p className="w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface">
+                                {message.content}
+                              </p>
+                            )}
+                            <AiAnhangListe
+                              anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
+                            />
+                          </ChatBubbleSurface>
+                        </div>
                         <ChatMessageMetaRow
                           align="end"
                           isStarred={isStarred}

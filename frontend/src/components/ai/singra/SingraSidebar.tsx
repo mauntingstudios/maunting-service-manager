@@ -103,9 +103,6 @@ function SidebarContent({
               <div className="flex items-center gap-1.5 font-headline text-base font-semibold tracking-tight text-on-surface leading-tight">
                 <span>Singra</span>
               </div>
-              <div className="text-label-sm text-on-surface-variant/80 leading-tight">
-                AI Assistant
-              </div>
             </div>
           </div>
 

@@ -213,8 +213,8 @@ export const AiAntwortblase = memo(function AiAntwortblase({
     : null
   return (
     <article
-      className={`group flex flex-col items-start rounded-xl transition-colors ${
-        isSelected ? 'bg-primary/10' : ''
+      className={`group flex flex-col items-start transition-colors ${
+        selectionMode ? 'cursor-pointer' : ''
       }`}
       onClick={selectionMode && onToggleSelect ? () => onToggleSelect(message) : undefined}
     >
@@ -241,7 +241,12 @@ export const AiAntwortblase = memo(function AiAntwortblase({
           />
         </span>
         <div className="flex min-w-0 flex-1 flex-col items-start">
-          <ChatBubbleSurface isSelf={false} size="wide" className="w-fit max-w-[92%] md:max-w-[85%]">
+          <div
+            className={`w-fit max-w-[92%] md:max-w-[85%] rounded-2xl transition-all ${
+              isSelected ? 'ring-2 ring-primary bg-primary/15 p-0.5' : ''
+            }`}
+          >
+            <ChatBubbleSurface isSelf={false} size="wide" className="w-full">
             {/* Nachrichten aus der Zeit vor den Denkabschnitten: dort gibt es die
                 Gedanken nur am Stück, ohne jede Stelle. Dann steht der Kasten wie
                 früher oben — besser als gar nicht, und es ist die einzige
@@ -313,6 +318,7 @@ export const AiAntwortblase = memo(function AiAntwortblase({
               <p className="mt-2 text-xs text-status-destructive">{t('ai.chat.failed')}</p>
             )}
           </ChatBubbleSurface>
+          </div>
           {!isStreaming && (
             <ChatMessageMetaRow
               align="end"
