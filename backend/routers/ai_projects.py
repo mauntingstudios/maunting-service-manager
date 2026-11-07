@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -140,6 +141,9 @@ class AiProjectGitCreateRepoPayload(BaseModel):
 class AiProjectPreviewInspectPayload(BaseModel):
     viewports: list[str] | None = None
     interactions: list[dict[str, Any]] | None = None
+
+
+AiProjectPreviewInspectPayload.model_rebuild()
 
 
 @router.get("", response_model=list[AiProjectResponse])

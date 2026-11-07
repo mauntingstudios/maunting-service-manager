@@ -342,7 +342,7 @@ export function buildPreviewDocument(
 
   let headInject = PREVIEW_ERROR_HARNESS
   if (usesTailwind && !doc.includes('cdn.tailwindcss.com')) {
-    headInject += '<script crossorigin="anonymous" src="https://cdn.tailwindcss.com"></script>'
+    headInject += '<script src="https://cdn.tailwindcss.com"></script>'
   }
 
   browserFiles

@@ -409,7 +409,7 @@ export function Ai({
 
           <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden">
             {activeSection !== 'chat' && (
-              <div className="flex lg:hidden shrink-0 items-center justify-between border-b border-outline-variant/30 bg-surface-container-low px-3 py-2">
+              <div className="flex lg:hidden shrink-0 items-center justify-between border-b border-outline-variant/20 bg-surface-container-lowest/80 backdrop-blur-xl px-3 py-2">
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(true)}

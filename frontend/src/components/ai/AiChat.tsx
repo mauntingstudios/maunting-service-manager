@@ -2928,9 +2928,9 @@ export function AiChat({
       offen={modelModalOpen}
       onSchliessen={() => setModelModalOpen(false)}
       titel="KI-Provider & Modell wählen"
-      className="bg-surface-container-high/95 backdrop-blur-2xl border border-outline-variant/30 text-on-surface shadow-2xl max-w-lg mx-auto max-h-[85vh] overflow-y-auto"
+      className="bg-surface-container-high/95 backdrop-blur-2xl border border-outline-variant/30 text-on-surface shadow-2xl max-w-2xl mx-auto max-h-[90vh] overflow-y-auto"
     >
-      <div className="p-4 space-y-4">
+      <div className="p-4 sm:p-5 space-y-4">
         {availableProviders.length > 1 && (
           <div className="space-y-1.5">
             <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
@@ -2984,9 +2984,9 @@ export function AiChat({
             </div>
           )}
 
-          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[min(56vh,480px)] overflow-y-auto pr-1">
             {gefilterteModelle.length === 0 ? (
-              <div className="p-3 text-center text-xs text-on-surface-variant rounded-xl border border-outline-variant/20 bg-surface-container-low/50">
+              <div className="col-span-full p-4 text-center text-xs text-on-surface-variant rounded-xl border border-outline-variant/20 bg-surface-container-low/50">
                 Kein passendes Modell gefunden.
               </div>
             ) : (
@@ -3000,43 +3000,47 @@ export function AiChat({
                     onClick={() => {
                       waehleModell(m.model_id)
                     }}
-                    className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-xl border text-left transition-all ${
+                    className={`group relative flex flex-col justify-between gap-1.5 p-3 rounded-xl border text-left transition-all ${
                       isSelected
-                        ? 'border-primary/50 bg-primary/10 text-on-surface shadow-sm'
-                        : 'border-outline-variant/20 hover:bg-surface-container-high/60 text-on-surface-variant hover:text-on-surface'
+                        ? 'border-primary/60 bg-primary/12 text-on-surface shadow-sm ring-1 ring-primary/30'
+                        : 'border-outline-variant/25 bg-surface-container-low/60 hover:bg-surface-container hover:border-outline-variant/60 text-on-surface-variant hover:text-on-surface'
                     }`}
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-on-surface truncate">
-                          {m.name && m.name !== m.model_id ? m.name : m.model_id}
+                    <div className="flex items-start justify-between gap-2 min-w-0">
+                      <span className="text-xs font-semibold text-on-surface truncate">
+                        {m.name && m.name !== m.model_id ? m.name : m.model_id}
+                      </span>
+                      {isSelected ? (
+                        <Check className="w-4 h-4 text-primary shrink-0" />
+                      ) : isDefault ? (
+                        <span className="text-label-sm font-medium px-1.5 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/25 shrink-0">
+                          Standard
                         </span>
-                        {isDefault && (
-                          <span className="text-label-sm font-medium px-1.5 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/25">
-                            Standard
-                          </span>
-                        )}
-                      </div>
-                      {m.name && m.name !== m.model_id && (
-                        <p className="text-label-sm font-mono text-on-surface-variant/75 truncate mt-0.5">
-                          {m.model_id}
-                        </p>
-                      )}
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                        {m.reasoning && (
-                          <span className="inline-flex items-center gap-1 text-label-sm text-primary font-medium">
-                            <Brain className="w-3 h-3" />
-                            <span>Denkmodell</span>
-                          </span>
-                        )}
-                        {m.vision && (
-                          <span className="inline-flex items-center gap-1 text-label-sm text-on-surface-variant">
-                            <span>Sehen</span>
-                          </span>
-                        )}
-                      </div>
+                      ) : null}
                     </div>
-                    {isSelected && <Check className="w-4 h-4 text-primary shrink-0" />}
+                    {m.name && m.name !== m.model_id && (
+                      <p className="text-label-sm font-mono text-on-surface-variant/70 truncate">
+                        {m.model_id}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                      {isDefault && isSelected && (
+                        <span className="text-label-sm font-medium px-1.5 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/25">
+                          Standard
+                        </span>
+                      )}
+                      {m.reasoning && (
+                        <span className="inline-flex items-center gap-1 text-label-sm text-primary font-medium">
+                          <Brain className="w-3 h-3" />
+                          <span>Denkmodell</span>
+                        </span>
+                      )}
+                      {m.vision && (
+                        <span className="inline-flex items-center gap-1 text-label-sm text-on-surface-variant">
+                          <span>Sehen</span>
+                        </span>
+                      )}
+                    </div>
                   </button>
                 )
               })

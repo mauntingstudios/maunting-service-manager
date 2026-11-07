@@ -87,7 +87,7 @@ function SidebarContent({
   const recentConversations = conversations.slice(0, 8)
 
   return (
-    <div className="flex h-full w-full flex-col justify-between bg-surface-container-low text-on-surface select-none">
+    <div className="flex h-full w-full flex-col justify-between bg-transparent text-on-surface select-none">
       {/* Top Brand + New Chat */}
       <div className="flex flex-col gap-3 px-3.5 pt-4 pb-2">
         <div className="flex items-center justify-between gap-2 px-1">
@@ -278,7 +278,7 @@ function SidebarContent({
 
       {/* User Footer */}
       <div className="shrink-0 border-t border-outline-variant/20 px-3.5 py-3">
-        <div className="flex items-center justify-between gap-2.5 rounded-xl bg-surface-container-low/40 px-2.5 py-2">
+        <div className="flex items-center justify-between gap-2.5 rounded-xl bg-surface-container-high/30 px-2.5 py-2">
           <div className="flex min-w-0 items-center gap-2.5">
             <Avatar src={user?.avatar_url} name={displayName} size="xs" />
             <div className="min-w-0">
@@ -307,7 +307,7 @@ export function SingraSidebar(props: SingraSidebarProps) {
     <>
       {/* Desktop Left Sidebar */}
       <aside
-        className="hidden lg:flex lg:w-60 xl:w-64 shrink-0 flex-col border-r border-outline-variant/40 bg-surface-container-low"
+        className="hidden lg:flex lg:w-60 xl:w-64 shrink-0 flex-col border-r border-outline-variant/30 bg-surface-container-lowest/85 backdrop-blur-xl"
         aria-label="Singra Seitenleiste"
       >
         <SidebarContent {...props} />
@@ -322,7 +322,7 @@ export function SingraSidebar(props: SingraSidebarProps) {
             aria-hidden="true"
           />
           <div
-            className="relative z-10 flex h-full w-72 max-w-[84vw] flex-col border-r border-outline-variant/40 bg-surface-container-low shadow-2xl"
+            className="relative z-10 flex h-full w-72 max-w-[84vw] flex-col border-r border-outline-variant/30 bg-surface-container-lowest/95 backdrop-blur-2xl shadow-2xl"
             style={{
               paddingTop: 'max(0px, var(--msm-oben-sicher, 0px))',
               paddingBottom: 'max(0px, var(--msm-unten-sicher, 0px))',
@@ -346,7 +346,7 @@ export function SingraMobileBottomBar({
   return (
     <nav
       aria-label="Singra Schnellnavigation"
-      className="flex lg:hidden shrink-0 items-center justify-around border-t border-outline-variant/40 bg-surface-container-low/95 backdrop-blur-md px-2 pt-1.5"
+      className="flex lg:hidden shrink-0 items-center justify-around border-t border-outline-variant/30 bg-surface-container-lowest/90 backdrop-blur-xl px-2 pt-1.5"
       style={{
         paddingBottom: 'max(0.45rem, var(--msm-unten-sicher, 0.45rem))',
       }}

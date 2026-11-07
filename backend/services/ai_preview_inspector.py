@@ -351,7 +351,7 @@ def build_preview_html_document(
 
     head_inject = _INSPECTOR_HARNESS_JS
     if uses_tailwind and "cdn.tailwindcss.com" not in doc:
-        head_inject += '<script crossorigin="anonymous" src="https://cdn.tailwindcss.com"></script>\n'
+        head_inject += '<script src="https://cdn.tailwindcss.com"></script>\n'
 
     for css in (f for f in browser_files if f["path"].lower().endswith(".css")):
         base_name = css["path"].split("/")[-1]
