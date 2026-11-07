@@ -221,6 +221,20 @@ _LAYOUT_COLLECTOR_SNIPPET = """
 """
 
 
+def _insert_before_body_end(html: str, snippet: str) -> str:
+    m = re.search(r"</body>", html, flags=re.I)
+    if m:
+        return html[: m.start()] + snippet + html[m.start() :]
+    return html + snippet
+
+
+def _insert_after_head_start(html: str, snippet: str) -> str:
+    m = re.search(r"<head(\s[^>]*)?>", html, flags=re.I)
+    if m:
+        return html[: m.end()] + snippet + html[m.end() :]
+    return snippet + html
+
+
 def build_preview_html_document(
     files: list[dict[str, Any]],
     configured_entry: str | None = None,
@@ -333,7 +347,7 @@ def build_preview_html_document(
         style_tag = f"<style>/* {css['path']} */\n{clean_css}</style>"
         link_pat = re.compile(rf'<link[^>]+href=["\'][^"\']*{re.escape(base_name)}["\'][^>]*>', re.I)
         if link_pat.search(doc):
-            doc = link_pat.sub(style_tag, doc)
+            doc = link_pat.sub(lambda _: style_tag, doc)
         else:
             head_inject += f"{style_tag}\n"
 
@@ -443,7 +457,7 @@ def build_preview_html_document(
 </script>
 """
         module_loader_script = module_loader_template.replace("__PAYLOAD__", payload)
-        doc = re.sub(r"</body>", f"{module_loader_script}</body>", doc, flags=re.I)
+        doc = _insert_before_body_end(doc, module_loader_script)
 
     # Optionale Interaktionen einbetten
     if interactions:
@@ -476,10 +490,10 @@ def build_preview_html_document(
 </script>
 """
         interact_snippet = interact_template.replace("__INTERACT_PAYLOAD__", interact_payload)
-        doc = re.sub(r"</body>", f"{interact_snippet}</body>", doc, flags=re.I)
+        doc = _insert_before_body_end(doc, interact_snippet)
 
-    doc = re.sub(r"</body>", f"{_LAYOUT_COLLECTOR_SNIPPET}</body>", doc, flags=re.I)
-    doc = re.sub(r"<head(\s[^>]*)?>", rf"\g<0>{head_inject}", doc, flags=re.I)
+    doc = _insert_before_body_end(doc, _LAYOUT_COLLECTOR_SNIPPET)
+    doc = _insert_after_head_start(doc, head_inject)
     return doc
 
 
