@@ -1756,7 +1756,7 @@ def publish_project_to_production(
     user: User,
     project_id: str,
     *,
-    node_id: int | None = None,
+    node_id: int | str | None = None,
     release_notes: str | None = None,
 ) -> dict[str, object]:
     """Veröffentlicht den aktuellen Dev-Stand auf Produktion (inkl. PostgreSQL-Migration & Server-Dashboard-Eintrag)."""
@@ -1769,13 +1769,28 @@ def publish_project_to_production(
     if not files:
         raise AiProjectError("Das Projekt enthält noch keine Dateien zum Veröffentlichen.")
 
-    # Node auflösen
+    # Node auflösen (unterstützt int, Ziffern-Strings, Node-Namen und Auto/Local-Fallbacks)
     chosen_node: Node | None = None
-    if node_id is not None and node_id > 0:
-        chosen_node = db.get(Node, node_id)
+    parsed_node_id: int | None = None
+    if node_id is not None:
+        if isinstance(node_id, int) and node_id > 0:
+            parsed_node_id = node_id
+        elif isinstance(node_id, str):
+            node_str = node_id.strip()
+            if node_str and node_str.lower() not in ("__auto__", "auto", "local", "none", "0"):
+                if node_str.isdigit():
+                    parsed_node_id = int(node_str)
+                else:
+                    node_by_name = db.query(Node).filter(Node.name.ilike(node_str)).first()
+                    if node_by_name is not None:
+                        chosen_node = node_by_name
+
+    if chosen_node is None and parsed_node_id is not None and parsed_node_id > 0:
+        chosen_node = db.get(Node, parsed_node_id)
         if chosen_node is None:
-            raise AiProjectError("Der ausgewählte Node wurde nicht gefunden.")
-    else:
+            raise AiProjectError(f"Der ausgewählte Node #{parsed_node_id} wurde nicht gefunden.")
+
+    if chosen_node is None:
         chosen_node = db.query(Node).order_by(Node.is_local.desc(), Node.id.asc()).first()
 
     effective_node_id = chosen_node.id if chosen_node is not None else None

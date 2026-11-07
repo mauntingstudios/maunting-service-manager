@@ -2267,26 +2267,26 @@ export function AiChat({
                             </span>
                           </div>
                         )}
-                        <div
-                          className={`w-fit max-w-full rounded-2xl transition-all ${
+                        <ChatBubbleSurface
+                          isSelf
+                          highlighted={Boolean(editingMessage?.id === message.id || isSelected)}
+                          className={`ml-auto transition-all ${
                             editingMessage?.id === message.id
-                              ? 'ring-2 ring-primary/70 bg-primary/10 p-0.5'
+                              ? 'ring-2 ring-primary/80 bg-primary/20 shadow-md'
                               : isSelected
-                                ? 'ring-2 ring-primary bg-primary/15 p-0.5'
+                                ? 'ring-2 ring-primary bg-primary/20 shadow-md'
                                 : ''
                           }`}
                         >
-                          <ChatBubbleSurface isSelf>
-                            {message.content && (
-                              <p className="w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface">
-                                {message.content}
-                              </p>
-                            )}
-                            <AiAnhangListe
-                              anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
-                            />
-                          </ChatBubbleSurface>
-                        </div>
+                          {message.content && (
+                            <p className="w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface">
+                              {message.content}
+                            </p>
+                          )}
+                          <AiAnhangListe
+                            anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
+                          />
+                        </ChatBubbleSurface>
                         <ChatMessageMetaRow
                           align="end"
                           isStarred={isStarred}
