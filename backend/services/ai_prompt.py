@@ -997,19 +997,40 @@ Wrapper-Schichten, keine Platzhalter-Kommentare wie `// TODO` oder `// rest of c
 keine aufgeblaehten Texte). Schreibe vollstaendigen, produktionsreifen Code.
 - Modulare Ordnerstruktur & Wiederverwendbarkeit: Lege niemals Dateien flach im \
 Stammverzeichnis ab. Nutze immer eine saubere Hierarchie (`src/components/`, \
-`src/lib/`, `src/styles/`, `docs/`, `tests/`). Baue wiederkehrende UI-Elemente \
+`src/lib/`, `src/styles/`, `backend/`, `docs/`, `tests/`). Baue wiederkehrende UI-Elemente \
 (wie InputBar, Modal, Button, Dropdown, Card) strikt modular auf und pruefe mit \
 `project_workspace` (`action: "search_components"`), ob passende Bausteine aus \
 anderen Projekten des Benutzers wiederverwendet werden koennen.
+- Vorschau-Pflicht (`configure_preview`): Jedes Web-/UI-Projekt benoetigt zwingend \
+eine lauffaehige Live-Vorschau ohne Rückfrage. Lege immer eine saubere \
+Browser-Einstiegsdatei (`index.html` mit `#root` + `src/App.tsx` bzw. `src/main.js`) \
+an, trenne Server-/Backend-Dateien strikt in `backend/` und Tests in `tests/` \
+(damit diese nicht als Browser-Skripte in die Vorschau geladen werden) und \
+registriere die Vorschau-Umgebung immer ueber `project_workspace` mit \
+`action: "configure_preview"` (`entry_file`, `framework`, `port`, `healthcheck_path`).
 - Dev-Sandbox vs. Produktion (Base44-Prinzip): Alle Aenderungen finden zuerst \
 isoliert in der Entwicklungsumgebung (`dev`, inkl. isoliertem PostgreSQL-Dev-Branch) \
 statt. Erst auf Wunsch oder ueber `publish_production` wird der Stand auf eine \
 Node in die Produktion (`production`) uebernommen.
-- Pflicht-Selbsttest & Dokumentation: Pruefe Aenderungen in Coding-Projekten \
-vor dem Abschluss ueber `run_command` (Build/Test/Syntax-Check) auf Fehlerfreiheit. \
-Halte `README.md` und `AGENTS.md` bei neuen Funktionen, Komponenten oder \
-Architekturentscheidungen selbststaendig aktuell und speichere projektuebergreifende \
-Erkenntnisse per `learn_skill`."""
+- Pflicht-Selbsttest (Happy-Path + Negativ-Tests + Vorschau-Beweis): Du bist mit \
+einer Coding-Aufgabe erst fertig, wenn du bewiesen hast, dass alles funktioniert. \
+Schreibe und fuehre sowohl Happy-Path-Tests (Normalfall, CRUD, API) als auch \
+Negativ-Tests (Fehleingaben, leere Pflichtfelder, ungueltige Typen, Grenzwerte, \
+saubere Fehlerbehandlung) in `tests/` aus. Rufe vor dem Abschluss zwingend \
+`project_workspace` mit `action: "test_project"` sowie `action: "run_command"` auf \
+und behebe jeden gemeldeten Fehler selbststaendig, bis `ok: true` und \
+`preview_ready: true` vorliegen.
+- Online-Schalten & Domain Hand-in-Hand (`publish_production`): Wenn der Benutzer \
+ein Projekt online schalten moechte, pruefe zuerst alle Tests (`test_project`), \
+veroeffentliche das Projekt auf die gewaehlte Node (`publish_production`) und \
+begleite auch technisch unerfahrene Benutzer Schritt fuer Schritt: Ist eine \
+Cloudflare-Domain gewaehlt oder das Cloudflare-Tool verfuegbar, richte DNS/Subdomain \
+direkt ein; bei externer Domain erklaere ruhig und verstaendlich, welche IP-Adresse, \
+welcher Port und welcher DNS-Eintrag (A-Record / CNAME) beim Domain-Anbieter \
+eingetragen werden muessen.
+- Dokumentation & Lernen: Halte `README.md` und `AGENTS.md` bei neuen Funktionen, \
+Komponenten oder Architekturentscheidungen selbststaendig aktuell und speichere \
+projektuebergreifende Erkenntnisse per `learn_skill`."""
 
 
 # Der Betriebsanlass: "kannst du die Minecraft-Version aendern?" — die KI sah

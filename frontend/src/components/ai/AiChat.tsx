@@ -1380,6 +1380,34 @@ export function AiChat({
     }
   }, [providerId, queuedMessages, sendContent, streaming])
 
+  // Auftrag aus dem Projektbereich (Vorschau-Fehler beheben, begleitetes
+  // Online-Schalten). Wird nur im passenden Projekt-Chat und erst nach dem
+  // Laden abgeschickt, damit er nicht in einem fremden Verlauf landet.
+  const autoAuftragGesendetRef = useRef(false)
+  useEffect(() => {
+    if (autoAuftragGesendetRef.current || loading || streaming || !providerId) return
+    if (scope.kind !== 'primary' || !scope.projectId) return
+    let auftrag: { projectId?: string; prompt?: string } | null = null
+    try {
+      const raw = sessionStorage.getItem('singra-auto-send-prompt')
+      if (raw) auftrag = JSON.parse(raw) as { projectId?: string; prompt?: string }
+    } catch (err) {
+      still(err, 'ai.autoSendPrompt.read')
+      return
+    }
+    if (!auftrag?.prompt || auftrag.projectId !== scope.projectId) return
+    try {
+      sessionStorage.removeItem('singra-auto-send-prompt')
+    } catch (err) {
+      still(err, 'ai.autoSendPrompt.remove')
+    }
+    autoAuftragGesendetRef.current = true
+    window.dispatchEvent(new CustomEvent('msm:ai-message-sent'))
+    userScrolledUpRef.current = false
+    setAmEnde(true)
+    void sendContent(auftrag.prompt.slice(0, 16_000))
+  }, [loading, providerId, scope, sendContent, streaming])
+
   const enqueueMessage = useCallback((content: string) => {
     const text = content.trim()
     if (!text) return

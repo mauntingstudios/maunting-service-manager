@@ -162,12 +162,15 @@ Du arbeitest als verantwortlicher Software-Architekt und Entwickler in einer vol
 - Verwende immer eine saubere, modulare Verzeichnishierarchie (z. B. `src/components/`, `src/pages/`, `src/lib/`, `src/styles/`, `backend/`, `migrations/`, `docs/`, `tests/`).
 - Tech-Stack: Unterstütze moderne Stacks (React, TypeScript, Tailwind CSS, Vite, Python/Node-Backends sowie PostgreSQL als Datenbank). HTML dient der Strukturierung, nicht als Ersatz für eine saubere Komponentenarchitektur.
 
-## 4. Umgebung (Dev vs. Produktion) & Datenbank-Branching
+## 4. Umgebung (Dev vs. Produktion), Vorschau-Einrichtung & Datenbank-Branching
 - Alle Änderungen finden zunächst sicher in der **Dev-Umgebung** (inkl. isoliertem PostgreSQL-Dev-Branch) statt.
-- Datenbank-Schemata werden über saubere Migrationsdateien (`migrations/`) gepflegt, sodass sie beim Veröffentlichen auf **Produktion** verlustfrei auf den Produktions-Branch migriert werden können.
+- **Vorschau-Pflicht (`configure_preview`):** Jedes Web-/UI-Projekt MUSS ohne manuelle Nutzereingriffe direkt im Reiter **Vorschau** sichtbar und interaktiv bedienbar sein. Lege immer einen funktionierenden Vorschau-Einstiegspunkt an (z. B. `index.html` mit eingebundenen Komponenten aus `src/components/` und `src/lib/` sowie lokalem Demo-/Fallback-State, falls das Backend noch getrennt läuft) und registriere ihn per `project_workspace` (`action="configure_preview"`, `entry_file="index.html"`, `framework="react"` oder `"html"`).
+- **Wichtig für die Live-Vorschau:** Trenne Frontend-Dateien (`index.html`, `src/components/`, `src/lib/`) sauber von Server-/Backend-Dateien (`backend/`, `migrations/`, `tests/`), damit keine Node-/Python-Serverbefehle (`require('express')`, `process.env`) ungeschützt im Browser-Kontext ausgeführt werden.
 
-## 5. Pflicht-Verifikation & Dokumentation
-- **Erst testen, dann melden:** Nach Code-Änderungen prüfst du das Projekt selbstständig in der Sandbox (`run_command` für Build/Tests/Syntaxprüfung), bevor du dem Nutzer Vollzug meldest.
+## 5. Pflicht-Verifikation (Happy-Path + Negativ-Tests + Vorschau-Beweis)
+- **Erst testen & beweisen, dann melden:** Du bist mit einer Aufgabe erst fertig, wenn du bewiesen hast, dass die Anwendung **sowohl in den Tests als auch in der Live-Vorschau fehlerfrei funktioniert**.
+- **Happy-Path UND Negativ-Tests:** Schreibe und führe bei jedem Feature nicht nur Gutfall-Tests (Happy Path), sondern zwingend auch **Negativ-Tests** (ungültige Eingaben, leere Pflichtfelder, Grenzwerte, doppelte Einträge, Fehlerbehandlung) aus. Nutze dafür `project_workspace` mit `action="test_project"` sowie `action="run_command"`.
+- **Online-Schalten & Domain-Begleitung (Hand-in-Hand):** Wenn das Projekt auf Produktion veröffentlicht wird (`action="publish_production"`), nimm den Nutzer verständlich und ohne Fachchinesisch an die Hand: Prüfe zuerst Tests & Erreichbarkeit, richte bei konfiguriertem Cloudflare die gewünschte Domain/Subdomain ein oder erkläre Schritt für Schritt (mit exakter IP-Adresse, Port und A-Record), wie man die eigene Domain verbindet.
 - **Wahrhaftige Dokumentation:** Halte `AGENTS.md` (Architekturregeln & Komponentenverzeichnis) sowie `README.md` (Setup, Stand & Struktur) bei strukturellen Änderungen automatisch aktuell.
 - **Autonomes Lernen:** Wenn du im Projekt ein wiederverwendbares Architekturmuster löst, halte es als Skill fest."""
 
@@ -608,6 +611,43 @@ _DANGEROUS_PATTERNS = [
 ]
 
 
+def _split_unquoted_command_segments(cmd: str) -> list[str]:
+    """Teilt eine Befehlszeile nur an unquotierten Verkettungsoperatoren (;, &, |)."""
+    segments: list[str] = []
+    current: list[str] = []
+    in_single = False
+    in_double = False
+    escape = False
+    for ch in cmd:
+        if escape:
+            current.append(ch)
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            current.append(ch)
+            continue
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            current.append(ch)
+            continue
+        if ch == '"' and not in_single:
+            in_double = not in_double
+            current.append(ch)
+            continue
+        if not in_single and not in_double and ch in (";", "&", "|"):
+            seg = "".join(current).strip()
+            if seg:
+                segments.append(seg)
+            current = []
+        else:
+            current.append(ch)
+    tail = "".join(current).strip()
+    if tail:
+        segments.append(tail)
+    return segments
+
+
 def _validate_project_command(cmd: str, ws: Path) -> None:
     trimmed = (cmd or "").strip()
     if not trimmed:
@@ -616,7 +656,7 @@ def _validate_project_command(cmd: str, ws: Path) -> None:
         if pattern.search(trimmed):
             raise AiProjectError("Befehl enthält nicht zugelassene System-Operationen oder Pfade")
 
-    segments = re.split(r"[;&|]+", trimmed)
+    segments = _split_unquoted_command_segments(trimmed)
     for seg in segments:
         seg_clean = seg.strip()
         if not seg_clean:
@@ -755,6 +795,177 @@ def run_project_command(
         }
     except OSError as exc:
         raise AiProjectError(f"Ausführung fehlgeschlagen: {exc}") from exc
+
+
+def verify_project_sandbox(
+    db: Session,
+    user: User,
+    project_id: str,
+) -> dict[str, object]:
+    """Fuehrt einen mehrstufigen automatischen Selbsttest (inkl. Vorschau-, Happy-Path- und Negativ-Prüfung) aus."""
+    import ast
+    import json as _json
+
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    _materialize_db_files_to_workspace(db, project, ws)
+    meta = _ensure_env_metadata(project, ws)
+    files = list_project_files(db, user, project.id)
+
+    checks: list[dict[str, object]] = []
+    errors: list[str] = []
+    warnings: list[str] = []
+    existing_paths = {f.path for f in files}
+    lower_to_actual = {f.path.lower(): f.path for f in files}
+
+    has_html_entry = False
+    has_jsx_entry = False
+    test_files_found: list[str] = []
+    has_negative_tests = False
+
+    for f in files:
+        path = f.path
+        lower = path.lower()
+        content = f.content or ""
+
+        if "test" in lower or "spec" in lower:
+            test_files_found.append(path)
+            if re.search(
+                r"(invalid|error|fail|empty|missing|unauthorized|forbidden|negativ|ungueltig|ungültig|fehler|throws|raises|reject)",
+                content,
+                re.I,
+            ):
+                has_negative_tests = True
+
+        if lower.endswith(".json"):
+            try:
+                _json.loads(content)
+                checks.append({"file": path, "kind": "json", "ok": True})
+            except Exception as exc:
+                msg = f"{path}: Ungültiges JSON ({exc})"
+                errors.append(msg)
+                checks.append({"file": path, "kind": "json", "ok": False, "error": str(exc)})
+
+        elif lower.endswith(".py"):
+            try:
+                ast.parse(content, filename=path)
+                checks.append({"file": path, "kind": "python_ast", "ok": True})
+            except SyntaxError as exc:
+                msg = f"{path}:{exc.lineno}: Python-Syntaxfehler ({exc.msg})"
+                errors.append(msg)
+                checks.append({"file": path, "kind": "python_ast", "ok": False, "error": msg})
+
+        elif lower.endswith((".js", ".mjs", ".cjs")):
+            full_path = ws / path
+            is_es_module = bool(re.search(r"^\s*(import|export)\s+", content, re.M))
+            if full_path.is_file() and not is_es_module:
+                try:
+                    proc = subprocess.run(
+                        ["node", "--check", str(full_path)],
+                        cwd=str(ws),
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=8,
+                    )
+                    if proc.returncode == 0:
+                        checks.append({"file": path, "kind": "node_syntax", "ok": True})
+                    else:
+                        err_detail = (proc.stderr or proc.stdout or "JS-Syntaxfehler").strip()
+                        errors.append(f"{path}: {err_detail[:240]}")
+                        checks.append({"file": path, "kind": "node_syntax", "ok": False, "error": err_detail[:240]})
+                except Exception:
+                    checks.append({"file": path, "kind": "node_syntax", "ok": True, "note": "node --check übersprungen"})
+            else:
+                checks.append({"file": path, "kind": "es_module_js", "ok": True})
+
+        elif lower.endswith((".jsx", ".tsx", ".ts")):
+            has_jsx_entry = True
+            open_braces = content.count("{") - content.count("}")
+            if abs(open_braces) > 2:
+                msg = f"{path}: Unausgeglichene geschweifte Klammern (Differenz: {open_braces})."
+                errors.append(msg)
+                checks.append({"file": path, "kind": "jsx_structure", "ok": False, "error": msg})
+            else:
+                checks.append({"file": path, "kind": "jsx_structure", "ok": True})
+
+        elif lower.endswith((".html", ".htm")):
+            has_html_entry = True
+            if "<html" not in content.lower() and "<!doctype" not in content.lower() and "<body" not in content.lower():
+                warnings.append(f"{path}: Enthält kein vollständiges HTML-Grundgerüst (<html>/<body>).")
+            for ref_match in re.finditer(r'(?:src|href)=["\'](?![a-z]+://|/|#|data:|mailto:)([^"\'?#]+)', content, re.I):
+                rel_ref = ref_match.group(1).strip().lstrip("./")
+                if rel_ref and rel_ref not in existing_paths and not rel_ref.lower().endswith((".tsx", ".jsx", ".ts")):
+                    warnings.append(f"{path}: Referenziert '{rel_ref}', diese Datei existiert im Projekt noch nicht.")
+            checks.append({"file": path, "kind": "html_structure", "ok": True})
+
+        elif lower.endswith(".sql"):
+            if not re.search(r"\b(CREATE|ALTER|INSERT|SELECT|UPDATE|DELETE|DROP)\b", content, re.I):
+                warnings.append(f"{path}: Keine erkennbaren SQL-Anweisungen gefunden.")
+            checks.append({"file": path, "kind": "sql_check", "ok": True})
+
+    # Vorschau-Einstiegspunkt prüfen und ggf. automatisch konfigurieren
+    configured_entry = str(meta.get("preview_entry") or "").strip()
+    preview_ready = False
+    preview_entry_resolved: str | None = None
+
+    if configured_entry and configured_entry.lower() in lower_to_actual:
+        preview_entry_resolved = lower_to_actual[configured_entry.lower()]
+        preview_ready = True
+    else:
+        for candidate in ("index.html", "public/index.html", "frontend/index.html", "src/index.html", "src/app.tsx", "src/app.jsx", "app.tsx", "app.jsx"):
+            if candidate in lower_to_actual:
+                preview_entry_resolved = lower_to_actual[candidate]
+                preview_ready = True
+                meta["preview_entry"] = preview_entry_resolved
+                meta["preview_configured"] = True
+                _save_env_metadata(ws, meta)
+                break
+        if not preview_ready and (has_html_entry or has_jsx_entry):
+            first_ui = next(
+                (f.path for f in files if f.path.lower().endswith((".html", ".htm", ".tsx", ".jsx"))),
+                None,
+            )
+            if first_ui:
+                preview_entry_resolved = first_ui
+                preview_ready = True
+                meta["preview_entry"] = first_ui
+                meta["preview_configured"] = True
+                _save_env_metadata(ws, meta)
+
+    if project.project_kind == "coding" and not preview_ready:
+        errors.append(
+            "Vorschau ist noch nicht lauffähig: Es fehlt eine index.html oder React-Einstiegsdatei (App.jsx / App.tsx). "
+            "Bitte lege eine index.html an und konfiguriere die Vorschau mit action='configure_preview'."
+        )
+
+    if project.project_kind == "coding":
+        if not test_files_found:
+            warnings.append(
+                "Es wurden noch keine dedizierten Testdateien (tests/) gefunden. "
+                "Bitte lege Tests für Happy-Path (Gutfall) und Negative-Path (Fehleingaben/Grenzwerte) an."
+            )
+        elif not has_negative_tests:
+            warnings.append(
+                "In den Testdateien fehlen erkennbare Negativ-Tests (ungültige Eingaben, leere Felder, Fehlerfälle). "
+                "Bitte ergänze Negativ-Testfälle."
+            )
+
+    return {
+        "ok": len(errors) == 0 and (preview_ready or project.project_kind != "coding"),
+        "project_id": project.id,
+        "preview_ready": preview_ready,
+        "preview_entry": preview_entry_resolved,
+        "happy_path_and_negative_tests_checked": bool(test_files_found and has_negative_tests),
+        "test_files": test_files_found,
+        "checked_files": len(checks),
+        "errors_count": len(errors),
+        "warnings_count": len(warnings),
+        "errors": errors,
+        "warnings": warnings,
+        "checks": checks,
+    }
 
 
 def git_status(db: Session, user: User, project_id: str) -> dict[str, object]:
@@ -1430,7 +1641,64 @@ def get_project_environment(
             "published_at": meta.get("prod_published_at"),
             "release_notes": meta.get("prod_release_notes"),
         },
+        "preview": {
+            "configured": bool(meta.get("preview_configured")),
+            "entry_file": meta.get("preview_entry"),
+            "framework": str(meta.get("preview_framework") or "auto"),
+            "port": int(meta.get("preview_port") or 3000),
+            "healthcheck_path": str(meta.get("preview_healthcheck") or "/"),
+        },
         "available_nodes": available_nodes,
+    }
+
+
+def configure_project_preview(
+    db: Session,
+    user: User,
+    project_id: str,
+    *,
+    entry_file: str | None = None,
+    framework: str | None = None,
+    port: int | None = None,
+    healthcheck_path: str | None = None,
+) -> dict[str, object]:
+    """Konfiguriert die Live-Vorschau des Projekts (Einstiegsdatei, Framework, Port, Healthcheck)."""
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    meta = _ensure_env_metadata(project, ws)
+    files = list_project_files(db, user, project.id)
+    lower_to_actual = {f.path.lower(): f.path for f in files}
+
+    resolved_entry = (entry_file or "").strip()
+    if resolved_entry and resolved_entry.lower() in lower_to_actual:
+        resolved_entry = lower_to_actual[resolved_entry.lower()]
+    elif not resolved_entry:
+        for candidate in ("index.html", "public/index.html", "frontend/index.html", "src/index.html", "src/app.tsx", "src/app.jsx", "app.tsx", "app.jsx"):
+            if candidate in lower_to_actual:
+                resolved_entry = lower_to_actual[candidate]
+                break
+
+    meta["preview_configured"] = True
+    if resolved_entry:
+        meta["preview_entry"] = resolved_entry
+    if framework:
+        meta["preview_framework"] = str(framework).strip().lower()
+    if port and int(port) > 0:
+        meta["preview_port"] = int(port)
+    if healthcheck_path:
+        meta["preview_healthcheck"] = str(healthcheck_path).strip()
+    _save_env_metadata(ws, meta)
+
+    return {
+        "ok": True,
+        "project_id": project.id,
+        "preview": {
+            "configured": True,
+            "entry_file": meta.get("preview_entry"),
+            "framework": str(meta.get("preview_framework") or "auto"),
+            "port": int(meta.get("preview_port") or 3000),
+            "healthcheck_path": str(meta.get("preview_healthcheck") or "/"),
+        },
     }
 
 

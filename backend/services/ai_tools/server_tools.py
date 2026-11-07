@@ -213,7 +213,7 @@ def _global_tool_definitions() -> list[dict]:
     optional.append(_function("advise_node_placement", "Empfiehlt einen Host fuer einen neuen Server. Nutze vor propose_server_create um RAM/Disk bewusst zu waehlen. Unterscheidet gebucht vs wirklich belegt.", {"ram_need_mb": {"type": "integer", "minimum": 512}, "disk_need_gb": {"type": "integer", "minimum": 1}}, ["ram_need_mb"]))
     optional.append(_function(
         "project_workspace",
-        "Arbeitet in KI-Projekten (Wissen, Dateien, Coding-Sandbox, GitHub/GitLab Git): Projekte/Dateien lesen & schreiben, Befehle ausfuehren, Git-Status/Sync/Commit.",
+        "Arbeitet in KI-Projekten (Wissen, Dateien, Coding-Sandbox, Vorschau, Tests, Produktion & Git): Projekte/Dateien lesen & schreiben, Vorschau einrichten (configure_preview), Projekt komplett durchtesten inkl. Happy-/Negative-Path (test_project), Befehle ausfuehren (run_command), auf Produktion schalten (publish_production), wiederverwendbare Komponenten suchen (search_components), Git-Status/Sync/Commit.",
         {
             "action": {
                 "type": "string",
@@ -224,7 +224,12 @@ def _global_tool_definitions() -> list[dict]:
                     "read_file",
                     "write_file",
                     "delete_file",
+                    "configure_preview",
+                    "test_project",
                     "run_command",
+                    "get_environment",
+                    "publish_production",
+                    "search_components",
                     "git_status",
                     "git_sync",
                     "git_commit",
@@ -232,12 +237,19 @@ def _global_tool_definitions() -> list[dict]:
             },
             "project_id": {
                 "type": "string",
-                "description": "Projekt-ID (UUID oder Zahl)",
+                "description": "Projekt-ID (UUID); kann weggelassen werden, wenn der Chat bereits einem Projekt zugeordnet ist.",
             },
             "name": {"type": "string", "maxLength": 160},
+            "description": {"type": "string", "maxLength": 500},
+            "project_kind": {"type": "string", "enum": ["coding", "docs", "general"]},
             "path": {"type": "string", "maxLength": 240},
+            "entry_file": {"type": "string", "maxLength": 240, "description": "Einstiegsdatei fuer die Live-Vorschau (z. B. index.html oder src/App.tsx)."},
+            "framework": {"type": "string", "maxLength": 64, "description": "Framework der Vorschau (html, react, fullstack)."},
             "content": {"type": "string", "maxLength": 200000},
             "command": {"type": "string", "maxLength": 2000},
+            "query": {"type": "string", "maxLength": 160},
+            "node_id": {"type": "string", "maxLength": 64},
+            "release_notes": {"type": "string", "maxLength": 500},
             "repo_url": {"type": "string", "maxLength": 1024},
             "branch": {"type": "string", "maxLength": 120},
             "message": {"type": "string", "maxLength": 500},
@@ -1930,6 +1942,18 @@ def _execute_global_read_tool(
                     raise AiActionValidationError("Programmierarbeiten und Befehlsausführung sind für diesen Benutzer nicht freigegeben (ai.coding.use)")
                 return ai_project_service.run_project_command(
                     db, user, pid, str(arguments.get("command") or "")
+                )
+            if action in ("test_project", "verify_project"):
+                return ai_project_service.verify_project_sandbox(db, user, pid)
+            if action == "configure_preview":
+                return ai_project_service.configure_project_preview(
+                    db,
+                    user,
+                    pid,
+                    entry_file=str(arguments.get("entry_file") or arguments.get("path") or "").strip() or None,
+                    framework=str(arguments.get("framework") or "").strip() or None,
+                    port=int(arguments["port"]) if arguments.get("port") else None,
+                    healthcheck_path=str(arguments.get("healthcheck_path") or "").strip() or None,
                 )
             if action == "get_environment":
                 return ai_project_service.get_project_environment(db, user, pid)

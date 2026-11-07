@@ -1568,6 +1568,13 @@ export interface AiProjectEnvironmentState {
     status: string
     release_notes?: string
   }
+  preview?: {
+    configured: boolean
+    entry_file: string | null
+    framework: string
+    port: number
+    healthcheck_path: string
+  }
 }
 
 export interface AiProjectPublishResult {

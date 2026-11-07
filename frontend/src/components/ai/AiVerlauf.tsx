@@ -14,6 +14,7 @@ import { AiActionProposalCard } from './AiActionProposalCard'
 import { AiMarkdown } from './AiMarkdown'
 import { AiQuestionCard } from './AiQuestionCard'
 import { AiReasoningBlock } from './AiReasoningBlock'
+import { still } from '@/lib/still'
 import type { Entry } from './useAiLauf'
 
 /**
@@ -460,15 +461,28 @@ export function AiFileDiffCard({
               variant="ghost"
               size="sm"
               onClick={() => {
+                const targetDetail = {
+                  projectId: diffInfo.project_id,
+                  tab: 'files' as const,
+                  filePath: diffInfo.path,
+                }
+                try {
+                  sessionStorage.setItem(
+                    'singra-open-project-target',
+                    JSON.stringify(targetDetail),
+                  )
+                } catch (err) {
+                  still(err, 'ai.diffCard.openTarget')
+                }
                 window.dispatchEvent(
                   new CustomEvent('singra-open-project', {
-                    detail: { projectId: diffInfo.project_id },
+                    detail: targetDetail,
                   }),
                 )
               }}
               className="h-7 px-2 text-xs"
             >
-              Öffnen
+              Datei öffnen
             </Button>
           )}
         </div>

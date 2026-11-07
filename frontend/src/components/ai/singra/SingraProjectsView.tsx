@@ -53,6 +53,8 @@ import {
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
 import { still } from '@/lib/still'
+import { buildPreviewDocument, isPreviewErrorMessage } from './previewBundle'
+import { PreviewDiagnostics } from './PreviewDiagnostics'
 import { teamsApi, type Team } from '@/api/teams'
 import {
   ActionMenu,
@@ -205,6 +207,28 @@ export function SingraProjectsView({
   const [inspectElement, setInspectElement] = useState<string | null>(null)
   const [inspectTargetChatId, setInspectTargetChatId] = useState<string>('__latest__')
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null)
+  const [previewError, setPreviewError] = useState<{ message: string; detail?: string } | null>(null)
+  const [previewErrorDismissed, setPreviewErrorDismissed] = useState(false)
+  const [fixTargetChatId, setFixTargetChatId] = useState<string>('__latest__')
+
+  // Welches Projekt in `files`/`editorTabs` tatsächlich geladen ist, und welche
+  // Datei aus einer Chat-Diff-Karte geöffnet werden soll.
+  const [detailsProjectId, setDetailsProjectId] = useState<string | null>(null)
+  const [pendingOpenTarget, setPendingOpenTarget] = useState<{
+    projectId: string
+    tab?: ProjectTab
+    filePath?: string
+  } | null>(() => {
+    try {
+      const raw = sessionStorage.getItem('singra-open-project-target')
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { projectId?: string; tab?: ProjectTab; filePath?: string }
+      return parsed.projectId ? { projectId: parsed.projectId, tab: parsed.tab, filePath: parsed.filePath } : null
+    } catch (err) {
+      still(err, 'singra:openTarget:read')
+      return null
+    }
+  })
 
   // Dev / Production environment & Publishing state
   const [envState, setEnvState] = useState<AiProjectEnvironmentState | null>(null)
@@ -218,6 +242,8 @@ export function SingraProjectsView({
   const [selectedNodeId, setSelectedNodeId] = useState<string>('__auto__')
   const [releaseNotes, setReleaseNotes] = useState('')
   const [publishing, setPublishing] = useState(false)
+  const [publishDomainMode, setPublishDomainMode] = useState<'ip' | 'cloudflare' | 'external'>('ip')
+  const [publishDomain, setPublishDomain] = useState('')
 
   // Team Sharing & Invite Modal state
   const [teamShareModalOpen, setTeamShareModalOpen] = useState(false)
@@ -421,6 +447,7 @@ export function SingraProjectsView({
         ])
         setProjectChats(chats)
         setInspectTargetChatId(chats.length > 0 ? chats[0].id : '__new__')
+        setFixTargetChatId(chats.length > 0 ? chats[0].id : '__new__')
         setFiles(fileList)
         setAgentsRules(rules)
         setEnvState(envData)
@@ -461,6 +488,7 @@ export function SingraProjectsView({
           setEditorTabs([])
           setActiveFilePath(null)
         }
+        setDetailsProjectId(projectId)
       } catch (err: unknown) {
         toast.error(
           err instanceof SanitizedApiError
@@ -478,6 +506,54 @@ export function SingraProjectsView({
     setExecHistory([])
     setGitStatus(null)
   }, [selectedId, loadProjectDetails])
+
+  // „Datei öffnen“ aus einer Diff-Karte im Chat: Projekt, Reiter und Datei.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string; tab?: ProjectTab; filePath?: string }>).detail
+      if (!detail?.projectId) return
+      setPendingOpenTarget({ projectId: detail.projectId, tab: detail.tab, filePath: detail.filePath })
+      setSelectedId(detail.projectId)
+      setProjectOpen(true)
+    }
+    window.addEventListener('singra-open-project', handler)
+    return () => window.removeEventListener('singra-open-project', handler)
+  }, [])
+
+  useEffect(() => {
+    if (!pendingOpenTarget) return
+    if (selectedId !== pendingOpenTarget.projectId || detailsProjectId !== pendingOpenTarget.projectId) return
+    try {
+      sessionStorage.removeItem('singra-open-project-target')
+    } catch (err) {
+      still(err, 'singra:openTarget:remove')
+    }
+    const { tab, filePath } = pendingOpenTarget
+    setPendingOpenTarget(null)
+    setProjectOpen(true)
+    if (filePath) {
+      const exists = files.some((f) => f.path === filePath)
+      if (!exists) {
+        setActiveTab('files')
+        toast.info(`„${filePath}“ ist im aktuellen Projektstand nicht mehr vorhanden.`)
+        return
+      }
+      setExpandedDirs((prev) => {
+        const next = new Set(prev)
+        const parts = filePath.split('/').slice(0, -1)
+        let current = ''
+        for (const part of parts) {
+          current = current ? `${current}/${part}` : part
+          next.add(current)
+        }
+        return next
+      })
+      openFileInEditor(filePath, files)
+      setActiveTab('files')
+      return
+    }
+    if (tab) setActiveTab(tab)
+  }, [pendingOpenTarget, selectedId, detailsProjectId, files, openFileInEditor])
 
   const loadGitStatus = useCallback(async () => {
     if (!selectedId) return
@@ -816,125 +892,13 @@ export function SingraProjectsView({
     })
   }, [])
 
-  // Automatischer srcDoc-Bundle für HTML/CSS/JS sowie React (.jsx/.tsx) + Tailwind CSS
+  // Vorschau-Dokument (siehe previewBundle.ts) plus Inspektor-Br?cke.
   const previewSrcDoc = useMemo(() => {
     const activeFiles: Array<{ path: string; content: string }> =
       previewEnv === 'production' ? productionFiles : files
-    if (!activeFiles || activeFiles.length === 0) return null
-
-    const htmlFile =
-      activeFiles.find((f) => f.path.toLowerCase() === 'index.html') ||
-      activeFiles.find((f) => f.path.toLowerCase().endsWith('.html'))
-
-    const jsxFiles = activeFiles.filter((f) => /\.(jsx|tsx)$/i.test(f.path))
-    if (!htmlFile && jsxFiles.length === 0) return null
-
-    let doc =
-      htmlFile?.content ||
-      '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div></body></html>'
-
-    const usesTailwind =
-      activeFiles.some((f) => /class(Name)?=["'][^"']*(flex|grid|bg-|text-|rounded-|px-|py-|border-)/i.test(f.content)) ||
-      activeFiles.some((f) => f.path.toLowerCase().includes('tailwind'))
-
-    if (usesTailwind && !doc.includes('cdn.tailwindcss.com')) {
-      const twScript = '<script src="https://cdn.tailwindcss.com"></script>'
-      if (doc.includes('</head>')) {
-        doc = doc.replace('</head>', `${twScript}</head>`)
-      } else {
-        doc = `${twScript}${doc}`
-      }
-    }
-
-    activeFiles
-      .filter((f) => f.path.toLowerCase().endsWith('.css'))
-      .forEach((css) => {
-        const baseName = css.path.split('/').pop() || css.path
-        const cleanCss = css.content.replace(/@tailwind\s+(base|components|utilities);?/g, '')
-        const linkRegex = new RegExp(
-          `<link[^>]+href=["'][^"']*${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`,
-          'gi',
-        )
-        if (linkRegex.test(doc)) {
-          doc = doc.replace(linkRegex, `<style>/* ${css.path} */\n${cleanCss}</style>`)
-        } else if (doc.includes('</head>')) {
-          doc = doc.replace('</head>', `<style>/* ${css.path} */\n${cleanCss}</style></head>`)
-        } else {
-          doc += `<style>/* ${css.path} */\n${cleanCss}</style>`
-        }
-      })
-
-    activeFiles
-      .filter((f) => f.path.toLowerCase().endsWith('.js') && !f.path.toLowerCase().endsWith('.json') && !f.path.toLowerCase().endsWith('config.js'))
-      .forEach((js) => {
-        const baseName = js.path.split('/').pop() || js.path
-        const scriptRegex = new RegExp(
-          `<script[^>]+src=["'][^"']*${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>\\s*</script>`,
-          'gi',
-        )
-        if (scriptRegex.test(doc)) {
-          doc = doc.replace(scriptRegex, `<script>/* ${js.path} */\n${js.content}</script>`)
-        } else if (doc.includes('</body>')) {
-          doc = doc.replace('</body>', `<script>/* ${js.path} */\n${js.content}</script></body>`)
-        } else {
-          doc += `<script>/* ${js.path} */\n${js.content}</script>`
-        }
-      })
-
-    if (jsxFiles.length > 0) {
-      // Strip external module script tags pointing to main.tsx / index.tsx
-      doc = doc.replace(/<script[^>]+src=["'][^"']*\.(tsx|jsx|ts)["'][^>]*>\s*<\/script>/gi, '')
-      if (!doc.includes('id="root"') && !doc.includes("id='root'")) {
-        doc = doc.replace('<body>', '<body><div id="root"></div>')
-      }
-      const reactRuntime = `
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-`
-      if (doc.includes('</head>')) {
-        doc = doc.replace('</head>', `${reactRuntime}</head>`)
-      } else {
-        doc = `${reactRuntime}${doc}`
-      }
-
-      // Sort JSX/TSX files so leaf components come before App.tsx / main.tsx
-      const orderedJsx = [...jsxFiles].sort((a, b) => {
-        const aScore = /main\.|index\./i.test(a.path) ? 2 : /app\./i.test(a.path) ? 1 : 0
-        const bScore = /main\.|index\./i.test(b.path) ? 2 : /app\./i.test(b.path) ? 1 : 0
-        return aScore - bScore
-      })
-
-      const combinedJsx = orderedJsx
-        .map((f) => {
-          const transformed = f.content
-            .replace(/^\s*import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
-            .replace(/^\s*import\s+['"][^'"]+['"];?\s*$/gm, '')
-            .replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, 'function $1')
-            .replace(/export\s+default\s+/g, 'const __DefaultExport__ = ')
-            .replace(/export\s+(const|function|class|type|interface)\s+/g, '$1 ')
-          return `// --- ${f.path} ---\n${transformed}`
-        })
-        .join('\n\n')
-
-      const mountSnippet = `
-<script type="text/babel" data-presets="react,typescript">
-const { useState, useEffect, useMemo, useCallback, useRef } = React;
-${combinedJsx}
-const __rootEl = document.getElementById('root') || document.getElementById('app');
-if (__rootEl && typeof App !== 'undefined') {
-  ReactDOM.createRoot(__rootEl).render(React.createElement(App));
-} else if (__rootEl && typeof __DefaultExport__ !== 'undefined') {
-  ReactDOM.createRoot(__rootEl).render(React.createElement(__DefaultExport__));
-}
-</script>
-`
-      if (doc.includes('</body>')) {
-        doc = doc.replace('</body>', `${mountSnippet}</body>`)
-      } else {
-        doc += mountSnippet
-      }
-    }
+    const base = buildPreviewDocument(activeFiles, envState?.preview?.entry_file ?? null)
+    if (!base) return null
+    let doc = base
 
     const bridgeScript = `
 <script>
@@ -1015,10 +979,23 @@ if (__rootEl && typeof App !== 'undefined') {
     }
 
     return doc
-  }, [files, productionFiles, previewEnv])
+  }, [files, productionFiles, previewEnv, envState?.preview?.entry_file])
+
+  // Neuer Stand, neue Prüfung: alte Fehlermeldungen gelten nicht mehr.
+  useEffect(() => {
+    setPreviewError(null)
+    setPreviewErrorDismissed(false)
+  }, [previewSrcDoc])
 
   useEffect(() => {
     const handleMsg = (ev: MessageEvent) => {
+      if (isPreviewErrorMessage(ev.data)) {
+        if (ev.source !== previewIframeRef.current?.contentWindow) return
+        const { message, detail } = ev.data
+        // Der erste Fehler ist meist die Ursache, Folgefehler überschreiben ihn nicht.
+        setPreviewError((prev) => prev ?? { message, detail })
+        return
+      }
       if (ev.data && ev.data.type === 'SINGRA_ELEMENT_SELECTED') {
         const selector = String(ev.data.selector || 'Element')
         setInspectElement(selector)
@@ -1187,6 +1164,80 @@ if (__rootEl && typeof App !== 'undefined') {
       return
     }
     await handleStartNewProjectChat(`Anpassung: ${selector.slice(0, 42)}`)
+  }
+
+  /** Legt einen Auftrag ab, den der Projekt-Chat nach dem Öffnen selbst abschickt. */
+  const sendTaskToProjectChat = async (prompt: string, chatChoice: string, newChatTitle: string) => {
+    if (!selectedProject) return
+    try {
+      sessionStorage.setItem(
+        'singra-auto-send-prompt',
+        JSON.stringify({ projectId: selectedProject.id, prompt }),
+      )
+    } catch (err) {
+      still(err, 'singra:autoSendPrompt:write')
+      toast.error('Der Auftrag konnte nicht an den Chat übergeben werden.')
+      return
+    }
+    const targetId = chatChoice === '__latest__' ? projectChats[0]?.id ?? '__new__' : chatChoice
+    if (targetId && targetId !== '__new__') {
+      onOpenProjectChat(selectedProject.id, targetId)
+      return
+    }
+    await handleStartNewProjectChat(newChatTitle)
+  }
+
+  const handleFixPreviewWithSingra = async () => {
+    const entry = envState?.preview?.entry_file || 'nicht konfiguriert'
+    const prompt = previewError
+      ? [
+          'Die Live-Vorschau dieses Projekts zeigt einen Fehler.',
+          '',
+          `Fehler: ${previewError.message}`,
+          previewError.detail ? `Details:\n\`\`\`\n${previewError.detail.slice(0, 2500)}\n\`\`\`` : '',
+          `Vorschau-Einstieg: ${entry}`,
+          '',
+          'Bitte finde die Ursache und behebe sie in den Projektdateien. Richte die Vorschau bei Bedarf mit `configure_preview` neu ein und prüfe danach mit `test_project`, dass sie fehlerfrei lädt. Melde dich erst, wenn das nachgewiesen ist.',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : [
+          'Für dieses Projekt gibt es noch keine funktionierende Live-Vorschau.',
+          '',
+          'Bitte lege eine Browser-Einstiegsdatei an (z. B. `index.html` mit `#root` und `src/main.tsx`), halte Backend- und Testdateien in `backend/` bzw. `tests/` getrennt und registriere die Vorschau mit `configure_preview`. Prüfe anschließend mit `test_project`, dass `preview_ready: true` gemeldet wird.',
+        ].join('\n')
+    await sendTaskToProjectChat(prompt, fixTargetChatId, 'Vorschau reparieren')
+  }
+
+  const handleGuidedPublish = async () => {
+    const nodeLabel =
+      selectedNodeId === '__auto__'
+        ? 'automatisch (lokale Haupt-Node)'
+        : availableNodes.find((n) => n.id === selectedNodeId)?.name ?? selectedNodeId
+    const domain = publishDomain.trim()
+    const reach =
+      publishDomainMode === 'cloudflare'
+        ? `über Cloudflare${domain ? ` unter ${domain}` : ''} (DNS bitte direkt einrichten, falls das Cloudflare-Werkzeug verfügbar ist)`
+        : publishDomainMode === 'external'
+          ? `über meine eigene Domain${domain ? ` ${domain}` : ''} (erkläre mir bitte Schritt für Schritt, was ich bei meinem Domain-Anbieter eintragen muss)`
+          : 'erst einmal direkt über IP-Adresse und Port'
+    const prompt = [
+      'Bitte schalte dieses Projekt gemeinsam mit mir online.',
+      '',
+      `- Ziel-Node: ${nodeLabel}`,
+      `- Erreichbarkeit: ${reach}`,
+      releaseNotes.trim() ? `- Release-Notiz: ${releaseNotes.trim()}` : '',
+      '',
+      'Ablauf:',
+      '1. Prüfe den aktuellen Stand mit `test_project` und behebe Fehler, bevor du veröffentlichst.',
+      '2. Veröffentliche mit `publish_production` auf die genannte Node.',
+      '3. Prüfe, ob das Projekt danach erreichbar ist, und nenne mir Adresse und Port.',
+      '4. Führe mich in einfachen Worten durch die Domain-Einrichtung (A-Record oder CNAME, welche IP, welcher Port) oder richte sie über Cloudflare selbst ein.',
+    ]
+      .filter(Boolean)
+      .join('\n')
+    setPublishModalOpen(false)
+    await sendTaskToProjectChat(prompt, '__latest__', 'Online schalten')
   }
 
   const handlePublishToProduction = async (e: React.FormEvent) => {
@@ -2093,15 +2144,25 @@ if (__rootEl && typeof App !== 'undefined') {
                   <div className="flex flex-1 items-center justify-center bg-black/35 p-4 overflow-auto min-h-[380px]">
                     <div
                       className={[
-                        'h-full min-h-[420px] transition-all rounded-xl overflow-hidden border border-outline-variant/30 shadow-2xl bg-surface flex flex-col',
+                        'relative h-full min-h-[420px] transition-all rounded-xl overflow-hidden border border-outline-variant/30 shadow-2xl bg-surface flex flex-col',
                         previewDevice === 'desktop'
                           ? 'w-full'
                           : previewDevice === 'tablet'
-                            ? 'w-[768px]'
-                            : 'w-[375px]',
+                            ? 'w-[768px] max-w-full'
+                            : 'w-[375px] max-w-full',
                       ].join(' ')}
                     >
-                      {!previewSrcDoc ? (
+                      {!previewSrcDoc && previewEnv === 'dev' && files.length > 0 ? (
+                        <PreviewDiagnostics
+                          kind="unconfigured"
+                          fileCount={files.length}
+                          entryFile={envState?.preview?.entry_file}
+                          chats={projectChats}
+                          chatChoice={fixTargetChatId}
+                          onChatChoiceChange={setFixTargetChatId}
+                          onFix={() => void handleFixPreviewWithSingra()}
+                        />
+                      ) : !previewSrcDoc ? (
                         <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-on-surface-variant">
                           <Globe className="h-10 w-10 text-primary/40 mb-3" />
                           <p className="text-sm font-medium text-on-surface">
@@ -2127,14 +2188,31 @@ if (__rootEl && typeof App !== 'undefined') {
                           )}
                         </div>
                       ) : (
-                        <iframe
-                          ref={previewIframeRef}
-                          key={`preview-${previewEnv}`}
-                          srcDoc={previewSrcDoc ?? undefined}
-                          title="Projekt-Vorschau"
-                          className="w-full flex-1 border-0 min-h-[400px] bg-white"
-                          sandbox="allow-scripts allow-forms allow-modals"
-                        />
+                        <>
+                          <iframe
+                            ref={previewIframeRef}
+                            key={`preview-${previewEnv}`}
+                            srcDoc={previewSrcDoc ?? undefined}
+                            title="Projekt-Vorschau"
+                            className="w-full flex-1 border-0 min-h-[400px] bg-white"
+                            sandbox="allow-scripts allow-forms allow-modals"
+                          />
+                          {previewError && !previewErrorDismissed && (
+                            <div className="absolute inset-0 z-10 flex flex-col">
+                              <PreviewDiagnostics
+                                kind="error"
+                                error={previewError}
+                                fileCount={(previewEnv === 'production' ? productionFiles : files).length}
+                                entryFile={envState?.preview?.entry_file}
+                                chats={projectChats}
+                                chatChoice={fixTargetChatId}
+                                onChatChoiceChange={setFixTargetChatId}
+                                onFix={() => void handleFixPreviewWithSingra()}
+                                onDismiss={() => setPreviewErrorDismissed(true)}
+                              />
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -2799,7 +2877,7 @@ if (__rootEl && typeof App !== 'undefined') {
 
       {/* Publish to Production (Online schalten) Modal */}
       <Dialog open={publishModalOpen} onOpenChange={setPublishModalOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Rocket className="h-5 w-5 text-primary" />
@@ -2867,13 +2945,59 @@ if (__rootEl && typeof App !== 'undefined') {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant/20">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                  Erreichbar über
+                </label>
+                <Dropdown
+                  value={publishDomainMode}
+                  onChange={(val) => setPublishDomainMode(val as 'ip' | 'cloudflare' | 'external')}
+                  options={[
+                    { value: 'ip', label: 'IP-Adresse und Port' },
+                    { value: 'cloudflare', label: 'Domain über Cloudflare' },
+                    { value: 'external', label: 'Eigene Domain (mit Anleitung)' },
+                  ]}
+                  aria-label="Erreichbarkeit wählen"
+                />
+              </div>
+              {publishDomainMode !== 'ip' && (
+                <div>
+                  <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                    Domain
+                  </label>
+                  <Input
+                    value={publishDomain}
+                    onChange={(e) => setPublishDomain(e.target.value)}
+                    placeholder="app.beispiel.de"
+                    aria-label="Domain"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-primary/25 bg-primary/8 p-3 text-xs text-on-surface-variant space-y-1">
+              <div className="font-semibold text-on-surface">Wie geht es weiter?</div>
+              <p>
+                <span className="font-medium text-on-surface">Mit Singra:</span> Singra testet zuerst, veröffentlicht
+                dann auf die Node, prüft die Erreichbarkeit und führt dich durch die Domain-Einrichtung.
+              </p>
+              <p>
+                <span className="font-medium text-on-surface">Direkt:</span> Der aktuelle Stand wird sofort ohne
+                vorherige Tests übernommen. Eine Domain musst du danach selbst verbinden.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 pt-3 border-t border-outline-variant/20 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" onClick={() => setPublishModalOpen(false)}>
                 Abbrechen
               </Button>
-              <Button type="submit" disabled={publishing}>
+              <Button type="submit" variant="secondary" disabled={publishing}>
+                <span>{publishing ? 'Veröffentlicht…' : 'Direkt veröffentlichen'}</span>
+              </Button>
+              <Button type="button" disabled={publishing} onClick={() => void handleGuidedPublish()}>
                 <Rocket className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>{publishing ? 'Veröffentlicht…' : 'Jetzt online schalten'}</span>
+                <span>Mit Singra online schalten</span>
               </Button>
             </div>
           </form>
