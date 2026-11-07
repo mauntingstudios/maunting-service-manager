@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   Check,
+  FolderGit2,
   History,
   MessageSquare,
   Pencil,
@@ -17,6 +18,7 @@ import { AiGenerationBadge } from './AiGenerationBadge'
 interface SingraHistoryViewProps {
   conversations: AiConversationSummary[]
   activeConversationId: string | null
+  projectMap?: Record<string, string>
   onSelectConversation: (conversationId: string) => void
   onNewChat: () => void
   onRenameConversation: (conv: AiConversationSummary, newTitle: string) => Promise<void>
@@ -27,6 +29,7 @@ interface SingraHistoryViewProps {
 export function SingraHistoryView({
   conversations,
   activeConversationId,
+  projectMap,
   onSelectConversation,
   onNewChat,
   onRenameConversation,
@@ -34,16 +37,34 @@ export function SingraHistoryView({
   onDeleteConversation,
 }: SingraHistoryViewProps) {
   const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'all' | 'main' | 'projects'>('all')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
 
+  const mainCount = useMemo(
+    () => conversations.filter((c) => !c.project_id).length,
+    [conversations],
+  )
+  const projectCount = useMemo(
+    () => conversations.filter((c) => Boolean(c.project_id)).length,
+    [conversations],
+  )
+
   const filtered = useMemo(() => {
+    let list = conversations
+    if (filter === 'main') {
+      list = list.filter((c) => !c.project_id)
+    } else if (filter === 'projects') {
+      list = list.filter((c) => Boolean(c.project_id))
+    }
     const needle = query.trim().toLowerCase()
-    if (!needle) return conversations
-    return conversations.filter((c) =>
-      (c.title || '').toLowerCase().includes(needle),
-    )
-  }, [conversations, query])
+    if (!needle) return list
+    return list.filter((c) => {
+      const titleMatch = (c.title || '').toLowerCase().includes(needle)
+      const projName = c.project_id ? (projectMap?.[c.project_id] || '').toLowerCase() : ''
+      return titleMatch || projName.includes(needle)
+    })
+  }, [conversations, filter, projectMap, query])
 
   const submitRename = async (conv: AiConversationSummary) => {
     const trimmed = editTitle.trim()
@@ -77,16 +98,59 @@ export function SingraHistoryView({
           </Button>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Unterhaltungen nach Titel durchsuchen …"
-            className="pl-10"
-            aria-label="Unterhaltungen durchsuchen"
-          />
+        {/* Search & Filter */}
+        <div className="space-y-2.5">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Unterhaltungen nach Titel durchsuchen …"
+              className="pl-10"
+              aria-label="Unterhaltungen durchsuchen"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <button
+              type="button"
+              onClick={() => setFilter('all')}
+              className={[
+                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors border',
+                filter === 'all'
+                  ? 'bg-primary/15 text-primary border-primary/30'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 border-transparent',
+              ].join(' ')}
+            >
+              <span>Alle ({conversations.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('main')}
+              className={[
+                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors border',
+                filter === 'main'
+                  ? 'bg-primary/15 text-primary border-primary/30'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 border-transparent',
+              ].join(' ')}
+            >
+              <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Hauptchats ({mainCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('projects')}
+              className={[
+                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors border',
+                filter === 'projects'
+                  ? 'bg-primary/15 text-primary border-primary/30'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 border-transparent',
+              ].join(' ')}
+            >
+              <FolderGit2 className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Projekte ({projectCount})</span>
+            </button>
+          </div>
         </div>
 
         {/* Conversation List */}
@@ -156,21 +220,31 @@ export function SingraHistoryView({
                             'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
                             conv.pinned
                               ? 'bg-primary/20 text-primary'
-                              : 'bg-surface-container-high text-on-surface-variant',
+                              : conv.project_id
+                                ? 'bg-primary/15 text-primary'
+                                : 'bg-surface-container-high text-on-surface-variant',
                           ].join(' ')}
                         >
                           {conv.pinned ? (
                             <Pin className="h-4 w-4" aria-hidden="true" />
+                          ) : conv.project_id ? (
+                            <FolderGit2 className="h-4 w-4" aria-hidden="true" />
                           ) : (
                             <MessageSquare className="h-4 w-4" aria-hidden="true" />
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="truncate text-sm font-medium text-on-surface">
                               {conv.title || 'Unterhaltung'}
                             </span>
                             <AiGenerationBadge conversationId={conv.id} />
+                            {conv.project_id && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-primary/12 px-2 py-0.5 text-label-sm font-medium text-primary border border-primary/20">
+                                <FolderGit2 className="h-3 w-3" aria-hidden="true" />
+                                <span>{projectMap?.[conv.project_id] || 'Projekt'}</span>
+                              </span>
+                            )}
                             {isSelected && (
                               <span className="rounded-full bg-primary/20 px-2 py-0.5 text-label-sm font-medium text-primary">
                                 Aktiv

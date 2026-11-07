@@ -1235,8 +1235,38 @@ export function SingraProjectsView({
               </div>
             </div>
 
-            {/* 4 Cozy Workspace Tabs */}
-            <div className="flex items-center gap-1.5 border-b border-outline-variant/20 bg-surface-container-low/15 px-4 py-1.5 overflow-x-auto no-scrollbar shrink-0">
+            {/* 4 Cozy Workspace Tabs: Mobile 4-Column Control (kein horizontales Swipen), Desktop Pills */}
+            <div className="grid grid-cols-4 gap-1 border-b border-outline-variant/20 bg-surface-container-low/30 p-1 sm:hidden shrink-0">
+              {(
+                [
+                  { id: 'chats', label: 'Unterhaltungen', mobileLabel: 'Chats', icon: MessageSquare },
+                  { id: 'files', label: 'Dateien', mobileLabel: 'Dateien', icon: FileCode },
+                  { id: 'preview', label: 'Vorschau', mobileLabel: 'Vorschau', icon: Globe },
+                  { id: 'settings', label: 'Einstellungen', mobileLabel: 'Optionen', icon: Settings2 },
+                ] as const
+              ).map((tab) => {
+                const Icon = tab.icon
+                const active = activeTab === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={[
+                      'flex flex-col items-center justify-center gap-1 py-1.5 px-0.5 rounded-xl text-label-sm font-medium transition-colors text-center',
+                      active
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40',
+                    ].join(' ')}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="truncate max-w-full text-label-sm leading-tight">{tab.mobileLabel}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="hidden sm:flex items-center gap-1.5 border-b border-outline-variant/20 bg-surface-container-low/15 px-4 py-1.5 overflow-x-auto no-scrollbar shrink-0">
               {(
                 [
                   { id: 'chats', label: 'Unterhaltungen', icon: MessageSquare },

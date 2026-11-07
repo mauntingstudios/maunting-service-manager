@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Menu, MessageSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { aiApi, type AiAttachment, type AiConversationSummary, type AiVoiceConfig } from '@/api/ai'
+import {
+  aiApi,
+  type AiAttachment,
+  type AiConversationSummary,
+  type AiProject,
+  type AiVoiceConfig,
+} from '@/api/ai'
 import { api } from '@/api/client'
 import { AiAutonomyButton } from '@/components/ai/AiAutonomyButton'
 import { AiChat } from '@/components/ai/AiChat'
@@ -109,10 +115,19 @@ export function Ai({
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [conversations, setConversations] = useState<AiConversationSummary[]>([])
+  const [projects, setProjects] = useState<AiProject[]>([])
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [activeProjectId, setActiveProjectId] = useState<string | undefined>(undefined)
   const [activeProjectName, setActiveProjectName] = useState<string | undefined>(undefined)
   const [pendingAttachmentToChat, setPendingAttachmentToChat] = useState<AiAttachment | null>(null)
+
+  const projectMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const p of projects) {
+      map[p.id] = p.name
+    }
+    return map
+  }, [projects])
 
   const providerId =
     user?.ai_provider_id
@@ -152,8 +167,12 @@ export function Ai({
   const loadConversations = useCallback(async () => {
     if (!canChat || typeof aiApi.listConversations !== 'function') return
     try {
-      const list = await aiApi.listConversations()
+      const [list, projectList] = await Promise.all([
+        aiApi.listConversations(),
+        aiApi.listProjects().catch(() => [] as AiProject[]),
+      ])
       setConversations(list)
+      setProjects(projectList)
       setActiveConversationId((prev) => {
         if (prev) return prev
         return list.length > 0 ? list[0].id : null
@@ -166,6 +185,33 @@ export function Ai({
   useEffect(() => {
     void loadConversations()
   }, [loadConversations])
+
+  useEffect(() => {
+    const refreshHandler = () => {
+      void loadConversations()
+    }
+    window.addEventListener('singra-refresh-conversations', refreshHandler)
+    return () => {
+      window.removeEventListener('singra-refresh-conversations', refreshHandler)
+    }
+  }, [loadConversations])
+
+  const handleSelectConversation = useCallback(
+    (id: string) => {
+      const conv = conversations.find((c) => c.id === id)
+      setActiveConversationId(id)
+      if (conv?.project_id) {
+        setActiveProjectId(conv.project_id)
+        const proj = projects.find((p) => p.id === conv.project_id)
+        setActiveProjectName(proj?.name)
+      } else {
+        setActiveProjectId(undefined)
+        setActiveProjectName(undefined)
+      }
+      setActiveSection('chat')
+    },
+    [conversations, projects],
+  )
 
   useEffect(() => {
     if (activeConversationId) {
@@ -249,10 +295,7 @@ export function Ai({
         void handleNewChat()
         return
       }
-      setActiveProjectId(undefined)
-      setActiveProjectName(undefined)
-      setActiveConversationId(convId)
-      setActiveSection('chat')
+      handleSelectConversation(convId)
     }
     window.addEventListener('singra-open-project', handler)
     window.addEventListener('singra-open-conversation', openConvHandler)
@@ -356,12 +399,7 @@ export function Ai({
             onSelectSection={setActiveSection}
             conversations={conversations}
             activeConversationId={activeConversationId}
-            onSelectConversation={(id) => {
-              setActiveConversationId(id)
-              setActiveProjectId(undefined)
-              setActiveProjectName(undefined)
-              setActiveSection('chat')
-            }}
+            onSelectConversation={handleSelectConversation}
             onNewChat={() => void handleNewChat()}
             onTogglePinConversation={(conv) => void handleTogglePinConversation(conv)}
             onDeleteConversation={(conv) => void handleDeleteConversation(conv)}
@@ -412,6 +450,8 @@ export function Ai({
                 onOpenProjectChat={(projectId, conversationId) => {
                   setActiveProjectId(projectId)
                   setActiveConversationId(conversationId ?? null)
+                  const proj = projects.find((p) => p.id === projectId)
+                  setActiveProjectName(proj?.name)
                   setActiveSection('chat')
                 }}
               />
@@ -435,12 +475,8 @@ export function Ai({
               <SingraHistoryView
                 conversations={conversations}
                 activeConversationId={activeConversationId}
-                onSelectConversation={(id) => {
-                  setActiveConversationId(id)
-                  setActiveProjectId(undefined)
-                  setActiveProjectName(undefined)
-                  setActiveSection('chat')
-                }}
+                projectMap={projectMap}
+                onSelectConversation={handleSelectConversation}
                 onNewChat={() => void handleNewChat()}
                 onRenameConversation={handleRenameConversation}
                 onTogglePinConversation={handleTogglePinConversation}

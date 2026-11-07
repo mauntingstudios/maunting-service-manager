@@ -383,8 +383,68 @@ export function SingraToolsView({
           </div>
         </div>
 
-        {/* Sub-Navigation Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+        {/* Sub-Navigation: Mobile Grid (kein horizontales Swipen), Desktop Pills */}
+        <div className="grid grid-cols-2 gap-2 sm:hidden">
+          <button
+            type="button"
+            onClick={() => setSubTab('mcp')}
+            className={[
+              'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors border',
+              subTab === 'mcp'
+                ? 'bg-primary/15 text-primary border-primary/30'
+                : 'bg-surface-container-low/60 text-on-surface-variant border-outline-variant/25 hover:text-on-surface',
+            ].join(' ')}
+          >
+            <Plug className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">Integrationen ({mcpServers.length})</span>
+          </button>
+
+          {canManageTasks && (
+            <button
+              type="button"
+              onClick={() => setSubTab('tasks')}
+              className={[
+                'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors border',
+                subTab === 'tasks'
+                  ? 'bg-primary/15 text-primary border-primary/30'
+                  : 'bg-surface-container-low/60 text-on-surface-variant border-outline-variant/25 hover:text-on-surface',
+              ].join(' ')}
+            >
+              <CalendarClock className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">Aufgaben</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setSubTab('workers')}
+            className={[
+              'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors border',
+              subTab === 'workers'
+                ? 'bg-primary/15 text-primary border-primary/30'
+                : 'bg-surface-container-low/60 text-on-surface-variant border-outline-variant/25 hover:text-on-surface',
+            ].join(' ')}
+          >
+            <Cpu className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">Aufträge ({workers.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSubTab('guardian')}
+            className={[
+              'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors border',
+              subTab === 'guardian'
+                ? 'bg-primary/15 text-primary border-primary/30'
+                : 'bg-surface-container-low/60 text-on-surface-variant border-outline-variant/25 hover:text-on-surface',
+            ].join(' ')}
+          >
+            <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">Selbstheilung</span>
+          </button>
+        </div>
+
+        <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
           <button
             type="button"
             onClick={() => setSubTab('mcp')}
@@ -564,8 +624,20 @@ export function SingraToolsView({
                 </div>
               </div>
 
-              {/* Category Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+              {/* Category Filter: Mobile Dropdown (kein Swipen), Desktop Wrapping Pills */}
+              <div className="sm:hidden">
+                <Dropdown
+                  value={selectedCategory}
+                  onChange={(val) => setSelectedCategory(val as McpCategory)}
+                  options={MCP_CATEGORIES.map((cat) => ({
+                    value: cat.id,
+                    label: cat.label,
+                  }))}
+                  aria-label="MCP-Kategorie auswählen"
+                />
+              </div>
+
+              <div className="hidden sm:flex flex-wrap items-center gap-1.5 pb-1">
                 {MCP_CATEGORIES.map((cat) => {
                   const active = selectedCategory === cat.id
                   return (

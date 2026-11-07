@@ -683,6 +683,7 @@ export function AiChat({
       const cur = useAiGenerationStore.getState().generations[scope.conversationId]
       if (cur && cur.status === 'generating') {
         useAiGenerationStore.getState().finishGeneration(scope.conversationId, true)
+        window.dispatchEvent(new CustomEvent('singra-refresh-conversations'))
       }
     }
   }, [streaming, scope])

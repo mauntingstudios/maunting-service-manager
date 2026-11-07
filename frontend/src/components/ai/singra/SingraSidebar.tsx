@@ -2,6 +2,7 @@ import {
   Bookmark,
   BookOpen,
   Folder,
+  FolderGit2,
   History,
   Layers,
   LayoutGrid,
@@ -231,6 +232,8 @@ function SidebarContent({
                 >
                   {conv.pinned ? (
                     <Pin className="h-3 w-3 shrink-0 text-primary" aria-hidden="true" />
+                  ) : conv.project_id ? (
+                    <FolderGit2 className="h-3 w-3 shrink-0 text-primary" aria-hidden="true" />
                   ) : (
                     <MessageSquare className="h-3 w-3 shrink-0 opacity-60" aria-hidden="true" />
                   )}
