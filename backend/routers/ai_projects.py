@@ -115,6 +115,8 @@ class AiProjectPublishPayload(BaseModel):
     enable_database: bool | None = None
     backend_proxy_url: str | None = Field(default=None, max_length=240)
     api_path: str | None = Field(default=None, max_length=120)
+    bind_ip: str | None = Field(default=None, max_length=64)
+    merge_to_main: bool = False
 
 
 class AiProjectCommandPayload(BaseModel):
@@ -417,6 +419,116 @@ def switch_project_environment(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/{project_id}/publish-options")
+async def get_project_publish_options(
+    project_id: str,
+    node_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> dict[str, object]:
+    from models import Node
+    from services import network_interfaces_service, cloudflare_service
+    from services.node_client import NodeClient
+
+    all_nodes = db.query(Node).all()
+    nodes_data = [
+        {
+            "id": n.id,
+            "name": n.name,
+            "is_local": n.is_local,
+            "public_bind_ip": getattr(n, "public_bind_ip", None),
+        }
+        for n in all_nodes
+    ]
+
+    target_node: Node | None = None
+    if node_id:
+        node_str = node_id.strip()
+        if node_str.isdigit():
+            target_node = db.get(Node, int(node_str))
+        else:
+            target_node = db.query(Node).filter(Node.name.ilike(node_str)).first()
+
+    if target_node is None:
+        target_node = db.query(Node).order_by(Node.is_local.desc(), Node.id.asc()).first()
+
+    public_ips: list[dict[str, Any]] = []
+    default_ip: str | None = None
+
+    if target_node and not target_node.is_local:
+        try:
+            client = NodeClient.from_node(target_node, timeout=5.0)
+            remote_ifaces = client.interfaces()
+            if isinstance(remote_ifaces, dict):
+                for iface in remote_ifaces.get("interfaces", []):
+                    ip = iface.get("ip")
+                    if ip and not iface.get("is_loopback"):
+                        public_ips.append(iface)
+                default_ip = remote_ifaces.get("default_bind_ip")
+        except Exception:
+            pass
+    else:
+        host_ifaces = network_interfaces_service.list_host_interfaces()
+        for h in host_ifaces:
+            if not h.is_loopback:
+                public_ips.append(h.to_dict())
+        default_ip = network_interfaces_service.default_bind_ip()
+
+    if target_node and getattr(target_node, "public_bind_ip", None):
+        node_bind_ip = target_node.public_bind_ip.strip()
+        if node_bind_ip:
+            if not any(item["ip"] == node_bind_ip for item in public_ips):
+                public_ips.insert(0, {
+                    "ip": node_bind_ip,
+                    "interface": "node_configured",
+                    "is_loopback": False,
+                    "is_private": False,
+                    "is_link_local": False,
+                })
+            default_ip = node_bind_ip
+
+    cf_configured = cloudflare_service.is_configured()
+    cf_zones: list[dict[str, Any]] = []
+    if cf_configured:
+        try:
+            raw_zones = await cloudflare_service.list_zones()
+            cf_zones = [
+                {"id": z.get("id"), "name": z.get("name"), "status": z.get("status")}
+                for z in raw_zones
+            ]
+        except Exception:
+            pass
+
+    github_configured = bool(ai_project_service.resolve_git_token_for_user(db, user, "github"))
+
+    return {
+        "nodes": nodes_data,
+        "chosen_node_id": target_node.id if target_node else None,
+        "chosen_node_name": target_node.name if target_node else "Lokaler Node",
+        "public_ips": public_ips,
+        "default_ip": default_ip or (public_ips[0]["ip"] if public_ips else "127.0.0.1"),
+        "cloudflare_configured": cf_configured,
+        "cloudflare_zones": cf_zones,
+        "github_configured": github_configured,
+    }
+
+
+@router.post("/{project_id}/dev-database")
+def ensure_project_dev_database(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        res = ai_project_service.ensure_dev_database(db, user, project_id)
+        if not res:
+            return {"ok": False, "message": "Keine Datenbank-Dateien oder SQL-Schema im Projekt vorhanden."}
+        return {"ok": True, **res}
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/{project_id}/publish")
 def publish_project_to_production(
     project_id: str,
@@ -437,6 +549,8 @@ def publish_project_to_production(
             enable_database=payload.enable_database,
             backend_proxy_url=payload.backend_proxy_url,
             api_path=payload.api_path,
+            bind_ip=payload.bind_ip,
+            merge_to_main=payload.merge_to_main,
         )
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

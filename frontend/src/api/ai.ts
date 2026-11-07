@@ -1548,14 +1548,28 @@ export interface AiProjectFile {
 
 export interface AiProjectEnvironmentState {
   active_environment: 'dev' | 'production'
-  dev_db: {
+  dev?: {
+    status: string
+    branch: string
+    db_engine: string
+    db_branch: string
+    file_count: number
+    pending_migrations: number
+    unreleased_changes_count: number
+    unreleased_files: string[]
+    dev_server_id?: number | null
+    dev_database_id?: number | null
+    dev_database_name?: string | null
+    dev_has_db?: boolean
+  }
+  dev_db?: {
     engine: string
     branch: string
     schema: string
     status: string
     migrations_applied: number
   }
-  prod_db: {
+  prod_db?: {
     engine: string
     branch: string
     schema: string
@@ -1579,6 +1593,7 @@ export interface AiProjectEnvironmentState {
     backend_url?: string | null
     frontend_port?: number | null
     backend_port?: number | null
+    bind_ip?: string | null
     db_configured?: boolean
   }
   preview?: {
@@ -1588,6 +1603,32 @@ export interface AiProjectEnvironmentState {
     port: number
     healthcheck_path: string
   }
+}
+
+export interface AiProjectPublishOptions {
+  nodes: Array<{
+    id: number
+    name: string
+    is_local: boolean
+    public_bind_ip?: string | null
+  }>
+  chosen_node_id: number | null
+  chosen_node_name: string
+  public_ips: Array<{
+    ip: string
+    interface: string
+    is_loopback: boolean
+    is_private: boolean
+    is_link_local: boolean
+  }>
+  default_ip: string
+  cloudflare_configured: boolean
+  cloudflare_zones: Array<{
+    id: string
+    name: string
+    status: string
+  }>
+  github_configured: boolean
 }
 
 export interface AiProjectPublishResult {
@@ -2397,11 +2438,30 @@ export const aiApi = {
       enable_database?: boolean
       backend_proxy_url?: string | null
       api_path?: string | null
+      bind_ip?: string | null
+      merge_to_main?: boolean
     },
   ) =>
     api<AiProjectPublishResult>(
       `/ai/projects/${encodeURIComponent(projectId)}/publish`,
       { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  getPublishOptions: (projectId: string, nodeId?: string | null) =>
+    api<AiProjectPublishOptions>(
+      `/ai/projects/${encodeURIComponent(projectId)}/publish-options${nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : ''}`,
+    ),
+  ensureDevDatabase: (projectId: string) =>
+    api<{
+      ok: boolean
+      dev_server_id?: number
+      dev_database_id?: number
+      dev_database_name?: string
+      migrations?: any
+      connection_string?: string
+      message?: string
+    }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/dev-database`,
+      { method: 'POST' },
     ),
   listProjectProductionFiles: (projectId: string) =>
     api<Array<{ path: string; content: string; size_bytes: number }>>(

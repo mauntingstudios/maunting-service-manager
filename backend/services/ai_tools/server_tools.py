@@ -232,6 +232,7 @@ def _global_tool_definitions() -> list[dict]:
                     "get_environment",
                     "publish_production",
                     "search_components",
+                    "run_sql",
                     "git_status",
                     "git_sync",
                     "git_commit",
@@ -288,6 +289,9 @@ def _global_tool_definitions() -> list[dict]:
             "enable_database": {"type": "boolean", "description": "Automatische PostgreSQL-Datenbank für das Backend anlegen."},
             "backend_proxy_url": {"type": "string", "maxLength": 240, "description": "Zieladresse für den Backend-Proxy (z. B. http://localhost:5001 oder https://api.extern.de)."},
             "api_path": {"type": "string", "maxLength": 120, "description": "Pfad für den Backend-Proxy (Standard /api/*)."},
+            "bind_ip": {"type": "string", "maxLength": 64, "description": "Öffentliche IP-Adresse des Ziel-Nodes für Bindings und Erreichbarkeit."},
+            "merge_to_main": {"type": "boolean", "description": "Release nach erfolgreicher Veröffentlichung direkt in den main-Branch mergen."},
+            "sql": {"type": "string", "maxLength": 100000, "description": "SQL-Skript oder Befehl, der auf der Projekt-Dev-Datenbank ausgefuehrt werden soll."},
             "repo_url": {"type": "string", "maxLength": 1024},
             "branch": {"type": "string", "maxLength": 120},
             "message": {"type": "string", "maxLength": 500},
@@ -2063,6 +2067,8 @@ def _execute_global_read_tool(
                     enable_db = bool(enable_db)
                 proxy_url = str(arguments.get("backend_proxy_url") or "").strip() or None
                 api_p = str(arguments.get("api_path") or "").strip() or None
+                bind_ip = str(arguments.get("bind_ip") or "").strip() or None
+                merge_to_main = bool(arguments.get("merge_to_main", False))
                 return ai_project_service.publish_project_to_production(
                     db,
                     user,
@@ -2074,7 +2080,15 @@ def _execute_global_read_tool(
                     enable_database=enable_db,
                     backend_proxy_url=proxy_url,
                     api_path=api_p,
+                    bind_ip=bind_ip,
+                    merge_to_main=merge_to_main,
                 )
+            if action == "run_sql":
+                sql_cmd = str(arguments.get("sql") or "").strip()
+                if not sql_cmd:
+                    raise AiActionValidationError("Parameter 'sql' darf nicht leer sein")
+                from services import ai_db_migration_service
+                return ai_db_migration_service.execute_project_sql(db, user, pid, sql_cmd)
             if action == "git_status":
                 return ai_project_service.git_status(db, user, pid)
             if action == "git_sync":

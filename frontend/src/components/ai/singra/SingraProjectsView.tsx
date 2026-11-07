@@ -39,6 +39,7 @@ import {
   Trash2,
   Unlock,
   Users,
+  ExternalLink,
   X,
 } from 'lucide-react'
 import {
@@ -49,6 +50,7 @@ import {
   type AiProjectExecResult,
   type AiProjectFile,
   type AiProjectGitStatus,
+  type AiProjectPublishOptions,
   type AiProjectWrite,
   type AiPreviewInspectionResult,
 } from '@/api/ai'
@@ -57,9 +59,11 @@ import { still } from '@/lib/still'
 import { buildPreviewDocument, isPreviewErrorMessage } from './previewBundle'
 import { PreviewDiagnostics } from './PreviewDiagnostics'
 import { SingraVisualInspectionModal } from './SingraVisualInspectionModal'
+import { PostgresStudio } from '@/components/postgres/PostgresStudio'
 import { teamsApi, type Team } from '@/api/teams'
 import {
   ActionMenu,
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -78,7 +82,7 @@ import {
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
-type ProjectTab = 'chats' | 'files' | 'preview' | 'settings'
+type ProjectTab = 'chats' | 'files' | 'preview' | 'database' | 'settings'
 type ProjectCreateMode = 'empty' | 'create_repo' | 'clone_repo'
 
 interface SingraProjectsViewProps {
@@ -255,6 +259,18 @@ export function SingraProjectsView({
   const [publishEnableDb, setPublishEnableDb] = useState(true)
   const [publishApiPath, setPublishApiPath] = useState('/api/*')
   const [publishBackendProxyUrl, setPublishBackendProxyUrl] = useState('')
+  const [publishOptions, setPublishOptions] = useState<AiProjectPublishOptions | null>(null)
+  const [publishBindIp, setPublishBindIp] = useState<string>('')
+  const [publishCfZoneId, setPublishCfZoneId] = useState<string>('')
+  const [publishCfSubdomain, setPublishCfSubdomain] = useState<string>('')
+  const [publishMergeToMain, setPublishMergeToMain] = useState<boolean>(false)
+
+  // Dev-Konsole state
+  const [devConsoleOpen, setDevConsoleOpen] = useState(false)
+  const [consoleLogs, setConsoleLogs] = useState<
+    Array<{ level: 'log' | 'info' | 'warn' | 'error'; message: string; time: string }>
+  >([])
+  const [consoleFilter, setConsoleFilter] = useState<'all' | 'log' | 'warn' | 'error'>('all')
 
   // Team Sharing & Invite Modal state
   const [teamShareModalOpen, setTeamShareModalOpen] = useState(false)
@@ -626,6 +642,50 @@ export function SingraProjectsView({
     }
   }, [activeTab, selectedId, loadGitStatus])
 
+  useEffect(() => {
+    if (publishModalOpen && selectedId) {
+      aiApi
+        .getPublishOptions(selectedId, selectedNodeId === '__auto__' ? undefined : selectedNodeId)
+        .then((opts) => {
+          setPublishOptions(opts)
+          if (!publishBindIp && opts.default_ip) {
+            setPublishBindIp(opts.default_ip)
+          }
+          if (opts.cloudflare_zones.length > 0 && !publishCfZoneId) {
+            setPublishCfZoneId(opts.cloudflare_zones[0].id)
+          }
+        })
+        .catch(() => {})
+    }
+  }, [publishModalOpen, selectedId, selectedNodeId, publishBindIp, publishCfZoneId])
+
+  useEffect(() => {
+    if (publishDomainMode === 'cloudflare' && publishOptions?.cloudflare_zones) {
+      const zone = publishOptions.cloudflare_zones.find((z) => z.id === publishCfZoneId)
+      if (zone) {
+        const sub = publishCfSubdomain.trim()
+        setPublishDomain(sub ? `${sub}.${zone.name}` : zone.name)
+      }
+    }
+  }, [publishDomainMode, publishCfSubdomain, publishCfZoneId, publishOptions])
+
+  useEffect(() => {
+    const handleDevConsoleMsg = (ev: MessageEvent) => {
+      if (ev.data && ev.data.type === 'SINGRA_DEV_CONSOLE') {
+        setConsoleLogs((prev) => [
+          ...prev.slice(-99),
+          {
+            level: ev.data.level,
+            message: String(ev.data.message || ''),
+            time: ev.data.time || new Date().toLocaleTimeString(),
+          },
+        ])
+      }
+    }
+    window.addEventListener('message', handleDevConsoleMsg)
+    return () => window.removeEventListener('message', handleDevConsoleMsg)
+  }, [])
+
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!draft.name.trim() || savingProject) return
@@ -951,6 +1011,26 @@ export function SingraProjectsView({
     const bridgeScript = `
 <script>
 (function() {
+  var _l = console.log, _i = console.info, _w = console.warn, _e = console.error;
+  function _postLog(lvl, args) {
+    try {
+      var str = Array.prototype.slice.call(args).map(function(a) {
+        if (typeof a === 'object' && a !== null) {
+          try { return JSON.stringify(a); } catch(err) { return String(a); }
+        }
+        return String(a);
+      }).join(' ');
+      window.parent.postMessage({ type: 'SINGRA_DEV_CONSOLE', level: lvl, message: str, time: new Date().toLocaleTimeString() }, '*');
+    } catch(ex) {}
+  }
+  console.log = function() { _l.apply(console, arguments); _postLog('log', arguments); };
+  console.info = function() { _i.apply(console, arguments); _postLog('info', arguments); };
+  console.warn = function() { _w.apply(console, arguments); _postLog('warn', arguments); };
+  console.error = function() { _e.apply(console, arguments); _postLog('error', arguments); };
+  window.addEventListener('error', function(ev) {
+    _postLog('error', [ev.message || 'Laufzeitfehler']);
+  });
+
   document.addEventListener('click', function(e) {
     var target = e.target;
     while (target && target.tagName !== 'A') {
@@ -1316,6 +1396,8 @@ export function SingraProjectsView({
         enable_database: publishEnableDb,
         api_path: publishApiPath.trim() || '/api/*',
         backend_proxy_url: publishBackendProxyUrl.trim() || null,
+        bind_ip: publishBindIp.trim() || null,
+        merge_to_main: publishMergeToMain,
       })
       setEnvState(res.environment)
       const prodFiles = await aiApi
@@ -1642,13 +1724,14 @@ export function SingraProjectsView({
               </div>
             </div>
 
-            {/* 4 Cozy Workspace Tabs: Mobile 4-Column Control (kein horizontales Swipen), Desktop Pills */}
-            <div className="grid grid-cols-4 gap-1 border-b border-outline-variant/20 bg-surface-container-low/30 p-1 sm:hidden shrink-0">
+            {/* 5 Cozy Workspace Tabs: Mobile 5-Column Control, Desktop Pills */}
+            <div className="grid grid-cols-5 gap-1 border-b border-outline-variant/20 bg-surface-container-low/30 p-1 sm:hidden shrink-0">
               {(
                 [
                   { id: 'chats', label: 'Unterhaltungen', mobileLabel: 'Chats', icon: MessageSquare },
                   { id: 'files', label: 'Dateien', mobileLabel: 'Dateien', icon: FileCode },
                   { id: 'preview', label: 'Vorschau', mobileLabel: 'Vorschau', icon: Globe },
+                  { id: 'database', label: 'Datenbank', mobileLabel: 'DB', icon: Database },
                   { id: 'settings', label: 'Einstellungen', mobileLabel: 'Optionen', icon: Settings2 },
                 ] as const
               ).map((tab) => {
@@ -1679,6 +1762,7 @@ export function SingraProjectsView({
                   { id: 'chats', label: 'Unterhaltungen', icon: MessageSquare },
                   { id: 'files', label: 'Dateien', icon: FileCode },
                   { id: 'preview', label: 'Vorschau', icon: Globe },
+                  { id: 'database', label: 'Datenbank', icon: Database },
                   { id: 'settings', label: 'Einstellungen', icon: Settings2 },
                 ] as const
               ).map((tab) => {
@@ -2319,14 +2403,67 @@ export function SingraProjectsView({
                         </div>
                       ) : (
                         <>
-                          <iframe
-                            ref={previewIframeRef}
-                            key={`preview-${previewEnv}`}
-                            srcDoc={previewSrcDoc ?? undefined}
-                            title="Projekt-Vorschau"
-                            className="w-full flex-1 border-0 min-h-[400px] bg-white"
-                            sandbox="allow-scripts allow-forms allow-modals"
-                          />
+                          {previewEnv === 'production' && envState?.production?.published && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/20 bg-surface-container-high/60 px-4 py-2 text-xs text-on-surface shrink-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="success" className="text-xs gap-1">
+                                  ✓ Live (v{envState.production.version || 1})
+                                </Badge>
+                                <span className="text-on-surface-variant">Node:</span>
+                                <span className="font-medium text-on-surface">{envState.production.node_id || 'Haupt-Node'}</span>
+                                <span className="text-on-surface-variant">• Modus:</span>
+                                <span className="font-medium text-on-surface">
+                                  {envState.production.mode === 'fullstack_split'
+                                    ? 'Fullstack getrennt'
+                                    : envState.production.mode === 'backend'
+                                      ? 'Backend'
+                                      : 'Frontend'}
+                                </span>
+                                {envState.production.web_url && (
+                                  <>
+                                    <span className="text-on-surface-variant">• Adresse:</span>
+                                    <a
+                                      href={envState.production.web_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-mono text-primary hover:underline inline-flex items-center gap-1"
+                                    >
+                                      <span>{envState.production.web_url}</span>
+                                      <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                  </>
+                                )}
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                className="h-7 text-xs px-2.5 gap-1"
+                                onClick={() => setPublishModalOpen(true)}
+                              >
+                                <Settings2 className="h-3 w-3" />
+                                <span>Bereitstellung anpassen</span>
+                              </Button>
+                            </div>
+                          )}
+                          {previewEnv === 'production' && envState?.production?.web_url ? (
+                            <iframe
+                              key={`preview-prod-${envState.production.web_url}`}
+                              src={envState.production.web_url}
+                              title="Projekt-Produktion"
+                              className="w-full flex-1 border-0 min-h-[400px] bg-white"
+                              sandbox="allow-scripts allow-forms allow-modals allow-same-origin"
+                            />
+                          ) : (
+                            <iframe
+                              ref={previewIframeRef}
+                              key={`preview-${previewEnv}`}
+                              srcDoc={previewSrcDoc ?? undefined}
+                              title="Projekt-Vorschau"
+                              className="w-full flex-1 border-0 min-h-[400px] bg-white"
+                              sandbox="allow-scripts allow-forms allow-modals allow-same-origin"
+                            />
+                          )}
                           {previewError && !previewErrorDismissed && (
                             <div className="absolute inset-0 z-10 flex flex-col">
                               <PreviewDiagnostics
@@ -2342,10 +2479,158 @@ export function SingraProjectsView({
                               />
                             </div>
                           )}
+
+                          {/* Dev-Konsole Drawer */}
+                          <div className="border-t border-outline-variant/30 bg-surface-container-lowest flex flex-col shrink-0">
+                            <div className="flex items-center justify-between px-3 py-1.5 bg-surface-container-low text-xs border-b border-outline-variant/20 select-none">
+                              <button
+                                type="button"
+                                onClick={() => setDevConsoleOpen((o) => !o)}
+                                className="flex items-center gap-1.5 font-medium text-on-surface hover:text-primary transition-colors"
+                              >
+                                <Terminal className="h-3.5 w-3.5 text-primary" />
+                                <span>Dev-Konsole</span>
+                                <span className="text-xs text-on-surface-variant font-mono">({consoleLogs.length})</span>
+                                {consoleLogs.filter((l) => l.level === 'error').length > 0 && (
+                                  <span className="rounded-full bg-status-destructive/20 text-status-destructive text-xs px-1.5 py-0.2 font-semibold">
+                                    {consoleLogs.filter((l) => l.level === 'error').length} Fehler
+                                  </span>
+                                )}
+                                {consoleLogs.filter((l) => l.level === 'warn').length > 0 && (
+                                  <span className="rounded-full bg-status-warning/20 text-status-warning text-xs px-1.5 py-0.2 font-semibold">
+                                    {consoleLogs.filter((l) => l.level === 'warn').length} Warnungen
+                                  </span>
+                                )}
+                                {devConsoleOpen ? <ChevronDown className="h-3 w-3 ml-0.5" /> : <ChevronUp className="h-3 w-3 ml-0.5" />}
+                              </button>
+                              {devConsoleOpen && (
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-1">
+                                    {(['all', 'log', 'warn', 'error'] as const).map((filter) => (
+                                      <button
+                                        key={filter}
+                                        type="button"
+                                        onClick={() => setConsoleFilter(filter)}
+                                        className={[
+                                          'px-1.5 py-0.5 rounded text-xs font-medium transition-colors',
+                                          consoleFilter === filter
+                                            ? 'bg-primary/20 text-primary'
+                                            : 'text-on-surface-variant hover:text-on-surface',
+                                        ].join(' ')}
+                                      >
+                                        {filter === 'all' ? 'Alle' : filter.toUpperCase()}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConsoleLogs([])}
+                                    className="text-on-surface-variant hover:text-on-surface text-xs px-1 py-0.5"
+                                    title="Konsole leeren"
+                                  >
+                                    Leeren
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            {devConsoleOpen && (
+                              <div className="h-36 overflow-y-auto p-2 font-mono text-xs bg-black/85 space-y-1">
+                                {consoleLogs.length === 0 ? (
+                                  <div className="text-on-surface-variant/50 italic text-xs p-2">Keine Konsolenausgaben erfasst.</div>
+                                ) : (
+                                  consoleLogs
+                                    .filter((l) => consoleFilter === 'all' || l.level === consoleFilter)
+                                    .map((l, idx) => (
+                                      <div
+                                        key={idx}
+                                        className={[
+                                          'flex items-start gap-2 py-0.5 px-1 rounded text-xs leading-relaxed',
+                                          l.level === 'error'
+                                            ? 'bg-status-destructive/15 text-status-destructive'
+                                            : l.level === 'warn'
+                                              ? 'bg-status-warning/15 text-status-warning'
+                                              : 'text-on-surface/90',
+                                        ].join(' ')}
+                                      >
+                                        <span className="text-xs text-on-surface-variant/60 shrink-0 font-sans">{l.time}</span>
+                                        <span className="uppercase text-xs font-bold px-1 rounded shrink-0 bg-white/10">
+                                          {l.level}
+                                        </span>
+                                        <span className="break-all whitespace-pre-wrap flex-1">{l.message}</span>
+                                        {l.level === 'error' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const targetChat = projectChats[0]?.id
+                                              if (targetChat) {
+                                                onOpenProjectChat(selectedProject!.id, targetChat)
+                                                toast.info('Chat geöffnet. Bitte Singra, diesen Fehler zu beheben.')
+                                              }
+                                            }}
+                                            className="shrink-0 text-xs text-primary hover:underline"
+                                          >
+                                            Mit Singra beheben
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </>
                       )}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'database' && (
+                <div className="flex-1 min-h-0 flex flex-col p-1">
+                  {envState?.dev?.dev_has_db && envState.dev.dev_server_id && envState.dev.dev_database_id ? (
+                    <div className="flex-1 min-h-0 flex flex-col">
+                      <PostgresStudio
+                        ziel={{
+                          art: 'server',
+                          serverId: envState.dev.dev_server_id,
+                          databaseId: envState.dev.dev_database_id,
+                        }}
+                        databaseName={envState.dev.dev_database_name ?? undefined}
+                      />
+                    </div>
+                  ) : (
+                    <div className="max-w-md mx-auto my-auto p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low text-center space-y-4">
+                      <Database className="h-10 w-10 text-primary mx-auto opacity-75" />
+                      <div>
+                        <h3 className="text-base font-semibold text-on-surface">PostgreSQL Dev-Datenbank</h3>
+                        <p className="text-xs text-on-surface-variant mt-1">
+                          Dieses Projekt besitzt aktuell noch keine aktive Dev-Datenbank. Sobald SQL-Dateien oder Tabellenschemata vorliegen, kann eine isolierte Entwicklungsdatenbank angelegt werden.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        className="rounded-full px-5 text-xs"
+                        onClick={async () => {
+                          if (!selectedProject) return
+                          try {
+                            const res = await aiApi.ensureDevDatabase(selectedProject.id)
+                            if (res.ok) {
+                              toast.success(`Dev-Datenbank „${res.dev_database_name}“ erfolgreich eingerichtet.`)
+                              const env = await aiApi.getProjectEnvironment(selectedProject.id)
+                              setEnvState(env)
+                            } else {
+                              toast.warning(res.message || 'Konnte keine Dev-Datenbank anlegen.')
+                            }
+                          } catch (err: unknown) {
+                            toast.error(err instanceof Error ? err.message : 'Fehler beim Anlegen der Dev-Datenbank.')
+                          }
+                        }}
+                      >
+                        <Database className="h-3.5 w-3.5 mr-1.5" />
+                        Dev-Datenbank einrichten
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3143,6 +3428,28 @@ export function SingraProjectsView({
 
             <div>
               <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                Öffentliche Node-IP (Schnittstelle)
+              </label>
+              <Dropdown
+                value={publishBindIp || publishOptions?.default_ip || ''}
+                onChange={(val) => setPublishBindIp(val)}
+                options={
+                  (publishOptions?.public_ips || []).length > 0
+                    ? (publishOptions?.public_ips || []).map((ip) => ({
+                        value: ip.ip,
+                        label: `${ip.ip} (${ip.interface}${!ip.is_private ? ' • Öffentlich' : ' • Privat'})`,
+                      }))
+                    : [{ value: '127.0.0.1', label: '127.0.0.1 (Lokal)' }]
+                }
+                aria-label="Öffentliche Schnittstelle auswählen"
+              />
+              <span className="text-xs text-on-surface-variant mt-0.5 block">
+                Auf dieser IP-Adresse wird der Port für Web-Traffic nach außen freigegeben.
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-on-surface-variant mb-1">
                 Release-Notiz (optional)
               </label>
               <Input
@@ -3153,36 +3460,130 @@ export function SingraProjectsView({
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                Erreichbar über
+              </label>
+              <Dropdown
+                value={publishDomainMode}
+                onChange={(val) => setPublishDomainMode(val as 'ip' | 'cloudflare' | 'external')}
+                options={[
+                  { value: 'ip', label: 'IP-Adresse und Port' },
+                  { value: 'cloudflare', label: 'Domain über Cloudflare' },
+                  { value: 'external', label: 'Eigene Domain (mit Anleitung)' },
+                ]}
+                aria-label="Erreichbarkeit wählen"
+              />
+            </div>
+
+            {publishDomainMode === 'cloudflare' && (
+              <div className="rounded-xl border border-primary/25 bg-surface-container-low/50 p-3 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-on-surface flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5 text-primary" />
+                    <span>Cloudflare DNS-Automatisierung</span>
+                  </span>
+                  {publishOptions?.cloudflare_configured ? (
+                    <Badge variant="success" className="text-xs">
+                      ✓ Cloudflare verbunden
+                    </Badge>
+                  ) : (
+                    <Badge variant="warning" className="text-xs">
+                      Kein Cloudflare-Token
+                    </Badge>
+                  )}
+                </div>
+                {publishOptions?.cloudflare_configured && publishOptions.cloudflare_zones.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                        Domain / Zone
+                      </label>
+                      <Dropdown
+                        value={publishCfZoneId}
+                        onChange={(val) => setPublishCfZoneId(val)}
+                        options={publishOptions.cloudflare_zones.map((z) => ({
+                          value: z.id,
+                          label: `${z.name} (${z.status})`,
+                        }))}
+                        aria-label="Cloudflare-Zone auswählen"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                        Subdomain-Präfix
+                      </label>
+                      <Input
+                        value={publishCfSubdomain}
+                        onChange={(e) => setPublishCfSubdomain(e.target.value)}
+                        placeholder="z. B. app oder toast"
+                        aria-label="Subdomain-Präfix"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                      Vollständige Domain
+                    </label>
+                    <Input
+                      value={publishDomain}
+                      onChange={(e) => setPublishDomain(e.target.value)}
+                      placeholder="app.beispiel.de"
+                      aria-label="Domain"
+                    />
+                  </div>
+                )}
+                {publishDomain && (
+                  <div className="text-xs text-primary font-mono pt-1">
+                    Zieladresse: https://{publishDomain}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {publishDomainMode === 'external' && (
               <div>
                 <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                  Erreichbar über
+                  Eigene Domain
                 </label>
-                <Dropdown
-                  value={publishDomainMode}
-                  onChange={(val) => setPublishDomainMode(val as 'ip' | 'cloudflare' | 'external')}
-                  options={[
-                    { value: 'ip', label: 'IP-Adresse und Port' },
-                    { value: 'cloudflare', label: 'Domain über Cloudflare' },
-                    { value: 'external', label: 'Eigene Domain (mit Anleitung)' },
-                  ]}
-                  aria-label="Erreichbarkeit wählen"
+                <Input
+                  value={publishDomain}
+                  onChange={(e) => setPublishDomain(e.target.value)}
+                  placeholder="app.beispiel.de"
+                  aria-label="Domain"
                 />
               </div>
-              {publishDomainMode !== 'ip' && (
-                <div>
-                  <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                    Domain
-                  </label>
-                  <Input
-                    value={publishDomain}
-                    onChange={(e) => setPublishDomain(e.target.value)}
-                    placeholder="app.beispiel.de"
-                    aria-label="Domain"
-                  />
+            )}
+
+            {selectedProject?.git_repo_url && (
+              <div className="rounded-xl border border-outline-variant/25 bg-surface-container-low/40 p-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-on-surface-variant flex items-center gap-1.5">
+                    <FolderGit2 className="h-3.5 w-3.5 text-primary" />
+                    <span>Git-Repository</span>
+                  </span>
+                  {publishOptions?.github_configured ? (
+                    <Badge variant="success" className="text-xs gap-1">
+                      ✓ GitHub-Schlüssel im Konto hinterlegt
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-on-surface-variant font-mono truncate max-w-[200px]">
+                      {selectedProject.git_repo_url}
+                    </span>
+                  )}
                 </div>
-              )}
-            </div>
+                <label className="flex items-center gap-2 text-xs text-on-surface cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={publishMergeToMain}
+                    onChange={(e) => setPublishMergeToMain(e.target.checked)}
+                    className="rounded border-outline-variant text-primary focus:ring-primary"
+                  />
+                  <span>Änderungen bei Veröffentlichung in den main-Branch mergen</span>
+                </label>
+              </div>
+            )}
 
             <div className="rounded-xl border border-primary/25 bg-primary/8 p-3 text-xs text-on-surface-variant space-y-1">
               <div className="font-semibold text-on-surface">Wie geht es weiter?</div>

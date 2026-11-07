@@ -1606,6 +1606,120 @@ def _seed_initial_agents_md_if_missing(
         pass
 
 
+def ensure_dev_database(
+    db: Session,
+    user: User,
+    project_id: str,
+) -> dict[str, Any] | None:
+    """Stellt sicher, dass das Projekt eine funktionierende PostgreSQL-Dev-Datenbank besitzt."""
+    from models import Node, Server, ServerPermission, PostgresDatabase
+    from services import postgres_service, ai_db_migration_service
+    from services.node_service import get_local_node
+
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    meta = _ensure_env_metadata(project, ws)
+    files = list_project_files(db, user, project.id)
+
+    db_keywords = ("postgresql", "postgres", "psycopg", "prisma", "database_url", "schema.sql")
+    has_db = any(
+        f.path.lower().endswith(".sql")
+        or f.path.lower().startswith("migrations/")
+        or (f.content and any(kw in f.content.lower() for kw in db_keywords))
+        for f in files
+    )
+    if not has_db:
+        return None
+
+    local_node = get_local_node(db)
+    if local_node is None:
+        local_node = db.query(Node).filter(Node.is_local == True).first()  # noqa: E712
+    if local_node is None:
+        local_node = db.query(Node).first()
+
+    node_id = local_node.id if local_node else None
+
+    dev_server_id = meta.get("dev_server_id")
+    dev_server: Server | None = None
+    if isinstance(dev_server_id, int) and dev_server_id > 0:
+        dev_server = db.get(Server, dev_server_id)
+
+    if dev_server is None:
+        dev_server = Server(
+            name=f"{project.name} (Dev)"[:120],
+            game_type="node_backend",
+            install_dir=str(ws),
+            node_id=node_id,
+            status="stopped",
+            status_message=f"Singra Dev Environment ({local_node.name if local_node else 'Local'})",
+            desired_power_state="stopped",
+            public_bind_ip="127.0.0.1",
+        )
+        db.add(dev_server)
+        db.flush()
+        db.add(
+            ServerPermission(
+                user_id=user.id,
+                server_id=dev_server.id,
+                permission_key="*",
+            )
+        )
+        meta["dev_server_id"] = dev_server.id
+
+    pg_db = (
+        db.query(PostgresDatabase)
+        .filter(PostgresDatabase.server_id == dev_server.id)
+        .first()
+    )
+    if pg_db is None:
+        try:
+            creds = postgres_service.provision_server_databases(db, dev_server, 1)
+            if creds:
+                pg_db = (
+                    db.query(PostgresDatabase)
+                    .filter(PostgresDatabase.server_id == dev_server.id)
+                    .first()
+                )
+        except Exception as exc:
+            logger.warning("Konnte Dev-Datenbank fuer Projekt %s nicht anlegen: %s", project.id, exc)
+            return None
+
+    if pg_db is None:
+        return None
+
+    meta["dev_database_id"] = pg_db.id
+    meta["dev_database_name"] = pg_db.name
+    _save_env_metadata(ws, meta)
+
+    migration_result = None
+    try:
+        migration_result = ai_db_migration_service.run_migrations_for_database(
+            db, dev_server.id, pg_db.id, files
+        )
+    except Exception as exc:
+        logger.warning("Migrationen fuer Dev-Datenbank %s fehlgeschlagen: %s", pg_db.id, exc)
+
+    owner_pw = ""
+    try:
+        owner_pw = postgres_service._owner_password(pg_db)
+    except Exception:
+        pass
+    conn_str = f"postgresql://{pg_db.owner_role}:{owner_pw}@127.0.0.1:5432/{pg_db.name}"
+    env_content = f"DATABASE_URL={conn_str}\nPGHOST=127.0.0.1\nPGPORT=5432\nPGDATABASE={pg_db.name}\nPGUSER={pg_db.owner_role}\nPGPASSWORD={owner_pw}\n"
+    try:
+        (ws / ".env").write_text(env_content, encoding="utf-8")
+    except OSError:
+        pass
+
+    return {
+        "dev_server_id": dev_server.id,
+        "dev_database_id": pg_db.id,
+        "dev_database_name": pg_db.name,
+        "migrations": migration_result,
+        "connection_string": conn_str,
+    }
+
+
 def get_project_environment(
     db: Session,
     user: User,
@@ -1679,6 +1793,14 @@ def get_project_environment(
     else:
         unreleased_files = [f.path for f in files]
 
+    # Sicherstellen, dass bei DB-Bedarf die Dev-Datenbank angelegt ist
+    if not meta.get("dev_database_id"):
+        try:
+            ensure_dev_database(db, user, project.id)
+            meta = _ensure_env_metadata(project, ws)
+        except Exception as exc:
+            logger.debug("Dev-Datenbank konnte beim Abrufen nicht angelegt werden: %s", exc)
+
     return {
         "project_id": project.id,
         "active_environment": str(meta.get("active_environment") or "dev"),
@@ -1691,6 +1813,10 @@ def get_project_environment(
             "pending_migrations": pending_migrations,
             "unreleased_changes_count": len(unreleased_files),
             "unreleased_files": unreleased_files[:25],
+            "dev_server_id": meta.get("dev_server_id"),
+            "dev_database_id": meta.get("dev_database_id"),
+            "dev_database_name": meta.get("dev_database_name"),
+            "dev_has_db": bool(meta.get("dev_database_id")),
         },
         "production": {
             "published": bool(meta.get("prod_published")),
@@ -1837,6 +1963,8 @@ def publish_project_to_production(
     enable_database: bool | None = None,
     backend_proxy_url: str | None = None,
     api_path: str | None = None,
+    bind_ip: str | None = None,
+    merge_to_main: bool = False,
 ) -> dict[str, object]:
     """Veröffentlicht das Projekt auf Produktion mit Blueprint-Zuordnung, Caddy-VHost und optionaler PostgreSQL-Datenbank."""
     from models import Node, Server, ServerPermission, PostgresDatabase
@@ -1917,6 +2045,17 @@ def publish_project_to_production(
     effective_node_id = chosen_node.id if chosen_node is not None else None
     effective_node_name = chosen_node.name if chosen_node is not None else "Lokaler Haupt-Node"
 
+    # Bind-IP ermitteln (behebt unvollstaendige Bind-IPs fuer den Server-Lifecycle)
+    effective_bind_ip: str | None = None
+    if bind_ip and bind_ip.strip():
+        effective_bind_ip = bind_ip.strip()
+    elif chosen_node is not None:
+        effective_bind_ip = getattr(chosen_node, "public_bind_ip", None)
+
+    if not effective_bind_ip:
+        from services.network_interfaces_service import default_bind_ip
+        effective_bind_ip = default_bind_ip() or "127.0.0.1"
+
     # 3. Dateien in das Produktions-Release-Verzeichnis spiegeln
     prod_dir = ws / "_prod_release"
     if prod_dir.exists():
@@ -1989,6 +2128,7 @@ def publish_project_to_production(
                 status_message=f"Singra Backend v{next_version} ({effective_node_name})",
                 desired_power_state="running",
                 guardian_observed_state="healthy",
+                public_bind_ip=effective_bind_ip,
                 last_started_at=now,
             )
             db.add(backend_server)
@@ -2010,13 +2150,14 @@ def publish_project_to_production(
             backend_server.status = "running"
             backend_server.status_message = f"Singra Backend v{next_version} ({effective_node_name})"
             backend_server.desired_power_state = "running"
+            backend_server.public_bind_ip = effective_bind_ip
             backend_server.last_started_at = now
             be_ports = [p.port for p in (backend_server.ports or []) if p.role == "web"]
             be_port = be_ports[0] if be_ports else 5001
 
-        # Automatische PostgreSQL-Datenbank provisionieren
+        # Automatische PostgreSQL-Datenbank provisionieren & migrieren
         if enable_database:
-            from services import postgres_service
+            from services import postgres_service, ai_db_migration_service
 
             existing_db = (
                 db.query(PostgresDatabase)
@@ -2028,11 +2169,44 @@ def publish_project_to_production(
                     new_dbs = postgres_service.provision_server_databases(db, backend_server, 1)
                     if new_dbs:
                         db_credentials = new_dbs[0]
+                        existing_db = (
+                            db.query(PostgresDatabase)
+                            .filter(PostgresDatabase.server_id == backend_server.id)
+                            .first()
+                        )
                 except Exception as exc:
                     logger.warning(
                         "Postgres-Provisionierung fuer Server %s fehlgeschlagen (Cluster nicht bereit): %s",
                         backend_server.id,
                         exc,
+                    )
+            elif existing_db:
+                owner_pw = ""
+                try:
+                    owner_pw = postgres_service._owner_password(existing_db)
+                except Exception:
+                    pass
+                db_credentials = {
+                    "database": existing_db.name,
+                    "user": existing_db.owner_role,
+                    "password": owner_pw,
+                    "host": "127.0.0.1",
+                    "port": 5432,
+                    "connection_string": f"postgresql://{existing_db.owner_role}:{owner_pw}@127.0.0.1:5432/{existing_db.name}",
+                }
+
+            if existing_db:
+                try:
+                    prod_mig_res = ai_db_migration_service.run_migrations_for_database(
+                        db, backend_server.id, existing_db.id, files
+                    )
+                    meta["prod_db_migrations"] = prod_mig_res
+                except Exception as mig_err:
+                    logger.warning(
+                        "Produktions-Migrationen fuer Server %s / DB %s fehlgeschlagen: %s",
+                        backend_server.id,
+                        existing_db.id,
+                        mig_err,
                     )
 
         # .env-Datei fuer das Backend schreiben
@@ -2052,6 +2226,32 @@ def publish_project_to_production(
             (backend_dir / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
         except OSError:
             pass
+
+        # Firewall fuer Backend oeffnen
+        try:
+            from services import firewall_service
+            firewall_service.open_ports(
+                backend_server.name,
+                [(be_port, "tcp", "web")],
+                node=chosen_node,
+                db=db,
+                server_id=backend_server.id,
+                user_id=user.id,
+                reason=f"Singra Backend v{next_version} veröffentlicht",
+            )
+        except Exception as fw_err:
+            logger.warning("Firewall-Port %s fuer Backend konnte nicht geoeffnet werden: %s", be_port, fw_err)
+
+        # Backend-Container starten oder neu starten
+        try:
+            from services.server_lifecycle_service import queue_lifecycle_operation
+            queue_lifecycle_operation(
+                db,
+                backend_server,
+                "restart" if backend_server.status == "running" else "start",
+            )
+        except Exception as start_err:
+            logger.warning("Lifecycle-Start fuer Backend %s fehlgeschlagen: %s", backend_server.id, start_err)
 
     # 5. Frontend-Server bereitstellen (bei Frontend oder getrenntem Fullstack)
     frontend_server: Server | None = None
@@ -2092,6 +2292,7 @@ def publish_project_to_production(
                 desired_power_state="running",
                 guardian_observed_state="healthy",
                 container_name="caddy-managed",
+                public_bind_ip=effective_bind_ip,
                 last_started_at=now,
             )
             db.add(frontend_server)
@@ -2113,6 +2314,7 @@ def publish_project_to_production(
             frontend_server.status_message = f"Singra Frontend v{next_version} ({effective_node_name})"
             frontend_server.desired_power_state = "running"
             frontend_server.container_name = "caddy-managed"
+            frontend_server.public_bind_ip = effective_bind_ip
             frontend_server.last_started_at = now
             fe_ports = [p.port for p in (frontend_server.ports or []) if p.role == "web"]
             fe_port = fe_ports[0] if fe_ports else 8080
@@ -2138,6 +2340,21 @@ def publish_project_to_production(
         )
         caddy_service.apply_vhost(frontend_server.id, caddy_cfg, node=chosen_node)
 
+        # Firewall fuer Frontend oeffnen
+        try:
+            from services import firewall_service
+            firewall_service.open_ports(
+                frontend_server.name,
+                [(fe_port, "tcp", "web")],
+                node=chosen_node,
+                db=db,
+                server_id=frontend_server.id,
+                user_id=user.id,
+                reason=f"Singra Frontend v{next_version} veröffentlicht",
+            )
+        except Exception as fw_err:
+            logger.warning("Firewall-Port %s fuer Frontend konnte nicht geoeffnet werden: %s", fe_port, fw_err)
+
         # Cloudflare DNS automatisieren, falls Domain angegeben und Token konfiguriert
         clean_domain = (domain or "").strip()
         if clean_domain:
@@ -2145,14 +2362,13 @@ def publish_project_to_production(
 
             if cloudflare_service.is_configured():
                 import asyncio
-                public_ip = getattr(chosen_node, "public_bind_ip", None) or "127.0.0.1"
                 try:
                     asyncio.run(
                         cloudflare_service.create_dns_record(
                             zone_id=None,
                             name=clean_domain,
                             rtype="A",
-                            content=public_ip,
+                            content=effective_bind_ip,
                             proxied=True,
                         )
                     )
@@ -2166,16 +2382,15 @@ def publish_project_to_production(
     # 6. Live-URL ermitteln
     primary_server = frontend_server or backend_server
     assert primary_server is not None
-    node_ip = getattr(chosen_node, "public_bind_ip", None) or "127.0.0.1"
     clean_domain = (domain or "").strip()
     if clean_domain:
         live_web_url = f"https://{clean_domain}"
     elif frontend_server and fe_port:
-        live_web_url = f"http://{node_ip}:{fe_port}"
+        live_web_url = f"http://{effective_bind_ip}:{fe_port}"
     elif backend_server and be_port:
-        live_web_url = f"http://{node_ip}:{be_port}"
+        live_web_url = f"http://{effective_bind_ip}:{be_port}"
     else:
-        live_web_url = f"http://{node_ip}"
+        live_web_url = f"http://{effective_bind_ip}"
 
     # 7. Git-Commit & Push falls verknuepft
     try:
@@ -2189,6 +2404,32 @@ def publish_project_to_production(
     except Exception:
         pass
 
+    if merge_to_main and project.git_repo_url:
+        try:
+            effective_token = resolve_git_token_for_user(db, user, project.git_provider)
+            clean_auth_url = _clean_git_remote_url(project.git_repo_url, project.git_provider) if effective_token else project.git_repo_url
+            base_env = {
+                **os.environ,
+                "GIT_TERMINAL_PROMPT": "0",
+                "GIT_AUTHOR_NAME": user.username or "Singra AI",
+                "GIT_AUTHOR_EMAIL": user.email or "singra@mauntingstudios.de",
+                "GIT_COMMITTER_NAME": user.username or "Singra AI",
+                "GIT_COMMITTER_EMAIL": user.email or "singra@mauntingstudios.de",
+            }
+            env, _ = _prepare_git_askpass_env(base_env, effective_token)
+            subprocess.run(
+                ["git", "push", clean_auth_url, "HEAD:main"],
+                cwd=str(ws),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                timeout=45,
+            )
+        except Exception as merge_err:
+            logger.warning("Git-Push nach main fuer Projekt %s fehlgeschlagen: %s", project.id, merge_err)
+
     # 8. Metadaten sichern
     meta["prod_published"] = True
     meta["prod_version"] = next_version
@@ -2197,6 +2438,7 @@ def publish_project_to_production(
     meta["prod_frontend_server_id"] = frontend_server.id if frontend_server else None
     meta["prod_backend_server_id"] = backend_server.id if backend_server else None
     meta["prod_web_url"] = live_web_url
+    meta["prod_bind_ip"] = effective_bind_ip
     meta["prod_frontend_port"] = fe_port if frontend_server else None
     meta["prod_backend_port"] = be_port if backend_server else None
     meta["prod_api_path"] = (api_path or "/api/*") if frontend_server else None
