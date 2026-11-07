@@ -102,6 +102,14 @@ class AiProjectGitCommitPayload(BaseModel):
     token: str | None = Field(default=None, max_length=512)
 
 
+class AiProjectGitCreateRepoPayload(BaseModel):
+    repo_name: str | None = Field(default=None, max_length=120)
+    private: bool = True
+    description: str | None = Field(default=None, max_length=350)
+    provider: str = Field(default="github", pattern="^(github|gitlab)$")
+    token: str | None = Field(default=None, max_length=512)
+
+
 @router.get("", response_model=list[AiProjectResponse])
 def list_projects(
     team_id: int | None = Query(default=None),
@@ -191,6 +199,7 @@ def list_project_files(
 
 
 @router.post("/{project_id}/files", response_model=AiProjectFileResponse)
+@router.put("/{project_id}/files", response_model=AiProjectFileResponse)
 def write_project_file(
     project_id: str,
     payload: AiProjectFileWritePayload,
@@ -308,6 +317,29 @@ def commit_project_git(
             project_id,
             message=payload.message,
             push=payload.push,
+            token=payload.token,
+        )
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/git/create-repo")
+def create_project_git_repo(
+    project_id: str,
+    payload: AiProjectGitCreateRepoPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_service.git_create_remote_repository(
+            db,
+            user,
+            project_id,
+            repo_name=payload.repo_name,
+            private=payload.private,
+            description=payload.description,
+            provider=payload.provider,
             token=payload.token,
         )
     except AiProjectError as exc:

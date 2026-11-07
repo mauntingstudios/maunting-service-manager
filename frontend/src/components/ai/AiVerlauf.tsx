@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from 'react'
-import { AlertTriangle, BookOpen, BrainCircuit, Calendar, CalendarClock, ChevronDown, ChevronRight, FolderGit2, Globe2, Loader2, Mail, Monitor, Sparkles, User, Wrench } from 'lucide-react'
+import { AlertTriangle, BookOpen, BrainCircuit, Calendar, CalendarClock, Check, ChevronDown, ChevronRight, FolderGit2, Globe2, Loader2, Mail, Monitor, Sparkles, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button, Kurzinfo } from '@maunting/ui'
+import { Button, ChatBubbleSurface, ChatMessageMetaRow, Kurzinfo } from '@maunting/ui'
 
 import type {
   AiActionProposal,
@@ -171,7 +171,16 @@ export const KEINE_AUFRUFE: AiToolPlanAufruf[] = []
  * Vergleich still wertlos, ohne dass ein Test es merkt.
  */
 export const AiAntwortblase = memo(function AiAntwortblase({
-  message, beantwortet, busy, laufendeWerkzeuge, onAnswer,
+  message,
+  beantwortet,
+  busy,
+  laufendeWerkzeuge,
+  onAnswer,
+  isStarred = false,
+  onOpenMenu,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: {
   message: AiMessage
   beantwortet: boolean
@@ -188,6 +197,11 @@ export const AiAntwortblase = memo(function AiAntwortblase({
    * kann im Guardian-Fenster also nur aus einem Verlauf von früher stammen.
    */
   onAnswer: ((label: string) => void) | null
+  isStarred?: boolean
+  onOpenMenu?: (message: AiMessage) => void
+  selectionMode?: boolean
+  isSelected?: boolean
+  onToggleSelect?: (message: AiMessage) => void
 }) {
   const { t } = useTranslation()
   const isStreaming = message.status === 'streaming'
@@ -197,96 +211,112 @@ export const AiAntwortblase = memo(function AiAntwortblase({
     ? gruppiert(message.sections)
     : null
   return (
-    <article className="flex gap-3">
-      <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-black/60 shadow-[0_0_10px_rgba(56,189,248,0.35)] overflow-hidden">
-        <img
-          src="/singra-logo.png"
-          alt="Singra"
-          className="h-full w-full object-contain rounded-full"
-        />
-      </span>
-      <div className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-surface-container-lowest/85 backdrop-blur-xl p-4 sm:p-5 shadow-lg text-on-surface">
-        {/* Nachrichten aus der Zeit vor den Denkabschnitten: dort gibt es die
-            Gedanken nur am Stück, ohne jede Stelle. Dann steht der Kasten wie
-            früher oben — besser als gar nicht, und es ist die einzige
-            Anordnung, die sich für sie nicht raten lässt. Alles Neuere
-            zeichnet unten in `teile` einen Block je Runde. */}
-        {message.reasoning && !teile?.some((teil) => teil.art === 'denken') && (
-          <AiReasoningBlock content={message.reasoning} streaming={false} />
-        )}
-        {teile?.length ? (
-          // Der Zug in seiner tatsächlichen Reihenfolge: Gedanke, Satz,
-          // Werkzeuge, Gedanke, Satz. Genau so ist er entstanden, und genau so
-          // hat der Benutzer ihn live gesehen — nach einem Neuladen soll er
-          // nicht anders aussehen.
-          <div className="space-y-3">
-            {teile.map((teil, stelle) => (
-              teil.art === 'tools' ? (
-                <div key={stelle} className="space-y-2">
-                  <AiWerkzeuggruppe
-                    werkzeuge={teil.werkzeuge}
-                    // Während die Antwort entsteht, ist das Aufgeklappte die
-                    // Antwort: der Benutzer sieht, dass gearbeitet wird. Ist sie
-                    // fertig, ist es ein Beleg, den man nachschlagen kann — und
-                    // der den Verlauf nicht zustellen soll.
-                    offenVoreingestellt={isStreaming}
-                  />
-                  {teil.werkzeuge.map((w, wIdx) => {
-                    const proj = w.project_created || (w.tool_name === 'project_create' && (w.ergebnis as any)?.created ? (w.ergebnis as any) : null)
-                    if (!proj) return null
-                    return (
-                      <AiProjectHandoffCard key={wIdx} project={proj} />
-                    )
-                  })}
-                </div>
-              ) : teil.art === 'denken' ? (
-                <AiReasoningBlock
-                  key={stelle}
-                  content={teil.inhalt}
-                  // Nur der letzte Block denkt noch. Alle früheren sind
-                  // abgeschlossen und klappen zu — sonst pulsten drei Kästen
-                  // gleichzeitig und behaupteten dasselbe.
-                  streaming={isStreaming && stelle === teile.length - 1}
-                />
-              ) : (
-                <AiMarkdown key={stelle} content={teil.inhalt} />
-              )
-            ))}
-          </div>
-        ) : message.content ? (
-          <AiMarkdown content={message.content} />
-        ) : !isStreaming && !message.question && !message.reasoning ? (
-          // Eine Rückfrage *ist* die Antwort. Früher stand hier "Keine Antwort
-          // erhalten" unter jeder gestellten Frage, weil die Frage in einer
-          // eigenen Karte lag und der Nachrichtentext leer blieb. Ebenso ist ein
-          // Denkabschnitt eine Ausgabe, unter der kein fälschliches "Keine Antwort" steht.
-          <p className="text-sm text-on-surface-variant">{t('ai.chat.noResponse')}</p>
-        ) : null}
-        {/* Die Wartezeile steht **einmal** und immer als letzte Zeile der
-            Blase — nicht mehr an drei Stellen mit drei Bedingungen. Genau
-            daraus entstanden die zwei Anzeigen übereinander und der leere
-            Denkkasten, der nur behauptete, dass gedacht wird. Der Denkkasten
-            erscheint jetzt allein dann, wenn wirklich Denktext fließt: er ist
-            oben ein `teil`, kein Platzhalter. */}
-        {isStreaming && <AiWartezeile aufrufe={laufendeWerkzeuge} />}
-        {/* Die Rückfrage gehört in dieselbe Blase wie der Text davor — sie ist
-            Teil dieser Antwort und keine neue Nachricht. */}
-        {message.question && onAnswer && (
-          <AiQuestionCard
-            question={message.question}
-            answered={beantwortet}
-            disabled={busy}
-            onAnswer={onAnswer}
+    <article
+      className={`group flex flex-col items-start rounded-xl transition-colors ${
+        isSelected ? 'bg-primary/10' : ''
+      }`}
+      onClick={selectionMode && onToggleSelect ? () => onToggleSelect(message) : undefined}
+    >
+      {selectionMode && (
+        <div className="mb-1 flex items-center gap-2">
+          <span
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors ${
+              isSelected
+                ? 'border-primary bg-primary text-on-primary'
+                : 'border-outline-variant/60 text-transparent'
+            }`}
+            aria-hidden="true"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </span>
+        </div>
+      )}
+      <div className="flex w-full items-start gap-2.5">
+        <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-black/60 shadow-[0_0_10px_rgba(56,189,248,0.35)] overflow-hidden">
+          <img
+            src="/singra-logo.png"
+            alt="Singra"
+            className="h-full w-full object-contain rounded-full"
           />
-        )}
-        {message.created_at && !isStreaming && (
-          <p className="mt-1 text-label-sm text-on-surface-variant/60">
-            {formatMessageTime(message.created_at)}
-          </p>
-        )}
-        {message.status === 'failed' && (
-          <p className="mt-2 text-xs text-status-destructive">{t('ai.chat.failed')}</p>
-        )}
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col items-start">
+          <ChatBubbleSurface isSelf={false} size="wide" className="w-fit max-w-[92%] md:max-w-[85%]">
+            {/* Nachrichten aus der Zeit vor den Denkabschnitten: dort gibt es die
+                Gedanken nur am Stück, ohne jede Stelle. Dann steht der Kasten wie
+                früher oben — besser als gar nicht, und es ist die einzige
+                Anordnung, die sich für sie nicht raten lässt. Alles Neuere
+                zeichnet unten in `teile` einen Block je Runde. */}
+            {message.reasoning && !teile?.some((teil) => teil.art === 'denken') && (
+              <AiReasoningBlock content={message.reasoning} streaming={false} />
+            )}
+            {teile?.length ? (
+              // Der Zug in seiner tatsächlichen Reihenfolge: Gedanke, Satz,
+              // Werkzeuge, Gedanke, Satz. Genau so ist er entstanden, und genau so
+              // hat der Benutzer ihn live gesehen — nach einem Neuladen soll er
+              // nicht anders aussehen.
+              <div className="space-y-3">
+                {teile.map((teil, stelle) => (
+                  teil.art === 'tools' ? (
+                    <div key={stelle} className="space-y-2">
+                      <AiWerkzeuggruppe
+                        werkzeuge={teil.werkzeuge}
+                        // Während die Antwort entsteht, ist das Aufgeklappte die
+                        // Antwort: der Benutzer sieht, dass gearbeitet wird. Ist sie
+                        // fertig, ist es ein Beleg, den man nachschlagen kann — und
+                        // der den Verlauf nicht zustellen soll.
+                        offenVoreingestellt={isStreaming}
+                      />
+                      {teil.werkzeuge.map((w, wIdx) => {
+                        const proj = w.project_created || (w.tool_name === 'project_create' && (w.ergebnis as any)?.created ? (w.ergebnis as any) : null)
+                        if (!proj) return null
+                        return (
+                          <AiProjectHandoffCard key={wIdx} project={proj} />
+                        )
+                      })}
+                    </div>
+                  ) : teil.art === 'denken' ? (
+                    <AiReasoningBlock
+                      key={stelle}
+                      content={teil.inhalt}
+                      // Nur der letzte Block denkt noch. Alle früheren sind
+                      // abgeschlossen und klappen zu — sonst pulsten drei Kästen
+                      // gleichzeitig und behaupteten dasselbe.
+                      streaming={isStreaming && stelle === teile.length - 1}
+                    />
+                  ) : (
+                    <AiMarkdown key={stelle} content={teil.inhalt} />
+                  )
+                ))}
+              </div>
+            ) : message.content ? (
+              <AiMarkdown content={message.content} />
+            ) : !isStreaming && !message.question && !message.reasoning ? (
+              <p className="text-sm text-on-surface-variant">{t('ai.chat.noResponse')}</p>
+            ) : null}
+            {isStreaming && <AiWartezeile aufrufe={laufendeWerkzeuge} />}
+            {message.question && onAnswer && (
+              <AiQuestionCard
+                question={message.question}
+                answered={beantwortet}
+                disabled={busy}
+                onAnswer={onAnswer}
+              />
+            )}
+            {message.status === 'failed' && (
+              <p className="mt-2 text-xs text-status-destructive">{t('ai.chat.failed')}</p>
+            )}
+          </ChatBubbleSurface>
+          {!isStreaming && (
+            <ChatMessageMetaRow
+              align="end"
+              isStarred={isStarred}
+              starredLabel="Markiert"
+              onOpenMenu={onOpenMenu ? () => onOpenMenu(message) : undefined}
+              menuLabel="Nachrichtenaktionen"
+              timestamp={message.created_at ? formatMessageTime(message.created_at) : null}
+            />
+          )}
+        </div>
       </div>
     </article>
   )
@@ -609,24 +639,19 @@ export function AiVerlauf({ entries, laufendeWerkzeuge, onProposalChange, nurAns
 
         const { message } = entry
         if (message.role === 'user') {
-          // Im Guardian-Fenster ist die „Benutzernachricht" der Auftragstext,
-          // den das Panel geschrieben hat — kein Mensch. Sie steht trotzdem
-          // wie eine: sie ist der Anlass, aus dem alles Folgende entstand.
           return (
-            <article key={entry.id} className="flex justify-end gap-3">
-              <div className="flex max-w-[85%] flex-col items-end rounded-2xl rounded-br-md border border-primary/25 bg-primary/10 px-4 py-2.5">
-                <p className="w-full whitespace-pre-wrap break-words text-sm leading-6 text-on-surface">
+            <article key={entry.id} className="group flex flex-col items-end">
+              <ChatBubbleSurface isSelf>
+                <p className="w-full whitespace-pre-wrap break-words text-sm leading-6">
                   {message.content}
                 </p>
-                {message.created_at && (
-                  <span className="mt-1 text-label-sm text-on-surface-variant/70">
-                    {formatMessageTime(message.created_at)}
-                  </span>
-                )}
-              </div>
-              <span className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-container-high text-on-surface-variant">
-                <User className="h-3.5 w-3.5" aria-hidden="true" />
-              </span>
+              </ChatBubbleSurface>
+              {message.created_at && (
+                <ChatMessageMetaRow
+                  align="end"
+                  timestamp={formatMessageTime(message.created_at)}
+                />
+              )}
             </article>
           )
         }

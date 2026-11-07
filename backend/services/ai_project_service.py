@@ -884,6 +884,179 @@ def git_commit_and_push(
     return status
 
 
+def git_create_remote_repository(
+    db: Session,
+    user: User,
+    project_id: str,
+    *,
+    repo_name: str | None = None,
+    private: bool = True,
+    description: str | None = None,
+    provider: str = "github",
+    token: str | None = None,
+) -> dict[str, object]:
+    """Erstellt ein neues GitHub- oder GitLab-Repository und verknüpft es direkt mit dem Projekt."""
+    import json as _json
+    import urllib.error as _urlerror
+    import urllib.request as _urlrequest
+
+    project = get_project(db, user, project_id)
+    target_provider = provider if provider in ("github", "gitlab") else (project.git_provider or "github")
+    effective_token = (token or "").strip() or resolve_git_token_for_user(db, user, target_provider)
+    if not effective_token:
+        raise AiProjectError(
+            "Kein GitHub/GitLab-Token hinterlegt. Bitte gib ein Personal Access Token an oder speichere es im Schlüsselbund."
+        )
+
+    raw_name = (repo_name or project.name or "singra-project").strip()
+    clean_repo_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", raw_name).strip("-._") or "singra-project"
+    clean_desc = (description if description is not None else (project.description or "")).strip()[:350]
+
+    clone_url = ""
+    html_url = ""
+    try:
+        if target_provider == "gitlab":
+            payload_bytes = _json.dumps(
+                {
+                    "name": clean_repo_name,
+                    "visibility": "private" if private else "public",
+                    "description": clean_desc,
+                }
+            ).encode("utf-8")
+            req = _urlrequest.Request(
+                "https://gitlab.com/api/v4/projects",
+                data=payload_bytes,
+                headers={
+                    "PRIVATE-TOKEN": effective_token,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "User-Agent": "MauntingServerManager-Singra",
+                },
+                method="POST",
+            )
+            with _urlrequest.urlopen(req, timeout=20) as resp:
+                data = _json.loads(resp.read().decode("utf-8", errors="replace"))
+                clone_url = str(data.get("http_url_to_repo") or "").strip()
+                html_url = str(data.get("web_url") or clone_url).strip()
+        else:
+            payload_bytes = _json.dumps(
+                {
+                    "name": clean_repo_name,
+                    "private": bool(private),
+                    "description": clean_desc,
+                    "auto_init": False,
+                }
+            ).encode("utf-8")
+            req = _urlrequest.Request(
+                "https://api.github.com/user/repos",
+                data=payload_bytes,
+                headers={
+                    "Authorization": f"Bearer {effective_token}",
+                    "Accept": "application/vnd.github+json",
+                    "Content-Type": "application/json",
+                    "User-Agent": "MauntingServerManager-Singra",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                method="POST",
+            )
+            with _urlrequest.urlopen(req, timeout=20) as resp:
+                data = _json.loads(resp.read().decode("utf-8", errors="replace"))
+                clone_url = str(data.get("clone_url") or "").strip()
+                html_url = str(data.get("html_url") or clone_url).strip()
+    except _urlerror.HTTPError as exc:
+        err_body = ""
+        try:
+            err_body = exc.read().decode("utf-8", errors="replace")
+            parsed_err = _json.loads(err_body)
+            msg = parsed_err.get("message") or err_body
+            errors_list = parsed_err.get("errors")
+            if isinstance(errors_list, list) and errors_list:
+                details = ", ".join(
+                    str(item.get("message") or item) if isinstance(item, dict) else str(item)
+                    for item in errors_list
+                )
+                msg = f"{msg} ({details})"
+        except Exception:
+            msg = err_body or str(exc)
+        if effective_token:
+            msg = msg.replace(effective_token, "***")
+        raise AiProjectError(f"Repository konnte nicht erstellt werden (HTTP {exc.code}): {msg[:300]}") from exc
+    except Exception as exc:
+        msg = str(exc)
+        if effective_token:
+            msg = msg.replace(effective_token, "***")
+        raise AiProjectError(f"Repository konnte nicht erstellt werden: {msg[:300]}") from exc
+
+    if not clone_url:
+        raise AiProjectError("Vom Git-Anbieter wurde keine gültige Repository-URL zurückgegeben.")
+
+    project.git_provider = target_provider
+    project.git_repo_url = clone_url
+    project.git_branch = (project.git_branch or "main").strip() or "main"
+    project.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+    ws = ensure_project_workspace(project)
+    _materialize_db_files_to_workspace(db, project, ws)
+    readme_path = ws / "README.md"
+    if not any(ws.iterdir()) or (not readme_path.exists() and not (ws / ".git").exists()):
+        readme_content = f"# {project.name}\n\n{project.description or 'Erstellt mit Singra.'}\n"
+        write_project_file(
+            db,
+            user,
+            project.id,
+            rel_path="README.md",
+            content=readme_content,
+            mime_type="text/markdown",
+        )
+
+    git_dir = ws / ".git"
+    base_env = {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_AUTHOR_NAME": user.username or "Singra AI",
+        "GIT_AUTHOR_EMAIL": user.email or "singra@mauntingstudios.de",
+        "GIT_COMMITTER_NAME": user.username or "Singra AI",
+        "GIT_COMMITTER_EMAIL": user.email or "singra@mauntingstudios.de",
+    }
+    env, _ = _prepare_git_askpass_env(base_env, effective_token)
+    target_branch = project.git_branch or "main"
+
+    if not git_dir.exists():
+        subprocess.run(["git", "init", "-b", target_branch], cwd=str(ws), capture_output=True, env=env, timeout=10)
+    subprocess.run(["git", "remote", "remove", "origin"], cwd=str(ws), capture_output=True, env=env, timeout=10)
+    subprocess.run(["git", "remote", "add", "origin", clone_url], cwd=str(ws), capture_output=True, env=env, timeout=10)
+    subprocess.run(["git", "add", "-A"], cwd=str(ws), capture_output=True, env=env, timeout=15)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"],
+        cwd=str(ws),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        timeout=15,
+    )
+    clean_auth_url = _clean_git_remote_url(clone_url, target_provider)
+    subprocess.run(
+        ["git", "push", "-u", clean_auth_url, f"HEAD:{target_branch}"],
+        cwd=str(ws),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        timeout=45,
+    )
+
+    status = git_status(db, user, project.id)
+    status["repo_url"] = clone_url
+    status["remote_url"] = clone_url
+    status["html_url"] = html_url
+    status["created"] = True
+    return status
+
+
 def get_project_agents_rules(
     db: Session,
     user: User,

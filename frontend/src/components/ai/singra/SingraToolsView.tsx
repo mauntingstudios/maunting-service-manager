@@ -3,6 +3,8 @@ import {
   Activity,
   Bot,
   CalendarClock,
+  ChevronDown,
+  ChevronUp,
   Cpu,
   LayoutGrid,
   Monitor,
@@ -61,9 +63,9 @@ interface SingraToolsViewProps {
 }
 
 const TRANSPORT_OPTIONS = [
-  { value: 'http', label: 'Remote HTTP (Streamable HTTP)' },
-  { value: 'sse', label: 'Remote SSE (Server-Sent Events)' },
-  { value: 'stdio', label: 'Lokaler Prozess (Stdio / Kommandozeile)' },
+  { value: 'http', label: 'Web-Verbindung (HTTP)' },
+  { value: 'sse', label: 'Live-Stream (SSE)' },
+  { value: 'stdio', label: 'Lokales Programm (Kommandozeile)' },
 ]
 
 export function SingraToolsView({
@@ -82,9 +84,12 @@ export function SingraToolsView({
   const [mcpServers, setMcpServers] = useState<AiMcpServer[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [loadingMcp, setLoadingMcp] = useState(true)
+  const [showAllPresets, setShowAllPresets] = useState(false)
 
-  // Create MCP Server Modal
+  // Create MCP Integration Modal
   const [mcpModalOpen, setMcpModalOpen] = useState(false)
+  const [isPresetModal, setIsPresetModal] = useState(false)
+  const [showTechnicalMcp, setShowTechnicalMcp] = useState(false)
   const [savingMcp, setSavingMcp] = useState(false)
   const [mcpDraft, setMcpDraft] = useState<
     AiMcpServerWrite & { name: string; scopeChoice: string }
@@ -159,6 +164,26 @@ export function SingraToolsView({
       scopeChoice: 'personal',
     })
     setArgsInput((preset.args || []).join(' '))
+    setIsPresetModal(true)
+    setShowTechnicalMcp(false)
+    setMcpModalOpen(true)
+  }
+
+  const handleOpenCustomModal = () => {
+    setMcpDraft({
+      name: '',
+      description: '',
+      transport: 'http',
+      endpoint_url: '',
+      command: '',
+      args: [],
+      auth_header: '',
+      enabled: true,
+      scopeChoice: 'personal',
+    })
+    setArgsInput('')
+    setIsPresetModal(false)
+    setShowTechnicalMcp(true)
     setMcpModalOpen(true)
   }
 
@@ -195,24 +220,12 @@ export function SingraToolsView({
       })
       setMcpServers((prev) => [created, ...prev])
       setMcpModalOpen(false)
-      setMcpDraft({
-        name: '',
-        description: '',
-        transport: 'http',
-        endpoint_url: '',
-        command: '',
-        args: [],
-        auth_header: '',
-        enabled: true,
-        scopeChoice: 'personal',
-      })
-      setArgsInput('')
-      toast.success('MCP-Server hinzugefügt.')
+      toast.success('Integration verbunden.')
     } catch (err: unknown) {
       toast.error(
         err instanceof SanitizedApiError
           ? err.message
-          : 'MCP-Server konnte nicht gespeichert werden.',
+          : 'Integration konnte nicht gespeichert werden.',
       )
     } finally {
       setSavingMcp(false)
@@ -234,56 +247,74 @@ export function SingraToolsView({
 
   const handleDeleteMcp = async (srv: AiMcpServer) => {
     const ok = await confirm({
-      title: 'MCP-Server entfernen',
-      message: `Soll der MCP-Server „${srv.name}“ wirklich gelöscht werden?`,
-      confirmText: 'Löschen',
+      title: 'Integration entfernen',
+      message: `Soll die Integration „${srv.name}“ wirklich getrennt werden?`,
+      confirmText: 'Entfernen',
       danger: true,
     })
     if (!ok) return
     try {
       await aiApi.deleteMcpServer(srv.id)
       setMcpServers((prev) => prev.filter((s) => s.id !== srv.id))
-      toast.success('MCP-Server gelöscht.')
+      toast.success('Integration entfernt.')
     } catch (err: unknown) {
       toast.error(
         err instanceof SanitizedApiError
           ? err.message
-          : 'MCP-Server konnte nicht gelöscht werden.',
+          : 'Integration konnte nicht entfernt werden.',
       )
     }
   }
 
+  const visiblePresets = showAllPresets
+    ? SINGRA_MCP_PRESETS
+    : SINGRA_MCP_PRESETS.slice(0, 6)
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-surface px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
-            <LayoutGrid className="h-5 w-5" aria-hidden="true" />
+      <div className="mx-auto max-w-4xl space-y-5">
+        {/* Calm Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 p-5">
+          <div className="flex items-start gap-3 max-w-xl">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <LayoutGrid className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 className="font-headline text-lg font-semibold text-on-surface">
+                Werkzeuge & Integrationen
+              </h2>
+              <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
+                Verbinde externe Dienste, verwalte geplante Aufgaben und lege fest, was Singra selbstständig ausführen darf.
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="font-headline text-lg font-semibold text-on-surface">
-              Singra Werkzeuge, Automatisierung & MCP
-            </h2>
-            <p className="text-xs text-on-surface-variant">
-              Steuere autonome Berechtigungen, Computer-Use, geplante Aufgaben, Hintergrund-Worker, Guardian-Heilungen und externe MCP-Server.
-            </p>
-          </div>
+
+          {subTab === 'mcp' && (
+            <Button
+              type="button"
+              size="sm"
+              className="rounded-full px-4"
+              onClick={handleOpenCustomModal}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Eigene Integration
+            </Button>
+          )}
         </div>
 
-        {/* Top Quick-Toggles: Autonomer Modus & Computer-Use */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="flex items-center justify-between gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/45 p-4">
+        {/* Compact Capability Cards: Selbstständiger Modus & Gerät */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-outline-variant/25 bg-surface-container-low/35 p-4">
             <div className="flex items-start gap-3 min-w-0">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
                 <Bot className="h-4 w-4" aria-hidden="true" />
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-on-surface">
-                  Autonomer Modus
+                  Selbstständiges Handeln
                 </div>
                 <p className="text-xs text-on-surface-variant mt-0.5">
-                  Erlaubt Singra, genehmigte Aktionen bis zum Stundenlimit direkt ohne einzelne Rückfrage auszuführen.
+                  Freigegebene Schritte ohne einzelne Rückfrage erledigen.
                 </p>
               </div>
             </div>
@@ -292,25 +323,23 @@ export function SingraToolsView({
                 <AiAutonomyButton servers={servers} />
               </div>
             ) : (
-              <span className="text-xs text-on-surface-variant">Keine Berechtigung</span>
+              <span className="text-xs text-on-surface-variant">Gesperrt</span>
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/45 p-4">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-outline-variant/25 bg-surface-container-low/35 p-4">
             <div className="flex items-start gap-3 min-w-0">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
                 <Monitor className="h-4 w-4" aria-hidden="true" />
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-on-surface">
-                  Computer-Use & Desktop-Werkzeuge
+                  Lokale App-Werkzeuge
                 </div>
                 <p className="text-xs text-on-surface-variant mt-0.5">
                   {appFaehigkeiten?.computer_use === true
-                    ? 'Aktiv in deiner Smart-System Desktop-App. Singra darf lokale Werkzeuge nutzen.'
-                    : appFaehigkeiten?.computer_use === false
-                      ? 'In den Desktop-Einstellungen derzeit deaktiviert.'
-                      : 'Verfügbar in der Maunting Smart-System Desktop-App sowie über die Projekt-Sandbox.'}
+                    ? 'In deiner Desktop-App aktiv.'
+                    : 'Über Projekt-Arbeitsbereich verfügbar.'}
                 </p>
               </div>
             </div>
@@ -319,28 +348,28 @@ export function SingraToolsView({
                 'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium border',
                 appFaehigkeiten?.computer_use
                   ? 'border-status-success/30 bg-status-success/15 text-status-success'
-                  : 'border-outline-variant/40 bg-surface-container text-on-surface-variant',
+                  : 'border-outline-variant/35 bg-surface-container text-on-surface-variant',
               ].join(' ')}
             >
-              {appFaehigkeiten?.computer_use ? 'Aktiv' : 'Sandbox / App'}
+              {appFaehigkeiten?.computer_use ? 'Aktiv' : 'Bereit'}
             </span>
           </div>
         </div>
 
-        {/* Sub-Navigation Tabs */}
-        <div className="flex items-center gap-1.5 border-b border-outline-variant/25 pb-2 overflow-x-auto">
+        {/* Sub-Navigation Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
           <button
             type="button"
             onClick={() => setSubTab('mcp')}
             className={[
-              'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-medium transition-colors shrink-0',
+              'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors shrink-0 border',
               subTab === 'mcp'
-                ? 'bg-primary/15 text-primary border border-primary/30'
-                : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface border border-transparent',
+                ? 'bg-primary/15 text-primary border-primary/30'
+                : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface border-transparent',
             ].join(' ')}
           >
             <Plug className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>MCP-Server ({mcpServers.length})</span>
+            <span>Integrationen ({mcpServers.length})</span>
           </button>
 
           {canManageTasks && (
@@ -348,10 +377,10 @@ export function SingraToolsView({
               type="button"
               onClick={() => setSubTab('tasks')}
               className={[
-                'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-medium transition-colors shrink-0',
+                'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors shrink-0 border',
                 subTab === 'tasks'
-                  ? 'bg-primary/15 text-primary border border-primary/30'
-                  : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface border border-transparent',
+                  ? 'bg-primary/15 text-primary border-primary/30'
+                  : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface border-transparent',
               ].join(' ')}
             >
               <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
@@ -363,168 +392,168 @@ export function SingraToolsView({
             type="button"
             onClick={() => setSubTab('workers')}
             className={[
-              'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-medium transition-colors shrink-0',
+              'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors shrink-0 border',
               subTab === 'workers'
-                ? 'bg-primary/15 text-primary border border-primary/30'
-                : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface border border-transparent',
+                ? 'bg-primary/15 text-primary border-primary/30'
+                : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface border-transparent',
             ].join(' ')}
           >
             <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>Hintergrund-Worker ({workers.length})</span>
+            <span>Laufende Aufträge ({workers.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setSubTab('guardian')}
             className={[
-              'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-medium transition-colors shrink-0',
+              'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors shrink-0 border',
               subTab === 'guardian'
-                ? 'bg-primary/15 text-primary border border-primary/30'
-                : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface border border-transparent',
+                ? 'bg-primary/15 text-primary border-primary/30'
+                : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface border-transparent',
             ].join(' ')}
           >
             <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>Guardian-Heilungen</span>
+            <span>Selbstheilung</span>
           </button>
         </div>
 
         {/* Sub-Tab Content */}
         {subTab === 'mcp' && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold text-on-surface">
-                  Model Context Protocol (MCP) Server
-                </h3>
-                <p className="text-xs text-on-surface-variant">
-                  Binde zusätzliche Werkzeug-Server über Remote HTTP/SSE oder lokale Prozesse an Singra an.
-                </p>
-              </div>
-              <Button type="button" size="sm" onClick={() => setMcpModalOpen(true)}>
-                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                MCP-Server verbinden
-              </Button>
+          <div className="space-y-5">
+            {/* Connected Integrations First */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-on-surface">
+                Verbundene Dienste
+              </h3>
+              {loadingMcp ? (
+                <div className="flex h-28 items-center justify-center">
+                  <Spinner size="md" className="text-primary" />
+                </div>
+              ) : mcpServers.length === 0 ? (
+                <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/30 p-6 text-center">
+                  <Server className="mx-auto h-7 w-7 text-primary/50 mb-2" />
+                  <p className="text-sm font-medium text-on-surface">
+                    Alle Grundwerkzeuge sind bereits aktiv
+                  </p>
+                  <p className="mt-1 text-xs text-on-surface-variant max-w-md mx-auto leading-relaxed">
+                    Server-Steuerung, Dokumente, Projekte, Git und Web-Suche stehen ohne Einrichtung bereit. Unten kannst du bei Bedarf weitere Dienste verbinden.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {mcpServers.map((srv) => (
+                    <div
+                      key={srv.id}
+                      className="flex flex-col justify-between rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-on-surface truncate">
+                              {srv.name}
+                            </span>
+                            <span className="rounded-full bg-primary/12 px-2 py-0.5 text-label-sm font-medium text-primary">
+                              {srv.is_global
+                                ? 'Global'
+                                : srv.team_id
+                                  ? 'Team'
+                                  : 'Persönlich'}
+                            </span>
+                          </div>
+                          {srv.description && (
+                            <p className="mt-1 text-xs text-on-surface-variant leading-relaxed">
+                              {srv.description}
+                            </p>
+                          )}
+                        </div>
+                        <Switch
+                          checked={srv.enabled}
+                          onCheckedChange={(val) => void handleToggleMcp(srv, val)}
+                          aria-label={`${srv.name} aktivieren`}
+                        />
+                      </div>
+                      <div className="mt-3 flex justify-end border-t border-outline-variant/15 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteMcp(srv)}
+                          className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-status-destructive transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Trennen
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* 1-Klick MCP Vorlagen */}
-            <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/30 p-4">
-              <div className="mb-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-primary">
-                  1-Klick Vorlagen
-                </h4>
-                <p className="text-xs text-on-surface-variant">
-                  Wähle einen beliebten Konnektor aus, um ihn direkt mit deinen Zugangsdaten zu verbinden.
-                </p>
+            {/* 1-Click Integration Cards */}
+            <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/25 p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-on-surface">
+                    Beliebte Erweiterungen
+                  </h4>
+                  <p className="text-xs text-on-surface-variant">
+                    Mit einem Klick vorbereiten und verbinden.
+                  </p>
+                </div>
+                {SINGRA_MCP_PRESETS.length > 6 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllPresets((v) => !v)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    <span>{showAllPresets ? 'Weniger anzeigen' : 'Alle anzeigen'}</span>
+                    {showAllPresets ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                )}
               </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {SINGRA_MCP_PRESETS.map((preset) => (
+                {visiblePresets.map((preset) => (
                   <div
                     key={preset.id}
-                    className="flex flex-col justify-between rounded-xl border border-outline-variant/20 bg-surface-container-low/60 p-3 hover:border-primary/40 transition-colors"
+                    className="flex flex-col justify-between rounded-xl border border-outline-variant/20 bg-surface-container-low/60 p-3.5 hover:border-primary/35 transition-colors"
                   >
                     <div>
                       <div className="flex items-center justify-between gap-1.5 mb-1">
                         <span className="text-xs font-semibold text-on-surface truncate">
                           {preset.name}
                         </span>
-                        <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-label-sm font-medium text-primary shrink-0">
+                        <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm font-medium text-primary shrink-0">
                           {preset.badge}
                         </span>
                       </div>
-                      <p className="text-xs text-on-surface-variant line-clamp-2">
+                      <p className="text-xs text-on-surface-variant line-clamp-2 leading-relaxed">
                         {preset.description}
                       </p>
                     </div>
-                    <div className="mt-3 flex items-center justify-between pt-2 border-t border-outline-variant/15">
-                      <span className="text-label-sm font-mono text-on-surface-variant">
-                        {preset.transport}
-                      </span>
+                    <div className="mt-3 flex justify-end pt-2 border-t border-outline-variant/15">
                       <Button
                         type="button"
                         size="sm"
                         variant="secondary"
+                        className="h-7 px-3 text-xs rounded-full"
                         onClick={() => handleApplyPreset(preset)}
                       >
-                        Hinzufügen
+                        Verbinden
                       </Button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-
-            {loadingMcp ? (
-              <div className="flex h-32 items-center justify-center">
-                <Spinner size="md" className="text-primary" />
-              </div>
-            ) : mcpServers.length === 0 ? (
-              <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/30 p-8 text-center">
-                <Server className="mx-auto h-8 w-8 text-on-surface-variant/60 mb-2" />
-                <p className="text-sm font-medium text-on-surface">
-                  Noch keine externen MCP-Server eingerichtet
-                </p>
-                <p className="mt-1 text-xs text-on-surface-variant max-w-md mx-auto">
-                  Die integrierten Singra-Werkzeuge (Server-Management, Maunting Docs, Projekt-Sandbox, Git, Web-Suche und Geo-Analyse) sind bereits fest eingebaut. Über MCP kannst du eigene Dienste ergänzen.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {mcpServers.map((srv) => (
-                  <div
-                    key={srv.id}
-                    className="flex flex-col justify-between rounded-xl border border-outline-variant/30 bg-surface-container-low/40 p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-sm text-on-surface truncate">
-                            {srv.name}
-                          </span>
-                          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-label-sm font-mono uppercase text-on-surface-variant">
-                            {srv.transport}
-                          </span>
-                          <span className="rounded bg-primary/12 px-1.5 py-0.5 text-label-sm font-medium text-primary">
-                            {srv.is_global
-                              ? 'Global'
-                              : srv.team_id
-                                ? 'Team'
-                                : 'Persönlich'}
-                          </span>
-                        </div>
-                        {srv.description && (
-                          <p className="mt-1 text-xs text-on-surface-variant">
-                            {srv.description}
-                          </p>
-                        )}
-                        <p className="mt-1.5 font-mono text-label-sm text-on-surface-variant/80 truncate">
-                          {srv.transport === 'stdio' ? srv.command : srv.endpoint_url}
-                        </p>
-                      </div>
-                      <Switch
-                        checked={srv.enabled}
-                        onCheckedChange={(val) => void handleToggleMcp(srv, val)}
-                        aria-label={`MCP-Server ${srv.name} aktivieren`}
-                      />
-                    </div>
-                    <div className="mt-3 flex justify-end border-t border-outline-variant/20 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteMcp(srv)}
-                        className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-status-destructive transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Entfernen
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
         {subTab === 'tasks' && canManageTasks && (
-          <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/20 overflow-hidden">
+          <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/20 overflow-hidden">
             <AufgabenAnsicht />
           </div>
         )}
@@ -535,18 +564,19 @@ export function SingraToolsView({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-on-surface">
-                    Hintergrund-Auftrag Verlauf
+                    Auftragsverlauf
                   </h3>
                   <Button
                     type="button"
                     size="sm"
                     variant="secondary"
+                    className="rounded-full"
                     onClick={() => setSelectedWorkerId(null)}
                   >
                     Zurück zur Übersicht
                   </Button>
                 </div>
-                <div className="rounded-2xl border border-outline-variant/30 overflow-hidden min-h-[460px]">
+                <div className="rounded-2xl border border-outline-variant/25 overflow-hidden min-h-[460px]">
                   <WorkerAnsicht
                     key={selectedWorkerId}
                     conversationId={selectedWorkerId}
@@ -554,13 +584,13 @@ export function SingraToolsView({
                 </div>
               </div>
             ) : workers.length === 0 ? (
-              <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/30 p-8 text-center">
+              <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/30 p-8 text-center">
                 <Activity className="mx-auto h-8 w-8 text-on-surface-variant/60 mb-2" />
                 <p className="text-sm font-medium text-on-surface">
-                  Aktuell laufen keine Hintergrund-Worker
+                  Momentan laufen keine Aufträge im Hintergrund
                 </p>
-                <p className="mt-1 text-xs text-on-surface-variant">
-                  Wenn Singra längere Recherchen oder parallele Teilaufgaben im Hintergrund ausführt, erscheinen sie hier live.
+                <p className="mt-1 text-xs text-on-surface-variant max-w-md mx-auto">
+                  Wenn Singra größere Aufgaben für dich im Hintergrund abarbeitet, kannst du den Fortschritt hier live verfolgen.
                 </p>
               </div>
             ) : (
@@ -568,23 +598,23 @@ export function SingraToolsView({
                 {workers.map((w) => (
                   <div
                     key={w.conversation_id}
-                    className="flex items-center justify-between rounded-xl border border-outline-variant/30 bg-surface-container-low/40 px-4 py-3"
+                    className="flex items-center justify-between rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 px-4 py-3"
                   >
                     <div>
                       <div className="text-sm font-medium text-on-surface">
                         {w.title}
                       </div>
                       <div className="text-xs text-on-surface-variant">
-                        Status: {w.status} • Gestartet:{' '}
-                        {new Date(w.created_at).toLocaleTimeString()}
+                        Gestartet um {new Date(w.created_at).toLocaleTimeString()}
                       </div>
                     </div>
                     <Button
                       type="button"
                       size="sm"
+                      className="rounded-full"
                       onClick={() => setSelectedWorkerId(w.conversation_id)}
                     >
-                      Einsehen
+                      Ansehen
                     </Button>
                   </div>
                 ))}
@@ -594,56 +624,45 @@ export function SingraToolsView({
         )}
 
         {subTab === 'guardian' && (
-          <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/20 overflow-hidden min-h-[480px]">
+          <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/20 overflow-hidden min-h-[480px]">
             <GuardianAnsicht />
           </div>
         )}
       </div>
 
-      {/* Add MCP Server Modal */}
+      {/* Connect Integration Modal */}
       <Dialog open={mcpModalOpen} onOpenChange={setMcpModalOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>MCP-Server hinzufügen</DialogTitle>
+            <DialogTitle>
+              {isPresetModal ? `${mcpDraft.name} verbinden` : 'Eigene Integration verbinden'}
+            </DialogTitle>
             <DialogDescription>
-              Verbinde einen externen Model Context Protocol Server für dich persönlich, für ein Team oder global.
+              {isPresetModal
+                ? mcpDraft.description || 'Verbinde diesen Dienst mit deinem Arbeitsbereich.'
+                : 'Binde einen externen Werkzeug-Dienst für dich oder dein Team an.'}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateMcp} className="space-y-3.5 mt-2">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                Name
-              </label>
-              <Input
-                value={mcpDraft.name}
-                onChange={(e) => setMcpDraft((d) => ({ ...d, name: e.target.value }))}
-                placeholder="z. B. GitLab MCP oder Dokumentations-Index"
-                required
-                aria-label="MCP-Server Name"
-              />
-            </div>
+            {!isPresetModal && (
+              <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                  Name der Integration
+                </label>
+                <Input
+                  value={mcpDraft.name}
+                  onChange={(e) => setMcpDraft((d) => ({ ...d, name: e.target.value }))}
+                  placeholder="z. B. Firmen-Wiki oder GitLab"
+                  required
+                  aria-label="MCP-Server Name"
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                  Transport-Protokoll
-                </label>
-                <Dropdown
-                  value={mcpDraft.transport ?? 'http'}
-                  onChange={(val) =>
-                    setMcpDraft((d) => ({
-                      ...d,
-                      transport: val as 'http' | 'sse' | 'stdio',
-                    }))
-                  }
-                  options={TRANSPORT_OPTIONS}
-                  aria-label="Transport-Protokoll"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                  Sichtbarkeit / Bereich
+                <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                  Wer darf die Integration nutzen?
                 </label>
                 <Dropdown
                   value={mcpDraft.scopeChoice}
@@ -651,93 +670,133 @@ export function SingraToolsView({
                     setMcpDraft((d) => ({ ...d, scopeChoice: val }))
                   }
                   options={[
-                    { value: 'personal', label: 'Persönlich' },
+                    { value: 'personal', label: 'Nur ich (Persönlich)' },
                     ...teams.map((t) => ({
                       value: String(t.id),
                       label: `Team: ${t.name}`,
                     })),
                     ...(canManageGlobalSettings
-                      ? [{ value: 'global', label: 'Global (Betreiber)' }]
+                      ? [{ value: 'global', label: 'Alle Nutzer (Global)' }]
                       : []),
                   ]}
                   aria-label="Sichtbarkeit"
                 />
               </div>
-            </div>
 
-            {mcpDraft.transport === 'stdio' ? (
-              <>
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                    Befehl (Executable)
-                  </label>
-                  <Input
-                    value={mcpDraft.command ?? ''}
-                    onChange={(e) =>
-                      setMcpDraft((d) => ({ ...d, command: e.target.value }))
-                    }
-                    placeholder="npx"
-                    aria-label="Befehl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                    Argumente (durch Leerzeichen getrennt)
-                  </label>
-                  <Input
-                    value={argsInput}
-                    onChange={(e) => setArgsInput(e.target.value)}
-                    placeholder="-y @modelcontextprotocol/server-filesystem /pfad"
-                    aria-label="Argumente"
-                  />
-                </div>
-              </>
-            ) : (
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                  Endpunkt-URL (HTTPS)
+                <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                  Zugangsschlüssel / Token (optional)
                 </label>
                 <Input
-                  value={mcpDraft.endpoint_url ?? ''}
+                  type="password"
+                  value={mcpDraft.auth_header ?? ''}
                   onChange={(e) =>
-                    setMcpDraft((d) => ({ ...d, endpoint_url: e.target.value }))
+                    setMcpDraft((d) => ({ ...d, auth_header: e.target.value }))
                   }
-                  placeholder="https://mcp.example.com/mcp"
-                  aria-label="Endpunkt-URL"
+                  placeholder="Bearer …"
+                  aria-label="Authorization Header"
                 />
+              </div>
+            </div>
+
+            {isPresetModal && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowTechnicalMcp((v) => !v)}
+                  className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-on-surface"
+                >
+                  {showTechnicalMcp ? (
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  )}
+                  <span>Verbindungsdetails anpassen</span>
+                </button>
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                Authorization Header / Bearer Token (optional, DIS-verschlüsselt)
-              </label>
-              <Input
-                type="password"
-                value={mcpDraft.auth_header ?? ''}
-                onChange={(e) =>
-                  setMcpDraft((d) => ({ ...d, auth_header: e.target.value }))
-                }
-                placeholder="Bearer …"
-                aria-label="Authorization Header"
-              />
-            </div>
+            {showTechnicalMcp && (
+              <div className="space-y-3 rounded-xl border border-outline-variant/20 bg-surface-container-low/40 p-3.5">
+                <div>
+                  <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                    Verbindungsart
+                  </label>
+                  <Dropdown
+                    value={mcpDraft.transport ?? 'http'}
+                    onChange={(val) =>
+                      setMcpDraft((d) => ({
+                        ...d,
+                        transport: val as 'http' | 'sse' | 'stdio',
+                      }))
+                    }
+                    options={TRANSPORT_OPTIONS}
+                    aria-label="Transport-Protokoll"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-                Kurzbeschreibung
-              </label>
-              <Input
-                value={mcpDraft.description ?? ''}
-                onChange={(e) =>
-                  setMcpDraft((d) => ({ ...d, description: e.target.value }))
-                }
-                placeholder="Welche Werkzeuge stellt dieser Server bereit?"
-                aria-label="Kurzbeschreibung"
-              />
-            </div>
+                {mcpDraft.transport === 'stdio' ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                        Programm / Befehl
+                      </label>
+                      <Input
+                        value={mcpDraft.command ?? ''}
+                        onChange={(e) =>
+                          setMcpDraft((d) => ({ ...d, command: e.target.value }))
+                        }
+                        placeholder="npx"
+                        aria-label="Befehl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                        Startparameter
+                      </label>
+                      <Input
+                        value={argsInput}
+                        onChange={(e) => setArgsInput(e.target.value)}
+                        placeholder="-y @modelcontextprotocol/server-filesystem /pfad"
+                        aria-label="Argumente"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                      Server-Adresse (HTTPS)
+                    </label>
+                    <Input
+                      value={mcpDraft.endpoint_url ?? ''}
+                      onChange={(e) =>
+                        setMcpDraft((d) => ({ ...d, endpoint_url: e.target.value }))
+                      }
+                      placeholder="https://mcp.example.com/mcp"
+                      aria-label="Endpunkt-URL"
+                    />
+                  </div>
+                )}
 
-            <div className="flex justify-end gap-2 pt-2">
+                {!isPresetModal && (
+                  <div>
+                    <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                      Kurzbeschreibung (optional)
+                    </label>
+                    <Input
+                      value={mcpDraft.description ?? ''}
+                      onChange={(e) =>
+                        setMcpDraft((d) => ({ ...d, description: e.target.value }))
+                      }
+                      placeholder="Wofür wird dieser Dienst genutzt?"
+                      aria-label="Kurzbeschreibung"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
               <Button
                 type="button"
                 variant="ghost"
@@ -746,7 +805,7 @@ export function SingraToolsView({
                 Abbrechen
               </Button>
               <Button type="submit" disabled={savingMcp || !mcpDraft.name.trim()}>
-                {savingMcp ? 'Speichert…' : 'Verbinden'}
+                {savingMcp ? 'Verbindet…' : 'Verbinden'}
               </Button>
             </div>
           </form>

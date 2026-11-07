@@ -29,21 +29,18 @@ import {
   Forward,
   MapPin,
   Mic,
-  MoreHorizontal,
   Pause,
   Pencil,
   Play,
   Plus,
   Reply,
   Sparkles,
-  Star,
   StickyNote,
-  Timer,
   Trash2,
 } from 'lucide-react'
 
 import { Avatar } from '@/components/app/Avatar'
-import { Button, Kurzinfo, NachrichtStatus, RoleBadge } from '@maunting/ui'
+import { Button, ChatBubbleSurface, ChatMessageMetaRow, Kurzinfo, NachrichtStatus, RoleBadge } from '@maunting/ui'
 import {
   ChatMediaFile,
   ChatMediaImage,
@@ -524,13 +521,7 @@ function ChatMessageBubbleContent({
         </div>
       )}
 
-      <div
-        className={`max-w-[85%] md:max-w-[70%] px-3.5 py-2 rounded-2xl text-xs break-words shadow-sm space-y-2 ${
-          msg.isSelf
-            ? 'bg-primary text-on-primary rounded-br-xs border border-primary-hover/30 shadow-md shadow-primary/20'
-            : 'bg-surface-container-high/85 text-on-surface backdrop-blur-md rounded-bl-xs border border-outline-variant/30 shadow-sm'
-        } ${michGemeint ? 'ring-1 ring-primary/70 border-primary/40' : ''}`}
-      >
+      <ChatBubbleSurface isSelf={msg.isSelf} highlighted={michGemeint}>
         {/* Group sender name if in group and not self */}
         {activeGroup && !msg.isSelf && (
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1017,7 +1008,7 @@ function ChatMessageBubbleContent({
             )
           })()
         )}
-      </div>
+      </ChatBubbleSurface>
 
       {/* Die Reaktionsleiste.
           Sitzt unter der Blase und überlappt sie leicht, damit klar ist, wozu
@@ -1061,92 +1052,61 @@ function ChatMessageBubbleContent({
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-1.5 text-label-sm text-on-surface-variant/60 mt-1 px-1">
-        {msg.istMarkiert && (
-          <Star className="w-3 h-3 text-status-warning fill-status-warning" aria-label={t('messenger.marked')} />
-        )}
-        {msg.verfaelltAm && (
-          <Timer className="w-3 h-3 opacity-70" aria-label={t('messenger.disappears')} />
-        )}
-        {/* Der Weg ins Menü für alles, was mit dieser Nachricht geht.
-            Am Telefon öffnet langes Drücken dasselbe Menü; hier steht der
-            sichtbare Knopf daneben, denn eine Geste allein findet niemand und
-            mit der Maus gibt es keinen Langdruck. */}
-        {darfHandeln && (
-          <div
-            // Wo es kein Hover gibt, heißt unsichtbar auch unantastbar: sonst
-            // läge am Telefon eine unsichtbare Fläche neben der Uhrzeit.
-            className="transition-opacity flex items-center mr-1 opacity-0
-              [@media(hover:none)]:pointer-events-none group-hover:opacity-100 focus-within:opacity-100"
-            // Ein Druck auf die Leiste selbst darf sie nicht schließen, bevor
-            // der Klick angekommen ist.
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            {/* Kurz wie vorher das title: der lange Name stünde am rechten
-                Rand über den Verlauf hinaus und schöbe eine Bildlaufleiste auf. */}
-            <Kurzinfo text={t('common.more')} lage="oben">
-              <button
-                type="button"
-                onClick={() => aktionen.onMenue(msg)}
-                className="w-8 h-8 rounded-md hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors flex items-center justify-center"
-                aria-label={t('messenger.messageActions')}
-              >
-                <MoreHorizontal className="w-3.5 h-3.5" />
-              </button>
-            </Kurzinfo>
-          </div>
-        )}
-
-        <span>
-          {safeFormatTime(msg.createdAt, {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </span>
-        {msg.isSelf &&
-          (msg.status === 'failed' ? (
-            <NachrichtStatus
-              status="failed"
-              label={aktionen.onErneutSenden ? t('messenger.stateFailedRetry') : t('messenger.stateFailed')}
-              onErneutSenden={aktionen.onErneutSenden ? () => aktionen.onErneutSenden!(msg) : undefined}
-              erneutSendenLabel={t('messenger.stateFailedRetry')}
-              seite="ende"
-              lage="oben"
-            />
-          ) : msg.status === 'queued' ? (
-            <NachrichtStatus
-              status="queued"
-              label={t('messenger.stateQueued')}
-              seite="ende"
-              lage="oben"
-            />
-          ) : activeGroup ? (
-            // Gruppen verschicken keine Quittungen. Ein einzelner Haken hiesse
-            // hier „noch nicht zugestellt“, und das stimmt nicht.
-            null
-          ) : msg.isRead && readReceiptsEnabled ? (
-            <NachrichtStatus
-              status="read"
-              label={t('messenger.stateRead')}
-              seite="ende"
-              lage="oben"
-            />
-          ) : msg.isDelivered ? (
-            <NachrichtStatus
-              status="delivered"
-              label={t('messenger.stateDelivered')}
-              seite="ende"
-              lage="oben"
-            />
-          ) : (
-            <NachrichtStatus
-              status="sent"
-              label={t('messenger.stateUndelivered')}
-              seite="ende"
-              lage="oben"
-            />
-          ))}
-      </div>
+      <ChatMessageMetaRow
+        align="end"
+        isStarred={Boolean(msg.istMarkiert)}
+        starredLabel={t('messenger.marked')}
+        isEphemeral={Boolean(msg.verfaelltAm)}
+        ephemeralLabel={t('messenger.disappears')}
+        onOpenMenu={darfHandeln ? () => aktionen.onMenue(msg) : undefined}
+        menuLabel={t('messenger.messageActions')}
+        timestamp={safeFormatTime(msg.createdAt, {
+          hour: '2-digit',
+          minute: '2-digit',
+        })}
+        statusSlot={
+          msg.isSelf ? (
+            msg.status === 'failed' ? (
+              <NachrichtStatus
+                status="failed"
+                label={aktionen.onErneutSenden ? t('messenger.stateFailedRetry') : t('messenger.stateFailed')}
+                onErneutSenden={aktionen.onErneutSenden ? () => aktionen.onErneutSenden!(msg) : undefined}
+                erneutSendenLabel={t('messenger.stateFailedRetry')}
+                seite="ende"
+                lage="oben"
+              />
+            ) : msg.status === 'queued' ? (
+              <NachrichtStatus
+                status="queued"
+                label={t('messenger.stateQueued')}
+                seite="ende"
+                lage="oben"
+              />
+            ) : activeGroup ? null : msg.isRead && readReceiptsEnabled ? (
+              <NachrichtStatus
+                status="read"
+                label={t('messenger.stateRead')}
+                seite="ende"
+                lage="oben"
+              />
+            ) : msg.isDelivered ? (
+              <NachrichtStatus
+                status="delivered"
+                label={t('messenger.stateDelivered')}
+                seite="ende"
+                lage="oben"
+              />
+            ) : (
+              <NachrichtStatus
+                status="sent"
+                label={t('messenger.stateUndelivered')}
+                seite="ende"
+                lage="oben"
+              />
+            )
+          ) : undefined
+        }
+      />
     </div>
   )
 }

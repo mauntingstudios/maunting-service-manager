@@ -2227,6 +2227,20 @@ export const aiApi = {
       `/ai/projects/${encodeURIComponent(projectId)}/git/commit`,
       { method: 'POST', body: JSON.stringify(payload) },
     ),
+  createProjectGitRepo: (
+    projectId: string,
+    payload: {
+      repo_name?: string | null
+      private?: boolean
+      description?: string | null
+      provider?: 'github' | 'gitlab'
+      token?: string | null
+    },
+  ) =>
+    api<AiProjectGitStatus & { repo_url?: string; html_url?: string; created?: boolean }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/git/create-repo`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
   listMcpServers: () => api<AiMcpServer[]>('/ai/mcp'),
   createMcpServer: (payload: AiMcpServerWrite & { name: string }) =>
     api<AiMcpServer>('/ai/mcp', { method: 'POST', body: JSON.stringify(payload) }),

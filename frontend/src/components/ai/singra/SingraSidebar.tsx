@@ -12,7 +12,6 @@ import {
   X,
 } from 'lucide-react'
 import { type AiConversationSummary } from '@/api/ai'
-import { AI_IS_BETA } from '@/components/ai/AiBetaBanner'
 import { Avatar } from '@/components/app/Avatar'
 import { useAuthStore } from '@/stores/authStore'
 import { AiGenerationBadge } from './AiGenerationBadge'
@@ -102,11 +101,6 @@ function SidebarContent({
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 font-headline text-base font-semibold tracking-tight text-on-surface leading-tight">
                 <span>Singra</span>
-                {AI_IS_BETA && (
-                  <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
-                    Beta
-                  </span>
-                )}
               </div>
               <div className="text-label-sm text-on-surface-variant/80 leading-tight">
                 AI Assistant

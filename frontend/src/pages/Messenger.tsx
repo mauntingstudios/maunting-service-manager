@@ -624,6 +624,19 @@ function MessengerSeite() {
     entwuerfe.merke(blindMailboxId, text)
   }
 
+  useEffect(() => {
+    if (!blindMailboxId) return
+    try {
+      const pending = sessionStorage.getItem('msm:pending_messenger_draft')
+      if (pending) {
+        sessionStorage.removeItem('msm:pending_messenger_draft')
+        setInputText((prev) => (prev.trim() ? `${prev}\n\n${pending}` : pending))
+        entwuerfe.merke(blindMailboxId, pending)
+        window.requestAnimationFrame(() => chatInputRef.current?.focus())
+      }
+    } catch {}
+  }, [blindMailboxId, entwuerfe])
+
 
   const handleStoryCreated = (story: ChatStoryItem) => {
     setStories((prev) => [story, ...prev])

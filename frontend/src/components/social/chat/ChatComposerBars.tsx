@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { Ban, FileText, Pencil, X } from 'lucide-react'
-import { Button, Kurzinfo } from '@maunting/ui'
+import { Ban, FileText, X } from 'lucide-react'
+import { Button, ChatComposerBanner } from '@maunting/ui'
 import { formatBytes } from '@/lib/format'
 import type { FileAttachment, ImageAttachment } from '@/components/social/ChatMediaAttachments'
 
@@ -61,27 +61,14 @@ export function StagedFileBar({ datei, onEntfernen }: { datei: FileAttachment; o
 export function EditingBanner({ text, onAbbrechen }: { text: string; onAbbrechen: () => void }) {
   const { t } = useTranslation()
   return (
-    <div className="relative px-4 py-2 border-t border-outline-variant/20 bg-primary/10 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2 min-w-0">
-        <div className="p-1.5 rounded-lg bg-primary/20 text-primary shrink-0">
-          <Pencil className="w-3.5 h-3.5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-primary">{t('messenger.editMessage')}</p>
-          <p className="text-label-sm text-on-surface-variant truncate max-w-md">{text}</p>
-        </div>
-      </div>
-      <Kurzinfo text={t('messenger.cancelEdit')} seite="ende" lage="oben" aussen="shrink-0">
-        <button
-          type="button"
-          onClick={onAbbrechen}
-          className="p-1 rounded-full hover:bg-surface-container-highest text-on-surface-variant"
-          aria-label={t('messenger.cancelEdit')}
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </Kurzinfo>
-    </div>
+    <ChatComposerBanner
+      mode="edit"
+      title={t('messenger.editMessage')}
+      text={text}
+      onCancel={onAbbrechen}
+      cancelLabel={t('messenger.cancelEdit')}
+      className="mx-auto max-w-3xl xl:max-w-4xl rounded-t-2xl border border-b-0 border-outline-variant/30"
+    />
   )
 }
 

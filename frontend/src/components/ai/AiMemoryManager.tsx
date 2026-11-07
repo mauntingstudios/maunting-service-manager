@@ -11,6 +11,7 @@ import {
   Flame,
   History,
   Lightbulb,
+  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
@@ -60,6 +61,8 @@ interface ServerOption {
 interface Props {
   /** Ohne Angabe: das eigene Gedächtnis. */
   scope?: AiKnowledgeScope
+  /** Öffnet das Formular zum Anlegen/Bearbeiten als ruhigen Dialog statt inline. */
+  compactModalForm?: boolean
 }
 
 const CHUNK_SIZE = 30
@@ -137,7 +140,7 @@ interface Ladeziel {
  * es endgültig weg ist. Altbestand behält seinen Namen, bis er umgeschrieben
  * ist.
  */
-export function AiMemoryManager({ scope = { kind: 'user' } }: Props) {
+export function AiMemoryManager({ scope = { kind: 'user' }, compactModalForm = false }: Props) {
   const { t, i18n } = useTranslation()
   const allowed = useHasPermission('ai.memory.use')
   const darfAendern = scopeCanManage(scope)
@@ -159,6 +162,8 @@ export function AiMemoryManager({ scope = { kind: 'user' } }: Props) {
   const [titel, setTitel] = useState('')
   const [thema, setThema] = useState('')
   const [bearbeitet, setBearbeitet] = useState<AiMemoryEntry | null>(null)
+  const [formDialogOffen, setFormDialogOffen] = useState(false)
+  const [moreMenuOffen, setMoreMenuOffen] = useState(false)
   const [serverNamen, setServerNamen] = useState<Map<number, string>>(new Map())
   const [busy, setBusy] = useState(false)
   const [importOffen, setImportOffen] = useState(false)
@@ -239,7 +244,7 @@ export function AiMemoryManager({ scope = { kind: 'user' } }: Props) {
   }
 
   const formLeeren = () => {
-    setText(''); setTitel(''); setThema(''); setBearbeitet(null)
+    setText(''); setTitel(''); setThema(''); setBearbeitet(null); setFormDialogOffen(false)
   }
 
   useEffect(() => {
@@ -506,6 +511,10 @@ export function AiMemoryManager({ scope = { kind: 'user' } }: Props) {
     setTitel(entry.titel ?? '')
     setThema(entry.thema?.name ?? '')
     setBearbeitet(entry)
+    if (compactModalForm) {
+      setFormDialogOffen(true)
+      return
+    }
     // Beim Bearbeiten den Eintrag aufklappen
     setExpandedIds((prev) => new Set(prev).add(entry.id))
     setTimeout(() => {
@@ -620,7 +629,100 @@ export function AiMemoryManager({ scope = { kind: 'user' } }: Props) {
           label: seitenzahl > 1 && imAktuellen ? t('ai.memory.searchAll') : t('ai.memory.search'),
         }
         : undefined}
-      filters={(
+      filters={compactModalForm ? (
+        <>
+          <TabBar
+            tabs={ANSICHTEN}
+            active={ansicht}
+            onChange={ansichtWechseln}
+            ariaLabel={t('ai.memory.ansichtLabel')}
+            embedded
+          />
+          {themenFilter}
+          {werkzeugleiste && herkunftsFilter}
+          <div className="ml-auto flex items-center gap-2">
+            {darfAendern && imAktuellen && (
+              <Button
+                type="button"
+                size="sm"
+                className="rounded-full px-3.5"
+                disabled={busy}
+                onClick={() => {
+                  formLeeren()
+                  setFormDialogOffen(true)
+                }}
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                {t('ai.memory.newEntry')}
+              </Button>
+            )}
+            {(sichtbar.length > 1 || (darfAendern && imAktuellen)) && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMoreMenuOffen((v) => !v)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+                  aria-label="Weitere Aktionen"
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </button>
+                {moreMenuOffen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setMoreMenuOffen(false)}
+                      aria-hidden="true"
+                    />
+                    <div className="absolute right-0 top-11 z-50 w-60 rounded-2xl bg-surface-container-high/95 backdrop-blur-2xl border border-outline-variant/30 p-1.5 text-on-surface shadow-2xl space-y-0.5">
+                      {sichtbar.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMoreMenuOffen(false)
+                            toggleAllExpanded()
+                          }}
+                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium text-on-surface hover:bg-surface-container-highest/70 transition-colors"
+                        >
+                          <ChevronsUpDown className="h-4 w-4 text-primary" />
+                          <span>
+                            {allExpanded ? t('ai.memory.collapseAll') : t('ai.memory.expandAll')}
+                          </span>
+                        </button>
+                      )}
+                      {darfAendern && imAktuellen && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMoreMenuOffen(false)
+                            setImportOffen(true)
+                          }}
+                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium text-on-surface hover:bg-surface-container-highest/70 transition-colors"
+                        >
+                          <Download className="h-4 w-4 text-primary" />
+                          <span>{t('ai.memory.import.button')}</span>
+                        </button>
+                      )}
+                      {darfAendern && imAktuellen && entries.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMoreMenuOffen(false)
+                            void allesEntfernen()
+                          }}
+                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium text-status-destructive hover:bg-status-destructive/15 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span>{t('ai.memory.clearAll')}</span>
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
         <>
           <TabBar
             tabs={ANSICHTEN}
@@ -669,7 +771,7 @@ export function AiMemoryManager({ scope = { kind: 'user' } }: Props) {
             : t('ai.memory.count', { shown: sichtbar.length, total: entries.length }))
         : undefined}
     >
-      {darfAendern && imAktuellen && (
+      {darfAendern && imAktuellen && !compactModalForm && (
         <form
           ref={formRef}
           className="rounded-xl border border-outline-variant/40 bg-surface-container-low/40 p-3 sm:p-4 space-y-3"
@@ -734,6 +836,86 @@ export function AiMemoryManager({ scope = { kind: 'user' } }: Props) {
             </span>
           </div>
         </form>
+      )}
+
+      {compactModalForm && darfAendern && (
+        <Dialog
+          open={formDialogOffen}
+          onOpenChange={(open) => {
+            if (!open) formLeeren()
+            else setFormDialogOffen(true)
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>
+                {bearbeitet !== null ? t('ai.memory.editEntry') : t('ai.memory.newEntry')}
+              </DialogTitle>
+              <DialogDescription>
+                Halte fest, was Singra sich dauerhaft merken soll.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={speichern} className="space-y-4 mt-2">
+              <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                  Erinnerung
+                </label>
+                <Textarea
+                  rows={3}
+                  maxLength={2000}
+                  value={text}
+                  disabled={busy}
+                  autoFocus
+                  onChange={(event) => setText(event.target.value)}
+                  placeholder={t('ai.memory.textPlaceholder')}
+                  aria-label={t('ai.memory.text')}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                    Kurztitel (optional)
+                  </label>
+                  <Input
+                    maxLength={120}
+                    value={titel}
+                    disabled={busy}
+                    onChange={(event) => setTitel(event.target.value)}
+                    placeholder={t('ai.memory.titel')}
+                    aria-label={t('ai.memory.titel')}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                    Thema / Kategorie (optional)
+                  </label>
+                  <Input
+                    maxLength={60}
+                    value={thema}
+                    disabled={busy}
+                    onChange={(event) => setThema(event.target.value)}
+                    placeholder={t('ai.memory.thema')}
+                    aria-label={t('ai.memory.thema')}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-outline-variant/20">
+                <span className="inline-flex items-center gap-1.5 text-label-sm text-on-surface-variant/80">
+                  <ShieldAlert className="h-3.5 w-3.5 text-secondary shrink-0" aria-hidden="true" />
+                  {t('ai.memory.secretHint')}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="ghost" onClick={formLeeren}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button type="submit" disabled={busy || !text.trim()}>
+                    {bearbeitet === null ? t('common.add') : t('common.save')}
+                  </Button>
+                </div>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Logbuch-Einträge Liste mit Accordion & Virtual/Lazy Scrolling */}

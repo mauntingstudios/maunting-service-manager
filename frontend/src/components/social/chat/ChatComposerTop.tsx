@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { Bell, X } from 'lucide-react'
+import { Bell } from 'lucide-react'
+import { ChatComposerBanner } from '@maunting/ui'
 import { Avatar } from '@/components/app/Avatar'
 import type { AntwortBezug } from '@/components/social/ChatMessageBubble'
 import type { Erwaehnungsvorschlag } from '@/services/erwaehnungen'
@@ -52,22 +53,12 @@ export function MentionSuggestions({
 export function ChatReplyBar({ antwort, onVerwerfen }: { antwort: AntwortBezug; onVerwerfen: () => void }) {
   const { t } = useTranslation()
   return (
-    <div className="px-2.5 py-2 border-b border-outline-variant/20 flex items-center gap-2">
-      <span className="w-0.5 self-stretch rounded-full bg-primary shrink-0" />
-      <span className="min-w-0 flex-1">
-        <span className="block text-label-sm font-semibold text-primary truncate">
-          Antwort an {antwort.absenderName || 'Nachricht'}
-        </span>
-        <span className="block text-label-sm text-on-surface-variant line-clamp-1">{antwort.auszug}</span>
-      </span>
-      <button
-        type="button"
-        onClick={onVerwerfen}
-        className="w-11 h-11 -mr-1 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors shrink-0"
-        aria-label={t('messenger.discardReply')}
-      >
-        <X className="w-4 h-4" />
-      </button>
-    </div>
+    <ChatComposerBanner
+      mode="reply"
+      title={`Antwort an ${antwort.absenderName || 'Nachricht'}`}
+      text={antwort.auszug}
+      onCancel={onVerwerfen}
+      cancelLabel={t('messenger.discardReply')}
+    />
   )
 }

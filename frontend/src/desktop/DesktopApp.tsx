@@ -1125,7 +1125,7 @@ function Hauptseite({
             <div className="flex min-w-0 items-center gap-2">
               <h1 className="truncate font-headline text-base sm:text-title-lg font-bold text-on-surface">{kopfTitel}</h1>
               {((bereich === 'ki' && AI_IS_BETA) || ((bereich === 'chat' || bereich === 'profil') && MESSENGER_IS_BETA)) && (
-                <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
+                <span className="hidden md:inline-flex px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
                   {t('ai.betaBadge', 'Beta')}
                 </span>
               )}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, Brain, CalendarClock, Camera, Check, ChevronDown, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, MoreHorizontal, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Trash2, Upload, X, Zap } from 'lucide-react'
+import { AudioLines, Brain, CalendarClock, Camera, Check, ChevronDown, Copy, Forward, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, MoreHorizontal, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Star, Trash2, Upload, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -9,6 +9,7 @@ import {
   type AiContextStatus,
   type AiConversationDetail,
   type AiGeoCameraCommand,
+  type AiMessage,
   type AiProviderAvailable,
   type AiRegionalAnalysis,
   type AiRunInfo,
@@ -16,8 +17,8 @@ import {
   type AiVoiceConfig,
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
-import { Ablageflaeche, Button, Blatteintrag, Blattmenue, Dropdown, Kurzinfo, NachrichtStatus, VoiceRecordingBar } from '@maunting/ui'
-import { Avatar } from '@/components/app/Avatar'
+import { Ablageflaeche, Auswahlleiste, Button, Blatteintrag, Blattmenue, ChatBubbleSurface, ChatComposerBanner, ChatMessageMetaRow, Dropdown, Kurzinfo, NachrichtStatus, useMehrfachauswahl, VoiceRecordingBar } from '@maunting/ui'
+import { AiNachrichtenMenue, AiWeiterleitenDialog } from './AiNachrichtenMenue'
 import {
   aiChatPreferenceKeys,
   aiModelChoiceKey,
@@ -275,8 +276,17 @@ export function AiChat({
   const [dictationElapsed, setDictationElapsed] = useState(0)
   const [dictationAudioLevel, setDictationAudioLevel] = useState(0)
   // Welche eigene Nachricht gerade umformuliert wird, und womit.
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editDraft, setEditDraft] = useState('')
+  const [editingMessage, setEditingMessage] = useState<AiMessage | null>(null)
+  const [replyingTo, setReplyingTo] = useState<AiMessage | null>(null)
+  const [actionMenuMessage, setActionMenuMessage] = useState<AiMessage | null>(null)
+  const [forwardMessages, setForwardMessages] = useState<AiMessage[] | null>(null)
+  const [starredIds, setStarredIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('msm:ai_starred_messages')
+      if (raw) return new Set(JSON.parse(raw))
+    } catch {}
+    return new Set()
+  })
   const [loading, setLoading] = useState(true)
   const [dragging, setDragging] = useState(false)
   // Was beim Oeffnen schon lief. Wird in einem eigenen Effekt angehaengt, weil
@@ -1315,11 +1325,15 @@ export function AiChat({
   }, [])
 
   const sendImmediatelyAndInterrupt = useCallback(async (content: string) => {
-    const text = content.trim()
+    const rawText = content.trim()
     const mitAnhaengen = offeneAnhaenge.length > 0
-    if ((!text && !mitAnhaengen) || !providerId) return
+    if ((!rawText && !mitAnhaengen) || !providerId) return
+    const text = replyingTo
+      ? `> ${replyingTo.role === 'assistant' ? 'Singra' : 'Ich'}: ${replyingTo.content.trim().slice(0, 180).replace(/\n/g, ' ')}\n\n${rawText}`
+      : rawText
     window.dispatchEvent(new CustomEvent('msm:ai-message-sent'))
     setInput('')
+    setReplyingTo(null)
     userScrolledUpRef.current = false
     setAmEnde(true)
     scrolleNachUnten(true)
@@ -1327,27 +1341,7 @@ export function AiChat({
       await stoppeLauf()
     }
     await sendContent(text, mitAnhaengen)
-  }, [offeneAnhaenge.length, providerId, scrolleNachUnten, sendContent, stoppeLauf, streaming])
-
-  const send = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (uploading || !providerId) return
-    const content = input.trim()
-    const mitAnhaengen = offeneAnhaenge.length > 0
-    // Ein Bild ohne Begleittext ist eine vollstaendige Frage. Die bisherige
-    // Sperre `!content` verhinderte genau das, was der Dateianhang anbietet.
-    if (!content && !mitAnhaengen) return
-    window.dispatchEvent(new CustomEvent('msm:ai-message-sent'))
-    if (streaming) {
-      if (content) enqueueMessage(content)
-      return
-    }
-    setInput('')
-    userScrolledUpRef.current = false
-    setAmEnde(true)
-    scrolleNachUnten(true)
-    await sendContent(content, mitAnhaengen)
-  }
+  }, [offeneAnhaenge.length, providerId, replyingTo, scrolleNachUnten, sendContent, stoppeLauf, streaming])
 
   /**
    * Nimmt eine bereits gesendete eigene Nachricht zurück und stellt sie neu.
@@ -1357,8 +1351,8 @@ export function AiChat({
    * erst danach geht der neue Text den gewohnten Weg. Die KI sieht von der
    * alten Fassung nichts mehr; sie steht weder im Verlauf noch im Kontext.
    */
-  const submitEdit = async (messageId: string) => {
-    const content = editDraft.trim()
+  const submitEdit = async (messageId: string, overrideText?: string) => {
+    const content = (overrideText ?? input).trim()
     if (!content || !providerId || streaming) return
     try {
       await chatApi.editMessage(messageId, content)
@@ -1366,26 +1360,48 @@ export function AiChat({
       toast.error(error instanceof SanitizedApiError ? error.message : t('ai.chat.errors.edit'))
       return
     }
-    // Erst wenn der Schnitt durch ist: sonst stünde die alte Fassung noch da,
-    // während der Server sie schon nicht mehr kennt.
     setEntries((current) => {
       const index = current.findIndex((item) => item.kind === 'message' && item.id === messageId)
       return index === -1 ? current : current.slice(0, index)
     })
-    // Der Server hat die Anhaenge der bearbeiteten Nachricht entbunden, nicht
-    // geloescht. Einmal nachladen, damit sie als Chips wieder ueber dem
-    // Eingabefeld stehen; `sendContent` bindet sie gleich an die neue Fassung.
     if (canAttach) {
       void aiApi.listAttachments()
         .then((rows) => { if (mountedRef.current) setAttachments(rows) })
         .catch(() => undefined)
     }
-    setEditingId(null)
-    setEditDraft('')
+    setEditingMessage(null)
+    setInput('')
     userScrolledUpRef.current = false
     setAmEnde(true)
     scrolleNachUnten(true)
     await sendContent(content)
+  }
+
+  const send = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (uploading || !providerId) return
+    if (editingMessage) {
+      await submitEdit(editingMessage.id, input)
+      return
+    }
+    const rawContent = input.trim()
+    const mitAnhaengen = offeneAnhaenge.length > 0
+    if (!rawContent && !mitAnhaengen) return
+    const content = replyingTo
+      ? `> ${replyingTo.role === 'assistant' ? 'Singra' : 'Ich'}: ${replyingTo.content.trim().slice(0, 180).replace(/\n/g, ' ')}\n\n${rawContent}`
+      : rawContent
+    window.dispatchEvent(new CustomEvent('msm:ai-message-sent'))
+    if (streaming) {
+      if (content) enqueueMessage(content)
+      setReplyingTo(null)
+      return
+    }
+    setInput('')
+    setReplyingTo(null)
+    userScrolledUpRef.current = false
+    setAmEnde(true)
+    scrolleNachUnten(true)
+    await sendContent(content, mitAnhaengen)
   }
 
   /**
@@ -1494,6 +1510,114 @@ export function AiChat({
     letztesTippSignalRef.current = jetzt
     void chatApi.typing().catch(() => undefined)
   }, [chatApi])
+
+  const messageKeys = useMemo(
+    () => entries.filter((e) => e.kind === 'message').map((e) => e.id),
+    [entries],
+  )
+  const wahl = useMehrfachauswahl(messageKeys)
+  const auswahlModus = wahl.auswahl !== null
+
+  const gewaehlteNachrichten = useMemo(() => {
+    if (!wahl.auswahl) return [] as AiMessage[]
+    const set = wahl.auswahl
+    return entries
+      .filter((e): e is Extract<Entry, { kind: 'message' }> => e.kind === 'message' && set.has(e.id))
+      .map((e) => e.message)
+  }, [entries, wahl.auswahl])
+
+  const handleToggleStar = useCallback((msg: AiMessage) => {
+    setStarredIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(msg.id)) {
+        next.delete(msg.id)
+      } else {
+        next.add(msg.id)
+      }
+      try {
+        localStorage.setItem('msm:ai_starred_messages', JSON.stringify(Array.from(next)))
+      } catch {}
+      return next
+    })
+  }, [])
+
+  const handleCopyMessage = useCallback((msg: AiMessage) => {
+    if (!msg.content) return
+    void navigator.clipboard.writeText(msg.content).then(
+      () => toast.success('Text kopiert.'),
+      () => toast.error('Konnte nicht kopiert werden.'),
+    )
+  }, [])
+
+  const handleOpenMessageMenu = useCallback((msg: AiMessage) => {
+    setActionMenuMessage(msg)
+  }, [])
+
+  const handleToggleSelectMessage = useCallback(
+    (msg: AiMessage) => {
+      wahl.umschalten(msg.id)
+    },
+    [wahl],
+  )
+
+  const handleReplyToMessage = useCallback((msg: AiMessage) => {
+    setEditingMessage(null)
+    setReplyingTo(msg)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [])
+
+  const handleEditMessage = useCallback((msg: AiMessage) => {
+    if (msg.role !== 'user') return
+    setReplyingTo(null)
+    setEditingMessage(msg)
+    setInput(msg.content)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) {
+        el.focus()
+        el.style.height = 'auto'
+        el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+      }
+    })
+  }, [])
+
+  const handleBulkCopy = useCallback(() => {
+    if (gewaehlteNachrichten.length === 0) return
+    const text = gewaehlteNachrichten
+      .map((m) => `${m.role === 'assistant' ? 'Singra' : 'Ich'}: ${m.content.trim()}`)
+      .join('\n\n')
+    void navigator.clipboard.writeText(text).then(
+      () => {
+        toast.success(`${gewaehlteNachrichten.length} Nachrichten kopiert.`)
+        wahl.leeren()
+      },
+      () => toast.error('Konnte nicht kopiert werden.'),
+    )
+  }, [gewaehlteNachrichten, wahl])
+
+  const handleBulkForward = useCallback(() => {
+    if (gewaehlteNachrichten.length === 0) return
+    setForwardMessages(gewaehlteNachrichten)
+    wahl.leeren()
+  }, [gewaehlteNachrichten, wahl])
+
+  const handleBulkStar = useCallback(() => {
+    if (gewaehlteNachrichten.length === 0) return
+    setStarredIds((prev) => {
+      const next = new Set(prev)
+      const allStarred = gewaehlteNachrichten.every((m) => next.has(m.id))
+      for (const m of gewaehlteNachrichten) {
+        if (allStarred) next.delete(m.id)
+        else next.add(m.id)
+      }
+      try {
+        localStorage.setItem('msm:ai_starred_messages', JSON.stringify(Array.from(next)))
+      } catch {}
+      return next
+    })
+    toast.success('Markierung aktualisiert.')
+    wahl.leeren()
+  }, [gewaehlteNachrichten, wahl])
 
   if (loading) {
     return (
@@ -1848,6 +1972,68 @@ export function AiChat({
         </div>
       ) : (
         <>
+          {auswahlModus && (
+            <>
+              <div className="relative z-40 flex min-h-14 shrink-0 items-center border-b border-outline-variant/40 bg-surface-container-high/95 px-2 backdrop-blur-md sm:px-3">
+                <Auswahlleiste
+                  variante="kopf"
+                  anzahlLabel={`${gewaehlteNachrichten.length} ausgewählt`}
+                  aktionen={[
+                    {
+                      key: 'weiterleiten',
+                      label: 'Weiterleiten',
+                      icon: <Forward className="h-5 w-5 md:h-4 md:w-4" />,
+                      onSelect: handleBulkForward,
+                    },
+                    {
+                      key: 'kopieren',
+                      label: 'Text kopieren',
+                      kurz: 'Kopieren',
+                      icon: <Copy className="h-5 w-5 md:h-4 md:w-4" />,
+                      onSelect: handleBulkCopy,
+                    },
+                    {
+                      key: 'markieren',
+                      label: 'Markieren',
+                      icon: <Star className="h-5 w-5 md:h-4 md:w-4" />,
+                      onSelect: handleBulkStar,
+                    },
+                  ]}
+                  abbrechenLabel="Auswahl beenden"
+                  onAbbrechen={wahl.leeren}
+                />
+              </div>
+              <Auswahlleiste
+                variante="fuss"
+                className="absolute inset-x-0 bottom-0 z-40"
+                anzahlLabel={`${gewaehlteNachrichten.length} ausgewählt`}
+                aktionen={[
+                  {
+                    key: 'weiterleiten',
+                    label: 'Weiterleiten',
+                    icon: <Forward className="h-5 w-5 md:h-4 md:w-4" />,
+                    onSelect: handleBulkForward,
+                  },
+                  {
+                    key: 'kopieren',
+                    label: 'Text kopieren',
+                    kurz: 'Kopieren',
+                    icon: <Copy className="h-5 w-5 md:h-4 md:w-4" />,
+                    onSelect: handleBulkCopy,
+                  },
+                  {
+                    key: 'markieren',
+                    label: 'Markieren',
+                    icon: <Star className="h-5 w-5 md:h-4 md:w-4" />,
+                    onSelect: handleBulkStar,
+                  },
+                ]}
+                abbrechenLabel="Auswahl beenden"
+                onAbbrechen={wahl.leeren}
+              />
+            </>
+          )}
+
           {/* ── Verlauf ───────────────────────────────────────────────────── */}
           <div
             ref={verlaufRef}
@@ -1947,95 +2133,75 @@ export function AiChat({
                   }
 
                   const { message } = entry
+                  const isStarred = starredIds.has(message.id)
+                  const isSelected = Boolean(wahl.auswahl?.has(message.id))
+
                   if (message.role === 'user') {
-                    const isEditing = editingId === message.id
                     return (
-                      <article key={entry.id} className="group flex justify-end gap-3">
-                        {isEditing ? (
-                          <div className="w-full max-w-[85%] space-y-2">
-                            <textarea
-                              className="msm-input min-h-[4.5rem] w-full text-sm"
-                              value={editDraft}
-                              maxLength={16_000}
-                              autoFocus
-                              disabled={busy}
-                              onChange={(event) => setEditDraft(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === 'Escape') { setEditingId(null); setEditDraft('') }
-                                if (event.key === 'Enter' && !event.shiftKey) {
-                                  event.preventDefault()
-                                  void submitEdit(message.id)
-                                }
-                              }}
-                              aria-label={t('ai.chat.edit')}
-                            />
-                            {/* Der Hinweis gehoert hierher, nicht in eine Rueckfrage
-                                danach: wer bearbeitet, soll vorher wissen, dass der
-                                Verlauf ab hier verschwindet. */}
-                            <p className="text-xs text-on-surface-variant">{t('ai.chat.editHint')}</p>
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                type="button" size="sm" variant="secondary" disabled={busy}
-                                onClick={() => { setEditingId(null); setEditDraft('') }}
-                              >
-                                <X className="h-4 w-4" aria-hidden="true" />
-                                {t('common.cancel')}
-                              </Button>
-                              <Button
-                                type="button" size="sm"
-                                disabled={busy || !editDraft.trim()}
-                                onClick={() => void submitEdit(message.id)}
-                              >
-                                <Check className="h-4 w-4" aria-hidden="true" />
-                                {t('ai.chat.editSend')}
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => { setEditingId(message.id); setEditDraft(message.content) }}
-                              className="mt-1 self-start rounded-lg p-1.5 text-on-surface-variant opacity-0 transition-opacity hover:text-on-surface focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-0"
-                              aria-label={t('ai.chat.edit')}
+                      <article
+                        key={entry.id}
+                        className={`group flex flex-col items-end rounded-xl transition-colors ${
+                          isSelected ? 'bg-primary/10' : ''
+                        } ${editingMessage?.id === message.id ? 'ring-1 ring-primary/60 bg-primary/5' : ''}`}
+                        onClick={auswahlModus ? () => handleToggleSelectMessage(message) : undefined}
+                      >
+                        {auswahlModus && (
+                          <div className="mb-1 flex flex-row-reverse items-center gap-2">
+                            <span
+                              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                                isSelected
+                                  ? 'border-primary bg-primary text-on-primary'
+                                  : 'border-outline-variant/60 text-transparent'
+                              }`}
+                              aria-hidden="true"
                             >
-                              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                            <div className="flex max-w-[85%] flex-col items-end rounded-2xl rounded-tr-sm border border-primary/35 bg-surface-container-high/95 text-on-surface px-4 py-3 shadow-md backdrop-blur-xl">
-                              {message.content && (
-                                <p className="w-full whitespace-pre-wrap break-words text-base sm:text-sm leading-relaxed sm:leading-6 text-on-surface">
-                                  {message.content}
-                                </p>
-                              )}
-                              {/* Die Anhaenge stehen **in** der Nachricht, mit der
-                                  sie gesendet wurden. Vorher hingen sie nur an der
-                                  Unterhaltung: nach einem Neuladen war nicht mehr
-                                  erkennbar, zu welcher Frage sie gehoerten. */}
-                              <AiAnhangListe
-                                anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
-                              />
-                              <div className="mt-1 flex items-center gap-1.5 text-label-sm text-on-surface-variant/70">
-                                {message.created_at && (
-                                  <span>
-                                    {formatMessageTime(message.created_at)}
-                                  </span>
-                                )}
-                                <NachrichtStatus
-                                  status={message.deliveryStatus ?? (message.status === 'failed' ? 'failed' : 'read')}
-                                  empfaengerName={KI_NAME}
-                                  seite="ende"
-                                  lage="oben"
-                                />
-                              </div>
-                            </div>
-                          </>
+                              <Check className="h-3.5 w-3.5" />
+                            </span>
+                          </div>
                         )}
-                        <Avatar
-                          src={currentUser?.avatar_url}
-                          name={currentUser?.username}
-                          size="xs"
-                          className="mt-1 shrink-0"
+                        <ChatBubbleSurface isSelf>
+                          {message.content && (
+                            <p className="w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-on-primary">
+                              {message.content}
+                            </p>
+                          )}
+                          <AiAnhangListe
+                            anhaenge={anhaengeJeNachricht.get(message.id) ?? []}
+                          />
+                        </ChatBubbleSurface>
+                        <ChatMessageMetaRow
+                          align="end"
+                          isStarred={isStarred}
+                          starredLabel="Markiert"
+                          onOpenMenu={!busy ? () => handleOpenMessageMenu(message) : undefined}
+                          menuLabel="Nachrichtenaktionen"
+                          timestamp={message.created_at ? formatMessageTime(message.created_at) : null}
+                          statusSlot={
+                            <>
+                              {!busy && !editingMessage && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setReplyingTo(null)
+                                    setEditingMessage(message)
+                                    setInput(message.content)
+                                    requestAnimationFrame(() => inputRef.current?.focus())
+                                  }}
+                                  aria-label={t('ai.chat.editMessage', { defaultValue: 'Nachricht bearbeiten' })}
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant opacity-0 transition-opacity hover:bg-surface-container-highest hover:text-on-surface focus-visible:opacity-100 group-hover:opacity-100"
+                                >
+                                  <Pencil className="h-3 w-3" aria-hidden="true" />
+                                </button>
+                              )}
+                              <NachrichtStatus
+                                status={message.deliveryStatus ?? (message.status === 'failed' ? 'failed' : 'read')}
+                                empfaengerName={KI_NAME}
+                                seite="ende"
+                                lage="oben"
+                              />
+                            </>
+                          }
                         />
                       </article>
                     )
@@ -2045,21 +2211,17 @@ export function AiChat({
                     <AiAntwortblase
                       key={entry.id}
                       message={message}
-                      // Beantwortet ist eine Rückfrage, sobald irgendein späterer
-                      // Eintrag existiert: dann hat der Benutzer geschrieben, ob
-                      // per Knopf oder frei getippt. Damit überlebt der Zustand
-                      // auch ein Neuladen der Seite, ohne dass er irgendwo
-                      // gespeichert werden müsste.
                       beantwortet={index < entries.length - 1}
                       busy={busy}
-                      // Nur die noch schreibende Blase bekommt den Plan. Alle
-                      // anderen bekommen immer dieselbe leere Liste — sonst
-                      // entwertete eine je Runde neue Eigenschaft den `memo`
-                      // Vergleich für den ganzen Verlauf.
                       laufendeWerkzeuge={
                         message.status === 'streaming' ? laufendeWerkzeuge : KEINE_AUFRUFE
                       }
                       onAnswer={sendContent}
+                      isStarred={isStarred}
+                      onOpenMenu={!busy ? handleOpenMessageMenu : undefined}
+                      selectionMode={auswahlModus}
+                      isSelected={isSelected}
+                      onToggleSelect={handleToggleSelectMessage}
                     />
                   )
                 })}
@@ -2093,6 +2255,32 @@ export function AiChat({
                 onRemove={(anhang) => void removeAttachment(anhang)}
                 disabled={busy}
               />
+
+              {editingMessage && (
+                <ChatComposerBanner
+                  mode="edit"
+                  title={t('ai.chat.edit', 'Nachricht bearbeiten')}
+                  text={editingMessage.content}
+                  hint={t('ai.chat.editHint', 'Nachfolgende Antworten werden neu generiert')}
+                  onCancel={() => {
+                    setEditingMessage(null)
+                    setInput('')
+                  }}
+                  cancelLabel={t('common.cancel')}
+                  className="mb-2 rounded-2xl border border-primary/35 shadow-lg"
+                />
+              )}
+
+              {replyingTo && !editingMessage && (
+                <ChatComposerBanner
+                  mode="reply"
+                  title={`Antwort an ${replyingTo.role === 'assistant' ? 'Singra' : 'Nachricht'}`}
+                  text={replyingTo.content}
+                  onCancel={() => setReplyingTo(null)}
+                  cancelLabel={t('common.cancel')}
+                  className="mb-2 rounded-2xl border border-outline-variant/35 shadow-lg"
+                />
+              )}
 
               {queuedMessages.length > 0 && (
                 <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-outline-variant/30 bg-surface-container-high/60 px-2.5 py-1.5 text-xs text-on-surface-variant">
@@ -2285,6 +2473,17 @@ export function AiChat({
                           }
                         }
 
+                        if (event.key === 'Escape' && (editingMessage || replyingTo)) {
+                          event.preventDefault()
+                          if (editingMessage) {
+                            setEditingMessage(null)
+                            setInput('')
+                          } else {
+                            setReplyingTo(null)
+                          }
+                          return
+                        }
+
                         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                           event.preventDefault()
                           if (event.altKey && streaming) {
@@ -2302,7 +2501,7 @@ export function AiChat({
                             : t('ai.chat.placeholder')
                       }
                       disabled={uploading || availableProviders.length === 0}
-                      aria-label={t('ai.chat.message')}
+                      aria-label={editingMessage ? t('ai.chat.editMessage', { defaultValue: 'Nachricht bearbeiten' }) : t('ai.chat.message')}
                     />
 
                     {/* Untere Leiste im Stil von Perplexity: Modell & Aktionen links, Realtime/Diktat/Senden rechts */}
@@ -2574,7 +2773,7 @@ export function AiChat({
                             </div>
                           )
                         ) : (
-                          <Kurzinfo text={`${t('ai.chat.send')} (Enter)`} lage="oben" seite="ende">
+                          <Kurzinfo text={`${editingMessage ? t('ai.chat.editSend', { defaultValue: 'Neu senden' }) : t('ai.chat.send')} (Enter)`} lage="oben" seite="ende">
                             <button
                               type="submit"
                               disabled={
@@ -2585,7 +2784,7 @@ export function AiChat({
                               className={`grid h-8 w-8 place-items-center rounded-full bg-primary text-on-primary hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 transition-all active:scale-95 shrink-0 shadow-sm ${
                                 singraShell ? 'shadow-md' : ''
                               }`}
-                              aria-label={t('ai.chat.send')}
+                              aria-label={editingMessage ? t('ai.chat.editSend', { defaultValue: 'Neu senden' }) : t('ai.chat.send')}
                             >
                               <Send className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
@@ -2840,6 +3039,24 @@ export function AiChat({
       titel="Foto für Singra aufnehmen"
       bestaetigen="Foto anfügen"
       nurKamera
+    />
+    <AiNachrichtenMenue
+      message={actionMenuMessage}
+      isStarred={Boolean(actionMenuMessage && starredIds.has(actionMenuMessage.id))}
+      canEdit={Boolean(actionMenuMessage?.role === 'user' && !busy)}
+      onClose={() => setActionMenuMessage(null)}
+      onReply={handleReplyToMessage}
+      onForward={(m) => setForwardMessages([m])}
+      onCopy={handleCopyMessage}
+      onToggleStar={handleToggleStar}
+      onStartMultiSelect={(m) => wahl.umschalten(m.id)}
+      onEdit={handleEditMessage}
+    />
+    <AiWeiterleitenDialog
+      open={Boolean(forwardMessages && forwardMessages.length > 0)}
+      messages={forwardMessages ?? []}
+      onClose={() => setForwardMessages(null)}
+      onNewChat={onNewChat}
     />
     </RegionalAnalysisLayout>
   )

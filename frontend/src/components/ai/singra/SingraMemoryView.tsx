@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bookmark, User, Users } from 'lucide-react'
+import { Bookmark, ChevronDown, ChevronUp, Gauge, User } from 'lucide-react'
 import { teamsApi, type Team } from '@/api/teams'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiUsageCard } from '@/components/ai/AiUsageCard'
@@ -8,6 +8,7 @@ import { Dropdown, Spinner } from '@maunting/ui'
 export function SingraMemoryView() {
   const [sharedTeams, setSharedTeams] = useState<Team[]>([])
   const [selectedScope, setSelectedScope] = useState<string>('personal')
+  const [showUsage, setShowUsage] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -42,45 +43,39 @@ export function SingraMemoryView() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-surface px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/45 p-5">
-          <div className="max-w-xl">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <Bookmark className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <div>
-                <h2 className="font-headline text-lg font-semibold text-on-surface">
-                  Erinnerungen & Gedächtnis
-                </h2>
-                <p className="text-xs text-on-surface-variant">
-                  Was Singra sich über deine Arbeitsweise, Server oder dein Team merkt — jederzeit einsehbar, bearbeitbar und löschbar.
-                </p>
-              </div>
+      <div className="mx-auto max-w-4xl space-y-5">
+        {/* Calm Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 p-5">
+          <div className="flex items-start gap-3 max-w-xl">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <Bookmark className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 className="font-headline text-lg font-semibold text-on-surface">
+                Erinnerungen
+              </h2>
+              <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
+                Was Singra sich über deine Vorlieben, Abläufe oder dein Team merkt. Du kannst jeden Eintrag jederzeit anpassen, anheften oder entfernen.
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 min-w-52">
+          <div className="flex items-center gap-2">
             {sharedTeams.length === 0 ? (
-              <span className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/12 px-3 py-2 text-xs font-medium text-primary">
-                <User className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant/30 bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface-variant">
+                <User className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
                 Persönlich
               </span>
             ) : (
-              <div className="w-60">
+              <div className="w-52">
                 <Dropdown
                   value={selectedScope}
                   onChange={setSelectedScope}
                   options={[
-                    {
-                      value: 'personal',
-                      label: 'Persönlich',
-                      hint: 'Deine eigenen Erinnerungen & Server-Notizen',
-                    },
+                    { value: 'personal', label: 'Persönlich' },
                     ...sharedTeams.map((team) => ({
                       value: String(team.id),
                       label: `Team: ${team.name}`,
-                      hint: 'Gemeinsames Team-Gedächtnis',
                     })),
                   ]}
                   aria-label="Gedächtnisbereich auswählen"
@@ -90,26 +85,8 @@ export function SingraMemoryView() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 px-1 text-xs text-on-surface-variant">
-          {!activeTeam ? (
-            <>
-              <User className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-              <span>
-                Aktiver Bereich: <strong className="text-on-surface">Persönlich</strong>
-              </span>
-            </>
-          ) : (
-            <>
-              <Users className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-              <span>
-                Aktiver Bereich:{' '}
-                <strong className="text-on-surface">Team {activeTeam.name}</strong>
-              </span>
-            </>
-          )}
-        </div>
-
         <AiMemoryManager
+          compactModalForm={true}
           scope={
             activeTeam
               ? {
@@ -121,7 +98,28 @@ export function SingraMemoryView() {
           }
         />
 
-        <AiUsageCard />
+        {/* Optional Usage Disclosure */}
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => setShowUsage((v) => !v)}
+            className="inline-flex items-center gap-2 rounded-full border border-outline-variant/25 bg-surface-container-low/40 px-3.5 py-1.5 text-xs font-medium text-on-surface-variant hover:text-on-surface transition-colors"
+          >
+            <Gauge className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+            <span>Nutzung & Kontingent {showUsage ? 'ausblenden' : 'anzeigen'}</span>
+            {showUsage ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )}
+          </button>
+
+          {showUsage && (
+            <div className="mt-3">
+              <AiUsageCard />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
