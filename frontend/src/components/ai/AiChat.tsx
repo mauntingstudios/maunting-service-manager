@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, Brain, CalendarClock, Camera, Check, ChevronDown, Copy, Forward, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, MoreHorizontal, Paperclip, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Star, Trash2, Upload, X, Zap } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { AudioLines, Brain, CalendarClock, Camera, Check, ChevronDown, Copy, Forward, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, MoreHorizontal, Paperclip, Plug, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Star, Trash2, Upload, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -208,6 +209,7 @@ export function AiChat({
   appFaehigkeiten,
 }: AiChatProps = {}) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const canAttach = useHasPermission('ai.attachments.use')
   const canUseAutonomy = useHasPermission('ai.autonomous.use')
   const canUseMemory = useHasPermission('ai.memory.use')
@@ -1272,6 +1274,28 @@ export function AiChat({
           }
         },
       },
+      {
+        id: '/tools',
+        label: '/tools',
+        beschreibung: 'MCP-Server, Integrationen & Werkzeuge öffnen',
+        icon: Plug,
+        art: 'aktion' as const,
+        ausfuehren: () => {
+          setInput('')
+          navigate('/ai?bereich=tools')
+        },
+      },
+      {
+        id: '/mcp',
+        label: '/mcp',
+        beschreibung: 'MCP-Schnittstellen und Verbindungen verwalten',
+        icon: Plug,
+        art: 'aktion' as const,
+        ausfuehren: () => {
+          setInput('')
+          navigate('/ai?bereich=tools')
+        },
+      },
     ]
 
     const skillBefehle = skills.map((s) => ({
@@ -1287,7 +1311,7 @@ export function AiChat({
     }))
 
     return [...aktionen, ...skillBefehle]
-  }, [skills, onNewChat, clearHistory])
+  }, [skills, onNewChat, clearHistory, navigate])
 
   const zeigeSlashMenu =
     singraShell &&
@@ -2572,6 +2596,19 @@ export function AiChat({
                                     >
                                       <HardDrive className="h-4 w-4 text-primary" aria-hidden="true" />
                                       <span className="font-medium">Aus KI-Speicher wählen</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-white/90 hover:bg-white/10 hover:text-white transition-colors"
+                                      onClick={() => {
+                                        setPlusMenuOffen(false)
+                                        navigate('/ai?bereich=tools')
+                                      }}
+                                    >
+                                      <Plug className="h-4 w-4 text-primary" aria-hidden="true" />
+                                      <span className="font-medium">Tools & MCP-Integrationen</span>
                                     </button>
                                   </div>
                                 </>

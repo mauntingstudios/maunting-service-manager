@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next'
 import { aiApi, type AiTaskEntry, type AiTaskWrite } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
 import { Button, DateTimePicker, Dropdown, DropdownOption, Switch } from '@maunting/ui'
-import { ChatHintergrund } from '@/features/chatHintergrund'
 import { useAuthStore } from '@/stores/authStore'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
@@ -256,11 +255,8 @@ export function AufgabenAnsicht() {
   const leer = aufgaben.length === 0 && !laedt
 
   return (
-    <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-outline-variant/40 bg-surface-container-lowest">
-      {/* Derselbe Hintergrund wie im KI-Chat — eine Wahl für den Bereich. */}
-      <ChatHintergrund bereich="ki" />
-
-      <header className="relative flex shrink-0 items-center gap-2 border-b border-outline-variant/40 px-4 py-3">
+    <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface">
+      <header className="relative flex shrink-0 items-center gap-2 border-b border-outline-variant/30 px-4 py-3 bg-surface-container-low/40">
         <CalendarClock className="h-4 w-4 shrink-0 text-secondary" aria-hidden="true" />
         <div className="min-w-0">
           <h2 className="truncate font-headline text-sm font-semibold text-on-surface">

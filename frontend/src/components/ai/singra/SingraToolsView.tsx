@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Activity,
   Bot,
@@ -6,10 +7,13 @@ import {
   ChevronDown,
   ChevronUp,
   Cpu,
+  ExternalLink,
   LayoutGrid,
+  Mail,
   Monitor,
   Plug,
   Plus,
+  Search,
   Server,
   ShieldAlert,
   Trash2,
@@ -28,7 +32,9 @@ import { GuardianAnsicht } from '@/components/ai/GuardianAnsicht'
 import { WorkerAnsicht } from '@/components/ai/WorkerAnsicht'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import {
+  MCP_CATEGORIES,
   SINGRA_MCP_PRESETS,
+  type McpCategory,
   type SingraMcpPreset,
 } from './singraTemplates'
 import {
@@ -84,10 +90,12 @@ export function SingraToolsView({
   const [mcpServers, setMcpServers] = useState<AiMcpServer[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [loadingMcp, setLoadingMcp] = useState(true)
-  const [showAllPresets, setShowAllPresets] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<'all' | McpCategory>('all')
+  const [presetSearch, setPresetSearch] = useState('')
 
   // Create MCP Integration Modal
   const [mcpModalOpen, setMcpModalOpen] = useState(false)
+  const [selectedPreset, setSelectedPreset] = useState<SingraMcpPreset | null>(null)
   const [isPresetModal, setIsPresetModal] = useState(false)
   const [showTechnicalMcp, setShowTechnicalMcp] = useState(false)
   const [savingMcp, setSavingMcp] = useState(false)
@@ -152,6 +160,7 @@ export function SingraToolsView({
   }, [loadToolsData])
 
   const handleApplyPreset = (preset: SingraMcpPreset) => {
+    setSelectedPreset(preset)
     setMcpDraft({
       name: preset.name,
       description: preset.description,
@@ -159,7 +168,10 @@ export function SingraToolsView({
       endpoint_url: preset.endpoint_url || '',
       command: preset.command || '',
       args: preset.args || [],
-      auth_header: preset.auth_header || '',
+      auth_header:
+        preset.authType === 'none' || preset.authType === 'connection_string'
+          ? ''
+          : (preset.auth_header || ''),
       enabled: true,
       scopeChoice: 'personal',
     })
@@ -170,6 +182,7 @@ export function SingraToolsView({
   }
 
   const handleOpenCustomModal = () => {
+    setSelectedPreset(null)
     setMcpDraft({
       name: '',
       description: '',
@@ -213,13 +226,17 @@ export function SingraToolsView({
         command:
           mcpDraft.transport === 'stdio' ? mcpDraft.command?.trim() || null : null,
         args: mcpDraft.transport === 'stdio' ? parsedArgs : [],
-        auth_header: mcpDraft.auth_header?.trim() || null,
+        auth_header:
+          selectedPreset?.authType === 'none' || selectedPreset?.authType === 'connection_string'
+            ? null
+            : mcpDraft.auth_header?.trim() || null,
         team_id: teamId,
         is_global: isGlobal,
         enabled: true,
       })
       setMcpServers((prev) => [created, ...prev])
       setMcpModalOpen(false)
+      setSelectedPreset(null)
       toast.success('Integration verbunden.')
     } catch (err: unknown) {
       toast.error(
@@ -266,9 +283,19 @@ export function SingraToolsView({
     }
   }
 
-  const visiblePresets = showAllPresets
-    ? SINGRA_MCP_PRESETS
-    : SINGRA_MCP_PRESETS.slice(0, 6)
+  const filteredPresets = useMemo(() => {
+    const q = presetSearch.trim().toLowerCase()
+    return SINGRA_MCP_PRESETS.filter((p) => {
+      const matchCategory = selectedCategory === 'all' || p.category === selectedCategory
+      if (!matchCategory) return false
+      if (!q) return true
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.badge.toLowerCase().includes(q)
+      )
+    })
+  }, [selectedCategory, presetSearch])
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-surface px-4 py-5 sm:px-6 lg:px-8">
@@ -488,66 +515,116 @@ export function SingraToolsView({
               )}
             </div>
 
-            {/* 1-Click Integration Cards */}
-            <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/25 p-4 sm:p-5 space-y-3">
-              <div className="flex items-center justify-between gap-2">
+            {/* Hinweis auf native E-Mail- & Kalender-Integration */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/8 p-4">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                  <Mail className="h-4 w-4" aria-hidden="true" />
+                </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-on-surface">
-                    Beliebte Erweiterungen
-                  </h4>
+                  <div className="text-sm font-semibold text-on-surface">
+                    E-Mail & Kalender sind bereits nativ integriert
+                  </div>
                   <p className="text-xs text-on-surface-variant">
-                    Mit einem Klick vorbereiten und verbinden.
+                    Postfächer (IMAP/SMTP) und Kalender (CalDAV) bindest du direkt unter Einstellungen → Verbindungen an – ganz ohne externen MCP-Server.
                   </p>
                 </div>
-                {SINGRA_MCP_PRESETS.length > 6 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllPresets((v) => !v)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                  >
-                    <span>{showAllPresets ? 'Weniger anzeigen' : 'Alle anzeigen'}</span>
-                    {showAllPresets ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                )}
+              </div>
+              <Link
+                to="/settings"
+                className="shrink-0 text-xs font-semibold text-primary hover:underline self-end sm:self-center"
+              >
+                Zu den Verbindungen →
+              </Link>
+            </div>
+
+            {/* 1-Click Integration Cards */}
+            <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/25 p-4 sm:p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-on-surface">
+                    Vorkonfigurierte MCP-Erweiterungen ({filteredPresets.length})
+                  </h4>
+                  <p className="text-xs text-on-surface-variant">
+                    Wähle aus fertigen Vorlagen für Cloud, Design, Office, E-Commerce und Medien.
+                  </p>
+                </div>
+
+                {/* Preset Search */}
+                <div className="relative w-full sm:w-64">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant" />
+                  <input
+                    type="search"
+                    value={presetSearch}
+                    onChange={(e) => setPresetSearch(e.target.value)}
+                    placeholder="Erweiterung suchen…"
+                    aria-label="MCP-Erweiterung suchen"
+                    className="h-8 w-full rounded-xl border border-outline-variant/30 bg-surface-container/60 pl-8 pr-3 text-xs text-on-surface placeholder:text-on-surface-variant/70 focus:border-primary/50 focus:outline-none"
+                  />
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {visiblePresets.map((preset) => (
-                  <div
-                    key={preset.id}
-                    className="flex flex-col justify-between rounded-xl border border-outline-variant/20 bg-surface-container-low/60 p-3.5 hover:border-primary/35 transition-colors"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-1.5 mb-1">
-                        <span className="text-xs font-semibold text-on-surface truncate">
-                          {preset.name}
-                        </span>
-                        <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm font-medium text-primary shrink-0">
-                          {preset.badge}
-                        </span>
-                      </div>
-                      <p className="text-xs text-on-surface-variant line-clamp-2 leading-relaxed">
-                        {preset.description}
-                      </p>
-                    </div>
-                    <div className="mt-3 flex justify-end pt-2 border-t border-outline-variant/15">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-7 px-3 text-xs rounded-full"
-                        onClick={() => handleApplyPreset(preset)}
-                      >
-                        Verbinden
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+              {/* Category Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                {MCP_CATEGORIES.map((cat) => {
+                  const active = selectedCategory === cat.id
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={[
+                        'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors shrink-0 border',
+                        active
+                          ? 'border-primary/40 bg-primary/15 text-primary'
+                          : 'border-outline-variant/25 bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high',
+                      ].join(' ')}
+                    >
+                      <span>{cat.label}</span>
+                    </button>
+                  )
+                })}
               </div>
+
+              {filteredPresets.length === 0 ? (
+                <div className="py-8 text-center text-xs text-on-surface-variant">
+                  Keine Erweiterung für diese Suche gefunden.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {filteredPresets.map((preset) => (
+                    <div
+                      key={preset.id}
+                      className="flex flex-col justify-between rounded-xl border border-outline-variant/20 bg-surface-container-low/60 p-3.5 hover:border-primary/35 transition-colors"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-1.5 mb-1">
+                          <span className="text-xs font-semibold text-on-surface truncate">
+                            {preset.name}
+                          </span>
+                          <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm font-medium text-primary shrink-0">
+                            {preset.badge}
+                          </span>
+                        </div>
+                        <p className="text-xs text-on-surface-variant line-clamp-2 leading-relaxed">
+                          {preset.description}
+                        </p>
+                      </div>
+                      <div className="mt-3 flex justify-end pt-2 border-t border-outline-variant/15">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-7 px-3 text-xs rounded-full"
+                          onClick={() => handleApplyPreset(preset)}
+                        >
+                          Verbinden
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -631,7 +708,13 @@ export function SingraToolsView({
       </div>
 
       {/* Connect Integration Modal */}
-      <Dialog open={mcpModalOpen} onOpenChange={setMcpModalOpen}>
+      <Dialog
+        open={mcpModalOpen}
+        onOpenChange={(open) => {
+          setMcpModalOpen(open)
+          if (!open) setSelectedPreset(null)
+        }}
+      >
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
@@ -681,23 +764,74 @@ export function SingraToolsView({
                   ]}
                   aria-label="Sichtbarkeit"
                 />
+                <p className="mt-1 text-xs text-on-surface-variant/80">
+                  {mcpDraft.scopeChoice === 'personal'
+                    ? 'Nur für dein eigenes Benutzerkonto aktiv.'
+                    : mcpDraft.scopeChoice === 'global'
+                    ? 'Global für alle Benutzer aktiv.'
+                    : 'Alle Mitglieder dieses Teams teilen sich diese Zugangsdaten.'}
+                </p>
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                  Zugangsschlüssel / Token (optional)
+                  {selectedPreset?.authLabel || 'Zugangsschlüssel / Token (optional)'}
                 </label>
-                <Input
-                  type="password"
-                  value={mcpDraft.auth_header ?? ''}
-                  onChange={(e) =>
-                    setMcpDraft((d) => ({ ...d, auth_header: e.target.value }))
-                  }
-                  placeholder="Bearer …"
-                  aria-label="Authorization Header"
-                />
+                {selectedPreset?.authType === 'none' ? (
+                  <div className="flex h-10 items-center rounded-xl border border-outline-variant/30 bg-surface-container-high/40 px-3 text-xs text-on-surface-variant">
+                    Kein Zugangsschlüssel nötig (Lokales Werkzeug)
+                  </div>
+                ) : (
+                  <Input
+                    type={selectedPreset?.authType === 'connection_string' ? 'text' : 'password'}
+                    value={mcpDraft.auth_header ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setMcpDraft((d) => ({ ...d, auth_header: val }))
+                      if (selectedPreset?.id === 'postgres' && val.trim()) {
+                        setArgsInput(`-y @modelcontextprotocol/server-postgres ${val.trim()}`)
+                      }
+                    }}
+                    placeholder={selectedPreset?.authPlaceholder || 'Bearer …'}
+                    aria-label={selectedPreset?.authLabel || 'Authorization Header'}
+                  />
+                )}
               </div>
             </div>
+
+            {selectedPreset && (selectedPreset.authHelp || selectedPreset.docUrl) && (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 text-xs text-on-surface-variant">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                  <div className="space-y-1">
+                    <p className="font-semibold text-primary">
+                      {selectedPreset.authType === 'none'
+                        ? 'Lokale Ausführung'
+                        : selectedPreset.authType === 'oauth_or_token'
+                        ? 'Anmeldung & Token'
+                        : selectedPreset.authType === 'connection_string'
+                        ? 'Verbindungsanleitung'
+                        : 'Zugangsdaten & Einrichtung'}
+                    </p>
+                    {selectedPreset.authHelp && (
+                      <p className="leading-relaxed text-on-surface-variant/90">
+                        {selectedPreset.authHelp}
+                      </p>
+                    )}
+                  </div>
+                  {selectedPreset.docUrl && (
+                    <a
+                      href={selectedPreset.docUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors self-start"
+                    >
+                      <span>Dashboard / Token ↗</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
 
             {isPresetModal && (
               <div>

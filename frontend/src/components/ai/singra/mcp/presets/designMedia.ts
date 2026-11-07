@@ -1,0 +1,58 @@
+import type { SingraMcpPreset } from '../types'
+
+export const DESIGN_MEDIA_PRESETS: SingraMcpPreset[] = [
+  {
+    id: 'canva',
+    name: 'Canva Design & Assets MCP',
+    description: 'Canva-Designs, Vorlagen, Brand-Assets und Bild-Exporte direkt anfragen.',
+    category: 'design_media',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@canva/mcp-server'],
+    auth_header: 'Bearer <CANVA_API_KEY>',
+    badge: 'Grafikdesign',
+    authType: 'token',
+    authLabel: 'Canva Integration Token',
+    authPlaceholder: 'Bearer <CANVA_API_KEY>',
+    authHelp:
+      'Registriere eine App im Canva Developers Portal und generiere ein Integration Token unter canva.com/developers.',
+    docUrl: 'https://www.canva.com/developers',
+    isOptionalAuth: false,
+  },
+  {
+    id: 'figma',
+    name: 'Figma Layout & Code Connect MCP',
+    description: 'Figma-Komponenten, Canvas-Frames, Design-Tokens und Layouts auslesen.',
+    category: 'design_media',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@figma/mcp-server'],
+    auth_header: 'Bearer <FIGMA_PERSONAL_TOKEN>',
+    badge: 'UI & UX Design',
+    authType: 'token',
+    authLabel: 'Figma Personal Access Token',
+    authPlaceholder: 'Bearer figd_...',
+    authHelp:
+      'In Figma unter Settings -> Account -> Personal access tokens ein Token erstellen.',
+    docUrl: 'https://www.figma.com/settings',
+    isOptionalAuth: false,
+  },
+  {
+    id: 'adobe',
+    name: 'Adobe Creative Cloud MCP',
+    description: 'Photoshop-, Illustrator- und Firefly-Generierungen sowie Creative Cloud Assets ansteuern.',
+    category: 'design_media',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@adobe/mcp-server'],
+    auth_header: 'Bearer <ADOBE_IMS_TOKEN>',
+    badge: 'Kreativstudio',
+    authType: 'token',
+    authLabel: 'Adobe Developer IMS Token',
+    authPlaceholder: 'Bearer <ADOBE_IMS_TOKEN>',
+    authHelp:
+      'In der Adobe Developer Console ein Projekt anlegen und Server-to-Server OAuth-Zugangsdaten generieren.',
+    docUrl: 'https://developer.adobe.com/console',
+    isOptionalAuth: false,
+  },
+]

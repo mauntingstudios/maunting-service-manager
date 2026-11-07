@@ -272,6 +272,95 @@ def _skill_index_message(
     return {"role": "user", "content": block}
 
 
+def _mcp_servers_block(
+    db: Session,
+    user: User | None,
+    *,
+    nur_team_id: int | None = None,
+    nur_persoenlich: bool = False,
+) -> str:
+    """Verzeichnis aktiver Model-Context-Protocol-Server (MCP).
+
+    Informiert das Modell ueber zusaetzliche externe Schnittstellen (z. B. Stripe,
+    Shopify, Supabase, Vercel, Slack etc.), damit es diese kontextbezogen
+    erkennen und verwenden kann.
+    """
+    if user is None:
+        return ""
+    from models import AiMcpServer, TeamMember
+    from sqlalchemy import or_
+
+    filters = [
+        (AiMcpServer.scope == "user") & (AiMcpServer.user_id == user.id)
+    ]
+    if not nur_persoenlich:
+        filters.append(AiMcpServer.scope == "global")
+        if nur_team_id is not None:
+            filters.append((AiMcpServer.scope == "team") & (AiMcpServer.team_id == nur_team_id))
+        else:
+            team_ids = [
+                tm.team_id
+                for tm in db.query(TeamMember.team_id)
+                .filter(TeamMember.user_id == user.id)
+                .all()
+            ]
+            if team_ids:
+                filters.append((AiMcpServer.scope == "team") & (AiMcpServer.team_id.in_(team_ids)))
+
+    servers = (
+        db.query(AiMcpServer)
+        .filter(AiMcpServer.enabled.is_(True))
+        .filter(or_(*filters))
+        .order_by(AiMcpServer.scope.asc(), AiMcpServer.name.asc())
+        .limit(30)
+        .all()
+    )
+    if not servers:
+        return ""
+
+    lines: list[str] = []
+    import json
+    for s in servers:
+        desc = (s.description or "").strip()
+        desc_part = f": {desc}" if desc else ""
+        lines.append(f"- **{s.name}** ({s.transport}, Scope: {s.scope}){desc_part}")
+        if s.cached_tools_json:
+            try:
+                tools = json.loads(s.cached_tools_json)
+                if isinstance(tools, list) and tools:
+                    tool_names = [t.get("name") for t in tools if isinstance(t, dict) and t.get("name")]
+                    if tool_names:
+                        lines.append(f"  Werkzeuge: {', '.join(tool_names[:8])}")
+            except Exception:
+                pass
+
+    return (
+        "Aktive MCP-Server & externe Integrationen (Model Context Protocol):\n"
+        "Folgende Schnittstellen stehen zur Verfügung. Falls die Anfrage des Benutzers diese Themen betrifft "
+        "(z. B. Zahlungen, Shop-Verwaltung, Datenbankabfragen, Deployments, Medienerstellung, Chat-Nachrichten), "
+        "nutze dieses Wissen und verweise den Benutzer bei Bedarf darauf:\n"
+        + "\n".join(lines)
+    )
+
+
+def _mcp_servers_message(
+    db: Session,
+    user: User | None,
+    *,
+    nur_team_id: int | None = None,
+    nur_persoenlich: bool = False,
+) -> dict[str, Any] | None:
+    block = _mcp_servers_block(
+        db,
+        user,
+        nur_team_id=nur_team_id,
+        nur_persoenlich=nur_persoenlich,
+    )
+    if not block:
+        return None
+    return {"role": "user", "content": block}
+
+
 def _format_message_timestamp(created_at: datetime | str | None, user_zone: str = "UTC") -> str:
     if created_at is None:
         return ""
@@ -611,6 +700,16 @@ def build_provider_messages(
         )
     if skill_verzeichnis is not None:
         result.append(skill_verzeichnis)
+    mcp_verzeichnis = None
+    if wissen_erlaubt and user is not None and (not unbeaufsichtigt or rolle == "worker"):
+        mcp_verzeichnis = _mcp_servers_message(
+            db,
+            user,
+            nur_team_id=docs_team_id if docs else None,
+            nur_persoenlich=nur_persoenlich,
+        )
+    if mcp_verzeichnis is not None:
+        result.append(mcp_verzeichnis)
     gedaechtnis_passend: str | None = None
     if user is not None and rolle != "worker" and wissen_erlaubt:
         from services import ai_gedaechtnis_abruf, permission_service

@@ -1,0 +1,55 @@
+import type { SingraMcpPreset } from '../types'
+
+export const STORAGE_FILES_PRESETS: SingraMcpPreset[] = [
+  {
+    id: 'dropbox',
+    name: 'Dropbox Cloud Storage MCP',
+    description: 'Dateien auf Dropbox suchen, Ordner durchforsten, Dokumente laden und ablegen.',
+    category: 'storage_files',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@dropbox/mcp-server'],
+    auth_header: 'Bearer <DROPBOX_TOKEN>',
+    badge: 'Cloud-Dateien',
+    authType: 'token',
+    authLabel: 'Dropbox App Access Token',
+    authPlaceholder: 'Bearer sl....',
+    authHelp:
+      'In der Dropbox App Console (dropbox.com/developers/apps) eine App erstellen und ein Access Token generieren.',
+    docUrl: 'https://www.dropbox.com/developers/apps',
+    isOptionalAuth: false,
+  },
+  {
+    id: 'gdrive',
+    name: 'Google Drive Dateimanager MCP',
+    description: 'Dateien in Google Drive suchen, Ordnerstrukturen lesen und Berechtigungen prüfen.',
+    category: 'storage_files',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@google/mcp-server-gdrive'],
+    auth_header: 'Bearer <GOOGLE_DRIVE_TOKEN>',
+    badge: 'Cloud-Ablage',
+    authType: 'oauth_or_token',
+    authLabel: 'Google Drive OAuth Token',
+    authPlaceholder: 'Bearer ya29....',
+    authHelp:
+      'OAuth 2.0 Token mit drive.readonly oder drive.file Scope in der Google Cloud Console generieren.',
+    docUrl: 'https://console.cloud.google.com/apis/credentials',
+    isOptionalAuth: false,
+  },
+  {
+    id: 'filesystem',
+    name: 'Lokales Dateisystem MCP',
+    description: 'Sicherer, lesender oder schreibender Zugriff auf lokale Verzeichnisse deines Computers.',
+    category: 'storage_files',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', './workspace'],
+    auth_header: '',
+    badge: 'Lokale Dateien',
+    authType: 'none',
+    authHelp:
+      'Für das lokale Dateisystem ist kein Zugangsschlüssel nötig. Übergib unter Startparameter einfach das freizugebende Verzeichnis (z. B. /home/user/workspace oder C:\\projekte).',
+    isOptionalAuth: true,
+  },
+]

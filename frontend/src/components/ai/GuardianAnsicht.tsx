@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Hand, ShieldAlert, Sparkles } from 'lucide-react'
+import { Hand, Server, ShieldAlert, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiActionProposal, type AiRunInfo } from '@/api/ai'
-import { SanitizedApiError } from '@/api/client'
+import { api, SanitizedApiError } from '@/api/client'
 import { Button, Kurzinfo } from '@maunting/ui'
-import { ChatHintergrund } from '@/features/chatHintergrund'
 import { toast } from '@/stores/toastStore'
 import { AiVerlauf, mergeEntries } from './AiVerlauf'
 import { useAiLauf } from './useAiLauf'
+
+interface ServerOption {
+  id: number
+  name: string
+}
 
 /**
  * Wie oft nachgesehen wird, ob im Hintergrund eine Reparatur angelaufen ist.
@@ -43,8 +47,22 @@ export function GuardianAnsicht() {
   const [laedt, setLaedt] = useState(true)
   const [lauf, setLauf] = useState<AiRunInfo | null>(null)
   const [uebernimmt, setUebernimmt] = useState(false)
+  const [servers, setServers] = useState<ServerOption[]>([])
+  const [selectedServerId, setSelectedServerId] = useState<number | 'all'>('all')
   const verlaufRef = useRef<HTMLDivElement | null>(null)
   const [amEnde, setAmEnde] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    api<ServerOption[]>('/servers')
+      .then((list) => {
+        if (active) setServers(list)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [])
 
   const {
     entries, setEntries, streaming, laufendeWerkzeuge, merkeVorschlag, haengeAn,
@@ -147,32 +165,72 @@ export function GuardianAnsicht() {
    * Danach in den Chat: dort kann man tippen, hier nicht. Wer übernimmt, will
    * als Nächstes etwas sagen.
    */
+  const selectedServer = useMemo(
+    () => (selectedServerId === 'all' ? null : servers.find((s) => s.id === selectedServerId) ?? null),
+    [selectedServerId, servers],
+  )
+
+  const gefilterteEntries = useMemo(() => {
+    if (selectedServerId === 'all') return entries
+    return entries.filter((entry) => {
+      if (entry.kind === 'proposal') {
+        return entry.proposal.server_id === selectedServerId
+      }
+      if (entry.kind === 'message') {
+        if (!selectedServer) return true
+        const text = entry.message.content.toLowerCase()
+        const sName = selectedServer.name.toLowerCase()
+        const sId = String(selectedServer.id)
+        return text.includes(sName) || text.includes(`server ${sId}`) || text.includes(`server #${sId}`)
+      }
+      return true
+    })
+  }, [entries, selectedServerId, selectedServer])
+
   const uebernehmen = useCallback(async () => {
     setUebernimmt(true)
     try {
       const { aborted } = await aiApi.takeOverGuardian()
-      // Kein „Übernommen", wenn es nichts zu übernehmen gab. Der Satz wäre
-      // sonst eine Behauptung über einen Vorgang, den es nicht gab — und der
-      // Knopf steht auch dann da, wenn gerade nichts läuft.
-      if (aborted > 0) toast.success(t('ai.guardian.takeOverDone'))
-      navigate('/ai')
+      const serverName = selectedServer ? selectedServer.name : 'Server'
+      const title = `Guardian: Reparatur ${serverName}`
+
+      let newConvId: string | null = null
+      if (typeof aiApi.createConversation === 'function') {
+        try {
+          const created = await aiApi.createConversation({ title })
+          newConvId = created.id
+        } catch {
+          // Fallback
+        }
+      }
+
+      if (aborted > 0) {
+        toast.success(t('ai.guardian.takeOverDone', 'Steuerung übernommen. Neuer Chat wurde vorbereitet.'))
+      } else {
+        toast.success('Steuerung übernommen. Neuer Chat gestartet.')
+      }
+
+      if (newConvId) {
+        window.dispatchEvent(
+          new CustomEvent('singra-open-conversation', { detail: { conversationId: newConvId } }),
+        )
+      } else {
+        navigate('/ai')
+      }
     } catch (error: unknown) {
       toast.error(
         error instanceof SanitizedApiError ? error.message : t('ai.guardian.takeOverFailed'),
       )
+    } finally {
       setUebernimmt(false)
     }
-  }, [navigate, t])
+  }, [navigate, selectedServer, t])
 
-  const leer = entries.length === 0
+  const leer = gefilterteEntries.length === 0
 
   return (
-    <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-outline-variant/40 bg-surface-container-lowest">
-      {/* Derselbe Hintergrund wie im KI-Chat: eine Wahl für den ganzen
-          Bereich, eingestellt wird sie drüben im Chat. */}
-      <ChatHintergrund bereich="ki" />
-
-      <header className="relative flex shrink-0 items-center gap-2 border-b border-outline-variant/40 px-4 py-3">
+    <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface">
+      <header className="relative flex shrink-0 items-center gap-2 border-b border-outline-variant/30 px-4 py-3 bg-surface-container-low/40">
         <ShieldAlert className="h-4 w-4 shrink-0 text-secondary" aria-hidden="true" />
         <div className="min-w-0">
           <h2 className="truncate font-headline text-sm font-semibold text-on-surface">
@@ -188,11 +246,6 @@ export function GuardianAnsicht() {
               {t('ai.guardian.running')}
             </span>
           ) : lauf?.status === 'waiting_confirmation' ? (
-            /* Ein Reparaturlauf darf seit der E-Mail-Freigabe warten, statt
-               aufzugeben. Ohne diesen Hinweis sähe das Fenster aus wie ein
-               abgebrochener Lauf — und genau die Verwechslung war einer der
-               vier Gründe, aus denen unbeaufsichtigte Läufe früher nie parken
-               durften. */
             <span className="inline-flex items-center gap-1.5 rounded-full bg-status-warning/10 px-2.5 py-1 text-xs font-medium text-status-warning">
               {t('ai.guardian.waitingApproval')}
             </span>
@@ -204,8 +257,6 @@ export function GuardianAnsicht() {
               {t('common.refresh')}
             </Button>
           )}
-          {/* Der ausdrückliche Abbruch — die einzige Stelle, an der man hier
-              etwas auslöst. Ein Eingabefeld täte dasselbe versehentlich. */}
           <Kurzinfo text={t('ai.guardian.takeOverHint')} seite="ende">
             <Button
               type="button" variant="ghost" size="sm"
@@ -219,6 +270,49 @@ export function GuardianAnsicht() {
           </Kurzinfo>
         </div>
       </header>
+
+      {/* Server Filterleiste */}
+      {servers.length > 0 && (
+        <div className="flex items-center gap-1.5 border-b border-outline-variant/20 bg-surface-container-low/25 px-4 py-2 overflow-x-auto no-scrollbar shrink-0">
+          <span className="text-xs font-medium text-on-surface-variant mr-1 shrink-0">
+            Server:
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedServerId('all')}
+            className={[
+              'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors shrink-0 border',
+              selectedServerId === 'all'
+                ? 'border-primary/40 bg-primary/15 text-primary'
+                : 'border-outline-variant/25 bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high',
+            ].join(' ')}
+          >
+            <span>Alle Server</span>
+            <span className="rounded-full bg-surface-container-high px-1.5 py-0.2 text-label-sm text-on-surface-variant">
+              {entries.length}
+            </span>
+          </button>
+          {servers.map((s) => {
+            const active = selectedServerId === s.id
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSelectedServerId(s.id)}
+                className={[
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors shrink-0 border',
+                  active
+                    ? 'border-primary/40 bg-primary/15 text-primary'
+                    : 'border-outline-variant/25 bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high',
+                ].join(' ')}
+              >
+                <Server className="h-3 w-3" aria-hidden="true" />
+                <span>{s.name}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div
         ref={verlaufRef}
@@ -242,7 +336,7 @@ export function GuardianAnsicht() {
             </div>
           )}
           <AiVerlauf
-            entries={entries}
+            entries={gefilterteEntries}
             laufendeWerkzeuge={laufendeWerkzeuge}
             onProposalChange={aufVorschlag}
           />

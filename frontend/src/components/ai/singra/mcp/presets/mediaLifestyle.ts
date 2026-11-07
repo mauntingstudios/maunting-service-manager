@@ -1,0 +1,58 @@
+import type { SingraMcpPreset } from '../types'
+
+export const MEDIA_LIFESTYLE_PRESETS: SingraMcpPreset[] = [
+  {
+    id: 'spotify',
+    name: 'Spotify Musik & Playlists MCP',
+    description: 'Playlists verwalten, Songs suchen, Wiedergabe-Status prüfen und Titel steuern.',
+    category: 'travel_lifestyle',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@spotify/mcp-server'],
+    auth_header: 'Bearer <SPOTIFY_TOKEN>',
+    badge: 'Audio & Musik',
+    authType: 'token',
+    authLabel: 'Spotify Web API Token',
+    authPlaceholder: 'Bearer <SPOTIFY_TOKEN>',
+    authHelp:
+      'Im Spotify Developer Dashboard (developer.spotify.com/dashboard) eine App anlegen und ein OAuth-Token generieren.',
+    docUrl: 'https://developer.spotify.com/dashboard',
+    isOptionalAuth: false,
+  },
+  {
+    id: 'apple_music',
+    name: 'Apple Music Media MCP',
+    description: 'Apple Music Katalog durchsuchen, Alben, Titel und persönliche Mediathek abfragen.',
+    category: 'travel_lifestyle',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@apple/mcp-server-musickit'],
+    auth_header: 'Bearer <APPLE_MUSIC_DEV_TOKEN>',
+    badge: 'Streaming',
+    authType: 'token',
+    authLabel: 'Apple Music Developer Token',
+    authPlaceholder: 'Bearer <APPLE_MUSIC_DEV_TOKEN>',
+    authHelp:
+      'Im Apple Developer Portal einen MusicKit-Schlüssel generieren und den signierten Entwickler-Token hinterlegen.',
+    docUrl: 'https://developer.apple.com/musickit',
+    isOptionalAuth: false,
+  },
+  {
+    id: 'booking',
+    name: 'Booking Hotel & Reisen MCP',
+    description: 'Hotelsuche, Reiseangebote, Verfügbarkeiten und Buchungsdetails anfragen.',
+    category: 'travel_lifestyle',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@booking/mcp-server'],
+    auth_header: 'Bearer <BOOKING_API_KEY>',
+    badge: 'Reisen & Hotels',
+    authType: 'token',
+    authLabel: 'Booking Partner API Key',
+    authPlaceholder: 'Bearer <BOOKING_API_KEY>',
+    authHelp:
+      'Trage deinen Booking Partner- oder Affiliate-API-Schlüssel aus dem Partner-Portal ein.',
+    docUrl: 'https://partner.booking.com',
+    isOptionalAuth: false,
+  },
+]
