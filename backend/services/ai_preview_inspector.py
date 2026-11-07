@@ -143,7 +143,20 @@ _INSPECTOR_HARNESS_JS = """
 (function() {
   window.__singraCapturedErrors = [];
   window.addEventListener('error', function(e) {
-    var msg = (e && e.message) || 'Unbekannter Skriptfehler';
+    // 1. Ressourcenfehler (z. B. 404 auf Favicon, Bilder, Audio) sind keine fatalen JS-Abstuerze
+    if (e && e.target && e.target !== window) {
+      var tag = (e.target.tagName || '').toUpperCase();
+      if (tag === 'LINK' && (e.target.rel || '').indexOf('icon') !== -1) return;
+      if (tag === 'IMG' || tag === 'AUDIO' || tag === 'VIDEO') return;
+      return;
+    }
+    // 2. Anonyme 'Script error.' ohne Details ignorieren, wenn kein Stacktrace/Filename existiert
+    var msg = (e && e.message) || (e && e.error && e.error.message) || '';
+    if (!msg || msg === 'Script error.' || msg === 'Unbekannter Skriptfehler') {
+      if (!e || (!e.filename && !e.error)) {
+        return;
+      }
+    }
     var src = (e && e.filename) ? (e.filename + ':' + e.lineno) : '';
     window.__singraCapturedErrors.push(msg + (src ? ' (' + src + ')' : ''));
   }, true);
@@ -338,7 +351,7 @@ def build_preview_html_document(
 
     head_inject = _INSPECTOR_HARNESS_JS
     if uses_tailwind and "cdn.tailwindcss.com" not in doc:
-        head_inject += '<script src="https://cdn.tailwindcss.com"></script>\n'
+        head_inject += '<script crossorigin="anonymous" src="https://cdn.tailwindcss.com"></script>\n'
 
     for css in (f for f in browser_files if f["path"].lower().endswith(".css")):
         base_name = css["path"].split("/")[-1]
@@ -356,9 +369,9 @@ def build_preview_html_document(
             doc = re.sub(r"<body(\s[^>]*)?>", r"<body\1><div id=\"root\"></div>", doc, flags=re.I)
 
         head_inject += """
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 """
         registry = {f["path"]: f["content"] for f in code_files}
         payload = json.dumps({"files": registry, "entries": module_entries}).replace("<", "\\u003c")

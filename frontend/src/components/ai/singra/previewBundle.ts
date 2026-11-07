@@ -93,12 +93,18 @@ const PREVIEW_ERROR_HARNESS = `<script id="__singra_preview_harness__">
   }
   window.__singraReport = report;
   window.addEventListener('error', function (e) {
-    if (e && e.target && e.target !== window && (e.target.src || e.target.href)) {
-      report('module', 'Ressource konnte nicht geladen werden', e.target.src || e.target.href);
+    if (e && e.target && e.target !== window) {
+      var tag = (e.target.tagName || '').toUpperCase();
+      if (tag === 'LINK' && (e.target.rel || '').indexOf('icon') !== -1) return;
+      if (tag === 'IMG' || tag === 'AUDIO' || tag === 'VIDEO') return;
       return;
     }
+    var msg = (e && e.message) || (e && e.error && e.error.message) || '';
+    if (!msg || msg === 'Script error.' || msg === 'Skriptfehler') {
+      if (!e || (!e.filename && !e.error)) return;
+    }
     var where = e.filename ? (e.filename + ':' + e.lineno + ':' + e.colno) : '';
-    report('runtime', e.message || 'Skriptfehler', (e.error && e.error.stack) || where);
+    report('runtime', msg || 'Skriptfehler', (e.error && e.error.stack) || where);
   }, true);
   window.addEventListener('unhandledrejection', function (e) {
     var r = e.reason;
@@ -336,7 +342,7 @@ export function buildPreviewDocument(
 
   let headInject = PREVIEW_ERROR_HARNESS
   if (usesTailwind && !doc.includes('cdn.tailwindcss.com')) {
-    headInject += '<script src="https://cdn.tailwindcss.com"></script>'
+    headInject += '<script crossorigin="anonymous" src="https://cdn.tailwindcss.com"></script>'
   }
 
   browserFiles
@@ -361,9 +367,9 @@ export function buildPreviewDocument(
       doc = doc.replace(/<body(\s[^>]*)?>/i, (m) => `${m}<div id="root"></div>`)
     }
     headInject += `
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 `
     const registry: Record<string, string> = {}
     for (const f of codeFiles) registry[f.path] = f.content

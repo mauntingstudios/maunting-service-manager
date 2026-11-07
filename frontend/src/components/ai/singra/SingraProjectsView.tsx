@@ -1036,6 +1036,10 @@ export function SingraProjectsView({
       if (isPreviewErrorMessage(ev.data)) {
         if (ev.source !== previewIframeRef.current?.contentWindow) return
         const { message, detail } = ev.data
+        // Anonyme Browser-Skriptfehler ohne Stacktrace/Detail ignorieren (z. B. unkritische Cross-Origin Asset-Warnungen)
+        if ((message === 'Skriptfehler' || message === 'Script error.') && !detail) {
+          return
+        }
         // Der erste Fehler ist meist die Ursache, Folgefehler überschreiben ihn nicht.
         setPreviewError((prev) => prev ?? { message, detail })
         return
