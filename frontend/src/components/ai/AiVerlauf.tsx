@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, BookOpen, BrainCircuit, Calendar, CalendarClock, Check, ChevronDown, ChevronRight, FileCode2, FolderGit2, GitBranch, Globe2, Loader2, Mail, Monitor, Rocket, Sparkles, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button, ChatBubbleSurface, ChatMessageMetaRow, Kurzinfo } from '@maunting/ui'
