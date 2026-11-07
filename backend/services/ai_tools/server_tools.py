@@ -1819,6 +1819,9 @@ def _execute_global_read_tool(
                 branch = str(arguments.get("branch") or arguments.get("git_branch") or "main").strip() or "main"
                 system_prompt = str(arguments.get("system_instructions") or arguments.get("system_prompt") or "").strip() or None
                 sandbox_mode = str(arguments.get("sandbox_mode") or "server")
+                project_kind = str(arguments.get("project_kind") or "coding").strip().lower()
+                if project_kind not in ("coding", "docs", "general"):
+                    project_kind = "coding"
                 local_path = str(arguments.get("local_path") or "").strip() or None
 
                 p = ai_project_service.create_project(
@@ -1827,6 +1830,7 @@ def _execute_global_read_tool(
                     name=name,
                     description=description,
                     system_prompt=system_prompt,
+                    project_kind=project_kind,
                     sandbox_mode=sandbox_mode,
                     local_path=local_path,
                     git_repo_url=repo_url,
@@ -1858,6 +1862,7 @@ def _execute_global_read_tool(
                     "project_id": p.id,
                     "name": p.name,
                     "description": p.description,
+                    "project_kind": p.project_kind,
                     "workspace": p.sandbox_path,
                     "git_repo_url": p.git_repo_url,
                     "git_branch": p.git_branch,
@@ -1865,14 +1870,38 @@ def _execute_global_read_tool(
                     "created": True,
                 }
             if not proj_id_raw:
+                conv_id_fallback = (
+                    getattr(kontext, "conversation_id", None)
+                    if kontext is not None
+                    else None
+                ) or (
+                    kontext.get("conversation_id")
+                    if isinstance(kontext, dict)
+                    else None
+                )
+                if conv_id_fallback:
+                    from models.ai_conversation import AiConversation
+                    conv_row = db.get(AiConversation, str(conv_id_fallback))
+                    if conv_row is not None and conv_row.project_id:
+                        proj_id_raw = conv_row.project_id
+            if action == "search_components":
+                query_str = str(arguments.get("query") or arguments.get("path") or "").strip()
+                items = ai_project_service.search_cross_project_components(
+                    db,
+                    user,
+                    current_project_id=str(proj_id_raw) if proj_id_raw else None,
+                    query=query_str,
+                )
+                return {"components": items}
+            if not proj_id_raw:
                 raise AiActionValidationError("project_id ist für diese Aktion erforderlich")
             pid = str(proj_id_raw)
             if action == "list_files":
                 files = ai_project_service.list_project_files(db, user, pid)
-                return {"files": [{"path": f.path, "size_bytes": f.size_bytes} for f in files]}
+                return {"project_id": pid, "files": [{"path": f.path, "size_bytes": f.size_bytes} for f in files]}
             if action == "read_file":
                 f = ai_project_service.read_project_file(db, user, pid, str(arguments.get("path") or ""))
-                return {"path": f.path, "content": f.content, "size_bytes": f.size_bytes}
+                return {"project_id": pid, "path": f.path, "content": f.content, "size_bytes": f.size_bytes}
             if action == "write_file":
                 if not permission_service.has_global_permission(db, user, "ai.coding.use"):
                     raise AiActionValidationError("Programmierarbeiten und Code-Änderungen sind für diesen Benutzer nicht freigegeben (ai.coding.use)")
@@ -1883,17 +1912,34 @@ def _execute_global_read_tool(
                     str(arguments.get("path") or ""),
                     str(arguments.get("content") or ""),
                 )
-                return {"path": f.path, "size_bytes": f.size_bytes, "saved": True}
+                diff_info = getattr(f, "_last_diff", None)
+                return {
+                    "project_id": pid,
+                    "path": f.path,
+                    "size_bytes": f.size_bytes,
+                    "saved": True,
+                    "diff": diff_info,
+                }
             if action == "delete_file":
                 if not (permission_service.has_global_permission(db, user, "ai.projects.manage") or permission_service.has_global_permission(db, user, "ai.coding.use")):
                     raise AiActionValidationError("Dateien löschen ist für diesen Benutzer nicht freigegeben")
                 ai_project_service.delete_project_file(db, user, pid, str(arguments.get("path") or ""))
-                return {"deleted": True}
+                return {"project_id": pid, "deleted": True}
             if action == "run_command":
                 if not permission_service.has_global_permission(db, user, "ai.coding.use"):
                     raise AiActionValidationError("Programmierarbeiten und Befehlsausführung sind für diesen Benutzer nicht freigegeben (ai.coding.use)")
                 return ai_project_service.run_project_command(
                     db, user, pid, str(arguments.get("command") or "")
+                )
+            if action == "get_environment":
+                return ai_project_service.get_project_environment(db, user, pid)
+            if action == "publish_production":
+                if not permission_service.has_global_permission(db, user, "ai.projects.manage"):
+                    raise AiActionValidationError("Projekt-Veröffentlichung erfordert ai.projects.manage")
+                node_id = str(arguments.get("node_id") or "").strip() or None
+                notes = str(arguments.get("message") or arguments.get("release_notes") or "").strip() or None
+                return ai_project_service.publish_project_to_production(
+                    db, user, pid, node_id=node_id, release_notes=notes
                 )
             if action == "git_status":
                 return ai_project_service.git_status(db, user, pid)

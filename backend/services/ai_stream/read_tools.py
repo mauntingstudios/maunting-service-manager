@@ -280,6 +280,21 @@ def _anzeigeeintrag(call, wert, fehlgeschlagen: str | None) -> dict:
         )
     ) and isinstance(wert, dict) and wert.get("project_id"):
         eintrag["project_created"] = wert
+    if (
+        call.name in ("project_workspace", "project_file_write")
+        and isinstance(wert, dict)
+        and isinstance(wert.get("diff"), dict)
+    ):
+        eintrag["file_diff"] = {
+            **wert["diff"],
+            "project_id": wert.get("project_id") or (call.arguments.get("project_id") if isinstance(call.arguments, dict) else None),
+        }
+    if (
+        call.name == "project_workspace"
+        and isinstance(wert, dict)
+        and wert.get("published") is True
+    ):
+        eintrag["project_published"] = wert
     return eintrag
 
 

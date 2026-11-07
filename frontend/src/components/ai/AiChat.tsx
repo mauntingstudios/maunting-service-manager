@@ -514,18 +514,52 @@ export function AiChat({
     }
   }, [merkSchluessel, providerId])
 
-  // Ein übergebener Entwurf (`lib/aiEntwurf.ts`) kommt ins Eingabefeld, nie direkt in den Chat.
+  // Ein übergebener Entwurf (`lib/aiEntwurf.ts`) oder ein ausgewähltes Vorschau-Element kommt ins Eingabefeld.
   useEffect(() => {
     const nehmen = () => {
       const text = entwurfNehmen()
-      if (!text) return
-      setInput((bisher) => (bisher.trim() ? `${bisher}\n\n${text}` : text).slice(0, 16_000))
-      requestAnimationFrame(() => inputRef.current?.focus())
+      if (text) {
+        setInput((bisher) => (bisher.trim() ? `${bisher}\n\n${text}` : text).slice(0, 16_000))
+        requestAnimationFrame(() => inputRef.current?.focus())
+      }
+      try {
+        const inspectPrompt = sessionStorage.getItem('singra-inspect-prompt')
+        if (inspectPrompt) {
+          sessionStorage.removeItem('singra-inspect-prompt')
+          setInput((bisher) => (bisher.trim() ? `${bisher}\n\n${inspectPrompt}` : inspectPrompt).slice(0, 16_000))
+          requestAnimationFrame(() => inputRef.current?.focus())
+        }
+      } catch (err) {
+        still(err, 'ai.inspectPrompt')
+      }
+    }
+    const handleInspectElement = (event: Event) => {
+      const detail = (event as CustomEvent<{ selector?: string }>).detail
+      try {
+        const inspectPrompt = sessionStorage.getItem('singra-inspect-prompt')
+        if (inspectPrompt) {
+          sessionStorage.removeItem('singra-inspect-prompt')
+          setInput((bisher) => (bisher.trim() ? `${bisher}\n\n${inspectPrompt}` : inspectPrompt).slice(0, 16_000))
+          requestAnimationFrame(() => inputRef.current?.focus())
+          return
+        }
+      } catch (err) {
+        still(err, 'ai.inspectElement')
+      }
+      if (detail?.selector) {
+        const fallback = `Bitte passe das Element \`${detail.selector}\` im aktuellen Projekt an: `
+        setInput((bisher) => (bisher.trim() ? `${bisher}\n\n${fallback}` : fallback).slice(0, 16_000))
+        requestAnimationFrame(() => inputRef.current?.focus())
+      }
     }
     nehmen()
     window.addEventListener(AI_ENTWURF_EVENT, nehmen)
-    return () => window.removeEventListener(AI_ENTWURF_EVENT, nehmen)
-  }, [])
+    window.addEventListener('singra-inspect-element', handleInspectElement)
+    return () => {
+      window.removeEventListener(AI_ENTWURF_EVENT, nehmen)
+      window.removeEventListener('singra-inspect-element', handleInspectElement)
+    }
+  }, [scope])
 
   useEffect(() => {
     // StrictMode fuehrt Setup/Cleanup in Entwicklung absichtlich doppelt aus.

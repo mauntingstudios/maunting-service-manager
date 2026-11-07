@@ -111,6 +111,10 @@ class AiProject(Base):
         from services.ai_project_service import _sandbox_base_dir
         return str(_sandbox_base_dir() / f"proj_{self.id}")
 
+    @sandbox_path.setter
+    def sandbox_path(self, _val: str | None) -> None:
+        pass
+
     @property
     def sandbox_mode(self) -> str:
         return self.workspace_mode
@@ -118,6 +122,33 @@ class AiProject(Base):
     @property
     def system_prompt(self) -> str | None:
         return self.instructions
+
+    @property
+    def owner_user_id(self) -> int:
+        return self.user_id
+
+    @property
+    def project_kind(self) -> str:
+        if self.workspace_mode == "docs":
+            return "docs"
+        return "coding"
+
+    @property
+    def sandbox_enabled(self) -> bool:
+        return self.workspace_mode in ("sandbox", "desktop")
+
+    @property
+    def local_directory(self) -> str | None:
+        return self.local_path
+
+    @property
+    def git_token_configured(self) -> bool:
+        return self.git_credential_id is not None
+
+    @property
+    def file_count(self) -> int:
+        return getattr(self, "_file_count", 0)
+
 
 
 class AiProjectFile(Base):

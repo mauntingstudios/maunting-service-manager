@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from 'react'
-import { AlertTriangle, BookOpen, BrainCircuit, Calendar, CalendarClock, Check, ChevronDown, ChevronRight, FolderGit2, Globe2, Loader2, Mail, Monitor, Sparkles, Wrench } from 'lucide-react'
+import { AlertTriangle, BookOpen, BrainCircuit, Calendar, CalendarClock, Check, ChevronDown, ChevronRight, FileCode2, FolderGit2, GitBranch, Globe2, Loader2, Mail, Monitor, Rocket, Sparkles, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button, ChatBubbleSurface, ChatMessageMetaRow, Kurzinfo } from '@maunting/ui'
 
@@ -268,9 +268,15 @@ export const AiAntwortblase = memo(function AiAntwortblase({
                       />
                       {teil.werkzeuge.map((w, wIdx) => {
                         const proj = w.project_created || (w.tool_name === 'project_create' && (w.ergebnis as any)?.created ? (w.ergebnis as any) : null)
-                        if (!proj) return null
+                        const fileDiff = w.file_diff || ((w.tool_name === 'project_workspace' || w.tool_name === 'project_file_write') && (w.ergebnis as any)?.diff ? (w.ergebnis as any).diff : null)
+                        const published = w.project_published || (w.tool_name === 'project_workspace' && (w.ergebnis as any)?.published ? (w.ergebnis as any) : null)
+                        if (!proj && !fileDiff && !published) return null
                         return (
-                          <AiProjectHandoffCard key={wIdx} project={proj} />
+                          <div key={wIdx} className="space-y-2">
+                            {proj && <AiProjectHandoffCard project={proj} />}
+                            {fileDiff && <AiFileDiffCard diffInfo={fileDiff} />}
+                            {published && <AiProjectPublishedCard publishedInfo={published} />}
+                          </div>
                         )
                       })}
                     </div>
@@ -380,6 +386,161 @@ export function AiProjectHandoffCard({
                 {t('ai.projects.openProject', { defaultValue: 'Projekt öffnen' })}
               </Button>
             </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Aufklappbare Code-Diff-Karte im Chat, wenn eine Projektdatei erstellt oder bearbeitet wurde. */
+export function AiFileDiffCard({
+  diffInfo,
+}: {
+  diffInfo: {
+    path: string
+    branch?: string
+    added_lines: number
+    removed_lines: number
+    is_new_file?: boolean
+    diff: string
+    project_id?: string | null
+  }
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const diffLines = (diffInfo.diff || '').split('\n').filter((line) => line.length > 0)
+
+  return (
+    <div className="mt-1.5 w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-surface-container-high/85 shadow-md backdrop-blur-md">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-medium text-on-surface hover:text-primary transition-colors cursor-pointer"
+        >
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-on-surface-variant" aria-hidden="true" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-on-surface-variant" aria-hidden="true" />
+          )}
+          <FileCode2 className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <span className="truncate font-mono text-xs text-on-surface">{diffInfo.path}</span>
+          {diffInfo.is_new_file && (
+            <span className="rounded-md bg-status-success/15 px-1.5 py-0.5 text-label-sm font-medium text-status-success">
+              Neu
+            </span>
+          )}
+          {diffInfo.branch && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-label-sm text-on-surface-variant">
+              <GitBranch className="h-2.5 w-2.5" aria-hidden="true" />
+              {diffInfo.branch}
+            </span>
+          )}
+        </button>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold">
+            {diffInfo.added_lines > 0 && (
+              <span className="rounded bg-status-success/15 px-1.5 py-0.5 text-status-success">
+                +{diffInfo.added_lines}
+              </span>
+            )}
+            {diffInfo.removed_lines > 0 && (
+              <span className="rounded bg-status-destructive/15 px-1.5 py-0.5 text-status-destructive">
+                -{diffInfo.removed_lines}
+              </span>
+            )}
+            {diffInfo.added_lines === 0 && diffInfo.removed_lines === 0 && (
+              <span className="text-on-surface-variant">Unverändert</span>
+            )}
+          </span>
+          {diffInfo.project_id && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent('singra-open-project', {
+                    detail: { projectId: diffInfo.project_id },
+                  }),
+                )
+              }}
+              className="h-7 px-2 text-xs"
+            >
+              Öffnen
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {expanded && diffLines.length > 0 && (
+        <div className="max-h-72 overflow-auto border-t border-white/10 bg-black/55 p-2.5 font-mono text-xs leading-5">
+          {diffLines.map((line, idx) => {
+            const isHeader = line.startsWith('---') || line.startsWith('+++') || line.startsWith('@@')
+            const isAdd = !isHeader && line.startsWith('+')
+            const isDel = !isHeader && line.startsWith('-')
+            return (
+              <div
+                key={idx}
+                className={`whitespace-pre px-2 py-0.5 rounded-sm ${
+                  isHeader
+                    ? 'text-primary/80 bg-primary/5'
+                    : isAdd
+                      ? 'bg-status-success/15 text-status-success'
+                      : isDel
+                        ? 'bg-status-destructive/15 text-status-destructive'
+                        : 'text-white/75'
+                }`}
+              >
+                {line}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Karte im Chat, wenn ein Projekt auf Produktion veröffentlicht wurde. */
+export function AiProjectPublishedCard({
+  publishedInfo,
+}: {
+  publishedInfo: {
+    project_id?: string
+    server_id?: number
+    server_name?: string
+    node_name?: string
+    production_url?: string
+    release_count?: number
+    files_copied?: number
+  }
+}) {
+  return (
+    <div className="mt-2 max-w-md rounded-2xl border border-status-success/30 bg-status-success/10 p-3.5 shadow-lg backdrop-blur-md">
+      <div className="flex items-start gap-3">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-status-success/20 text-status-success">
+          <Rocket className="h-4 w-4" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h4 className="truncate text-sm font-semibold text-on-surface">
+              {publishedInfo.server_name || 'Produktion veröffentlicht'}
+            </h4>
+            <span className="rounded-full bg-status-success/20 px-2 py-0.5 text-label-sm font-medium text-status-success">
+              Live #{publishedInfo.release_count ?? 1}
+            </span>
+          </div>
+          {publishedInfo.node_name && (
+            <p className="mt-0.5 text-xs text-on-surface-variant">
+              Node: {publishedInfo.node_name} · {publishedInfo.files_copied ?? 0} Dateien synchronisiert
+            </p>
+          )}
+          {publishedInfo.production_url && (
+            <p className="mt-1 truncate font-mono text-xs text-primary">
+              {publishedInfo.production_url}
+            </p>
           )}
         </div>
       </div>

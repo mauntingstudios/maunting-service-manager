@@ -484,6 +484,28 @@ export interface AiToolUse {
     repo_url?: string | null
     sandbox_path?: string | null
   } | null
+  /** Wenn eine Projektdatei erstellt oder geändert wurde (Diff-Vorschau im Chat). */
+  file_diff?: {
+    path: string
+    branch?: string
+    added_lines: number
+    removed_lines: number
+    is_new_file?: boolean
+    diff: string
+    project_id?: string | null
+  } | null
+  /** Wenn ein Projekt auf Produktion veröffentlicht wurde. */
+  project_published?: {
+    published: boolean
+    project_id: string
+    server_id: number
+    server_name: string
+    node_id: number
+    node_name: string
+    production_url: string
+    release_count: number
+    files_copied: number
+  } | null
 }
 
 /**
@@ -1498,6 +1520,16 @@ export interface AiProjectWrite {
   clear_git_token?: boolean
 }
 
+export interface AiProjectDiffInfo {
+  path: string
+  branch: string
+  added_lines: number
+  removed_lines: number
+  is_new_file: boolean
+  diff: string
+  truncated?: boolean
+}
+
 export interface AiProjectFile {
   id: string
   project_id: string
@@ -1505,8 +1537,60 @@ export interface AiProjectFile {
   content: string
   mime_type: string
   size_bytes: number
-  created_at: string
+  created_at?: string
   updated_at: string
+  diff?: AiProjectDiffInfo | null
+}
+
+export interface AiProjectEnvironmentState {
+  active_environment: 'dev' | 'production'
+  dev_db: {
+    engine: string
+    branch: string
+    schema: string
+    status: string
+    migrations_applied: number
+  }
+  prod_db: {
+    engine: string
+    branch: string
+    schema: string
+    status: string
+    migrations_applied: number
+    last_migrated_at: string | null
+  }
+  production: {
+    published: boolean
+    server_id: number | null
+    node_id: string | null
+    published_at: string | null
+    release_count: number
+    status: string
+    release_notes?: string
+  }
+}
+
+export interface AiProjectPublishResult {
+  ok: boolean
+  project_id: string
+  server_id: number
+  node_id: string
+  node_name: string
+  published_files: number
+  migrations_applied: number
+  release_count: number
+  published_at: string
+  environment: AiProjectEnvironmentState
+}
+
+export interface AiCrossProjectComponent {
+  project_id: string
+  project_name: string
+  path: string
+  component_name: string
+  size_bytes: number
+  score: number
+  preview: string
 }
 
 export interface AiProjectExecResult {
@@ -2240,6 +2324,31 @@ export const aiApi = {
     api<AiProjectGitStatus & { repo_url?: string; html_url?: string; created?: boolean }>(
       `/ai/projects/${encodeURIComponent(projectId)}/git/create-repo`,
       { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  getProjectEnvironment: (projectId: string) =>
+    api<AiProjectEnvironmentState>(
+      `/ai/projects/${encodeURIComponent(projectId)}/environment`,
+    ),
+  switchProjectEnvironment: (projectId: string, environment: 'dev' | 'production') =>
+    api<AiProjectEnvironmentState>(
+      `/ai/projects/${encodeURIComponent(projectId)}/environment/switch`,
+      { method: 'POST', body: JSON.stringify({ environment }) },
+    ),
+  publishProjectToProduction: (
+    projectId: string,
+    payload: { node_id?: string | null; release_notes?: string | null },
+  ) =>
+    api<AiProjectPublishResult>(
+      `/ai/projects/${encodeURIComponent(projectId)}/publish`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  listProjectProductionFiles: (projectId: string) =>
+    api<Array<{ path: string; content: string; size_bytes: number }>>(
+      `/ai/projects/${encodeURIComponent(projectId)}/production-files`,
+    ),
+  searchCrossProjectComponents: (projectId: string, query = '') =>
+    api<AiCrossProjectComponent[]>(
+      `/ai/projects/${encodeURIComponent(projectId)}/cross-project-components?query=${encodeURIComponent(query)}`,
     ),
   listMcpServers: () => api<AiMcpServer[]>('/ai/mcp'),
   createMcpServer: (payload: AiMcpServerWrite & { name: string }) =>

@@ -9,7 +9,7 @@ import {
   ChevronRight,
   ChevronUp,
   Code2,
-  ExternalLink,
+  Database,
   Eye,
   FileCode,
   FilePlus2,
@@ -28,7 +28,9 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Rocket,
   Search,
+  Server as ServerIcon,
   Settings2,
   Smartphone,
   Sparkles,
@@ -36,18 +38,20 @@ import {
   Terminal,
   Trash2,
   Unlock,
+  Users,
   X,
 } from 'lucide-react'
 import {
   aiApi,
   type AiConversationSummary,
   type AiProject,
+  type AiProjectEnvironmentState,
   type AiProjectExecResult,
   type AiProjectFile,
   type AiProjectGitStatus,
   type AiProjectWrite,
 } from '@/api/ai'
-import { SanitizedApiError } from '@/api/client'
+import { api, SanitizedApiError } from '@/api/client'
 import { still } from '@/lib/still'
 import { teamsApi, type Team } from '@/api/teams'
 import {
@@ -61,6 +65,7 @@ import {
   Dropdown,
   Input,
   Kontextmenue,
+  Kurzinfo,
   Pfadleiste,
   Spinner,
   Switch,
@@ -193,13 +198,30 @@ export function SingraProjectsView({
   } | null>(null)
   const [showAgentsModal, setShowAgentsModal] = useState(false)
 
-  // Live-Preview & Inspector state
+  // Live-Preview, Environment (Dev vs. Production) & Inspector state
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
   const [inspectMode, setInspectMode] = useState(false)
-  const [previewUrl, setPreviewUrl] = useState('http://localhost:5173')
-  const [previewMode, setPreviewMode] = useState<'bundle' | 'url'>('bundle')
+  const [previewEnv, setPreviewEnv] = useState<'dev' | 'production'>('dev')
   const [inspectElement, setInspectElement] = useState<string | null>(null)
+  const [inspectTargetChatId, setInspectTargetChatId] = useState<string>('__latest__')
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null)
+
+  // Dev / Production environment & Publishing state
+  const [envState, setEnvState] = useState<AiProjectEnvironmentState | null>(null)
+  const [productionFiles, setProductionFiles] = useState<
+    Array<{ path: string; content: string; size_bytes: number }>
+  >([])
+  const [publishModalOpen, setPublishModalOpen] = useState(false)
+  const [availableNodes, setAvailableNodes] = useState<
+    Array<{ id: string; name: string; status?: string }>
+  >([])
+  const [selectedNodeId, setSelectedNodeId] = useState<string>('__auto__')
+  const [releaseNotes, setReleaseNotes] = useState('')
+  const [publishing, setPublishing] = useState(false)
+
+  // Team Sharing & Invite Modal state
+  const [teamShareModalOpen, setTeamShareModalOpen] = useState(false)
+  const [selectedTeamShareId, setSelectedTeamShareId] = useState<string>('__personal__')
 
   // Sandbox Terminal
   const [commandInput, setCommandInput] = useState('')
@@ -309,12 +331,17 @@ export function SingraProjectsView({
   const loadProjects = useCallback(async () => {
     setLoading(true)
     try {
-      const [projRows, teamRows] = await Promise.all([
+      const [projRows, teamRows, nodeRows] = await Promise.all([
         aiApi.listProjects(),
         teamsApi.list().catch(() => [] as Team[]),
+        api<Array<{ id: string; name: string; status?: string }>>('/nodes').catch(() => []),
       ])
       setProjects(projRows)
       setTeams(teamRows.filter((t) => !t.is_personal))
+      setAvailableNodes(nodeRows)
+      if (nodeRows.length > 0) {
+        setSelectedNodeId((prev) => (prev === '__auto__' ? nodeRows[0].id : prev))
+      }
       setSelectedId((prev) => prev || (projRows.length > 0 ? projRows[0].id : null))
     } catch (err: unknown) {
       toast.error(
@@ -379,7 +406,7 @@ export function SingraProjectsView({
   const loadProjectDetails = useCallback(
     async (projectId: string) => {
       try {
-        const [chats, fileList, rules] = await Promise.all([
+        const [chats, fileList, rules, envData, prodFileList] = await Promise.all([
           aiApi.listConversations(projectId),
           aiApi.listProjectFiles(projectId),
           aiApi.getProjectAgentsRules(projectId).catch(() => ({
@@ -389,10 +416,18 @@ export function SingraProjectsView({
             lines_count: 0,
             size_bytes: 0,
           })),
+          aiApi.getProjectEnvironment(projectId).catch(() => null),
+          aiApi.listProjectProductionFiles(projectId).catch(() => []),
         ])
         setProjectChats(chats)
+        setInspectTargetChatId(chats.length > 0 ? chats[0].id : '__new__')
         setFiles(fileList)
         setAgentsRules(rules)
+        setEnvState(envData)
+        setProductionFiles(prodFileList)
+        if (envData?.production?.node_id) {
+          setSelectedNodeId(envData.production.node_id)
+        }
 
         const { allDirs: dirs } = buildProjectTreeNodes(fileList)
         setExpandedDirs(new Set(['', ...dirs.filter((d) => !d.includes('/'))]))
@@ -781,35 +816,56 @@ export function SingraProjectsView({
     })
   }, [])
 
-  // Automatischer srcDoc-Bundle für HTML/CSS/JS-Projekte direkt im Browser
+  // Automatischer srcDoc-Bundle für HTML/CSS/JS sowie React (.jsx/.tsx) + Tailwind CSS
   const previewSrcDoc = useMemo(() => {
-    if (previewMode !== 'bundle') return null
+    const activeFiles: Array<{ path: string; content: string }> =
+      previewEnv === 'production' ? productionFiles : files
+    if (!activeFiles || activeFiles.length === 0) return null
+
     const htmlFile =
-      files.find((f) => f.path.toLowerCase() === 'index.html') ||
-      files.find((f) => f.path.toLowerCase().endsWith('.html'))
-    if (!htmlFile) return null
+      activeFiles.find((f) => f.path.toLowerCase() === 'index.html') ||
+      activeFiles.find((f) => f.path.toLowerCase().endsWith('.html'))
+
+    const jsxFiles = activeFiles.filter((f) => /\.(jsx|tsx)$/i.test(f.path))
+    if (!htmlFile && jsxFiles.length === 0) return null
 
     let doc =
-      htmlFile.content ||
-      '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body></body></html>'
+      htmlFile?.content ||
+      '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div></body></html>'
 
-    files
+    const usesTailwind =
+      activeFiles.some((f) => /class(Name)?=["'][^"']*(flex|grid|bg-|text-|rounded-|px-|py-|border-)/i.test(f.content)) ||
+      activeFiles.some((f) => f.path.toLowerCase().includes('tailwind'))
+
+    if (usesTailwind && !doc.includes('cdn.tailwindcss.com')) {
+      const twScript = '<script src="https://cdn.tailwindcss.com"></script>'
+      if (doc.includes('</head>')) {
+        doc = doc.replace('</head>', `${twScript}</head>`)
+      } else {
+        doc = `${twScript}${doc}`
+      }
+    }
+
+    activeFiles
       .filter((f) => f.path.toLowerCase().endsWith('.css'))
       .forEach((css) => {
         const baseName = css.path.split('/').pop() || css.path
+        const cleanCss = css.content.replace(/@tailwind\s+(base|components|utilities);?/g, '')
         const linkRegex = new RegExp(
           `<link[^>]+href=["'][^"']*${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`,
           'gi',
         )
         if (linkRegex.test(doc)) {
-          doc = doc.replace(linkRegex, `<style>/* ${css.path} */\n${css.content}</style>`)
+          doc = doc.replace(linkRegex, `<style>/* ${css.path} */\n${cleanCss}</style>`)
+        } else if (doc.includes('</head>')) {
+          doc = doc.replace('</head>', `<style>/* ${css.path} */\n${cleanCss}</style></head>`)
         } else {
-          doc = doc.replace('</head>', `<style>/* ${css.path} */\n${css.content}</style></head>`)
+          doc += `<style>/* ${css.path} */\n${cleanCss}</style>`
         }
       })
 
-    files
-      .filter((f) => f.path.toLowerCase().endsWith('.js') && !f.path.toLowerCase().endsWith('.json'))
+    activeFiles
+      .filter((f) => f.path.toLowerCase().endsWith('.js') && !f.path.toLowerCase().endsWith('.json') && !f.path.toLowerCase().endsWith('config.js'))
       .forEach((js) => {
         const baseName = js.path.split('/').pop() || js.path
         const scriptRegex = new RegExp(
@@ -818,10 +874,67 @@ export function SingraProjectsView({
         )
         if (scriptRegex.test(doc)) {
           doc = doc.replace(scriptRegex, `<script>/* ${js.path} */\n${js.content}</script>`)
-        } else {
+        } else if (doc.includes('</body>')) {
           doc = doc.replace('</body>', `<script>/* ${js.path} */\n${js.content}</script></body>`)
+        } else {
+          doc += `<script>/* ${js.path} */\n${js.content}</script>`
         }
       })
+
+    if (jsxFiles.length > 0) {
+      // Strip external module script tags pointing to main.tsx / index.tsx
+      doc = doc.replace(/<script[^>]+src=["'][^"']*\.(tsx|jsx|ts)["'][^>]*>\s*<\/script>/gi, '')
+      if (!doc.includes('id="root"') && !doc.includes("id='root'")) {
+        doc = doc.replace('<body>', '<body><div id="root"></div>')
+      }
+      const reactRuntime = `
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+`
+      if (doc.includes('</head>')) {
+        doc = doc.replace('</head>', `${reactRuntime}</head>`)
+      } else {
+        doc = `${reactRuntime}${doc}`
+      }
+
+      // Sort JSX/TSX files so leaf components come before App.tsx / main.tsx
+      const orderedJsx = [...jsxFiles].sort((a, b) => {
+        const aScore = /main\.|index\./i.test(a.path) ? 2 : /app\./i.test(a.path) ? 1 : 0
+        const bScore = /main\.|index\./i.test(b.path) ? 2 : /app\./i.test(b.path) ? 1 : 0
+        return aScore - bScore
+      })
+
+      const combinedJsx = orderedJsx
+        .map((f) => {
+          const transformed = f.content
+            .replace(/^\s*import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
+            .replace(/^\s*import\s+['"][^'"]+['"];?\s*$/gm, '')
+            .replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, 'function $1')
+            .replace(/export\s+default\s+/g, 'const __DefaultExport__ = ')
+            .replace(/export\s+(const|function|class|type|interface)\s+/g, '$1 ')
+          return `// --- ${f.path} ---\n${transformed}`
+        })
+        .join('\n\n')
+
+      const mountSnippet = `
+<script type="text/babel" data-presets="react,typescript">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+${combinedJsx}
+const __rootEl = document.getElementById('root') || document.getElementById('app');
+if (__rootEl && typeof App !== 'undefined') {
+  ReactDOM.createRoot(__rootEl).render(React.createElement(App));
+} else if (__rootEl && typeof __DefaultExport__ !== 'undefined') {
+  ReactDOM.createRoot(__rootEl).render(React.createElement(__DefaultExport__));
+}
+</script>
+`
+      if (doc.includes('</body>')) {
+        doc = doc.replace('</body>', `${mountSnippet}</body>`)
+      } else {
+        doc += mountSnippet
+      }
+    }
 
     const bridgeScript = `
 <script>
@@ -902,7 +1015,7 @@ export function SingraProjectsView({
     }
 
     return doc
-  }, [files, previewMode])
+  }, [files, productionFiles, previewEnv])
 
   useEffect(() => {
     const handleMsg = (ev: MessageEvent) => {
@@ -1050,6 +1163,74 @@ export function SingraProjectsView({
     }
   }
 
+  const handleApplyElementWithSingra = async (selector: string) => {
+    if (!selectedProject) return
+    const promptHint = `Bitte passe folgendes Element in diesem Projekt an: \`${selector}\` — `
+    try {
+      sessionStorage.setItem('singra-inspect-prompt', promptHint)
+      window.dispatchEvent(
+        new CustomEvent('singra-inspect-element', {
+          detail: { projectId: selectedProject.id, selector, promptHint },
+        }),
+      )
+    } catch (err) {
+      still(err, 'singra:inspect:sessionStorage')
+    }
+
+    const targetId =
+      inspectTargetChatId === '__latest__'
+        ? projectChats[0]?.id ?? '__new__'
+        : inspectTargetChatId
+
+    if (targetId && targetId !== '__new__') {
+      onOpenProjectChat(selectedProject.id, targetId)
+      return
+    }
+    await handleStartNewProjectChat(`Anpassung: ${selector.slice(0, 42)}`)
+  }
+
+  const handlePublishToProduction = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedProject || publishing) return
+    setPublishing(true)
+    try {
+      const res = await aiApi.publishProjectToProduction(selectedProject.id, {
+        node_id: selectedNodeId === '__auto__' ? null : selectedNodeId,
+        release_notes: releaseNotes.trim() || null,
+      })
+      setEnvState(res.environment)
+      const prodFiles = await aiApi
+        .listProjectProductionFiles(selectedProject.id)
+        .catch(() => [])
+      setProductionFiles(prodFiles)
+      setPreviewEnv('production')
+      setPublishModalOpen(false)
+      setReleaseNotes('')
+      toast.success(
+        `Auf Node „${res.node_name}“ veröffentlicht (${res.published_files} Dateien, Server #${res.server_id} ist im Dashboard aktiv).`,
+      )
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof SanitizedApiError
+          ? err.message
+          : 'Veröffentlichung fehlgeschlagen.',
+      )
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  const handleSaveTeamShare = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedProject || savingProject) return
+    const nextTeamId =
+      selectedTeamShareId === '__personal__' ? null : Number(selectedTeamShareId)
+    await handleUpdateProject({
+      team_id: nextTeamId,
+    })
+    setTeamShareModalOpen(false)
+  }
+
   if (loading) {
     return (
       <div className="flex h-full flex-1 items-center justify-center">
@@ -1163,20 +1344,38 @@ export function SingraProjectsView({
             {/* Calm Project Top Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 bg-surface-container-low/35 px-4 py-3 shrink-0">
               <div className="min-w-0 flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setProjectOpen(false)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant/30 bg-surface-container-high/55 px-3 py-1.5 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors shrink-0"
-                  title="Zurück zur Projektübersicht"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Alle Projekte</span>
-                </button>
+                <Kurzinfo text="Zurück zur Projektübersicht">
+                  <button
+                    type="button"
+                    onClick={() => setProjectOpen(false)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant/30 bg-surface-container-high/55 px-3 py-1.5 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors shrink-0"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Alle Projekte</span>
+                  </button>
+                </Kurzinfo>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="font-headline text-base font-semibold text-on-surface truncate">
                       {selectedProject.name}
                     </h2>
+                    {selectedProject.project_kind === 'coding' && (
+                      <span
+                        className={[
+                          'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-label-sm font-medium border',
+                          envState?.production?.published
+                            ? 'border-status-success/35 bg-status-success/12 text-status-success'
+                            : 'border-primary/30 bg-primary/10 text-primary',
+                        ].join(' ')}
+                      >
+                        <Database className="h-3 w-3" aria-hidden="true" />
+                        <span>
+                          {envState?.production?.published
+                            ? `Live (Server #${envState.production.server_id})`
+                            : 'Entwicklung (Dev)'}
+                        </span>
+                      </span>
+                    )}
                     {!selectedProject.git_repo_url && (
                       <button
                         type="button"
@@ -1191,16 +1390,17 @@ export function SingraProjectsView({
                       </button>
                     )}
                     {agentsRules?.found && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAgentsModal(true)}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-label-sm font-medium text-primary hover:bg-primary/20 transition-colors"
-                        title="Projektregeln ansehen"
-                      >
-                        <FileText className="h-3 w-3" aria-hidden="true" />
-                        <span>Projektregeln</span>
-                        <Eye className="h-2.5 w-2.5 opacity-70" />
-                      </button>
+                      <Kurzinfo text="Projektregeln (AGENTS.md) ansehen">
+                        <button
+                          type="button"
+                          onClick={() => setShowAgentsModal(true)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-label-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+                        >
+                          <FileText className="h-3 w-3" aria-hidden="true" />
+                          <span>Projektregeln</span>
+                          <Eye className="h-2.5 w-2.5 opacity-70" />
+                        </button>
+                      </Kurzinfo>
                     )}
                   </div>
                   {selectedProject.description && (
@@ -1211,7 +1411,48 @@ export function SingraProjectsView({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Kurzinfo text="Projekt mit einem Team teilen">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="rounded-full px-3"
+                    onClick={() => {
+                      setSelectedTeamShareId(
+                        selectedProject.team_id ? String(selectedProject.team_id) : '__personal__',
+                      )
+                      setTeamShareModalOpen(true)
+                    }}
+                  >
+                    <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="hidden sm:inline">
+                      {selectedProject.team_id
+                        ? teams.find((t) => t.id === selectedProject.team_id)?.name ?? 'Team'
+                        : 'Team & Teilen'}
+                    </span>
+                  </Button>
+                </Kurzinfo>
+
+                {selectedProject.project_kind === 'coding' && (
+                  <Kurzinfo text="Entwicklungsstand auf einer Node online schalten und ins Server-Dashboard übernehmen">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="rounded-full px-3.5 border-primary/30 text-primary hover:bg-primary/15"
+                      onClick={() => setPublishModalOpen(true)}
+                    >
+                      <Rocket className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>
+                        {envState?.production?.published
+                          ? 'Update veröffentlichen'
+                          : 'Online schalten'}
+                      </span>
+                    </Button>
+                  </Kurzinfo>
+                )}
+
                 <Button
                   type="button"
                   size="sm"
@@ -1221,17 +1462,17 @@ export function SingraProjectsView({
                   <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
                   Neuer Chat
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0 rounded-full text-on-surface-variant hover:text-status-destructive"
-                  onClick={() => void handleDeleteProject(selectedProject)}
-                  aria-label="Projekt löschen"
-                  title="Projekt löschen"
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                </Button>
+
+                <Kurzinfo text="Projekt löschen">
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteProject(selectedProject)}
+                    aria-label="Projekt löschen"
+                    className="grid h-10 w-10 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-full border border-outline-variant/30 bg-surface-container-high/85 text-on-surface-variant hover:border-status-destructive/40 hover:bg-status-destructive/15 hover:text-status-destructive backdrop-blur-md shadow-sm transition-all active:scale-95"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </Kurzinfo>
               </div>
             </div>
 
@@ -1428,16 +1669,17 @@ export function SingraProjectsView({
                           },
                         ]}
                       />
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => void loadProjectDetails(selectedProject.id)}
-                        title="Dateien aktualisieren"
-                        aria-label="Dateien aktualisieren"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      </Button>
+                      <Kurzinfo text="Dateien aktualisieren">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void loadProjectDetails(selectedProject.id)}
+                          aria-label="Dateien aktualisieren"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        </Button>
+                      </Kurzinfo>
                     </div>
                   </div>
 
@@ -1687,89 +1929,95 @@ export function SingraProjectsView({
               {activeTab === 'preview' && (
                 <div className="flex flex-1 min-h-[480px] flex-col rounded-2xl border border-outline-variant/25 bg-surface-container-low/35 overflow-hidden">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 bg-surface-container-low/60 px-4 py-2.5">
-                    <div className="flex items-center gap-2 flex-1 max-w-lg">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       <div className="flex items-center rounded-lg border border-outline-variant/30 bg-surface-container-high/40 p-0.5 shrink-0 text-xs">
                         <button
                           type="button"
-                          onClick={() => setPreviewMode('bundle')}
+                          onClick={() => setPreviewEnv('dev')}
                           className={[
                             'px-2.5 py-1 rounded-md transition-colors font-medium',
-                            previewMode === 'bundle'
+                            previewEnv === 'dev'
                               ? 'bg-primary/20 text-primary'
                               : 'text-on-surface-variant hover:text-on-surface',
                           ].join(' ')}
                         >
-                          Direktvorschau
+                          Entwicklung (Dev)
                         </button>
                         <button
                           type="button"
-                          onClick={() => setPreviewMode('url')}
+                          onClick={() => setPreviewEnv('production')}
                           className={[
                             'px-2.5 py-1 rounded-md transition-colors font-medium',
-                            previewMode === 'url'
-                              ? 'bg-primary/20 text-primary'
+                            previewEnv === 'production'
+                              ? 'bg-status-success/20 text-status-success'
                               : 'text-on-surface-variant hover:text-on-surface',
                           ].join(' ')}
                         >
-                          Eigene Adresse
+                          Produktion (Live)
                         </button>
                       </div>
 
-                      {previewMode === 'url' && (
-                        <div className="flex items-center gap-1.5 flex-1">
-                          <Globe className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
-                          <Input
-                            value={previewUrl}
-                            onChange={(e) => setPreviewUrl(e.target.value)}
-                            placeholder="http://localhost:5173"
-                            className="h-8 text-xs"
-                            aria-label="Vorschau-Adresse"
-                          />
-                        </div>
+                      {previewEnv === 'production' && !envState?.production?.published && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-8 text-xs gap-1.5 border-primary/30 text-primary"
+                          onClick={() => setPublishModalOpen(true)}
+                        >
+                          <Rocket className="h-3.5 w-3.5" aria-hidden="true" />
+                          <span>Jetzt online schalten</span>
+                        </Button>
                       )}
                     </div>
 
                     <div className="flex items-center gap-2">
                       <div className="flex items-center rounded-lg border border-outline-variant/30 bg-surface-container-high/40 p-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDevice('desktop')}
-                          className={[
-                            'p-1.5 rounded-md transition-colors',
-                            previewDevice === 'desktop'
-                              ? 'bg-primary/20 text-primary'
-                              : 'text-on-surface-variant hover:text-on-surface',
-                          ].join(' ')}
-                          title="Desktop"
-                        >
-                          <Laptop className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDevice('tablet')}
-                          className={[
-                            'p-1.5 rounded-md transition-colors',
-                            previewDevice === 'tablet'
-                              ? 'bg-primary/20 text-primary'
-                              : 'text-on-surface-variant hover:text-on-surface',
-                          ].join(' ')}
-                          title="Tablet"
-                        >
-                          <Tablet className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDevice('mobile')}
-                          className={[
-                            'p-1.5 rounded-md transition-colors',
-                            previewDevice === 'mobile'
-                              ? 'bg-primary/20 text-primary'
-                              : 'text-on-surface-variant hover:text-on-surface',
-                          ].join(' ')}
-                          title="Smartphone"
-                        >
-                          <Smartphone className="h-3.5 w-3.5" />
-                        </button>
+                        <Kurzinfo text="Desktop-Ansicht">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDevice('desktop')}
+                            aria-label="Desktop-Ansicht"
+                            className={[
+                              'p-1.5 rounded-md transition-colors',
+                              previewDevice === 'desktop'
+                                ? 'bg-primary/20 text-primary'
+                                : 'text-on-surface-variant hover:text-on-surface',
+                            ].join(' ')}
+                          >
+                            <Laptop className="h-3.5 w-3.5" />
+                          </button>
+                        </Kurzinfo>
+                        <Kurzinfo text="Tablet-Ansicht">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDevice('tablet')}
+                            aria-label="Tablet-Ansicht"
+                            className={[
+                              'p-1.5 rounded-md transition-colors',
+                              previewDevice === 'tablet'
+                                ? 'bg-primary/20 text-primary'
+                                : 'text-on-surface-variant hover:text-on-surface',
+                            ].join(' ')}
+                          >
+                            <Tablet className="h-3.5 w-3.5" />
+                          </button>
+                        </Kurzinfo>
+                        <Kurzinfo text="Smartphone-Ansicht">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDevice('mobile')}
+                            aria-label="Smartphone-Ansicht"
+                            className={[
+                              'p-1.5 rounded-md transition-colors',
+                              previewDevice === 'mobile'
+                                ? 'bg-primary/20 text-primary'
+                                : 'text-on-surface-variant hover:text-on-surface',
+                            ].join(' ')}
+                          >
+                            <Smartphone className="h-3.5 w-3.5" />
+                          </button>
+                        </Kurzinfo>
                       </div>
 
                       <Button
@@ -1790,36 +2038,42 @@ export function SingraProjectsView({
                         <MousePointer className="h-3.5 w-3.5" aria-hidden="true" />
                         {inspectMode ? 'Auswahl aktiv' : 'Element wählen'}
                       </Button>
-
-                      {previewMode === 'url' && (
-                        <a
-                          href={previewUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-outline-variant/30 bg-surface-container-high/50 text-on-surface-variant hover:text-on-surface transition-colors"
-                          title="Im neuen Tab öffnen"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      )}
                     </div>
                   </div>
 
                   {inspectElement && (
-                    <div className="flex items-center justify-between gap-2 border-b border-primary/20 bg-primary/10 px-4 py-2 text-xs text-on-surface">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-primary">Ausgewählt:</span>
-                        <span className="rounded bg-black/40 px-2 py-0.5 text-primary text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/20 bg-primary/10 px-4 py-2 text-xs text-on-surface">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-semibold text-primary shrink-0">Ausgewählt:</span>
+                        <span className="truncate rounded bg-black/40 px-2 py-0.5 font-mono text-primary text-xs">
                           {inspectElement}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="w-48">
+                          <Dropdown
+                            value={
+                              inspectTargetChatId === '__latest__'
+                                ? projectChats[0]?.id ?? '__new__'
+                                : inspectTargetChatId
+                            }
+                            onChange={(val) => setInspectTargetChatId(val)}
+                            options={[
+                              ...projectChats.map((c, idx) => ({
+                                value: c.id,
+                                label: idx === 0 ? `${c.title} (Zuletzt aktiv)` : c.title,
+                              })),
+                              { value: '__new__', label: '+ Neuer Projekt-Chat' },
+                            ]}
+                            aria-label="Ziel-Chat für Anpassung wählen"
+                          />
+                        </div>
                         <Button
                           type="button"
                           size="sm"
-                          className="h-6 px-2.5 text-xs"
+                          className="h-8 px-3 text-xs"
                           onClick={() => {
-                            void handleStartNewProjectChat(`Anpassung für ${inspectElement}`)
+                            void handleApplyElementWithSingra(inspectElement)
                           }}
                         >
                           Mit Singra anpassen
@@ -1827,7 +2081,8 @@ export function SingraProjectsView({
                         <button
                           type="button"
                           onClick={() => setInspectElement(null)}
-                          className="text-on-surface-variant hover:text-on-surface"
+                          aria-label="Elementauswahl aufheben"
+                          className="text-on-surface-variant hover:text-on-surface p-1"
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -1846,22 +2101,36 @@ export function SingraProjectsView({
                             : 'w-[375px]',
                       ].join(' ')}
                     >
-                      {previewMode === 'bundle' && !previewSrcDoc ? (
+                      {!previewSrcDoc ? (
                         <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-on-surface-variant">
                           <Globe className="h-10 w-10 text-primary/40 mb-3" />
                           <p className="text-sm font-medium text-on-surface">
-                            Noch keine Vorschau verfügbar
+                            {previewEnv === 'production'
+                              ? 'Noch nicht auf Produktion veröffentlicht'
+                              : 'Noch keine Vorschau verfügbar'}
                           </p>
                           <p className="text-xs text-on-surface-variant max-w-sm mt-1">
-                            Sobald eine Webseite im Projekt angelegt ist, wird sie hier direkt dargestellt.
+                            {previewEnv === 'production'
+                              ? 'Schalte deinen aktuellen Entwicklungsstand online, um ihn als Live-Server im Dashboard bereitzustellen.'
+                              : 'Sobald eine Webseite oder React-Oberfläche im Projekt angelegt ist, wird sie hier direkt dargestellt.'}
                           </p>
+                          {previewEnv === 'production' && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="mt-4 rounded-full px-4"
+                              onClick={() => setPublishModalOpen(true)}
+                            >
+                              <Rocket className="h-3.5 w-3.5" aria-hidden="true" />
+                              <span>Jetzt online schalten</span>
+                            </Button>
+                          )}
                         </div>
                       ) : (
                         <iframe
                           ref={previewIframeRef}
-                          key={previewMode === 'bundle' ? 'bundle-preview' : previewUrl}
-                          src={previewMode === 'url' ? previewUrl : undefined}
-                          srcDoc={previewMode === 'bundle' ? (previewSrcDoc ?? undefined) : undefined}
+                          key={`preview-${previewEnv}`}
+                          srcDoc={previewSrcDoc ?? undefined}
                           title="Projekt-Vorschau"
                           className="w-full flex-1 border-0 min-h-[400px] bg-white"
                           sandbox="allow-scripts allow-forms allow-modals"
@@ -2525,6 +2794,131 @@ export function SingraProjectsView({
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Publish to Production (Online schalten) Modal */}
+      <Dialog open={publishModalOpen} onOpenChange={setPublishModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rocket className="h-5 w-5 text-primary" />
+              <span>
+                {envState?.production?.published
+                  ? 'Produktions-Update veröffentlichen'
+                  : 'Projekt auf Produktion online schalten'}
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              Übernimmt deinen aktuellen Entwicklungsstand auf eine Node, führt ausstehende PostgreSQL-Migrationen aus und stellt das Projekt im Server-Dashboard bereit.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handlePublishToProduction} className="space-y-4 px-6 pb-6 pt-5">
+            <div className="rounded-xl border border-outline-variant/25 bg-surface-container-low/50 p-3.5 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-on-surface-variant flex items-center gap-1.5">
+                  <Database className="h-3.5 w-3.5 text-primary" />
+                  <span>PostgreSQL Dev → Prod Branch</span>
+                </span>
+                <span className="font-mono text-on-surface">
+                  {envState?.dev_db?.branch ?? 'pg_dev'} → {envState?.prod_db?.branch ?? 'pg_prod'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-on-surface-variant flex items-center gap-1.5">
+                  <ServerIcon className="h-3.5 w-3.5 text-primary" />
+                  <span>Dashboard-Status</span>
+                </span>
+                <span className="font-medium text-on-surface">
+                  {envState?.production?.published
+                    ? `Aktiv (Server #${envState.production.server_id}, Release #${envState.production.release_count})`
+                    : 'Wird beim Veröffentlichen im Dashboard angelegt'}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                Ziel-Node auswählen
+              </label>
+              <Dropdown
+                value={selectedNodeId}
+                onChange={(val) => setSelectedNodeId(val)}
+                options={[
+                  { value: '__auto__', label: 'Automatisch (Lokale Haupt-Node)' },
+                  ...availableNodes.map((n) => ({
+                    value: n.id,
+                    label: `${n.name} (${n.status === 'online' ? 'Online' : n.status || 'Bereit'})`,
+                  })),
+                ]}
+                aria-label="Ziel-Node auswählen"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                Release-Notiz (optional)
+              </label>
+              <Input
+                value={releaseNotes}
+                onChange={(e) => setReleaseNotes(e.target.value)}
+                placeholder="z. B. Dark Mode und Startseite veröffentlicht"
+                aria-label="Release-Notiz"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant/20">
+              <Button type="button" variant="ghost" onClick={() => setPublishModalOpen(false)}>
+                Abbrechen
+              </Button>
+              <Button type="submit" disabled={publishing}>
+                <Rocket className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>{publishing ? 'Veröffentlicht…' : 'Jetzt online schalten'}</span>
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Team & Teilen Modal */}
+      <Dialog open={teamShareModalOpen} onOpenChange={setTeamShareModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <span>Projekt im Team teilen</span>
+            </DialogTitle>
+            <DialogDescription>
+              Ordne „{selectedProject?.name}“ einem Team zu, damit alle Teammitglieder gemeinsam auf Unterhaltungen, Dateien und die Vorschau zugreifen können.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveTeamShare} className="space-y-4 px-6 pb-6 pt-5">
+            <div>
+              <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                Zugriffsbereich
+              </label>
+              <Dropdown
+                value={selectedTeamShareId}
+                onChange={(val) => setSelectedTeamShareId(val)}
+                options={[
+                  { value: '__personal__', label: 'Nur für mich (Persönlich)' },
+                  ...teams.map((t) => ({
+                    value: String(t.id),
+                    label: `Team: ${t.name} (${t.member_count} Mitglieder)`,
+                  })),
+                ]}
+                aria-label="Team auswählen"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant/20">
+              <Button type="button" variant="ghost" onClick={() => setTeamShareModalOpen(false)}>
+                Abbrechen
+              </Button>
+              <Button type="submit" disabled={savingProject}>
+                Speichern
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

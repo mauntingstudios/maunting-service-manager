@@ -9,7 +9,6 @@ import { HighlightStyle, StreamLanguage, syntaxHighlighting, type LanguageSuppor
 import { tags } from '@lezer/highlight'
 import { EditorView, type ViewUpdate } from '@codemirror/view'
 import { css } from '@codemirror/legacy-modes/mode/css'
-import { html as legacyHtml } from '@codemirror/legacy-modes/mode/xml'
 import { cpp, csharp, java } from '@codemirror/legacy-modes/mode/clike'
 import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile'
 import { go } from '@codemirror/legacy-modes/mode/go'
@@ -32,11 +31,12 @@ import {
   RotateCcw,
   Save,
   Search,
+  Wand2,
   X,
 } from 'lucide-react'
 import { detectLanguage, detectIndentation, fileName } from './fileHelpers'
 import type { EditorTab } from './fileWorkspaceTypes'
-import { Button, Input } from '@maunting/ui'
+import { Button, Input, Kurzinfo } from '@maunting/ui'
 
 interface FileEditorWorkspaceProps {
   tabs: EditorTab[]
@@ -62,7 +62,7 @@ export function languageExtension(path: string): LanguageSupport | ReturnType<ty
   switch (detectLanguage(path)) {
     case 'json': return json()
     case 'yaml': return yaml()
-    case 'html': return StreamLanguage.define(legacyHtml)
+    case 'html':
     case 'xml': return xml()
     case 'markdown': return markdown()
     case 'ini':
@@ -100,16 +100,87 @@ export const EDITOR_THEME = EditorView.theme(
 
 export const EDITOR_HIGHLIGHT_STYLE = HighlightStyle.define([
   { tag: [tags.tagName, tags.standard(tags.tagName)], color: '#38bdf8' },
-  { tag: [tags.angleBracket], color: '#7dd3fc' },
+  { tag: [tags.angleBracket, tags.punctuation, tags.separator], color: '#7dd3fc' },
   { tag: [tags.attributeName, tags.propertyName], color: '#c084fc' },
   { tag: [tags.attributeValue, tags.string, tags.special(tags.string)], color: '#34d399' },
-  { tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword, tags.modifier], color: '#a78bfa' },
+  { tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword, tags.modifier, tags.definitionKeyword], color: '#a78bfa' },
   { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#fbbf24' },
-  { tag: [tags.typeName, tags.className, tags.namespace], color: '#67e8f9' },
-  { tag: [tags.number, tags.bool, tags.atom, tags.null], color: '#fb923c' },
-  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.documentMeta], color: '#64748b', fontStyle: 'italic' },
+  { tag: [tags.variableName, tags.definition(tags.variableName)], color: '#e2e8f0' },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.labelName], color: '#67e8f9' },
+  { tag: [tags.number, tags.bool, tags.atom, tags.null, tags.self], color: '#fb923c' },
+  { tag: [tags.operator, tags.compareOperator, tags.logicOperator], color: '#94a3b8' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.documentMeta, tags.meta], color: '#64748b', fontStyle: 'italic' },
   { tag: [tags.heading], color: '#38bdf8', fontWeight: '700' },
+  { tag: [tags.invalid], color: '#cbd5e1', textDecoration: 'none' },
 ])
+
+export function formatDocumentContent(path: string, content: string): string {
+  const lang = detectLanguage(path)
+  const raw = content.replace(/\r\n/g, '\n')
+  if (!raw.trim()) return content
+
+  if (lang === 'json') {
+    try {
+      return `${JSON.stringify(JSON.parse(raw), null, 2)}\n`
+    } catch {
+      return content
+    }
+  }
+
+  if (lang === 'html' || lang === 'xml') {
+    const voidTags = new Set([
+      'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+      'link', 'meta', 'param', 'source', 'track', 'wbr', '!doctype',
+    ])
+    const normalized = raw
+      .replace(/>\s+</g, '>\n<')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+
+    let indent = 0
+    const out: string[] = []
+    for (const line of normalized) {
+      const isClosing = /^<\/[a-zA-Z0-9:-]+/.test(line)
+      if (isClosing) {
+        indent = Math.max(0, indent - 1)
+      }
+      out.push(`${'  '.repeat(indent)}${line}`)
+      const openMatch = line.match(/^<([!a-zA-Z0-9:-]+)/)
+      const tagName = openMatch ? openMatch[1].toLowerCase() : ''
+      const isSelfClosing = /\/>$/.test(line) || voidTags.has(tagName) || line.startsWith('<!--') || line.startsWith('<!')
+      const hasInlineClose = new RegExp(`</${tagName}>\\s*$`, 'i').test(line)
+      if (openMatch && !isClosing && !isSelfClosing && !hasInlineClose) {
+        indent += 1
+      }
+    }
+    return `${out.join('\n')}\n`
+  }
+
+  if (lang === 'css' || lang === 'javascript' || lang === 'typescript') {
+    const lines = raw.split('\n')
+    let indent = 0
+    const out: string[] = []
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim()
+      if (!trimmed) {
+        out.push('')
+        continue
+      }
+      if (/^[}\])]/.test(trimmed)) {
+        indent = Math.max(0, indent - 1)
+      }
+      out.push(`${'  '.repeat(indent)}${trimmed}`)
+      const opens = (trimmed.match(/[{[(]/g) ?? []).length
+      const closes = (trimmed.match(/[}\])]/g) ?? []).length
+      const net = opens - closes + (/^[}\])]/.test(trimmed) ? 1 : 0)
+      indent = Math.max(0, indent + net)
+    }
+    return `${out.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n`
+  }
+
+  return `${raw.split('\n').map((l) => l.replace(/\s+$/, '')).join('\n').trim()}\n`
+}
 
 export const EDITOR_BASIC_SETUP = {
   lineNumbers: true,
@@ -380,6 +451,24 @@ export function FileEditorWorkspace({
               <span className={`hidden items-center gap-1.5 text-label-sm sm:inline-flex ${activeTab.saveState === 'conflict' || activeTab.saveState === 'error' ? 'text-status-destructive' : activeTab.saveState === 'clean' ? 'text-status-success' : 'text-status-warning'}`}>
                 {saveIndicator}
               </span>
+              {canWrite && (
+                <Kurzinfo text="Code sauber einrücken und formatieren">
+                  <Button variant="ghost" size="sm"
+                    type="button"
+                    onClick={() => {
+                      const formatted = formatDocumentContent(activeTab.path, activeTab.content)
+                      if (formatted !== activeTab.content) {
+                        onChange(activeTab.path, formatted)
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs"
+                    aria-label="Formatieren"
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Formatieren</span>
+                  </Button>
+                </Kurzinfo>
+              )}
               <Button variant="ghost" size="sm"
                 type="button"
                 onClick={() => (searchOpen ? closeSearch() : openSearch('find'))}

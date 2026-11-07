@@ -22,12 +22,16 @@ class AiProjectCreatePayload(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=12000)
     icon: str = Field(default="folder-code", max_length=48)
     color: str = Field(default="emerald", max_length=32)
+    project_kind: str = Field(default="coding", pattern="^(coding|docs|general)$")
     team_id: int | None = None
     sandbox_mode: str = Field(default="server", pattern="^(server|local|none)$")
+    sandbox_enabled: bool | None = None
     local_path: str | None = Field(default=None, max_length=1024)
+    local_directory: str | None = Field(default=None, max_length=1024)
     git_provider: str | None = Field(default=None, pattern="^(github|gitlab)$")
     git_repo_url: str | None = Field(default=None, max_length=1024)
     git_branch: str | None = Field(default="main", max_length=120)
+    git_token: str | None = Field(default=None, max_length=512)
 
 
 class AiProjectUpdatePayload(BaseModel):
@@ -36,30 +40,43 @@ class AiProjectUpdatePayload(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=12000)
     icon: str | None = Field(default=None, max_length=48)
     color: str | None = Field(default=None, max_length=32)
+    project_kind: str | None = Field(default=None, pattern="^(coding|docs|general)$")
     pinned: bool | None = None
+    team_id: int | None = None
+    clear_team: bool | None = None
     sandbox_mode: str | None = Field(default=None, pattern="^(server|local|none)$")
+    sandbox_enabled: bool | None = None
     local_path: str | None = Field(default=None, max_length=1024)
+    local_directory: str | None = Field(default=None, max_length=1024)
     git_provider: str | None = Field(default=None, pattern="^(github|gitlab)$")
     git_repo_url: str | None = Field(default=None, max_length=1024)
     git_branch: str | None = Field(default=None, max_length=120)
+    git_token: str | None = Field(default=None, max_length=512)
+    clear_git_token: bool | None = None
 
 
 class AiProjectResponse(BaseModel):
     id: str
     user_id: int
+    owner_user_id: int | None = None
     team_id: int | None = None
     name: str
     description: str | None = None
     system_prompt: str | None = None
     icon: str
     color: str
+    project_kind: str = "coding"
     pinned: bool
     sandbox_mode: str
+    sandbox_enabled: bool = True
     sandbox_path: str | None = None
     local_path: str | None = None
+    local_directory: str | None = None
     git_provider: str | None = None
     git_repo_url: str | None = None
     git_branch: str | None = None
+    git_token_configured: bool = False
+    file_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -80,8 +97,18 @@ class AiProjectFileResponse(BaseModel):
     mime_type: str
     size_bytes: int
     updated_at: datetime
+    diff: dict[str, object] | None = None
 
     model_config = {"from_attributes": True}
+
+
+class AiProjectEnvironmentSwitchPayload(BaseModel):
+    environment: str = Field(default="dev", pattern="^(dev|production|prod)$")
+
+
+class AiProjectPublishPayload(BaseModel):
+    node_id: str | None = None
+    release_notes: str | None = Field(default=None, max_length=500)
 
 
 class AiProjectCommandPayload(BaseModel):
@@ -216,7 +243,9 @@ def write_project_file(
             content=payload.content,
             mime_type=payload.mime_type,
         )
-        return AiProjectFileResponse.model_validate(row)
+        resp = AiProjectFileResponse.model_validate(row)
+        resp.diff = getattr(row, "_last_diff", None)
+        return resp
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -341,6 +370,86 @@ def create_project_git_repo(
             description=payload.description,
             provider=payload.provider,
             token=payload.token,
+        )
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/environment")
+def get_project_environment(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> dict[str, object]:
+    try:
+        return ai_project_service.get_project_environment(db, user, project_id)
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/environment/switch")
+def switch_project_environment(
+    project_id: str,
+    payload: AiProjectEnvironmentSwitchPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_service.switch_project_environment(
+            db, user, project_id, payload.environment
+        )
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/publish")
+def publish_project_to_production(
+    project_id: str,
+    payload: AiProjectPublishPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_service.publish_project_to_production(
+            db,
+            user,
+            project_id,
+            node_id=payload.node_id,
+            release_notes=payload.release_notes,
+        )
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/production-files")
+def list_project_production_files(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> list[dict[str, object]]:
+    try:
+        return ai_project_service.list_production_files(db, user, project_id)
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/cross-project-components")
+def search_project_reusable_components(
+    project_id: str,
+    query: str = Query(default="", max_length=200),
+    limit: int = Query(default=8, ge=1, le=25),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> list[dict[str, object]]:
+    try:
+        return ai_project_service.search_cross_project_components(
+            db,
+            user,
+            current_project_id=project_id,
+            query=query,
+            limit=limit,
         )
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

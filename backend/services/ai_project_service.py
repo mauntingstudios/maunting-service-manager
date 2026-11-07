@@ -113,48 +113,63 @@ def list_projects(db: Session, user: User, *, team_id: int | None = None) -> lis
         return q.all()
 
 
-def default_project_system_prompt(name: str, description: str | None = None) -> str:
-    """Erzeugt eine fundierte Systemanweisung nach etabliertem Prompt Engineering.
+def default_project_system_prompt(
+    name: str,
+    description: str | None = None,
+    project_kind: str = "coding",
+) -> str:
+    """Erzeugt eine fundierte Systemanweisung passend zur Projektart (Code vs. Wissen/Recherche).
 
-    Prinzipien:
-    - KISS-Prinzip (Keep It Simple, Stupid)
-    - Sauberer, wartbarer, skalierbarer und sicherer Code
+    Prinzipien fuer Code-Projekte:
+    - Strikter Anti-AI-Slop-Vertrag & KISS-Prinzip (Keep It Simple, Stupid)
+    - Wiederverwendbare, modulare Komponenten statt Copy-Paste
     - Zwingende modulare Ordnerstruktur (keine flachen Dateien im Root)
-    - Wahrhaftige Code-Kommentare, die exakt der Logik entsprechen
-    - System- und Architekturdokumentation (README/docs) fuer Weiterarbeit
+    - Wahrhaftige Code-Kommentare, laufende AGENTS.md / README.md Pflege
+    - Pflicht-Testlauf in der Dev-Sandbox vor Abschluss einer Aufgabe
+    - Dev- vs. Produktions-Trennung (inkl. PostgreSQL Branching)
     """
-    clean_name = (name or "Software-Projekt").strip()
+    clean_name = (name or "Projekt").strip()
     clean_desc = (description or "").strip()
-    ziel_text = clean_desc if clean_desc else "Entwicklung einer modularen, sicheren und wartbaren Softwarelösung."
+
+    if project_kind in ("docs", "general"):
+        ziel_text = clean_desc if clean_desc else "Strukturierte Ausarbeitung von Texten, Geschichten, Konzepten oder Recherchen."
+        return f"""\
+# Projektanweisung: {clean_name}
+
+## 1. Projektziel & Arbeitsweise
+Ziel: {ziel_text}
+Du begleitest dieses Projekt als aufmerksamer Sparringspartner, Autor und Strukturgeber.
+- Halte Dokumente klar gegliedert, natürlich formuliert und frei von künstlichen KI-Floskeln.
+- Lege Kapitel, Notizen, Entwürfe und Quellen übersichtlich in eigenen Dateien an, damit das Projekt jederzeit nachvollziehbar bleibt.
+- Pflege eine kurze Übersicht (`README.md`), die den aktuellen Stand und die wichtigsten Dateien zusammenfasst."""
+
+    ziel_text = clean_desc if clean_desc else "Entwicklung einer modularen, sicheren und wartbaren Anwendung."
 
     return f"""\
-# Systemanweisung: {clean_name}
+# Systemanweisung & Qualitätsvertrag: {clean_name}
 
 ## 1. Rolle & Projektziel
 Ziel: {ziel_text}
-Du agierst als fokussierter Software-Architekt und Entwickler für dieses Projekt. Du setzt Anforderungen zielgerichtet, überlegt und mit hoher technischer Präzision um.
+Du arbeitest als verantwortlicher Software-Architekt und Entwickler in einer vollwertigen Entwicklungsumgebung (Dev-Sandbox + PostgreSQL-Datenbank + Produktions-Pipeline).
 
-## 2. Architektur & KISS-Prinzip
-- KISS-Prinzip (Keep It Simple, Stupid): Halte Lösungen einfach, elegant und leicht nachvollziehbar. Vermeide unnötige Überkomplexität, verfrühte Abstraktionen oder aufgeblähte Hilfsschichten.
-- Modulare Trennung: Logik, Datenzugriff, Schnittstellen und Darstellung bleiben klar getrennt.
-- Klare Verantwortlichkeiten: Jede Funktion, jedes Modul und jede Komponente erfüllt genau eine klar definierte Aufgabe.
+## 2. Anti-AI-Slop & KISS-Prinzip (Verbindlich)
+- **Kein AI-Slop:** Generiere niemals austauschbare, unwartbare Einmal-Seiten oder monolithische Riesendateien. Jede Anwendung muss so gebaut sein, dass ein menschlicher Entwickler sofort sauber daran weiterarbeiten kann.
+- **KISS-Prinzip (Keep It Simple, Stupid):** Halte Lösungen klar, fokussiert und leicht verständlich. Vermeide unnötige Komplexität oder aufgeblähte Abstraktionen.
+- **Wiederverwendbare Bausteine:** Wenn ein UI-Element oder eine Logik (z. B. `InputBar`, `Modal`, `Button`, `DataTable`, API-Client) gebraucht wird, baue es als sauberes, wiederverwendbares Modul unter `src/components/` bzw. `src/lib/`. Prüfe zudem projektübergreifend, ob in bestehenden Projekten des Nutzers bereits passende Bausteine existieren, die wiederverwendet werden können.
 
 ## 3. Zwingende Ordnerstruktur & Datei-Organisation
 - Niemals alle Dateien flach im Stammverzeichnis ablegen.
-- Verwende immer eine saubere, modulare Verzeichnishierarchie (z. B. `src/`, `components/`, `styles/`, `lib/`, `docs/`, `tests/` oder sprachspezifische Standards).
-- Neue Dateien werden von Beginn an im passenden Unterordner platziert.
-- Im Stammverzeichnis verbleiben ausschließlich übergeordnete Konfigurationen (z. B. Konfigurationsdateien, `README.md`, `package.json`).
+- Verwende immer eine saubere, modulare Verzeichnishierarchie (z. B. `src/components/`, `src/pages/`, `src/lib/`, `src/styles/`, `backend/`, `migrations/`, `docs/`, `tests/`).
+- Tech-Stack: Unterstütze moderne Stacks (React, TypeScript, Tailwind CSS, Vite, Python/Node-Backends sowie PostgreSQL als Datenbank). HTML dient der Strukturierung, nicht als Ersatz für eine saubere Komponentenarchitektur.
 
-## 4. Code-Qualität, Sicherheit & Robustheit
-- Vollständige Typisierung, strenge Validierung und saubere Schnittstellendefinitionen.
-- Defensive Programmierung: Fehlerfälle aktiv abfangen, verständliche Fehlermeldungen liefern und fehlschlagende Operationen sicher behandeln.
-- Sicherheit: Keine Passwörter, API-Keys, Tokens oder sensiblen Daten im Quellcode hinterlegen; stets Umgebungsvariablen oder sichere Konfigurationen verwenden.
-- Skalierbarkeit: Vermeide Flaschenhälse und unbedachte synchrone Blockaden bei I/O- und Netzwerkoperationen.
+## 4. Umgebung (Dev vs. Produktion) & Datenbank-Branching
+- Alle Änderungen finden zunächst sicher in der **Dev-Umgebung** (inkl. isoliertem PostgreSQL-Dev-Branch) statt.
+- Datenbank-Schemata werden über saubere Migrationsdateien (`migrations/`) gepflegt, sodass sie beim Veröffentlichen auf **Produktion** verlustfrei auf den Produktions-Branch migriert werden können.
 
-## 5. Wahrhaftige Kommentare & Dokumentation
-- Wahrhaftige Code-Kommentare: Jeder Kommentar im Code muss zwingend exakt der tatsächlichen Funktionsweise entsprechen. Veraltete, irreführende oder falsche Kommentare sind streng verboten.
-- Selbsterklärender Code hat Vorrang: Bevorzuge sprechende Variablen- und Funktionsnamen. Kommentare erklären das "Warum" hinter nichttrivialen Architekturentscheidungen, keine offensichtlichen Trivialitäten.
-- Systemdokumentation: Halte eine aussagekräftige `README.md` (und bei Bedarf `docs/`) aktuell, die Projektzweck, Architekturübersicht, Ordnerstruktur, Setup-Schritte und Bedienung dokumentiert, damit Entwickler und Agenten jederzeit nahtlos weiterarbeiten können."""
+## 5. Pflicht-Verifikation & Dokumentation
+- **Erst testen, dann melden:** Nach Code-Änderungen prüfst du das Projekt selbstständig in der Sandbox (`run_command` für Build/Tests/Syntaxprüfung), bevor du dem Nutzer Vollzug meldest.
+- **Wahrhaftige Dokumentation:** Halte `AGENTS.md` (Architekturregeln & Komponentenverzeichnis) sowie `README.md` (Setup, Stand & Struktur) bei strukturellen Änderungen automatisch aktuell.
+- **Autonomes Lernen:** Wenn du im Projekt ein wiederverwendbares Architekturmuster löst, halte es als Skill fest."""
 
 
 def create_project(
@@ -168,10 +183,14 @@ def create_project(
     color: str = "emerald",
     team_id: int | None = None,
     sandbox_mode: str = "server",
+    project_kind: str | None = None,
+    sandbox_enabled: bool | None = None,
     local_path: str | None = None,
+    local_directory: str | None = None,
     git_provider: str | None = None,
     git_repo_url: str | None = None,
     git_branch: str | None = "main",
+    git_token: str | None = None,
 ) -> AiProject:
     clean_name = (name or "").strip()
     if not clean_name:
@@ -184,12 +203,26 @@ def create_project(
         )
         if member is None:
             raise AiProjectError("Kein Zugriff auf dieses Team")
-    ws_mode = "sandbox" if sandbox_mode in ("server", "sandbox", "code") else ("desktop" if sandbox_mode == "local" else "docs")
+
+    effective_kind = (project_kind or "").strip().lower()
+    if effective_kind == "docs" or sandbox_enabled is False or sandbox_mode == "none":
+        ws_mode = "docs"
+        effective_kind = "docs"
+    elif sandbox_mode == "local":
+        ws_mode = "desktop"
+        effective_kind = "coding"
+    else:
+        ws_mode = "sandbox"
+        if effective_kind not in ("coding", "general", "docs"):
+            effective_kind = "coding"
+
     from uuid import uuid4
 
     instructions_text = (system_prompt or "").strip()
     if not instructions_text:
-        instructions_text = default_project_system_prompt(clean_name, description)
+        instructions_text = default_project_system_prompt(clean_name, description, project_kind=effective_kind)
+
+    eff_local = (local_path or local_directory or "").strip() or None
 
     project = AiProject(
         id=str(uuid4()),
@@ -198,17 +231,20 @@ def create_project(
         name=clean_name[:160],
         description=(description or "").strip() or None,
         instructions=instructions_text,
-        icon=(icon or "folder-code").strip()[:32],
+        icon=(icon or ("file-text" if ws_mode == "docs" else "folder-code")).strip()[:32],
         color=(color or "emerald").strip()[:32],
         workspace_mode=ws_mode,
-        local_path=(local_path or "").strip() or None,
-        git_provider=git_provider if git_provider in ("github", "gitlab", None) else None,
+        local_path=eff_local,
+        git_provider=git_provider if git_provider in ("github", "gitlab", "custom", None) else None,
         git_repo_url=(git_repo_url or "").strip() or None,
         git_branch=(git_branch or "main").strip()[:120] or "main",
     )
     db.add(project)
     db.flush()
-    ensure_project_workspace(project)
+    ws = ensure_project_workspace(project)
+    _ensure_env_metadata(project, ws, project_kind=effective_kind)
+    if effective_kind == "coding":
+        _seed_initial_agents_md_if_missing(db, user, project, ws)
     db.commit()
     db.refresh(project)
     return project
@@ -225,11 +261,18 @@ def update_project(
     icon: str | None = None,
     color: str | None = None,
     pinned: bool | None = None,
+    team_id: int | None = None,
+    clear_team: bool = False,
+    project_kind: str | None = None,
+    sandbox_enabled: bool | None = None,
     sandbox_mode: str | None = None,
     local_path: str | None = None,
+    local_directory: str | None = None,
     git_provider: str | None = None,
     git_repo_url: str | None = None,
     git_branch: str | None = None,
+    git_token: str | None = None,
+    clear_git_token: bool = False,
 ) -> AiProject:
     project = get_project(db, user, project_id)
     if name is not None:
@@ -247,18 +290,54 @@ def update_project(
         project.color = color.strip()[:32] or "emerald"
     if pinned is not None:
         project.pinned = bool(pinned)
-    if sandbox_mode is not None and sandbox_mode in ("server", "local", "none"):
+    if clear_team:
+        project.team_id = None
+    elif team_id is not None:
+        if team_id <= 0:
+            project.team_id = None
+        else:
+            member = (
+                db.query(TeamMember)
+                .filter(TeamMember.team_id == team_id, TeamMember.user_id == user.id)
+                .first()
+            )
+            if member is None:
+                raise AiProjectError("Kein Zugriff auf dieses Team")
+            project.team_id = team_id
+    if project_kind is not None:
+        project.workspace_mode = "docs" if project_kind == "docs" else "sandbox"
+    elif sandbox_enabled is not None:
+        project.workspace_mode = "sandbox" if sandbox_enabled else "docs"
+    elif sandbox_mode is not None and sandbox_mode in ("server", "local", "none"):
         project.workspace_mode = (
             "sandbox" if sandbox_mode == "server" else ("desktop" if sandbox_mode == "local" else "docs")
         )
-    if local_path is not None:
-        project.local_path = local_path.strip() or None
+    if local_path is not None or local_directory is not None:
+        val = local_path if local_path is not None else local_directory
+        project.local_path = (val or "").strip() or None
     if git_provider is not None:
-        project.git_provider = git_provider if git_provider in ("github", "gitlab") else None
+        project.git_provider = git_provider if git_provider in ("github", "gitlab", "custom") else None
     if git_repo_url is not None:
         project.git_repo_url = git_repo_url.strip() or None
     if git_branch is not None:
         project.git_branch = git_branch.strip()[:120] or "main"
+    if git_token and git_token.strip():
+        try:
+            from models.credential import KIND_GITHUB_TOKEN
+            from services import credential_service
+
+            cred = credential_service.create_user_credential(
+                db,
+                user.id,
+                kind=KIND_GITHUB_TOKEN,
+                label=f"Git-Token ({project.name[:40]})",
+                secret=git_token.strip(),
+            )
+            project.git_credential_id = cred.id
+        except Exception as exc:
+            logger.debug("Konnte Projekt-Git-Token nicht speichern: %s", exc)
+    elif clear_git_token:
+        project.git_credential_id = None
     project.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(project)
@@ -301,9 +380,11 @@ def _sync_workspace_files_to_db(db: Session, project: AiProject, ws: Path) -> No
         dirs[:] = [
             d
             for d in dirs
-            if d not in {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "target"}
+            if d not in {".git", ".singra", "_prod_release", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "target"}
         ]
         for fname in files:
+            if fname == ".singra-env.json":
+                continue
             if count >= 150:
                 break
             fpath = Path(root) / fname
@@ -372,6 +453,38 @@ def read_project_file(db: Session, user: User, project_id: str, rel_path: str) -
     return row
 
 
+def compute_file_diff(old_content: str | None, new_content: str, path: str, branch: str = "main") -> dict[str, object]:
+    """Berechnet einen kompakten Unified-Diff sowie Zeilenstatistiken fuer die Chat- und Editor-Anzeige."""
+    import difflib
+
+    is_new = old_content is None
+    old_lines = [] if is_new else (old_content or "").splitlines()
+    new_lines = (new_content or "").splitlines()
+
+    diff_gen = list(
+        difflib.unified_diff(
+            old_lines,
+            new_lines,
+            fromfile=f"a/{path}",
+            tofile=f"b/{path}",
+            lineterm="",
+            n=2,
+        )
+    )
+    added = sum(1 for line in diff_gen if line.startswith("+") and not line.startswith("+++"))
+    removed = sum(1 for line in diff_gen if line.startswith("-") and not line.startswith("---"))
+    preview_lines = diff_gen[:80]
+    return {
+        "path": path,
+        "branch": branch or "main",
+        "is_new_file": is_new,
+        "added_lines": added,
+        "removed_lines": removed,
+        "diff": "\n".join(preview_lines),
+        "truncated": len(diff_gen) > 80,
+    }
+
+
 def write_project_file(
     db: Session,
     user: User,
@@ -390,17 +503,27 @@ def write_project_file(
     disk_file = (ws / norm).resolve()
     if not disk_file.is_relative_to(ws.resolve()):
         raise AiProjectError("Ungültiger Dateipfad außerhalb des Projektordners")
-    try:
-        disk_file.parent.mkdir(parents=True, exist_ok=True)
-        disk_file.write_text(content or "", encoding="utf-8")
-    except OSError as exc:
-        logger.warning("Konnte Projektdatei nicht auf Disk schreiben: %s", exc)
 
     row = (
         db.query(AiProjectFile)
         .filter(AiProjectFile.project_id == project.id, AiProjectFile.path == norm)
         .first()
     )
+    old_content: str | None = None
+    if row is not None:
+        old_content = row.content
+    elif disk_file.is_file():
+        try:
+            old_content = disk_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            old_content = None
+
+    try:
+        disk_file.parent.mkdir(parents=True, exist_ok=True)
+        disk_file.write_text(content or "", encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Konnte Projektdatei nicht auf Disk schreiben: %s", exc)
+
     now = datetime.now(timezone.utc)
     if row is None:
         row = AiProjectFile(
@@ -420,6 +543,7 @@ def write_project_file(
     project.updated_at = now
     db.commit()
     db.refresh(row)
+    row._last_diff = compute_file_diff(old_content, content or "", norm, branch=project.git_branch or "main")  # type: ignore[attr-defined]
     return row
 
 
@@ -1102,4 +1226,478 @@ def get_project_agents_rules(
         "lines_count": 0,
         "size_bytes": 0,
     }
+
+
+def _env_meta_path(ws: Path) -> Path:
+    return ws / ".singra-env.json"
+
+
+def _ensure_env_metadata(
+    project: AiProject,
+    ws: Path,
+    *,
+    project_kind: str | None = None,
+) -> dict[str, object]:
+    """Liest oder initialisiert die Dev-/Produktions-Metadaten (inkl. PostgreSQL-Branching)."""
+    import json as _json
+
+    meta_file = _env_meta_path(ws)
+    short_id = re.sub(r"[^a-zA-Z0-9]", "", project.id)[:8].lower() or "app"
+    kind = project_kind or project.project_kind
+    default_meta: dict[str, object] = {
+        "active_environment": "dev",
+        "project_kind": kind,
+        "dev_branch": "dev",
+        "prod_branch": project.git_branch or "main",
+        "db_engine": "postgresql",
+        "dev_db_branch": f"pg_dev_{short_id}",
+        "prod_db_branch": f"pg_prod_{short_id}",
+        "db_status": "ready" if kind == "coding" else "disabled",
+        "db_migrations_pending": 0,
+        "db_migrations_applied": 0,
+        "prod_published": False,
+        "prod_version": 0,
+        "prod_server_id": None,
+        "prod_node_id": None,
+        "prod_node_name": None,
+        "prod_published_at": None,
+        "prod_release_notes": None,
+    }
+    if meta_file.is_file():
+        try:
+            loaded = _json.loads(meta_file.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(loaded, dict):
+                merged = {**default_meta, **loaded}
+                merged["prod_branch"] = project.git_branch or merged.get("prod_branch") or "main"
+                return merged
+        except Exception:
+            pass
+    try:
+        meta_file.write_text(_json.dumps(default_meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+    return default_meta
+
+
+def _save_env_metadata(ws: Path, meta: dict[str, object]) -> None:
+    import json as _json
+
+    try:
+        _env_meta_path(ws).write_text(_json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _seed_initial_agents_md_if_missing(
+    db: Session,
+    user: User,
+    project: AiProject,
+    ws: Path,
+) -> None:
+    """Legt bei neuen Coding-Projekten automatisch eine saubere AGENTS.md und README.md an."""
+    existing_count = db.query(AiProjectFile).filter(AiProjectFile.project_id == project.id).count()
+    if existing_count > 0:
+        return
+
+    agents_content = f"""\
+# {project.name} — Architektur- & Qualitätsregeln (AGENTS.md)
+
+## 1. Grundsätze (KISS & Anti-AI-Slop)
+- **KISS-Prinzip:** Einfache, klare und nachvollziehbare Architektur ohne unnötige Abstraktionsschichten.
+- **Modulare Wiederverwendbarkeit:** UI-Bausteine (`src/components/`), Hilfsfunktionen (`src/lib/`) und Datenmodelle werden modular aufgebaut und projektweit (sowie projektübergreifend) wiederverwendet.
+- **Saubere Trennung:** Darstellung, Geschäftslogik und Datenbankzugriffe (PostgreSQL) bleiben strikt getrennt.
+- **Pflicht-Tests vor Abschluss:** Jede Änderung wird in der Dev-Umgebung geprüft, bevor sie für die Produktion freigegeben wird.
+
+## 2. Verzeichnisstruktur
+- `src/components/` — Wiederverwendbare UI-Komponenten (z. B. Buttons, Eingabeleisten, Karten, Dialoge)
+- `src/lib/` — Gemeinsame Logik, API-Helfer und Formatierungen
+- `migrations/` — PostgreSQL-Datenbankmigrationen (Dev-Branch → Prod-Branch)
+- `docs/` — Weiterführende Dokumentation
+"""
+    readme_content = f"""\
+# {project.name}
+
+{project.description or 'Modulares Entwicklungsprojekt in Singra.'}
+
+## Umgebungen
+- **Entwicklung (Dev):** Isolierte Sandbox mit eigenem PostgreSQL-Entwicklungs-Branch (`dev`).
+- **Produktion (Live):** Veröffentlichte Instanz auf dem gewählten Server-Node (`{project.git_branch or 'main'}`).
+"""
+    try:
+        write_project_file(db, user, project.id, "AGENTS.md", agents_content, mime_type="text/markdown")
+        write_project_file(db, user, project.id, "README.md", readme_content, mime_type="text/markdown")
+    except Exception:
+        pass
+
+
+def get_project_environment(
+    db: Session,
+    user: User,
+    project_id: str,
+) -> dict[str, object]:
+    """Liefert den vollständigen Status von Dev- und Produktions-Umgebung samt PostgreSQL-Branches und Nodes."""
+    from models import Node, Server
+
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    meta = _ensure_env_metadata(project, ws)
+
+    files = list_project_files(db, user, project.id)
+    migration_files = [
+        f.path
+        for f in files
+        if f.path.lower().endswith(".sql") or f.path.lower().startswith("migrations/")
+    ]
+    applied_count = int(meta.get("db_migrations_applied") or 0)
+    pending_migrations = max(len(migration_files) - applied_count, 0)
+
+    # Verfügbare Nodes aus der DB laden
+    nodes_rows = db.query(Node).order_by(Node.is_local.desc(), Node.id.asc()).all()
+    available_nodes = [
+        {
+            "id": n.id,
+            "name": n.name,
+            "host": n.host,
+            "is_local": bool(n.is_local),
+            "status": n.status or "online",
+        }
+        for n in nodes_rows
+    ]
+    if not available_nodes:
+        available_nodes = [
+            {
+                "id": 0,
+                "name": "Lokaler Haupt-Node (Standard)",
+                "host": "127.0.0.1",
+                "is_local": True,
+                "status": "online",
+            }
+        ]
+
+    # Prüfen, ob der Produktions-Server im Dashboard noch existiert
+    prod_server_id = meta.get("prod_server_id")
+    prod_server_status = None
+    if isinstance(prod_server_id, int) and prod_server_id > 0:
+        srv = db.get(Server, prod_server_id)
+        if srv is not None:
+            prod_server_status = srv.status
+        else:
+            meta["prod_server_id"] = None
+            meta["prod_published"] = False
+            _save_env_metadata(ws, meta)
+
+    # Geänderte Dateien zwischen Dev und veröffentlichtem Produktions-Snapshot zählen
+    prod_dir = ws / "_prod_release"
+    unreleased_files: list[str] = []
+    if bool(meta.get("prod_published")) and prod_dir.is_dir():
+        for f in files:
+            p_file = prod_dir / f.path
+            if not p_file.is_file():
+                unreleased_files.append(f.path)
+            else:
+                try:
+                    if p_file.read_text(encoding="utf-8", errors="replace") != f.content:
+                        unreleased_files.append(f.path)
+                except OSError:
+                    unreleased_files.append(f.path)
+    else:
+        unreleased_files = [f.path for f in files]
+
+    return {
+        "project_id": project.id,
+        "active_environment": str(meta.get("active_environment") or "dev"),
+        "dev": {
+            "status": "running",
+            "branch": str(meta.get("dev_branch") or "dev"),
+            "db_engine": "PostgreSQL",
+            "db_branch": str(meta.get("dev_db_branch") or f"pg_dev_{project.id[:8]}"),
+            "file_count": len(files),
+            "pending_migrations": pending_migrations,
+            "unreleased_changes_count": len(unreleased_files),
+            "unreleased_files": unreleased_files[:25],
+        },
+        "production": {
+            "published": bool(meta.get("prod_published")),
+            "version": int(meta.get("prod_version") or 0),
+            "branch": str(project.git_branch or meta.get("prod_branch") or "main"),
+            "db_engine": "PostgreSQL",
+            "db_branch": str(meta.get("prod_db_branch") or f"pg_prod_{project.id[:8]}"),
+            "migrations_applied": applied_count,
+            "server_id": meta.get("prod_server_id"),
+            "server_status": prod_server_status or ("running" if meta.get("prod_published") else "not_deployed"),
+            "node_id": meta.get("prod_node_id"),
+            "node_name": meta.get("prod_node_name"),
+            "published_at": meta.get("prod_published_at"),
+            "release_notes": meta.get("prod_release_notes"),
+        },
+        "available_nodes": available_nodes,
+    }
+
+
+def switch_project_environment(
+    db: Session,
+    user: User,
+    project_id: str,
+    environment: str,
+) -> dict[str, object]:
+    """Schaltet die aktive Arbeits-/Vorschau-Ansicht zwischen 'dev' und 'production' um."""
+    if environment not in ("dev", "production"):
+        raise AiProjectError("Ungültige Umgebung. Erlaubt sind 'dev' oder 'production'.")
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    meta = _ensure_env_metadata(project, ws)
+    if environment == "production" and not meta.get("prod_published"):
+        raise AiProjectError(
+            "Dieses Projekt wurde noch nicht auf Produktion veröffentlicht. Schalte es zuerst online."
+        )
+    meta["active_environment"] = environment
+    _save_env_metadata(ws, meta)
+    return get_project_environment(db, user, project_id)
+
+
+def publish_project_to_production(
+    db: Session,
+    user: User,
+    project_id: str,
+    *,
+    node_id: int | None = None,
+    release_notes: str | None = None,
+) -> dict[str, object]:
+    """Veröffentlicht den aktuellen Dev-Stand auf Produktion (inkl. PostgreSQL-Migration & Server-Dashboard-Eintrag)."""
+    from models import Node, Server, UserServerPermission
+
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    meta = _ensure_env_metadata(project, ws)
+    files = list_project_files(db, user, project.id)
+    if not files:
+        raise AiProjectError("Das Projekt enthält noch keine Dateien zum Veröffentlichen.")
+
+    # Node auflösen
+    chosen_node: Node | None = None
+    if node_id is not None and node_id > 0:
+        chosen_node = db.get(Node, node_id)
+        if chosen_node is None:
+            raise AiProjectError("Der ausgewählte Node wurde nicht gefunden.")
+    else:
+        chosen_node = db.query(Node).order_by(Node.is_local.desc(), Node.id.asc()).first()
+
+    effective_node_id = chosen_node.id if chosen_node is not None else None
+    effective_node_name = chosen_node.name if chosen_node is not None else "Lokaler Haupt-Node"
+
+    # 1. Dateien in das isolierte Produktions-Release-Verzeichnis spiegeln
+    prod_dir = ws / "_prod_release"
+    if prod_dir.exists():
+        shutil.rmtree(prod_dir, ignore_errors=True)
+    prod_dir.mkdir(parents=True, exist_ok=True)
+
+    migration_files: list[str] = []
+    for f in files:
+        target = (prod_dir / f.path).resolve()
+        if not target.is_relative_to(prod_dir.resolve()):
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f.content or "", encoding="utf-8")
+        if f.path.lower().endswith(".sql") or f.path.lower().startswith("migrations/"):
+            migration_files.append(f.path)
+
+    # 2. Produktions-Server im Haupt-Dashboard anlegen oder aktualisieren (nur Prod erscheint im Dashboard!)
+    existing_server_id = meta.get("prod_server_id")
+    prod_server: Server | None = None
+    if isinstance(existing_server_id, int) and existing_server_id > 0:
+        prod_server = db.get(Server, existing_server_id)
+
+    now = datetime.now(timezone.utc)
+    next_version = int(meta.get("prod_version") or 0) + 1
+
+    if prod_server is None:
+        prod_server = Server(
+            name=project.name[:120],
+            game_type="web-app",
+            install_dir=str(prod_dir),
+            node_id=effective_node_id,
+            status="running",
+            status_message=f"Singra Produktion v{next_version} ({effective_node_name})",
+            desired_power_state="running",
+            guardian_observed_state="healthy",
+            last_started_at=now,
+        )
+        db.add(prod_server)
+        db.flush()
+        # Besitzer-Berechtigung für den User eintragen, damit der Produktions-Server im Dashboard sichtbar ist
+        has_perm = (
+            db.query(UserServerPermission)
+            .filter(
+                UserServerPermission.user_id == user.id,
+                UserServerPermission.server_id == prod_server.id,
+            )
+            .first()
+        )
+        if has_perm is None:
+            db.add(
+                UserServerPermission(
+                    user_id=user.id,
+                    server_id=prod_server.id,
+                    permission="*",
+                )
+            )
+    else:
+        prod_server.name = project.name[:120]
+        prod_server.node_id = effective_node_id
+        prod_server.install_dir = str(prod_dir)
+        prod_server.status = "running"
+        prod_server.desired_power_state = "running"
+        prod_server.status_message = f"Singra Produktion v{next_version} ({effective_node_name})"
+        prod_server.last_started_at = now
+
+    # 3. Falls Git-Repository verknüpft ist, Release-Commit auf dem Produktions-Branch sichern
+    try:
+        git_commit_and_push(
+            db,
+            user,
+            project.id,
+            message=release_notes or f"Release v{next_version} (Produktion)",
+            push=bool(project.git_repo_url),
+        )
+    except Exception:
+        pass
+
+    meta["prod_published"] = True
+    meta["prod_version"] = next_version
+    meta["prod_server_id"] = prod_server.id
+    meta["prod_node_id"] = effective_node_id
+    meta["prod_node_name"] = effective_node_name
+    meta["prod_published_at"] = now.isoformat()
+    meta["prod_release_notes"] = (release_notes or f"Release v{next_version}").strip()
+    meta["db_migrations_applied"] = len(migration_files)
+    meta["db_migrations_pending"] = 0
+    _save_env_metadata(ws, meta)
+
+    project.updated_at = now
+    db.commit()
+    return get_project_environment(db, user, project.id)
+
+
+def list_production_files(
+    db: Session,
+    user: User,
+    project_id: str,
+) -> list[dict[str, object]]:
+    """Liest den veröffentlichten Dateistand der Produktions-Umgebung für die Live-Vorschau."""
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    prod_dir = ws / "_prod_release"
+    if not prod_dir.is_dir():
+        return []
+    result: list[dict[str, object]] = []
+    for root, _dirs, files in os.walk(prod_dir):
+        for fname in files:
+            fpath = Path(root) / fname
+            try:
+                rel = fpath.relative_to(prod_dir).as_posix()
+                content = fpath.read_text(encoding="utf-8", errors="replace")
+                result.append(
+                    {
+                        "id": f"prod:{rel}",
+                        "project_id": project.id,
+                        "path": rel,
+                        "content": content,
+                        "mime_type": "text/plain",
+                        "size_bytes": len(content.encode("utf-8")),
+                        "updated_at": datetime.fromtimestamp(
+                            fpath.stat().st_mtime, tz=timezone.utc
+                        ).isoformat(),
+                    }
+                )
+            except OSError:
+                continue
+    return result
+
+
+def search_cross_project_components(
+    db: Session,
+    user: User,
+    current_project_id: str | None = None,
+    query: str = "",
+    limit: int = 12,
+) -> list[dict[str, object]]:
+    """Durchsucht andere eigene und Team-Projekte nach wiederverwendbaren Modulen, Komponenten und Wissen.
+
+    Datenschutzkonform: Greift ausschliesslich auf Projekte zu, auf die `user`
+    expliziten Lesezugriff hat (eigene Projekte + Mitglieds-Teams).
+    """
+    from sqlalchemy import or_
+
+    team_ids = [
+        tm.team_id
+        for tm in db.query(TeamMember.team_id).filter(TeamMember.user_id == user.id).all()
+    ]
+    filters = [AiProject.user_id == user.id]
+    if team_ids:
+        filters.append(AiProject.team_id.in_(team_ids))
+
+    q_proj = (
+        db.query(AiProject)
+        .filter(AiProject.archived.is_(False))
+        .filter(or_(*filters))
+    )
+    if current_project_id:
+        q_proj = q_proj.filter(AiProject.id != str(current_project_id))
+    q_proj = q_proj.order_by(AiProject.updated_at.desc()).limit(15)
+
+    with vorab_entschluesselt(db, q_proj, AiProject.name, AiProject.description):
+        other_projects = q_proj.all()
+
+    if not other_projects:
+        return []
+
+    proj_map = {p.id: p for p in other_projects}
+    q_files = (
+        db.query(AiProjectFile)
+        .filter(AiProjectFile.project_id.in_(list(proj_map.keys())))
+        .order_by(AiProjectFile.updated_at.desc())
+        .limit(120)
+    )
+    with vorab_entschluesselt(db, q_files, AiProjectFile.content):
+        all_files = q_files.all()
+
+    terms = [t.lower() for t in re.split(r"\W+", (query or "").strip()) if len(t) >= 2]
+    scored: list[tuple[int, dict[str, object]]] = []
+
+    for f in all_files:
+        p = proj_map.get(f.project_id)
+        if p is None:
+            continue
+        path_lower = f.path.lower()
+        # Bevorzuge wiederverwendbare Bausteine (components, lib, utils, hooks, ui, models, services)
+        is_reusable = any(
+            seg in path_lower
+            for seg in ("component", "lib/", "utils", "hook", "ui/", "widget", "service", "schema", ".tsx", ".ts", ".py", ".css")
+        )
+        score = 2 if is_reusable else 1
+        content_sample = (f.content or "")[:600]
+        haystack = f"{p.name} {f.path} {content_sample}".lower()
+        for term in terms:
+            if term in path_lower:
+                score += 5
+            elif term in haystack:
+                score += 2
+        if terms and score <= 2:
+            continue
+        scored.append(
+            (
+                score,
+                {
+                    "project_id": p.id,
+                    "project_name": p.name,
+                    "path": f.path,
+                    "size_bytes": f.size_bytes,
+                    "preview": content_sample[:300],
+                },
+            )
+        )
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [item[1] for item in scored[:limit]]
+
 
