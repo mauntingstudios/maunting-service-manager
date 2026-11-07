@@ -995,6 +995,11 @@ statt zu behaupten, du haettest keine Erinnerung an die Webseite oder das Projek
 direkt und wartbar. Kein generischer KI-Einheitsbrei (keine unnoetigen \
 Wrapper-Schichten, keine Platzhalter-Kommentare wie `// TODO` oder `// rest of code`, \
 keine aufgeblaehten Texte). Schreibe vollstaendigen, produktionsreifen Code.
+- Datei-Änderungen & Teil-Ersetzungen (`patch_file` wie Claude Code): Ändere bestehende Dateien \
+bevorzugt punktgenau per `project_workspace` mit `action: "patch_file"`. Gib in `find` den exakten, \
+eindeutigen Codeblock an (inkl. Einrückung und Zeilenumbrüchen) und in `replace` den neuen Code. \
+Das spart Tokens, beschleunigt die Ausführung und verhindert Kürzungsfehler. Schreibe eine Datei \
+nur dann mit `write_file` komplett neu, wenn sie neu angelegt wird oder von Grund auf neu strukturiert wird.
 - Modulare Ordnerstruktur & Wiederverwendbarkeit: Lege niemals Dateien flach im \
 Stammverzeichnis ab. Nutze immer eine saubere Hierarchie (`src/components/`, \
 `src/lib/`, `src/styles/`, `backend/`, `docs/`, `tests/`). Baue wiederkehrende UI-Elemente \

@@ -550,6 +550,71 @@ def write_project_file(
     return row
 
 
+def patch_project_file(
+    db: Session,
+    user: User,
+    project_id: str,
+    rel_path: str,
+    edits: list[dict[str, str]],
+    *,
+    mime_type: str = "text/plain",
+) -> tuple[AiProjectFile, int]:
+    """Ersetzt gezielt eine oder mehrere Textstellen in einer bestehenden Projektdatei ohne Vollersetzung."""
+    if not edits:
+        raise AiProjectError("Es wurden keine Ersetzungen angegeben")
+
+    current_file = read_project_file(db, user, project_id, rel_path)
+    old_content = current_file.content or ""
+    new_content = old_content
+
+    applied_count = 0
+    for idx, edit in enumerate(edits, 1):
+        find_text = edit.get("find")
+        replace_text = edit.get("replace")
+        if find_text is None or replace_text is None:
+            raise AiProjectError(f"Ersetzung #{idx} muss 'find' und 'replace' enthalten")
+        if not find_text:
+            raise AiProjectError(f"Suchtext in Ersetzung #{idx} darf nicht leer sein")
+
+        count = new_content.count(find_text)
+        if count == 0:
+            find_norm = find_text.replace("\r\n", "\n")
+            content_norm = new_content.replace("\r\n", "\n")
+            if find_norm in content_norm:
+                count_norm = content_norm.count(find_norm)
+                if count_norm == 1:
+                    new_content = content_norm.replace(find_norm, (replace_text or "").replace("\r\n", "\n"), 1)
+                    applied_count += 1
+                    continue
+                elif count_norm > 1:
+                    raise AiProjectError(
+                        f"Der Suchtext in '{rel_path}' kommt {count_norm}-mal vor. "
+                        "Bitte mehr Zeilen Kontext angeben, damit die Stelle eindeutig ist."
+                    )
+            raise AiProjectError(
+                f"Der Suchtext in '{rel_path}' wurde nicht gefunden. "
+                "Bitte den exakten Codeausschnitt inklusive Einrückung und Zeilenumbrüchen angeben."
+            )
+        if count > 1:
+            raise AiProjectError(
+                f"Der Suchtext in '{rel_path}' kommt {count}-mal vor. "
+                "Bitte mehr Zeilen Kontext angeben, damit die Stelle eindeutig ist."
+            )
+
+        new_content = new_content.replace(find_text, replace_text, 1)
+        applied_count += 1
+
+    updated_file = write_project_file(
+        db,
+        user,
+        project_id,
+        rel_path,
+        new_content,
+        mime_type=mime_type or current_file.mime_type or "text/plain",
+    )
+    return updated_file, applied_count
+
+
 def delete_project_file(db: Session, user: User, project_id: str, rel_path: str) -> None:
     project = get_project(db, user, project_id)
     norm = normalize_rel_path(rel_path)

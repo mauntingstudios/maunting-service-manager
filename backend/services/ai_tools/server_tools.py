@@ -213,7 +213,7 @@ def _global_tool_definitions() -> list[dict]:
     optional.append(_function("advise_node_placement", "Empfiehlt einen Host fuer einen neuen Server. Nutze vor propose_server_create um RAM/Disk bewusst zu waehlen. Unterscheidet gebucht vs wirklich belegt.", {"ram_need_mb": {"type": "integer", "minimum": 512}, "disk_need_gb": {"type": "integer", "minimum": 1}}, ["ram_need_mb"]))
     optional.append(_function(
         "project_workspace",
-        "Arbeitet in KI-Projekten (Wissen, Dateien, Coding-Sandbox, Vorschau, Tests, Produktion & Git): Projekte/Dateien lesen & schreiben, Vorschau einrichten (configure_preview), Projekt komplett durchtesten inkl. Happy-/Negative-Path (test_project), Befehle ausfuehren (run_command), auf Produktion schalten (publish_production), wiederverwendbare Komponenten suchen (search_components), Git-Status/Sync/Commit.",
+        "Arbeitet in KI-Projekten (Wissen, Dateien, Coding-Sandbox, Vorschau, Tests, Produktion & Git): Projekte/Dateien lesen & schreiben, gezielt patchen (patch_file für Teil-Ersetzungen wie bei Claude Code), Vorschau einrichten (configure_preview), Projekt komplett durchtesten inkl. Happy-/Negative-Path (test_project), Befehle ausfuehren (run_command), auf Produktion schalten (publish_production), wiederverwendbare Komponenten suchen (search_components), Git-Status/Sync/Commit.",
         {
             "action": {
                 "type": "string",
@@ -223,6 +223,7 @@ def _global_tool_definitions() -> list[dict]:
                     "list_files",
                     "read_file",
                     "write_file",
+                    "patch_file",
                     "delete_file",
                     "configure_preview",
                     "preview_inspect",
@@ -256,6 +257,28 @@ def _global_tool_definitions() -> list[dict]:
                 "description": "Optionale Liste interaktiver Aktionen vor der Sichtpruefung (z. B. [{'selector': '#menu-btn', 'action': 'click'}]).",
             },
             "content": {"type": "string", "maxLength": 200000},
+            "find": {
+                "type": "string",
+                "maxLength": 50000,
+                "description": "Exakter zu ersetzender Codeausschnitt in der Datei (fuer patch_file). Muss genau einmal vorkommen.",
+            },
+            "replace": {
+                "type": "string",
+                "maxLength": 50000,
+                "description": "Neuer Codeausschnitt, der anstelle von 'find' eingesetzt wird (fuer patch_file).",
+            },
+            "edits": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "find": {"type": "string", "maxLength": 50000},
+                        "replace": {"type": "string", "maxLength": 50000},
+                    },
+                    "required": ["find", "replace"],
+                },
+                "description": "Optionale Liste sequenzieller Ersetzungen fuer patch_file.",
+            },
             "command": {"type": "string", "maxLength": 2000},
             "query": {"type": "string", "maxLength": 160},
             "node_id": {"type": "string", "maxLength": 64},
@@ -1944,6 +1967,48 @@ def _execute_global_read_tool(
                     "project_id": pid,
                     "path": f.path,
                     "size_bytes": f.size_bytes,
+                    "saved": True,
+                    "diff": diff_info,
+                }
+            if action in ("patch_file", "edit_file"):
+                if not permission_service.has_global_permission(db, user, "ai.coding.use"):
+                    raise AiActionValidationError("Programmierarbeiten und Code-Änderungen sind für diesen Benutzer nicht freigegeben (ai.coding.use)")
+
+                path_arg = str(arguments.get("path") or "")
+                raw_edits = arguments.get("edits")
+                edits_list: list[dict[str, str]] = []
+
+                if isinstance(raw_edits, list) and raw_edits:
+                    for item in raw_edits:
+                        if isinstance(item, dict):
+                            find_s = str(item.get("find") if item.get("find") is not None else item.get("target", ""))
+                            replace_s = str(item.get("replace") if item.get("replace") is not None else item.get("replacement", ""))
+                            edits_list.append({"find": find_s, "replace": replace_s})
+                else:
+                    find_val = arguments.get("find") if arguments.get("find") is not None else arguments.get("target")
+                    replace_val = arguments.get("replace") if arguments.get("replace") is not None else arguments.get("replacement")
+                    if find_val is not None:
+                        edits_list.append({
+                            "find": str(find_val),
+                            "replace": str(replace_val if replace_val is not None else ""),
+                        })
+
+                if not edits_list:
+                    raise AiActionValidationError("Keine Ersetzungen angegeben. Nutze 'find' und 'replace' oder eine Liste unter 'edits'.")
+
+                f, count = ai_project_service.patch_project_file(
+                    db,
+                    user,
+                    pid,
+                    path_arg,
+                    edits_list,
+                )
+                diff_info = getattr(f, "_last_diff", None)
+                return {
+                    "project_id": pid,
+                    "path": f.path,
+                    "size_bytes": f.size_bytes,
+                    "edits_applied": count,
                     "saved": True,
                     "diff": diff_info,
                 }
