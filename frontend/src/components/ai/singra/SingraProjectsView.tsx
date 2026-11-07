@@ -407,16 +407,23 @@ export function SingraProjectsView({
   const openFileInEditor = useCallback(
     (path: string, fileListSource?: AiProjectFile[]) => {
       const list = fileListSource ?? files
-      const target = list.find((f) => f.path === path)
+      const clean = path.replace(/^\.\//, '')
+      const target = list.find(
+        (f) =>
+          f.path === path ||
+          f.path.replace(/^\.\//, '') === clean ||
+          f.path.toLowerCase() === clean.toLowerCase(),
+      )
       if (!target) return
+      const actualPath = target.path
       const modifiedTs = target.updated_at
         ? Math.floor(new Date(target.updated_at).getTime() / 1000)
         : 0
       setEditorTabs((prev) => {
-        const exists = prev.some((t) => t.path === path)
+        const exists = prev.some((t) => t.path === actualPath)
         if (exists) return prev
         const nextTab: EditorTab = {
-          path: target.path,
+          path: actualPath,
           content: target.content,
           savedContent: target.content,
           revision: String(modifiedTs),
@@ -431,7 +438,7 @@ export function SingraProjectsView({
         }
         return [...prev, nextTab]
       })
-      setActiveFilePath(path)
+      setActiveFilePath(actualPath)
     },
     [files],
   )
@@ -467,9 +474,33 @@ export function SingraProjectsView({
         setExpandedDirs(new Set(['', ...dirs.filter((d) => !d.includes('/'))]))
 
         if (fileList.length > 0) {
+          const targetPath =
+            pendingOpenTarget?.projectId === projectId && pendingOpenTarget.filePath
+              ? pendingOpenTarget.filePath
+              : null
+          const entryFile = envData?.preview?.entry_file
+
           const preferred =
-            fileList.find((f) => f.path.toLowerCase() === 'readme.md') ??
+            (targetPath
+              ? fileList.find(
+                  (f) =>
+                    f.path === targetPath ||
+                    f.path.replace(/^\.\//, '') === targetPath.replace(/^\.\//, '') ||
+                    f.path.toLowerCase() === targetPath.toLowerCase(),
+                )
+              : null) ??
+            (entryFile
+              ? fileList.find(
+                  (f) =>
+                    f.path === entryFile ||
+                    f.path.replace(/^\.\//, '') === entryFile.replace(/^\.\//, '') ||
+                    f.path.toLowerCase() === entryFile.toLowerCase(),
+                )
+              : null) ??
+            fileList.find((f) => /^(src\/)?(App|main|index)\.(tsx|jsx|ts|js)$/i.test(f.path)) ??
             fileList.find((f) => f.path.toLowerCase() === 'index.html') ??
+            fileList.find((f) => /^(app|main|server)\.(py|js|ts)$/i.test(f.path)) ??
+            fileList.find((f) => f.path.toLowerCase() === 'readme.md') ??
             fileList[0]
           const modifiedTs = preferred.updated_at
             ? Math.floor(new Date(preferred.updated_at).getTime() / 1000)
@@ -539,15 +570,21 @@ export function SingraProjectsView({
     setPendingOpenTarget(null)
     setProjectOpen(true)
     if (filePath) {
-      const exists = files.some((f) => f.path === filePath)
-      if (!exists) {
+      const clean = filePath.replace(/^\.\//, '')
+      const match = files.find(
+        (f) =>
+          f.path === filePath ||
+          f.path.replace(/^\.\//, '') === clean ||
+          f.path.toLowerCase() === clean.toLowerCase(),
+      )
+      if (!match) {
         setActiveTab('files')
         toast.info(`„${filePath}“ ist im aktuellen Projektstand nicht mehr vorhanden.`)
         return
       }
       setExpandedDirs((prev) => {
         const next = new Set(prev)
-        const parts = filePath.split('/').slice(0, -1)
+        const parts = match.path.split('/').slice(0, -1)
         let current = ''
         for (const part of parts) {
           current = current ? `${current}/${part}` : part
@@ -555,7 +592,7 @@ export function SingraProjectsView({
         }
         return next
       })
-      openFileInEditor(filePath, files)
+      openFileInEditor(match.path, files)
       setActiveTab('files')
       return
     }

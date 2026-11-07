@@ -333,6 +333,19 @@ export function AiChat({
   const dictationSelectionRef = useRef<{ start: number; end: number } | null>(null)
   providerRef.current = providerId
 
+  // Eingabefeld-Höhe synchronisieren: Beim Leeren (z. B. nach Absenden) sofort
+  // auf Normalgröße zurücksetzen, bei Textinhalt passend bis max. 160px wachsen.
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    if (!input) {
+      el.style.height = 'auto'
+    } else {
+      el.style.height = 'auto'
+      el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+    }
+  }, [input])
+
   useEffect(() => {
     let active = true
     if (!providerId || !canUseVoice) {

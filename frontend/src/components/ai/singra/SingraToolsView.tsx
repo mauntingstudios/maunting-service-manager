@@ -586,12 +586,12 @@ export function SingraToolsView({
                     E-Mail & Kalender sind bereits nativ integriert
                   </div>
                   <p className="text-xs text-on-surface-variant">
-                    Postfächer (IMAP/SMTP) und Kalender (CalDAV) bindest du direkt unter Einstellungen → Verbindungen an – ganz ohne externen MCP-Server.
+                    Postfächer (IMAP/SMTP) und Kalender (CalDAV) bindest du direkt unter Profil → Verbindungen an – ganz ohne externen MCP-Server.
                   </p>
                 </div>
               </div>
               <Link
-                to="/settings"
+                to="/profile?tab=connections"
                 className="shrink-0 text-xs font-semibold text-primary hover:underline self-end sm:self-center"
               >
                 Zu den Verbindungen →
