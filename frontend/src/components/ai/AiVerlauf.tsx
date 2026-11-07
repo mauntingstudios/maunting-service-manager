@@ -582,6 +582,32 @@ function AiWerkzeugzeile({ tool }: { tool: AiToolUse }) {
       )
     : null
 
+  const workspaceLabel = useMemo(() => {
+    if (tool.tool_name !== 'project_workspace') return null
+    const action = tool.workspace_action
+    const path = tool.workspace_path
+    const actionLabels: Record<string, string> = {
+      list_projects: 'Projekte auflisten',
+      create_project: 'Projekt anlegen',
+      list_files: 'Dateien auflisten',
+      read_file: path ? `Datei lesen (${path})` : 'Datei lesen',
+      write_file: path ? `Datei schreiben (${path})` : 'Datei schreiben',
+      delete_file: path ? `Datei löschen (${path})` : 'Datei löschen',
+      configure_preview: 'Vorschau einrichten',
+      preview_inspect: 'Sichtprüfung im Browser (preview_inspect)',
+      test_project: 'Tests ausführen (test_project)',
+      run_command: 'Befehl ausführen',
+      get_environment: 'Umgebung abrufen',
+      publish_production: 'Auf Produktion schalten',
+      search_components: 'Komponenten suchen',
+      git_status: 'Git-Status prüfen',
+      git_sync: 'Git synchronisieren',
+      git_commit: 'Git-Commit erstellen',
+    }
+    const sub = action ? actionLabels[action] || action : null
+    return sub ? `Projekt: ${sub}` : 'Projekt-Workspace'
+  }, [tool.tool_name, tool.workspace_action, tool.workspace_path])
+
   const failureDetail = tool.error_message || tool.error_code || (tool.failed ? t('ai.chat.toolFailedGeneric', { defaultValue: 'Aufruf fehlgeschlagen oder Dienst nicht verfügbar.' }) : null)
 
   return (
@@ -607,7 +633,7 @@ function AiWerkzeugzeile({ tool }: { tool: AiToolUse }) {
                         ? <Monitor className="h-3.5 w-3.5 shrink-0 text-secondary" aria-hidden="true" />
                         : <Wrench className="h-3.5 w-3.5 shrink-0 text-secondary" aria-hidden="true" />}
         <span>
-          {skillLabel ?? (tool.uebergeben
+          {skillLabel ?? workspaceLabel ?? (tool.uebergeben
             ? t('ai.chat.toolHandedOver')
             : t(`ai.tools.${tool.tool_name}`, { defaultValue: tool.tool_name }))}
         </span>

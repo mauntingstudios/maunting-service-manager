@@ -506,6 +506,10 @@ export interface AiToolUse {
     release_count: number
     files_copied: number
   } | null
+  /** Konkrete Aktion im Projekt-Workspace (z. B. write_file, preview_inspect). */
+  workspace_action?: string | null
+  /** Optionaler Dateipfad der Aktion im Projekt-Workspace. */
+  workspace_path?: string | null
 }
 
 /**

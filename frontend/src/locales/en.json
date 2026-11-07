@@ -1182,6 +1182,8 @@
       "worker_cancel": "Worker cancelled",
       "worker_frage": "Question raised",
       "worker_start": "Worker started",
+      "project_create": "Created project",
+      "project_workspace": "Worked in project workspace",
       "email_search": "Emails searched",
       "email_read": "Email read",
       "calendar_read": "Calendar queried",
@@ -1253,6 +1255,7 @@
     },
     "toolsRunning": {
       "project_create": "I am creating the project",
+      "project_workspace": "I am working in the project workspace",
       "ask_user": "Asking a quick question",
       "check_server_reachability": "Checking whether the server is reachable",
       "desktop_dateien": "Working in your sandbox",

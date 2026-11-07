@@ -295,6 +295,13 @@ def _anzeigeeintrag(call, wert, fehlgeschlagen: str | None) -> dict:
         and wert.get("published") is True
     ):
         eintrag["project_published"] = wert
+    if call.name == "project_workspace" and isinstance(call.arguments, dict):
+        action = call.arguments.get("action")
+        if action:
+            eintrag["workspace_action"] = str(action)
+        path = call.arguments.get("path")
+        if path:
+            eintrag["workspace_path"] = str(path)
     return eintrag
 
 

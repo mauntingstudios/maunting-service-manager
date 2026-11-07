@@ -1185,6 +1185,8 @@
       "worker_cancel": "Worker abgebrochen",
       "worker_frage": "Rückfrage gestellt",
       "worker_start": "Worker gestartet",
+      "project_create": "Projekt angelegt",
+      "project_workspace": "Im Projekt-Workspace gearbeitet",
       "email_search": "E-Mails durchsucht",
       "email_read": "E-Mail gelesen",
       "calendar_read": "Kalender abgefragt",
@@ -1253,6 +1255,7 @@
     },
     "toolsRunning": {
       "project_create": "Ich erstelle das Projekt",
+      "project_workspace": "Ich arbeite im Projekt-Workspace",
       "ask_user": "Ich frage kurz nach",
       "check_server_reachability": "Ich prüfe, ob der Server erreichbar ist",
       "desktop_dateien": "Ich arbeite in deiner Sandbox",
