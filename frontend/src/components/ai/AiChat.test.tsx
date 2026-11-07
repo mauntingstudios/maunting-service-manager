@@ -1073,7 +1073,8 @@ describe('AiChat', () => {
     render(<MemoryRouter><AiChat /></MemoryRouter>)
     await screen.findByText('synthetic-note.txt')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Nachricht bearbeiten' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Nachrichtenaktionen' })[0])
+    fireEvent.click(screen.getByText('Bearbeiten'))
     fireEvent.change(screen.getByLabelText('Nachricht bearbeiten'), {
       target: { value: 'so war es gemeint' },
     })
@@ -1098,7 +1099,8 @@ describe('AiChat', () => {
     render(<MemoryRouter><AiChat /></MemoryRouter>)
     await screen.findByText('synthetic-note.txt')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Nachricht bearbeiten' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Nachrichtenaktionen' })[0])
+    fireEvent.click(screen.getByText('Bearbeiten'))
     fireEvent.change(screen.getByLabelText('Nachricht bearbeiten'), {
       target: { value: 'neuer Text' },
     })

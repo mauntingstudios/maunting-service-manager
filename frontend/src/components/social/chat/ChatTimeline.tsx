@@ -102,11 +102,11 @@ export function tagesTrenner(nachrichten: readonly { createdAt?: string | null }
 function TagesTrenner({ text }: { text: string }) {
   return (
     <div className="flex items-center gap-3 py-1">
-      <span className="h-px flex-1 bg-outline-variant/30" />
-      <span className="px-3.5 py-1 rounded-full text-label-sm font-semibold bg-surface-container/90 text-on-surface-variant backdrop-blur-md border border-outline-variant/30 shadow-sm">
+      <span className="h-px flex-1 bg-outline-variant/20" />
+      <span className="px-3.5 py-1 rounded-full text-label-sm font-semibold bg-black/45 text-white/85 backdrop-blur-sm">
         {text}
       </span>
-      <span className="h-px flex-1 bg-outline-variant/30" />
+      <span className="h-px flex-1 bg-outline-variant/20" />
     </div>
   )
 }

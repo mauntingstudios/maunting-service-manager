@@ -62,6 +62,7 @@ describe('detectLanguage', () => {
     expect(detectLanguage('docker-compose.yaml')).toBe('yaml')
     expect(detectLanguage('config.yml')).toBe('yaml')
     expect(detectLanguage('manifest.xml')).toBe('xml')
+    expect(detectLanguage('index.html')).toBe('html')
     expect(detectLanguage('README.md')).toBe('markdown')
     expect(detectLanguage('serverDZ.cfg')).toBe('ini')
     expect(detectLanguage('app.properties')).toBe('properties')

@@ -38,7 +38,7 @@ export function sortEntries<T extends { name: string; is_dir: boolean }>(entries
  *  Implementierung haelt sich an die im Plugin-Set installierten Sprachen.
  */
 export type FileLanguage =
-  | 'json' | 'yaml' | 'xml' | 'markdown' | 'ini' | 'properties'
+  | 'json' | 'yaml' | 'xml' | 'html' | 'markdown' | 'ini' | 'properties'
   | 'javascript' | 'typescript' | 'python' | 'shell' | 'sql' | 'css'
   | 'cpp' | 'java' | 'csharp' | 'go' | 'rust' | 'lua' | 'toml'
   | 'dockerfile' | 'plain'
@@ -48,7 +48,8 @@ export function detectLanguage(filename: string): FileLanguage {
   const base = lower.split('/').pop() || lower
   if (lower.endsWith('.json')) return 'json'
   if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'yaml'
-  if (lower.endsWith('.xml') || lower.endsWith('.html') || lower.endsWith('.htm')) return 'xml'
+  if (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.vue') || lower.endsWith('.svelte')) return 'html'
+  if (lower.endsWith('.xml') || lower.endsWith('.svg')) return 'xml'
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'markdown'
   if (lower.endsWith('.ini') || lower.endsWith('.cfg') || lower.endsWith('.conf')) return 'ini'
   if (lower.endsWith('.properties')) return 'properties'

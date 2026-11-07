@@ -15,7 +15,7 @@ export interface ChatBubbleSurfaceProps {
 
 /**
  * ChatBubbleSurface: Einheitliche Nachrichtenblase (Design-DNA) für Messenger und Singra KI-Chat.
- * - Eigene Nachrichten (`isSelf=true`): Primärfarbe (`bg-primary text-on-primary rounded-br-xs`).
+ * - Eigene Nachrichten (`isSelf=true`): Dunkles Acrylglas mit dezentem Primär-Akzent (`from-primary/20 to-primary/10 text-on-surface rounded-br-xs`).
  * - Eingehende / KI-Nachrichten (`isSelf=false`): Dunkles Acrylglas (`bg-surface-container-high/85 backdrop-blur-md rounded-bl-xs`).
  */
 export function ChatBubbleSurface({
@@ -32,8 +32,8 @@ export function ChatBubbleSurface({
           ? 'max-w-[92%] md:max-w-[82%] px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl text-sm break-words shadow-sm space-y-2'
           : 'max-w-[85%] md:max-w-[70%] px-3.5 py-2 rounded-2xl text-xs break-words shadow-sm space-y-2',
         isSelf
-          ? 'bg-primary text-on-primary rounded-br-xs border border-primary-hover/30 shadow-md shadow-primary/20'
-          : 'bg-surface-container-high/85 text-on-surface backdrop-blur-md rounded-bl-xs border border-outline-variant/30 shadow-sm',
+          ? 'bg-surface-container-high/90 bg-gradient-to-br from-primary/20 to-primary/10 text-on-surface backdrop-blur-md rounded-br-xs border border-primary/35 shadow-sm'
+          : 'bg-surface-container-high/85 text-on-surface backdrop-blur-md rounded-bl-xs border border-outline-variant/25 shadow-sm',
         highlighted && 'ring-1 ring-primary/70 border-primary/40',
         className,
       )}
@@ -109,7 +109,7 @@ export function ChatMessageMetaRow({
           <button
             type="button"
             onClick={onOpenMenu}
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white/80 backdrop-blur-md transition-colors hover:bg-black/75 hover:text-primary"
+            className="flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/75 hover:text-primary"
             aria-label={menuLabel}
             title={menuLabel}
           >
@@ -118,7 +118,7 @@ export function ChatMessageMetaRow({
         </div>
       )}
 
-      <div className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-black/50 px-2 py-0.5 text-label-sm text-white/85 backdrop-blur-md shadow-xs">
+      <div className="inline-flex items-center gap-1.5 rounded-full bg-black/45 px-2 py-0.5 text-label-sm text-white/80 backdrop-blur-sm">
         {isStarred && (
           <Star
             className="h-3 w-3 shrink-0 fill-status-warning text-status-warning"

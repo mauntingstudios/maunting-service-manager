@@ -29,6 +29,7 @@ import { aiApi, type AiConversationSummary, type AiMessage } from '@/api/ai'
 import { getDirectChats, getFriends, getGroups, type ChatGroupItem } from '@/api/social'
 import { Avatar } from '@/components/app/Avatar'
 import { entwurfUebergeben } from '@/lib/aiEntwurf'
+import { still } from '@/lib/still'
 import { benenneGruppen } from '@/services/gruppenName'
 import { toast } from '@/stores/toastStore'
 
@@ -150,16 +151,31 @@ export function AiWeiterleitenDialog({
     setLoading(true)
 
     Promise.all([
-      getFriends().catch(() => []),
-      getDirectChats().catch(() => []),
-      getGroups().catch(() => [] as ChatGroupItem[]),
+      getFriends().catch((err) => {
+        still(err, 'ai.forward.getFriends')
+        return []
+      }),
+      getDirectChats().catch((err) => {
+        still(err, 'ai.forward.getDirectChats')
+        return []
+      }),
+      getGroups().catch((err) => {
+        still(err, 'ai.forward.getGroups')
+        return [] as ChatGroupItem[]
+      }),
       typeof aiApi.listConversations === 'function'
-        ? aiApi.listConversations().catch(() => [])
+        ? aiApi.listConversations().catch((err) => {
+            still(err, 'ai.forward.listConversations')
+            return []
+          })
         : Promise.resolve([]),
     ])
       .then(async ([friends, directChats, rawGroups, convs]) => {
         if (!active) return
-        const groups = await benenneGruppen(rawGroups).catch(() => rawGroups)
+        const groups = await benenneGruppen(rawGroups).catch((err) => {
+          still(err, 'ai.forward.benenneGruppen')
+          return rawGroups
+        })
         if (!active) return
 
         const targets: MessengerTarget[] = []
@@ -246,7 +262,9 @@ export function AiWeiterleitenDialog({
   const handleForwardToMessenger = (target: MessengerTarget) => {
     try {
       sessionStorage.setItem('msm:pending_messenger_draft', formattedForwardText)
-    } catch {}
+    } catch (err) {
+      still(err, 'ai.forward.sessionStorage')
+    }
     onClose()
     if (target.type === 'direct') {
       navigate(`/messenger?userId=${target.id}`)
@@ -257,14 +275,28 @@ export function AiWeiterleitenDialog({
   }
 
   const handleForwardToSingra = (convId: string | 'new', title: string) => {
+    entwurfUebergeben(formattedForwardText)
     onClose()
     if (convId === 'new') {
-      onNewChat?.()
+      if (onNewChat) {
+        onNewChat()
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('singra-open-conversation', { detail: { conversationId: 'new' } }),
+        )
+      }
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('singra-open-conversation', { detail: { conversationId: convId } }),
+      )
+    }
+    if (!window.location.pathname.startsWith('/ai')) {
+      navigate('/ai')
     }
     window.setTimeout(() => {
       entwurfUebergeben(formattedForwardText)
-    }, 60)
-    toast.success(`In „${title}" übernommen.`)
+    }, 80)
+    toast.success(`In „${title}" geöffnet.`)
   }
 
   return (
@@ -284,14 +316,14 @@ export function AiWeiterleitenDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 pt-1">
+        <div className="space-y-4 px-6 pb-6 pt-4">
           <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-surface-container-low p-1 border border-outline-variant/25">
             <button
               type="button"
               onClick={() => setTab('messenger')}
               className={`flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-colors ${
                 tab === 'messenger'
-                  ? 'bg-primary text-on-primary shadow-xs'
+                  ? 'bg-primary text-on-primary shadow-sm'
                   : 'text-on-surface-variant hover:text-on-surface'
               }`}
             >
@@ -303,7 +335,7 @@ export function AiWeiterleitenDialog({
               onClick={() => setTab('singra')}
               className={`flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-colors ${
                 tab === 'singra'
-                  ? 'bg-primary text-on-primary shadow-xs'
+                  ? 'bg-primary text-on-primary shadow-sm'
                   : 'text-on-surface-variant hover:text-on-surface'
               }`}
             >
@@ -401,7 +433,7 @@ export function AiWeiterleitenDialog({
             )}
           </div>
 
-          <div className="flex justify-end pt-1">
+          <div className="flex justify-end pt-2 border-t border-outline-variant/20">
             <Button type="button" variant="secondary" size="sm" onClick={onClose}>
               Abbrechen
             </Button>

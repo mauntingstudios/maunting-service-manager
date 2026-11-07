@@ -643,7 +643,7 @@ export function SingraToolsView({
                 : 'Binde einen externen Werkzeug-Dienst für dich oder dein Team an.'}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateMcp} className="space-y-3.5 mt-2">
+          <form onSubmit={handleCreateMcp} className="space-y-4 px-6 pb-6 pt-5">
             {!isPresetModal && (
               <div>
                 <label className="block text-xs font-medium text-on-surface-variant mb-1">

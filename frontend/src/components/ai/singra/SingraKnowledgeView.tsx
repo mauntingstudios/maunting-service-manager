@@ -471,7 +471,7 @@ export function SingraKnowledgeView() {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSave} className="space-y-4 mt-2">
+          <form onSubmit={handleSave} className="space-y-4 px-6 pb-6 pt-5">
             <div>
               <label className="block text-xs font-medium text-on-surface-variant mb-1">
                 Titel

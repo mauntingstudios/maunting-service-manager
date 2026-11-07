@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FileTree } from '@/components/server/FileTree'
 import { FileEditorWorkspace } from '@/components/server/FileEditorWorkspace'
-import { detectLineEnding } from '@/components/server/fileHelpers'
+import { detectLineEnding, parentPath, pathSegments } from '@/components/server/fileHelpers'
 import type { EditorTab, FileEntry, SearchResult } from '@/components/server/fileWorkspaceTypes'
 import {
+  ArrowLeft,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Code2,
   ExternalLink,
   Eye,
   FileCode,
+  FilePlus2,
   FileText,
   Folder,
   FolderGit2,
@@ -48,6 +51,7 @@ import { SanitizedApiError } from '@/api/client'
 import { still } from '@/lib/still'
 import { teamsApi, type Team } from '@/api/teams'
 import {
+  ActionMenu,
   Button,
   Dialog,
   DialogContent,
@@ -56,6 +60,8 @@ import {
   DialogTitle,
   Dropdown,
   Input,
+  Kontextmenue,
+  Pfadleiste,
   Spinner,
   Switch,
   Textarea,
@@ -67,6 +73,7 @@ type ProjectTab = 'chats' | 'files' | 'preview' | 'settings'
 type ProjectCreateMode = 'empty' | 'create_repo' | 'clone_repo'
 
 interface SingraProjectsViewProps {
+  initialProjectId?: string | null
   onOpenProjectChat: (projectId: string, conversationId?: string) => void
 }
 
@@ -144,10 +151,14 @@ function buildProjectTreeNodes(files: AiProjectFile[]): {
   return { nodes, allDirs: Array.from(seenDirs) }
 }
 
-export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProps) {
+export function SingraProjectsView({
+  initialProjectId,
+  onOpenProjectChat,
+}: SingraProjectsViewProps) {
   const [projects, setProjects] = useState<AiProject[]>([])
   const [teams, setTeams] = useState<Team[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(initialProjectId ?? null)
+  const [projectOpen, setProjectOpen] = useState<boolean>(Boolean(initialProjectId))
   const [activeTab, setActiveTab] = useState<ProjectTab>('chats')
   const [loading, setLoading] = useState(true)
 
@@ -162,6 +173,12 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
   const [fileSearchQuery, setFileSearchQuery] = useState('')
   const [newFileModalOpen, setNewFileModalOpen] = useState(false)
   const [newFilePath, setNewFilePath] = useState('')
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    path: string
+    isDir: boolean
+  } | null>(null)
 
   // Collapsible terminal drawer inside Code & Files
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -227,6 +244,18 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
   const selectedProject = projects.find((p) => p.id === selectedId) ?? null
 
   const { nodes: treeNodes, allDirs } = useMemo(() => buildProjectTreeNodes(files), [files])
+
+  const breadcrumbTeile = useMemo(() => {
+    const dir = activeFilePath ? parentPath(activeFilePath) : ''
+    const segs = pathSegments(dir)
+    const result: { key: string; label: string }[] = []
+    let acc = ''
+    for (const seg of segs) {
+      acc = acc ? `${acc}/${seg}` : seg
+      result.push({ key: acc, label: seg })
+    }
+    return result
+  }, [activeFilePath])
 
   const searchResults = useMemo<SearchResult[] | null>(() => {
     const q = fileSearchQuery.trim().toLowerCase()
@@ -301,6 +330,19 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
   useEffect(() => {
     void loadProjects()
   }, [loadProjects])
+
+  useEffect(() => {
+    if (initialProjectId) {
+      setSelectedId(initialProjectId)
+      setProjectOpen(true)
+    }
+  }, [initialProjectId])
+
+  useEffect(() => {
+    const handleResetView = () => setProjectOpen(false)
+    window.addEventListener('singra-reset-project-view', handleResetView)
+    return () => window.removeEventListener('singra-reset-project-view', handleResetView)
+  }, [])
 
   const openFileInEditor = useCallback(
     (path: string, fileListSource?: AiProjectFile[]) => {
@@ -450,6 +492,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
       })
       setProjects((prev) => [created, ...prev])
       setSelectedId(created.id)
+      setProjectOpen(true)
       setCreateOpen(false)
 
       if (createMode === 'create_repo') {
@@ -583,6 +626,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
       setProjects(next)
       if (selectedId === proj.id) {
         setSelectedId(next[0]?.id ?? null)
+        setProjectOpen(false)
       }
       toast.success('Projekt gelöscht.')
     } catch (err: unknown) {
@@ -1015,133 +1059,156 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
   }
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-1 flex-col lg:flex-row overflow-hidden bg-surface">
-      {/* Left Column: Calm Project List */}
-      <div className="w-full lg:w-68 shrink-0 border-b lg:border-b-0 lg:border-r border-outline-variant/20 bg-surface-container-low/30 flex flex-col max-h-52 lg:max-h-none">
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-outline-variant/15">
-          <div className="flex items-center gap-2">
-            <Layers className="h-4 w-4 text-primary" aria-hidden="true" />
-            <h2 className="font-headline text-sm font-semibold text-on-surface">
-              Projekte
-            </h2>
-            <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm font-medium text-on-surface-variant">
-              {projects.length}
-            </span>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setCreateOpen(true)}
-            className="h-8 px-3 text-xs rounded-full"
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            Neu
-          </Button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-2.5 space-y-1">
-          {projects.length === 0 ? (
-            <div className="p-4 text-center text-xs text-on-surface-variant leading-relaxed">
-              Noch kein Projekt vorhanden. Lege einen eigenen Arbeitsbereich für Code, Ideen oder Dokumente an.
+    <div className="flex h-full w-full min-w-0 min-h-0 flex-1 flex-col overflow-hidden bg-surface">
+      {!projectOpen || !selectedProject ? (
+        /* Calm Project Overview */
+        <div className="flex flex-1 min-h-0 flex-col overflow-y-auto p-4 sm:p-6">
+          <div className="mx-auto w-full max-w-4xl space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Layers className="h-5 w-5 text-primary" aria-hidden="true" />
+                  <h2 className="font-headline text-lg font-semibold text-on-surface">
+                    Projekte
+                  </h2>
+                  <span className="rounded-full bg-surface-container-high px-2.5 py-0.5 text-xs font-medium text-on-surface-variant">
+                    {projects.length}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs sm:text-sm text-on-surface-variant">
+                  Wähle ein Projekt aus, um deine Unterhaltungen, Dateien und die Vorschau zu öffnen.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setCreateOpen(true)}
+                className="rounded-full px-4"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Neues Projekt
+              </Button>
             </div>
-          ) : (
-            projects.map((proj) => {
-              const active = proj.id === selectedId
-              return (
-                <button
-                  key={proj.id}
-                  type="button"
-                  onClick={() => setSelectedId(proj.id)}
-                  className={[
-                    'w-full rounded-xl p-3 text-left transition-all border',
-                    active
-                      ? 'border-primary/35 bg-primary/12 text-on-surface shadow-sm'
-                      : 'border-transparent bg-surface-container/30 text-on-surface-variant hover:bg-surface-container-high/45 hover:text-on-surface',
-                  ].join(' ')}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-sm text-on-surface truncate">
-                      {proj.name}
-                    </span>
+
+            {projects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-outline-variant/25 bg-surface-container-low/30 p-8 sm:p-12 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary mb-4">
+                  <Code2 className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <h3 className="font-headline text-base sm:text-lg font-semibold text-on-surface">
+                  Dein Projekt-Arbeitsbereich
+                </h3>
+                <p className="mt-2 max-w-md text-xs sm:text-sm text-on-surface-variant leading-relaxed">
+                  Arbeite gemeinsam mit Singra an eigenen Anwendungen, Skripten oder Dokumenten. Du kannst leer starten, direkt ein neues GitHub-Repository anlegen oder bestehenden Code klonen.
+                </p>
+                <Button type="button" className="mt-5 rounded-full px-5" onClick={() => setCreateOpen(true)}>
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Neues Projekt starten
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {projects.map((proj) => (
+                  <button
+                    key={proj.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(proj.id)
+                      setProjectOpen(true)
+                    }}
+                    className="group flex flex-col justify-between rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 p-4 text-left transition-all hover:border-primary/45 hover:bg-surface-container-high/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
+                    <div className="min-w-0 w-full">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary group-hover:bg-primary/20 transition-colors">
+                            <Folder className="h-4 w-4" aria-hidden="true" />
+                          </div>
+                          <span className="font-semibold text-sm sm:text-base text-on-surface truncate">
+                            {proj.name}
+                          </span>
+                        </div>
+                        <ChevronRight
+                          className="h-4 w-4 shrink-0 text-on-surface-variant group-hover:text-primary group-hover:translate-x-0.5 transition-all"
+                          aria-hidden="true"
+                        />
+                      </div>
+                      {proj.description ? (
+                        <p className="mt-2 line-clamp-2 text-xs text-on-surface-variant leading-relaxed">
+                          {proj.description}
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-xs text-on-surface-variant/70">
+                          Klicken, um Arbeitsbereich, Dateien und Chats zu öffnen
+                        </p>
+                      )}
+                    </div>
+
                     {proj.git_repo_url && (
-                      <GitBranch className="h-3.5 w-3.5 shrink-0 text-primary/80" aria-hidden="true" />
+                      <div className="mt-3 flex items-center gap-1.5 pt-2.5 border-t border-outline-variant/15 text-xs text-on-surface-variant">
+                        <GitBranch className="h-3.5 w-3.5 shrink-0 text-primary/80" aria-hidden="true" />
+                        <span className="truncate">{proj.git_branch || 'main'}</span>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Cozy Project Workspace */
+        <div className="flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden">
+          <>
+            {/* Calm Project Top Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 bg-surface-container-low/35 px-4 py-3 shrink-0">
+              <div className="min-w-0 flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setProjectOpen(false)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant/30 bg-surface-container-high/55 px-3 py-1.5 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors shrink-0"
+                  title="Zurück zur Projektübersicht"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Alle Projekte</span>
+                </button>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="font-headline text-base font-semibold text-on-surface truncate">
+                      {selectedProject.name}
+                    </h2>
+                    {!selectedProject.git_repo_url && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewRepoName(selectedProject.name)
+                          setCreateRepoOpen(true)
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full border border-outline-variant/35 bg-surface-container-high/50 px-2.5 py-0.5 text-label-sm font-medium text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors"
+                      >
+                        <FolderGit2 className="h-3 w-3" aria-hidden="true" />
+                        <span>Mit GitHub verbinden</span>
+                      </button>
+                    )}
+                    {agentsRules?.found && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAgentsModal(true)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-label-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+                        title="Projektregeln ansehen"
+                      >
+                        <FileText className="h-3 w-3" aria-hidden="true" />
+                        <span>Projektregeln</span>
+                        <Eye className="h-2.5 w-2.5 opacity-70" />
+                      </button>
                     )}
                   </div>
-                  {proj.description && (
-                    <p className="mt-0.5 line-clamp-1 text-xs text-on-surface-variant">
-                      {proj.description}
+                  {selectedProject.description && (
+                    <p className="text-xs text-on-surface-variant truncate mt-0.5">
+                      {selectedProject.description}
                     </p>
                   )}
-                </button>
-              )
-            })
-          )}
-        </div>
-      </div>
-
-      {/* Right Column: Cozy Project Workspace */}
-      <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
-        {!selectedProject ? (
-          <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary mb-4">
-              <Code2 className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <h3 className="font-headline text-lg font-semibold text-on-surface">
-              Dein Projekt-Arbeitsbereich
-            </h3>
-            <p className="mt-2 max-w-md text-sm text-on-surface-variant leading-relaxed">
-              Arbeite gemeinsam mit Singra an eigenen Anwendungen, Skripten oder Dokumenten. Du kannst leer starten, direkt ein neues GitHub-Repository anlegen oder bestehenden Code klonen.
-            </p>
-            <Button type="button" className="mt-5 rounded-full px-5" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              Neues Projekt starten
-            </Button>
-          </div>
-        ) : (
-          <>
-            {/* Calm Project Top Bar (No Dev/Prod technical clutter) */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 bg-surface-container-low/35 px-4 py-3 shrink-0">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="font-headline text-base font-semibold text-on-surface truncate">
-                    {selectedProject.name}
-                  </h2>
-                  {selectedProject.git_repo_url ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-label-sm font-medium text-primary">
-                      <GitBranch className="h-3 w-3" aria-hidden="true" />
-                      {selectedProject.git_branch || 'main'}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewRepoName(selectedProject.name)
-                        setCreateRepoOpen(true)
-                      }}
-                      className="inline-flex items-center gap-1 rounded-full border border-outline-variant/35 bg-surface-container-high/50 px-2.5 py-0.5 text-label-sm font-medium text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors"
-                    >
-                      <FolderGit2 className="h-3 w-3" aria-hidden="true" />
-                      <span>Mit GitHub verknüpfen</span>
-                    </button>
-                  )}
-                  {agentsRules?.found && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAgentsModal(true)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-label-sm font-medium text-primary hover:bg-primary/20 transition-colors"
-                      title="Projektregeln ansehen"
-                    >
-                      <FileText className="h-3 w-3" aria-hidden="true" />
-                      <span>{agentsRules.filename}</span>
-                      <Eye className="h-2.5 w-2.5 opacity-70" />
-                    </button>
-                  )}
                 </div>
-                {selectedProject.description && (
-                  <p className="text-xs text-on-surface-variant truncate mt-0.5">
-                    {selectedProject.description}
-                  </p>
-                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -1168,14 +1235,14 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
               </div>
             </div>
 
-            {/* 4 Clean Workspace Tabs */}
+            {/* 4 Cozy Workspace Tabs */}
             <div className="flex items-center gap-1.5 border-b border-outline-variant/20 bg-surface-container-low/15 px-4 py-1.5 overflow-x-auto no-scrollbar shrink-0">
               {(
                 [
-                  { id: 'chats', label: `Unterhaltungen (${projectChats.length})`, icon: MessageSquare },
-                  { id: 'files', label: `Dateien & Code (${files.length})`, icon: FileCode },
+                  { id: 'chats', label: 'Unterhaltungen', icon: MessageSquare },
+                  { id: 'files', label: 'Dateien', icon: FileCode },
                   { id: 'preview', label: 'Vorschau', icon: Globe },
-                  { id: 'settings', label: 'Git & Einstellungen', icon: Settings2 },
+                  { id: 'settings', label: 'Einstellungen', icon: Settings2 },
                 ] as const
               ).map((tab) => {
                 const Icon = tab.icon
@@ -1284,41 +1351,86 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
               {activeTab === 'files' && (
                 <div className="flex flex-1 min-h-[480px] flex-col gap-3 overflow-hidden">
+                  {/* Server File Manager Toolbar (Pfadleiste + ActionMenu) */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 px-3.5 py-2 text-xs shrink-0">
+                    <Pfadleiste
+                      label="Projektpfad"
+                      stamm={{
+                        key: '',
+                        label: selectedProject.name,
+                        icon: <Folder className="h-3.5 w-3.5 shrink-0" />,
+                      }}
+                      teile={breadcrumbTeile}
+                      onWaehlen={(dirKey) => {
+                        if (!dirKey) {
+                          setExpandedDirs((prev) => new Set([...prev, '']))
+                          return
+                        }
+                        setExpandedDirs((prev) => new Set([...prev, '', dirKey]))
+                      }}
+                    />
+
+                    <div className="flex items-center gap-2">
+                      <ActionMenu
+                        label="Neu"
+                        icon={<Plus className="h-3.5 w-3.5" />}
+                        align="end"
+                        items={[
+                          {
+                            key: 'new-file',
+                            label: 'Neue Datei',
+                            icon: <FilePlus2 className="h-4 w-4" />,
+                            onSelect: () => {
+                              const currentDir = activeFilePath ? parentPath(activeFilePath) : ''
+                              setNewFilePath(currentDir ? `${currentDir}/` : '')
+                              setNewFileModalOpen(true)
+                            },
+                          },
+                          {
+                            key: 'new-folder',
+                            label: 'Neuer Ordner',
+                            icon: <FolderPlus className="h-4 w-4" />,
+                            onSelect: () => {
+                              const currentDir = activeFilePath ? parentPath(activeFilePath) : ''
+                              setNewFilePath(currentDir ? `${currentDir}/neuer-ordner/README.md` : 'neuer-ordner/README.md')
+                              setNewFileModalOpen(true)
+                            },
+                          },
+                        ]}
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void loadProjectDetails(selectedProject.id)}
+                        title="Dateien aktualisieren"
+                        aria-label="Dateien aktualisieren"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+
                   <div className="flex flex-1 min-h-0 flex-col md:flex-row gap-3 overflow-hidden">
                     {/* Left: Hierarchical Server FileTree */}
-                    <div className="w-full md:w-68 shrink-0 rounded-2xl border border-outline-variant/25 bg-surface-container-low/35 flex flex-col max-h-60 md:max-h-none overflow-hidden">
-                      <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-outline-variant/20">
+                    <div className="w-full md:w-64 xl:w-72 shrink-0 rounded-2xl border border-outline-variant/25 bg-surface-container-low/35 flex flex-col max-h-60 md:max-h-none overflow-hidden">
+                      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-outline-variant/20">
                         <span className="text-xs font-semibold text-on-surface">
-                          Projektdateien
+                          Ordner & Dateien
                         </span>
-                        <div className="flex items-center gap-1">
-                          {activeFilePath && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 w-7 p-0 text-on-surface-variant hover:text-status-destructive"
-                              onClick={() => void handleDeleteFile(activeFilePath)}
-                              title={`„${activeFilePath}“ löschen`}
-                              aria-label={`Datei ${activeFilePath} löschen`}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          <Button
+                        {allDirs.length > 0 && (
+                          <button
                             type="button"
-                            size="sm"
-                            variant="secondary"
-                            className="h-7 px-2.5 text-xs rounded-lg"
-                            onClick={() => {
-                              setNewFilePath('')
-                              setNewFileModalOpen(true)
-                            }}
+                            onClick={() =>
+                              setExpandedDirs((prev) =>
+                                prev.size > 1 ? new Set(['']) : new Set(['', ...allDirs]),
+                              )
+                            }
+                            className="text-label-sm text-on-surface-variant hover:text-on-surface"
                           >
-                            <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                            Neu
-                          </Button>
-                        </div>
+                            {expandedDirs.size > 1 ? 'Einklappen' : 'Alle öffnen'}
+                          </button>
+                        )}
                       </div>
 
                       {files.length > 3 && (
@@ -1352,11 +1464,14 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                           onToggle={handleToggleDir}
                           onOpenFile={(path) => openFileInEditor(path)}
                           onContextMenu={(e, entry, parent) => {
-                            if (!entry.is_dir) {
-                              e.preventDefault()
-                              const fullPath = parent ? `${parent}/${entry.name}` : entry.name
-                              openFileInEditor(fullPath)
-                            }
+                            e.preventDefault()
+                            const fullPath = parent ? `${parent}/${entry.name}` : entry.name
+                            setContextMenu({
+                              x: e.clientX,
+                              y: e.clientY,
+                              path: fullPath,
+                              isDir: entry.is_dir,
+                            })
                           }}
                           onDragStart={() => undefined}
                           onDropFolder={() => undefined}
@@ -1371,38 +1486,29 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                           className="inline-flex items-center gap-1.5 text-xs font-medium text-on-surface-variant hover:text-primary transition-colors"
                         >
                           <Terminal className="h-3.5 w-3.5" />
-                          <span>Konsole / Terminal</span>
+                          <span>Konsole</span>
                           {terminalOpen ? (
                             <ChevronDown className="h-3.5 w-3.5" />
                           ) : (
                             <ChevronUp className="h-3.5 w-3.5" />
                           )}
                         </button>
-                        {allDirs.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setExpandedDirs((prev) =>
-                                prev.size > 1 ? new Set(['']) : new Set(['', ...allDirs]),
-                              )
-                            }
-                            className="text-label-sm text-on-surface-variant hover:text-on-surface"
-                          >
-                            {expandedDirs.size > 1 ? 'Einklappen' : 'Alle öffnen'}
-                          </button>
-                        )}
                       </div>
                     </div>
 
                     {/* Right: Shared Multi-Tab FileEditorWorkspace */}
-                    <div className="flex flex-1 min-h-[380px] flex-col rounded-2xl border border-outline-variant/25 bg-surface-container-low/35 overflow-hidden">
+                    <div className="flex flex-1 min-w-0 min-h-[380px] flex-col rounded-2xl border border-outline-variant/25 bg-surface-container-low/35 overflow-hidden">
                       <FileEditorWorkspace
                         tabs={editorTabs}
                         activePath={activeFilePath}
                         canWrite={true}
                         tabListLabel="Geöffnete Projektdateien"
                         horizontalScrollHint="Horizontal scrollen"
-                        ortLabel={selectedProject.name}
+                        ortLabel={
+                          activeFilePath
+                            ? `${selectedProject.name} / ${activeFilePath}`
+                            : selectedProject.name
+                        }
                         onActivate={(path) => setActiveFilePath(path)}
                         onChange={handleEditorChange}
                         onSave={(path) => void handleSaveFile(path)}
@@ -1411,6 +1517,74 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                       />
                     </div>
                   </div>
+
+                  <Kontextmenue
+                    ort={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null}
+                    label="Datei-Aktionen"
+                    onSchliessen={() => setContextMenu(null)}
+                    items={
+                      contextMenu
+                        ? contextMenu.isDir
+                          ? [
+                              {
+                                key: 'toggle',
+                                label: expandedDirs.has(contextMenu.path)
+                                  ? 'Ordner einklappen'
+                                  : 'Ordner öffnen',
+                                icon: <Folder className="h-4 w-4" />,
+                                onSelect: () => {
+                                  handleToggleDir(contextMenu.path)
+                                  setContextMenu(null)
+                                },
+                              },
+                              {
+                                key: 'new-in-dir',
+                                label: 'Neue Datei in diesem Ordner',
+                                icon: <FilePlus2 className="h-4 w-4" />,
+                                onSelect: () => {
+                                  setNewFilePath(`${contextMenu.path}/`)
+                                  setNewFileModalOpen(true)
+                                  setContextMenu(null)
+                                },
+                              },
+                            ]
+                          : [
+                              {
+                                key: 'open',
+                                label: 'Im Editor öffnen',
+                                icon: <FileCode className="h-4 w-4" />,
+                                onSelect: () => {
+                                  openFileInEditor(contextMenu.path)
+                                  setContextMenu(null)
+                                },
+                              },
+                              {
+                                key: 'new-sibling',
+                                label: 'Neue Datei im selben Ordner',
+                                icon: <FilePlus2 className="h-4 w-4" />,
+                                onSelect: () => {
+                                  const dir = parentPath(contextMenu.path)
+                                  setNewFilePath(dir ? `${dir}/` : '')
+                                  setNewFileModalOpen(true)
+                                  setContextMenu(null)
+                                },
+                              },
+                              {
+                                key: 'delete',
+                                label: 'Datei löschen',
+                                icon: <Trash2 className="h-4 w-4" />,
+                                destructive: true,
+                                separatorBefore: true,
+                                onSelect: () => {
+                                  const targetPath = contextMenu.path
+                                  setContextMenu(null)
+                                  void handleDeleteFile(targetPath)
+                                },
+                              },
+                            ]
+                        : []
+                    }
+                  />
 
                   {/* Collapsible Sandbox Terminal Drawer */}
                   {terminalOpen && (
@@ -1434,8 +1608,8 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                         <Input
                           value={commandInput}
                           onChange={(e) => setCommandInput(e.target.value)}
-                          placeholder="Befehl eingeben (z. B. npm test, pytest, git status)…"
-                          className="flex-1 font-mono text-xs h-8"
+                          placeholder="Befehl eingeben (z. B. npm test)…"
+                          className="flex-1 text-xs h-8"
                           disabled={runningCmd}
                           aria-label="Konsolenbefehl"
                         />
@@ -1446,7 +1620,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                           disabled={runningCmd || !commandInput.trim()}
                         >
                           <Play className="h-3.5 w-3.5" aria-hidden="true" />
-                          {runningCmd ? 'Läuft…' : 'Starten'}
+                          {runningCmd ? 'Läuft…' : 'Ausführen'}
                         </Button>
                       </form>
 
@@ -1459,9 +1633,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                             >
                               <div className="flex items-center justify-between text-on-surface-variant text-label-sm">
                                 <span className="text-primary font-semibold">$ {item.command}</span>
-                                <span>
-                                  Code {item.result.exit_code} • {item.timestamp}
-                                </span>
+                                <span>{item.timestamp}</span>
                               </div>
                               {item.result.stdout && (
                                 <pre className="mt-1 whitespace-pre-wrap break-words text-on-surface">
@@ -1497,7 +1669,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                               : 'text-on-surface-variant hover:text-on-surface',
                           ].join(' ')}
                         >
-                          Projektdateien
+                          Direktvorschau
                         </button>
                         <button
                           type="button"
@@ -1509,28 +1681,21 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                               : 'text-on-surface-variant hover:text-on-surface',
                           ].join(' ')}
                         >
-                          Lokale Adresse
+                          Eigene Adresse
                         </button>
                       </div>
 
-                      {previewMode === 'url' ? (
+                      {previewMode === 'url' && (
                         <div className="flex items-center gap-1.5 flex-1">
                           <Globe className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
                           <Input
                             value={previewUrl}
                             onChange={(e) => setPreviewUrl(e.target.value)}
                             placeholder="http://localhost:5173"
-                            className="h-8 text-xs font-mono"
+                            className="h-8 text-xs"
                             aria-label="Vorschau-Adresse"
                           />
                         </div>
-                      ) : (
-                        <span className="text-xs text-on-surface-variant truncate font-mono">
-                          {files.some((f) => f.path.toLowerCase().endsWith('.html'))
-                            ? files.find((f) => f.path.toLowerCase() === 'index.html')?.path ||
-                              files.find((f) => f.path.toLowerCase().endsWith('.html'))?.path
-                            : 'Keine HTML-Datei im Projekt'}
-                        </span>
                       )}
                     </div>
 
@@ -1614,9 +1779,9 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                     <div className="flex items-center justify-between gap-2 border-b border-primary/20 bg-primary/10 px-4 py-2 text-xs text-on-surface">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-primary">Ausgewählt:</span>
-                        <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-primary text-xs">
+                        <span className="rounded bg-black/40 px-2 py-0.5 text-primary text-xs">
                           {inspectElement}
-                        </code>
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -1658,7 +1823,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                             Noch keine Vorschau verfügbar
                           </p>
                           <p className="text-xs text-on-surface-variant max-w-sm mt-1">
-                            Sobald eine HTML-Datei (z. B. <code>index.html</code>) im Projekt liegt, wird sie hier direkt dargestellt.
+                            Sobald eine Webseite im Projekt angelegt ist, wird sie hier direkt dargestellt.
                           </p>
                         </div>
                       ) : (
@@ -1679,215 +1844,16 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
               {activeTab === 'settings' && (
                 <div className="max-w-3xl w-full mx-auto space-y-5 py-1">
-                  {/* Card 1: GitHub / GitLab Connection & Direct Repo Creation */}
+                  {/* Card 1: Everyday Project Name, Instructions & Autonomy */}
                   <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 p-5 space-y-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-on-surface flex items-center gap-2">
-                          <FolderGit2 className="h-4 w-4 text-primary" />
-                          <span>GitHub & GitLab Anbindung</span>
-                        </h3>
-                        <p className="text-xs text-on-surface-variant mt-0.5">
-                          {selectedProject.git_repo_url
-                            ? `Verknüpft mit ${selectedProject.git_repo_url} (${selectedProject.git_branch || 'main'})`
-                            : 'Verknüpfe ein bestehendes Repository oder erstelle mit einem Klick ein neues Repository auf GitHub.'}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        {!selectedProject.git_repo_url && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => {
-                              setNewRepoName(selectedProject.name)
-                              setCreateRepoOpen(true)
-                            }}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            Neues GitHub-Repo erstellen
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          disabled={gitBusy}
-                          onClick={() => void loadGitStatus()}
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 ${gitBusy ? 'animate-spin' : ''}`} />
-                          Status
-                        </Button>
-                        {selectedProject.git_repo_url && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={gitBusy}
-                            onClick={() => void handleGitSync()}
-                          >
-                            <GitBranch className="h-3.5 w-3.5" />
-                            Abgleichen (Pull)
-                          </Button>
-                        )}
-                      </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-on-surface">
+                        Allgemeine Einstellungen & Arbeitsweise
+                      </h3>
+                      <p className="text-xs text-on-surface-variant mt-0.5">
+                        Lege fest, wie das Projekt heißt und worauf Singra bei der Zusammenarbeit achten soll.
+                      </p>
                     </div>
-
-                    {gitStatus && (
-                      <div className="rounded-xl border border-outline-variant/20 bg-surface-container/50 p-3.5 text-xs space-y-1.5">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="font-medium text-on-surface">
-                            {gitStatus.initialized ? 'Git bereit' : 'Noch nicht initialisiert'}
-                          </span>
-                          {gitStatus.branch && (
-                            <span className="rounded-md bg-primary/15 px-2 py-0.5 text-primary font-medium">
-                              {gitStatus.branch}
-                            </span>
-                          )}
-                          {gitStatus.last_commit && (
-                            <span className="font-mono text-on-surface-variant truncate">
-                              Letzter Stand: {gitStatus.last_commit}
-                            </span>
-                          )}
-                        </div>
-                        {(gitStatus.changed_files?.length ?? 0) > 0 ? (
-                          <div className="pt-1">
-                            <div className="font-medium text-on-surface mb-1">
-                              Offene Änderungen ({gitStatus.changed_files?.length ?? 0}):
-                            </div>
-                            <ul className="font-mono text-label-sm text-on-surface-variant space-y-0.5 max-h-32 overflow-y-auto">
-                              {gitStatus.changed_files?.map((line, i) => (
-                                <li key={i}>{line}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : (
-                          gitStatus.initialized && (
-                            <p className="text-status-success">
-                              Alle Dateien sind auf dem aktuellen Stand.
-                            </p>
-                          )
-                        )}
-                      </div>
-                    )}
-
-                    {/* Quick Commit & Push */}
-                    <form
-                      onSubmit={handleGitCommit}
-                      className="rounded-xl border border-outline-variant/20 bg-surface-container/30 p-3.5 space-y-3"
-                    >
-                      <div className="text-xs font-semibold text-on-surface">
-                        Stand sichern & übertragen (Commit & Push)
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <Input
-                          value={commitMessage}
-                          onChange={(e) => setCommitMessage(e.target.value)}
-                          placeholder="Kurze Beschreibung der Änderung…"
-                          className="flex-1 text-xs"
-                          aria-label="Commit-Nachricht"
-                        />
-                        <Button
-                          type="submit"
-                          size="sm"
-                          disabled={gitBusy || !commitMessage.trim()}
-                        >
-                          <GitCommit className="h-3.5 w-3.5" />
-                          Sichern
-                        </Button>
-                      </div>
-                      <label className="flex items-center gap-2 text-xs text-on-surface-variant">
-                        <Switch
-                          checked={pushOnCommit}
-                          onCheckedChange={setPushOnCommit}
-                          aria-label="Direkt zu GitHub/GitLab übertragen"
-                        />
-                        <span>Direkt zum verknüpften Repository hochladen (Push)</span>
-                      </label>
-                    </form>
-
-                    {/* Repository URL & Token configuration */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-outline-variant/15">
-                      <div>
-                        <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                          Anbieter
-                        </label>
-                        <Dropdown
-                          value={selectedProject.git_provider ?? '__none__'}
-                          onChange={(val) =>
-                            void handleUpdateProject({
-                              git_provider:
-                                val === '__none__'
-                                  ? null
-                                  : (val as 'github' | 'gitlab' | 'custom'),
-                            })
-                          }
-                          options={GIT_PROVIDER_OPTIONS}
-                          aria-label="Git-Anbieter"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                          Branch
-                        </label>
-                        <Input
-                          defaultValue={selectedProject.git_branch}
-                          onBlur={(e) => {
-                            if (
-                              e.target.value.trim() &&
-                              e.target.value !== selectedProject.git_branch
-                            ) {
-                              void handleUpdateProject({ git_branch: e.target.value.trim() })
-                            }
-                          }}
-                          aria-label="Git-Branch"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                          Repository-Adresse (HTTPS)
-                        </label>
-                        <Input
-                          key={selectedProject.git_repo_url ?? 'no-url'}
-                          defaultValue={selectedProject.git_repo_url ?? ''}
-                          placeholder="https://github.com/nutzer/projekt.git"
-                          onBlur={(e) => {
-                            if (e.target.value !== (selectedProject.git_repo_url ?? '')) {
-                              void handleUpdateProject({
-                                git_repo_url: e.target.value.trim() || null,
-                              })
-                            }
-                          }}
-                          aria-label="Repository-Adresse"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                          Zugangstoken (optional, falls nicht global im Schlüsselbund hinterlegt)
-                        </label>
-                        <Input
-                          type="password"
-                          placeholder={
-                            selectedProject.git_token_configured
-                              ? 'Token ist hinterlegt (zum Ändern neu eingeben)'
-                              : 'ghp_… oder glpat-…'
-                          }
-                          onBlur={(e) => {
-                            if (e.target.value.trim()) {
-                              void handleUpdateProject({ git_token: e.target.value.trim() })
-                              e.target.value = ''
-                            }
-                          }}
-                          aria-label="Git Zugangstoken"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card 2: Project Instructions & General Settings */}
-                  <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 p-5 space-y-4">
-                    <h3 className="text-sm font-semibold text-on-surface">
-                      Projektname & Anweisungen für Singra
-                    </h3>
                     <div className="space-y-3">
                       <div>
                         <label className="block text-xs font-medium text-on-surface-variant mb-1">
@@ -1913,7 +1879,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                         <Textarea
                           defaultValue={selectedProject.system_prompt ?? ''}
                           rows={4}
-                          placeholder="Welche Ziele, Stilvorgaben oder technischen Rahmenbedingungen gelten für dieses Projekt?"
+                          placeholder="Welche Ziele, Stilvorgaben oder Wünsche gelten für dieses Projekt?"
                           onBlur={(e) => {
                             if (e.target.value !== (selectedProject.system_prompt ?? '')) {
                               void handleUpdateProject({ system_prompt: e.target.value })
@@ -1921,26 +1887,6 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                           }}
                           aria-label="Projektanweisungen"
                         />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                          Lokaler Ordner auf deinem Gerät (optional)
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <Folder className="h-4 w-4 text-on-surface-variant shrink-0" />
-                          <Input
-                            defaultValue={selectedProject.local_directory ?? ''}
-                            placeholder="z. B. E:\Projekte\mein-projekt"
-                            onBlur={(e) => {
-                              if (e.target.value !== (selectedProject.local_directory ?? '')) {
-                                void handleUpdateProject({
-                                  local_directory: e.target.value.trim() || null,
-                                })
-                              }
-                            }}
-                            aria-label="Lokaler Projektordner"
-                          />
-                        </div>
                       </div>
                       <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-surface-container/60 p-3.5">
                         <div>
@@ -1960,20 +1906,192 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                       </div>
                     </div>
                   </div>
+
+                  {/* Card 2: GitHub / GitLab Connection & Sync */}
+                  <div className="rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 p-5 space-y-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-on-surface flex items-center gap-2">
+                          <FolderGit2 className="h-4 w-4 text-primary" />
+                          <span>Online-Sicherung (GitHub & GitLab)</span>
+                        </h3>
+                        <p className="text-xs text-on-surface-variant mt-0.5">
+                          {selectedProject.git_repo_url
+                            ? `Verbunden mit ${selectedProject.git_repo_url}`
+                            : 'Sichere dein Projekt online auf GitHub oder GitLab.'}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!selectedProject.git_repo_url && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              setNewRepoName(selectedProject.name)
+                              setCreateRepoOpen(true)
+                            }}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Neues GitHub-Repo erstellen
+                          </Button>
+                        )}
+                        {selectedProject.git_repo_url && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={gitBusy}
+                            onClick={() => void handleGitSync()}
+                          >
+                            <RefreshCw className={`h-3.5 w-3.5 ${gitBusy ? 'animate-spin' : ''}`} />
+                            Aktualisieren
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {gitStatus && gitStatus.initialized && (
+                      <div className="rounded-xl border border-outline-variant/20 bg-surface-container/50 px-3.5 py-2.5 text-xs flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-on-surface">
+                          {(gitStatus.changed_files?.length ?? 0) > 0
+                            ? `${gitStatus.changed_files?.length} ungesicherte Änderung(en) bereit zum Übertragen.`
+                            : 'Alle Dateien sind gesichert und auf dem aktuellen Stand.'}
+                        </span>
+                        {gitStatus.branch && (
+                          <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-primary font-medium">
+                            {gitStatus.branch}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Quick Commit & Push */}
+                    <form
+                      onSubmit={handleGitCommit}
+                      className="rounded-xl border border-outline-variant/20 bg-surface-container/30 p-3.5 space-y-3"
+                    >
+                      <div className="text-xs font-semibold text-on-surface">
+                        Stand sichern & hochladen
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Input
+                          value={commitMessage}
+                          onChange={(e) => setCommitMessage(e.target.value)}
+                          placeholder="Was hast du geändert?"
+                          className="flex-1 text-xs"
+                          aria-label="Commit-Nachricht"
+                        />
+                        <Button
+                          type="submit"
+                          size="sm"
+                          disabled={gitBusy || !commitMessage.trim()}
+                        >
+                          <GitCommit className="h-3.5 w-3.5" />
+                          Sichern
+                        </Button>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-on-surface-variant">
+                        <Switch
+                          checked={pushOnCommit}
+                          onCheckedChange={setPushOnCommit}
+                          aria-label="Direkt zu GitHub/GitLab übertragen"
+                        />
+                        <span>Gleichzeitig online zum verbundenen Repository hochladen</span>
+                      </label>
+                    </form>
+
+                    {/* Repository URL & Token configuration */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-outline-variant/15">
+                      <div>
+                        <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                          Anbieter
+                        </label>
+                        <Dropdown
+                          value={selectedProject.git_provider ?? '__none__'}
+                          onChange={(val) =>
+                            void handleUpdateProject({
+                              git_provider:
+                                val === '__none__'
+                                  ? null
+                                  : (val as 'github' | 'gitlab' | 'custom'),
+                            })
+                          }
+                          options={GIT_PROVIDER_OPTIONS}
+                          aria-label="Git-Anbieter"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                          Zweig (Branch)
+                        </label>
+                        <Input
+                          defaultValue={selectedProject.git_branch}
+                          onBlur={(e) => {
+                            if (
+                              e.target.value.trim() &&
+                              e.target.value !== selectedProject.git_branch
+                            ) {
+                              void handleUpdateProject({ git_branch: e.target.value.trim() })
+                            }
+                          }}
+                          aria-label="Git-Branch"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                          Repository-Adresse
+                        </label>
+                        <Input
+                          key={selectedProject.git_repo_url ?? 'no-url'}
+                          defaultValue={selectedProject.git_repo_url ?? ''}
+                          placeholder="https://github.com/nutzer/projekt.git"
+                          onBlur={(e) => {
+                            if (e.target.value !== (selectedProject.git_repo_url ?? '')) {
+                              void handleUpdateProject({
+                                git_repo_url: e.target.value.trim() || null,
+                              })
+                            }
+                          }}
+                          aria-label="Repository-Adresse"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                          Zugangsschlüssel (optional, falls nicht global im Schlüsselbund hinterlegt)
+                        </label>
+                        <Input
+                          type="password"
+                          placeholder={
+                            selectedProject.git_token_configured
+                              ? 'Schlüssel ist hinterlegt (zum Ändern neu eingeben)'
+                              : 'Nur nötig bei eigenem Zugangsschlüssel…'
+                          }
+                          onBlur={(e) => {
+                            if (e.target.value.trim()) {
+                              void handleUpdateProject({ git_token: e.target.value.trim() })
+                              e.target.value = ''
+                            }
+                          }}
+                          aria-label="Git Zugangstoken"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           </>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* New File Dialog */}
       <Dialog open={newFileModalOpen} onOpenChange={setNewFileModalOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Neue Datei anlegen</DialogTitle>
             <DialogDescription>
-              Gib den Namen oder Pfad der Datei an (z. B. <code>src/app.ts</code> oder <code>README.md</code>). Unterordner werden automatisch erstellt.
+              Gib den Namen oder Pfad der Datei an (z. B. index.html oder src/app.ts). Unterordner werden automatisch erstellt.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1983,16 +2101,16 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
               setNewFileModalOpen(false)
               void handleSaveFile(newFilePath.trim(), '')
             }}
-            className="space-y-4 mt-2"
+            className="space-y-4 px-6 pb-6 pt-5"
           >
             <Input
               value={newFilePath}
               onChange={(e) => setNewFilePath(e.target.value)}
-              placeholder="src/index.ts"
+              placeholder="index.html"
               autoFocus
               aria-label="Dateipfad"
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
               <Button
                 type="button"
                 variant="ghost"
@@ -2017,7 +2135,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
               Erstellt das Repository in deinem Account, verknüpft es mit „{selectedProject?.name}“ und lädt deine Projektdateien direkt hoch.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateRemoteRepoForExisting} className="space-y-4 mt-2">
+          <form onSubmit={handleCreateRemoteRepoForExisting} className="space-y-4 px-6 pb-6 pt-5">
             <div>
               <label className="block text-xs font-medium text-on-surface-variant mb-1">
                 Name des Repositories
@@ -2084,18 +2202,18 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
             <div>
               <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                Personal Access Token (optional, falls bereits im Schlüsselbund gespeichert)
+                Zugangsschlüssel (optional, falls bereits im Schlüsselbund gespeichert)
               </label>
               <Input
                 type="password"
                 value={newRepoToken}
                 onChange={(e) => setNewRepoToken(e.target.value)}
-                placeholder="Berechtigtes Token im Schlüsselbund verwenden oder hier eingeben…"
+                placeholder="Gespeicherten Schlüssel verwenden oder hier eingeben…"
                 aria-label="Personal Access Token"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant/20">
               <Button type="button" variant="ghost" onClick={() => setCreateRepoOpen(false)}>
                 Abbrechen
               </Button>
@@ -2109,7 +2227,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
 
       {/* Calm, Single-View Create Project Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto p-6">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="space-y-1.5">
             <DialogTitle className="text-lg font-headline font-semibold text-on-surface">
               Neues Projekt anlegen
@@ -2119,7 +2237,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleCreateProject} className="space-y-4 pt-2">
+          <form onSubmit={handleCreateProject} className="space-y-4 px-6 pb-6 pt-5">
             <div>
               <label className="block text-xs font-medium text-on-surface-variant mb-1">
                 Projektname
@@ -2217,13 +2335,13 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                    Token (nur nötig, falls noch keines im Schlüsselbund liegt)
+                    Zugangsschlüssel (nur nötig, falls noch keiner im Schlüsselbund liegt)
                   </label>
                   <Input
                     type="password"
                     value={draft.git_token ?? ''}
                     onChange={(e) => setDraft((d) => ({ ...d, git_token: e.target.value }))}
-                    placeholder="ghp_… (leer lassen für gespeichertes Token)"
+                    placeholder="Leer lassen für gespeicherten Schlüssel"
                     aria-label="GitHub Token"
                   />
                 </div>
@@ -2235,7 +2353,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
               <div className="rounded-xl border border-outline-variant/25 bg-surface-container-low/50 p-3.5 space-y-3">
                 <div>
                   <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                    Repository-URL
+                    Repository-Adresse
                   </label>
                   <Input
                     value={draft.git_repo_url ?? ''}
@@ -2248,7 +2366,7 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div>
                     <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                      Branch
+                      Zweig (Branch)
                     </label>
                     <Input
                       value={draft.git_branch ?? 'main'}
@@ -2259,13 +2377,13 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                      Token (optional)
+                      Zugangsschlüssel (optional)
                     </label>
                     <Input
                       type="password"
                       value={draft.git_token ?? ''}
                       onChange={(e) => setDraft((d) => ({ ...d, git_token: e.target.value }))}
-                      placeholder="ghp_…"
+                      placeholder="Optional…"
                       aria-label="Personal Access Token"
                     />
                   </div>
@@ -2361,19 +2479,21 @@ export function SingraProjectsView({ onOpenProjectChat }: SingraProjectsViewProp
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
-              <span>{agentsRules?.filename ?? 'AGENTS.md'}</span>
+              <span>Projektregeln ({agentsRules?.filename ?? 'AGENTS.md'})</span>
             </DialogTitle>
             <DialogDescription>
               Diese Datei aus deinem Projekt wird bei Unterhaltungen automatisch berücksichtigt.
             </DialogDescription>
           </DialogHeader>
-          <div className="mt-2 rounded-xl border border-outline-variant/30 bg-surface-container-lowest/80 p-4 font-mono text-xs leading-relaxed text-on-surface overflow-x-auto whitespace-pre-wrap max-h-[60vh] select-text">
-            {agentsRules?.content || 'Kein Inhalt.'}
-          </div>
-          <div className="flex justify-end pt-2">
-            <Button type="button" onClick={() => setShowAgentsModal(false)}>
-              Schließen
-            </Button>
+          <div className="space-y-4 px-6 pb-6 pt-5">
+            <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest/80 p-4 font-mono text-xs leading-relaxed text-on-surface overflow-x-auto whitespace-pre-wrap max-h-[55vh] select-text">
+              {agentsRules?.content || 'Kein Inhalt.'}
+            </div>
+            <div className="flex justify-end pt-2 border-t border-outline-variant/20">
+              <Button type="button" onClick={() => setShowAgentsModal(false)}>
+                Schließen
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -5,9 +5,11 @@ import { json } from '@codemirror/lang-json'
 import { yaml } from '@codemirror/lang-yaml'
 import { xml } from '@codemirror/lang-xml'
 import { markdown } from '@codemirror/lang-markdown'
-import { StreamLanguage, type LanguageSupport } from '@codemirror/language'
+import { HighlightStyle, StreamLanguage, syntaxHighlighting, type LanguageSupport } from '@codemirror/language'
+import { tags } from '@lezer/highlight'
 import { EditorView, type ViewUpdate } from '@codemirror/view'
 import { css } from '@codemirror/legacy-modes/mode/css'
+import { html as legacyHtml } from '@codemirror/legacy-modes/mode/xml'
 import { cpp, csharp, java } from '@codemirror/legacy-modes/mode/clike'
 import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile'
 import { go } from '@codemirror/legacy-modes/mode/go'
@@ -60,6 +62,7 @@ export function languageExtension(path: string): LanguageSupport | ReturnType<ty
   switch (detectLanguage(path)) {
     case 'json': return json()
     case 'yaml': return yaml()
+    case 'html': return StreamLanguage.define(legacyHtml)
     case 'xml': return xml()
     case 'markdown': return markdown()
     case 'ini':
@@ -82,15 +85,31 @@ export function languageExtension(path: string): LanguageSupport | ReturnType<ty
   }
 }
 
-export const EDITOR_THEME = EditorView.theme({
-  '&': { backgroundColor: '#071013', color: '#e7f4f7', fontSize: '13px', height: '100%' },
-  '.cm-content': { caretColor: '#67e8f9', fontFamily: 'JetBrains Mono, monospace' },
-  '.cm-gutters': { backgroundColor: '#071013', borderRight: '1px solid #203038', color: '#5b737a' },
-  '.cm-scroller': { overflowX: 'auto', lineHeight: '1.55' },
-  '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'rgba(103, 232, 249, 0.045)' },
-  '&.cm-focused': { outline: 'none' },
-  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(103, 232, 249, 0.22)' },
-})
+export const EDITOR_THEME = EditorView.theme(
+  {
+    '&': { backgroundColor: '#071013', color: '#e7f4f7', fontSize: '13px', height: '100%' },
+    '.cm-content': { caretColor: '#67e8f9', fontFamily: 'JetBrains Mono, monospace' },
+    '.cm-gutters': { backgroundColor: '#071013', borderRight: '1px solid #203038', color: '#5b737a' },
+    '.cm-scroller': { overflowX: 'auto', lineHeight: '1.55' },
+    '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'rgba(103, 232, 249, 0.045)' },
+    '&.cm-focused': { outline: 'none' },
+    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(103, 232, 249, 0.22)' },
+  },
+  { dark: true },
+)
+
+export const EDITOR_HIGHLIGHT_STYLE = HighlightStyle.define([
+  { tag: [tags.tagName, tags.standard(tags.tagName)], color: '#38bdf8' },
+  { tag: [tags.angleBracket], color: '#7dd3fc' },
+  { tag: [tags.attributeName, tags.propertyName], color: '#c084fc' },
+  { tag: [tags.attributeValue, tags.string, tags.special(tags.string)], color: '#34d399' },
+  { tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword, tags.modifier], color: '#a78bfa' },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#fbbf24' },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: '#67e8f9' },
+  { tag: [tags.number, tags.bool, tags.atom, tags.null], color: '#fb923c' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.documentMeta], color: '#64748b', fontStyle: 'italic' },
+  { tag: [tags.heading], color: '#38bdf8', fontWeight: '700' },
+])
 
 export const EDITOR_BASIC_SETUP = {
   lineNumbers: true,
@@ -248,7 +267,7 @@ export function FileEditorWorkspace({
   const extensions = useMemo(() => {
     if (!activeTab) return []
     const language = languageExtension(activeTab.path)
-    return [...(language ? [language] : []), EDITOR_THEME]
+    return [...(language ? [language] : []), syntaxHighlighting(EDITOR_HIGHLIGHT_STYLE), EDITOR_THEME]
   }, [activeTab?.path])
 
   const updateCursor = useCallback((update: ViewUpdate) => {
@@ -449,7 +468,7 @@ export function FileEditorWorkspace({
                 onUpdate={updateCursor}
                 onCreateEditor={handleCreateEditor}
                 autoFocus
-                theme="dark"
+                theme={EDITOR_THEME}
                 extensions={extensions}
                 editable={canWrite}
                 readOnly={!canWrite}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AudioLines, Brain, CalendarClock, Camera, Check, ChevronDown, Copy, Forward, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, MoreHorizontal, Paperclip, Pencil, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Star, Trash2, Upload, X, Zap } from 'lucide-react'
+import { AudioLines, Brain, CalendarClock, Camera, Check, ChevronDown, Copy, Forward, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, MoreHorizontal, Paperclip, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Star, Trash2, Upload, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -284,7 +284,9 @@ export function AiChat({
     try {
       const raw = localStorage.getItem('msm:ai_starred_messages')
       if (raw) return new Set(JSON.parse(raw))
-    } catch {}
+    } catch (err) {
+      still(err, 'ai.starred.read')
+    }
     return new Set()
   })
   const [loading, setLoading] = useState(true)
@@ -763,8 +765,8 @@ export function AiChat({
             await vaultStore.deleteItem(vaultItem.id)
           }
         }
-      } catch {
-        // Vault-Löschung optional falls nicht initialisiert
+      } catch (err) {
+        still(err, 'ai.storage.deleteVault')
       }
     }
   }, [removeAttachment])
@@ -924,7 +926,9 @@ export function AiChat({
                   let domain = 'Websuche'
                   try {
                     if (r.url) domain = new URL(r.url).hostname.replace(/^www\./, '')
-                  } catch {}
+                  } catch (err) {
+                    still(err, 'ai.news.url')
+                  }
                   return {
                     id: `search-news-${idx}`,
                     title: r.title || 'Nachrichtenbericht',
@@ -1487,8 +1491,8 @@ export function AiChat({
         verlaufEintraegeRef.current = geladen
         setEntries(geladen)
       }
-    } catch {
-      // Fehler still abfangen
+    } catch (err) {
+      still(err, 'ai.chat.manualReload')
     } finally {
       if (mountedRef.current) {
         setReloading(false)
@@ -1536,7 +1540,9 @@ export function AiChat({
       }
       try {
         localStorage.setItem('msm:ai_starred_messages', JSON.stringify(Array.from(next)))
-      } catch {}
+      } catch (err) {
+        still(err, 'ai.starred.write')
+      }
       return next
     })
   }, [])
@@ -1612,7 +1618,9 @@ export function AiChat({
       }
       try {
         localStorage.setItem('msm:ai_starred_messages', JSON.stringify(Array.from(next)))
-      } catch {}
+      } catch (err) {
+        still(err, 'ai.starred.write')
+      }
       return next
     })
     toast.success('Markierung aktualisiert.')
@@ -2161,7 +2169,7 @@ export function AiChat({
                         )}
                         <ChatBubbleSurface isSelf>
                           {message.content && (
-                            <p className="w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-on-primary">
+                            <p className="w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface">
                               {message.content}
                             </p>
                           )}
@@ -2177,30 +2185,12 @@ export function AiChat({
                           menuLabel="Nachrichtenaktionen"
                           timestamp={message.created_at ? formatMessageTime(message.created_at) : null}
                           statusSlot={
-                            <>
-                              {!busy && !editingMessage && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setReplyingTo(null)
-                                    setEditingMessage(message)
-                                    setInput(message.content)
-                                    requestAnimationFrame(() => inputRef.current?.focus())
-                                  }}
-                                  aria-label={t('ai.chat.editMessage', { defaultValue: 'Nachricht bearbeiten' })}
-                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant opacity-0 transition-opacity hover:bg-surface-container-highest hover:text-on-surface focus-visible:opacity-100 group-hover:opacity-100"
-                                >
-                                  <Pencil className="h-3 w-3" aria-hidden="true" />
-                                </button>
-                              )}
-                              <NachrichtStatus
-                                status={message.deliveryStatus ?? (message.status === 'failed' ? 'failed' : 'read')}
-                                empfaengerName={KI_NAME}
-                                seite="ende"
-                                lage="oben"
-                              />
-                            </>
+                            <NachrichtStatus
+                              status={message.deliveryStatus ?? (message.status === 'failed' ? 'failed' : 'read')}
+                              empfaengerName={KI_NAME}
+                              seite="ende"
+                              lage="oben"
+                            />
                           }
                         />
                       </article>
@@ -2501,7 +2491,7 @@ export function AiChat({
                             : t('ai.chat.placeholder')
                       }
                       disabled={uploading || availableProviders.length === 0}
-                      aria-label={editingMessage ? t('ai.chat.editMessage', { defaultValue: 'Nachricht bearbeiten' }) : t('ai.chat.message')}
+                      aria-label={editingMessage ? t('ai.chat.edit', 'Nachricht bearbeiten') : t('ai.chat.message')}
                     />
 
                     {/* Untere Leiste im Stil von Perplexity: Modell & Aktionen links, Realtime/Diktat/Senden rechts */}

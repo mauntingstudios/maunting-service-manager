@@ -241,11 +241,26 @@ export function Ai({
         setActiveSection('projekte')
       }
     }
+    const openConvHandler = (event: Event) => {
+      const custom = event as CustomEvent<{ conversationId?: string }>
+      const convId = custom.detail?.conversationId
+      if (!convId) return
+      if (convId === 'new') {
+        void handleNewChat()
+        return
+      }
+      setActiveProjectId(undefined)
+      setActiveProjectName(undefined)
+      setActiveConversationId(convId)
+      setActiveSection('chat')
+    }
     window.addEventListener('singra-open-project', handler)
+    window.addEventListener('singra-open-conversation', openConvHandler)
     return () => {
       window.removeEventListener('singra-open-project', handler)
+      window.removeEventListener('singra-open-conversation', openConvHandler)
     }
-  }, [])
+  }, [handleNewChat])
 
   useEffect(() => {
     if (!canSpeak) return
@@ -393,6 +408,7 @@ export function Ai({
 
             {activeSection === 'projekte' ? (
               <SingraProjectsView
+                initialProjectId={activeProjectId}
                 onOpenProjectChat={(projectId, conversationId) => {
                   setActiveProjectId(projectId)
                   setActiveConversationId(conversationId ?? null)
