@@ -1712,7 +1712,7 @@ def inspect_project_preview(
     """Fuehrt eine visuelle Headless-Sichtpruefung der Projekt-Vorschau durch (Mobile & Desktop)."""
     project = get_project(db, user, project_id)
     ws = ensure_project_workspace(project)
-    meta = _load_env_metadata(ws)
+    meta = _ensure_env_metadata(project, ws)
     files = list_project_files(db, user, project.id)
     file_dicts = [{"path": f.path, "content": f.content} for f in files]
 
