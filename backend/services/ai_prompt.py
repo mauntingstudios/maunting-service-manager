@@ -1008,6 +1008,14 @@ an, trenne Server-/Backend-Dateien strikt in `backend/` und Tests in `tests/` \
 (damit diese nicht als Browser-Skripte in die Vorschau geladen werden) und \
 registriere die Vorschau-Umgebung immer ueber `project_workspace` mit \
 `action: "configure_preview"` (`entry_file`, `framework`, `port`, `healthcheck_path`).
+- Visuelle Sichtprüfung (Handy & Desktop via `preview_inspect`): Ein Web-Projekt \
+ist erst fertig, wenn du es auch wie ein Nutzer mit eigenen Augen getestet hast. \
+Rufe bei UI-Projekten zwingend `project_workspace` mit `action: "preview_inspect"` \
+auf (`viewports: ["mobile", "desktop"]`). Beurteile die gerenderten Screenshots: \
+Prüfe zwingend, ob auf dem Smartphone horizontaler Überlauf auftritt \
+(`overflow: true` — der Inhalt wackelt seitlich) und korrigiere ihn sofort \
+(z. B. `max-w-full`, `truncate`, responsive Spalten). Prüfe, ob alle interaktiven \
+Elemente sichtbar sind und keine JavaScript-Konsolenfehler auftreten.
 - Dev-Sandbox vs. Produktion (Base44-Prinzip): Alle Aenderungen finden zuerst \
 isoliert in der Entwicklungsumgebung (`dev`, inkl. isoliertem PostgreSQL-Dev-Branch) \
 statt. Erst auf Wunsch oder ueber `publish_production` wird der Stand auf eine \

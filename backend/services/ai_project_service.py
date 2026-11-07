@@ -1702,6 +1702,34 @@ def configure_project_preview(
     }
 
 
+def inspect_project_preview(
+    db: Session,
+    user: User,
+    project_id: str,
+    viewports: list[str] | None = None,
+    interactions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Fuehrt eine visuelle Headless-Sichtpruefung der Projekt-Vorschau durch (Mobile & Desktop)."""
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    meta = _load_env_metadata(ws)
+    files = list_project_files(db, user, project.id)
+    file_dicts = [{"path": f.path, "content": f.content} for f in files]
+
+    configured_entry = meta.get("preview_entry")
+    from services import ai_preview_inspector
+
+    res = ai_preview_inspector.inspect_project_preview_viewports(
+        file_dicts,
+        configured_entry=configured_entry,
+        viewports=viewports,
+        interactions=interactions,
+    )
+    res["project_id"] = project.id
+    res["project_name"] = project.name
+    return res
+
+
 def switch_project_environment(
     db: Session,
     user: User,

@@ -1619,6 +1619,30 @@ export interface AiProjectGitStatus {
   last_commit: string | null
 }
 
+export interface AiPreviewInspectionViewport {
+  width: number
+  height: number
+  label: string
+  overflow: boolean
+  scroll_width: number
+  root_empty: boolean
+  errors: string[]
+  issues: string[]
+  screenshot_base64: string | null
+}
+
+export interface AiPreviewInspectionResult {
+  ok: boolean
+  browser_available: boolean
+  browser_name?: string
+  error?: string
+  viewports: Record<string, AiPreviewInspectionViewport>
+  issues: string[]
+  summary: string
+  project_id?: string
+  project_name?: string
+}
+
 export interface AiMcpServer {
   id: string
   owner_user_id: number | null
@@ -2356,6 +2380,14 @@ export const aiApi = {
   searchCrossProjectComponents: (projectId: string, query = '') =>
     api<AiCrossProjectComponent[]>(
       `/ai/projects/${encodeURIComponent(projectId)}/cross-project-components?query=${encodeURIComponent(query)}`,
+    ),
+  inspectProjectPreview: (
+    projectId: string,
+    payload?: { viewports?: string[]; interactions?: Array<Record<string, unknown>> },
+  ) =>
+    api<AiPreviewInspectionResult>(
+      `/ai/projects/${encodeURIComponent(projectId)}/preview/inspect`,
+      { method: 'POST', body: JSON.stringify(payload ?? {}) },
     ),
   listMcpServers: () => api<AiMcpServer[]>('/ai/mcp'),
   createMcpServer: (payload: AiMcpServerWrite & { name: string }) =>

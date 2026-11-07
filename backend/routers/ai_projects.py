@@ -137,6 +137,11 @@ class AiProjectGitCreateRepoPayload(BaseModel):
     token: str | None = Field(default=None, max_length=512)
 
 
+class AiProjectPreviewInspectPayload(BaseModel):
+    viewports: list[str] | None = None
+    interactions: list[dict[str, Any]] | None = None
+
+
 @router.get("", response_model=list[AiProjectResponse])
 def list_projects(
     team_id: int | None = Query(default=None),
@@ -450,6 +455,23 @@ def search_project_reusable_components(
             current_project_id=project_id,
             query=query,
             limit=limit,
+        )
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/preview/inspect")
+def inspect_project_preview(
+    project_id: str,
+    payload: AiProjectPreviewInspectPayload | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> dict[str, object]:
+    try:
+        vps = payload.viewports if payload else None
+        inter = payload.interactions if payload else None
+        return ai_project_service.inspect_project_preview(
+            db, user, project_id, viewports=vps, interactions=inter
         )
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

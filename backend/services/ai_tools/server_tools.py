@@ -225,6 +225,7 @@ def _global_tool_definitions() -> list[dict]:
                     "write_file",
                     "delete_file",
                     "configure_preview",
+                    "preview_inspect",
                     "test_project",
                     "run_command",
                     "get_environment",
@@ -245,6 +246,15 @@ def _global_tool_definitions() -> list[dict]:
             "path": {"type": "string", "maxLength": 240},
             "entry_file": {"type": "string", "maxLength": 240, "description": "Einstiegsdatei fuer die Live-Vorschau (z. B. index.html oder src/App.tsx)."},
             "framework": {"type": "string", "maxLength": 64, "description": "Framework der Vorschau (html, react, fullstack)."},
+            "viewports": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["mobile", "tablet", "desktop"]},
+                "description": "Bildschirmgroessen fuer die visuelle Headless-Sichtpruefung (preview_inspect). Standard ist ['mobile', 'desktop'].",
+            },
+            "interactions": {
+                "type": "array",
+                "description": "Optionale Liste interaktiver Aktionen vor der Sichtpruefung (z. B. [{'selector': '#menu-btn', 'action': 'click'}]).",
+            },
             "content": {"type": "string", "maxLength": 200000},
             "command": {"type": "string", "maxLength": 2000},
             "query": {"type": "string", "maxLength": 160},
@@ -1954,6 +1964,20 @@ def _execute_global_read_tool(
                     framework=str(arguments.get("framework") or "").strip() or None,
                     port=int(arguments["port"]) if arguments.get("port") else None,
                     healthcheck_path=str(arguments.get("healthcheck_path") or "").strip() or None,
+                )
+            if action == "preview_inspect":
+                vps_raw = arguments.get("viewports")
+                vps_list: list[str] | None = None
+                if isinstance(vps_raw, list):
+                    vps_list = [str(x) for x in vps_raw]
+                elif isinstance(vps_raw, str):
+                    vps_list = [x.strip() for x in vps_raw.split(",") if x.strip()]
+                inter_raw = arguments.get("interactions")
+                inter_list: list[dict] | None = None
+                if isinstance(inter_raw, list):
+                    inter_list = [x for x in inter_raw if isinstance(x, dict)]
+                return ai_project_service.inspect_project_preview(
+                    db, user, pid, viewports=vps_list, interactions=inter_list
                 )
             if action == "get_environment":
                 return ai_project_service.get_project_environment(db, user, pid)

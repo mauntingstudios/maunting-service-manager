@@ -50,11 +50,13 @@ import {
   type AiProjectFile,
   type AiProjectGitStatus,
   type AiProjectWrite,
+  type AiPreviewInspectionResult,
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
 import { still } from '@/lib/still'
 import { buildPreviewDocument, isPreviewErrorMessage } from './previewBundle'
 import { PreviewDiagnostics } from './PreviewDiagnostics'
+import { SingraVisualInspectionModal } from './SingraVisualInspectionModal'
 import { teamsApi, type Team } from '@/api/teams'
 import {
   ActionMenu,
@@ -210,6 +212,11 @@ export function SingraProjectsView({
   const [previewError, setPreviewError] = useState<{ message: string; detail?: string } | null>(null)
   const [previewErrorDismissed, setPreviewErrorDismissed] = useState(false)
   const [fixTargetChatId, setFixTargetChatId] = useState<string>('__latest__')
+
+  // Visuelle Sichtprüfung (Headless Mobile vs. Desktop Screenshots & Layout-Analyse)
+  const [visualModalOpen, setVisualModalOpen] = useState(false)
+  const [visualInspection, setVisualInspection] = useState<AiPreviewInspectionResult | null>(null)
+  const [visualLoading, setVisualLoading] = useState(false)
 
   // Welches Projekt in `files`/`editorTabs` tatsächlich geladen ist, und welche
   // Datei aus einer Chat-Diff-Karte geöffnet werden soll.
@@ -1271,6 +1278,42 @@ export function SingraProjectsView({
     }
   }
 
+  const handleRunVisualInspection = async () => {
+    if (!selectedProject || visualLoading) return
+    setVisualModalOpen(true)
+    setVisualLoading(true)
+    try {
+      const res = await aiApi.inspectProjectPreview(selectedProject.id, {
+        viewports: ['mobile', 'desktop'],
+      })
+      setVisualInspection(res)
+      if (!res.ok) {
+        toast.warning(
+          `Sichtprüfung: ${res.issues.length} Auffälligkeit(en) auf Smartphone oder Desktop erkannt.`,
+        )
+      } else {
+        toast.success('Sichtprüfung bestanden: Mobil- und Desktop-Layout sind fehlerfrei.')
+      }
+    } catch (err: unknown) {
+      still(err, 'singra:visualInspect')
+      toast.error(err instanceof SanitizedApiError ? err.message : 'Sichtprüfung fehlgeschlagen.')
+    } finally {
+      setVisualLoading(false)
+    }
+  }
+
+  const handleFixVisualIssuesWithSingra = async (issues: string[]) => {
+    const prompt = [
+      'Bei der visuellen Sichtprüfung der Vorschau wurden folgende Layout- und Render-Probleme auf Smartphone oder Desktop erkannt:',
+      '',
+      ...issues.map((iss) => `- ${iss}`),
+      '',
+      'Bitte korrigiere die betroffenen Projektdateien (z. B. overflow-x-hidden, max-w-full, responsive Tailwind-Klassen, Schriftgrößen oder DOM-Struktur), damit die Seite auf dem Smartphone sauber ohne seitlichen Überlauf dargestellt wird und keine JavaScript-Fehler auftreten.',
+      'Prüfe nach deiner Reparatur mit `project_workspace` (action: "preview_inspect"), dass alle Viewports fehlerfrei sind.',
+    ].join('\n')
+    await sendTaskToProjectChat(prompt, '__latest__', 'Layout & Mobile optimieren')
+  }
+
   const handleSaveTeamShare = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedProject || savingProject) return
@@ -2088,6 +2131,21 @@ export function SingraProjectsView({
                       >
                         <MousePointer className="h-3.5 w-3.5" aria-hidden="true" />
                         {inspectMode ? 'Auswahl aktiv' : 'Element wählen'}
+                      </Button>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={visualLoading || !selectedProject || files.length === 0}
+                        onClick={() => void handleRunVisualInspection()}
+                        className="h-8 text-xs gap-1.5"
+                      >
+                        <Sparkles
+                          className={`h-3.5 w-3.5 text-primary ${visualLoading ? 'animate-spin' : ''}`}
+                          aria-hidden="true"
+                        />
+                        <span>{visualLoading ? 'Prüft…' : 'KI-Sichtprüfung'}</span>
                       </Button>
                     </div>
                   </div>
@@ -3045,6 +3103,18 @@ export function SingraProjectsView({
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Visuelle Sichtprüfung (Headless Screenshots & Responsive-Analyse) */}
+      <SingraVisualInspectionModal
+        open={visualModalOpen}
+        onOpenChange={setVisualModalOpen}
+        projectId={selectedProject?.id ?? ''}
+        projectName={selectedProject?.name ?? 'Projekt'}
+        inspectionResult={visualInspection}
+        loading={visualLoading}
+        onReinspect={() => void handleRunVisualInspection()}
+        onFixWithSingra={(issues) => void handleFixVisualIssuesWithSingra(issues)}
+      />
     </div>
   )
 }
