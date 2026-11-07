@@ -1571,6 +1571,15 @@ export interface AiProjectEnvironmentState {
     release_count: number
     status: string
     release_notes?: string
+    mode?: 'frontend' | 'backend' | 'fullstack_split'
+    frontend_server_id?: number | null
+    backend_server_id?: number | null
+    web_url?: string | null
+    api_path?: string | null
+    backend_url?: string | null
+    frontend_port?: number | null
+    backend_port?: number | null
+    db_configured?: boolean
   }
   preview?: {
     configured: boolean
@@ -1585,12 +1594,21 @@ export interface AiProjectPublishResult {
   ok: boolean
   project_id: string
   server_id: number
+  frontend_server_id?: number | null
+  backend_server_id?: number | null
   node_id: string
   node_name: string
+  mode?: string
   published_files: number
-  migrations_applied: number
-  release_count: number
-  published_at: string
+  migrations_applied?: number
+  release_count?: number
+  version?: number
+  web_url?: string
+  frontend_port?: number | null
+  backend_port?: number | null
+  api_path?: string
+  database_provisioned?: boolean
+  published_at?: string
   environment: AiProjectEnvironmentState
 }
 
@@ -2371,7 +2389,15 @@ export const aiApi = {
     ),
   publishProjectToProduction: (
     projectId: string,
-    payload: { node_id?: string | null; release_notes?: string | null },
+    payload: {
+      node_id?: string | null
+      release_notes?: string | null
+      mode?: 'frontend' | 'backend' | 'fullstack_split' | 'auto'
+      domain?: string | null
+      enable_database?: boolean
+      backend_proxy_url?: string | null
+      api_path?: string | null
+    },
   ) =>
     api<AiProjectPublishResult>(
       `/ai/projects/${encodeURIComponent(projectId)}/publish`,

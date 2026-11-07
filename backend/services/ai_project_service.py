@@ -1630,11 +1630,20 @@ def get_project_environment(
         "production": {
             "published": bool(meta.get("prod_published")),
             "version": int(meta.get("prod_version") or 0),
+            "mode": str(meta.get("prod_mode") or "frontend"),
             "branch": str(project.git_branch or meta.get("prod_branch") or "main"),
             "db_engine": "PostgreSQL",
             "db_branch": str(meta.get("prod_db_branch") or f"pg_prod_{project.id[:8]}"),
             "migrations_applied": applied_count,
             "server_id": meta.get("prod_server_id"),
+            "frontend_server_id": meta.get("prod_frontend_server_id"),
+            "backend_server_id": meta.get("prod_backend_server_id"),
+            "web_url": meta.get("prod_web_url"),
+            "api_path": meta.get("prod_api_path") or "/api/*",
+            "backend_url": meta.get("prod_backend_url"),
+            "frontend_port": meta.get("prod_frontend_port"),
+            "backend_port": meta.get("prod_backend_port"),
+            "db_configured": bool(meta.get("prod_db_configured")),
             "server_status": prod_server_status or ("running" if meta.get("prod_published") else "not_deployed"),
             "node_id": meta.get("prod_node_id"),
             "node_name": meta.get("prod_node_name"),
@@ -1758,9 +1767,17 @@ def publish_project_to_production(
     *,
     node_id: int | str | None = None,
     release_notes: str | None = None,
+    mode: str | None = None,
+    domain: str | None = None,
+    enable_database: bool | None = None,
+    backend_proxy_url: str | None = None,
+    api_path: str | None = None,
 ) -> dict[str, object]:
-    """Veröffentlicht den aktuellen Dev-Stand auf Produktion (inkl. PostgreSQL-Migration & Server-Dashboard-Eintrag)."""
-    from models import Node, Server, ServerPermission
+    """Veröffentlicht das Projekt auf Produktion mit Blueprint-Zuordnung, Caddy-VHost und optionaler PostgreSQL-Datenbank."""
+    from models import Node, Server, ServerPermission, PostgresDatabase
+    from games.base import container_name_for
+    from services.port_allocation_service import allocate_ports
+    from services import caddy_service
 
     project = get_project(db, user, project_id)
     ws = ensure_project_workspace(project)
@@ -1769,7 +1786,46 @@ def publish_project_to_production(
     if not files:
         raise AiProjectError("Das Projekt enthält noch keine Dateien zum Veröffentlichen.")
 
-    # Node auflösen (unterstützt int, Ziffern-Strings, Node-Namen und Auto/Local-Fallbacks)
+    # 1. Komponenten- und Architektur-Analyse
+    has_frontend = any(
+        f.path.lower().endswith((".html", ".jsx", ".tsx", ".vue", ".svelte"))
+        or f.path.lower() in ("vite.config.ts", "vite.config.js", "index.html")
+        for f in files
+    )
+    has_backend = any(
+        f.path.lower().endswith((".py", ".php", ".rb", ".go", ".rs"))
+        or f.path.lower() in ("server.js", "app.js", "main.py", "requirements.txt")
+        or f.path.lower().startswith(("api/", "server/", "backend/"))
+        for f in files
+    )
+    for f in files:
+        if f.path.lower() == "package.json" and f.content:
+            c_low = f.content.lower()
+            if any(term in c_low for term in ('"express"', '"fastify"', '"koa"', '"nest"', '"hono"', '"server"', '"pg"', '"prisma"')):
+                has_backend = True
+
+    chosen_mode = (mode or "auto").strip().lower()
+    if chosen_mode in ("frontend", "backend", "fullstack_split"):
+        effective_mode = chosen_mode
+    elif has_frontend and has_backend:
+        effective_mode = "fullstack_split"
+    elif has_backend:
+        effective_mode = "backend"
+    else:
+        effective_mode = "frontend"
+
+    # Datenbank-Bedarf ermitteln
+    if enable_database is None:
+        db_keywords = ("postgresql", "postgres", "psycopg", "prisma", "database_url")
+        has_db_indicators = any(
+            f.path.lower().endswith(".sql")
+            or f.path.lower().startswith("migrations/")
+            or (f.content and any(kw in f.content.lower() for kw in db_keywords))
+            for f in files
+        )
+        enable_database = bool(has_db_indicators and effective_mode in ("backend", "fullstack_split"))
+
+    # 2. Ziel-Node auflösen
     chosen_node: Node | None = None
     parsed_node_id: int | None = None
     if node_id is not None:
@@ -1796,7 +1852,7 @@ def publish_project_to_production(
     effective_node_id = chosen_node.id if chosen_node is not None else None
     effective_node_name = chosen_node.name if chosen_node is not None else "Lokaler Haupt-Node"
 
-    # 1. Dateien in das isolierte Produktions-Release-Verzeichnis spiegeln
+    # 3. Dateien in das Produktions-Release-Verzeichnis spiegeln
     prod_dir = ws / "_prod_release"
     if prod_dir.exists():
         shutil.rmtree(prod_dir, ignore_errors=True)
@@ -1812,70 +1868,277 @@ def publish_project_to_production(
         if f.path.lower().endswith(".sql") or f.path.lower().startswith("migrations/"):
             migration_files.append(f.path)
 
-    # 2. Produktions-Server im Haupt-Dashboard anlegen oder aktualisieren (nur Prod erscheint im Dashboard!)
-    existing_server_id = meta.get("prod_server_id")
-    prod_server: Server | None = None
-    if isinstance(existing_server_id, int) and existing_server_id > 0:
-        prod_server = db.get(Server, existing_server_id)
+    fe_sub = prod_dir / "frontend"
+    be_sub = prod_dir / "backend"
+    if fe_sub.is_dir() and be_sub.is_dir():
+        frontend_dir = fe_sub
+        backend_dir = be_sub
+    else:
+        frontend_dir = prod_dir
+        backend_dir = prod_dir
 
     now = datetime.now(timezone.utc)
     next_version = int(meta.get("prod_version") or 0) + 1
 
-    if prod_server is None:
-        prod_server = Server(
-            name=project.name[:120],
-            game_type="web-app",
-            install_dir=str(prod_dir),
-            node_id=effective_node_id,
-            status="running",
-            status_message=f"Singra Produktion v{next_version} ({effective_node_name})",
-            desired_power_state="running",
-            guardian_observed_state="healthy",
-            last_started_at=now,
+    # 4. Backend-Server bereitstellen (bei Backend oder getrenntem Fullstack)
+    backend_server: Server | None = None
+    be_port: int | None = None
+    db_credentials: dict[str, Any] | None = None
+
+    if effective_mode in ("backend", "fullstack_split"):
+        is_python = any(
+            f.path.lower().endswith(".py") or f.path.lower() == "requirements.txt"
+            for f in files
         )
-        db.add(prod_server)
-        db.flush()
-        # Besitzer-Berechtigung für den User eintragen, damit der Produktions-Server im Dashboard sichtbar ist
-        has_perm = (
-            db.query(ServerPermission)
-            .filter(
-                ServerPermission.user_id == user.id,
-                ServerPermission.server_id == prod_server.id,
+        backend_bp = "python_backend" if is_python else "node_backend"
+        existing_be_id = meta.get("prod_backend_server_id") or (
+            meta.get("prod_server_id") if effective_mode == "backend" else None
+        )
+        if isinstance(existing_be_id, int) and existing_be_id > 0:
+            backend_server = db.get(Server, existing_be_id)
+
+        be_name = (
+            f"{project.name} (Backend)"[:120]
+            if effective_mode == "fullstack_split"
+            else project.name[:120]
+        )
+        if backend_server is None:
+            try:
+                allocated_be = allocate_ports(
+                    db,
+                    bind_ip="0.0.0.0",
+                    port_requirements=[("web", "tcp")],
+                    node_id=effective_node_id,
+                    check_host=bool(chosen_node is None or chosen_node.is_local),
+                )
+                be_port = allocated_be[0][1] if allocated_be else 5001
+            except Exception:
+                be_port = 5001
+
+            backend_server = Server(
+                name=be_name,
+                game_type=backend_bp,
+                install_dir=str(backend_dir),
+                node_id=effective_node_id,
+                status="running",
+                status_message=f"Singra Backend v{next_version} ({effective_node_name})",
+                desired_power_state="running",
+                guardian_observed_state="healthy",
+                last_started_at=now,
             )
-            .first()
-        )
-        if has_perm is None:
+            db.add(backend_server)
+            db.flush()
+            backend_server.container_name = container_name_for(backend_server.id)
+            backend_server.set_port("web", be_port, "tcp")
             db.add(
                 ServerPermission(
                     user_id=user.id,
-                    server_id=prod_server.id,
+                    server_id=backend_server.id,
                     permission_key="*",
                 )
             )
-    else:
-        prod_server.name = project.name[:120]
-        prod_server.node_id = effective_node_id
-        prod_server.install_dir = str(prod_dir)
-        prod_server.status = "running"
-        prod_server.desired_power_state = "running"
-        prod_server.status_message = f"Singra Produktion v{next_version} ({effective_node_name})"
-        prod_server.last_started_at = now
+        else:
+            backend_server.name = be_name
+            backend_server.game_type = backend_bp
+            backend_server.install_dir = str(backend_dir)
+            backend_server.node_id = effective_node_id
+            backend_server.status = "running"
+            backend_server.status_message = f"Singra Backend v{next_version} ({effective_node_name})"
+            backend_server.desired_power_state = "running"
+            backend_server.last_started_at = now
+            be_ports = [p.port for p in (backend_server.ports or []) if p.role == "web"]
+            be_port = be_ports[0] if be_ports else 5001
 
-    # 3. Falls Git-Repository verknüpft ist, Release-Commit auf dem Produktions-Branch sichern
+        # Automatische PostgreSQL-Datenbank provisionieren
+        if enable_database:
+            from services import postgres_service
+
+            existing_db = (
+                db.query(PostgresDatabase)
+                .filter(PostgresDatabase.server_id == backend_server.id)
+                .first()
+            )
+            if not existing_db:
+                try:
+                    new_dbs = postgres_service.provision_server_databases(db, backend_server, 1)
+                    if new_dbs:
+                        db_credentials = new_dbs[0]
+                except Exception as exc:
+                    logger.warning(
+                        "Postgres-Provisionierung fuer Server %s fehlgeschlagen (Cluster nicht bereit): %s",
+                        backend_server.id,
+                        exc,
+                    )
+
+        # .env-Datei fuer das Backend schreiben
+        env_lines = [f"PORT={be_port}"]
+        if db_credentials:
+            env_lines.extend(
+                [
+                    f"DATABASE_URL={db_credentials.get('connection_string', '')}",
+                    f"PGHOST={db_credentials.get('host', '127.0.0.1')}",
+                    f"PGPORT={db_credentials.get('port', 5432)}",
+                    f"PGDATABASE={db_credentials.get('database', '')}",
+                    f"PGUSER={db_credentials.get('user', '')}",
+                    f"PGPASSWORD={db_credentials.get('password', '')}",
+                ]
+            )
+        try:
+            (backend_dir / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+
+    # 5. Frontend-Server bereitstellen (bei Frontend oder getrenntem Fullstack)
+    frontend_server: Server | None = None
+    fe_port: int | None = None
+
+    if effective_mode in ("frontend", "fullstack_split"):
+        existing_fe_id = meta.get("prod_frontend_server_id") or (
+            meta.get("prod_server_id") if effective_mode == "frontend" else None
+        )
+        if isinstance(existing_fe_id, int) and existing_fe_id > 0:
+            frontend_server = db.get(Server, existing_fe_id)
+
+        fe_name = (
+            f"{project.name} (Frontend)"[:120]
+            if effective_mode == "fullstack_split"
+            else project.name[:120]
+        )
+        if frontend_server is None:
+            try:
+                allocated_fe = allocate_ports(
+                    db,
+                    bind_ip="0.0.0.0",
+                    port_requirements=[("web", "tcp")],
+                    node_id=effective_node_id,
+                    check_host=bool(chosen_node is None or chosen_node.is_local),
+                )
+                fe_port = allocated_fe[0][1] if allocated_fe else 8080
+            except Exception:
+                fe_port = 8080
+
+            frontend_server = Server(
+                name=fe_name,
+                game_type="web_static",
+                install_dir=str(frontend_dir),
+                node_id=effective_node_id,
+                status="running",
+                status_message=f"Singra Frontend v{next_version} ({effective_node_name})",
+                desired_power_state="running",
+                guardian_observed_state="healthy",
+                container_name="caddy-managed",
+                last_started_at=now,
+            )
+            db.add(frontend_server)
+            db.flush()
+            frontend_server.set_port("web", fe_port, "tcp")
+            db.add(
+                ServerPermission(
+                    user_id=user.id,
+                    server_id=frontend_server.id,
+                    permission_key="*",
+                )
+            )
+        else:
+            frontend_server.name = fe_name
+            frontend_server.game_type = "web_static"
+            frontend_server.install_dir = str(frontend_dir)
+            frontend_server.node_id = effective_node_id
+            frontend_server.status = "running"
+            frontend_server.status_message = f"Singra Frontend v{next_version} ({effective_node_name})"
+            frontend_server.desired_power_state = "running"
+            frontend_server.container_name = "caddy-managed"
+            frontend_server.last_started_at = now
+            fe_ports = [p.port for p in (frontend_server.ports or []) if p.role == "web"]
+            fe_port = fe_ports[0] if fe_ports else 8080
+
+        # Caddy VHost konfigurieren
+        effective_proxy_url = None
+        if effective_mode == "fullstack_split" and be_port:
+            effective_proxy_url = f"127.0.0.1:{be_port}"
+        elif backend_proxy_url:
+            effective_proxy_url = backend_proxy_url
+
+        effective_api_path = api_path or "/api/*"
+        web_root = str(frontend_dir / "dist") if (frontend_dir / "dist").is_dir() else str(frontend_dir)
+
+        caddy_cfg = caddy_service.generate_caddy_config(
+            frontend_server.id,
+            web_root,
+            server_name=frontend_server.name,
+            domain=domain,
+            port=fe_port,
+            backend_proxy_url=effective_proxy_url,
+            api_path=effective_api_path,
+        )
+        caddy_service.apply_vhost(frontend_server.id, caddy_cfg, node=chosen_node)
+
+        # Cloudflare DNS automatisieren, falls Domain angegeben und Token konfiguriert
+        clean_domain = (domain or "").strip()
+        if clean_domain:
+            from services import cloudflare_service
+
+            if cloudflare_service.is_configured():
+                import asyncio
+                public_ip = getattr(chosen_node, "public_bind_ip", None) or "127.0.0.1"
+                try:
+                    asyncio.run(
+                        cloudflare_service.create_dns_record(
+                            zone_id=None,
+                            name=clean_domain,
+                            rtype="A",
+                            content=public_ip,
+                            proxied=True,
+                        )
+                    )
+                except Exception as cf_err:
+                    logger.warning(
+                        "Cloudflare DNS-Record fuer %s konnte nicht gesetzt werden: %s",
+                        clean_domain,
+                        cf_err,
+                    )
+
+    # 6. Live-URL ermitteln
+    primary_server = frontend_server or backend_server
+    assert primary_server is not None
+    node_ip = getattr(chosen_node, "public_bind_ip", None) or "127.0.0.1"
+    clean_domain = (domain or "").strip()
+    if clean_domain:
+        live_web_url = f"https://{clean_domain}"
+    elif frontend_server and fe_port:
+        live_web_url = f"http://{node_ip}:{fe_port}"
+    elif backend_server and be_port:
+        live_web_url = f"http://{node_ip}:{be_port}"
+    else:
+        live_web_url = f"http://{node_ip}"
+
+    # 7. Git-Commit & Push falls verknuepft
     try:
         git_commit_and_push(
             db,
             user,
             project.id,
-            message=release_notes or f"Release v{next_version} (Produktion)",
+            message=release_notes or f"Release v{next_version} ({effective_mode})",
             push=bool(project.git_repo_url),
         )
     except Exception:
         pass
 
+    # 8. Metadaten sichern
     meta["prod_published"] = True
     meta["prod_version"] = next_version
-    meta["prod_server_id"] = prod_server.id
+    meta["prod_mode"] = effective_mode
+    meta["prod_server_id"] = primary_server.id
+    meta["prod_frontend_server_id"] = frontend_server.id if frontend_server else None
+    meta["prod_backend_server_id"] = backend_server.id if backend_server else None
+    meta["prod_web_url"] = live_web_url
+    meta["prod_frontend_port"] = fe_port if frontend_server else None
+    meta["prod_backend_port"] = be_port if backend_server else None
+    meta["prod_api_path"] = (api_path or "/api/*") if frontend_server else None
+    meta["prod_backend_url"] = (
+        f"127.0.0.1:{be_port}" if effective_mode == "fullstack_split" else backend_proxy_url
+    )
+    meta["prod_db_configured"] = bool(enable_database and db_credentials)
     meta["prod_node_id"] = effective_node_id
     meta["prod_node_name"] = effective_node_name
     meta["prod_published_at"] = now.isoformat()
@@ -1883,6 +2146,28 @@ def publish_project_to_production(
     meta["db_migrations_applied"] = len(migration_files)
     meta["db_migrations_pending"] = 0
     _save_env_metadata(ws, meta)
+
+    project.updated_at = now
+    db.commit()
+
+    return {
+        "ok": True,
+        "project_id": project.id,
+        "server_id": primary_server.id,
+        "frontend_server_id": frontend_server.id if frontend_server else None,
+        "backend_server_id": backend_server.id if backend_server else None,
+        "node_id": effective_node_id,
+        "node_name": effective_node_name,
+        "mode": effective_mode,
+        "published_files": len(files),
+        "version": next_version,
+        "web_url": live_web_url,
+        "frontend_port": fe_port,
+        "backend_port": be_port,
+        "api_path": api_path or "/api/*",
+        "database_provisioned": bool(db_credentials),
+        "environment": get_project_environment(db, user, project.id),
+    }
 
     project.updated_at = now
     db.commit()

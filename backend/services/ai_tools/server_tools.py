@@ -260,6 +260,11 @@ def _global_tool_definitions() -> list[dict]:
             "query": {"type": "string", "maxLength": 160},
             "node_id": {"type": "string", "maxLength": 64},
             "release_notes": {"type": "string", "maxLength": 500},
+            "mode": {"type": "string", "enum": ["auto", "frontend", "backend", "fullstack_split"], "description": "Veröffentlichungs-Architektur (Fullstack getrennt, nur Frontend, nur Backend)."},
+            "domain": {"type": "string", "maxLength": 160, "description": "Öffentliche Domain für Cloudflare/Caddy (z. B. app.beispiel.de)."},
+            "enable_database": {"type": "boolean", "description": "Automatische PostgreSQL-Datenbank für das Backend anlegen."},
+            "backend_proxy_url": {"type": "string", "maxLength": 240, "description": "Zieladresse für den Backend-Proxy (z. B. http://localhost:5001 oder https://api.extern.de)."},
+            "api_path": {"type": "string", "maxLength": 120, "description": "Pfad für den Backend-Proxy (Standard /api/*)."},
             "repo_url": {"type": "string", "maxLength": 1024},
             "branch": {"type": "string", "maxLength": 120},
             "message": {"type": "string", "maxLength": 500},
@@ -1986,8 +1991,24 @@ def _execute_global_read_tool(
                     raise AiActionValidationError("Projekt-Veröffentlichung erfordert ai.projects.manage")
                 node_id = str(arguments.get("node_id") or "").strip() or None
                 notes = str(arguments.get("message") or arguments.get("release_notes") or "").strip() or None
+                mode = str(arguments.get("mode") or "").strip() or None
+                domain = str(arguments.get("domain") or "").strip() or None
+                enable_db = arguments.get("enable_database")
+                if enable_db is not None:
+                    enable_db = bool(enable_db)
+                proxy_url = str(arguments.get("backend_proxy_url") or "").strip() or None
+                api_p = str(arguments.get("api_path") or "").strip() or None
                 return ai_project_service.publish_project_to_production(
-                    db, user, pid, node_id=node_id, release_notes=notes
+                    db,
+                    user,
+                    pid,
+                    node_id=node_id,
+                    release_notes=notes,
+                    mode=mode,
+                    domain=domain,
+                    enable_database=enable_db,
+                    backend_proxy_url=proxy_url,
+                    api_path=api_p,
                 )
             if action == "git_status":
                 return ai_project_service.git_status(db, user, pid)
@@ -3114,6 +3135,17 @@ def execute_read_tool(
                 "content": "",
                 "available": False,
                 "reason": "node_unreachable",
+            }
+        if server.container_name == "caddy-managed" or server.game_type == "web_static":
+            ports = [f"{p.port}/{p.protocol}" for p in (server.ports or [])]
+            port_str = ", ".join(ports) if ports else "kein Port"
+            return {
+                "server_id": server.id,
+                "lines_requested": lines,
+                "content": f"[MSM] Web-Server #{server.id} ({server.name}) wird aktiv über Caddy verwaltet (Ports: {port_str}).",
+                "available": True,
+                "truncated": False,
+                "redacted": False,
             }
         if not server.container_name:
             return {

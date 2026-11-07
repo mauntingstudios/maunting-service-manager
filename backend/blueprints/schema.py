@@ -64,6 +64,9 @@ class BlueprintCategory(str, Enum):
     BOT = "bot"
     # Eigene Datenbankinstanz statt Spiel (Blueprint `postgres`).
     DATABASE = "database"
+    WEB_APP = "web_app"
+    FRONTEND = "frontend"
+    BACKEND = "backend"
 
 
 class BlueprintSourceType(str, Enum):

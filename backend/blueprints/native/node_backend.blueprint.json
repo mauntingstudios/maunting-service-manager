@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "node_backend",
+    "name": "Node.js Backend",
+    "category": "backend",
+    "author": "Maunting Studios",
+    "description": "Node.js 22 LTS API- und Backend-Server mit automatischer Port-Zuordnung und PostgreSQL-Integration."
+  },
+  "runtime": {
+    "image": "node:22-bookworm-slim",
+    "workdir": "/data",
+    "env": {
+      "NODE_ENV": "production",
+      "PORT": "{WEB_PORT}"
+    },
+    "startup": "./start.sh",
+    "startupProfiles": [
+      {
+        "whenFile": "package.json",
+        "startup": "npm start"
+      },
+      {
+        "whenFile": "index.js",
+        "startup": "node index.js"
+      },
+      {
+        "whenFile": "server.js",
+        "startup": "node server.js"
+      }
+    ],
+    "stopGracePeriodSeconds": 30,
+    "startupCheckSeconds": 3.0,
+    "enableExec": true
+  },
+  "ports": [
+    {
+      "name": "web",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "dockerOnly",
+    "steam": null,
+    "http": null
+  },
+  "mods": null,
+  "health": {
+    "port": {
+      "protocol": "tcp",
+      "port": "{{WEB_PORT}}",
+      "interval": "30s",
+      "failure_threshold": 3
+    }
+  },
+  "backup": null
+}

@@ -251,6 +251,10 @@ export function SingraProjectsView({
   const [publishing, setPublishing] = useState(false)
   const [publishDomainMode, setPublishDomainMode] = useState<'ip' | 'cloudflare' | 'external'>('ip')
   const [publishDomain, setPublishDomain] = useState('')
+  const [publishMode, setPublishMode] = useState<'fullstack_split' | 'frontend' | 'backend'>('fullstack_split')
+  const [publishEnableDb, setPublishEnableDb] = useState(true)
+  const [publishApiPath, setPublishApiPath] = useState('/api/*')
+  const [publishBackendProxyUrl, setPublishBackendProxyUrl] = useState('')
 
   // Team Sharing & Invite Modal state
   const [teamShareModalOpen, setTeamShareModalOpen] = useState(false)
@@ -1269,16 +1273,27 @@ export function SingraProjectsView({
         : publishDomainMode === 'external'
           ? `über meine eigene Domain${domain ? ` ${domain}` : ''} (erkläre mir bitte Schritt für Schritt, was ich bei meinem Domain-Anbieter eintragen muss)`
           : 'erst einmal direkt über IP-Adresse und Port'
+    const modeLabel =
+      publishMode === 'fullstack_split'
+        ? 'Getrenntes Fullstack-Deployment (Frontend über Caddy + Backend im Docker-Container)'
+        : publishMode === 'backend'
+          ? 'Nur Backend (Docker-Container mit Port & PostgreSQL)'
+          : 'Nur Frontend (Caddy Static Web/SPA)'
     const prompt = [
       'Bitte schalte dieses Projekt gemeinsam mit mir online.',
       '',
+      `- Architektur: ${modeLabel}`,
       `- Ziel-Node: ${nodeLabel}`,
       `- Erreichbarkeit: ${reach}`,
+      domain ? `- Domain: ${domain}` : '',
+      publishMode !== 'frontend' ? `- PostgreSQL-Datenbank: ${publishEnableDb ? 'Ja (automatisch einrichten)' : 'Nein'}` : '',
+      publishApiPath.trim() ? `- API-Proxy-Pfad: ${publishApiPath.trim()}` : '',
+      publishBackendProxyUrl.trim() ? `- Backend-Zieladresse: ${publishBackendProxyUrl.trim()}` : '',
       releaseNotes.trim() ? `- Release-Notiz: ${releaseNotes.trim()}` : '',
       '',
       'Ablauf:',
       '1. Prüfe den aktuellen Stand mit `test_project` und behebe Fehler, bevor du veröffentlichst.',
-      '2. Veröffentliche mit `publish_production` auf die genannte Node.',
+      `2. Veröffentliche mit \`publish_production\` (mode="${publishMode}", node_id="${selectedNodeId}"${domain ? `, domain="${domain}"` : ''}, enable_database=${publishEnableDb}${publishApiPath ? `, api_path="${publishApiPath.trim()}"` : ''}${publishBackendProxyUrl ? `, backend_proxy_url="${publishBackendProxyUrl.trim()}"` : ''}).`,
       '3. Prüfe, ob das Projekt danach erreichbar ist, und nenne mir Adresse und Port.',
       '4. Führe mich in einfachen Worten durch die Domain-Einrichtung (A-Record oder CNAME, welche IP, welcher Port) oder richte sie über Cloudflare selbst ein.',
     ]
@@ -1296,6 +1311,11 @@ export function SingraProjectsView({
       const res = await aiApi.publishProjectToProduction(selectedProject.id, {
         node_id: selectedNodeId === '__auto__' ? null : selectedNodeId,
         release_notes: releaseNotes.trim() || null,
+        mode: publishMode,
+        domain: publishDomain.trim() || null,
+        enable_database: publishEnableDb,
+        api_path: publishApiPath.trim() || '/api/*',
+        backend_proxy_url: publishBackendProxyUrl.trim() || null,
       })
       setEnvState(res.environment)
       const prodFiles = await aiApi
@@ -1305,8 +1325,19 @@ export function SingraProjectsView({
       setPreviewEnv('production')
       setPublishModalOpen(false)
       setReleaseNotes('')
+      const portInfo = res.frontend_port
+        ? `Web-Port ${res.frontend_port}`
+        : res.backend_port
+          ? `Backend-Port ${res.backend_port}`
+          : ''
+      const modeText =
+        res.mode === 'fullstack_split'
+          ? 'Fullstack (Frontend & Backend getrennt)'
+          : res.mode === 'backend'
+            ? 'Backend'
+            : 'Frontend'
       toast.success(
-        `Auf Node „${res.node_name}“ veröffentlicht (${res.published_files} Dateien, Server #${res.server_id} ist im Dashboard aktiv).`,
+        `Auf Node „${res.node_name}“ als ${modeText} veröffentlicht (${res.published_files} Dateien, Server #${res.server_id} aktiv${portInfo ? `, ${portInfo}` : ''}).`,
       )
     } catch (err: unknown) {
       toast.error(
@@ -3012,7 +3043,85 @@ export function SingraProjectsView({
                     : 'Wird beim Veröffentlichen im Dashboard angelegt'}
                 </span>
               </div>
+              {envState?.production?.web_url && (
+                <div className="flex items-center justify-between pt-1 border-t border-outline-variant/15">
+                  <span className="text-on-surface-variant flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5 text-primary" />
+                    <span>Öffentliche Adresse</span>
+                  </span>
+                  <a
+                    href={envState.production.web_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-primary hover:underline truncate max-w-[260px]"
+                  >
+                    {envState.production.web_url}
+                  </a>
+                </div>
+              )}
             </div>
+
+            <div>
+              <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                Architektur-Modus
+              </label>
+              <Dropdown
+                value={publishMode}
+                onChange={(val) => setPublishMode(val as 'fullstack_split' | 'frontend' | 'backend')}
+                options={[
+                  { value: 'fullstack_split', label: 'Frontend & Backend getrennt (Fullstack)' },
+                  { value: 'frontend', label: 'Nur Frontend (Webseite / SPA über Caddy)' },
+                  { value: 'backend', label: 'Nur Backend (Docker-Container mit Port & DB)' },
+                ]}
+                aria-label="Architektur-Modus auswählen"
+              />
+            </div>
+
+            {publishMode !== 'frontend' && (
+              <label className="flex items-start gap-2.5 text-xs text-on-surface cursor-pointer rounded-xl border border-outline-variant/25 bg-surface-container-low/40 p-3 select-none">
+                <input
+                  type="checkbox"
+                  checked={publishEnableDb}
+                  onChange={(e) => setPublishEnableDb(e.target.checked)}
+                  className="rounded border-outline-variant text-primary focus:ring-primary mt-0.5"
+                />
+                <div className="flex flex-col">
+                  <span className="font-medium text-on-surface">Eigene PostgreSQL-Datenbank automatisch anlegen & verbinden</span>
+                  <span className="text-xs text-on-surface-variant">Erstellt eine verwaltete Datenbank auf der Node und injiziert DATABASE_URL in die Umgebung des Backends.</span>
+                </div>
+              </label>
+            )}
+
+            {publishMode !== 'backend' && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                    API-Pfad für Backend-Proxy
+                  </label>
+                  <Input
+                    value={publishApiPath}
+                    onChange={(e) => setPublishApiPath(e.target.value)}
+                    placeholder="/api/*"
+                    aria-label="API-Pfad für Backend-Proxy"
+                  />
+                  <span className="text-xs text-on-surface-variant mt-0.5 block">Standard: /api/* (anpassbar für /graphql, /trpc/* etc.)</span>
+                </div>
+                {publishMode === 'frontend' && (
+                  <div>
+                    <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                      Backend-Zieladresse (optional)
+                    </label>
+                    <Input
+                      value={publishBackendProxyUrl}
+                      onChange={(e) => setPublishBackendProxyUrl(e.target.value)}
+                      placeholder="z. B. https://api.extern.de oder 127.0.0.1:5001"
+                      aria-label="Backend-Zieladresse"
+                    />
+                    <span className="text-xs text-on-surface-variant mt-0.5 block">Wohin Caddy Anfragen an den API-Pfad weiterleiten soll.</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-medium text-on-surface-variant mb-1">
@@ -3087,7 +3196,7 @@ export function SingraProjectsView({
               </p>
             </div>
 
-            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-3 border-t border-outline-variant/20">
+            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-4 border-t border-outline-variant/20">
               <Button type="button" variant="ghost" size="sm" onClick={() => setPublishModalOpen(false)}>
                 Abbrechen
               </Button>

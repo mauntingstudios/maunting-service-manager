@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "web_static",
+    "name": "Statisches Web-Frontend",
+    "category": "frontend",
+    "author": "Maunting Studios",
+    "description": "Statisches Web-Frontend (React, Vue, Vite, HTML/JS) ausgeliefert über Caddy mit automatischer SPA-Routenauflösung."
+  },
+  "runtime": {
+    "image": "alpine:3.20",
+    "workdir": "/data",
+    "env": {},
+    "startup": "sleep 315360000",
+    "stopGracePeriodSeconds": 10,
+    "startupCheckSeconds": 1.0
+  },
+  "ports": [
+    {
+      "name": "web",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "dockerOnly",
+    "steam": null,
+    "http": null
+  },
+  "mods": null,
+  "health": {
+    "port": {
+      "protocol": "tcp",
+      "port": "{{WEB_PORT}}",
+      "interval": "30s",
+      "failure_threshold": 3
+    }
+  },
+  "backup": null
+}

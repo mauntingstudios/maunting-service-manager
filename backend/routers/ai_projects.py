@@ -110,6 +110,11 @@ class AiProjectEnvironmentSwitchPayload(BaseModel):
 class AiProjectPublishPayload(BaseModel):
     node_id: str | None = None
     release_notes: str | None = Field(default=None, max_length=500)
+    mode: str | None = Field(default=None, max_length=32)
+    domain: str | None = Field(default=None, max_length=160)
+    enable_database: bool | None = None
+    backend_proxy_url: str | None = Field(default=None, max_length=240)
+    api_path: str | None = Field(default=None, max_length=120)
 
 
 class AiProjectCommandPayload(BaseModel):
@@ -427,6 +432,11 @@ def publish_project_to_production(
             project_id,
             node_id=payload.node_id,
             release_notes=payload.release_notes,
+            mode=payload.mode,
+            domain=payload.domain,
+            enable_database=payload.enable_database,
+            backend_proxy_url=payload.backend_proxy_url,
+            api_path=payload.api_path,
         )
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
