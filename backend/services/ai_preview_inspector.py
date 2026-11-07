@@ -421,9 +421,12 @@ def build_preview_html_document(
     var module = { exports: {} };
     cache[path] = module;
     try {
+      var isTs = /\\.(ts|tsx)$/i.test(path);
+      var presets = [['react', { runtime: 'classic' }]];
+      if (isTs) presets.push('typescript');
       var code = window.Babel.transform(files[path], {
         filename: path,
-        presets: [['react', { runtime: 'classic' }], ['typescript', { isTSX: /\\.(tsx|jsx|js|mjs)$/i.test(path), allExtensions: true }]],
+        presets: presets,
         plugins: ['transform-modules-commonjs'],
         sourceType: 'module'
       }).code;

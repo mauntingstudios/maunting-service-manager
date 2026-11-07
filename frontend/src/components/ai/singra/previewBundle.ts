@@ -212,9 +212,12 @@ const PREVIEW_MODULE_LOADER = `
     cache[path] = module;
     var code;
     try {
+      var isTs = /\\.(ts|tsx)$/i.test(path);
+      var presets = [['react', { runtime: 'classic' }]];
+      if (isTs) presets.push('typescript');
       code = window.Babel.transform(files[path], {
         filename: path,
-        presets: [['react', { runtime: 'classic' }], ['typescript', { isTSX: /\\.(tsx|jsx|js|mjs)$/i.test(path), allExtensions: true }]],
+        presets: presets,
         plugins: ['transform-modules-commonjs'],
         sourceType: 'module'
       }).code;
