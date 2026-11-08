@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import {
-  Bell,
   Check,
   FolderPlus,
   Layers,
@@ -15,7 +14,6 @@ import {
   X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Avatar } from '@/components/app/Avatar'
 import { Button } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
@@ -147,19 +145,27 @@ export function TeamsOverview({
   const displayedArchivedTeams = useMemo(() => filterTeams(archivedTeams), [archivedTeams, searchQuery, teamMetaMap])
 
   return (
-    <div className={`flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin ${className}`}>
-      {/* ── Atmosphärischer Header-Bereich mit weichem Auslauf nach unten (wie im Tresor) ──── */}
-      <div className="relative overflow-hidden shrink-0">
-        <TageszeitHintergrund motiv={headerMotiv} hoehe="h-96" />
+    <div className={`relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin ${className}`}>
+      {/* ── Weicher atmosphärischer Hintergrund, der großzügig nach unten verwaschen ausläuft ──── */}
+      <TageszeitHintergrund
+        motiv={headerMotiv}
+        hoehe="h-[520px] sm:h-[580px] lg:h-[620px]"
+        deckkraft="opacity-55"
+        ebene="-z-10"
+        verlauf="bg-gradient-to-b from-surface/5 via-surface/35 to-surface"
+      />
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[520px] sm:h-[580px] lg:h-[620px] -z-10 bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
+        aria-hidden="true"
+      />
 
-        {/* Obere Topbar */}
-        <header className="relative z-10 flex shrink-0 items-center justify-between gap-4 border-b border-outline-variant/20 bg-surface-container-low/40 px-4 py-3 backdrop-blur-xl sm:px-6">
+      <main className="relative z-10 mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 space-y-6">
+        {/* Obere Leiste: Titel & Suche frei schwebend ohne trennenden Glas-Balken */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="font-headline text-lg sm:text-xl font-bold tracking-tight text-on-surface">
-                {t('teams.title', 'Teams')}
-              </h1>
-            </div>
+            <h1 className="font-headline text-lg sm:text-xl font-bold tracking-tight text-on-surface">
+              {t('teams.title', 'Teams')}
+            </h1>
             <p className="text-xs text-on-surface-variant hidden sm:block truncate">
               {t('teams.overviewSubtitle', 'Zusammenarbeiten, Wissen teilen und Projekte gemeinsam umsetzen.')}
             </p>
@@ -168,109 +174,81 @@ export function TeamsOverview({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3.5 shrink-0">
-            {/* Suche (Desktop) */}
-            <div className="relative hidden md:block w-48 lg:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-on-surface-variant pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('teams.searchGlobal', 'Suchen ...')}
-                className="w-full h-9 rounded-full border border-outline-variant/30 bg-surface-container-high/60 pl-8 pr-12 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/40 backdrop-blur-md transition-colors"
-              />
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-label-sm font-mono px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface-variant/70 bg-surface-container/60">
-                Ctrl + K
-              </span>
-            </div>
-
-            {/* Benachrichtigungs-Glocke mit Indikator */}
-            <button
-              type="button"
-              onClick={() => setActiveTab('invitations')}
-              aria-label={t('teams.notifications', 'Benachrichtigungen')}
-              className="relative grid h-9 w-9 place-items-center rounded-full border border-outline-variant/30 bg-surface-container-high/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors active:scale-95"
-            >
-              <Bell className="h-4 w-4" />
-              {totalInvitationsCount > 0 && (
-                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary ring-2 ring-surface" />
-              )}
-            </button>
-
-            {/* Profil-Avatar mit Online-Status */}
-            <Avatar
-              src={currentUser?.avatar_url}
-              name={currentUser?.username}
-              size="sm"
-              status="online"
-              className="ring-2 ring-primary/25 shadow-sm"
+          {/* Suche (Desktop & Mobile) */}
+          <div className="relative w-full sm:w-64 lg:w-72 shrink-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-on-surface-variant pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('teams.searchPlaceholder', 'Teams durchsuchen ...')}
+              aria-label={t('teams.searchPlaceholder', 'Teams durchsuchen ...')}
+              className="w-full h-9 rounded-full border border-outline-variant/30 bg-surface-container-high/60 pl-8 pr-12 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/40 backdrop-blur-md transition-colors"
             />
+            <span className="hidden sm:inline-flex absolute right-2.5 top-1/2 -translate-y-1/2 text-label-sm font-mono px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface-variant/70 bg-surface-container/60">
+              Ctrl + K
+            </span>
           </div>
-        </header>
-
-        {/* Hero-Bereich mit Begrüßung & "+ Team erstellen" CTA + 4 Stat Cards */}
-        <div className="relative z-10 mx-auto w-full max-w-7xl px-4 pt-6 pb-4 sm:px-6 space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3.5 sm:gap-4">
-              <div className="grid h-12 w-12 sm:h-14 sm:w-14 shrink-0 place-items-center rounded-2xl border border-primary/30 bg-primary/20 text-primary backdrop-blur-xl shadow-lg shadow-primary/10">
-                <Users className="h-6 w-6 sm:h-7 sm:w-7" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="font-headline text-xl sm:text-2xl font-bold tracking-tight text-on-surface">
-                  {greeting}
-                </h2>
-                <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl">
-                  {t('teams.bannerDescription', 'Verwalte deine Teams, Mitglieder, Wissen und gemeinsame Ressourcen.')}
-                </p>
-              </div>
-            </div>
-
-            {canCreate && (
-              <Button
-                variant="primary"
-                onClick={onCreateTeam}
-                className="gap-2 shadow-lg shadow-primary/20 self-start sm:self-auto"
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                <span>{t('teams.createAction', 'Team erstellen')}</span>
-              </Button>
-            )}
-          </div>
-
-          {/* 4 KPI Metrik-Kacheln */}
-          <section aria-label="Statistiken" className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-4">
-            <TeamStatCard
-              icon={<Users className="h-5 w-5" />}
-              value={totalTeamsCount}
-              label={t('teams.statTeams', 'Teams')}
-              accent="blue"
-            />
-            <TeamStatCard
-              icon={<UsersRound className="h-5 w-5" />}
-              value={totalMembersCount}
-              label={t('teams.statMembers', 'Mitglieder')}
-              accent="green"
-            />
-            <TeamStatCard
-              icon={<Layers className="h-5 w-5" />}
-              value={totalProjectsCount}
-              label={t('teams.statProjects', 'Projekte')}
-              accent="purple"
-            />
-            <TeamStatCard
-              icon={<Lock className="h-5 w-5" />}
-              value={totalVaultsCount}
-              label={t('teams.statVaults', 'Team-Tresore')}
-              accent="amber"
-            />
-          </section>
         </div>
-      </div>
 
-      {/* ── Hauptbereich / Canvas ───────────────────────────────────────── */}
-      <main className="flex-1 space-y-5 sm:space-y-6 p-4 sm:p-6 max-w-7xl w-full mx-auto">
+        {/* Hero-Bereich mit Begrüßung & "+ Team erstellen" CTA */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-1">
+          <div className="flex items-center gap-3.5 sm:gap-4">
+            <div className="grid h-12 w-12 sm:h-14 sm:w-14 shrink-0 place-items-center rounded-2xl border border-primary/30 bg-primary/20 text-primary backdrop-blur-xl shadow-lg shadow-primary/10">
+              <Users className="h-6 w-6 sm:h-7 sm:w-7" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-headline text-xl sm:text-2xl font-bold tracking-tight text-on-surface">
+                {greeting}
+              </h2>
+              <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl">
+                {t('teams.bannerDescription', 'Verwalte deine Teams, Mitglieder, Wissen und gemeinsame Ressourcen.')}
+              </p>
+            </div>
+          </div>
+
+          {canCreate && (
+            <Button
+              variant="primary"
+              onClick={onCreateTeam}
+              className="gap-2 shadow-lg shadow-primary/20 self-start sm:self-auto"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              <span>{t('teams.createAction', 'Team erstellen')}</span>
+            </Button>
+          )}
+        </div>
+
+        {/* 4 KPI Metrik-Kacheln */}
+        <section aria-label="Statistiken" className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-4">
+          <TeamStatCard
+            icon={<Users className="h-5 w-5" />}
+            value={totalTeamsCount}
+            label={t('teams.statTeams', 'Teams')}
+            accent="blue"
+          />
+          <TeamStatCard
+            icon={<UsersRound className="h-5 w-5" />}
+            value={totalMembersCount}
+            label={t('teams.statMembers', 'Mitglieder')}
+            accent="green"
+          />
+          <TeamStatCard
+            icon={<Layers className="h-5 w-5" />}
+            value={totalProjectsCount}
+            label={t('teams.statProjects', 'Projekte')}
+            accent="purple"
+          />
+          <TeamStatCard
+            icon={<Lock className="h-5 w-5" />}
+            value={totalVaultsCount}
+            label={t('teams.statVaults', 'Team-Tresore')}
+            accent="amber"
+          />
+        </section>
+
         {/* Filter-Leiste & Ansichts-Umschaltung */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
           {/* Tab-Pills */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             <button
@@ -328,7 +306,7 @@ export function TeamsOverview({
               aria-label="Rasteransicht"
               className={`grid h-7 w-7 place-items-center rounded-full text-xs transition-colors ${
                 viewMode === 'grid'
-                  ? 'bg-surface-container-highest text-on-surface shadow-xs'
+                  ? 'bg-surface-container-highest text-on-surface shadow-sm'
                   : 'text-on-surface-variant hover:text-on-surface'
               }`}
             >
@@ -340,25 +318,13 @@ export function TeamsOverview({
               aria-label="Listenansicht"
               className={`grid h-7 w-7 place-items-center rounded-full text-xs transition-colors ${
                 viewMode === 'list'
-                  ? 'bg-surface-container-highest text-on-surface shadow-xs'
+                  ? 'bg-surface-container-highest text-on-surface shadow-sm'
                   : 'text-on-surface-variant hover:text-on-surface'
               }`}
             >
               <List className="h-3.5 w-3.5" />
             </button>
           </div>
-        </div>
-
-        {/* Suche (Mobile) */}
-        <div className="relative md:hidden w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-on-surface-variant pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('teams.searchPlaceholder', 'Teams durchsuchen ...')}
-            className="w-full h-9 rounded-full border border-outline-variant/30 bg-surface-container-high/60 pl-8 pr-4 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary/60 focus:outline-none focus:ring-1 focus:ring-primary/40 backdrop-blur-md transition-colors"
-          />
         </div>
 
         {/* ── Inhalt nach Tab ─────────────────────────────────────────── */}
