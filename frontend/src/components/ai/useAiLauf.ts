@@ -637,6 +637,7 @@ export function useAiLauf({
           ...(selectedModel ? { model: selectedModel } : {}),
           ...(appFaehigkeiten ? { app_faehigkeiten: appFaehigkeiten } : {}),
         }, verarbeite, signal, (newId) => {
+          useAiGenerationStore.getState().startGeneration(newId)
           onResolveConversationId?.(newId)
         }),
         assistantId,

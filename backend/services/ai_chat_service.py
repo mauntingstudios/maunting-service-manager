@@ -277,11 +277,15 @@ def list_user_conversations(
     limit: int = 100,
 ) -> list[AiConversation]:
     """Listet alle Chat-Unterhaltungen des Benutzers, sortiert nach Pin und Aktivitaet."""
+    from datetime import datetime, timezone, timedelta
     from models.dis_text import vorab_entschluesselt
     from models import AiMessage
 
-    # Leere Unterhaltungen (0 Nachrichten), die nicht angeheftet sind, belasten den Verlauf nicht.
-    # Sie werden bereinigt, damit keine "Neue Unterhaltung"-Ruinen liegenbleiben.
+    # Leere Unterhaltungen (0 Nachrichten), die nicht angeheftet sind und älter als 15 Minuten sind,
+    # werden bereinigt, damit keine verwaisten Altlasten liegenbleiben.
+    # Kürzlich erstellte Unterhaltungen (< 15 Min) bleiben sichtbar, damit neu gestartete Chats sofort erscheinen.
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+
     conv_with_msgs = (
         db.query(AiMessage.conversation_id)
         .join(AiConversation, AiMessage.conversation_id == AiConversation.id)
@@ -294,6 +298,7 @@ def list_user_conversations(
             AiConversation.user_id == user.id,
             AiConversation.kind == "primary",
             AiConversation.pinned.is_(False),
+            AiConversation.created_at < cutoff,
         )
         if msg_conv_ids:
             cleanup_query = cleanup_query.filter(~AiConversation.id.in_(msg_conv_ids))
@@ -308,10 +313,15 @@ def list_user_conversations(
     )
     if msg_conv_ids:
         query = query.filter(
-            (AiConversation.pinned == True) | (AiConversation.id.in_(msg_conv_ids))
+            (AiConversation.pinned == True)
+            | (AiConversation.id.in_(msg_conv_ids))
+            | (AiConversation.created_at >= cutoff)
         )
     else:
-        query = query.filter(AiConversation.pinned == True)
+        query = query.filter(
+            (AiConversation.pinned == True)
+            | (AiConversation.created_at >= cutoff)
+        )
     if project_id is not None:
         query = query.filter(AiConversation.project_id == project_id)
     query = query.order_by(

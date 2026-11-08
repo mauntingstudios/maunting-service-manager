@@ -177,9 +177,6 @@ export function Ai({
         if (prev === undefined) {
           return list.length > 0 ? list[0].id : null
         }
-        if (prev !== null && !list.some((c) => c.id === prev)) {
-          return null
-        }
         return prev
       })
     } catch (err) {
@@ -498,6 +495,20 @@ export function Ai({
                 onNewChat={() => void handleNewChat()}
                 onResolveConversationId={(resolvedId) => {
                   setActiveConversationId(resolvedId)
+                  setConversations((prev) => {
+                    if (prev.some((c) => c.id === resolvedId)) return prev
+                    const now = new Date().toISOString()
+                    const optimisticConv: AiConversationSummary = {
+                      id: resolvedId,
+                      kind: 'primary',
+                      title: 'Neuer Chat',
+                      project_id: activeProjectId ?? null,
+                      pinned: false,
+                      created_at: now,
+                      updated_at: now,
+                    }
+                    return [optimisticConv, ...prev]
+                  })
                   void aiApi.listConversations(activeProjectId).then((list) => setConversations(list)).catch(() => {})
                 }}
                 initialAttachment={pendingAttachmentToChat}

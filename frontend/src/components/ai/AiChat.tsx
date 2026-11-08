@@ -586,6 +586,15 @@ export function AiChat({
 
   useEffect(() => {
     let active = true
+    if (streaming) {
+      return
+    }
+    if (
+      lastResolvedDraftIdRef.current &&
+      lastResolvedDraftIdRef.current === (scope.kind === 'primary' ? scope.conversationId : null)
+    ) {
+      return
+    }
     Promise.all([
       aiApi.listProviders().catch((err) => {
         still(err, 'ai.listProviders')
@@ -747,11 +756,12 @@ export function AiChat({
 
   useEffect(() => {
     if (!streaming && scope.kind === 'primary' && scope.conversationId) {
+      lastResolvedDraftIdRef.current = null
       const cur = useAiGenerationStore.getState().generations[scope.conversationId]
       if (cur && cur.status === 'generating') {
         useAiGenerationStore.getState().finishGeneration(scope.conversationId, true)
-        window.dispatchEvent(new CustomEvent('singra-refresh-conversations'))
       }
+      window.dispatchEvent(new CustomEvent('singra-refresh-conversations'))
     }
   }, [streaming, scope])
 
