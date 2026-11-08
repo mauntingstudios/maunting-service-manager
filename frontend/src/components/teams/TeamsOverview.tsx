@@ -72,7 +72,7 @@ export function TeamsOverview({
 
   // Tageszeitabhängiges Motiv & Begrüßung für nahtlosen Header-Auslauf (wie im Tresor)
   const stunde = useMemo(() => new Date().getHours(), [])
-  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde), [stunde])
+  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'teams'), [stunde])
   const greetingKey = useMemo(() => begruessungSchluessel(stunde, true), [stunde])
   const greeting = currentUser?.username
     ? `${t(greetingKey, 'Hallo')}, ${currentUser.username}!`
