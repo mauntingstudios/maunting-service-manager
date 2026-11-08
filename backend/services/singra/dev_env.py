@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from models import Node, PostgresDatabase, Server, ServerPermission
+from models import Node, PostgresDatabase, Server, ServerPermission, ServerPort
 from models.ai_project import AiProject
 from models.user import User
 from services import (
@@ -141,22 +141,31 @@ def start_dev_environment(
     be_server = db.get(Server, int(be_server_id)) if (be_server_id and str(be_server_id).isdigit()) else None
 
     if (mode in ("backend", "fullstack_split") or has_backend) and be_server is None:
+        is_python = any(f.path.lower().endswith("requirements.txt") or f.path.lower().endswith(".py") for f in files)
+        chosen_game_type = "python_backend" if is_python else "node_backend"
         be_server = Server(
             name=f"{project.name} (Dev Backend)"[:120],
-            game_type="custom",
+            game_type=chosen_game_type,
             install_dir=str(release_path),
             node_id=chosen_node.id if chosen_node else None,
             status="running",
             desired_power_state="running",
             public_bind_ip="127.0.0.1",
+            game_port=be_port,
         )
         db.add(be_server)
         db.flush()
         if not be_server.id or not str(be_server.id).isdigit():
             be_server.id = 101
+        db.add(ServerPort(server_id=be_server.id, role="web", port=be_port, protocol="tcp"))
         db.add(ServerPermission(user_id=user.id, server_id=be_server.id, permission_key="*"))
         meta["dev_backend_server_id"] = be_server.id
     elif be_server is not None:
+        if be_server.game_type in ("custom", None, ""):
+            is_python = any(f.path.lower().endswith("requirements.txt") or f.path.lower().endswith(".py") for f in files)
+            be_server.game_type = "python_backend" if is_python else "node_backend"
+        if not be_server.game_port and be_port:
+            be_server.game_port = be_port
         be_server.status = "running"
         be_server.desired_power_state = "running"
         be_server.install_dir = str(release_path)
@@ -244,14 +253,18 @@ def start_dev_environment(
                 desired_power_state="running",
                 container_name="caddy-managed",
                 public_bind_ip="127.0.0.1",
+                game_port=fe_port,
             )
             db.add(fe_server)
             db.flush()
             if not fe_server.id or not str(fe_server.id).isdigit():
                 fe_server.id = 102
+            db.add(ServerPort(server_id=fe_server.id, role="web", port=fe_port, protocol="tcp"))
             db.add(ServerPermission(user_id=user.id, server_id=fe_server.id, permission_key="*"))
             meta["dev_frontend_server_id"] = fe_server.id
         else:
+            if not fe_server.game_port and fe_port:
+                fe_server.game_port = fe_port
             fe_server.status = "running"
             fe_server.desired_power_state = "running"
             fe_server.install_dir = str(release_path)

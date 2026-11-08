@@ -116,12 +116,13 @@ def _delete(port: int, protocol: str) -> bool:
     return "Could not delete" not in (result.stdout or "")
 
 
-# Eine Zeile aus ``ufw status``:
+# Eine Zeile aus ``ufw status`` oder ``ufw status numbered``:
 #   25565/tcp                  ALLOW       Anywhere
+#   [ 1] 25565/tcp             ALLOW IN    Anywhere
 #   25565                      ALLOW       Anywhere
-# Die zweite Form ohne Protokoll gilt fuer TCP **und** UDP.
+# Die Form ohne Protokoll gilt fuer TCP **und** UDP.
 _ALLOW_LINE_RE = re.compile(
-    r"^\s*(?P<port>\d+)(?:/(?P<protocol>tcp|udp))?\s+ALLOW\b",
+    r"^\s*(?:\[\s*\d+\]\s+)?(?P<port>\d+)(?:/(?P<protocol>tcp|udp))?\s+ALLOW\b",
     re.IGNORECASE,
 )
 

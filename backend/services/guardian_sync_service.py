@@ -112,6 +112,8 @@ def compile_desired_state(
     capabilities: dict | None = None,
 ) -> dict:
     plugin = get_plugin(server.game_type)
+    if plugin is None and getattr(server, "game_type", None) in ("custom", None, ""):
+        plugin = get_plugin("node_backend")
     blueprint = plugin.get_blueprint() if plugin else None
     if blueprint is None:
         raise GuardianCompileError("blueprint_unavailable", "Guardian Blueprint is unavailable")

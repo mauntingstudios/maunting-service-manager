@@ -17,7 +17,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
-from models import Node, OperationTask, PostgresDatabase, Server, ServerPermission, SingraDeployment
+from models import Node, OperationTask, PostgresDatabase, Server, ServerPermission, ServerPort, SingraDeployment
 from models.ai_project import AiProject
 from models.user import User
 from services import (
@@ -263,16 +263,21 @@ def _execute_phases(
         be_port = int(options.get("backend_port") or 27025)
 
         if (mode in ("backend", "fullstack_split") or enable_db) and not backend_server_id:
+            is_python = any(f.path.lower().endswith("requirements.txt") or f.path.lower().endswith(".py") for f in files)
+            chosen_game_type = "python_backend" if is_python else "node_backend"
             new_be = Server(
                 name=f"{project.name} (Backend)"[:120] if mode == "fullstack_split" else project.name[:120],
-                game_type="custom",
+                game_type=chosen_game_type,
                 install_dir=str(release_path),
                 status="stopped",
                 desired_power_state="running",
+                public_bind_ip="127.0.0.1",
+                game_port=be_port,
             )
             db.add(new_be)
             db.flush()
             backend_server_id = new_be.id or 1
+            db.add(ServerPort(server_id=backend_server_id, role="web", port=be_port, protocol="tcp"))
             meta[f"{environment}_backend_server_id"] = backend_server_id
             ai_project_service._save_env_metadata(ws, meta)
 
@@ -353,6 +358,11 @@ def _execute_phases(
 
             be_server = db.get(Server, backend_server_id)
             if be_server:
+                if be_server.game_type in ("custom", None, ""):
+                    is_python = any(f.path.lower().endswith("requirements.txt") or f.path.lower().endswith(".py") for f in files)
+                    be_server.game_type = "python_backend" if is_python else "node_backend"
+                if not be_server.game_port and be_port:
+                    be_server.game_port = be_port
                 be_server.desired_power_state = "running"
                 db.commit()
 
@@ -391,10 +401,13 @@ def _execute_phases(
                     status="stopped",
                     desired_power_state="running",
                     container_name="caddy-managed",
+                    public_bind_ip="127.0.0.1",
+                    game_port=fe_port,
                 )
                 db.add(new_fe)
                 db.flush()
                 fe_server_id = new_fe.id or (2 if backend_server_id == 1 else 1)
+                db.add(ServerPort(server_id=fe_server_id, role="web", port=fe_port, protocol="tcp"))
                 meta[f"{environment}_frontend_server_id"] = fe_server_id
                 ai_project_service._save_env_metadata(ws, meta)
 

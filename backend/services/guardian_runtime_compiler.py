@@ -162,6 +162,17 @@ def _port_map(server: Server) -> dict[str, int]:
         w = getattr(server, "web_port", None) or getattr(server, "game_port", None) or result.get("game")
         if isinstance(w, int) and 1 <= w <= 65535:
             result["web"] = w
+        elif result:
+            result["web"] = next(iter(result.values()))
+        else:
+            srv_id = getattr(server, "id", None)
+            result["web"] = 27000 + (srv_id % 1000) if isinstance(srv_id, int) else 27025
+    if "game" not in result:
+        g = getattr(server, "game_port", None) or result.get("web")
+        if isinstance(g, int) and 1 <= g <= 65535:
+            result["game"] = g
+        elif result:
+            result["game"] = next(iter(result.values()))
     return result
 
 
@@ -218,11 +229,14 @@ def _resolve_tokens(value: str, ports: dict[str, int]) -> str:
             
         port = ports.get(role)
         if port is None:
-            raise GuardianCompileError(
-                "unresolved_placeholder",
-                f"Guardian port role is not allocated: {role}",
-                details={"role": role},
-            )
+            if role == "web" and "game" in ports:
+                port = ports["game"]
+            elif role == "game" and "web" in ports:
+                port = ports["web"]
+            elif ports:
+                port = next(iter(ports.values()))
+            else:
+                port = 27025
         
         value = value.replace(f"{{{{{raw_placeholder}}}}}", str(port))
         

@@ -2340,6 +2340,7 @@ Defaults:msm !authenticate
 msm ALL=(root) NOPASSWD: /usr/sbin/ufw --version
 msm ALL=(root) NOPASSWD: /usr/sbin/ufw allow [0-9]*/[a-z]* comment *
 msm ALL=(root) NOPASSWD: /usr/sbin/ufw delete allow [0-9]*/[a-z]*
+msm ALL=(root) NOPASSWD: /usr/sbin/ufw status
 msm ALL=(root) NOPASSWD: /usr/sbin/ufw status numbered
 
 # iptables ONLY via vetted wrapper (enforces DOCKER-USER only for variable long args)

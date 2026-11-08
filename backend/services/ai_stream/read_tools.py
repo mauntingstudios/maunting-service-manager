@@ -79,7 +79,13 @@ def _serverbezug(eintraege: list[dict]) -> int | None:
     return None
 
 
-def _ergebnis_schwaerzen(wert, *, freitext: bool = False):
+def _ergebnis_schwaerzen(
+    wert,
+    *,
+    freitext: bool = False,
+    _visited: set[int] | None = None,
+    _tiefe: int = 0,
+):
     """Laeuft ein Werkzeugergebnis durch und schwaerzt jede Zeichenkette darin.
 
     Rekursiv ueber Woerterbuecher und Listen, weil Ergebnisse verschachtelt sind
@@ -99,25 +105,56 @@ def _ergebnis_schwaerzen(wert, *, freitext: bool = False):
 
     Zahlen und Wahrheitswerte bleiben, wie sie sind — ein Port ist kein Geheimnis
     und eine Groesse in Megabyte auch nicht.
+
+    Zyklen- und Tiefenschutz verhindern Stack Overflow und Rekursionsabstuerze,
+    wenn Werkzeuge rekursive Datenstrukturen oder tiefe Graphreferenzen liefern.
     """
+    if _tiefe > 30:
+        return "[MAX_TIEFE]"
+
     schwaerzen = redact_freetext if freitext else redact_sensitive_text
     if isinstance(wert, str):
         return schwaerzen(wert)
     if isinstance(wert, dict):
-        ergebnis = {}
-        for k, v in wert.items():
-            if ist_geheimer_schluessel(k):
-                # Der ganze Teilbaum, nicht nur eine Zeichenkette: unter
-                # `credentials` kann ein Woerterbuch stehen, dessen Werte
-                # harmlose Schluessel wie `user` und `pass` tragen. Weiter
-                # hineinzusteigen hiesse, sich auf die inneren Namen zu
-                # verlassen — und der aeussere hat schon gesagt, worum es geht.
-                ergebnis[k] = "[REDACTED]"
-                continue
-            ergebnis[k] = _ergebnis_schwaerzen(v, freitext=freitext)
-        return ergebnis
+        if _visited is None:
+            _visited = set()
+        obj_id = id(wert)
+        if obj_id in _visited:
+            return "[ZIRKULAER]"
+        _visited.add(obj_id)
+        try:
+            ergebnis = {}
+            for k, v in wert.items():
+                if ist_geheimer_schluessel(k):
+                    # Der ganze Teilbaum, nicht nur eine Zeichenkette: unter
+                    # `credentials` kann ein Woerterbuch stehen, dessen Werte
+                    # harmlose Schluessel wie `user` und `pass` tragen. Weiter
+                    # hineinzusteigen hiesse, sich auf die inneren Namen zu
+                    # verlassen — und der aeussere hat schon gesagt, worum es geht.
+                    ergebnis[k] = "[REDACTED]"
+                    continue
+                ergebnis[k] = _ergebnis_schwaerzen(
+                    v, freitext=freitext, _visited=_visited, _tiefe=_tiefe + 1
+                )
+            return ergebnis
+        finally:
+            _visited.remove(obj_id)
     if isinstance(wert, list):
-        return [_ergebnis_schwaerzen(v, freitext=freitext) for v in wert]
+        if _visited is None:
+            _visited = set()
+        obj_id = id(wert)
+        if obj_id in _visited:
+            return "[ZIRKULAER]"
+        _visited.add(obj_id)
+        try:
+            return [
+                _ergebnis_schwaerzen(
+                    v, freitext=freitext, _visited=_visited, _tiefe=_tiefe + 1
+                )
+                for v in wert
+            ]
+        finally:
+            _visited.remove(obj_id)
     return wert
 
 
