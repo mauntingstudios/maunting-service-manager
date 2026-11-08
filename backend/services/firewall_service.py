@@ -364,10 +364,34 @@ def reconcile_firewall_rules(db) -> int:
     Returns:
         Anzahl der bereinigten gestoppten Server.
     """
+    if not _ufw_available():
+        return 0
+
+    open_rules = allowed_ports()
+    if open_rules is None or not open_rules:
+        # Keine UFW-Regeln geoeffnet -> nichts zu tun, verhindert unnoetige Subprozess-Aufrufe
+        return 0
+
     from models import Server
     from services.server_lifecycle_service import _ports
 
     try:
+        active_servers = (
+            db.query(Server)
+            .options(selectinload(Server.ports))
+            .filter(
+                (Server.status.in_(tuple(_FIREWALL_KEEP_OPEN_STATUSES)))
+                | (Server.desired_power_state == "running")
+            )
+            .all()
+        )
+        active_ports = {
+            (p.port, p.protocol.lower())
+            for srv in active_servers
+            for p in getattr(srv, "ports", [])
+            if p.port and p.protocol
+        }
+
         non_running = (
             db.query(Server)
             .options(selectinload(Server.ports))
@@ -384,12 +408,19 @@ def reconcile_firewall_rules(db) -> int:
         try:
             ports_list = _ports(srv)
             if not ports_list:
-                # Ohne Ports gibt es nichts zu schließen. Der Aufruf hätte nur
-                # einen ``ufw --version``-Unterprozess gekostet und alle 30
-                # Sekunden eine Audit-Zeile über nichts geschrieben.
                 continue
+
+            # Nur Ports schliessen, die tatsächlich in UFW offen sind UND von keinem aktiven Server beansprucht werden!
+            stale_ports = [
+                (p, proto, role)
+                for p, proto, role in ports_list
+                if (p, proto.lower()) in open_rules and (p, proto.lower()) not in active_ports
+            ]
+            if not stale_ports:
+                continue
+
             if close_ports(
-                ports_list,
+                stale_ports,
                 node=srv.node,
                 name=srv.name,
                 db=db,
@@ -397,6 +428,8 @@ def reconcile_firewall_rules(db) -> int:
                 reason="Audit-Reconciliation: Veraltete Ports für gestoppten Server geschlossen",
             ):
                 reconciled += 1
+                for p, proto, _ in stale_ports:
+                    open_rules.discard((p, proto.lower()))
         except Exception as exc:
             logger.warning("Fehler bei Firewall-Reconciliation für Server %s: %s", srv.id, exc)
 

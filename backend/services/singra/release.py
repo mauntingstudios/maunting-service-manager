@@ -176,6 +176,35 @@ def build_release(
         dist_index = target_fe_dir / "dist" / "index.html"
         if not dist_index.exists() and (build_dir / "dist" / "index.html").exists():
             dist_index = build_dir / "dist" / "index.html"
+
+        # Falls dist/index.html fehlt, aber Vite-Dateien vorhanden sind: versuche automatischen Vite-Build
+        if not dist_index.exists():
+            has_vite = any((target_fe_dir / marker).exists() for marker in ("vite.config.ts", "vite.config.js", "vite.config.mjs")) or (target_fe_dir / "index.html").exists()
+            if has_vite:
+                log("dist/index.html fehlt nach 'npm run build'; führe automatischen 'vite build' Fallback aus...")
+                if docker_avail:
+                    fallback_res = docker_service.run_ephemeral(
+                        image="node:22-bookworm-slim",
+                        command=["sh", "-c", "npx --no-install vite build || npx vite build || ./node_modules/.bin/vite build"],
+                        workdir="/app",
+                        volumes=volumes,
+                        timeout=300,
+                        node=node,
+                        log_callback=log_callback,
+                    )
+                    build_output += "\n" + (fallback_res.get("stdout") or "") + "\n" + (fallback_res.get("stderr") or "")
+                else:
+                    try:
+                        npx_bin = shutil.which("npx.cmd") or shutil.which("npx")
+                        if npx_bin:
+                            pf = subprocess.run([npx_bin, "vite", "build"], cwd=str(target_fe_dir), capture_output=True, text=True, timeout=300)
+                            build_output += "\n" + pf.stdout + pf.stderr
+                    except Exception as fallback_exc:
+                        build_output += f"\nVite-Fallback-Fehler: {fallback_exc}"
+
+            if not dist_index.exists() and (build_dir / "dist" / "index.html").exists():
+                dist_index = build_dir / "dist" / "index.html"
+
         if not dist_index.exists():
             tail = build_output.strip()[-500:] if build_output else "Keine Build-Ausgabe vorhanden."
             raise SingraBuildError(

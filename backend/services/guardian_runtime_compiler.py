@@ -158,6 +158,10 @@ def _port_map(server: Server) -> dict[str, int]:
         r = getattr(server, "rcon_port", None)
         if isinstance(r, int) and 1 <= r <= 65535:
             result["rcon"] = r
+    if "web" not in result:
+        w = getattr(server, "web_port", None) or getattr(server, "game_port", None) or result.get("game")
+        if isinstance(w, int) and 1 <= w <= 65535:
+            result["web"] = w
     return result
 
 
@@ -240,6 +244,9 @@ def _resolved_port(value: str, ports: dict[str, int]) -> int:
 def _target_host(server: Server) -> str:
     value = str(getattr(server, "public_bind_ip", "") or "").strip()
     if not value:
+        node = getattr(server, "node", None)
+        if node is None or getattr(node, "is_local", True):
+            return "127.0.0.1"
         raise GuardianCompileError(
             "probe_target_unavailable",
             "A concrete public_bind_ip is required for host-bound Guardian probes",
