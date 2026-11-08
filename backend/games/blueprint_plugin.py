@@ -520,11 +520,19 @@ class BlueprintPlugin(GamePlugin):
     def build_container_env(self, server) -> dict[str, str]:
         # Port-Tokens in Env-Werten aufloesen (z. B. ``SERVER_PORT={GAME_PORT}``
         # fuer ``itzg/minecraft-server``). Werte selbst werden NIE geloggt.
-        return render_env_values(
+        base_env = render_env_values(
             self._blueprint.runtime.env,
             ports=self._server_ports(server),
             bind_ip=server.public_bind_ip or None,
         )
+        try:
+            from services.server_runtime_env import get_runtime_env
+            runtime_env = get_runtime_env(server.id)
+            if runtime_env:
+                base_env.update(runtime_env)
+        except Exception as exc:
+            logger.warning("Konnte server_runtime_env fuer Server %s nicht laden: %s", getattr(server, "id", None), exc)
+        return base_env
 
     def prepare_runtime(self, server) -> None:
         ports = self._server_ports(server)

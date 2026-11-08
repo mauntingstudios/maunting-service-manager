@@ -213,7 +213,7 @@ def _global_tool_definitions() -> list[dict]:
     optional.append(_function("advise_node_placement", "Empfiehlt einen Host fuer einen neuen Server. Nutze vor propose_server_create um RAM/Disk bewusst zu waehlen. Unterscheidet gebucht vs wirklich belegt.", {"ram_need_mb": {"type": "integer", "minimum": 512}, "disk_need_gb": {"type": "integer", "minimum": 1}}, ["ram_need_mb"]))
     optional.append(_function(
         "project_workspace",
-        "Arbeitet in KI-Projekten (Wissen, Dateien, Coding-Sandbox, Vorschau, Tests, Produktion & Git): Projekte/Dateien lesen & schreiben, gezielt patchen (patch_file für Teil-Ersetzungen wie bei Claude Code), Vorschau einrichten (configure_preview), Projekt komplett durchtesten inkl. Happy-/Negative-Path (test_project), Befehle ausfuehren (run_command), auf Produktion schalten (publish_production), wiederverwendbare Komponenten suchen (search_components), Git-Status/Sync/Commit.",
+        "Arbeitet in KI-Projekten (Dateien, Coding, Vorschau, Tests, Dev-Sandbox, DB, Deploy & Git).",
         {
             "action": {
                 "type": "string",
@@ -233,41 +233,38 @@ def _global_tool_definitions() -> list[dict]:
                     "publish_production",
                     "search_components",
                     "run_sql",
+                    "db_status",
+                    "db_tables",
+                    "db_rows",
+                    "apply_migrations",
                     "git_status",
                     "git_sync",
                     "git_commit",
+                    "dev_start",
+                    "dev_stop",
+                    "dev_status",
+                    "git_branch",
+                    "git_open_pr",
+                    "merge_to_main",
                 ],
             },
-            "project_id": {
-                "type": "string",
-                "description": "Projekt-ID (UUID); kann weggelassen werden, wenn der Chat bereits einem Projekt zugeordnet ist.",
-            },
+            "project_id": {"type": "string", "description": "Projekt-ID (UUID)."},
             "name": {"type": "string", "maxLength": 160},
             "description": {"type": "string", "maxLength": 500},
             "project_kind": {"type": "string", "enum": ["coding", "docs", "general"]},
             "path": {"type": "string", "maxLength": 240},
-            "entry_file": {"type": "string", "maxLength": 240, "description": "Einstiegsdatei fuer die Live-Vorschau (z. B. index.html oder src/App.tsx)."},
-            "framework": {"type": "string", "maxLength": 64, "description": "Framework der Vorschau (html, react, fullstack)."},
+            "entry_file": {"type": "string", "maxLength": 240, "description": "Vorschau-Einstieg (index.html, src/App.tsx)."},
+            "framework": {"type": "string", "maxLength": 64, "description": "html, react, fullstack."},
             "viewports": {
                 "type": "array",
                 "items": {"type": "string", "enum": ["mobile", "tablet", "desktop"]},
-                "description": "Bildschirmgroessen fuer die visuelle Headless-Sichtpruefung (preview_inspect). Standard ist ['mobile', 'desktop'].",
             },
             "interactions": {
                 "type": "array",
-                "description": "Optionale Liste interaktiver Aktionen vor der Sichtpruefung (z. B. [{'selector': '#menu-btn', 'action': 'click'}]).",
             },
             "content": {"type": "string", "maxLength": 200000},
-            "find": {
-                "type": "string",
-                "maxLength": 50000,
-                "description": "Exakter zu ersetzender Codeausschnitt in der Datei (fuer patch_file). Muss genau einmal vorkommen.",
-            },
-            "replace": {
-                "type": "string",
-                "maxLength": 50000,
-                "description": "Neuer Codeausschnitt, der anstelle von 'find' eingesetzt wird (fuer patch_file).",
-            },
+            "find": {"type": "string", "maxLength": 50000, "description": "Exakter zu ersetzender Codeblock (patch_file)."},
+            "replace": {"type": "string", "maxLength": 50000, "description": "Neuer Codeblock (patch_file)."},
             "edits": {
                 "type": "array",
                 "items": {
@@ -278,24 +275,30 @@ def _global_tool_definitions() -> list[dict]:
                     },
                     "required": ["find", "replace"],
                 },
-                "description": "Optionale Liste sequenzieller Ersetzungen fuer patch_file.",
             },
             "command": {"type": "string", "maxLength": 2000},
             "query": {"type": "string", "maxLength": 160},
             "node_id": {"type": "string", "maxLength": 64},
             "release_notes": {"type": "string", "maxLength": 500},
-            "mode": {"type": "string", "enum": ["auto", "frontend", "backend", "fullstack_split"], "description": "Veröffentlichungs-Architektur (Fullstack getrennt, nur Frontend, nur Backend)."},
-            "domain": {"type": "string", "maxLength": 160, "description": "Öffentliche Domain für Cloudflare/Caddy (z. B. app.beispiel.de)."},
-            "enable_database": {"type": "boolean", "description": "Automatische PostgreSQL-Datenbank für das Backend anlegen."},
-            "backend_proxy_url": {"type": "string", "maxLength": 240, "description": "Zieladresse für den Backend-Proxy (z. B. http://localhost:5001 oder https://api.extern.de)."},
-            "api_path": {"type": "string", "maxLength": 120, "description": "Pfad für den Backend-Proxy (Standard /api/*)."},
-            "bind_ip": {"type": "string", "maxLength": 64, "description": "Öffentliche IP-Adresse des Ziel-Nodes für Bindings und Erreichbarkeit."},
-            "merge_to_main": {"type": "boolean", "description": "Release nach erfolgreicher Veröffentlichung direkt in den main-Branch mergen."},
-            "sql": {"type": "string", "maxLength": 100000, "description": "SQL-Skript oder Befehl, der auf der Projekt-Dev-Datenbank ausgefuehrt werden soll."},
+            "mode": {"type": "string", "enum": ["auto", "frontend", "backend", "fullstack_split"]},
+            "domain": {"type": "string", "maxLength": 160},
+            "enable_database": {"type": "boolean"},
+            "backend_proxy_url": {"type": "string", "maxLength": 240},
+            "api_path": {"type": "string", "maxLength": 120},
+            "bind_ip": {"type": "string", "maxLength": 64},
+            "merge_to_main": {"type": "boolean"},
+            "sql": {"type": "string", "maxLength": 100000},
+            "environment": {"type": "string", "enum": ["dev", "prod"]},
+            "write": {"type": "boolean"},
+            "table": {"type": "string", "maxLength": 120},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
             "repo_url": {"type": "string", "maxLength": 1024},
             "branch": {"type": "string", "maxLength": 120},
             "message": {"type": "string", "maxLength": 500},
             "push": {"type": "boolean"},
+            "title": {"type": "string", "maxLength": 200, "description": "PR-Titel für git_open_pr."},
+            "body": {"type": "string", "maxLength": 4000, "description": "PR-Beschreibung für git_open_pr."},
+            "target_branch": {"type": "string", "maxLength": 120, "description": "Zielbranch (Standard: main)."},
         },
         ["action"],
     ))
@@ -2087,8 +2090,34 @@ def _execute_global_read_tool(
                 sql_cmd = str(arguments.get("sql") or "").strip()
                 if not sql_cmd:
                     raise AiActionValidationError("Parameter 'sql' darf nicht leer sein")
+                env = str(arguments.get("environment") or arguments.get("env") or "dev").strip()
+                write = bool(arguments.get("write", False))
                 from services import ai_db_migration_service
-                return ai_db_migration_service.execute_project_sql(db, user, pid, sql_cmd)
+                return ai_db_migration_service.execute_project_sql(
+                    db, user, pid, sql_cmd, target_env=env, write=write
+                )
+            if action == "db_status":
+                env = str(arguments.get("environment") or arguments.get("env") or "dev").strip()
+                from services import ai_db_migration_service
+                return ai_db_migration_service.get_project_db_status(db, user, pid, target_env=env)
+            if action == "db_tables":
+                env = str(arguments.get("environment") or arguments.get("env") or "dev").strip()
+                from services import ai_db_migration_service
+                return {"tables": ai_db_migration_service.list_project_tables(db, user, pid, target_env=env)}
+            if action == "db_rows":
+                table = str(arguments.get("table") or arguments.get("table_name") or "").strip()
+                if not table:
+                    raise AiActionValidationError("Parameter 'table' darf nicht leer sein")
+                limit = int(arguments.get("limit") or 50)
+                env = str(arguments.get("environment") or arguments.get("env") or "dev").strip()
+                from services import ai_db_migration_service
+                return ai_db_migration_service.get_project_table_rows(
+                    db, user, pid, table, limit=limit, target_env=env
+                )
+            if action == "apply_migrations":
+                env = str(arguments.get("environment") or arguments.get("env") or "dev").strip()
+                from services import ai_db_migration_service
+                return ai_db_migration_service.apply_project_migrations(db, user, pid, target_env=env)
             if action == "git_status":
                 return ai_project_service.git_status(db, user, pid)
             if action == "git_sync":
@@ -2113,6 +2142,26 @@ def _execute_global_read_tool(
                     push=bool(arguments.get("push", False)),
                     token=token,
                 )
+            if action == "dev_start":
+                from services.singra import dev_env
+                return dev_env.start_dev_environment(db, user, pid, options=arguments)
+            if action == "dev_stop":
+                from services.singra import dev_env
+                return dev_env.stop_dev_environment(db, user, pid)
+            if action == "dev_status":
+                from services.singra import dev_env
+                return dev_env.get_dev_environment_status(db, user, pid)
+            if action == "git_branch":
+                branch_arg = str(arguments.get("branch") or arguments.get("name") or "").strip() or None
+                return ai_project_service.git_branch(db, user, pid, branch_name=branch_arg)
+            if action == "git_open_pr":
+                title = str(arguments.get("title") or "").strip() or None
+                body = str(arguments.get("body") or "").strip() or None
+                target_branch = str(arguments.get("target_branch") or "main").strip()
+                token = str(arguments.get("token") or arguments.get("git_token") or "").strip() or None
+                return ai_project_service.git_open_pr(db, user, pid, title=title, body=body, target_branch=target_branch, token=token)
+            if action == "merge_to_main":
+                return ai_project_service.merge_to_main(db, user, pid)
             raise AiActionValidationError(f"Unbekannte project_workspace-Aktion: {action}")
         except AiProjectError as exc:
             raise AiActionValidationError(str(exc)) from exc

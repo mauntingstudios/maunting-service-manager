@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest'
 const UEBERSCHRIFT = new Set([
   'AiKnowledgeShell',
   'Alert',
+  'ChatComposerBanner',
   'DocCard',
   'FormDialog',
   'ListBlock',

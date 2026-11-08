@@ -25,12 +25,12 @@ type StepState = 'ok' | 'error' | 'warning'
 
 function Step({
   icon,
-  title,
+  label,
   subtitle,
   state,
 }: {
   icon: ReactNode
-  title: string
+  label: string
   subtitle: string
   state: StepState
 }) {
@@ -50,7 +50,7 @@ function Step({
           )}
         </span>
       </div>
-      <div className="text-xs font-semibold text-on-surface">{title}</div>
+      <div className="text-xs font-semibold text-on-surface">{label}</div>
       <div className={`text-label-sm ${color}`}>{subtitle}</div>
     </div>
   )
@@ -88,16 +88,16 @@ export function PreviewDiagnostics({
         <div className="flex items-start gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container-low/50 px-3 py-4">
           <Step
             icon={<FolderOpen className="h-5 w-5" aria-hidden="true" />}
-            title="Projektdateien"
+            label="Projektdateien"
             subtitle={`${fileCount} Datei${fileCount === 1 ? '' : 'en'}`}
             state="ok"
           />
           <div className="mt-6 h-px w-6 shrink-0 bg-outline-variant/40 sm:w-10" />
-          <Step icon={<Server className="h-5 w-5" aria-hidden="true" />} title="Dev-Sandbox" subtitle="Bereit" state="ok" />
+          <Step icon={<Server className="h-5 w-5" aria-hidden="true" />} label="Dev-Sandbox" subtitle="Bereit" state="ok" />
           <div className="mt-6 h-px w-6 shrink-0 bg-outline-variant/40 sm:w-10" />
           <Step
             icon={<Monitor className="h-5 w-5" aria-hidden="true" />}
-            title="Vorschau"
+            label="Vorschau"
             subtitle={isError ? 'Fehler' : 'Nicht eingerichtet'}
             state={isError ? 'error' : 'warning'}
           />

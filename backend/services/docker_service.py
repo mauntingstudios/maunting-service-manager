@@ -262,6 +262,17 @@ def _check_docker(force: bool = False) -> bool:
     return _DOCKER_AVAILABLE
 
 
+def is_docker_available(node: Any | None = None) -> bool:
+    """Prüft, ob Docker auf dem Ziel-Node (oder lokal) verfügbar ist."""
+    if node is not None:
+        try:
+            from services.node_client import NodeClient
+            return NodeClient.from_node(node).ping()
+        except Exception:
+            return False
+    return _check_docker()
+
+
 def _client_or_error() -> tuple[Any | None, dict | None]:
     client, error = _get_client()
     if client is None:

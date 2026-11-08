@@ -372,6 +372,7 @@ def reconcile_firewall_rules(db) -> int:
             db.query(Server)
             .options(selectinload(Server.ports))
             .filter(Server.status.notin_(tuple(_FIREWALL_KEEP_OPEN_STATUSES)))
+            .filter(Server.desired_power_state != "running")
             .all()
         )
     except Exception as exc:

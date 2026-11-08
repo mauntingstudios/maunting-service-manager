@@ -170,6 +170,46 @@ def reconcile_guardian_server(
     *,
     node_client: NodeClient | None = None,
 ) -> dict[str, Any]:
+    # Caddy-managed Web-Server laufen nicht als Docker-Container.
+    # Guardian prüft stattdessen HTTP-Erreichbarkeit (probe_url) und markiert nicht fälschlich 'stopped'.
+    if server.container_name == "caddy-managed" or server.game_type == "web_static":
+        import httpx
+        from services import server_runtime_env
+
+        probe_url = server_runtime_env.get_probe_url(server.id, db=db)
+        if not probe_url:
+            ports = [p.port for p in (server.ports or []) if p.role == "web"]
+            port = ports[0] if ports else 80
+            probe_url = f"http://127.0.0.1:{port}/"
+
+        is_healthy = False
+        try:
+            with httpx.Client(timeout=2.0) as http_client:
+                resp = http_client.get(probe_url)
+                is_healthy = (resp.status_code == 200)
+        except Exception:
+            is_healthy = False
+
+        now = datetime.now(timezone.utc)
+        if server.desired_power_state == "running":
+            server.status = "running" if is_healthy else "stopped"
+            server.guardian_observed_state = "healthy" if is_healthy else "stopped"
+            server.guardian_container_status = "running" if is_healthy else "stopped"
+        else:
+            server.status = "stopped"
+            server.guardian_observed_state = "stopped"
+            server.guardian_container_status = "stopped"
+
+        server.guardian_probe_timestamp = now
+        server.guardian_transition_timestamp = now
+        db.commit()
+        return {
+            "status": "synchronized",
+            "server_id": server.id,
+            "managed_by": "caddy",
+            "healthy": is_healthy,
+        }
+
     node = server.node
     if node is None or node.status != "online":
         raise RuntimeError("Guardian node is not online")
@@ -304,6 +344,11 @@ def reconcile_guardian_server(
         server.guardian_container_status = container_state
         if container_state in ("exited", "dead", "stopped", "missing") and server.status == "running":
             server.status = "stopped"
+            from games.base import _append_console_log
+            from services.console_stream_service import append_msm_log_to_memory
+            crash_msg = f"[MSM] Container unerwartet beendet: status={container_state}\n"
+            _append_console_log(server.id, crash_msg)
+            append_msm_log_to_memory(server.id, crash_msg.rstrip("\n"))
             try:
                 from services.server_lifecycle_service import _ports
                 from services.firewall_service import close_ports

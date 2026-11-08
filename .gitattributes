@@ -1,5 +1,7 @@
 # Force LF line endings for shell scripts on all platforms
 *.sh            text eol=lf
+backend/scripts/msm-caddy text eol=lf
+backend/scripts/msm-*     text eol=lf
 
 # Python files — LF
 *.py            text eol=lf

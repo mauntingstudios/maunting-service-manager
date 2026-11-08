@@ -153,6 +153,25 @@ class AiProjectPreviewInspectPayload(BaseModel):
 AiProjectPreviewInspectPayload.model_rebuild()
 
 
+class AiProjectDevStartPayload(BaseModel):
+    mode: str | None = Field(default=None, max_length=32)
+    node_id: str | None = None
+    frontend_port: int | None = None
+    backend_port: int | None = None
+    enable_database: bool | None = None
+
+
+class AiProjectGitBranchPayload(BaseModel):
+    branch: str | None = Field(default=None, max_length=120)
+
+
+class AiProjectGitOpenPrPayload(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    body: str | None = Field(default=None, max_length=2000)
+    target_branch: str = Field(default="main", max_length=120)
+    token: str | None = Field(default=None, max_length=512)
+
+
 @router.get("", response_model=list[AiProjectResponse])
 def list_projects(
     team_id: int | None = Query(default=None),
@@ -603,3 +622,226 @@ def inspect_project_preview(
         )
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/dev/start")
+def start_project_dev_environment(
+    project_id: str,
+    payload: AiProjectDevStartPayload | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    from services.singra import dev_env
+    try:
+        opts = payload.model_dump() if payload else {}
+        return dev_env.start_dev_environment(db, user, project_id, options=opts)
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/dev/stop")
+def stop_project_dev_environment(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    from services.singra import dev_env
+    try:
+        return dev_env.stop_dev_environment(db, user, project_id)
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/dev/status")
+def get_project_dev_environment_status(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> dict[str, object]:
+    from services.singra import dev_env
+    try:
+        return dev_env.get_dev_environment_status(db, user, project_id)
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/test")
+def run_project_tests(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_service.verify_project_sandbox(db, user, project_id)
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/test-runs")
+def list_project_test_runs(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> list[dict[str, object]]:
+    from models.singra_test_run import SingraTestRun
+    import json as _json
+    runs = (
+        db.query(SingraTestRun)
+        .filter(SingraTestRun.project_id == project_id)
+        .order_by(SingraTestRun.started_at.desc())
+        .limit(20)
+        .all()
+    )
+    result = []
+    for r in runs:
+        summary_parsed = None
+        if r.summary_json:
+            try:
+                summary_parsed = _json.loads(r.summary_json)
+            except Exception:
+                pass
+        result.append({
+            "id": r.id,
+            "project_id": r.project_id,
+            "environment": r.environment,
+            "release_checksum": r.release_checksum,
+            "kind": r.kind,
+            "status": r.status,
+            "summary": summary_parsed,
+            "artifacts_path": r.artifacts_path,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+        })
+    return result
+
+
+@router.post("/{project_id}/git/branch")
+def git_create_or_checkout_branch(
+    project_id: str,
+    payload: AiProjectGitBranchPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_service.git_branch(db, user, project_id, branch_name=payload.branch)
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/git/open-pr")
+def git_open_pull_request(
+    project_id: str,
+    payload: AiProjectGitOpenPrPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_service.git_open_pr(
+            db,
+            user,
+            project_id,
+            title=payload.title,
+            body=payload.body,
+            target_branch=payload.target_branch,
+            token=payload.token,
+        )
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{project_id}/git/merge-to-main")
+def git_merge_branch_to_main(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_service.merge_to_main(db, user, project_id)
+    except AiProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/deployments")
+def list_project_deployments(
+    project_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> list[dict[str, object]]:
+    from models.singra_deployment import SingraDeployment
+    import json as _json
+
+    deps = (
+        db.query(SingraDeployment)
+        .filter(SingraDeployment.project_id == project_id)
+        .order_by(SingraDeployment.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    result = []
+    for d in deps:
+        diag = None
+        if d.diagnostics_json:
+            try:
+                diag = _json.loads(d.diagnostics_json)
+            except Exception:
+                diag = d.diagnostics_json
+        result.append({
+            "id": d.id,
+            "project_id": d.project_id,
+            "environment": d.environment,
+            "version": d.version,
+            "task_id": d.task_id,
+            "status": d.status,
+            "phase": d.phase,
+            "error_code": d.error_code,
+            "error_detail": d.error_detail,
+            "diagnostics": diag,
+            "release_path": d.release_path,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "finished_at": d.finished_at.isoformat() if d.finished_at else None,
+        })
+    return result
+
+
+@router.get("/{project_id}/deployments/{deployment_id}")
+def get_project_deployment(
+    project_id: str,
+    deployment_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> dict[str, object]:
+    from models.singra_deployment import SingraDeployment
+    import json as _json
+
+    dep = db.get(SingraDeployment, deployment_id)
+    if not dep or dep.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Deployment nicht gefunden.")
+    diag = None
+    if dep.diagnostics_json:
+        try:
+            diag = _json.loads(dep.diagnostics_json)
+        except Exception:
+            diag = dep.diagnostics_json
+    return {
+        "id": dep.id,
+        "project_id": dep.project_id,
+        "environment": dep.environment,
+        "version": dep.version,
+        "task_id": dep.task_id,
+        "status": dep.status,
+        "phase": dep.phase,
+        "error_code": dep.error_code,
+        "error_detail": dep.error_detail,
+        "diagnostics": diag,
+        "release_path": dep.release_path,
+        "created_at": dep.created_at.isoformat() if dep.created_at else None,
+        "finished_at": dep.finished_at.isoformat() if dep.finished_at else None,
+    }
+

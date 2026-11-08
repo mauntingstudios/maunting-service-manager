@@ -80,6 +80,7 @@ def start_scheduler():
     _ensure_node_heartbeat_job()
     _ensure_calendar_reminder_job()
     _ensure_e2ee_envelope_cleanup_job()
+    _ensure_singra_dev_idle_job()
 
 
 def _utcnow() -> datetime:
@@ -1362,6 +1363,41 @@ def _ensure_e2ee_envelope_cleanup_job() -> None:
     )
 
 
+async def _singra_dev_idle_task() -> None:
+    """Prüft alle aktiven Singra Dev-Umgebungen und pausiert inaktive (>60 Minuten)."""
+    from services.singra import dev_idle_worker
+
+    def _worker() -> None:
+        db = SessionLocal()
+        try:
+            dev_idle_worker.check_and_pause_idle_dev_environments(db)
+        except Exception:
+            logger.exception("Fehler beim Prüfen inaktiver Singra Dev-Umgebungen")
+            db.rollback()
+        finally:
+            db.close()
+
+    await asyncio.to_thread(_worker)
+
+
+def _ensure_singra_dev_idle_job() -> None:
+    scheduler = get_scheduler()
+    job_id = "global_singra_dev_idle"
+    try:
+        scheduler.remove_job(job_id)
+    except Exception:
+        pass
+    scheduler.add_job(
+        func=_singra_dev_idle_task,
+        trigger=IntervalTrigger(minutes=5),
+        id=job_id,
+        name="Singra Dev-Umgebungen: 60-Minuten Auto-Pause",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+
 def init_server_schedules(db):
     """Initialize schedules for all servers on startup."""
     from models import Server
@@ -1376,6 +1412,7 @@ def init_server_schedules(db):
     _ensure_hoster_maintenance_job()
     _ensure_calendar_reminder_job()
     _ensure_e2ee_envelope_cleanup_job()
+    _ensure_singra_dev_idle_job()
 
     servers = db.query(Server).all()
     for server in servers:

@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from config import settings
 
@@ -20,8 +20,26 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Standard-Verzeichnis für modulare Caddy-Sites
+# Standard-Verzeichnisse für modulare Caddy-Sites und Staging
 DEFAULT_CADDY_CONF_DIR = Path("/etc/caddy/conf.d")
+DEFAULT_CADDY_STAGING_DIR = Path("/opt/msm/caddy-staging")
+DEFAULT_CADDY_LOG_DIR = Path("/var/log/caddy")
+DEFAULT_MSM_CADDY_BIN = Path("/usr/local/sbin/msm-caddy")
+
+
+class ApplyVhostResult(NamedTuple):
+    """Ergebnis des VHost-Schreibvorgangs mit boolescher Rückwärtskompatibilität."""
+
+    success: bool
+    error: str = ""
+
+    def __bool__(self) -> bool:
+        return self.success
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, bool):
+            return self.success is other
+        return tuple(self) == other
 
 
 def _resolve_conf_dir() -> Path:
@@ -45,10 +63,69 @@ def _resolve_conf_dir() -> Path:
     return fallback
 
 
+def _resolve_staging_dir() -> Path:
+    """Ermittelt das Staging-Verzeichnis für den atomaren msm-caddy-Schreibweg."""
+    custom = getattr(settings, "caddy_staging_dir", None)
+    if custom:
+        p = Path(custom)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    if DEFAULT_CADDY_STAGING_DIR.exists() or os.name == "posix":
+        try:
+            DEFAULT_CADDY_STAGING_DIR.mkdir(parents=True, exist_ok=True)
+            return DEFAULT_CADDY_STAGING_DIR
+        except (PermissionError, OSError):
+            pass
+
+    fallback = Path(settings.servers_dir).resolve().parent / "caddy_staging"
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
+def _resolve_log_dir() -> Path:
+    """Ermittelt das Log-Verzeichnis für Caddy-Server-Logs."""
+    custom = getattr(settings, "caddy_log_dir", None)
+    if custom:
+        p = Path(custom)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    if DEFAULT_CADDY_LOG_DIR.exists() or os.name == "posix":
+        try:
+            DEFAULT_CADDY_LOG_DIR.mkdir(parents=True, exist_ok=True)
+            return DEFAULT_CADDY_LOG_DIR
+        except (PermissionError, OSError):
+            pass
+
+    fallback = Path(settings.servers_dir).resolve().parent / "caddy_logs"
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
 def get_vhost_path(server_id: int) -> Path:
     """Pfad zur Caddyfile-Konfiguration eines Servers."""
     conf_dir = _resolve_conf_dir()
     return conf_dir / f"app_{server_id}.conf"
+
+
+def get_staging_path(server_id: int) -> Path:
+    """Pfad zur vorbereiteten Caddyfile-Staging-Datei eines Servers."""
+    staging_dir = _resolve_staging_dir()
+    return staging_dir / f"app_{server_id}.conf"
+
+
+def get_caddy_log_path(server_id: int) -> Path:
+    """Pfad zur Caddy-Logdatei eines Servers."""
+    log_dir = _resolve_log_dir()
+    return log_dir / f"app_{server_id}.log"
+
+
+def _get_msm_caddy_bin() -> Path:
+    custom = getattr(settings, "msm_caddy_path", None)
+    if custom:
+        return Path(custom)
+    return DEFAULT_MSM_CADDY_BIN
 
 
 def normalize_api_path(path: str | None) -> str:
@@ -102,11 +179,15 @@ def generate_caddy_config(
 """
 
     root_posix = Path(root_dir).as_posix()
+    log_posix = get_caddy_log_path(server_id).as_posix()
 
     return f"""# Managed by MSM: Server #{server_id}{name_comment}
 {target_header} {{
     root * {root_posix}
     encode gzip
+    log {{
+        output file {log_posix}
+    }}
 
 {proxy_snippet}    # Statische Assets mit Langzeit-Cache
     handle /assets/* {{
@@ -134,23 +215,59 @@ def apply_vhost(
     config_text: str,
     *,
     node: Node | None = None,
-) -> bool:
-    """Schreibt die Caddy-Konfiguration und triggert einen Caddy-Reload."""
+) -> ApplyVhostResult:
+    """Schreibt die Caddy-Konfiguration und triggert einen Caddy-Reload.
+
+    Verwendet vorrangig den Root-Helfer msm-caddy über sudo -n, um /etc/caddy/conf.d
+    atomar zu aktualisieren und caddy validate auszuführen.
+    """
+    if node is not None and not node.is_local:
+        logger.warning("Remote-Node Caddy-Konfiguration fuer Server %s abgelehnt: caddy_agent_unsupported.", server_id)
+        return ApplyVhostResult(False, "caddy_agent_unsupported")
+
+    msm_caddy_bin = _get_msm_caddy_bin()
+    if msm_caddy_bin.exists():
+        staging_file = get_staging_path(server_id)
+        try:
+            staging_file.parent.mkdir(parents=True, exist_ok=True)
+            staging_file.write_text(config_text, encoding="utf-8")
+        except OSError as exc:
+            err = f"Konnte Caddy-Staging-Datei fuer Server {server_id} nicht schreiben: {exc}"
+            logger.error(err)
+            return ApplyVhostResult(False, err)
+
+        cmd = ["sudo", "-n", str(msm_caddy_bin), "apply", str(server_id)]
+        try:
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if res.returncode != 0:
+                err = res.stderr.strip() or f"msm-caddy exit code {res.returncode}"
+                logger.error("msm-caddy apply fehlgeschlagen fuer Server %s: %s", server_id, err)
+                return ApplyVhostResult(False, err)
+            logger.info("Caddy-VHost fuer Server %s via msm-caddy erfolgreich angewendet.", server_id)
+            return ApplyVhostResult(True, "")
+        except Exception as exc:
+            err = f"Fehler beim Aufruf von msm-caddy apply: {exc}"
+            logger.error(err)
+            return ApplyVhostResult(False, err)
+
+    # Fallback fuer Test- und Entwicklungsumgebungen ohne sudo/msm-caddy
     target_path = get_vhost_path(server_id)
     try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(config_text, encoding="utf-8")
     except OSError as exc:
-        logger.error("Konnte Caddy-VHost fuer Server %s nicht schreiben: %s", server_id, exc)
-        return False
-
-    # Auf Remote-Nodes könnte künftig der Node-Agent Caddy steuern; lokal direkt Caddy reloaden
-    if node is not None and not node.is_local:
-        logger.info("Remote-Node Caddy-Konfiguration fuer Server %s abgelegt.", server_id)
-        return True
+        err = f"Konnte Caddy-VHost fuer Server {server_id} nicht schreiben: {exc}"
+        logger.error(err)
+        return ApplyVhostResult(False, err)
 
     if not is_caddy_available():
         logger.info("Caddy ist nicht lokal installiert; VHost-Datei fuer Server %s wurde gespeichert.", server_id)
-        return True
+        return ApplyVhostResult(True, "")
 
     # 1. Konfiguration validieren
     try:
@@ -176,7 +293,7 @@ def apply_vhost(
             )
             if reload_res.returncode == 0:
                 logger.info("Caddy via systemctl erfolgreich neu geladen.")
-                return True
+                return ApplyVhostResult(True, "")
 
         reload_res = subprocess.run(
             ["caddy", "reload"],
@@ -186,16 +303,34 @@ def apply_vhost(
         )
         if reload_res.returncode == 0:
             logger.info("Caddy erfolgreich neu geladen.")
-            return True
+            return ApplyVhostResult(True, "")
         logger.warning("caddy reload ergab Returncode %s: %s", reload_res.returncode, reload_res.stderr.strip()[:150])
     except Exception as exc:
         logger.warning("Caddy konnte nicht neu geladen werden: %s", exc)
 
-    return True
+    return ApplyVhostResult(True, "")
 
 
 def remove_vhost(server_id: int, *, node: Node | None = None) -> bool:
     """Entfernt die Caddy-Konfiguration eines gelöschten oder gestoppten Web-Servers."""
+    if node is not None and not node.is_local:
+        logger.warning("Remote-Node Caddy-Entfernung fuer Server %s nicht unterstuetzt.", server_id)
+        return False
+
+    msm_caddy_bin = _get_msm_caddy_bin()
+    if msm_caddy_bin.exists():
+        cmd = ["sudo", "-n", str(msm_caddy_bin), "remove", str(server_id)]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if res.returncode != 0:
+                logger.warning("msm-caddy remove Server %s ergab Returncode %s: %s", server_id, res.returncode, res.stderr.strip()[:150])
+                return False
+            return True
+        except Exception as exc:
+            logger.warning("Fehler beim Aufruf von msm-caddy remove: %s", exc)
+            return False
+
+    # Lokaler Fallback
     target_path = get_vhost_path(server_id)
     if target_path.exists():
         try:
@@ -204,7 +339,14 @@ def remove_vhost(server_id: int, *, node: Node | None = None) -> bool:
             logger.warning("Konnte Caddy-VHost %s nicht loeschen: %s", target_path, exc)
             return False
 
-    if is_caddy_available() and (node is None or node.is_local):
+    staging_path = get_staging_path(server_id)
+    if staging_path.exists():
+        try:
+            staging_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    if is_caddy_available():
         try:
             if shutil.which("systemctl"):
                 subprocess.run(["systemctl", "reload", "caddy"], capture_output=True, timeout=5)

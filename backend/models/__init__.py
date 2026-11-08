@@ -129,6 +129,9 @@ from .chat_group_background import ChatGroupBackground
 from .chat_story import ChatStory
 from .direct_chat import DirectChat
 from .chat_media import ChatMedia
+from .server_runtime_env import ServerRuntimeEnv
+from .singra_deployment import SingraDeployment
+from .singra_test_run import SingraTestRun
 
 __all__ = [
     "User", "UserRole", "RoleAiLimit", "RoleVaultQuota", "AiUsageEvent", "OperationTask",
@@ -138,7 +141,7 @@ __all__ = [
     "AiAutonomyGrant", "AiToolResult", "AiRun", "AiGuardianNotice",
     "AiGuardianRepair", "AiTask", "AiActionApproval",
     "AiMailOutbox", "AiMeldung", "DesktopJob", "DevicePairing",
-    "Server", "Node", "NodeEnrollment", "Role", "RolePermission", "ServerPermission",
+    "Server", "ServerRuntimeEnv", "SingraDeployment", "SingraTestRun", "Node", "NodeEnrollment", "Role", "RolePermission", "ServerPermission",
     "Team", "TeamInvitation", "TeamMember", "TeamMemberRole", "TeamRole", "TeamRolePermission", "TeamRoleServerGrant", "TeamServerGrant",
     "Backup", "PanelBackup", "Mod", "AuditLog", "RefreshToken", "JwtBlacklist",
     "EmailVerification", "BackupCode", "UserPasskey", "PanelSetting", "ServerPort",

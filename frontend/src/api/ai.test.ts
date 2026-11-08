@@ -162,3 +162,103 @@ describe('aiApi memory URLs', () => {
     })
   })
 })
+
+describe('aiApi Singra Dev, Tests & Deployment endpoints', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('startDevEnvironment sendet POST an /dev/start mit optionalem Payload', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue({ ok: true, status: 'running' })
+
+    await aiApi.startDevEnvironment('proj-1', { mode: 'fullstack' })
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/dev/start', {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'fullstack' }),
+    })
+  })
+
+  it('stopDevEnvironment sendet POST an /dev/stop', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue({ ok: true, status: 'stopped', project_id: 'proj-1' })
+
+    await aiApi.stopDevEnvironment('proj-1')
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/dev/stop', {
+      method: 'POST',
+    })
+  })
+
+  it('getDevEnvironmentStatus holt den Status per GET', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue({ project_id: 'proj-1', status: 'running' })
+
+    await aiApi.getDevEnvironmentStatus('proj-1')
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/dev/status')
+  })
+
+  it('runProjectTests triggert Testlauf per POST', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue({ ok: true, passed: true })
+
+    await aiApi.runProjectTests('proj-1')
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/test', {
+      method: 'POST',
+    })
+  })
+
+  it('getProjectTestRuns listet die Testläufe auf', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue([])
+
+    await aiApi.getProjectTestRuns('proj-1')
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/test-runs')
+  })
+
+  it('gitBranch wechselt oder erstellt Branches per POST', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue({ ok: true, branch: 'singra/feat-1' })
+
+    await aiApi.gitBranch('proj-1', 'singra/feat-1')
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/git/branch', {
+      method: 'POST',
+      body: JSON.stringify({ branch: 'singra/feat-1' }),
+    })
+  })
+
+  it('gitOpenPr öffnet Pull Request per POST mit Parametern', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue({ ok: true, pr_number: 42 })
+
+    await aiApi.gitOpenPr('proj-1', { title: 'Feat: Login', body: 'Added login screen', target_branch: 'main' })
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/git/open-pr', {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Feat: Login', body: 'Added login screen', target_branch: 'main' }),
+    })
+  })
+
+  it('mergeToMain führt Merge in Main per POST durch', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue({ ok: true, branch: 'main' })
+
+    await aiApi.mergeToMain('proj-1')
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/git/merge-to-main', {
+      method: 'POST',
+    })
+  })
+
+  it('listProjectDeployments fragt Deployments mit Limit ab', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue([])
+
+    await aiApi.listProjectDeployments('proj-1', 15)
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/deployments?limit=15')
+  })
+
+  it('getProjectDeployment holt einzelnes Deployment unter codierter ID ab', async () => {
+    const gerufen = vi.spyOn(client, 'api').mockResolvedValue({ id: 'dep-xyz' })
+
+    await aiApi.getProjectDeployment('proj-1', 'dep-xyz')
+
+    expect(gerufen).toHaveBeenCalledWith('/ai/projects/proj-1/deployments/dep-xyz')
+  })
+})
+

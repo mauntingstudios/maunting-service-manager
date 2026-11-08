@@ -75,7 +75,10 @@ def test_apply_and_remove_vhost(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "caddy_conf_dir", str(tmp_path))
 
     cfg_text = generate_caddy_config(server_id=99, root_dir=str(tmp_path), port=8099)
-    assert apply_vhost(99, cfg_text) is True
+    res = apply_vhost(99, cfg_text)
+    assert res
+    assert res == True
+    assert res.success is True
 
     vhost_file = get_vhost_path(99)
     assert vhost_file.exists()
@@ -83,3 +86,91 @@ def test_apply_and_remove_vhost(tmp_path, monkeypatch):
 
     assert remove_vhost(99) is True
     assert not vhost_file.exists()
+
+
+def test_apply_vhost_remote_node_unsupported():
+    class DummyNode:
+        is_local = False
+
+    res = apply_vhost(123, "test config", node=DummyNode())
+    assert not res
+    assert res.success is False
+    assert res.error == "caddy_agent_unsupported"
+    ok, err = res
+    assert ok is False
+    assert err == "caddy_agent_unsupported"
+
+
+def test_apply_vhost_via_msm_caddy_success(tmp_path, monkeypatch):
+    import subprocess
+    from config import settings
+    from services.caddy_service import get_staging_path
+
+    staging_dir = tmp_path / "staging"
+    fake_bin = tmp_path / "msm-caddy"
+    fake_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+    monkeypatch.setattr(settings, "caddy_staging_dir", str(staging_dir))
+    monkeypatch.setattr(settings, "msm_caddy_path", str(fake_bin))
+
+    called_cmds = []
+
+    def fake_run(cmd, **kwargs):
+        called_cmds.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    res = apply_vhost(55, "cfg for 55")
+    assert res
+    assert res.success is True
+    assert res.error == ""
+
+    # Verify staging file was created
+    staging_file = get_staging_path(55)
+    assert staging_file.exists()
+    assert staging_file.read_text(encoding="utf-8") == "cfg for 55"
+
+    # Verify sudo -n was invoked
+    assert called_cmds == [["sudo", "-n", str(fake_bin), "apply", "55"]]
+
+
+def test_apply_vhost_via_msm_caddy_failure(tmp_path, monkeypatch):
+    import subprocess
+    from config import settings
+
+    fake_bin = tmp_path / "msm-caddy"
+    fake_bin.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "caddy_staging_dir", str(tmp_path / "staging"))
+    monkeypatch.setattr(settings, "msm_caddy_path", str(fake_bin))
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="caddy validate failed for server 55")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    res = apply_vhost(55, "cfg for 55")
+    assert not res
+    assert res.success is False
+    assert "caddy validate failed for server 55" in res.error
+
+
+def test_remove_vhost_via_msm_caddy(tmp_path, monkeypatch):
+    import subprocess
+    from config import settings
+
+    fake_bin = tmp_path / "msm-caddy"
+    fake_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "msm_caddy_path", str(fake_bin))
+
+    called_cmds = []
+
+    def fake_run(cmd, **kwargs):
+        called_cmds.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert remove_vhost(77) is True
+    assert called_cmds == [["sudo", "-n", str(fake_bin), "remove", "77"]]
+

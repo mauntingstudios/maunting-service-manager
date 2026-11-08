@@ -198,6 +198,11 @@ class Settings(BaseSettings):
     auto_update: bool = False  # true = systemd-Timer installiert Updates automatisch
     auto_update_interval_hours: int = 24  # Prüfintervall
 
+    # Caddy Reverse Proxy / Static Sites
+    caddy_conf_dir: str = ""
+    caddy_staging_dir: str = ""
+    msm_caddy_path: str = ""
+
     # RAM left free for OS/agent/docker when booking server.ram_limit_mb on a node.
     # Guard skips entirely when node.ram_total is still unknown (no heartbeat).
     node_ram_headroom_mb: int = 1024

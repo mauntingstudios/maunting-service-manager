@@ -268,7 +268,6 @@ export function SingraHistoryView({
                               ? 'text-primary hover:bg-primary/15'
                               : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface',
                           ].join(' ')}
-                          title={conv.pinned ? 'Anheftung lösen' : 'Oben anheften'}
                           aria-label={conv.pinned ? 'Anheftung lösen' : 'Oben anheften'}
                         >
                           <Pin className="h-4 w-4" />
@@ -280,7 +279,6 @@ export function SingraHistoryView({
                             setEditTitle(conv.title)
                           }}
                           className="rounded-lg p-2 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
-                          title="Umbenennen"
                           aria-label="Umbenennen"
                         >
                           <Pencil className="h-4 w-4" />
@@ -289,7 +287,6 @@ export function SingraHistoryView({
                           type="button"
                           onClick={() => void onDeleteConversation(conv)}
                           className="rounded-lg p-2 text-on-surface-variant hover:bg-status-destructive/15 hover:text-status-destructive transition-colors"
-                          title="Löschen"
                           aria-label="Löschen"
                         >
                           <Trash2 className="h-4 w-4" />

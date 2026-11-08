@@ -19,15 +19,30 @@ logger = logging.getLogger(__name__)
 class AiDbMigrationError(Exception):
     """Fehler bei der Ausfuehrung einer Datenbank-Migration."""
 
-    def __init__(self, message: str, *, file_path: str | None = None, statement: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        file_path: str | None = None,
+        statement: str | None = None,
+        error_code: str = "migration_failed",
+    ):
         super().__init__(message)
         self.message = message
         self.file_path = file_path
         self.statement = statement
+        self.error_code = error_code
 
 
-def discover_migration_files(files: list[AiProjectFile]) -> list[tuple[str, str]]:
-    """Ermittelt und sortiert alle relevanten SQL-Dateien im Projekt."""
+def discover_migration_files(
+    files: list[AiProjectFile],
+    target_env: str = "prod",
+) -> list[tuple[str, str]]:
+    """Ermittelt und sortiert alle relevanten SQL-Dateien im Projekt.
+
+    Seeds (seeds/*.sql, seed.sql, dummy_data.sql) werden NUR in der Dev-Umgebung
+    ausgeführt, niemals in Produktion.
+    """
     schema_first: list[tuple[str, str]] = []
     migrations: list[tuple[str, str]] = []
     seeds_last: list[tuple[str, str]] = []
@@ -45,17 +60,19 @@ def discover_migration_files(files: list[AiProjectFile]) -> list[tuple[str, str]
         base_name = path_low.rsplit("/", 1)[-1]
         if base_name in ("schema.sql", "init.sql", "tables.sql", "database.sql", "create_tables.sql"):
             schema_first.append((f.path, content))
-        elif base_name in ("seed.sql", "seeds.sql", "dummy_data.sql", "data.sql"):
+        elif base_name in ("seed.sql", "seeds.sql", "dummy_data.sql", "data.sql") or path_low.startswith("seeds/"):
             seeds_last.append((f.path, content))
         elif path_low.startswith(("migrations/", "migration/", "sql/", "database/")):
             migrations.append((f.path, content))
         else:
             migrations.append((f.path, content))
 
-    # Migrationen natuerlich sortieren (z. B. 001_..., 002_...)
+    # Migrationen natürlich sortieren (z. B. 001_..., 002_...)
     migrations.sort(key=lambda item: item[0].lower())
 
-    return [*schema_first, *migrations, *seeds_last]
+    if target_env.lower() == "dev":
+        return [*schema_first, *migrations, *seeds_last]
+    return [*schema_first, *migrations]
 
 
 def ensure_migration_table(db: Session, server_id: int, database_id: int) -> None:
@@ -101,9 +118,14 @@ def run_migrations_for_database(
     server_id: int,
     database_id: int,
     project_files: list[AiProjectFile],
+    *,
+    target_env: str = "prod",
 ) -> dict[str, Any]:
-    """Fuehrt alle noch offenen SQL-Dateien des Projekts in geordneter Reihenfolge aus."""
-    candidates = discover_migration_files(project_files)
+    """Fuehrt alle noch offenen SQL-Dateien des Projekts in geordneter Reihenfolge aus.
+
+    Prüft auf Checksummen-Drift bereits angewendeter Migrationen.
+    """
+    candidates = discover_migration_files(project_files, target_env=target_env)
     if not candidates:
         return {"applied": [], "skipped": [], "total": 0}
 
@@ -117,6 +139,13 @@ def run_migrations_for_database(
     for file_path, content in candidates:
         checksum = hashlib.sha256(content.encode("utf-8")).hexdigest()
         if file_path in applied_existing:
+            existing_chk = applied_existing[file_path]
+            if existing_chk and existing_chk != checksum:
+                raise AiDbMigrationError(
+                    f"Migrations-Prüfsumme weicht ab für bereits angewendete Migration '{file_path}' (migration_drift).",
+                    file_path=file_path,
+                    error_code="migration_drift",
+                )
             skipped.append(file_path)
             continue
 
@@ -137,12 +166,10 @@ def run_migrations_for_database(
                 rollback=False,
             )
 
-            # Eintrag in Tracking-Tabelle schreiben
-            record_sql = "INSERT INTO _msm_migrations (name, checksum) VALUES (%s, %s) ON CONFLICT (name) DO UPDATE SET checksum = EXCLUDED.checksum;"
             # Formatierung fuer den Studio-Runner
             escaped_name = file_path.replace("'", "''")
             escaped_check = checksum.replace("'", "''")
-            record_stmt = f"INSERT INTO _msm_migrations (name, checksum) VALUES ('{escaped_name}', '{escaped_check}') ON CONFLICT (name) DO NOTHING;"
+            record_stmt = f"INSERT INTO _msm_migrations (name, checksum) VALUES ('{escaped_name}', '{escaped_check}') ON CONFLICT (name) DO UPDATE SET checksum = EXCLUDED.checksum;"
             postgres_studio_service._run(
                 db,
                 k,
@@ -156,6 +183,7 @@ def run_migrations_for_database(
             raise AiDbMigrationError(
                 f"SQL-Migration in '{file_path}' fehlgeschlagen: {err_msg}",
                 file_path=file_path,
+                error_code="migration_failed",
             ) from exc
 
     return {
@@ -165,26 +193,156 @@ def run_migrations_for_database(
     }
 
 
+def _resolve_project_db_context(
+    db: Session,
+    user_or_server_id: Any,
+    project_id_or_database_id: Any,
+    target_env: str = "dev",
+) -> tuple[int, int]:
+    """Ermittelt (server_id, database_id) entweder direkt oder über User und Projekt."""
+    if isinstance(user_or_server_id, int):
+        return user_or_server_id, int(project_id_or_database_id)
+
+    from services import ai_project_service
+    project = ai_project_service.get_project(db, user_or_server_id, str(project_id_or_database_id))
+    ws = ai_project_service.ensure_project_workspace(project)
+    meta = ai_project_service._ensure_env_metadata(project, ws)
+
+    is_prod = target_env.lower() in ("prod", "production")
+    if is_prod:
+        database_id = meta.get("prod_database_id")
+        server_id = meta.get("prod_backend_server_id") or meta.get("prod_server_id")
+    else:
+        database_id = meta.get("dev_database_id") or meta.get("prod_database_id")
+        server_id = meta.get("dev_backend_server_id") or meta.get("dev_server_id") or meta.get("prod_backend_server_id")
+
+    if not database_id or not server_id:
+        raise AiDbMigrationError(
+            f"Für das Projekt '{project.name}' ist in Umgebung '{target_env}' keine PostgreSQL-Datenbank hinterlegt."
+        )
+
+    return int(server_id), int(database_id)
+
+
 def execute_project_sql(
     db: Session,
-    server_id: int,
-    database_id: int,
-    sql: str,
+    user_or_server_id: Any = None,
+    project_id_or_database_id: Any = None,
+    sql: str = "",
     *,
+    server_id: Any = None,
+    database_id: Any = None,
+    target_env: str = "dev",
+    write: bool = False,
     row_limit: int = 200,
 ) -> dict[str, Any]:
-    """Fuehrt eine direkte SQL-Anfrage fuer Singra auf der Datenbank aus."""
-    k = kontext(db, server_id, database_id)
+    """Fuehrt eine direkte SQL-Anfrage fuer Singra auf der Datenbank aus.
+
+    Sicherheitsregeln:
+    - Standardmodus ist 'read' (SELECT)
+    - Schreibender Zugriff ('tx') erfordert explizit write=True und ai.projects.manage Berechtigung
+    """
+    effective_first = server_id if server_id is not None else user_or_server_id
+    effective_second = database_id if database_id is not None else project_id_or_database_id
+    res_server_id, res_database_id = _resolve_project_db_context(
+        db, effective_first, effective_second, target_env=target_env
+    )
+
+    if write and not isinstance(effective_first, int):
+        from services import permission_service
+        if not permission_service.has_global_permission(db, effective_first, "ai.projects.manage"):
+            raise AiDbMigrationError("Schreibender Zugriff auf die Datenbank erfordert das Recht 'ai.projects.manage'.")
+
+    k = kontext(db, res_server_id, res_database_id)
     statements = postgres_service._split_sql_statements(sql)
     if not statements:
         raise ValueError("Keine ausfuehrbare SQL-Anweisung angegeben.")
 
+    mode = "tx" if write else "read"
     res = postgres_studio_service._run(
         db,
         k,
         [(stmt, None) for stmt in statements],
-        mode="tx",
+        mode=mode,
         rollback=False,
         row_limit=row_limit,
     )
     return res
+
+
+def get_project_db_status(
+    db: Session,
+    user: Any,
+    project_id: str,
+    *,
+    target_env: str = "dev",
+) -> dict[str, Any]:
+    """Prüft die Datenbankverbindung und liefert angewendete Migrationen."""
+    try:
+        server_id, database_id = _resolve_project_db_context(db, user, project_id, target_env=target_env)
+        applied = get_applied_migrations(db, server_id, database_id)
+        return {
+            "ok": True,
+            "connected": True,
+            "server_id": server_id,
+            "database_id": database_id,
+            "environment": target_env,
+            "applied_migrations_count": len(applied),
+            "applied_migrations": list(applied.keys()),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "connected": False,
+            "environment": target_env,
+            "error": str(exc),
+        }
+
+
+def list_project_tables(
+    db: Session,
+    user: Any,
+    project_id: str,
+    *,
+    target_env: str = "dev",
+) -> list[str]:
+    """Liefert alle Tabellennamen im public-Schema der Projektdatenbank."""
+    sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;"
+    res = execute_project_sql(db, user, project_id, sql, target_env=target_env, write=False)
+    tables: list[str] = []
+    for r in res.get("results", [{}])[0].get("rows", []):
+        if r and len(r) > 0:
+            tables.append(str(r[0]))
+    return tables
+
+
+def get_project_table_rows(
+    db: Session,
+    user: Any,
+    project_id: str,
+    table_name: str,
+    *,
+    limit: int = 50,
+    target_env: str = "dev",
+) -> dict[str, Any]:
+    """Liest Zeilen einer Tabelle mit Limit."""
+    import re
+    if not re.match(r"^[a-zA-Z0-9_]+$", table_name):
+        raise ValueError("Ungültiger Tabellenname")
+    sql = f'SELECT * FROM "{table_name}" LIMIT {int(limit)};'
+    return execute_project_sql(db, user, project_id, sql, target_env=target_env, write=False, row_limit=limit)
+
+
+def apply_project_migrations(
+    db: Session,
+    user: Any,
+    project_id: str,
+    *,
+    target_env: str = "dev",
+) -> dict[str, Any]:
+    """Wendet offene Migrationen für das angegebene Projekt an."""
+    from services import ai_project_service
+    server_id, database_id = _resolve_project_db_context(db, user, project_id, target_env=target_env)
+    files = ai_project_service.list_project_files(db, user, project_id)
+    return run_migrations_for_database(db, server_id, database_id, files, target_env=target_env)
+

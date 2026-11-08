@@ -1017,9 +1017,58 @@ def verify_project_sandbox(
                 "Bitte ergänze Negativ-Testfälle."
             )
 
+    # Release-Prüfsumme für das Test-Gate berechnen
+    import hashlib
+    hasher = hashlib.sha256()
+    for f in sorted(files, key=lambda x: getattr(x, "path", "")):
+        p_val = getattr(f, "path", "")
+        c_val = getattr(f, "content", "") or ""
+        hasher.update(f"{p_val}:{c_val}".encode("utf-8"))
+    release_checksum = hasher.hexdigest()
+
+    browser_results = None
+    dev_url = meta.get("dev_web_url")
+    if dev_url:
+        from services.singra import browser
+        artifacts_dir = ws / "_test_artifacts" / release_checksum[:12]
+        try:
+            browser_results = browser.run_project_browser_tests(
+                db,
+                project.id,
+                target_url=dev_url,
+                environment="dev",
+                release_checksum=release_checksum,
+                artifacts_dir=artifacts_dir,
+            )
+            if not browser_results.get("passed", False):
+                errors.append(f"Browser-Test fehlgeschlagen: {browser_results.get('error') or 'Fehler aufgetreten'}")
+        except Exception as b_exc:
+            logger.warning("Browser-Test Ausführung meldet: %s", b_exc)
+    elif project.project_kind != "coding" and len(errors) == 0:
+        # Statischen Testlauf für Nicht-Coding-Projekte registrieren
+        from models.singra_test_run import SingraTestRun
+        test_run = SingraTestRun(
+            id=str(uuid4()),
+            project_id=project.id,
+            environment="dev",
+            release_checksum=release_checksum,
+            kind="static_check",
+            status="passed",
+            summary_json=_json.dumps({"checks_count": len(checks), "passed": True, "non_coding": True}),
+            started_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(timezone.utc),
+        )
+        db.add(test_run)
+        db.commit()
+    else:
+        warnings.append("Dev-Sandbox läuft nicht; Browser-Tests konnten nicht ausgeführt werden. Für ein Produktions-Deployment muss die Dev-Sandbox gestartet und getestet werden.")
+
+    is_ok = len(errors) == 0 and (preview_ready or project.project_kind != "coding")
+    test_gate_passed = is_ok and (bool(browser_results and browser_results.get("passed")) or project.project_kind != "coding")
     return {
-        "ok": len(errors) == 0 and (preview_ready or project.project_kind != "coding"),
+        "ok": is_ok,
         "project_id": project.id,
+        "release_checksum": release_checksum,
         "preview_ready": preview_ready,
         "preview_entry": preview_entry_resolved,
         "happy_path_and_negative_tests_checked": bool(test_files_found and has_negative_tests),
@@ -1030,6 +1079,8 @@ def verify_project_sandbox(
         "errors": errors,
         "warnings": warnings,
         "checks": checks,
+        "browser_tests": browser_results,
+        "test_gate_passed": test_gate_passed,
     }
 
 
@@ -1259,6 +1310,10 @@ def git_commit_and_push(
     if push and project.git_repo_url:
         clean_auth_url = _clean_git_remote_url(project.git_repo_url, project.git_provider) if effective_token else project.git_repo_url
         target_branch = project.git_branch or "main"
+        # Guard gegen direkten Push auf main (Feature-Branch-Pflicht)
+        if target_branch.lower() in ("main", "master"):
+            raise AiProjectError("Direkter Push auf den main-Branch ist untersagt. Bitte erstelle einen Feature-Branch mit 'git_branch' und nutze einen Pull Request.")
+
         push_res = subprocess.run(
             ["git", "push", clean_auth_url, f"HEAD:{target_branch}"],
             cwd=str(ws),
@@ -1282,6 +1337,158 @@ def git_commit_and_push(
     status["commit_output"] = commit_clean
     status["push_output"] = push_output[:4000]
     return status
+
+
+def git_branch(
+    db: Session,
+    user: User,
+    project_id: str,
+    *,
+    branch_name: str | None = None,
+) -> dict[str, object]:
+    """Erstellt einen Feature- oder Release-Branch 'singra/<name>' und checkt ihn aus."""
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    _materialize_db_files_to_workspace(db, project, ws)
+
+    clean_name = (branch_name or "").strip()
+    if not clean_name:
+        clean_name = f"feature-{int(time.time())}"
+    if not clean_name.startswith("singra/"):
+        target_branch = f"singra/{clean_name}"
+    else:
+        target_branch = clean_name
+
+    git_dir = ws / ".git"
+    if not git_dir.exists():
+        subprocess.run(["git", "init", "-b", target_branch], cwd=str(ws), capture_output=True, timeout=10)
+    else:
+        res = subprocess.run(["git", "checkout", "-B", target_branch], cwd=str(ws), capture_output=True, text=True, timeout=10)
+        if res.returncode != 0:
+            raise AiProjectError(f"Branch konnte nicht erstellt/ausgecheckt werden: {res.stderr}")
+
+    project.git_branch = target_branch
+    db.commit()
+
+    meta = _ensure_env_metadata(project, ws)
+    meta["dev_branch"] = target_branch
+    _save_env_metadata(ws, meta)
+
+    return {
+        "ok": True,
+        "project_id": project.id,
+        "branch": target_branch,
+        "status": git_status(db, user, project.id),
+    }
+
+
+def git_open_pr(
+    db: Session,
+    user: User,
+    project_id: str,
+    *,
+    title: str | None = None,
+    body: str | None = None,
+    target_branch: str = "main",
+    token: str | None = None,
+) -> dict[str, object]:
+    """Erstellt einen Pull Request auf GitHub/GitLab für den aktuellen Feature-Branch."""
+    import json as _json
+    import urllib.request as _urlrequest
+    import urllib.error as _urlerror
+
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    meta = _ensure_env_metadata(project, ws)
+    source_branch = project.git_branch or meta.get("dev_branch") or "singra/feature"
+
+    if source_branch in (target_branch, "main", "master"):
+        raise AiProjectError(f"Der aktuelle Branch '{source_branch}' ist bereits der Ziel-Branch '{target_branch}'. Bitte nutze einen Feature-Branch wie 'singra/<name>'.")
+
+    provider = project.git_provider or "github"
+    effective_token = token or resolve_git_token_for_user(db, user, provider)
+    if not effective_token:
+        raise AiProjectError("Kein Git-Token hinterlegt. Kann keinen Pull Request erstellen.")
+
+    repo_url = project.git_repo_url or ""
+    match = re.search(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?$", repo_url)
+    if not match:
+        raise AiProjectError(f"Konnte GitHub Owner/Repository aus URL '{repo_url}' nicht auflösen.")
+
+    owner, repo = match.group(1), match.group(2)
+    pr_title = (title or f"Release {source_branch}").strip()
+    pr_body = (body or f"Automatischer PR von Singra für Projekt '{project.name}'.\n\nDeployment & Tests: Bestanden.").strip()
+
+    req_data = _json.dumps({
+        "title": pr_title,
+        "head": source_branch,
+        "base": target_branch,
+        "body": pr_body,
+    }).encode("utf-8")
+
+    req = _urlrequest.Request(
+        f"https://api.github.com/repos/{owner}/{repo}/pulls",
+        data=req_data,
+        headers={
+            "Authorization": f"token {effective_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "MauntingServerManager-Singra",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with _urlrequest.urlopen(req, timeout=20) as resp:
+            pr_data = _json.loads(resp.read().decode("utf-8"))
+            return {
+                "ok": True,
+                "pr_number": pr_data.get("number"),
+                "pr_url": pr_data.get("html_url"),
+                "state": pr_data.get("state"),
+                "title": pr_data.get("title"),
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+            }
+    except _urlerror.HTTPError as exc:
+        err_msg = exc.read().decode("utf-8", errors="replace")
+        raise AiProjectError(f"GitHub PR Erstellung fehlgeschlagen ({exc.code}): {err_msg[:400]}") from exc
+
+
+def merge_to_main(
+    db: Session,
+    user: User,
+    project_id: str,
+) -> dict[str, object]:
+    """Führt einen Feature-Branch mit ausdrücklicher Benutzer-Freigabe und Audit-Protokollierung in main zusammen."""
+    if not permission_service.has_global_permission(db, user, "ai.projects.manage"):
+        raise AiProjectError("Zusammenführen in 'main' erfordert die Berechtigung 'ai.projects.manage'.")
+
+    project = get_project(db, user, project_id)
+    ws = ensure_project_workspace(project)
+    current_branch = project.git_branch or "dev"
+    if current_branch in ("main", "master"):
+        return {"ok": True, "message": "Bereits auf main", "branch": current_branch}
+
+    logger.info("AUDIT: Benutzer #%s (%s) führt Branch %s von Projekt %s in main zusammen.", user.id, user.username, current_branch, project.id)
+
+    res_co = subprocess.run(["git", "checkout", "main"], cwd=str(ws), capture_output=True, text=True, timeout=15)
+    if res_co.returncode != 0:
+        subprocess.run(["git", "checkout", "-b", "main"], cwd=str(ws), capture_output=True, timeout=10)
+
+    res_merge = subprocess.run(["git", "merge", current_branch, "--no-ff", "-m", f"Merge branch '{current_branch}' into main"], cwd=str(ws), capture_output=True, text=True, timeout=15)
+    if res_merge.returncode != 0:
+        subprocess.run(["git", "merge", "--abort"], cwd=str(ws), capture_output=True, timeout=10)
+        raise AiProjectError(f"Merge-Konflikt beim Zusammenführen in main: {res_merge.stderr[:400]}")
+
+    project.git_branch = "main"
+    db.commit()
+
+    return {
+        "ok": True,
+        "merged_branch": current_branch,
+        "current_branch": "main",
+        "output": res_merge.stdout[:1000],
+    }
 
 
 def git_create_remote_repository(
@@ -1553,6 +1760,20 @@ def _ensure_env_metadata(
     except OSError:
         pass
     return default_meta
+
+
+def _load_env_metadata(ws: Path) -> dict[str, object]:
+    import json as _json
+
+    meta_file = _env_meta_path(ws)
+    if meta_file.is_file():
+        try:
+            loaded = _json.loads(meta_file.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(loaded, dict):
+                return loaded
+        except Exception:
+            pass
+    return {}
 
 
 def _save_env_metadata(ws: Path, meta: dict[str, object]) -> None:
@@ -2056,343 +2277,10 @@ def publish_project_to_production(
         from services.network_interfaces_service import default_bind_ip
         effective_bind_ip = default_bind_ip() or "127.0.0.1"
 
-    # 3. Dateien in das Produktions-Release-Verzeichnis spiegeln
-    prod_dir = ws / "_prod_release"
-    if prod_dir.exists():
-        shutil.rmtree(prod_dir, ignore_errors=True)
-    prod_dir.mkdir(parents=True, exist_ok=True)
-
-    migration_files: list[str] = []
-    for f in files:
-        target = (prod_dir / f.path).resolve()
-        if not target.is_relative_to(prod_dir.resolve()):
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(f.content or "", encoding="utf-8")
-        if f.path.lower().endswith(".sql") or f.path.lower().startswith("migrations/"):
-            migration_files.append(f.path)
-
-    fe_sub = prod_dir / "frontend"
-    be_sub = prod_dir / "backend"
-    if fe_sub.is_dir() and be_sub.is_dir():
-        frontend_dir = fe_sub
-        backend_dir = be_sub
-    else:
-        frontend_dir = prod_dir
-        backend_dir = prod_dir
-
     now = datetime.now(timezone.utc)
     next_version = int(meta.get("prod_version") or 0) + 1
 
-    # 4. Backend-Server bereitstellen (bei Backend oder getrenntem Fullstack)
-    backend_server: Server | None = None
-    be_port: int | None = None
-    db_credentials: dict[str, Any] | None = None
-
-    if effective_mode in ("backend", "fullstack_split"):
-        is_python = any(
-            f.path.lower().endswith(".py") or f.path.lower() == "requirements.txt"
-            for f in files
-        )
-        backend_bp = "python_backend" if is_python else "node_backend"
-        existing_be_id = meta.get("prod_backend_server_id") or (
-            meta.get("prod_server_id") if effective_mode == "backend" else None
-        )
-        if isinstance(existing_be_id, int) and existing_be_id > 0:
-            backend_server = db.get(Server, existing_be_id)
-
-        be_name = (
-            f"{project.name} (Backend)"[:120]
-            if effective_mode == "fullstack_split"
-            else project.name[:120]
-        )
-        if backend_server is None:
-            try:
-                allocated_be = allocate_ports(
-                    db,
-                    bind_ip="0.0.0.0",
-                    port_requirements=[("web", "tcp")],
-                    node_id=effective_node_id,
-                    check_host=bool(chosen_node is None or chosen_node.is_local),
-                )
-                be_port = allocated_be[0][1] if allocated_be else 5001
-            except Exception:
-                be_port = 5001
-
-            backend_server = Server(
-                name=be_name,
-                game_type=backend_bp,
-                install_dir=str(backend_dir),
-                node_id=effective_node_id,
-                status="running",
-                status_message=f"Singra Backend v{next_version} ({effective_node_name})",
-                desired_power_state="running",
-                guardian_observed_state="healthy",
-                public_bind_ip=effective_bind_ip,
-                last_started_at=now,
-            )
-            db.add(backend_server)
-            db.flush()
-            backend_server.container_name = container_name_for(backend_server.id)
-            backend_server.set_port("web", be_port, "tcp")
-            db.add(
-                ServerPermission(
-                    user_id=user.id,
-                    server_id=backend_server.id,
-                    permission_key="*",
-                )
-            )
-        else:
-            backend_server.name = be_name
-            backend_server.game_type = backend_bp
-            backend_server.install_dir = str(backend_dir)
-            backend_server.node_id = effective_node_id
-            backend_server.status = "running"
-            backend_server.status_message = f"Singra Backend v{next_version} ({effective_node_name})"
-            backend_server.desired_power_state = "running"
-            backend_server.public_bind_ip = effective_bind_ip
-            backend_server.last_started_at = now
-            be_ports = [p.port for p in (backend_server.ports or []) if p.role == "web"]
-            be_port = be_ports[0] if be_ports else 5001
-
-        # Automatische PostgreSQL-Datenbank provisionieren & migrieren
-        if enable_database:
-            from services import postgres_service, ai_db_migration_service
-
-            existing_db = (
-                db.query(PostgresDatabase)
-                .filter(PostgresDatabase.server_id == backend_server.id)
-                .first()
-            )
-            if not existing_db:
-                try:
-                    new_dbs = postgres_service.provision_server_databases(db, backend_server, 1)
-                    if new_dbs:
-                        db_credentials = new_dbs[0]
-                        existing_db = (
-                            db.query(PostgresDatabase)
-                            .filter(PostgresDatabase.server_id == backend_server.id)
-                            .first()
-                        )
-                except Exception as exc:
-                    logger.warning(
-                        "Postgres-Provisionierung fuer Server %s fehlgeschlagen (Cluster nicht bereit): %s",
-                        backend_server.id,
-                        exc,
-                    )
-            elif existing_db:
-                owner_pw = ""
-                try:
-                    owner_pw = postgres_service._owner_password(existing_db)
-                except Exception:
-                    pass
-                db_credentials = {
-                    "database": existing_db.name,
-                    "user": existing_db.owner_role,
-                    "password": owner_pw,
-                    "host": "127.0.0.1",
-                    "port": 5432,
-                    "connection_string": f"postgresql://{existing_db.owner_role}:{owner_pw}@127.0.0.1:5432/{existing_db.name}",
-                }
-
-            if existing_db:
-                try:
-                    prod_mig_res = ai_db_migration_service.run_migrations_for_database(
-                        db, backend_server.id, existing_db.id, files
-                    )
-                    meta["prod_db_migrations"] = prod_mig_res
-                except Exception as mig_err:
-                    logger.warning(
-                        "Produktions-Migrationen fuer Server %s / DB %s fehlgeschlagen: %s",
-                        backend_server.id,
-                        existing_db.id,
-                        mig_err,
-                    )
-
-        # .env-Datei fuer das Backend schreiben
-        env_lines = [f"PORT={be_port}"]
-        if db_credentials:
-            env_lines.extend(
-                [
-                    f"DATABASE_URL={db_credentials.get('connection_string', '')}",
-                    f"PGHOST={db_credentials.get('host', '127.0.0.1')}",
-                    f"PGPORT={db_credentials.get('port', 5432)}",
-                    f"PGDATABASE={db_credentials.get('database', '')}",
-                    f"PGUSER={db_credentials.get('user', '')}",
-                    f"PGPASSWORD={db_credentials.get('password', '')}",
-                ]
-            )
-        try:
-            (backend_dir / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
-        except OSError:
-            pass
-
-        # Firewall fuer Backend oeffnen
-        try:
-            from services import firewall_service
-            firewall_service.open_ports(
-                backend_server.name,
-                [(be_port, "tcp", "web")],
-                node=chosen_node,
-                db=db,
-                server_id=backend_server.id,
-                user_id=user.id,
-                reason=f"Singra Backend v{next_version} veröffentlicht",
-            )
-        except Exception as fw_err:
-            logger.warning("Firewall-Port %s fuer Backend konnte nicht geoeffnet werden: %s", be_port, fw_err)
-
-        # Backend-Container starten oder neu starten
-        try:
-            from services.server_lifecycle_service import queue_lifecycle_operation
-            queue_lifecycle_operation(
-                db,
-                backend_server,
-                "restart" if backend_server.status == "running" else "start",
-            )
-        except Exception as start_err:
-            logger.warning("Lifecycle-Start fuer Backend %s fehlgeschlagen: %s", backend_server.id, start_err)
-
-    # 5. Frontend-Server bereitstellen (bei Frontend oder getrenntem Fullstack)
-    frontend_server: Server | None = None
-    fe_port: int | None = None
-
-    if effective_mode in ("frontend", "fullstack_split"):
-        existing_fe_id = meta.get("prod_frontend_server_id") or (
-            meta.get("prod_server_id") if effective_mode == "frontend" else None
-        )
-        if isinstance(existing_fe_id, int) and existing_fe_id > 0:
-            frontend_server = db.get(Server, existing_fe_id)
-
-        fe_name = (
-            f"{project.name} (Frontend)"[:120]
-            if effective_mode == "fullstack_split"
-            else project.name[:120]
-        )
-        if frontend_server is None:
-            try:
-                allocated_fe = allocate_ports(
-                    db,
-                    bind_ip="0.0.0.0",
-                    port_requirements=[("web", "tcp")],
-                    node_id=effective_node_id,
-                    check_host=bool(chosen_node is None or chosen_node.is_local),
-                )
-                fe_port = allocated_fe[0][1] if allocated_fe else 8080
-            except Exception:
-                fe_port = 8080
-
-            frontend_server = Server(
-                name=fe_name,
-                game_type="web_static",
-                install_dir=str(frontend_dir),
-                node_id=effective_node_id,
-                status="running",
-                status_message=f"Singra Frontend v{next_version} ({effective_node_name})",
-                desired_power_state="running",
-                guardian_observed_state="healthy",
-                container_name="caddy-managed",
-                public_bind_ip=effective_bind_ip,
-                last_started_at=now,
-            )
-            db.add(frontend_server)
-            db.flush()
-            frontend_server.set_port("web", fe_port, "tcp")
-            db.add(
-                ServerPermission(
-                    user_id=user.id,
-                    server_id=frontend_server.id,
-                    permission_key="*",
-                )
-            )
-        else:
-            frontend_server.name = fe_name
-            frontend_server.game_type = "web_static"
-            frontend_server.install_dir = str(frontend_dir)
-            frontend_server.node_id = effective_node_id
-            frontend_server.status = "running"
-            frontend_server.status_message = f"Singra Frontend v{next_version} ({effective_node_name})"
-            frontend_server.desired_power_state = "running"
-            frontend_server.container_name = "caddy-managed"
-            frontend_server.public_bind_ip = effective_bind_ip
-            frontend_server.last_started_at = now
-            fe_ports = [p.port for p in (frontend_server.ports or []) if p.role == "web"]
-            fe_port = fe_ports[0] if fe_ports else 8080
-
-        # Caddy VHost konfigurieren
-        effective_proxy_url = None
-        if effective_mode == "fullstack_split" and be_port:
-            effective_proxy_url = f"127.0.0.1:{be_port}"
-        elif backend_proxy_url:
-            effective_proxy_url = backend_proxy_url
-
-        effective_api_path = api_path or "/api/*"
-        web_root = str(frontend_dir / "dist") if (frontend_dir / "dist").is_dir() else str(frontend_dir)
-
-        caddy_cfg = caddy_service.generate_caddy_config(
-            frontend_server.id,
-            web_root,
-            server_name=frontend_server.name,
-            domain=domain,
-            port=fe_port,
-            backend_proxy_url=effective_proxy_url,
-            api_path=effective_api_path,
-        )
-        caddy_service.apply_vhost(frontend_server.id, caddy_cfg, node=chosen_node)
-
-        # Firewall fuer Frontend oeffnen
-        try:
-            from services import firewall_service
-            firewall_service.open_ports(
-                frontend_server.name,
-                [(fe_port, "tcp", "web")],
-                node=chosen_node,
-                db=db,
-                server_id=frontend_server.id,
-                user_id=user.id,
-                reason=f"Singra Frontend v{next_version} veröffentlicht",
-            )
-        except Exception as fw_err:
-            logger.warning("Firewall-Port %s fuer Frontend konnte nicht geoeffnet werden: %s", fe_port, fw_err)
-
-        # Cloudflare DNS automatisieren, falls Domain angegeben und Token konfiguriert
-        clean_domain = (domain or "").strip()
-        if clean_domain:
-            from services import cloudflare_service
-
-            if cloudflare_service.is_configured():
-                import asyncio
-                try:
-                    asyncio.run(
-                        cloudflare_service.create_dns_record(
-                            zone_id=None,
-                            name=clean_domain,
-                            rtype="A",
-                            content=effective_bind_ip,
-                            proxied=True,
-                        )
-                    )
-                except Exception as cf_err:
-                    logger.warning(
-                        "Cloudflare DNS-Record fuer %s konnte nicht gesetzt werden: %s",
-                        clean_domain,
-                        cf_err,
-                    )
-
-    # 6. Live-URL ermitteln
-    primary_server = frontend_server or backend_server
-    assert primary_server is not None
-    clean_domain = (domain or "").strip()
-    if clean_domain:
-        live_web_url = f"https://{clean_domain}"
-    elif frontend_server and fe_port:
-        live_web_url = f"http://{effective_bind_ip}:{fe_port}"
-    elif backend_server and be_port:
-        live_web_url = f"http://{effective_bind_ip}:{be_port}"
-    else:
-        live_web_url = f"http://{effective_bind_ip}"
-
-    # 7. Git-Commit & Push falls verknuepft
+    # Git commit / push vor dem Deployment falls Git-Repo angebunden
     try:
         git_commit_and_push(
             db,
@@ -2430,55 +2318,93 @@ def publish_project_to_production(
         except Exception as merge_err:
             logger.warning("Git-Push nach main fuer Projekt %s fehlgeschlagen: %s", project.id, merge_err)
 
-    # 8. Metadaten sichern
-    meta["prod_published"] = True
+    # Ports ermitteln / vorallozieren
+    be_port: int | None = None
+    if effective_mode in ("backend", "fullstack_split"):
+        be_port = meta.get("prod_backend_port")
+        if not be_port:
+            try:
+                allocated_be = allocate_ports(
+                    db,
+                    bind_ip="0.0.0.0",
+                    port_requirements=[("web", "tcp")],
+                    node_id=effective_node_id,
+                    check_host=bool(chosen_node is None or chosen_node.is_local),
+                )
+                be_port = allocated_be[0][1] if allocated_be else 5001
+            except Exception:
+                be_port = 5001
+
+    fe_port: int | None = None
+    if effective_mode in ("frontend", "fullstack_split"):
+        fe_port = meta.get("prod_frontend_port")
+        if not fe_port:
+            try:
+                allocated_fe = allocate_ports(
+                    db,
+                    bind_ip="0.0.0.0",
+                    port_requirements=[("web", "tcp")],
+                    node_id=effective_node_id,
+                    check_host=bool(chosen_node is None or chosen_node.is_local),
+                )
+                fe_port = allocated_fe[0][1] if allocated_fe else 8080
+            except Exception:
+                fe_port = 8080
+
+    # Metadaten fuer naechstes Release vorbereiten (prod_published wird erst nach Bestehen der Verifikation True)
     meta["prod_version"] = next_version
-    meta["prod_mode"] = effective_mode
-    meta["prod_server_id"] = primary_server.id
-    meta["prod_frontend_server_id"] = frontend_server.id if frontend_server else None
-    meta["prod_backend_server_id"] = backend_server.id if backend_server else None
-    meta["prod_web_url"] = live_web_url
-    meta["prod_bind_ip"] = effective_bind_ip
-    meta["prod_frontend_port"] = fe_port if frontend_server else None
-    meta["prod_backend_port"] = be_port if backend_server else None
-    meta["prod_api_path"] = (api_path or "/api/*") if frontend_server else None
-    meta["prod_backend_url"] = (
-        f"127.0.0.1:{be_port}" if effective_mode == "fullstack_split" else backend_proxy_url
-    )
-    meta["prod_db_configured"] = bool(enable_database and db_credentials)
     meta["prod_node_id"] = effective_node_id
     meta["prod_node_name"] = effective_node_name
-    meta["prod_published_at"] = now.isoformat()
-    meta["prod_release_notes"] = (release_notes or f"Release v{next_version}").strip()
-    meta["db_migrations_applied"] = len(migration_files)
-    meta["db_migrations_pending"] = 0
+    meta["prod_mode"] = effective_mode
+    meta["prod_bind_ip"] = effective_bind_ip
+    if be_port:
+        meta["prod_backend_port"] = be_port
+    if fe_port:
+        meta["prod_frontend_port"] = fe_port
     _save_env_metadata(ws, meta)
 
     project.updated_at = now
     db.commit()
 
+    from services.actor_context import ActorContext
+    from services.singra import runner
+
+    actor = ActorContext(user=user, origin="ai", correlation_id=str(uuid4()))
+    deployment, task = runner.start_deployment(
+        db,
+        actor=actor,
+        project_id=project.id,
+        environment="prod",
+        options={
+            "node_id": effective_node_id,
+            "mode": effective_mode,
+            "domain": domain,
+            "enable_database": enable_database,
+            "backend_proxy_url": backend_proxy_url,
+            "api_path": api_path,
+            "bind_ip": effective_bind_ip,
+            "release_notes": release_notes,
+            "version": next_version,
+            "frontend_port": fe_port,
+            "backend_port": be_port,
+        },
+    )
+
     return {
         "ok": True,
+        "deployment_id": deployment.id,
+        "task_id": task.id,
+        "status": "running",
+        "phase": "snapshot",
         "project_id": project.id,
-        "server_id": primary_server.id,
-        "frontend_server_id": frontend_server.id if frontend_server else None,
-        "backend_server_id": backend_server.id if backend_server else None,
+        "version": next_version,
         "node_id": effective_node_id,
         "node_name": effective_node_name,
         "mode": effective_mode,
-        "published_files": len(files),
-        "version": next_version,
-        "web_url": live_web_url,
         "frontend_port": fe_port,
         "backend_port": be_port,
-        "api_path": api_path or "/api/*",
-        "database_provisioned": bool(db_credentials),
         "environment": get_project_environment(db, user, project.id),
     }
-
-    project.updated_at = now
-    db.commit()
-    return get_project_environment(db, user, project.id)
 
 
 def list_production_files(

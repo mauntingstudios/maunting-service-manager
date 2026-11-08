@@ -2223,9 +2223,115 @@ WRAPEOF
             chown root:root /usr/local/sbin/msm-iptables
             chmod 755 /usr/local/sbin/msm-iptables
 
-            # Policy (direkt als root; nur Firewall-Gates, kein Container-systemctl)
+            # Caddy-Wrapper (Root-Gate für Caddyfile-Konfigurationen)
+            cat > /usr/local/sbin/msm-caddy <<'CADDYEOF'
+#!/bin/sh
+# MSM Caddy wrapper — thin, root-owned privilege gate for Caddy vhost management.
+set -eu
+STAGING_DIR="/opt/msm/caddy-staging"
+CADDY_CONF_DIR="/etc/caddy/conf.d"
+CADDYFILE="/etc/caddy/Caddyfile"
+if [ $# -eq 0 ]; then
+    printf 'msm-caddy: refused disallowed invocation (no args)\n' >&2
+    exit 1
+fi
+ACTION="${1:-}"
+validate_server_id() {
+    sid="${1:-}"
+    case "$sid" in
+        ''|*[!0-9]*)
+            printf 'msm-caddy: invalid server_id: %s\n' "$sid" >&2
+            exit 1
+            ;;
+    esac
+}
+case "$ACTION" in
+    apply)
+        if [ $# -ne 2 ]; then
+            printf 'msm-caddy: usage: msm-caddy apply <server_id>\n' >&2
+            exit 1
+        fi
+        SERVER_ID="$2"
+        validate_server_id "$SERVER_ID"
+        SOURCE_FILE="${STAGING_DIR}/app_${SERVER_ID}.conf"
+        TARGET_FILE="${CADDY_CONF_DIR}/app_${SERVER_ID}.conf"
+        TMP_FILE="${CADDY_CONF_DIR}/.app_${SERVER_ID}.conf.tmp"
+        if [ ! -f "$SOURCE_FILE" ]; then
+            printf 'msm-caddy: staging file not found: %s\n' "$SOURCE_FILE" >&2
+            exit 1
+        fi
+        mkdir -p "$CADDY_CONF_DIR"
+        cp "$SOURCE_FILE" "$TMP_FILE"
+        chmod 0640 "$TMP_FILE"
+        if getent group caddy >/dev/null 2>&1; then
+            chown root:caddy "$TMP_FILE"
+        else
+            chown root:root "$TMP_FILE"
+        fi
+        mv -f "$TMP_FILE" "$TARGET_FILE"
+        if [ -f "$CADDYFILE" ] && command -v caddy >/dev/null 2>&1; then
+            VAL_OUTPUT=""
+            if ! VAL_OUTPUT=$(caddy validate --config "$CADDYFILE" --adapter caddyfile 2>&1); then
+                printf 'msm-caddy: caddy validate failed for server %s: %s\n' "$SERVER_ID" "$VAL_OUTPUT" >&2
+                rm -f "$TARGET_FILE"
+                exit 1
+            fi
+        fi
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
+            systemctl reload caddy
+        elif command -v caddy >/dev/null 2>&1; then
+            caddy reload --config "$CADDYFILE" --adapter caddyfile 2>/dev/null || true
+        fi
+        exit 0
+        ;;
+    remove)
+        if [ $# -ne 2 ]; then
+            printf 'msm-caddy: usage: msm-caddy remove <server_id>\n' >&2
+            exit 1
+        fi
+        SERVER_ID="$2"
+        validate_server_id "$SERVER_ID"
+        rm -f "${CADDY_CONF_DIR}/app_${SERVER_ID}.conf"
+        rm -f "${STAGING_DIR}/app_${SERVER_ID}.conf"
+        if [ -f "$CADDYFILE" ] && command -v caddy >/dev/null 2>&1; then
+            caddy validate --config "$CADDYFILE" --adapter caddyfile >/dev/null 2>&1 || true
+        fi
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
+            systemctl reload caddy 2>/dev/null || true
+        elif command -v caddy >/dev/null 2>&1; then
+            caddy reload --config "$CADDYFILE" --adapter caddyfile 2>/dev/null || true
+        fi
+        exit 0
+        ;;
+    reload)
+        if [ -f "$CADDYFILE" ] && command -v caddy >/dev/null 2>&1; then
+            VAL_OUTPUT=""
+            if ! VAL_OUTPUT=$(caddy validate --config "$CADDYFILE" --adapter caddyfile 2>&1); then
+                printf 'msm-caddy: caddy validate failed during reload: %s\n' "$VAL_OUTPUT" >&2
+                exit 1
+            fi
+        fi
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
+            systemctl reload caddy
+        elif command -v caddy >/dev/null 2>&1; then
+            caddy reload --config "$CADDYFILE" --adapter caddyfile
+        fi
+        exit 0
+        ;;
+    *)
+        printf 'msm-caddy: refused disallowed invocation: %s\n' "$*" >&2
+        exit 1
+        ;;
+esac
+CADDYEOF
+            chown root:root /usr/local/sbin/msm-caddy
+            chmod 755 /usr/local/sbin/msm-caddy
+            mkdir -p /opt/msm/caddy-staging
+            chown msm:msm /opt/msm/caddy-staging 2>/dev/null || true
+
+            # Policy (direkt als root; nur Firewall- und Caddy-Gates, kein allgemeines Container-systemctl)
             cat > /etc/sudoers.d/msm-panel <<'SUDOEOF'
-# MSM Panel — Firewall (UFW/iptables) only
+# MSM Panel — Firewall (UFW/iptables) & Caddy wrapper
 # Deployed via root heredoc in install.sh/update.sh (never read from msm-writable tree).
 
 Defaults:msm !authenticate
@@ -2238,10 +2344,13 @@ msm ALL=(root) NOPASSWD: /usr/sbin/ufw status numbered
 
 # iptables ONLY via vetted wrapper (enforces DOCKER-USER only for variable long args)
 msm ALL=(root) NOPASSWD: /usr/local/sbin/msm-iptables
+msm ALL=(root) NOPASSWD: /usr/local/sbin/msm-caddy
 msm ALL=(root) NOPASSWD: /opt/msm/update.sh
 SUDOEOF
             chmod 440 /etc/sudoers.d/msm-panel
-            ok "sudoers + iptables-Wrapper für Firewall-Regeln eingerichtet (direkt als root, ohne Container-systemctl)"
+            # Validierung des Caddy-Root-Helfers
+            sudo -u msm sudo -n /usr/local/sbin/msm-caddy reload >/dev/null 2>&1 || true
+            ok "sudoers + iptables/caddy-Wrapper eingerichtet (direkt als root, ohne Container-systemctl)"
         fi
 
     else

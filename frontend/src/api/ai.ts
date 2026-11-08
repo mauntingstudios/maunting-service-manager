@@ -1634,6 +1634,9 @@ export interface AiProjectPublishOptions {
 export interface AiProjectPublishResult {
   ok: boolean
   project_id: string
+  deployment_id?: string | null
+  task_id?: string | null
+  phase?: string
   server_id: number
   frontend_server_id?: number | null
   backend_server_id?: number | null
@@ -1704,6 +1707,61 @@ export interface AiPreviewInspectionResult {
   summary: string
   project_id?: string
   project_name?: string
+}
+
+export interface AiProjectDevStatus {
+  project_id: string
+  status: string
+  is_paused: boolean
+  dev_web_url: string | null
+  dev_api_url: string | null
+  dev_frontend_port: number | null
+  dev_backend_port: number | null
+  dev_backend_server_id: number | null
+  dev_frontend_server_id: number | null
+  dev_database_id: number | null
+  last_active_at: string | null
+  idle_minutes: number
+}
+
+export interface SingraTestRunItem {
+  id: string
+  project_id: string
+  environment: string
+  release_checksum: string | null
+  kind: string
+  status: 'passed' | 'failed' | 'running' | string
+  summary: {
+    scenarios?: Array<{ name: string; status: string; detail?: string }>
+    errors?: string[]
+    negative_tests?: {
+      empty_submit_blocked?: boolean
+      invalid_email_blocked?: boolean
+    }
+    viewports?: Record<string, { overflow: boolean; console_errors_count: number; screenshot?: string }>
+    third_party_requests_blocked?: number
+    console_errors?: string[]
+    [key: string]: any
+  } | null
+  artifacts_path: string | null
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface SingraDeploymentItem {
+  id: string
+  project_id: string
+  environment: string
+  version: number
+  task_id: string | null
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | string
+  phase: string
+  error_code: string | null
+  error_detail: string | null
+  diagnostics: Array<{ phase: string; step: string; message: string; timestamp?: string }> | any
+  release_path: string | null
+  created_at: string
+  finished_at: string | null
 }
 
 export interface AiMcpServer {
@@ -2484,6 +2542,58 @@ export const aiApi = {
     api<AiPreviewInspectionResult>(
       `/ai/projects/${encodeURIComponent(projectId)}/preview/inspect`,
       { method: 'POST', body: JSON.stringify(payload ?? {}) },
+    ),
+  startDevEnvironment: (
+    projectId: string,
+    payload?: { mode?: string; node_id?: number | string; backend_port?: number; frontend_port?: number },
+  ) =>
+    api<{ ok: boolean; status: string; dev_web_url?: string; dev_api_url?: string }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/dev/start`,
+      { method: 'POST', body: JSON.stringify(payload ?? {}) },
+    ),
+  stopDevEnvironment: (projectId: string) =>
+    api<{ ok: boolean; status: string; project_id: string }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/dev/stop`,
+      { method: 'POST' },
+    ),
+  getDevEnvironmentStatus: (projectId: string) =>
+    api<AiProjectDevStatus>(
+      `/ai/projects/${encodeURIComponent(projectId)}/dev/status`,
+    ),
+  runProjectTests: (projectId: string) =>
+    api<{ ok: boolean; passed: boolean; release_checksum?: string; summary?: any; errors?: string[] }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/test`,
+      { method: 'POST' },
+    ),
+  getProjectTestRuns: (projectId: string) =>
+    api<SingraTestRunItem[]>(
+      `/ai/projects/${encodeURIComponent(projectId)}/test-runs`,
+    ),
+  gitBranch: (projectId: string, branch: string) =>
+    api<{ ok: boolean; branch: string; initialized?: boolean }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/git/branch`,
+      { method: 'POST', body: JSON.stringify({ branch }) },
+    ),
+  gitOpenPr: (
+    projectId: string,
+    payload: { title: string; body?: string; target_branch?: string; token?: string },
+  ) =>
+    api<{ ok: boolean; pr_url?: string; pr_number?: number; html_url?: string }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/git/open-pr`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  mergeToMain: (projectId: string) =>
+    api<{ ok: boolean; branch: string; message?: string }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/git/merge-to-main`,
+      { method: 'POST' },
+    ),
+  listProjectDeployments: (projectId: string, limit = 20) =>
+    api<SingraDeploymentItem[]>(
+      `/ai/projects/${encodeURIComponent(projectId)}/deployments?limit=${limit}`,
+    ),
+  getProjectDeployment: (projectId: string, deploymentId: string) =>
+    api<SingraDeploymentItem>(
+      `/ai/projects/${encodeURIComponent(projectId)}/deployments/${encodeURIComponent(deploymentId)}`,
     ),
   listMcpServers: () => api<AiMcpServer[]>('/ai/mcp'),
   createMcpServer: (payload: AiMcpServerWrite & { name: string }) =>

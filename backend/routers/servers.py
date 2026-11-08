@@ -1105,7 +1105,8 @@ async def server_console_ws(websocket: WebSocket, server_id: int) -> None:
         finally:
             db.close()
 
-        container = container_name_for(server.id)
+        container = getattr(server, "container_name", None) or container_name_for(server.id)
+        server_status = getattr(server, "status", None)
         log_path = _console_log_path(server.id)
         last_id_raw = websocket.query_params.get("last_id")
         last_id: int | None = None
@@ -1123,6 +1124,7 @@ async def server_console_ws(websocket: WebSocket, server_id: int) -> None:
             last_id=last_id,
             node=node,
             declared_logs=declared_logs,
+            server_status=server_status,
         )
     finally:
         if db.is_active:

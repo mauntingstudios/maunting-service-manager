@@ -258,10 +258,7 @@ export function SingraFilesView({
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div
-                        className="truncate text-sm font-medium text-on-surface"
-                        title={item.original_name}
-                      >
+                      <div className="truncate text-sm font-medium text-on-surface">
                         {item.original_name}
                       </div>
                       <div className="mt-0.5 text-xs text-on-surface-variant">

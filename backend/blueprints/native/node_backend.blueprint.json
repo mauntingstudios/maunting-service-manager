@@ -17,6 +17,10 @@
     "startup": "./start.sh",
     "startupProfiles": [
       {
+        "whenFile": "start.sh",
+        "startup": "./start.sh"
+      },
+      {
         "whenFile": "package.json",
         "startup": "npm start"
       },

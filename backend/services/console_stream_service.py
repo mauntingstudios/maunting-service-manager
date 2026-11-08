@@ -144,6 +144,23 @@ async def ingest_line(server_id: int, text: str, source: str, timestamp: str | N
             logger.debug("Broadcast to ws failed: %s", exc)
 
 
+def append_msm_log_to_memory(server_id: int, text: str, timestamp: str | None = None) -> None:
+    """Synchroner Eintrag in den Konsolen-Ringpuffer für System- und Deployment-Meldungen."""
+    ts = timestamp or _utc_iso()
+    with _SYNC_STATES_LOCK:
+        state = _get_state(server_id)
+        with state.lock:
+            line = _Line(
+                id=state.next_id,
+                text=text.rstrip("\r\n"),
+                source="msm",
+                timestamp=ts,
+            )
+            state.next_id += 1
+            _NEXT_IDS[server_id] = state.next_id
+            state.lines.append(line)
+
+
 def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -488,6 +505,7 @@ async def connect(
     last_id: int | None = None,
     node: Any | None = None,
     declared_logs: DeclaredLogConfig | None = None,
+    server_status: str | None = None,
 ) -> None:
     """Hauptcoroutine: akzeptiert die WS-Verbindung, spult Replay ab, streamed live."""
     async with _STATES_LOCK:
@@ -531,7 +549,20 @@ async def connect(
                 _tail_file_loop(log_path, state, lambda txt, src, ts: ingest_line(server_id, txt, src, ts))
             ))
             
-            if use_agent:
+            if container == "caddy-managed":
+                await ingest_line(server_id, "[MSM] Frontend wird durch Caddy Reverse-Proxy bereitgestellt.", "msm")
+                from services.caddy_service import get_caddy_log_path
+                c_log = get_caddy_log_path(server_id)
+                if not c_log.exists():
+                    try:
+                        c_log.parent.mkdir(parents=True, exist_ok=True)
+                        c_log.touch()
+                    except OSError:
+                        pass
+                state.tasks.append(asyncio.create_task(
+                    _tail_file_loop(c_log, state, lambda txt, src, ts: ingest_line(server_id, txt, "caddy", ts))
+                ))
+            elif use_agent:
                 state.tasks.append(asyncio.create_task(
                     _agent_proxy_loop(server_id, container, node)
                 ))
@@ -551,6 +582,9 @@ async def connect(
                             lambda txt, src, ts: ingest_line(server_id, txt, src, ts),
                         )
                     ))
+
+            if not state.lines and server_status == "stopped":
+                await ingest_line(server_id, "[MSM] Server ist gestoppt.", "msm")
                 
         # Send replay to THIS client only
         async with _STATES_LOCK:

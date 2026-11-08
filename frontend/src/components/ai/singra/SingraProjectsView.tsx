@@ -12,6 +12,8 @@ import {
   Database,
   Eye,
   FileCode,
+  AlertTriangle,
+  CheckCircle2,
   FilePlus2,
   FileText,
   Folder,
@@ -25,6 +27,7 @@ import {
   Lock,
   MessageSquare,
   MousePointer,
+  Pause,
   Play,
   Plus,
   RefreshCw,
@@ -32,6 +35,7 @@ import {
   Search,
   Server as ServerIcon,
   Settings2,
+  ShieldCheck,
   Smartphone,
   Sparkles,
   Tablet,
@@ -46,6 +50,7 @@ import {
   aiApi,
   type AiConversationSummary,
   type AiProject,
+  type AiProjectDevStatus,
   type AiProjectEnvironmentState,
   type AiProjectExecResult,
   type AiProjectFile,
@@ -59,6 +64,8 @@ import { still } from '@/lib/still'
 import { buildPreviewDocument, isPreviewErrorMessage } from './previewBundle'
 import { PreviewDiagnostics } from './PreviewDiagnostics'
 import { SingraVisualInspectionModal } from './SingraVisualInspectionModal'
+import { SingraDeploymentPanel } from './SingraDeploymentPanel'
+import { SingraTestResults } from './SingraTestResults'
 import { PostgresStudio } from '@/components/postgres/PostgresStudio'
 import { teamsApi, type Team } from '@/api/teams'
 import {
@@ -82,7 +89,7 @@ import {
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
-type ProjectTab = 'chats' | 'files' | 'preview' | 'database' | 'settings'
+type ProjectTab = 'chats' | 'files' | 'preview' | 'database' | 'tests' | 'settings'
 type ProjectCreateMode = 'empty' | 'create_repo' | 'clone_repo'
 
 interface SingraProjectsViewProps {
@@ -264,6 +271,13 @@ export function SingraProjectsView({
   const [publishCfZoneId, setPublishCfZoneId] = useState<string>('')
   const [publishCfSubdomain, setPublishCfSubdomain] = useState<string>('')
   const [publishMergeToMain, setPublishMergeToMain] = useState<boolean>(false)
+
+  // Singra Dev-Sandbox, Tests & Deployment Engine state
+  const [devStatus, setDevStatus] = useState<AiProjectDevStatus | null>(null)
+  const [devStatusLoading, setDevStatusLoading] = useState(false)
+  const [activeDeploymentId, setActiveDeploymentId] = useState<string | null>(null)
+  const [showDeploymentPanel, setShowDeploymentPanel] = useState(false)
+  const [latestTestPassed, setLatestTestPassed] = useState<boolean | null>(null)
 
   // Dev-Konsole state
   const [devConsoleOpen, setDevConsoleOpen] = useState(false)
@@ -577,6 +591,8 @@ export function SingraProjectsView({
           setActiveFilePath(null)
         }
         setDetailsProjectId(projectId)
+        void loadDevStatus(projectId)
+        void checkLatestTestStatus(projectId)
       } catch (err: unknown) {
         toast.error(
           err instanceof SanitizedApiError
@@ -587,6 +603,64 @@ export function SingraProjectsView({
     },
     [],
   )
+
+  const loadDevStatus = useCallback(async (projectId: string) => {
+    try {
+      const res = await aiApi.getDevEnvironmentStatus(projectId)
+      setDevStatus(res)
+    } catch (err) {
+      still(err, 'SingraProjectsView.loadDevStatus')
+    }
+  }, [])
+
+  const checkLatestTestStatus = useCallback(async (projectId: string) => {
+    try {
+      const runs = await aiApi.getProjectTestRuns(projectId)
+      if (runs.length > 0) {
+        setLatestTestPassed(runs[0].status === 'passed')
+      } else {
+        setLatestTestPassed(null)
+      }
+    } catch {
+      setLatestTestPassed(null)
+    }
+  }, [])
+
+  const handleStartDevSandbox = async () => {
+    if (!selectedProject || devStatusLoading) return
+    setDevStatusLoading(true)
+    try {
+      await aiApi.startDevEnvironment(selectedProject.id)
+      toast.success('Dev-Sandbox gestartet. Frontend und Backend aktiv.')
+      await loadDevStatus(selectedProject.id)
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof SanitizedApiError
+          ? err.message
+          : 'Start der Dev-Sandbox fehlgeschlagen.',
+      )
+    } finally {
+      setDevStatusLoading(false)
+    }
+  }
+
+  const handleStopDevSandbox = async () => {
+    if (!selectedProject || devStatusLoading) return
+    setDevStatusLoading(true)
+    try {
+      await aiApi.stopDevEnvironment(selectedProject.id)
+      toast.success('Dev-Sandbox pausiert.')
+      await loadDevStatus(selectedProject.id)
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof SanitizedApiError
+          ? err.message
+          : 'Pausieren der Dev-Sandbox fehlgeschlagen.',
+      )
+    } finally {
+      setDevStatusLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!selectedId) return
@@ -1051,7 +1125,7 @@ export function SingraProjectsView({
         return String(a);
       }).join(' ');
       window.parent.postMessage({ type: 'SINGRA_DEV_CONSOLE', level: lvl, message: str, time: new Date().toLocaleTimeString() }, '*');
-    } catch(ex) {}
+    } catch(ex) { void ex; }
   }
   console.log = function() { _l.apply(console, arguments); _postLog('log', arguments); };
   console.info = function() { _i.apply(console, arguments); _postLog('info', arguments); };
@@ -1429,7 +1503,13 @@ export function SingraProjectsView({
         bind_ip: publishBindIp.trim() || null,
         merge_to_main: publishMergeToMain,
       })
-      setEnvState(res.environment)
+      if (res.environment) {
+        setEnvState(res.environment)
+      }
+      if (res.deployment_id) {
+        setActiveDeploymentId(res.deployment_id)
+        setShowDeploymentPanel(true)
+      }
       const prodFiles = await aiApi
         .listProjectProductionFiles(selectedProject.id)
         .catch(() => [])
@@ -1437,19 +1517,8 @@ export function SingraProjectsView({
       setPreviewEnv('production')
       setPublishModalOpen(false)
       setReleaseNotes('')
-      const portInfo = res.frontend_port
-        ? `Web-Port ${res.frontend_port}`
-        : res.backend_port
-          ? `Backend-Port ${res.backend_port}`
-          : ''
-      const modeText =
-        res.mode === 'fullstack_split'
-          ? 'Fullstack (Frontend & Backend getrennt)'
-          : res.mode === 'backend'
-            ? 'Backend'
-            : 'Frontend'
       toast.success(
-        `Auf Node „${res.node_name}“ als ${modeText} veröffentlicht (${res.published_files} Dateien, Server #${res.server_id} aktiv${portInfo ? `, ${portInfo}` : ''}).`,
+        `Bereitstellung gestartet (Phase: ${res.phase || 'Snapshot'}). Phasen-Fortschritt wird überwacht.`,
       )
     } catch (err: unknown) {
       toast.error(
@@ -1754,14 +1823,15 @@ export function SingraProjectsView({
               </div>
             </div>
 
-            {/* 5 Cozy Workspace Tabs: Mobile 5-Column Control, Desktop Pills */}
-            <div className="grid grid-cols-5 gap-1 border-b border-outline-variant/20 bg-surface-container-low/30 p-1 sm:hidden shrink-0">
+            {/* 6 Cozy Workspace Tabs: Mobile 6-Column Control, Desktop Pills */}
+            <div className="grid grid-cols-6 gap-1 border-b border-outline-variant/20 bg-surface-container-low/30 p-1 sm:hidden shrink-0">
               {(
                 [
                   { id: 'chats', label: 'Unterhaltungen', mobileLabel: 'Chats', icon: MessageSquare },
                   { id: 'files', label: 'Dateien', mobileLabel: 'Dateien', icon: FileCode },
                   { id: 'preview', label: 'Vorschau', mobileLabel: 'Vorschau', icon: Globe },
                   { id: 'database', label: 'Datenbank', mobileLabel: 'DB', icon: Database },
+                  { id: 'tests', label: 'Tests & Gate', mobileLabel: 'Tests', icon: ShieldCheck },
                   { id: 'settings', label: 'Einstellungen', mobileLabel: 'Optionen', icon: Settings2 },
                 ] as const
               ).map((tab) => {
@@ -1793,6 +1863,7 @@ export function SingraProjectsView({
                   { id: 'files', label: 'Dateien', icon: FileCode },
                   { id: 'preview', label: 'Vorschau', icon: Globe },
                   { id: 'database', label: 'Datenbank', icon: Database },
+                  { id: 'tests', label: 'Tests & Gate', icon: ShieldCheck },
                   { id: 'settings', label: 'Einstellungen', icon: Settings2 },
                 ] as const
               ).map((tab) => {
@@ -2433,11 +2504,71 @@ export function SingraProjectsView({
                         </div>
                       ) : (
                         <>
+                          {previewEnv === 'dev' && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/20 bg-surface-container-high/60 px-4 py-2 text-xs text-on-surface shrink-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge
+                                  variant={devStatus?.status === 'running' ? 'success' : 'default'}
+                                  className="text-xs gap-1"
+                                >
+                                  {devStatus?.status === 'running'
+                                    ? `✓ Dev-Sandbox aktiv (Port :${devStatus.dev_frontend_port || 27031})`
+                                    : devStatus?.status === 'paused_idle'
+                                      ? 'Pausiert (Inaktivität)'
+                                      : 'Dev-Sandbox gestoppt'}
+                                </Badge>
+                                {devStatus?.dev_web_url && devStatus?.status === 'running' && (
+                                  <a
+                                    href={devStatus.dev_web_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-mono text-primary hover:underline inline-flex items-center gap-1"
+                                  >
+                                    <span>{devStatus.dev_web_url}</span>
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                                {devStatus?.idle_minutes && devStatus.idle_minutes > 0 ? (
+                                  <span className="text-label-sm text-on-surface-variant">
+                                    • Inaktiv seit {Math.round(devStatus.idle_minutes)} Min. (Auto-Pause nach 60 Min.)
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                {devStatus?.status === 'running' ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    className="h-7 text-xs px-2.5 gap-1"
+                                    disabled={devStatusLoading}
+                                    onClick={handleStopDevSandbox}
+                                  >
+                                    <Pause className="h-3 w-3" />
+                                    <span>Sandbox pausieren</span>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-7 text-xs px-2.5 gap-1"
+                                    disabled={devStatusLoading}
+                                    onClick={handleStartDevSandbox}
+                                  >
+                                    {devStatusLoading ? <Spinner className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                                    <span>Sandbox starten</span>
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {previewEnv === 'production' && envState?.production?.published && (
                             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/20 bg-surface-container-high/60 px-4 py-2 text-xs text-on-surface shrink-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <Badge variant="success" className="text-xs gap-1">
-                                  ✓ Live (v{envState.production.version || 1})
+                                  ✓ Live (v{envState.production.release_count || 1})
                                 </Badge>
                                 <span className="text-on-surface-variant">Node:</span>
                                 <span className="font-medium text-on-surface">{envState.production.node_id || 'Haupt-Node'}</span>
@@ -2481,6 +2612,14 @@ export function SingraProjectsView({
                               key={`preview-prod-${envState.production.web_url}`}
                               src={envState.production.web_url}
                               title="Projekt-Produktion"
+                              className="w-full flex-1 border-0 min-h-[400px] bg-white"
+                              sandbox="allow-scripts allow-forms allow-modals allow-same-origin"
+                            />
+                          ) : previewEnv === 'dev' && devStatus?.status === 'running' && devStatus?.dev_web_url ? (
+                            <iframe
+                              key={`preview-dev-${devStatus.dev_web_url}`}
+                              src={devStatus.dev_web_url}
+                              title="Projekt-Dev-Sandbox"
                               className="w-full flex-1 border-0 min-h-[400px] bg-white"
                               sandbox="allow-scripts allow-forms allow-modals allow-same-origin"
                             />
@@ -2556,7 +2695,7 @@ export function SingraProjectsView({
                                     type="button"
                                     onClick={() => setConsoleLogs([])}
                                     className="text-on-surface-variant hover:text-on-surface text-xs px-1 py-0.5"
-                                    title="Konsole leeren"
+                                    aria-label="Konsole leeren"
                                   >
                                     Leeren
                                   </button>
@@ -2617,6 +2756,31 @@ export function SingraProjectsView({
 
               {activeTab === 'database' && (
                 <div className="flex-1 min-h-0 flex flex-col p-1">
+                  {devStatus && devStatus.status !== 'running' && (
+                    <div className="mb-3 flex items-center justify-between rounded-xl border border-status-warning/30 bg-status-warning/10 p-3 text-xs">
+                      <div className="flex items-center gap-2">
+                        <Pause className="h-4 w-4 text-status-warning shrink-0" />
+                        <div>
+                          <span className="font-semibold text-on-surface">Dev-Sandbox ist pausiert</span>
+                          <span className="text-on-surface-variant ml-1.5">
+                            {devStatus.status === 'paused_idle'
+                              ? `(Auto-Pause nach ${Math.round(devStatus.idle_minutes ?? 60)} Min. Inaktivität)`
+                              : '(Gestoppt)'}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 text-xs px-3 gap-1 rounded-full"
+                        onClick={handleStartDevSandbox}
+                        disabled={devStatusLoading}
+                      >
+                        {devStatusLoading ? <Spinner className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                        <span>Dev-Sandbox starten</span>
+                      </Button>
+                    </div>
+                  )}
                   {envState?.dev?.dev_has_db && envState.dev.dev_server_id && envState.dev.dev_database_id ? (
                     <div className="flex-1 min-h-0 flex flex-col">
                       <PostgresStudio
@@ -2661,6 +2825,15 @@ export function SingraProjectsView({
                       </Button>
                     </div>
                   )}
+                </div>
+              )}
+
+              {activeTab === 'tests' && selectedProject && (
+                <div className="flex-1 min-h-0 overflow-y-auto max-w-4xl w-full mx-auto p-1">
+                  <SingraTestResults
+                    projectId={selectedProject.id}
+                    onTestCompleted={(passed) => setLatestTestPassed(passed)}
+                  />
                 </div>
               )}
 
@@ -2718,11 +2891,11 @@ export function SingraProjectsView({
                                 Selbstständiges Arbeiten im Projekt erlauben
                               </span>
                               {hasProjectAutonomyOverride ? (
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="default" className="text-xs">
                                   Projektspezifisch
                                 </Badge>
                               ) : (
-                                <Badge variant={globalAutonomy ? 'success' : 'outline'} className="text-xs">
+                                <Badge variant={globalAutonomy ? 'success' : 'default'} className="text-xs">
                                   {globalAutonomy ? 'Global aktiv (Tools)' : 'Global inaktiv (Tools)'}
                                 </Badge>
                               )}
@@ -3657,6 +3830,62 @@ export function SingraProjectsView({
               </p>
             </div>
 
+            {/* Test-Gate Banner */}
+            <div
+              className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+                latestTestPassed === true
+                  ? 'bg-status-success/10 border-status-success/30 text-status-success'
+                  : latestTestPassed === false
+                    ? 'bg-status-destructive/10 border-status-destructive/30 text-status-destructive'
+                    : 'bg-status-warning/10 border-status-warning/30 text-status-warning'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {latestTestPassed === true ? (
+                  <CheckCircle2 className="h-4 w-4 text-status-success shrink-0" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-status-warning shrink-0" />
+                )}
+                <div>
+                  <span className="font-semibold block">
+                    {latestTestPassed === true
+                      ? 'Test-Gate bestanden'
+                      : latestTestPassed === false
+                        ? 'Test-Gate nicht bestanden'
+                        : 'Test-Gate ausstehend'}
+                  </span>
+                  <span className="text-label-sm opacity-80">
+                    {latestTestPassed === true
+                      ? 'Browser-, Layout- und Sicherheitsprüfungen wurden erfolgreich durchlaufen.'
+                      : 'Vor der Veröffentlichung müssen automatisierte Tests für diesen Release-Stand vorliegen.'}
+                  </span>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="text-xs h-7 shrink-0"
+                onClick={async () => {
+                  if (!selectedProject) return
+                  toast.info('Starte System- und Browsertests …')
+                  try {
+                    const testRes = await aiApi.runProjectTests(selectedProject.id)
+                    setLatestTestPassed(testRes.passed)
+                    if (testRes.passed) {
+                      toast.success('Test-Gate bestanden!')
+                    } else {
+                      toast.warning('Test-Gate meldet Fehler.')
+                    }
+                  } catch {
+                    toast.error('Tests konnten nicht ausgeführt werden.')
+                  }
+                }}
+              >
+                Tests jetzt starten
+              </Button>
+            </div>
+
             <div className="flex flex-wrap items-center justify-end gap-2.5 pt-4 border-t border-outline-variant/20">
               <Button type="button" variant="ghost" size="sm" onClick={() => setPublishModalOpen(false)}>
                 Abbrechen
@@ -3726,6 +3955,34 @@ export function SingraProjectsView({
         onReinspect={() => void handleRunVisualInspection()}
         onFixWithSingra={(issues) => void handleFixVisualIssuesWithSingra(issues)}
       />
+
+      {/* 14-Phasen Bereitstellungs-Panel (Live-Status & Diagnose) */}
+      <Dialog open={showDeploymentPanel} onOpenChange={setShowDeploymentPanel}>
+        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rocket className="h-5 w-5 text-primary" />
+              <span>Bereitstellungs-Status — „{selectedProject?.name}“</span>
+            </DialogTitle>
+            <DialogDescription>
+              Verfolgt die 14 Phasen von Quellcode-Erfassung und Tests bis zur produktiven Freigabe.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedProject && (
+            <div className="p-4">
+              <SingraDeploymentPanel
+                projectId={selectedProject.id}
+                activeDeploymentId={activeDeploymentId}
+                onClose={() => setShowDeploymentPanel(false)}
+                onRetry={() => {
+                  setShowDeploymentPanel(false)
+                  setPublishModalOpen(true)
+                }}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

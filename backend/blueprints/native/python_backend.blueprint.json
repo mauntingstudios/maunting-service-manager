@@ -16,6 +16,10 @@
     "startup": "./start.sh",
     "startupProfiles": [
       {
+        "whenFile": "start.sh",
+        "startup": "./start.sh"
+      },
+      {
         "whenFile": "main.py",
         "startup": "uvicorn main:app --host 0.0.0.0 --port {WEB_PORT}"
       },
