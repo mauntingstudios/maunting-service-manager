@@ -68,6 +68,12 @@ def normalize_rel_path(rel_path: str) -> str:
         raise AiProjectError("Ungültiger Dateipfad außerhalb des Projektordners")
     if not _SAFE_REL_PATH_RE.match(norm):
         raise AiProjectError("Dateipfad enthält nicht unterstützte Sonderzeichen")
+
+    # Regelwerke gehören ausschließlich in das Stammverzeichnis
+    basename = posixpath.basename(norm).lower()
+    if basename in ("agents.md", "gemini.md") and "/" in norm:
+        return "AGENTS.md" if basename == "agents.md" else "GEMINI.md"
+
     return norm
 
 
@@ -378,6 +384,14 @@ def _sync_workspace_files_to_db(db: Session, project: AiProject, ws: Path) -> No
         for f in db.query(AiProjectFile).filter(AiProjectFile.project_id == project.id).all()
     }
     changed = False
+
+    # Veraltete/fehlerhafte Unterordner-AGENTS.md in DB und Cache bereinigen
+    for p, row in list(existing.items()):
+        if "/" in p and posixpath.basename(p).lower() in ("agents.md", "gemini.md"):
+            db.delete(row)
+            existing.pop(p, None)
+            changed = True
+
     count = 0
     for root, dirs, files in os.walk(ws):
         dirs[:] = [
@@ -391,6 +405,13 @@ def _sync_workspace_files_to_db(db: Session, project: AiProject, ws: Path) -> No
             if count >= 150:
                 break
             fpath = Path(root) / fname
+            # Regelwerke gehören ausschließlich in das Root-Verzeichnis; Duplikate entfernen
+            if fname.lower() in ("agents.md", "gemini.md") and fpath.parent != ws:
+                try:
+                    fpath.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                continue
             try:
                 rel = fpath.relative_to(ws).as_posix()
                 if not _SAFE_REL_PATH_RE.match(rel):

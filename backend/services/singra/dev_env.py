@@ -281,7 +281,9 @@ def start_dev_environment(
             backend_proxy_url=proxy_target,
             api_path="/api/*",
         )
-        caddy_service.apply_vhost(fe_server.id, caddy_cfg, node=chosen_node)
+        vhost_res = caddy_service.apply_vhost(fe_server.id, caddy_cfg, node=chosen_node)
+        if not vhost_res:
+            logger.warning("Caddy VHost-Konfiguration für Dev fehlgeschlagen: %s", vhost_res.error)
 
     now = datetime.now(timezone.utc)
     dev_web_url = f"http://127.0.0.1:{fe_port}" if (mode in ("frontend", "fullstack_split") or has_frontend) else f"http://127.0.0.1:{be_port}"

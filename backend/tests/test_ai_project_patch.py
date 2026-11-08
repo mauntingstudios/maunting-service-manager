@@ -13,6 +13,7 @@ from services.ai_project_service import (
     patch_project_file,
     AiProjectError,
     compute_file_diff,
+    normalize_rel_path,
 )
 from models.ai_project import AiProjectFile
 
@@ -176,6 +177,15 @@ def test_compute_diff_for_patch():
     assert "+modified second line" in diff["diff"]
 
 
+def test_normalize_rel_path_agents_and_gemini_root():
+    assert normalize_rel_path("AGENTS.md") == "AGENTS.md"
+    assert normalize_rel_path("src/components/AGENTS.md") == "AGENTS.md"
+    assert normalize_rel_path("backend/services/agents.md") == "AGENTS.md"
+    assert normalize_rel_path("src/GEMINI.md") == "GEMINI.md"
+    assert normalize_rel_path("nested/sub/folder/gemini.md") == "GEMINI.md"
+    assert normalize_rel_path("src/components/Button.tsx") == "src/components/Button.tsx"
+
+
 if __name__ == "__main__":
     test_patch_project_file_single_edit()
     test_patch_project_file_multiple_sequential_edits()
@@ -183,4 +193,5 @@ if __name__ == "__main__":
     test_patch_project_file_find_not_found()
     test_patch_project_file_ambiguous_find()
     test_compute_diff_for_patch()
+    test_normalize_rel_path_agents_and_gemini_root()
     print("All patch tests passed successfully!")

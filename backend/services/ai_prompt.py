@@ -1037,9 +1037,12 @@ Testberichte. Ein Merge nach `main` erfolgt nur auf ausdrücklichen Wunsch des B
 oder die Cloudflare-API im Panel eingerichtet, legt das Deployment den DNS-A-Record automatisch an. \
 Andernfalls erkläre dem Benutzer ruhig und verständlich, welcher A-Record auf welche Server-IP gelegt \
 werden muss.
-- Dokumentation & Lernen: Halte `README.md` und `AGENTS.md` bei neuen Funktionen, \
-Komponenten oder Architekturentscheidungen selbststaendig aktuell und speichere \
-projektuebergreifende Erkenntnisse per `learn_skill`."""
+- Dokumentation & AGENTS.md-Regel: Die Projekt-Regelwerke `AGENTS.md` (bzw. `GEMINI.md`) \
+und `README.md` liegen AUSSCHLIESSLICH genau EINMAL im Root-Verzeichnis des Projekts. \
+Sie dürfen NIEMALS in Unterordner (wie `src/`, `backend/`, `components/` etc.) kopiert \
+oder dort neu angelegt werden. Halte `README.md` und `AGENTS.md` im Stammverzeichnis \
+bei neuen Funktionen, Komponenten oder Architekturentscheidungen selbststaendig aktuell \
+und speichere projektuebergreifende Erkenntnisse per `learn_skill`."""
 
 
 # Der Betriebsanlass: "kannst du die Minecraft-Version aendern?" — die KI sah

@@ -1153,7 +1153,7 @@ StandardError=journal
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false
-ReadWritePaths=/opt/msm -/etc/ufw -/var/lib/ufw -/run/ufw -/run/ufw.lock -/run/user -/run/sudo
+ReadWritePaths=/opt/msm -/etc/ufw -/var/lib/ufw -/run/ufw -/run/ufw.lock -/run/user -/run/sudo -/etc/caddy -/run/caddy
 
 [Install]
 WantedBy=multi-user.target
@@ -1257,7 +1257,7 @@ fi
 # scheitert das systemd-Namespacing mit ``status=226/NAMESPACE``.
 # ``-``-Praefix laesst systemd fehlende Pfade still ueberspringen.
 # ``-/run/user`` wird fuer die Verbindung zum Rootless Docker Socket benoetigt.
-GOOD_RWP="ReadWritePaths=/opt/msm -/etc/ufw -/var/lib/ufw -/run/ufw -/run/ufw.lock -/run/user -/run/sudo"
+GOOD_RWP="ReadWritePaths=/opt/msm -/etc/ufw -/var/lib/ufw -/run/ufw -/run/ufw.lock -/run/user -/run/sudo -/etc/caddy -/run/caddy"
 BAD_RWP_1="ReadWritePaths=/opt/msm /etc/systemd/system /run/ufw /var/lib/ufw /etc/ufw /run/ufw.lock"
 BAD_RWP_2="ReadWritePaths=/opt/msm -/etc/ufw -/var/lib/ufw -/run/ufw -/run/ufw.lock"
 
@@ -1276,6 +1276,10 @@ if [[ -f "$PANEL_UNIT" ]]; then
         fi
         if ! grep -qF "-/run/sudo" "$PANEL_UNIT"; then
             sed -i 's|^ReadWritePaths=\(.*\)|ReadWritePaths=\1 -/run/sudo|' "$PANEL_UNIT"
+            UPDATED_RWP=true
+        fi
+        if ! grep -qF "-/etc/caddy" "$PANEL_UNIT"; then
+            sed -i 's|^ReadWritePaths=\(.*\)|ReadWritePaths=\1 -/etc/caddy -/run/caddy|' "$PANEL_UNIT"
             UPDATED_RWP=true
         fi
     fi

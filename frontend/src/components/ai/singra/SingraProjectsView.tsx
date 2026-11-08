@@ -217,6 +217,7 @@ export function SingraProjectsView({
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
   const [inspectMode, setInspectMode] = useState(false)
   const [previewEnv, setPreviewEnv] = useState<'dev' | 'production'>('dev')
+  const [devPreviewMode, setDevPreviewMode] = useState<'bundle' | 'live'>('bundle')
   const [inspectElement, setInspectElement] = useState<string | null>(null)
   const [inspectTargetChatId, setInspectTargetChatId] = useState<string>('__latest__')
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -278,6 +279,20 @@ export function SingraProjectsView({
   const [activeDeploymentId, setActiveDeploymentId] = useState<string | null>(null)
   const [showDeploymentPanel, setShowDeploymentPanel] = useState(false)
   const [latestTestPassed, setLatestTestPassed] = useState<boolean | null>(null)
+
+  const isLocalAccess = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  const resolvedDevWebUrl = useMemo(() => {
+    if (!devStatus?.dev_web_url) return null
+    try {
+      const u = new URL(devStatus.dev_web_url)
+      if ((u.hostname === '127.0.0.1' || u.hostname === 'localhost') && typeof window !== 'undefined' && !isLocalAccess) {
+        u.hostname = window.location.hostname
+      }
+      return u.toString()
+    } catch {
+      return devStatus.dev_web_url
+    }
+  }, [devStatus?.dev_web_url, isLocalAccess])
 
   // Dev-Konsole state
   const [devConsoleOpen, setDevConsoleOpen] = useState(false)
@@ -2519,12 +2534,13 @@ export function SingraProjectsView({
                                 </Badge>
                                 {devStatus?.dev_web_url && devStatus?.status === 'running' && (
                                   <a
-                                    href={devStatus.dev_web_url}
+                                    href={resolvedDevWebUrl || devStatus.dev_web_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="font-mono text-primary hover:underline inline-flex items-center gap-1"
+                                    title="Live-Server in neuem Tab öffnen"
                                   >
-                                    <span>{devStatus.dev_web_url}</span>
+                                    <span>{resolvedDevWebUrl || devStatus.dev_web_url}</span>
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
                                 )}
@@ -2536,6 +2552,33 @@ export function SingraProjectsView({
                               </div>
 
                               <div className="flex items-center gap-2">
+                                {devStatus?.status === 'running' && (
+                                  <div className="flex items-center gap-1 rounded border border-outline-variant/30 p-0.5 bg-surface-container-low text-xs">
+                                    <button
+                                      type="button"
+                                      className={`px-2 py-0.5 rounded transition-colors ${
+                                        devPreviewMode === 'bundle'
+                                          ? 'bg-surface-container-high font-medium text-on-surface'
+                                          : 'text-on-surface-variant hover:text-on-surface'
+                                      }`}
+                                      onClick={() => setDevPreviewMode('bundle')}
+                                    >
+                                      Vorschau
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={`px-2 py-0.5 rounded transition-colors ${
+                                        devPreviewMode === 'live'
+                                          ? 'bg-surface-container-high font-medium text-on-surface'
+                                          : 'text-on-surface-variant hover:text-on-surface'
+                                      }`}
+                                      onClick={() => setDevPreviewMode('live')}
+                                      title={resolvedDevWebUrl || devStatus?.dev_web_url || undefined}
+                                    >
+                                      Live-Server
+                                    </button>
+                                  </div>
+                                )}
                                 {devStatus?.status === 'running' ? (
                                   <Button
                                     type="button"
@@ -2615,10 +2658,10 @@ export function SingraProjectsView({
                               className="w-full flex-1 border-0 min-h-[400px] bg-white"
                               sandbox="allow-scripts allow-forms allow-modals allow-same-origin"
                             />
-                          ) : previewEnv === 'dev' && devStatus?.status === 'running' && devStatus?.dev_web_url ? (
+                          ) : previewEnv === 'dev' && devPreviewMode === 'live' && devStatus?.status === 'running' && resolvedDevWebUrl ? (
                             <iframe
-                              key={`preview-dev-${devStatus.dev_web_url}`}
-                              src={devStatus.dev_web_url}
+                              key={`preview-dev-${resolvedDevWebUrl}`}
+                              src={resolvedDevWebUrl}
                               title="Projekt-Dev-Sandbox"
                               className="w-full flex-1 border-0 min-h-[400px] bg-white"
                               sandbox="allow-scripts allow-forms allow-modals allow-same-origin"
