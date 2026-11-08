@@ -6867,7 +6867,12 @@
     "teamRestored": "Team has been restored",
     "tryDifferentSearch": "Try a different search term or clear the filter.",
     "unarchive": "Restore",
-    "uploadCustomCover": "Upload custom cover"
+    "uploadCustomCover": "Upload custom cover",
+    "editTeam": "Edit team",
+    "fullAccess": "Full access",
+    "observerPreset": "Observer",
+    "operatorPreset": "Operator",
+    "quickPresets": "Quick presets"
   },
   "mss": {
     "fenster": {

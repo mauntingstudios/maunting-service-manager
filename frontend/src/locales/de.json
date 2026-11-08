@@ -6867,7 +6867,12 @@
     "teamRestored": "Team wurde wiederhergestellt",
     "tryDifferentSearch": "Versuche einen anderen Suchbegriff oder setze die Filter zurück.",
     "unarchive": "Wiederherstellen",
-    "uploadCustomCover": "Eigenes Bild hochladen"
+    "uploadCustomCover": "Eigenes Bild hochladen",
+    "editTeam": "Team bearbeiten",
+    "fullAccess": "Vollzugriff",
+    "observerPreset": "Beobachter",
+    "operatorPreset": "Operator",
+    "quickPresets": "Schnellvorlagen"
   },
   "mss": {
     "fenster": {

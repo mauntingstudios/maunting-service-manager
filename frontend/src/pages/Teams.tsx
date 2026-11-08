@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft, ArrowUpRight, Bot, Brain, Check, Crown, LogOut, Mail, Pencil, Plus, Server, Shield, ShieldCheck, Sparkles, Trash2, UserPlus, Users, UsersRound, X,
+  ArrowLeft, Check, Crown, LogOut, Mail, Pencil, Plus, Server, Shield, ShieldCheck, Sparkles, Trash2, UserPlus, Users, UsersRound, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
 import { api, SanitizedApiError } from '@/api/client'
 import {
@@ -15,10 +15,7 @@ import {
   type TeamRole,
   type TeamServer,
 } from '@/api/teams'
-import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
-import { AiSkillManager } from '@/components/ai/AiSkillManager'
 import { StatusDot } from '@/components/social/StatusIndicator'
-import type { AiKnowledgeScope, AiSkillScope } from '@/components/ai/knowledgeScope'
 import { TeamRoleForm } from '@/components/teams/TeamRoleForm'
 import { mitServerSicht } from '@/components/teams/teamPermissionsCatalog'
 import { TabBar, TabDef } from '@maunting/ui'
@@ -33,6 +30,7 @@ import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
 import { Spinner } from '@maunting/ui'
 import { TeamsOverview } from '@/components/teams/TeamsOverview'
 import { TeamModal } from '@/components/teams/TeamModal'
+import { TeamServerManager } from '@/components/teams/TeamServerManager'
 import {
   getTeamMetadata,
   setTeamMetadata,
@@ -47,20 +45,7 @@ interface UserOption {
   username: string
 }
 
-type TeamReiter = 'members' | 'servers' | 'roles' | 'knowledge' | 'vault'
-
-function memoryScope(detail: TeamDetail): AiKnowledgeScope {
-  return { kind: 'team', teamId: detail.id, canManage: detail.can_manage_memory }
-}
-
-function skillScope(detail: TeamDetail): AiSkillScope {
-  return {
-    kind: 'team',
-    teamId: detail.id,
-    personal: detail.is_personal,
-    canManage: detail.can_manage_skills,
-  }
-}
+type TeamReiter = 'members' | 'servers' | 'roles' | 'vault'
 
 /**
  * Modernes Organisation- & Team-Dashboard (Vollbild / Full-Page).
@@ -76,13 +61,12 @@ export function Teams() {
   const { t } = useTranslation()
   const canCreate = useHasPermission('teams.create')
   const canReadUsers = useHasPermission('users.read')
-  const canUseSkills = useHasPermission('ai.skills.use')
   const benutzerId = useAuthStore((state) => state.user?.id ?? null)
 
   const [reiter, setReiterState] = useState<TeamReiter>(() => {
     if (typeof localStorage !== 'undefined') {
       const saved = localStorage.getItem(STORAGE_KEY_REITER) as TeamReiter
-      if (['members', 'servers', 'roles', 'knowledge', 'vault'].includes(saved)) return saved
+      if (['members', 'servers', 'roles', 'vault'].includes(saved)) return saved
     }
     return 'members'
   })
@@ -264,13 +248,23 @@ export function Teams() {
     coverImage: string
   }) => {
     if (!editingTeam) return
-    setTeamMetadata(editingTeam.team.id, {
-      category: payload.category,
-      description: payload.description,
-      coverImage: payload.coverImage,
-    })
-    toast.success(t('common.saved', 'Änderungen gespeichert'))
-    await reloadTeams()
+    await run(async () => {
+      const nextName = payload.name.trim()
+      if (nextName && nextName !== editingTeam.team.name) {
+        await teamsApi.rename(editingTeam.team.id, nextName)
+      }
+      setTeamMetadata(editingTeam.team.id, {
+        category: payload.category,
+        description: payload.description,
+        coverImage: payload.coverImage,
+      })
+      toast.success(t('common.saved', 'Änderungen gespeichert'))
+      await reloadTeams()
+      if (selectedId) {
+        const refreshed = await teamsApi.get(selectedId)
+        setDetail(refreshed)
+      }
+    }, 'teams.saved')
   }
 
   const handleArchiveToggle = (tm: Team) => {
@@ -499,7 +493,6 @@ export function Teams() {
       ? [{ id: 'servers' as const, labelKey: 'teams.tabServers', icon: Server, badge: team.servers.length }]
       : []),
     { id: 'roles' as const, labelKey: 'teams.roles', icon: Shield, badge: team?.roles?.length ?? 0 },
-    { id: 'knowledge', labelKey: 'teams.knowledge', icon: Brain },
     ...(inTauri ? [{ id: 'vault' as const, labelKey: 'teams.vault', icon: ShieldCheck }] : []),
   ]
   const aktiverReiter: TeamReiter = teamReiter.some((row) => row.id === reiter) ? reiter : 'members'
@@ -524,84 +517,51 @@ export function Teams() {
         />
       ) : (
         <>
-      {/* ── Executive Dashboard Header ─────────────────────────────────── */}
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-outline-variant/40 bg-surface-container-low/70 px-4 py-3 backdrop-blur-xl sm:px-6">
-        <div className="flex items-center gap-3 min-w-0">
+      {/* ── Executive Workspace Header & Centered Hero ─────────────────── */}
+      <header className="shrink-0 border-b border-outline-variant/30 bg-surface-container-low/60 backdrop-blur-xl">
+        {/* Top Utility Bar */}
+        <div className="flex items-center justify-between gap-3 border-b border-outline-variant/20 px-4 py-2.5 sm:px-6">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={() => setView('overview')}
             aria-label={t('teams.backToOverview', 'Zurück zur Übersicht')}
-            className="gap-1.5 text-on-surface-variant hover:text-on-surface shrink-0"
+            className="gap-2 text-on-surface-variant hover:text-on-surface"
           >
             <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('teams.backToOverview', 'Zurück zur Übersicht')}</span>
+            <span className="text-xs sm:text-sm">{t('teams.backToOverview', 'Zurück zur Übersicht')}</span>
           </Button>
 
-          {/* Team Cover Thumbnail */}
-          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container shadow-sm">
-            {activeMeta?.coverImage ? (
-              <img
-                src={activeMeta.coverImage}
-                alt={team?.name ?? ''}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="grid h-full w-full place-items-center bg-primary/10 text-primary">
-                <UsersRound className="h-5 w-5" aria-hidden="true" />
-              </div>
-            )}
-          </div>
-
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              {activeCat && (
-                <span
-                  style={{
-                    color: activeCat.colorHex,
-                    backgroundColor: activeCat.bgHex,
-                    borderColor: activeCat.borderHex,
-                  }}
-                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-label-sm font-semibold border"
-                >
-                  <activeCat.icon className="h-3 w-3" />
-                  <span>{activeCat.label}</span>
-                </span>
-              )}
-              {team?.is_owner && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-label-sm font-semibold text-primary border border-primary/20">
-                  <Crown className="h-3 w-3" />
-                  {t('teams.founder')}
-                </span>
-              )}
-            </div>
-            <h1 className="font-headline text-lg sm:text-xl font-bold leading-tight text-on-surface truncate">
-              {team?.name ?? t('teams.title')}
-            </h1>
-            {activeMeta?.description && (
-              <p className="text-xs text-on-surface-variant truncate max-w-md hidden md:block">
-                {activeMeta.description}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {team && (
-            <div className="flex items-center gap-1 sm:gap-2">
+            <div className="flex items-center gap-2">
               {team.is_owner ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void removeTeam(team)}
-                  aria-label={t('teams.remove')}
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">{t('teams.remove')}</span>
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
+                    aria-label={t('teams.editTeam', 'Team bearbeiten')}
+                    className="gap-1.5 text-xs text-on-surface-variant hover:text-on-surface"
+                  >
+                    <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{t('common.edit', 'Bearbeiten')}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void removeTeam(team)}
+                    aria-label={t('teams.remove')}
+                    className="gap-1.5 text-xs text-status-destructive hover:bg-status-destructive/10"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{t('teams.remove')}</span>
+                  </Button>
+                </>
               ) : (
                 <Button
                   type="button"
@@ -610,13 +570,149 @@ export function Teams() {
                   disabled={busy}
                   onClick={() => void leaveTeam(team)}
                   aria-label={t('teams.leave')}
+                  className="gap-1.5 text-xs text-status-destructive hover:bg-status-destructive/10"
                 >
-                  <LogOut className="h-4 w-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">{t('teams.leave')}</span>
+                  <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{t('teams.leave')}</span>
                 </Button>
               )}
             </div>
           )}
+        </div>
+
+        {/* Centered Atmospheric Hero Section (Mittig!) */}
+        <div className="relative overflow-hidden px-4 pt-6 pb-6 text-center sm:px-6">
+          {/* Ambient Glow */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 -top-24 mx-auto h-48 w-96 rounded-full blur-3xl opacity-20"
+            style={{
+              background: activeCat
+                ? `radial-gradient(circle, ${activeCat.colorHex} 0%, transparent 70%)`
+                : 'radial-gradient(circle, var(--color-primary) 0%, transparent 70%)',
+            }}
+          />
+
+          <div className="relative mx-auto flex max-w-2xl flex-col items-center">
+            {/* Großes zentriertes Titelbild / Profilbild */}
+            <div className="relative h-20 w-20 sm:h-24 sm:w-24 overflow-hidden rounded-3xl border-2 border-outline-variant/40 bg-surface-container shadow-xl">
+              {activeMeta?.coverImage ? (
+                <img
+                  src={activeMeta.coverImage}
+                  alt={team?.name ?? ''}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="grid h-full w-full place-items-center bg-primary/10 text-primary">
+                  <UsersRound className="h-8 w-8" aria-hidden="true" />
+                </div>
+              )}
+              {team?.is_owner && (
+                <button
+                  type="button"
+                  onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
+                  className="absolute inset-0 grid place-items-center bg-black/50 text-white opacity-0 transition-opacity hover:opacity-100"
+                  aria-label={t('teams.editTeam', 'Team bearbeiten')}
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Badges Reihe (Zentriert) */}
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {activeCat && (
+                <span
+                  style={{
+                    color: activeCat.colorHex,
+                    backgroundColor: activeCat.bgHex,
+                    borderColor: activeCat.borderHex,
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold border shadow-sm"
+                >
+                  <activeCat.icon className="h-3 w-3" />
+                  <span>{activeCat.label}</span>
+                </span>
+              )}
+              {team?.is_owner && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary border border-primary/25">
+                  <Crown className="h-3 w-3" />
+                  <span>{t('teams.founder')}</span>
+                </span>
+              )}
+            </div>
+
+            {/* Zentrierter Titel */}
+            <h1 className="mt-2 font-headline text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-on-surface">
+              {team?.name ?? t('teams.title')}
+            </h1>
+
+            {/* Zentrierte Beschreibung */}
+            {activeMeta?.description && (
+              <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-lg leading-relaxed">
+                {activeMeta.description}
+              </p>
+            )}
+
+            {/* 4 Stat Cards Strip (Zentriert wie im Referenzbild) */}
+            {team && (
+              <div className="mt-4 grid w-full max-w-xl grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5">
+                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-2.5 backdrop-blur-md shadow-sm">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
+                    <Users className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{team.members.length}</div>
+                    <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.members')}</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-2.5 backdrop-blur-md shadow-sm">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-secondary/15 text-secondary border border-secondary/25">
+                    <Server className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{team.servers.length}</div>
+                    <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.tabServers')}</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-2.5 backdrop-blur-md shadow-sm">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
+                    <ShieldCheck className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{(team.roles || []).length}</div>
+                    <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.roles')}</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-2.5 backdrop-blur-md shadow-sm">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-status-warning/15 text-status-warning border border-status-warning/25">
+                    <ShieldCheck className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{team.can_access_vault !== false ? 'Aktiv' : 'Gesperrt'}</div>
+                    <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.vault')}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Tab-Leiste */}
+        <div className="border-t border-outline-variant/30 bg-surface/80 px-4 pt-2 backdrop-blur-xl sm:px-6">
+          <TabBar
+            tabs={teamReiter}
+            active={aktiverReiter}
+            onChange={(nextTab) => {
+              setReiter(nextTab)
+              closeRoleForm()
+            }}
+            ariaLabel={t('teams.sections')}
+            embedded
+          />
         </div>
       </header>
 
@@ -668,65 +764,6 @@ export function Teams() {
                   </div>
                 )}
 
-                {/* Organisation Executive Stats Grid */}
-                <div className="grid grid-cols-2 gap-3 border-b border-outline-variant/30 bg-surface-container-low/40 p-3 sm:px-6 sm:py-4 md:grid-cols-4 shrink-0">
-                  <div className="flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-3.5 backdrop-blur-md shadow-sm">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
-                      <Users className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-lg font-bold leading-none text-on-surface">{team.members.length}</div>
-                      <div className="mt-1 truncate text-xs text-on-surface-variant font-medium">{t('teams.members')}</div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-3.5 backdrop-blur-md shadow-sm">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-secondary/15 text-secondary border border-secondary/25">
-                      <Server className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-lg font-bold leading-none text-on-surface">{team.servers.length}</div>
-                      <div className="mt-1 truncate text-xs text-on-surface-variant font-medium">{t('teams.tabServers')}</div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-3.5 backdrop-blur-md shadow-sm">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
-                      <Mail className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-lg font-bold leading-none text-on-surface">{team.is_owner ? offeneBeitritte.length : 0}</div>
-                      <div className="mt-1 truncate text-xs text-on-surface-variant font-medium">Ausstehend</div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-3.5 backdrop-blur-md shadow-sm">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
-                      <ShieldCheck className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-lg font-bold leading-none text-on-surface">
-                        {team.servers.reduce((sum, s) => sum + s.permission_keys.length, 0)}
-                      </div>
-                      <div className="mt-1 truncate text-xs text-on-surface-variant font-medium">{t('teams.permissions')}</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Modern Tab Bar */}
-                <div className="border-b border-outline-variant/40 bg-surface/70 px-4 pt-3 backdrop-blur-xl sm:px-6 shrink-0">
-                  <TabBar
-                    tabs={teamReiter}
-                    active={aktiverReiter}
-                    onChange={(nextTab) => {
-                      setReiter(nextTab)
-                      closeRoleForm()
-                    }}
-                    ariaLabel={t('teams.sections')}
-                    embedded
-                  />
-                </div>
-
                 {/* Tabbed Canvas Area */}
                 <div className={`flex-1 min-h-0 ${aktiverReiter === 'vault' ? 'p-0 overflow-hidden flex flex-col' : 'overflow-y-auto p-4 sm:p-6 lg:p-8'}`}>
                   {aktiverReiter === 'members' && (
@@ -747,75 +784,16 @@ export function Teams() {
                   )}
 
                   {aktiverReiter === 'servers' && (
-                    <section className="space-y-4 max-w-4xl" aria-labelledby="team-servers">
-                      <div>
-                        <h3 id="team-servers" className="font-headline text-lg font-semibold text-on-surface">
-                          {t('teams.servers')}
-                        </h3>
-                        <p className="mt-1 text-sm text-on-surface-variant">{t('teams.serversHint')}</p>
-                      </div>
-
-                      {team.is_owner && (
-                        <div className="flex items-start justify-between gap-4 rounded-xl border border-outline-variant/40 bg-surface p-4">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-on-surface">{t('teams.serverRolesTitle')}</p>
-                            <p className="mt-1 text-xs text-on-surface-variant">{t('teams.serverRolesHint')}</p>
-                          </div>
-                          <Switch
-                            checked={team.server_roles_active ?? false}
-                            disabled={busy}
-                            onCheckedChange={(next) => void setServerRolesActive(next)}
-                            aria-label={t('teams.serverRolesTitle')}
-                          />
-                        </div>
-                      )}
-
-                      {assignable.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-outline-variant/50 p-6 text-center text-sm text-on-surface-variant bg-surface-container-low/30">
-                          {t('teams.noAssignableServers')}
-                        </div>
-                      ) : team.server_roles_active ? (
-                        <ServerRollenListe
-                          team={team}
-                          assignable={assignable}
-                          rollenWahl={rollenWahl}
-                          busy={busy}
-                          onRollenWahl={(serverId, roleId) => setRollenWahl((prev) => ({ ...prev, [serverId]: roleId }))}
-                          onKeys={(serverId, roleId, keys) => void setRoleServerKeys(serverId, roleId, keys)}
-                        />
-                      ) : (
-                        <ul className="divide-y divide-outline-variant/30 rounded-xl border border-outline-variant/40 bg-surface">
-                          {assignable.map((server) => {
-                            const current = team.servers.find((item) => item.server_id === server.server_id)
-                            return (
-                              <li
-                                key={server.server_id}
-                                className="grid items-center gap-3 p-4 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] md:gap-4"
-                              >
-                                <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-on-surface">
-                                  <Server className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                                  <span className="truncate">{server.server_name}</span>
-                                </span>
-                                <div className="min-w-0">
-                                  <MultiSelect
-                                    options={server.permission_keys.map((key) => ({
-                                      value: key,
-                                      label: t(`permissionDetails.${key.replace(/\./g, '_')}.title`, { defaultValue: key }),
-                                    }))}
-                                    values={current?.permission_keys ?? []}
-                                    onChange={(keys) => void setServerKeys(server.server_id, keys)}
-                                    disabled={busy}
-                                    placeholder={t('teams.noAccess')}
-                                    aria-label={`${t('teams.permissions')}: ${server.server_name}`}
-                                  />
-                                  <p className="mt-1 text-xs text-on-surface-variant">{t('teams.serverSichtAuto')}</p>
-                                </div>
-                              </li>
-                            )
-                          })}
-                        </ul>
-                      )}
-                    </section>
+                    <TeamServerManager
+                      team={team}
+                      assignable={assignable}
+                      busy={busy}
+                      onSetServerKeys={(serverId, keys) => void setServerKeys(serverId, keys)}
+                      rollenWahl={rollenWahl}
+                      onRollenWahl={(serverId, roleId) => setRollenWahl((prev) => ({ ...prev, [serverId]: roleId }))}
+                      onRoleKeys={(serverId, roleId, keys) => void setRoleServerKeys(serverId, roleId, keys)}
+                      onToggleServerRoles={(next) => void setServerRolesActive(next)}
+                    />
                   )}
 
                   {aktiverReiter === 'roles' && (
@@ -831,49 +809,6 @@ export function Teams() {
                       onRoleSaved={onRoleSaved}
                       onDeleteRole={(role) => void deleteRole(role)}
                     />
-                  )}
-
-                  {aktiverReiter === 'knowledge' && (
-                    <section className="space-y-6 max-w-5xl" aria-labelledby="team-knowledge">
-                      {/* Enttechnisiertes Header-Panel analog zu AiTab im Benutzerprofil */}
-                      <div className="msm-card p-6">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <Bot className="h-5 w-5 text-secondary" aria-hidden="true" />
-                            <h2 id="team-knowledge" className="font-headline text-title-lg font-semibold text-on-surface">
-                              {t('teams.knowledgeTitle', 'Gemeinsames KI-Wissen')}
-                            </h2>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Link
-                              to="/ai?bereich=wissen"
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface hover:border-primary/40 transition-colors"
-                            >
-                              <span>In Singra Wissen öffnen</span>
-                              <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
-                            </Link>
-                            <Link
-                              to="/ai?bereich=erinnerungen"
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface hover:border-primary/40 transition-colors"
-                            >
-                              <span>In Singra Erinnerungen öffnen</span>
-                              <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
-                            </Link>
-                          </div>
-                        </div>
-                        <p className="mt-2 max-w-3xl text-sm text-on-surface-variant">
-                          {t('teams.knowledgeHint', 'Erinnerungen und Fähigkeiten, die allen Mitgliedern dieses Teams bei Unterhaltungen zur Verfügung stehen.')}
-                        </p>
-                      </div>
-
-                      {/* Gedächtnis & Skills direkt und ohne doppelte msm-card Hülle */}
-                      <div className="space-y-6">
-                        <AiMemoryManager scope={memoryScope(team)} />
-                        {canUseSkills && (
-                          <AiSkillManager scope={skillScope(team)} />
-                        )}
-                      </div>
-                    </section>
                   )}
 
                   {aktiverReiter === 'vault' && (
@@ -930,85 +865,7 @@ export function Teams() {
   )
 }
 
-/**
- * Server-Rechte je Rolle (Rollenmodus an).
- *
- * Pro Server: Rollenauswahl plus Rechte-Editor für die gewählte Rolle.
- * Administratoren stehen nicht zur Wahl — sie halten alles von selbst.
- * Team-Freigaben sind in diesem Modus pausiert und werden nicht gezeigt.
- */
-function ServerRollenListe({
-  team, assignable, rollenWahl, busy, onRollenWahl, onKeys,
-}: {
-  team: TeamDetail
-  assignable: TeamServer[]
-  rollenWahl: Record<number, number | null>
-  busy: boolean
-  onRollenWahl: (serverId: number, roleId: number | null) => void
-  onKeys: (serverId: number, roleId: number, keys: string[]) => void
-}) {
-  const { t } = useTranslation()
-  const rollen = (team.roles || []).filter((r) => !r.is_admin)
 
-  return (
-    <div className="space-y-3">
-      <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5 text-sm text-on-surface-variant">
-        {t('teams.serverRollenHinweis')}
-      </div>
-      {rollen.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-outline-variant/50 p-6 text-center text-sm text-on-surface-variant bg-surface-container-low/30">
-          {t('teams.keineRollenFuerServer')}
-        </div>
-      ) : (
-        <ul className="divide-y divide-outline-variant/30 rounded-xl border border-outline-variant/40 bg-surface">
-          {assignable.map((server) => {
-            const gewaehlt = rollen.find((r) => r.id === rollenWahl[server.server_id]) ?? null
-            const grant = gewaehlt?.server_grants?.find((g) => g.server_id === server.server_id)
-            return (
-              <li
-                key={server.server_id}
-                className="grid items-center gap-3 p-4 md:grid-cols-[minmax(0,14rem)_minmax(0,12rem)_minmax(0,1fr)] md:gap-4"
-              >
-                <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-on-surface">
-                  <Server className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                  <span className="truncate">{server.server_name}</span>
-                </span>
-                <Dropdown
-                  value={gewaehlt ? String(gewaehlt.id) : null}
-                  onChange={(val) => onRollenWahl(server.server_id, val ? Number(val) : null)}
-                  options={rollen.map((r) => ({ value: String(r.id), label: r.name }))}
-                  placeholder={t('teams.rolleWaehlen')}
-                  disabled={busy}
-                  aria-label={`${t('teams.roles')}: ${server.server_name}`}
-                />
-                <div className="min-w-0">
-                  {gewaehlt ? (
-                    <>
-                      <MultiSelect
-                        options={server.permission_keys.map((key) => ({
-                          value: key,
-                          label: t(`permissionDetails.${key.replace(/\./g, '_')}.title`, { defaultValue: key }),
-                        }))}
-                        values={grant?.permission_keys ?? []}
-                        onChange={(keys) => onKeys(server.server_id, gewaehlt.id, keys)}
-                        disabled={busy}
-                        placeholder={t('teams.noAccess')}
-                        aria-label={`${t('teams.permissions')}: ${server.server_name}`}
-                      />
-                      <p className="mt-1 text-xs text-on-surface-variant">{t('teams.serverSichtAuto')}</p>
-                    </>
-                  ) : (
-                    <span className="text-xs text-on-surface-variant/70 italic" aria-hidden="true">-</span>
-                  )}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </div>
-  )
-}
 
 function MitgliederReiter({
   team, benutzerId, kandidaten, newMemberId, busy, offeneBeitritte, offeneAnhebungen,

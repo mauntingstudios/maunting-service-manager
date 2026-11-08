@@ -91,16 +91,16 @@ export interface TeamCoverPreset {
 }
 
 export const TEAM_COVER_PRESETS: TeamCoverPreset[] = [
-  { id: 'holiday', title: 'Urlaub am See', url: '/assets/teams/team-cover-holiday.jpg' },
-  { id: 'privat', title: 'Gemütliche Blockhütte', url: '/assets/teams/team-cover-privat.jpg' },
-  { id: 'msm', title: 'Entwickler-Setup', url: '/assets/teams/team-cover-msm.jpg' },
-  { id: 'gaming', title: 'Gaming & Setup', url: '/assets/teams/team-cover-gaming.jpg' },
-  { id: 'bergsee', title: 'Bergsee & Erholung', url: '/hintergruende/bergsee.webp' },
-  { id: 'bergwald', title: 'Wandern & Bergwald', url: '/hintergruende/bergwald.webp' },
-  { id: 'balkon', title: 'Kaffee & Balkon', url: '/hintergruende/balkon.webp' },
-  { id: 'feld', title: 'Sommerfeld & Natur', url: '/hintergruende/feld.webp' },
-  { id: 'ozean', title: 'Küste & Ozean', url: '/hintergruende/ozean.webp' },
-  { id: 'wasserfaelle', title: 'Wasserfall & Abenteuer', url: '/hintergruende/wasserfaelle.webp' },
+  { id: 'holiday', title: 'Urlaub & Reisen', url: '/assets/teams/team-cover-holiday.jpg' },
+  { id: 'privat', title: 'Gemütliche Blockhütte & Persönliches', url: '/assets/teams/team-cover-privat.jpg' },
+  { id: 'msm', title: 'Entwickler-Setup & PC', url: '/assets/teams/team-cover-msm.jpg' },
+  { id: 'gaming', title: 'Gaming & Spieleabend', url: '/assets/teams/team-cover-gaming.jpg' },
+  { id: 'server', title: 'Server & Infrastruktur', url: '/assets/teams/team-cover-server.jpg' },
+  { id: 'echofall', title: 'Projekt & Planung', url: '/assets/teams/team-cover-echofall.jpg' },
+  { id: 'dokumente', title: 'Akten & Dokumente', url: '/tresor-kategorien/dokumente.webp' },
+  { id: 'arbeit', title: 'Büro & Organisation', url: '/tresor-kategorien/arbeit.webp' },
+  { id: 'studio', title: 'Studio & Notizen', url: '/tresor-kategorien/studio.webp' },
+  { id: 'medien', title: 'Medien & Design', url: '/tresor-kategorien/medien.webp' },
 ]
 
 export interface TeamMetadata {

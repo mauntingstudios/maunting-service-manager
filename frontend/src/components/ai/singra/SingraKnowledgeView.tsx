@@ -74,7 +74,8 @@ export function SingraKnowledgeView() {
         aiApi.listSkills().catch(() => [] as AiSkillSummary[]),
       ])
       const personal = teamRows.find((r) => r.is_personal) ?? null
-      const shared = teamRows.filter((r) => !r.is_personal)
+      // Nur Teams anzeigen, bei denen der Benutzer für Skills berechtigt ist
+      const shared = teamRows.filter((r) => !r.is_personal && (r.is_owner || r.can_manage_skills))
       setPersonalTeam(personal)
       setSharedTeams(shared)
       setManagedSkills(managedRows)
