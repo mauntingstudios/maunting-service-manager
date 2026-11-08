@@ -28,6 +28,8 @@ import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
 import { Spinner } from '@maunting/ui'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { headerHintergrundWaehlen } from '@/lib/tageszeit'
 import { TeamsOverview } from '@/components/teams/TeamsOverview'
 import { TeamModal } from '@/components/teams/TeamModal'
 import { TeamServerManager } from '@/components/teams/TeamServerManager'
@@ -62,6 +64,9 @@ export function Teams() {
   const canCreate = useHasPermission('teams.create')
   const canReadUsers = useHasPermission('users.read')
   const benutzerId = useAuthStore((state) => state.user?.id ?? null)
+
+  const stunde = useMemo(() => new Date().getHours(), [])
+  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'teams'), [stunde])
 
   const [reiter, setReiterState] = useState<TeamReiter>(() => {
     if (typeof localStorage !== 'undefined') {
@@ -518,19 +523,32 @@ export function Teams() {
       ) : (
         <>
       {/* ── Executive Workspace Header & Centered Hero ─────────────────── */}
-      <header className="shrink-0 border-b border-outline-variant/30 bg-surface-container-low/60 backdrop-blur-xl">
+      <header className="relative isolate shrink-0 overflow-hidden border-b border-outline-variant/30 bg-surface-container-lowest/30 backdrop-blur-xl">
+        {/* Tageszeit-Hintergrund, der atmosphärisch hinter Profilbild und Buttons liegt und nach unten verwaschen ausläuft */}
+        <TageszeitHintergrund
+          motiv={headerMotiv}
+          hoehe="h-[480px] sm:h-[540px]"
+          deckkraft="opacity-50"
+          ebene="-z-10"
+          verlauf="bg-gradient-to-b from-surface/10 via-surface/40 70% to-surface"
+        />
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-[480px] sm:h-[540px] -z-10 bg-gradient-to-b from-transparent via-surface/20 60% to-surface"
+          aria-hidden="true"
+        />
+
         {/* Top Utility Bar */}
-        <div className="flex items-center justify-between gap-3 border-b border-outline-variant/20 px-4 py-2.5 sm:px-6">
+        <div className="flex items-center justify-between gap-3 border-b border-outline-variant/20 px-3 py-2 sm:px-6 sm:py-2.5 bg-surface-container-lowest/20 backdrop-blur-md">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={() => setView('overview')}
             aria-label={t('teams.backToOverview', 'Zurück zur Übersicht')}
-            className="gap-2 text-on-surface-variant hover:text-on-surface"
+            className="gap-2 text-on-surface-variant hover:text-on-surface rounded-xl bg-surface-container-high/60 backdrop-blur-md border border-outline-variant/30 px-3 py-1.5 shadow-sm"
           >
             <ArrowLeft className="h-4 w-4" />
-            <span className="text-xs sm:text-sm">{t('teams.backToOverview', 'Zurück zur Übersicht')}</span>
+            <span className="text-xs sm:text-sm font-medium">{t('teams.backToOverview', 'Zurück zur Übersicht')}</span>
           </Button>
 
           {team && (
@@ -544,7 +562,7 @@ export function Teams() {
                     disabled={busy}
                     onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
                     aria-label={t('teams.editTeam', 'Team bearbeiten')}
-                    className="gap-1.5 text-xs text-on-surface-variant hover:text-on-surface"
+                    className="gap-1.5 text-xs text-on-surface hover:text-primary rounded-xl bg-surface-container-high/60 backdrop-blur-md border border-outline-variant/30 px-3 py-1.5 shadow-sm"
                   >
                     <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>{t('common.edit', 'Bearbeiten')}</span>
@@ -556,7 +574,7 @@ export function Teams() {
                     disabled={busy}
                     onClick={() => void removeTeam(team)}
                     aria-label={t('teams.remove')}
-                    className="gap-1.5 text-xs text-status-destructive hover:bg-status-destructive/10"
+                    className="gap-1.5 text-xs text-status-destructive hover:bg-status-destructive/10 rounded-xl bg-surface-container-high/60 backdrop-blur-md border border-outline-variant/30 px-3 py-1.5 shadow-sm"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>{t('teams.remove')}</span>
@@ -570,7 +588,7 @@ export function Teams() {
                   disabled={busy}
                   onClick={() => void leaveTeam(team)}
                   aria-label={t('teams.leave')}
-                  className="gap-1.5 text-xs text-status-destructive hover:bg-status-destructive/10"
+                  className="gap-1.5 text-xs text-status-destructive hover:bg-status-destructive/10 rounded-xl bg-surface-container-high/60 backdrop-blur-md border border-outline-variant/30 px-3 py-1.5 shadow-sm"
                 >
                   <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{t('teams.leave')}</span>
@@ -581,11 +599,11 @@ export function Teams() {
         </div>
 
         {/* Centered Atmospheric Hero Section (Mittig!) */}
-        <div className="relative overflow-hidden px-4 pt-6 pb-6 text-center sm:px-6">
+        <div className="relative px-3 pt-5 pb-5 text-center sm:px-6 sm:pt-6 sm:pb-6">
           {/* Ambient Glow */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 -top-24 mx-auto h-48 w-96 rounded-full blur-3xl opacity-20"
+            className="pointer-events-none absolute inset-x-0 -top-20 mx-auto h-48 w-80 sm:w-[420px] rounded-full blur-3xl opacity-25"
             style={{
               background: activeCat
                 ? `radial-gradient(circle, ${activeCat.colorHex} 0%, transparent 70%)`
@@ -595,7 +613,7 @@ export function Teams() {
 
           <div className="relative mx-auto flex max-w-2xl flex-col items-center">
             {/* Großes zentriertes Titelbild / Profilbild */}
-            <div className="relative h-20 w-20 sm:h-24 sm:w-24 overflow-hidden rounded-3xl border-2 border-outline-variant/40 bg-surface-container shadow-xl">
+            <div className="group relative h-20 w-20 sm:h-28 sm:w-28 overflow-hidden rounded-3xl border-2 border-outline-variant/40 bg-surface-container shadow-2xl transition-transform hover:scale-105">
               {activeMeta?.coverImage ? (
                 <img
                   src={activeMeta.coverImage}
@@ -604,17 +622,17 @@ export function Teams() {
                 />
               ) : (
                 <div className="grid h-full w-full place-items-center bg-primary/10 text-primary">
-                  <UsersRound className="h-8 w-8" aria-hidden="true" />
+                  <UsersRound className="h-10 w-10 sm:h-12 sm:w-12" aria-hidden="true" />
                 </div>
               )}
               {team?.is_owner && (
                 <button
                   type="button"
                   onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
-                  className="absolute inset-0 grid place-items-center bg-black/50 text-white opacity-0 transition-opacity hover:opacity-100"
+                  className="absolute inset-0 grid place-items-center bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
                   aria-label={t('teams.editTeam', 'Team bearbeiten')}
                 >
-                  <Pencil className="h-4 w-4" />
+                  <Pencil className="h-5 w-5" />
                 </button>
               )}
             </div>
@@ -628,22 +646,22 @@ export function Teams() {
                     backgroundColor: activeCat.bgHex,
                     borderColor: activeCat.borderHex,
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold border shadow-sm"
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border shadow-sm backdrop-blur-md"
                 >
-                  <activeCat.icon className="h-3 w-3" />
+                  <activeCat.icon className="h-3.5 w-3.5" />
                   <span>{activeCat.label}</span>
                 </span>
               )}
               {team?.is_owner && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary border border-primary/25">
-                  <Crown className="h-3 w-3" />
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold text-primary border border-primary/25 shadow-sm backdrop-blur-md">
+                  <Crown className="h-3.5 w-3.5" />
                   <span>{t('teams.founder')}</span>
                 </span>
               )}
             </div>
 
             {/* Zentrierter Titel */}
-            <h1 className="mt-2 font-headline text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-on-surface">
+            <h1 className="mt-2 font-headline text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-on-surface">
               {team?.name ?? t('teams.title')}
             </h1>
 
@@ -657,8 +675,8 @@ export function Teams() {
             {/* 4 Stat Cards Strip (Zentriert wie im Referenzbild) */}
             {team && (
               <div className="mt-4 grid w-full max-w-xl grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5">
-                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-2.5 backdrop-blur-md shadow-sm">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
+                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
+                  <div className="grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
                     <Users className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 text-left">
@@ -667,8 +685,8 @@ export function Teams() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-2.5 backdrop-blur-md shadow-sm">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-secondary/15 text-secondary border border-secondary/25">
+                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
+                  <div className="grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-xl bg-secondary/15 text-secondary border border-secondary/25">
                     <Server className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 text-left">
@@ -677,8 +695,8 @@ export function Teams() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-2.5 backdrop-blur-md shadow-sm">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
+                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
+                  <div className="grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
                     <ShieldCheck className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 text-left">
@@ -687,8 +705,8 @@ export function Teams() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/70 p-2.5 backdrop-blur-md shadow-sm">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-status-warning/15 text-status-warning border border-status-warning/25">
+                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
+                  <div className="grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-xl bg-status-warning/15 text-status-warning border border-status-warning/25">
                     <ShieldCheck className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 text-left">
@@ -701,18 +719,21 @@ export function Teams() {
           </div>
         </div>
 
-        {/* Tab-Leiste */}
-        <div className="border-t border-outline-variant/30 bg-surface/80 px-4 pt-2 backdrop-blur-xl sm:px-6">
-          <TabBar
-            tabs={teamReiter}
-            active={aktiverReiter}
-            onChange={(nextTab) => {
-              setReiter(nextTab)
-              closeRoleForm()
-            }}
-            ariaLabel={t('teams.sections')}
-            embedded
-          />
+        {/* Tab-Leiste (Mittig vom Bildschirm, groß auf Desktop, umbruchsicher und wischfrei mobil) */}
+        <div className="border-t border-outline-variant/30 bg-surface/85 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3.5">
+          <div className="mx-auto flex w-full max-w-4xl justify-center">
+            <TabBar
+              tabs={teamReiter}
+              active={aktiverReiter}
+              onChange={(nextTab) => {
+                setReiter(nextTab)
+                closeRoleForm()
+              }}
+              ariaLabel={t('teams.sections')}
+              embedded
+              className="w-full sm:w-auto flex flex-wrap justify-center gap-1 sm:gap-2 p-1 sm:p-1.5 rounded-2xl bg-surface-container-high/60 backdrop-blur-xl border border-outline-variant/30 shadow-sm"
+            />
+          </div>
         </div>
       </header>
 
@@ -748,24 +769,8 @@ export function Teams() {
           {/* ── Main Workspace: KPI Strip & Tabbed Canvas ──────────────── */}
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
             {team ? (
-              <>
-                {/* Mobile / Narrow Dropdown Selector */}
-                {echte.length > 1 && (
-                  <div className="border-b border-outline-variant/40 bg-surface-container-low/70 p-3 backdrop-blur-xl lg:hidden">
-                    <Dropdown
-                      value={selectedId ? String(selectedId) : null}
-                      onChange={(val) => {
-                        if (val) setSelectedId(Number(val))
-                      }}
-                      options={echte.map((e) => ({ value: String(e.id), label: e.name }))}
-                      placeholder={t('teams.chooseTeam')}
-                      aria-label={t('teams.yourTeams')}
-                    />
-                  </div>
-                )}
-
-                {/* Tabbed Canvas Area */}
-                <div className={`flex-1 min-h-0 ${aktiverReiter === 'vault' ? 'p-0 overflow-hidden flex flex-col' : 'overflow-y-auto p-4 sm:p-6 lg:p-8'}`}>
+              <div className={`flex-1 min-h-0 ${aktiverReiter === 'vault' ? 'p-0 overflow-hidden flex flex-col' : 'overflow-y-auto px-3 py-4 sm:px-6 sm:py-6'}`}>
+                <div className={aktiverReiter === 'vault' ? 'h-full flex flex-col' : 'mx-auto w-full max-w-5xl space-y-6'}>
                   {aktiverReiter === 'members' && (
                     <MitgliederReiter
                       team={team}
@@ -817,7 +822,7 @@ export function Teams() {
                     </section>
                   )}
                 </div>
-              </>
+              </div>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-sm text-on-surface-variant">
                 <div className="grid h-16 w-16 place-items-center rounded-2xl border border-outline-variant/40 bg-surface-container-high/60 text-on-surface-variant mb-4">
