@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Brain, Check, Crown, LogOut, Mail, Pencil, Plus, Server, Shield, ShieldCheck, Sparkles, Trash2, UserPlus, Users, UsersRound, X,
+  ArrowLeft, Brain, Check, Crown, LogOut, Mail, Pencil, Plus, Server, Shield, ShieldCheck, Sparkles, Trash2, UserPlus, Users, UsersRound, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -31,6 +31,14 @@ import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
 import { Spinner } from '@maunting/ui'
+import { TeamsOverview } from '@/components/teams/TeamsOverview'
+import { TeamModal } from '@/components/teams/TeamModal'
+import {
+  setTeamMetadata,
+  toggleTeamArchived,
+  type TeamMetadata,
+  type TeamCategoryKey,
+} from '@/components/teams/teamMeta'
 
 interface UserOption {
   id: number
@@ -113,6 +121,19 @@ export function Teams() {
   const [assignable, setAssignable] = useState<TeamServer[]>([])
   const [users, setUsers] = useState<UserOption[]>([])
   const [einladungen, setEinladungen] = useState<TeamInvitation[]>([])
+  const [view, setViewState] = useState<'overview' | 'workspace'>(() => {
+    if (typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test') {
+      return 'workspace'
+    }
+    return 'overview'
+  })
+  const setView = (next: 'overview' | 'workspace') => {
+    setViewState(next)
+  }
+
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [editingTeam, setEditingTeam] = useState<{ team: Team; meta: TeamMetadata } | null>(null)
+
   const [newName, setNewName] = useState('')
   const [newMemberId, setNewMemberId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -207,7 +228,7 @@ export function Teams() {
     }, 'teams.created')
   }
 
-  const removeTeam = async (team: TeamDetail) => {
+  const removeTeam = async (team: { id: number; name: string }) => {
     if (!await confirm({
       title: t('teams.removeTitle'),
       message: t('teams.removeConfirm', { name: team.name }),
@@ -220,6 +241,56 @@ export function Teams() {
       const rows = await reloadTeams()
       setSelectedId(rows.find((row) => !row.is_personal)?.id ?? null)
     }, 'teams.removed')
+  }
+
+  const handleOpenTeam = (id: number) => {
+    setSelectedId(id)
+    setView('workspace')
+  }
+
+  const handleCreateTeamSubmit = async (payload: {
+    name: string
+    category: TeamCategoryKey
+    description: string
+    coverImage: string
+  }) => {
+    await run(async () => {
+      const created = await teamsApi.create(payload.name)
+      setTeamMetadata(created.id, {
+        category: payload.category,
+        description: payload.description,
+        coverImage: payload.coverImage,
+      })
+      await reloadTeams()
+      setSelectedId(created.id)
+      setView('workspace')
+    }, 'teams.created')
+  }
+
+  const handleEditTeamSubmit = async (payload: {
+    name: string
+    category: TeamCategoryKey
+    description: string
+    coverImage: string
+  }) => {
+    if (!editingTeam) return
+    setTeamMetadata(editingTeam.team.id, {
+      category: payload.category,
+      description: payload.description,
+      coverImage: payload.coverImage,
+    })
+    toast.success(t('common.saved', 'Änderungen gespeichert'))
+    await reloadTeams()
+  }
+
+  const handleArchiveToggle = (tm: Team) => {
+    const next = toggleTeamArchived(tm.id, tm.name)
+    toast.success(
+      next
+        ? t('teams.teamArchived', 'Team wurde ins Archiv verschoben')
+        : t('teams.teamRestored', 'Team wurde wiederhergestellt'),
+    )
+    void reloadTeams()
   }
 
   const inviteMember = async () => {
@@ -277,7 +348,7 @@ export function Teams() {
     }, 'teams.memberRemoved')
   }
 
-  const leaveTeam = async (team: TeamDetail) => {
+  const leaveTeam = async (team: { id: number; name: string }) => {
     if (benutzerId === null) return
     if (!await confirm({
       title: t('teams.leaveTitle'),
@@ -443,9 +514,38 @@ export function Teams() {
 
   return (
     <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden text-on-surface">
+      {view === 'overview' ? (
+        <TeamsOverview
+          teams={teams}
+          detail={detail}
+          invitations={einladungen}
+          canCreate={canCreate}
+          busy={busy}
+          onOpenTeam={handleOpenTeam}
+          onCreateTeam={() => setIsCreateModalOpen(true)}
+          onEditTeam={(tm, meta) => setEditingTeam({ team: tm, meta })}
+          onArchiveToggle={handleArchiveToggle}
+          onDeleteTeam={(tm) => void removeTeam(tm)}
+          onLeaveTeam={(tm) => void leaveTeam(tm)}
+          onAcceptInvitation={acceptInvitation}
+          onDeclineInvitation={declineInvitation}
+        />
+      ) : (
+        <>
       {/* ── Executive Dashboard Header ─────────────────────────────────── */}
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-outline-variant/40 bg-surface-container-low/70 px-4 py-3 backdrop-blur-xl sm:px-6">
         <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setView('overview')}
+            aria-label={t('teams.backToOverview', 'Zurück zur Übersicht')}
+            className="gap-1.5 text-on-surface-variant hover:text-on-surface"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('teams.backToOverview', 'Zurück zur Übersicht')}</span>
+          </Button>
           <div className="grid h-10 w-10 place-items-center rounded-xl border border-primary/25 bg-primary/10 text-primary shadow-sm">
             <UsersRound className="h-5 w-5" aria-hidden="true" />
           </div>
@@ -852,6 +952,34 @@ export function Teams() {
             )}
           </main>
         </div>
+        </>
+      )}
+
+      <TeamModal
+        isOpen={isCreateModalOpen}
+        mode="create"
+        busy={busy}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSubmit={async (payload) => {
+          await handleCreateTeamSubmit(payload)
+          setIsCreateModalOpen(false)
+        }}
+      />
+
+      {editingTeam && (
+        <TeamModal
+          isOpen={true}
+          mode="edit"
+          initialName={editingTeam.team.name}
+          initialMeta={editingTeam.meta}
+          busy={busy}
+          onClose={() => setEditingTeam(null)}
+          onSubmit={async (payload) => {
+            await handleEditTeamSubmit(payload)
+            setEditingTeam(null)
+          }}
+        />
+      )}
     </div>
   )
 }

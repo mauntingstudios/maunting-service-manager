@@ -1,9 +1,9 @@
-import { useMemo, useRef, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/authStore'
 import { useMedienabfrage } from '@/hooks/useMedienabfrage'
 import { TageszeitHintergrund } from './TageszeitHintergrund'
-import { begruessungSchluessel, headerHintergrundWaehlen } from '@/lib/tageszeit'
+import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
 
 export interface TageszeitBannerProps {
   /** Bereichsname über der Begrüßung (z. B. „Dashboard“, „Kalender“, „Notizen“, „Maunting Docs“) */
@@ -41,16 +41,16 @@ export function TageszeitBanner({
   const { t } = useTranslation()
   const angemeldeterName = useAuthStore((s) => s.user?.username)
   const istSchmal = useMedienabfrage('(max-width: 767.98px)')
-  const zufall = useRef(Math.random() * 5)
+  const tagesZaehler = tagesSeed()
 
   const stunde = new Date().getHours()
   const headerMotiv = useMemo(
-    () => headerHintergrundWaehlen(stunde, zufall.current),
-    [stunde],
+    () => headerHintergrundWaehlen(stunde, tagesZaehler),
+    [stunde, tagesZaehler],
   )
 
   const begruessung = angemeldeterName
-    ? t(begruessungSchluessel(stunde, istSchmal, zufall.current), { name: angemeldeterName })
+    ? t(begruessungSchluessel(stunde, istSchmal, tagesZaehler), { name: angemeldeterName })
     : t('common.begruessung.ohneName')
 
   const bildHoehe = kompakt ? 'h-48' : 'h-64'
