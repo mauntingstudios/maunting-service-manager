@@ -2136,6 +2136,12 @@ export const aiApi = {
     max_actions_per_hour: number
   }) =>
     api<AiAutonomyGrant>('/ai/autonomy', { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteAutonomyGrant: (params: { server_id?: number | null; project_id?: string | null }) => {
+    const q = new URLSearchParams()
+    if (params.server_id !== undefined && params.server_id !== null) q.set('server_id', String(params.server_id))
+    if (params.project_id) q.set('project_id', params.project_id)
+    return api<void>(`/ai/autonomy?${q.toString()}`, { method: 'DELETE' })
+  },
   /**
    * Ein ganzer Bereich auf einmal. Die Oberfläche liest so nicht mehr — sie
    * nimmt `listScopeMemory`, seit ein Teambereich 5.000 Einträge fassen darf

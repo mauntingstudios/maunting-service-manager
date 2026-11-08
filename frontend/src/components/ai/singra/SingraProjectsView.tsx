@@ -314,6 +314,8 @@ export function SingraProjectsView({
   })
   const [savingProject, setSavingProject] = useState(false)
   const [projectAutonomy, setProjectAutonomy] = useState(false)
+  const [hasProjectAutonomyOverride, setHasProjectAutonomyOverride] = useState(false)
+  const [globalAutonomy, setGlobalAutonomy] = useState(false)
   const [savingAutonomy, setSavingAutonomy] = useState(false)
 
   const selectedProject = projects.find((p) => p.id === selectedId) ?? null
@@ -343,6 +345,8 @@ export function SingraProjectsView({
   useEffect(() => {
     if (!selectedId) {
       setProjectAutonomy(false)
+      setHasProjectAutonomyOverride(false)
+      setGlobalAutonomy(false)
       return
     }
     let active = true
@@ -350,8 +354,18 @@ export function SingraProjectsView({
       .listAutonomyGrants()
       .then((grants) => {
         if (!active) return
-        const g = grants.find((x) => x.project_id === selectedId)
-        setProjectAutonomy(Boolean(g?.enabled))
+        const globalGrant = grants.find((x) => x.server_id === null && !x.project_id)
+        const isGlobalOn = Boolean(globalGrant?.enabled)
+        setGlobalAutonomy(isGlobalOn)
+
+        const projectGrant = grants.find((x) => x.project_id === selectedId)
+        if (projectGrant) {
+          setHasProjectAutonomyOverride(true)
+          setProjectAutonomy(Boolean(projectGrant.enabled))
+        } else {
+          setHasProjectAutonomyOverride(false)
+          setProjectAutonomy(isGlobalOn)
+        }
       })
       .catch(() => undefined)
     return () => {
@@ -369,13 +383,29 @@ export function SingraProjectsView({
         max_actions_per_hour: 100,
       })
       setProjectAutonomy(enabled)
+      setHasProjectAutonomyOverride(true)
       toast.success(
         enabled
-          ? 'Autonomie für dieses Projekt aktiviert.'
-          : 'Autonomie für dieses Projekt deaktiviert.',
+          ? 'Autonomie für dieses Projekt aktiviert (überschreibt die globale Einstellung).'
+          : 'Autonomie für dieses Projekt deaktiviert (Singra fragt vor Änderungen nach).',
       )
     } catch {
       toast.error('Autonomie-Einstellung konnte nicht gespeichert werden.')
+    } finally {
+      setSavingAutonomy(false)
+    }
+  }
+
+  const handleResetAutonomyToGlobal = async () => {
+    if (!selectedId || savingAutonomy) return
+    setSavingAutonomy(true)
+    try {
+      await aiApi.deleteAutonomyGrant({ project_id: selectedId })
+      setHasProjectAutonomyOverride(false)
+      setProjectAutonomy(globalAutonomy)
+      toast.success('Projektspezifische Autonomie entfernt. Es gilt wieder die globale Einstellung aus Tools.')
+    } catch {
+      toast.error('Zurücksetzen fehlgeschlagen.')
     } finally {
       setSavingAutonomy(false)
     }
@@ -2680,21 +2710,51 @@ export function SingraProjectsView({
                           aria-label="Projektanweisungen"
                         />
                       </div>
-                      <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-surface-container/60 p-3.5">
-                        <div>
-                          <div className="text-xs font-semibold text-on-surface">
-                            Selbstständiges Arbeiten im Projekt erlauben
+                      <div className="rounded-xl border border-outline-variant/25 bg-surface-container/60 p-3.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-on-surface">
+                                Selbstständiges Arbeiten im Projekt erlauben
+                              </span>
+                              {hasProjectAutonomyOverride ? (
+                                <Badge variant="secondary" className="text-xs">
+                                  Projektspezifisch
+                                </Badge>
+                              ) : (
+                                <Badge variant={globalAutonomy ? 'success' : 'outline'} className="text-xs">
+                                  {globalAutonomy ? 'Global aktiv (Tools)' : 'Global inaktiv (Tools)'}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-on-surface-variant">
+                              Singra darf Dateien in diesem Projekt direkt anlegen und bearbeiten, ohne jede Änderung einzeln abzufragen.
+                            </p>
                           </div>
-                          <p className="text-xs text-on-surface-variant mt-0.5">
-                            Singra darf Dateien in diesem Projekt direkt anlegen und bearbeiten, ohne jede Änderung einzeln abzufragen.
-                          </p>
+                          <Switch
+                            checked={projectAutonomy}
+                            disabled={savingAutonomy}
+                            onCheckedChange={handleToggleAutonomy}
+                            aria-label="Selbstständiges Arbeiten im Projekt erlauben"
+                          />
                         </div>
-                        <Switch
-                          checked={projectAutonomy}
-                          disabled={savingAutonomy}
-                          onCheckedChange={handleToggleAutonomy}
-                          aria-label="Selbstständiges Arbeiten im Projekt erlauben"
-                        />
+                        <div className="flex items-center justify-between text-xs text-on-surface-variant border-t border-outline-variant/15 pt-2">
+                          <span>
+                            {hasProjectAutonomyOverride
+                              ? 'Dieses Projekt nutzt eine eigene Freigabe und überschreibt die globale KI-Einstellung unter „Tools“.'
+                              : `Erbt aktuell die globale Einstellung aus dem Menü „Tools“ (dort: ${globalAutonomy ? 'aktiv' : 'inaktiv'}).`}
+                          </span>
+                          {hasProjectAutonomyOverride && (
+                            <button
+                              type="button"
+                              disabled={savingAutonomy}
+                              onClick={() => void handleResetAutonomyToGlobal()}
+                              className="text-primary hover:underline text-xs shrink-0 ml-2"
+                            >
+                              Auf globale Einstellung zurücksetzen
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
