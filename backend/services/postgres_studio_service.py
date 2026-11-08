@@ -54,10 +54,12 @@ class Kontext:
 
 
 def kontext(db: Session, server_id: int, database_id: int) -> Kontext:
+    database = postgres_service._database_row(db, server_id, database_id)
     server = db.get(Server, server_id)
     if server is None:
+        server = getattr(database, "server", None) or db.get(Server, database.server_id)
+    if server is None:
         raise ValueError("Server nicht gefunden.")
-    database = postgres_service._database_row(db, server_id, database_id)
     return Kontext(
         server=server,
         database=database,

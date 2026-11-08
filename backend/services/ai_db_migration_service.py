@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from services import postgres_service, postgres_studio_service
 from services.postgres_studio_service import kontext
+from models.postgres_database import PostgresDatabase
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -201,7 +202,11 @@ def _resolve_project_db_context(
 ) -> tuple[int, int]:
     """Ermittelt (server_id, database_id) entweder direkt oder über User und Projekt."""
     if isinstance(user_or_server_id, int):
-        return user_or_server_id, int(project_id_or_database_id)
+        database_id = int(project_id_or_database_id)
+        pg_db = db.get(PostgresDatabase, database_id)
+        if pg_db is not None:
+            return pg_db.server_id, pg_db.id
+        return user_or_server_id, database_id
 
     from services import ai_project_service
     project = ai_project_service.get_project(db, user_or_server_id, str(project_id_or_database_id))
@@ -220,6 +225,23 @@ def _resolve_project_db_context(
         raise AiDbMigrationError(
             f"Für das Projekt '{project.name}' ist in Umgebung '{target_env}' keine PostgreSQL-Datenbank hinterlegt."
         )
+
+    pg_db = db.get(PostgresDatabase, int(database_id))
+    if pg_db is not None:
+        target_srv_id = int(server_id)
+        if pg_db.server_id != target_srv_id:
+            logger.info(
+                "Passe PostgresDatabase %s server_id von %s auf Projekt-Server %s an",
+                pg_db.id,
+                pg_db.server_id,
+                target_srv_id,
+            )
+            try:
+                pg_db.server_id = target_srv_id
+                db.commit()
+            except Exception:
+                db.rollback()
+        return pg_db.server_id, pg_db.id
 
     return int(server_id), int(database_id)
 
@@ -308,12 +330,18 @@ def list_project_tables(
 ) -> list[str]:
     """Liefert alle Tabellennamen im public-Schema der Projektdatenbank."""
     sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;"
-    res = execute_project_sql(db, user, project_id, sql, target_env=target_env, write=False)
-    tables: list[str] = []
-    for r in res.get("results", [{}])[0].get("rows", []):
-        if r and len(r) > 0:
-            tables.append(str(r[0]))
-    return tables
+    try:
+        res = execute_project_sql(db, user, project_id, sql, target_env=target_env, write=False)
+        tables: list[str] = []
+        results = res.get("results", [])
+        if results and isinstance(results, list):
+            for r in results[0].get("rows", []):
+                if r and len(r) > 0:
+                    tables.append(str(r[0]))
+        return tables
+    except Exception as exc:
+        logger.warning("list_project_tables für Projekt %s (%s) fehlgeschlagen: %s", project_id, target_env, exc)
+        return []
 
 
 def get_project_table_rows(

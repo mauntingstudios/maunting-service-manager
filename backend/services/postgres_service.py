@@ -427,6 +427,16 @@ def _database_row(db: Session, server_id: int, database_id: int) -> PostgresData
         .first()
     )
     if not database:
+        # Fallback: Falls die ID existiert, aber der Serverbezug verschoben wurde (z. B. Singra Re-Deployment)
+        fallback = db.get(PostgresDatabase, database_id)
+        if fallback:
+            logger.info(
+                "PostgresDatabase %s gehört zu server_id=%s, angefragt war server_id=%s. Verwende Datenbank.",
+                database_id,
+                fallback.server_id,
+                server_id,
+            )
+            return fallback
         raise ValueError("Datenbank wurde fuer diesen Server nicht gefunden.")
     return database
 

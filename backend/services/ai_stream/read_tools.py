@@ -399,8 +399,8 @@ def _werkzeug_ausfuehren(
                 except Exception:
                     pass
             db.commit()
-        except (AiActionValidationError, HTTPException) as exc:
-            # Fehlendes Recht, fremde Server-ID, ungueltige Argumente. Das
+        except (AiActionValidationError, HTTPException, Exception) as exc:
+            # Fehlendes Recht, fremde Server-ID, ungueltige Argumente, Tool-Fehler. Das
             # Modell soll es erfahren und weitermachen koennen; frueher riss ein
             # solcher Aufruf die gesamte Antwort ab.
             #
