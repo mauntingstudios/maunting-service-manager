@@ -186,6 +186,14 @@ def test_normalize_rel_path_agents_and_gemini_root():
     assert normalize_rel_path("src/components/Button.tsx") == "src/components/Button.tsx"
 
 
+def test_clean_heuristic_title():
+    from services.ai_chat_service import clean_heuristic_title
+    assert clean_heuristic_title("Kannst du mir bitte ein Snake-Spiel in React erstellen?") == "Snake-Spiel in React erstellen"
+    assert clean_heuristic_title("### Erstelle mir ein Cyberpunk Canvas Dashboard") == "Cyberpunk Canvas Dashboard"
+    assert clean_heuristic_title("Fix bug in auth") == "Fix bug in auth"
+    assert clean_heuristic_title("") == "Unterhaltung"
+
+
 if __name__ == "__main__":
     test_patch_project_file_single_edit()
     test_patch_project_file_multiple_sequential_edits()
@@ -194,4 +202,5 @@ if __name__ == "__main__":
     test_patch_project_file_ambiguous_find()
     test_compute_diff_for_patch()
     test_normalize_rel_path_agents_and_gemini_root()
+    test_clean_heuristic_title()
     print("All patch tests passed successfully!")

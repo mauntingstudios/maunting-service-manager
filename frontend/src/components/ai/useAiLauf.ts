@@ -93,6 +93,7 @@ export function useAiLauf({
   ladeKontext,
   setAttachments,
   appFaehigkeiten,
+  onResolveConversationId,
   api = primaryChatApi,
 }: {
   conversationId?: string | null
@@ -113,6 +114,7 @@ export function useAiLauf({
     computer_use?: boolean | null
     artifact_install?: boolean | null
   }
+  onResolveConversationId?: (id: string) => void
 }) {
   const { t } = useTranslation()
 
@@ -634,14 +636,16 @@ export function useAiLauf({
           reasoning_effort: denken.stufe,
           ...(selectedModel ? { model: selectedModel } : {}),
           ...(appFaehigkeiten ? { app_faehigkeiten: appFaehigkeiten } : {}),
-        }, verarbeite, signal),
+        }, verarbeite, signal, (newId) => {
+          onResolveConversationId?.(newId)
+        }),
         assistantId,
         optimisticUser.id,
       )
     } finally {
       streamingRef.current = false
     }
-  }, [api, appFaehigkeiten, conversationId, denken.an, denken.stufe, providerId, selectedModel, streaming, verfolge])
+  }, [api, appFaehigkeiten, conversationId, denken.an, denken.stufe, onResolveConversationId, providerId, selectedModel, streaming, verfolge])
 
   /** Bricht den laufenden Strom und den serverseitigen Lauf kontrolliert ab. */
   const stoppeLauf = useCallback(async () => {

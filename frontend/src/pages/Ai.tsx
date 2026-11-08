@@ -219,21 +219,9 @@ export function Ai({
     }
   }, [activeConversationId])
 
-  const handleNewChat = async () => {
+  const handleNewChat = () => {
     setActiveProjectId(undefined)
     setActiveProjectName(undefined)
-    if (typeof aiApi.createConversation === 'function') {
-      try {
-        const created = await aiApi.createConversation({ title: 'Neue Unterhaltung' })
-        setConversations((prev) => [created, ...prev])
-        setActiveConversationId(created.id)
-        setActiveSection('chat')
-        return
-      } catch (err) {
-        still(err, 'ai.createConversation')
-        toast.error('Neue Unterhaltung konnte nicht angelegt werden.')
-      }
-    }
     setActiveConversationId(null)
     setActiveSection('chat')
   }
@@ -401,6 +389,7 @@ export function Ai({
             activeConversationId={activeConversationId}
             onSelectConversation={handleSelectConversation}
             onNewChat={() => void handleNewChat()}
+            onRenameConversation={handleRenameConversation}
             onTogglePinConversation={(conv) => void handleTogglePinConversation(conv)}
             onDeleteConversation={(conv) => void handleDeleteConversation(conv)}
             mobileDrawerOpen={mobileMenuOpen}
@@ -496,7 +485,10 @@ export function Ai({
                 activeProjectName={activeProjectName}
                 voiceConfig={sprachkonfiguration}
                 onNewChat={() => void handleNewChat()}
-                onResolveConversationId={(resolvedId) => setActiveConversationId((prev) => prev ?? resolvedId)}
+                onResolveConversationId={(resolvedId) => {
+                  setActiveConversationId(resolvedId)
+                  void aiApi.listConversations(activeProjectId).then((list) => setConversations(list)).catch(() => {})
+                }}
                 initialAttachment={pendingAttachmentToChat}
                 onConsumeInitialAttachment={() => setPendingAttachmentToChat(null)}
               />

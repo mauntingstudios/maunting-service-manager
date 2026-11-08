@@ -21,6 +21,7 @@ an der Guardian-Unterhaltung.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -31,8 +32,16 @@ from models import AiConversation, AiMessage, AiUsageEvent, User
 from models.ai_conversation import ARTEN, EINZELFENSTER
 from services.ai_usage_service import complete_ai_usage
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_TITLE = "Singra"
+GENERIC_TITLES = frozenset({
+    DEFAULT_TITLE,
+    "Neue Unterhaltung",
+    "Keine Unterhaltung",
+    "Unterhaltung",
+    "Projekt-Chat",
+})
 
 #: Der Titel je Art. Die Spalte gab es laengst und niemand las sie; jetzt traegt
 #: sie das, was die Oberflaeche ueber ein Fenster schreibt.
@@ -161,6 +170,105 @@ def create_user_conversation(
     return conversation
 
 
+def clean_heuristic_title(prompt: str) -> str:
+    """Erzeugt aus dem ersten Prompt einen sauberen, lesbaren Kurztitel (max. 45 Zeichen)."""
+    if not prompt:
+        return "Unterhaltung"
+    import re
+    from services.ai_redaction import redact_sensitive_text
+
+    # Sensible Daten schwaerzen und erste relevante Zeile nehmen
+    erste_zeile = redact_sensitive_text(prompt).strip().splitlines()[0].strip()
+    # Code-Bloecke, Sonderzeichen, fuehrende Markdown-Hashes entfernen
+    erste_zeile = re.sub(r"^#+\s*", "", erste_zeile)
+    erste_zeile = re.sub(r"[`*_{}[\]()]+", "", erste_zeile)
+
+    # Typische Anweisungsfloskeln am Anfang mehrstufig entfernen:
+    prefixes = [
+        r"^(kannst\s+du|koenntest\s+du|könntest\s+du|wuerdest\s+du|würdest\s+du)\s+(mir\s+)?(bitte\s+)?",
+        r"^(bitte\s+)?(erstelle|baue|programmiere|schreibe|hilf\s+mir\s+bei|mach(e)?|zeige|implementiere|generiere)\s+(mir\s+)?(bitte\s+)?",
+        r"^(ein[e|en|er|em]?|das|den|die|der)\s+",
+        r"^(can\s+you|could\s+you|please)\s+(help\s+me\s+)?",
+        r"^(create|build|write|make|implement|generate)\s+(a|an|the)?\s+",
+    ]
+    for _ in range(3):
+        for p in prefixes:
+            erste_zeile = re.sub(p, "", erste_zeile, flags=re.IGNORECASE).strip()
+
+    erste_zeile = erste_zeile.rstrip("?.!:")
+
+    if not erste_zeile:
+        erste_zeile = "Unterhaltung"
+    else:
+        erste_zeile = erste_zeile[0].upper() + erste_zeile[1:]
+
+    return erste_zeile[:45].strip()
+
+
+async def generate_conversation_title_llm(
+    conversation_id: str,
+    first_prompt: str,
+    provider_id: int,
+    model: str | None = None,
+) -> None:
+    """Erzeugt im Hintergrund ueber das gewaehlte KI-Modell einen praegnanten 3-5 Woerter Titel."""
+    import httpx
+    from database import SessionLocal
+    from models.ai_provider import AiProvider
+    from models.ai_conversation import AiConversation
+    from services.ai_provider_service import resolve_api_key
+
+    db = SessionLocal()
+    try:
+        conv = db.get(AiConversation, conversation_id)
+        provider = db.get(AiProvider, provider_id)
+        if conv is None or provider is None or not provider.enabled:
+            return
+
+        api_key = resolve_api_key(provider)
+        base_url = (provider.api_base_url or "https://api.openai.com/v1").rstrip("/")
+        chosen_model = model or provider.default_model or "gpt-4o-mini"
+
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Du bist ein praeziser Titelgenerator. Fasse das Thema der folgenden Nutzeranfrage "
+                    "in genau 3 bis 5 praegnanten deutschen Woertern zusammen. "
+                    "Antworte AUSSCHLIESSLICH mit dem Titel. Keine Anfuehrungszeichen, keine Satzzeichen am Ende."
+                ),
+            },
+            {
+                "role": "user",
+                "content": first_prompt[:500],
+            },
+        ]
+        payload = {
+            "model": chosen_model,
+            "messages": messages,
+            "max_tokens": 25,
+            "temperature": 0.3,
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_title = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                raw_title = raw_title.strip('"\'`').rstrip(".!?:")
+                if raw_title and len(raw_title) >= 3:
+                    conv.title = raw_title[:80]
+                    db.commit()
+    except Exception as exc:
+        logger.debug("Hintergrund-Titelgenerierung fehlgeschlagen: %s", exc)
+    finally:
+        db.close()
+
+
 def list_user_conversations(
     db: Session,
     user: User,
@@ -172,9 +280,8 @@ def list_user_conversations(
     from models.dis_text import vorab_entschluesselt
     from models import AiMessage
 
-    # Leere Unterhaltungen (0 Nachrichten), die nicht angeheftet sind und keinem
-    # Projekt angehoeren, belasten den Verlauf nicht. Existieren echte Gespraeche,
-    # werden verwaiste Rumpf-Chats ohne Inhalt bereinigt.
+    # Leere Unterhaltungen (0 Nachrichten), die nicht angeheftet sind, belasten den Verlauf nicht.
+    # Sie werden bereinigt, damit keine "Neue Unterhaltung"-Ruinen liegenbleiben.
     conv_with_msgs = (
         db.query(AiMessage.conversation_id)
         .join(AiConversation, AiMessage.conversation_id == AiConversation.id)
@@ -182,18 +289,18 @@ def list_user_conversations(
         .distinct()
     )
     msg_conv_ids = [row[0] for row in conv_with_msgs.all() if row[0]]
-    if msg_conv_ids:
-        try:
-            db.query(AiConversation).filter(
-                AiConversation.user_id == user.id,
-                AiConversation.kind == "primary",
-                AiConversation.pinned == False,
-                AiConversation.project_id.is_(None),
-                ~AiConversation.id.in_(msg_conv_ids),
-            ).delete(synchronize_session=False)
-            db.commit()
-        except Exception:
-            db.rollback()
+    try:
+        cleanup_query = db.query(AiConversation).filter(
+            AiConversation.user_id == user.id,
+            AiConversation.kind == "primary",
+            AiConversation.pinned.is_(False),
+        )
+        if msg_conv_ids:
+            cleanup_query = cleanup_query.filter(~AiConversation.id.in_(msg_conv_ids))
+        cleanup_query.delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
 
     query = db.query(AiConversation).filter(
         AiConversation.user_id == user.id,
@@ -203,6 +310,8 @@ def list_user_conversations(
         query = query.filter(
             (AiConversation.pinned == True) | (AiConversation.id.in_(msg_conv_ids))
         )
+    else:
+        query = query.filter(AiConversation.pinned == True)
     if project_id is not None:
         query = query.filter(AiConversation.project_id == project_id)
     query = query.order_by(

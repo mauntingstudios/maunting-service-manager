@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Bookmark,
   BookOpen,
@@ -7,6 +8,7 @@ import {
   Layers,
   LayoutGrid,
   MessageSquare,
+  Pencil,
   Pin,
   Plus,
   Trash2,
@@ -55,6 +57,7 @@ interface SingraSidebarProps {
   activeConversationId: string | null
   onSelectConversation: (conversationId: string) => void
   onNewChat: () => void
+  onRenameConversation?: (conv: AiConversationSummary, newTitle: string) => Promise<void>
   onTogglePinConversation?: (conv: AiConversationSummary) => void
   onDeleteConversation?: (conv: AiConversationSummary) => void
   mobileDrawerOpen: boolean
@@ -68,6 +71,7 @@ function SidebarContent({
   activeConversationId,
   onSelectConversation,
   onNewChat,
+  onRenameConversation,
   onTogglePinConversation,
   onDeleteConversation,
   onCloseMobile,
@@ -78,6 +82,7 @@ function SidebarContent({
   activeConversationId: string | null
   onSelectConversation: (conversationId: string) => void
   onNewChat: () => void
+  onRenameConversation?: (conv: AiConversationSummary, newTitle: string) => Promise<void>
   onTogglePinConversation?: (conv: AiConversationSummary) => void
   onDeleteConversation?: (conv: AiConversationSummary) => void
   onCloseMobile?: () => void
@@ -85,6 +90,8 @@ function SidebarContent({
   const user = useAuthStore((s) => s.user)
   const displayName = user?.username || 'Nutzer'
   const recentConversations = conversations.slice(0, 8)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
 
   return (
     <div className="flex h-full w-full flex-col justify-between bg-transparent text-on-surface select-none">
@@ -209,6 +216,42 @@ function SidebarContent({
           recentConversations.map((conv) => {
             const isSelected =
               activeSection === 'chat' && activeConversationId === conv.id
+            const isEditing = editingId === conv.id
+
+            if (isEditing) {
+              return (
+                <div
+                  key={conv.id}
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs bg-surface-container-high border border-primary/40"
+                >
+                  <input
+                    type="text"
+                    className="flex-1 min-w-0 bg-transparent text-xs text-on-surface focus:outline-none"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        if (editTitle.trim() && editTitle.trim() !== conv.title) {
+                          void onRenameConversation?.(conv, editTitle.trim())
+                        }
+                        setEditingId(null)
+                      } else if (e.key === 'Escape') {
+                        setEditingId(null)
+                      }
+                    }}
+                    autoFocus
+                    onBlur={() => {
+                      if (editTitle.trim() && editTitle.trim() !== conv.title) {
+                        void onRenameConversation?.(conv, editTitle.trim())
+                      }
+                      setEditingId(null)
+                    }}
+                  />
+                </div>
+              )
+            }
+
             return (
               <div
                 key={conv.id}
@@ -238,6 +281,20 @@ function SidebarContent({
                   <AiGenerationBadge conversationId={conv.id} className="ml-auto shrink-0" />
                 </button>
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  {onRenameConversation && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setEditingId(conv.id)
+                        setEditTitle(conv.title || '')
+                      }}
+                      className="rounded p-1 text-on-surface-variant hover:text-primary"
+                      aria-label="Unterhaltung umbenennen"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
                   {onTogglePinConversation && (
                     <button
                       type="button"

@@ -244,6 +244,7 @@ export function AiChat({
   const [modelModalOpen, setModelModalOpen] = useState(false)
   const [modelSearchQuery, setModelSearchQuery] = useState('')
   const [inlineVoiceActive, setInlineVoiceActive] = useState(false)
+  const [currentConversationTitle, setCurrentConversationTitle] = useState<string | null>(null)
   useEffect(() => {
     onProviderChange?.(providerId)
   }, [onProviderChange, providerId])
@@ -636,6 +637,9 @@ export function AiChat({
           // erstbesten Zugang — und der kann beliebig langsam sein.
           void browserWahlInsKontoUebernehmen()
         }
+        if (conversation?.title) {
+          setCurrentConversationTitle(conversation.title)
+        }
         if (scope.kind === 'primary' && !scope.conversationId && conversation?.id) {
           onResolveConversationId?.(conversation.id)
         }
@@ -722,6 +726,7 @@ export function AiChat({
     ladeKontext,
     setAttachments,
     appFaehigkeiten,
+    onResolveConversationId,
     api: chatApi,
   })
 
@@ -1829,24 +1834,24 @@ export function AiChat({
             </Kurzinfo>
           )}
 
-          {(!singraShell || activeProjectName) && (
-            <div
-              className={`flex items-center gap-2 min-w-0 ${
-                singraShell
-                  ? 'rounded-full bg-surface-container-high/85 border border-outline-variant/30 backdrop-blur-md px-3 py-1 shadow-sm'
-                  : ''
-              }`}
-            >
-              <span className="font-semibold text-xs sm:text-sm text-on-surface truncate">
-                {activeProjectName ? `Projekt: ${activeProjectName}` : t('ai.chat.title')}
+          <div
+            className={`flex items-center gap-2 min-w-0 ${
+              singraShell
+                ? 'rounded-full bg-surface-container-high/85 border border-outline-variant/30 backdrop-blur-md px-3 py-1 shadow-sm'
+                : ''
+            }`}
+          >
+            <span className="font-semibold text-xs sm:text-sm text-on-surface truncate">
+              {activeProjectName
+                ? `Projekt: ${activeProjectName}${currentConversationTitle && currentConversationTitle !== activeProjectName ? ` • ${currentConversationTitle}` : ''}`
+                : (currentConversationTitle || t('ai.chat.title'))}
+            </span>
+            {!singraShell && AI_IS_BETA && (
+              <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
+                {t('ai.betaBadge', 'Beta')}
               </span>
-              {!singraShell && AI_IS_BETA && (
-                <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
-                  {t('ai.betaBadge', 'Beta')}
-                </span>
-              )}
-            </div>
-          )}
+            )}
+          </div>
 
           {!singraShell && availableProviders.length > 0 && (
             <div className="shrink-0 min-w-[7rem] max-w-[11rem]">

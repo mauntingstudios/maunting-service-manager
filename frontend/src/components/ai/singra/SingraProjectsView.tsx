@@ -953,7 +953,7 @@ export function SingraProjectsView({
   const handleDeleteProject = async (proj: AiProject) => {
     const ok = await confirm({
       title: 'Projekt löschen',
-      message: `Möchtest du das Projekt „${proj.name}“ mitsamt seinen Projektdateien wirklich löschen?`,
+      message: `Möchtest du das Projekt „${proj.name}“ mitsamt seinen Projektdateien, der Dev-Sandbox und den zugehörigen Projekt-Chats wirklich löschen?`,
       confirmText: 'Löschen',
       danger: true,
     })
@@ -966,7 +966,7 @@ export function SingraProjectsView({
         setSelectedId(next[0]?.id ?? null)
         setProjectOpen(false)
       }
-      toast.success('Projekt gelöscht.')
+      toast.success('Projekt und zugehörige Chats gelöscht.')
     } catch (err: unknown) {
       toast.error(
         err instanceof SanitizedApiError
@@ -1374,21 +1374,9 @@ export function SingraProjectsView({
     }
   }
 
-  const handleStartNewProjectChat = async (initialTitle?: string) => {
+  const handleStartNewProjectChat = (_initialTitle?: string) => {
     if (!selectedProject) return
-    try {
-      const conv = await aiApi.createConversation({
-        title: initialTitle || `${selectedProject.name} Chat`,
-        project_id: selectedProject.id,
-      })
-      onOpenProjectChat(selectedProject.id, conv.id)
-    } catch (err: unknown) {
-      toast.error(
-        err instanceof SanitizedApiError
-          ? err.message
-          : 'Projekt-Chat konnte nicht gestartet werden.',
-      )
-    }
+    onOpenProjectChat(selectedProject.id, undefined)
   }
 
   const handleApplyElementWithSingra = async (selector: string) => {

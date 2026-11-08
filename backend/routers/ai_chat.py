@@ -18,7 +18,7 @@ Oberflaeche bricht den Auftrag ab und wechselt in den Dauerchat.
 import json
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -721,6 +721,7 @@ def attach_run(
 async def stream_message(
     payload: AiChatRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
     herkunft: str = Depends(session_herkunft),
@@ -734,14 +735,30 @@ async def stream_message(
         if conversation is None or conversation.kind != "primary":
             raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
     else:
-        conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
+        conversation = ai_chat_service.create_user_conversation(
+            db, user, project_id=payload.project_id
+        )
     if payload.project_id and not conversation.project_id:
         conversation.project_id = payload.project_id
-    # Automatischer Titel beim ersten Zug in einer neuen Unterhaltung
-    if conversation.title == ai_chat_service.DEFAULT_TITLE and payload.content.strip():
-        erste_zeile = redact_sensitive_text(payload.content).strip().splitlines()[0]
-        if erste_zeile:
-            conversation.title = erste_zeile[:80]
+
+    # Automatischer Titel beim ersten Zug oder bei generischem Vor-Titel
+    raw_content = payload.content.strip()
+    is_generic_title = (
+        conversation.title in ai_chat_service.GENERIC_TITLES
+        or conversation.title.endswith(" Chat")
+        or not conversation.title
+    )
+    if is_generic_title and raw_content:
+        # 1. Sofort-Heuristik (synchron): Bereinigt von Floskeln, sauber lesbar
+        conversation.title = ai_chat_service.clean_heuristic_title(raw_content)
+        # 2. Asynchrone Verfeinerung durch das Modell im Hintergrund
+        background_tasks.add_task(
+            ai_chat_service.generate_conversation_title_llm,
+            conversation.id,
+            raw_content,
+            payload.provider_id,
+            payload.model,
+        )
     docs_document_uid: str | None = None
     docs_team_id: int | None = None
     docs_is_link_guest: bool = False
@@ -883,5 +900,7 @@ async def stream_message(
         headers={
             "Cache-Control": "no-store",
             "X-Accel-Buffering": "no",
+            "X-Conversation-Id": conversation.id,
+            "Access-Control-Expose-Headers": "X-Conversation-Id",
         },
     )

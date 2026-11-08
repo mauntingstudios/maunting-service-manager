@@ -52,6 +52,7 @@ export interface ChatScopeApi {
     },
     onEvent: (event: AiStreamEvent) => void,
     signal?: AbortSignal,
+    onConversationResolved?: (conversationId: string) => void,
   ) => Promise<void>
 }
 
@@ -126,7 +127,7 @@ export function chatScopeApi(
       typing: async () => {
         await aiApi.typing()
       },
-      stream: (payload, onEvent, signal) =>
+      stream: (payload, onEvent, signal, onConversationResolved) =>
         streamAiMessage(
           {
             ...payload,
@@ -135,6 +136,7 @@ export function chatScopeApi(
           },
           onEvent,
           signal,
+          onConversationResolved,
         ),
     }
   }
@@ -162,7 +164,8 @@ export function chatScopeApi(
     typing: async () => {
       await aiApi.typing()
     },
-    stream: (payload, onEvent, signal) => streamAiMessage(payload, onEvent, signal),
+    stream: (payload, onEvent, signal, onConversationResolved) =>
+      streamAiMessage(payload, onEvent, signal, onConversationResolved),
   }
 }
 

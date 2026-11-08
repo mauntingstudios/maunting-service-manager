@@ -356,6 +356,53 @@ def update_project(
 def delete_project(db: Session, user: User, project_id: str) -> None:
     project = get_project(db, user, project_id)
     sandbox_dir = _sandbox_base_dir() / f"proj_{project.id}"
+
+    # 1. Dev-Sandbox sauber stoppen
+    try:
+        from services.singra import dev_env
+        dev_env.stop_dev_environment(db, user, project.id)
+    except Exception as exc:
+        logger.debug("Konnte Dev-Umgebung bei Projektloeschung nicht stoppen: %s", exc)
+
+    # 2. Caddy-VHost fuer ggf. registrierte Server des Projekts deregistrieren
+    try:
+        from services import caddy_service
+        meta = project.meta or {}
+        for server_key in (
+            "dev_frontend_server_id",
+            "dev_backend_server_id",
+            "production_server_id",
+            "production_frontend_server_id",
+        ):
+            sid = meta.get(server_key)
+            if sid and str(sid).isdigit():
+                caddy_service.remove_vhost(int(sid))
+    except Exception as exc:
+        logger.debug("Konnte Caddy-VHost bei Projektloeschung nicht entfernen: %s", exc)
+
+    # 3. Kaskadierendes Loeschen aller zugehoerigen Projekt-Chats
+    try:
+        from models.ai_conversation import AiConversation
+        from services import ai_chat_service
+        project_convs = (
+            db.query(AiConversation)
+            .filter(AiConversation.project_id == project.id)
+            .all()
+        )
+        for conv in project_convs:
+            ai_chat_service.delete_user_conversation(db, conv)
+    except Exception as exc:
+        logger.debug("Konnte zugehoerige Projekt-Chats bei Projektloeschung nicht loeschen: %s", exc)
+
+    # 4. Autonomie-Grants bereinigen
+    try:
+        from models.ai_autonomy_grant import AiAutonomyGrant
+        db.query(AiAutonomyGrant).filter(
+            AiAutonomyGrant.project_id == project.id
+        ).delete(synchronize_session=False)
+    except Exception as exc:
+        logger.debug("Konnte Autonomie-Grants bei Projektloeschung nicht bereinigen: %s", exc)
+
     db.delete(project)
     db.commit()
     if sandbox_dir.exists() and sandbox_dir.is_dir():

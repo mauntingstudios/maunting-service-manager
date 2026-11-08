@@ -2659,12 +2659,17 @@ export async function streamAiMessage(
   },
   onEvent: (event: AiStreamEvent) => void,
   signal?: AbortSignal,
+  onConversationResolved?: (conversationId: string) => void,
 ): Promise<void> {
   const response = await apiStream('/ai/conversation/messages/stream', {
     method: 'POST',
     body: JSON.stringify(payload),
     signal,
   })
+  const resolvedConvId = response.headers.get('x-conversation-id')
+  if (resolvedConvId) {
+    onConversationResolved?.(resolvedConvId)
+  }
   await leseStrom(response, onEvent)
 }
 
