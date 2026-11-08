@@ -13,7 +13,7 @@ import {
 import { api } from '@/api/client'
 import { AiAutonomyButton } from '@/components/ai/AiAutonomyButton'
 import { AiChat } from '@/components/ai/AiChat'
-import { PRIMARY_CHAT_SCOPE, type AiChatScope } from '@/components/ai/chatScope'
+import { type AiChatScope } from '@/components/ai/chatScope'
 import { AufgabenAnsicht } from '@/components/ai/AufgabenAnsicht'
 import { GuardianAnsicht } from '@/components/ai/GuardianAnsicht'
 import { WorkerAnsicht } from '@/components/ai/WorkerAnsicht'
@@ -116,7 +116,7 @@ export function Ai({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [conversations, setConversations] = useState<AiConversationSummary[]>([])
   const [projects, setProjects] = useState<AiProject[]>([])
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [activeConversationId, setActiveConversationId] = useState<string | null | undefined>(undefined)
   const [activeProjectId, setActiveProjectId] = useState<string | undefined>(undefined)
   const [activeProjectName, setActiveProjectName] = useState<string | undefined>(undefined)
   const [pendingAttachmentToChat, setPendingAttachmentToChat] = useState<AiAttachment | null>(null)
@@ -174,8 +174,13 @@ export function Ai({
       setConversations(list)
       setProjects(projectList)
       setActiveConversationId((prev) => {
-        if (prev) return prev
-        return list.length > 0 ? list[0].id : null
+        if (prev === undefined) {
+          return list.length > 0 ? list[0].id : null
+        }
+        if (prev !== null && !list.some((c) => c.id === prev)) {
+          return null
+        }
+        return prev
       })
     } catch (err) {
       still(err, 'ai.listConversations')
@@ -219,12 +224,12 @@ export function Ai({
     }
   }, [activeConversationId])
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     setActiveProjectId(undefined)
     setActiveProjectName(undefined)
     setActiveConversationId(null)
     setActiveSection('chat')
-  }
+  }, [])
 
   const handleRenameConversation = async (conv: AiConversationSummary, newTitle: string) => {
     try {
@@ -343,14 +348,20 @@ export function Ai({
     )
   }
 
-  const chatScope: AiChatScope =
-    activeConversationId || activeProjectId
-      ? {
-          kind: 'primary',
-          conversationId: activeConversationId ?? undefined,
-          projectId: activeProjectId,
-        }
-      : PRIMARY_CHAT_SCOPE
+  const chatScope: AiChatScope = useMemo(() => {
+    if (activeConversationId) {
+      return {
+        kind: 'primary',
+        conversationId: activeConversationId,
+        projectId: activeProjectId,
+      }
+    }
+    return {
+      kind: 'primary',
+      isDraft: true,
+      projectId: activeProjectId,
+    }
+  }, [activeConversationId, activeProjectId])
 
   return (
     <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
@@ -386,7 +397,7 @@ export function Ai({
             activeSection={activeSection}
             onSelectSection={setActiveSection}
             conversations={conversations}
-            activeConversationId={activeConversationId}
+            activeConversationId={activeConversationId ?? null}
             onSelectConversation={handleSelectConversation}
             onNewChat={() => void handleNewChat()}
             onRenameConversation={handleRenameConversation}
@@ -450,7 +461,7 @@ export function Ai({
               <SingraMemoryView />
             ) : activeSection === 'dateien' ? (
               <SingraFilesView
-                activeConversationId={activeConversationId}
+                activeConversationId={activeConversationId ?? null}
                 onUseFileInChat={(att) => {
                   setPendingAttachmentToChat(att)
                   setActiveSection('chat')
@@ -463,7 +474,7 @@ export function Ai({
             ) : activeSection === 'verlauf' ? (
               <SingraHistoryView
                 conversations={conversations}
-                activeConversationId={activeConversationId}
+                activeConversationId={activeConversationId ?? null}
                 projectMap={projectMap}
                 onSelectConversation={handleSelectConversation}
                 onNewChat={() => void handleNewChat()}
@@ -473,7 +484,7 @@ export function Ai({
               />
             ) : (
               <AiChat
-                key={`${activeConversationId ?? 'primary'}-${activeProjectId ?? 'none'}`}
+                key={activeProjectId ? `project-${activeProjectId}` : 'global-chat'}
                 scope={chatScope}
                 onSwitchMode={setzeAnsicht}
                 canTasks={canManageTasks}

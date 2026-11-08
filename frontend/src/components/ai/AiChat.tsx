@@ -225,11 +225,14 @@ export function AiChat({
   const scopeIdentityKey =
     scope.kind === 'docs'
       ? `docs:${scope.documentUid}`
-      : `primary:${scope.conversationId ?? ''}:${scope.projectId ?? ''}`
+      : scope.isDraft
+        ? `draft:${scope.projectId ?? 'global'}`
+        : `primary:${scope.conversationId ?? ''}:${scope.projectId ?? ''}`
   const chatApi = useMemo(
     () => chatScopeApi(scopeRef.current, () => scopeRef.current.kind === 'docs' ? scopeRef.current.selection : undefined),
     [scopeIdentityKey],
   )
+  const lastResolvedDraftIdRef = useRef<string | null>(null)
   const [skillsModalOpen, setSkillsModalOpen] = useState(false)
   const [hintergrundOffen, setzeHintergrundOffen] = useState(false)
   const [providers, setProviders] = useState<AiProviderAvailable[]>(() => cachedProviders ?? [])
@@ -637,10 +640,19 @@ export function AiChat({
           // erstbesten Zugang — und der kann beliebig langsam sein.
           void browserWahlInsKontoUebernehmen()
         }
-        if (conversation?.title) {
-          setCurrentConversationTitle(conversation.title)
+        if (
+          lastResolvedDraftIdRef.current &&
+          lastResolvedDraftIdRef.current === (scope.kind === 'primary' ? scope.conversationId : null)
+        ) {
+          lastResolvedDraftIdRef.current = null
+          return
         }
-        if (scope.kind === 'primary' && !scope.conversationId && conversation?.id) {
+        if (conversation?.title && (!scope.kind || scope.kind !== 'primary' || !scope.isDraft)) {
+          setCurrentConversationTitle(conversation.title)
+        } else if (scope.kind === 'primary' && scope.isDraft) {
+          setCurrentConversationTitle(null)
+        }
+        if (scope.kind === 'primary' && !scope.isDraft && !scope.conversationId && conversation?.id) {
           onResolveConversationId?.(conversation.id)
         }
         // Vorschlaege werden chronologisch zwischen die Nachrichten einsortiert,
@@ -726,7 +738,10 @@ export function AiChat({
     ladeKontext,
     setAttachments,
     appFaehigkeiten,
-    onResolveConversationId,
+    onResolveConversationId: (newId) => {
+      lastResolvedDraftIdRef.current = newId
+      onResolveConversationId?.(newId)
+    },
     api: chatApi,
   })
 

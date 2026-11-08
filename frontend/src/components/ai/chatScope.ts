@@ -15,6 +15,7 @@ export type AiChatScope =
       kind: 'primary'
       conversationId?: string
       projectId?: string | null
+      isDraft?: boolean
     }
   | {
       kind: 'docs'
@@ -99,6 +100,49 @@ export function chatScopeApi(
           },
           onEvent,
           signal,
+        ),
+    }
+  }
+
+  if (scope.kind === 'primary' && scope.isDraft) {
+    const pid = scope.projectId
+    return {
+      scopeKey: `draft:${pid ?? 'global'}`,
+      getConversation: async () => ({
+        id: '',
+        kind: 'primary',
+        title: 'Neuer Chat',
+        messages: [],
+        has_more: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+      listActions: async () => [],
+      getActiveRun: async () => null,
+      getContextStatus: (providerId, model) =>
+        model
+          ? aiApi.getContextStatus(providerId, undefined, undefined, model)
+          : aiApi.getContextStatus(providerId),
+      listAttachments: async () => [],
+      uploadAttachment: (file) => aiApi.uploadAttachment(file),
+      deleteAttachment: async (id) => {
+        await aiApi.deleteAttachment(id)
+      },
+      clearHistory: async () => {},
+      editMessage: async () => ({ removed: 0 }),
+      stopRun: async () => ({ ok: true, stopped: false }),
+      typing: async () => {
+        await aiApi.typing()
+      },
+      stream: (payload, onEvent, signal, onConversationResolved) =>
+        streamAiMessage(
+          {
+            ...payload,
+            ...(pid ? { project_id: pid } : {}),
+          },
+          onEvent,
+          signal,
+          onConversationResolved,
         ),
     }
   }

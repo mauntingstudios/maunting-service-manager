@@ -728,13 +728,15 @@ async def stream_message(
     familie: str | None = Depends(session_familie),
     _: None = Depends(verify_csrf),
 ) -> StreamingResponse:
+    conversation = None
     if payload.conversation_id:
         conversation = ai_chat_service.get_owned_conversation(
             db, payload.conversation_id, user
         )
-        if conversation is None or conversation.kind != "primary":
-            raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
-    else:
+        if conversation is not None and conversation.kind != "primary":
+            conversation = None
+
+    if conversation is None:
         conversation = ai_chat_service.create_user_conversation(
             db, user, project_id=payload.project_id
         )
