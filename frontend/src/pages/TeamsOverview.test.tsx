@@ -8,6 +8,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, defaultValue?: string | Record<string, unknown>) => {
       if (typeof defaultValue === 'string') return defaultValue
+      if (typeof defaultValue === 'object' && defaultValue !== null && 'name' in defaultValue) {
+        return `Hallo, ${defaultValue.name}`
+      }
       if (key === 'teams.eyebrow') return 'Organisation & Teams'
       if (key === 'teams.title') return 'Deine Teams'
       if (key === 'teams.overviewSubtitle') return 'Zusammenarbeiten, Wissen teilen und Projekte gemeinsam umsetzen.'

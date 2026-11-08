@@ -74,9 +74,11 @@ export function TeamsOverview({
   const stunde = useMemo(() => new Date().getHours(), [])
   const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'teams'), [stunde])
   const greetingKey = useMemo(() => begruessungSchluessel(stunde, true), [stunde])
-  const greeting = currentUser?.username
-    ? `${t(greetingKey, 'Hallo')}, ${currentUser.username}!`
-    : t('teams.title', 'Deine Teams')
+  const greeting = useMemo(() => {
+    if (!currentUser?.username) return t('teams.title', 'Deine Teams')
+    const raw = t(greetingKey, { name: currentUser.username, defaultValue: `Hallo, ${currentUser.username}` })
+    return raw.endsWith('!') || raw.endsWith('?') ? raw : `${raw}!`
+  }, [currentUser?.username, greetingKey, t])
 
   // Nur echte Teams (keine 1-Mann-Teams)
   const echteTeams = useMemo(() => teams.filter((t) => !t.is_personal), [teams])
