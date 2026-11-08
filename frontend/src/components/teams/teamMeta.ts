@@ -91,10 +91,16 @@ export interface TeamCoverPreset {
 }
 
 export const TEAM_COVER_PRESETS: TeamCoverPreset[] = [
-  { id: 'echofall', title: 'Aussichtsturm & Berge', url: '/assets/teams/team-cover-echofall.jpg' },
-  { id: 'msm', title: 'Entwickler-Arbeitsplatz', url: '/assets/teams/team-cover-msm.jpg' },
-  { id: 'server', title: 'Server-Infrastruktur & Funkmast', url: '/assets/teams/team-cover-server.jpg' },
+  { id: 'holiday', title: 'Urlaub am See', url: '/assets/teams/team-cover-holiday.jpg' },
   { id: 'privat', title: 'Gemütliche Blockhütte', url: '/assets/teams/team-cover-privat.jpg' },
+  { id: 'msm', title: 'Entwickler-Setup', url: '/assets/teams/team-cover-msm.jpg' },
+  { id: 'gaming', title: 'Gaming & Setup', url: '/assets/teams/team-cover-gaming.jpg' },
+  { id: 'bergsee', title: 'Bergsee & Erholung', url: '/hintergruende/bergsee.webp' },
+  { id: 'bergwald', title: 'Wandern & Bergwald', url: '/hintergruende/bergwald.webp' },
+  { id: 'balkon', title: 'Kaffee & Balkon', url: '/hintergruende/balkon.webp' },
+  { id: 'feld', title: 'Sommerfeld & Natur', url: '/hintergruende/feld.webp' },
+  { id: 'ozean', title: 'Küste & Ozean', url: '/hintergruende/ozean.webp' },
+  { id: 'wasserfaelle', title: 'Wasserfall & Abenteuer', url: '/hintergruende/wasserfaelle.webp' },
 ]
 
 export interface TeamMetadata {
@@ -128,7 +134,7 @@ export function getTeamMetadata(teamId: number, teamName: string): TeamMetadata 
     return {
       category: 'projekt',
       description: 'Community, Server und Entwicklung.',
-      coverImage: '/assets/teams/team-cover-echofall.jpg',
+      coverImage: '/assets/teams/team-cover-holiday.jpg',
     }
   }
   if (lower.includes('msm') || lower.includes('entwickl')) {
@@ -156,7 +162,7 @@ export function getTeamMetadata(teamId: number, teamName: string): TeamMetadata 
   return {
     category: 'projekt',
     description: 'Gemeinsame Projekte, Server und Wissensaustausch.',
-    coverImage: '/assets/teams/team-cover-echofall.jpg',
+    coverImage: '/assets/teams/team-cover-holiday.jpg',
   }
 }
 
@@ -165,7 +171,7 @@ export function setTeamMetadata(teamId: number, meta: Partial<TeamMetadata>): Te
   const existing = store[teamId] ?? {
     category: 'projekt' as TeamCategoryKey,
     description: '',
-    coverImage: '/assets/teams/team-cover-echofall.jpg',
+    coverImage: '/assets/teams/team-cover-holiday.jpg',
   }
   const updated: TeamMetadata = { ...existing, ...meta }
   store[teamId] = updated

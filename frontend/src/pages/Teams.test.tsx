@@ -287,13 +287,10 @@ describe('Teams', () => {
     renderTeams()
     await zuTeams()
 
-    // „einmalmaik" ist der Name des persönlichen Teams. In der Liste, aus der
-    // man ein Team auswählt, hat es nichts verloren — es ist keins. (Derselbe
-    // Name steht daneben als Mitglied des echten Teams; deshalb wird hier
-    // gezielt die Liste geprüft und nicht die ganze Seite.)
-    const liste = await screen.findByRole('list', { name: 'Deine Teams' })
-    expect(within(liste).getByRole('button', { name: /Betrieb/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(liste).queryByText('einmalmaik')).not.toBeInTheDocument()
+    // „einmalmaik" ist der Name des persönlichen Teams. In der Team-Auswahl
+    // hat es nichts verloren — es ist keins.
+    expect(await screen.findByRole('heading', { name: 'Betrieb' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'einmalmaik' })).not.toBeInTheDocument()
   })
 
   it('zeigt die Mitglieder zuerst — Wissen und Server erst auf Klick', async () => {
