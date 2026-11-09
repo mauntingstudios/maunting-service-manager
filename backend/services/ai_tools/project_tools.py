@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from models import User
+from models import AiProject, User
 from services import permission_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_tool_spec import werkzeug
@@ -158,6 +158,18 @@ def _pruefe_projekt_sperre(
     """
     from services import ai_worker_service
 
+    # Projektzeile sperren, bevor geprueft wird: ein worker_start, der im
+    # selben Moment prueft, sieht sonst keinen laufenden Auftrag und legt
+    # einen an, waehrend diese Aktion schreibt. Dieselbe Sperre wie dort,
+    # nur von der anderen Seite.
+    gesperrt = (
+        db.query(AiProject.id)
+        .filter(AiProject.id == project_id)
+        .with_for_update()
+        .first()
+    )
+    if gesperrt is None:
+        return
     laufend = ai_worker_service.aktiver_auftrag_im_projekt(db, project_id)
     if laufend is None:
         return
