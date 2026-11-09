@@ -653,6 +653,7 @@ def _execute_global_read_tool(
             db, user=user, arguments=arguments, herkunft=herkunft,
             familie=familie, docs_document_uid=docs_document_uid,
             docs_team_id=docs_team_id,
+            conversation_id=getattr(kontext, "conversation_id", None),
         )
 
     if tool_name == "worker_cancel":

@@ -972,6 +972,7 @@ def execute_proposal(
                     row_id=row_id,
                     guardian=guardian,
                     tool_name=tool_name,
+                    conversation_id=proposal.conversation_id,
                 ),
             )
             result = ausgefuehrt.result

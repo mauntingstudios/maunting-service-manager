@@ -345,6 +345,7 @@ def _ausfuehren_worker_start(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausge
         user=rahmen.active_user,
         arguments=rahmen.payload,
         herkunft="panel",
+        conversation_id=rahmen.conversation_id,
     )
     return _Ausgefuehrt(result=res if isinstance(res, dict) else {"result": res})
 

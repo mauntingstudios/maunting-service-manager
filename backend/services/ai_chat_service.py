@@ -413,7 +413,9 @@ def get_or_create_docs_conversation(
     return conversation
 
 
-def worker_unterhaltung_anlegen(db: Session, user: User, titel: str) -> AiConversation:
+def worker_unterhaltung_anlegen(
+    db: Session, user: User, titel: str, *, project_id: str | None = None
+) -> AiConversation:
     """Legt das Fenster eines neuen Worker-Auftrags an — immer eine neue Zeile.
 
     Bewusst kein get-or-create: mehrere gleichzeitige Auftraege sind der Zweck
@@ -432,6 +434,9 @@ def worker_unterhaltung_anlegen(db: Session, user: User, titel: str) -> AiConver
         user_id=user.id,
         server_id=None,
         kind="worker",
+        # Der Auftrag arbeitet im selben Projekt wie der Lauf, der ihn
+        # gestellt hat — sonst fehlten ihm Dateibaum, AGENTS.md und Git-Stand.
+        project_id=project_id,
         title=redact_sensitive_text(titel or "Auftrag").strip()[:160] or "Auftrag",
     )
     db.add(fenster)

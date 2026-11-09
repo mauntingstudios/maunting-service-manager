@@ -306,6 +306,9 @@ class _AusfuehrungsRahmen:
     row_id: str
     guardian: GuardianKontext | None
     tool_name: str
+    # Der Lauf, aus dem der Vorschlag kam. Gebraucht von genau einem
+    # Werkzeug: `worker_start` erbt daraus das Projekt.
+    conversation_id: str | None = None
 
 @dataclass(frozen=True)
 class _Ausgefuehrt:

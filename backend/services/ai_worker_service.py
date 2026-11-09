@@ -89,10 +89,34 @@ def _text(arguments: dict, feld: str, maximum: int) -> str | None:
     return text[:maximum]
 
 
+def _projekt_des_laufs(
+    db: Session, user: User, conversation_id: str | None
+) -> str | None:
+    """Das Projekt des aufrufenden Laufs, wenn es dem Benutzer gehört.
+
+    Eine fremde oder gelöschte Kennung wird zu ``None``: der Auftrag läuft
+    dann ohne Projektbezug weiter, statt an einer Vererbung zu scheitern, die
+    er nicht beeinflussen kann.
+    """
+    if not conversation_id:
+        return None
+    eltern = db.get(AiConversation, conversation_id)
+    if eltern is None or eltern.user_id != user.id or not eltern.project_id:
+        return None
+    from services import ai_project_service
+    from services.ai_project_errors import AiProjectError
+
+    try:
+        projekt = ai_project_service.get_project(db, user, eltern.project_id)
+    except AiProjectError:
+        return None
+    return projekt.id
+
+
 def worker_start(
     db: Session, *, user: User, arguments: dict, herkunft: str = "panel",
     familie: str | None = None, docs_document_uid: str | None = None,
-    docs_team_id: int | None = None,
+    docs_team_id: int | None = None, conversation_id: str | None = None,
 ) -> dict:
     """Deklariert einen Auftrag: eigenes Fenster, eigener Lauf, sofort zurueck.
 
@@ -189,11 +213,19 @@ def worker_start(
             "detail": "Am KI-Zugang fehlt der Schlüssel des Betreibers.",
         }
 
+    # Das Projekt erbt der Auftrag vom aufrufenden Lauf — wie Herkunft und
+    # Familie, und ebenso aus dem Laufzustand statt aus den Argumenten. Die
+    # Kennung kommt aus der Unterhaltung, nicht aus dem Modell: was ein Modell
+    # schreiben kann, ist keine Tatsache über die Welt, aus der es spricht.
+    project_id = _projekt_des_laufs(db, user, conversation_id)
+
     # Nur geflusht, nicht committet: ein Commit hier gäbe die Benutzersperre
     # frei, bevor der neue Lauf überhaupt existiert — genau in dem Fenster,
     # das die Sperre schließen soll. Den einen Commit setzt `lauf_beginnen`
     # am Ende, und der schließt dann Fenster und Lauf gemeinsam ab.
-    fenster = ai_chat_service.worker_unterhaltung_anlegen(db, user, titel)
+    fenster = ai_chat_service.worker_unterhaltung_anlegen(
+        db, user, titel, project_id=project_id
+    )
     db.flush()
 
     # Dokumentkontext: die UID kommt aus dem Laufkontext (Server-Injektion),

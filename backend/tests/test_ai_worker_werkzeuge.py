@@ -22,6 +22,9 @@ from sqlalchemy.orm import Query, Session
 
 from models import AiAutonomyGrant, AiConversation, AiRun, Role, RolePermission, User
 from services import (
+    ai_action_service,
+    ai_chat_service,
+    ai_project_service,
     ai_provider_service,
     ai_run_service,
     ai_stream_service,
@@ -69,13 +72,14 @@ def _provider(db: Session, **extra):
 
 
 def _start(
-    db: Session, user: User, *, herkunft: str = "panel", **argumente
+    db: Session, user: User, *, herkunft: str = "panel",
+    conversation_id: str | None = None, **argumente,
 ) -> dict:
     """Ruft worker_start mit stillgelegtem Anlauf — kein Laufzeit-Segment."""
     with patch.object(ai_run_service, "anlauf", lambda db_, run: True):
         return ai_worker_service.worker_start(
             db, user=user, arguments={"auftrag": "Pruef die Backups", **argumente},
-            herkunft=herkunft,
+            herkunft=herkunft, conversation_id=conversation_id,
         )
 
 
@@ -740,3 +744,79 @@ def test_worker_ohne_sondermodell_wechselt_nicht_den_anbieter(db, monkeypatch):
     assert result["started"] is True
     run = db.query(AiRun).filter_by(conversation_id=result["worker_id"]).one()
     assert run.provider_id == chosen.id
+
+
+class TestWorkerProjekt:
+    """Der Auftrag erbt das Projekt des Laufs, der ihn gestellt hat."""
+
+    def test_auftrag_erbt_das_projekt_des_laufs(self, db: Session) -> None:
+        user = _benutzer(db, "projekt-erbe")
+        _provider(db)
+        projekt = ai_project_service.create_project(
+            db, user, name="Website", sandbox_enabled=False
+        )
+        eltern = ai_chat_service.create_user_conversation(
+            db, user, project_id=projekt.id
+        )
+        db.commit()
+
+        ergebnis = _start(db, user, conversation_id=eltern.id)
+
+        assert ergebnis["started"] is True
+        fenster = db.get(AiConversation, ergebnis["worker_id"])
+        assert fenster is not None
+        assert fenster.project_id == projekt.id
+
+    def test_ein_fremdes_projekt_wird_nicht_geerbt(self, db: Session) -> None:
+        user = _benutzer(db, "projekt-fremd")
+        fremd = _benutzer(db, "projekt-besitzer")
+        _provider(db)
+        projekt = ai_project_service.create_project(
+            db, fremd, name="Fremd", sandbox_enabled=False
+        )
+        eltern = ai_chat_service.create_user_conversation(
+            db, fremd, project_id=projekt.id
+        )
+        db.commit()
+
+        ergebnis = _start(db, user, conversation_id=eltern.id)
+
+        assert ergebnis["started"] is True
+        fenster = db.get(AiConversation, ergebnis["worker_id"])
+        assert fenster is not None
+        assert fenster.project_id is None
+
+    def test_ohne_unterhaltung_gibt_es_kein_projekt(self, db: Session) -> None:
+        user = _benutzer(db, "projekt-ohne")
+        _provider(db)
+
+        ergebnis = _start(db, user)
+
+        fenster = db.get(AiConversation, ergebnis["worker_id"])
+        assert fenster is not None and fenster.project_id is None
+
+    def test_der_dispatch_reicht_die_unterhaltung_durch(self, db: Session) -> None:
+        user = _benutzer(db, "projekt-dispatch")
+        _provider(db)
+        projekt = ai_project_service.create_project(
+            db, user, name="Dispatch", sandbox_enabled=False
+        )
+        eltern = ai_chat_service.create_user_conversation(
+            db, user, project_id=projekt.id
+        )
+        db.commit()
+        from services.ai_tools.document_tools import ToolKontext
+
+        with patch.object(ai_run_service, "anlauf", lambda db_, run: True):
+            ergebnis = ai_action_service.execute_read_tool(
+                db,
+                user=user,
+                tool_name="worker_start",
+                arguments={"auftrag": "Pruef die Backups"},
+                kontext=ToolKontext(conversation_id=eltern.id),
+            )
+
+        assert ergebnis["started"] is True
+        fenster = db.get(AiConversation, ergebnis["worker_id"])
+        assert fenster is not None
+        assert fenster.project_id == projekt.id
