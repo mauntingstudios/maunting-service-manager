@@ -28,7 +28,7 @@ export interface FensterleisteProps {
   className?: string
 }
 
-const knopf = 'flex h-full w-11 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface'
+const knopf = 'mui-fensterknopf flex h-full w-11 items-center justify-center text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface'
 
 export function Fensterleiste({
   steuerung,
@@ -45,7 +45,7 @@ export function Fensterleiste({
   return (
     <header
       data-tauri-drag-region
-      className={`relative z-30 flex h-10 shrink-0 select-none items-stretch border-b border-outline-variant/50 bg-surface-container-lowest/85 backdrop-blur-xl ${className}`}
+      className={`mui-fensterkopf relative z-30 flex h-10 shrink-0 select-none items-stretch border-b border-outline-variant/50 bg-surface-container-lowest/85 backdrop-blur-xl ${className}`}
     >
       {(marke || titel) && (
         <div className="flex shrink-0 items-center gap-2.5 pl-3 pr-1">
@@ -86,7 +86,7 @@ export function Fensterleiste({
           <button
             type="button"
             onClick={steuerung.schliessen}
-            className="flex h-full w-11 items-center justify-center text-on-surface-variant transition-colors hover:bg-status-destructive hover:text-white"
+            className="mui-fensterknopf mui-fensterknopf--schliessen flex h-full w-11 items-center justify-center text-on-surface-variant transition-colors hover:bg-status-destructive hover:text-white"
             aria-label={beschriftungen.schliessen}
           >
             <X className="h-4 w-4" aria-hidden="true" />

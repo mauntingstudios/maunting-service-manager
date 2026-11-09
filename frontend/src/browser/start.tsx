@@ -19,6 +19,8 @@ import '@fontsource/jetbrains-mono/500.css'
 import { textBereit } from '@/i18n'
 import '@/index.css'
 import './browser.css'
+import '@/fenster/fenster.css'
+import { fensterStilAnwenden } from '@/fenster/fensterStil'
 import { MotionProvider } from '@maunting/ui'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -29,6 +31,8 @@ import { BrowserApp } from './BrowserApp'
 
 transportEinrichten()
 initOfflineSync()
+// Die Marke steht, bevor das erste Bild gezeichnet wird.
+fensterStilAnwenden()
 
 void textBereit.finally(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(

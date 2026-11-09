@@ -752,7 +752,7 @@ export function VertikaleTableiste() {
   return (
     <aside
       aria-label={t('browser.tabs.liste')}
-      className={`relative flex flex-col shrink-0 border-r border-outline-variant/20 bg-surface-container transition-all duration-200 ease-in-out select-none ${
+      className={`msb-randleiste msb-randleiste-links relative flex flex-col shrink-0 border-r border-outline-variant/20 bg-surface-container transition-all duration-200 ease-in-out select-none ${
         vertikaleTabsEingeklappt ? 'w-12' : 'w-60'
       }`}
     >

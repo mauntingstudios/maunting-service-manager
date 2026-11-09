@@ -695,6 +695,15 @@ html[data-season] .msm-logo-bild {
     radial-gradient(70rem 32rem at 50% -12rem, hsl(var(--season-glow) / .10), transparent 68%),
     radial-gradient(42rem 26rem at 8% 108%, hsl(var(--season-accent) / .07), transparent 72%);
   pointer-events: none;
+  /* Ohne Saison bleibt der Container unsichtbar. Der Schimmer hing bisher
+     immer im Fenster, auch ohne `data-season`; die Farben sind dann nur die
+     Vorgaben (orange) und wirkten wie ein Fleck über der Oberfläche. */
+  opacity: 0;
+  transition: opacity var(--mui-motion-slow) var(--mui-ease-out);
+}
+
+html[data-season] .season-hintergrund::before {
+  opacity: 1;
 }
 
 .season-partikel {

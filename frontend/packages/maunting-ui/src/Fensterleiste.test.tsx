@@ -10,6 +10,8 @@ describe('Fensterleiste', () => {
   it('nennt die drei Fensterknöpfe und führt sie aus', () => {
     const { container } = render(<Fensterleiste steuerung={steuerung} beschriftungen={beschriftungen} />)
     expect(container.firstElementChild).toHaveAttribute('data-tauri-drag-region')
+    // Der Haken verbindet die Leiste mit der Fensterarchitektur (`fenster.css`).
+    expect(container.firstElementChild).toHaveClass('mui-fensterkopf')
 
     fireEvent.click(screen.getByRole('button', { name: 'Minimieren' }))
     fireEvent.click(screen.getByRole('button', { name: 'Maximieren' }))

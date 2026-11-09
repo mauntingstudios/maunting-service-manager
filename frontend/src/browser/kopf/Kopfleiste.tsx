@@ -264,7 +264,7 @@ function EinfuegeIndikator() {
     <div
       data-testid="tab-drop-indikator"
       aria-hidden="true"
-      className="relative flex h-8 w-2.5 shrink-0 items-center justify-center transition-all duration-150 ease-out animate-scale-in"
+      className="relative mb-1 flex h-8 w-2.5 shrink-0 items-center justify-center transition-all duration-150 ease-out animate-scale-in"
     >
       <div className="h-6 w-1 rounded-full bg-primary shadow-[0_0_8px_rgba(99,102,241,0.9)] ring-2 ring-primary/40 animate-pulse" />
     </div>
@@ -276,7 +276,7 @@ function PhantomTabVorschau({ tab }: { tab: { titel: string; favicon: string | n
     <div
       data-testid="phantom-tab-vorschau"
       aria-hidden="true"
-      className="flex h-8 min-w-[7.5rem] max-w-[14rem] flex-1 select-none items-center gap-2 rounded-t-lg px-2.5 text-label-md bg-surface-container-high/80 text-primary border border-dashed border-primary/60 shadow-[0_0_12px_rgba(99,102,241,0.25)] transition-all duration-150 ease-out animate-fade-in"
+      className="mb-1 flex h-8 min-w-[7.5rem] max-w-[14rem] flex-1 select-none items-center gap-2 rounded-lg px-2.5 text-label-md bg-surface-container-high/80 text-primary border border-dashed border-primary/60 shadow-[0_0_12px_rgba(99,102,241,0.25)] transition-all duration-150 ease-out animate-fade-in"
     >
       <span className="flex h-4 w-4 shrink-0 items-center justify-center">
         {tab.favicon ? (
@@ -565,12 +565,12 @@ function TabReiter({ tab, aktiv, index: _index, onHoverZieh, onDropTab }: TabRei
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') aktivieren(tab.id)
       }}
-      className={`group flex h-8 min-w-[7.5rem] max-w-[14rem] flex-1 cursor-default items-center gap-2 rounded-t-lg px-2.5 text-label-md transition-all duration-150 ease-out ${
+      className={`group mb-1 flex h-8 min-w-[7.5rem] max-w-[14rem] flex-1 cursor-default items-center gap-2 rounded-lg px-2.5 text-label-md transition-all duration-150 ease-out ${
         aktiv
-          ? 'bg-surface-container text-on-surface'
+          ? 'bg-surface-container-high text-on-surface shadow-sm'
           : istImSplit
-          ? 'bg-surface-container/80 text-on-surface'
-          : 'text-on-surface-variant hover:bg-surface-container/60'
+          ? 'bg-surface-container-high/70 text-on-surface'
+          : 'text-on-surface-variant hover:bg-surface-container-high/45'
       }`}
     >
       <span className={`flex h-4 w-4 shrink-0 items-center justify-center ${tab.ruhe ? 'opacity-50' : ''}`}>
@@ -950,7 +950,7 @@ export function Kopfleiste() {
       onDrop={(e) => {
         behandleDrop(e, dropZielIndex ?? sichtbareTabs.length)
       }}
-      className={`relative z-30 flex h-10 shrink-0 select-none gap-1 border-b border-outline-variant/50 bg-surface-container-lowest/85 pl-2 backdrop-blur-xl ${
+      className={`mui-fensterkopf relative z-30 flex h-10 shrink-0 select-none gap-1 border-b border-outline-variant/50 bg-surface-container-lowest/85 pl-2 backdrop-blur-xl ${
         tabAusrichtung === 'vertikal' ? 'items-center' : 'items-end'
       }`}
     >
@@ -1137,7 +1137,7 @@ export function Kopfleiste() {
             <button
               type="button"
               onClick={() => void nativ.fensterAktion(aktion)}
-              className="flex w-11 items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+              className="mui-fensterknopf flex w-11 items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
               aria-label={name}
             >
               <Symbol className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1148,7 +1148,7 @@ export function Kopfleiste() {
           <button
             type="button"
             onClick={() => void nativ.fensterAktion('schliessen')}
-            className="flex w-11 items-center justify-center text-on-surface-variant hover:bg-status-destructive hover:text-white"
+            className="mui-fensterknopf mui-fensterknopf--schliessen flex w-11 items-center justify-center text-on-surface-variant hover:bg-status-destructive hover:text-white"
             aria-label={t('common.close')}
           >
             <X className="h-4 w-4" aria-hidden="true" />

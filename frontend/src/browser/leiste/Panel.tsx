@@ -149,7 +149,7 @@ function Kopf({ titel, schliessen, msm }: { titel: string; schliessen: () => voi
   const { t } = useTranslation()
   return (
     <div
-      className={`flex h-10 shrink-0 items-center justify-between px-3 [@media(pointer:coarse)]:h-14 ${
+      className={`msb-panelkopf flex h-10 shrink-0 items-center justify-between px-3 [@media(pointer:coarse)]:h-14 ${
         msm ? 'border-b border-outline-variant/20 bg-surface/75 backdrop-blur-md' : ''
       }`}
     >
@@ -219,7 +219,7 @@ export function Panel({ seite }: { seite: 'links' | 'rechts' | 'voll' }) {
     <aside
       aria-label={titel}
       style={{ width: `max(${PANEL_MIN}px, min(${breite}px, 100vw - ${PLATZ_FUER_SEITE}px))` }}
-      className={`relative flex shrink-0 flex-col ${msm ? 'bg-surface' : 'bg-surface-container-low'}`}
+      className={`msb-modulpanel msb-modulpanel-${seite} relative flex shrink-0 flex-col bg-surface-container`}
     >
       {/* Ganz im Panel: daneben liegt die Seite, ein Fenster über der Oberfläche. */}
       <div

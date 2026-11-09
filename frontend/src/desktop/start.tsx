@@ -22,6 +22,8 @@ import '@fontsource/jetbrains-mono/500.css'
 
 import { textBereit } from '@/i18n'
 import '@/index.css'
+import '@/fenster/fenster.css'
+import { fensterStilAnwenden } from '@/fenster/fensterStil'
 import { MotionProvider } from '@maunting/ui'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -32,6 +34,8 @@ import { DesktopRoot } from './DesktopRoot'
 
 transportEinrichten()
 initOfflineSync()
+// Die Marke steht, bevor das erste Bild gezeichnet wird.
+fensterStilAnwenden()
 
 // Wie im Panel (`src/main.tsx`): erst rendern, wenn die Texte da sind.
 void textBereit.finally(() => {

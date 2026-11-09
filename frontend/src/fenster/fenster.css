@@ -1,0 +1,173 @@
+/*
+ * Fensterarchitektur „Eine Hülle“ — Experiment für Pontis und MSS.
+ *
+ * Die Lehre aus den rahmenlosen Tauri-Vorlagen (decorum, snap-layouts): Der
+ * Kopf ist keine Systemtitelleiste, sondern die oberste Fläche der App. Also
+ * eine einzige Fläche von der Oberkante bis unter die Bedienleiste — keine
+ * Verläufe, keine Trennlinien, kein zweiter Rahmen. Die Fensterknöpfe sind
+ * ruhige Symbole mit einer runden Fläche nur im Hover.
+ *
+ * Tiefe entsteht ausschließlich aus den vorhandenen Flächen-Tokens
+ * (`surface-0` … `surface-4`) und einer Lichtnaht (1 px, 5 % Weiß), nie aus
+ * einer neuen Farbe.
+ *
+ * Jede Regel hängt an `html[data-fenster="einheit"]`. Diese Marke setzt
+ * `fensterStil.ts`; fehlt sie, bleibt die Oberfläche exakt wie zuvor.
+ * Rückkehr: `FENSTER_STIL` in `fensterStil.ts` auf `'klassisch'`.
+ */
+
+html[data-fenster='einheit'] {
+  /* Lichtnaht zwischen zwei gleich hellen Flächen. */
+  --msm-naht: hsl(0 0% 100% / 0.05);
+}
+
+/* ── Äußere Kontur ──────────────────────────────────────────────────────
+ * Windows zeichnet die Rundung selbst (DWM, 8 px). Die innere Kante macht
+ * dieselbe Rundung sichtbar, ohne einen zweiten Rahmen aufzulegen.
+ */
+
+html[data-fenster='einheit'] .mui-window {
+  box-shadow: inset 0 0 0 1px hsl(var(--mui-line-strong) / 0.22);
+  transition: border-radius var(--mui-motion-base) var(--mui-ease-out);
+}
+
+/* Maximiert liegt das Fenster an den Bildschirmkanten; dort gehört keine
+ * Innenkante hin. */
+html[data-fenster='einheit'][data-maximiert] .mui-window {
+  box-shadow: none;
+}
+
+/* ── Eine Fläche ────────────────────────────────────────────────────────
+ * Der Kopf trägt dieselbe Fläche wie die Leisten darunter. Er ist damit
+ * keine Titelleiste mehr, sondern der oberste Streifen der App: Pontis
+ * zieht links in die Reiterleiste und die Adresszeile, MSS in die obere
+ * Navigation (`.msm-topbar`) hinunter.
+ */
+
+html[data-fenster='einheit'] .mui-fensterkopf {
+  border-bottom-width: 0;
+  background: hsl(var(--mui-surface-2));
+  box-shadow: none;
+}
+
+/* MSS: Die obere Navigation ist Teil derselben Fläche. Fast deckend, damit
+ * beim Scrollen kein Text durchscheint; ein weicher Schatten hebt die Leiste
+ * vom Inhalt ab, ohne eine Linie zu ziehen. */
+html[data-fenster='einheit'] .msm-topbar {
+  border-bottom-width: 0;
+  background: hsl(var(--mui-surface-2) / 0.92);
+  box-shadow: 0 14px 24px -22px hsl(0 0% 0% / 0.9);
+}
+
+/* ── Fensterknöpfe ──────────────────────────────────────────────────────
+ * Kein Systemknopf: das Symbol steht frei, die Fläche erscheint als runder
+ * Hof nur beim Zeigen. Die Trefferfläche bleibt der ganze 44-px-Knopf.
+ */
+
+html[data-fenster='einheit'] .mui-fensterknopf {
+  position: relative;
+  background: transparent;
+}
+
+html[data-fenster='einheit'] .mui-fensterknopf::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: transparent;
+  transition: background-color var(--mui-motion-fast) var(--mui-ease-out);
+}
+
+/* Die Fläche liegt hinter dem Symbol; ein positioniertes ::before würde es
+ * sonst übermalen. */
+html[data-fenster='einheit'] .mui-fensterknopf > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-fenster='einheit'] .mui-fensterknopf:hover,
+html[data-fenster='einheit'] .mui-fensterknopf:focus-visible {
+  background: transparent;
+}
+
+html[data-fenster='einheit'] .mui-fensterknopf:hover::before {
+  background: hsl(var(--mui-surface-3));
+}
+
+html[data-fenster='einheit'] .mui-fensterknopf:active::before {
+  background: hsl(var(--mui-surface-4));
+}
+
+html[data-fenster='einheit'] .mui-fensterknopf--schliessen:hover {
+  color: hsl(var(--mui-foreground));
+}
+
+html[data-fenster='einheit'] .mui-fensterknopf--schliessen:hover::before {
+  background: hsl(var(--mui-danger));
+}
+
+/* ── Pontis: senkrechte Leisten ─────────────────────────────────────────
+ * Die linke Leiste behält ihre Fläche (dieselbe wie hinter der Adresszeile),
+ * das Modulpanel seine leicht tiefere. Unterschieden werden sie durch ihre
+ * Fläche, nicht mehr durch eine dunkle Trennlinie.
+ */
+
+html[data-fenster='einheit'] .msb-randleiste {
+  border-color: transparent;
+}
+
+html[data-fenster='einheit'] .msb-randleiste-links {
+  box-shadow: inset -1px 0 0 var(--msm-naht);
+}
+
+html[data-fenster='einheit'] .msb-randleiste-rechts {
+  box-shadow: inset 1px 0 0 var(--msm-naht);
+}
+
+html[data-fenster='einheit'] .msb-modulpanel {
+  border-color: transparent;
+}
+
+html[data-fenster='einheit'] .msb-modulpanel-links {
+  box-shadow: inset -1px 0 0 var(--msm-naht);
+}
+
+html[data-fenster='einheit'] .msb-modulpanel-rechts {
+  box-shadow: inset 1px 0 0 var(--msm-naht);
+}
+
+/* ── Rahmen über der Saison-Ebene ───────────────────────────────────────
+ * `SaisonHintergrund` liegt auf z-1 über allen Flächen ohne eigenen Stapel.
+ * Das ist für den Inhalt gedacht, nicht für den Rahmen: Adresszeile, Leisten
+ * und Modulpanel bekommen einen eigenen Stapel, damit dort kein Partikel und
+ * kein Schimmer landet.
+ */
+
+html[data-fenster='einheit'] .msb-adressleiste,
+html[data-fenster='einheit'] .msb-randleiste,
+html[data-fenster='einheit'] .msb-modulpanel {
+  position: relative;
+  z-index: 20;
+}
+
+/* Das Modulpanel trägt die Fläche des Rahmens; den Inhalt darunter liefern
+ * die Module selbst. */
+html[data-fenster='einheit'] .msb-panelkopf {
+  background: transparent;
+  border-bottom-width: 0;
+}
+
+/* Saison: Der Akzentstrich unter der oberen Navigation ist eine Trennlinie
+ * und entfällt im Fenster. Der großflächige Schimmer wird zurückgenommen,
+ * die Partikel bleiben. */
+html[data-fenster='einheit'][data-season] .msm-topbar::after {
+  display: none;
+}
+
+html[data-fenster='einheit'][data-season] .season-hintergrund::before {
+  opacity: 0.4;
+}
