@@ -23,7 +23,8 @@ import { FARB_PALETTE, farbwahl } from '@/config/farbpalette'
 import { apiUrl } from '@/config/api'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
-import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
 import { DateTimePicker, Dropdown, Kurzinfo, NumberStepper, useZurueckSchliesst } from '@maunting/ui'
 import { Button } from '@maunting/ui'
 import { sendeGeraeteBenachrichtigung, pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
@@ -780,19 +781,48 @@ export function Calendar() {
     return null
   }
 
+  const user = useAuthStore((state) => state.user)
+  const stunde = useMemo(() => new Date().getHours(), [])
+  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'calendar'), [stunde])
+  const tagesZaehler = useMemo(() => tagesSeed(), [])
+  const begruessung = user?.username
+    ? t(begruessungSchluessel(stunde, false, tagesZaehler), { name: user.username })
+    : t('common.begruessung.ohneName')
+
   return (
-    <div className="space-y-6">
-      <TageszeitBanner
-        bereich={t('calendar.title')}
-        icon={<CalendarIcon className="h-3.5 w-3.5" aria-hidden="true" />}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
+    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
+      {/* Weicher atmosphärischer Tageszeit-Hintergrund für den Kalender */}
+      <TageszeitHintergrund
+        motiv={headerMotiv}
+        hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+        deckkraft="opacity-55"
+        ebene="-z-10"
+        verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
+      />
+
+      <div className="relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 py-4 sm:px-6 sm:py-6 lg:px-8 space-y-6 pb-12">
+        {/* Freischwebender Kalender-Header mit Tageszeit-Begrüßung und Aktionen */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+              <CalendarIcon className="h-4 w-4" aria-hidden="true" />
+              <span>{t('calendar.title')}</span>
+            </div>
+            <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+              {begruessung}
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">
+              {t('calendar.subtitle', { defaultValue: 'Termine, Server-Ereignisse und Team-Aktivitäten im Blick.' })}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Button
               variant="secondary"
               size="sm"
               onClick={handleTestPush}
               disabled={testingPush}
-              className="gap-1.5"
+              className="gap-1.5 rounded-xl bg-surface-container-high/80 backdrop-blur-md border border-outline-variant/30 shadow-sm"
             >
               <BellRing className={`w-4 h-4 ${testingPush ? 'animate-spin' : ''}`} />
               {t('calendar.testPush')}
@@ -801,17 +831,17 @@ export function Calendar() {
               variant="secondary"
               size="sm"
               onClick={openFeedModal}
-              className="gap-1.5"
+              className="gap-1.5 rounded-xl bg-surface-container-high/80 backdrop-blur-md border border-outline-variant/30 shadow-sm"
             >
               <Download className="w-4 h-4" />
               {t('calendar.subscribe')}
             </Button>
           </div>
-        }
-      />
-      <NotizschluesselHinweis />
+        </div>
 
-      {/* Kategorie Filter Leiste */}
+        <NotizschluesselHinweis />
+
+        {/* Kategorie Filter Leiste */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
         <button
           type="button"
@@ -1863,6 +1893,7 @@ export function Calendar() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

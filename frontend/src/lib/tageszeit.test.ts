@@ -21,9 +21,21 @@ describe('tageszeit', () => {
     }
   })
 
-  it('wählt zu jeder Stunde eine Szene mit Bild', () => {
+  it('wählt zu jeder Stunde eine Szene mit atmosphärischem Bild (ohne Browser-Hintergründe)', () => {
     for (let stunde = 0; stunde < 24; stunde++) {
-      expect(headerHintergrundWaehlen(stunde, 3).pfad).toMatch(/^\/hintergruende\//)
+      const standard = headerHintergrundWaehlen(stunde, 3)
+      expect(standard.pfad).toMatch(/^\/assets\/(singra|teams)\//)
+      expect(standard.pfad.startsWith('/hintergruende/')).toBe(false)
+
+      const teams = headerHintergrundWaehlen(stunde, undefined, 'teams')
+      expect(teams.pfad).toMatch(/^\/assets\/teams\/teams-bg-/)
+      expect(teams.pfad.startsWith('/hintergruende/')).toBe(false)
+
+      for (const bereich of ['dashboard', 'calendar', 'notes', 'docs'] as const) {
+        const szene = headerHintergrundWaehlen(stunde, undefined, bereich)
+        expect(szene.pfad).toMatch(/^\/assets\/(singra|teams)\//)
+        expect(szene.pfad.startsWith('/hintergruende/')).toBe(false)
+      }
     }
   })
 })

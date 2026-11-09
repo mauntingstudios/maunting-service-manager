@@ -1,28 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowUpRight, Bot, Brain, Sparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 
 import { teamsApi, type Team } from '@/api/teams'
-import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
-import { AiSkillManager } from '@/components/ai/AiSkillManager'
+import { AiKnowledgeWorkspace, type AiKnowledgeSection } from '@/components/ai/AiKnowledgeWorkspace'
 import { AiUsageCard } from '@/components/ai/AiUsageCard'
-import { TabBar, TabDef } from '@maunting/ui'
 import { useHasPermission } from '@/hooks/useHasPermission'
 
-export type AiTabSection = 'memory' | 'skills'
+export type { AiKnowledgeSection as AiTabSection }
 
 /**
  * Der persönliche KI-Bereich im Profil.
  *
- * Beherbergt alles, was dem Benutzer selbst gehört:
- * - Sein persönliches Gedächtnis (AiMemoryManager)
- * - Seine persönlichen KI-Skills (gebunden an sein persönliches Team)
- * - Sein individuelles KI-Nutzungskontingent (AiUsageCard)
- *
- * Beide Wissensbereiche (Gedächtnis & Skills) sind per Tab sauber getrennt,
- * sodass man direkt zu den Skills springen kann, ohne erst an endlosen
- * Erinnerungen vorbeiscrollen zu müssen.
+ * Nutzt die zentrale, modulare AiKnowledgeWorkspace-Komponente,
+ * sodass persönliches Wissen und Team-Wissen exakt dieselbe
+ * saubere Tab-Struktur und Design-DNA teilen.
  */
 export function AiTab() {
   const { t } = useTranslation()
@@ -30,18 +22,11 @@ export function AiTab() {
   const [personalTeam, setPersonalTeam] = useState<Team | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const tabs: TabDef<AiTabSection>[] = useMemo(() => [
-    { id: 'memory', labelKey: 'ai.profile.tabMemory', icon: Brain },
-    ...(canUseSkills && personalTeam
-      ? [{ id: 'skills' as const, labelKey: 'ai.profile.tabSkills', icon: Sparkles }]
-      : []),
-  ], [canUseSkills, personalTeam])
-
   const sectionParam = searchParams.get('section')
-  const activeSection: AiTabSection =
+  const activeSection: AiKnowledgeSection =
     sectionParam === 'skills' && canUseSkills && personalTeam ? 'skills' : 'memory'
 
-  const handleTabChange = (next: AiTabSection) => {
+  const handleTabChange = (next: AiKnowledgeSection) => {
     const nextParams = new URLSearchParams(searchParams)
     if (next === 'skills') {
       nextParams.set('section', 'skills')
@@ -69,60 +54,21 @@ export function AiTab() {
   }, [canUseSkills])
 
   return (
-    <section className="space-y-6" aria-labelledby="ai-profile-title">
-      <div className="msm-card p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-secondary" aria-hidden="true" />
-            <h2 id="ai-profile-title" className="font-headline text-title-lg font-semibold text-on-surface">
-              {t('ai.profile.title')}
-            </h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              to="/ai?bereich=wissen"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface hover:border-primary/40 transition-colors"
-            >
-              <span>In Singra Wissen öffnen</span>
-              <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
-            </Link>
-            <Link
-              to="/ai?bereich=erinnerungen"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface hover:border-primary/40 transition-colors"
-            >
-              <span>In Singra Erinnerungen öffnen</span>
-              <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
-            </Link>
-          </div>
-        </div>
-        <p className="mt-2 max-w-3xl text-sm text-on-surface-variant">
-          {t('ai.profile.description')}
-        </p>
-      </div>
-
-      <AiUsageCard />
-
-      {tabs.length > 1 && (
-        <TabBar
-          tabs={tabs}
-          active={activeSection}
-          onChange={handleTabChange}
-          ariaLabel={t('ai.profile.title')}
-        />
-      )}
-
-      {activeSection === 'memory' && <AiMemoryManager />}
-
-      {activeSection === 'skills' && personalTeam && (
-        <AiSkillManager
-          scope={{
-            kind: 'team',
-            teamId: personalTeam.id,
-            personal: true,
-            canManage: personalTeam.can_manage_skills ?? true,
-          }}
-        />
-      )}
-    </section>
+    <AiKnowledgeWorkspace
+      title={t('ai.profile.title')}
+      description={t('ai.profile.description')}
+      memoryScope={{ kind: 'user' }}
+      skillScope={personalTeam ? {
+        kind: 'team',
+        teamId: personalTeam.id,
+        personal: true,
+        canManage: personalTeam.can_manage_skills ?? true,
+      } : null}
+      canUseSkills={canUseSkills}
+      topContent={<AiUsageCard />}
+      activeSection={activeSection}
+      onSectionChange={handleTabChange}
+    />
   )
 }
+

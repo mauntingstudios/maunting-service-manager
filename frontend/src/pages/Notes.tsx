@@ -26,7 +26,9 @@ import { Button } from '@maunting/ui'
 import { Switch } from '@maunting/ui'
 import { teamsApi, type Team } from '@/api/teams'
 import { Spinner } from '@maunting/ui'
-import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
+import { useAuthStore } from '@/stores/authStore'
 import { NotizschluesselHinweis } from '@/components/notes/NotizschluesselHinweis'
 import {
   loadNotesOfflineFirst,
@@ -84,6 +86,18 @@ function InlineMarkdown({ text, strikethrough }: { text: string; strikethrough?:
 
 export function Notes() {
   const { t } = useTranslation()
+  const user = useAuthStore((s) => s.user)
+  const [jetzt] = useState(() => new Date())
+  const stunde = jetzt.getHours()
+  const zufall = useMemo(() => tagesSeed(jetzt), [jetzt])
+  const headerMotiv = useMemo(
+    () => headerHintergrundWaehlen(stunde, zufall, 'notes'),
+    [stunde, zufall]
+  )
+  const begruessung = user?.username
+    ? t(begruessungSchluessel(stunde, false, zufall), { name: user.username })
+    : t('common.begruessung.ohneName')
+
   const [notes, setNotes] = useState<NoteItem[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [loading, setLoading] = useState(true)
@@ -302,6 +316,19 @@ export function Notes() {
     })
   }, [notes, showArchived, selectedCategory, selectedType, searchQuery])
 
+  const { pinnedNotes, otherNotes } = useMemo(() => {
+    const pinned: NoteItem[] = []
+    const others: NoteItem[] = []
+    for (const note of filteredNotes) {
+      if (note.is_pinned && !showArchived) {
+        pinned.push(note)
+      } else {
+        others.push(note)
+      }
+    }
+    return { pinnedNotes: pinned, otherNotes: others }
+  }, [filteredNotes, showArchived])
+
   const categoryOptions: DropdownOption[] = [
     { value: 'all', label: t('notes.categories.all') },
     { value: 'personal', label: t('notes.categories.personal') },
@@ -337,15 +364,172 @@ export function Notes() {
     label: team.name,
   }))
 
+  const renderNoteCard = (note: NoteItem) => {
+    const theme = farbwahl(note.color)
+    const lines = (note.content || '').split('\n')
+    let checkCounter = 0
+
+    return (
+      <div
+        key={note.id}
+        onClick={() => openEditModal(note)}
+        className={`group relative flex flex-col justify-between rounded-2xl sm:rounded-3xl border transition-all duration-200 cursor-pointer overflow-hidden p-4 sm:p-5 backdrop-blur-md ${theme.flaeche} ${theme.rand} hover:shadow-lg hover:border-outline/50 hover:-translate-y-0.5 active:scale-[0.99]`}
+      >
+        {/* Header mit Kategorie, Team und Pin-Button */}
+        <div>
+          <div className="flex items-start justify-between gap-2 mb-2.5">
+            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+              <span className={`text-label-sm font-semibold px-2.5 py-0.5 rounded-full border truncate shadow-sm ${theme.pille}`}>
+                {note.category === 'shopping'
+                  ? 'Einkauf'
+                  : note.category === 'todo'
+                  ? 'To-Do'
+                  : note.category === 'work'
+                  ? 'Server'
+                  : note.category === 'idea'
+                  ? 'Idee'
+                  : note.category === 'meeting'
+                  ? 'Meeting'
+                  : 'Notiz'}
+              </span>
+
+              {note.note_type === 'team' && (
+                <span className="text-label-sm font-semibold px-2.5 py-0.5 rounded-full bg-status-success/20 text-status-success border border-status-success/30 flex items-center gap-1 shadow-sm">
+                  <Users className="w-3 h-3" />
+                  <span className="truncate max-w-[90px]">{note.team_name || 'Team'}</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <Kurzinfo text={note.is_pinned ? t('notes.unpin') : t('notes.pin')} seite="ende" portal>
+                <button
+                  type="button"
+                  onClick={(e) => handleTogglePin(note, e)}
+                  aria-label={note.is_pinned ? t('notes.unpin') : t('notes.pin')}
+                  className={`p-2 rounded-xl transition-all active:scale-90 ${
+                    note.is_pinned
+                      ? 'text-primary bg-primary/20 hover:bg-primary/30 shadow-sm'
+                      : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high/80'
+                  }`}
+                >
+                  {note.is_pinned ? <Pin className="w-3.5 h-3.5 fill-primary" /> : <Pin className="w-3.5 h-3.5" />}
+                </button>
+              </Kurzinfo>
+            </div>
+          </div>
+
+          <h4 className="font-headline text-base font-bold text-on-surface mb-2.5 line-clamp-2 leading-snug tracking-tight">
+            {note.title}
+          </h4>
+
+          {/* Content Preview & Interactive Checklist */}
+          <div className="space-y-1.5 text-xs text-on-surface-variant line-clamp-6 mb-3.5">
+            {lines.map((line, idx) => {
+              const isUnchecked = line.trimStart().startsWith('- [ ]')
+              const isChecked = line.trimStart().startsWith('- [x]') || line.trimStart().startsWith('- [X]')
+
+              if (isUnchecked || isChecked) {
+                const itemIdx = checkCounter++
+                const itemText = line.replace(/^[ \t]*- \[[ xX]\][ \t]*/, '')
+                return (
+                  <div
+                    key={idx}
+                    onClick={(e) => handleToggleCheckItem(note, itemIdx, e)}
+                    className="flex items-start gap-2.5 py-1 px-2 rounded-xl hover:bg-surface-container-high/60 active:bg-surface-container-high transition-colors cursor-pointer min-h-[30px]"
+                  >
+                    {isChecked ? (
+                      <CheckSquare className="w-4 h-4 text-status-success shrink-0 mt-0.5" />
+                    ) : (
+                      <Square className="w-4 h-4 text-on-surface-variant/80 shrink-0 mt-0.5" />
+                    )}
+                    <InlineMarkdown text={itemText} strikethrough={isChecked} />
+                  </div>
+                )
+              }
+
+              if (!line.trim()) return <div key={idx} className="h-1.5" />
+
+              return (
+                <div key={idx} className="line-clamp-2 text-on-surface-variant leading-relaxed">
+                  <InlineMarkdown text={line} />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Card Footer */}
+        <div className="flex items-center justify-between pt-2.5 border-t border-outline-variant/20 text-label-sm text-on-surface-variant/80 mt-auto">
+          <span className="font-medium text-xs text-on-surface-variant/70">
+            {new Date(note.updated_at || note.created_at).toLocaleDateString('de-DE', {
+              day: '2-digit',
+              month: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+
+          <div className="flex items-center gap-1">
+            <Kurzinfo text={note.is_archived ? t('notes.unarchive') : t('notes.archive')} portal>
+              <button
+                type="button"
+                onClick={(e) => handleToggleArchive(note, e)}
+                aria-label={note.is_archived ? t('notes.unarchive') : t('notes.archive')}
+                className="p-1.5 text-on-surface-variant hover:text-on-surface rounded-xl hover:bg-surface-container-high transition-all active:scale-95"
+              >
+                {note.is_archived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+              </button>
+            </Kurzinfo>
+
+            <Kurzinfo text={t('common.delete')} seite="ende" portal>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleDelete(note)
+                }}
+                aria-label={t('common.delete')}
+                className="p-1.5 text-status-destructive hover:text-status-destructive/80 rounded-xl hover:bg-status-destructive/15 transition-all active:scale-95"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </Kurzinfo>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-3.5">
-      {/* ── Kopfzeile: Atmosphärische Tageszeit-Begrüßung, Zähler & Erstellen ── */}
-      <TageszeitBanner
-        bereich={t('notes.title')}
-        icon={<StickyNote className="h-3.5 w-3.5" aria-hidden="true" />}
-        actions={
-          <>
-            <span className="text-label-sm font-medium px-2.5 py-1 rounded-full bg-surface-container-high/85 text-on-surface-variant border border-outline-variant/30 shrink-0 backdrop-blur-md">
+    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
+      {/* Weicher atmosphärischer Tageszeit-Hintergrund für Notizen */}
+      <TageszeitHintergrund
+        motiv={headerMotiv}
+        hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+        deckkraft="opacity-55"
+        ebene="-z-10"
+        verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
+      />
+
+      <div className="relative z-10 w-full max-w-7xl 2xl:max-w-[1600px] mx-auto px-3.5 py-4 sm:px-6 sm:py-6 lg:px-8 space-y-5 sm:space-y-6 pb-16">
+        {/* Freischwebender Notizen-Header mit Tageszeit-Begrüßung, Zähler und Aktion */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+              <StickyNote className="h-4 w-4" aria-hidden="true" />
+              <span>{t('notes.title')}</span>
+            </div>
+            <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+              {begruessung}
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">
+              {t('notes.subtitle', { defaultValue: 'Gedanken, Checklisten und Team-Dokumente im Blick behalten.' })}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <span className="text-label-sm font-semibold px-3 py-1 rounded-full bg-surface-container-high/85 text-on-surface-variant border border-outline-variant/30 shrink-0 backdrop-blur-md shadow-sm">
               {filteredNotes.length}
             </span>
             <Button
@@ -356,83 +540,81 @@ export function Notes() {
               <span className="hidden sm:inline">{t('notes.newNote')}</span>
               <span className="sm:hidden">{t('notes.newNoteShort')}</span>
             </Button>
-          </>
-        }
-      />
+          </div>
+        </div>
 
-      <NotizschluesselHinweis />
+        <NotizschluesselHinweis />
 
-      {/* ── Werkzeugleiste: Suche & Filter ── */}
-      <div className="flex flex-col gap-2.5 bg-surface-container-low/80 border border-outline-variant/30 rounded-2xl p-2.5 sm:p-3 shadow-sm backdrop-blur-sm">
-        {/* Suche */}
-        <div className="relative w-full">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('notes.searchPlaceholder')}
-            className="msm-input pl-9 pr-8"
-          />
-          {searchQuery && (
+        {/* ── Werkzeugleiste: Suche & Filter ── */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('notes.searchPlaceholder')}
+              className="msm-input pl-10 pr-9 py-2 text-sm bg-surface-container/70 hover:bg-surface-container/90 focus:bg-surface-container border border-outline-variant/30 backdrop-blur-md transition-colors rounded-xl w-full shadow-sm"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-on-surface-variant hover:text-on-surface rounded-lg transition-colors"
+                aria-label={t('common.clear')}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Dropdown Filters für kompakte Breiten & Barrierefreiheit */}
+          <div className="flex items-center gap-2 overflow-x-auto msm-ohne-rollbalken py-0.5 shrink-0">
+            <div className="w-36 sm:w-44 shrink-0">
+              <Dropdown
+                value={selectedCategory}
+                onChange={setSelectedCategory}
+                options={categoryOptions}
+                aria-label={t('notes.categories.all')}
+              />
+            </div>
+
+            <div className="w-32 sm:w-40 shrink-0">
+              <Dropdown
+                value={selectedType}
+                onChange={setSelectedType}
+                options={typeOptions}
+                aria-label={t('notes.types.all')}
+              />
+            </div>
+
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-on-surface-variant hover:text-on-surface rounded-lg"
-              aria-label={t('common.clear')}
+              onClick={() => setShowArchived(!showArchived)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border backdrop-blur-md transition-all whitespace-nowrap shrink-0 active:scale-95 ${
+                showArchived
+                  ? 'bg-status-warning/20 text-status-warning border-status-warning/40 shadow-sm'
+                  : 'bg-surface-container-high/80 text-on-surface-variant border-outline-variant/30 hover:text-on-surface hover:bg-surface-container shadow-sm'
+              }`}
             >
-              <X className="w-3.5 h-3.5" />
+              <Archive className="w-3.5 h-3.5" />
+              <span>{showArchived ? t('notes.archivedView') : t('common.active')}</span>
             </button>
-          )}
-        </div>
-
-        {/* Untere Leiste: Filter */}
-        <div className="flex items-center gap-2 overflow-x-auto msm-ohne-rollbalken py-0.5">
-          <div className="w-36 sm:w-44 shrink-0">
-            <Dropdown
-              value={selectedCategory}
-              onChange={setSelectedCategory}
-              options={categoryOptions}
-              aria-label={t('notes.categories.all')}
-            />
           </div>
-
-          <div className="w-32 sm:w-40 shrink-0">
-            <Dropdown
-              value={selectedType}
-              onChange={setSelectedType}
-              options={typeOptions}
-              aria-label={t('notes.types.all')}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowArchived(!showArchived)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border transition-colors whitespace-nowrap shrink-0 ${
-              showArchived
-                ? 'bg-status-warning/20 text-status-warning border-status-warning/40 font-semibold'
-                : 'bg-surface-container text-on-surface-variant border-outline-variant/30 hover:text-on-surface'
-            }`}
-          >
-            <Archive className="w-3.5 h-3.5" />
-            <span>{showArchived ? t('notes.archivedView') : t('common.active')}</span>
-          </button>
         </div>
-      </div>
 
       {/* Grid of Notes */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5 sm:gap-4">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
             <div
               key={i}
-              className="h-44 rounded-2xl bg-surface-container-low border border-outline-variant/20 animate-pulse"
+              className="h-44 rounded-2xl bg-surface-container-low/80 border border-outline-variant/20 animate-pulse"
             />
           ))}
         </div>
       ) : filteredNotes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 px-4 bg-surface-container-low/60 border border-outline-variant/20 rounded-2xl text-center">
+        <div className="flex flex-col items-center justify-center py-12 px-4 bg-surface-container-low/60 border border-outline-variant/20 rounded-2xl text-center backdrop-blur-md">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-3">
             <StickyNote className="w-6 h-6" />
           </div>
@@ -452,144 +634,37 @@ export function Notes() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-          {filteredNotes.map((note) => {
-            const theme = farbwahl(note.color)
-            const lines = (note.content || '').split('\n')
-            let checkCounter = 0
-
-            return (
-              <div
-                key={note.id}
-                onClick={() => openEditModal(note)}
-                className={`group relative flex flex-col justify-between rounded-2xl border transition-all duration-200 cursor-pointer overflow-hidden p-3.5 sm:p-4 ${theme.flaeche} ${theme.rand} hover:shadow-md hover:border-outline/50 active:scale-[0.99]`}
-              >
-                {/* Header */}
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                      <span className={`text-label-sm font-semibold px-2 py-0.5 rounded-full border truncate ${theme.pille}`}>
-                        {note.category === 'shopping'
-                          ? 'Einkauf'
-                          : note.category === 'todo'
-                          ? 'To-Do'
-                          : note.category === 'work'
-                          ? 'Server'
-                          : note.category === 'idea'
-                          ? 'Idee'
-                          : note.category === 'meeting'
-                          ? 'Meeting'
-                          : 'Notiz'}
-                      </span>
-                      {note.note_type === 'team' && (
-                        <span className="text-label-sm font-semibold px-2 py-0.5 rounded-full bg-status-success/20 text-status-success border border-status-success/30 flex items-center gap-1">
-                          <Users className="w-3 h-3" />
-                          <span className="truncate max-w-[90px]">{note.team_name || 'Team'}</span>
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Kurzinfo text={note.is_pinned ? t('notes.unpin') : t('notes.pin')} seite="ende" portal>
-                        <button
-                          type="button"
-                          onClick={(e) => handleTogglePin(note, e)}
-                          aria-label={note.is_pinned ? t('notes.unpin') : t('notes.pin')}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            note.is_pinned
-                              ? 'text-primary bg-primary/20 hover:bg-primary/30'
-                              : 'text-on-surface-variant/60 hover:text-on-surface hover:bg-surface-container-high'
-                          }`}
-                        >
-                          {note.is_pinned ? <Pin className="w-3.5 h-3.5 fill-primary" /> : <Pin className="w-3.5 h-3.5" />}
-                        </button>
-                      </Kurzinfo>
-                    </div>
-                  </div>
-
-                  <h4 className="font-headline text-sm sm:text-base font-semibold text-on-surface mb-2 line-clamp-2 leading-snug">
-                    {note.title}
-                  </h4>
-
-                  {/* Content Preview & Interactive Checklist */}
-                  <div className="space-y-1 text-xs text-on-surface-variant line-clamp-6 mb-3">
-                    {lines.map((line, idx) => {
-                      const isUnchecked = line.trimStart().startsWith('- [ ]')
-                      const isChecked = line.trimStart().startsWith('- [x]') || line.trimStart().startsWith('- [X]')
-
-                      if (isUnchecked || isChecked) {
-                        const itemIdx = checkCounter++
-                        const itemText = line.replace(/^[ \t]*- \[[ xX]\][ \t]*/, '')
-                        return (
-                          <div
-                            key={idx}
-                            onClick={(e) => handleToggleCheckItem(note, itemIdx, e)}
-                            className="flex items-start gap-2 py-1 px-1.5 rounded-lg hover:bg-surface-container-high/50 active:bg-surface-container-high/70 transition-colors cursor-pointer min-h-[26px]"
-                          >
-                            {isChecked ? (
-                              <CheckSquare className="w-3.5 h-3.5 text-status-success shrink-0 mt-0.5" />
-                            ) : (
-                              <Square className="w-3.5 h-3.5 text-on-surface-variant shrink-0 mt-0.5" />
-                            )}
-                            <InlineMarkdown text={itemText} strikethrough={isChecked} />
-                          </div>
-                        )
-                      }
-
-                      if (!line.trim()) return <div key={idx} className="h-1.5" />
-
-                      return (
-                        <div key={idx} className="line-clamp-2 text-on-surface-variant leading-relaxed">
-                          <InlineMarkdown text={line} />
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Card Footer */}
-                <div className="flex items-center justify-between pt-2 border-t border-outline-variant/20 text-label-sm text-on-surface-variant/80 mt-auto">
-                  <span>
-                    {new Date(note.updated_at || note.created_at).toLocaleDateString('de-DE', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-
-                  <div className="flex items-center gap-1">
-                    {/* Die Karte hat `overflow-hidden`; ohne Portal schnitte sie
-                        den Hinweis unten ab, statt ihn ganz zu zeigen. */}
-                    <Kurzinfo text={note.is_archived ? t('notes.unarchive') : t('notes.archive')} portal>
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleArchive(note, e)}
-                        aria-label={note.is_archived ? t('notes.unarchive') : t('notes.archive')}
-                        className="p-1.5 text-on-surface-variant hover:text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"
-                      >
-                        {note.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-                      </button>
-                    </Kurzinfo>
-
-                    <Kurzinfo text={t('common.delete')} seite="ende" portal>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void handleDelete(note)
-                        }}
-                        aria-label={t('common.delete')}
-                        className="p-1.5 text-status-destructive hover:text-status-destructive/80 rounded-lg hover:bg-status-destructive/10 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </Kurzinfo>
-                  </div>
-                </div>
+        <div className="space-y-6">
+          {pinnedNotes.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-primary mb-3 px-1">
+                <Pin className="w-3.5 h-3.5 fill-primary" />
+                <span>{t('notes.pinnedNotes', { defaultValue: 'Angepinnt' })}</span>
+                <span className="ml-1 text-label-sm font-semibold px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/20">
+                  {pinnedNotes.length}
+                </span>
               </div>
-            )
-          })}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5 sm:gap-4">
+                {pinnedNotes.map((note) => renderNoteCard(note))}
+              </div>
+            </div>
+          )}
+
+          {otherNotes.length > 0 && (
+            <div>
+              {pinnedNotes.length > 0 && (
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant mb-3 px-1">
+                  <span>{t('notes.otherNotes', { defaultValue: 'Weitere Notizen' })}</span>
+                  <span className="ml-1 text-label-sm font-semibold px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant border border-outline-variant/30">
+                    {otherNotes.length}
+                  </span>
+                </div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5 sm:gap-4">
+                {otherNotes.map((note) => renderNoteCard(note))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -603,20 +678,21 @@ export function Notes() {
           onClick={() => setIsModalOpen(false)}
         >
           <div
-            className="w-full max-w-xl bg-surface-container-low border border-outline-variant/30 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            className="w-full max-w-xl bg-surface-container-low/95 backdrop-blur-2xl border border-outline-variant/30 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:rounded-none max-h-[92vh]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/30">
-              <h3 className="font-headline text-title-lg font-semibold text-on-surface">
+            <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-outline-variant/30">
+              <h3 className="font-headline text-lg sm:text-title-lg font-bold text-on-surface">
                 {editingNote ? t('notes.editNote') : t('notes.createNote')}
               </h3>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="p-1.5 text-on-surface-variant hover:text-on-surface rounded-xl hover:bg-surface-container-high transition-colors"
+                className="grid h-9 w-9 place-items-center rounded-full bg-surface-container-high/80 border border-outline-variant/30 hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-all active:scale-95"
+                aria-label={t('common.close', { defaultValue: 'Schließen' })}
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -832,7 +908,7 @@ export function Notes() {
               </div>
 
               {/* Modal Footer */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-outline-variant/30">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-outline-variant/30 pb-[calc(var(--msm-unten-sicher,0px)+0.5rem)]">
                 <Button
                   type="button"
                   variant="secondary"
@@ -851,6 +927,7 @@ export function Notes() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

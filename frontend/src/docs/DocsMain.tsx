@@ -1,10 +1,11 @@
-import type { MutableRefObject } from 'react'
+import { useState, useMemo, type MutableRefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileText, Menu, Plus } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 
 import { Button, Kurzinfo, Zustandsflaeche } from '@maunting/ui'
-import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
 import type { DocDetail, UploadGrenzen } from '@/api/docs'
 import { DocEditor } from './DocEditor'
 import type { OutlineEntry } from './editor/Outline'
@@ -32,6 +33,9 @@ interface DocsMainProps {
   onOutlineChange: (eintraege: OutlineEntry[]) => void
 }
 
+const rundknopf =
+  'flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95'
+
 /** Kopfzeile und Editor mit seinen Ladezuständen (Befund 21). */
 export function DocsMain({
   uid,
@@ -53,6 +57,17 @@ export function DocsMain({
   onOutlineChange,
 }: DocsMainProps) {
   const { t } = useTranslation()
+  const [jetzt] = useState(() => new Date())
+  const stunde = jetzt.getHours()
+  const zufall = useMemo(() => tagesSeed(jetzt), [jetzt])
+  const headerMotiv = useMemo(
+    () => headerHintergrundWaehlen(stunde, zufall, 'docs'),
+    [stunde, zufall]
+  )
+  const begruessung = userName
+    ? t(begruessungSchluessel(stunde, false, zufall), { name: userName })
+    : t('common.begruessung.ohneName')
+
   const fehlerTitel = offlineOhneKopie
     ? t('docs.offline.noCopyTitle')
     : detailFehler?.code
@@ -73,19 +88,31 @@ export function DocsMain({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-outline-variant/40 bg-surface-container/85 px-3 py-2 backdrop-blur-xl md:hidden">
+      <div className="relative z-30 flex shrink-0 items-center gap-2.5 border-b border-outline-variant/30 bg-surface-container-lowest/80 px-3 pt-[calc(var(--msm-oben-sicher,0px)+0.5rem)] pb-2.5 backdrop-blur-xl md:hidden">
         <Kurzinfo text={t('docs.tree.open')}>
-          <Button variant="ghost" size="sm" onClick={() => setTreeOffen(true)} aria-label={t('docs.tree.open')}>
+          <button
+            type="button"
+            onClick={() => setTreeOffen(true)}
+            aria-label={t('docs.tree.open')}
+            className={rundknopf}
+          >
             <Menu className="h-4 w-4" />
-          </Button>
+          </button>
         </Kurzinfo>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface">
-          {detail?.title ?? t('docs.title')}
-        </span>
+        <div className="flex min-w-0 flex-1 flex-col justify-center">
+          <span className="truncate font-headline text-sm font-semibold text-on-surface">
+            {detail?.title ?? t('docs.title')}
+          </span>
+        </div>
         <Kurzinfo text={t('docs.new')}>
-          <Button variant="primary" size="sm" onClick={() => void neueDokument()} aria-label={t('docs.new')}>
+          <button
+            type="button"
+            onClick={() => void neueDokument()}
+            aria-label={t('docs.new')}
+            className={rundknopf}
+          >
             <Plus className="h-4 w-4" />
-          </Button>
+          </button>
         </Kurzinfo>
       </div>
 
@@ -96,24 +123,52 @@ export function DocsMain({
           </div>
         )}
         {!fehler && !uid && (
-          <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6">
-            <TageszeitBanner
-              kompakt
-              bereich={t('docs.title')}
-              icon={<FileText className="h-3.5 w-3.5" aria-hidden="true" />}
-              untertitel={t('docs.list.emptyText')}
+          <div className="relative isolate flex flex-1 flex-col overflow-y-auto">
+            {/* Weicher atmosphärischer Tageszeit-Hintergrund für Docs */}
+            <TageszeitHintergrund
+              motiv={headerMotiv}
+              hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+              deckkraft="opacity-55"
+              ebene="-z-10"
+              verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
             />
-            <div className="flex flex-1 items-center justify-center py-4">
-              <Zustandsflaeche
-                art="leer"
-                titel={t('docs.list.emptyTitle')}
-                text={t('docs.list.emptyText')}
-              >
-                <Button onClick={() => void neueDokument()}>
-                  <Plus className="mr-1 h-4 w-4" />
-                  {t('docs.new')}
-                </Button>
-              </Zustandsflaeche>
+
+            <div className="relative z-10 flex flex-1 flex-col p-4 sm:p-6 space-y-6">
+              {/* Freischwebender Docs-Header mit Tageszeit-Begrüßung und Aktion */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+                    <FileText className="h-4 w-4" aria-hidden="true" />
+                    <span>{t('docs.title')}</span>
+                  </div>
+                  <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+                    {begruessung}
+                  </h1>
+                  <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">
+                    {t('docs.list.emptyText')}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button onClick={() => void neueDokument()} className="gap-1.5 rounded-xl font-medium shadow-sm">
+                    <Plus className="w-4 h-4" />
+                    <span>{t('docs.new')}</span>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-1 items-center justify-center py-6">
+                <Zustandsflaeche
+                  art="leer"
+                  titel={t('docs.list.emptyTitle')}
+                  text={t('docs.list.emptyText')}
+                >
+                  <Button onClick={() => void neueDokument()}>
+                    <Plus className="mr-1 h-4 w-4" />
+                    {t('docs.new')}
+                  </Button>
+                </Zustandsflaeche>
+              </div>
             </div>
           </div>
         )}

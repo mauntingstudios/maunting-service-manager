@@ -17,7 +17,8 @@ export function SingraMemoryView() {
       .list()
       .then((rows) => {
         if (!active) return
-        setSharedTeams(rows.filter((r) => !r.is_personal))
+        // Nur Teams anzeigen, bei denen der Benutzer berechtigt ist
+        setSharedTeams(rows.filter((r) => !r.is_personal && (r.is_owner || r.can_manage_memory)))
       })
       .catch(() => undefined)
       .finally(() => {

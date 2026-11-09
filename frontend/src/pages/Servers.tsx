@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
@@ -13,7 +13,8 @@ import { PostgresCredentialsDialog } from '@/components/server/PostgresCredentia
 import { Badge } from '@maunting/ui'
 import { Dropdown } from '@maunting/ui'
 import { TabBar } from '@maunting/ui'
-import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { headerHintergrundWaehlen } from '@/lib/tageszeit'
 import { Button, Checkbox, Input, Kurzinfo, Switch } from '@maunting/ui'
 import { PasswordInput } from '@maunting/ui'
 import { Spinner } from '@maunting/ui'
@@ -34,7 +35,7 @@ function splitCidrs(text: string): string[] {
   return text.split(/[\s,;]+/).map((part) => part.trim()).filter(Boolean)
 }
 
-export function Servers() {
+export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const canCreateServer = useHasPermission('servers.create')
@@ -44,6 +45,9 @@ export function Servers() {
   const [nodes, setNodes] = useState<Node[]>([])
   const [activeTab, setActiveTab] = useState<'own' | 'customers'>('own')
   const [loading, setLoading] = useState(true)
+
+  const stunde = useMemo(() => new Date().getHours(), [])
+  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'dashboard'), [stunde])
   // Ohne dieses Flag wird aus einem fehlgeschlagenen Laden die Aussage
   // "Keine Server vorhanden" — der Betreiber liest, seine Server seien weg.
   const [loadError, setLoadError] = useState(false)
@@ -382,14 +386,38 @@ export function Servers() {
   }
 
   return (
-    <div className="msm-page">
-      <TageszeitBanner
-        bereich={t('nav.servers')}
-        icon={<ServerIcon className="h-3.5 w-3.5" aria-hidden="true" />}
-        untertitel={t('servers.subtitle')}
-        actions={
-          <>
-            <span className="msm-badge-info">
+    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
+      {!ohneHintergrund && (
+        <TageszeitHintergrund
+          motiv={headerMotiv}
+          hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+          deckkraft="opacity-55"
+          ebene="-z-10"
+          verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
+        />
+      )}
+
+      <main className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${ohneHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'} pb-12 sm:px-6 lg:px-8 space-y-6`}>
+        {/* Freischwebender Server-Header ohne doppelten Gruß oder Banner-Kasten */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+              <ServerIcon className="h-4 w-4" aria-hidden="true" />
+              <span>{t('nav.servers')}</span>
+            </div>
+            {!ohneHintergrund && (
+              <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+                {t('nav.servers')}
+              </h1>
+            )}
+            <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">
+              {t('servers.subtitle')}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border backdrop-blur-md shadow-sm bg-surface-container-high/80 border-outline-variant/30 text-on-surface-variant">
+              <ServerIcon className="h-3.5 w-3.5 text-primary" />
               {servers.length} {t('nav.servers')}
             </span>
             {canCreateServer && (
@@ -398,15 +426,14 @@ export function Servers() {
                   setShowCreate(true)
                   void loadNodes()
                 }}
-                className="flex min-h-11 items-center gap-2"
+                className="flex min-h-9 sm:min-h-10 items-center gap-2 rounded-xl shadow-sm"
               >
                 <Plus className="w-4 h-4" />
                 {t('servers.create')}
               </Button>
             )}
-          </>
-        }
-      />
+          </div>
+        </div>
 
       {loadError && (
         <div className="msm-card p-12 text-center border-dashed border-2 border-outline-variant">
@@ -438,6 +465,9 @@ export function Servers() {
           active={activeTab}
           onChange={setActiveTab}
           ariaLabel={t('nav.servers')}
+          embedded
+          einzeilig
+          className="backdrop-blur-md border border-outline-variant/30 shadow-sm bg-surface-container-low/60"
         />
       )}
 
@@ -857,6 +887,7 @@ export function Servers() {
           </div>
         </div>
       )}
+      </main>
       <PostgresCredentialsDialog credentials={oneTimeCredentials} onClose={() => setOneTimeCredentials([])} />
     </div>
   )

@@ -171,6 +171,9 @@ export const teamsApi = {
   create: (name: string) => api<Team>('/teams', {
     method: 'POST', body: JSON.stringify({ name }),
   }),
+  rename: (teamId: number, name: string) => api<Team>(`/teams/${teamId}`, {
+    method: 'PUT', body: JSON.stringify({ name }),
+  }),
   remove: (teamId: number) => api(`/teams/${teamId}`, { method: 'DELETE' }),
   /**
    * Lädt einen Benutzer ein. Mitglied wird er erst, wenn er annimmt — die

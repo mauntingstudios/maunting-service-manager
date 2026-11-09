@@ -53,6 +53,8 @@ interface TabBarProps<TId extends string> {
    * Namen der übrigen nennt eine Kurzinfo.
    */
   kompakt?: boolean
+  /** Zusätzliche CSS-Klassen für den äußeren Container */
+  className?: string
 }
 
 /**
@@ -60,7 +62,16 @@ interface TabBarProps<TId extends string> {
  * damit beide Seiten dasselbe Verhalten, dieselben i18n-Keys und dasselbe Design
  * teilen. Die Auswahl der Tabs liegt weiterhin in der jeweiligen Orchestrator-Komponente.
  */
-export function TabBar<TId extends string>({ tabs, active, onChange, ariaLabel, embedded = false, einzeilig = false, kompakt = false }: TabBarProps<TId>) {
+export function TabBar<TId extends string>({
+  tabs,
+  active,
+  onChange,
+  ariaLabel,
+  embedded = false,
+  einzeilig = false,
+  kompakt = false,
+  className = '',
+}: TabBarProps<TId>) {
   const { t } = useTranslation()
   const aktiverReiter = useRef<HTMLButtonElement | null>(null)
 
@@ -76,9 +87,9 @@ export function TabBar<TId extends string>({ tabs, active, onChange, ariaLabel, 
       role="tablist"
       aria-label={ariaLabel}
       data-msm-tabbar=""
-      className={`${embedded ? `rounded-lg bg-surface-container-low/50 ${kompakt ? 'p-0.5' : 'p-1'}` : 'msm-card p-2'} inline-flex flex-wrap ${kompakt ? 'gap-0.5' : 'gap-1'} ${
+      className={`${embedded ? `rounded-xl bg-surface-container-low/50 ${kompakt ? 'p-0.5' : 'p-1'}` : 'msm-card p-2'} inline-flex flex-wrap ${kompakt ? 'gap-0.5' : 'gap-1'} ${
         einzeilig ? 'max-md:flex max-md:w-full max-md:flex-nowrap max-md:overflow-x-auto msm-ohne-rollbalken' : ''
-      }`}
+      } ${className}`.trim()}
     >
       {tabs.map((tab, index) => {
         const Icon = tab.icon
@@ -101,7 +112,7 @@ export function TabBar<TId extends string>({ tabs, active, onChange, ariaLabel, 
               onChange(tab.id)
               if (einzeilig) e.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
             }}
-            className={`${kompakt ? `gap-1.5 px-2.5 py-1 text-xs [@media(pointer:coarse)]:min-h-11 ${nurSymbol ? 'max-md:px-1.5' : ''}` : 'gap-2 px-4 py-2 text-sm'} rounded-md font-medium inline-flex shrink-0 items-center transition-colors ${
+            className={`${kompakt ? `gap-1.5 px-2.5 py-1 text-xs [@media(pointer:coarse)]:min-h-11 ${nurSymbol ? 'max-md:px-1.5' : ''}` : 'gap-2 px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold'} rounded-lg inline-flex shrink-0 items-center justify-center transition-all ${
               einzeilig ? 'max-md:min-h-11' : ''
             } ${
               isActive

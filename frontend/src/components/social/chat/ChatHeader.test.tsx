@@ -39,7 +39,7 @@ describe('ChatHeader', () => {
     // Die Notch liegt am Telefon über dem Kopf. Der Abstand gehört in den
     // Header, damit dessen Hintergrund die Fläche dahinter ausfüllt.
     zeige()
-    expect(document.querySelector('header')).toHaveClass('pt-[var(--msm-oben-sicher)]')
+    expect(document.querySelector('header')).toHaveClass('pt-[calc(var(--msm-oben-sicher,0px)+0.5rem)]')
   })
 
   it('hält den Zurück-Pfeil am Telefon und blendet ihn am Rechner aus', () => {

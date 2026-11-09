@@ -19,6 +19,8 @@ import { TabBar, TabDef } from '@maunting/ui'
 import { ActionMenu, useZurueckSchliesst, ActionMenuItem } from '@maunting/ui'
 import { Bot } from 'lucide-react'
 import { DASHBOARD_SEITEN, dashboardElternroute } from './dashboardWege'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { headerHintergrundWaehlen } from '@/lib/tageszeit'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((modul) => ({ default: modul.Dashboard })))
 const Servers = lazy(() => import('@/pages/Servers').then((modul) => ({ default: modul.Servers })))
@@ -39,6 +41,9 @@ export function DashboardBereich() {
   const location = useLocation()
   const { items } = usePanelNavigation()
   const inhaltRef = useRef<HTMLDivElement>(null)
+
+  const stunde = useMemo(() => new Date().getHours(), [])
+  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'dashboard'), [stunde])
 
   const eltern = dashboardElternroute(location.pathname)
   // Unter Android beendet Zurück sonst die App: eine Unterseite bekommt einen
@@ -83,27 +88,47 @@ export function DashboardBereich() {
   })
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
-      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
-        <TabBar
-          tabs={tabs}
-          active={aktiv}
-          onChange={(ziel) => navigate(ziel)}
-          ariaLabel={t('mss.dashboard.bereiche')}
-          einzeilig
-        />
-        {mehrItems.length > 0 && (
-          <ActionMenu
-            label={t('mss.dashboard.mehr')}
-            items={mehrItems}
-            variant="ghost"
-            surface="dna"
-            compact
+    <div className="relative isolate flex h-full min-h-0 w-full flex-col overflow-hidden">
+      {/* Weicher atmosphärischer Tageszeit-Hintergrund geht direkt hinter die Menü-Punkte */}
+      <TageszeitHintergrund
+        motiv={headerMotiv}
+        hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+        deckkraft="opacity-55"
+        ebene="-z-10"
+        verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
+      />
+
+      {/* Freischwebende Menü-Reiter (Schwebe-Buttons) direkt über dem Hintergrund */}
+      <div className="relative z-20 flex shrink-0 items-center justify-between gap-2 px-3.5 sm:px-6 lg:px-8 pt-3 sm:pt-3.5 pb-1 max-w-7xl 2xl:max-w-[1600px] w-full mx-auto">
+        <div className="flex flex-1 items-center gap-2 min-w-0">
+          <TabBar
+            tabs={tabs}
+            active={aktiv}
+            onChange={(ziel) => navigate(ziel)}
+            ariaLabel={t('mss.dashboard.bereiche')}
+            einzeilig
+            embedded
           />
-        )}
+          {mehrItems.length > 0 && (
+            <ActionMenu
+              label={t('mss.dashboard.mehr')}
+              items={mehrItems}
+              variant="ghost"
+              surface="dna"
+              compact
+            />
+          )}
+        </div>
       </div>
 
-      <div ref={inhaltRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-6">
+      <div
+        ref={inhaltRef}
+        className={`min-h-0 flex-1 flex flex-col relative z-10 ${
+          location.pathname === '/' || location.pathname === '/servers'
+            ? 'overflow-hidden'
+            : 'overflow-y-auto overscroll-contain px-3.5 sm:px-6 lg:px-8 py-3 pb-8'
+        }`}
+      >
         <ErrorBoundary key={location.pathname} compact>
           <Suspense
             fallback={
@@ -113,8 +138,8 @@ export function DashboardBereich() {
             }
           >
             <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/servers" element={<Servers />} />
+              <Route path="/" element={<Dashboard ohneHintergrund />} />
+              <Route path="/servers" element={<Servers ohneHintergrund />} />
               <Route path="/servers/:id" element={<ServerDetail />} />
               <Route
                 path="/users"

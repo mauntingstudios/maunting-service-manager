@@ -17,6 +17,7 @@ vi.mock('@/api/teams', () => ({
     list: vi.fn(),
     get: vi.fn(),
     create: vi.fn(),
+    rename: vi.fn(),
     remove: vi.fn(),
     inviteMember: vi.fn(),
     updateMember: vi.fn(),
@@ -287,13 +288,10 @@ describe('Teams', () => {
     renderTeams()
     await zuTeams()
 
-    // „einmalmaik" ist der Name des persönlichen Teams. In der Liste, aus der
-    // man ein Team auswählt, hat es nichts verloren — es ist keins. (Derselbe
-    // Name steht daneben als Mitglied des echten Teams; deshalb wird hier
-    // gezielt die Liste geprüft und nicht die ganze Seite.)
-    const liste = await screen.findByRole('list', { name: 'Deine Teams' })
-    expect(within(liste).getByRole('button', { name: /Betrieb/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(liste).queryByText('einmalmaik')).not.toBeInTheDocument()
+    // „einmalmaik" ist der Name des persönlichen Teams. In der Team-Auswahl
+    // hat es nichts verloren — es ist keins.
+    expect(await screen.findByRole('heading', { name: 'Betrieb' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'einmalmaik' })).not.toBeInTheDocument()
   })
 
   it('zeigt die Mitglieder zuerst — Wissen und Server erst auf Klick', async () => {
@@ -322,34 +320,15 @@ describe('Teams', () => {
     expect(screen.queryByRole('tab', { name: /^Server/ })).not.toBeInTheDocument()
   })
 
-  it('zeigt beim echten Team beides — Gedächtnis und Skills', async () => {
+  it('erlaubt das Bearbeiten von Team-Name und Details', async () => {
+    vi.mocked(teamsApi.rename).mockResolvedValue({ ...real, name: 'Betrieb Neu' })
     renderTeams()
     await zuTeams()
     await screen.findByRole('heading', { name: 'Betrieb' })
-    fireEvent.click(screen.getByRole('tab', { name: 'KI-Wissen' }))
 
-    expect(await screen.findByLabelText('Wissen dieses Teams')).toBeInTheDocument()
-    expect(await screen.findByLabelText('Skills')).toBeInTheDocument()
-    // Der Leertext gehörte bis zum 27.09.2026 dem persönlichen Gedächtnis —
-    // unter einem Team stand „Noch keine persönlichen Memory-Einträge".
-    expect(await screen.findByText('Für dieses Team ist noch nichts gemerkt.')).toBeInTheDocument()
-    expect(screen.queryByText(/persönlichen Memory-Einträge/)).not.toBeInTheDocument()
-  })
-
-  it('zeigt keine Skills im Team ohne das Recht, sie zu benutzen', async () => {
-    usePermissionsStore.setState({
-      me: {
-        is_owner: false, role_id: null, role_name: null,
-        global_keys: ['teams.create', 'ai.memory.use'], server_keys: {},
-      },
-      isLoading: false, error: null,
-    })
-    renderTeams()
-
-    await screen.findByRole('heading', { name: 'Betrieb' })
-    fireEvent.click(await screen.findByRole('tab', { name: 'KI-Wissen' }))
-    await screen.findByLabelText('Wissen dieses Teams')
-    expect(screen.queryByLabelText('Skills')).not.toBeInTheDocument()
+    const editButtons = screen.getAllByLabelText('Team bearbeiten')
+    fireEvent.click(editButtons[0])
+    expect(await screen.findByDisplayValue('Betrieb')).toBeInTheDocument()
   })
 
   it('meldet eine Anhebung als Anfrage — nicht als Speicherung', async () => {

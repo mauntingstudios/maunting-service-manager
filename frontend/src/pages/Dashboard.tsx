@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { Server, GameInfo, NodeCapacitySummary } from '@/types'
 import { UpdateBanner } from '@/components/UpdateBanner'
 import { useHasPermission } from '@/hooks/useHasPermission'
+import { useAuthStore } from '@/stores/authStore'
 import {
   Server as ServerIcon,
   Activity,
@@ -18,7 +19,8 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import { UptimeDisplay } from '@/components/server/UptimeDisplay'
-import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
 import { ProgressBar, StackedProgressBar, Segment } from '@maunting/ui'
 import { Badge } from '@maunting/ui'
 
@@ -283,7 +285,7 @@ function SystemStatusCard() {
   )
 }
 
-export function Dashboard() {
+export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boolean } = {}) {
   const { t } = useTranslation()
   const canCreateServer = useHasPermission('servers.create')
   const [servers, setServers] = useState<Server[]>([])
@@ -307,6 +309,14 @@ export function Dashboard() {
       .finally(() => setLoading(false))
   }, [])
 
+  const user = useAuthStore((state) => state.user)
+  const stunde = useMemo(() => new Date().getHours(), [])
+  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'dashboard'), [stunde])
+  const tagesZaehler = useMemo(() => tagesSeed(), [])
+  const begruessung = user?.username
+    ? t(begruessungSchluessel(stunde, false, tagesZaehler), { name: user.username })
+    : t('common.begruessung.ohneName')
+
   const runningCount = servers.filter((s) => s.status === 'running').length
 
   if (loading) {
@@ -318,20 +328,50 @@ export function Dashboard() {
   }
 
   return (
-    <div className="msm-page">
-      <UpdateBanner />
-      <TageszeitBanner
-        bereich={t('dashboard.title')}
-        icon={<ServerIcon className="h-3.5 w-3.5" aria-hidden="true" />}
-        untertitel={t('dashboard.subtitle')}
-        actions={
-          <span className={runningCount > 0 ? 'msm-badge-success' : 'msm-badge-info'}>
-            {runningCount} {t('dashboard.running')}
-          </span>
-        }
-      />
+    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
+      {!ohneHintergrund && (
+        <TageszeitHintergrund
+          motiv={headerMotiv}
+          hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+          deckkraft="opacity-55"
+          ebene="-z-10"
+          verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
+        />
+      )}
 
-      {/* Stat Cards */}
+      <main className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${ohneHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'} pb-12 sm:px-6 lg:px-8 space-y-6`}>
+        <UpdateBanner />
+
+        {/* Freischwebender Dashboard-Header mit Begrüßung und Server-Status */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+              <ServerIcon className="h-4 w-4" aria-hidden="true" />
+              <span>{t('dashboard.title')}</span>
+            </div>
+            <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+              {begruessung}
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">
+              {t('dashboard.subtitle')}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border backdrop-blur-md shadow-sm ${
+                runningCount > 0
+                  ? 'bg-status-success/15 border-status-success/30 text-status-success'
+                  : 'bg-surface-container-high/80 border-outline-variant/30 text-on-surface-variant'
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${runningCount > 0 ? 'bg-status-success animate-pulse' : 'bg-on-surface-variant/50'}`} />
+              {runningCount} {t('dashboard.running')}
+            </span>
+          </div>
+        </div>
+
+        {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Server-Zähler */}
         <div className="msm-card p-5">
@@ -464,6 +504,7 @@ export function Dashboard() {
           ))}
         </div>
       )}
+      </main>
     </div>
   )
 }
