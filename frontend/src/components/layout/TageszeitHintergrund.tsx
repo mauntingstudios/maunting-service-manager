@@ -13,18 +13,18 @@ export interface TageszeitHintergrundProps {
 }
 
 const AUSLAUF =
-  'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.68) 50%, rgba(0,0,0,0.2) 80%, transparent 100%)'
+  'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.18) 75%, transparent 100%)'
 
 /**
  * Die drei Ebenen einer Tageszeit-Szene: Bild mit weichem Auslauf, farbige
- * Stimmung und Verlauf in die Oberfläche. Wird von Banner, Kulisse und
- * Tresor-Dashboard gemeinsam genutzt.
+ * Stimmung und Verlauf in die Oberfläche. Wird von Dashboard, Teams, Kalender,
+ * Notizen, Dokumenten und Kulisse gemeinsam genutzt.
  */
 export function TageszeitHintergrund({
   motiv,
-  hoehe = 'h-64',
-  deckkraft = 'opacity-40',
-  verlauf = 'bg-gradient-to-b from-surface/15 via-surface/65 to-surface',
+  hoehe = 'h-[500px] sm:h-[560px] lg:h-[620px]',
+  deckkraft = 'opacity-55',
+  verlauf = 'bg-gradient-to-b from-transparent via-surface/30 60% to-surface',
   ebene = '',
 }: TageszeitHintergrundProps) {
   return (
@@ -39,11 +39,17 @@ export function TageszeitHintergrund({
         }}
         aria-hidden="true"
       />
-      <div
-        className={`pointer-events-none absolute inset-x-0 top-0 ${ebene} ${hoehe}`}
-        style={{ background: motiv.ueberlagerung }}
-        aria-hidden="true"
-      />
+      {motiv.ueberlagerung && (
+        <div
+          className={`pointer-events-none absolute inset-x-0 top-0 ${ebene} ${hoehe}`}
+          style={{
+            background: motiv.ueberlagerung,
+            maskImage: AUSLAUF,
+            WebkitMaskImage: AUSLAUF,
+          }}
+          aria-hidden="true"
+        />
+      )}
       <div
         className={`pointer-events-none absolute inset-x-0 top-0 ${ebene} ${hoehe} ${verlauf}`}
         aria-hidden="true"

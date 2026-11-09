@@ -1523,10 +1523,9 @@ function Hauptseite({
           </div>
         </div>
       )}
-      {/* Hauptinhalt — KI, Tresor, Chat, Dokumente und Teams nehmen den ganzen Schirm (p-0), Kalender/Notizen zentrieren.
-          Nur KI und Chat tragen eine eigene Fläche (inkl. Hintergrundbild); Tresor, Dokumente und Teams
-          liegen wie Notizen und Kalender auf dem Raster des Fensters. */}
-      <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'chat' ? 'p-0 bg-surface' : bereich === 'tresor' || bereich === 'dokumente' || bereich === 'teams' ? 'p-0' : 'p-margin-mobile md:p-margin-desktop'}`}>
+      {/* Hauptinhalt — Dashboard, KI, Tresor, Chat, Dokumente, Kalender, Notizen und Teams füllen den Raum vollflächig (p-0).
+          Jede Seite bindet ihren atmosphärischen Hintergrund nahtlos bis zum oberen Rand ein. */}
+      <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'chat' ? 'p-0 bg-surface' : bereich === 'tresor' || bereich === 'dokumente' || bereich === 'teams' || bereich === 'kalender' || bereich === 'notizen' || bereich === 'dashboard' ? 'p-0' : 'p-margin-mobile md:p-margin-desktop'}`}>
         <div className="relative z-10 flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
           {bereich === 'dashboard' ? (
             <DashboardBereich />
@@ -1559,11 +1558,11 @@ function Hauptseite({
               <Benutzerprofil />
             </div>
           ) : bereich === 'kalender' ? (
-            <div className="mx-auto w-full max-w-6xl flex-1 min-h-0 overflow-y-auto pb-8">
+            <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
               <Calendar />
             </div>
           ) : bereich === 'notizen' ? (
-            <div className="mx-auto w-full max-w-6xl flex-1 min-h-0 overflow-y-auto pb-8">
+            <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
               <Notes />
             </div>
           ) : bereich === 'dokumente' ? (

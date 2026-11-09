@@ -33,6 +33,9 @@ interface DocsMainProps {
   onOutlineChange: (eintraege: OutlineEntry[]) => void
 }
 
+const rundknopf =
+  'flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95'
+
 /** Kopfzeile und Editor mit seinen Ladezuständen (Befund 21). */
 export function DocsMain({
   uid,
@@ -85,19 +88,31 @@ export function DocsMain({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-outline-variant/40 bg-surface-container/85 px-3 py-2 backdrop-blur-xl md:hidden">
+      <div className="relative z-30 flex shrink-0 items-center gap-2.5 border-b border-outline-variant/30 bg-surface-container-lowest/80 px-3 pt-[calc(var(--msm-oben-sicher,0px)+0.5rem)] pb-2.5 backdrop-blur-xl md:hidden">
         <Kurzinfo text={t('docs.tree.open')}>
-          <Button variant="ghost" size="sm" onClick={() => setTreeOffen(true)} aria-label={t('docs.tree.open')}>
+          <button
+            type="button"
+            onClick={() => setTreeOffen(true)}
+            aria-label={t('docs.tree.open')}
+            className={rundknopf}
+          >
             <Menu className="h-4 w-4" />
-          </Button>
+          </button>
         </Kurzinfo>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface">
-          {detail?.title ?? t('docs.title')}
-        </span>
+        <div className="flex min-w-0 flex-1 flex-col justify-center">
+          <span className="truncate font-headline text-sm font-semibold text-on-surface">
+            {detail?.title ?? t('docs.title')}
+          </span>
+        </div>
         <Kurzinfo text={t('docs.new')}>
-          <Button variant="primary" size="sm" onClick={() => void neueDokument()} aria-label={t('docs.new')}>
+          <button
+            type="button"
+            onClick={() => void neueDokument()}
+            aria-label={t('docs.new')}
+            className={rundknopf}
+          >
             <Plus className="h-4 w-4" />
-          </Button>
+          </button>
         </Kurzinfo>
       </div>
 
@@ -112,14 +127,10 @@ export function DocsMain({
             {/* Weicher atmosphärischer Tageszeit-Hintergrund für Docs */}
             <TageszeitHintergrund
               motiv={headerMotiv}
-              hoehe="h-[440px] sm:h-[500px]"
-              deckkraft="opacity-50"
+              hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+              deckkraft="opacity-55"
               ebene="-z-10"
-              verlauf="bg-gradient-to-b from-surface/10 via-surface/40 70% to-surface"
-            />
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-[440px] sm:h-[500px] -z-10 bg-gradient-to-b from-transparent via-surface/20 60% to-surface"
-              aria-hidden="true"
+              verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
             />
 
             <div className="relative z-10 flex flex-1 flex-col p-4 sm:p-6 space-y-6">

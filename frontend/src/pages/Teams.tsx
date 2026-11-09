@@ -527,14 +527,10 @@ export function Teams() {
         {/* Tageszeit-Hintergrund, der atmosphärisch hinter Profilbild und Buttons liegt und nach unten verwaschen ausläuft */}
         <TageszeitHintergrund
           motiv={headerMotiv}
-          hoehe="h-[480px] sm:h-[540px]"
-          deckkraft="opacity-50"
+          hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+          deckkraft="opacity-55"
           ebene="-z-10"
-          verlauf="bg-gradient-to-b from-surface/10 via-surface/40 70% to-surface"
-        />
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-[480px] sm:h-[540px] -z-10 bg-gradient-to-b from-transparent via-surface/20 60% to-surface"
-          aria-hidden="true"
+          verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
         />
 
         {/* Frei schwebende Navigations- & Aktionsleiste ohne trennenden Glas-Balken */}

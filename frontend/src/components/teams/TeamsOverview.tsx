@@ -151,17 +151,13 @@ export function TeamsOverview({
       {/* ── Weicher atmosphärischer Hintergrund, der großzügig nach unten verwaschen ausläuft ──── */}
       <TageszeitHintergrund
         motiv={headerMotiv}
-        hoehe="h-[520px] sm:h-[580px] lg:h-[620px]"
+        hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
         deckkraft="opacity-55"
         ebene="-z-10"
-        verlauf="bg-gradient-to-b from-surface/5 via-surface/35 to-surface"
-      />
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[520px] sm:h-[580px] lg:h-[620px] -z-10 bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
-        aria-hidden="true"
+        verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
       />
 
-      <main className="relative z-10 mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 space-y-6">
+      <main className="relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 py-4 sm:px-6 sm:py-6 lg:px-8 space-y-6 pb-12">
         {/* Obere Leiste: Titel & Suche frei schwebend ohne trennenden Glas-Balken */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div className="min-w-0">

@@ -204,6 +204,8 @@
     "pin": "Anpinnen",
     "unpin": "Lösen",
     "pinToTop": "Oben anheften",
+    "pinnedNotes": "Angepinnt",
+    "otherNotes": "Weitere Notizen",
     "pinError": "Fehler beim Anpinnen der Notiz.",
     "archive": "Archivieren",
     "unarchive": "Wiederherstellen",

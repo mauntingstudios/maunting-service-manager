@@ -794,17 +794,13 @@ export function Calendar() {
       {/* Weicher atmosphärischer Tageszeit-Hintergrund für den Kalender */}
       <TageszeitHintergrund
         motiv={headerMotiv}
-        hoehe="h-[440px] sm:h-[500px]"
-        deckkraft="opacity-50"
+        hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+        deckkraft="opacity-55"
         ebene="-z-10"
-        verlauf="bg-gradient-to-b from-surface/10 via-surface/40 70% to-surface"
-      />
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[440px] sm:h-[500px] -z-10 bg-gradient-to-b from-transparent via-surface/20 60% to-surface"
-        aria-hidden="true"
+        verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
       />
 
-      <div className="relative z-10 mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 space-y-6">
+      <div className="relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 py-4 sm:px-6 sm:py-6 lg:px-8 space-y-6 pb-12">
         {/* Freischwebender Kalender-Header mit Tageszeit-Begrüßung und Aktionen */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div>

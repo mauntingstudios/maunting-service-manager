@@ -285,7 +285,7 @@ function SystemStatusCard() {
   )
 }
 
-export function Dashboard() {
+export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boolean } = {}) {
   const { t } = useTranslation()
   const canCreateServer = useHasPermission('servers.create')
   const [servers, setServers] = useState<Server[]>([])
@@ -329,20 +329,17 @@ export function Dashboard() {
 
   return (
     <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
-      {/* Weicher atmosphärischer Tageszeit-Hintergrund für das Dashboard */}
-      <TageszeitHintergrund
-        motiv={headerMotiv}
-        hoehe="h-[460px] sm:h-[520px]"
-        deckkraft="opacity-50"
-        ebene="-z-10"
-        verlauf="bg-gradient-to-b from-surface/10 via-surface/40 70% to-surface"
-      />
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[460px] sm:h-[520px] -z-10 bg-gradient-to-b from-transparent via-surface/20 60% to-surface"
-        aria-hidden="true"
-      />
+      {!ohneHintergrund && (
+        <TageszeitHintergrund
+          motiv={headerMotiv}
+          hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+          deckkraft="opacity-55"
+          ebene="-z-10"
+          verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
+        />
+      )}
 
-      <main className="relative z-10 mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 space-y-6">
+      <main className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${ohneHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'} pb-12 sm:px-6 lg:px-8 space-y-6`}>
         <UpdateBanner />
 
         {/* Freischwebender Dashboard-Header mit Begrüßung und Server-Status */}

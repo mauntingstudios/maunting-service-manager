@@ -204,6 +204,8 @@
     "pin": "Pin",
     "unpin": "Unpin",
     "pinToTop": "Pin to top",
+    "pinnedNotes": "Pinned",
+    "otherNotes": "Other notes",
     "pinError": "Failed to pin note.",
     "archive": "Archive",
     "unarchive": "Restore",
