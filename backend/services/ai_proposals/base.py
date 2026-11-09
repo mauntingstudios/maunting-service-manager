@@ -105,6 +105,8 @@ def _json_object(value: str) -> dict:
 
 def _permission_for(tool_name: str, payload: dict) -> tuple[str, ...]:
     """Die Permission-Keys, die dieses Werkzeug verlangt — alle zugleich."""
+    if tool_name.startswith("mcp_"):
+        return ("ai.mcp.use",)
     if tool_name == "propose_server_lifecycle":
         recht = _LIFECYCLE_RECHTE.get(str(payload.get("operation")), "")
         return (recht,) if recht else ()
@@ -130,6 +132,13 @@ def _permission_for(tool_name: str, payload: dict) -> tuple[str, ...]:
 def _require_tool_permission(
     db: Session, user: User, server_id: int | None, tool_name: str, payload: dict
 ) -> None:
+    # MCP-Werkzeuge stehen nicht in der Registry (ihre Namen entstehen aus dem
+    # Werkzeugverzeichnis des Servers). Ihr Recht ist immer dasselbe.
+    if tool_name.startswith("mcp_"):
+        if not permission_service.has_global_permission(db, user, "ai.mcp.use"):
+            raise AiActionValidationError("MCP-Nutzung ist nicht erlaubt")
+        return
+
     if tool_name in {"propose_guardian_tuning", "read_guardian_incidents"}:
         from services.ai_guardian_settings import is_guardian_ai_enabled
         if not is_guardian_ai_enabled(db=db):

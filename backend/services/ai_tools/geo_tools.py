@@ -8,6 +8,7 @@ from models import User
 from services import permission_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
+from services.ai_tool_spec import werkzeug
 from services.ai_tools.base import _function
 
 logger = logging.getLogger(__name__)
@@ -189,3 +190,94 @@ def _execute_control_region_camera(db: Session, *, user: User, arguments: dict) 
     # wiederholte GPT-Live abgewiesene Kameraaufrufe, bis das Tokenlimit
     # griff, und wich danach auf `focus_location` mit dem Ort aus.
     return {"action": action, "command_id": str(uuid4())}
+
+
+# --- Werkzeugvertrag -------------------------------------------------------
+#
+# Sitzungsgebundene Sprachsteuerung. Sie wird im Sprachpfad verteilt, nicht
+# ueber die globale Lesekette; die Spec traegt nur Klassifikation und Hinweis.
+
+_VOICE_WERKZEUGE = {
+    "voice_resolve_latest_proposal": dict(
+        art="voice_control",
+        hinweis="Verwirft den zuletzt gezeigten Vorschlag, wenn der Sprecher ablehnt.",
+    ),
+    "voice_set_region_view": dict(
+        art="voice_control",
+        hinweis="Oeffnet oder wechselt die Regionsansicht im Sprachmodus.",
+    ),
+    "voice_leave_region_view": dict(
+        art="voice_control",
+        hinweis="Schliesst die Regionsansicht im Sprachmodus.",
+    ),
+}
+
+DEFINITIONEN = voice_control_tool_definitions()
+
+for _schema in DEFINITIONEN:
+    _eintrag = _VOICE_WERKZEUGE.get(_schema["function"]["name"])
+    if _eintrag is not None:
+        werkzeug(_schema, **_eintrag)
+
+
+
+# --- Werkzeugvertrag: Regionsanalyse ---------------------------------------
+#
+# Beide Handler stehen in diesem Modul; die Schemas standen im Katalog in
+# `server_tools`. Die Specs uebergeben die Laufparameter (Prefetch, schnelle
+# Region) aus `lauf`.
+
+_ANALYZE = _function(
+        "analyze_region",
+        "Karte, Globus, Wetter und Bild zu einem Ort oder einer Sehenswürdigkeit.",
+        {
+            "location": {"type": "string"},
+            "camera": {"type": "string", "enum": ["overview", "focus", "detail"]},
+        },
+        ["location"],
+    )
+_CAMERA = _function(
+        "control_region_camera",
+        "Bewegt nur die offene Regionskarte, ohne neue Abfrage.",
+        {
+            "action": {"type": "string", "enum": ["zoom_in", "zoom_out", "overview", "focus_location"]},
+            "location": {"type": "string"},
+        },
+        ["action"],
+    )
+
+GEO_DEFINITIONEN = [_ANALYZE, _CAMERA]
+
+
+def lies_region(db, *, user, arguments, lauf=None):
+    lauf = lauf or {}
+    if lauf.get("fast_region"):
+        return execute_realtime_region_initial(db, user=user, arguments=arguments)
+    return _execute_analyze_region(
+        db,
+        user=user,
+        arguments=arguments,
+        prefetch_session_id=lauf.get("prefetch_session_id"),
+    )
+
+
+def steuert_kamera(db, *, user, arguments, lauf=None):
+    return _execute_control_region_camera(db, user=user, arguments=arguments)
+
+
+werkzeug(
+    _ANALYZE,
+    art="global_read",
+    gruppe="geo",
+    angebot=("ai.satellite.use",),
+    hinweis="Analysiert Karte, Globus, Wetter und Bild zu einem Ort.",
+    global_handler=lies_region,
+)
+werkzeug(
+    _CAMERA,
+    art="global_read",
+    gruppe="geo",
+    angebot=("ai.satellite.use",),
+    hinweis="Bewegt die offene Regionskarte, ohne neue Abfrage.",
+    global_handler=steuert_kamera,
+)

@@ -30,6 +30,7 @@ from services import (
     desktop_job_service,
 )
 from services.ai_action_service import angebotene_werkzeuge, provider_tool_definitions
+from services.mcp.ausfuehrung import MAX_JE_TURN, katalog as mcp_katalog, waehle_je_turn
 from services.ai_context_service import (
     MIN_HISTORY_CHARS,
     anlagenwissen_nachtrag,
@@ -404,6 +405,7 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
         db.commit()
         db.refresh(provider)
         db.expunge(provider)
+        mcp_werkzeuge, mcp_schreib = mcp_katalog(db, user)
         return _Vorbereitung(
             run_id=run_id,
             user_id=run.user_id,
@@ -422,6 +424,8 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
             token_price_micro_usd_per_million=provider.token_price_micro_usd_per_million,
             zustand=zustand,
             angebotene_werkzeuge=angebotene_werkzeuge(db, user),
+            mcp_werkzeuge=tuple(mcp_werkzeuge),
+            mcp_schreib_werkzeuge=mcp_schreib,
         ), None
 
 
@@ -806,6 +810,8 @@ async def _werkzeuge_und_grenze(
     ganze Segment.
     """
     tools = provider_tool_definitions()
+    if vorbereitung.mcp_werkzeuge:
+        tools = [*tools, *vorbereitung.mcp_werkzeuge]
     # **Angeboten wird nur, was auch ausgefuehrt wuerde.**
     #
     # Die Schranke ist das nicht — die steht in `_tool_followup_messages`
@@ -832,6 +838,15 @@ async def _werkzeuge_und_grenze(
     # Werkzeuge deshalb auch dann nicht sehen, wenn sie im zentralen Katalog
     # registriert sind. Realtime fuegt sie in seiner Sitzung gezielt hinzu.
     erlaubt = vorbereitung.angebotene_werkzeuge - VOICE_CONTROL_TOOLS
+    # MCP-Werkzeuge stehen nicht in der Registry: ihre Namen kommen aus den
+    # Servern des Benutzers. Ohne sie in `erlaubt` faellt der Katalog weiter
+    # unten durch den Schnitt, und kein MCP-Aufruf kaeme je beim Modell an.
+    mcp_namen = {
+        str(eintrag.get("function", {}).get("name"))
+        for eintrag in vorbereitung.mcp_werkzeuge
+        if isinstance(eintrag, dict) and isinstance(eintrag.get("function"), dict)
+    }
+    erlaubt = erlaubt | mcp_namen
     # Dokumentkontext zuerst und ohne Rollenschnitt: die Dokument-KI arbeitet
     # direkt im Dokument, auch wenn am Zugang ein Arbeitsmodell haengt. Der
     # Rollenschnitt wuerde ihr sonst die Dokument-Schreibwerkzeuge nehmen und
@@ -923,6 +938,21 @@ async def _werkzeuge_und_grenze(
     if not desktop_werkzeuge_erlaubt:
         erlaubt = erlaubt - DESKTOP_TOOLS
 
+    # Der semantische Router sieht nur die Panel-Werkzeuge; MCP bekommt ein
+    # eigenes, kleines Budget. So ziehen 200 MCP-Werkzeuge nicht den ganzen
+    # Katalog auf, und die fuenf semantischen Treffer bleiben fuer die
+    # eingebauten Werkzeuge reserviert.
+    panel_erlaubt = frozenset(erlaubt) - mcp_namen
+    mcp_eintraege = [
+        eintrag for eintrag in tools
+        if str(eintrag.get("function", {}).get("name")) in mcp_namen
+    ]
+    mcp_gewaehlt = (
+        {str(eintrag.get("function", {}).get("name")) for eintrag in mcp_eintraege}
+        if len(mcp_eintraege) <= MAX_JE_TURN
+        else set(waehle_je_turn(mcp_eintraege, letzte))
+    )
+
     try:
         from services.semantic_tool_router_adapter import SemanticToolRouterAdapter, gruppen_nachbarn
         from services.tool_selection_port import HOTSET, pflichtwerkzeuge
@@ -931,32 +961,49 @@ async def _werkzeuge_und_grenze(
         # Was der Router nie wegschneidet: der Grundstock und, aus der App,
         # die Desktop-Werkzeuge (`pflichtwerkzeuge`).
         pflicht = pflichtwerkzeuge(
-            frozenset(erlaubt), herkunft,
+            panel_erlaubt, herkunft,
             hat_anhaenge=hat_anhaenge, query=letzte,
             desktop_intent=desktop_intent if isinstance(desktop_intent, bool) else None,
         )
         if docs_kontext:
             pflicht = pflicht | (
                 frozenset({"read_document", "read_document_selection", "edit_document"})
-                & frozenset(erlaubt)
+                & panel_erlaubt
             )
         if isinstance(zustand, dict) and zustand.get("project_id"):
-            pflicht = pflicht | (frozenset({"project_workspace"}) & frozenset(erlaubt))
-        hot = [n for n in HOTSET if n in erlaubt]
+            pflicht = pflicht | (frozenset({"project_workspace"}) & panel_erlaubt)
+        hot = [n for n in HOTSET if n in panel_erlaubt]
         hot_and_topk = len(set(hot) | pflicht) + 5
-        if letzte and len(erlaubt) > hot_and_topk:
-            router = SemanticToolRouterAdapter({str(e.get("function", {}).get("name")): e for e in tools})
+        if letzte and len(panel_erlaubt) > hot_and_topk:
+            router = SemanticToolRouterAdapter(
+                {
+                    str(e.get("function", {}).get("name")): e
+                    for e in tools
+                    if str(e.get("function", {}).get("name")) not in mcp_namen
+                }
+            )
             import asyncio
             try:
                 loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, router.warm, frozenset(erlaubt))
-                routed = await loop.run_in_executor(None, router.select, letzte, frozenset(erlaubt), 5)
+                await loop.run_in_executor(None, router.warm, panel_erlaubt)
+                routed = await loop.run_in_executor(None, router.select, letzte, panel_erlaubt, 5)
             except RuntimeError:
-                router.warm(frozenset(erlaubt))
-                routed = router.select(letzte, frozenset(erlaubt), top_k=5)
-            keep = set(hot) | pflicht | set(routed) | set(gruppen_nachbarn(routed, frozenset(erlaubt)))
+                router.warm(panel_erlaubt)
+                routed = router.select(letzte, panel_erlaubt, top_k=5)
+            # MCP bleibt beim semantischen Router draussen und wird nach
+            # Stichworten der Frage ausgewaehlt (eigenes Budget).
+            if len(mcp_eintraege) > MAX_JE_TURN:
+                mcp_gewaehlt = set(waehle_je_turn(mcp_eintraege, letzte))
+            keep = (
+                set(hot) | pflicht | set(routed)
+                | set(gruppen_nachbarn(routed, panel_erlaubt))
+                | mcp_gewaehlt
+            )
             tools = [e for e in tools if str(e.get("function", {}).get("name")) in keep]
-            _log.info("Tool-Routing: erlaubt=%d keep=%d routed=%s query=%.80s", len(erlaubt), len(keep), routed, letzte)
+            _log.info(
+                "Tool-Routing: erlaubt=%d keep=%d routed=%s mcp=%d query=%.80s",
+                len(panel_erlaubt), len(keep), routed, len(mcp_gewaehlt), letzte,
+            )
     except Exception as exc:
         import logging
         logging.getLogger(__name__).debug("Tool-Routing uebersprungen: %s", type(exc).__name__)
@@ -966,6 +1013,13 @@ async def _werkzeuge_und_grenze(
         tools = [
             e for e in tools
             if str(e.get("function", {}).get("name")) not in DESKTOP_TOOLS
+        ]
+    # Auch ohne Router (leere Frage, kleiner Katalog) gilt das MCP-Budget.
+    if len(mcp_eintraege) > MAX_JE_TURN:
+        tools = [
+            e for e in tools
+            if str(e.get("function", {}).get("name")) not in mcp_namen
+            or str(e.get("function", {}).get("name")) in mcp_gewaehlt
         ]
     # Was der Katalog selbst kostet. Er geht in Zeile `tools=tools` neben den
     # Nachrichten über dieselbe Leitung, wurde aber in keinem Budget

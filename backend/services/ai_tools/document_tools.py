@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from models import User
 from services import permission_service
 from services.ai_action_errors import AiActionValidationError
+from services.ai_tool_spec import werkzeug
 from services.docs_access import ROLE_RANG
 from services.docs_service import DocsService, _inhalt_text, _titel
 
@@ -774,3 +775,49 @@ def _dokument_tool_definitions() -> list[dict]:
             ["title"],
         ),
     ]
+
+
+# --- Werkzeugvertrag -------------------------------------------------------
+#
+# Alle Dokumentwerkzeuge laufen durch `execute_document_tool` und brauchen den
+# Laufkontext (Dokument-UID, Team). Die Spec bindet nur den Namen; der Handler
+# reicht den Kontext aus `lauf` weiter.
+
+_DOKU_WERKZEUGE = {
+    "add_document_comment": dict(art="docs_write", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Schreibt einen Kommentar an eine Stelle des Dokuments."),
+    "edit_document": dict(art="docs_write", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Aendert eine Stelle im Dokument."),
+    "undo_ai_edit": dict(art="docs_write", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Nimmt die letzte KI-Aenderung zurueck."),
+    "update_document_title": dict(art="docs_write", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Aendert den Titel des Dokuments."),
+    "get_document_outline": dict(art="global_read", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Liest die Gliederung des Dokuments."),
+    "learn_team_skill": dict(art="global_read", gruppe="dokumente", angebot=("ai.skills.use",), hinweis="Legt einen Team-Skill aus dem Dokument an."),
+    "list_document_comments": dict(art="global_read", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Listet die Kommentare des Dokuments."),
+    "list_documents": dict(art="global_read", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Listet die Dokumente des Benutzers."),
+    "read_document": dict(art="global_read", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Liest einen Abschnitt des Dokuments."),
+    "read_document_selection": dict(art="global_read", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Liest die aktuelle Auswahl im Dokument."),
+    "read_document_skill": dict(art="global_read", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Liest die Skills des Dokuments."),
+    "read_document_structure": dict(art="global_read", gruppe="dokumente", angebot=("ai.docs.use",), hinweis="Liest den Aufbau des Dokuments."),
+    "read_team_calendar": dict(art="global_read", gruppe="dokumente", angebot=("ai.calendar.use",), hinweis="Liest den Teamkalender."),
+    "read_team_notes": dict(art="global_read", gruppe="dokumente", angebot=("ai.notes.use",), hinweis="Liest die Teamnotizen."),
+    "search_team_memory": dict(art="global_read", gruppe="dokumente", angebot=("ai.memory.use",), hinweis="Durchsucht das Team-Gedaechtnis."),
+}
+
+
+def _doku_handler(name: str):
+    def ausfuehren(db, *, user, arguments, lauf=None):
+        return execute_document_tool(
+            db,
+            user=user,
+            tool_name=name,
+            arguments=arguments,
+            kontext=(lauf or {}).get("kontext"),
+        )
+
+    ausfuehren.__name__ = f"lies_{name}"
+    return ausfuehren
+
+
+DEFINITIONEN = _dokument_tool_definitions()
+
+for _schema in DEFINITIONEN:
+    _name = _schema["function"]["name"]
+    werkzeug(_schema, **_DOKU_WERKZEUGE[_name], global_handler=_doku_handler(_name))

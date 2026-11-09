@@ -2,22 +2,18 @@ from __future__ import annotations
 
 from models.ai_task import ARTEN as _AUFGABENARTEN
 from models.ai_meldung import KANAELE as _MELDEKANAELE
-from services.ai_tool_registry import (
-    GLOBAL_READ_TOOLS,
-    READ_TOOLS,
-    WERKZEUGE,
-    angebotsrechte,
-)
 from services.ai_tools.base import (
     _function,
     _PLAN_SCHEMA,
     _RATIONALE_SCHEMA,
     _RATIONALE_REQUIRED,
+    _require_no_arguments,
     MAX_QUESTION_OPTIONS,
     MAX_QUESTION_CHARS,
     MAX_OPTION_CHARS,
     MAX_OPTION_HINT_CHARS,
 )
+from services.ai_tool_spec import spaet, spaet_vorschlag, werkzeug
 
 def _aufgaben_tool_definitions() -> list[dict]:
     """Stehende Auftraege: auflisten, anlegen, aendern, loeschen — und die Testmail.
@@ -238,3 +234,98 @@ def _worker_tool_definitions() -> list[dict]:
             ["question", "options"],
         ),
     ]
+
+
+# --- Werkzeugvertrag -------------------------------------------------------
+
+def _lies_aufgaben(db, *, user, arguments, lauf=None) -> dict:
+    from services import ai_task_service
+
+    _require_no_arguments("list_tasks", arguments)
+    # Kein zusaetzliches Recht: die Liste zeigt ausschliesslich, was diesem
+    # Benutzer gehoert. Wer keine Aufgaben anlegen darf, hat auch keine.
+    return {"tasks": ai_task_service.auflisten(db, user=user)}
+
+
+def _sende_testmail(db, *, user, arguments, lauf=None) -> dict:
+    _require_no_arguments("send_test_email", arguments)
+    from services.ai_tools.personal_tools import _execute_send_test_email
+
+    return _execute_send_test_email(db, user=user)
+
+
+_TASK_WERKZEUGE = {
+    "list_tasks": dict(
+        art="global_read",
+        gruppe="tasks",
+        hinweis="Listet die stehenden Auftraege des Benutzers.",
+        global_handler=_lies_aufgaben,
+    ),
+    "propose_task_set": dict(
+        art="global_write",
+        gruppe="tasks",
+        recht="ai.tasks.manage",
+        recht_global=True,
+        hinweis="Legt einen stehenden Auftrag an oder aendert ihn.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.task_proposals._task_set_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.task_proposals._ausfuehren_task_set"
+        ),
+    ),
+    "propose_task_delete": dict(
+        art="global_write",
+        gruppe="tasks",
+        recht="ai.tasks.manage",
+        recht_global=True,
+        hinweis="Loescht einen stehenden Auftrag nach Bestaetigung.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.task_proposals._task_delete_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.task_proposals._ausfuehren_task_delete"
+        ),
+    ),
+    "send_test_email": dict(
+        art="global_read",
+        gruppe="tasks",
+        hinweis="Schickt eine Testmail ueber den eingerichteten Versandweg.",
+        global_handler=_sende_testmail,
+    ),
+    "worker_start": dict(
+        art="delegation",
+        gruppe="worker",
+        angebot=("ai.background.use",),
+        hinweis="Startet einen Hintergrundauftrag mit eigenem Kontext.",
+    ),
+    "worker_cancel": dict(
+        art="delegation",
+        gruppe="worker",
+        angebot=("ai.background.use",),
+        hinweis="Bricht einen laufenden Hintergrundauftrag ab.",
+    ),
+    "worker_antwort": dict(
+        art="delegation",
+        gruppe="worker",
+        angebot=("ai.background.use",),
+        hinweis="Antwortet einem wartenden Hintergrundauftrag.",
+    ),
+    "wait_until": dict(
+        art="delegation",
+        gruppe="worker",
+        hinweis="Wartet bis zu einem Zeitpunkt, statt zu raten.",
+    ),
+    "worker_frage": dict(
+        art="ask",
+        gruppe="worker",
+        hinweis="Stellt eine Rueckfrage aus einem Hintergrundauftrag.",
+    ),
+}
+
+DEFINITIONEN = [*_aufgaben_tool_definitions(), *_worker_tool_definitions()]
+
+for _schema in DEFINITIONEN:
+    _eintrag = _TASK_WERKZEUGE.get(_schema["function"]["name"])
+    if _eintrag is not None:
+        werkzeug(_schema, **_eintrag)

@@ -510,6 +510,7 @@ describe('AiChat', () => {
       expect.objectContaining({ content: 'Hallo', reasoning: true, reasoning_effort: 'high' }),
       expect.any(Function),
       expect.any(AbortSignal),
+      expect.any(Function),
     ))
   })
 
@@ -1087,6 +1088,7 @@ describe('AiChat', () => {
       expect.objectContaining({ content: 'so war es gemeint' }),
       expect.any(Function),
       expect.any(AbortSignal),
+      expect.any(Function),
     ))
   })
 
@@ -1137,6 +1139,7 @@ describe('AiChat', () => {
       expect.objectContaining({ content: '1.20.1' }),
       expect.any(Function),
       expect.any(AbortSignal),
+      expect.any(Function),
     ))
     // Die Karte bleibt stehen, aber ohne Knoepfe: sonst saehe man spaeter nur
     // die Antwort und wuesste nicht mehr, worauf sie sich bezieht.

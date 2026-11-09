@@ -47,6 +47,7 @@ const DIENST: &str = "MauntingSmartSystemDev";
 const DIENST_FRUEHER: Option<&str> = Some("SingraSmartSystem");
 #[cfg(any(target_os = "android", debug_assertions))]
 const DIENST_FRUEHER: Option<&str> = Some("SingraSmartSystemDev");
+mod mcp_stdio;
 mod medien;
 mod nsis_migration;
 mod sandbox;
@@ -753,6 +754,9 @@ pub(crate) fn beenden_erzwingen(app: &tauri::AppHandle) {
         let _ = warten.recv_timeout(std::time::Duration::from_secs(1));
     }
     discord::beenden();
+    // Lokale MCP-Programme sterben mit der App; ein hängender Prozess
+    // überlebt den Menschen nicht.
+    mcp_stdio::alle_beenden();
     app.cleanup_before_exit();
     std::process::exit(0);
 }
@@ -878,6 +882,7 @@ pub fn run() {
             datei_speichern::datei_speichern_teil,
             datei_speichern::datei_speichern_ende,
             datei_speichern::tresor_backup_speichern,
+            mcp_stdio::mcp_stdio,
             medien::medien_zugriff,
             medien::medien_sicherung_schluessel,
             medien::medien_einrichten,
@@ -976,8 +981,13 @@ pub fn run() {
                 _ => {}
             }
         })
-        .run(kontext)
-        .expect("Fehler beim Start des Maunting Smart Systems");
+        .build(kontext)
+        .expect("Fehler beim Start des Maunting Smart Systems")
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                mcp_stdio::alle_beenden();
+            }
+        });
 }
 
 #[cfg(all(test, not(target_os = "android")))]

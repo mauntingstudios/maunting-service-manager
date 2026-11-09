@@ -1781,6 +1781,19 @@ export interface AiMcpServer {
   updated_at: string
 }
 
+export interface AiMcpPruefung {
+  tools: Array<{ name: string; beschreibung?: string; nur_lesen?: boolean }>
+  status: string
+}
+
+/** Ein Werkzeug, das die Desktop-App für ein lokales Programm gemeldet hat. */
+export interface AiMcpWerkzeugMeldung {
+  name: string
+  beschreibung?: string
+  nur_lesen?: boolean
+  schema?: Record<string, unknown>
+}
+
 export interface AiMcpServerWrite {
   name?: string
   description?: string | null
@@ -2596,6 +2609,15 @@ export const aiApi = {
       `/ai/projects/${encodeURIComponent(projectId)}/deployments/${encodeURIComponent(deploymentId)}`,
     ),
   listMcpServers: () => api<AiMcpServer[]>('/ai/mcp'),
+  pruefeMcpServer: (serverId: string) =>
+    api<AiMcpPruefung>(`/ai/mcp/${encodeURIComponent(serverId)}/pruefen`, {
+      method: 'POST',
+    }),
+  meldeMcpWerkzeuge: (serverId: string, tools: AiMcpWerkzeugMeldung[]) =>
+    api<AiMcpPruefung>(`/ai/mcp/${encodeURIComponent(serverId)}/werkzeuge`, {
+      method: 'POST',
+      body: JSON.stringify({ tools }),
+    }),
   createMcpServer: (payload: AiMcpServerWrite & { name: string }) =>
     api<AiMcpServer>('/ai/mcp', { method: 'POST', body: JSON.stringify(payload) }),
   updateMcpServer: (serverId: string, payload: AiMcpServerWrite) =>

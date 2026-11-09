@@ -2013,3 +2013,124 @@ def build(
         # ist.
         teile.append(SCHLUSS_GESPROCHEN.get(rolle, GESPROCHEN))
     return "\n".join(teile)
+
+
+#: Obergrenze des Werkzeugverzeichnisses je Segment.
+WERKZEUG_INDEX_BUDGET = 4_000
+
+#: Reihenfolge der Gruppen im Verzeichnis. Die taeglich gebrauchten zuerst;
+#: alles, was hier nicht steht, folgt alphabetisch, die ungruppierten zuletzt.
+_GRUPPEN_PRIORITAET = (
+    "mailbox",
+    "calendar",
+    "notes",
+    "tasks",
+    "attachments",
+    "dokumente",
+    "memory",
+    "skill",
+    "mods",
+    "domains",
+    "nodes",
+    "users",
+    "projects",
+    "worker",
+    "desktop",
+    "docs",
+    "popup",
+    "geo",
+)
+
+
+def werkzeug_index(werkzeuge: Iterable[str], *, budget: int = WERKZEUG_INDEX_BUDGET) -> str:
+    """Ein Verzeichnis der in diesem Lauf angebotenen Werkzeuge.
+
+    Der Verhaltensblock `WERKZEUGE` sagt, **wie** Werkzeuge benutzt werden;
+    dieses Verzeichnis sagt, **welche** es gerade gibt. Es haengt damit an den
+    Rechten des Benutzers und wird als eigene Systemnachricht hinter den
+    Prompt gelegt (der Prompt selbst bleibt byteweise statisch).
+
+    Schreibwerkzeuge stehen immer im Verzeichnis, auch wenn das Budget knapp
+    wird: ein Modell, das eine Aenderung will, findet sonst keinen Weg. Der
+    Rest wird in Gruppenreihenfolge aufgefuellt; die letzte Zeile, die nicht
+    mehr passt, beendet das Verzeichnis — nie eine halbe Zeile.
+    """
+    from services import ai_tool_registry as registry
+
+    gewaehlt = [
+        (name, registry.WERKZEUGE[name], registry.ALLE.get(name))
+        for name in sorted(set(werkzeuge))
+        if name in registry.WERKZEUGE
+    ]
+    if not gewaehlt:
+        return ""
+
+    def gruppenordnung(gruppenname: str) -> tuple[int, str]:
+        if gruppenname in _GRUPPEN_PRIORITAET:
+            return (0, f"{_GRUPPEN_PRIORITAET.index(gruppenname):02d}")
+        if gruppenname == "allgemein":
+            return (2, gruppenname)
+        return (1, gruppenname)
+
+    def zeile(name: str, dekl: Any) -> str:
+        hinweis = dekl.hinweis.strip() if dekl is not None else ""
+        return f"- {name} — {hinweis}" if hinweis else f"- {name}"
+
+    nach_gruppe: dict[str, list[tuple[str, Any, Any]]] = {}
+    for name, werkzeug, dekl in gewaehlt:
+        nach_gruppe.setdefault(werkzeug.gruppe or "allgemein", []).append(
+            (name, werkzeug, dekl)
+        )
+    for eintraege in nach_gruppe.values():
+        eintraege.sort(key=lambda teil: (teil[0] not in registry.WRITE_TOOLS, teil[0]))
+
+    kopf = "Werkzeugverzeichnis — nur die in diesem Lauf angebotenen Werkzeuge:"
+    zeilen: list[str] = []
+    laenge = len(kopf) + 1
+
+    def schreibend(gruppenname: str) -> list[tuple[str, Any, Any]]:
+        return [
+            teil for teil in nach_gruppe[gruppenname] if teil[0] in registry.WRITE_TOOLS
+        ]
+
+    def lesend(gruppenname: str) -> list[tuple[str, Any, Any]]:
+        return [
+            teil for teil in nach_gruppe[gruppenname] if teil[0] not in registry.WRITE_TOOLS
+        ]
+
+    # Das Schreibkontingent steht vorher fest: es geht nie an die Leser.
+    schreib_laenge = 0
+    for gruppenname in nach_gruppe:
+        block = schreibend(gruppenname)
+        if block:
+            schreib_laenge += len(f"[{gruppenname}]") + 1
+            schreib_laenge += sum(len(zeile(n, d)) + 1 for n, _, d in block)
+    lese_budget = max(0, budget - len(kopf) - 1 - schreib_laenge)
+
+    # Gruppen mit Schreibwerkzeugen zuerst, dann die uebrigen.
+    reihenfolge = sorted(
+        nach_gruppe,
+        key=lambda g: (not bool(schreibend(g)), gruppenordnung(g)),
+    )
+    for gruppenname in reihenfolge:
+        block = [f"[{gruppenname}]"] + [zeile(n, d) for n, _, d in schreibend(gruppenname)]
+        block_laenge = sum(len(z) + 1 for z in block)
+        if laenge + block_laenge > budget:
+            # Ein Schreibblock in ein spaeteres, kleineres Budget zu quetschen
+            # hiesse, Schreibwerkzeuge stillschweigend zu verlieren.
+            continue
+        zeilen.extend(block)
+        laenge += block_laenge
+        for name, _, dekl in lesend(gruppenname):
+            text = zeile(name, dekl)
+            if lese_budget <= 0:
+                break
+            if laenge + len(text) + 1 > budget:
+                break
+            zeilen.append(text)
+            laenge += len(text) + 1
+            lese_budget -= len(text) + 1
+
+    if not zeilen:
+        return ""
+    return kopf + "\n" + "\n".join(zeilen)

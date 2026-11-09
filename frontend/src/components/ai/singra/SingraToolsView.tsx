@@ -13,6 +13,7 @@ import {
   Monitor,
   Plug,
   Plus,
+  RefreshCw,
   Search,
   Server,
   ShieldAlert,
@@ -31,6 +32,7 @@ import { AufgabenAnsicht } from '@/components/ai/AufgabenAnsicht'
 import { GuardianAnsicht } from '@/components/ai/GuardianAnsicht'
 import { WorkerAnsicht } from '@/components/ai/WorkerAnsicht'
 import { useHasPermission } from '@/hooks/useHasPermission'
+import { entdeckeStdioWerkzeuge, stdioVerfuegbar } from '@/services/mcpStdio'
 import {
   MCP_CATEGORIES,
   SINGRA_MCP_PRESETS,
@@ -68,7 +70,7 @@ interface SingraToolsViewProps {
   }
 }
 
-const TRANSPORT_OPTIONS = [
+const TRANSPORT_OPTIONS: Array<{ value: 'http' | 'sse' | 'stdio'; label: string }> = [
   { value: 'http', label: 'Web-Verbindung (HTTP)' },
   { value: 'sse', label: 'Live-Stream (SSE)' },
   { value: 'stdio', label: 'Lokales Programm (Kommandozeile)' },
@@ -99,6 +101,7 @@ export function SingraToolsView({
   const [isPresetModal, setIsPresetModal] = useState(false)
   const [showTechnicalMcp, setShowTechnicalMcp] = useState(false)
   const [savingMcp, setSavingMcp] = useState(false)
+  const [pruefendMcp, setPruefendMcp] = useState<string | null>(null)
   const [mcpDraft, setMcpDraft] = useState<
     AiMcpServerWrite & { name: string; scopeChoice: string }
   >({
@@ -113,6 +116,17 @@ export function SingraToolsView({
     scopeChoice: 'personal',
   })
   const [argsInput, setArgsInput] = useState('')
+  // Ein lokales Programm lässt sich nur in der Desktop-App starten. Im Panel
+  // bleibt die Auswahl verborgen; ein bereits gespeicherter stdio-Server
+  // bleibt sichtbar und bearbeitbar, damit Umstellen nichts zerstört.
+  const desktopApp = stdioVerfuegbar()
+  const transportOptionen = useMemo(
+    () =>
+      TRANSPORT_OPTIONS.filter(
+        (option) => option.value !== 'stdio' || desktopApp || mcpDraft.transport === 'stdio',
+      ),
+    [desktopApp, mcpDraft.transport],
+  )
 
   useEffect(() => {
     if (initialSubTab) setSubTab(initialSubTab)
@@ -259,6 +273,43 @@ export function SingraToolsView({
           ? err.message
           : 'Status konnte nicht geändert werden.',
       )
+    }
+  }
+
+  const handlePruefenMcp = async (srv: AiMcpServer) => {
+    setPruefendMcp(srv.id)
+    try {
+      if (srv.transport === 'stdio') {
+        // Der Prozess läuft am Rechner des Benutzers. Nur die App kann ihn
+        // starten; sie meldet die gefundene Liste anschließend zurück.
+        if (!stdioVerfuegbar() || !srv.command) {
+          toast.error('Lokale Programme lassen sich nur in der Desktop-App prüfen.')
+          return
+        }
+        const werkzeuge = await entdeckeStdioWerkzeuge(srv.command, srv.args)
+        await aiApi.meldeMcpWerkzeuge(srv.id, werkzeuge)
+        if (werkzeuge.length > 0) {
+          toast.success(`${werkzeuge.length} Werkzeuge gefunden.`)
+        } else {
+          toast.error('Der MCP-Prozess hat keine Werkzeuge gemeldet.')
+        }
+      } else {
+        const ergebnis = await aiApi.pruefeMcpServer(srv.id)
+        if (ergebnis.status === 'ok') {
+          toast.success(`${ergebnis.tools.length} Werkzeuge gefunden.`)
+        } else {
+          toast.error(`Prüfung fehlgeschlagen: ${ergebnis.status}`)
+        }
+      }
+      await loadToolsData()
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof SanitizedApiError
+          ? err.message
+          : 'Die Verbindung konnte nicht geprüft werden.',
+      )
+    } finally {
+      setPruefendMcp(null)
     }
   }
 
@@ -559,7 +610,19 @@ export function SingraToolsView({
                           aria-label={`${srv.name} aktivieren`}
                         />
                       </div>
-                      <div className="mt-3 flex justify-end border-t border-outline-variant/15 pt-2">
+                      <div className="mt-3 flex items-center justify-end gap-3 border-t border-outline-variant/15 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => void handlePruefenMcp(srv)}
+                          disabled={pruefendMcp === srv.id}
+                          className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors disabled:opacity-50"
+                        >
+                          <RefreshCw
+                            className={`h-3.5 w-3.5 ${pruefendMcp === srv.id ? 'animate-spin' : ''}`}
+                            aria-hidden="true"
+                          />
+                          Prüfen
+                        </button>
                         <button
                           type="button"
                           onClick={() => void handleDeleteMcp(srv)}
@@ -936,13 +999,19 @@ export function SingraToolsView({
                         transport: val as 'http' | 'sse' | 'stdio',
                       }))
                     }
-                    options={TRANSPORT_OPTIONS}
+                    options={transportOptionen}
                     aria-label="Transport-Protokoll"
                   />
                 </div>
 
                 {mcpDraft.transport === 'stdio' ? (
                   <>
+                    {!desktopApp && (
+                      <p className="text-xs text-status-warning">
+                        Lokale Programme laufen nur in der Desktop-App. Hier lässt sich die
+                        Verbindung nicht prüfen; die Einstellung bleibt erhalten.
+                      </p>
+                    )}
                     <div>
                       <label className="block text-xs font-medium text-on-surface-variant mb-1">
                         Programm / Befehl

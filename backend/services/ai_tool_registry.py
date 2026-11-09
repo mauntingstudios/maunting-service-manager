@@ -7,9 +7,9 @@ brauchte damit Eintraege an mehreren Stellen, und eine vergessene fiel erst zur
 Laufzeit auf: das Modell rief etwas auf, das der Allowlist-Pruefung nicht
 bekannt war, und der Stream endete mit einem Fehler.
 
-Jetzt gibt es **eine** Zeile je Werkzeug. Die Mengen sind Ableitungen, keine
-Quellen. Und `_function()` prueft beim Definieren gegen diese Tabelle: ein
-Werkzeug ohne Zeile fliegt sofort auf, nicht erst beim ersten Aufruf.
+Jetzt gibt es **eine** Zeile je Werkzeug. Fuer umgestellte Domaenen ist das
+die `ToolSpec` in ihrem Modul (`services/ai_tool_spec.py`); diese Tabelle
+traegt noch die uebrigen. Die Mengen sind Ableitungen, keine Quellen.
 
 Bewusst **keine** Handler in dieser Tabelle. Die Ausfuehrungen brauchen
 unterschiedliche Signaturen — serverbezogene bekommen den aufgeloesten Server,
@@ -20,114 +20,13 @@ den Aufruf.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from services.ai_tool_spec import ARTEN, ALLE, ToolSpec, Werkzeug, werkzeug
 
 
-# Die Art entscheidet ueber alles Weitere:
-#
-# - `server_read`  — liest, braucht eine `server_id`, laeuft ueber `_resolve_server`
-# - `global_read`  — liest ohne Serverbezug
-# - `server_write` — erzeugt einen bestaetigungspflichtigen Vorschlag zu einem Server
-# - `global_write` — erzeugt einen Vorschlag ohne Serverbezug (Servererstellung)
-# - `ask`          — beendet den Zug und uebergibt an den Menschen
-# - `delegation`   — laeuft sofort im Handler, ohne Vorschlagskarte: reine
-#                    MSM-interne Orchestrierung (Gehirn↔Worker), keine
-#                    Aussenwirkung auf einen Server (docs/agentic-framework.md)
-# - `voice_control` — steuert nur Zustand der aktuellen Sprachsitzung
-ARTEN = ("server_read", "global_read", "docs_write", "server_write", "global_write", "ask", "delegation", "voice_control")
-
-
-@dataclass(frozen=True)
-class Werkzeug:
-    """Die Einordnung eines Werkzeugs — nicht seine Definition.
-
-    ``gruppe`` fasst thematisch zusammen, was die Oberflaeche unterschiedlich
-    darstellt: Gedaechtnis- und Skill-Aufrufe bekommen im Verlauf ein eigenes
-    Symbol statt des allgemeinen Werkzeugsymbols.
-
-    ``immer_bestaetigen`` schliesst ein Werkzeug vom autonomen Modus aus, auch
-    bei erteilter Freigabe. Die Liste ist eine Vorgabe des Betreibers vom
-    25.09.2026, woertlich: nur noch Server loeschen, zuruecksetzen oder neu
-    installieren, Dateien loeschen, Backup einspielen, Blueprint oder Rolle
-    loeschen, Rechte anderer Benutzer (die stehen am Aufruf, `verlangt_klick`),
-    Shop-Anbindung, Tarif-Rolle und Zugangsdaten. Was nur die eigenen Daten des
-    Benutzers loescht — Notiz, Termin, Aufgabe, DNS-Eintrag, Skill —
-    laeuft autonom (`EIGENE_DATEN_LOESCHEN`).
-
-    Dazwischen lag die Regel vom 23.09.2026, "jedes Loeschen fragt", nachdem
-    das Modell dem Betreiber im autonomen Modus fast seinen Discord-Bot geloescht
-    haette. Der Betreiber hat sie zwei Tage spaeter zurueckgenommen: autonom
-    heisst autonom, und gefragt wird dort, wo sich ein Fehlgriff nicht mehr
-    auffangen laesst. Bestaetigt wird in jedem Fall per Klick auf die Karte, nie
-    per gesprochenem Ja (`ai_voice.interactions.klick_noetig`).
-
-    Umgekehrt fragt nicht, was nur heikel klingt: eine falsche Bind-IP stellt
-    derselbe Aufruf zurueck. Eine bewusste Ausnahme ist der Blueprint-Wechsel.
-    Er leert das Serververzeichnis, der Betreiber hat ihn aber am 02.09.2026
-    ausdruecklich fuer den autonomen Modus freigegeben; davor legt er zwingend
-    ein Backup an.
-
-    Desktop-Werkzeuge tragen das Feld nicht, weil sie `delegation` sind. Seit
-    dem 25.09.2026 loeschen sie im autonomen Modus auch ohne Karte; ob sie
-    fragen, entscheidet allein die Freigabe (`ai_stream.interactions`).
-
-    ``recht`` ist der Permission-Key, den ein Schreibwerkzeug verlangt. Er stand
-    frueher in einer if-Kette in `ai_proposal_service._permission_for` — ein
-    zweiter Ort, an dem ein neues Werkzeug eingetragen werden musste, und der
-    Ort, an dem man es am ehesten vergisst. Ein Schreibwerkzeug ohne `recht`
-    kommt gar nicht erst durch die Pruefung.
-
-    ``recht_global`` entscheidet, **wie** geprueft wird. Die meisten Rechte
-    haengen am Server; einige sind bewusst global und nicht delegierbar —
-    `servers.delete` etwa, weil es destruktiv ist. Ein serverbezogenes Werkzeug
-    kann also durchaus ein globales Recht verlangen: `propose_server_delete`
-    braucht eine `server_id` und trotzdem die globale Loeschbefugnis.
-
-    ``angebot`` sind die Rechte, von denen **eines** genuegt, damit das Werkzeug
-    dem Modell ueberhaupt angeboten wird. Ohne Angabe gilt `recht`; steht auch
-    das nicht da, wird das Werkzeug jedem angeboten.
-
-    Der Unterschied zu `recht` ist die Richtung, nicht die Strenge: `recht`
-    entscheidet, ob ein Aufruf **laeuft**, `angebot` nur, ob er im Katalog
-    **steht**. Ein Lesewerkzeug prueft sein Recht im eigenen Handler und traegt
-    deshalb kein `recht` — `angebot` schreibt denselben Schluessel hin, damit
-    der Katalog ihn kennt, ohne dass sich an der Pruefung etwas aendert. Zwei
-    Eintraege sind noetig, weil zwei Werkzeuge mit einem einzelnen Schluessel
-    nicht auskommen: `read_blueprint` genuegt `servers.create` **oder**
-    `blueprints.manage`, und `propose_server_lifecycle` haengt am Vorgang.
-
-    Warum es das ueberhaupt gibt: bis hierher bekam jeder Benutzer alle 51
-    Werkzeuge angeboten — auch die, die seine KI in seinem Namen gar nicht
-    ausfuehren darf, weil ihm das Recht fehlt. Das Modell versuchte sie,
-    prallte ab und verbrauchte dabei eine Runde. Der Katalog ging in **jeder**
-    Runde ueber die Leitung und machte 94 Prozent des Prompts aus.
-    """
-
-    art: str
-    gruppe: str | None = None
-    immer_bestaetigen: bool = False
-    recht: str | None = None
-    recht_global: bool = False
-    angebot: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        if self.art not in ARTEN:
-            raise ValueError(f"Unbekannte Werkzeugart: {self.art}")
-        if self.recht_global and not self.recht:
-            raise ValueError("recht_global ohne recht ist sinnlos")
-        if self.art == "delegation" and (self.recht or self.immer_bestaetigen):
-            # `recht` prueft der Vorschlagspfad, `immer_bestaetigen` der
-            # autonome Modus — durch beide kommt eine Delegation nie. Ein Wert
-            # hier saehe nach einer Schranke aus, die nirgends greift; das
-            # Angebots-Gate leistet `angebot`, die Ausfuehrungspruefung der
-            # Handler selbst (Muster der Lesewerkzeuge).
-            raise ValueError(
-                "delegation läuft ohne Vorschlagspfad — recht/immer_bestaetigen "
-                "würden dort nie geprüft"
-            )
-
-
-WERKZEUGE: dict[str, Werkzeug] = {
+# Die Einordnung steht in `services/ai_tool_spec.py`. Diese Tabelle traegt
+# zunaechst noch die Werkzeuge, deren Domaenenmodul nicht umgestellt ist;
+# deklarierte Specs kommen hinzu und duerfen sich nicht doppeln.
+_TABELLE: dict[str, Werkzeug] = {
     # ── Serverbezogen lesen ───────────────────────────────────────────
     #
     # Ohne `angebot` steht hier nur `server.view` dahinter, und das prueft
@@ -136,76 +35,34 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # sparte nur bei einem Benutzer etwas ein, der ueberhaupt keinen Server
     # sieht — und dessen Gespraech endet ohnehin an `list_my_servers`.
     # Eingetragen ist deshalb nur, was ein **eigenes** Recht verlangt.
-    "read_server_status": Werkzeug("server_read"),
-    "read_server_capacity": Werkzeug("server_read"),
-    "read_server_logs": Werkzeug("server_read", angebot=("server.console.read",)),
-    "read_config": Werkzeug("server_read", angebot=("server.files.read",)),
-    "read_server_ports": Werkzeug("server_read"),
-    "read_server_network": Werkzeug("server_read"),
-    "check_server_reachability": Werkzeug("server_read"),
-    "read_server_mods": Werkzeug("server_read", angebot=("server.mods.read",)),
-    "read_mod_updates": Werkzeug("server_read", angebot=("server.mods.read",)),
-    "search_workshop_mods": Werkzeug("server_read", angebot=("server.mods.read",)),
-    "list_server_files": Werkzeug("server_read", angebot=("server.files.read",)),
-    "search_server_files": Werkzeug("server_read", angebot=("server.files.read",)),
-    "read_server_backups": Werkzeug("server_read", angebot=("server.backups.read",)),
     # Das PostgreSQL-Studio lesend — dieselben Funktionen wie die Studio-Reiter
     # (`ai_tools.database_tools`). Parameter, Sitzungen und Sperren verlangen
     # dort zusaetzlich `server.databases.admin`, wie an der Route.
-    "read_database": Werkzeug("server_read", angebot=("server.databases.read",)),
-    "read_guardian_incidents": Werkzeug("server_read"),
-    "read_ai_action_history": Werkzeug("server_read"),
 
     # ── Global lesen ──────────────────────────────────────────────────
-    "list_my_servers": Werkzeug("global_read"),
-    "list_blueprints": Werkzeug("global_read", angebot=("servers.create",)),
     # Zwei Rechte, von denen eines genuegt — genau der Fall, fuer den `angebot`
     # eine Aufzaehlung ist und kein einzelner Schluessel: wer Blueprints pflegen
     # darf, muss seine eigene Vorlage ansehen koennen, auch ohne Server anlegen
     # zu duerfen (`_execute_global_read_tool`).
-    "read_blueprint": Werkzeug(
-        "global_read", angebot=("servers.create", "blueprints.manage")
-    ),
-    "read_node_capacity": Werkzeug("global_read", angebot=("servers.create",)),
-    "read_node_health": Werkzeug("global_read", angebot=("nodes.read",)),
     # Zusaetzlich zum Recht entscheidet die Einrichtung: ohne hinterlegten
     # Suchschluessel steht `web_search` gar nicht erst im Katalog
     # (`ai_action_service._global_tool_definitions`).
-    "web_search": Werkzeug("global_read", angebot=("ai.web_search.use",)),
-    "read_web_page": Werkzeug("global_read", angebot=("ai.web_search.use",)),
-    "search_curseforge_modpacks": Werkzeug("global_read", gruppe="mods", angebot=("server.mods.read",)),
-    "search_curseforge_mods": Werkzeug("global_read", gruppe="mods", angebot=("server.mods.read",)),
-    "advise_node_placement": Werkzeug("global_read", gruppe="nodes", angebot=("servers.create",)),
-    "cloudflare_list_zones": Werkzeug("global_read", gruppe="domains", angebot=("cloudflare.manage",)),
-    "cloudflare_list_dns_records": Werkzeug("global_read", gruppe="domains", angebot=("cloudflare.manage",)),
 
     # Regionsanalyse: Geocoding, Open-Meteo und ein Bild der Region — mit
     # Copernicus-Zugang die neueste Sentinel-2-Szene, ohne ihn das
     # schluesselfreie Kartenbild (ArcGIS-Mosaik). Steht deshalb immer im Katalog.
-    "analyze_region": Werkzeug(
-        "global_read", gruppe="geo", angebot=("ai.satellite.use",)
-    ),
     # Reine Steuerung einer bereits sichtbaren Karte. Das Werkzeug ruft keine
     # Geo-, Wetter- oder Nachrichtendienste erneut ab, prueft aber dasselbe
     # Recht wie die Regionsanalyse: ohne Kartenfreigabe gibt es auch keinen
     # verdeckten zweiten Steuerpfad.
-    "control_region_camera": Werkzeug(
-        "global_read", gruppe="geo", angebot=("ai.satellite.use",)
-    ),
 
     # Die Doku des Panels. Kein zusaetzliches Recht: dieselben Seiten stehen
     # jedem angemeldeten Benutzer im Panel offen — ein Gate hier waere eine
     # Schranke, die es nebenan nicht gibt.
-    "search_docs": Werkzeug("global_read", gruppe="docs"),
-    "read_docs": Werkzeug("global_read", gruppe="docs"),
 
     # Die Shop-Anbindung. Beide pruefen `panel.hoster.read` im eigenen Zweig —
     # bei `global_read` wertet die Registry `recht` nicht aus, das tut nur der
     # Vorschlagspfad.
-    "read_hoster_setup": Werkzeug("global_read", angebot=("panel.hoster.read",)),
-    "read_hoster_integration_guide": Werkzeug(
-        "global_read", angebot=("panel.hoster.read",)
-    ),
 
     # Die stehenden Auftraege. `list_tasks` liest nur, was diesem Benutzer
     # gehoert.
@@ -218,16 +75,11 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # Der Betreiber hat diesen Weg ausdruecklich ohne Bestaetigungsknopf
     # gewuenscht: wer "teste mal meine Mails" tippt, hat die Frage schon
     # beantwortet.
-    "list_tasks": Werkzeug("global_read", gruppe="tasks"),
-    "send_test_email": Werkzeug("global_read", gruppe="tasks"),
 
     # Das Gedaechtnis liest die KI nur noch. Geschrieben und vergessen wird
     # seit Stufe 2 (06.10.2026) nach dem Gespraech, im Hintergrund
     # (`ai_gedaechtnis_schreiber`); `remember` und `forget_memory` gibt es
     # nicht mehr.
-    "search_memory": Werkzeug(
-        "global_read", gruppe="memory", angebot=("ai.memory.use",)
-    ),
 
     # `learn_skill` und `forget_skill` schreiben, stehen aber bei den
     # Lesewerkzeugen. Der Unterschied zwischen den Mengen ist nicht "aendert
@@ -236,31 +88,9 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # aus**: ein gelernter Skill kann nichts, was das Modell nicht ohnehin
     # duerfte — er aendert nur, wie es an eine Aufgabe herangeht. Vergessen
     # laeuft im autonomen Modus ohne Karte (`EIGENE_DATEN_LOESCHEN`).
-    "read_skill": Werkzeug("global_read", gruppe="skill", angebot=("ai.skills.use",)),
     "learn_skill": Werkzeug("global_read", gruppe="skill", angebot=("ai.skills.use",)),
-    "forget_skill": Werkzeug(
-        "global_read", gruppe="skill", angebot=("ai.skills.use",)
-    ),
 
     # E-Mail- & Kalender-Lesewerkzeuge (Verknuepfte Postfaecher & Kalender).
-    "email_search": Werkzeug(
-        "global_read", gruppe="mailbox", angebot=("ai.mailbox.use",)
-    ),
-    "email_read": Werkzeug(
-        "global_read", gruppe="mailbox", angebot=("ai.mailbox.use",)
-    ),
-    "calendar_read": Werkzeug(
-        "global_read", gruppe="calendar", angebot=("ai.calendar.use",)
-    ),
-    "notes_read": Werkzeug(
-        "global_read", gruppe="notes", angebot=("ai.notes.use",)
-    ),
-    "search_chat_attachments": Werkzeug(
-        "global_read", gruppe="attachments", angebot=("ai.attachments.use",)
-    ),
-    "read_chat_attachment": Werkzeug(
-        "global_read", gruppe="attachments", angebot=("ai.attachments.use",)
-    ),
     # ── Dokumente ─────────────────────────────────────────────────────
     # Gruppe `dokumente`, nicht `docs`: `docs` gehoert seit jeher den
     # statischen Hilfeseiten (`search_docs`, `read_docs`). Die Handler pruefen
@@ -268,62 +98,13 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # Schreibende Dokumentwerkzeuge laufen direkt (Art `docs_write`), nicht
     # ueber den Vorschlagspfad: der Mensch sieht die Aenderung live, die
     # Version und `ai-undo` bleiben der Rueckweg.
-    "list_documents": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
-    "read_document": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
-    "read_document_selection": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
-    "get_document_outline": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
-    "read_document_structure": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
-    "list_document_comments": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
-    "read_document_skill": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
     # Teamwissen bleibt an das Dokumentteam gebunden. Die Handler lesen die
     # Team-ID aus dem Laufkontext, nie aus einem Modellargument; ein
     # Dokumenttext darf den Lauf nicht auf ein fremdes Team richten.
-    "read_team_notes": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.notes.use",)
-    ),
-    "read_team_calendar": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.calendar.use",)
-    ),
-    "search_team_memory": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.memory.use",)
-    ),
-    "learn_team_skill": Werkzeug(
-        "global_read", gruppe="dokumente", angebot=("ai.skills.use",)
-    ),
-    "edit_document": Werkzeug(
-        "docs_write", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
-    "add_document_comment": Werkzeug(
-        "docs_write", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
-    "undo_ai_edit": Werkzeug(
-        "docs_write", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
-    "update_document_title": Werkzeug(
-        "docs_write", gruppe="dokumente", angebot=("ai.docs.use",)
-    ),
     # Ohne dieses Werkzeug konnte die KI nur neue Ankuendigungen anlegen. Ein
     # "nimm den Hinweis auf Mac und Linux aus dem Pop-up raus" war damit nicht
     # zu erfuellen: sie kannte weder die Kennung noch den Text, den sie haette
     # aendern sollen — und sagte das auch so.
-    "popups_read": Werkzeug(
-        "global_read", gruppe="popup", angebot=("ai.popups.manage",)
-    ),
-    "execute_server_action": Werkzeug("global_read"),
 
     # Benutzer und Rollen, lesend. Dieselben Rechte wie die Panel-Routen:
     # die Benutzerliste `users.read` (`GET /api/admin/users`), die
@@ -332,18 +113,8 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # im Panel jedem offen; angeboten wird sie trotzdem nur, wer Rollen oder
     # Rechte verwaltet — sonst braucht sie niemand, und der Katalog geht in
     # jeder Runde mit.
-    "list_users": Werkzeug("global_read", gruppe="users", angebot=("users.read",)),
-    "read_user_permissions": Werkzeug(
-        "global_read", gruppe="users", angebot=("users.permissions.manage",)
-    ),
-    "list_roles": Werkzeug(
-        "global_read",
-        gruppe="users",
-        angebot=("roles.manage", "users.permissions.manage"),
-    ),
 
     # ── Rueckfrage ────────────────────────────────────────────────────
-    "ask_user": Werkzeug("ask"),
 
     # ── Delegation: Gehirn und Worker (docs/agentic-framework.md) ─────
     #
@@ -353,43 +124,29 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # unter dem vollen Vorschlagsfluss mit den Rechten des Benutzers. Das
     # `angebot` haelt sie aus dem Katalog jedes Benutzers heraus, dem das
     # Recht fehlt: dessen Chat arbeitet wie bisher in einem Lauf.
-    "worker_start": Werkzeug(
-        "delegation", gruppe="worker", angebot=("ai.background.use",)
-    ),
-    "worker_cancel": Werkzeug(
-        "delegation", gruppe="worker", angebot=("ai.background.use",)
-    ),
     # Der Rueckweg fuer Rueckfragen: hat ein Worker mit `worker_frage`
     # gefragt, gibt das Gehirn die Antwort des Benutzers hiermit an genau
     # dieses Fenster zurueck. Mechanisch dieselbe Abloesung wie im Dauerchat
     # (neue Nachricht ueberholt den wartenden Lauf und erbt seine
     # Schleifensignaturen) — nur eben im Worker-Fenster, in das der Benutzer
     # selbst nicht schreiben kann.
-    "worker_antwort": Werkzeug(
-        "delegation", gruppe="worker", angebot=("ai.background.use",)
-    ),
     # `wait_until` parkt den eigenen Lauf bis zu einem Zeitpunkt
     # (`waiting_wake` + `wake_at`) statt zu schleifen. Kein `angebot`: es ist
     # nur fuer Worker-Laeufe gedacht, und das entscheidet der Laufart-Schnitt
     # in `_werkzeuge_und_grenze` — ein Rechteschluessel waere die falsche
     # Achse, denn das Recht haengt am Delegieren, nicht am Warten.
-    "wait_until": Werkzeug("delegation", gruppe="worker"),
     # Die Rueckfrage eines Workers. `art="ask"` mit Absicht: sie faehrt damit
     # in ASK_TOOLS/READ_TOOLS mit und wird wie `ask_user` vor der Lesephase
     # abgefangen — nur die Zustellung (Meldestelle mit Worker-ID statt
     # Broker-Frage) und das Park-Ziel unterscheiden sich. Kein `angebot` aus
     # demselben Grund wie bei `wait_until`.
-    "worker_frage": Werkzeug("ask", gruppe="worker"),
 
     # Nur OpenAI Realtime bekommt dieses Werkzeug. Der normale Chat und Worker
     # schneiden `voice_control` aus ihren Rollenmengen heraus. Die Kennung des
     # Vorschlags bleibt dabei serverseitig in genau einer Sprachsitzung.
-    "voice_resolve_latest_proposal": Werkzeug("voice_control"),
     # Rein lokale, sitzungsgebundene Darstellung. Diese Befehle lesen weder
     # Regionaldaten noch verändern sie Serverzustand; sie dürfen deshalb nur
     # im Realtime-Transport und nie im allgemeinen Chatlauf erscheinen.
-    "voice_set_region_view": Werkzeug("voice_control"),
-    "voice_leave_region_view": Werkzeug("voice_control"),
 
     # ── Schreiben: erzeugen ausschliesslich Vorschlaege ───────────────
     #
@@ -399,20 +156,11 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # `angebot` zaehlt alle drei auf, weil eines genuegt: wer nur starten darf,
     # soll das Werkzeug bekommen. Welches Recht der einzelne Aufruf braucht,
     # entscheidet weiterhin `_permission_for` am `operation`-Argument.
-    "propose_server_lifecycle": Werkzeug(
-        "server_write",
-        angebot=("server.start", "server.stop", "server.restart"),
-    ),
-    "propose_backup": Werkzeug("server_write", recht="server.backups.create"),
     # Einspielen ueberschreibt den aktuellen Spielstand mit einem aelteren. Was
     # seit dem Backup passiert ist, existiert danach nicht mehr — und kein
     # zweites Backup holt es zurueck, weil es nie eines davon gab. Unumkehrbar,
     # also gesperrt. Anlegen bleibt autonomiefaehig: ein zusaetzliches Backup
     # schadet nie.
-    "propose_backup_restore": Werkzeug(
-        "server_write", immer_bestaetigen=True, recht="server.backups.restore"
-    ),
-    "propose_config_update": Werkzeug("server_write", recht="server.files.write"),
     # Dieselbe Sache wie `propose_config_update`, nur nicht die ganze Datei —
     # und deshalb dasselbe Recht. Die Trennung ist keine Rechtefrage, sondern
     # eine der Reichweite: die Vollersetzung setzt voraus, dass das Modell die
@@ -423,7 +171,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # Umkehrbar und damit autonomiefaehig: `write_server_text` legt vor jedem
     # Schreiben einen Versionsschnappschuss an, aus dem der Dateimanager den
     # alten Stand zurueckholt.
-    "propose_config_patch": Werkzeug("server_write", recht="server.files.write"),
     # Der Normalfall fuer Spielkonfigurationen — und dasselbe Recht wie die
     # beiden darueber, weil es dieselbe Sache tut: eine Datei des Servers
     # aendern.
@@ -438,22 +185,16 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # damit autonomiefaehig. Dass der Wert zusaetzlich als dauerhafter Wunsch
     # hinterlegt wird, aendert daran nichts: `propose_config_set` mit dem alten
     # Wert stellt beides zurueck.
-    "propose_config_set": Werkzeug("server_write", recht="server.files.write"),
-    "propose_mod_install": Werkzeug("server_write", recht="server.mods.write"),
     # Der Schalter an einer bereits installierten Mod. Eigenes Recht
     # (`server.mods.toggle`, im Katalog seit jeher) und eigenes Werkzeug, weil
     # An- und Ausschalten etwas anderes ist als Herunterladen: es loescht
     # nichts, laedt nichts und ist mit demselben Aufruf zurueckzunehmen —
     # also autonomiefaehig. `read_server_mods` meldete den Zustand `enabled`
     # schon lange, ohne dass irgendetwas ihn setzen konnte.
-    "propose_mod_toggle": Werkzeug("server_write", recht="server.mods.toggle"),
     # Eine falsche Bind-IP macht den Server unerreichbar — aber nur, bis jemand
     # sie zurueckstellt, und das kann die KI selbst. Kein Datenverlust, also
     # keine Sperre. Die Freigabe des Betreibers ist hier die Entscheidung, nicht
     # die Bestaetigung jedes einzelnen Falls.
-    "propose_bind_ip_update": Werkzeug(
-        "server_write", recht="server.network.manage"
-    ),
     # Loeschen ist nicht rueckgaengig zu machen — deshalb auch im autonomen
     # Modus bestaetigungspflichtig, ausdrueckliche Vorgabe des Betreibers.
     #
@@ -462,21 +203,10 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # serverbezogen: es braucht eine `server_id`, und `_resolve_server` stellt
     # vorher sicher, dass der Benutzer diesen Server ueberhaupt sehen darf. Es
     # gilt also beides — sehen duerfen **und** global loeschen duerfen.
-    "propose_server_delete": Werkzeug(
-        "server_write",
-        immer_bestaetigen=True,
-        recht="servers.delete",
-        recht_global=True,
-    ),
     # Eine Ableitung legt eine **neue** Datei an und laesst die Vorlage, aus der
     # sie stammt, unberuehrt. Ist sie falsch, loescht man sie wieder; kein Server
     # aendert sich, solange niemand ihn umstellt. Der Betreiber hat die Sperre
     # hier ausdruecklich aufgehoben.
-    "propose_blueprint_change": Werkzeug(
-        "global_write",
-        recht="blueprints.manage",
-        recht_global=True,
-    ),
     # Das Gegenstueck dazu — und es traegt die Sperre, die die Ableitung nicht
     # braucht. `blueprint_service.delete_community_blueprint` entfernt die Datei
     # per `unlink`; einen Versionsschnappschuss wie bei den Serverdateien gibt es
@@ -493,12 +223,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # einen Klick, Anlegen nicht. Das ist die richtige Richtung: ein Blueprint zu
     # viel ist eine Zeile in einer Liste, ein Blueprint zu wenig sind Server, die
     # ihre Vorlage verloren haben.
-    "propose_blueprint_delete": Werkzeug(
-        "global_write",
-        immer_bestaetigen=True,
-        recht="blueprints.manage",
-        recht_global=True,
-    ),
     # Der Wechsel des Spiels bzw. Blueprints eines bestehenden Servers.
     #
     # **Seit dem 02.09.2026 wieder ohne `immer_bestaetigen`**, auf ausdrueckliche
@@ -541,10 +265,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # Rechten. Jemand haette sie ueber die KI gedurft und ueber das Panel nicht,
     # oder umgekehrt. Das Recht, nach dem der Betreiber gefragt hat, gab es
     # bereits; es fehlte nur die Verbindung dorthin.
-    "propose_server_blueprint_switch": Werkzeug(
-        "server_write",
-        recht="server.config.write",
-    ),
     # Kein `immer_bestaetigen`: ein Server, den es vorher nicht gab, vernichtet
     # nichts. Das ist die eine Haelfte der Asymmetrie, die bei
     # `propose_blueprint_delete` und `propose_server_delete` beschrieben steht —
@@ -552,9 +272,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # diese Zeile nicht noch einmal als Versehen gelesen wird: die KI kann im
     # autonomen Modus anlegen, aber nicht wegraeumen. Wer sie einen Testserver
     # bauen laesst, raeumt ihn selbst wieder ab.
-    "propose_server_create": Werkzeug(
-        "global_write", recht="servers.create", recht_global=True
-    ),
 
     # ── Stehende Auftraege anlegen, aendern, loeschen ─────────────────
     #
@@ -581,15 +298,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # anlegen, dasselbe Muster wie bei `propose_hoster_integration`. Zwei
     # Werkzeuge haetten den Zeitplan zweimal im Katalog gehabt, und der geht in
     # jeder Runde der Werkzeugschleife mit ueber die Leitung.
-    "propose_task_set": Werkzeug(
-        "global_write", gruppe="tasks", recht="ai.tasks.manage", recht_global=True
-    ),
-    "propose_task_delete": Werkzeug(
-        "global_write",
-        gruppe="tasks",
-        recht="ai.tasks.manage",
-        recht_global=True,
-    ),
 
     # ── Heilung: Reparatur der Anlage, nicht des Spielstands ──────────
     #
@@ -617,10 +325,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # Startparameter") konnte hier also Firewallregeln umbauen lassen.
     # `angebot` zaehlt beide auf, weil eines genuegt; welches Recht der einzelne
     # Aufruf braucht, entscheidet `_permission_for` am `action`-Argument.
-    "propose_server_repair": Werkzeug(
-        "server_write",
-        angebot=("server.files.write", "server.network.manage"),
-    ),
     # Guardian **fuer diesen einen Server** anders einstellen.
     #
     # Der Fall, den es abdeckt, ist der dritte der drei, die eine Reparatur
@@ -644,9 +348,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # dieselbe Spalte liegt. Ein eigenes Recht waere eine Handlung mit zwei
     # Rechten — der Fehler, der bei `propose_server_blueprint_switch` zweimal
     # gemacht und dokumentiert wurde.
-    "propose_guardian_tuning": Werkzeug(
-        "server_write", recht="server.config.write"
-    ),
     # ── Auto-Neustart und Auto-Backup eines Servers einstellen ────────
     #
     # Der Durchgriff auf die **eingebaute** Zeitplanlogik: „starte den Server
@@ -662,12 +363,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # `PATCH /api/backups/{id}/settings` für den Backup-Zeitplan) — eine
     # Handlung, ein Recht. Kein `immer_bestaetigen`: ein Zeitplan ist eine
     # Zeile, die man zurückstellt; nichts daran vernichtet Daten.
-    "propose_restart_schedule_set": Werkzeug(
-        "server_write", recht="server.config.write"
-    ),
-    "propose_backup_schedule_set": Werkzeug(
-        "server_write", recht="server.config.write"
-    ),
     # Loeschen einer **einzelnen** Datei unterhalb des Serververzeichnisses.
     #
     # `immer_bestaetigen` seit dem 23.09.2026, obwohl es einen Rueckweg gibt.
@@ -707,9 +402,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # das Loeschrecht, und die Rechtebeschreibung von `server_files_write`
     # nennt Loeschen nicht. Mit `write` hier waere der Chat der Umweg, auf dem
     # ein Benutzer ohne Loeschrecht doch loescht — eine Handlung, zwei Rechte.
-    "propose_file_delete": Werkzeug(
-        "server_write", immer_bestaetigen=True, recht="server.files.delete"
-    ),
     # Was das PostgreSQL-Studio schreibt: Struktur (auch Funktionen, Trigger,
     # Erweiterungen), Zeilen und freies SQL (`ai_proposals.database_proposals`).
     # `recht` ist die Untergrenze; Operationen mit Admin-Plan und freies SQL
@@ -717,7 +409,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # Kein `immer_bestaetigen`: eine neue Funktion oder ein Trigger ist wie eine
     # neue Konfigzeile. Gefragt wird am Aufruf (`always_confirm`), wo Daten
     # verschwinden koennen — destruktiver Plan, Zeilen loeschen, freies SQL.
-    "propose_database_change": Werkzeug("server_write", recht="server.databases.write"),
 
     # ── Shop-Anbindung einrichten ─────────────────────────────────────
     #
@@ -735,104 +426,21 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # exakt einmal aus, gespeichert wird nur der Hash. Eine autonom angelegte
     # Integration waere unbenutzbar und nur ueber eine Rotation zu retten.
     # Bestaetigungspflicht ist hier keine Vorsicht, sondern Funktionsbedingung.
-    "propose_hoster_integration": Werkzeug(
-        "global_write",
-        immer_bestaetigen=True,
-        recht="panel.hoster.write",
-        recht_global=True,
-    ),
-    "propose_hoster_product": Werkzeug(
-        "global_write",
-        immer_bestaetigen=True,
-        recht="panel.hoster.write",
-        recht_global=True,
-    ),
     # `roles.manage` steht in der Tabelle, weil die Rolle angelegt wird.
     # Das zweite noetige Recht (`panel.settings.write` fuer das KI-Kontingent)
     # prueft der Payload-Bau zusaetzlich — die Tabelle traegt genau ein `recht`,
     # und die Handlung braucht zwei.
-    "propose_ai_tarif_role": Werkzeug(
-        "global_write",
-        immer_bestaetigen=True,
-        recht="roles.manage",
-        recht_global=True,
-    ),
 
     # ── E-Mail & Kalender Aktionen (Vorschlagspflichtig) ──────────────
-    "propose_email_send": Werkzeug(
-        "global_write",
-        gruppe="mailbox",
-        recht="ai.mailbox.use",
-        recht_global=True,
-    ),
-    "propose_calendar_event_create": Werkzeug(
-        "global_write",
-        gruppe="calendar",
-        recht="ai.calendar.use",
-        recht_global=True,
-    ),
-    "propose_calendar_event_update": Werkzeug(
-        "global_write",
-        gruppe="calendar",
-        recht="ai.calendar.use",
-        recht_global=True,
-    ),
     # Die persoenlichen Loeschwerkzeuge laufen im autonomen Modus ohne Karte
     # (`EIGENE_DATEN_LOESCHEN`), aber mit Stundenbudget: die Abkuerzung in
     # `autonomy_allows` gilt nur fuer Anlegen und Aendern.
-    "propose_calendar_event_delete": Werkzeug(
-        "global_write",
-        gruppe="calendar",
-        recht="ai.calendar.use",
-        recht_global=True,
-    ),
-    "propose_note_create": Werkzeug(
-        "global_write",
-        gruppe="notes",
-        recht="ai.notes.use",
-        recht_global=True,
-    ),
-    "propose_note_update": Werkzeug(
-        "global_write",
-        gruppe="notes",
-        recht="ai.notes.use",
-        recht_global=True,
-    ),
-    "propose_note_delete": Werkzeug(
-        "global_write",
-        gruppe="notes",
-        recht="ai.notes.use",
-        recht_global=True,
-    ),
     # Anlegen **und** aendern in einem Werkzeug, nach dem Vorbild von
     # `propose_task_set`: beide tragen dasselbe Schema, und eine `popup_id`
     # entscheidet, welcher der beiden Faelle gemeint ist. Zwei Werkzeuge waeren
     # hier rund 1.700 Zeichen Katalog fuer ein zweites Mal dieselben acht
     # Felder gewesen — der Katalog geht in jeder Runde mit
     # (`test_ai_tool_handler_contract`).
-    "propose_popup_set": Werkzeug(
-        "global_write",
-        gruppe="popup",
-        recht="ai.popups.manage",
-        recht_global=True,
-    ),
-    "propose_cloudflare_dns_record": Werkzeug(
-        "global_write",
-        gruppe="domains",
-        recht="cloudflare.manage",
-        recht_global=True,
-    ),
-    "propose_cloudflare_dns_delete": Werkzeug(
-        "global_write",
-        gruppe="domains",
-        recht="cloudflare.manage",
-        recht_global=True,
-    ),
-    "propose_modpack_install": Werkzeug(
-        "server_write",
-        gruppe="mods",
-        recht="server.mods.write",
-    ),
 
     # ── Rechte anderer Benutzer ─────────────────────────────────────────
     #
@@ -855,34 +463,9 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # Serverbezogen, weil eine Delegation an genau einem Server haengt;
     # `_resolve_server` prueft vorher, dass der Benutzer ihn sieht. Das Recht
     # selbst ist global wie am Panel-Endpunkt.
-    "propose_user_server_permission": Werkzeug(
-        "server_write",
-        gruppe="users",
-        recht="users.permissions.manage",
-        recht_global=True,
-    ),
     # Anlegen und aendern in einem Werkzeug, Muster `propose_task_set`: eine
     # `role_id` entscheidet. Systemrollen (`admin`, `user`) fasst die KI nie
     # an, auch dort nicht, wo das Panel dem Owner die `user`-Rolle oeffnet.
-    "propose_role_set": Werkzeug(
-        "global_write",
-        gruppe="users",
-        recht="roles.manage",
-        recht_global=True,
-    ),
-    "propose_user_roles": Werkzeug(
-        "global_write",
-        gruppe="users",
-        recht="users.permissions.manage",
-        recht_global=True,
-    ),
-    "propose_role_delete": Werkzeug(
-        "global_write",
-        gruppe="users",
-        immer_bestaetigen=True,
-        recht="roles.manage",
-        recht_global=True,
-    ),
 
     # ── Der Rechner des Benutzers (Smart System) ────────────────────────────
     #
@@ -902,16 +485,10 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # **nur** fuer sie. Ausserhalb gibt es keinen freigegebenen Ordner mehr,
     # auf den man sich berufen koennte — deshalb hat `desktop_aufraeumen`
     # weiter unten seine eigene Begruendung und seine eigene Karte.
-    "desktop_dateien": Werkzeug(
-        "delegation", gruppe="desktop", angebot=("ai.desktop.use",)
-    ),
     # Nur lesend: Laufwerke, Ordner, Platzfresser, Bildschirmfoto, Virenscan.
     # Dass Sehen und Scannen hier stehen und nicht in eigenen Werkzeugen, ist
     # dieselbe Rechnung wie oben — eine `aktion` kostet nichts, ein Werkzeug
     # rund tausend Zeichen Katalog.
-    "desktop_system": Werkzeug(
-        "delegation", gruppe="desktop", angebot=("ai.desktop.use",)
-    ),
     # Aufraeumen ausserhalb der Sandbox — der einzige Weg, auf dem die KI am
     # Rechner etwas vernichtet, das der Benutzer nicht ausdruecklich fuer sie
     # freigegeben hat.
@@ -931,12 +508,6 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # (`autonomy_allows`, eingesetzt in `_desktop_behandeln`). Die App bekommt
     # das Urteil als Argument und kann es nicht zu ihren Gunsten drehen: bei
     # fehlendem Feld fragt sie.
-    "desktop_aufraeumen": Werkzeug(
-        "delegation", gruppe="desktop", angebot=("ai.desktop.use",)
-    ),
-    "desktop_launch_app": Werkzeug(
-        "delegation", gruppe="desktop", angebot=("ai.desktop.use",)
-    ),
     # Maus und Tastatur — samt der Bitte um die Freigabe dafuer
     # (`aktion="freigabe"`, frueher das eigene Werkzeug
     # `desktop_takeover_control`). Zusammengelegt am 23.08.2026, weil der
@@ -950,17 +521,9 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # kann sie weder erteilen noch verlaengern, und ohne gueltige Freigabe
     # weist die App jede der uebrigen Aktionen ab — losgeschickt werden sie
     # trotzdem, weil nur der Rechner weiss, ob die Frist noch laeuft.
-    "desktop_steuern": Werkzeug(
-        "delegation", gruppe="desktop", angebot=("ai.desktop.use",)
-    ),
     # Desktop-Artefakte: generische Pipeline fuer Software, Mods und Installer.
     # Download, SHA-256, Defender-Pruefung, fluechtige Windows Sandbox, Locator,
     # Deployment mit Snapshot-Manifest und dateibasiertem Rollback.
-    "desktop_artifact": Werkzeug(
-        "delegation",
-        gruppe="desktop",
-        angebot=("ai.desktop.install", "ai.desktop.use"),
-    ),
     # Universeller Projekt-, Coding-Sandbox- und Git-Arbeitsbereich (GitHub/GitLab).
     #
     # Die Sicherheitsgrenze ist die isolierte Sandbox des jeweiligen Projekts:
@@ -968,18 +531,17 @@ WERKZEUGE: dict[str, Werkzeug] = {
     # dedizierten Sandbox-Basisverzeichnis. Befehle (`run_command`) sind durch
     # eine Dev-Tool-Allowlist und strikte Pfadprüfungen gegen Host-Eskalation
     # abgesichert. Git-Tokens werden über den AskPass-Mechanismus geschützt.
-    "project_workspace": Werkzeug(
-        "global_read",
-        gruppe="projects",
-        angebot=("ai.projects.manage", "ai.coding.use"),
-    ),
-    "project_create": Werkzeug(
-        "global_read",
-        gruppe="projects",
-        angebot=("ai.projects.manage",),
-    ),
 }
 
+
+
+from services.ai_tools import cloudflare_read_tools, curseforge_read_tools, database_tools, document_tools, geo_tools, global_write_tools, hoster_read_tools, panel_overview_tools, project_tools, personal_tools, server_history_tools, server_network_tools, server_file_tools, server_mod_tools, server_ops_tools, server_write_tools, system_tools, task_tools, user_tools  # noqa: E402,F401
+
+_DEKLARIERT = {name: spec.werkzeug for name, spec in ALLE.items()}
+_DOPPELT = set(_TABELLE) & set(_DEKLARIERT)
+if _DOPPELT:
+    raise RuntimeError(f"Werkzeug doppelt deklariert: {sorted(_DOPPELT)}")
+WERKZEUGE: dict[str, Werkzeug] = {**_TABELLE, **_DEKLARIERT}
 
 # Werkzeuge aus dem Zielbild, die es noch nicht gibt. Sie stehen hier, damit
 # ein kuenftiges Tool sich ausdruecklich einordnen muss, statt stillschweigend

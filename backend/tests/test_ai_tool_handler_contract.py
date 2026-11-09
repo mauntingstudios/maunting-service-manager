@@ -36,6 +36,8 @@ from services import (
     ai_tool_registry,
 )
 from services.ai_action_errors import AiActionValidationError
+from services.ai_proposals import lifecycle as ai_proposals_lifecycle
+from services import ai_tool_spec
 from services.ai_tool_registry import herkunft_schnitt
 
 
@@ -76,6 +78,13 @@ def test_every_global_read_tool_is_named_in_its_dispatch() -> None:
             ai_tool_registry.GLOBAL_READ_TOOLS
             - ai_tool_registry.ASK_TOOLS
             - ai_tool_registry.DOCUMENTS_TOOLS
+            # Ein Spec-Handler ist seine eigene Verteilung: sein Name muss
+            # nicht mehr in der Kette stehen.
+            - {
+                name
+                for name, spec in ai_tool_spec.ALLE.items()
+                if spec.global_handler is not None
+            }
         )
         if f'"{name}"' not in quelle
     )
@@ -138,7 +147,9 @@ def test_every_write_tool_has_its_own_payload_branch() -> None:
     dort in den Waechterzweig ("Kein Payload-Bau fuer Werkzeug") — dieser Test
     sorgt dafuer, dass das beim Bauen auffaellt und nicht erst beim Benutzer.
     """
-    quelle = inspect.getsource(ai_proposal_service.create_proposal)
+    quelle = inspect.getsource(ai_proposal_service.create_proposal) + inspect.getsource(
+        ai_proposals_lifecycle.server_vorschlag
+    )
     fehlend = sorted(
         name
         for name in ai_tool_registry.WRITE_TOOLS

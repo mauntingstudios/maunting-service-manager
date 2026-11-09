@@ -27,6 +27,13 @@ from models import RefreshToken, Role, RolePermission, RoleVaultQuota, Server, S
 from services import permission_service, role_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
+from services.ai_tool_spec import (
+    ausfuehrung_aus_tabelle,
+    spaet,
+    spaet_vorschlag,
+    vorschlag_server,
+    werkzeug,
+)
 from services.ai_tools.base import (
     _RATIONALE_REQUIRED,
     _RATIONALE_SCHEMA,
@@ -406,3 +413,105 @@ def execute_user_read_tool(db: Session, *, user: User, tool_name: str, arguments
     if tool_name == "list_roles":
         return _execute_list_roles(db, user, arguments)
     raise AiActionValidationError(f"Kein Handler fuer Werkzeug: {tool_name}")
+
+
+# --- Werkzeugvertrag -------------------------------------------------------
+#
+# Die drei Lesewerkzeuge teilen sich eine Verteilung (`execute_user_read_tool`);
+# der Spec-Handler benennt nur, welches gemeint ist. Die vier Schreibwege
+# bleiben in `user_proposals`; `propose_user_server_permission` haengt an einem
+# Server und folgt mit der Server-Domaene.
+
+def _lies_nutzer(db, *, user, arguments, lauf=None) -> dict:
+    return execute_user_read_tool(db, user=user, tool_name="list_users", arguments=arguments)
+
+
+def _lies_nutzerrechte(db, *, user, arguments, lauf=None) -> dict:
+    return execute_user_read_tool(
+        db, user=user, tool_name="read_user_permissions", arguments=arguments
+    )
+
+
+def _lies_rollen(db, *, user, arguments, lauf=None) -> dict:
+    return execute_user_read_tool(db, user=user, tool_name="list_roles", arguments=arguments)
+
+
+_USER_WERKZEUGE = {
+    "list_users": dict(
+        art="global_read",
+        gruppe="users",
+        angebot=("users.read",),
+        hinweis="Listet Benutzer mit Kennung, Name und Status.",
+        global_handler=_lies_nutzer,
+    ),
+    "read_user_permissions": dict(
+        art="global_read",
+        gruppe="users",
+        angebot=("users.permissions.manage",),
+        hinweis="Liest die Rechte eines Benutzers.",
+        global_handler=_lies_nutzerrechte,
+    ),
+    "list_roles": dict(
+        art="global_read",
+        gruppe="users",
+        angebot=("roles.manage", "users.permissions.manage"),
+        hinweis="Listet Rollen und ihre Rechte.",
+        global_handler=_lies_rollen,
+    ),
+    "propose_role_set": dict(
+        art="global_write",
+        gruppe="users",
+        recht="roles.manage",
+        recht_global=True,
+        hinweis="Legt eine Rolle an oder aendert sie.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.user_proposals._role_set_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.user_proposals._ausfuehren_role_set"
+        ),
+    ),
+    "propose_user_roles": dict(
+        art="global_write",
+        gruppe="users",
+        recht="users.permissions.manage",
+        recht_global=True,
+        hinweis="Aendert die Rollen eines Benutzers.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.user_proposals._user_roles_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.user_proposals._ausfuehren_user_roles"
+        ),
+    ),
+    "propose_user_server_permission": dict(
+        art="server_write",
+        gruppe="users",
+        recht="users.permissions.manage",
+        recht_global=True,
+        hinweis="Vergibt Serverrechte an einen Benutzer.",
+        vorschlag=vorschlag_server("propose_user_server_permission"),
+        ausfuehren=ausfuehrung_aus_tabelle("propose_user_server_permission"),
+    ),
+    "propose_role_delete": dict(
+        art="global_write",
+        gruppe="users",
+        recht="roles.manage",
+        recht_global=True,
+        immer_bestaetigen=True,
+        hinweis="Loescht eine Rolle nach Bestaetigung.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.user_proposals._role_delete_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.user_proposals._ausfuehren_role_delete"
+        ),
+    ),
+}
+
+DEFINITIONEN = _user_tool_definitions()
+
+for _schema in DEFINITIONEN:
+    _eintrag = _USER_WERKZEUGE.get(_schema["function"]["name"])
+    if _eintrag is not None:
+        werkzeug(_schema, **_eintrag)

@@ -25,6 +25,8 @@ from sqlalchemy.orm import Session
 from models import PostgresDatabase, Server, User
 from services import permission_service
 from services.ai_action_errors import AiActionValidationError
+from services.ai_tool_spec import werkzeug
+from services.ai_tools.base import _server_function
 
 READ = "server.databases.read"
 ADMIN = "server.databases.admin"
@@ -209,3 +211,38 @@ def read_database(db: Session, *, user: User, server: Server, arguments: dict) -
         "view": view,
         "data": daten,
     }
+
+
+# --- Werkzeugvertrag -------------------------------------------------------
+
+_SERVER_DEFINITION = _server_function(
+    "read_database",
+    "Liest eine PostgreSQL-Datenbank des Servers wie das Studio.",
+    {
+        "database": {"type": "string", "maxLength": 63},
+        "view": {
+            "type": "string",
+            "enum": [
+                "overview", "objects", "table", "rows", "function", "extensions", "roles",
+                "grants", "health", "parameters", "sessions", "locks", "operations",
+                "operation_schema",
+            ],
+        },
+        "schema": {"type": "string", "maxLength": 63},
+        "name": {"type": "string", "maxLength": 63},
+        "oid": {"type": "integer"},
+        "filters": {"type": "array", "items": {"type": "object"}},
+        "limit": {"type": "integer", "enum": [25, 50, 100, 500]},
+    },
+    ["view"],
+)
+
+DEFINITIONEN = [_SERVER_DEFINITION]
+
+werkzeug(
+    _SERVER_DEFINITION,
+    art="server_read",
+    angebot=("server.databases.read",),
+    hinweis="Liest Schema, Tabellen und Betriebswerte einer Server-Datenbank.",
+    handler=read_database,
+)

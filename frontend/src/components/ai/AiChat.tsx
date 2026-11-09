@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AudioLines, Brain, CalendarClock, Camera, Check, ChevronDown, Copy, Forward, Globe2, HardDrive, Image as ImageIcon, ListPlus, Loader2, Menu, MessageSquarePlus, Mic, MoreHorizontal, Paperclip, Plug, Plus, RotateCw, Search, Send, ShieldAlert, Sparkles, Square, Star, Trash2, Upload, X, Zap } from 'lucide-react'
+import { CalendarClock, Camera, Check, Copy, Forward, HardDrive, Menu, MessageSquarePlus, MoreHorizontal, Paperclip, Plug, Plus, RotateCw, Search, ShieldAlert, Sparkles, Star, Upload, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -18,8 +18,14 @@ import {
   type AiVoiceConfig,
 } from '@/api/ai'
 import { api, SanitizedApiError } from '@/api/client'
-import { Ablageflaeche, Auswahlleiste, Button, Blatteintrag, Blattmenue, ChatBubbleSurface, ChatComposerBanner, ChatMessageMetaRow, Dropdown, Kurzinfo, NachrichtStatus, useMehrfachauswahl, VoiceRecordingBar } from '@maunting/ui'
+import { Ablageflaeche, Auswahlleiste, Button, ChatBubbleSurface, ChatMessageMetaRow, Dropdown, Kurzinfo, NachrichtStatus, useMehrfachauswahl, VoiceRecordingBar } from '@maunting/ui'
 import { AiNachrichtenMenue, AiWeiterleitenDialog } from './AiNachrichtenMenue'
+import { AiModellBlatt, type Denkwahl } from './AiModellBlatt'
+import { AiChatComposerHinweise } from './AiChatComposerHinweise'
+import { AiChatMenue } from './AiChatMenue'
+import { AiChatModellPille } from './AiChatModellPille'
+import { AiChatPlusMenue } from './AiChatPlusMenue'
+import { AiChatSendeleiste } from './AiChatSendeleiste'
 import {
   aiChatPreferenceKeys,
   aiModelChoiceKey,
@@ -40,13 +46,10 @@ import { useAiGenerationStore } from '@/stores/aiGenerationStore'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import { AiActionProposalCard } from './AiActionProposalCard'
-import { AiAnhangLeiste } from './anhaenge/AiAnhangLeiste'
 import { AiAnhangListe } from './anhaenge/AiAnhangListe'
 import { AiSpeicherDrawer } from './anhaenge/AiSpeicherDrawer'
 import { useAnhangUpload } from './anhaenge/useAnhangUpload'
 import { AiAutonomyButton } from './AiAutonomyButton'
-import { AiContextMeter } from './AiContextMeter'
-import { AiMemoryNotice } from './AiMemoryNotice'
 import { AiSkillModal } from './AiSkillModal'
 import { denkwahlFuer, ReasoningPicker } from './ReasoningPicker'
 // Die Blase und ihre Bestandteile standen hier, solange es genau ein Fenster
@@ -83,7 +86,6 @@ interface ServerOption {
  * Server an Inhalt und Endung — nicht der Browser anhand einer kurzen Liste,
  * die genau die Formate vergisst, die jemand gerade braucht.
  */
-const ATTACHMENT_ACCEPT = '*/*'
 
 /**
  * Wie oft das Tipp-Signal höchstens gesendet wird.
@@ -111,13 +113,6 @@ const NACHSEHEN_MS = 20_000
  * null}` heisst dort „denk nach, so wie du es fuer richtig haeltst" — mit einem
  * einzelnen Stufenfeld muesste man dafuer einen Wert erfinden.
  */
-interface Denkwahl {
-  an: boolean
-  stufe: string | null
-}
-
-
-
 /**
  * Mit welchem Modell der Chat aufgeht: dem zuletzt gewaehlten, sonst dem
  * ersten benutzbaren.
@@ -787,7 +782,6 @@ export function AiChat({
 
   const [speicherOffen, setSpeicherOffen] = useState(false)
   const [kameraOffen, setKameraOffen] = useState(false)
-  const [plusMenuOffen, setPlusMenuOffen] = useState(false)
   const [slashMenuAbgewiesen, setSlashMenuAbgewiesen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
   const [skills, setSkills] = useState<AiSkillSummary[]>([])
@@ -2017,75 +2011,23 @@ export function AiChat({
             </button>
           </Kurzinfo>
 
-          <Blattmenue
+          <AiChatMenue
             offen={menueOffen}
             onSchliessen={() => setMenueOffen(false)}
-            titel={t('ai.chat.title')}
-            className="bg-surface-container-high/95 backdrop-blur-2xl border border-outline-variant/30 text-on-surface shadow-2xl"
-          >
-            <div className="px-4 pt-3 pb-2 text-xs font-semibold text-on-surface-variant truncate border-b border-outline-variant/20">
-              {t('ai.chat.title')}
-            </div>
-            <div className="py-1">
-              {onNewChat && (
-                <Blatteintrag
-                  icon={<Plus className="h-4 w-4" aria-hidden="true" />}
-                  label="Neuer Chat"
-                  onClick={() => {
-                    setMenueOffen(false)
-                    onNewChat()
-                  }}
-                />
-              )}
-              <Blatteintrag
-                icon={<RotateCw className={`h-4 w-4 ${reloading ? 'animate-spin' : ''}`} aria-hidden="true" />}
-                label={t('common.refresh', 'Aktualisieren')}
-                disabled={busy || streaming}
-                onClick={() => {
-                  setMenueOffen(false)
-                  void manuellNachladen()
-                }}
-              />
-              {singraShell && onOpenHistorySearch && (
-                <Blatteintrag
-                  icon={<Search className="h-4 w-4" aria-hidden="true" />}
-                  label="Unterhaltungen durchsuchen"
-                  onClick={() => {
-                    setMenueOffen(false)
-                    onOpenHistorySearch()
-                  }}
-                />
-              )}
-              {geoData && !geoOpen && (
-                <Blatteintrag
-                  icon={<Globe2 className="h-4 w-4" aria-hidden="true" />}
-                  label={t('ai.geo.open')}
-                  onClick={() => {
-                    setMenueOffen(false)
-                    setGeoOpen(true)
-                  }}
-                />
-              )}
-              <Blatteintrag
-                icon={<ImageIcon className="h-4 w-4" aria-hidden="true" />}
-                label={t('social.wallpaper.title')}
-                onClick={() => {
-                  setMenueOffen(false)
-                  setzeHintergrundOffen(true)
-                }}
-              />
-              <Blatteintrag
-                icon={<Trash2 className="h-4 w-4 text-status-destructive" aria-hidden="true" />}
-                label={t('ai.chat.clear')}
-                gefahr
-                disabled={busy || empty}
-                onClick={() => {
-                  setMenueOffen(false)
-                  void clearHistory()
-                }}
-              />
-            </div>
-          </Blattmenue>
+            onNewChat={onNewChat}
+            onOpenHistorySearch={onOpenHistorySearch}
+            onOpenGeo={() => setGeoOpen(true)}
+            onOpenWallpaper={() => setzeHintergrundOffen(true)}
+            onClearHistory={() => void clearHistory()}
+            singraShell={singraShell}
+            busy={busy}
+            streaming={streaming}
+            reloading={reloading}
+            empty={empty}
+            geoOpen={geoOpen}
+            hasGeoData={!!geoData}
+            onReload={() => void manuellNachladen()}
+          />
         </div>
       </header>
 
@@ -2372,130 +2314,27 @@ export function AiChat({
             {/* Der Hinweis steht ueber dem Eingabefeld, nicht in einer
                 Einstellungsseite: er soll dort auftauchen, wo die Entscheidung
                 Folgen hat — bevor jemand etwas Persoenliches tippt. */}
-            {memoryNoticeDue && scope.kind !== 'docs' && (
-              <AiMemoryNotice onAnswered={() => setMemoryNoticeDue(false)} />
-            )}
             <div ref={eingabeRef} className="mx-auto w-full max-w-3xl xl:max-w-4xl">
-              {/* Nur Ungesendetes: alles Uebrige steht in seiner Nachricht. Vorher
-                  blieb jeder Anhang hier stehen und ging bei jeder Folgefrage
-                  erneut an den Anbieter. */}
-              <AiAnhangLeiste
-                anhaenge={offeneAnhaenge}
-                vorschauen={vorschauen}
-                onRemove={(anhang) => void removeAttachment(anhang)}
-                disabled={busy}
-              />
-
-              {editingMessage && (
-                <ChatComposerBanner
-                  mode="edit"
-                  title={t('ai.chat.edit', 'Nachricht bearbeiten')}
-                  text={editingMessage.content}
-                  hint={t('ai.chat.editHint', 'Nachfolgende Antworten werden neu generiert')}
-                  onCancel={() => {
-                    setEditingMessage(null)
-                    setInput('')
-                  }}
-                  cancelLabel={t('common.cancel')}
-                  className="mb-2 rounded-2xl border border-primary/35 shadow-lg"
-                />
-              )}
-
-              {replyingTo && !editingMessage && (
-                <ChatComposerBanner
-                  mode="reply"
-                  title={`Antwort an ${replyingTo.role === 'assistant' ? 'Singra' : 'Nachricht'}`}
-                  text={replyingTo.content}
-                  onCancel={() => setReplyingTo(null)}
-                  cancelLabel={t('common.cancel')}
-                  className="mb-2 rounded-2xl border border-outline-variant/35 shadow-lg"
-                />
-              )}
-
-              {queuedMessages.length > 0 && (
-                <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-outline-variant/30 bg-surface-container-high/60 px-2.5 py-1.5 text-xs text-on-surface-variant">
-                  <span className="flex items-center gap-1 font-medium text-on-surface">
-                    <ListPlus className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                    Warteschlange ({queuedMessages.length}):
-                  </span>
-                  {queuedMessages.map((msg, idx) => (
-                    <Kurzinfo key={idx} text={msg} aussen="max-w-[220px]">
-                      <span className="inline-flex max-w-[220px] items-center gap-1 rounded bg-surface-container-highest px-2 py-0.5 text-on-surface border border-outline-variant/40">
-                        <span className="truncate">{msg}</span>
-                        <button
-                          type="button"
-                          className="text-on-surface-variant hover:text-status-destructive transition-colors"
-                          onClick={() => setQueuedMessages((q) => q.filter((_, i) => i !== idx))}
-                          aria-label="Aus Warteschlange entfernen"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    </Kurzinfo>
-                  ))}
-                  {queuedMessages.length > 1 && (
-                    <button
-                      type="button"
-                      className="ml-auto text-label-sm text-on-surface-variant hover:text-status-destructive underline transition-colors"
-                      onClick={() => setQueuedMessages([])}
-                    >
-                      Alle leeren
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Autovervollständigung für Slash-Befehle und Skills */}
-              {zeigeSlashMenu && gefilterteSlashBefehle.length > 0 && (
-                <div
-                  role="listbox"
-                  aria-label="Verfügbare Befehle und Skills"
-                  className="mb-2 max-h-64 overflow-y-auto rounded-2xl border border-outline-variant/40 bg-surface-container-high/95 p-2 shadow-2xl backdrop-blur-xl animate-fade-in"
-                >
-                  <div className="px-2.5 py-1 text-label-sm font-semibold uppercase tracking-wider text-white/50">
-                    Befehle & Skills ({gefilterteSlashBefehle.length})
-                  </div>
-                  <div className="space-y-1 mt-1">
-                    {gefilterteSlashBefehle.map((befehl, idx) => {
-                      const aktiv = idx === slashIndex
-                      const Icon = befehl.icon
-                      return (
-                        <button
-                          key={befehl.id}
-                          type="button"
-                          role="option"
-                          aria-selected={aktiv}
-                          className={[
-                            'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-xs transition-colors',
-                            aktiv
-                              ? 'bg-primary/25 border border-primary/45 text-white'
-                              : 'text-white/85 hover:bg-white/10 hover:text-white border border-transparent',
-                          ].join(' ')}
-                          onMouseEnter={() => setSlashIndex(idx)}
-                          onClick={() => befehl.ausfuehren()}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div
-                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                                aktiv ? 'bg-primary/30 text-primary' : 'bg-white/10 text-white/70'
-                              }`}
-                            >
-                              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                            </div>
-                            <div className="min-w-0">
-                              <span className="font-semibold text-white">{befehl.label}</span>
-                              <span className="ml-2 truncate text-white/60">{befehl.beschreibung}</span>
-                            </div>
-                          </div>
-                          <span className="text-label-sm text-white/40 shrink-0 font-mono">
-                            {befehl.art === 'skill' ? 'Skill' : 'Aktion'}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
+            <AiChatComposerHinweise
+              memoryNoticeDue={memoryNoticeDue}
+              onMemoryNoticeAnswered={() => setMemoryNoticeDue(false)}
+              scopeKind={scope.kind}
+              anhaenge={offeneAnhaenge}
+              vorschauen={vorschauen}
+              onRemoveAttachment={(anhang) => void removeAttachment(anhang)}
+              busy={busy}
+              editingMessage={editingMessage}
+              onCancelEdit={() => setEditingMessage(null)}
+              onEditInputClear={() => setInput('')}
+              replyingTo={replyingTo}
+              onCancelReply={() => setReplyingTo(null)}
+              queuedMessages={queuedMessages}
+              setQueuedMessages={setQueuedMessages}
+              zeigeSlashMenu={zeigeSlashMenu}
+              gefilterteSlashBefehle={gefilterteSlashBefehle}
+              slashIndex={slashIndex}
+              setSlashIndex={setSlashIndex}
+            />
 
               <div
                 className={
@@ -2638,140 +2477,17 @@ export function AiChat({
                     <div className="flex items-center justify-between gap-1.5 pt-1.5 min-w-0">
                       {/* Links: Aktionen, Anhänge & Modell-Pille */}
                       <div className="flex items-center gap-1.5 min-w-0">
-                        {canAttach && (
-                          singraShell ? (
-                            <div className="relative shrink-0">
-                              <Kurzinfo text="Aktionen & Anhänge" lage="oben" seite="anfang">
-                                <button
-                                  type="button"
-                                  onClick={() => setPlusMenuOffen((v) => !v)}
-                                  className={`grid h-8 w-8 place-items-center rounded-full transition-colors border border-white/15 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white ${
-                                    busy ? 'pointer-events-none opacity-50' : 'cursor-pointer'
-                                  }`}
-                                  aria-label="Aktionen und Anhänge"
-                                  aria-expanded={plusMenuOffen}
-                                >
-                                  {uploading ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                                  ) : (
-                                    <Plus
-                                      className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                                        plusMenuOffen ? 'rotate-45' : ''
-                                      }`}
-                                      aria-hidden="true"
-                                    />
-                                  )}
-                                </button>
-                              </Kurzinfo>
-
-                              {plusMenuOffen && (
-                                <>
-                                  <div
-                                    className="fixed inset-0 z-40"
-                                    onClick={() => setPlusMenuOffen(false)}
-                                    aria-hidden="true"
-                                  />
-                                  <div
-                                    role="menu"
-                                    className="absolute bottom-11 left-0 z-50 w-56 rounded-2xl border border-outline-variant/40 bg-surface-container-high/95 p-1.5 shadow-2xl backdrop-blur-xl animate-fade-in text-on-surface text-xs"
-                                  >
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-white/90 hover:bg-white/10 hover:text-white transition-colors"
-                                      onClick={() => {
-                                        setPlusMenuOffen(false)
-                                        fileInputRef.current?.click()
-                                      }}
-                                    >
-                                      <Upload className="h-4 w-4 text-primary" aria-hidden="true" />
-                                      <span className="font-medium">Datei hochladen</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-white/90 hover:bg-white/10 hover:text-white transition-colors"
-                                      onClick={() => {
-                                        setPlusMenuOffen(false)
-                                        setKameraOffen(true)
-                                      }}
-                                    >
-                                      <Camera className="h-4 w-4 text-primary" aria-hidden="true" />
-                                      <span className="font-medium">Foto aufnehmen</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-white/90 hover:bg-white/10 hover:text-white transition-colors"
-                                      onClick={() => {
-                                        setPlusMenuOffen(false)
-                                        setSpeicherOffen(true)
-                                      }}
-                                    >
-                                      <HardDrive className="h-4 w-4 text-primary" aria-hidden="true" />
-                                      <span className="font-medium">Aus KI-Speicher wählen</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-white/90 hover:bg-white/10 hover:text-white transition-colors"
-                                      onClick={() => {
-                                        setPlusMenuOffen(false)
-                                        navigate('/ai?bereich=tools')
-                                      }}
-                                    >
-                                      <Plug className="h-4 w-4 text-primary" aria-hidden="true" />
-                                      <span className="font-medium">Tools & MCP-Integrationen</span>
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-
-                              <input
-                                ref={fileInputRef}
-                                type="file"
-                                className="sr-only"
-                                disabled={busy}
-                                accept={ATTACHMENT_ACCEPT}
-                                multiple
-                                aria-label={t('ai.attachments.add')}
-                                onChange={(event) => {
-                                  void uploadFiles(event.target.files)
-                                  event.target.value = ''
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            <Kurzinfo text={t('ai.attachments.add')} lage="oben" seite="anfang" aussen="shrink-0">
-                              <label
-                                className={`grid h-8 w-8 place-items-center rounded-full transition-colors text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface ${
-                                  busy ? 'pointer-events-none opacity-50' : 'cursor-pointer'
-                                }`}
-                              >
-                                {uploading ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                                ) : (
-                                  <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
-                                )}
-                                <input
-                                  type="file"
-                                  className="sr-only"
-                                  disabled={busy}
-                                  accept={ATTACHMENT_ACCEPT}
-                                  multiple
-                                  aria-label={t('ai.attachments.add')}
-                                  onChange={(event) => {
-                                    void uploadFiles(event.target.files)
-                                    event.target.value = ''
-                                  }}
-                                />
-                              </label>
-                            </Kurzinfo>
-                          )
-                        )}
+                        <AiChatPlusMenue
+                          singraShell={singraShell}
+                          canAttach={canAttach}
+                          busy={busy}
+                          uploading={uploading}
+                          fileInputRef={fileInputRef}
+                          uploadFiles={uploadFiles}
+                          onKamera={() => setKameraOffen(true)}
+                          onSpeicher={() => setSpeicherOffen(true)}
+                          onTools={() => navigate('/ai?bereich=tools')}
+                        />
                         {canAttach && !singraShell && (
                           <Kurzinfo text={t('ai.attachments.storageTitle')} lage="oben" seite="anfang" aussen="shrink-0">
                             <Button
@@ -2787,153 +2503,42 @@ export function AiChat({
                           </Kurzinfo>
                         )}
 
-                        {/* Das Perplexity-artige Modell-Badge direkt in der Leiste */}
-                        <Kurzinfo text="KI-Provider & Modell wechseln" lage="oben">
-                          <button
-                            type="button"
-                            onClick={() => setModelModalOpen(true)}
-                            disabled={busy}
-                            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full border text-xs font-medium transition-all active:scale-95 cursor-pointer max-w-[140px] xs:max-w-[190px] sm:max-w-[260px] shrink-0 ${
-                              singraShell
-                                ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white shadow-sm'
-                                : 'border-outline-variant/30 bg-surface-container-high/60 hover:bg-surface-container-high text-on-surface'
-                            }`}
-                            aria-label="KI-Provider und Modell wählen"
-                          >
-                            <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
-                            <div className="flex items-center gap-1 min-w-0 text-xs">
-                              <span className="text-white/60 text-label-sm truncate hidden xs:inline max-w-[70px]">
-                                {aktiverProvider?.name || 'KI'}
-                              </span>
-                              <span className="text-white/30 shrink-0 hidden xs:inline">·</span>
-                              <span className="truncate font-medium">
-                                {selectedModel || aktiverProvider?.default_model || 'Modell'}
-                              </span>
-                            </div>
-                            {aktiverProviderMitModell?.reasoning && denken.an && (
-                              <span className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/20 text-primary text-label-sm font-medium shrink-0">
-                                <Brain className="h-2.5 w-2.5" aria-hidden="true" />
-                                <span className="truncate max-w-[50px]">
-                                  {denken.stufe ? t(`ai.reasoning.levels.${denken.stufe}`, { defaultValue: denken.stufe }) : 'Aktiv'}
-                                </span>
-                              </span>
-                            )}
-                            <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
-                          </button>
-                        </Kurzinfo>
+                        <AiChatModellPille
+                          provider={aktiverProvider}
+                          providerMitModell={aktiverProviderMitModell}
+                          selectedModel={selectedModel}
+                          denken={denken}
+                          busy={busy}
+                          singraShell={singraShell}
+                          onOpen={() => setModelModalOpen(true)}
+                        />
                       </div>
 
-                      {/* Rechts: Realtime, Diktat, Kontext, Senden */}
-                      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                        {/* Realtime Sprachmodus direkt in der Leiste */}
-                        {hasVoice && (onSwitchMode || voiceConfig) && (
-                          <Kurzinfo text={inlineVoiceActive ? 'Realtime beenden' : 'Realtime Sprachmodus'} lage="oben">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (singraShell && voiceConfig) {
-                                  setInlineVoiceActive((v) => !v)
-                                } else if (onSwitchMode) {
-                                  onSwitchMode('sprache')
-                                }
-                              }}
-                              className={`grid h-8 w-8 place-items-center rounded-full transition-all active:scale-95 shrink-0 ${
-                                inlineVoiceActive
-                                  ? 'bg-primary text-on-primary shadow-sm shadow-primary/30'
-                                  : singraShell
-                                    ? 'border border-white/10 bg-white/5 text-primary hover:bg-white/15'
-                                    : 'border border-outline-variant/30 bg-surface-container-high/60 text-primary hover:bg-surface-container-high'
-                              }`}
-                              aria-label="Realtime Sprachmodus"
-                            >
-                              <AudioLines className={`h-4 w-4 ${inlineVoiceActive ? '' : 'animate-pulse'}`} aria-hidden="true" />
-                            </button>
-                          </Kurzinfo>
-                        )}
-
-                        {/* Diktat / Spracheingabe */}
-                        {dictationAvailable && (
-                          <Kurzinfo text={t('ai.chat.dictationStart')} lage="oben">
-                            <button
-                              type="button"
-                              className={`grid h-8 w-8 place-items-center rounded-full transition-all active:scale-95 shrink-0 disabled:opacity-50 ${
-                                singraShell
-                                  ? 'border border-white/10 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white'
-                                  : 'border border-outline-variant/30 bg-surface-container-high/60 text-on-surface-variant hover:text-on-surface'
-                              }`}
-                              disabled={transcribing || uploading || !providerId}
-                              onClick={() => void diktatUmschalten()}
-                              aria-label={t('ai.chat.dictationStart')}
-                            >
-                              {transcribing ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                              ) : (
-                                <Mic className="h-3.5 w-3.5" aria-hidden="true" />
-                              )}
-                            </button>
-                          </Kurzinfo>
-                        )}
-
-                        {/* Kontextanzeige */}
-                        <AiContextMeter status={contextStatus} />
-
-                        {/* Senden / Stoppen */}
-                        {streaming ? (
-                          !input.trim() ? (
-                            <Kurzinfo text={t('ai.chat.stopRun')} lage="oben" seite="ende">
-                              <button
-                                type="button"
-                                className="grid h-8 w-8 place-items-center rounded-full bg-status-destructive/15 text-status-destructive hover:bg-status-destructive/25 border border-status-destructive/30 transition-all active:scale-95 shrink-0"
-                                onClick={() => void stoppeLauf()}
-                                aria-label={t('ai.chat.stopRun')}
-                              >
-                                <Square className="h-3 w-3 fill-current" aria-hidden="true" />
-                              </button>
-                            </Kurzinfo>
-                          ) : (
-                            <div className="flex items-center gap-1 shrink-0">
-                              <Kurzinfo text={`${t('ai.chat.enqueue')} (Enter)`} lage="oben">
-                                <button
-                                  type="button"
-                                  className="flex h-8 items-center gap-1 px-2.5 rounded-full bg-primary text-on-primary hover:brightness-110 text-xs font-medium transition-all active:scale-95 shrink-0"
-                                  onClick={() => enqueueMessage(input)}
-                                  aria-label={t('ai.chat.enqueue')}
-                                >
-                                  <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                                  <span className="hidden sm:inline">Einreihen</span>
-                                </button>
-                              </Kurzinfo>
-                              <Kurzinfo text={`${t('ai.chat.sendNowInterrupt')} (Alt+Enter)`} lage="oben" seite="ende">
-                                <button
-                                  type="button"
-                                  className="grid h-8 w-8 place-items-center rounded-full bg-status-destructive/20 text-status-destructive hover:bg-status-destructive/30 border border-status-destructive/40 transition-all active:scale-95 shrink-0"
-                                  onClick={() => void sendImmediatelyAndInterrupt(input)}
-                                  aria-label={t('ai.chat.sendNowInterrupt')}
-                                >
-                                  <Zap className="h-3.5 w-3.5" aria-hidden="true" />
-                                </button>
-                              </Kurzinfo>
-                            </div>
-                          )
-                        ) : (
-                          <Kurzinfo text={`${editingMessage ? t('ai.chat.editSend', { defaultValue: 'Neu senden' }) : t('ai.chat.send')} (Enter)`} lage="oben" seite="ende">
-                            <button
-                              type="submit"
-                              disabled={
-                                uploading
-                                || (!input.trim() && offeneAnhaenge.length === 0)
-                                || !providerId
-                              }
-                              className={`grid h-8 w-8 place-items-center rounded-full bg-primary text-on-primary hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 transition-all active:scale-95 shrink-0 shadow-sm ${
-                                singraShell ? 'shadow-md' : ''
-                              }`}
-                              aria-label={editingMessage ? t('ai.chat.editSend', { defaultValue: 'Neu senden' }) : t('ai.chat.send')}
-                            >
-                              <Send className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                          </Kurzinfo>
-                        )}
-                      </div>
+                      <AiChatSendeleiste
+                        hasVoiceTarget={hasVoice && Boolean(onSwitchMode || voiceConfig)}
+                        inlineVoiceActive={inlineVoiceActive}
+                        onToggleVoice={() => {
+                          if (singraShell && voiceConfig) {
+                            setInlineVoiceActive((v) => !v)
+                          } else if (onSwitchMode) {
+                            onSwitchMode('sprache')
+                          }
+                        }}
+                        singraShell={singraShell}
+                        dictationAvailable={dictationAvailable}
+                        transcribing={transcribing}
+                        uploading={uploading}
+                        hasProvider={Boolean(providerId)}
+                        onToggleDictation={() => void diktatUmschalten()}
+                        contextStatus={contextStatus}
+                        streaming={streaming}
+                        input={input}
+                        hasAttachments={offeneAnhaenge.length > 0}
+                        editingMessage={Boolean(editingMessage)}
+                        onStop={() => void stoppeLauf()}
+                        onEnqueue={(text) => enqueueMessage(text)}
+                        onSendNowInterrupt={(text) => void sendImmediatelyAndInterrupt(text)}
+                      />
                     </div>
                   </>
                 )}
@@ -2963,214 +2568,23 @@ export function AiChat({
       offen={hintergrundOffen}
       onOffenChange={setzeHintergrundOffen}
     />
-    {/* ── Dialog / Blattmenü zur schnellen Provider-, Modell- und Denkstufenauswahl ── */}
-    <Blattmenue
+    <AiModellBlatt
       offen={modelModalOpen}
       onSchliessen={() => setModelModalOpen(false)}
-      titel="KI-Provider & Modell wählen"
-      className="bg-surface-container-high/95 backdrop-blur-2xl border border-outline-variant/30 text-on-surface shadow-2xl max-w-2xl mx-auto max-h-[90vh] overflow-y-auto"
-    >
-      <div className="p-4 sm:p-5 space-y-4">
-        {availableProviders.length > 1 && (
-          <div className="space-y-1.5">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              Provider wählen
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {availableProviders.map((p) => {
-                const isActive = p.id === providerId
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => {
-                      waehleProvider(String(p.id))
-                    }}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
-                      isActive
-                        ? 'border-primary/60 bg-primary/15 text-primary shadow-sm font-semibold'
-                        : 'border-outline-variant/30 bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-                    }`}
-                  >
-                    <span>{p.name}</span>
-                    {isActive && <Check className="w-3.5 h-3.5 text-primary" />}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              Modelle ({aktiverProvider?.name || 'Ausgewählt'})
-            </span>
-            <span className="text-xs text-on-surface-variant">
-              {providerModelle.length} {providerModelle.length === 1 ? 'Modell' : 'Modelle'}
-            </span>
-          </div>
-
-          {providerModelle.length > 5 && (
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-on-surface-variant" />
-              <input
-                type="text"
-                value={modelSearchQuery}
-                onChange={(e) => setModelSearchQuery(e.target.value)}
-                placeholder="Modell suchen..."
-                className="w-full h-8 pl-8 pr-3 text-xs rounded-xl border border-outline-variant/30 bg-surface-container-low text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[min(56vh,480px)] overflow-y-auto pr-1">
-            {gefilterteModelle.length === 0 ? (
-              <div className="col-span-full p-4 text-center text-xs text-on-surface-variant rounded-xl border border-outline-variant/20 bg-surface-container-low/50">
-                Kein passendes Modell gefunden.
-              </div>
-            ) : (
-              gefilterteModelle.map((m) => {
-                const isSelected = (selectedModel || aktiverProvider?.default_model) === m.model_id
-                const isDefault = aktiverProvider?.default_model === m.model_id
-                return (
-                  <button
-                    key={m.model_id}
-                    type="button"
-                    onClick={() => {
-                      waehleModell(m.model_id)
-                    }}
-                    className={`group relative flex flex-col justify-between gap-1.5 p-3 rounded-xl border text-left transition-all ${
-                      isSelected
-                        ? 'border-primary/60 bg-primary/12 text-on-surface shadow-sm ring-1 ring-primary/30'
-                        : 'border-outline-variant/25 bg-surface-container-low/60 hover:bg-surface-container hover:border-outline-variant/60 text-on-surface-variant hover:text-on-surface'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 min-w-0">
-                      <span className="text-xs font-semibold text-on-surface truncate">
-                        {m.name && m.name !== m.model_id ? m.name : m.model_id}
-                      </span>
-                      {isSelected ? (
-                        <Check className="w-4 h-4 text-primary shrink-0" />
-                      ) : isDefault ? (
-                        <span className="text-label-sm font-medium px-1.5 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/25 shrink-0">
-                          Standard
-                        </span>
-                      ) : null}
-                    </div>
-                    {m.name && m.name !== m.model_id && (
-                      <p className="text-label-sm font-mono text-on-surface-variant/70 truncate">
-                        {m.model_id}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                      {isDefault && isSelected && (
-                        <span className="text-label-sm font-medium px-1.5 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/25">
-                          Standard
-                        </span>
-                      )}
-                      {m.reasoning && (
-                        <span className="inline-flex items-center gap-1 text-label-sm text-primary font-medium">
-                          <Brain className="w-3 h-3" />
-                          <span>Denkmodell</span>
-                        </span>
-                      )}
-                      {m.vision && (
-                        <span className="inline-flex items-center gap-1 text-label-sm text-on-surface-variant">
-                          <span>Sehen</span>
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                )
-              })
-            )}
-          </div>
-
-          {providerModelle.length <= 1 && (
-            <p className="text-xs text-on-surface-variant/80 pt-1">
-              Tipp: In den Server-Einstellungen unter <em>KI-Provider</em> können weitere Modelle für diesen Provider freigegeben oder „Alle Modelle erlauben“ aktiviert werden.
-            </p>
-          )}
-        </div>
-
-        {/* Denkstufe für das ausgewählte Modell */}
-        {aktiverProviderMitModell?.reasoning && (
-          <div className="pt-3 border-t border-outline-variant/20 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                <Brain className="w-3.5 h-3.5 text-primary" aria-hidden="true" />
-                Denkstufe
-              </span>
-              <span className="text-label-sm text-on-surface-variant/75 truncate max-w-[170px]">
-                {selectedModel || aktiverProvider?.default_model}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {aktiverProviderMitModell.can_disable && (
-                <button
-                  type="button"
-                  onClick={() => waehleDenken({ an: false, stufe: null })}
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
-                    !denken.an
-                      ? 'border-primary/60 bg-primary/15 text-primary font-semibold shadow-sm'
-                      : 'border-outline-variant/30 bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-                  }`}
-                >
-                  Aus
-                </button>
-              )}
-              {aktiverProviderMitModell.efforts.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={() => waehleDenken({ an: true, stufe: null })}
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
-                    denken.an
-                      ? 'border-primary/60 bg-primary/15 text-primary font-semibold shadow-sm'
-                      : 'border-outline-variant/30 bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-                  }`}
-                >
-                  Aktiv
-                </button>
-              ) : (
-                aktiverProviderMitModell.efforts.map((stufe) => {
-                  const isActive = denken.an && denken.stufe === stufe
-                  return (
-                    <button
-                      key={stufe}
-                      type="button"
-                      onClick={() => waehleDenken({ an: true, stufe })}
-                      className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
-                        isActive
-                          ? 'border-primary/60 bg-primary/15 text-primary font-semibold shadow-sm'
-                          : 'border-outline-variant/30 bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-                      }`}
-                    >
-                      {t(`ai.reasoning.levels.${stufe}`, { defaultValue: stufe })}
-                    </button>
-                  )
-                })
-              )}
-            </div>
-            <p className="text-label-sm text-on-surface-variant/65">
-              Wird für dieses Modell gespeichert.
-            </p>
-          </div>
-        )}
-
-        <div className="pt-2 flex justify-end">
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={() => setModelModalOpen(false)}
-            className="w-full sm:w-auto text-xs"
-          >
-            Fertig
-          </Button>
-        </div>
-      </div>
-    </Blattmenue>
+      anbieter={availableProviders}
+      anbieterId={providerId}
+      waehleAnbieter={waehleProvider}
+      modelle={providerModelle}
+      gefilterteModelle={gefilterteModelle}
+      suchbegriff={modelSearchQuery}
+      onSuchbegriff={setModelSearchQuery}
+      gewaehltesModell={selectedModel}
+      aktiverAnbieter={aktiverProvider}
+      waehleModell={waehleModell}
+      aktiverMitModell={aktiverProviderMitModell}
+      denken={denken}
+      waehleDenken={waehleDenken}
+    />
     <AiSpeicherDrawer
       offen={speicherOffen}
       onSchliessen={() => setSpeicherOffen(false)}

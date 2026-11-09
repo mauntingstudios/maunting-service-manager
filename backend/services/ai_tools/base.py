@@ -19,7 +19,6 @@ from services.ai_task_service import (
     MAX_INTERVALL_STUNDEN as _MAX_INTERVALL_STUNDEN,
     MIN_INTERVALL_STUNDEN as _MIN_INTERVALL_STUNDEN,
 )
-from services.ai_tool_registry import bekannt as _werkzeug_bekannt
 from services.ai_action_errors import (
     AiActionStateError,
     AiActionValidationError,
@@ -161,10 +160,6 @@ _PLAN_SCHEMA = {
 }
 
 def _function(name: str, description: str, properties: dict, required: list[str]) -> dict:
-    # Ohne Zeile in `ai_tool_registry` waere das Werkzeug zwar im Katalog, aber
-    # in keiner Menge — das Modell duerfte es aufrufen und die Allowlist wuerde
-    # es abweisen. Hier faellt der fehlende Eintrag sofort auf.
-    assert _werkzeug_bekannt(name), f"Werkzeug {name!r} fehlt in ai_tool_registry"
     return {
         "type": "function",
         "function": {

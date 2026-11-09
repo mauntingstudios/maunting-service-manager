@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from services import ai_action_service, ai_tool_registry
+from services import ai_action_service, ai_tool_registry, ai_tool_spec
 
 
 def test_every_offered_tool_has_a_table_entry() -> None:
@@ -118,10 +118,33 @@ def test_an_unknown_kind_is_refused() -> None:
         ai_tool_registry.Werkzeug("lesen_vielleicht")
 
 
-def test_defining_a_tool_without_a_table_entry_fails_loudly() -> None:
-    """Der eigentliche Gewinn: der vergessene Eintrag faellt beim Definieren auf."""
-    with pytest.raises(AssertionError, match="ai_tool_registry"):
-        ai_action_service._function("erfundenes_werkzeug", "Test", {}, [])
+def test_defining_the_same_tool_twice_fails_loudly() -> None:
+    """Die Spec ist die Zeile. Zweimal deklariert gibt es nicht.
+
+    Der alte Test prueft eine Assertion in `_function`: Schema ohne Tabellen-
+    zeile. Mit `ToolSpec` sind Schema und Einordnung dieselbe Deklaration, der
+    Fehler ist strukturell ausgeschlossen. Was bleibt, ist der doppelte Name.
+    """
+    schema = ai_action_service._function("erfundenes_werkzeug", "Test", {}, [])
+    try:
+        ai_tool_spec.werkzeug(schema, art="global_read", hinweis="Test")
+        with pytest.raises(ValueError, match="bereits deklariert"):
+            ai_tool_spec.werkzeug(schema, art="global_read", hinweis="Test")
+    finally:
+        ai_tool_spec.ALLE.pop("erfundenes_werkzeug", None)
+
+
+def test_a_write_without_proposal_is_refused() -> None:
+    """Eine Schreibfaehigkeit ohne Bauer und Ausfuehrer waere ein toter Knopf."""
+    schema = ai_action_service._function("erfundenes_schreiben", "Test", {}, [])
+    with pytest.raises(ValueError, match="braucht aber Vorschlag"):
+        ai_tool_spec.werkzeug(
+            schema,
+            art="global_write",
+            recht="ai.notes.use",
+            recht_global=True,
+            hinweis="Test",
+        )
 
 
 def test_planned_confirm_only_tools_are_not_offered() -> None:

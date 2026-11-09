@@ -4,6 +4,11 @@ sqlalchemy==2.0.31
 alembic==1.18.5
 pydantic==2.10.6
 pydantic-settings==2.3.4
+# jsonschema: prueft Werkzeugargumente gegen genau das Schema, das dem Modell
+# angeboten wurde. Die Schemas sind bereits JSON Schema; eine eigene Auslegung
+# waere eine zweite Wahrheit daneben. Reines Python, keine C-Erweiterung.
+# Bewertung: docs/agent-rules/dependencies.md.
+jsonschema==4.25.0
 python-jose[cryptography]==3.4.0
 # Dependabot #20 (algorithm confusion via DER-encoded public keys) has no fixed
 # release as of 2026-10-29; tracked for replacement with PyJWT. Do not remove

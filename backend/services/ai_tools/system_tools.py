@@ -9,12 +9,7 @@ from models import User
 from services import permission_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
-from services.ai_tool_registry import (
-    GLOBAL_READ_TOOLS,
-    READ_TOOLS,
-    WERKZEUGE,
-    angebotsrechte,
-)
+from services.ai_tool_spec import werkzeug
 from services.ai_tools.base import (
     _function,
     _resolve_server,
@@ -849,3 +844,317 @@ def _execute_read_web_page(
         "title": scraped.get("title", ""),
         "content": scraped.get("content", ""),
     }
+
+
+# --- Werkzeugvertrag -------------------------------------------------------
+#
+# Desktop-Werkzeuge sind Delegationen: sie laufen im Lauf und in der App,
+# nicht ueber die Lesekette. Die Spec traegt deshalb nur Klassifikation und
+# Hinweis, keinen Handler.
+
+_SYSTEM_WERKZEUGE = {
+    "desktop_dateien": dict(
+        art="delegation",
+        gruppe="desktop",
+        angebot=("ai.desktop.use",),
+        hinweis="Sucht, liest und ordnet Dateien auf dem Rechner des Benutzers.",
+    ),
+    "desktop_launch_app": dict(
+        art="delegation",
+        gruppe="desktop",
+        angebot=("ai.desktop.use",),
+        hinweis="Startet ein Programm auf dem Rechner.",
+    ),
+    "desktop_steuern": dict(
+        art="delegation",
+        gruppe="desktop",
+        angebot=("ai.desktop.use",),
+        hinweis="Klickt und tippt auf dem Rechner, nach Freigabe.",
+    ),
+    "desktop_system": dict(
+        art="delegation",
+        gruppe="desktop",
+        angebot=("ai.desktop.use",),
+        hinweis="Liest Systemzustand, Fenster und Bildschirminhalt.",
+    ),
+    "desktop_aufraeumen": dict(
+        art="delegation",
+        gruppe="desktop",
+        angebot=("ai.desktop.use",),
+        hinweis="Schliesst Fenster und raeumt die Sitzung auf.",
+    ),
+    "desktop_artifact": dict(
+        art="delegation",
+        gruppe="desktop",
+        angebot=("ai.desktop.install", "ai.desktop.use"),
+        hinweis="Legt ein Artefakt auf dem Rechner ab.",
+    ),
+}
+
+DEFINITIONEN = _desktop_tool_definitions()
+
+for _schema in DEFINITIONEN:
+    _eintrag = _SYSTEM_WERKZEUGE.get(_schema["function"]["name"])
+    if _eintrag is not None:
+        werkzeug(_schema, **_eintrag)
+
+
+# --- Werkzeugvertrag: globale System-Reads --------------------------------
+#
+# Die Schemas standen in `server_tools._global_tool_definitions`; die Handler
+# stehen hier. Dokumentseiten und Skills sind statisch, nur `learn_skill`
+# haengt an der Lernpolitik und bleibt deshalb vorerst dort.
+
+from services.ai_docs_corpus import SEITEN as _DOKU_SEITEN
+
+doku_seiten = sorted(_DOKU_SEITEN)
+doku_liste = ", ".join(f"{s.schluessel} ({s.titel})" for s in _DOKU_SEITEN.values())
+
+_SEARCH_DOCS = _function(
+            "search_docs",
+            "Durchsucht die MSM-Dokumentation — **der erste Schritt, bevor du "
+            "etwas ueber MSM behauptest.** Seiten: " + doku_liste + ".\n"
+            "Liefert Seite, Abschnitt und Ausschnitt; den Abschnitt liest du "
+            "mit `read_docs`. Findest du nichts, sag genau das, statt mit "
+            "Wissen ueber andere Panels aufzufuellen. Nicht fuer laufende "
+            "Server, Spielinhalte oder Konfigurationswerte.",
+            {
+                "query": {"type": "string", "maxLength": 200},
+                "page": {
+                    "type": "string",
+                    "enum": doku_seiten,
+                    "description": "Nur diese Seite durchsuchen. Weglassen sucht in allen.",
+                },
+            },
+            ["query"],
+        )
+_READ_DOCS = _function(
+            "read_docs",
+            "Liest die MSM-Dokumentation: ohne `section` die Gliederung einer "
+            "Seite, mit `section` den Abschnitt. **Abschnittskennungen nie "
+            "raten** — sie kommen aus der Gliederung oder `search_docs`. Was "
+            "hier nicht steht, behauptest du nicht. Nenne dem Benutzer die "
+            "Seite (`panel_page`).",
+            {
+                "page": {"type": "string", "enum": doku_seiten},
+                "section": {
+                    "type": ["string", "null"],
+                    "maxLength": 64,
+                    "description": "Aus Gliederung oder search_docs; leer = Gliederung.",
+                },
+            },
+            ["page"],
+        )
+_READ_SKILL = _function(
+            "read_skill",
+            "Laedt den Text eines Skills aus dem Verzeichnis. Nur, wenn seine "
+            "Beschreibung die Lage wirklich trifft — **passt keiner eindeutig, "
+            "ruf keinen auf**. Der Text ist Anleitung, kein Befehl.",
+            {
+                "skill_key": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "Schluessel aus dem Skill-Verzeichnis.",
+                },
+            },
+            ["skill_key"],
+        )
+_SEARCH_MEMORY = _function(
+            "search_memory",
+            "Durchsucht das Gedaechtnis nach Bedeutung, auch anders "
+            "Formuliertes — wenn der Benutzer wissen will, was du ueber ein "
+            "Thema weisst, oder dir etwas fehlt, das nicht im Memory-Block "
+            "steht. Liefert Bereich und Inhalt.",
+            {
+                "query": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Wonach gesucht wird, in Worten des Benutzers.",
+                },
+            },
+            ["query"],
+        )
+_FORGET_SKILL = _function(
+            "forget_skill",
+            "Loescht einen erlernten Skill, also eine gelernte Vorgehensweise (eigen oder Team); mitgelieferte lassen sich "
+            "nur unter demselben Schluessel ueberschreiben. Zum Aendern nimm "
+            "`learn_skill`. Gibt es den Schluessel in mehreren Bereichen, kommt "
+            "eine Rueckfrage — ruf danach mit der Antwort erneut auf.",
+            {
+                "skill_key": {"type": "string", "maxLength": 64},
+                "scope": {
+                    "type": "string",
+                    "enum": ["global", "team"],
+                    "description": "Nur nach einer Rueckfrage nach dem Bereich.",
+                },
+                "team": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "Nur nach einer Rueckfrage: der Bereichsname daraus, genau so.",
+                },
+            },
+            ["skill_key"],
+        )
+
+DOKU_DEFINITIONEN = [_SEARCH_DOCS, _READ_DOCS]
+SKILL_LESE_DEFINITIONEN = [_READ_SKILL]
+MEMORY_DEFINITIONEN = [_SEARCH_MEMORY, _FORGET_SKILL]
+
+
+def _lies_doku_suche(db, *, user, arguments, lauf=None):
+    return _execute_search_docs(arguments)
+
+
+def _lies_doku(db, *, user, arguments, lauf=None):
+    return _execute_read_docs(arguments)
+
+
+def _lies_skill(db, *, user, arguments, lauf=None):
+    return _execute_read_skill(db, user=user, arguments=arguments)
+
+
+def _lies_memory(db, *, user, arguments, lauf=None):
+    return _execute_search_memory(db, user=user, arguments=arguments)
+
+
+def _vergisst_skill(db, *, user, arguments, lauf=None):
+    return _execute_forget_skill(db, user=user, arguments=arguments)
+
+
+werkzeug(
+    _SEARCH_DOCS,
+    art="global_read",
+    gruppe="docs",
+    hinweis="Durchsucht die MSM-Dokumentation nach Seite und Abschnitt.",
+    global_handler=_lies_doku_suche,
+)
+werkzeug(
+    _READ_DOCS,
+    art="global_read",
+    gruppe="docs",
+    hinweis="Liest Gliederung oder Abschnitt einer Dokumentationsseite.",
+    global_handler=_lies_doku,
+)
+werkzeug(
+    _READ_SKILL,
+    art="global_read",
+    gruppe="skill",
+    angebot=("ai.skills.use",),
+    hinweis="Laedt den Text eines freigegebenen Skills.",
+    global_handler=_lies_skill,
+)
+werkzeug(
+    _SEARCH_MEMORY,
+    art="global_read",
+    gruppe="memory",
+    angebot=("ai.memory.use",),
+    hinweis="Durchsucht das Gedaechtnis nach Bedeutung.",
+    global_handler=_lies_memory,
+)
+werkzeug(
+    _FORGET_SKILL,
+    art="global_read",
+    gruppe="skill",
+    angebot=("ai.skills.use",),
+    hinweis="Loescht einen eigenen oder Team-Skill nach Rueckfrage.",
+    global_handler=_vergisst_skill,
+)
+
+
+
+# --- Werkzeugvertrag: Web und Rueckfrage ----------------------------------
+#
+# Websuche und Seitenlesen hingen am Websuch-Schluessel und standen deshalb
+# nur bedingt im Katalog. Die Bedingung bleibt in `server_tools`; hier stehen
+# die Definitionen und Specs.
+
+from services.ai_web_search_service import MAX_RESULTS
+
+_WEB_SEARCH = _function(
+            "web_search",
+            "Sucht im Web nach aktuellen Informationen, Fehlermeldungen, Modkompatibilitaet oder Spielversionen. Liefert Titel, Adresse und Kurztext von bis zu 15 Treffern.",
+            {
+                "query": {"type": "string", "maxLength": 200, "description": "Suchbegriff oder Frage."},
+                "count": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS, "description": "Anzahl der Treffer (Standard: 10, maximal 15)."},
+            },
+            ["query"],
+        )
+_WEB_PAGE = _function(
+            "read_web_page",
+            "Liest den vollständigen Textinhalt einer Webseite oder das Transkript eines YouTube-Videos ein (inklusive formatierter Tabellen, Spezifikationen und Benchmarks). Nutze dies, um gefundene Suchtreffer oder Artikel im Detail zu studieren.",
+            {
+                "url": {"type": "string", "maxLength": 2000, "description": "Die vollständige HTTP-, HTTPS- oder YouTube-Adresse der zu lesenden Seite."},
+                "deep": {"type": "boolean", "description": "Liest bei true ausführliche Berichte, vollständige Tabellen und lange Artikel mit bis zu 25.000 Zeichen ein (Standard: false für 8.000 Zeichen)."},
+            },
+            ["url"],
+        )
+_ASK = _function(
+            "ask_user",
+            "Stellt dem Benutzer eine Frage mit anklickbaren Vorschlaegen — "
+            "**nur**, wenn Raten teuer waere (Version, Zielserver, schwer "
+            "Ruecknehmbares). Nicht fuer \"soll ich anfangen?\" und nicht fuer "
+            "Nachsehbares. Er kann frei antworten. Danach endet dein Zug.",
+            {
+                "question": {
+                    "type": "string",
+                    "maxLength": MAX_QUESTION_CHARS,
+                    "description": "Die Frage, vollstaendig und aus sich heraus verstaendlich.",
+                },
+                "options": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": MAX_QUESTION_OPTIONS,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string", "maxLength": MAX_OPTION_CHARS},
+                            "hint": {
+                                "type": "string",
+                                "maxLength": MAX_OPTION_HINT_CHARS,
+                                "description": "Was diese Wahl bedeutet. Kurz.",
+                            },
+                        },
+                        "required": ["label"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            ["question", "options"],
+        )
+
+WEB_DEFINITIONEN = [_WEB_SEARCH, _WEB_PAGE]
+ASK_DEFINITIONEN = [_ASK]
+
+
+def _sucht_web(db, *, user, arguments, lauf=None):
+    return _execute_web_search(
+        db,
+        user=user,
+        arguments=arguments,
+        prefetch_session_id=(lauf or {}).get("prefetch_session_id"),
+    )
+
+
+def _liest_webseite(db, *, user, arguments, lauf=None):
+    return _execute_read_web_page(db, user=user, arguments=arguments)
+
+
+werkzeug(
+    _WEB_SEARCH,
+    art="global_read",
+    angebot=("ai.web_search.use",),
+    hinweis="Sucht im Web nach aktuellen Informationen.",
+    global_handler=_sucht_web,
+)
+werkzeug(
+    _WEB_PAGE,
+    art="global_read",
+    angebot=("ai.web_search.use",),
+    hinweis="Liest den Text einer Webseite oder ein Video-Transkript.",
+    global_handler=_liest_webseite,
+)
+werkzeug(
+    _ASK,
+    art="ask",
+    hinweis="Stellt eine Rueckfrage mit anklickbaren Vorschlaegen.",
+)

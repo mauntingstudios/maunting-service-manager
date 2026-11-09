@@ -1,24 +1,30 @@
 from __future__ import annotations
 
 import logging
+import re
+from datetime import datetime, timezone
+from typing import Any
+
 from sqlalchemy.orm import Session
 from models import User
 from services import permission_service
 from services.ai_action_errors import AiActionValidationError
-from services.ai_tool_registry import (
-    GLOBAL_READ_TOOLS,
-    READ_TOOLS,
-    WERKZEUGE,
-    angebotsrechte,
-)
+from services.ai_redaction import redact_sensitive_text
 from services.ai_tools.base import (
     _function,
+    _positive_int,
     _RATIONALE_SCHEMA,
     _RATIONALE_REQUIRED,
+    MAX_KALENDER_VORKOMMEN,
+    MAX_LISTED_POPUPS,
+    MAX_POPUP_INHALT_CHARS,
     MAX_TESTMAILS_JE_STUNDE,
 )
+from services.ai_tool_spec import spaet, spaet_vorschlag, werkzeug
 
 logger = logging.getLogger(__name__)
+
+_NUR_DATUM = re.compile(r"\d{4}-\d{2}-\d{2}|\d{8}")
 
 # Lokaler Zaehler fuer Test-E-Mails je Benutzer und Stunde
 _TESTMAILS: dict[int, list[float]] = {}
@@ -639,3 +645,395 @@ def _execute_send_test_email(db: Session, *, user: User) -> dict:
             "Versands im Panel und nicht an dir."
         ),
     }
+
+
+# --- Werkzeugvertrag -------------------------------------------------------
+#
+# Ab hier steht die Ausfuehrung bei ihrem Fach. Die Handler unten sind aus der
+# langen Kette in `server_tools._execute_global_read_tool` hierher gezogen,
+# woertlich bis auf die Signatur. Die Vorschlaege bleiben, wo sie sind; die
+# Spec zeigt ueber `spaet`/`spaet_vorschlag` darauf.
+
+
+def _lies_email_suche(
+    db: Session, *, user: User, arguments: dict, lauf: dict | None = None
+) -> dict:
+    if not permission_service.has_global_permission(db, user, "ai.mailbox.use"):
+        raise AiActionValidationError("Postfach-Einsicht ist nicht erlaubt")
+    from services.mailbox_service import MailboxService
+
+    query = str(arguments.get("query", "")) if arguments.get("query") else None
+    sender = str(arguments.get("sender", "")) if arguments.get("sender") else None
+    # Gedeckelt und getippt statt `int(...)`: ein `int("alle")` riss den Lauf
+    # ab, und ein `limit: 1000000` war eine Postfachabfrage ohne Obergrenze.
+    limit = _positive_int(
+        arguments.get("limit"), name="limit", default=10, minimum=1, maximum=100
+    )
+    mailbox_id = _positive_int(
+        arguments.get("mailbox_id"), name="mailbox_id", default=0, minimum=1
+    ) or None
+    messages = MailboxService.search_messages(
+        db, user=user, mailbox_id=mailbox_id, query=query, sender=sender, limit=limit
+    )
+    return {"messages": messages, "count": len(messages)}
+
+
+def _lies_email(
+    db: Session, *, user: User, arguments: dict, lauf: dict | None = None
+) -> dict:
+    if not permission_service.has_global_permission(db, user, "ai.mailbox.use"):
+        raise AiActionValidationError("Postfach-Einsicht ist nicht erlaubt")
+    from services.mailbox_service import MailboxService
+
+    if "message_id" not in arguments:
+        raise AiActionValidationError("message_id ist erforderlich")
+    message_id = str(arguments["message_id"]).strip()
+    mailbox_id = _positive_int(
+        arguments.get("mailbox_id"), name="mailbox_id", default=0, minimum=1
+    ) or None
+    msg = MailboxService.read_message(
+        db, user=user, message_id=message_id, mailbox_id=mailbox_id
+    )
+    if not msg:
+        return {"error": "Nachricht nicht gefunden oder Postfach nicht erreichbar"}
+    return msg
+
+
+def _lies_notizen(
+    db: Session, *, user: User, arguments: dict, lauf: dict | None = None
+) -> dict:
+    if not (
+        permission_service.has_global_permission(db, user, "notes.use")
+        and permission_service.has_global_permission(db, user, "ai.notes.use")
+    ):
+        raise AiActionValidationError("Notiz-Einsicht ist nicht erlaubt")
+    from services.notes_service import NotesService
+
+    query = str(arguments.get("query", "")) if arguments.get("query") else None
+    category = str(arguments.get("category", "")) if arguments.get("category") else None
+    team_id = int(arguments["team_id"]) if arguments.get("team_id") is not None else None
+    is_pinned = bool(arguments["is_pinned"]) if arguments.get("is_pinned") is not None else None
+    notes = NotesService.get_notes(
+        db, user=user, search=query, category=category, team_id=team_id, is_pinned=is_pinned
+    )
+    return {"notes": notes, "count": len(notes)}
+
+
+def _lies_popups(
+    db: Session, *, user: User, arguments: dict, lauf: dict | None = None
+) -> dict:
+    # Dasselbe Recht wie das Schreibwerkzeug und nicht `panel.settings.read`:
+    # wer der KI keine Ankuendigungen erlaubt, soll ihr auch die bestehenden
+    # nicht vorlegen.
+    if not permission_service.has_global_permission(db, user, "ai.popups.manage"):
+        raise AiActionValidationError("Pop-up-Einsicht ist nicht erlaubt")
+    if set(arguments) - {"only_active"}:
+        raise AiActionValidationError("Pop-up-Tool hat ungueltige Argumente")
+    from models import PanelPopup
+
+    abfrage = db.query(PanelPopup).order_by(PanelPopup.id.desc())
+    # Nachsichtig gelesen: das Schema sagt `boolean`, aber ein Modell schickt
+    # auch mal den String "false" — und der ist als Wahrheitswert wahr.
+    if str(arguments.get("only_active", "")).strip().lower() in ("true", "1"):
+        abfrage = abfrage.filter(PanelPopup.is_active.is_(True))
+    popups = abfrage.limit(MAX_LISTED_POPUPS).all()
+    eintraege = []
+    for popup in popups:
+        inhalt = redact_sensitive_text(str(popup.content_markdown or ""))
+        gekuerzt = len(inhalt) > MAX_POPUP_INHALT_CHARS
+        eintraege.append({
+            "popup_id": popup.id,
+            "title": redact_sensitive_text(str(popup.title or "")),
+            "content_markdown": inhalt[:MAX_POPUP_INHALT_CHARS],
+            # Die Marke ist keine Kosmetik: `propose_popup_set` ersetzt den
+            # Inhalt vollstaendig. Wer einen gekuerzten Text zurueckschreibt,
+            # loescht den Rest des Pop-ups, ohne es zu merken.
+            "content_truncated": gekuerzt,
+            "is_active": bool(popup.is_active),
+            "start_at": popup.start_at.isoformat() if popup.start_at else None,
+            "end_at": popup.end_at.isoformat() if popup.end_at else None,
+            "button_text": redact_sensitive_text(str(popup.button_text))
+            if popup.button_text
+            else None,
+            "button_url": popup.button_url or None,
+        })
+    return {"popups": eintraege, "count": len(eintraege)}
+
+
+def _lies_kalender(
+    db: Session, *, user: User, arguments: dict, lauf: dict | None = None
+) -> dict:
+    if not (
+        permission_service.has_global_permission(db, user, "calendar.use")
+        and permission_service.has_global_permission(db, user, "ai.calendar.use")
+    ):
+        raise AiActionValidationError("Kalender-Einsicht ist nicht erlaubt")
+    from services.calendar_service import CalendarService
+
+    start_date = str(arguments.get("start_date", "")) if arguments.get("start_date") else None
+    end_date = str(arguments.get("end_date", "")) if arguments.get("end_date") else None
+    calendar_id = _positive_int(
+        arguments.get("calendar_id"), name="calendar_id", default=0, minimum=1
+    ) or None
+    # Ausgebreitete Vorkommen, nicht Serienkoepfe: auf "was steht naechste
+    # Woche an" ist ein Geburtstag von 1995 die richtige Antwort.
+    from datetime import date as _datum, timedelta as _zeitspanne
+
+    from services.calendar_service import _parse_datetime as _kalender_zeit
+
+    # Ohne Zeitraum braucht es trotzdem einen: eine Serie ohne Ende liefe sonst
+    # bis an die Schrittgrenze. Ein Jahr voraus und ein Monat zurueck ist das,
+    # was "was steht an" gewoehnlich meint.
+    jetzt = datetime.now(timezone.utc)
+    von = _kalender_zeit(start_date, user=user) if start_date else jetzt - _zeitspanne(days=30)
+    if end_date and _NUR_DATUM.fullmatch(end_date.strip()):
+        # Ein reines Datum als Ende meint den **ganzen** Tag. Das Fensterende
+        # ist Mitternacht des Folgetags, in der Benutzerzone gerechnet und
+        # nicht als UTC + 24 h — ueber eine Zeitumstellung ist ein Tag 23 oder
+        # 25 Stunden lang.
+        folgetag = _datum.fromisoformat(end_date.strip()) + _zeitspanne(days=1)
+        bis = _kalender_zeit(folgetag.isoformat(), user=user)
+    else:
+        bis = _kalender_zeit(end_date, user=user) if end_date else jetzt + _zeitspanne(days=365)
+
+    events = CalendarService.vorkommen_im_fenster(
+        db, user=user, calendar_id=calendar_id, von=von, bis=bis
+    )
+    gekuerzt = len(events) > MAX_KALENDER_VORKOMMEN
+    if gekuerzt:
+        events = events[:MAX_KALENDER_VORKOMMEN]
+    ergebnis: dict[str, Any] = {"events": events, "count": len(events)}
+    if gekuerzt:
+        ergebnis["gekuerzt"] = True
+        ergebnis["hinweis"] = (
+            f"Nur die ersten {MAX_KALENDER_VORKOMMEN} Vorkommen. "
+            "Fuer mehr einen engeren Zeitraum angeben."
+        )
+    return ergebnis
+
+
+def _lies_anhang(
+    db: Session, *, user: User, arguments: dict, lauf: dict | None = None
+) -> dict:
+    if not permission_service.has_global_permission(db, user, "ai.attachments.use"):
+        raise AiActionValidationError("Dateianhang-Zugriff ist nicht erlaubt")
+    from services.ai_tools.server_tools import _execute_read_chat_attachment
+
+    return _execute_read_chat_attachment(
+        db,
+        user=user,
+        arguments=arguments,
+        docs_document_uid=(lauf or {}).get("docs_document_uid"),
+    )
+
+
+def _sucht_anhaenge(
+    db: Session, *, user: User, arguments: dict, lauf: dict | None = None
+) -> dict:
+    if not permission_service.has_global_permission(db, user, "ai.attachments.use"):
+        raise AiActionValidationError("Dateianhang-Zugriff ist nicht erlaubt")
+    from services.ai_tools.server_tools import _execute_search_chat_attachments
+
+    return _execute_search_chat_attachments(
+        db,
+        user=user,
+        arguments=arguments,
+        docs_document_uid=(lauf or {}).get("docs_document_uid"),
+    )
+
+
+def _fuehrt_server_aktion(
+    db: Session, *, user: User, arguments: dict, lauf: dict | None = None
+) -> dict:
+    from services.ai_voice.voice_dispatcher import dispatch_voice_action
+
+    lauf = lauf or {}
+    wert, fehler, _anzeige, _vorschlaege = dispatch_voice_action(
+        user.id,
+        arguments,
+        conversation_id=None,
+        herkunft=lauf.get("herkunft", "panel"),
+        familie=lauf.get("familie"),
+        # Hier kommt ein Chatlauf an, und der hat fuer diesen Aufruf schon
+        # gefragt oder autonom freigegeben.
+        schon_freigegeben=True,
+        stimme=False,
+    )
+    if fehler and isinstance(wert, dict) and "error" not in wert:
+        wert["error"] = fehler
+    return wert if isinstance(wert, dict) else {"result": wert}
+
+
+_PERSONAL_WERKZEUGE = {
+    "email_search": dict(
+        art="global_read",
+        gruppe="mailbox",
+        angebot=("ai.mailbox.use",),
+        hinweis="Durchsucht das Postfach nach Stichwort oder Absender.",
+        global_handler=_lies_email_suche,
+    ),
+    "email_read": dict(
+        art="global_read",
+        gruppe="mailbox",
+        angebot=("ai.mailbox.use",),
+        hinweis="Liest eine Nachricht samt Inhalt.",
+        global_handler=_lies_email,
+    ),
+    "notes_read": dict(
+        art="global_read",
+        gruppe="notes",
+        angebot=("ai.notes.use",),
+        hinweis="Liest Notizen, gefiltert nach Suche, Kategorie oder Team.",
+        global_handler=_lies_notizen,
+    ),
+    "popups_read": dict(
+        art="global_read",
+        gruppe="popup",
+        angebot=("ai.popups.manage",),
+        hinweis="Listet die Ankuendigungen des Panels.",
+        global_handler=_lies_popups,
+    ),
+    "calendar_read": dict(
+        art="global_read",
+        gruppe="calendar",
+        angebot=("ai.calendar.use",),
+        hinweis="Liest Termine eines Zeitraums, Serien als Vorkommen.",
+        global_handler=_lies_kalender,
+    ),
+    "read_chat_attachment": dict(
+        art="global_read",
+        gruppe="attachments",
+        angebot=("ai.attachments.use",),
+        hinweis="Liest einen angehaengten Text oder ein Dokument.",
+        global_handler=_lies_anhang,
+    ),
+    "search_chat_attachments": dict(
+        art="global_read",
+        gruppe="attachments",
+        angebot=("ai.attachments.use",),
+        hinweis="Durchsucht die Anhaenge der Unterhaltung.",
+        global_handler=_sucht_anhaenge,
+    ),
+    "execute_server_action": dict(
+        art="global_read",
+        hinweis="Fuehrt eine freigegebene Serveraktion im Chat aus.",
+        global_handler=_fuehrt_server_aktion,
+    ),
+    "propose_email_send": dict(
+        art="global_write",
+        gruppe="mailbox",
+        recht="ai.mailbox.use",
+        recht_global=True,
+        hinweis="Legt eine E-Mail als bestaetigungspflichtigen Vorschlag vor.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.personal_proposals._email_send_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.personal_proposals._ausfuehren_email_send"
+        ),
+    ),
+    "propose_calendar_event_create": dict(
+        art="global_write",
+        gruppe="calendar",
+        recht="ai.calendar.use",
+        recht_global=True,
+        hinweis="Legt einen Termin als Vorschlag vor.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.personal_proposals._calendar_event_create_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.personal_proposals._ausfuehren_calendar_event_create"
+        ),
+    ),
+    "propose_calendar_event_update": dict(
+        art="global_write",
+        gruppe="calendar",
+        recht="ai.calendar.use",
+        recht_global=True,
+        hinweis="Aendert einen Termin als Vorschlag.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.personal_proposals._calendar_event_update_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.personal_proposals._ausfuehren_calendar_event_update"
+        ),
+    ),
+    "propose_calendar_event_delete": dict(
+        art="global_write",
+        gruppe="calendar",
+        recht="ai.calendar.use",
+        recht_global=True,
+        hinweis="Loescht einen Termin nach Bestaetigung.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.personal_proposals._calendar_event_delete_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.personal_proposals._ausfuehren_calendar_event_delete"
+        ),
+    ),
+    "propose_popup_set": dict(
+        art="global_write",
+        gruppe="popup",
+        recht="ai.popups.manage",
+        recht_global=True,
+        hinweis="Legt eine Ankuendigung an oder ersetzt sie.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.task_proposals._popup_set_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.task_proposals._ausfuehren_popup_set"
+        ),
+    ),
+    "propose_note_create": dict(
+        art="global_write",
+        gruppe="notes",
+        recht="ai.notes.use",
+        recht_global=True,
+        hinweis="Legt eine Notiz nach Bestaetigung an.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.personal_proposals._note_create_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.personal_proposals._ausfuehren_note_create"
+        ),
+    ),
+    "propose_note_update": dict(
+        art="global_write",
+        gruppe="notes",
+        recht="ai.notes.use",
+        recht_global=True,
+        hinweis="Aendert eine Notiz nach Bestaetigung.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.personal_proposals._note_update_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.personal_proposals._ausfuehren_note_update"
+        ),
+    ),
+    "propose_note_delete": dict(
+        art="global_write",
+        gruppe="notes",
+        recht="ai.notes.use",
+        recht_global=True,
+        hinweis="Loescht eine Notiz nach Bestaetigung.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.personal_proposals._note_delete_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.personal_proposals._ausfuehren_note_delete"
+        ),
+    ),
+}
+
+# Einmal beim Import gebaut: die Registry liest `ALLE`, bevor der erste Lauf
+# beginnt. Die Liste bleibt die Katalog-Reihenfolge.
+DEFINITIONEN = [
+    *_mailbox_and_calendar_tool_definitions(),
+    *_notes_tool_definitions(),
+    *_attachment_tool_definitions(),
+]
+
+for _schema in DEFINITIONEN:
+    _eintrag = _PERSONAL_WERKZEUGE.get(_schema["function"]["name"])
+    if _eintrag is not None:
+        werkzeug(_schema, **_eintrag)

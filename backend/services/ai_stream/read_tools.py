@@ -957,7 +957,10 @@ async def _tool_followup_messages(
     deferred = [(call, reason) for call, reason in deferred]
     if len(tool_calls) + len(deferred) > MAX_TOOL_CALLS:
         raise AiActionValidationError("Ungueltige Read-Tool-Sequenz")
-    if any(call.name not in READ_TOOLS for call in tool_calls):
+    if any(
+        call.name not in READ_TOOLS and not call.name.startswith("mcp_")
+        for call in tool_calls
+    ):
         raise AiActionValidationError("Ungueltige Read-Tool-Sequenz")
     # Der Rollen-Spiegel (docs/agentic-framework.md, §7). Der Katalogschnitt
     # in `_werkzeuge_und_grenze` ist Fuehrung, keine Zusage — die Schranke

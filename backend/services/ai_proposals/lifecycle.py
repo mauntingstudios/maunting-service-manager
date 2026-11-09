@@ -16,6 +16,7 @@ from schemas.ai_action import AiActionProposalResponse
 from services import ai_lage, audit_service, permission_service
 from services.ai_action_errors import AiActionStateError, AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
+from services.ai_tools.validierung import pruefe_argumente
 from services.dis_client import DisClient
 from services.ai_tool_registry import (
     GLOBAL_READ_TOOLS,
@@ -35,17 +36,6 @@ from services.ai_action_service import (
     CONFIRMATION_TTL,
     MAX_BACKUP_NAME_CHARS,
     _MUTEX_TOOLS,
-)
-from services.ai_tool_registry import (
-    GLOBAL_READ_TOOLS,
-    GLOBAL_WRITE_TOOLS,
-    GUARDIAN_HEILUNG_TOOLS,
-    READ_TOOLS,
-    SERVER_READ_TOOLS,
-    WERKZEUGE,
-    WORKER_STEUERUNG,
-    WRITE_TOOLS,
-    aufgaben_tools,
 )
 from services.ai_proposals.base import (
     GuardianKontext,
@@ -235,52 +225,217 @@ _GLOBALE_PAYLOADS: dict = {
     "propose_ai_tarif_role": lambda db, user, rest, arguments, guardian: (
         _ai_tarif_role_payload(db, user, rest)
     ),
-    "propose_task_set": lambda db, user, rest, arguments, guardian: (
-        _task_set_payload(db, user, rest)
-    ),
-    "propose_task_delete": lambda db, user, rest, arguments, guardian: (
-        _task_delete_payload(db, user, rest)
-    ),
-    "propose_email_send": lambda db, user, rest, arguments, guardian: (
-        _email_send_payload(db, user, rest)
-    ),
-    "propose_calendar_event_create": lambda db, user, rest, arguments, guardian: (
-        _calendar_event_create_payload(db, user, rest)
-    ),
-    "propose_calendar_event_update": lambda db, user, rest, arguments, guardian: (
-        _calendar_event_update_payload(db, user, rest)
-    ),
-    "propose_calendar_event_delete": lambda db, user, rest, arguments, guardian: (
-        _calendar_event_delete_payload(db, user, rest)
-    ),
-    "propose_note_create": lambda db, user, rest, arguments, guardian: (
-        _note_create_payload(db, user, rest)
-    ),
-    "propose_note_update": lambda db, user, rest, arguments, guardian: (
-        _note_update_payload(db, user, rest)
-    ),
-    "propose_note_delete": lambda db, user, rest, arguments, guardian: (
-        _note_delete_payload(db, user, rest)
-    ),
-    "propose_popup_set": lambda db, user, rest, arguments, guardian: (
-        _popup_set_payload(db, user, rest)
-    ),
     "propose_cloudflare_dns_record": lambda db, user, rest, arguments, guardian: (
         _cloudflare_dns_payload(rest)
     ),
     "propose_cloudflare_dns_delete": lambda db, user, rest, arguments, guardian: (
         _cloudflare_dns_delete_payload(rest)
     ),
-    "propose_role_set": lambda db, user, rest, arguments, guardian: (
-        _role_set_payload(db, user, rest)
-    ),
-    "propose_user_roles": lambda db, user, rest, arguments, guardian: (
-        _user_roles_payload(db, user, rest)
-    ),
-    "propose_role_delete": lambda db, user, rest, arguments, guardian: (
-        _role_delete_payload(db, user, rest)
-    ),
 }
+
+def server_vorschlag(
+    db: Session,
+    user: User,
+    tool_name: str,
+    arguments: dict,
+    rest: dict,
+    guardian=None,
+    aufgabe=None,
+):
+    """Baut Nutzlast und Vorschau fuer ein serverbezogenes Werkzeug.
+
+    Der Zweig stand in `create_proposal`; die Spec-Wrapper der Server-Writes
+    rufen ihn ueber denselben Weg. Rechtepruefung, Guardian-Bindung und
+    Revisionspruefung bleiben unveraendert.
+    """
+    server, rest = _resolve_server(db, user, rest)
+
+    # Ein Heilungslauf gehoert **einem** Server. `_resolve_server` prueft
+    # nur, ob der Benutzer den genannten sehen darf — und der Freigeber darf
+    # in aller Regel mehrere sehen. Ohne diese Zeile koennte ein Modell,
+    # das aus einer Logzeile heraus in die Irre gefuehrt wurde, einen
+    # Vorfall auf Server A zum Anlass nehmen, an Server B zu schreiben.
+    if guardian is not None and server.id != guardian.server_id:
+        raise AiActionValidationError(
+            "In einer Guardian-Heilung ist nur der betroffene Server erlaubt"
+        )
+
+    # **Das Recht vor der Nutzlast.** Frueher stand diese Pruefung erst
+    # hinter dem Payload-Bau — und der liest den Zustand, ueber den er
+    # urteilt: `_config_patch_payload` holt den Dateiinhalt, um zu zaehlen,
+    # wie oft der Suchtext darin vorkommt.
+    #
+    # Damit war die Ablehnung selbst eine Auskunft. Ein Benutzer mit
+    # `server.view` und ohne `server.files.read` bekam auf einen erfundenen
+    # Patch die Antwort "kommt 3-mal vor" — ein Orakel, mit dem sich der
+    # Inhalt einer Datei Zeichen fuer Zeichen erraten laesst, ohne sie je
+    # lesen zu duerfen. Der Vorschlag wurde nie gespeichert und nichts
+    # geschrieben; das Leck lag allein in der Reihenfolge.
+    #
+    # Die Zusage ist "die KI kann nur, was der Benutzer kann". Sie gilt erst,
+    # wenn schon der *Versuch* nichts verraet.
+    #
+    # Fuer Lebenszyklus und Reparatur haengt das Recht am Vorgang, deshalb
+    # wird deren Formpruefung hier vorgezogen — sonst bekaeme ein
+    # ungueltiger Vorgang die Rechte-Ablehnung statt der Formmeldung, die
+    # dem Modell weiterhilft. Beide Pruefungen lesen keinen Zustand; sie
+    # verraten also nichts, was die Rechtepruefung schuetzen muesste.
+    #
+    # Die Schlüsselmenge wird hier mitgeprüft und nicht noch einmal im
+    # Payload-Bau weiter unten. Dieselbe Prüfung an zwei Stellen hieße:
+    # zwei Wertelisten, die auseinanderlaufen können, und eine zweite
+    # Meldung für einen Fall, über den die erste schon entschieden hat.
+    if tool_name == "propose_server_lifecycle":
+        _allowed_keys = {"operation", "action", "aktion", "vorgang"}
+        if set(rest) - _allowed_keys:
+            raise AiActionValidationError("Ungueltige Lifecycle-Argumente")
+        _LIFECYCLE_SYNONYMS = {
+            "start": "start",
+            "starten": "start",
+            "boot": "start",
+            "up": "start",
+            "stop": "stop",
+            "stoppen": "stop",
+            "halt": "stop",
+            "shutdown": "stop",
+            "down": "stop",
+            "restart": "restart",
+            "reboot": "restart",
+            "neustart": "restart",
+            "neustarten": "restart",
+        }
+        op_raw = rest.get("operation") or rest.get("action") or rest.get("aktion") or rest.get("vorgang")
+        if not op_raw:
+            raise AiActionValidationError("Ungueltige Lifecycle-Aktion")
+        norm_op = _LIFECYCLE_SYNONYMS.get(str(op_raw).strip().lower())
+        if not norm_op or norm_op not in _LIFECYCLE_RECHTE:
+            raise AiActionValidationError("Ungueltige Lifecycle-Aktion")
+        rest = {"operation": norm_op}
+    if tool_name == "propose_server_repair":
+        rep_action = rest.get("action") or rest.get("aktion") or rest.get("repair")
+        if not rep_action or rep_action not in REPARATUREN:
+            raise AiActionValidationError("Unbekannte Reparatur")
+        rest["action"] = rep_action
+    _require_tool_permission(db, user, server.id, tool_name, rest)
+
+    if tool_name == "propose_server_lifecycle":
+        # Geprueft ist schon oben, vor der Rechtepruefung — hier bleibt der
+        # reine Bau.
+        op = rest["operation"]
+        payload = {"operation": op}
+        preview = {
+            "operation": op,
+            "current_status": server.status,
+            "restart_required": op == "restart",
+        }
+        expected_revision = None
+    elif tool_name == "propose_backup":
+        if set(rest) - {"name"}:
+            raise AiActionValidationError("Backup-Tool hat ungueltige Argumente")
+        name = rest.get("name")
+        if name is not None and not isinstance(name, str):
+            raise AiActionValidationError("Backup-Name ist ungueltig")
+        # Der Name ist Modelltext und landet in einer Liste, die Menschen
+        # lesen — also redigiert und gekuerzt wie jede andere Modellausgabe.
+        sauber = redact_sensitive_text(str(name).strip())[:MAX_BACKUP_NAME_CHARS] if name else ""
+        payload = {"name": sauber} if sauber else {}
+        preview = {
+            "operation": "backup",
+            "current_status": server.status,
+            "restart_required": False,
+            "name": sauber or None,
+        }
+        expected_revision = None
+    elif tool_name == "propose_backup_restore":
+        payload, preview = _backup_restore_payload(db, server, rest)
+        expected_revision = None
+    elif tool_name == "propose_server_blueprint_switch":
+        payload, preview = _blueprint_switch_payload(server, rest)
+        expected_revision = None
+    elif tool_name == "propose_server_delete":
+        if rest:
+            raise AiActionValidationError("Loesch-Tool akzeptiert keine Argumente")
+        # Der Name steht in der Vorschau, nicht in der Nutzlast: er ist das
+        # Einzige, woran ein Mensch beim Bestaetigen erkennt, ob der
+        # richtige Server gemeint ist. Die Server-ID allein sagt ihm nichts.
+        payload = {}
+        preview = {
+            "operation": "delete",
+            "server_name": server.name,
+            "current_status": server.status,
+            "restart_required": False,
+            # Was tatsaechlich verschwindet. Ohne diese Aufzaehlung waere
+            # "Server loeschen" eine Zusage, deren Umfang der Bestaetigende
+            # raten muesste — Backups und S3-Objekte gehen mit.
+            "removes": [
+                "container", "files", "backups", "ports", "database_resources",
+            ],
+            "irreversible": True,
+        }
+        expected_revision = None
+    elif tool_name == "propose_bind_ip_update":
+        payload, preview = _bind_ip_payload(db, server, rest)
+        expected_revision = None
+    elif tool_name == "propose_mod_install":
+        payload, preview = _mod_install_payload(db, server, rest)
+        expected_revision = None
+    elif tool_name == "propose_mod_toggle":
+        payload, preview = _mod_toggle_payload(db, server, rest)
+        expected_revision = None
+    elif tool_name == "propose_config_patch":
+        payload, preview, expected_revision = _config_patch_payload(db, server.id, rest)
+    elif tool_name == "propose_config_set":
+        payload, preview, expected_revision = _config_set_payload(db, server, rest)
+    elif tool_name == "propose_config_update":
+        payload, preview, expected_revision = _config_payload(db, server.id, rest)
+    elif tool_name == "propose_server_repair":
+        payload, preview = _server_repair_payload(server, rest)
+        expected_revision = None
+    elif tool_name == "propose_guardian_tuning":
+        payload, preview = _guardian_tuning_payload(server, rest)
+        expected_revision = None
+    elif tool_name == "propose_restart_schedule_set":
+        payload, preview = _restart_schedule_payload(server, rest)
+        # Kommt der Vorschlag aus einem stehenden Auftrag, wird der Server
+        # mit ihm verknüpft: das Panel zeigt dann „Von der KI verwaltet
+        # (Aufgabe X)", und eine manuelle Änderung deaktiviert genau X.
+        if aufgabe is not None:
+            payload["ai_task_id"] = aufgabe.task_id
+        expected_revision = None
+    elif tool_name == "propose_backup_schedule_set":
+        payload, preview = _backup_schedule_payload(server, rest)
+        if aufgabe is not None:
+            payload["ai_task_id"] = aufgabe.task_id
+        expected_revision = None
+    elif tool_name == "propose_file_delete":
+        payload, preview, expected_revision = _file_delete_payload(db, server, rest)
+    elif tool_name == "propose_modpack_install":
+        payload, preview = _modpack_install_payload(db, server, rest)
+        expected_revision = None
+    elif tool_name == "propose_user_server_permission":
+        payload, preview = _user_server_permission_payload(db, user, server, rest)
+        expected_revision = None
+    elif tool_name == "propose_database_change":
+        payload, preview = _database_change_payload(db, user, server, rest)
+        expected_revision = None
+    elif tool_name in SERVER_READ_TOOLS:
+        _require_tool_permission(db, user, server.id, tool_name, rest)
+        payload = dict(rest)
+        preview = {
+            "operation": tool_name,
+            "server_name": server.name,
+            "current_status": server.status,
+        }
+        if "path" in rest:
+            preview["path"] = redact_sensitive_text(str(rest["path"]))
+        if "lines" in rest:
+            preview["lines"] = rest["lines"]
+        expected_revision = None
+    else:
+        raise AiActionValidationError(f"Kein Payload-Bau fuer Werkzeug: {tool_name}")
+
+    return server, payload, preview, expected_revision
+
 
 def create_proposal(
     db: Session,
@@ -308,7 +463,13 @@ def create_proposal(
     sonst — der, der die Freigabe erteilt hat —, und `_require_tool_permission`
     laeuft unveraendert.
     """
-    if tool_name not in WRITE_TOOLS and tool_name not in READ_TOOLS and tool_name not in WORKER_STEUERUNG:
+    ist_mcp = tool_name.startswith("mcp_")
+    if (
+        not ist_mcp
+        and tool_name not in WRITE_TOOLS
+        and tool_name not in READ_TOOLS
+        and tool_name not in WORKER_STEUERUNG
+    ):
         raise AiActionValidationError("Tool ist in diesem Kontext nicht erlaubt")
     if guardian is not None and tool_name not in GUARDIAN_HEILUNG_TOOLS:
         # Die Menge steht in der Registry und wird hier durchgesetzt, nicht im
@@ -337,7 +498,13 @@ def create_proposal(
 
     server: Server | None = None
     bauer = _GLOBALE_PAYLOADS.get(tool_name)
-    if bauer is not None:
+    if ist_mcp:
+        _require_tool_permission(db, user, None, tool_name, rest)
+        from services.mcp.ausfuehrung import vorschlag as mcp_vorschlag
+
+        payload, preview = mcp_vorschlag(db, user, tool_name, arguments)
+        expected_revision = None
+    elif bauer is not None:
         # **Das Recht vor der Nutzlast**, fuer jeden Tabelleneintrag an genau
         # dieser einen Stelle: die Bauer lesen den Bestand, ueber den sie
         # urteilen, und ihre Fehlermeldungen reichen ihn woertlich durch. Ohne
@@ -346,6 +513,7 @@ def create_proposal(
         # "Unbekannte Node" waere eine Auskunft an jemanden ohne
         # `servers.create`.
         _require_tool_permission(db, user, None, tool_name, rest)
+        pruefe_argumente(tool_name, arguments, aliase=frozenset(_RATIONALE_KEYS))
         payload, preview = bauer(db, user, rest, arguments, guardian)
         expected_revision = None
     elif tool_name in GLOBAL_READ_TOOLS or tool_name in WORKER_STEUERUNG:
@@ -389,191 +557,9 @@ def create_proposal(
         # Dieselbe zentrale Rechtepruefung wie bei den Lesewerkzeugen. `rest`
         # verliert dabei die `server_id`, damit die nachfolgenden
         # Argumentpruefungen ihre exakten Schluesselmengen behalten.
-        server, rest = _resolve_server(db, user, rest)
-
-        # Ein Heilungslauf gehoert **einem** Server. `_resolve_server` prueft
-        # nur, ob der Benutzer den genannten sehen darf — und der Freigeber darf
-        # in aller Regel mehrere sehen. Ohne diese Zeile koennte ein Modell,
-        # das aus einer Logzeile heraus in die Irre gefuehrt wurde, einen
-        # Vorfall auf Server A zum Anlass nehmen, an Server B zu schreiben.
-        if guardian is not None and server.id != guardian.server_id:
-            raise AiActionValidationError(
-                "In einer Guardian-Heilung ist nur der betroffene Server erlaubt"
-            )
-
-        # **Das Recht vor der Nutzlast.** Frueher stand diese Pruefung erst
-        # hinter dem Payload-Bau — und der liest den Zustand, ueber den er
-        # urteilt: `_config_patch_payload` holt den Dateiinhalt, um zu zaehlen,
-        # wie oft der Suchtext darin vorkommt.
-        #
-        # Damit war die Ablehnung selbst eine Auskunft. Ein Benutzer mit
-        # `server.view` und ohne `server.files.read` bekam auf einen erfundenen
-        # Patch die Antwort "kommt 3-mal vor" — ein Orakel, mit dem sich der
-        # Inhalt einer Datei Zeichen fuer Zeichen erraten laesst, ohne sie je
-        # lesen zu duerfen. Der Vorschlag wurde nie gespeichert und nichts
-        # geschrieben; das Leck lag allein in der Reihenfolge.
-        #
-        # Die Zusage ist "die KI kann nur, was der Benutzer kann". Sie gilt erst,
-        # wenn schon der *Versuch* nichts verraet.
-        #
-        # Fuer Lebenszyklus und Reparatur haengt das Recht am Vorgang, deshalb
-        # wird deren Formpruefung hier vorgezogen — sonst bekaeme ein
-        # ungueltiger Vorgang die Rechte-Ablehnung statt der Formmeldung, die
-        # dem Modell weiterhilft. Beide Pruefungen lesen keinen Zustand; sie
-        # verraten also nichts, was die Rechtepruefung schuetzen muesste.
-        #
-        # Die Schlüsselmenge wird hier mitgeprüft und nicht noch einmal im
-        # Payload-Bau weiter unten. Dieselbe Prüfung an zwei Stellen hieße:
-        # zwei Wertelisten, die auseinanderlaufen können, und eine zweite
-        # Meldung für einen Fall, über den die erste schon entschieden hat.
-        if tool_name == "propose_server_lifecycle":
-            _allowed_keys = {"operation", "action", "aktion", "vorgang"}
-            if set(rest) - _allowed_keys:
-                raise AiActionValidationError("Ungueltige Lifecycle-Argumente")
-            _LIFECYCLE_SYNONYMS = {
-                "start": "start",
-                "starten": "start",
-                "boot": "start",
-                "up": "start",
-                "stop": "stop",
-                "stoppen": "stop",
-                "halt": "stop",
-                "shutdown": "stop",
-                "down": "stop",
-                "restart": "restart",
-                "reboot": "restart",
-                "neustart": "restart",
-                "neustarten": "restart",
-            }
-            op_raw = rest.get("operation") or rest.get("action") or rest.get("aktion") or rest.get("vorgang")
-            if not op_raw:
-                raise AiActionValidationError("Ungueltige Lifecycle-Aktion")
-            norm_op = _LIFECYCLE_SYNONYMS.get(str(op_raw).strip().lower())
-            if not norm_op or norm_op not in _LIFECYCLE_RECHTE:
-                raise AiActionValidationError("Ungueltige Lifecycle-Aktion")
-            rest = {"operation": norm_op}
-        if tool_name == "propose_server_repair":
-            rep_action = rest.get("action") or rest.get("aktion") or rest.get("repair")
-            if not rep_action or rep_action not in REPARATUREN:
-                raise AiActionValidationError("Unbekannte Reparatur")
-            rest["action"] = rep_action
-        _require_tool_permission(db, user, server.id, tool_name, rest)
-
-        if tool_name == "propose_server_lifecycle":
-            # Geprueft ist schon oben, vor der Rechtepruefung — hier bleibt der
-            # reine Bau.
-            op = rest["operation"]
-            payload = {"operation": op}
-            preview = {
-                "operation": op,
-                "current_status": server.status,
-                "restart_required": op == "restart",
-            }
-            expected_revision = None
-        elif tool_name == "propose_backup":
-            if set(rest) - {"name"}:
-                raise AiActionValidationError("Backup-Tool hat ungueltige Argumente")
-            name = rest.get("name")
-            if name is not None and not isinstance(name, str):
-                raise AiActionValidationError("Backup-Name ist ungueltig")
-            # Der Name ist Modelltext und landet in einer Liste, die Menschen
-            # lesen — also redigiert und gekuerzt wie jede andere Modellausgabe.
-            sauber = redact_sensitive_text(str(name).strip())[:MAX_BACKUP_NAME_CHARS] if name else ""
-            payload = {"name": sauber} if sauber else {}
-            preview = {
-                "operation": "backup",
-                "current_status": server.status,
-                "restart_required": False,
-                "name": sauber or None,
-            }
-            expected_revision = None
-        elif tool_name == "propose_backup_restore":
-            payload, preview = _backup_restore_payload(db, server, rest)
-            expected_revision = None
-        elif tool_name == "propose_server_blueprint_switch":
-            payload, preview = _blueprint_switch_payload(server, rest)
-            expected_revision = None
-        elif tool_name == "propose_server_delete":
-            if rest:
-                raise AiActionValidationError("Loesch-Tool akzeptiert keine Argumente")
-            # Der Name steht in der Vorschau, nicht in der Nutzlast: er ist das
-            # Einzige, woran ein Mensch beim Bestaetigen erkennt, ob der
-            # richtige Server gemeint ist. Die Server-ID allein sagt ihm nichts.
-            payload = {}
-            preview = {
-                "operation": "delete",
-                "server_name": server.name,
-                "current_status": server.status,
-                "restart_required": False,
-                # Was tatsaechlich verschwindet. Ohne diese Aufzaehlung waere
-                # "Server loeschen" eine Zusage, deren Umfang der Bestaetigende
-                # raten muesste — Backups und S3-Objekte gehen mit.
-                "removes": [
-                    "container", "files", "backups", "ports", "database_resources",
-                ],
-                "irreversible": True,
-            }
-            expected_revision = None
-        elif tool_name == "propose_bind_ip_update":
-            payload, preview = _bind_ip_payload(db, server, rest)
-            expected_revision = None
-        elif tool_name == "propose_mod_install":
-            payload, preview = _mod_install_payload(db, server, rest)
-            expected_revision = None
-        elif tool_name == "propose_mod_toggle":
-            payload, preview = _mod_toggle_payload(db, server, rest)
-            expected_revision = None
-        elif tool_name == "propose_config_patch":
-            payload, preview, expected_revision = _config_patch_payload(db, server.id, rest)
-        elif tool_name == "propose_config_set":
-            payload, preview, expected_revision = _config_set_payload(db, server, rest)
-        elif tool_name == "propose_config_update":
-            payload, preview, expected_revision = _config_payload(db, server.id, rest)
-        elif tool_name == "propose_server_repair":
-            payload, preview = _server_repair_payload(server, rest)
-            expected_revision = None
-        elif tool_name == "propose_guardian_tuning":
-            payload, preview = _guardian_tuning_payload(server, rest)
-            expected_revision = None
-        elif tool_name == "propose_restart_schedule_set":
-            payload, preview = _restart_schedule_payload(server, rest)
-            # Kommt der Vorschlag aus einem stehenden Auftrag, wird der Server
-            # mit ihm verknüpft: das Panel zeigt dann „Von der KI verwaltet
-            # (Aufgabe X)", und eine manuelle Änderung deaktiviert genau X.
-            if aufgabe is not None:
-                payload["ai_task_id"] = aufgabe.task_id
-            expected_revision = None
-        elif tool_name == "propose_backup_schedule_set":
-            payload, preview = _backup_schedule_payload(server, rest)
-            if aufgabe is not None:
-                payload["ai_task_id"] = aufgabe.task_id
-            expected_revision = None
-        elif tool_name == "propose_file_delete":
-            payload, preview, expected_revision = _file_delete_payload(db, server, rest)
-        elif tool_name == "propose_modpack_install":
-            payload, preview = _modpack_install_payload(db, server, rest)
-            expected_revision = None
-        elif tool_name == "propose_user_server_permission":
-            payload, preview = _user_server_permission_payload(db, user, server, rest)
-            expected_revision = None
-        elif tool_name == "propose_database_change":
-            payload, preview = _database_change_payload(db, user, server, rest)
-            expected_revision = None
-        elif tool_name in SERVER_READ_TOOLS:
-            _require_tool_permission(db, user, server.id, tool_name, rest)
-            payload = dict(rest)
-            preview = {
-                "operation": tool_name,
-                "server_name": server.name,
-                "current_status": server.status,
-            }
-            if "path" in rest:
-                preview["path"] = redact_sensitive_text(str(rest["path"]))
-            if "lines" in rest:
-                preview["lines"] = rest["lines"]
-            expected_revision = None
-        else:
-            raise AiActionValidationError(f"Kein Payload-Bau fuer Werkzeug: {tool_name}")
+        server, payload, preview, expected_revision = server_vorschlag(
+            db, user, tool_name, arguments, rest, guardian, aufgabe
+        )
 
     preview["reason"] = reason
     preview["expected_effect"] = expected_effect
@@ -834,27 +820,41 @@ _AUSFUEHRUNGEN: dict[str, Callable[[Session, _AusfuehrungsRahmen], _Ausgefuehrt]
     "propose_hoster_integration": _ausfuehren_hoster_schreiben,
     "propose_hoster_product": _ausfuehren_hoster_schreiben,
     "propose_ai_tarif_role": _ausfuehren_hoster_schreiben,
-    "propose_task_set": _ausfuehren_task_set,
-    "propose_task_delete": _ausfuehren_task_delete,
-    "propose_email_send": _ausfuehren_email_send,
-    "propose_calendar_event_create": _ausfuehren_calendar_event_create,
-    "propose_calendar_event_update": _ausfuehren_calendar_event_update,
-    "propose_calendar_event_delete": _ausfuehren_calendar_event_delete,
-    "propose_note_create": _ausfuehren_note_create,
-    "propose_note_update": _ausfuehren_note_update,
-    "propose_note_delete": _ausfuehren_note_delete,
-    "propose_popup_set": _ausfuehren_popup_set,
     "propose_cloudflare_dns_record": _ausfuehren_cloudflare_dns,
     "propose_cloudflare_dns_delete": _ausfuehren_cloudflare_dns_delete,
     "propose_modpack_install": _ausfuehren_modpack_install,
     "propose_user_server_permission": _ausfuehren_user_server_permission,
-    "propose_role_set": _ausfuehren_role_set,
-    "propose_user_roles": _ausfuehren_user_roles,
-    "propose_role_delete": _ausfuehren_role_delete,
     "worker_start": _ausfuehren_worker_start,
     "worker_cancel": _ausfuehren_worker_cancel,
     "worker_antwort": _ausfuehren_read_tool,
     **{name: _ausfuehren_read_tool for name in READ_TOOLS},
+}
+
+# Deklarierte Specs sind die Quelle; die Tabellen oben tragen nur noch die
+# noch nicht umgestellten Werkzeuge.
+from services.ai_tool_spec import ALLE as _SPECS  # noqa: E402
+
+# Vor dem Overlay: die Specs verweisen ueber `vorschlag_aus_tabelle` auf diese
+# Rohfassung. Zeigte der Zeiger auf die ueberschriebene Tabelle, riefe er sich
+# selbst auf.
+_GLOBALE_PAYLOADS_ROH = dict(_GLOBALE_PAYLOADS)
+_AUSFUEHRUNGEN_ROH = dict(_AUSFUEHRUNGEN)
+
+_GLOBALE_PAYLOADS = {
+    **_GLOBALE_PAYLOADS,
+    # Server-Writes laufen ueber `server_vorschlag`: dort stehen die
+    # Serveraufloesung, die Guardian-Bindung und die Revisionspruefung.
+    # Stuenden sie hier, naehme `create_proposal` den Tabellenzweig und
+    # verloere den Serverbezug.
+    **{
+        name: spec.vorschlag
+        for name, spec in _SPECS.items()
+        if spec.vorschlag and spec.art != "server_write"
+    },
+}
+_AUSFUEHRUNGEN = {
+    **_AUSFUEHRUNGEN,
+    **{name: spec.ausfuehren for name, spec in _SPECS.items() if spec.ausfuehren},
 }
 
 def execute_proposal(
@@ -955,6 +955,10 @@ def execute_proposal(
 
         try:
             ausfuehrung = _AUSFUEHRUNGEN.get(tool_name)
+            if ausfuehrung is None and tool_name.startswith("mcp_"):
+                from services.mcp.ausfuehrung import ausfuehren as mcp_ausfuehren
+
+                ausfuehrung = mcp_ausfuehren
             if ausfuehrung is None:
                 raise AiActionStateError("AI_ACTION_TOOL_NOT_ALLOWED")
             ausgefuehrt = ausfuehrung(

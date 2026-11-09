@@ -30,7 +30,7 @@ from database import Base
 from models import User
 from services import ai_lage, ai_tool_registry
 from services.ai_prompt import IDENTITAET, KI_NAME, ROLLE, build
-from services.ai_tools import provider_tool_definitions
+from services.ai_tools.server_tools import provider_tool_definitions
 from services.ai_voice.live_session import live_anweisungen
 from services.openai_compatible_adapter import ProviderToolCall, StreamChunk
 from tests.test_ai_provider_chat import _enable_chat, _provider

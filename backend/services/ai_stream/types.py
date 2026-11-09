@@ -194,6 +194,12 @@ class _Vorbereitung:
     # nach einer Bestaetigung Stunden spaeter soll den Rechtestand von *jetzt*
     # sehen, nicht den von damals.
     angebotene_werkzeuge: frozenset[str]
+    # Katalogeintraege der MCP-Server, die diesem Benutzer angeboten werden.
+    # Ausserhalb der Segment-Transaktion gibt es keine Sitzung, in der sie
+    # nachgeladen werden koennten.
+    mcp_werkzeuge: tuple[dict, ...] = ()
+    # Namen der MCP-Werkzeuge, die einen Vorschlag erzeugen (kein ReadOnly).
+    mcp_schreib_werkzeuge: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)

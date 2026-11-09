@@ -360,6 +360,30 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             and isinstance(tool.get("function"), dict)
             and isinstance((name := tool["function"].get("name")), str)
         )
+        # Welche Werkzeuge es gerade gibt, sagt eine eigene Systemnachricht
+        # hinter dem Prompt. Der Prompt selbst bleibt byteweise statisch, und
+        # die Liste haengt an den Rechten dieses Laufs — zwei Laeufe mit
+        # denselben Rechten bekommen dieselbe Liste in derselben Reihenfolge.
+        from services.ai_prompt import werkzeug_index
+
+        index = werkzeug_index(angebotene_werkzeuge)
+        schon_da = any(
+            isinstance(nachricht, dict)
+            and isinstance(nachricht.get("content"), str)
+            and nachricht["content"].startswith("Werkzeugverzeichnis")
+            for nachricht in provider_messages
+        )
+        if (
+            index
+            and not schon_da
+            and provider_messages
+            and provider_messages[0].get("role") == "system"
+        ):
+            provider_messages = [
+                provider_messages[0],
+                {"role": "system", "content": index},
+                *provider_messages[1:],
+            ]
         # Das Modell dieses Laufs — je Rolle, siehe `_modell_fuer`. Einmal je
         # Segment: dieselbe Lebensdauer wie der Katalogzuschnitt darueber.
         modellname = _modell_fuer(vorbereitung.provider, rolle, zustand)
@@ -613,8 +637,17 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             # Ganzes hinfällig. Ausgeführt wird nichts, die Allowlist bleibt
             # unverändert scharf, und gegen hartnäckige Wiederholung steht der
             # Rundendeckel, den diese Runde mitbezahlt.
+            mcp_namen = {
+                eintrag["function"]["name"]
+                for eintrag in vorbereitung.mcp_werkzeuge
+                if isinstance(eintrag, dict)
+                and isinstance(eintrag.get("function"), dict)
+                and isinstance(eintrag["function"].get("name"), str)
+            }
             if any(
-                call.name not in READ_TOOLS and call.name not in WRITE_TOOLS
+                call.name not in READ_TOOLS
+                and call.name not in WRITE_TOOLS
+                and call.name not in mcp_namen
                 for call in current_usage.tool_calls
             ):
                 provider_messages.extend(_rundenfehler_nachrichten(
@@ -641,7 +674,10 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             # Ab hier ist jeder Aufruf entweder lesend oder schreibend/delegierend — die
             # dritte Moeglichkeit hat die Pruefung darueber schon abgefangen.
             kinds = {
-                "read" if call.name in READ_TOOLS else "write"
+                "write"
+                if call.name in WRITE_TOOLS
+                or call.name in vorbereitung.mcp_schreib_werkzeuge
+                else "read"
                 for call in current_usage.tool_calls
             }
             if kinds == {"write"}:
