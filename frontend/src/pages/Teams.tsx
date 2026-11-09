@@ -523,7 +523,7 @@ export function Teams() {
       ) : (
         <>
       {/* ── Executive Workspace Header & Centered Hero ─────────────────── */}
-      <header className="relative isolate shrink-0 overflow-hidden border-b border-outline-variant/30 bg-surface-container-lowest/30 backdrop-blur-xl">
+      <header className="relative isolate shrink-0 overflow-hidden border-b border-outline-variant/30">
         {/* Tageszeit-Hintergrund, der atmosphärisch hinter Profilbild und Buttons liegt und nach unten verwaschen ausläuft */}
         <TageszeitHintergrund
           motiv={headerMotiv}
@@ -537,22 +537,22 @@ export function Teams() {
           aria-hidden="true"
         />
 
-        {/* Top Utility Bar */}
-        <div className="flex items-center justify-between gap-3 border-b border-outline-variant/20 px-3 py-2 sm:px-6 sm:py-2.5 bg-surface-container-lowest/20 backdrop-blur-md">
+        {/* Frei schwebende Navigations- & Aktionsleiste ohne trennenden Glas-Balken */}
+        <div className="flex items-center justify-between gap-3 px-4 pt-3.5 sm:px-6 sm:pt-4">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={() => setView('overview')}
             aria-label={t('teams.backToOverview', 'Zurück zur Übersicht')}
-            className="gap-2 text-on-surface-variant hover:text-on-surface rounded-xl bg-surface-container-high/60 backdrop-blur-md border border-outline-variant/30 px-3 py-1.5 shadow-sm"
+            className="gap-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 rounded-full px-3 py-1.5 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             <span className="text-xs sm:text-sm font-medium">{t('teams.backToOverview', 'Zurück zur Übersicht')}</span>
           </Button>
 
           {team && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               {team.is_owner ? (
                 <>
                   <Button
@@ -562,10 +562,10 @@ export function Teams() {
                     disabled={busy}
                     onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
                     aria-label={t('teams.editTeam', 'Team bearbeiten')}
-                    className="gap-1.5 text-xs text-on-surface hover:text-primary rounded-xl bg-surface-container-high/60 backdrop-blur-md border border-outline-variant/30 px-3 py-1.5 shadow-sm"
+                    title={t('teams.editTeam', 'Team bearbeiten')}
+                    className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                   >
-                    <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>{t('common.edit', 'Bearbeiten')}</span>
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
                   </Button>
                   <Button
                     type="button"
@@ -574,10 +574,10 @@ export function Teams() {
                     disabled={busy}
                     onClick={() => void removeTeam(team)}
                     aria-label={t('teams.remove')}
-                    className="gap-1.5 text-xs text-status-destructive hover:bg-status-destructive/10 rounded-xl bg-surface-container-high/60 backdrop-blur-md border border-outline-variant/30 px-3 py-1.5 shadow-sm"
+                    title={t('teams.remove')}
+                    className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                   >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>{t('teams.remove')}</span>
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </>
               ) : (
@@ -588,10 +588,10 @@ export function Teams() {
                   disabled={busy}
                   onClick={() => void leaveTeam(team)}
                   aria-label={t('teams.leave')}
-                  className="gap-1.5 text-xs text-status-destructive hover:bg-status-destructive/10 rounded-xl bg-surface-container-high/60 backdrop-blur-md border border-outline-variant/30 px-3 py-1.5 shadow-sm"
+                  title={t('teams.leave')}
+                  className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                 >
-                  <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{t('teams.leave')}</span>
+                  <LogOut className="h-4 w-4" aria-hidden="true" />
                 </Button>
               )}
             </div>
@@ -599,7 +599,7 @@ export function Teams() {
         </div>
 
         {/* Centered Atmospheric Hero Section (Mittig!) */}
-        <div className="relative px-3 pt-5 pb-5 text-center sm:px-6 sm:pt-6 sm:pb-6">
+        <div className="relative px-3 pt-3 pb-5 text-center sm:px-6 sm:pt-4 sm:pb-6">
           {/* Ambient Glow */}
           <div
             aria-hidden="true"
@@ -660,10 +660,23 @@ export function Teams() {
               )}
             </div>
 
-            {/* Zentrierter Titel */}
-            <h1 className="mt-2 font-headline text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-on-surface">
-              {team?.name ?? t('teams.title')}
-            </h1>
+            {/* Zentrierter Titel mit direktem Bearbeiten-Icon */}
+            <div className="mt-2.5 flex items-center justify-center gap-2">
+              <h1 className="font-headline text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-on-surface">
+                {team?.name ?? t('teams.title')}
+              </h1>
+              {team?.is_owner && (
+                <button
+                  type="button"
+                  onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
+                  aria-label={t('teams.editTeam', 'Team bearbeiten')}
+                  title={t('teams.editTeam', 'Team bearbeiten')}
+                  className="grid h-8 w-8 place-items-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high/60 transition-colors"
+                >
+                  <Pencil className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
+            </div>
 
             {/* Zentrierte Beschreibung */}
             {activeMeta?.description && (
