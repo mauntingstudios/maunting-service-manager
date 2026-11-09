@@ -497,6 +497,8 @@ def _lauf_abschliessen(
             return
         run.status = status
         run.stop_reason = stop_reason
+        if status == "failed":
+            ai_run_service.protokolliere_fehlschlag(db, run, stop_reason)
         if wake_at is not None:
             # Nur beim Parken auf `waiting_wake` gesetzt (dritte Parkstelle,
             # `wait_until`). Der Takt (`faellige_wecken`) liest genau diese

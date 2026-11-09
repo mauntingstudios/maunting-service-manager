@@ -94,6 +94,7 @@ const KATEGORIE_REGELN: readonly {
       'auth.',
       'credential.',
       'server.credential.',
+      'device.',
       'vault.',
       'team.vault.',
       'guardian.',
@@ -154,7 +155,13 @@ export function auditKategorie(action: string | null | undefined): AuditKategori
 
 export function auditErgebnis(action: string | null | undefined, details: string | null | undefined): AuditErgebnis {
   const text = (action ?? '').trim().toLowerCase()
-  if (text.endsWith('.failed') || text.endsWith('.fehlgeschlagen')) return 'failed'
+  if (
+    text.endsWith('.failed')
+    || text.endsWith('.fehlgeschlagen')
+    || text.endsWith('.denied')
+  ) {
+    return 'failed'
+  }
   if (!details) return 'success'
   try {
     const daten = JSON.parse(details) as unknown
@@ -404,6 +411,20 @@ const EXAKT: Record<string, string> = {
   'social.call.unmute': 'audit.action.callUnmuted',
   'ai.action.rejected': 'audit.action.aiActionRejected',
   'ai.tool.read': 'audit.action.aiToolRead',
+  'auth.login.failed': 'audit.action.loginFailed',
+  'ai.run.failed': 'audit.action.aiRunFailed',
+  'docs.document.created': 'audit.action.documentCreated',
+  'docs.document.trashed': 'audit.action.documentTrashed',
+  'docs.document.restored': 'audit.action.documentRestored',
+  'docs.document.deleted': 'audit.action.documentDeleted',
+  'docs.document.duplicated': 'audit.action.documentDuplicated',
+  'docs.access.denied': 'audit.action.docsAccessDenied',
+  'server.incident.detected': 'audit.action.serverIncidentDetected',
+  'server.incident.recurred': 'audit.action.serverIncidentRecurred',
+  'server.incident.resolved': 'audit.action.serverIncidentResolved',
+  'device.pairing.generated': 'audit.action.devicePairingGenerated',
+  'device.pairing.redeemed': 'audit.action.devicePairingRedeemed',
+  'device.pairing.failed': 'audit.action.devicePairingFailed',
 }
 
 const SUBJEKTE: readonly [string, string][] = [

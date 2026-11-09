@@ -16,6 +16,59 @@ from services.node_client import NodeClient
 
 logger = logging.getLogger(__name__)
 
+
+def _audit_vorfall(
+    db: Session,
+    server_id: int,
+    action: str,
+    *,
+    incident_type: str,
+    status: str,
+    incident_uuid: str,
+    occurrences: int,
+    evidence: str | None = None,
+) -> None:
+    """Haelt einen Server-Vorfall im zentralen Audit fest.
+
+    Der Vorfall liegt in `incidents`; hier steht die eine Zeile, die ein
+    Betreiber im Audit-Protokoll sieht. Die Beschreibung des Agenten wird
+    bewusst nicht uebernommen — darin koennen Logzeilen stehen. Art, Status,
+    Vorkommen und die kurze Evidenz reichen, um den Absturz einzuordnen.
+    """
+    try:
+        from services import audit_service
+
+        # Vorfall-Aenderung vor dem Savepoint festschreiben: ein Audit-Fehler
+        # darf den erkannten Vorfall nicht mit zuruecknehmen.
+        db.flush()
+        with db.begin_nested():
+            audit_service.record_privileged_action(
+                db,
+                user_id=None,
+                action=action,
+                target_type="server",
+                target_id=server_id,
+                details={
+                    "type": incident_type,
+                    "status": status,
+                    "incident_uuid": incident_uuid,
+                    "occurrences": occurrences,
+                    **({"evidence": evidence} if evidence else {}),
+                },
+                origin="system",
+                commit=False,
+            )
+    except Exception:
+        logger.exception("Server-Vorfall konnte nicht protokolliert werden")
+
+
+def _evidenz(payload: dict[str, Any]) -> str | None:
+    diagnostic = payload.get("diagnostic")
+    if not isinstance(diagnostic, dict):
+        return None
+    text = _safe_text(diagnostic.get("evidence"), fallback="", limit=200)
+    return text or None
+
 _INCIDENT_STATUSES = frozenset(
     {"open", "recovering", "verifying", "resolved", "quarantined"}
 )
@@ -234,6 +287,7 @@ def ingest_incidents_and_ack(
             fallback="Guardian incident",
             limit=2000,
         )
+        evidence = _evidenz(payload)
 
         # 1. Check if this exact UUID was already delivered (Idempotency)
         delivery = db.query(GuardianIncidentDelivery).filter(GuardianIncidentDelivery.incident_uuid == incident_uuid).first()
@@ -254,6 +308,17 @@ def ingest_incidents_and_ack(
                     existing_inc.resolved_at = None
                 if old_st != existing_inc.status:
                     notifications_to_send.append((item["type"], item["status"], message))
+                    if existing_inc.status == "resolved":
+                        _audit_vorfall(
+                            db,
+                            server.id,
+                            "server.incident.resolved",
+                            incident_type=item["type"],
+                            status=existing_inc.status,
+                            incident_uuid=incident_uuid,
+                            occurrences=existing_inc.occurrences,
+                            evidence=evidence,
+                        )
                 # Persist the parent update before the delivery ACK bulk update.
                 # This also makes grouped UUID status changes observable through
                 # the same session immediately and avoids relying on autoflush
@@ -279,6 +344,17 @@ def ingest_incidents_and_ack(
                 existing.resolved_at = None
             if old_st != item["status"]:
                 notifications_to_send.append((item["type"], item["status"], message))
+                if item["status"] == "resolved":
+                    _audit_vorfall(
+                        db,
+                        server.id,
+                        "server.incident.resolved",
+                        incident_type=item["type"],
+                        status=item["status"],
+                        incident_uuid=incident_uuid,
+                        occurrences=existing.occurrences,
+                        evidence=evidence,
+                    )
             target_incident = existing
         else:
             # 3. Check for active (unresolved) incident with the same fingerprint (Grouping)
@@ -302,6 +378,27 @@ def ingest_incidents_and_ack(
                     group_parent.resolved_at = datetime.now(timezone.utc)
                 if old_st != item["status"]:
                     notifications_to_send.append((item["type"], item["status"], message))
+                _audit_vorfall(
+                    db,
+                    server.id,
+                    "server.incident.recurred",
+                    incident_type=item["type"],
+                    status=group_parent.status,
+                    incident_uuid=incident_uuid,
+                    occurrences=group_parent.occurrences,
+                    evidence=evidence,
+                )
+                if old_st != item["status"] and group_parent.status == "resolved":
+                    _audit_vorfall(
+                        db,
+                        server.id,
+                        "server.incident.resolved",
+                        incident_type=item["type"],
+                        status=group_parent.status,
+                        incident_uuid=incident_uuid,
+                        occurrences=group_parent.occurrences,
+                        evidence=evidence,
+                    )
                 target_incident = group_parent
             else:
                 # 4. Create a brand new incident
@@ -324,6 +421,16 @@ def ingest_incidents_and_ack(
                     new_inc.resolved_at = datetime.now(timezone.utc)
                 db.add(new_inc)
                 db.flush()
+                _audit_vorfall(
+                    db,
+                    server.id,
+                    "server.incident.detected",
+                    incident_type=item["type"],
+                    status=status,
+                    incident_uuid=incident_uuid,
+                    occurrences=1,
+                    evidence=evidence,
+                )
                 notifications_to_send.append((item["type"], status, message))
                 target_incident = new_inc
 

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import uuid
 
@@ -125,9 +126,37 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+logger = logging.getLogger(__name__)
+
+
 def fehler(status: int, code: str, message: str, **extra: object) -> HTTPException:
     return HTTPException(
         status_code=status, detail={"code": code, "message": message, **extra}
+    )
+
+
+def _audit_dokument(
+    db: Session,
+    user: User,
+    action: str,
+    doc_uid: str,
+    details: dict | None = None,
+) -> None:
+    """Schreibt eine Dokument-Aktion in dieselbe Transaktion wie die Aktion.
+
+    Kein Dokumenttitel und kein Zustand in den Details: beides ist
+    Nutzerinhalt und liegt sonst im Klartext im Audit. Team, Ordner und die
+    Kennung des Dokuments reichen zum Nachvollziehen.
+    """
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action=action,
+        target_type="document",
+        target_id=doc_uid,
+        details=details,
+        origin="direct",
+        commit=False,
     )
 
 
@@ -373,6 +402,13 @@ class DocsService:
             last_edited_at=_now(),
         )
         db.add(doc)
+        _audit_dokument(
+            db,
+            user,
+            "docs.document.created",
+            doc_uid,
+            {"team_id": team.id, "folder_id": folder_id},
+        )
         db.commit()
         db.refresh(doc)
         zugriff = docs_access.access_or_404(db, user, doc)
@@ -665,6 +701,7 @@ class DocsService:
         doc.deleted_at = _now()
         doc.purge_after = _now() + timedelta(days=PURGE_TAGE)
         doc.updated_at = _now()
+        _audit_dokument(db, user, "docs.document.trashed", doc_uid, {"team_id": doc.team_id})
         db.commit()
         _publish("deleted", doc, user_id=user.id)
         DocsService._disconnect(doc_uid)
@@ -678,6 +715,7 @@ class DocsService:
         doc.purge_after = None
         doc.archived_at = None
         doc.updated_at = _now()
+        _audit_dokument(db, user, "docs.document.restored", doc_uid, {"team_id": doc.team_id})
         db.commit()
         db.refresh(doc)
         _publish("restored", doc, user_id=user.id)
@@ -688,6 +726,7 @@ class DocsService:
         doc = _doc(db, doc_uid, mit_trash=True)
         docs_access.require_manage(db, user, doc, mit_trash=True)
         DocsService._disconnect(doc_uid)
+        _audit_dokument(db, user, "docs.document.deleted", doc_uid, {"team_id": doc.team_id})
         db.delete(doc)
         db.commit()
         SyncEventService.publish(
@@ -740,6 +779,13 @@ class DocsService:
             kopie.content_chars = doc.content_chars
             kopie.content_truncated = doc.content_truncated
         db.add(kopie)
+        _audit_dokument(
+            db,
+            user,
+            "docs.document.duplicated",
+            kopie.doc_uid,
+            {"team_id": doc.team_id, "source": doc_uid},
+        )
         db.commit()
         db.refresh(kopie)
         _publish("created", kopie, user_id=user.id)

@@ -962,6 +962,39 @@ async def vorflug(
     return Vorflug(anbieter=anbieter, denken=denken, stufe=stufe, fenster=fenster), anbieter
 
 
+def protokolliere_fehlschlag(db: Session, run: AiRun, stop_reason: str | None) -> None:
+    """Schreibt einen gescheiterten KI-Lauf ins Audit, ohne ihn zu blockieren.
+
+    Der Eintrag liegt in einem Savepoint derselben Transaktion: scheitert nur
+    die Protokollzeile, wird der Lauf trotzdem als fehlgeschlagen festgehalten.
+    Die Details tragen den stabilen Fehlercode, nicht die Anbieterantwort —
+    darin koennten Schluessel oder Nutzertext stehen.
+    """
+    try:
+        from services import audit_service
+
+        # Den Statuswechsel vor dem Savepoint festschreiben: scheitert nur die
+        # Protokollzeile, bleibt der Lauf trotzdem als fehlgeschlagen stehen.
+        db.flush()
+        with db.begin_nested():
+            audit_service.record_privileged_action(
+                db,
+                user_id=run.user_id,
+                action="ai.run.failed",
+                target_type="ai_run",
+                target_id=run.id,
+                details={
+                    "stop_reason": stop_reason,
+                    "provider_id": run.provider_id,
+                    "server_id": run.last_server_id,
+                },
+                origin="ai",
+                commit=False,
+            )
+    except Exception:
+        logger.exception("Fehlgeschlagener KI-Lauf konnte nicht protokolliert werden")
+
+
 def anlauf(db: Session, run: AiRun) -> bool:
     """Der Anlauf-Schwanz: Kanal eroeffnen, Segment planen — oder ehrlich scheitern.
 
@@ -976,6 +1009,7 @@ def anlauf(db: Session, run: AiRun) -> bool:
     if not lauf_starten(run.id):
         run.status = "failed"
         run.stop_reason = "no_runtime"
+        protokolliere_fehlschlag(db, run, "no_runtime")
         db.commit()
         return False
     return True
@@ -1006,6 +1040,7 @@ def unterbrochene_laeufe_abgleichen(db: Session) -> int:
     for run in laeufe:
         run.status = "failed"
         run.stop_reason = "process_restart"
+        protokolliere_fehlschlag(db, run, "process_restart")
         arbeitsspeicher_leeren(run)
         run.updated_at = _jetzt()
     if not laeufe:

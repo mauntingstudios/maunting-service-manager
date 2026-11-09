@@ -79,6 +79,62 @@ from services.captcha_service import CaptchaService
 
 logger = logging.getLogger(__name__)
 
+
+def _audit_login_failure(db: Session, user: User | None, reason: str) -> None:
+    """Schreibt einen fehlgeschlagenen Anmeldeversuch ins Audit.
+
+    Der Akteur ist unbekannt; das Ziel ist das Konto, wenn es existiert. Der
+    eingegebene Benutzername landet **nicht** in den Details: er kann ein
+    Tippfehler, ein Passwort im falschen Feld oder ein Rateversuch sein. Die
+    Antwort an den Client bleibt unveraendert generisch; nur das geschuetzte
+    Protokoll nennt den Grund.
+    """
+    try:
+        audit_service.record_privileged_action(
+            db,
+            user_id=None,
+            action="auth.login.failed",
+            target_type="user" if user is not None else None,
+            target_id=user.id if user is not None else None,
+            details={"reason": reason},
+            origin="direct",
+            commit=True,
+        )
+    except Exception:
+        # Ein Audit-Fehlschlag darf die Anmeldung nicht in einen 500 verwandeln.
+        db.rollback()
+        logger.exception("Fehlgeschlagener Login konnte nicht protokolliert werden")
+
+
+def _audit_device_pairing(
+    db: Session,
+    *,
+    user_id: int | None,
+    action: str,
+    target_id: int | None = None,
+    details: dict | None = None,
+) -> None:
+    """Protokolliert Erzeugen, Einloesen und Fehlversuche einer Kopplung.
+
+    Der Code selbst ist ein Geheimnis und steht nie in den Details. Ein
+    Fehlversuch hat kein Ziel: der Rateversuch soll nicht verraten, ob es den
+    Code gibt.
+    """
+    try:
+        audit_service.record_privileged_action(
+            db,
+            user_id=user_id,
+            action=action,
+            target_type="device_pairing" if target_id is not None else None,
+            target_id=target_id,
+            details=details,
+            origin="direct",
+            commit=True,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Geraetekopplung konnte nicht protokolliert werden")
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
@@ -487,9 +543,11 @@ def login_verify(
 ) -> dict:
     user = AuthService.get_user_by_username(db, req.username)
     if not user or not AuthService.verify_password(req.password, user.password_hash):
+        _audit_login_failure(db, user, "unknown_user" if user is None else "bad_password")
         raise HTTPException(status_code=401, detail="Ungültige Anmeldedaten")
     AuthService.rehash_password_if_needed(db, user, req.password)
     if not user.is_active:
+        _audit_login_failure(db, user, "inactive")
         raise HTTPException(status_code=401, detail="Account deaktiviert")
     if user.email_verified:
         raise HTTPException(status_code=400, detail="Bereits verifiziert")
@@ -532,18 +590,21 @@ async def login(
     # Der Schein gilt nur fuer das Konto, fuer das er ausgestellt wurde — und
     # das wird geprueft, bevor das Passwort etwas verraet.
     if schein is not None and (not user or schein.user_id != user.id):
+        _audit_login_failure(db, user, "challenge_mismatch")
         raise HTTPException(status_code=401, detail="Ungültige Anmeldedaten")
     # Argon2 dauert gewollt lange. Im Threadpool, sonst hielte jeder
     # Anmeldeversuch die Ereignisschleife des ganzen Panels an.
     if not user or not await run_in_threadpool(
         AuthService.verify_password, req.password, user.password_hash
     ):
+        _audit_login_failure(db, user, "unknown_user" if user is None else "bad_password")
         raise HTTPException(status_code=401, detail="Ungültige Anmeldedaten")
     # Umhuellte und passlib-Hashes werden hier zu frischen DIS-Hashes. Bis
     # 09/2026 geschah das nur in /login-verify, also fast nie.
     await run_in_threadpool(AuthService.rehash_password_if_needed, db, user, req.password)
 
     if not user.is_active:
+        _audit_login_failure(db, user, "inactive")
         raise HTTPException(status_code=401, detail="Account deaktiviert")
 
     if not user.email_verified:
@@ -641,6 +702,13 @@ def create_device_pairing(
     if fehlt:
         raise HTTPException(status_code=403, detail=fehlt)
     einladung, code = device_pairing_service.anlegen(db, user, req.label)
+    _audit_device_pairing(
+        db,
+        user_id=user.id,
+        action="device.pairing.generated",
+        target_id=einladung.id,
+        details={"expires_at": einladung.expires_at.isoformat() if einladung.expires_at else None},
+    )
     return {
         "code": code,
         "expires_at": einladung.expires_at,
@@ -722,9 +790,22 @@ def redeem_device_pairing(
     """
     einladung = device_pairing_service.einloesen(db, req.code)
     if einladung is None:
+        _audit_device_pairing(
+            db,
+            user_id=None,
+            action="device.pairing.failed",
+            details={"reason": "invalid_or_expired"},
+        )
         raise HTTPException(status_code=400, detail="Kopplungscode ungültig oder abgelaufen")
     user = AuthService.get_user_by_id(db, einladung.user_id)
     if not user or not user.is_active:
+        _audit_device_pairing(
+            db,
+            user_id=None,
+            action="device.pairing.failed",
+            target_id=einladung.id,
+            details={"reason": "inactive"},
+        )
         raise HTTPException(status_code=400, detail="Kopplungscode ungültig oder abgelaufen")
 
     # Erst hier entsteht die Sitzung, und mit ihr die Familie. `geraet` macht
@@ -738,6 +819,13 @@ def redeem_device_pairing(
             einladung.label = req.label.strip()[: device_pairing_service.MAX_BEZEICHNUNG]
         device_pairing_service.familie_vermerken(db, einladung, rt.family)
         device_pairing_service.aktivitaet_vermerken(rt.family)
+    _audit_device_pairing(
+        db,
+        user_id=user.id,
+        action="device.pairing.redeemed",
+        target_id=einladung.id,
+        details={"geraet": req.geraet},
+    )
     return _native_token_body(tokens)
 
 

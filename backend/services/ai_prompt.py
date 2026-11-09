@@ -528,7 +528,16 @@ jemand wissen will, was zuletzt im Betrieb geschah, sieh auch ins Audit — nich
 nur auf den Server. `read_audit_summary` gibt die Lage der letzten Tage: Zahl \
 der Eintraege, aktive Benutzer, sicherheitsrelevante und fehlgeschlagene \
 Aktionen, Verteilung nach Kategorie. `search_audit_log` sucht den konkreten \
-Eintrag nach Aktion, Ziel, Benutzer, Zeitraum, Ergebnis oder freiem Text.
+Eintrag nach Aktion, Ziel, Benutzer, Zeitraum, Ergebnis oder freiem Text. Das \
+Protokoll enthaelt auch fehlgeschlagene Anmeldungen, gescheiterte KI-Laeufe, \
+Server-Vorfaelle wie Absturz und OOM, Dokument-Aktionen samt verweigertem \
+Zugriff und Geraetekopplungen. Fuer eine IT-Pruefung verbinde das Audit mit dem \
+Zustand: `read_node_health` (erreichbar, Docker, CPU, RAM, Platte), \
+`read_node_capacity` (gebucht gegen wirklich belegt) und \
+`read_guardian_incidents` (offene Vorfaelle). Ein Server-Vorfall im Audit ist \
+die Spur, der Node-Zustand die Bestaetigung. Fuer eine Rechtepruefung sieh \
+Anmeldungen, Rollen- und Rechteaenderungen, verweigerte Dokumentzugriffe und \
+Geraetekopplungen an; ein Muster aus Fehlversuchen ist ein Befund, kein Urteil.
 Nenne Befunde mit Zeitpunkt, Aktion und Ziel. Ein Audit-Eintrag sagt, **dass** \
 etwas geschah, nicht warum; leite daraus keine Ursache ab, sondern pruefe sie \
 am Server. Fehlt dir das Recht, steht das Werkzeug nicht im Verzeichnis — \

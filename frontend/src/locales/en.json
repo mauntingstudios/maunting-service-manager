@@ -318,7 +318,10 @@
       "blueprint": "Blueprint",
       "doc": "Document",
       "docs": "Document",
-      "backup": "Backup"
+      "backup": "Backup",
+      "device_pairing": "Device pairing",
+      "ai_run": "AI run",
+      "document": "Document"
     },
     "detail": {
       "title": "Audit entry",
@@ -357,7 +360,20 @@
       "key": "Key",
       "value": "Value",
       "before": "Before",
-      "after": "After"
+      "after": "After",
+      "stop_reason": "Stop reason",
+      "provider_id": "Provider ID",
+      "incident_uuid": "Incident ID",
+      "occurrences": "Occurrences",
+      "evidence": "Evidence",
+      "geraet": "Device",
+      "expires_at": "Valid until",
+      "mindestens": "Required role",
+      "rolle": "Actual role",
+      "folder_id": "Folder ID",
+      "source": "Source",
+      "type": "Type",
+      "status": "Status"
     },
     "operations": {
       "start": "Start",
@@ -452,7 +468,21 @@
       "callMuted": "Participant muted",
       "callUnmuted": "Participant unmuted",
       "aiActionRejected": "AI action rejected",
-      "aiToolRead": "AI tool read"
+      "aiToolRead": "AI tool read",
+      "loginFailed": "Sign-in failed",
+      "aiRunFailed": "AI run failed",
+      "documentCreated": "Document created",
+      "documentTrashed": "Document moved to trash",
+      "documentRestored": "Document restored",
+      "documentDeleted": "Document permanently deleted",
+      "documentDuplicated": "Document duplicated",
+      "docsAccessDenied": "Document access denied",
+      "serverIncidentDetected": "Server incident detected",
+      "serverIncidentRecurred": "Server incident recurred",
+      "serverIncidentResolved": "Server incident resolved",
+      "devicePairingGenerated": "Device pairing created",
+      "devicePairingRedeemed": "Device pairing redeemed",
+      "devicePairingFailed": "Device pairing failed"
     },
     "subject": {
       "backups": "Backup",

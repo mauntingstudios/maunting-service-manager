@@ -204,6 +204,7 @@ _KATEGORIE_REGELN: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "auth.",
             "credential.",
             "server.credential.",
+            "device.",
             "vault.",
             "team.vault.",
             "guardian.",
@@ -277,7 +278,11 @@ def audit_ergebnis(action: str | None, details: str | None = None) -> str:
     nichts darueber sagt.
     """
     text = (action or "").strip().lower()
-    if text.endswith(".failed") or text.endswith(".fehlgeschlagen"):
+    if (
+        text.endswith(".failed")
+        or text.endswith(".fehlgeschlagen")
+        or text.endswith(".denied")
+    ):
         return "failed"
     if not details:
         return "success"
@@ -301,9 +306,23 @@ def audit_sicherheitsrelevant(action: str | None) -> bool:
 
     Das sind Zugang, Geheimnisse und Rechte — die Felder, in denen ein Fehlgriff
     fremden Zugang schafft. Reine Betriebsaktionen (Start, Stopp, Backup)
-    zaehlen nicht, auch wenn sie wichtig sind.
+    zaehlen nicht, auch wenn sie wichtig sind. Ein verweigerter Dokumentzugriff
+    steht in der Kategorie `docs`, ist aber ein Rechtefehler und zaehlt deshalb
+    hier mit.
     """
-    return audit_kategorie(action) in {"security", "role"}
+    return (
+        audit_kategorie(action) in {"security", "role"}
+        or (action or "").strip().lower() == "docs.access.denied"
+    )
+
+
+def _sicherheits_bedingung():
+    """SQL-Fassung von `audit_sicherheitsrelevant` fuer die Kennzahlen."""
+    return or_(
+        _kategorie_bedingung("security"),
+        _kategorie_bedingung("role"),
+        AuditLog.action == "docs.access.denied",
+    )
 
 
 def _kategorie_bedingung(kategorie: str):
@@ -335,6 +354,7 @@ def _failed_bedingung():
     return or_(
         AuditLog.action.like("%.failed"),
         AuditLog.action.like("%.fehlgeschlagen"),
+        AuditLog.action.like("%.denied"),
         AuditLog.details.like('%"error_code": "%'),
         AuditLog.details.like('%"success": false%'),
         AuditLog.details.like('%"status": "failed"%'),
@@ -441,11 +461,7 @@ def audit_uebersicht(
             "users": int(
                 basis.with_entities(func.count(func.distinct(AuditLog.user_id))).scalar() or 0
             ),
-            "security": int(
-                basis.filter(
-                    or_(_kategorie_bedingung("security"), _kategorie_bedingung("role"))
-                ).count()
-            ),
+            "security": int(basis.filter(_sicherheits_bedingung()).count()),
             "failed": int(basis.filter(_failed_bedingung()).count()),
         }
 

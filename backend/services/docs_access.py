@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -16,6 +17,8 @@ from sqlalchemy.orm import Session
 from models.doc import DocMember, Document
 from models.team import TeamMember
 from models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 ROLE_RANG: dict[str, int] = {"viewer": 1, "commenter": 2, "editor": 3}
@@ -153,12 +156,41 @@ def access_or_404(
     return zugriff
 
 
+def _audit_verweigert(
+    db: Session, user: User, doc: Document, mindestens: str, rolle: str
+) -> None:
+    """Haelt einen verweigerten Dokumentzugriff im Audit fest.
+
+    Die Rollenpruefung steht am Anfang jeder Operation, bevor Daten geschrieben
+    werden; der Commit schreibt daher nur die Protokollzeile fest. Der
+    Dokumenttitel steht nicht in den Details — nur Kennung, geforderte und
+    tatsaechliche Rolle.
+    """
+    try:
+        from services import audit_service
+
+        audit_service.record_privileged_action(
+            db,
+            user_id=user.id,
+            action="docs.access.denied",
+            target_type="document",
+            target_id=doc.doc_uid,
+            details={"mindestens": mindestens, "rolle": rolle},
+            origin="direct",
+            commit=True,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Verweigerter Dokumentzugriff konnte nicht protokolliert werden")
+
+
 def require_role(
     db: Session, user: User, doc: Document, mindestens: str
 ) -> DocAccess:
     zugriff = access_or_404(db, user, doc)
     if ROLE_RANG[zugriff.role] < ROLE_RANG[mindestens]:
         code = "DOCS_READ_ONLY" if mindestens != "viewer" else "DOCS_FORBIDDEN"
+        _audit_verweigert(db, user, doc, mindestens, zugriff.role)
         raise HTTPException(
             status_code=403,
             detail={"code": code, "message": "Dafuer fehlt die Dokumentrolle"},
@@ -171,6 +203,7 @@ def require_manage(
 ) -> DocAccess:
     zugriff = access_or_404(db, user, doc, mit_trash=mit_trash)
     if not zugriff.can_manage:
+        _audit_verweigert(db, user, doc, "manage", zugriff.role)
         raise HTTPException(
             status_code=403,
             detail={"code": "DOCS_FORBIDDEN", "message": "Nur die Verwaltung darf das"},

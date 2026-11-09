@@ -318,7 +318,10 @@
       "blueprint": "Blueprint",
       "doc": "Dokument",
       "docs": "Dokument",
-      "backup": "Backup"
+      "backup": "Backup",
+      "device_pairing": "Gerätekopplung",
+      "ai_run": "KI-Lauf",
+      "document": "Dokument"
     },
     "detail": {
       "title": "Audit-Eintrag",
@@ -357,7 +360,20 @@
       "key": "Schlüssel",
       "value": "Wert",
       "before": "Vorher",
-      "after": "Nachher"
+      "after": "Nachher",
+      "stop_reason": "Abbruchgrund",
+      "provider_id": "Anbieter-ID",
+      "incident_uuid": "Vorfall-ID",
+      "occurrences": "Vorkommen",
+      "evidence": "Beleg",
+      "geraet": "Gerät",
+      "expires_at": "Gültig bis",
+      "mindestens": "Benötigte Rolle",
+      "rolle": "Tatsächliche Rolle",
+      "folder_id": "Ordner-ID",
+      "source": "Vorlage",
+      "type": "Art",
+      "status": "Status"
     },
     "operations": {
       "start": "Starten",
@@ -452,7 +468,21 @@
       "callMuted": "Teilnehmer im Anruf stummgeschaltet",
       "callUnmuted": "Teilnehmer im Anruf lautgeschaltet",
       "aiActionRejected": "KI-Aktion abgelehnt",
-      "aiToolRead": "KI-Werkzeug gelesen"
+      "aiToolRead": "KI-Werkzeug gelesen",
+      "loginFailed": "Anmeldung fehlgeschlagen",
+      "aiRunFailed": "KI-Lauf fehlgeschlagen",
+      "documentCreated": "Dokument erstellt",
+      "documentTrashed": "Dokument in den Papierkorb gelegt",
+      "documentRestored": "Dokument wiederhergestellt",
+      "documentDeleted": "Dokument endgültig gelöscht",
+      "documentDuplicated": "Dokument dupliziert",
+      "docsAccessDenied": "Dokumentzugriff verweigert",
+      "serverIncidentDetected": "Server-Vorfall erkannt",
+      "serverIncidentRecurred": "Server-Vorfall erneut aufgetreten",
+      "serverIncidentResolved": "Server-Vorfall behoben",
+      "devicePairingGenerated": "Gerätekopplung erzeugt",
+      "devicePairingRedeemed": "Gerätekopplung eingelöst",
+      "devicePairingFailed": "Gerätekopplung fehlgeschlagen"
     },
     "subject": {
       "backups": "Backup",

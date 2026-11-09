@@ -71,6 +71,10 @@ describe('auditPresentation', () => {
     expect(auditKategorie('server.firewall_opened')).toBe('configuration')
     expect(auditKategorie('hoster.product.saved')).toBe('billing')
     expect(auditKategorie('auto_restart')).toBe('system')
+    expect(auditKategorie('auth.login.failed')).toBe('security')
+    expect(auditKategorie('device.pairing.generated')).toBe('security')
+    expect(auditKategorie('docs.access.denied')).toBe('docs')
+    expect(auditKategorie('server.incident.detected')).toBe('server')
   })
 
   it('erkennt Fehlschlaege nur mit Beleg', () => {
@@ -79,6 +83,9 @@ describe('auditPresentation', () => {
     expect(auditErgebnis('server.lifecycle.completed', '{"error_code":"timeout"}')).toBe('failed')
     expect(auditErgebnis('server.lifecycle.completed', '{"success":false}')).toBe('failed')
     expect(auditErgebnis('server.lifecycle.completed', 'kein json')).toBe('success')
+    expect(auditErgebnis('docs.access.denied', null)).toBe('failed')
+    expect(auditErgebnis('device.pairing.failed', null)).toBe('failed')
+    expect(auditErgebnis('server.incident.detected', null)).toBe('success')
   })
 
   it('formatiert Ziel und Zeit ohne erfundene Daten', () => {
@@ -108,6 +115,11 @@ describe('auditPresentation', () => {
     expect(t).toHaveBeenCalledWith('audit.subject.hosterProduct')
     expect(t).toHaveBeenCalledWith('audit.verb.saved')
     expect(auditAktionText(t, 'unbekannt', null)).toBe('unbekannt')
+    expect(auditAktionText(t, 'auth.login.failed', null)).toBe('audit.action.loginFailed')
+    expect(auditAktionText(t, 'ai.run.failed', null)).toBe('audit.action.aiRunFailed')
+    expect(auditAktionText(t, 'docs.document.created', null)).toBe('audit.action.documentCreated')
+    expect(auditAktionText(t, 'server.incident.detected', null)).toBe('audit.action.serverIncidentDetected')
+    expect(auditAktionText(t, 'device.pairing.redeemed', null)).toBe('audit.action.devicePairingRedeemed')
   })
 
   it('liest Details nur als Objekt', () => {

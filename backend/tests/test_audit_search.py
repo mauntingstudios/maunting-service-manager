@@ -63,6 +63,16 @@ def _eintrag(
     return entry
 
 
+def test_neue_sicherheitsereignisse_werden_eingeordnet() -> None:
+    assert audit_service.audit_kategorie("auth.login.failed") == "security"
+    assert audit_service.audit_kategorie("device.pairing.generated") == "security"
+    assert audit_service.audit_kategorie("docs.access.denied") == "docs"
+    assert audit_service.audit_sicherheitsrelevant("docs.access.denied") is True
+    assert audit_service.audit_ergebnis("docs.access.denied", None) == "failed"
+    assert audit_service.audit_ergebnis("device.pairing.failed", None) == "failed"
+    assert audit_service.audit_ergebnis("server.incident.detected", None) == "success"
+
+
 def test_filter_und_gesamtzahl_beschreiben_dieselbe_menge(
     client: TestClient, db: Session, owner_user: User, owner_cookies: dict
 ) -> None:

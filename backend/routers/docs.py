@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -24,6 +25,7 @@ from schemas.docs import (
     ShareClaim,
     ShareCreate,
 )
+from services import audit_service
 from services.auth_service import AuthService
 from services.panel_settings_service import docs_enabled
 from services.permission_service import has_global_permission
@@ -32,6 +34,23 @@ from services.docs_pending_edit_service import DocsPendingEditService
 from services.docs_service import DocsService, fehler
 
 router = APIRouter(prefix="/api/docs", tags=["docs"])
+logger = logging.getLogger(__name__)
+
+
+def _audit_modul_verweigert(db: Session, user: User) -> None:
+    """Haelt einen Zugriff ohne `docs.use` im Audit fest."""
+    try:
+        audit_service.record_privileged_action(
+            db,
+            user_id=user.id,
+            action="docs.access.denied",
+            details={"mindestens": "docs.use"},
+            origin="direct",
+            commit=True,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Verweigerter Dokumentzugriff konnte nicht protokolliert werden")
 
 
 def _check_docs_enabled() -> None:
@@ -44,6 +63,7 @@ def _docs_user(
 ) -> User:
     _check_docs_enabled()
     if not has_global_permission(db, user, "docs.use"):
+        _audit_modul_verweigert(db, user)
         raise fehler(403, "DOCS_FORBIDDEN", "Kein Zugriff auf Dokumente")
     return user
 
