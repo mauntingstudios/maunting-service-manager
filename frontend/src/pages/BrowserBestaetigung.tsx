@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { Check, KeyRound, ShieldAlert } from 'lucide-react'
 import { api } from '@/api/client'
-import { Logo } from '@/components/Logo'
+import { AuthRahmen } from '@/components/auth/AuthRahmen'
 import { Zahlenwahl } from '@maunting/ui'
 import { passkeyBestaetigen, type PasskeyBestaetigungsOptionen } from '@/services/passkeyService'
 
@@ -86,16 +86,8 @@ export function BrowserBestaetigung() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-on-surface flex items-center justify-center p-margin-mobile md:p-margin-desktop relative overflow-hidden">
-      <div className="absolute inset-0 msm-deep-grid opacity-50" />
-
-      <div className="relative z-10 w-full max-w-md">
-        <div className="flex items-center justify-center gap-3 mb-8">
-          <Logo size="md" />
-          <h1 className="font-headline text-body-lg font-extrabold text-primary leading-tight">MSM</h1>
-        </div>
-
-        <div className="msm-card p-8 text-center">
+    <AuthRahmen>
+      <div className="text-center">
           <div className="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center mx-auto mb-4">
             <KeyRound className="w-6 h-6 text-secondary" aria-hidden="true" />
           </div>
@@ -138,8 +130,7 @@ export function BrowserBestaetigung() {
               <p className="text-base text-status-destructive">{meldung}</p>
             </div>
           )}
-        </div>
       </div>
-    </div>
+    </AuthRahmen>
   )
 }

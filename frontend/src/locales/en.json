@@ -3281,6 +3281,8 @@
   },
   "auth": {
     "login": "Sign in",
+    "brandTagline": "Servers, services and projects in one place.",
+    "orContinueWith": "Or continue with an account",
     "loginDescription": "Sign in to your Service Manager",
     "register": "Register",
     "registerDescription": "Create a new account",
@@ -3951,6 +3953,8 @@
         "github": "GitHub",
         "microsoft": "Microsoft",
         "twitter": "Twitter / X",
+        "gitlab": "GitLab",
+        "twitch": "Twitch",
         "custom_oidc": "Custom OIDC (Authentik, Keycloak, Zitadel …)",
         "custom_oauth2": "Custom OAuth 2.0"
       },
@@ -5297,6 +5301,8 @@
       "github": "OAuth 2.0, primary email + username. Requires an OAuth app in GitHub Settings → Developer settings.",
       "microsoft": "OpenID Connect (multi-tenant), email + username. Requires an app registration in Microsoft Entra ID.",
       "twitter": "OAuth 2.0 with PKCE, user ID and username. Requires an app in the Twitter Developer Portal.",
+      "gitlab": "OpenID Connect on gitlab.com, email, username and avatar. Requires an OAuth application in the GitLab settings.",
+      "twitch": "OAuth 2.0, Twitch account with email. Requires an app in the Twitch developer console; the client ID is also sent as a header to the Helix API.",
       "custom_oidc": "Generic OIDC client: only the issuer is required, endpoints are discovered via /.well-known/openid-configuration. Suitable for Authentik, Keycloak, Zitadel, Auth0, Okta.",
       "custom_oauth2": "Generic OAuth 2.0 client: endpoints must be set manually. For providers that do not fully implement OIDC."
     },

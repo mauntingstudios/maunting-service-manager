@@ -6,6 +6,8 @@ export const OAUTH_PRESETS = [
   'github',
   'microsoft',
   'twitter',
+  'gitlab',
+  'twitch',
   'custom_oidc',
   'custom_oauth2',
 ] as const

@@ -148,10 +148,15 @@ def requires_verified_email() -> bool:
 # ── Claim-Mapping ──────────────────────────────────────────────────────
 
 def _resolve_dotted(obj: Any, path: str) -> Any:
+    """Liest einen Claim-Pfad; Zahlen greifen in Listen (Twitch: data.0.id)."""
     for part in path.split("."):
-        if not isinstance(obj, dict):
+        if isinstance(obj, dict):
+            obj = obj.get(part)
+        elif isinstance(obj, list) and part.isdigit():
+            index = int(part)
+            obj = obj[index] if index < len(obj) else None
+        else:
             return None
-        obj = obj.get(part)
     return obj
 
 
@@ -703,7 +708,13 @@ def fetch_user_profile(
             userinfo_url = endpoints.get("userinfo_endpoint")
             if userinfo_url:
                 try:
-                    userinfo = _fetch_userinfo(str(userinfo_url), tokens.get("access_token", ""), timeout=2.5)
+                    userinfo = _fetch_userinfo(
+                        str(userinfo_url),
+                        tokens.get("access_token", ""),
+                        timeout=2.5,
+                        client_id=provider.client_id,
+                        client_id_header=preset.client_id_header,
+                    )
                     if userinfo:
                         # Behaupte vom IdP: sub MUSS gleich sein (OpenID-Spec)
                         if not userinfo.get("sub") or userinfo.get("sub") == claims.get("sub"):
@@ -717,7 +728,13 @@ def fetch_user_profile(
     userinfo_url = endpoints.get("userinfo_endpoint")
     if not userinfo_url:
         raise ValueError("Provider liefert weder ID-Token noch /userinfo-Endpoint")
-    userinfo = _fetch_userinfo(str(userinfo_url), tokens.get("access_token", ""), timeout=5.0)
+    userinfo = _fetch_userinfo(
+        str(userinfo_url),
+        tokens.get("access_token", ""),
+        timeout=5.0,
+        client_id=provider.client_id,
+        client_id_header=preset.client_id_header,
+    )
     if not userinfo:
         raise ValueError("userinfo-Endpoint lieferte leeres Profil")
     return userinfo
@@ -746,14 +763,26 @@ def _decode_jwt_payload(jwt: str) -> dict[str, Any] | None:
         return None
 
 
-def _fetch_userinfo(url: str, access_token: str, timeout: float = 4.0) -> dict[str, Any] | None:
+def _fetch_userinfo(
+    url: str,
+    access_token: str,
+    timeout: float = 4.0,
+    *,
+    client_id: str | None = None,
+    client_id_header: str | None = None,
+) -> dict[str, Any] | None:
     if not access_token:
         return None
+    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    # Twitch (Helix) verlangt die Client-ID als eigenen Kopf. Sie ist
+    # oeffentlich; das Client-Secret bleibt am Token-Endpunkt.
+    if client_id_header and client_id:
+        headers[client_id_header] = client_id
     try:
         client = get_http_client()
         resp = client.get(
             url,
-            headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            headers=headers,
             timeout=httpx.Timeout(timeout, connect=2.5),
         )
     except Exception:

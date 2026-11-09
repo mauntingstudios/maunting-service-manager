@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import i18n from '@/i18n'
 
 const { api, passkeyBestaetigen } = vi.hoisted(() => ({ api: vi.fn(), passkeyBestaetigen: vi.fn() }))
@@ -19,6 +20,12 @@ describe('BrowserBestaetigung', () => {
   beforeEach(() => {
     window.location.hash = KENNUNG
     api.mockReset()
+    // Fußzeile des Rahmens fragt Version und Rechtstexte ab.
+    api.mockImplementation(async (pfad: string) => {
+      if (pfad === '/system/version') return 'v9.9.9'
+      if (pfad === '/system/legal') return { imprint_enabled: false, imprint_url: '' }
+      return {}
+    })
     passkeyBestaetigen.mockReset().mockResolvedValue({ id: 'p', type: 'public-key' })
   })
   afterEach(() => {
@@ -29,7 +36,7 @@ describe('BrowserBestaetigung', () => {
     api.mockImplementation(async (pfad: string) =>
       pfad === '/auth/passkey/browser/optionen' ? { zweck: 'data_export', auswahl: [12, 47, 83], optionen: OPTIONEN } : {},
     )
-    render(<BrowserBestaetigung />)
+    render(<MemoryRouter><BrowserBestaetigung /></MemoryRouter>)
 
     expect(await screen.findByText(i18n.t('auth.browserBestaetigung.forAction', {
       aktion: i18n.t('auth.browserBestaetigung.purpose.data_export'),
@@ -50,8 +57,8 @@ describe('BrowserBestaetigung', () => {
 
   it('ohne Kennung fragt sie nichts ab', async () => {
     window.location.hash = ''
-    render(<BrowserBestaetigung />)
+    render(<MemoryRouter><BrowserBestaetigung /></MemoryRouter>)
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(i18n.t('auth.browserBestaetigung.expired')))
-    expect(api).not.toHaveBeenCalled()
+    expect(api).not.toHaveBeenCalledWith('/auth/passkey/browser/optionen', expect.anything())
   })
 })

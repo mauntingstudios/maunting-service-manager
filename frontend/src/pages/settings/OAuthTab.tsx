@@ -4,6 +4,7 @@ import {
   KeyRound, Plus, Pencil, Trash2, FlaskConical, Save, Copy, Check, ShieldCheck, X,
 } from 'lucide-react'
 import { oauthApi, OAUTH_PRESETS, type OAuthProvider, type OAuthPreset, type OAuthSwitches } from '@/api/oauth'
+import { AnbieterSymbol } from '@/components/auth/AnbieterSymbol'
 import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { API_ORIGIN } from '@/config/api'
@@ -272,6 +273,7 @@ export function OAuthTab() {
               const isCopied = copiedId === p.id
               return (
                 <li key={p.id} className="py-4 first:pt-0 last:pb-0 flex items-start gap-4">
+                  <AnbieterSymbol slug={p.slug} name={p.name} className="mt-0.5 h-5 w-5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-label-md text-sm font-medium text-on-surface">{p.name}</span>

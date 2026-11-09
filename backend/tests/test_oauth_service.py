@@ -34,8 +34,18 @@ from services.role_service import ensure_system_roles
 # ── Preset-Tests ───────────────────────────────────────────────────────
 
 class TestOAuthPresets:
-    def test_all_seven_presets_known(self):
-        expected = {"google", "discord", "github", "microsoft", "twitter", "custom_oidc", "custom_oauth2"}
+    def test_all_presets_known(self):
+        expected = {
+            "google",
+            "discord",
+            "github",
+            "microsoft",
+            "twitter",
+            "gitlab",
+            "twitch",
+            "custom_oidc",
+            "custom_oauth2",
+        }
         assert set(p.key for p in list_presets()) == expected
 
     def test_preset_lookup(self):
@@ -44,9 +54,56 @@ class TestOAuthPresets:
         assert "accounts.google.com" in (g.authorization_endpoint or "")
 
     def test_apple_preset_not_included(self):
-        """Apple Sign In wurde explizit ausgeschlossen (Phase 1)."""
+        """Apple braucht form_post und ein signiertes Client-Secret; beides fehlt noch."""
         assert not known_preset("apple")
         assert not known_preset("apple_id")
+
+    def test_steam_preset_not_included(self):
+        """Steam spricht OpenID 2.0 ohne E-Mail und passt nicht in den OAuth-Flow."""
+        assert not known_preset("steam")
+
+    def test_gitlab_preset_uses_oidc(self):
+        gitlab = get_preset("gitlab")
+        assert gitlab is not None
+        assert gitlab.is_oidc is True
+        assert "gitlab.com/oauth/authorize" in (gitlab.authorization_endpoint or "")
+        assert gitlab.issuer == "https://gitlab.com"
+
+    def test_twitch_preset_reads_the_helix_list(self):
+        twitch = get_preset("twitch")
+        assert twitch is not None
+        assert twitch.is_oidc is False
+        assert twitch.client_id_header == "Client-Id"
+        profile = {"data": [{"id": "42", "login": "kanal", "email": "a@b.de"}]}
+        normalisiert = oauth_service.normalize_profile(twitch, profile)
+        assert normalisiert.subject == "42"
+        assert normalisiert.username == "kanal"
+        assert normalisiert.email == "a@b.de"
+
+    def test_twitch_userinfo_sends_the_client_id_header(self, monkeypatch):
+        client = oauth_service.get_http_client()
+        gesehen: dict[str, object] = {}
+
+        class Antwort:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"data": [{"id": "42"}]}
+
+        def fake_get(url, **kwargs):
+            gesehen.update(kwargs.get("headers") or {})
+            return Antwort()
+
+        monkeypatch.setattr(client, "get", fake_get)
+        oauth_service._fetch_userinfo(
+            "https://api.twitch.tv/helix/users",
+            "token",
+            client_id="oeffentlich",
+            client_id_header="Client-Id",
+        )
+        assert gesehen["Client-Id"] == "oeffentlich"
+        assert gesehen["Authorization"] == "Bearer token"
 
     def test_pkce_enabled_for_all_presets(self):
         for p in list_presets():

@@ -1,6 +1,6 @@
 """OAuth/OIDC-Provider-Presets (reine Konfigurations-Konstanten).
 
-Endpunkte, Scopes und Claim-Mappings fuer die 7 festen Presets. Custom-Presets
+Endpunkte, Scopes und Claim-Mappings fuer die festen Presets. Custom-Presets
 nutzen die Overrides aus dem Provider-Datensatz.
 
 Sicherheit: Hier stehen KEINE Secrets. Nur oeffentliche, dokumentierte Endpoints.
@@ -33,6 +33,9 @@ class OAuthPreset:
     pkce: bool = True
     # Unterstuetzt der Provider OIDC (ID-Token) oder nur OAuth2 (userinfo)
     is_oidc: bool = True
+    # Manche APIs verlangen die Client-ID als eigenen Kopf (Twitch: Client-Id).
+    # Die Client-ID ist oeffentlich; das Secret bleibt am Token-Endpunkt.
+    client_id_header: str | None = None
 
 
 PRESETS: dict[str, OAuthPreset] = {
@@ -123,6 +126,44 @@ PRESETS: dict[str, OAuthPreset] = {
             "avatar": "data.profile_image_url",
         },
         is_oidc=False,
+    ),
+    "gitlab": OAuthPreset(
+        key="gitlab",
+        label="GitLab",
+        authorization_endpoint="https://gitlab.com/oauth/authorize",
+        token_endpoint="https://gitlab.com/oauth/token",
+        userinfo_endpoint="https://gitlab.com/oauth/userinfo",
+        issuer="https://gitlab.com",
+        default_scope="openid profile email",
+        claim_map={
+            "id": "sub",
+            "email": "email",
+            "email_verified": "email_verified",
+            "username": "preferred_username",
+            "name": "name",
+            "avatar": "picture",
+        },
+    ),
+    "twitch": OAuthPreset(
+        key="twitch",
+        label="Twitch",
+        authorization_endpoint="https://id.twitch.tv/oauth2/authorize",
+        token_endpoint="https://id.twitch.tv/oauth2/token",
+        # Helix antwortet mit {"data": [ {...} ]} und verlangt die Client-ID
+        # als eigenen Kopf; beides deckt das Mapping/der Kopf unten ab.
+        userinfo_endpoint="https://api.twitch.tv/helix/users",
+        issuer=None,
+        default_scope="user:read:email",
+        claim_map={
+            "id": "data.0.id",
+            "email": "data.0.email",
+            "email_verified": "_msm_default_true",
+            "username": "data.0.login",
+            "name": "data.0.display_name",
+            "avatar": "data.0.profile_image_url",
+        },
+        is_oidc=False,
+        client_id_header="Client-Id",
     ),
     "custom_oidc": OAuthPreset(
         key="custom_oidc",

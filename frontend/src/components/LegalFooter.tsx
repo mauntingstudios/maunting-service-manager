@@ -6,9 +6,11 @@ interface LegalFooterProps {
   version?: string
   className?: string
   imprintUrl?: string
+  /** Auf den Anmeldeseiten steht das Herkunftszeichen nicht neben dem Login. */
+  ohneHerkunftszeichen?: boolean
 }
 
-export function LegalFooter({ version, className = '', imprintUrl }: LegalFooterProps) {
+export function LegalFooter({ version, className = '', imprintUrl, ohneHerkunftszeichen = false }: LegalFooterProps) {
   const privacyNoticeVisible = usePrivacyNoticeVisible()
 
   return (
@@ -33,7 +35,7 @@ export function LegalFooter({ version, className = '', imprintUrl }: LegalFooter
           </>
         )}
       </div>
-      {!privacyNoticeVisible && <DisBadge />}
+      {!privacyNoticeVisible && !ohneHerkunftszeichen && <DisBadge />}
     </footer>
   )
 }

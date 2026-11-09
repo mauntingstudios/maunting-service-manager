@@ -102,7 +102,17 @@ export function OAuthDocs() {
               {t('docsOAuth.presets.title')}
             </h2>
             <div className="space-y-4">
-              {(['google', 'discord', 'github', 'microsoft', 'twitter', 'custom_oidc', 'custom_oauth2'] as const).map((p) => (
+              {([
+                'google',
+                'discord',
+                'github',
+                'microsoft',
+                'twitter',
+                'gitlab',
+                'twitch',
+                'custom_oidc',
+                'custom_oauth2',
+              ] as const).map((p) => (
                 <div key={p} className="flex gap-3">
                   <div className="w-24 shrink-0">
                     <span className="font-mono text-sm text-primary">{t(`settings.oauth.preset.${p}` as any, p)}</span>

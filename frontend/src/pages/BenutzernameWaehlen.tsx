@@ -3,7 +3,7 @@ import { AtSign } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { BenutzernameFeld } from '@/components/BenutzernameFeld'
-import { Logo } from '@/components/Logo'
+import { AuthRahmen } from '@/components/auth/AuthRahmen'
 import { Kartenbegruessung } from '@/desktop/vault/Kartenbegruessung'
 import { benutzernameVorschlag } from '@/lib/benutzername'
 import { useAuthStore } from '@/stores/authStore'
@@ -33,36 +33,27 @@ export function BenutzernameWaehlen() {
   const [konto, setKonto] = useState<User | null>(null)
 
   return (
-    <div className="min-h-screen bg-background text-on-surface flex items-center justify-center p-margin-mobile md:p-margin-desktop relative overflow-hidden">
-      <div className="absolute inset-0 msm-deep-grid opacity-50" />
-
-      <div className={`relative z-10 w-full ${konto ? 'max-w-2xl' : 'max-w-md'}`}>
-        <div className="flex items-center justify-center gap-3 mb-8">
-          <Logo size="md" />
-          <h1 className="font-headline text-body-lg font-extrabold text-primary leading-tight">MSM</h1>
-        </div>
-
-        <div className="msm-card p-6 sm:p-8 space-y-5">
-          {konto ? (
-            <Kartenbegruessung user={konto} onFertig={() => setUser(konto)} />
-          ) : (
-            <>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <AtSign className="h-5 w-5" aria-hidden="true" />
-                </div>
-                <h2 className="font-headline text-headline-sm text-on-surface">{t('benutzername.titel')}</h2>
+    <AuthRahmen breite={konto ? 'max-w-2xl' : 'max-w-md'}>
+      <div className="space-y-5">
+        {konto ? (
+          <Kartenbegruessung user={konto} onFertig={() => setUser(konto)} />
+        ) : (
+          <>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <AtSign className="h-5 w-5" aria-hidden="true" />
               </div>
-              <p className="text-sm text-on-surface-variant">{t('benutzername.hinweis')}</p>
-              <BenutzernameFeld
-                start={benutzernameVorschlag(vorlaeufig, email)}
-                uebernehmen={false}
-                onGespeichert={setKonto}
-              />
-            </>
-          )}
-        </div>
+              <h2 className="font-headline text-headline-sm text-on-surface">{t('benutzername.titel')}</h2>
+            </div>
+            <p className="text-sm text-on-surface-variant">{t('benutzername.hinweis')}</p>
+            <BenutzernameFeld
+              start={benutzernameVorschlag(vorlaeufig, email)}
+              uebernehmen={false}
+              onGespeichert={setKonto}
+            />
+          </>
+        )}
       </div>
-    </div>
+    </AuthRahmen>
   )
 }

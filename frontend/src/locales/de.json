@@ -3281,6 +3281,8 @@
   },
   "auth": {
     "login": "Anmelden",
+    "brandTagline": "Server, Dienste und Projekte an einem Ort.",
+    "orContinueWith": "Oder mit einem Konto anmelden",
     "loginDescription": "Melde dich bei deinem Service Manager an",
     "register": "Registrieren",
     "registerDescription": "Erstelle ein neues Konto",
@@ -3951,6 +3953,8 @@
         "github": "GitHub",
         "microsoft": "Microsoft",
         "twitter": "Twitter / X",
+        "gitlab": "GitLab",
+        "twitch": "Twitch",
         "custom_oidc": "Custom OIDC (Authentik, Keycloak, Zitadel …)",
         "custom_oauth2": "Custom OAuth 2.0"
       },
@@ -5297,6 +5301,8 @@
       "github": "OAuth 2.0, primäre E-Mail + Username. Erfordert OAuth-App in GitHub Settings → Developer settings.",
       "microsoft": "OpenID Connect (Multi-Tenant), E-Mail + Username. Erfordert App-Registrierung in Microsoft Entra ID.",
       "twitter": "OAuth 2.0 mit PKCE, User-ID und Username. Erfordert App im Twitter Developer Portal.",
+      "gitlab": "OpenID Connect über gitlab.com, E-Mail, Username und Profilbild. Erfordert eine OAuth-Anwendung in den GitLab-Einstellungen.",
+      "twitch": "OAuth 2.0, Twitch-Konto mit E-Mail. Erfordert eine App in der Twitch Developer Console; die Client-ID geht zusätzlich als Kopf an die Helix-API.",
       "custom_oidc": "Generischer OIDC-Client: Issuer reicht, Endpoints werden via /.well-known/openid-configuration entdeckt. Geeignet für Authentik, Keycloak, Zitadel, Auth0, Okta.",
       "custom_oauth2": "Generischer OAuth-2.0-Client: Endpoints müssen manuell gesetzt werden. Für nicht-OIDC-konforme Provider."
     },

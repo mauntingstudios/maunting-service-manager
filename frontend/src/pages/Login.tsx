@@ -7,12 +7,12 @@ import { useAuthStore } from '@/stores/authStore'
 import { oauthApi, type OAuthProviderPublic } from '@/api/oauth'
 import { toast } from '@/stores/toastStore'
 import type { User, Zweitfaktor } from '@/types'
-import { Logo } from '@/components/Logo'
-import { VersionFooter } from '@/components/VersionFooter'
+import { AuthRahmen } from '@/components/auth/AuthRahmen'
+import { AnbieterSymbol } from '@/components/auth/AnbieterSymbol'
 import { ErrorMessage } from '@maunting/ui'
 import { PasswordInput } from '@maunting/ui'
 import { CaptchaWidget, captchaSperrt, CaptchaStatus } from '@/components/app/CaptchaWidget'
-import { Shield, ArrowRight, KeyRound, Mail, Check, Fingerprint } from 'lucide-react'
+import { ArrowRight, KeyRound, Mail, Check, Fingerprint } from 'lucide-react'
 import { Button, buttonClasses, Input } from '@maunting/ui'
 import { Spinner } from '@maunting/ui'
 import { sicheresZiel } from '@/lib/sicheresZiel'
@@ -251,9 +251,10 @@ export function Login() {
 
   if (oauthStep === 'oauth_2fa' && oauthChallenge && oauthSlug) {
     return (
-      <LoginShell>
+      <AuthRahmen>
         <OAuth2FAStep
           slug={oauthSlug}
+          anbieterName={oauthProviders.find((p) => p.slug === oauthSlug)?.name}
           challenge={oauthChallenge}
           onCancel={() => {
             const next = new URLSearchParams(searchParams)
@@ -263,13 +264,12 @@ export function Login() {
             setSearchParams(next, { replace: true })
           }}
         />
-      </LoginShell>
+      </AuthRahmen>
     )
   }
 
   return (
-    <LoginShell>
-      <div className="msm-card p-8">
+    <AuthRahmen>
         {/* Verification success screen */}
         {verifiedSuccess && (
           <div className="text-center">
@@ -374,18 +374,7 @@ export function Login() {
         {/* Normal login form */}
         {!requiresVerification && !verifiedSuccess && (
           <>
-            <div className="text-center mb-6">
-              <div className="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center mx-auto mb-4">
-                <Shield className="w-6 h-6 text-secondary" />
-              </div>
-              <h2 className="font-headline text-headline-md text-primary mb-1">
-                {t('auth.login')}
-              </h2>
-              <p className="font-body-md text-sm text-on-surface-variant">
-                {t('auth.loginDescription')}
-              </p>
-            </div>
-
+            <h2 className="sr-only">{requires2FA ? t('auth.verify2FA') : t('auth.login')}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label htmlFor={`${feld}-name`} className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
@@ -483,28 +472,45 @@ export function Login() {
             </form>
 
             {oauthProviders.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-outline-variant/30 space-y-2">
-                <p className="font-label-md text-xs text-on-surface-variant uppercase tracking-wider text-center">
-                  {t('auth.or')}
+              <div className="mt-6 space-y-3 border-t border-outline-variant/30 pt-5">
+                <p className="text-center font-label-md text-xs uppercase tracking-wider text-on-surface-variant">
+                  {t('auth.orContinueWith')}
                 </p>
-                <div className="grid gap-2">
-                  {oauthProviders.map((p) =>
-                    captchaBlockiert ? (
-                      <Button key={p.slug} variant="secondary" size="lg" className="w-full" disabled>
-                        <KeyRound className="w-4 h-4" />
-                        {t('auth.signInWith', { provider: p.name })}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {oauthProviders.map((p) => {
+                    const anbieterKlasse = `!h-auto min-h-11 w-full gap-2.5 py-2 ${
+                      oauthProviders.length === 1 ? 'sm:col-span-2' : ''
+                    }`
+                    const inhalt = (
+                      <>
+                        <AnbieterSymbol slug={p.slug} name={p.name} />
+                        <span className="min-w-0 whitespace-normal break-words text-center leading-tight">
+                          {p.name}
+                        </span>
+                      </>
+                    )
+                    return captchaBlockiert ? (
+                      <Button
+                        key={p.slug}
+                        variant="secondary"
+                        size="lg"
+                        className={anbieterKlasse}
+                        disabled
+                        aria-label={t('auth.signInWith', { provider: p.name })}
+                      >
+                        {inhalt}
                       </Button>
                     ) : (
                       <a
                         key={p.slug}
                         href={apiUrl(`/oauth/${p.slug}/start?next=/&cb=${Date.now().toString(36)}`)}
-                        className={buttonClasses('secondary', 'lg', 'w-full')}
+                        className={buttonClasses('secondary', 'lg', anbieterKlasse)}
+                        aria-label={t('auth.signInWith', { provider: p.name })}
                       >
-                        <KeyRound className="w-4 h-4" />
-                        {t('auth.signInWith', { provider: p.name })}
+                        {inhalt}
                       </a>
-                    ),
-                  )}
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -526,34 +532,22 @@ export function Login() {
             </div>
           </>
         )}
-      </div>
-    </LoginShell>
+    </AuthRahmen>
   )
 }
 
-function LoginShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-background text-on-surface flex items-center justify-center p-margin-mobile md:p-margin-desktop relative overflow-hidden">
-      <div className="relative z-10 w-full max-w-md">
-
-        <div className="flex items-center justify-center gap-3 mb-8">
-          <Logo size="md" />
-          <div>
-            <h1 className="font-headline text-body-lg font-extrabold text-primary leading-tight">
-              MSM
-            </h1>
-          </div>
-        </div>
-
-        {children}
-
-        <VersionFooter />
-      </div>
-    </div>
-  )
-}
-
-function OAuth2FAStep({ slug, challenge, onCancel }: { slug: string; challenge: string; onCancel: () => void }) {
+function OAuth2FAStep({
+  slug,
+  anbieterName,
+  challenge,
+  onCancel,
+}: {
+  slug: string
+  anbieterName?: string
+  challenge: string
+  onCancel: () => void
+}) {
+  const anbieter = anbieterName || slug
   const { t } = useTranslation()
   const codeFeld = useId()
   const [otp, setOtp] = useState('')
@@ -674,16 +668,16 @@ function OAuth2FAStep({ slug, challenge, onCancel }: { slug: string; challenge: 
   }
 
   return (
-    <div className="msm-card p-8">
-      <div className="text-center mb-6">
-        <div className="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center mx-auto mb-4">
-          <Shield className="w-6 h-6 text-secondary" />
+    <div>
+      <div className="mb-6 text-center">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-container-highest">
+          <AnbieterSymbol slug={slug} name={anbieter} className="h-6 w-6" />
         </div>
-        <h2 className="font-headline text-headline-md text-primary mb-1">
+        <h2 className="mb-1 font-headline text-headline-sm text-primary">
           {t('auth.oauth2faTitle')}
         </h2>
         <p className="font-body-md text-sm text-on-surface-variant">
-          {t('auth.oauth2faDescription', { provider: slug })}
+          {t('auth.oauth2faDescription', { provider: anbieter })}
         </p>
       </div>
 

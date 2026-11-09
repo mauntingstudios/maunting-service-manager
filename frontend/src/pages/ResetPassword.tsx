@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api/client'
-import { Logo } from '@/components/Logo'
-import { VersionFooter } from '@/components/VersionFooter'
+import { AuthRahmen } from '@/components/auth/AuthRahmen'
 import { ErrorMessage } from '@maunting/ui'
 import { PasswordInput } from '@maunting/ui'
 import { CaptchaWidget } from '@/components/app/CaptchaWidget'
@@ -60,109 +59,92 @@ export function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-on-surface flex items-center justify-center p-margin-mobile md:p-margin-desktop relative overflow-hidden">
-      <div className="absolute inset-0 msm-deep-grid opacity-50" />
-
-      <div className="relative z-10 w-full max-w-md">
-        <div className="flex items-center justify-center gap-3 mb-8">
-          <Logo size="md" />
-          <div>
-            <h1 className="font-headline text-body-lg font-extrabold text-primary leading-tight">
-              MSM
-            </h1>
-          </div>
+    <AuthRahmen>
+      <div className="text-center mb-6">
+        <div className="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center mx-auto mb-4">
+          <Shield className="w-6 h-6 text-secondary" />
         </div>
-
-        <div className="msm-card p-8">
-          <div className="text-center mb-6">
-            <div className="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-6 h-6 text-secondary" />
-            </div>
-            <h2 className="font-headline text-headline-md text-primary mb-1">
-              {t('resetPassword.title')}
-            </h2>
-            <p className="font-body-md text-sm text-on-surface-variant">
-              {t('resetPassword.description')}
-            </p>
-          </div>
-
-          {status === 'success' && (
-            <div className="text-center py-6 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-status-success/10 border border-status-success/30 flex items-center justify-center mx-auto">
-                <Check className="w-8 h-8 text-status-success" />
-              </div>
-              <p className="font-body-md text-base text-on-surface">{message}</p>
-              <Link
-                to="/login"
-                className={buttonClasses('primary', 'lg', 'w-full')}
-              >
-                {t('auth.goToLogin')}
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          )}
-
-          {status === 'error' && (
-            <div className="text-center py-6 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-status-destructive/10 border border-status-destructive/30 flex items-center justify-center mx-auto">
-                <X className="w-8 h-8 text-status-destructive" />
-              </div>
-              <p className="font-body-md text-base text-status-destructive">{message}</p>
-              <Link
-                to="/forgot-password"
-                className={buttonClasses('secondary', 'lg', 'w-full')}
-              >
-                {t('forgotPassword.title')}
-              </Link>
-            </div>
-          )}
-
-          {(status === 'idle' || status === 'submitting') && (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <PasswordInput
-                label={t('common.password') || 'Passwort'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                minLength={8}
-              />
-
-              <PasswordInput
-                label={t('auth.confirmPassword') || 'Passwort bestätigen'}
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                placeholder="••••••••"
-                required
-              />
-
-              <CaptchaWidget onVerify={setCaptchaToken} resetKey={captchaResetKey} />
-
-              <ErrorMessage message={message} className="text-sm" />
-
-              <Button size="lg"
-                type="submit"
-                disabled={status === 'submitting'}
-                className="w-full flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {status === 'submitting' ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Spinner />
-                    {t('common.loading')}
-                  </span>
-                ) : (
-                  <>
-                    {t('resetPassword.confirm')}
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </Button>
-            </form>
-          )}
-        </div>
-
-        <VersionFooter />
+        <h2 className="font-headline text-headline-md text-primary mb-1">
+          {t('resetPassword.title')}
+        </h2>
+        <p className="font-body-md text-sm text-on-surface-variant">
+          {t('resetPassword.description')}
+        </p>
       </div>
-    </div>
+
+      {status === 'success' && (
+        <div className="text-center py-6 space-y-4">
+          <div className="w-16 h-16 rounded-full bg-status-success/10 border border-status-success/30 flex items-center justify-center mx-auto">
+            <Check className="w-8 h-8 text-status-success" />
+          </div>
+          <p className="font-body-md text-base text-on-surface">{message}</p>
+          <Link
+            to="/login"
+            className={buttonClasses('primary', 'lg', 'w-full')}
+          >
+            {t('auth.goToLogin')}
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div className="text-center py-6 space-y-4">
+          <div className="w-16 h-16 rounded-full bg-status-destructive/10 border border-status-destructive/30 flex items-center justify-center mx-auto">
+            <X className="w-8 h-8 text-status-destructive" />
+          </div>
+          <p className="font-body-md text-base text-status-destructive">{message}</p>
+          <Link
+            to="/forgot-password"
+            className={buttonClasses('secondary', 'lg', 'w-full')}
+          >
+            {t('forgotPassword.title')}
+          </Link>
+        </div>
+      )}
+
+      {(status === 'idle' || status === 'submitting') && (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <PasswordInput
+            label={t('common.password') || 'Passwort'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            required
+            minLength={8}
+          />
+
+          <PasswordInput
+            label={t('auth.confirmPassword') || 'Passwort bestätigen'}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder="••••••••"
+            required
+          />
+
+          <CaptchaWidget onVerify={setCaptchaToken} resetKey={captchaResetKey} />
+
+          <ErrorMessage message={message} className="text-sm" />
+
+          <Button size="lg"
+            type="submit"
+            disabled={status === 'submitting'}
+            className="w-full flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {status === 'submitting' ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner />
+                {t('common.loading')}
+              </span>
+            ) : (
+              <>
+                {t('resetPassword.confirm')}
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </Button>
+        </form>
+      )}
+    </AuthRahmen>
   )
 }

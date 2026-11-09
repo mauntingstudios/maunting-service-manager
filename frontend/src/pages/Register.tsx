@@ -4,8 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import type { User } from '@/types'
-import { Logo } from '@/components/Logo'
-import { VersionFooter } from '@/components/VersionFooter'
+import { AuthRahmen } from '@/components/auth/AuthRahmen'
 import { ErrorMessage } from '@maunting/ui'
 import { PasswordInput } from '@maunting/ui'
 import { CaptchaWidget, captchaSperrt, CaptchaStatus } from '@/components/app/CaptchaWidget'
@@ -105,180 +104,75 @@ export function Register() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-background text-on-surface flex items-center justify-center p-margin-mobile md:p-margin-desktop relative overflow-hidden">
-        <div className="absolute inset-0 msm-deep-grid opacity-50" />
-        <div className="relative z-10 w-full max-w-md">
-          <div className="msm-card p-8 text-center">
-            <div className="w-16 h-16 rounded-full bg-status-success/10 border border-status-success/30 flex items-center justify-center mx-auto mb-6">
-              <Check className="w-8 h-8 text-status-success" />
-            </div>
-            <h2 className="font-headline text-headline-md text-primary mb-2">
-              {t('auth.registerSuccess')}
-            </h2>
-            <p className="font-body-md text-sm text-on-surface-variant mb-6">
-              {t('auth.verifiedAndSignedIn')}
-            </p>
-            <Button size="lg"
-              type="button"
-              onClick={() => {
-                if (!pendingUser) return
-                void finishLogin(pendingUser).then(() => navigate(zielNachLogin))
-              }}
-              className="inline-flex items-center gap-2"
-            >
-              {t('common.continue')}
-              <ArrowRight className="w-4 h-4" />
-            </Button>
+      <AuthRahmen>
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-full bg-status-success/10 border border-status-success/30 flex items-center justify-center mx-auto mb-6">
+            <Check className="w-8 h-8 text-status-success" />
           </div>
+          <h2 className="font-headline text-headline-md text-primary mb-2">
+            {t('auth.registerSuccess')}
+          </h2>
+          <p className="font-body-md text-sm text-on-surface-variant mb-6">
+            {t('auth.verifiedAndSignedIn')}
+          </p>
+          <Button size="lg"
+            type="button"
+            onClick={() => {
+              if (!pendingUser) return
+              void finishLogin(pendingUser).then(() => navigate(zielNachLogin))
+            }}
+            className="inline-flex items-center gap-2"
+          >
+            {t('common.continue')}
+            <ArrowRight className="w-4 h-4" />
+          </Button>
         </div>
-      </div>
+      </AuthRahmen>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background text-on-surface flex items-center justify-center p-margin-mobile md:p-margin-desktop relative overflow-hidden">
-      <div className="absolute inset-0 msm-deep-grid opacity-50" />
-
-      <div className="relative z-10 w-full max-w-md">
-        <div className="flex items-center justify-center gap-3 mb-8">
-          <Logo size="md" />
-          <div>
-            <h1 className="font-headline text-body-lg font-extrabold text-primary leading-tight">
-              MSM
-            </h1>
+    <AuthRahmen>
+      {requiresVerification ? (
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-full bg-surface-container-highest flex items-center justify-center mx-auto mb-6">
+            <Mail className="w-8 h-8 text-secondary" />
           </div>
-        </div>
+          <h2 className="font-headline text-headline-md text-primary mb-3">
+            {t('setup.verifyEmail')}
+          </h2>
+          <p className="font-body-md text-body-md text-on-surface-variant mb-2 max-w-sm mx-auto">
+            {t('setup.verifyEmailDesc', { email: registeredEmail })}
+          </p>
+          <p className="font-mono-sm text-mono-sm text-on-surface-variant mb-8">
+            {t('setup.codeExpires')}
+          </p>
 
-        <div className="msm-card p-8">
-          {requiresVerification ? (
-            <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-surface-container-highest flex items-center justify-center mx-auto mb-6">
-                <Mail className="w-8 h-8 text-secondary" />
-              </div>
-              <h2 className="font-headline text-headline-md text-primary mb-3">
-                {t('setup.verifyEmail')}
-              </h2>
-              <p className="font-body-md text-body-md text-on-surface-variant mb-2 max-w-sm mx-auto">
-                {t('setup.verifyEmailDesc', { email: registeredEmail })}
-              </p>
-              <p className="font-mono-sm text-mono-sm text-on-surface-variant mb-8">
-                {t('setup.codeExpires')}
-              </p>
-
-              <form onSubmit={handleVerify} className="space-y-4 max-w-xs mx-auto">
-                <div>
-                  <label htmlFor={`${feld}-code`} className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                    {t('auth.verificationCode')}
-                  </label>
-                  <Input
-                    id={`${feld}-code`}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="\d{6}"
-                    maxLength={6}
-                    value={verifyCode}
-                    onChange={(e) => setVerifyCode(e.target.value)}
-                    className="text-center text-2xl tracking-[0.5em] font-mono"
-                    placeholder="000000"
-                    required
-                  />
-                </div>
-
-                <ErrorMessage message={error} className="text-sm" />
-
-                <Button size="lg"
-                  type="submit"
-                  disabled={submitting || verifyCode.length !== 6}
-                  className="w-full disabled:opacity-50"
-                >
-                  {submitting ? (
-                    <span className="inline-flex items-center gap-2">
-                      <Spinner />
-                      {t('common.loading')}
-                    </span>
-                  ) : (
-                    t('auth.verifyNow')
-                  )}
-                </Button>
-
-                <Link
-                  to="/login"
-                  className="text-sm text-secondary hover:text-mint-accent transition-colors"
-                >
-                  {t('auth.goToLogin')}
-                </Link>
-              </form>
-            </div>
-          ) : (
-            <>
-          <div className="text-center mb-6">
-            <div className="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-6 h-6 text-secondary" />
-            </div>
-            <h2 className="font-headline text-headline-md text-primary mb-1">
-              {t('auth.register')}
-            </h2>
-            <p className="font-body-md text-sm text-on-surface-variant">
-              {t('auth.registerDescription')}
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleVerify} className="space-y-4 max-w-xs mx-auto">
             <div>
-              <label htmlFor={`${feld}-name`} className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                {t('auth.username')}
+              <label htmlFor={`${feld}-code`} className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+                {t('auth.verificationCode')}
               </label>
               <Input
-                id={`${feld}-name`}
+                id={`${feld}-code`}
                 type="text"
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
-                placeholder="admin"
-                required
-                minLength={3}
-                maxLength={12}
-              />
-            </div>
-
-            <div>
-              <label htmlFor={`${feld}-email`} className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                {t('auth.email')}
-              </label>
-              <Input
-                id={`${feld}-email`}
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="admin@example.com"
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                value={verifyCode}
+                onChange={(e) => setVerifyCode(e.target.value)}
+                className="text-center text-2xl tracking-[0.5em] font-mono"
+                placeholder="000000"
                 required
               />
             </div>
-
-            <PasswordInput
-              label={t('common.password') || 'Passwort'}
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              placeholder="••••••••"
-              required
-              minLength={8}
-            />
-
-            <PasswordInput
-              label={t('auth.confirmPassword') || 'Passwort bestätigen'}
-              value={form.confirm}
-              onChange={(e) => setForm({ ...form, confirm: e.target.value })}
-              placeholder="••••••••"
-              required
-            />
-
-            <CaptchaWidget onVerify={setCaptchaToken} onStatusChange={setCaptchaStatus} resetKey={captchaResetKey} />
 
             <ErrorMessage message={error} className="text-sm" />
 
             <Button size="lg"
               type="submit"
-              disabled={submitting || captchaSperrt(captchaStatus)}
-              className="w-full flex items-center justify-center gap-2 disabled:opacity-50"
+              disabled={submitting || verifyCode.length !== 6}
+              className="w-full disabled:opacity-50"
             >
               {submitting ? (
                 <span className="inline-flex items-center gap-2">
@@ -286,29 +180,114 @@ export function Register() {
                   {t('common.loading')}
                 </span>
               ) : (
-                <>
-                  {t('auth.createAccount')}
-                  <ArrowRight className="w-4 h-4" />
-                </>
+                t('auth.verifyNow')
               )}
             </Button>
-          </form>
 
-          <div className="mt-6 text-center font-body-md text-sm">
             <Link
-              to={gemerktesZiel ? `/login?redirect=${encodeURIComponent(gemerktesZiel)}` : '/login'}
-              state={{ from: gemerktesZiel }}
-              className="text-secondary hover:text-mint-accent transition-colors"
+              to="/login"
+              className="text-sm text-secondary hover:text-mint-accent transition-colors"
             >
-              {t('auth.hasAccount')}
+              {t('auth.goToLogin')}
             </Link>
-          </div>
-            </>
-          )}
+          </form>
+        </div>
+      ) : (
+        <>
+      <div className="text-center mb-6">
+        <div className="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center mx-auto mb-4">
+          <Shield className="w-6 h-6 text-secondary" />
+        </div>
+        <h2 className="font-headline text-headline-md text-primary mb-1">
+          {t('auth.register')}
+        </h2>
+        <p className="font-body-md text-sm text-on-surface-variant">
+          {t('auth.registerDescription')}
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label htmlFor={`${feld}-name`} className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+            {t('auth.username')}
+          </label>
+          <Input
+            id={`${feld}-name`}
+            type="text"
+            value={form.username}
+            onChange={(e) => setForm({ ...form, username: e.target.value })}
+            placeholder="admin"
+            required
+            minLength={3}
+            maxLength={12}
+          />
         </div>
 
-        <VersionFooter />
+        <div>
+          <label htmlFor={`${feld}-email`} className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+            {t('auth.email')}
+          </label>
+          <Input
+            id={`${feld}-email`}
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            placeholder="admin@example.com"
+            required
+          />
+        </div>
+
+        <PasswordInput
+          label={t('common.password') || 'Passwort'}
+          value={form.password}
+          onChange={(e) => setForm({ ...form, password: e.target.value })}
+          placeholder="••••••••"
+          required
+          minLength={8}
+        />
+
+        <PasswordInput
+          label={t('auth.confirmPassword') || 'Passwort bestätigen'}
+          value={form.confirm}
+          onChange={(e) => setForm({ ...form, confirm: e.target.value })}
+          placeholder="••••••••"
+          required
+        />
+
+        <CaptchaWidget onVerify={setCaptchaToken} onStatusChange={setCaptchaStatus} resetKey={captchaResetKey} />
+
+        <ErrorMessage message={error} className="text-sm" />
+
+        <Button size="lg"
+          type="submit"
+          disabled={submitting || captchaSperrt(captchaStatus)}
+          className="w-full flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {submitting ? (
+            <span className="inline-flex items-center gap-2">
+              <Spinner />
+              {t('common.loading')}
+            </span>
+          ) : (
+            <>
+              {t('auth.createAccount')}
+              <ArrowRight className="w-4 h-4" />
+            </>
+          )}
+        </Button>
+      </form>
+
+      <div className="mt-6 text-center font-body-md text-sm">
+        <Link
+          to={gemerktesZiel ? `/login?redirect=${encodeURIComponent(gemerktesZiel)}` : '/login'}
+          state={{ from: gemerktesZiel }}
+          className="text-secondary hover:text-mint-accent transition-colors"
+        >
+          {t('auth.hasAccount')}
+        </Link>
       </div>
-    </div>
+        </>
+      )}
+    </AuthRahmen>
   )
 }

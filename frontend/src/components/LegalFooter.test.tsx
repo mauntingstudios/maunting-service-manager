@@ -16,6 +16,16 @@ describe('LegalFooter', () => {
     expect(screen.getByText(/Maunting Service Manager v1.2.3/)).toBeInTheDocument()
   })
 
+  it('lässt das Herkunftszeichen auf Wunsch weg', () => {
+    render(
+      <MemoryRouter>
+        <LegalFooter version="v1.2.3" ohneHerkunftszeichen />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByLabelText(/Defensive Integration Shield/)).toBeNull()
+  })
+
   it('renders the external Impressum link when an imprint URL is configured', () => {
     render(
       <MemoryRouter>

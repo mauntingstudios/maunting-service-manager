@@ -103,6 +103,36 @@ describe('Login — Ziel nach der Anmeldung', () => {
   })
 })
 
+describe('Login — externe Anbieter', () => {
+  const ANBIETER = [
+    { slug: 'google', name: 'Google' },
+    { slug: 'discord', name: 'Discord' },
+    { slug: 'github', name: 'GitHub' },
+    { slug: 'microsoft', name: 'Microsoft' },
+    { slug: 'gitlab', name: 'GitLab' },
+    { slug: 'firma-sso', name: 'Firmen-SSO' },
+  ]
+
+  beforeEach(() => {
+    useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: true })
+    vi.mocked(client.api).mockReset()
+    vi.mocked(client.api).mockImplementation(async (path: string) => {
+      if (path === '/oauth/public/providers') return ANBIETER as any
+      if (path === '/auth/captcha-config') return { enabled: false, provider: 'none', site_key: '' } as any
+      return [] as any
+    })
+  })
+
+  it('zeigt jeden aktivierten Anbieter mit eigenem Symbol', async () => {
+    const { container } = renderLogin()
+
+    const links = await screen.findAllByRole('link', { name: /Anmelden mit/ })
+    expect(links).toHaveLength(ANBIETER.length)
+    expect(links[0]).toHaveAttribute('href', expect.stringContaining('/oauth/google/start'))
+    expect(container.querySelectorAll('[data-anbieter]')).toHaveLength(ANBIETER.length)
+  })
+})
+
 describe('Login — Sicherheitsabfrage sperrt auch den Social Login', () => {
   let optionen: Record<string, (token?: string) => void> = {}
 
