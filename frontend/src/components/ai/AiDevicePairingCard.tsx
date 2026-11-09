@@ -11,6 +11,7 @@ import { Input } from '@maunting/ui'
 import { PasswordInput } from '@maunting/ui'
 import { SecretOnce } from '@/components/app/SecretOnce'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
+import { fehlerText } from '@/lib/fehlerText'
 import { Button } from '@maunting/ui'
 import { entferneGeraet, gebeGeraetFrei, sicherheitsnummer } from '@/services/e2eeGeraet'
 import { FaktorWechsel, useZweitfaktor } from '@/components/auth/ZweitfaktorNachweis'
@@ -182,7 +183,7 @@ export function AiDevicePairingCard() {
       setNachweis('')
       faktor.setCode('')
     } catch (err: any) {
-      toast.error(err.message || t('common.error'))
+      toast.error(fehlerText(err, t('common.error')))
     } finally {
       setBusy(false)
     }
@@ -263,7 +264,7 @@ export function AiDevicePairingCard() {
     } catch (err: any) {
       // Die Rückfrage bleibt stehen: entfernt ist womöglich noch nichts, und
       // der Knopf soll ein zweites Mal gehen.
-      toast.error(err?.message || t('common.error'))
+      toast.error(fehlerText(err, t('common.error')))
     } finally {
       setUebergibt(false)
       laden()
@@ -276,7 +277,7 @@ export function AiDevicePairingCard() {
       toast.success(t('ai.profile.deviceRevoked'))
       laden()
     } catch (err: any) {
-      toast.error(err.message || t('common.error'))
+      toast.error(fehlerText(err, t('common.error')))
     }
   }
 

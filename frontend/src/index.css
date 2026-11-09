@@ -180,6 +180,21 @@
     display: none;
   }
 
+  /* Der Auslauf der Tageszeit-Bilder. Drei Stufen statt eines einzelnen
+     Via-Stopps: Die Bildfläche blendet früh an, wird zur Mitte ruhiger und
+     endet erst unten in der Canvas-Fläche. Die frühere Kette aus zwei
+     `via-*`-Klassen ging in Tailwind verloren; die 40/75-Prozent-Stufen
+     standen nie im CSS. */
+  .msm-tageszeit-verlauf {
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      hsl(var(--mui-canvas) / 0.2) 40%,
+      hsl(var(--mui-canvas) / 0.6) 75%,
+      hsl(var(--mui-canvas)) 100%
+    );
+  }
+
   /* Rollbalken für abgerundete Such- und Eingabeleisten: transparentes Gleis,
      schlanker Daumen aus der Linienfarbe, mit vertikalem Randabstand. */
   .msm-suchleiste-rollbalken {

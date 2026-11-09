@@ -88,7 +88,7 @@ export function DashboardBereich() {
   })
 
   return (
-    <div className="relative isolate flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface">
+    <div className="relative isolate flex h-full min-h-0 w-full flex-col overflow-hidden">
       {/* Weicher atmosphärischer Tageszeit-Hintergrund geht direkt hinter die Menü-Punkte */}
       <TageszeitHintergrund
         motiv={headerMotiv}

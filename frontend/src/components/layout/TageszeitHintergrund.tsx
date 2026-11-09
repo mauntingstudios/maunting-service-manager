@@ -24,7 +24,7 @@ export function TageszeitHintergrund({
   motiv,
   hoehe = 'h-[520px] sm:h-[580px] lg:h-[640px]',
   deckkraft = 'opacity-55',
-  verlauf = 'bg-gradient-to-b from-transparent via-surface/20 40%, via-surface/60 75%, to-surface 100%',
+  verlauf = 'msm-tageszeit-verlauf',
   ebene = '',
 }: TageszeitHintergrundProps) {
   return (

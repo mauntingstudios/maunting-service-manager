@@ -386,7 +386,7 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
   }
 
   return (
-    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto bg-surface text-on-surface scrollbar-thin">
+    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
       {!ohneHintergrund && (
         <TageszeitHintergrund
           motiv={headerMotiv}

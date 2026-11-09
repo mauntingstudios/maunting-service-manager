@@ -242,6 +242,23 @@ describe('AiDevicePairingCard — nur eingerichtete Faktoren', () => {
     )
   })
 
+  it('zeigt den Grund, wenn der Passkey-Weg mit einem bloßen String scheitert', async () => {
+    const { passkeyNachweis } = await import('@/services/passkeyService')
+    vi.mocked(passkeyNachweis).mockRejectedValueOnce('Command oeffne_browser not found')
+    useAuthStore.setState({
+      user: { id: 10, two_factor_enabled: true, two_factor_methods: ['passkey'] } as never,
+    })
+    render(<AiDevicePairingCard />)
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('ai.profile.devicesProofPasskey') }))
+
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.map((t) => t.message)).toContain(
+        'Command oeffne_browser not found',
+      ),
+    )
+  })
+
   it('App-Konto: nur das Code-Feld, kein Passkey-Knopf', () => {
     useAuthStore.setState({
       user: { id: 10, two_factor_enabled: true, two_factor_methods: ['totp'] } as never,

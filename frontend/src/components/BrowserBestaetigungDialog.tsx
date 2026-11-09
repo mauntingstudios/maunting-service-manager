@@ -2,7 +2,9 @@ import { useTranslation } from 'react-i18next'
 import { Globe } from 'lucide-react'
 import { Abgleichzahl, Button, Dialog, DialogContent } from '@maunting/ui'
 import { oeffneBrowser } from '@/desktop/tauri'
+import { fehlerText } from '@/lib/fehlerText'
 import { useBrowserBestaetigung } from '@/stores/browserBestaetigung'
+import { toast } from '@/stores/toastStore'
 
 /**
  * Wartet auf die Passkey-Bestätigung im Browser (nur App, einmal in
@@ -28,7 +30,15 @@ export function BrowserBestaetigungDialog() {
           <p className="mt-2 text-sm text-on-surface-variant">{t('auth.browserBestaetigung.appText')}</p>
           <Abgleichzahl zahl={offen.zahl} warteText={t('auth.browserBestaetigung.appWaiting')} />
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-            <Button variant="secondary" type="button" onClick={() => void oeffneBrowser(offen.adresse)}>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => {
+                void oeffneBrowser(offen.adresse).catch((fehler) =>
+                  toast.error(fehlerText(fehler, t('common.error'))),
+                )
+              }}
+            >
               {t('auth.browserBestaetigung.reopen')}
             </Button>
             <Button variant="ghost" type="button" onClick={offen.abbrechen}>

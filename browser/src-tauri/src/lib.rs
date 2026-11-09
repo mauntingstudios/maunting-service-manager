@@ -303,6 +303,7 @@ pub fn run() {
             downloads::download_pruefen,
             fenster::fenster_aktion,
             fenster::fenster_start_info,
+            fenster::oeffne_browser,
             kurzinfo::kurzinfo,
             browserdaten::seitendaten_loeschen,
             browserdaten::seitenrechte,

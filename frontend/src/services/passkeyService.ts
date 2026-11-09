@@ -17,6 +17,7 @@
 import { api, isNetworkOrOfflineError } from '@/api/client'
 import i18n from '@/i18n'
 import { oeffneBrowser, pruefeBiometrieVerfuegbar, verifiziereBiometrie } from '@/desktop/tauri'
+import { fehlerText } from '@/lib/fehlerText'
 import { useBrowserBestaetigung } from '@/stores/browserBestaetigung'
 
 async function checkAndroidBiometric(): Promise<boolean> {
@@ -372,7 +373,16 @@ async function imBrowserBestaetigen(zweck: PasskeyZweck): Promise<BrowserNachwei
     throw fehler
   }
   const { vorgang, zahl, url } = antwort
-  await oeffneBrowser(url)
+  try {
+    await oeffneBrowser(url)
+  } catch (fehler) {
+    // Der Grund gehört auf den Schirm: ohne Browser kann niemand bestätigen.
+    throw new Error(
+      i18n.t('auth.browserBestaetigung.openFailed', {
+        grund: fehlerText(fehler, i18n.t('common.error')),
+      }),
+    )
+  }
 
   return new Promise<BrowserNachweis>((resolve, reject) => {
     let fertig = false

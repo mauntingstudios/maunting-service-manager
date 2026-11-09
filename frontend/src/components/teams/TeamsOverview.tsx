@@ -147,7 +147,7 @@ export function TeamsOverview({
   const displayedArchivedTeams = useMemo(() => filterTeams(archivedTeams), [archivedTeams, searchQuery, teamMetaMap])
 
   return (
-    <div className={`relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto bg-surface text-on-surface scrollbar-thin ${className}`}>
+    <div className={`relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin ${className}`}>
       {/* ── Weicher atmosphärischer Hintergrund, der großzügig nach unten verwaschen ausläuft ──── */}
       <TageszeitHintergrund
         motiv={headerMotiv}

@@ -83,6 +83,7 @@ const BEFEHLE: &[&str] = &[
     "download_pruefen",
     "fenster_aktion",
     "fenster_start_info",
+    "oeffne_browser",
     "kurzinfo",
     "seitendaten_loeschen",
     "seitenrechte",

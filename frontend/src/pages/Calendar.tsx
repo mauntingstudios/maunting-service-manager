@@ -790,7 +790,7 @@ export function Calendar() {
     : t('common.begruessung.ohneName')
 
   return (
-    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto bg-surface text-on-surface scrollbar-thin">
+    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
       {/* Weicher atmosphärischer Tageszeit-Hintergrund für den Kalender */}
       <TageszeitHintergrund
         motiv={headerMotiv}
