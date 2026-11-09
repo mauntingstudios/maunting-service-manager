@@ -194,3 +194,36 @@ def test_ohne_frage_bleiben_die_ersten_acht_in_namensreihenfolge() -> None:
     assert waehle_je_turn(werkzeuge, "") == [
         f"mcp_2_werkzeug_{i:02d}" for i in range(8)
     ]
+
+
+def test_die_semantische_auswahl_steht_vorn_und_wird_aufgefuellt() -> None:
+    from services.mcp.ausfuehrung import waehle_je_turn
+
+    werkzeuge = [
+        {"type": "function", "function": {"name": f"mcp_3_tool_{i:02d}", "description": "egal"}}
+        for i in range(12)
+    ]
+    gewaehlt = waehle_je_turn(
+        werkzeuge, "irgendwas", semantisch=["mcp_3_tool_09", "unbekannt"]
+    )
+    assert gewaehlt[0] == "mcp_3_tool_09"
+    assert len(gewaehlt) == 8
+    assert len(set(gewaehlt)) == 8
+
+
+def test_der_semantische_router_findet_das_passende_werkzeug() -> None:
+    from services.mcp.ausfuehrung import semantisch_waehlen
+
+    werkzeuge = [
+        {
+            "type": "function",
+            "function": {
+                "name": f"mcp_4_werkzeug_{i:02d}",
+                "description": "Erstellt ein Backup der Datenbank" if i == 4 else "Etwas anderes",
+            },
+        }
+        for i in range(10)
+    ]
+    gewaehlt = semantisch_waehlen(werkzeuge, "Bitte ein Datenbank-Backup erstellen", 8)
+    assert gewaehlt, "Der Router hat nichts ausgewaehlt"
+    assert gewaehlt[0] == "mcp_4_werkzeug_04", gewaehlt

@@ -30,7 +30,12 @@ from services import (
     desktop_job_service,
 )
 from services.ai_action_service import angebotene_werkzeuge, provider_tool_definitions
-from services.mcp.ausfuehrung import MAX_JE_TURN, katalog as mcp_katalog, waehle_je_turn
+from services.mcp.ausfuehrung import (
+    MAX_JE_TURN,
+    katalog as mcp_katalog,
+    semantisch_waehlen,
+    waehle_je_turn,
+)
 from services.ai_context_service import (
     MIN_HISTORY_CHARS,
     anlagenwissen_nachtrag,
@@ -947,11 +952,27 @@ async def _werkzeuge_und_grenze(
         eintrag for eintrag in tools
         if str(eintrag.get("function", {}).get("name")) in mcp_namen
     ]
-    mcp_gewaehlt = (
-        {str(eintrag.get("function", {}).get("name")) for eintrag in mcp_eintraege}
-        if len(mcp_eintraege) <= MAX_JE_TURN
-        else set(waehle_je_turn(mcp_eintraege, letzte))
-    )
+    mcp_gewaehlt = {
+        str(eintrag.get("function", {}).get("name")) for eintrag in mcp_eintraege
+    }
+    if len(mcp_eintraege) > MAX_JE_TURN:
+        # Semantischer Router, aber nur ueber die MCP-Eintraege: er laeuft im
+        # Executor, weil er Embeddings rechnet. Scheitert er, entscheiden
+        # Stichworte — lieber acht angebotene als gar keine.
+        semantisch: list[str] | None = None
+        if letzte:
+            try:
+                import asyncio
+
+                loop = asyncio.get_running_loop()
+                semantisch = await loop.run_in_executor(
+                    None, semantisch_waehlen, mcp_eintraege, letzte, MAX_JE_TURN
+                )
+            except Exception:
+                semantisch = None
+        mcp_gewaehlt = set(
+            waehle_je_turn(mcp_eintraege, letzte, semantisch=semantisch)
+        )
 
     try:
         from services.semantic_tool_router_adapter import SemanticToolRouterAdapter, gruppen_nachbarn
@@ -990,10 +1011,6 @@ async def _werkzeuge_und_grenze(
             except RuntimeError:
                 router.warm(panel_erlaubt)
                 routed = router.select(letzte, panel_erlaubt, top_k=5)
-            # MCP bleibt beim semantischen Router draussen und wird nach
-            # Stichworten der Frage ausgewaehlt (eigenes Budget).
-            if len(mcp_eintraege) > MAX_JE_TURN:
-                mcp_gewaehlt = set(waehle_je_turn(mcp_eintraege, letzte))
             keep = (
                 set(hot) | pflicht | set(routed)
                 | set(gruppen_nachbarn(routed, panel_erlaubt))

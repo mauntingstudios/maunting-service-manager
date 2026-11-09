@@ -8,9 +8,11 @@ zweite Zuordnungstabelle auskommt.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
+import threading
 import time
 from typing import Any
 
@@ -341,17 +343,82 @@ def _stichworte(text: str) -> set[str]:
     return {teil for teil in re.split(r"[^0-9a-zäöüß]+", (text or "").lower()) if len(teil) > 2}
 
 
+_ROUTER_LOCK = threading.Lock()
+_ROUTER: tuple[str, Any] | None = None
+
+
+def _router_fuer(schemas: dict[str, dict]) -> Any:
+    """Ein Router je Werkzeugstand, nicht je Segment.
+
+    Die Vektoren der Beschreibungen zu rechnen kostet Zeit; derselbe Katalog
+    kommt in jedem Segment wieder. Aendert sich eine Beschreibung oder kommt
+    ein Server dazu, aendert sich die Kennung und der Router wird neu gebaut.
+    """
+    global _ROUTER
+    signatur = hashlib.sha256(
+        json.dumps(sorted(schemas.items()), ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
+    with _ROUTER_LOCK:
+        if _ROUTER is None or _ROUTER[0] != signatur:
+            from services.semantic_tool_router_adapter import SemanticToolRouterAdapter
+
+            _ROUTER = (signatur, SemanticToolRouterAdapter(schemas))
+        return _ROUTER[1]
+
+
+def semantisch_waehlen(
+    werkzeuge: list[dict], query: str, hoechstens: int = MAX_JE_TURN
+) -> list[str]:
+    """Waehlt MCP-Werkzeuge ueber den semantischen Router.
+
+    Derselbe Adapter wie fuer die eingebauten Werkzeuge (BM25 plus Embeddings,
+    wenn ein Modell bereitsteht), aber nur ueber die MCP-Eintraege: die
+    Beschreibungen sind Angaben des Gegenuebers, und der Router soll die
+    eingebauten fuenf Treffer nicht verdraengen. Gibt ``[]`` zurueck, wenn
+    nichts passt oder der Router nicht verfuegbar ist; der Aufrufer faellt
+    dann auf `waehle_je_turn` zurueck.
+    """
+    schemas: dict[str, dict] = {}
+    for eintrag in werkzeuge:
+        funktion = eintrag.get("function") if isinstance(eintrag, dict) else None
+        if isinstance(funktion, dict) and isinstance(funktion.get("name"), str):
+            schemas[str(funktion["name"])] = eintrag
+    if not schemas or not query.strip():
+        return []
+    try:
+        router = _router_fuer(schemas)
+        erlaubt = frozenset(schemas)
+        # Unter der Sperre, weil `warm` den Index fortschreibt; nach dem
+        # ersten Warmlauf ist beides nur noch Lesen und Rechnen.
+        with _ROUTER_LOCK:
+            router.warm(erlaubt)
+            return router.select(query, erlaubt, hoechstens)
+    except Exception as exc:  # Router ist eine Verbesserung, keine Bedingung
+        logger.debug("MCP-Routing uebersprungen: %s", type(exc).__name__)
+        return []
+
+
 def waehle_je_turn(
-    werkzeuge: list[dict], query: str, *, hoechstens: int = MAX_JE_TURN
+    werkzeuge: list[dict],
+    query: str,
+    *,
+    hoechstens: int = MAX_JE_TURN,
+    semantisch: list[str] | None = None,
 ) -> list[str]:
     """Waehlt die zur Frage passendsten MCP-Werkzeuge, deterministisch.
 
-    Der semantische Router bleibt den eingebauten Werkzeugen vorbehalten;
-    MCP-Server koennen hundert Werkzeuge mitbringen, und ihre Beschreibungen
-    sind Angaben des Gegenuebers. Stichworte aus Name und Beschreibung reichen
-    fuer eine Vorauswahl. Reicht kein Stichwort, bleiben die ersten Eintraege
-    in Namensreihenfolge — lieber acht angebotene als gar keine.
+    Zuerst die semantische Auswahl (falls vorhanden), dann Stichworte aus Name
+    und Beschreibung. Reicht beides nicht, bleiben die ersten Eintraege in
+    Namensreihenfolge — lieber acht angebotene als gar keine.
     """
+    bekannte: set[str] = set()
+    for eintrag in werkzeuge:
+        funktion = eintrag.get("function") if isinstance(eintrag, dict) else None
+        if isinstance(funktion, dict) and funktion.get("name"):
+            bekannte.add(str(funktion["name"]))
+
+    gewaehlt = [name for name in (semantisch or []) if name in bekannte]
+    gesehen = set(gewaehlt)
     begriffe = _stichworte(query)
     bewertet: list[tuple[int, str]] = []
     for eintrag in werkzeuge:
@@ -359,11 +426,12 @@ def waehle_je_turn(
         if not isinstance(funktion, dict):
             continue
         name = str(funktion.get("name") or "")
-        if not name:
+        if not name or name in gesehen:
             continue
         text = f"{name} {funktion.get('description') or ''}".lower()
         im_namen = sum(1 for begriff in begriffe if begriff in name.lower())
         im_text = sum(1 for begriff in begriffe if begriff in text)
         bewertet.append((-(im_namen * 3 + im_text), name))
     bewertet.sort(key=lambda teil: (teil[0], teil[1]))
-    return [name for _, name in bewertet[:hoechstens]]
+    gewaehlt.extend(name for _, name in bewertet[: max(0, hoechstens - len(gewaehlt))])
+    return gewaehlt[:hoechstens]
