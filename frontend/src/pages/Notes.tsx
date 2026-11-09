@@ -546,84 +546,60 @@ export function Notes() {
         <NotizschluesselHinweis />
 
         {/* ── Werkzeugleiste: Suche & Filter ── */}
-        <div className="flex flex-col gap-3 bg-surface-container-low/75 border border-outline-variant/30 rounded-2xl p-3 sm:p-3.5 shadow-sm backdrop-blur-xl">
-          {/* Obere Zeile: Suche & Dropdown-Filter */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-            <div className="relative flex-1 min-w-0">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('notes.searchPlaceholder')}
-                className="msm-input pl-10 pr-9 py-2 text-sm bg-surface-container/60 hover:bg-surface-container/80 focus:bg-surface-container transition-colors rounded-xl w-full"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-on-surface-variant hover:text-on-surface rounded-lg transition-colors"
-                  aria-label={t('common.clear')}
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Dropdown Filters für kompakte Breiten & Barrierefreiheit */}
-            <div className="flex items-center gap-2 overflow-x-auto msm-ohne-rollbalken py-0.5">
-              <div className="w-36 sm:w-44 shrink-0">
-                <Dropdown
-                  value={selectedCategory}
-                  onChange={setSelectedCategory}
-                  options={categoryOptions}
-                  aria-label={t('notes.categories.all')}
-                />
-              </div>
-
-              <div className="w-32 sm:w-40 shrink-0">
-                <Dropdown
-                  value={selectedType}
-                  onChange={setSelectedType}
-                  options={typeOptions}
-                  aria-label={t('notes.types.all')}
-                />
-              </div>
-
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('notes.searchPlaceholder')}
+              className="msm-input pl-10 pr-9 py-2 text-sm bg-surface-container/70 hover:bg-surface-container/90 focus:bg-surface-container border border-outline-variant/30 backdrop-blur-md transition-colors rounded-xl w-full shadow-sm"
+            />
+            {searchQuery && (
               <button
                 type="button"
-                onClick={() => setShowArchived(!showArchived)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition-all whitespace-nowrap shrink-0 active:scale-95 ${
-                  showArchived
-                    ? 'bg-status-warning/20 text-status-warning border-status-warning/40 shadow-sm'
-                    : 'bg-surface-container/80 text-on-surface-variant border-outline-variant/30 hover:text-on-surface hover:bg-surface-container'
-                }`}
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-on-surface-variant hover:text-on-surface rounded-lg transition-colors"
+                aria-label={t('common.clear')}
               >
-                <Archive className="w-3.5 h-3.5" />
-                <span>{showArchived ? t('notes.archivedView') : t('common.active')}</span>
+                <X className="w-3.5 h-3.5" />
               </button>
-            </div>
+            )}
           </div>
 
-          {/* Horizontale Schnell-Kategorien (UX-Verbesserung fürs Handy & schnelle Navigation) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto msm-ohne-rollbalken pt-0.5 pb-0.5">
-            {categoryOptions.map((opt) => {
-              const aktiv = selectedCategory === opt.value
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setSelectedCategory(opt.value)}
-                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-all shrink-0 active:scale-95 border ${
-                    aktiv
-                      ? 'bg-primary text-on-primary border-primary shadow-sm font-semibold'
-                      : 'bg-surface-container/50 text-on-surface-variant border-outline-variant/25 hover:bg-surface-container hover:text-on-surface'
-                  }`}
-                >
-                  <span>{opt.label}</span>
-                </button>
-              )
-            })}
+          {/* Dropdown Filters für kompakte Breiten & Barrierefreiheit */}
+          <div className="flex items-center gap-2 overflow-x-auto msm-ohne-rollbalken py-0.5 shrink-0">
+            <div className="w-36 sm:w-44 shrink-0">
+              <Dropdown
+                value={selectedCategory}
+                onChange={setSelectedCategory}
+                options={categoryOptions}
+                aria-label={t('notes.categories.all')}
+              />
+            </div>
+
+            <div className="w-32 sm:w-40 shrink-0">
+              <Dropdown
+                value={selectedType}
+                onChange={setSelectedType}
+                options={typeOptions}
+                aria-label={t('notes.types.all')}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowArchived(!showArchived)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border backdrop-blur-md transition-all whitespace-nowrap shrink-0 active:scale-95 ${
+                showArchived
+                  ? 'bg-status-warning/20 text-status-warning border-status-warning/40 shadow-sm'
+                  : 'bg-surface-container-high/80 text-on-surface-variant border-outline-variant/30 hover:text-on-surface hover:bg-surface-container shadow-sm'
+              }`}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              <span>{showArchived ? t('notes.archivedView') : t('common.active')}</span>
+            </button>
           </div>
         </div>
 
