@@ -124,7 +124,9 @@ export function DashboardBereich() {
       <div
         ref={inhaltRef}
         className={`min-h-0 flex-1 flex flex-col relative z-10 ${
-          location.pathname === '/' ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain px-3.5 sm:px-6 lg:px-8 py-3 pb-8'
+          location.pathname === '/' || location.pathname === '/servers'
+            ? 'overflow-hidden'
+            : 'overflow-y-auto overscroll-contain px-3.5 sm:px-6 lg:px-8 py-3 pb-8'
         }`}
       >
         <ErrorBoundary key={location.pathname} compact>
@@ -137,7 +139,7 @@ export function DashboardBereich() {
           >
             <Routes>
               <Route path="/" element={<Dashboard ohneHintergrund />} />
-              <Route path="/servers" element={<Servers />} />
+              <Route path="/servers" element={<Servers ohneHintergrund />} />
               <Route path="/servers/:id" element={<ServerDetail />} />
               <Route
                 path="/users"
