@@ -5,13 +5,14 @@ folgen in separaten Schnitten, damit Rollenverwaltung und Secret-Flows nicht
 zu einem schwer prüfbaren Monolithen werden.
 """
 
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from database import SessionLocal, get_db
 from dependencies import get_current_user, require_global, verify_csrf
-from models import Role, User
+from models import AiProvider, Role, User
 from schemas.ai_settings import (
     AiContextPolicyStatus,
     AiContextPolicyUpdate,
@@ -29,6 +30,7 @@ from schemas.ai_settings import (
     AiMemorySearchUpdate,
     AiRoleLimitsResponse,
     AiRoleLimitsUpdate,
+    RoleAiModelAccessResponse,
     AiSatelliteCredentialsUpdate,
     AiSatelliteStatus,
     AiTomTomKeyUpdate,
@@ -69,10 +71,32 @@ def _role_response(db: Session, role: Role) -> AiRoleLimitsResponse:
         field: getattr(row, field) if row is not None else None
         for field in ai_limit_service.LIMIT_FIELDS
     }
+    access_rows = ai_limit_service.get_role_model_access(db, role.id)
+    provs = {p.id: p.name for p in db.query(AiProvider.id, AiProvider.name).all()}
+    model_access: list[RoleAiModelAccessResponse] = []
+    for ar in access_rows:
+        parsed_models: list[str] = []
+        if ar.allowed_models_json:
+            try:
+                raw_m = json.loads(ar.allowed_models_json)
+                if isinstance(raw_m, list):
+                    parsed_models = [str(x) for x in raw_m if str(x).strip()]
+            except Exception:
+                pass
+        model_access.append(
+            RoleAiModelAccessResponse(
+                provider_id=ar.provider_id,
+                provider_name=provs.get(ar.provider_id),
+                allow_all=ar.allow_all,
+                allowed_models=parsed_models,
+            )
+        )
     return AiRoleLimitsResponse(
         role_id=role.id,
         role_name=role.name,
         configured=row is not None,
+        allow_all_models=row.allow_all_models if row is not None else True,
+        model_access=model_access,
         updated_at=row.updated_at if row is not None else None,
         **values,
     )
@@ -118,8 +142,15 @@ def update_role_limits(
         feld: genannt[feld] if feld in genannt else (getattr(bisher, feld) if bisher else None)
         for feld in ai_limit_service.LIMIT_FIELDS
     }
+    allow_all_models = (
+        bool(genannt["allow_all_models"])
+        if "allow_all_models" in genannt
+        else (bisher.allow_all_models if bisher else True)
+    )
     try:
-        ai_limit_service.set_role_limit(db, role.id, values)
+        ai_limit_service.set_role_limit(db, role.id, values, allow_all_models=allow_all_models)
+        if "model_access" in genannt and genannt["model_access"] is not None:
+            ai_limit_service.set_role_model_access(db, role.id, genannt["model_access"])
         # Ein leeres Feld heisst in jedem Feld „unbegrenzt“ — seit dem
         # 05.10.2026 auch bei ``max_memory_entries``. Vorher stand das
         # Memory-Feld hier getrennt unter ``unset_fields``, weil es beim Merken
@@ -136,6 +167,7 @@ def update_role_limits(
                 "unlimited_fields": sorted(
                     field for field, value in values.items() if value is None
                 ),
+                "allow_all_models": allow_all_models,
             },
         )
         db.commit()

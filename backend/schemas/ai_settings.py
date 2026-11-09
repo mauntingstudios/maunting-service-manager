@@ -51,8 +51,25 @@ class AiLimitsBase(BaseModel):
     max_attachment_storage_mb: AttachmentStorageLimit = None
 
 
+class RoleAiModelAccessItem(BaseModel):
+    """Modell-Zugriffsdefinition für genau einen Provider."""
+
+    provider_id: int
+    allow_all: bool = True
+    allowed_models: list[str] = Field(default_factory=list)
+
+
+class RoleAiModelAccessResponse(RoleAiModelAccessItem):
+    """Provider-Modellfreigabe mit Name zur UI-Darstellung."""
+
+    provider_name: str | None = None
+
+
 class AiRoleLimitsUpdate(AiLimitsBase):
     """Ersetzt die KI-Limits genau einer Rolle."""
+
+    allow_all_models: bool | None = None
+    model_access: list[RoleAiModelAccessItem] | None = None
 
 
 class AiRoleLimitsResponse(AiLimitsBase):
@@ -61,6 +78,8 @@ class AiRoleLimitsResponse(AiLimitsBase):
     role_id: int
     role_name: str
     configured: bool
+    allow_all_models: bool = True
+    model_access: list[RoleAiModelAccessResponse] = Field(default_factory=list)
     updated_at: datetime | None = None
 
 

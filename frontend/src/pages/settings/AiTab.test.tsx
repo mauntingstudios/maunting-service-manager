@@ -46,6 +46,9 @@ const row: AiRoleLimits = {
   max_memory_entries: 250,
   // Rang 4 = "hoch". Diese Rolle darf tief denken lassen, aber nicht maximal.
   max_reasoning_effort: 4,
+  max_attachment_storage_mb: null,
+  allow_all_models: true,
+  model_access: [],
   updated_at: '2026-08-01T12:00:00Z',
 }
 
@@ -61,7 +64,20 @@ const blankRow: AiRoleLimits = {
   monthly_dictation_minutes_limit: null,
   max_memory_entries: null,
   max_reasoning_effort: null,
+  max_attachment_storage_mb: null,
+  allow_all_models: true,
+  model_access: [],
   updated_at: null,
+}
+
+const testProvider = {
+  id: 1,
+  name: 'OpenRouter',
+  provider_kind: 'openrouter',
+  enabled: true,
+  standard_enabled: true,
+  default_model: 'anthropic/claude-3.5-sonnet',
+  enabled_models: ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet'],
 }
 
 /** Zwei Benutzer mit Verbrauch — die Antwort von `/ai/usage`. */
@@ -95,6 +111,7 @@ const usage = {
  */
 function respond(path: string): Promise<unknown> {
   if (path === '/ai/usage') return Promise.resolve(usage)
+  if (path === '/ai/settings/providers') return Promise.resolve([testProvider])
   // Die Einzelaufstellung und die Waehrungspolitik haengen an derselben Seite.
   // Ohne eigene Antwort bekaemen sie die Rollenliste und scheiterten daran.
   if (path.startsWith('/ai/usage/events')) {
@@ -135,16 +152,11 @@ describe('AiTab', () => {
           monthly_token_limit: null,
           monthly_realtime_minutes_limit: 30,
           monthly_dictation_minutes_limit: 120,
-          // Die Reihenfolge ist hier bedeutsam: verglichen werden zwei
-          // Zeichenketten, und der Rumpf entsteht in der Reihenfolge von
-          // FIELD_DEFINITIONS. Wer ein Feld dort verschiebt, muss es auch hier
-          // verschieben.
           max_memory_entries: 250,
-          // Der Rumpf entsteht aus FIELD_DEFINITIONS — ein neues Limit ist
-          // damit automatisch mit im Speichern. Genau das prüft diese Zeile:
-          // ein Feld hinzuzufügen, ohne den Speicherpfad anzufassen, darf nicht
-          // dazu führen, dass der Wert im Formular steht und nie ankommt.
           max_reasoning_effort: 4,
+          max_attachment_storage_mb: null,
+          allow_all_models: true,
+          model_access: [],
         }),
       })
     })
@@ -399,5 +411,66 @@ describe('AiTab', () => {
     expect(screen.queryByRole('tab', { name: /Verbrauch & Kosten/i })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('KI-Nutzung')).not.toBeInTheDocument()
     expect(client.api).not.toHaveBeenCalledWith('/ai/usage')
+  })
+
+  it('erlaubt das Eingrenzen von Providern und Modellen bei deaktiviertem Master-Schalter', async () => {
+    render(<AiTab />)
+    fireEvent.click(await screen.findByRole('tab', { name: /Rollen & Kontingente/i }))
+
+    const masterSchalter = await screen.findByRole('switch', {
+      name: /Alle globalen Modelle für diese Rolle erlauben: ai-vip/i,
+    })
+    expect(masterSchalter).toHaveAttribute('aria-checked', 'true')
+    // Wenn aktiv: Provider-Karten sind nicht sichtbar
+    expect(screen.queryByText('Provider- & Modell-Freigaben')).not.toBeInTheDocument()
+
+    // Master-Schalter ausschalten
+    fireEvent.click(masterSchalter)
+    expect(masterSchalter).toHaveAttribute('aria-checked', 'false')
+
+    // Nun erscheint der Bereich "Provider- & Modell-Freigaben"
+    expect(await screen.findByText('Provider- & Modell-Freigaben')).toBeInTheDocument()
+    expect(screen.getByText('OpenRouter')).toBeInTheDocument()
+
+    // Modus auf "Bestimmte Modelle auswählen" setzen
+    const modeDropdown = screen.getByRole('button', { name: /OpenRouter Modus: ai-vip/i })
+    fireEvent.click(modeDropdown)
+    fireEvent.click(screen.getByRole('option', { name: /Bestimmte Modelle auswählen/i }))
+
+    // Modelle erscheinen als Chips
+    const gptChip = await screen.findByRole('button', { name: /openai\/gpt-4o/i })
+    expect(gptChip).toBeInTheDocument()
+    fireEvent.click(gptChip)
+
+    vi.mocked(client.api).mockResolvedValue({
+      ...row,
+      allow_all_models: false,
+      model_access: [{ provider_id: 1, allow_all: false, allowed_models: ['openai/gpt-4o'] }],
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Speichern: ai-vip/i }))
+
+    await waitFor(() => {
+      expect(client.api).toHaveBeenCalledWith('/ai/settings/role-limits/9', {
+        method: 'PUT',
+        body: JSON.stringify({
+          daily_token_limit: 10_000,
+          weekly_token_limit: 50_000,
+          monthly_token_limit: 200_000,
+          monthly_realtime_minutes_limit: 30,
+          monthly_dictation_minutes_limit: 120,
+          max_memory_entries: 250,
+          max_reasoning_effort: 4,
+          max_attachment_storage_mb: null,
+          allow_all_models: false,
+          model_access: [
+            {
+              provider_id: 1,
+              allow_all: false,
+              allowed_models: ['openai/gpt-4o'],
+            },
+          ],
+        }),
+      })
+    })
   })
 })

@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { BarChart3, Bot, KeyRound, Save, Sliders, Sparkles } from 'lucide-react'
 
 import { api, SanitizedApiError } from '@/api/client'
+import { type AiProviderAdmin, type RoleAiModelAccessItem } from '@/api/ai'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiSkillManager } from '@/components/ai/AiSkillManager'
 import { TabBar, TabDef } from '@maunting/ui'
@@ -84,6 +85,8 @@ export interface AiRoleLimits {
    */
   max_reasoning_effort: number | null
   max_attachment_storage_mb: number | null
+  allow_all_models: boolean
+  model_access?: RoleAiModelAccessItem[]
   updated_at: string | null
 }
 
@@ -96,7 +99,7 @@ const REASONING_RANKS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'ma
 
 type LimitField = Exclude<
   keyof AiRoleLimits,
-  'role_id' | 'role_name' | 'configured' | 'updated_at'
+  'role_id' | 'role_name' | 'configured' | 'updated_at' | 'allow_all_models' | 'model_access'
 >
 
 const FIELD_DEFINITIONS: Array<{
@@ -205,6 +208,7 @@ export function AiTab() {
   const canReadUsage = useHasPermission('ai.usage.read.all')
   const [activeTab, setActiveTab] = useState<AiSubTab>('providers')
   const [rows, setRows] = useState<AiRoleLimits[]>([])
+  const [providers, setProviders] = useState<AiProviderAdmin[]>([])
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null)
   const [loading, setLoading] = useState(canRead)
   const [saving, setSaving] = useState(false)
@@ -225,11 +229,15 @@ export function AiTab() {
       return
     }
     let active = true
-    api<AiRoleLimits[]>('/ai/settings/role-limits')
-      .then((data) => {
+    Promise.all([
+      api<AiRoleLimits[]>('/ai/settings/role-limits'),
+      api<AiProviderAdmin[]>('/ai/settings/providers').catch(() => [] as AiProviderAdmin[]),
+    ])
+      .then(([roleData, providerData]) => {
         if (!active) return
-        const list = Array.isArray(data) ? data : []
+        const list = Array.isArray(roleData) ? roleData : []
         setRows(list)
+        setProviders(Array.isArray(providerData) ? providerData : [])
         // Bevorzugt die erste bereits konfigurierte Rolle: dort gibt es etwas
         // zu sehen. Ist nichts konfiguriert, greift schlicht die erste Rolle.
         setSelectedRoleId((list.find((row) => row.configured) ?? list[0])?.role_id ?? null)
@@ -255,6 +263,10 @@ export function AiTab() {
     [rows, selectedRoleId],
   )
 
+  const chatProviders = useMemo(() => {
+    return providers.filter((p) => p.enabled && p.standard_enabled !== false)
+  }, [providers])
+
   /** Ändert genau ein Feld lokal; gespeichert wird anschließend das Vollset. */
   const updateField = (roleId: number, field: LimitField, value: number | null) => {
     setRows((current) => current.map((row) => (
@@ -262,13 +274,74 @@ export function AiTab() {
     )))
   }
 
+  const updateRoleAllowAllModels = (roleId: number, allowAll: boolean) => {
+    setRows((current) => current.map((row) => (
+      row.role_id === roleId ? { ...row, allow_all_models: allowAll } : row
+    )))
+  }
+
+  const updateRoleModelAccessMode = (
+    roleId: number,
+    providerId: number,
+    mode: 'blocked' | 'all' | 'custom',
+  ) => {
+    setRows((current) => current.map((row) => {
+      if (row.role_id !== roleId) return row
+      const currentList = row.model_access ?? []
+      let nextList: RoleAiModelAccessItem[]
+      if (mode === 'blocked') {
+        nextList = currentList.filter((a) => a.provider_id !== providerId)
+      } else if (mode === 'all') {
+        const existing = currentList.find((a) => a.provider_id === providerId)
+        const updatedItem: RoleAiModelAccessItem = {
+          provider_id: providerId,
+          allow_all: true,
+          allowed_models: existing?.allowed_models ?? [],
+        }
+        nextList = [...currentList.filter((a) => a.provider_id !== providerId), updatedItem]
+      } else {
+        const existing = currentList.find((a) => a.provider_id === providerId)
+        const updatedItem: RoleAiModelAccessItem = {
+          provider_id: providerId,
+          allow_all: false,
+          allowed_models: existing?.allowed_models ?? [],
+        }
+        nextList = [...currentList.filter((a) => a.provider_id !== providerId), updatedItem]
+      }
+      return { ...row, model_access: nextList }
+    }))
+  }
+
+  const toggleRoleModel = (roleId: number, providerId: number, modelId: string) => {
+    setRows((current) => current.map((row) => {
+      if (row.role_id !== roleId) return row
+      const currentList = row.model_access ?? []
+      const existing = currentList.find((a) => a.provider_id === providerId)
+      const currentModels = existing?.allowed_models ?? []
+      const nextModels = currentModels.includes(modelId)
+        ? currentModels.filter((m) => m !== modelId)
+        : [...currentModels, modelId]
+      const updatedItem: RoleAiModelAccessItem = {
+        provider_id: providerId,
+        allow_all: false,
+        allowed_models: nextModels,
+      }
+      const nextList = [...currentList.filter((a) => a.provider_id !== providerId), updatedItem]
+      return { ...row, model_access: nextList }
+    }))
+  }
+
   const save = async (row: AiRoleLimits) => {
     if (!canWrite || saving) return
     setSaving(true)
     try {
-      const payload = Object.fromEntries(
-        FIELD_DEFINITIONS.map(({ key }) => [key, row[key]]),
-      )
+      const payload = {
+        ...Object.fromEntries(
+          FIELD_DEFINITIONS.map(({ key }) => [key, row[key]]),
+        ),
+        allow_all_models: row.allow_all_models ?? true,
+        model_access: row.model_access ?? [],
+      }
       const updated = await api<AiRoleLimits>(`/ai/settings/role-limits/${row.role_id}`, {
         method: 'PUT',
         body: JSON.stringify(payload),
@@ -459,6 +532,135 @@ export function AiTab() {
                   )
                 })}
               </div>
+
+              {/* Master-Schalter für globale Modell-Freigaben */}
+              <div className="mt-6 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-5">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold text-on-surface">
+                      {t('aiSettings.allowAllModels')}
+                    </h4>
+                    <p className="max-w-2xl text-xs text-on-surface-variant">
+                      {t('aiSettings.allowAllModelsHint')}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={selected.allow_all_models ?? true}
+                    disabled={!canWrite || saving}
+                    onCheckedChange={(next) => updateRoleAllowAllModels(selected.role_id, next)}
+                    aria-label={`${t('aiSettings.allowAllModels')}: ${selected.role_name}`}
+                  />
+                </div>
+              </div>
+
+              {/* Provider- und Modell-Freigaben, wenn Master-Schalter deaktiviert */}
+              {!(selected.allow_all_models ?? true) && (
+                <div className="mt-6 space-y-4">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold text-on-surface">
+                      {t('aiSettings.providerModelAccess')}
+                    </h4>
+                    <p className="text-xs text-on-surface-variant">
+                      {t('aiSettings.providerModelAccessDesc')}
+                    </p>
+                  </div>
+
+                  {chatProviders.length === 0 ? (
+                    <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low/20 p-4 text-xs text-on-surface-variant">
+                      {t('aiSettings.noActiveProviders')}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      {chatProviders.map((p) => {
+                        const access = selected.model_access?.find((a) => a.provider_id === p.id)
+                        const mode: 'blocked' | 'all' | 'custom' = !access
+                          ? 'blocked'
+                          : access.allow_all
+                            ? 'all'
+                            : 'custom'
+
+                        const providerModels = Array.from(new Set([
+                          ...(p.default_model ? [p.default_model] : []),
+                          ...(p.enabled_models ?? []),
+                        ])).filter(Boolean)
+
+                        const allowedModels = access?.allowed_models ?? []
+
+                        return (
+                          <div
+                            key={p.id}
+                            className="space-y-3 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <span className="font-semibold text-sm text-on-surface">{p.name}</span>
+                                <span className="ml-2 text-xs text-on-surface-variant">({p.provider_kind})</span>
+                              </div>
+                              <div className="w-56">
+                                <Dropdown
+                                  value={mode}
+                                  disabled={!canWrite || saving}
+                                  onChange={(val) => updateRoleModelAccessMode(selected.role_id, p.id, val as 'blocked' | 'all' | 'custom')}
+                                  options={[
+                                    { value: 'blocked', label: t('aiSettings.providerAccessBlocked') },
+                                    { value: 'all', label: t('aiSettings.providerAccessAll') },
+                                    { value: 'custom', label: t('aiSettings.providerAccessCustom') },
+                                  ]}
+                                  aria-label={`${p.name} Modus: ${selected.role_name}`}
+                                />
+                              </div>
+                            </div>
+
+                            {mode === 'custom' && (
+                              <div className="pt-2 border-t border-outline-variant/20 space-y-2">
+                                <span className="block text-xs font-medium text-on-surface-variant">
+                                  {t('aiSettings.providerAccessCustom')}
+                                </span>
+                                {providerModels.length === 0 ? (
+                                  <p className="text-xs text-on-surface-variant">
+                                    {p.allow_all_models
+                                      ? t('aiSettings.globallyAllModelsAllowed')
+                                      : t('aiSettings.noModelsSelected')}
+                                  </p>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-2 rounded-xl border border-outline-variant/20 bg-surface-container-low/40">
+                                    {providerModels.map((m) => {
+                                      const isSelected = allowedModels.includes(m)
+                                      return (
+                                        <button
+                                          key={m}
+                                          type="button"
+                                          disabled={!canWrite || saving}
+                                          onClick={() => toggleRoleModel(selected.role_id, p.id, m)}
+                                          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                                            isSelected
+                                              ? 'border-primary/50 bg-primary/15 text-primary font-medium'
+                                              : 'border-outline-variant/40 bg-surface-container-low text-on-surface-variant hover:text-on-surface'
+                                          }`}
+                                        >
+                                          <span>{m}</span>
+                                          {m === p.default_model && (
+                                            <span className="text-label-sm opacity-75">(Standard)</span>
+                                          )}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                                {allowedModels.length === 0 && (
+                                  <p className="text-xs text-on-surface-variant italic">
+                                    {t('aiSettings.noModelsSelected')}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           )}
         </div>

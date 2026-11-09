@@ -30,11 +30,12 @@ from database import Base
 
 # Letzte Revision auf `main`. Alles danach ist neu in diesem Branch.
 BASE_REVISION = "20260731_01"
-HEAD_REVISION = "20261108_01"
+HEAD_REVISION = "20261109_01"
 
 BRANCH_TABLES = (
     "user_roles",
     "role_ai_limits",
+    "role_ai_model_access",
     "operation_tasks",
     "ai_providers",
     "ai_conversations",

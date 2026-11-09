@@ -47,6 +47,7 @@ from services import (
     ai_chat_service,
     ai_context_service,
     ai_context_window,
+    ai_limit_service,
     ai_provider_service,
     ai_reasoning,
     ai_run_broker,
@@ -551,21 +552,33 @@ def edit_message(
     return AiMessageEditResponse(removed=removed)
 
 
-async def _replay_message(message: AiMessage) -> AsyncIterator[str]:
-    yield sse_event("message", {"message_id": message.id, "request_id": message.request_id})
+def _snapshot_message(message: AiMessage) -> dict:
+    return {
+        "id": message.id,
+        "request_id": message.request_id,
+        "reasoning": message.reasoning,
+        "content": message.content,
+        "sections": _sections(message),
+        "question": _question(message),
+    }
+
+
+async def _replay_message(message: AiMessage | dict) -> AsyncIterator[str]:
+    data = _snapshot_message(message) if isinstance(message, AiMessage) else message
+    yield sse_event("message", {"message_id": data["id"], "request_id": data["request_id"]})
     # Die Wiedergabe folgt der **gespeicherten Reihenfolge**, wenn es eine gibt.
     # Ein einzelnes `delta` mit dem ganzen Text waere fuer eine Antwort, die
     # zwischen ihren Absaetzen Werkzeuge gerufen hat, eine falsche Wiedergabe:
     # der Text stimmte, die Werkzeuge fehlten, und beim naechsten Neuladen
     # saehe dieselbe Nachricht wieder anders aus als eben.
-    abschnitte = _sections(message)
+    abschnitte = data["sections"]
     # Trägt die Gliederung die Gedanken, kommen sie an ihrer Stelle. Nur für
     # Nachrichten aus der Zeit davor gibt es sie ausschließlich flach — dann
     # vorweg, wie bisher. Beides zugleich wäre derselbe Text zweimal.
-    if message.reasoning and not any(
+    if data["reasoning"] and not any(
         abschnitt.art == "denken" for abschnitt in (abschnitte or [])
     ):
-        yield sse_event("reasoning", {"content": message.reasoning})
+        yield sse_event("reasoning", {"content": data["reasoning"]})
     if abschnitte:
         for abschnitt in abschnitte:
             if abschnitt.art == "text" and abschnitt.inhalt:
@@ -574,15 +587,15 @@ async def _replay_message(message: AiMessage) -> AsyncIterator[str]:
                 yield sse_event("reasoning", {"content": abschnitt.inhalt})
             elif abschnitt.art == "tool" and abschnitt.werkzeug:
                 yield sse_event("tool", abschnitt.werkzeug)
-    elif message.content:
-        yield sse_event("delta", {"content": message.content})
+    elif data["content"]:
+        yield sse_event("delta", {"content": data["content"]})
     # Endete der Zug mit einer Rueckfrage, gehoert sie auch in die Wiedergabe —
     # sonst saehe der Benutzer nach einem erneuten Absenden derselben Anfrage
     # eine Antwort ohne die Frage, auf die er antworten soll.
-    frage = _question(message)
+    frage = data["question"]
     if frage is not None:
         yield sse_event("question", frage.model_dump())
-    yield sse_event("done", {"message_id": message.id, "replayed": True})
+    yield sse_event("done", {"message_id": data["id"], "replayed": True})
 
 
 async def _fehlerstrom(code: str, message_key: str) -> AsyncIterator[str]:
@@ -728,6 +741,46 @@ async def stream_message(
     familie: str | None = Depends(session_familie),
     _: None = Depends(verify_csrf),
 ) -> StreamingResponse:
+    provider = db.get(AiProvider, payload.provider_id)
+    if provider is None or not provider.enabled or not _fuer_chat(provider):
+        raise HTTPException(status_code=404, detail="Provider nicht gefunden")
+    if provider.requires_api_key and not provider.operator_api_key_encrypted:
+        raise HTTPException(status_code=409, detail="Fuer diesen Provider ist kein API-Key konfiguriert")
+
+    # Rollenbasierte Provider- und Modellfreigaben strikt durchsetzen (Fail-closed)
+    effective_allowed = ai_limit_service.resolve_effective_allowed_models(db, user)
+    if effective_allowed is not None:
+        if provider.id not in effective_allowed:
+            raise HTTPException(status_code=403, detail="AI_PROVIDER_NOT_PERMITTED_FOR_ROLE")
+        allowed_models = effective_allowed[provider.id]
+        candidate_model = (payload.model or "").strip() or (provider.default_model or "").strip()
+        if "*" not in allowed_models and candidate_model not in allowed_models:
+            raise HTTPException(status_code=403, detail="AI_MODEL_NOT_PERMITTED_FOR_ROLE")
+
+    existing = db.query(AiMessage).filter(AiMessage.request_id == str(payload.request_id)).first()
+    if existing is not None:
+        if payload.conversation_id and existing.conversation_id != payload.conversation_id:
+            raise HTTPException(status_code=409, detail="AI-Request-ID wurde widerspruechlich wiederverwendet")
+        if existing.provider_id != provider.id:
+            raise HTTPException(status_code=409, detail="AI-Request-ID wurde widerspruechlich wiederverwendet")
+        if existing.status == "complete":
+            conversation = db.get(AiConversation, existing.conversation_id)
+            if conversation is None:
+                raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
+            snapshot = _snapshot_message(existing)
+            return StreamingResponse(
+                _replay_message(snapshot),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-store",
+                    "X-Accel-Buffering": "no",
+                    "X-Conversation-Id": conversation.id,
+                    "Access-Control-Expose-Headers": "X-Conversation-Id",
+                },
+            )
+        else:
+            raise HTTPException(status_code=409, detail="AI-Anfrage ist bereits aktiv oder fehlgeschlagen")
+
     conversation = None
     if payload.conversation_id:
         conversation = ai_chat_service.get_owned_conversation(
@@ -773,11 +826,6 @@ async def stream_message(
         docs_team_id = scope_res.team_id
         docs_is_link_guest = scope_res.is_link_guest
     db.commit()
-    provider = db.get(AiProvider, payload.provider_id)
-    if provider is None or not provider.enabled or not _fuer_chat(provider):
-        raise HTTPException(status_code=404, detail="Provider nicht gefunden")
-    if provider.requires_api_key and not provider.operator_api_key_encrypted:
-        raise HTTPException(status_code=409, detail="Fuer diesen Provider ist kein API-Key konfiguriert")
 
     requested_model: str | None = None
     if payload.model and payload.model.strip():
@@ -786,116 +834,108 @@ async def stream_message(
         if getattr(provider, "allow_all_models", False) or candidate in erlaubte or candidate == provider.default_model:
             requested_model = candidate
 
-    existing = db.query(AiMessage).filter(AiMessage.request_id == str(payload.request_id)).first()
-    if existing is not None:
-        if existing.conversation_id != conversation.id or existing.provider_id != provider.id:
-            raise HTTPException(status_code=409, detail="AI-Request-ID wurde widerspruechlich wiederverwendet")
-        if existing.status == "complete":
-            stream = _replay_message(existing)
-        else:
-            raise HTTPException(status_code=409, detail="AI-Anfrage ist bereits aktiv oder fehlgeschlagen")
-    else:
-        safe_content = redact_sensitive_text(payload.content).strip()
-        if not safe_content and not ai_attachment_service.has_unbound(
-            db, conversation.id, user.id
-        ):
-            raise HTTPException(status_code=400, detail="Nachricht ist nach Sicherheitsfilter leer")
-        # Die Denkvorgabe wird **hier** festgelegt und nicht erst beim Senden:
-        # der Anlauf kennt keinen HTTP-Client, der Modellkatalog ist aber ein
-        # HTTP-Abruf. Wichtiger noch — der geklemmte Wert gehoert in den Lauf,
-        # damit eine Fortsetzung nach einer Bestaetigung dieselbe Tiefe
-        # verwendet wie der erste Zug.
-        denken, stufe = await ai_reasoning.vorgabe(
-            request.app.state.ai_http_client,
-            db,
-            user=user,
-            provider=provider,
-            aktiv=payload.reasoning,
-            wunsch=payload.reasoning_effort,
-        )
-        # Aus demselben Grund hier und nicht im Anlauf: das Kontextfenster steht
-        # im Modellkatalog, und den zu befragen ist ein HTTP-Abruf. Es gehoert
-        # ausserdem in den Lauf — eine Fortsetzung nach einer Bestaetigung muss
-        # mit demselben Budget rechnen wie der erste Zug, auch wenn der
-        # Betreiber zwischendurch das Modell wechselt.
-        fenster = await ai_context_window.ermitteln(
-            request.app.state.ai_http_client, provider, db=db, user_id=user.id
-        )
-        # Ab hier reisen nur noch **Kennungen** weiter. Der Anlauf legt sich
-        # gleich eine eigene Sitzung in einem eigenen Thread an, und die des
-        # Requests darf diese Grenze nicht ueberschreiten — sie gehoert dem
-        # Request-Thread und wird von ihm geschlossen.
-        user_id, conversation_id, provider_id = user.id, conversation.id, provider.id
-        # Und sie darf auch keine offene Transaktion ueber die Grenze tragen.
-        # Die Sitzung im Thread saehe ungesicherte Arbeit dieser Sitzung nicht,
-        # und in der Testsuite teilen sich beide sogar eine Verbindung. Frueher
-        # endete `lauf_beginnen` selbst mit genau diesem Commit — es ist also
-        # derselbe Zeitpunkt wie bisher, nur eine Zeile frueher.
-        db.commit()
-        run_id, fehler = await lauf_beginnen_nebenher(
-            user_id=user_id,
-            conversation_id=conversation_id,
-            provider_id=provider_id,
-            request_id=payload.request_id,
-            content=safe_content,
-            reasoning=denken,
-            reasoning_effort=stufe,
-            # Ein unbekanntes Fenster reist als `None` weiter und nicht als
-            # Rueckfallzahl: nur so kann die Kompression den Unterschied
-            # zwischen "kleines Fenster" und "kein Wissen" noch sehen.
-            context_chars=fenster.zeichen if fenster.bekannt else None,
-            # Von wo die Bitte kam. Entscheidet den Werkzeugkatalog des Laufs
-            # (`herkunft_schnitt`) und wird darin eingefroren. Aus dem Token,
-            # nicht aus dem Koerper: solange der Client sie selbst erklaerte,
-            # konnte sich jeder als App ausgeben und nach Maus und Tastatur
-            # greifen (`dependencies.session_herkunft`).
-            herkunft=herkunft,
-            # Und von **welchem** Rechner. Die Herkunft unterscheidet App und
-            # Panel, nicht zwei gekoppelte Rechner desselben Benutzers — ohne
-            # die Familie holt sich einen Auftrag der, der zuerst fragt, und
-            # ein Blick auf "meinen Bildschirm" zeigte den des anderen.
-            familie=familie,
-            docs_document_uid=docs_document_uid,
-            docs_team_id=docs_team_id,
-            docs_is_link_guest=docs_is_link_guest,
-            # Ob das Modell Bilder liest, kommt aus demselben Katalog wie das
-            # Fenster. `None` heisst unbekannt; nur ein ausdrueckliches False
-            # ersetzt das Bild durch einen Hinweis.
-            modell_sieht=fenster.sieht,
-            # Nur die App meldet ihre Faehigkeiten; aus dem Panel ignoriert der
-            # Launcher das Feld. Es verkleinert nur das Angebot.
-            app_faehigkeiten=(
-                payload.app_faehigkeiten.model_dump()
-                if payload.app_faehigkeiten is not None else None
-            ),
-            requested_model=requested_model,
-            project_id=payload.project_id or conversation.project_id,
-        )
-        if run_id is None:
-            code, message_key = fehler or ("AI_PREPARATION_FAILED", "ai.chat.errors.unavailable")
-            stream = _fehlerstrom(code, message_key)
-        else:
-            if docs_document_uid and isinstance(payload.selection, dict):
-                from services import ai_docs_selection
+    safe_content = redact_sensitive_text(payload.content).strip()
+    if not safe_content and not ai_attachment_service.has_unbound(
+        db, conversation.id, user.id
+    ):
+        raise HTTPException(status_code=400, detail="Nachricht ist nach Sicherheitsfilter leer")
 
-                quote = str(payload.selection.get("quote") or "").strip()
-                if quote:
-                    ai_docs_selection.setzen(
-                        run_id,
-                        {"quote": quote[:4_000]},
-                        hash_wert=str(payload.selection.get("hash") or "")[:64] or None,
-                    )
-            # Reihenfolge ist hier alles: Kanal auf, **abonnieren**, dann erst
-            # die Arbeit starten.
-            #
-            # Der Rumpf einer StreamingResponse laeuft erst an, wenn Starlette
-            # ihn zu lesen beginnt — der Lauf arbeitet da laengst. Wuerde erst
-            # dort abonniert, waeren die ersten Zeichen schon durch. Abonniert
-            # wird deshalb hier, synchron, vor dem Start.
-            ai_run_broker.eroeffnen(run_id)
-            abo = ai_run_broker.abonnieren(run_id)
-            ai_run_service.lauf_starten(run_id)
-            stream = lauf_verfolgen(run_id, abo=abo)
+    # Die Denkvorgabe wird **hier** festgelegt und nicht erst beim Senden:
+    # der Anlauf kennt keinen HTTP-Client, der Modellkatalog ist aber ein
+    # HTTP-Abruf. Wichtiger noch — der geklemmte Wert gehoert in den Lauf,
+    # damit eine Fortsetzung nach einer Bestaetigung dieselbe Tiefe
+    # verwendet wie der erste Zug.
+    denken, stufe = await ai_reasoning.vorgabe(
+        request.app.state.ai_http_client,
+        db,
+        user=user,
+        provider=provider,
+        aktiv=payload.reasoning,
+        wunsch=payload.reasoning_effort,
+    )
+    # Aus demselben Grund hier und nicht im Anlauf: das Kontextfenster steht
+    # im Modellkatalog, und den zu befragen ist ein HTTP-Abruf. Es gehoert
+    # ausserdem in den Lauf — eine Fortsetzung nach einer Bestaetigung muss
+    # mit demselben Budget rechnen wie der erste Zug, auch wenn der
+    # Betreiber zwischendurch das Modell wechselt.
+    fenster = await ai_context_window.ermitteln(
+        request.app.state.ai_http_client, provider, db=db, user_id=user.id
+    )
+    # Ab hier reisen nur noch **Kennungen** weiter. Der Anlauf legt sich
+    # gleich eine eigene Sitzung in einem eigenen Thread an, und die des
+    # Requests darf diese Grenze nicht ueberschreiten — sie gehoert dem
+    # Request-Thread und wird von ihm geschlossen.
+    user_id, conversation_id, provider_id = user.id, conversation.id, provider.id
+    # Und sie darf auch keine offene Transaktion ueber die Grenze tragen.
+    # Die Sitzung im Thread saehe ungesicherte Arbeit dieser Sitzung nicht,
+    # und in der Testsuite teilen sich beide sogar eine Verbindung. Frueher
+    # endete `lauf_beginnen` selbst mit genau diesem Commit — es ist also
+    # derselbe Zeitpunkt wie bisher, nur eine Zeile frueher.
+    db.commit()
+    run_id, fehler = await lauf_beginnen_nebenher(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        provider_id=provider_id,
+        request_id=payload.request_id,
+        content=safe_content,
+        reasoning=denken,
+        reasoning_effort=stufe,
+        # Ein unbekanntes Fenster reist als `None` weiter und nicht als
+        # Rueckfallzahl: nur so kann die Kompression den Unterschied
+        # zwischen "kleines Fenster" und "kein Wissen" noch sehen.
+        context_chars=fenster.zeichen if fenster.bekannt else None,
+        # Von wo die Bitte kam. Entscheidet den Werkzeugkatalog des Laufs
+        # (`herkunft_schnitt`) und wird darin eingefroren. Aus dem Token,
+        # nicht aus dem Koerper: solange der Client sie selbst erklaerte,
+        # konnte sich jeder als App ausgeben und nach Maus und Tastatur
+        # greifen (`dependencies.session_herkunft`).
+        herkunft=herkunft,
+        # Und von **welchem** Rechner. Die Herkunft unterscheidet App und
+        # Panel, nicht zwei gekoppelte Rechner desselben Benutzers — ohne
+        # die Familie holt sich einen Auftrag der, der zuerst fragt, und
+        # ein Blick auf "meinen Bildschirm" zeigte den des anderen.
+        familie=familie,
+        docs_document_uid=docs_document_uid,
+        docs_team_id=docs_team_id,
+        docs_is_link_guest=docs_is_link_guest,
+        # Ob das Modell Bilder liest, kommt aus demselben Katalog wie das
+        # Fenster. `None` heisst unbekannt; nur ein ausdrueckliches False
+        # ersetzt das Bild durch einen Hinweis.
+        modell_sieht=fenster.sieht,
+        # Nur die App meldet ihre Faehigkeiten; aus dem Panel ignoriert der
+        # Launcher das Feld. Es verkleinert nur das Angebot.
+        app_faehigkeiten=(
+            payload.app_faehigkeiten.model_dump()
+            if payload.app_faehigkeiten is not None else None
+        ),
+        requested_model=requested_model,
+        project_id=payload.project_id or conversation.project_id,
+    )
+    if run_id is None:
+        code, message_key = fehler or ("AI_PREPARATION_FAILED", "ai.chat.errors.unavailable")
+        stream = _fehlerstrom(code, message_key)
+    else:
+        if docs_document_uid and isinstance(payload.selection, dict):
+            from services import ai_docs_selection
+
+            quote = str(payload.selection.get("quote") or "").strip()
+            if quote:
+                ai_docs_selection.setzen(
+                    run_id,
+                    {"quote": quote[:4_000]},
+                    hash_wert=str(payload.selection.get("hash") or "")[:64] or None,
+                )
+        # Reihenfolge ist hier alles: Kanal auf, **abonnieren**, dann erst
+        # die Arbeit starten.
+        #
+        # Der Rumpf einer StreamingResponse laeuft erst an, wenn Starlette
+        # ihn zu lesen beginnt — der Lauf arbeitet da laengst. Wuerde erst
+        # dort abonniert, waeren die ersten Zeichen schon durch. Abonniert
+        # wird deshalb hier, synchron, vor dem Start.
+        ai_run_broker.eroeffnen(run_id)
+        abo = ai_run_broker.abonnieren(run_id)
+        ai_run_service.lauf_starten(run_id)
+        stream = lauf_verfolgen(run_id, abo=abo)
     return StreamingResponse(
         stream,
         media_type="text/event-stream",

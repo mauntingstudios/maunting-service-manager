@@ -140,6 +140,43 @@ export interface AiProviderAdmin {
   updated_at: string
 }
 
+export interface RoleAiModelAccessItem {
+  provider_id: number
+  provider_name?: string | null
+  allow_all: boolean
+  allowed_models: string[]
+}
+
+export interface AiRoleLimitsResponse {
+  role_id: number
+  role_name: string
+  configured: boolean
+  daily_token_limit: number | null
+  weekly_token_limit: number | null
+  monthly_token_limit: number | null
+  monthly_realtime_minutes_limit: number | null
+  monthly_dictation_minutes_limit: number | null
+  max_memory_entries: number | null
+  max_reasoning_effort: number | null
+  max_attachment_storage_mb: number | null
+  allow_all_models: boolean
+  model_access: RoleAiModelAccessItem[]
+  updated_at: string | null
+}
+
+export interface AiRoleLimitsUpdate {
+  daily_token_limit: number | null
+  weekly_token_limit: number | null
+  monthly_token_limit: number | null
+  monthly_realtime_minutes_limit?: number | null
+  monthly_dictation_minutes_limit?: number | null
+  max_memory_entries?: number | null
+  max_reasoning_effort?: number | null
+  max_attachment_storage_mb?: number | null
+  allow_all_models?: boolean
+  model_access?: RoleAiModelAccessItem[]
+}
+
 export interface AiProviderModelOption {
   model_id: string
   name: string

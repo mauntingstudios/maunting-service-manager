@@ -11,7 +11,8 @@ dort „nichts hinterlegt“ und wurde beim Merken zur festen Systemgrenze.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer
+import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -75,6 +76,14 @@ class RoleAiLimit(Base):
     # Maximaler Speicherplatz fuer hochgeladene KI-Dateianhaenge in Megabyte (MB).
     # ``None`` bedeutet unbegrenzt, 0 verbietet Uploads komplett.
     max_attachment_storage_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Ob alle Provider und Modelle erlaubt sind (Standard True). Wenn False,
+    # greifen die Eintraege in `role_ai_model_access`.
+    allow_all_models: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=sa.true(),
+        nullable=False,
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

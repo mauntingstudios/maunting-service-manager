@@ -606,6 +606,7 @@ async def find_catalog_model(
 
 
 @router.get("/providers", response_model=list[AiProviderAvailableResponse])
+@router.get("/providers/available", response_model=list[AiProviderAvailableResponse])
 async def list_available_providers(
     request: Request,
     db: Session = Depends(get_db),
@@ -638,12 +639,31 @@ async def list_available_providers(
         if ai_provider_service.fuer_chat(provider)
     ]
     deckel = ai_limit_service.resolve_effective_limits(db, user).max_reasoning_effort
+    effective_models = ai_limit_service.resolve_effective_allowed_models(db, user)
+    if effective_models is not None:
+        providers = [
+            provider for provider in providers
+            if provider.id in effective_models and (bool(effective_models[provider.id]) or "*" in effective_models[provider.id])
+        ]
 
     antworten: list[AiProviderAvailableResponse] = []
     for provider in providers:
         freigegeben = ai_provider_service.freigegebene_modelle(provider)
         allow_all = bool(getattr(provider, "allow_all_models", False))
+        allowed_for_prov = effective_models.get(provider.id) if effective_models is not None else None
+
+        if allowed_for_prov is not None and "*" not in allowed_for_prov:
+            allow_all = False
+            if getattr(provider, "allow_all_models", False):
+                freigegeben = sorted(list(allowed_for_prov))
+            else:
+                freigegeben = [m for m in freigegeben if m in allowed_for_prov]
+
         std_model = provider.default_model or (freigegeben[0] if freigegeben else "")
+        if allowed_for_prov is not None and "*" not in allowed_for_prov:
+            if std_model not in allowed_for_prov:
+                std_model = freigegeben[0] if freigegeben else ""
+
         antwort = AiProviderAvailableResponse(
             id=provider.id,
             name=provider.name,
@@ -737,6 +757,9 @@ async def list_available_providers(
                             default_effort=None,
                         )
                     )
+        if allowed_for_prov is not None and "*" not in allowed_for_prov:
+            model_options = [mo for mo in model_options if mo.model_id in allowed_for_prov]
+
         if not model_options and std_model:
             model_options.append(
                 AiProviderModelOption(
@@ -748,6 +771,9 @@ async def list_available_providers(
                     default_effort=antwort.default_effort,
                 )
             )
+        if not model_options:
+            continue
         antwort.models = model_options
+        antwort.enabled_models = [mo.model_id for mo in model_options]
         antworten.append(antwort)
     return antworten

@@ -31,12 +31,14 @@ Modul stellt dafür die zentrale, backendseitige Grenzauflösung bereit.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from models import Role, RoleAiLimit, Team, User
+from models import AiProvider, Role, RoleAiLimit, RoleAiModelAccess, Team, User
+from services import ai_provider_service
 from services.role_service import effective_user_role_ids
 
 
@@ -227,10 +229,69 @@ def get_role_limit(db: Session, role_id: int) -> RoleAiLimit | None:
     return db.query(RoleAiLimit).filter(RoleAiLimit.role_id == role_id).first()
 
 
+def get_role_model_access(db: Session, role_id: int) -> list[RoleAiModelAccess]:
+    """Liest alle konfigurierten Provider-Freigaben einer Rolle."""
+    return (
+        db.query(RoleAiModelAccess)
+        .filter(RoleAiModelAccess.role_id == role_id)
+        .order_by(RoleAiModelAccess.provider_id.asc())
+        .all()
+    )
+
+
+def set_role_model_access(
+    db: Session,
+    role_id: int,
+    access_list: list[dict | Any],
+) -> list[RoleAiModelAccess]:
+    """Ersetzt alle Provider-/Modell-Freigaben einer Rolle."""
+    if db.query(Role.id).filter(Role.id == role_id).first() is None:
+        raise ValueError("Rolle nicht gefunden")
+    # Alte Einträge entfernen
+    db.query(RoleAiModelAccess).filter(RoleAiModelAccess.role_id == role_id).delete()
+    rows: list[RoleAiModelAccess] = []
+    seen_providers: set[int] = set()
+    for item in access_list:
+        if isinstance(item, dict):
+            prov_id = int(item.get("provider_id", 0))
+            allow_all = bool(item.get("allow_all", True))
+            models_raw = item.get("allowed_models") or []
+        else:
+            prov_id = int(getattr(item, "provider_id", 0))
+            allow_all = bool(getattr(item, "allow_all", True))
+            models_raw = getattr(item, "allowed_models", None) or []
+
+        if prov_id <= 0 or prov_id in seen_providers:
+            continue
+        # Pruefen, ob Provider existiert
+        if db.query(AiProvider.id).filter(AiProvider.id == prov_id).first() is None:
+            raise ValueError(f"Provider {prov_id} nicht gefunden")
+        seen_providers.add(prov_id)
+
+        cleaned_models: list[str] = []
+        if isinstance(models_raw, list):
+            for m in models_raw:
+                ms = str(m or "").strip()
+                if ms and ms not in cleaned_models:
+                    cleaned_models.append(ms)
+
+        row = RoleAiModelAccess(
+            role_id=role_id,
+            provider_id=prov_id,
+            allow_all=allow_all,
+            allowed_models_json=json.dumps(cleaned_models) if cleaned_models else None,
+        )
+        db.add(row)
+        rows.append(row)
+    db.flush()
+    return rows
+
+
 def set_role_limit(
     db: Session,
     role_id: int,
     values: dict[str, int | None],
+    allow_all_models: bool = True,
 ) -> RoleAiLimit:
     """Ersetzt alle KI-Limits einer existierenden Rolle in der offenen Transaktion."""
     if db.query(Role.id).filter(Role.id == role_id).first() is None:
@@ -246,11 +307,12 @@ def set_role_limit(
 
     row = get_role_limit(db, role_id)
     if row is None:
-        row = RoleAiLimit(role_id=role_id, **values)
+        row = RoleAiLimit(role_id=role_id, allow_all_models=bool(allow_all_models), **values)
         db.add(row)
     else:
         for field in LIMIT_FIELDS:
             setattr(row, field, values[field])
+        row.allow_all_models = bool(allow_all_models)
         row.updated_at = datetime.now(timezone.utc)
     db.flush()
     return row
@@ -290,6 +352,91 @@ def resolve_effective_limits(db: Session, user: User) -> EffectiveAiLimits:
     return EffectiveAiLimits(
         **{field: _resolve_field(rows, field) for field in LIMIT_FIELDS}
     )
+
+
+def resolve_effective_allowed_models(
+    db: Session,
+    user: User,
+) -> dict[int, set[str]] | None:
+    """Ermittelt die effektiven Provider- und Modell-Freigaben für einen Benutzer.
+
+    Rückgabe:
+    - ``None``: Unbeschränkter Zugriff (Benutzer hat keine Rollen, oder keine einzige
+      Rolle hat ein KI-Limit konfiguriert, oder mindestens eine Rolle hat
+      ``allow_all_models=True``). Es gelten nur die globalen Provider-Freigaben.
+    - ``dict[int, set[str]]``: Mapping von ``provider_id`` auf die nicht-leere Menge der
+      erlaubten Modell-IDs. Enthält ``"*"``, wenn für diesen Provider alle
+      global freigegebenen Modelle erlaubt sind.
+    """
+    role_ids = effective_user_role_ids(db, user)
+    if not role_ids:
+        return None
+
+    rows = (
+        db.query(RoleAiLimit).filter(RoleAiLimit.role_id.in_(role_ids)).all()
+    )
+    if not rows:
+        # Keine einzige Rolle des Benutzers hat ein KI-Limit konfiguriert (nicht konfiguriert).
+        # Siehe Modul-Docstring: unkonfiguriert bedeutet unbeschränkt.
+        return None
+
+    # Hat der Benutzer mindestens eine konfigurierte Rolle mit allow_all_models=True,
+    # gilt uneingeschränkter Zugriff (Rollen-Erhöhung):
+    if any(bool(r.allow_all_models) for r in rows):
+        return None
+
+    # Alle konfigurierten Rollen des Benutzers haben allow_all_models=False.
+    # Unkonfigurierte Rollen tragen nichts bei (wie bei den Kontingenten in resolve_effective_limits).
+    configured_restricted_role_ids = [r.role_id for r in rows if not r.allow_all_models]
+    access_rows = (
+        db.query(RoleAiModelAccess)
+        .filter(RoleAiModelAccess.role_id.in_(configured_restricted_role_ids))
+        .all()
+    )
+    if not access_rows:
+        return {}
+
+    by_prov: dict[int, list[RoleAiModelAccess]] = {}
+    for ar in access_rows:
+        by_prov.setdefault(ar.provider_id, []).append(ar)
+
+    result: dict[int, set[str]] = {}
+    for prov_id, accesses in by_prov.items():
+        provider = db.get(AiProvider, prov_id)
+        if provider is None or not provider.enabled or not ai_provider_service.fuer_chat(provider):
+            continue
+
+        prov_allow_all = bool(getattr(provider, "allow_all_models", False))
+        prov_freigegeben = set(ai_provider_service.freigegebene_modelle(provider))
+        has_allow_all = any(a.allow_all for a in accesses)
+
+        if has_allow_all:
+            if prov_allow_all:
+                # Provider und Rolle erlauben alles
+                result[prov_id] = set(prov_freigegeben) | {"*"}
+            else:
+                # Rolle erlaubt alle, aber Provider erlaubt nur seine freigegebenen Modelle
+                if prov_freigegeben:
+                    result[prov_id] = set(prov_freigegeben)
+        else:
+            # Vereinigung der expliziten Modelle aus allen Rollen
+            union_models: set[str] = set()
+            for a in accesses:
+                if a.allowed_models_json:
+                    try:
+                        parsed = json.loads(a.allowed_models_json)
+                        if isinstance(parsed, list):
+                            for m in parsed:
+                                if isinstance(m, str) and m.strip():
+                                    union_models.add(m.strip())
+                    except Exception:
+                        pass
+            # Schnittmenge mit globalen Provider-Modellen (Sicherheit gegen fremde/deaktivierte Modelle)
+            allowed_set = union_models if prov_allow_all else (union_models & prov_freigegeben)
+            if allowed_set:
+                result[prov_id] = allowed_set
+
+    return result
 
 
 def resolve_scope_memory_limit(

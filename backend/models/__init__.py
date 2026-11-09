@@ -1,6 +1,7 @@
 from .user import User
 from .user_role import UserRole
 from .role_ai_limit import RoleAiLimit
+from .role_ai_model_access import RoleAiModelAccess
 from .role_vault_quota import RoleVaultQuota
 from .ai_usage_event import AiUsageEvent
 from .operation_task import OperationTask
@@ -134,7 +135,7 @@ from .singra_deployment import SingraDeployment
 from .singra_test_run import SingraTestRun
 
 __all__ = [
-    "User", "UserRole", "RoleAiLimit", "RoleVaultQuota", "AiUsageEvent", "OperationTask",
+    "User", "UserRole", "RoleAiLimit", "RoleAiModelAccess", "RoleVaultQuota", "AiUsageEvent", "OperationTask",
     "AiProvider", "AiConversation", "AiMessage", "AiProject", "AiProjectFile", "AiMcpServer", "AiActionProposal",
     "AiMemoryBegriff", "AiMemoryBeleg", "AiMemoryEntry", "AiMemoryPflege", "AiMemoryPreference", "AiMemoryTopic", "AiMemoryVersion",
     "AiSkill", "AiAttachment",
