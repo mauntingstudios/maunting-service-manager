@@ -119,9 +119,11 @@ def _worker_tool_definitions() -> list[dict]:
             "erledigt, während du weiter im Gespräch bleibst. Der "
             "`auftrag` ist dessen **einzige** Wissensquelle — schreib alles "
             "hinein, was er braucht: was zu tun ist, woran der Erfolg zu "
-            "erkennen ist, und jede Angabe des Benutzers. Nach dem Start "
-            "antworte sofort weiter; das Ergebnis kommt später als Meldung. "
-            "Versprich nichts über die Dauer.",
+            "erkennen ist, und jede Angabe des Benutzers. Ein Projekt hat "
+            "höchstens einen aktiven Auftrag; ein zweiter Start am selben "
+            "Projekt wird abgelehnt. Nach dem Start antworte sofort weiter; "
+            "das Ergebnis kommt später als Meldung. Versprich nichts über "
+            "die Dauer.",
             {
                 "auftrag": {
                     "type": "string",
@@ -297,7 +299,7 @@ _TASK_WERKZEUGE = {
         art="delegation",
         gruppe="worker",
         angebot=("ai.background.use",),
-        hinweis="Startet einen Hintergrundauftrag mit eigenem Kontext.",
+        hinweis="Startet einen Hintergrundauftrag mit eigenem Kontext; je Projekt nur einer.",
     ),
     "worker_cancel": dict(
         art="delegation",

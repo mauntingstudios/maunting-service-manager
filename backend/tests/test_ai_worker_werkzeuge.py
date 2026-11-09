@@ -20,7 +20,16 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Query, Session
 
-from models import AiAutonomyGrant, AiConversation, AiRun, Role, RolePermission, User
+from models import (
+    AiAutonomyGrant,
+    AiConversation,
+    AiRun,
+    Role,
+    RolePermission,
+    Team,
+    TeamMember,
+    User,
+)
 from services import (
     ai_action_service,
     ai_chat_service,
@@ -820,3 +829,93 @@ class TestWorkerProjekt:
         fenster = db.get(AiConversation, ergebnis["worker_id"])
         assert fenster is not None
         assert fenster.project_id == projekt.id
+
+    def test_ein_zweiter_auftrag_am_selben_projekt_wird_abgelehnt(self, db: Session) -> None:
+        user = _benutzer(db, "projekt-sperre")
+        _provider(db)
+        projekt = ai_project_service.create_project(
+            db, user, name="Sperre", sandbox_enabled=False
+        )
+        eltern = ai_chat_service.create_user_conversation(
+            db, user, project_id=projekt.id
+        )
+        db.commit()
+
+        erst = _start(db, user, conversation_id=eltern.id, titel="Erster")
+        zweit = _start(db, user, conversation_id=eltern.id, titel="Zweiter")
+
+        assert erst["started"] is True
+        assert zweit["started"] is False
+        assert zweit["reason"] == "project_busy"
+        assert erst["worker_id"] in zweit["detail"]
+
+    def test_ein_anderes_projekt_bleibt_frei(self, db: Session) -> None:
+        user = _benutzer(db, "projekt-zwei")
+        _provider(db)
+        projekt_a = ai_project_service.create_project(
+            db, user, name="A", sandbox_enabled=False
+        )
+        projekt_b = ai_project_service.create_project(
+            db, user, name="B", sandbox_enabled=False
+        )
+        eltern_a = ai_chat_service.create_user_conversation(
+            db, user, project_id=projekt_a.id
+        )
+        eltern_b = ai_chat_service.create_user_conversation(
+            db, user, project_id=projekt_b.id
+        )
+        db.commit()
+
+        erst = _start(db, user, conversation_id=eltern_a.id)
+        zweit = _start(db, user, conversation_id=eltern_b.id)
+
+        assert erst["started"] is True
+        assert zweit["started"] is True
+
+    def test_nach_dem_ende_ist_das_projekt_wieder_frei(self, db: Session) -> None:
+        user = _benutzer(db, "projekt-ende")
+        _provider(db)
+        projekt = ai_project_service.create_project(
+            db, user, name="Ende", sandbox_enabled=False
+        )
+        eltern = ai_chat_service.create_user_conversation(
+            db, user, project_id=projekt.id
+        )
+        db.commit()
+
+        erst = _start(db, user, conversation_id=eltern.id)
+        run = db.query(AiRun).filter(AiRun.conversation_id == erst["worker_id"]).one()
+        run.status = "completed"
+        db.commit()
+
+        zweit = _start(db, user, conversation_id=eltern.id)
+
+        assert zweit["started"] is True
+
+    def test_auch_ein_auftrag_eines_teammitglieds_sperrt_das_projekt(self, db: Session) -> None:
+        user = _benutzer(db, "projekt-team-a")
+        mitglied = _benutzer(db, "projekt-team-b")
+        _provider(db)
+        team = Team(name="Projektteam", owner_user_id=user.id)
+        db.add(team)
+        db.flush()
+        db.add(TeamMember(team_id=team.id, user_id=user.id, role="owner"))
+        db.add(TeamMember(team_id=team.id, user_id=mitglied.id, role="member"))
+        db.commit()
+        projekt = ai_project_service.create_project(
+            db, user, name="Gemeinsam", team_id=team.id, sandbox_enabled=False
+        )
+        eltern_mitglied = ai_chat_service.create_user_conversation(
+            db, mitglied, project_id=projekt.id
+        )
+        eltern_user = ai_chat_service.create_user_conversation(
+            db, user, project_id=projekt.id
+        )
+        db.commit()
+
+        erst = _start(db, mitglied, conversation_id=eltern_mitglied.id)
+        zweit = _start(db, user, conversation_id=eltern_user.id)
+
+        assert erst["started"] is True
+        assert zweit["started"] is False
+        assert zweit["reason"] == "project_busy"

@@ -30,7 +30,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from models import AiActionProposal, AiConversation, AiRun, User
+from models import AiActionProposal, AiConversation, AiProject, AiRun, User
 # Die Kanaele der **Meldestelle**, nicht die der stehenden Auftraege. Der Wert
 # wandert von hier in den Worker-Rahmen und wird am Ende von
 # `ai_meldestelle.melden` verbraucht; deren Liste ist bewusst eine eigene Kopie,
@@ -111,6 +111,29 @@ def _projekt_des_laufs(
     except AiProjectError:
         return None
     return projekt.id
+
+
+def _aktiver_auftrag_im_projekt(
+    db: Session, project_id: str
+) -> tuple[AiRun, AiConversation] | None:
+    """Der erste nicht beendete Worker, der an diesem Projekt arbeitet.
+
+    Projektweit und nicht je Benutzer: an einem Team-Projekt koennen mehrere
+    Mitglieder Auftraege stellen, und zwei schreibende Auftraege am selben
+    Dateibaum sind genau der Wettlauf, den die Sperre verhindert.
+    """
+    zeile = (
+        db.query(AiRun, AiConversation)
+        .join(AiConversation, AiConversation.id == AiRun.conversation_id)
+        .filter(
+            AiConversation.project_id == project_id,
+            AiConversation.kind == "worker",
+            AiRun.status.notin_(BEENDET),
+        )
+        .order_by(AiRun.created_at.asc())
+        .first()
+    )
+    return (zeile[0], zeile[1]) if zeile is not None else None
 
 
 def worker_start(
@@ -218,6 +241,37 @@ def worker_start(
     # Kennung kommt aus der Unterhaltung, nicht aus dem Modell: was ein Modell
     # schreiben kann, ist keine Tatsache über die Welt, aus der es spricht.
     project_id = _projekt_des_laufs(db, user, conversation_id)
+    if project_id:
+        # Die Projektzeile sperren, bevor geprueft wird: zwei gleichzeitige
+        # Starts — auch von zwei Teammitgliedern — saehen sonst beide keinen
+        # laufenden Auftrag und legten zwei an. Dieselbe Reihenfolge wie beim
+        # Benutzerdeckel (erst sperren, dann lesen), nur auf der Projektzeile.
+        gesperrt = (
+            db.query(AiProject.id)
+            .filter(AiProject.id == project_id)
+            .with_for_update()
+            .first()
+        )
+        if gesperrt is None:
+            # Zwischen Lesen und Sperren geloescht: ohne Projekt kein Bezug.
+            project_id = None
+    if project_id:
+        laufend = _aktiver_auftrag_im_projekt(db, project_id)
+        if laufend is not None:
+            _, fenster = laufend
+            projekt = db.get(AiProject, project_id)
+            name = str(projekt.name) if projekt is not None else project_id
+            return {
+                "started": False,
+                "reason": "project_busy",
+                "detail": (
+                    f"Am Projekt {name!r} arbeitet bereits "
+                    f"der Auftrag {fenster.title!r} (worker_id={fenster.id}). "
+                    "Warte auf sein Ergebnis oder brich ihn mit worker_cancel ab; "
+                    "zwei schreibende Auftraege am selben Projekt wuerden sich "
+                    "gegenseitig ueberschreiben."
+                ),
+            }
 
     # Nur geflusht, nicht committet: ein Commit hier gäbe die Benutzersperre
     # frei, bevor der neue Lauf überhaupt existiert — genau in dem Fenster,
