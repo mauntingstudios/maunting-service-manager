@@ -32,6 +32,11 @@ DOMAIN_PACKS: dict[str, frozenset[str]] = {
         "list_my_servers",
         "read_server_status",
         "read_server_logs",
+        # Ein Serverproblem ist ohne das Protokoll eine halbe Diagnose: der
+        # Zustand sagt, dass etwas klemmt; das Audit sagt, wer zuletzt etwas
+        # geaendert, gestartet oder geloescht hat.
+        "read_audit_summary",
+        "search_audit_log",
         "read_config",
         "propose_server_lifecycle",
         "propose_backup",

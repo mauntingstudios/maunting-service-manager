@@ -535,7 +535,7 @@ _TABELLE: dict[str, Werkzeug] = {
 
 
 
-from services.ai_tools import cloudflare_read_tools, curseforge_read_tools, database_tools, document_tools, geo_tools, global_write_tools, hoster_read_tools, panel_overview_tools, project_tools, personal_tools, server_history_tools, server_network_tools, server_file_tools, server_mod_tools, server_ops_tools, server_write_tools, system_tools, task_tools, user_tools  # noqa: E402,F401
+from services.ai_tools import audit_tools, cloudflare_read_tools, curseforge_read_tools, database_tools, document_tools, geo_tools, global_write_tools, hoster_read_tools, panel_overview_tools, project_tools, personal_tools, server_history_tools, server_network_tools, server_file_tools, server_mod_tools, server_ops_tools, server_write_tools, system_tools, task_tools, user_tools  # noqa: E402,F401
 
 _DEKLARIERT = {name: spec.werkzeug for name, spec in ALLE.items()}
 _DOPPELT = set(_TABELLE) & set(_DEKLARIERT)

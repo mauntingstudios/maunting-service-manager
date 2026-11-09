@@ -60,6 +60,7 @@ from services.ai_tools.panel_overview_tools import (
     PLACEMENT_DEFINITIONEN as _PLACEMENT_DEFINITIONEN,
     REST_DEFINITIONEN as _PANEL_REST_DEFINITIONEN,
 )
+from services.ai_tools.audit_tools import DEFINITIONEN as _AUDIT_DEFINITIONEN
 from services.ai_tools.system_tools import (
     ASK_DEFINITIONEN as _ASK_DEFINITIONEN,
     DOKU_DEFINITIONEN as _DOKU_DEFINITIONEN,
@@ -222,6 +223,7 @@ def _global_tool_definitions() -> list[dict]:
         *_DOKU_DEFINITIONEN,
         *_HOSTER_DEFINITIONEN,
         *_SKILL_LESE_DEFINITIONEN,
+        *_AUDIT_DEFINITIONEN,
         # Der Bauplan des Textes ("was zu pruefen ist, in welcher Reihenfolge,
         # woran man die Ursache erkennt") und die Ausschlussliste ("Nicht
         # festhalten: Einzelfaelle, Zwischenergebnisse …") stehen in

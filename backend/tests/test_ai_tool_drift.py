@@ -38,7 +38,7 @@ SPRACHEN = ("de", "en")
 
 @pytest.fixture(scope="module")
 def katalog() -> dict[str, dict]:
-    """Alle 123 Definitionen, unabhaengig von der Betreiberkonfiguration."""
+    """Alle 125 Definitionen, unabhaengig von der Betreiberkonfiguration."""
     import services.ai_learning_policy as learning_policy
     import services.ai_web_search_service as web_search
     import services.cloudflare_service as cloudflare_service
@@ -88,7 +88,7 @@ def _ts_liste(pfad: Path, anfang: str, ende: str) -> set[str]:
 
 
 def test_katalog_und_registry_nennen_dieselben_werkzeuge(katalog: dict[str, dict]) -> None:
-    assert len(katalog) == len(registry.WERKZEUGE) == 123
+    assert len(katalog) == len(registry.WERKZEUGE) == 125
     assert set(katalog) == set(registry.WERKZEUGE)
 
 

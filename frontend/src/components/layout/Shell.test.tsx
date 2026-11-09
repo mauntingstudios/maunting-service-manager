@@ -44,6 +44,8 @@ describe('Shell', () => {
         <Route path="/" element={<Shell />}>
           <Route index element={<div>Dashboard</div>} />
           <Route path="audit" element={<div>Audit</div>} />
+          <Route path="docs" element={<div>Hilfe</div>} />
+          <Route path="docs/*" element={<div>Hilfe</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -103,6 +105,23 @@ describe('Shell', () => {
 
     const inhalt = screen.getByRole('main')
     expect(inhalt.className).not.toMatch(/\boverflow-(auto|scroll|hidden|x-auto|y-auto)\b/)
+  })
+
+  it('legt auf Standardseiten die Tageszeit-Szene hinter den Inhalt', () => {
+    // Nodes, Benutzer, Rollen, Audit, Einstellungen, Blueprints und die
+    // Panel-Seiten brachten bis 09.11.2026 keinen eigenen Hintergrund mit.
+    // Die Huelle traegt ihn jetzt fuer alle Seiten, die keine eigene Buehne haben.
+    const { container } = renderShell('/audit')
+    const bild = Array.from(container.querySelectorAll<HTMLElement>('main [aria-hidden="true"]'))
+      .find((element) => element.style.backgroundImage.includes('/assets/'))
+    expect(bild).toBeDefined()
+  })
+
+  it('laesst Hilfe ohne Szenenbild', () => {
+    const { container } = renderShell('/docs')
+    const bild = Array.from(container.querySelectorAll<HTMLElement>('main [aria-hidden="true"]'))
+      .find((element) => element.style.backgroundImage.includes('/assets/'))
+    expect(bild).toBeUndefined()
   })
 
   it('blendet die Kopfzeile im offenen Chat aus', () => {

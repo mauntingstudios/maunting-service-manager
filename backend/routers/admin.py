@@ -398,20 +398,59 @@ def list_server_permissions_for_user(
 
 
 class AuditLogOut(BaseModel):
-    """Oeffentliche Audit-Darstellung ohne Secrets."""
+    """Oeffentliche Audit-Darstellung ohne Secrets.
+
+    Name und Zielname kommen aus der Anreicherung im Dienst; die Kennungen
+    bleiben daneben stehen, damit ein Eintrag auch dann eindeutig ist, wenn ein
+    Konto oder Server inzwischen umbenannt wurde.
+    """
 
     id: int
     user_id: int | None
+    username: str | None = None
     action: str
+    category: str
+    result: str
     target_type: str | None
     target_id: str | None
+    target_label: str | None = None
     origin: str
     correlation_id: str | None
     details: str | None
     created_at: datetime | None
 
-    class Config:
-        from_attributes = True
+
+class AuditLogPageOut(BaseModel):
+    items: list[AuditLogOut]
+    total: int
+
+
+class AuditZahlenOut(BaseModel):
+    total: int
+    users: int
+    security: int
+    failed: int
+
+
+class AuditKategorieZahlOut(BaseModel):
+    category: str
+    count: int
+
+
+class AuditAktionZahlOut(BaseModel):
+    action: str
+    category: str
+    count: int
+
+
+class AuditSummaryOut(BaseModel):
+    range_days: int
+    start: datetime
+    end: datetime
+    current: AuditZahlenOut
+    previous: AuditZahlenOut
+    by_category: list[AuditKategorieZahlOut]
+    top_actions: list[AuditAktionZahlOut]
 
 
 class ManagedPostgresAdminRotateOut(BaseModel):
@@ -421,29 +460,51 @@ class ManagedPostgresAdminRotateOut(BaseModel):
     nodes_skipped: list[int]
 
 
-@router.get("/audit-logs", response_model=list[AuditLogOut])
+@router.get("/audit-logs", response_model=AuditLogPageOut)
 def list_admin_audit_logs(
     db: Session = Depends(get_db),
     user: User = Depends(require_global("system.audit.read")),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    days: int | None = Query(None, ge=1, le=365),
     action: str | None = Query(None, max_length=64),
     target_type: str | None = Query(None, max_length=64),
     target_id: str | None = Query(None, max_length=64),
-) -> list[AuditLog]:
+    search: str | None = Query(None, max_length=200),
+    category: str | None = Query(None, max_length=32),
+    result: str | None = Query(None, pattern="^(success|failed)$"),
+    origin: str | None = Query(None, pattern="^(direct|ai|external|system)$"),
+) -> dict:
     """Listet privilegierte Operator-Aktionen. Unberechtigt: 403 (kein leeres OK)."""
-    if action or target_type or target_id:
+    if any((action, target_type, target_id, search, category, result, origin)):
         # Vor der Abfrage: ein Commit danach ließe die gelesenen Zeilen verfallen.
         AchievementService.melde(db, user.id, "security_audit_inspector", commit=True)
-    try:
-        return audit_service.list_audit_logs(
-            db,
-            limit=limit,
-            action=action,
-            target_type=target_type,
-            target_id=target_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if category and category not in audit_service.AUDIT_KATEGORIEN:
+        raise HTTPException(status_code=400, detail="Unbekannte Audit-Kategorie.")
+    rows, total = audit_service.suche_audit_logs(
+        db,
+        limit=limit,
+        offset=offset,
+        tage=days,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        search=search,
+        kategorie=category,
+        result=result,
+        origin=origin,
+    )
+    return {"items": audit_service.audit_zeilen(db, rows), "total": total}
+
+
+@router.get("/audit-logs/summary", response_model=AuditSummaryOut)
+def audit_summary(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("system.audit.read")),
+    days: int = Query(7, ge=1, le=365),
+) -> dict:
+    """Kennzahlen des Audit-Protokolls samt Vergleich zum Zeitraum davor."""
+    return audit_service.audit_uebersicht(db, tage=days)
 
 
 @router.post(

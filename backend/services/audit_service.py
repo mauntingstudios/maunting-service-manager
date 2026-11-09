@@ -11,9 +11,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy import String, and_, cast, func, or_
 from sqlalchemy.orm import Session
 
-from models import AuditLog
+from models import AuditLog, Node, Role, Server, Team, User
 
 # Keys / Patterns, die nie in audit_logs.details landen duerfen.
 _SECRET_KEY_RE = re.compile(
@@ -172,21 +173,381 @@ def record_read_access(
     )
 
 
-def list_audit_logs(
+# ── Einordnung fuer Oberflaeche und KI ─────────────────────────────────────
+#
+# Die Einordnung ist Darstellung, keine Autorisierung: sie entscheidet ueber
+# Symbol, Farbe und Filter, nie ueber Zugriff. Die Rechte bleiben am Aufrufer
+# (`system.audit.read`).
+
+AUDIT_KATEGORIEN = (
+    "server",
+    "configuration",
+    "user",
+    "role",
+    "team",
+    "backup",
+    "security",
+    "ai",
+    "docs",
+    "billing",
+    "system",
+)
+
+# Reihenfolge zaehlt: die erste passende Regel gewinnt. `user.roles.*` ist eine
+# Rollenaenderung, keine Benutzeraenderung, und `server.backups.*` ein Backup,
+# keine Serveraktion. Die SQL-Filter unten spiegeln dieselbe Reihenfolge.
+_KATEGORIE_REGELN: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("backup", ("server.backups.", "panel.backup", "backup."), ()),
+    (
+        "security",
+        (
+            "auth.",
+            "credential.",
+            "server.credential.",
+            "vault.",
+            "team.vault.",
+            "guardian.",
+            "nodes.token.",
+            "nodes.enrollment.",
+            "postgres.admin.",
+            "panel.settings.",
+            "panel.livekit.",
+            "social.call.",
+        ),
+        (),
+    ),
+    (
+        "role",
+        (
+            "roles.",
+            "user.roles.",
+            "team.role.",
+            "team.member.roles.",
+            "team.server.",
+            "team.server_roles.",
+        ),
+        (),
+    ),
+    ("user", ("user.", "users."), ("user.roles.",)),
+    (
+        "team",
+        ("team.",),
+        (
+            "team.role.",
+            "team.member.roles.",
+            "team.server.",
+            "team.server_roles.",
+            "team.vault.",
+        ),
+    ),
+    ("ai", ("ai.",), ()),
+    ("docs", ("docs.", "document."), ()),
+    ("billing", ("hoster.",), ()),
+    (
+        "configuration",
+        ("blueprints.", "server.firewall", "server.config", "panel.popup"),
+        (),
+    ),
+    (
+        "server",
+        ("server.",),
+        ("server.backups.", "server.credential.", "server.firewall", "server.config"),
+    ),
+)
+
+
+def audit_kategorie(action: str | None) -> str:
+    """Ordnet eine Aktion einer der sieben sichtbaren Gruppen zu."""
+    text = (action or "").strip().lower()
+    for kategorie, praefixe, ausschluesse in _KATEGORIE_REGELN:
+        if not text.startswith(praefixe):
+            continue
+        if ausschluesse and text.startswith(ausschluesse):
+            continue
+        return kategorie
+    return "system"
+
+
+def audit_ergebnis(action: str | None, details: str | None = None) -> str:
+    """`failed` nur, wenn der Eintrag es hergibt — nie aus dem Bauch.
+
+    Der laengste Weg ist ein `.failed` in der Aktion. Dazu kommen
+    Fehlercodes und ausdrueckliche Erfolgs-/Statusfelder in den Details. Ein
+    fehlender Wert heisst nicht „gescheitert“; er heisst nur, dass der Eintrag
+    nichts darueber sagt.
+    """
+    text = (action or "").strip().lower()
+    if text.endswith(".failed") or text.endswith(".fehlgeschlagen"):
+        return "failed"
+    if not details:
+        return "success"
+    try:
+        daten = json.loads(details)
+    except (TypeError, ValueError):
+        return "success"
+    if not isinstance(daten, dict):
+        return "success"
+    if daten.get("error_code") not in (None, "", False):
+        return "failed"
+    if daten.get("success") is False:
+        return "failed"
+    if str(daten.get("status") or "").strip().lower() in {"failed", "error", "fehlgeschlagen"}:
+        return "failed"
+    return "success"
+
+
+def audit_sicherheitsrelevant(action: str | None) -> bool:
+    """Ob ein Eintrag unter „Sicherheitsrelevant“ zaehlt.
+
+    Das sind Zugang, Geheimnisse und Rechte — die Felder, in denen ein Fehlgriff
+    fremden Zugang schafft. Reine Betriebsaktionen (Start, Stopp, Backup)
+    zaehlen nicht, auch wenn sie wichtig sind.
+    """
+    return audit_kategorie(action) in {"security", "role"}
+
+
+def _kategorie_bedingung(kategorie: str):
+    """SQL-Fassung von `audit_kategorie`, damit Filter und Anzeige gleich sind."""
+    if kategorie not in AUDIT_KATEGORIEN:
+        raise ValueError("Unbekannte Audit-Kategorie.")
+
+    def treffer(praefixe: tuple[str, ...], ausschluesse: tuple[str, ...]):
+        bedingung = or_(*[AuditLog.action.like(f"{praefix}%") for praefix in praefixe])
+        if ausschluesse:
+            bedingung = and_(
+                bedingung,
+                ~or_(*[AuditLog.action.like(f"{ausschluss}%") for ausschluss in ausschluesse]),
+            )
+        return bedingung
+
+    if kategorie == "system":
+        bekannt = [treffer(praefixe, ausschluesse) for _, praefixe, ausschluesse in _KATEGORIE_REGELN]
+        return ~or_(*bekannt)
+
+    for name, praefixe, ausschluesse in _KATEGORIE_REGELN:
+        if name == kategorie:
+            return treffer(praefixe, ausschluesse)
+    return _kategorie_bedingung("system")
+
+
+def _failed_bedingung():
+    """Was als gescheitert gilt — dieselbe Regel wie `audit_ergebnis` in SQL."""
+    return or_(
+        AuditLog.action.like("%.failed"),
+        AuditLog.action.like("%.fehlgeschlagen"),
+        AuditLog.details.like('%"error_code": "%'),
+        AuditLog.details.like('%"success": false%'),
+        AuditLog.details.like('%"status": "failed"%'),
+        AuditLog.details.like('%"status": "error"%'),
+        AuditLog.details.like('%"status": "fehlgeschlagen"%'),
+    )
+
+
+def _such_bedingungen(db: Session, search: str) -> list:
+    """Freitext ueber Aktion, Details, Vorgang, Benutzer- und Servernamen."""
+    like = f"%{search.strip()}%"
+    benutzer_ids = db.query(User.id).filter(User.username.ilike(like))
+    server_ids = db.query(cast(Server.id, String)).filter(Server.name.ilike(like))
+    return [
+        or_(
+            AuditLog.action.ilike(like),
+            AuditLog.details.ilike(like),
+            AuditLog.correlation_id.ilike(like),
+            AuditLog.target_id.ilike(like),
+            AuditLog.user_id.in_(benutzer_ids),
+            and_(AuditLog.target_type == "server", AuditLog.target_id.in_(server_ids)),
+        )
+    ]
+
+
+def suche_audit_logs(
     db: Session,
     *,
-    limit: int = 50,
+    limit: int = 25,
+    offset: int = 0,
     action: str | None = None,
     target_type: str | None = None,
     target_id: str | int | None = None,
-) -> list[AuditLog]:
-    """Listet die neuesten Audit-Eintraege mit optionalen Filtern."""
+    user_id: int | None = None,
+    search: str | None = None,
+    origin: str | None = None,
+    result: str | None = None,
+    kategorie: str | None = None,
+    tage: int | None = None,
+    jetzt: datetime | None = None,
+) -> tuple[list[AuditLog], int]:
+    """Filterbare Audit-Suche mit Gesamtzahl fuer die Seitenleiste.
+
+    `tage` ist ein Fenster ab jetzt; `limit`/`offset` blaettern darin. Die
+    Gesamtzahl kommt aus derselben Bedingung wie die Zeilen — sonst behauptet
+    die Oberflaeche eine andere Menge, als sie zeigt.
+    """
     limit = min(max(int(limit), 1), 200)
-    q = db.query(AuditLog).order_by(AuditLog.id.desc())
+    offset = max(int(offset), 0)
+    bedingungen: list = []
+
+    if tage is not None:
+        start = (jetzt or datetime.now(timezone.utc)) - timedelta(days=min(max(int(tage), 1), 365))
+        bedingungen.append(AuditLog.created_at >= start)
     if action:
-        q = q.filter(AuditLog.action == action.strip())
+        bedingungen.append(AuditLog.action == action.strip())
     if target_type:
-        q = q.filter(AuditLog.target_type == target_type.strip())
+        bedingungen.append(AuditLog.target_type == target_type.strip())
     if target_id is not None:
-        q = q.filter(AuditLog.target_id == str(target_id))
-    return q.limit(limit).all()
+        bedingungen.append(AuditLog.target_id == str(target_id))
+    if user_id is not None:
+        bedingungen.append(AuditLog.user_id == int(user_id))
+    if search and search.strip():
+        bedingungen.extend(_such_bedingungen(db, search))
+    if origin:
+        bedingungen.append(AuditLog.origin == origin.strip())
+    if kategorie:
+        bedingungen.append(_kategorie_bedingung(kategorie.strip()))
+    if result == "failed":
+        bedingungen.append(_failed_bedingung())
+    elif result == "success":
+        bedingungen.append(~_failed_bedingung())
+
+    basis = db.query(AuditLog).filter(*bedingungen)
+    gesamt = basis.count()
+    rows = (
+        basis.order_by(AuditLog.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return rows, int(gesamt)
+
+
+def audit_uebersicht(
+    db: Session,
+    *,
+    tage: int = 7,
+    jetzt: datetime | None = None,
+) -> dict[str, Any]:
+    """Kennzahlen fuer einen Zeitraum samt Vergleich zum Zeitraum davor."""
+    tage = min(max(int(tage), 1), 365)
+    ende = jetzt or datetime.now(timezone.utc)
+    start = ende - timedelta(days=tage)
+    vorher_start = start - timedelta(days=tage)
+
+    def zahlen(von: datetime, bis: datetime) -> dict[str, int]:
+        basis = db.query(AuditLog).filter(
+            AuditLog.created_at >= von,
+            AuditLog.created_at < bis,
+        )
+        return {
+            "total": int(basis.count()),
+            "users": int(
+                basis.with_entities(func.count(func.distinct(AuditLog.user_id))).scalar() or 0
+            ),
+            "security": int(
+                basis.filter(
+                    or_(_kategorie_bedingung("security"), _kategorie_bedingung("role"))
+                ).count()
+            ),
+            "failed": int(basis.filter(_failed_bedingung()).count()),
+        }
+
+    gruppen = (
+        db.query(AuditLog.action, func.count(AuditLog.id))
+        .filter(AuditLog.created_at >= start, AuditLog.created_at < ende)
+        .group_by(AuditLog.action)
+        .all()
+    )
+    nach_kategorie: dict[str, int] = {}
+    for aktion, anzahl in gruppen:
+        name = audit_kategorie(aktion)
+        nach_kategorie[name] = nach_kategorie.get(name, 0) + int(anzahl)
+    top_aktionen = sorted(gruppen, key=lambda paar: (-int(paar[1]), paar[0]))[:10]
+
+    return {
+        "range_days": tage,
+        "start": start.isoformat(),
+        "end": ende.isoformat(),
+        "current": zahlen(start, ende),
+        "previous": zahlen(vorher_start, start),
+        "by_category": [
+            {"category": name, "count": anzahl}
+            for name, anzahl in sorted(nach_kategorie.items(), key=lambda paar: (-paar[1], paar[0]))
+        ],
+        "top_actions": [
+            {"action": aktion, "category": audit_kategorie(aktion), "count": int(anzahl)}
+            for aktion, anzahl in top_aktionen
+        ],
+    }
+
+
+def _ziel_namen(db: Session, rows: list[AuditLog]) -> dict[tuple[str, str], str]:
+    """Loest Zielkennungen gesammelt auf — hoechstens eine Abfrage je Art."""
+    ids: dict[str, set[int]] = {}
+    for row in rows:
+        if not row.target_type or row.target_id is None:
+            continue
+        try:
+            zahl = int(str(row.target_id))
+        except (TypeError, ValueError):
+            continue
+        ids.setdefault(row.target_type, set()).add(zahl)
+
+    namen: dict[tuple[str, str], str] = {}
+    modelle = {
+        "server": Server,
+        "user": User,
+        "users": User,
+        "roles": Role,
+        "role": Role,
+        "team": Team,
+        "node": Node,
+        "nodes": Node,
+        "managed_node": Node,
+    }
+    for typ, kennungen in ids.items():
+        modell = modelle.get(typ)
+        if modell is None or not kennungen:
+            continue
+        # `User` traegt seinen Namen in `username`, alle anderen in `name`.
+        spalte = modell.username if modell is User else modell.name
+        for kennung, name in db.query(modell.id, spalte).filter(modell.id.in_(kennungen)).all():
+            if name:
+                namen[(typ, str(kennung))] = str(name)
+    return namen
+
+
+def audit_zeilen(db: Session, rows: list[AuditLog]) -> list[dict[str, Any]]:
+    """Anzeigefertige Zeilen: Name des Benutzers, Zielname, Gruppe, Ergebnis.
+
+    Die Details werden beim Anzeigen noch einmal durch dieselbe Redaktion
+    geschickt wie beim Schreiben. Ein Altbestand aus einer Fassung vor der
+    Redaktion soll nicht durch die neue Oberflaeche sichtbar werden.
+    """
+    benutzer_ids = {row.user_id for row in rows if row.user_id is not None}
+    benutzernamen = (
+        dict(db.query(User.id, User.username).filter(User.id.in_(benutzer_ids)).all())
+        if benutzer_ids
+        else {}
+    )
+    zielnamen = _ziel_namen(db, rows)
+
+    ergebnis: list[dict[str, Any]] = []
+    for row in rows:
+        typ = row.target_type
+        ziel = zielnamen.get((typ or "", str(row.target_id))) if typ and row.target_id is not None else None
+        ergebnis.append(
+            {
+                "id": row.id,
+                "user_id": row.user_id,
+                "username": benutzernamen.get(row.user_id) if row.user_id is not None else None,
+                "action": row.action,
+                "category": audit_kategorie(row.action),
+                "result": audit_ergebnis(row.action, row.details),
+                "target_type": row.target_type,
+                "target_id": row.target_id,
+                "target_label": ziel,
+                "origin": row.origin,
+                "correlation_id": row.correlation_id,
+                "details": sanitize_audit_details(row.details),
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+        )
+    return ergebnis

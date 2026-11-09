@@ -20,6 +20,11 @@ class AuditLog(Base):
             "target_id",
             "created_at",
         ),
+        # Die Uebersicht fragt nach einem Zeitfenster („letzte 7 Tage“) und
+        # gruppiert danach. Der Dedupe-Index beginnt mit `user_id` und hilft
+        # dabei nicht; ohne diesen Index waere jede Kennzahl ein Heap-Scan der
+        # unbegrenzt wachsenden Tabelle.
+        Index("ix_audit_logs_created_at", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

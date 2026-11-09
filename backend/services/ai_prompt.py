@@ -517,6 +517,24 @@ nennt oder gar nicht benennt. Passt kein Eintrag eindeutig, frage nach, statt \
 zu raten."""
 
 
+# Aus dem Betrieb: „der Server hat Probleme“ ist ohne das Protokoll eine halbe
+# Diagnose. Der Zustand sagt, **dass** etwas klemmt; das Audit sagt, wer zuletzt
+# etwas geaendert, gestartet oder geloescht hat. Die Werkzeuge stehen im
+# Katalog, der Satz hier sagt, wann sie dazugehoeren — sonst liest das Modell
+# nur den Serverzustand und behauptet eine Ursache.
+AUDIT = """\
+Audit-Protokoll: Wenn ein Server Probleme macht, ein Zugriff unklar ist oder \
+jemand wissen will, was zuletzt im Betrieb geschah, sieh auch ins Audit — nicht \
+nur auf den Server. `read_audit_summary` gibt die Lage der letzten Tage: Zahl \
+der Eintraege, aktive Benutzer, sicherheitsrelevante und fehlgeschlagene \
+Aktionen, Verteilung nach Kategorie. `search_audit_log` sucht den konkreten \
+Eintrag nach Aktion, Ziel, Benutzer, Zeitraum, Ergebnis oder freiem Text.
+Nenne Befunde mit Zeitpunkt, Aktion und Ziel. Ein Audit-Eintrag sagt, **dass** \
+etwas geschah, nicht warum; leite daraus keine Ursache ab, sondern pruefe sie \
+am Server. Fehlt dir das Recht, steht das Werkzeug nicht im Verzeichnis — \
+behaupte dann nicht, du haettest nachgesehen."""
+
+
 # Der zweite Satz stand hier jahrelang falsch — und er ist die
 # wahrscheinlichste Quelle der ueberfluessigen Rueckfragen, die der Betreiber
 # am 22.08.2026 gemeldet hat ("er fragt zu oft nach").
@@ -1553,6 +1571,7 @@ BLOECKE = (
     DATENBANKSERVER,
     DATENBANK_STUDIO,
     SERVERBEZUG,
+    AUDIT,
     WERKZEUGE,
     DOKUMENTATION,
     DATEIEN,
@@ -1604,6 +1623,7 @@ GEHIRN_BLOECKE = (
     PROAKTIV,
     AGENTIC_LOOP_SELF_HEALING,
     SERVERBEZUG,
+    AUDIT,
     WERKZEUGE,
     DOKUMENTATION,
     DATEIEN,
@@ -1830,6 +1850,7 @@ REALTIME_BLOECKE = (
     ERMESSEN,
     AGENTIC_LOOP_SELF_HEALING,
     SERVERBEZUG,
+    AUDIT,
     WERKZEUGE,
     DOKUMENTATION,
     WEBSUCHE,

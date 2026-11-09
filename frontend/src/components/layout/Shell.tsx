@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
@@ -12,6 +12,8 @@ import { AnrufEbene } from '@/components/calling/AnrufEbene'
 import { CrossDeviceCallBanner } from '@/components/calling/CrossDeviceCallBanner'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { OfflineBanner } from './OfflineBanner'
+import { TageszeitHintergrund } from './TageszeitHintergrund'
+import { headerHintergrundWaehlen } from '@/lib/tageszeit'
 import { api } from '@/api/client'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
@@ -106,6 +108,22 @@ export function Shell() {
    */
   const chatVollbild = isChatPage && chatIstOffen(location.search)
 
+  /*
+   * Dieselbe Tageszeit-Szene wie im Dashboard, aber für die Seiten, die keine
+   * eigene Bühne mitbringen. Dashboard, Server, Teams, Notizen, Kalender, KI,
+   * Messenger und der Dokumenteneditor haben ihren Hintergrund selbst; Hilfe
+   * und Datenschutz bleiben ruhig. Bis 09.11.2026 fehlte das Bild auf Nodes,
+   * Benutzern, Rollen, Audit, Einstellungen, Blueprints und den Panel-Seiten —
+   * dort begann die Seite auf nacktem Grund, während die Nachbarseite die
+   * Szene trug.
+   */
+  const istHilfeOderRecht = location.pathname === '/docs'
+    || location.pathname.startsWith('/docs/')
+    || location.pathname === '/privacy'
+  const zeigeSeitenhintergrund = !isFullHeightPage && !istHilfeOderRecht
+  const stunde = useMemo(() => new Date().getHours(), [])
+  const seitenMotiv = useMemo(() => headerHintergrundWaehlen(stunde), [stunde])
+
   return (
     // `overflow-x-clip` statt `overflow-x-hidden`: `hidden` auf einer Achse
     // lässt die andere zu `auto` rechnen und macht diese Wurzel damit zum
@@ -164,7 +182,15 @@ export function Shell() {
             Klebeelemente der Seiten (Reiterleiste, Inhaltsverzeichnisse)
             vergeblich ausgerichtet haben. Breite Inhalte bringen ihr eigenes
             `overflow-x-auto` mit. */}
-        <main className={`flex-1 relative flex flex-col min-h-0 ${isFullHeightPage ? `p-0 overflow-hidden ${chatVollbild ? '' : 'h-[calc(100dvh-3rem)] max-h-[calc(100dvh-3rem)] lg:h-[100dvh] lg:max-h-[100dvh]'}` : 'p-margin-mobile md:p-margin-desktop'}`}>
+        <main className={`isolate flex-1 relative flex flex-col min-h-0 ${isFullHeightPage ? `p-0 overflow-hidden ${chatVollbild ? '' : 'h-[calc(100dvh-3rem)] max-h-[calc(100dvh-3rem)] lg:h-[100dvh] lg:max-h-[100dvh]'}` : 'p-margin-mobile md:p-margin-desktop'}`}>
+          {zeigeSeitenhintergrund && (
+            <TageszeitHintergrund
+              motiv={seitenMotiv}
+              hoehe="h-[420px] sm:h-[520px] lg:h-[600px]"
+              deckkraft="opacity-45"
+              ebene="-z-10"
+            />
+          )}
           <div className={`relative z-10 flex-1 w-full flex flex-col min-h-0 ${isFullHeightPage ? 'h-full overflow-hidden' : ''}`}>
             <ErrorBoundary key={location.pathname} compact>
               <Outlet />

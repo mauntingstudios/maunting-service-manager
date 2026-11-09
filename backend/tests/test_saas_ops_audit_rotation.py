@@ -377,8 +377,9 @@ def test_audit_list_allowed_for_owner(client: TestClient, owner_cookies: dict, d
     r = client.get("/api/admin/audit-logs?limit=10", cookies=owner_cookies)
     assert r.status_code == 200
     data = r.json()
-    assert isinstance(data, list)
-    assert any(item["action"] == "postgres.admin.rotate" for item in data)
+    assert isinstance(data, dict)
+    assert data["total"] >= 1
+    assert any(item["action"] == "postgres.admin.rotate" for item in data["items"])
     # Keine Secrets in Response
     blob = r.text.lower()
     assert "password=" not in blob
