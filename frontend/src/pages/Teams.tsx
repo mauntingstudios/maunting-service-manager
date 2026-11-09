@@ -503,7 +503,7 @@ export function Teams() {
   const aktiverReiter: TeamReiter = teamReiter.some((row) => row.id === reiter) ? reiter : 'members'
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden text-on-surface">
+    <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden bg-surface text-on-surface">
       {view === 'overview' ? (
         <TeamsOverview
           teams={teams}
@@ -523,14 +523,13 @@ export function Teams() {
       ) : (
         <>
       {/* ── Executive Workspace Header & Centered Hero ─────────────────── */}
-      <header className="relative isolate shrink-0 overflow-hidden border-b border-outline-variant/30">
+      <header className="relative isolate shrink-0 overflow-hidden border-b border-outline-variant/30 bg-surface">
         {/* Tageszeit-Hintergrund, der atmosphärisch hinter Profilbild und Buttons liegt und nach unten verwaschen ausläuft */}
         <TageszeitHintergrund
           motiv={headerMotiv}
-          hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+          hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
           deckkraft="opacity-55"
           ebene="-z-10"
-          verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
         />
 
         {/* Frei schwebende Navigations- & Aktionsleiste ohne trennenden Glas-Balken */}

@@ -68,27 +68,27 @@ function MitKopplung({ id, children }: { id: PanelId; children: ReactNode }) {
 function Inhalt({ id, pfad, voll }: { id: PanelId; pfad: string; voll: boolean }) {
   switch (id) {
     case 'ai':
-      return <MitKopplung id={id}><Ai /></MitKopplung>
+      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface"><Ai /></div></MitKopplung>
     case 'chat':
       return (
         <MitKopplung id={id}>
           {pfad.startsWith('/user/') ? (
-            <div className="h-full overflow-y-auto"><Benutzerprofil /></div>
+            <div className="h-full overflow-y-auto bg-surface"><Benutzerprofil /></div>
           ) : (
             <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface"><Messenger /></div>
           )}
         </MitKopplung>
       )
     case 'notizen':
-      return <MitKopplung id={id}><div className="h-full overflow-y-auto px-3 pt-3 pb-8"><Notes /></div></MitKopplung>
+      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface"><Notes /></div></MitKopplung>
     case 'dokumente':
-      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden"><DocsEmbedded /></div></MitKopplung>
+      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface"><DocsEmbedded /></div></MitKopplung>
     case 'kalender':
-      return <MitKopplung id={id}><div className="h-full overflow-y-auto px-3 pt-3 pb-8"><Calendar /></div></MitKopplung>
+      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface"><Calendar /></div></MitKopplung>
     case 'tresor':
-      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden"><VaultView /></div></MitKopplung>
+      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface"><VaultView /></div></MitKopplung>
     case 'teams':
-      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden"><Teams /></div></MitKopplung>
+      return <MitKopplung id={id}><div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface"><Teams /></div></MitKopplung>
     case 'lesezeichen':
       return <LesezeichenPanel />
     case 'verlauf':
@@ -135,11 +135,24 @@ function useBreiteZiehen(vorzeichen: 1 | -1) {
   }
 }
 
+const istMsmModul = (id?: PanelId | null): boolean =>
+  id === 'ai' ||
+  id === 'chat' ||
+  id === 'notizen' ||
+  id === 'dokumente' ||
+  id === 'kalender' ||
+  id === 'tresor' ||
+  id === 'teams'
+
 /** Kopf mit Titel und Schließen; darunter der Inhalt. */
-function Kopf({ titel, schliessen }: { titel: string; schliessen: () => void }) {
+function Kopf({ titel, schliessen, msm }: { titel: string; schliessen: () => void; msm?: boolean }) {
   const { t } = useTranslation()
   return (
-    <div className="flex h-10 shrink-0 items-center justify-between px-3 [@media(pointer:coarse)]:h-14">
+    <div
+      className={`flex h-10 shrink-0 items-center justify-between px-3 [@media(pointer:coarse)]:h-14 ${
+        msm ? 'border-b border-outline-variant/20 bg-surface/75 backdrop-blur-md' : ''
+      }`}
+    >
       <h2 className="text-title-sm text-on-surface">{titel}</h2>
       <Kurzinfo text={t('browser.panel.schliessen')} seite="ende">
         <button
@@ -161,15 +174,16 @@ function Vollbild({ id, titel, pfad }: { id: PanelId; titel: string; pfad: strin
   const [modalContainer, setModalContainer] = useState<HTMLElement | null>(null)
   useZurueckSchliesst(true, () => navigate('/'))
   const extern = id === 'whatsapp' || id === 'discord' || id === 'telegram' || id === 'instagram'
+  const msm = istMsmModul(id)
   return (
     <aside
       role="dialog"
       aria-modal="true"
       aria-label={titel}
       data-msm-in-panel={extern ? true : undefined}
-      className="fixed inset-0 z-40 flex flex-col bg-surface-container-low pb-[var(--msm-unten-sicher)] pl-[var(--msm-links-sicher)] pr-[var(--msm-rechts-sicher)] pt-[var(--msm-oben-sicher)]"
+      className={`fixed inset-0 z-40 flex flex-col ${msm ? 'bg-surface' : 'bg-surface-container-low'} pb-[var(--msm-unten-sicher)] pl-[var(--msm-links-sicher)] pr-[var(--msm-rechts-sicher)] pt-[var(--msm-oben-sicher)]`}
     >
-      <Kopf titel={titel} schliessen={() => navigate('/')} />
+      <Kopf titel={titel} schliessen={() => navigate('/')} msm={msm} />
       <div ref={setModalContainer} className="msb-bereich relative min-h-0 flex-1 overflow-hidden">
         <ModalContainerContext.Provider value={modalContainer}>
           <Suspense fallback={<Laedt />}>
@@ -199,11 +213,13 @@ export function Panel({ seite }: { seite: 'links' | 'rechts' | 'voll' }) {
   const titel = eintrag ? t(eintrag.name) : ''
   if (seite === 'voll') return <Vollbild id={id} titel={titel} pfad={pathname} />
 
+  const msm = istMsmModul(id)
+
   return (
     <aside
       aria-label={titel}
       style={{ width: `max(${PANEL_MIN}px, min(${breite}px, 100vw - ${PLATZ_FUER_SEITE}px))` }}
-      className="relative flex shrink-0 flex-col bg-surface-container-low"
+      className={`relative flex shrink-0 flex-col ${msm ? 'bg-surface' : 'bg-surface-container-low'}`}
     >
       {/* Ganz im Panel: daneben liegt die Seite, ein Fenster über der Oberfläche. */}
       <div
@@ -218,7 +234,7 @@ export function Panel({ seite }: { seite: 'links' | 'rechts' | 'voll' }) {
       >
         <span aria-hidden="true" className="h-10 w-1 rounded-full bg-outline transition-colors group-hover/griff:bg-primary group-focus-visible/griff:bg-primary group-active/griff:bg-primary" />
       </div>
-      <Kopf titel={titel} schliessen={() => navigate('/')} />
+      <Kopf titel={titel} schliessen={() => navigate('/')} msm={msm} />
       <div ref={setModalContainer} className="msb-bereich relative min-h-0 flex-1 overflow-hidden">
         <ModalContainerContext.Provider value={modalContainer}>
           <Suspense fallback={<Laedt />}>

@@ -1884,7 +1884,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
   // ── 3. HAUPTANSICHT ──
   return (
-    <div className="flex flex-col md:flex-row h-full min-h-0 text-on-surface overflow-hidden">
+    <div className="flex flex-col md:flex-row h-full min-h-0 text-on-surface overflow-hidden bg-surface">
       <VaultSidebar
         ansicht={ansicht}
         onAnsicht={(naechste) => {

@@ -123,14 +123,13 @@ export function DocsMain({
           </div>
         )}
         {!fehler && !uid && (
-          <div className="relative isolate flex flex-1 flex-col overflow-y-auto">
+          <div className="relative isolate flex flex-1 flex-col overflow-y-auto bg-surface">
             {/* Weicher atmosphärischer Tageszeit-Hintergrund für Docs */}
             <TageszeitHintergrund
               motiv={headerMotiv}
-              hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+              hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
               deckkraft="opacity-55"
               ebene="-z-10"
-              verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
             />
 
             <div className="relative z-10 flex flex-1 flex-col p-4 sm:p-6 space-y-6">

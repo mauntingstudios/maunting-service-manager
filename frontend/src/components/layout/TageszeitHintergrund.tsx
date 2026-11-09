@@ -13,7 +13,7 @@ export interface TageszeitHintergrundProps {
 }
 
 const AUSLAUF =
-  'linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.18) 75%, transparent 100%)'
+  'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 30%, rgba(0,0,0,0.45) 60%, rgba(0,0,0,0.12) 85%, transparent 100%)'
 
 /**
  * Die drei Ebenen einer Tageszeit-Szene: Bild mit weichem Auslauf, farbige
@@ -22,9 +22,9 @@ const AUSLAUF =
  */
 export function TageszeitHintergrund({
   motiv,
-  hoehe = 'h-[500px] sm:h-[560px] lg:h-[620px]',
+  hoehe = 'h-[520px] sm:h-[580px] lg:h-[640px]',
   deckkraft = 'opacity-55',
-  verlauf = 'bg-gradient-to-b from-transparent via-surface/30 60% to-surface',
+  verlauf = 'bg-gradient-to-b from-transparent via-surface/20 40%, via-surface/60 75%, to-surface 100%',
   ebene = '',
 }: TageszeitHintergrundProps) {
   return (

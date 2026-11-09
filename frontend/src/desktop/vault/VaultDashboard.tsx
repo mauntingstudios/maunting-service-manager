@@ -405,10 +405,10 @@ export function VaultDashboard({
   )
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto bg-surface">
       {/* Atmosphärischer Header-Bereich mit tageszeitabhängigem Motiv & weichem Übergang */}
       <div className="relative overflow-hidden">
-        <TageszeitHintergrund motiv={headerMotiv} hoehe="h-80" />
+        <TageszeitHintergrund motiv={headerMotiv} hoehe="h-[520px] sm:h-[580px] lg:h-[640px]" />
 
         <div className="relative mx-auto w-full max-w-6xl space-y-6 px-4 py-5 sm:px-6">
           {/* Obere Such- & Statusleiste */}

@@ -58,7 +58,7 @@ export function SingraScenicBackground({ visible }: { visible: boolean }) {
         alt=""
         className="h-full w-full object-cover object-center scale-[1.01] transition-transform duration-700"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-[#0b0f0d]/55 via-[#0b0f0d]/65 to-[#0b0f0d]/92" />
+      <div className="absolute inset-0 bg-gradient-to-b from-surface/50 via-surface/70 to-surface" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(251,191,36,0.08),transparent_65%)]" />
     </div>
   )

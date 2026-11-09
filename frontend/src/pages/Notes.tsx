@@ -502,14 +502,13 @@ export function Notes() {
   }
 
   return (
-    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
+    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto bg-surface text-on-surface scrollbar-thin">
       {/* Weicher atmosphärischer Tageszeit-Hintergrund für Notizen */}
       <TageszeitHintergrund
         motiv={headerMotiv}
-        hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+        hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
         deckkraft="opacity-55"
         ebene="-z-10"
-        verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
       />
 
       <div className="relative z-10 w-full max-w-7xl 2xl:max-w-[1600px] mx-auto px-3.5 py-4 sm:px-6 sm:py-6 lg:px-8 space-y-5 sm:space-y-6 pb-16">

@@ -88,14 +88,13 @@ export function DashboardBereich() {
   })
 
   return (
-    <div className="relative isolate flex h-full min-h-0 w-full flex-col overflow-hidden">
+    <div className="relative isolate flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface">
       {/* Weicher atmosphärischer Tageszeit-Hintergrund geht direkt hinter die Menü-Punkte */}
       <TageszeitHintergrund
         motiv={headerMotiv}
-        hoehe="h-[480px] sm:h-[540px] lg:h-[600px]"
+        hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
         deckkraft="opacity-55"
         ebene="-z-10"
-        verlauf="bg-gradient-to-b from-transparent via-surface/30 60% to-surface"
       />
 
       {/* Freischwebende Menü-Reiter (Schwebe-Buttons) direkt über dem Hintergrund */}
