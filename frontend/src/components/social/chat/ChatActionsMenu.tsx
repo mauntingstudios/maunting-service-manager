@@ -12,6 +12,7 @@ import {
   Timer,
   Trash2,
   UserRound,
+  Video,
 } from 'lucide-react'
 import { Blatteintrag } from '@maunting/ui'
 
@@ -118,6 +119,20 @@ export function ChatActionsMenu({
       <div className="my-1 border-t border-outline-variant/20" />
 
       {/* 2. Bereich: Medien & Anrufe */}
+      {kontakt?.istFreund && (
+        <Blatteintrag
+          icon={<Video className="w-4 h-4 text-on-surface-variant" />}
+          label={t('messenger.videoCall')}
+          onClick={tu(aktion.onVideoanruf)}
+        />
+      )}
+      {aktion.onSprachanruf && (
+        <Blatteintrag
+          icon={<Phone className="w-4 h-4 text-on-surface-variant" />}
+          label={t('messenger.startVoiceCall')}
+          onClick={tu(aktion.onSprachanruf)}
+        />
+      )}
       {kontakt?.istFreund && aktion.onAugenblick && (
         <Blatteintrag
           icon={<Camera className="w-4 h-4 text-on-surface-variant" />}

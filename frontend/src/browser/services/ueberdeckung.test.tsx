@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react'
+import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const offen: { befehl: string; args: unknown; fertig: (wert?: unknown) => void }[] = []
@@ -32,6 +32,7 @@ describe('Sichtbarkeit der Tabs', () => {
     useStandbild.setState({ bilder: {} })
   })
   afterEach(() => {
+    cleanup()
     document.body.innerHTML = ''
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
   })
@@ -120,6 +121,14 @@ describe('Sichtbarkeit der Tabs', () => {
     await vi.waitFor(
       () =>
         expect(Object.keys(useStandbild.getState().bilder).sort()).toEqual(['tab-a', 'tab-b']),
+      { timeout: 5000 },
+    )
+
+    await vi.waitFor(
+      () =>
+        expect(
+          offen.find((o) => o.befehl === 'tabs_verdecken' && (o.args as { verdeckt?: boolean })?.verdeckt === true),
+        ).toBeDefined(),
       { timeout: 5000 },
     )
 

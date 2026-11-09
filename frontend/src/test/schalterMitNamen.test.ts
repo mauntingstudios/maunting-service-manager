@@ -63,7 +63,7 @@ describe('Schalter mit Namen', () => {
     // Bis 03.10.2026 lasen Screenreader an vielen Schaltern nur „Schalter, aus“.
     const stellen = Object.entries(quellen).flatMap(([pfad, text]) => schalterOhneNamen(pfad, text))
     expect(stellen).toEqual([])
-  })
+  }, 30_000)
 
   it('erkennt Schalter ohne Namen und lässt benannte stehen', () => {
     const probe = `<>

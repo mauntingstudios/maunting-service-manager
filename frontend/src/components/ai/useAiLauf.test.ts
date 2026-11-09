@@ -340,10 +340,9 @@ describe('useAiLauf', () => {
     expect(antworten(result.current.entries).map((m) => m.status)).toEqual(['failed'])
   })
 
-  it('bricht beim Verlassen der Seite still ab', async () => {
-    // Weggehen ist kein Fehlschlag. Der Lauf arbeitet auf dem Server weiter,
-    // abgebrochen wird allein die Anzeige — ein Toast wäre hier eine
-    // Falschmeldung über eine Antwort, die es noch gibt.
+  it('läuft beim Verlassen der Seite im Hintergrund weiter (kein stiller Abbruch)', async () => {
+    // Verlässt der Nutzer den Chat oder wechselt die Ansicht, wird die Antwort
+    // im Hintergrund weiter generiert. Der Strom wird beim Unmount nicht abgebrochen.
     const signale: (AbortSignal | undefined)[] = []
     vi.mocked(streamAiMessage).mockImplementation((_payload, _onEvent, signal) => (
       new Promise((_erfuellen, verwerfen) => {
@@ -363,10 +362,8 @@ describe('useAiLauf', () => {
     unmount()
     await act(async () => {})
 
-    // Erst der Beleg, dass überhaupt abgebrochen wurde — sonst bewiese die
-    // leere Toastliste darunter nur, dass nie ein Strom lief.
     expect(signale).toHaveLength(1)
-    expect(signale[0]?.aborted).toBe(true)
+    expect(signale[0]?.aborted).toBe(false)
     expect(useToastStore.getState().toasts).toEqual([])
   })
 

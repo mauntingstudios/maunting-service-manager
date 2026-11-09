@@ -89,19 +89,19 @@ describe('Symbole der Kacheln', () => {
     useEinstellungenStore.setState({
       schnellzugriffe: [
         { url: 'https://de.wikipedia.org/wiki/Hauptseite', titel: 'Wikipedia' },
-        { url: 'https://codeberg.org/explore', titel: 'Codeberg' },
+        { url: 'https://currywurst.test/explore', titel: 'Curry' },
       ],
     })
     nativ.symbole['https://de.wikipedia.org/wiki/Hauptseite'] = 'data:image/png;base64,iVBORw0KGgo='
     zeigen(<Schnellzugriffe />)
     const wiki = screen.getByRole('button', { name: 'Wikipedia' })
     await vi.waitFor(() => expect(wiki.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo='))
-    const codeberg = screen.getByRole('button', { name: 'Codeberg' })
-    expect(codeberg.querySelector('img')).toBeNull()
-    expect(codeberg.querySelector('span[aria-hidden="true"]')?.textContent).toBe('c')
+    const curry = screen.getByRole('button', { name: 'Curry' })
+    expect(curry.querySelector('img')).toBeNull()
+    expect(curry.querySelector('span[aria-hidden="true"]')?.textContent).toBe('c')
     // Nur die Adresse der Kachel geht an Rust; geladen wird in der Oberfläche nichts.
     expect(nativ.gerufen.filter(([b]) => b === 'kachel_symbol').map(([, a]) => (a as { url: string }).url)).toEqual(
-      expect.arrayContaining(['https://de.wikipedia.org/wiki/Hauptseite', 'https://codeberg.org/explore']),
+      expect.arrayContaining(['https://de.wikipedia.org/wiki/Hauptseite', 'https://currywurst.test/explore']),
     )
   })
 

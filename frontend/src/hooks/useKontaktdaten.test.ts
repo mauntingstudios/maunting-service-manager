@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   getGroups: vi.fn(),
   getStories: vi.fn(),
   getPublicProfiles: vi.fn(),
+  getDirectChats: vi.fn(),
   teamsList: vi.fn(),
   teamsGet: vi.fn(),
   gespraechsListe: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('@/api/social', () => ({
   getGroups: api.getGroups,
   getStories: api.getStories,
   getPublicProfiles: api.getPublicProfiles,
+  getDirectChats: api.getDirectChats,
 }))
 vi.mock('@/api/teams', () => ({ teamsApi: { list: api.teamsList, get: api.teamsGet } }))
 vi.mock('@/services/gespraechsListe', () => ({
@@ -45,6 +47,7 @@ beforeEach(() => {
   api.getGroups.mockReset().mockResolvedValue([{ id: 3, name: null }])
   api.getStories.mockReset().mockResolvedValue([])
   api.getPublicProfiles.mockReset().mockResolvedValue([])
+  api.getDirectChats.mockReset().mockResolvedValue([])
   api.teamsList.mockReset().mockResolvedValue([{ id: 9, name: 'Ops' }])
   api.teamsGet.mockReset().mockResolvedValue({ members: [{ user_id: ICH }, { user_id: 2 }] })
   api.gespraechsListe.mockReset().mockResolvedValue([{ other_user_id: 1 }])

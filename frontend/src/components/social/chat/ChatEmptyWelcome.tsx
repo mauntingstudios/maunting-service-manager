@@ -1,4 +1,5 @@
 import { Sparkles } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Avatar } from '@/components/app/Avatar'
 
 interface ChatEmptyWelcomeProps {
@@ -14,6 +15,7 @@ export function ChatEmptyWelcome({
   istGruppe = false,
   onSchnellNachricht,
 }: ChatEmptyWelcomeProps) {
+  const { t } = useTranslation()
   const vorschlaege = [
     'Hallo! 👋',
     'Wie geht es dir? 😊',
@@ -39,7 +41,7 @@ export function ChatEmptyWelcome({
           <p className="font-body text-xs text-on-surface-variant/80 max-w-xs mx-auto leading-relaxed">
             {istGruppe
               ? 'Noch keine Nachrichten in dieser Gruppe. Schreib die erste Nachricht und starte den Austausch!'
-              : 'Noch keine Nachrichten vorhanden. Sag Hallo und beginne euer Gespräch!'}
+              : t('messenger.noMessagesYet')}
           </p>
         </div>
 

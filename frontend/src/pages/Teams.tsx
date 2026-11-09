@@ -558,7 +558,6 @@ export function Teams() {
                     disabled={busy}
                     onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
                     aria-label={t('teams.editTeam', 'Team bearbeiten')}
-                    title={t('teams.editTeam', 'Team bearbeiten')}
                     className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                   >
                     <Pencil className="h-4 w-4" aria-hidden="true" />
@@ -570,7 +569,6 @@ export function Teams() {
                     disabled={busy}
                     onClick={() => void removeTeam(team)}
                     aria-label={t('teams.remove')}
-                    title={t('teams.remove')}
                     className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -584,7 +582,6 @@ export function Teams() {
                   disabled={busy}
                   onClick={() => void leaveTeam(team)}
                   aria-label={t('teams.leave')}
-                  title={t('teams.leave')}
                   className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                 >
                   <LogOut className="h-4 w-4" aria-hidden="true" />
@@ -666,7 +663,6 @@ export function Teams() {
                   type="button"
                   onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
                   aria-label={t('teams.editTeam', 'Team bearbeiten')}
-                  title={t('teams.editTeam', 'Team bearbeiten')}
                   className="grid h-8 w-8 place-items-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high/60 transition-colors"
                 >
                   <Pencil className="h-4 w-4" aria-hidden="true" />

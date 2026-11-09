@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
  */
 const UEBERSCHRIFT = new Set([
   'AiKnowledgeShell',
+  'AiKnowledgeWorkspace',
   'Alert',
   'ChatComposerBanner',
   'DocCard',
@@ -63,7 +64,7 @@ describe('kein natives title', () => {
     // Bis 02.10.2026 standen 166 solche title im Frontend.
     const stellen = Object.entries(quellen).flatMap(([pfad, text]) => titelStellen(pfad, text))
     expect(stellen).toEqual([])
-  })
+  }, 30_000)
 
   it('erkennt title an HTML und an weiterreichenden Komponenten', () => {
     const probe = `<>

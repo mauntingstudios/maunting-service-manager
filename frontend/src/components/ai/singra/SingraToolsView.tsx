@@ -495,7 +495,7 @@ export function SingraToolsView({
           </button>
         </div>
 
-        <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+        <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto msm-ohne-rollbalken pb-1">
           <button
             type="button"
             onClick={() => setSubTab('mcp')}

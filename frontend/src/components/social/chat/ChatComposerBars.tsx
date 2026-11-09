@@ -67,7 +67,7 @@ export function EditingBanner({ text, onAbbrechen }: { text: string; onAbbrechen
       text={text}
       onCancel={onAbbrechen}
       cancelLabel={t('messenger.cancelEdit')}
-      className="mx-auto max-w-3xl xl:max-w-4xl rounded-t-2xl border border-b-0 border-outline-variant/30"
+      className="relative mx-auto max-w-3xl xl:max-w-4xl rounded-t-2xl border border-b-0 border-outline-variant/30"
     />
   )
 }

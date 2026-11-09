@@ -111,7 +111,7 @@ export function SingraHistoryView({
             />
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1.5 overflow-x-auto msm-ohne-rollbalken">
             <button
               type="button"
               onClick={() => setFilter('all')}

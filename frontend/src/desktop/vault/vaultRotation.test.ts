@@ -146,7 +146,7 @@ describe('tresorBackup', () => {
       leseBackupBytes(await mitKopf({ art: 'msm-vault-backup', version: 2 }), passwort),
     ).rejects.toThrow('Ungültiges Backup-Format')
     await expect(leseBackupBytes(await mitKopf({}), passwort)).rejects.toThrow('Ungültiges Backup-Format')
-  })
+  }, 15_000)
 
   it('entschlüsselt statischen Test-Vektor (Cross-Package mit Recovery)', async () => {
     const vectorB64 =

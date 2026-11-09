@@ -1859,7 +1859,7 @@ export function SingraProjectsView({
               })}
             </div>
 
-            <div className="hidden sm:flex items-center gap-1.5 border-b border-outline-variant/20 bg-surface-container-low/15 px-4 py-1.5 overflow-x-auto no-scrollbar shrink-0">
+            <div className="hidden sm:flex items-center gap-1.5 border-b border-outline-variant/20 bg-surface-container-low/15 px-4 py-1.5 overflow-x-auto msm-ohne-rollbalken shrink-0">
               {(
                 [
                   { id: 'chats', label: 'Unterhaltungen', icon: MessageSquare },
@@ -2526,7 +2526,7 @@ export function SingraProjectsView({
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="font-mono text-primary hover:underline inline-flex items-center gap-1"
-                                    title="Live-Server in neuem Tab öffnen"
+                                    aria-label="Live-Server in neuem Tab öffnen"
                                   >
                                     <span>{resolvedDevWebUrl || devStatus.dev_web_url}</span>
                                     <ExternalLink className="h-3 w-3" />
@@ -2561,7 +2561,7 @@ export function SingraProjectsView({
                                           : 'text-on-surface-variant hover:text-on-surface'
                                       }`}
                                       onClick={() => setDevPreviewMode('live')}
-                                      title={resolvedDevWebUrl || devStatus?.dev_web_url || undefined}
+                                      aria-label={resolvedDevWebUrl || devStatus?.dev_web_url || 'Live-Server'}
                                     >
                                       Live-Server
                                     </button>

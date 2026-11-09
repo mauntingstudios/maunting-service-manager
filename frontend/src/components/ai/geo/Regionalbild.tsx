@@ -69,17 +69,20 @@ export function useBildquelle(pfad: string | null): Bildquelle {
     let aktiv = true
     let blobUrl: string | null = null
     const abbruch = new AbortController()
-    void apiStream(pfad, { method: 'GET', headers: { Accept: 'image/*' }, signal: abbruch.signal })
-      .then(async (antwort) => {
-        if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`)
-        const inhalt = await antwort.blob()
-        if (!aktiv) return
-        blobUrl = URL.createObjectURL(inhalt)
-        setBlob({ pfad, quelle: blobUrl, fehlgeschlagen: false })
-      })
-      .catch(() => {
-        if (aktiv) setBlob({ pfad, quelle: null, fehlgeschlagen: true })
-      })
+    const stream = apiStream(pfad, { method: 'GET', headers: { Accept: 'image/*' }, signal: abbruch.signal })
+    if (stream && typeof stream.then === 'function') {
+      void stream
+        .then(async (antwort) => {
+          if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`)
+          const inhalt = await antwort.blob()
+          if (!aktiv) return
+          blobUrl = URL.createObjectURL(inhalt)
+          setBlob({ pfad, quelle: blobUrl, fehlgeschlagen: false })
+        })
+        .catch(() => {
+          if (aktiv) setBlob({ pfad, quelle: null, fehlgeschlagen: true })
+        })
+    }
     return () => {
       aktiv = false
       abbruch.abort()

@@ -349,15 +349,16 @@ def _build_minimal_repo(tmp_path, *, with_subpath=False):
                    check=True, capture_output=True)
     subprocess.run(["git", "-C", str(src), "config", "user.email", "t@t"], check=True)
     subprocess.run(["git", "-C", str(src), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(src), "config", "commit.gpgsign", "false"], check=True)
     (src / "README.md").write_text("v1\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(src), "add", "README.md"], check=True)
     subprocess.run(["git", "-C", str(src), "commit", "-m", "v1"], check=True,
                    capture_output=True)
-    subprocess.run(["git", "-C", str(src), "remote", "add", "origin", str(upstream)],
+    subprocess.run(["git", "-C", str(src), "remote", "add", "origin", upstream.resolve().as_uri()],
                    check=True)
     subprocess.run(["git", "-C", str(src), "push", "origin", "main"], check=True,
                    capture_output=True)
-    subprocess.run(["git", "clone", "--depth", "1", str(upstream), str(clone)],
+    subprocess.run(["git", "clone", "--depth", "1", upstream.resolve().as_uri(), str(clone)],
                    check=True, capture_output=True)
     return upstream, clone
 
@@ -400,7 +401,7 @@ def test_pull_updates_working_tree_despite_dirty_workdir(tmp_path, monkeypatch):
     # ohne Netz funktioniert. Wir mocken nur die Clone-URL-Berechnung.
     monkeypatch.setattr(
         "blueprints.github_source._clone_url",
-        lambda repo, token=None: str(upstream),
+        lambda repo, token=None: upstream.resolve().as_uri(),
     )
 
     bp = load_blueprint_dict({
@@ -459,7 +460,7 @@ def test_pull_overwrites_uncommitted_setup_artifacts(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "blueprints.github_source._clone_url",
-        lambda repo, token=None: str(upstream),
+        lambda repo, token=None: upstream.resolve().as_uri(),
     )
 
     bp = load_blueprint_dict({
@@ -523,7 +524,7 @@ def test_pull_tolerates_local_branch_already_exists_race(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "blueprints.github_source._clone_url",
-        lambda repo, token=None: str(upstream),
+        lambda repo, token=None: upstream.resolve().as_uri(),
     )
 
     bp = load_blueprint_dict({
@@ -600,7 +601,7 @@ def test_pull_switches_branch_and_updates_working_tree(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "blueprints.github_source._clone_url",
-        lambda repo, token=None: str(upstream),
+        lambda repo, token=None: upstream.resolve().as_uri(),
     )
 
     bp = load_blueprint_dict({

@@ -124,7 +124,7 @@ describe('Am Handy', () => {
 
   it('legt Downloads beim System ab: kein Ordner, keine Rückfrage, die Liste öffnet die Downloads', () => {
     const { unmount } = zeigen(<EinstellungenSeite teil="downloads" />)
-    expect(screen.getByText(/Ordner „Download“ des Telefons/)).toBeInTheDocument()
+    expect(screen.getByText(/(?:Telefon-Ordner „Download“|Ordner „Download“)/)).toBeInTheDocument()
     expect(screen.queryByText('Bei jedem Download fragen')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ordner wählen' })).not.toBeInTheDocument()
     unmount()

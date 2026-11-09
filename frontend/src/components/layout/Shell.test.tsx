@@ -38,10 +38,13 @@ describe('Shell', () => {
     expect(screen.getByTestId('queue-background')).toBeInTheDocument()
   })
 
-  const renderShell = () => render(
-    <MemoryRouter>
+  const renderShell = (path = '/audit') => render(
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/" element={<Shell />}><Route index element={<div>Dashboard</div>} /></Route>
+        <Route path="/" element={<Shell />}>
+          <Route index element={<div>Dashboard</div>} />
+          <Route path="audit" element={<div>Audit</div>} />
+        </Route>
       </Routes>
     </MemoryRouter>,
   )
@@ -58,9 +61,11 @@ describe('Shell', () => {
   it('does not render Powered by DIS while the privacy notice is open', () => {
     render(
       <PrivacyNoticeVisibilityContext.Provider value>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={['/audit']}>
           <Routes>
-            <Route path="/" element={<Shell />}><Route index element={<div>Dashboard</div>} /></Route>
+            <Route path="/" element={<Shell />}>
+              <Route path="audit" element={<div>Audit</div>} />
+            </Route>
           </Routes>
         </MemoryRouter>
       </PrivacyNoticeVisibilityContext.Provider>,

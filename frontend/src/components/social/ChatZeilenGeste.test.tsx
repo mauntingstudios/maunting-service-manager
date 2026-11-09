@@ -91,6 +91,8 @@ describe('ChatZeilenGeste', () => {
   it('setzt kein natives title; der Name steht als Kurzinfo am Knopf', () => {
     zeichne()
     expect(document.querySelectorAll('[title]')).toHaveLength(0)
+    const knopf = screen.getByRole('button', { name: i18n.t('messenger.chatActions') })
+    fireEvent.pointerEnter(knopf.parentElement!, { pointerType: 'mouse' })
     expect(document.querySelector(`[data-kurzinfo="${i18n.t('messenger.chatActions')}"]`)).not.toBeNull()
   })
 })

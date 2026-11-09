@@ -47,7 +47,6 @@ android {
             }
         }
         getByName("release") {
-            signingConfig = signingConfigs.getByName("debug")
             // Kommt unsigniert heraus. Signiert wird nur in der Release-Pipeline
             // (scripts/android-apk-signieren.sh), der Schluessel liegt nie im Repo.
             isMinifyEnabled = false

@@ -273,7 +273,7 @@ export function GuardianAnsicht() {
 
       {/* Server Filterleiste */}
       {servers.length > 0 && (
-        <div className="flex items-center gap-1.5 border-b border-outline-variant/20 bg-surface-container-low/25 px-4 py-2 overflow-x-auto no-scrollbar shrink-0">
+        <div className="flex items-center gap-1.5 border-b border-outline-variant/20 bg-surface-container-low/25 px-4 py-2 overflow-x-auto msm-ohne-rollbalken shrink-0">
           <span className="text-xs font-medium text-on-surface-variant mr-1 shrink-0">
             Server:
           </span>

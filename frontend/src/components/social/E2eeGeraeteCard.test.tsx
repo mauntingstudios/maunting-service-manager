@@ -377,7 +377,7 @@ describe('E2eeGeraeteCard', () => {
 
     expect(await screen.findByText('Ohne gültige Freigabe')).toBeInTheDocument()
     expect(
-      screen.getByText(/keines deiner Geräte hat die Freigabe unterschrieben/),
+      screen.getByText(i18n.t('profile.e2eeDevices.notCoveredHelp')),
     ).toBeInTheDocument()
   })
 
@@ -505,7 +505,7 @@ describe('E2eeGeraeteCard', () => {
     render(<E2eeGeraeteCard />)
 
     expect(
-      await screen.findByText(/Du kannst es auch selbst mit deinem Passwort/),
+      await screen.findByText(/(?:oder )?du selbst mit Passwort/i),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'Dieses Gerät wieder zulassen' }),
