@@ -113,7 +113,7 @@ def _projekt_des_laufs(
     return projekt.id
 
 
-def _aktiver_auftrag_im_projekt(
+def aktiver_auftrag_im_projekt(
     db: Session, project_id: str
 ) -> tuple[AiRun, AiConversation] | None:
     """Der erste nicht beendete Worker, der an diesem Projekt arbeitet.
@@ -256,7 +256,7 @@ def worker_start(
             # Zwischen Lesen und Sperren geloescht: ohne Projekt kein Bezug.
             project_id = None
     if project_id:
-        laufend = _aktiver_auftrag_im_projekt(db, project_id)
+        laufend = aktiver_auftrag_im_projekt(db, project_id)
         if laufend is not None:
             _, fenster = laufend
             projekt = db.get(AiProject, project_id)

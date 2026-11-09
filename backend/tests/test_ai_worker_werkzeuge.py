@@ -919,3 +919,91 @@ class TestWorkerProjekt:
         assert erst["started"] is True
         assert zweit["started"] is False
         assert zweit["reason"] == "project_busy"
+
+
+class TestProjektSperreSchreiben:
+    """Auch der Chat schreibt nicht am Projekt, solange ein Auftrag laeuft."""
+
+    def _worker(self, db: Session, user: User, projekt):
+        _provider(db)
+        eltern = ai_chat_service.create_user_conversation(
+            db, user, project_id=projekt.id
+        )
+        db.commit()
+        with patch.object(ai_run_service, "anlauf", lambda db_, run: True):
+            ergebnis = ai_worker_service.worker_start(
+                db,
+                user=user,
+                arguments={"auftrag": "Baue die Seite"},
+                conversation_id=eltern.id,
+            )
+        assert ergebnis["started"] is True
+        return eltern, ergebnis["worker_id"]
+
+    def test_schreibende_aktion_wartet_auf_den_auftrag(self, db: Session) -> None:
+        from services.ai_tools.document_tools import ToolKontext
+        from services.ai_tools.project_tools import projekt_werkzeug
+
+        user = _benutzer(db, "sperre-schreiben")
+        projekt = ai_project_service.create_project(
+            db, user, name="Sperre", sandbox_enabled=False
+        )
+        eltern, worker_id = self._worker(db, user, projekt)
+
+        with pytest.raises(AiActionValidationError, match="arbeitet gerade") as fehler:
+            projekt_werkzeug(
+                db,
+                user=user,
+                arguments={
+                    "action": "write_file",
+                    "project_id": projekt.id,
+                    "path": "notiz.md",
+                    "content": "x",
+                },
+                lauf={"kontext": ToolKontext(conversation_id=eltern.id)},
+            )
+        assert worker_id in str(fehler.value)
+
+    def test_lesende_aktion_bleibt_erlaubt(self, db: Session) -> None:
+        from services.ai_tools.document_tools import ToolKontext
+        from services.ai_tools.project_tools import projekt_werkzeug
+
+        user = _benutzer(db, "sperre-lesen")
+        projekt = ai_project_service.create_project(
+            db, user, name="Lesen", sandbox_enabled=False
+        )
+        eltern, _ = self._worker(db, user, projekt)
+
+        ergebnis = projekt_werkzeug(
+            db,
+            user=user,
+            arguments={"action": "list_files", "project_id": projekt.id},
+            lauf={"kontext": ToolKontext(conversation_id=eltern.id)},
+        )
+        assert "files" in ergebnis
+
+    def test_der_auftrag_selbst_darf_schreiben(self, db: Session) -> None:
+        from services.ai_tools.document_tools import ToolKontext
+        from services.ai_tools.project_tools import projekt_werkzeug
+
+        user = _benutzer(db, "sperre-eigener")
+        projekt = ai_project_service.create_project(
+            db, user, name="Eigener", sandbox_enabled=False
+        )
+        _, worker_id = self._worker(db, user, projekt)
+        rolle = db.query(Role).filter(Role.name == "worker-sperre-eigener").one()
+        db.add(RolePermission(role_id=rolle.id, permission_key="ai.coding.use"))
+        db.commit()
+
+        ergebnis = projekt_werkzeug(
+            db,
+            user=user,
+            arguments={
+                "action": "write_file",
+                "project_id": projekt.id,
+                "path": "notiz.md",
+                "content": "vom Auftrag",
+            },
+            lauf={"kontext": ToolKontext(conversation_id=worker_id)},
+        )
+        assert ergebnis["saved"] is True

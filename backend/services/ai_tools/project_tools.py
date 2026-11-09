@@ -10,6 +10,8 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from models import User
+from services import permission_service
+from services.ai_action_errors import AiActionValidationError
 from services.ai_tool_spec import werkzeug
 from services.ai_tools.base import _function
 
@@ -125,6 +127,51 @@ _CREATE = _function(
 DEFINITIONEN = [_WORKSPACE, _CREATE]
 
 
+#: Aktionen, die den Projektstand nicht veraendern. Alles andere gilt als
+#: schreibend — auch `run_sql`, `run_command` und `test_project`: sie laufen
+#: zwar nicht immer auf Dateien, aber im selben Dateibaum und derselben
+#: Sandbox wie ein Auftrag, und zwei gleichzeitige Laeufe dort sind genau der
+#: Wettlauf, den die Projekt-Sperre verhindert.
+_LESENDE_AKTIONEN = frozenset({
+    "list_projects",
+    "list_files",
+    "read_file",
+    "preview_inspect",
+    "get_environment",
+    "search_components",
+    "db_status",
+    "db_tables",
+    "db_rows",
+    "git_status",
+    "dev_status",
+})
+
+
+def _pruefe_projekt_sperre(
+    db: Session, project_id: str, conversation_id: str | None
+) -> None:
+    """Schreibende Projektarbeit wartet, solange ein Auftrag dort laeuft.
+
+    Der Worker selbst darf schreiben: seine Unterhaltung ist die, die den
+    Auftrag traegt. Jede andere Unterhaltung — Chat, ein zweiter Worker —
+    bekommt eine Meldung mit Titel und Kennung des laufenden Auftrags.
+    """
+    from services import ai_worker_service
+
+    laufend = ai_worker_service.aktiver_auftrag_im_projekt(db, project_id)
+    if laufend is None:
+        return
+    _, fenster = laufend
+    if conversation_id and str(fenster.id) == str(conversation_id):
+        return
+    raise AiActionValidationError(
+        f"Am Projekt arbeitet gerade der Auftrag {fenster.title!r} "
+        f"(worker_id={fenster.id}). Warte auf sein Ergebnis oder brich ihn "
+        "mit worker_cancel ab; schreibende Projektaktionen sind so lange "
+        "gesperrt."
+    )
+
+
 def projekt_werkzeug(
     db: Session,
     *,
@@ -231,6 +278,17 @@ def projekt_werkzeug(
                 conv_row = db.get(AiConversation, str(conv_id_fallback))
                 if conv_row is not None and conv_row.project_id:
                     proj_id_raw = conv_row.project_id
+        if action not in _LESENDE_AKTIONEN and proj_id_raw:
+            conv_id = (
+                getattr(kontext, "conversation_id", None)
+                if kontext is not None
+                else None
+            ) or (
+                kontext.get("conversation_id")
+                if isinstance(kontext, dict)
+                else None
+            )
+            _pruefe_projekt_sperre(db, str(proj_id_raw), conv_id)
         if action == "search_components":
             query_str = str(arguments.get("query") or arguments.get("path") or "").strip()
             items = ai_project_service.search_cross_project_components(
