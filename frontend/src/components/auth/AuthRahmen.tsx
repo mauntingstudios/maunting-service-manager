@@ -49,9 +49,6 @@ export function AuthRahmen({ children, breite = 'max-w-md' }: AuthRahmenProps) {
               <h1 className="font-headline text-headline-sm font-extrabold tracking-tight text-primary">
                 MSM
               </h1>
-              <p className="mt-1 font-headline text-sm font-semibold text-on-surface">
-                Mounting Service Manager
-              </p>
               <p className="mt-1.5 text-xs text-on-surface-variant">{t('auth.brandTagline')}</p>
             </header>
 

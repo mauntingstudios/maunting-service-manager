@@ -49,6 +49,21 @@ describe('Shell', () => {
     </MemoryRouter>,
   )
 
+  it('rückt den Inhalt um genau die Breite der Seitenleiste ein', () => {
+    // Bis 09.11.2026 war die Leiste 15rem breit (w-60), der Inhalt rückte
+    // aber um 16rem ein (lg:ml-64). Dazwischen blieb ein 16-px-Streifen der
+    // Hüllenfarbe, in dem das Szenenbild der Seite nicht lag.
+    renderShell()
+    const seite = document.querySelector<HTMLElement>('aside.msm-sidebar')
+    const inhalt = seite?.nextElementSibling as HTMLElement | null
+    expect(seite).not.toBeNull()
+    expect(inhalt).not.toBeNull()
+    const breite = seite?.className.match(/\bw-(\d+)\b/)?.[1]
+    const abstand = inhalt?.className.match(/\blg:ml-(\d+)\b/)?.[1]
+    expect(breite).toBeDefined()
+    expect(abstand).toBe(breite)
+  })
+
   it('renders the privacy footer link without an impressum link', () => {
     renderShell()
 

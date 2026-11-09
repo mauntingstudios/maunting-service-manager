@@ -18,7 +18,8 @@ describe('AuthRahmen', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByText('Mounting Service Manager')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'MSM' })).toBeInTheDocument()
+    expect(screen.queryByText('Mounting Service Manager')).toBeNull()
     expect(screen.getByText('Anmeldeformular')).toBeInTheDocument()
 
     const szene = container.querySelector('[aria-hidden="true"] [style*="background-image"]')
