@@ -280,6 +280,19 @@ def test_dokument_erstellen_papierkorb_wiederherstellen_duplizieren_loeschen(
     assert "Audit" not in (geloescht[0].details or "")
 
 
+def test_dokumentmodul_ohne_recht_wird_protokolliert(
+    client: TestClient, db: Session, regular_user: User, user_cookies: dict
+) -> None:
+    antwort = client.get("/api/docs/status", cookies=user_cookies)
+    assert antwort.status_code == 403
+
+    eintraege = _audit(db, "docs.access.denied")
+    assert len(eintraege) == 1
+    assert eintraege[0].user_id == regular_user.id
+    assert eintraege[0].target_type is None
+    assert "docs.use" in (eintraege[0].details or "")
+
+
 def test_verweigerter_dokumentzugriff_landet_im_audit(
     db: Session, owner_user: User, regular_user: User
 ) -> None:
