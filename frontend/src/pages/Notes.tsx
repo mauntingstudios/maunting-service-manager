@@ -26,7 +26,9 @@ import { Button } from '@maunting/ui'
 import { Switch } from '@maunting/ui'
 import { teamsApi, type Team } from '@/api/teams'
 import { Spinner } from '@maunting/ui'
-import { TageszeitBanner } from '@/components/layout/TageszeitBanner'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
+import { useAuthStore } from '@/stores/authStore'
 import { NotizschluesselHinweis } from '@/components/notes/NotizschluesselHinweis'
 import {
   loadNotesOfflineFirst,
@@ -84,6 +86,18 @@ function InlineMarkdown({ text, strikethrough }: { text: string; strikethrough?:
 
 export function Notes() {
   const { t } = useTranslation()
+  const user = useAuthStore((s) => s.user)
+  const [jetzt] = useState(() => new Date())
+  const stunde = jetzt.getHours()
+  const zufall = useMemo(() => tagesSeed(jetzt), [jetzt])
+  const headerMotiv = useMemo(
+    () => headerHintergrundWaehlen(stunde, zufall, 'notes'),
+    [stunde, zufall]
+  )
+  const begruessung = user?.username
+    ? t(begruessungSchluessel(stunde, false, zufall), { name: user.username })
+    : t('common.begruessung.ohneName')
+
   const [notes, setNotes] = useState<NoteItem[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [loading, setLoading] = useState(true)
@@ -338,14 +352,38 @@ export function Notes() {
   }))
 
   return (
-    <div className="space-y-3.5">
-      {/* ── Kopfzeile: Atmosphärische Tageszeit-Begrüßung, Zähler & Erstellen ── */}
-      <TageszeitBanner
-        bereich={t('notes.title')}
-        icon={<StickyNote className="h-3.5 w-3.5" aria-hidden="true" />}
-        actions={
-          <>
-            <span className="text-label-sm font-medium px-2.5 py-1 rounded-full bg-surface-container-high/85 text-on-surface-variant border border-outline-variant/30 shrink-0 backdrop-blur-md">
+    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
+      {/* Weicher atmosphärischer Tageszeit-Hintergrund für Notizen */}
+      <TageszeitHintergrund
+        motiv={headerMotiv}
+        hoehe="h-[440px] sm:h-[500px]"
+        deckkraft="opacity-50"
+        ebene="-z-10"
+        verlauf="bg-gradient-to-b from-surface/10 via-surface/40 70% to-surface"
+      />
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[440px] sm:h-[500px] -z-10 bg-gradient-to-b from-transparent via-surface/20 60% to-surface"
+        aria-hidden="true"
+      />
+
+      <div className="relative z-10 mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 space-y-6">
+        {/* Freischwebender Notizen-Header mit Tageszeit-Begrüßung, Zähler und Aktion */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+              <StickyNote className="h-4 w-4" aria-hidden="true" />
+              <span>{t('notes.title')}</span>
+            </div>
+            <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+              {begruessung}
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">
+              {t('notes.subtitle', { defaultValue: 'Gedanken, Checklisten und Team-Dokumente im Blick behalten.' })}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-label-sm font-medium px-2.5 py-1 rounded-full bg-surface-container-high/85 text-on-surface-variant border border-outline-variant/30 shrink-0 backdrop-blur-md shadow-sm">
               {filteredNotes.length}
             </span>
             <Button
@@ -356,11 +394,10 @@ export function Notes() {
               <span className="hidden sm:inline">{t('notes.newNote')}</span>
               <span className="sm:hidden">{t('notes.newNoteShort')}</span>
             </Button>
-          </>
-        }
-      />
+          </div>
+        </div>
 
-      <NotizschluesselHinweis />
+        <NotizschluesselHinweis />
 
       {/* ── Werkzeugleiste: Suche & Filter ── */}
       <div className="flex flex-col gap-2.5 bg-surface-container-low/80 border border-outline-variant/30 rounded-2xl p-2.5 sm:p-3 shadow-sm backdrop-blur-sm">
@@ -851,6 +888,7 @@ export function Notes() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

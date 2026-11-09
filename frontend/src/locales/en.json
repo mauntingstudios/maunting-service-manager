@@ -139,7 +139,8 @@
     "eventsThisDay_other": "{{count}} events on this day",
     "createEventAction": "Create event",
     "moreEvents_one": "+{{count}} more",
-    "moreEvents_other": "+{{count}} more"
+    "moreEvents_other": "+{{count}} more",
+    "subtitle": "Keep track of events, server schedules, and team activities."
   },
   "pageContext": {
     "overview": "Overview",
@@ -227,7 +228,8 @@
     "formType": "Visibility / scope",
     "formTeam": "Assign team",
     "tabEditor": "Editor",
-    "previewEmpty": "No content entered yet to preview."
+    "previewEmpty": "No content entered yet to preview.",
+    "subtitle": "Keep track of ideas, checklists, and team documents."
   },
   "audit": {
     "title": "Audit log",

@@ -189,6 +189,134 @@ export const TEAMS_HEADER_HINTERGRUENDE: Record<Tageszeit, HeaderHintergrundVari
 }
 
 /**
+ * Dedizierte Varianten für das Dashboard (Erhabene Kommandozentrale & weiter Horizont).
+ */
+export const DASHBOARD_HEADER_HINTERGRUENDE: Record<Tageszeit, HeaderHintergrundVariante> = {
+  morgen: {
+    id: 'dashboard-morgen',
+    pfad: '/assets/singra/singra-bg-morning.jpg',
+    position: 'center 32%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(245, 158, 11, 0.16) 0%, rgba(14, 165, 233, 0.12) 48%, transparent 100%)',
+  },
+  tag: {
+    id: 'dashboard-tag',
+    pfad: '/assets/singra/singra-bg-day.jpg',
+    position: 'center 46%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(56, 189, 248, 0.15) 0%, rgba(15, 23, 42, 0.25) 55%, transparent 100%)',
+  },
+  abend: {
+    id: 'dashboard-abend',
+    pfad: '/assets/singra/daemmerung_huegel.jpg',
+    position: 'center 52%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(217, 119, 6, 0.18) 0%, rgba(30, 41, 59, 0.35) 55%, transparent 100%)',
+  },
+  nacht: {
+    id: 'dashboard-nacht',
+    pfad: '/assets/singra/singra-bg-night.jpg',
+    position: 'center 38%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(30, 58, 138, 0.22) 0%, rgba(2, 6, 23, 0.55) 55%, transparent 100%)',
+  },
+}
+
+/**
+ * Dedizierte Varianten für den Kalender (Tagesverlauf, Zeitrhythmus & alpine Klarheit).
+ */
+export const CALENDAR_HEADER_HINTERGRUENDE: Record<Tageszeit, HeaderHintergrundVariante> = {
+  morgen: {
+    id: 'calendar-morgen',
+    pfad: '/assets/teams/teams-bg-morning.jpg',
+    position: 'center 35%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(251, 191, 36, 0.15) 0%, rgba(56, 189, 248, 0.10) 50%, transparent 100%)',
+  },
+  tag: {
+    id: 'calendar-tag',
+    pfad: '/assets/teams/teams-bg-day.jpg',
+    position: 'center 42%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(34, 211, 238, 0.14) 0%, rgba(15, 23, 42, 0.25) 55%, transparent 100%)',
+  },
+  abend: {
+    id: 'calendar-abend',
+    pfad: '/assets/teams/teams-bg-evening.jpg',
+    position: 'center 48%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(249, 115, 22, 0.16) 0%, rgba(14, 165, 233, 0.12) 50%, transparent 100%)',
+  },
+  nacht: {
+    id: 'calendar-nacht',
+    pfad: '/assets/teams/teams-bg-night.jpg',
+    position: 'center 32%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(14, 116, 144, 0.20) 0%, rgba(2, 6, 23, 0.55) 55%, transparent 100%)',
+  },
+}
+
+/**
+ * Dedizierte Varianten für Notizen (Warme, ruhige & kontemplative Atmosphäre zum Nachdenken und Verfassen).
+ */
+export const NOTES_HEADER_HINTERGRUENDE: Record<Tageszeit, HeaderHintergrundVariante> = {
+  morgen: {
+    id: 'notes-morgen',
+    pfad: '/assets/singra/singra-bg-morning.jpg',
+    position: 'center 42%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(253, 186, 116, 0.15) 0%, rgba(14, 165, 233, 0.12) 50%, transparent 100%)',
+  },
+  tag: {
+    id: 'notes-tag',
+    pfad: '/assets/singra/singra-bg-day.jpg',
+    position: 'center 52%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(56, 189, 248, 0.14) 0%, rgba(15, 23, 42, 0.25) 55%, transparent 100%)',
+  },
+  abend: {
+    id: 'notes-abend',
+    pfad: '/assets/singra/daemmerung_wald.jpg',
+    position: 'center 45%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(245, 158, 11, 0.18) 0%, rgba(225, 29, 72, 0.12) 48%, transparent 100%)',
+  },
+  nacht: {
+    id: 'notes-nacht',
+    pfad: '/assets/singra/singra-bg-night.jpg',
+    position: 'center 45%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(56, 189, 248, 0.14) 0%, rgba(15, 23, 42, 0.45) 55%, transparent 100%)',
+  },
+}
+
+/**
+ * Dedizierte Varianten für Maunting Docs (Editorische Klarheit & spiegelnde nordische Seen).
+ */
+export const DOCS_HEADER_HINTERGRUENDE: Record<Tageszeit, HeaderHintergrundVariante> = {
+  morgen: {
+    id: 'docs-morgen',
+    pfad: '/assets/singra/singra-bg-morning.jpg',
+    position: 'center 26%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(251, 191, 36, 0.14) 0%, rgba(14, 165, 233, 0.12) 45%, transparent 100%)',
+  },
+  tag: {
+    id: 'docs-tag',
+    pfad: '/assets/teams/teams-bg-day.jpg',
+    position: 'center 44%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(45, 212, 191, 0.14) 0%, rgba(15, 23, 42, 0.25) 55%, transparent 100%)',
+  },
+  abend: {
+    id: 'docs-abend',
+    pfad: '/assets/singra/daemmerung_see.jpg',
+    position: 'center 50%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(249, 115, 22, 0.16) 0%, rgba(14, 165, 233, 0.12) 50%, transparent 100%)',
+  },
+  nacht: {
+    id: 'docs-nacht',
+    pfad: '/assets/singra/singra-bg-night.jpg',
+    position: 'center 40%',
+    ueberlagerung: 'linear-gradient(180deg, rgba(14, 165, 233, 0.18) 0%, rgba(2, 6, 23, 0.50) 55%, transparent 100%)',
+  },
+}
+
+export type HintergrundBereich =
+  | 'standard'
+  | 'teams'
+  | 'dashboard'
+  | 'calendar'
+  | 'notes'
+  | 'docs'
+
+/**
  * Berechnet einen tagesbasierten Seed, der innerhalb eines Kalendertags konstant
  * bleibt. So wechselt das atmosphärische Motiv verlässlich jeden Tag, ohne bei jedem
  * Neuladen oder Seitenwechsel zu springen.
@@ -203,12 +331,14 @@ export function tagesSeed(datum: Date = new Date()): number {
 export function headerHintergrundWaehlen(
   stunde: number,
   zufall?: number,
-  bereich?: 'standard' | 'teams',
+  bereich?: HintergrundBereich,
 ): HeaderHintergrundVariante {
   const zeit = tageszeit(stunde)
-  if (bereich === 'teams') {
-    return TEAMS_HEADER_HINTERGRUENDE[zeit]
-  }
+  if (bereich === 'teams') return TEAMS_HEADER_HINTERGRUENDE[zeit]
+  if (bereich === 'dashboard') return DASHBOARD_HEADER_HINTERGRUENDE[zeit]
+  if (bereich === 'calendar') return CALENDAR_HEADER_HINTERGRUENDE[zeit]
+  if (bereich === 'notes') return NOTES_HEADER_HINTERGRUENDE[zeit]
+  if (bereich === 'docs') return DOCS_HEADER_HINTERGRUENDE[zeit]
   const liste = HEADER_HINTERGRUENDE[zeit]
   const zaehler = typeof zufall === 'number' && !isNaN(zufall) ? zufall : tagesSeed()
   const index = Math.abs(Math.floor(zaehler)) % liste.length
@@ -229,7 +359,7 @@ export function ermittleTageszeitBild(stunde: number = new Date().getHours()): s
  * Schlüssel der Begrüßung. Die Variante wird täglich einmal bestimmt, damit
  * die Zeile konsistent bleibt und trotzdem von Tag zu Tag rotiert.
  */
-export function begruessungSchluessel(stunde: number, kurz: boolean, zufall?: number): string {
+export function begruessungSchluessel(stunde: number, kurz: boolean = false, zufall?: number): string {
   const zeit = tageszeit(stunde)
   if (kurz) return `common.begruessung.${zeit}Kurz`
   const zaehler = typeof zufall === 'number' && !isNaN(zufall) ? zufall : tagesSeed()

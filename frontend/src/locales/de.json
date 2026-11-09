@@ -139,7 +139,8 @@
     "eventsThisDay_other": "{{count}} Termine an diesem Tag",
     "createEventAction": "Termin erstellen",
     "moreEvents_one": "+{{count}} weiterer",
-    "moreEvents_other": "+{{count}} weitere"
+    "moreEvents_other": "+{{count}} weitere",
+    "subtitle": "Termine, Server-Ereignisse und Team-Aktivitäten im Blick behalten."
   },
   "pageContext": {
     "overview": "Übersicht",
@@ -227,7 +228,8 @@
     "formType": "Sichtbarkeit / Bereich",
     "formTeam": "Team zuordnen",
     "tabEditor": "Editor",
-    "previewEmpty": "Noch kein Inhalt zum Anzeigen eingegeben."
+    "previewEmpty": "Noch kein Inhalt zum Anzeigen eingegeben.",
+    "subtitle": "Gedanken, Checklisten und Team-Dokumente im Blick behalten."
   },
   "audit": {
     "title": "Audit-Protokoll",

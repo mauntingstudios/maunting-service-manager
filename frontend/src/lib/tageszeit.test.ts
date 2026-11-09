@@ -30,6 +30,12 @@ describe('tageszeit', () => {
       const teams = headerHintergrundWaehlen(stunde, undefined, 'teams')
       expect(teams.pfad).toMatch(/^\/assets\/teams\/teams-bg-/)
       expect(teams.pfad.startsWith('/hintergruende/')).toBe(false)
+
+      for (const bereich of ['dashboard', 'calendar', 'notes', 'docs'] as const) {
+        const szene = headerHintergrundWaehlen(stunde, undefined, bereich)
+        expect(szene.pfad).toMatch(/^\/assets\/(singra|teams)\//)
+        expect(szene.pfad.startsWith('/hintergruende/')).toBe(false)
+      }
     }
   })
 })
