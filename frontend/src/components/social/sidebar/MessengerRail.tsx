@@ -54,12 +54,12 @@ export function MessengerRail({
     `relative flex items-center justify-center w-11 h-11 rounded-2xl transition-all ${
       aktiv
         ? 'bg-primary text-on-primary shadow-md shadow-primary/30 scale-105'
-        : 'text-white/70 hover:text-white hover:bg-white/10'
+        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60'
     }`
 
   return (
     <aside
-      className="hidden md:flex flex-col items-center justify-between py-3 px-2 w-16 shrink-0 bg-transparent border-r border-white/5 z-20 select-none"
+      className="hidden md:flex flex-col items-center justify-between py-3 px-2 w-16 shrink-0 bg-surface-container border-r border-outline-variant/30 z-20 select-none messenger-sidebar msm-sidebar"
       aria-label="Messenger Navigation"
     >
       {/* Oben: Haupt-Modi */}

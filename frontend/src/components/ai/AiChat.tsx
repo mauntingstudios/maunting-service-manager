@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarClock, Camera, Check, Copy, Forward, HardDrive, Menu, MessageSquarePlus, MoreHorizontal, Paperclip, Plug, Plus, RotateCw, Search, ShieldAlert, Sparkles, Star, Upload, X, Zap } from 'lucide-react'
+import { CalendarClock, Camera, Check, ChevronLeft, ChevronRight, Copy, Forward, HardDrive, Menu, MessageSquarePlus, MoreHorizontal, Paperclip, Plug, Plus, RotateCw, ShieldAlert, Sparkles, Star, Upload, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -155,6 +155,8 @@ export interface AiChatProps {
   showWorkers?: boolean
   /** Aktiviert die ruhige Singra-Oberfläche mit Tageszeit-Kulisse, Starter-Karten und Inline-Sprachmodus. */
   singraShell?: boolean
+  isSidebarCollapsed?: boolean
+  onToggleSidebar?: () => void
   onOpenMobileMenu?: () => void
   onOpenHistorySearch?: () => void
   activeProjectName?: string | null
@@ -191,6 +193,8 @@ export function AiChat({
   showGuardian = true,
   showWorkers = true,
   singraShell = false,
+  isSidebarCollapsed = false,
+  onToggleSidebar,
   onOpenMobileMenu,
   onOpenHistorySearch,
   activeProjectName,
@@ -1840,6 +1844,19 @@ export function AiChat({
         }`}
       >
         <div className={`flex min-w-0 flex-1 items-center gap-2 py-0.5 ${singraShell ? 'pointer-events-auto' : ''}`}>
+          {singraShell && onToggleSidebar && (
+            <Kurzinfo text={isSidebarCollapsed ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}>
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                className="hidden lg:flex h-10 w-10 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+                aria-label={isSidebarCollapsed ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
+              >
+                {isSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              </button>
+            </Kurzinfo>
+          )}
+
           {singraShell && onOpenMobileMenu && (
             <Kurzinfo text="Navigation öffnen">
               <button
@@ -1981,19 +1998,6 @@ export function AiChat({
                 aria-label="Neuer Chat"
               >
                 <Plus className="h-4 w-4" />
-              </button>
-            </Kurzinfo>
-          )}
-
-          {singraShell && onOpenHistorySearch && (
-            <Kurzinfo text="Unterhaltungen durchsuchen">
-              <button
-                type="button"
-                onClick={onOpenHistorySearch}
-                className="hidden sm:flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95 shrink-0"
-                aria-label="Unterhaltungen durchsuchen"
-              >
-                <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
             </Kurzinfo>
           )}

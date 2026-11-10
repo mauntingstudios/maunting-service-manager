@@ -88,7 +88,7 @@ export function DocsMain({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="relative z-30 flex shrink-0 items-center gap-2.5 border-b border-outline-variant/30 bg-surface-container-lowest/80 px-3 pt-[calc(var(--msm-oben-sicher,0px)+0.5rem)] pb-2.5 backdrop-blur-xl md:hidden">
+      <div className="relative z-30 flex shrink-0 items-center gap-2.5 border-b border-outline-variant/30 bg-surface-container px-3 pt-[calc(var(--msm-oben-sicher,0px)+0.5rem)] pb-2.5 md:hidden">
         <Kurzinfo text={t('docs.tree.open')}>
           <button
             type="button"

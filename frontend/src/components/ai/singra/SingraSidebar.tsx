@@ -51,6 +51,7 @@ export const SINGRA_MOBILE_TABS: SingraNavDef[] = [
 ]
 
 interface SingraSidebarProps {
+  isCollapsed?: boolean
   activeSection: SingraSection
   onSelectSection: (section: SingraSection) => void
   conversations: AiConversationSummary[]
@@ -358,12 +359,14 @@ export function SingraSidebar(props: SingraSidebarProps) {
   return (
     <>
       {/* Desktop Left Sidebar */}
-      <aside
-        className="hidden lg:flex lg:w-60 xl:w-64 shrink-0 flex-col border-r border-outline-variant/30 bg-surface-container-lowest/85 backdrop-blur-xl"
-        aria-label="Singra Seitenleiste"
-      >
-        <SidebarContent {...props} />
-      </aside>
+      {!props.isCollapsed && (
+        <aside
+          className="hidden lg:flex lg:w-60 xl:w-64 shrink-0 flex-col border-r border-outline-variant/30 bg-surface-container singra-sidebar msm-sidebar"
+          aria-label="Singra Seitenleiste"
+        >
+          <SidebarContent {...props} />
+        </aside>
+      )}
 
       {/* Mobile Drawer Overlay */}
       {props.mobileDrawerOpen && (
@@ -374,7 +377,7 @@ export function SingraSidebar(props: SingraSidebarProps) {
             aria-hidden="true"
           />
           <div
-            className="relative z-10 flex h-full w-72 max-w-[84vw] flex-col border-r border-outline-variant/30 bg-surface-container-lowest/95 backdrop-blur-2xl shadow-2xl"
+            className="relative z-10 flex h-full w-72 max-w-[84vw] flex-col border-r border-outline-variant/30 bg-surface-container shadow-2xl singra-sidebar"
             style={{
               paddingTop: 'max(0px, var(--msm-oben-sicher, 0px))',
               paddingBottom: 'max(0px, var(--msm-unten-sicher, 0px))',
@@ -398,7 +401,7 @@ export function SingraMobileBottomBar({
   return (
     <nav
       aria-label="Singra Schnellnavigation"
-      className="flex lg:hidden shrink-0 items-center justify-around border-t border-outline-variant/30 bg-surface-container-lowest/90 backdrop-blur-xl px-2 pt-1.5"
+      className="flex lg:hidden shrink-0 items-center justify-around border-t border-outline-variant/30 bg-surface-container px-2 pt-1.5"
       style={{
         paddingBottom: 'max(0.45rem, var(--msm-unten-sicher, 0.45rem))',
       }}

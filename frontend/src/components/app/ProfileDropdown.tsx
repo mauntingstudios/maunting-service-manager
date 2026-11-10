@@ -175,7 +175,7 @@ export function ProfileDropdown({
           ref={menueRef}
           role="menu"
           style={lage}
-          className="w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-high shadow-2xl animate-fade-in"
+          className="w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-2xl border border-outline-variant/30 bg-surface-container-high/95 backdrop-blur-2xl shadow-2xl animate-fade-in"
         >
           {/* Header mit Avatar & Benutzername & Statusumschalter */}
           <div className="border-b border-outline-variant/30 p-3.5 bg-surface-container">

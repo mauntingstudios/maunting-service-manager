@@ -160,14 +160,10 @@ export function ActionMenu({
               id={menuId}
               role="menu"
               style={lage}
-              className={
-                surface === 'dna'
-                  ? 'min-w-[200px] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-high p-1 shadow-panel'
-                  : 'min-w-[190px] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-high/98 p-1.5 shadow-panel backdrop-blur-xl'
-              }
+              className="z-50 min-w-[200px] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-2xl border border-outline-variant/30 bg-surface-container-high/95 p-1.5 shadow-2xl backdrop-blur-2xl animate-fade-in"
             >
               {items.map((item) => (
-                <div key={item.key} className={item.separatorBefore ? 'mt-1 border-t border-outline-variant pt-1' : ''}>
+                <div key={item.key} className={item.separatorBefore ? 'my-1 border-t border-outline-variant/30 pt-1' : ''}>
                   <button
                     type="button"
                     role="menuitem"
@@ -177,10 +173,10 @@ export function ActionMenu({
                       setOpen(false)
                     }}
                     className={cx(
-                      'flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-9',
+                      'flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-9',
                       item.destructive
-                        ? 'text-status-destructive hover:bg-status-destructive/10'
-                        : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
+                        ? 'text-status-destructive hover:bg-status-destructive/15'
+                        : 'text-on-surface-variant hover:bg-surface-container-highest/70 hover:text-on-surface',
                     )}
                   >
                     <span

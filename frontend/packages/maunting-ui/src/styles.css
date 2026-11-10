@@ -129,7 +129,7 @@
   /* ── Rahmen der App ────────────────────────────────────────────────── */
 
   .msm-sidebar {
-    @apply border-r border-outline-variant/50 bg-surface-container-lowest/85 backdrop-blur-xl;
+    @apply border-r border-outline-variant/30 bg-surface-container backdrop-blur-xl;
   }
 
   .msm-topbar {

@@ -1,12 +1,14 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MessageSquare, Palette, Plus } from 'lucide-react'
-import { Button } from '@maunting/ui'
+import { ChevronRight, MessageSquare, Palette, Plus } from 'lucide-react'
+import { Button, Kurzinfo } from '@maunting/ui'
 
 interface MessengerEmptyStateProps {
   onNeueGruppe: () => void
   onHintergrund: () => void
   onNeuerChat: () => void
+  isSidebarCollapsed?: boolean
+  onSeitenleisteUmschalten?: () => void
 }
 
 function ermittleBegruessung(): string {
@@ -24,12 +26,28 @@ export function MessengerEmptyState({
   onNeueGruppe,
   onHintergrund,
   onNeuerChat,
+  isSidebarCollapsed,
+  onSeitenleisteUmschalten,
 }: MessengerEmptyStateProps) {
   const { t } = useTranslation()
   const begruessung = useMemo(() => ermittleBegruessung(), [])
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center relative z-10 select-none">
+      {isSidebarCollapsed && onSeitenleisteUmschalten && (
+        <div className="absolute top-4 left-4 z-20 hidden md:block">
+          <Kurzinfo text="Seitenleiste ausklappen" seite="anfang">
+            <button
+              type="button"
+              onClick={onSeitenleisteUmschalten}
+              className="flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+              aria-label="Seitenleiste ausklappen"
+            >
+              <ChevronRight className="w-4 h-4 text-primary" />
+            </button>
+          </Kurzinfo>
+        </div>
+      )}
       <div className="max-w-md w-full p-8 rounded-3xl bg-surface-container/70 backdrop-blur-xl border border-outline-variant/30 shadow-2xl space-y-5 transition-all">
         <div className="w-16 h-16 mx-auto rounded-3xl bg-primary text-on-primary flex items-center justify-center shadow-lg shadow-primary/30">
           <MessageSquare className="w-8 h-8" />

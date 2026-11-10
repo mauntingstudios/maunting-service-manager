@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Menu, MessageSquare } from 'lucide-react'
+import { ChevronRight, Menu, MessageSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Kurzinfo } from '@maunting/ui'
 
 import {
   aiApi,
@@ -114,6 +115,7 @@ export function Ai({
   const [suchParameter, setzeSuchParameter] = useSearchParams()
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [conversations, setConversations] = useState<AiConversationSummary[]>([])
   const [projects, setProjects] = useState<AiProject[]>([])
   const [activeConversationId, setActiveConversationId] = useState<string | null | undefined>(undefined)
@@ -361,9 +363,9 @@ export function Ai({
   }, [activeConversationId, activeProjectId])
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden bg-surface">
+    <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden">
       {ansicht !== 'text' && (
-        <div className="flex shrink-0 items-center justify-between sm:justify-end gap-1.5 sm:gap-2 px-3 py-2 border-b border-outline-variant/30 bg-surface-container-low/40">
+        <div className="flex shrink-0 items-center justify-between sm:justify-end gap-1.5 sm:gap-2 px-3 py-2 border-b border-outline-variant/30 bg-surface-container">
           <div className="flex items-center justify-between w-full sm:w-auto gap-2">
             <Umschalter
               aktiv={false}
@@ -391,6 +393,7 @@ export function Ai({
       ) : (
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <SingraSidebar
+            isCollapsed={isSidebarCollapsed}
             activeSection={activeSection}
             onSelectSection={setActiveSection}
             conversations={conversations}
@@ -405,12 +408,27 @@ export function Ai({
           />
 
           <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden">
+            {activeSection !== 'chat' && isSidebarCollapsed && (
+              <div className="hidden lg:flex shrink-0 items-center border-b border-outline-variant/30 bg-surface-container px-3 py-2">
+                <Kurzinfo text="Seitenleiste einblenden">
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarCollapsed(false)}
+                    className="flex h-10 w-10 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+                    aria-label="Seitenleiste einblenden"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </Kurzinfo>
+              </div>
+            )}
+
             {activeSection !== 'chat' && (
-              <div className="flex lg:hidden shrink-0 items-center justify-between border-b border-outline-variant/20 bg-surface-container-lowest/80 backdrop-blur-xl px-3 py-2">
+              <div className="flex lg:hidden shrink-0 items-center justify-between border-b border-outline-variant/30 bg-surface-container px-3 py-2">
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(true)}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+                  className="flex h-10 w-10 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
                   aria-label="Singra Navigation öffnen"
                 >
                   <Menu className="h-5 w-5" />
@@ -488,6 +506,8 @@ export function Ai({
                 hasVoice={Boolean(sprachkonfiguration)}
                 appFaehigkeiten={appFaehigkeiten}
                 singraShell
+                isSidebarCollapsed={isSidebarCollapsed}
+                onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
                 onOpenMobileMenu={() => setMobileMenuOpen(true)}
                 onOpenHistorySearch={() => setActiveSection('verlauf')}
                 activeProjectName={activeProjectName}

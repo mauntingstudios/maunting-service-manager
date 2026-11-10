@@ -109,7 +109,7 @@ export function DocsSidebar({ session, aktionen, selectedUid, canManageFolders }
           overlayClassName="!justify-start md:hidden"
           className="!mr-auto !w-[min(18rem,85vw)] !max-w-none !rounded-none p-0 pt-[var(--msm-oben-sicher)] pb-[var(--msm-unten-sicher)] pl-[var(--msm-links-sicher)]"
         >
-          <div className="flex items-center justify-between border-b border-outline-variant/40 bg-surface-container/85 px-3 py-2 backdrop-blur-xl">
+          <div className="flex items-center justify-between border-b border-outline-variant/30 bg-surface-container px-3 py-2">
             <span className="truncate text-sm font-semibold text-on-surface">{t('docs.title')}</span>
             <Kurzinfo text={t('common.close')}>
               <Button

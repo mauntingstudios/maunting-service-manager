@@ -79,7 +79,7 @@ export function ChatHeader({
   const [menueOffen, setMenueOffen] = useState(false)
 
   return (
-    <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-outline-variant/30 bg-surface-container-lowest/80 px-3 pt-[calc(var(--msm-oben-sicher,0px)+0.5rem)] pb-2.5 sm:pt-[calc(var(--msm-oben-sicher,0px)+0.625rem)] sm:pb-3 backdrop-blur-xl sm:gap-3 sm:px-4">
+    <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-outline-variant/30 bg-surface-container px-3 pt-[calc(var(--msm-oben-sicher,0px)+0.5rem)] pb-2.5 sm:pt-[calc(var(--msm-oben-sicher,0px)+0.625rem)] sm:pb-3 backdrop-blur-xl sm:gap-3 sm:px-4">
       {onSeitenleisteUmschalten && (
         <Kurzinfo
           text={seitenleisteEingeklappt ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
@@ -94,7 +94,7 @@ export function ChatHeader({
             aria-label={seitenleisteEingeklappt ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
           >
             {seitenleisteEingeklappt ? (
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4 text-primary" />
             ) : (
               <ChevronLeft className="w-4 h-4" />
             )}

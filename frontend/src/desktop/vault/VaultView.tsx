@@ -1884,7 +1884,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
   // ── 3. HAUPTANSICHT ──
   return (
-    <div className="flex flex-col md:flex-row h-full min-h-0 text-on-surface overflow-hidden bg-surface">
+    <div className="flex flex-col md:flex-row h-full min-h-0 text-on-surface overflow-hidden">
       <VaultSidebar
         ansicht={ansicht}
         onAnsicht={(naechste) => {
@@ -1923,7 +1923,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {/* KOPFZEILE */}
-      <div className="flex items-center justify-between border-b border-outline-variant/20 bg-surface-container-low/70 px-4 py-2.5 backdrop-blur-xl">
+      <div className="flex items-center justify-between border-b border-outline-variant/20 bg-surface-container px-4 py-2.5 backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
             <Shield className="h-4 w-4" />
@@ -2012,7 +2012,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
       {/* FILTER, SAMMLUNG UND SUCHE */}
       {ansicht !== 'uebersicht' && (
-        <div className="flex flex-col gap-2 border-b border-outline-variant/15 bg-surface-container-low/40 px-4 py-2">
+        <div className="flex flex-col gap-2 border-b border-outline-variant/15 bg-surface-container px-4 py-2">
           {ansicht === 'tresor' && (
             <div className="msm-ohne-rollbalken flex items-center gap-1.5 overflow-x-auto" role="group" aria-label={t('mss.vault.dashboard.werkzeuge')}>
               {TRESOR_FILTER.map((eintrag) => {

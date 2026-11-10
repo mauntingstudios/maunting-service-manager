@@ -122,7 +122,7 @@ function Zeile({
         className={`w-full flex items-center justify-between p-2.5 rounded-2xl text-left transition-all ${
           ausgewaehlt
             ? 'bg-primary/20 border border-primary/40 shadow-sm text-primary'
-            : 'hover:bg-surface-container-high/60 border border-transparent'
+            : 'bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-on-surface'
         } ${imArchiv ? 'opacity-60' : ''}`}
       >
         <div className="flex items-center gap-3 min-w-0 flex-1">{children}</div>

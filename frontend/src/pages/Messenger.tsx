@@ -2429,7 +2429,7 @@ function MessengerSeite() {
 
         {/* Left Column: Modern Contacts & Groups List */}
         <div
-          className={`w-full md:w-80 lg:w-96 shrink-0 flex flex-col min-h-0 border-r border-white/10 bg-surface-container-lowest/80 backdrop-blur-xl ${
+          className={`w-full md:w-80 lg:w-96 shrink-0 flex flex-col min-h-0 border-r border-outline-variant/30 bg-surface-container messenger-sidebar msm-sidebar ${
             isChatOpen ? 'hidden md:flex' : 'flex'
           } ${isSidebarCollapsed ? 'md:hidden' : ''}`}
         >
@@ -2448,14 +2448,14 @@ function MessengerSeite() {
 
           {/* Suchleiste für Kontakte */}
           {mobileNavTab === 'chats' && (
-            <div className="p-2.5 border-b border-white/10 bg-transparent">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+            <div className="flex items-center gap-2 p-2.5 border-b border-outline-variant/20 bg-transparent">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50" />
                 <Input
                   value={searchQuery}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                   placeholder={t('messenger.searchPlaceholder')}
-                  className="text-xs pl-8 h-8 rounded-full bg-white/5 border-white/10 text-white placeholder:text-white/40 focus:border-primary/50 transition-all"
+                  className="text-xs pl-8 h-8 rounded-full bg-surface-container-high/40 border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary/50 transition-all"
                 />
               </div>
             </div>
@@ -3019,6 +3019,8 @@ function MessengerSeite() {
                 setFilterTab('all')
                 setMobileNavTab('chats')
               }}
+              isSidebarCollapsed={isSidebarCollapsed}
+              onSeitenleisteUmschalten={() => setIsSidebarCollapsed((v) => !v)}
             />
           )}
         </div>

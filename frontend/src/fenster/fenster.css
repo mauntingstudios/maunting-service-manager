@@ -56,7 +56,16 @@ html[data-fenster='einheit'] .mui-fensterkopf {
 html[data-fenster='einheit'] .msm-topbar {
   border-bottom-width: 0;
   background: hsl(var(--mui-surface-2) / 0.92);
-  box-shadow: 0 14px 24px -22px hsl(0 0% 0% / 0.9);
+  box-shadow: none;
+}
+
+/* MSS: Seitenleisten und Teilbereiche tragen dieselbe Fläche wie die obere Navigation */
+html[data-fenster='einheit'] .msm-sidebar,
+html[data-fenster='einheit'] .singra-sidebar,
+html[data-fenster='einheit'] .messenger-sidebar,
+html[data-fenster='einheit'] .docs-sidebar,
+html[data-fenster='einheit'] .vault-sidebar {
+  background: hsl(var(--mui-surface-2) / 0.92);
 }
 
 /* ── Fensterknöpfe ──────────────────────────────────────────────────────

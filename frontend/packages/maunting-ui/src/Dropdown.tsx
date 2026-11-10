@@ -223,8 +223,8 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
             data-testid={testId}
             onClick={() => !disabled && setOpen((current) => !current)}
             className={cx(
-              'msm-input flex h-10 min-w-0 max-w-full items-center justify-between gap-2 px-3 text-left disabled:cursor-not-allowed disabled:opacity-50',
-              open && 'border-primary ring-2 ring-primary/25',
+              'flex h-10 min-w-0 max-w-full items-center justify-between gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-low/70 px-3.5 py-2 text-left text-sm text-on-surface shadow-sm transition-all duration-150 hover:border-outline-variant/60 hover:bg-surface-container-low focus-visible:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50',
+              open && 'border-primary/50 ring-2 ring-primary/20 bg-surface-container-low',
               buttonClassName,
             )}
           >
@@ -239,7 +239,7 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
               )}
             </span>
             <ChevronDown
-              className={cx('h-4 w-4 shrink-0 text-on-surface-variant transition-transform', open && 'rotate-180')}
+              className={cx('h-4 w-4 shrink-0 text-on-surface-variant/70 transition-transform duration-200', open && 'rotate-180 text-primary')}
               aria-hidden="true"
             />
           </button>
@@ -259,10 +259,10 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
                   // `closest('[data-msm-dropdown-menu]')`.
                   data-msm-dropdown-menu=""
                   {...(rootRef.current?.closest('.msb-bereich, aside:not([role="dialog"])') ? { 'data-msm-in-panel': '' } : {})}
-                  className="flex flex-col overflow-hidden rounded-lg border border-outline-variant bg-surface-container-high shadow-panel"
+                  className="z-50 flex flex-col overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-high/95 p-1 text-on-surface shadow-2xl backdrop-blur-2xl animate-fade-in"
                 >
                   {searchable && (
-                    <div className="border-b border-outline-variant/60 p-1.5">
+                    <div className="border-b border-outline-variant/20 p-1.5">
                       <div className="relative">
                         <Search
                           className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant/50"
@@ -274,7 +274,7 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
                           value={query}
                           onChange={(e) => setQuery(e.target.value)}
                           placeholder={searchPlaceholder ?? t('common.suchenPunkte')}
-                          className="msm-input w-full py-1.5 pl-8 pr-2 text-xs"
+                          className="w-full rounded-xl border border-outline-variant/30 bg-surface-container-low/80 py-1.5 pl-8 pr-2.5 text-xs text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => {
                             if (e.key === 'Escape') {
@@ -303,7 +303,7 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
                       </div>
                     </div>
                   )}
-                  <ul id={listId} role="listbox" className="min-h-0 flex-1 overflow-y-auto p-1">
+                  <ul id={listId} role="listbox" className="min-h-0 flex-1 overflow-y-auto p-0.5 space-y-0.5">
                     {filteredOptions.length === 0 ? (
                       <li className="px-3 py-4 text-center text-xs text-on-surface-variant/60">
                         {emptyText ?? t('common.keineEintraege')}
@@ -323,10 +323,10 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
                                 setOpen(false)
                               }}
                               className={cx(
-                                'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-40',
+                                'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-40',
                                 active
-                                  ? 'bg-primary/10 text-primary'
-                                  : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface',
+                                  ? 'bg-primary/15 text-primary'
+                                  : 'text-on-surface-variant hover:bg-surface-container-highest/70 hover:text-on-surface',
                               )}
                             >
                               {option.icon}
@@ -336,7 +336,7 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
                                   <span className="ml-2 text-xs text-on-surface-variant/60">{option.hint}</span>
                                 )}
                               </span>
-                              {active && <Check className="h-4 w-4 shrink-0 text-secondary" aria-hidden="true" />}
+                              {active && <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />}
                             </button>
                           </li>
                         )

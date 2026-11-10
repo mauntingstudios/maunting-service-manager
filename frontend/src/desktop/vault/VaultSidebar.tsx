@@ -120,7 +120,7 @@ export function VaultSidebar({
   return (
     <nav
       aria-label={t('mss.vault.titelManager')}
-      className="hidden w-60 shrink-0 flex-col border-r border-outline-variant/20 bg-surface-container-low/65 md:flex xl:w-64"
+      className="hidden w-60 shrink-0 flex-col border-r border-outline-variant/30 bg-surface-container vault-sidebar msm-sidebar md:flex xl:w-64"
     >
       {/* Marken-Kopfbereich */}
       <div className="flex items-center gap-2.5 border-b border-outline-variant/15 px-3.5 py-3">

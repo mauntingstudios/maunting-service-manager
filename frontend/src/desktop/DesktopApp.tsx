@@ -1268,7 +1268,7 @@ function Hauptseite({
             <button
               type="button"
               onClick={() => setMobileMenuOffen(!mobileMenuOffen)}
-              className="p-2 rounded-xl border border-outline-variant/40 bg-surface-container-low text-on-surface hover:bg-surface-container md:hidden transition-colors"
+              className="flex h-10 w-10 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95 md:hidden"
               aria-label={t('mss.app.menueOeffnen')}
               aria-expanded={mobileMenuOffen}
             >
@@ -1525,7 +1525,7 @@ function Hauptseite({
       )}
       {/* Hauptinhalt — Dashboard, KI, Tresor, Chat, Dokumente, Kalender, Notizen und Teams füllen den Raum vollflächig (p-0).
           Jede Seite bindet ihren atmosphärischen Hintergrund nahtlos bis zum oberen Rand ein. */}
-      <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'chat' ? 'p-0 bg-surface' : bereich === 'tresor' || bereich === 'dokumente' || bereich === 'teams' || bereich === 'kalender' || bereich === 'notizen' || bereich === 'dashboard' ? 'p-0' : 'p-margin-mobile md:p-margin-desktop'}`}>
+      <main className={`relative flex flex-1 min-h-0 flex-col overflow-hidden ${bereich === 'ki' || bereich === 'chat' || bereich === 'dokumente' || bereich === 'tresor' || bereich === 'teams' || bereich === 'kalender' || bereich === 'notizen' || bereich === 'dashboard' ? 'p-0' : 'p-margin-mobile md:p-margin-desktop'}`}>
         <div className="relative z-10 flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
           {bereich === 'dashboard' ? (
             <DashboardBereich />
@@ -1536,7 +1536,7 @@ function Hauptseite({
                 <p className="text-sm text-on-surface-variant">{t('common.offline')}</p>
               </div>
             ) : darfChatten ? (
-              <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden bg-surface">
+              <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <Ai
                     appFaehigkeiten={{
@@ -1550,7 +1550,7 @@ function Hauptseite({
               <KeinChatrecht />
             )
           ) : bereich === 'chat' ? (
-            <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden bg-surface">
+            <div className="flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden">
               <Messenger />
             </div>
           ) : bereich === 'profil' ? (
