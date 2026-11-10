@@ -1,30 +1,19 @@
 """Ownership, DIS-Schutz, Secret-Abweisung und Abruf fuer AI-Memory."""
 
-from collections.abc import Iterable, Iterator, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from functools import lru_cache
-import hashlib
-import hmac
 import logging
-import math
-import os
-import re
 from uuid import UUID, uuid4
 
-from cryptography.exceptions import InvalidTag
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import HTTPException
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session
 
-from config import settings
 from models import (
-    AiMemoryBegriff,
     AiMemoryBeleg,
     AiMemoryEntry,
-    AiMemoryPreference,
     AiMemoryTopic,
     AiMemoryVersion,
     Server,
@@ -38,82 +27,61 @@ from services import (
     permission_service,
 )
 from services.ai_redaction import enthaelt_zugangsdaten
-from services.ai_embedding_service import EMBEDDING_BYTES
-from services.dis_client import DisClient, DisDecryptionError, DisSidecarError
+from services.dis_client import DisClient, DisDecryptionError
+# Re-Exporte: Router, Dienste, Migrationen und Tests holen diese Namen ueber
+# diesen Modulpfad statt ueber das Ursprungsmodul. Sie sind hier absichtlich
+# nicht benutzt, damit der Pfad nicht bricht (`noqa: F401`).
 from services.ai_memory_ranking import (
-    GEWICHTE_AUSWAHL,
-    HALTBARKEIT_START,
-    MAX_HALTBARKEIT_TAGE,
-    RECENCY_HALFLIFE_DAYS,
-    _FUELLWOERTER,
-    _WORD_RE,
-    _bewertung,
-    _reiz,
-    _relevance,
-    _tage_seit_gebrauch,
-    _tokens,
-    _wortquelle,
-    haltbarkeit,
-    haltbarkeit_nach_gebrauch,
+    HALTBARKEIT_START,  # noqa: F401 - Re-Export
+    MAX_HALTBARKEIT_TAGE,  # noqa: F401 - Re-Export
+    _reiz,  # noqa: F401 - Re-Export
+    _relevance,  # noqa: F401 - Re-Export
+    _tokens,  # noqa: F401 - Re-Export
+    _wortquelle,  # noqa: F401 - Re-Export
+    haltbarkeit,  # noqa: F401 - Re-Export
+    haltbarkeit_nach_gebrauch,  # noqa: F401 - Re-Export
     kopf_rang,
-    praesenz,
 )
 from services.ai_memory_lesen import (
-    Gedaechtnisseite,
-    _ansicht,
-    _seite,
-    _suchseite,
-    list_entries,
-    personal_entries,
-    scope_entries,
+    Gedaechtnisseite,  # noqa: F401 - Re-Export
+    list_entries,  # noqa: F401 - Re-Export
+    personal_entries,  # noqa: F401 - Re-Export
+    scope_entries,  # noqa: F401 - Re-Export
 )
 from services.ai_memory_consent import (
-    NOTICE_REPEAT_HOURS,
-    _einschalten,
-    _preference_row,
-    einwilligung_seit,
-    notice_due,
-    preference,
-    record_notice_answer,
-    set_preference,
+    NOTICE_REPEAT_HOURS,  # noqa: F401 - Re-Export
+    einwilligung_seit,  # noqa: F401 - Re-Export
+    notice_due,  # noqa: F401 - Re-Export
+    preference,  # noqa: F401 - Re-Export
+    record_notice_answer,  # noqa: F401 - Re-Export
+    set_preference,  # noqa: F401 - Re-Export
 )
 from services.ai_memory_vektor import (
-    GEPACKT_BYTES,
-    MAX_BEGRIFFE,
-    _VEKTOR_NONCE,
-    _begriff_schluessel,
-    _begriffe_setzen,
-    _einbettungstext,
-    _embedding_source,
-    _liegt_im_klartext,
+    GEPACKT_BYTES,  # noqa: F401 - Re-Export
     _stored_vector,
-    _vektor_entschluesseln,
-    _vektor_setzen,
-    _vektor_verschluesseln,
-    _vektorschluessel,
-    begriff_werte,
-    indizes_nachziehen,
+    _vektor_verschluesseln,  # noqa: F401 - Re-Export
+    begriff_werte,  # noqa: F401 - Re-Export
+    indizes_nachziehen,  # noqa: F401 - Re-Export
     refresh_embedding,
-    vektor_lesen,
+    vektor_lesen,  # noqa: F401 - Re-Export
 )
 from services.ai_memory_krypto import (
     SCHLUSS,
-    _STAPEL_WERTE,
-    _STAPEL_ZEICHEN,
+    _STAPEL_WERTE,  # noqa: F401 - Re-Export
     _aad,
-    _entschluesseln,
+    _entschluesseln,  # noqa: F401 - Re-Export
     _entschluesseln_lesbare,
-    _index_nachziehen,
-    _memory_line,
-    _oeffnen,
+    _index_nachziehen,  # noqa: F401 - Re-Export
+    _memory_line,  # noqa: F401 - Re-Export
+    _oeffnen,  # noqa: F401 - Re-Export
     _schluessel_indizes,
     _schluessel_laden,
     _sammeln,
-    _stapel,
+    _stapel,  # noqa: F401 - Re-Export
     _utc,
     _versions_aad,
     schluessel_bedingung,
-    schluessel_nachziehen,
+    schluessel_nachziehen,  # noqa: F401 - Re-Export
 )
 
 

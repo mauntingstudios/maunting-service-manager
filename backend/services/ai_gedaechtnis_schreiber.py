@@ -556,7 +556,7 @@ def _weiter(ende: tuple[datetime, str], bis: datetime | None, bis_id: str | None
     """Liegt ``ende`` hinter der Marke? Die Marke geht nur vorwärts.
 
     Wird das Gedächtnis während eines Durchgangs eingeschaltet, steht die
-    Marke danach auf „jetzt“ (`ai_memory_service._einschalten`). Der
+    Marke danach auf „jetzt“ (`ai_memory_consent._einschalten`). Der
     Durchgang darf sie beim Freigeben nicht auf sein älteres Fensterende
     zurücksetzen — sonst läse der nächste, was ohne Einwilligung gesagt wurde.
     Eine Marke ohne Kennung deckt alles bis einschließlich ihres Zeitpunkts.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from models import AiMessage, Role, RolePermission, User
+from models import AiMessage, Role, RolePermission
 from models.doc import Document
 from models.team import Team, TeamMember
 from services import ai_gedaechtnis_schreiber as schreiber
@@ -77,13 +77,32 @@ def test_dokumentgedaechtnis_schreibt_nur_das_dokumentteam(db):
 
 def test_ohne_memory_schalter_kein_teambereich(db):
     owner = _benutzer(db, "mem_doc_b")
-    team = _team(db, owner, "Ohne-Schalter", manage_memory=False)
-    _doc, gespraech = _gespraech(db, owner, team)
+    mitglied = _benutzer(db, "mem_doc_b2")
+    team = _team(db, owner, "Ohne-Schalter")
+    # Der Schalter gilt fuer Mitglieder. Der Teamgruender darf immer
+    # (`has_team_permission`), deshalb traegt hier ein normales Mitglied die
+    # Einschraenkung.
+    db.add(TeamMember(
+        team_id=team.id, user_id=mitglied.id, role="member", added_by=owner.id,
+        can_manage_memory=True,
+    ))
+    db.commit()
+    _doc, gespraech = _gespraech(db, mitglied, team)
 
     gelesen = schreiber._gespraech_lesen(db, gespraech.id)
 
     assert gelesen is not None and gelesen.auftrag is not None
-    assert schreiber._bereiche(db, owner, gelesen.auftrag, persoenlich=False) == []
+    assert schreiber._bereiche(db, mitglied, gelesen.auftrag, persoenlich=False) != []
+
+    eintrag = (
+        db.query(TeamMember)
+        .filter_by(team_id=team.id, user_id=mitglied.id)
+        .one()
+    )
+    eintrag.can_manage_memory = False
+    db.commit()
+
+    assert schreiber._bereiche(db, mitglied, gelesen.auftrag, persoenlich=False) == []
 
 
 def test_link_gast_erzeugt_keinen_gedaechtnisauftrag(db):

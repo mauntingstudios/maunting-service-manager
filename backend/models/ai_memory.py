@@ -225,7 +225,7 @@ class AiMemoryEntry(Base):
     # Er lag hier lange im Klartext, mit der Begründung, der `key` daneben
     # verrate ohnehin mehr. Das stimmte nicht. Der Schlüssel fasst 64 Zeichen
     # aus [A-Za-z0-9_.-]; der Vektor entsteht aus Schlüssel **und** Wert
-    # (`ai_memory_service._embedding_source`), und das Modell darunter ist ein
+    # (`ai_memory_vektor._embedding_source`), und das Modell darunter ist ein
     # statisches — der Vektor ist im Kern das Mittel der Wortvektoren, und aus
     # so einem Mittel lässt sich der Wortbestand des Werts näherungsweise
     # zurücksuchen. Wer nur die Datenbank hatte, kam damit an den Inhalt fremder
@@ -241,7 +241,7 @@ class AiMemoryEntry(Base):
     #
     # Bestandszeilen tragen hier weiterhin die nackten 1.024 Bytes. Sie werden
     # gelesen wie bisher und beim nächsten Abruf in den Kontext neu und dann
-    # verpackt geschrieben (`ai_memory_service._liegt_im_klartext`) — eine
+    # verpackt geschrieben (`ai_memory_vektor._liegt_im_klartext`) — eine
     # Migration braucht es dafür nicht, und keine Zeile verliert unterwegs
     # ihren Bedeutungsanteil.
     #
@@ -330,7 +330,7 @@ class AiMemoryEntry(Base):
     def titel(self) -> str | None:
         """Der Titel im Klartext, wie beim Namen einmal entschluesselt und gemerkt.
 
-        Fuer viele Zeilen fuellt `ai_memory_service._oeffnen` den Speicher in
+        Fuer viele Zeilen fuellt `ai_memory_krypto._oeffnen` den Speicher in
         einem Sidecar-Aufruf zusammen mit dem Text.
         """
         if "_titel_klartext" in self.__dict__:
@@ -409,7 +409,7 @@ class AiMemoryBegriff(Base):
 
     Der Prüfwert ist ein HMAC über Bereich und Wort, die ersten acht Byte als
     Zahl, mit einem Schlüssel aus dem Panel-Secret — wie beim Vektor
-    (`ai_memory_service._begriff_schluessel`). Derselbe Schutz und dieselbe
+    (`ai_memory_vektor._begriff_schluessel`). Derselbe Schutz und dieselbe
     Grenze: wer nur die Datenbank hat, liest kein Wort; wer auch die
     Panel-Umgebung hat, kann Wörter durchprobieren. Der Bereich steckt im
     Prüfwert, damit ein Wort in zwei Bereichen nicht als dasselbe erkennbar ist

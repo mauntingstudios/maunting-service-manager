@@ -22,7 +22,7 @@ entsteht und das Modell darunter ein statisches ist, liess sich aus ihm der
 Wortbestand einer fremden Notiz naeherungsweise zurueckholen — an der
 Verschluesselung des Werts vorbei. Sein Schluessel kommt allerdings aus dem
 Panel-Secret und nicht aus dem DIS-Sidecar (Begruendung an
-`ai_memory_service._vektorschluessel`): gegen den blossen Datenbankzugriff
+`ai_memory_vektor._vektorschluessel`): gegen den blossen Datenbankzugriff
 traegt das, gegen jemanden mit der Panel-Umgebung nicht.
 """
 
