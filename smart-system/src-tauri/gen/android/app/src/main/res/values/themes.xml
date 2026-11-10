@@ -29,4 +29,11 @@
     <style name="Theme.MSS.Teilen" parent="Theme.MaterialComponents.DayNight.Dialog">
         <item name="android:windowCloseOnTouchOutside">false</item>
     </style>
+
+    <!-- Für CameraActivity: Vollbild ohne Titelleiste, schwarzer Hintergrund -->
+    <style name="Theme.MSS.Kamera" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowBackground">#000000</item>
+    </style>
 </resources>

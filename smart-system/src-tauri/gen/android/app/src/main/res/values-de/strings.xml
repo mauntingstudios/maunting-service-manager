@@ -13,4 +13,14 @@
     <string name="teilen_keine_datei">Im Tresor lassen sich nur Dateien sichern, kein Text.</string>
     <string name="teilen_kein_platz">Auf dem Telefon ist nicht genug Platz, um die Datei vorzubereiten.</string>
     <string name="teilen_fehler">Die Datei ließ sich nicht lesen.</string>
+    <string name="kamera_titel">Kamera</string>
+    <string name="kamera_zurueck">Zurück</string>
+    <string name="kamera_blitz">Blitz</string>
+    <string name="kamera_hdr">HDR</string>
+    <string name="kamera_nachtmodus">Nachtmodus</string>
+    <string name="kamera_modus_foto">FOTO</string>
+    <string name="kamera_modus_video">VIDEO</string>
+    <string name="kamera_letztes_bild">Letzte Aufnahme</string>
+    <string name="kamera_wechseln">Kamera wechseln</string>
+    <string name="kamera_keine_berechtigung">Kameraberechtigung erforderlich</string>
 </resources>

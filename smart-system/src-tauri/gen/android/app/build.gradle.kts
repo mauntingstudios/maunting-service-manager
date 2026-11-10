@@ -83,6 +83,17 @@ dependencies {
     // Aufnahmen, Netzbedingung, Fortsetzen nach Abbruch. Der Standard von Google
     // dafür; 2.10, weil das Kotlin-Plugin hier 1.9 ist.
     implementation("androidx.work:work-runtime:2.10.5")
+
+    // CameraX für die native Kamera
+    val cameraxVersion = "1.4.1"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("androidx.camera:camera-extensions:$cameraxVersion")
+    implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     testImplementation("junit:junit:4.13.2")
     // Nur für die Tests, nicht im APK. Auf der JVM sind org.json und SQLite aus
     // android.jar bloß Stummel: org.json für den Stand der Kamera-Sicherung,

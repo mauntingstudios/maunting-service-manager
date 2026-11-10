@@ -99,6 +99,24 @@
             </intent-filter>
         </activity>
 
+        <!-- Native Kamera: autark, schnell, mit direkter Tresorübergabe -->
+        <activity
+            android:name=".camera.ui.CameraActivity"
+            android:label="@string/kamera_titel"
+            android:theme="@style/Theme.MSS.Kamera"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode">
+            <intent-filter>
+                <action android:name="android.media.action.IMAGE_CAPTURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <!-- Terminerinnerungen, die die offene App eingeplant hat (Erinnerungen.kt) -->
         <receiver
             android:name=".ErinnerungEmpfaenger"

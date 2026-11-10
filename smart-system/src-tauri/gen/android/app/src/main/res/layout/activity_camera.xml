@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/cameraRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- Live-Kamera-Vorschau -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Animierter Fadenkreuz-Indikator für Touch-to-Focus -->
+    <View
+        android:id="@+id/focusRing"
+        android:layout_width="68dp"
+        android:layout_height="68dp"
+        android:background="@drawable/bg_focus_ring"
+        android:visibility="gone" />
+
+    <!-- Obere Steuerleiste (Glassmorphism-Knöpfe) -->
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingTop="36dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="12dp">
+
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_round_glass_button"
+            android:contentDescription="@string/kamera_zurueck"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_arrow_back" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <ImageButton
+            android:id="@+id/btnFlash"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_round_glass_button"
+            android:contentDescription="@string/kamera_blitz"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_flash_off" />
+
+        <ImageButton
+            android:id="@+id/btnHdr"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_round_glass_button"
+            android:contentDescription="@string/kamera_hdr"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_hdr"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/btnNight"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_round_glass_button"
+            android:contentDescription="@string/kamera_nachtmodus"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_night"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Untere Steuerleiste mit Modus, Auslöser und Thumbnail -->
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingBottom="36dp">
+
+        <!-- Modusumschaltung -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/txtModePhoto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="16dp"
+                android:text="@string/kamera_modus_foto"
+                android:textColor="#ffffff"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/txtModeVideo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:text="@string/kamera_modus_video"
+                android:textColor="#80ffffff"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- Hauptbedienelemente: Thumbnail links, Auslöser mittig, Kamerawechsel rechts -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="96dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp">
+
+            <!-- Thumbnail der letzten Aufnahme -->
+            <FrameLayout
+                android:id="@+id/btnThumbnailContainer"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:background="@drawable/bg_thumbnail_frame"
+                android:padding="2dp">
+
+                <ImageView
+                    android:id="@+id/imgThumbnail"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@string/kamera_letztes_bild"
+                    android:scaleType="centerCrop" />
+            </FrameLayout>
+
+            <!-- Großer runder Auslöser -->
+            <FrameLayout
+                android:id="@+id/btnShutter"
+                android:layout_width="84dp"
+                android:layout_height="84dp"
+                android:layout_centerInParent="true"
+                android:background="@drawable/bg_shutter_outer">
+
+                <View
+                    android:id="@+id/shutterInner"
+                    android:layout_width="66dp"
+                    android:layout_height="66dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_shutter_inner" />
+            </FrameLayout>
+
+            <!-- Kamerawechsel (Front / Rückseite) -->
+            <ImageButton
+                android:id="@+id/btnSwitchLens"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="@drawable/bg_round_glass_button"
+                android:contentDescription="@string/kamera_wechseln"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_camera_switch" />
+        </RelativeLayout>
+    </LinearLayout>
+
+</FrameLayout>

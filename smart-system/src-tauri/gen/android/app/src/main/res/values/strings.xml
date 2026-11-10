@@ -15,4 +15,14 @@
     <string name="teilen_keine_datei">Only files can be saved in the vault, not text.</string>
     <string name="teilen_kein_platz">There is not enough space on the phone to prepare the file.</string>
     <string name="teilen_fehler">The file could not be read.</string>
+    <string name="kamera_titel">Camera</string>
+    <string name="kamera_zurueck">Back</string>
+    <string name="kamera_blitz">Flash</string>
+    <string name="kamera_hdr">HDR</string>
+    <string name="kamera_nachtmodus">Night mode</string>
+    <string name="kamera_modus_foto">PHOTO</string>
+    <string name="kamera_modus_video">VIDEO</string>
+    <string name="kamera_letztes_bild">Latest capture</string>
+    <string name="kamera_wechseln">Switch camera</string>
+    <string name="kamera_keine_berechtigung">Camera permission required</string>
 </resources>
