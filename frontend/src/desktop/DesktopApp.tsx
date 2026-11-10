@@ -750,6 +750,23 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
   }, [location.pathname, location.search])
 
   useEffect(() => {
+    if (!isAndroid) return
+    const oeffneTresor = () => {
+      navigate('/tresor')
+    }
+    window.addEventListener('msm:open-vault', oeffneTresor)
+    try {
+      const msmRand = (window as unknown as { MsmRand?: { vaultAngefordertVerbrauchen?: () => boolean } }).MsmRand
+      if (msmRand?.vaultAngefordertVerbrauchen?.()) {
+        navigate('/tresor')
+      }
+    } catch (err) {
+      still(err, 'NavigationEmpfaenger.vaultAngefordertVerbrauchen')
+    }
+    return () => window.removeEventListener('msm:open-vault', oeffneTresor)
+  }, [navigate])
+
+  useEffect(() => {
     const unlisten = listen<string>('mss:navigiere-zu', (event) => {
       if (event.payload) {
         const ziel = event.payload

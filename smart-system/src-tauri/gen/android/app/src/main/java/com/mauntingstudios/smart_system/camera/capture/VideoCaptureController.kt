@@ -1,10 +1,14 @@
 package com.mauntingstudios.smart_system.camera.capture
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.camera.video.FallbackStrategy
-import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.MediaStoreOutputOptions
 import androidx.camera.video.PendingRecording
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
@@ -15,15 +19,16 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
 import com.mauntingstudios.smart_system.camera.media.InternalMediaStore
 import com.mauntingstudios.smart_system.camera.media.ThumbnailLoader
-import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executor
 
 /**
  * Verantwortlich für hardwarebeschleunigte Videoaufnahmen mittels CameraX VideoCapture.
  *
- * Behandelt Audioberechtigungen kontrolliert (stille Aufnahme bei verweigerter
- * Berechtigung ohne Absturz), prüft Speicherplatz und schließt den MP4-Container
- * bei Unterbrechungen sauber ab.
+ * Speichert Aufnahmen im Standard-Videoalbum (DCIM/Camera), damit der Hintergrund-Job
+ * (KameraArbeit) neue Videos erfassen und verschlüsselt in den Tresor laden kann.
  */
 class VideoCaptureController {
 
@@ -51,7 +56,7 @@ class VideoCaptureController {
     }
 
     /**
-     * Startet eine neue Videoaufnahme in den geschützten internen Speicher.
+     * Startet eine neue Videoaufnahme in den MediaStore (DCIM/Camera).
      */
     fun startRecording(
         context: Context,
@@ -73,10 +78,23 @@ class VideoCaptureController {
             return
         }
 
-        val videoDatei = InternalMediaStore.neueVideoDatei(context)
-        val outputOptions = FileOutputOptions.Builder(videoDatei).build()
+        val zeitstempel = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+        val dateiName = "VID_$zeitstempel.mp4"
 
-        var pending: PendingRecording = capture.output.prepareRecording(context, outputOptions)
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, dateiName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
+            }
+        }
+
+        val mediaStoreOptions = MediaStoreOutputOptions.Builder(
+            context.contentResolver,
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        ).setContentValues(contentValues).build()
+
+        var pending: PendingRecording = capture.output.prepareRecording(context, mediaStoreOptions)
 
         // Mikrofonberechtigung prüfen
         val hatAudio = ContextCompat.checkSelfPermission(
@@ -106,16 +124,16 @@ class VideoCaptureController {
                     listener.onVideoRecordingChanged(false)
 
                     if (event.hasError()) {
-                        InternalMediaStore.sicherLoeschen(videoDatei)
                         listener.onCaptureError(
                             IllegalStateException("Videoaufnahme fehlgeschlagen (Fehlercode: ${event.error})")
                         )
                     } else {
-                        if (videoDatei.exists() && videoDatei.length() > 0) {
-                            ThumbnailLoader.ladeFuer(videoDatei) {
+                        val uri = event.outputResults.outputUri
+                        if (uri != Uri.EMPTY) {
+                            ThumbnailLoader.ladeFuerUri(context, uri) {
                                 // Thumbnail aktualisiert
                             }
-                            listener.onVideoSaved(videoDatei)
+                            listener.onVideoSaved(uri)
                         } else {
                             listener.onCaptureError(IllegalStateException("Videodatei ist leer"))
                         }

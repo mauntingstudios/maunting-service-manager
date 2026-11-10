@@ -26,6 +26,7 @@ import androidx.core.view.WindowInsetsCompat
 class MainActivity : TauriActivity() {
   companion object {
     const val ACTION_OPEN_WALLET = "com.mauntingstudios.smart_system.OPEN_WALLET"
+    const val ACTION_OPEN_VAULT = "com.mauntingstudios.smart_system.OPEN_VAULT"
   }
 
   /**
@@ -36,6 +37,8 @@ class MainActivity : TauriActivity() {
    */
   @Volatile private var rand = mapOf("oben" to 0f, "links" to 0f, "rechts" to 0f, "unten" to 0f)
   @Volatile private var walletAngefordert = false
+  @Volatile private var vaultAngefordert = false
+  @Volatile private var vaultAufnahmeUri: String? = null
   private var hauptWebView: WebView? = null
 
   override fun onWebViewCreate(webView: WebView) {
@@ -68,6 +71,16 @@ class MainActivity : TauriActivity() {
         walletAngefordert = false
         return war
       }
+      @JavascriptInterface fun vaultAngefordertVerbrauchen(): Boolean {
+        val war = vaultAngefordert
+        vaultAngefordert = false
+        return war
+      }
+      @JavascriptInterface fun vaultAufnahmeUriVerbrauchen(): String? {
+        val uri = vaultAufnahmeUri
+        vaultAufnahmeUri = null
+        return uri
+      }
     }, "MsmRand")
     // Nur lesen, kein eigener OnApplyWindowInsetsListener: der ersetzt den des
     // WebViews, und env(safe-area-inset-top) fiel auf 0, die Statusleiste lag
@@ -98,12 +111,14 @@ class MainActivity : TauriActivity() {
     createNotificationChannels()
     registriereWalletShortcut()
     pruefeWalletIntent(intent)
+    pruefeVaultIntent(intent)
   }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
     pruefeWalletIntent(intent)
+    pruefeVaultIntent(intent)
   }
 
   private fun pruefeWalletIntent(intent: Intent?) {
@@ -111,6 +126,20 @@ class MainActivity : TauriActivity() {
       walletAngefordert = true
       hauptWebView?.post {
         hauptWebView?.evaluateJavascript("window.dispatchEvent(new Event('msm:open-wallet'))", null)
+      }
+    }
+  }
+
+  private fun pruefeVaultIntent(intent: Intent?) {
+    if (intent?.action == ACTION_OPEN_VAULT) {
+      vaultAngefordert = true
+      vaultAufnahmeUri = intent.getStringExtra("aufnahmeUri")
+      val uriJson = org.json.JSONObject.quote(vaultAufnahmeUri ?: "")
+      hauptWebView?.post {
+        hauptWebView?.evaluateJavascript(
+          "window.dispatchEvent(new CustomEvent('msm:open-vault', { detail: { uri: $uriJson } }))",
+          null
+        )
       }
     }
   }

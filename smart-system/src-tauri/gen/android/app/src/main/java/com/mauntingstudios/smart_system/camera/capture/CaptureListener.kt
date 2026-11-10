@@ -1,5 +1,6 @@
 package com.mauntingstudios.smart_system.camera.capture
 
+import android.net.Uri
 import java.io.File
 
 /**
@@ -12,6 +13,9 @@ interface CaptureListener {
     /** Foto wurde erfolgreich auf den Datenträger geschrieben. */
     fun onPhotoSaved(file: File) {}
 
+    /** Foto wurde im MediaStore / Speicher abgelegt. */
+    fun onPhotoSaved(uri: Uri) {}
+
     /** Aufnahme ist fehlgeschlagen. */
     fun onCaptureError(error: Throwable) {}
 
@@ -20,4 +24,7 @@ interface CaptureListener {
 
     /** Video wurde erfolgreich auf den Datenträger geschrieben. */
     fun onVideoSaved(file: File) {}
+
+    /** Video wurde im MediaStore / Speicher abgelegt. */
+    fun onVideoSaved(uri: Uri) {}
 }

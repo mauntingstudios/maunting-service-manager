@@ -23,4 +23,8 @@
     <string name="kamera_letztes_bild">Letzte Aufnahme</string>
     <string name="kamera_wechseln">Kamera wechseln</string>
     <string name="kamera_keine_berechtigung">Kameraberechtigung erforderlich</string>
+    <string name="kamera_sicherung_aus_titel">Kamera-Sicherung</string>
+    <string name="kamera_sicherung_aus_nachricht">Die automatische Kamera-Sicherung ist im Tresor noch nicht aktiviert. Schalte sie im Tresor ein, damit deine Aufnahmen automatisch verschlüsselt gesichert werden.</string>
+    <string name="kamera_sicherung_einschalten">Zum Tresor</string>
+    <string name="kamera_schliessen">Schließen</string>
 </resources>

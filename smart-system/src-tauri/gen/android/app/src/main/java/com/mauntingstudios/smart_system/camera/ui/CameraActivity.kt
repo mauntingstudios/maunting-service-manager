@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -23,8 +24,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.mauntingstudios.smart_system.KameraAblage
 import com.mauntingstudios.smart_system.MainActivity
 import com.mauntingstudios.smart_system.R
 import com.mauntingstudios.smart_system.camera.capture.CaptureListener
@@ -62,6 +65,7 @@ class CameraActivity : AppCompatActivity() {
     private lateinit var btnShutter: FrameLayout
     private lateinit var shutterInner: View
     private lateinit var btnSwitchLens: ImageButton
+    private var letztesAufnahmeUri: Uri? = null
 
     private lateinit var scaleGestureDetector: ScaleGestureDetector
 
@@ -340,6 +344,18 @@ class CameraActivity : AppCompatActivity() {
                 // Fotoaufnahme gestartet
             }
 
+            override fun onPhotoSaved(uri: Uri) {
+                runOnUiThread {
+                    letztesAufnahmeUri = uri
+                    ThumbnailLoader.ladeFuerUri(this@CameraActivity, uri) { bmp ->
+                        if (bmp != null) {
+                            imgThumbnail.setImageBitmap(bmp)
+                            imgThumbnail.animate().alpha(1.0f).setDuration(200).start()
+                        }
+                    }
+                }
+            }
+
             override fun onPhotoSaved(file: File) {
                 runOnUiThread {
                     ThumbnailLoader.ladeFuer(file) { bmp ->
@@ -396,6 +412,19 @@ class CameraActivity : AppCompatActivity() {
                     }
                 }
 
+                override fun onVideoSaved(uri: Uri) {
+                    runOnUiThread {
+                        setzeVideoUiZurueck()
+                        letztesAufnahmeUri = uri
+                        ThumbnailLoader.ladeFuerUri(this@CameraActivity, uri) { bmp ->
+                            if (bmp != null) {
+                                imgThumbnail.setImageBitmap(bmp)
+                                imgThumbnail.animate().alpha(1.0f).setDuration(200).start()
+                            }
+                        }
+                    }
+                }
+
                 override fun onVideoSaved(file: File) {
                     runOnUiThread {
                         setzeVideoUiZurueck()
@@ -444,14 +473,22 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun aktualisiereLetztesThumbnail() {
-        val ausstehende = InternalMediaStore.ausstehendeAufnahmen(this)
-        ThumbnailLoader.ladeNeuestes(ausstehende) { bmp ->
-            if (bmp != null) {
+        ThumbnailLoader.ladeNeuestesAusMediaStore(this) { bmp, uri ->
+            if (bmp != null && uri != null) {
+                letztesAufnahmeUri = uri
                 imgThumbnail.setImageBitmap(bmp)
                 imgThumbnail.alpha = 1.0f
             } else {
-                imgThumbnail.setImageDrawable(null)
-                imgThumbnail.alpha = 0.0f
+                val ausstehende = InternalMediaStore.ausstehendeAufnahmen(this)
+                ThumbnailLoader.ladeNeuestes(ausstehende) { localBmp ->
+                    if (localBmp != null) {
+                        imgThumbnail.setImageBitmap(localBmp)
+                        imgThumbnail.alpha = 1.0f
+                    } else {
+                        imgThumbnail.setImageDrawable(null)
+                        imgThumbnail.alpha = 0.0f
+                    }
+                }
             }
         }
     }
@@ -487,9 +524,34 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun oeffneTresorOderVorschau() {
+        val stand = KameraAblage.lesen(this)
+        if (stand == null) {
+            zeigeSicherungDeaktiviertDialog()
+            return
+        }
+
         val intent = Intent(this, MainActivity::class.java).apply {
+            action = MainActivity.ACTION_OPEN_VAULT
             flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            letztesAufnahmeUri?.let {
+                putExtra("aufnahmeUri", it.toString())
+            }
         }
         startActivity(intent)
+    }
+
+    private fun zeigeSicherungDeaktiviertDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.kamera_sicherung_aus_titel)
+            .setMessage(R.string.kamera_sicherung_aus_nachricht)
+            .setPositiveButton(R.string.kamera_sicherung_einschalten) { _, _ ->
+                val intent = Intent(this, MainActivity::class.java).apply {
+                    action = MainActivity.ACTION_OPEN_VAULT
+                    flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                }
+                startActivity(intent)
+            }
+            .setNegativeButton(R.string.kamera_schliessen, null)
+            .show()
     }
 }

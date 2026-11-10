@@ -1,18 +1,24 @@
 package com.mauntingstudios.smart_system.camera.capture
 
+import android.content.ContentValues
 import android.content.Context
 import android.os.Build
+import android.provider.MediaStore
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import com.mauntingstudios.smart_system.camera.core.FlashMode
 import com.mauntingstudios.smart_system.camera.media.InternalMediaStore
 import com.mauntingstudios.smart_system.camera.media.ThumbnailLoader
-import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executor
 
 /**
  * Verantwortlich für Fotoaufnahmen mit maximaler nativer Bildqualität,
- * korrekter Flash-Steuerung und Ultra-HDR-Ausgabe auf unterstützten Geräten.
+ * korrekter Flash-Steuerung und Speicherung im Standard-Kameraalbum (DCIM),
+ * damit die automatische Hintergrund-Sicherung (KameraArbeit) neue Aufnahmen
+ * erfassen und verschlüsselt in den Tresor laden kann.
  */
 class PhotoCaptureController {
 
@@ -45,7 +51,7 @@ class PhotoCaptureController {
     }
 
     /**
-     * Löst eine Fotoaufnahme aus und speichert sie direkt im isolierten App-Speicher.
+     * Löst eine Fotoaufnahme aus und registriert sie im MediaStore (DCIM/Camera).
      */
     fun takePhoto(
         context: Context,
@@ -62,8 +68,23 @@ class PhotoCaptureController {
             return
         }
 
-        val zielfile = InternalMediaStore.neueFotoDatei(context)
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(zielfile).build()
+        val zeitstempel = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+        val dateiName = "IMG_$zeitstempel.jpg"
+
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, dateiName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+        }
+
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(
+            context.contentResolver,
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            contentValues
+        ).build()
 
         listener.onCaptureStarted()
 
@@ -72,18 +93,27 @@ class PhotoCaptureController {
             executor,
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    if (zielfile.exists() && zielfile.length() > 0) {
-                        ThumbnailLoader.ladeFuer(zielfile) {
+                    val uri = outputFileResults.savedUri
+                    if (uri != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val values = ContentValues().apply {
+                                put(MediaStore.MediaColumns.IS_PENDING, 0)
+                            }
+                            try {
+                                context.contentResolver.update(uri, values, null, null)
+                            } catch (_: Exception) {
+                            }
+                        }
+                        ThumbnailLoader.ladeFuerUri(context, uri) {
                             // Thumbnail im Speicher aktualisiert
                         }
-                        listener.onPhotoSaved(zielfile)
+                        listener.onPhotoSaved(uri)
                     } else {
-                        listener.onCaptureError(IllegalStateException("Aufnahmedatei ist leer oder wurde nicht erstellt"))
+                        listener.onCaptureError(IllegalStateException("Aufnahme-URI ist null"))
                     }
                 }
 
                 override fun onError(exception: ImageCaptureException) {
-                    InternalMediaStore.sicherLoeschen(zielfile)
                     listener.onCaptureError(exception)
                 }
             },
