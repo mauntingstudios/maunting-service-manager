@@ -12,10 +12,12 @@ import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.WindowManager
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -27,6 +29,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import com.mauntingstudios.smart_system.KameraAblage
 import com.mauntingstudios.smart_system.MainActivity
 import com.mauntingstudios.smart_system.R
@@ -86,6 +91,13 @@ class CameraActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_camera)
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        passeWindowInsetsAn()
+
         initialisiereViews()
         konfiguriereGesten()
         konfiguriereButtons()
@@ -116,6 +128,42 @@ class CameraActivity : AppCompatActivity() {
             this,
             Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun passeWindowInsetsAn() {
+        val root = findViewById<View>(R.id.cameraRoot)
+        val topBar = findViewById<View>(R.id.topBar)
+        val bottomBar = findViewById<View>(R.id.bottomBar)
+        val timer = findViewById<View>(R.id.txtRecordingTimer)
+
+        val baseTopPadding = topBar.paddingTop
+        val baseBottomPadding = bottomBar.paddingBottom
+        val density = resources.displayMetrics.density
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, windowInsets ->
+            val insets = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+
+            // Obere Steuerleiste sicher unterhalb der Statusleiste / Notch platzieren
+            topBar.updatePadding(
+                top = insets.top + baseTopPadding
+            )
+
+            // Untere Leiste über der Navigationsleiste platzieren
+            bottomBar.updatePadding(
+                bottom = insets.bottom + baseBottomPadding
+            )
+
+            // Video-Timer dynamisch unter der Leiste ausrichten
+            val timerParams = timer.layoutParams as? FrameLayout.LayoutParams
+            if (timerParams != null) {
+                timerParams.topMargin = insets.top + (68 * density).toInt()
+                timer.layoutParams = timerParams
+            }
+
+            windowInsets
+        }
     }
 
     private fun initialisiereViews() {
@@ -511,15 +559,27 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun haptikFeedback() {
-        if (Build.VERSION.SDK_INT >= 31) {
-            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-            val vibrator = vibratorManager?.defaultVibrator
-            vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
-        } else {
-            @Suppress("DEPRECATION")
-            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            @Suppress("DEPRECATION")
-            vibrator?.vibrate(VibrationEffect.createOneShot(35, VibrationEffect.DEFAULT_AMPLITUDE))
+        try {
+            val decorView = window?.decorView
+            val ok = decorView?.performHapticFeedback(
+                HapticFeedbackConstants.CONFIRM
+            ) ?: false
+
+            if (!ok) {
+                if (Build.VERSION.SDK_INT >= 31) {
+                    val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                    vibratorManager?.defaultVibrator?.vibrate(
+                        VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                    @Suppress("DEPRECATION")
+                    vibrator?.vibrate(VibrationEffect.createOneShot(35, VibrationEffect.DEFAULT_AMPLITUDE))
+                }
+            }
+        } catch (_: Throwable) {
+            // Haptik darf niemals den Aufnahmeablauf beeinträchtigen
         }
     }
 

@@ -26,6 +26,8 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+    <!-- Haptisches Auslöser-Feedback für die Kamera -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
@@ -104,6 +106,8 @@
         <activity
             android:name=".camera.ui.CameraActivity"
             android:label="@string/kamera_titel"
+            android:icon="@mipmap/ic_camera_launcher"
+            android:roundIcon="@mipmap/ic_camera_launcher_round"
             android:theme="@style/Theme.MSS.Kamera"
             android:exported="true"
             android:screenOrientation="portrait"
