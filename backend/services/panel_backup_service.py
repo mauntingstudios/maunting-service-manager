@@ -101,6 +101,9 @@ PANEL_BACKUP_OHNE_DATEN: tuple[str, ...] = (
     # kein Bestand, den ein Restore weiterfuehren soll. Nach einer
     # Wiederherstellung beginnt eine Kopplung neu.
     "device_pairings",
+    # Ephemere Login- und Zero-Knowledge-Relais-Challenges (TTL 180s - 300s).
+    # Enthalten kurzlebige Tokens und duerfen nie in Backups gesichert werden.
+    "login_challenges",
 )
 
 

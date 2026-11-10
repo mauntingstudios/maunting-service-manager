@@ -38,7 +38,10 @@ export interface User {
   /** URL zum hochgeladenen Profilbild */
   avatar_url?: string | null
   social_privacy?: 'private' | 'friends' | 'public'
+  /** Zeitstempel der letzten Tresorschlüssel-Rotation (für Smartcard-Gültigkeit). */
+  vault_keys_rotated_at?: string | null
   created_at: string
+
 }
 
 export interface Server {

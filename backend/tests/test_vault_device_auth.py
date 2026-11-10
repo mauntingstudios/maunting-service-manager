@@ -366,3 +366,124 @@ def test_device_auth_token_nur_im_header(client, owner_cookies):
     )
     assert neu.status_code == 200
     assert neu.json()["status"] == "pending"
+
+
+def test_device_auth_chiffre_wird_bei_abruf_in_db_zerstoert(client, owner_cookies, db):
+    """Hygiene-Invariante: Bei Abruf (Status 'resolved') wird die Chiffre in der DB
+    sofort genullt/zerstoert, damit keine sensiblen Chiffrate persistent liegen bleiben."""
+    import json
+    sitzung = _session_anlegen(client, owner_cookies)
+    sid, token, rt = sitzung["session_id"], sitzung["session_token"], sitzung["resolve_token"]
+
+    aufloesen = client.post(
+        "/api/vault/device-auth/resolve",
+        json={"session_id": sid, "encrypted_payload": "geheime-chiffre-12345", "resolve_token": rt},
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies),
+    )
+    assert aufloesen.status_code == 200
+
+    abfrage = client.get(
+        f"/api/vault/device-auth/session/{sid}",
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies, token),
+    )
+    assert abfrage.status_code == 200
+    assert abfrage.json()["status"] == "resolved"
+    assert abfrage.json()["encrypted_payload"] == "geheime-chiffre-12345"
+
+    db.expire_all()
+    rows = db.query(LoginChallenge).filter(LoginChallenge.purpose == relay.PURPOSE_VAULT_DEVICE_AUTH).all()
+    ziel_row = None
+    for r in rows:
+        d = json.loads(r.payload_json or "{}")
+        if d.get("session_id") == sid:
+            ziel_row = r
+            break
+    assert ziel_row is not None
+    daten = json.loads(ziel_row.payload_json or "{}")
+    assert daten.get("encrypted_payload") is None, f"Chiffre verbleibt in DB: {daten.get('encrypted_payload')}"
+
+
+def test_device_auth_zweiter_abruf_liefert_expired_ohne_chiffre(client, owner_cookies):
+    """Single-Use-Invariante: Ein zweiter Abrufversuch auf derselben Session MUSS
+    den Status 'expired' liefern und darf die Chiffre keinesfalls erneut ausliefern."""
+    sitzung = _session_anlegen(client, owner_cookies)
+    sid, token, rt = sitzung["session_id"], sitzung["session_token"], sitzung["resolve_token"]
+
+    aufloesen = client.post(
+        "/api/vault/device-auth/resolve",
+        json={"session_id": sid, "encrypted_payload": "einmaliges-geheimnis-987", "resolve_token": rt},
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies),
+    )
+    assert aufloesen.status_code == 200
+
+    # 1. Abruf: liefert Chiffre
+    abruf1 = client.get(
+        f"/api/vault/device-auth/session/{sid}",
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies, token),
+    )
+    assert abruf1.status_code == 200
+    assert abruf1.json()["status"] == "resolved"
+    assert abruf1.json()["encrypted_payload"] == "einmaliges-geheimnis-987"
+
+    # 2. Abruf: MUSS 'expired' sein und DARF KEINE Chiffre enthalten
+    abruf2 = client.get(
+        f"/api/vault/device-auth/session/{sid}",
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies, token),
+    )
+    assert abruf2.status_code == 200
+    assert abruf2.json()["status"] == "expired"
+    assert "encrypted_payload" not in abruf2.json() or abruf2.json()["encrypted_payload"] is None
+
+
+def test_device_auth_paralleler_doppelabruf_liefert_genau_einmal_chiffre(client, owner_cookies):
+    """Race-Condition-Schutz: Zwei zeitgleiche Abfragen auf dieselbe aufgelöste Session
+    duerfen die Chiffre exakt einmal ausliefern. Der Verlierer der Race Condition MUSS
+    'expired' erhalten."""
+    import concurrent.futures
+
+    sitzung = _session_anlegen(client, owner_cookies)
+    sid, token, rt = sitzung["session_id"], sitzung["session_token"], sitzung["resolve_token"]
+
+    aufloesen = client.post(
+        "/api/vault/device-auth/resolve",
+        json={"session_id": sid, "encrypted_payload": "race-condition-secret-42", "resolve_token": rt},
+        cookies=owner_cookies,
+        headers=_kopf(owner_cookies),
+    )
+    assert aufloesen.status_code == 200
+
+    def _abrufen():
+        return client.get(
+            f"/api/vault/device-auth/session/{sid}",
+            cookies=owner_cookies,
+            headers=_kopf(owner_cookies, token),
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f1 = executor.submit(_abrufen)
+        f2 = executor.submit(_abrufen)
+        res1 = f1.result()
+        res2 = f2.result()
+
+    assert res1.status_code == 200
+    assert res2.status_code == 200
+
+    daten1 = res1.json()
+    daten2 = res2.json()
+
+    statuses = [daten1.get("status"), daten2.get("status")]
+    assert "resolved" in statuses, f"Mindestens ein Abruf muss 'resolved' sein: {statuses}"
+    assert "expired" in statuses, f"Der parallele Doppelabruf muss 'expired' sein: {statuses}"
+
+    erfolgreich = daten1 if daten1.get("status") == "resolved" else daten2
+    abgewiesen = daten2 if daten1.get("status") == "resolved" else daten1
+
+    assert erfolgreich.get("encrypted_payload") == "race-condition-secret-42"
+    assert abgewiesen.get("encrypted_payload") is None
+
+

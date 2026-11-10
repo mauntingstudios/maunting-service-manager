@@ -1038,7 +1038,11 @@ def test_vault_reset_loescht_den_tresor_ganz(client, test_db):
     assert ok.status_code == 200
 
     salz = client.get("/api/vault/salt").json()
-    assert salz == {"kdf_salt": None, "bucket_id": None, "has_vault": False}
+    assert salz["kdf_salt"] is None
+    assert salz["bucket_id"] is None
+    assert salz["has_vault"] is False
+    assert salz["vault_canary"] is None
+    assert salz["vault_keys_rotated_at"] is None
     assert _tresorzeile(session, user, VaultHint) is None
     session.expire_all()
     assert session.query(VaultEntry).filter(VaultEntry.bucket_id == bucket).count() == 0
@@ -1411,3 +1415,27 @@ def test_hinweis_anfordern_haelt_die_schleife_frei(client, test_db, monkeypatch)
         event.remove(bindung, "before_cursor_execute", mitschreiben)
     assert antwort.status_code == 200, antwort.text
     assert in_der_schleife == []
+
+
+def test_vault_salt_liefert_canary_fuer_neugeraete(client, test_db):
+    """Canary-Pruefung auf Neugeraeten: /api/vault/salt liefert den verschluesselten
+    vault-canary mit, damit Neugeraete ohne lokalen Canary ihn verifizieren koennen."""
+    bucket = "6" * 64
+    assert client.post("/api/vault/salt", json={"kdf_salt": "cd" * 16, "bucket_id": bucket}).status_code == 200
+    res1 = client.get("/api/vault/salt").json()
+    assert res1.get("vault_canary") is None
+
+    sync = client.post(
+        "/api/vault/sync",
+        json={
+            "bucket_id": bucket,
+            "since_revision": 0,
+            "mutations": [{"id": "vault-canary", "ciphertext": "sv-vault-v2:canary-pruefblock", "revision": 1, "is_deleted": False}],
+        },
+    )
+    assert sync.status_code == 200
+
+    res2 = client.get("/api/vault/salt").json()
+    assert res2.get("vault_canary") == "sv-vault-v2:canary-pruefblock"
+    assert res2.get("vault_keys_rotated_at") is not None
+

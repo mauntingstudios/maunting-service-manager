@@ -141,7 +141,7 @@ sequenceDiagram
   Relay-->>Desktop: session_id (sid), resolve_token (rt)
   Desktop->>Desktop: Berechnet SHA-256 Fingerabdruck (fp)
   Desktop-->>User: Zeigt QR-Code: msm3:sid:purpose:rt:fp
-  Desktop->>Relay: Long-Polling /status (Warten auf Freigabe)
+  Desktop->>Relay: Polling GET /session/{sid} (Headers: X-MSM-Device-Token, 800ms-Intervall)
 
   User->>Phone: Öffnet Smartcard-Wallet (Querformat)
   Phone->>Phone: High-Speed-Kamera scannt msm3-Code (< 500 ms)
@@ -191,9 +191,9 @@ RSA-OAEP-2048 mit SHA-256 fasst direkt maximal 190 Bytes. Da ein vollständiges 
 
 ## 6. Sicherheitsgarantien & Fail-Closed-Verhalten
 
-1. **Zero-Knowledge auf dem Relay:** Der Server speichert Sitzungen ausschließlich flüchtig im Arbeitsspeicher mit einer Lebensdauer von 180 Sekunden. Da die Nutzlast mit dem Zielgeräte-Schlüssel verschlüsselt ist, kann der Server weder Schlüssel noch Klartexte mitlesen oder manipulieren.
-2. **Replay-Schutz:** Jede Sitzungs-ID (`sid`) und jedes Resolve-Token (`rt`) sind nur ein einziges Mal gültig und werden nach der Einlösung oder nach Ablauf gelöscht.
-3. **Canary-Prüfung:** Das Zielgerät akzeptiert einen übertragenen Schlüssel erst, wenn damit der lokale Tresor-Canary (`vault-canary`) erfolgreich entschlüsselt werden kann. Schlägt die Prüfung fehl, wird der Schlüssel sofort verworfen.
+1. **Zero-Knowledge auf dem Relay:** Der Relay-Server verwaltet Freigabe-Sitzungen über kurzlebige Datenbank-Challenges mit 180 Sekunden Lebensdauer. Die Chiffren sind Ende-zu-Ende verschlüsselt (RSA-OAEP / AES-GCM) und können vom Server weder eingesehen noch manipuliert werden. Zur strikten Datenhygiene wird die Chiffre beim ersten Abruf sofort in der Datenbank genullt (`encrypted_payload = null`). Abgelaufene Sitzungen werden durch periodische Hintergrund-Tasks des Schedulers bereinigt und von System-Backups ausgeschlossen (`PANEL_BACKUP_OHNE_DATEN`).
+2. **Replay-Schutz:** Jede Sitzungs-ID (`sid`) und jedes Resolve-Token (`rt`) sind nur ein einziges Mal gültig. Ein zweiter Abrufversuch liefert sofort den Status `expired` ohne Chiffre.
+3. **Canary-Prüfung:** Das Zielgerät akzeptiert einen übertragenen Schlüssel erst, wenn damit der Tresor-Canary (`vault-canary`) erfolgreich entschlüsselt werden kann. Auf Neugeräten ohne lokalen Cache wird der vom Server bereitgestellte Canary (über `/api/vault/salt`) verifiziert. Schlägt die Prüfung fehl, wird der Schlüssel sofort verworfen.
 4. **Ephemere Schlüsselpaare:** Das auf dem Zielgerät erzeugte RSA-Schlüsselpaar existiert nur während des Handshakes im flüchtigen Speicher und wird unmittelbar nach der Entschlüsselung gelöscht.
 5. **Rate-Limiting & Sperrzeiten:** Fehlgeschlagene Entsperrversuche auf dem Zielgerät oder dem Smartphone lösen exponentielle Wartezeiten (`lockedUntilMs`) aus.
 

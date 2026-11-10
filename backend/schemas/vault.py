@@ -182,6 +182,9 @@ class VaultSaltResponse(BaseModel):
     rotation_state: str | None = None
     pending_bucket_id: str | None = None
     pending_salt: str | None = None
+    vault_canary: str | None = None
+    vault_keys_rotated_at: str | None = None
+
 
 
 class VaultRotationPrepareRequest(BaseModel):

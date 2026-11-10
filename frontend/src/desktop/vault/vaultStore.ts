@@ -514,6 +514,9 @@ interface VaultState {
   resetVault: (nachweis: Record<string, unknown>, bestaetigung: string) => Promise<void>
   rotationState: string | null
   pendingBucketId: string | null
+  vaultCanary: string | null
+  vaultKeysRotatedAt: string | null
+
   /**
    * Zwei-Phasen-Rotation des Master-Passworts (gleiches Protokoll wie Team).
    * `nachweis` ist der frische Kontonachweis (Kontopasswort oder zweiter
@@ -843,6 +846,9 @@ export const useVaultStore = create<VaultState>((set, get) => {
   hasHint: null,
   rotationState: null,
   pendingBucketId: null,
+  vaultCanary: null,
+  vaultKeysRotatedAt: null,
+
 
   autoLockMinutes: liesSperrfrist(VAULT_SPERR_PRAEFIX, 15),
   lockOnWindowBlur: liesFensterwechsel(VAULT_SPERR_PRAEFIX),
@@ -885,11 +891,27 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
   fetchVaultSalt: async () => {
     try {
-      const res = await api<{ kdf_salt: string | null; bucket_id: string | null; has_vault: boolean; has_hint?: boolean; rotation_state?: string | null; pending_bucket_id?: string | null; pending_salt?: string | null }>('/api/vault/salt')
+      const res = await api<{
+        kdf_salt: string | null
+        bucket_id: string | null
+        has_vault: boolean
+        has_hint?: boolean
+        rotation_state?: string | null
+        pending_bucket_id?: string | null
+        pending_salt?: string | null
+        vault_canary?: string | null
+        vault_keys_rotated_at?: string | null
+      }>('/api/vault/salt')
       if (res.has_hint !== undefined) {
         set({ hasHint: !!res.has_hint })
       }
-      set({ rotationState: res.rotation_state ?? null, pendingBucketId: res.pending_bucket_id ?? null })
+      set({
+        rotationState: res.rotation_state ?? null,
+        pendingBucketId: res.pending_bucket_id ?? null,
+        vaultCanary: res.vault_canary ?? null,
+        vaultKeysRotatedAt: res.vault_keys_rotated_at ?? null,
+      })
+
       if (res.kdf_salt && typeof localStorage !== 'undefined') {
         localStorage.setItem(VAULT_SALT_KEY, res.kdf_salt)
       }
@@ -1432,10 +1454,18 @@ export const useVaultStore = create<VaultState>((set, get) => {
       let canaryCiphertext = typeof localStorage !== 'undefined' ? localStorage.getItem(VAULT_CANARY_KEY) : null
       let matchedCanary = false
 
+      if (!canaryCiphertext && get().vaultCanary) {
+        canaryCiphertext = get().vaultCanary
+      }
+
       if (canaryCiphertext) {
         try {
           await decryptVaultEntry(canaryCiphertext, userKey, 'vault-canary')
           matchedCanary = true
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(VAULT_CANARY_KEY, canaryCiphertext)
+            localStorage.setItem(`${VAULT_CANARY_PREFIX}${bucketId}`, canaryCiphertext)
+          }
         } catch {
           throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
         }
@@ -1586,10 +1616,18 @@ export const useVaultStore = create<VaultState>((set, get) => {
       let canaryCiphertext = typeof localStorage !== 'undefined' ? localStorage.getItem(VAULT_CANARY_KEY) : null
       let matchedCanary = false
 
+      if (!canaryCiphertext && get().vaultCanary) {
+        canaryCiphertext = get().vaultCanary
+      }
+
       if (canaryCiphertext) {
         try {
           await decryptVaultEntry(canaryCiphertext, userKey, 'vault-canary')
           matchedCanary = true
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(VAULT_CANARY_KEY, canaryCiphertext)
+            localStorage.setItem(`${VAULT_CANARY_PREFIX}${bucketId}`, canaryCiphertext)
+          }
         } catch {
           throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
         }
@@ -1797,17 +1835,24 @@ export const useVaultStore = create<VaultState>((set, get) => {
         throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
       }
 
-      const canaryCiphertext =
+      let canaryCiphertext =
         typeof localStorage !== 'undefined'
           ? localStorage.getItem(VAULT_CANARY_KEY) ||
             localStorage.getItem(`${VAULT_CANARY_PREFIX}${bucketId}`)
           : null
+      if (!canaryCiphertext && get().vaultCanary) {
+        canaryCiphertext = get().vaultCanary
+      }
 
       let matchedCanary = false
       if (canaryCiphertext) {
         try {
           await decryptVaultEntry(canaryCiphertext, userKey, 'vault-canary')
           matchedCanary = true
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(VAULT_CANARY_KEY, canaryCiphertext)
+            localStorage.setItem(`${VAULT_CANARY_PREFIX}${bucketId}`, canaryCiphertext)
+          }
         } catch {
           throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
         }
@@ -1854,14 +1899,21 @@ export const useVaultStore = create<VaultState>((set, get) => {
 
       const userKey = await importVaultTransferKey(keyBase64)
 
-      const canaryCiphertext =
+      let canaryCiphertext =
         typeof localStorage !== 'undefined'
           ? localStorage.getItem(VAULT_CANARY_KEY) ||
             localStorage.getItem(`${VAULT_CANARY_PREFIX}${bucketId}`)
           : null
+      if (!canaryCiphertext && get().vaultCanary) {
+        canaryCiphertext = get().vaultCanary
+      }
       if (canaryCiphertext) {
         try {
           await decryptVaultEntry(canaryCiphertext, userKey, 'vault-canary')
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(VAULT_CANARY_KEY, canaryCiphertext)
+            localStorage.setItem(`${VAULT_CANARY_PREFIX}${bucketId}`, canaryCiphertext)
+          }
         } catch {
           throw new TresorFehler(i18n.t('mss.vault.errors.wrongMasterPassword'))
         }

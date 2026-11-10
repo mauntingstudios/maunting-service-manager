@@ -1316,7 +1316,7 @@ async def _e2ee_envelope_cleanup_task() -> None:
     from services.chat_media_service import ChatMediaService
     from services.social.messages_service import cleanup_expired
     from services.social_service import SocialService
-    from services import ai_memory_service, vault_blob_service, vault_service
+    from services import ai_memory_service, login_challenge_service, vault_blob_service, vault_service
     def _worker() -> None:
         db = SessionLocal()
         try:
@@ -1333,6 +1333,8 @@ async def _e2ee_envelope_cleanup_task() -> None:
                 ("Tresor-Rotation", vault_service.bereinige_faellige_rotationen),
                 # Was die KI vergessen hat, bleibt 30 Tage zurueckholbar.
                 ("Vergessene-Erinnerung", ai_memory_service.vergessene_aufraeumen),
+                # Abgelaufene Login- und ZK-Device-Auth-Relais-Sitzungen periodisch raeumen
+                ("Login-Challenges", login_challenge_service.cleanup_expired),
             ):
                 try:
                     cleanup(db)

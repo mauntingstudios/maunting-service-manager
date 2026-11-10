@@ -9,6 +9,20 @@
 
 export type CardStatus = 'uninitialized' | 'unauthorized' | 'locked' | 'active' | 'rotation_due'
 
+export type CardExpiryBasis =
+  | string
+  | number
+  | Date
+  | null
+  | undefined
+  | {
+      vault_keys_rotated_at?: string | number | Date | null
+      rotatedAt?: string | number | Date | null
+      rotation_date?: string | number | Date | null
+      created_at?: string | number | Date | null
+      createdAt?: string | number | Date | null
+    }
+
 /**
  * Erzeugt aus einer Hex-Bucket-ID oder einem Fallback-Seed eine saubere,
  * formatierte Smartcard-ID im Format `MSM-XXXX-XXXX-XXXX`.
@@ -31,9 +45,10 @@ export function formatCardNumber(bucketId: string | null | undefined, fallbackSe
 /**
  * Berechnet das Gültigkeitsdatum (Valid Thru) einer Karte.
  * Gültigkeit beträgt standardmäßig 24 Monate ab Erstellung bzw. letzter Rotation.
+ * Berücksichtigt vorrangig tatsächliche Schlüsselrotation (`vault_keys_rotated_at`).
  */
 export function calculateCardExpiry(
-  basisDatum?: string | number | Date | null,
+  basisDatum?: CardExpiryBasis,
   lebensdauerMonate = 24
 ): {
   validThru: string
@@ -41,8 +56,21 @@ export function calculateCardExpiry(
   isExpired: boolean
   isExpiringSoon: boolean
 } {
-  const start = basisDatum ? new Date(basisDatum) : new Date()
+  let rawDate: string | number | Date | null | undefined = null
+  if (basisDatum && typeof basisDatum === 'object' && !(basisDatum instanceof Date)) {
+    rawDate =
+      basisDatum.vault_keys_rotated_at ||
+      basisDatum.rotatedAt ||
+      basisDatum.rotation_date ||
+      basisDatum.created_at ||
+      basisDatum.createdAt
+  } else {
+    rawDate = basisDatum
+  }
+
+  const start = rawDate ? new Date(rawDate) : new Date()
   const baseTime = isNaN(start.getTime()) ? new Date() : start
+
 
   const expiryDate = new Date(baseTime)
   expiryDate.setMonth(expiryDate.getMonth() + lebensdauerMonate)

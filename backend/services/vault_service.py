@@ -714,6 +714,15 @@ def get_vault_salt(db: Session, konto: TresorKonto) -> VaultSaltResponse:
         db.rollback()
     setting = einstellung(db, konto)
     hint_obj = _eigene_zeile(db, VaultHint, konto)
+    canary_entry = (
+        db.query(VaultEntry)
+        .filter(
+            VaultEntry.bucket_id == setting.bucket_id,
+            VaultEntry.id == "vault-canary",
+            VaultEntry.is_deleted.is_(False),
+        )
+        .first()
+    ) if setting and setting.bucket_id else None
     db.commit()
     has_hint = bool(hint_obj and hint_obj.hint)
     if not setting:
@@ -726,7 +735,10 @@ def get_vault_salt(db: Session, konto: TresorKonto) -> VaultSaltResponse:
         rotation_state=setting.rotation_state,
         pending_bucket_id=setting.pending_bucket_id,
         pending_salt=setting.pending_salt,
+        vault_canary=canary_entry.ciphertext if canary_entry else None,
+        vault_keys_rotated_at=setting.updated_at.isoformat() if setting and setting.updated_at else None,
     )
+
 
 
 def set_vault_salt(
@@ -805,6 +817,7 @@ def set_vault_salt(
         kdf_salt=setting.kdf_salt,
         bucket_id=setting.bucket_id,
         has_vault=True,
+        vault_keys_rotated_at=setting.updated_at.isoformat() if setting and setting.updated_at else None,
     )
 
 

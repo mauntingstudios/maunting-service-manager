@@ -129,22 +129,33 @@ def get_device_auth_session_status(
     if data.get("resolved") and data.get("encrypted_payload"):
         # Atomar verbrauchen: zwei Abrufe duerfen die Chiffre nicht doppelt
         # sehen. Nur wer das Flag umlegt, liefert aus.
+        # Zero-Knowledge & Relay-Hygiene: Die Chiffre wird in der DB sofort
+        # genullt, sodass sie nicht laenger als bis zur Auslieferung verbleibt.
+        auszuliefernde_chiffre = data["encrypted_payload"]
+        data["encrypted_payload"] = None
         markiert = (
             db.query(LoginChallenge)
             .filter(
                 LoginChallenge.id == row.id,
                 LoginChallenge.consumed_at.is_(None),
             )
-            .update({"consumed_at": now}, synchronize_session=False)
+            .update(
+                {
+                    "consumed_at": now,
+                    "payload_json": json.dumps(data),
+                },
+                synchronize_session=False,
+            )
         )
         db.commit()
         if not markiert:
             return {"status": "expired"}
         return {
             "status": "resolved",
-            "encrypted_payload": data["encrypted_payload"],
+            "encrypted_payload": auszuliefernde_chiffre,
             "purpose": data.get("purpose", "authorize"),
         }
+
 
     return {
         "status": "pending",

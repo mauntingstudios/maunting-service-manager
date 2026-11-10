@@ -91,6 +91,7 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
     return () => {
       active = false
       unmountedRef.current = true
+      setPrivateKey(null)
       if (pollingRef.current) {
         clearInterval(pollingRef.current)
         pollingRef.current = null
@@ -116,9 +117,12 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
 
           try {
             const decrypted = await decryptAuthPayload(privateKey, status.encrypted_payload)
+            // Zero-Knowledge Hygiene: Den privaten ephemeren RSA-Schlüssel sofort vernichten
+            setPrivateKey(null)
             setResolved(true)
             onSuccess(decrypted)
           } catch (decErr) {
+            setPrivateKey(null)
             still(decErr, 'DeviceAuthQrView.poll.decrypt')
             setErrorMsg('Fehler beim Entschlüsseln der Freigabe-Daten.')
           }
@@ -127,20 +131,36 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
             clearInterval(pollingRef.current)
             pollingRef.current = null
           }
+          setPrivateKey(null)
           setErrorMsg('Session abgelaufen. Bitte erneut versuchen.')
         }
-      } catch (err) {
+      } catch (err: any) {
         still(err, 'DeviceAuthQrView.poll')
+        // Wenn die Session nicht mehr existiert (404), sofort abbrechen statt 15x vergeblich zu pollen
+        const status = err?.status ?? err?.response?.status
+        const msg = String(err?.message || '')
+        if (status === 404 || msg.includes('404') || msg.includes('nicht gefunden')) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current)
+            pollingRef.current = null
+          }
+          setPrivateKey(null)
+          setErrorMsg('Session nicht gefunden oder abgelaufen.')
+          return
+        }
+
         consecutiveErrorsRef.current += 1
         if (consecutiveErrorsRef.current >= 15) {
           if (pollingRef.current) {
             clearInterval(pollingRef.current)
             pollingRef.current = null
           }
+          setPrivateKey(null)
           setErrorMsg('Verbindung zum Server verloren oder Sitzung ungültig.')
         }
       }
     }
+
 
     pollingRef.current = setInterval(() => {
       void poll()
@@ -156,7 +176,11 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center p-8 text-center space-y-3">
+      <div
+        data-testid="device-auth-view"
+        data-has-key={privateKey !== null ? 'true' : 'false'}
+        className="flex flex-col items-center justify-center p-8 text-center space-y-3"
+      >
         <Spinner size="md" className="text-primary" />
         <p className="text-xs text-on-surface-variant font-medium">
           Erzeuge sichere Zero-Knowledge Session...
@@ -167,7 +191,11 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
 
   if (errorMsg) {
     return (
-      <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
+      <div
+        data-testid="device-auth-view"
+        data-has-key={privateKey !== null ? 'true' : 'false'}
+        className="flex flex-col items-center justify-center p-6 text-center space-y-3"
+      >
         <p className="text-xs text-status-destructive font-semibold">{errorMsg}</p>
       </div>
     )
@@ -175,7 +203,7 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
 
   if (resolved) {
     return (
-      <div className="flex flex-col items-center justify-center p-8 text-center space-y-3 animate-scale-in">
+      <div data-testid="device-auth-view" data-has-key={privateKey !== null ? 'true' : 'false'} className="flex flex-col items-center justify-center p-8 text-center space-y-3 animate-scale-in">
         <div className="grid h-12 w-12 place-items-center rounded-full bg-status-success/20 text-status-success border border-status-success/40 shadow-lg">
           <CheckCircle2 className="h-6 w-6" />
         </div>
@@ -185,7 +213,7 @@ export function DeviceAuthQrView({ purpose, onSuccess, onError }: DeviceAuthQrVi
   }
 
   return (
-    <div className="flex flex-col items-center justify-center space-y-3.5 py-1">
+    <div data-testid="device-auth-view" data-has-key={privateKey !== null ? 'true' : 'false'} className="flex flex-col items-center justify-center space-y-3.5 py-1">
       {qrValue && (
         <MauntingQrCard
           value={qrValue}

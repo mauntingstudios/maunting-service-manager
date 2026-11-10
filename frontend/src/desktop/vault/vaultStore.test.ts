@@ -916,3 +916,57 @@ describe('Hinweis per E-Mail', () => {
     expect(await useVaultStore.getState().requestHintEmail()).toEqual({ ok: false, message: '' })
   })
 })
+
+describe('Smartcard Wallet Transfer Canary-Pruefung', () => {
+  it('weist ungueltigen Canary bei unlockWithTransferredKey auf Neugeraeten ohne localStorage-Canary ab', async () => {
+    localStorage.clear()
+    const store = useVaultStore.getState()
+    // Server hat einen Canary hinterlegt (z. B. via /api/vault/salt)
+    useVaultStore.setState({ vaultCanary: 'sv-vault-v2:fremder-oder-manipulierter-canary' })
+
+    const dummyKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)))
+    const bucketId = 'a'.repeat(64)
+    const bucketAuthToken = 'b'.repeat(64)
+
+    const ok = await store.unlockWithTransferredKey({
+      keyBase64: dummyKeyBase64,
+      bucketId,
+      bucketAuthToken,
+    })
+
+    // Der Canary laesst sich mit diesem Schluessel nicht entschluesseln.
+    // Auf Neugeraeten MUSS der Canary geprueft werden und darf nicht einfach uebersprungen werden!
+    expect(ok).toBe(false)
+    expect(useVaultStore.getState().isUnlocked).toBe(false)
+  })
+
+  it('weist falschen Master-Key bei deriveWalletUnlockPayload auf Neugeraeten ohne lokalen Canary ab, wenn vaultCanary gesetzt ist', async () => {
+    localStorage.clear()
+    const { deriveVaultKeys, encryptVaultEntry } = await import('./vaultCrypto')
+    const salt = new Uint8Array(32).fill(3)
+    const saltHex = Array.from(salt).map((b) => b.toString(16).padStart(2, '0')).join('')
+    localStorage.setItem('mss:vault_salt', saltHex)
+
+    const { userKey, bucketId } = await deriveVaultKeys('richtiges-passwort-123', salt)
+    const realCanary = await encryptVaultEntry(
+      { canary: 'mss-vault-initialized-v1', createdAt: Date.now() },
+      userKey,
+      'vault-canary',
+    )
+
+    // Auf dem Neugeraet ist localStorage leer (kein Canary), aber der Store kennt vaultCanary vom Server
+    useVaultStore.setState({ vaultCanary: realCanary, bucketId })
+
+    const store = useVaultStore.getState()
+    // Falsches Passwort: MUSS abgelehnt werden
+    await expect(store.deriveWalletUnlockPayload('falsches-passwort-456')).rejects.toThrow()
+    expect(localStorage.getItem('mss:vault_canary')).toBeNull()
+
+    // Richtiges Passwort: MUSS erfolgreich abgeleitet werden und Canary cachen
+    const payload = await store.deriveWalletUnlockPayload('richtiges-passwort-123')
+    expect(payload).not.toBeNull()
+    expect(payload?.keyBase64).toBeDefined()
+    expect(localStorage.getItem('mss:vault_canary')).toBe(realCanary)
+  })
+})
+

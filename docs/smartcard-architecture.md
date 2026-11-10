@@ -141,7 +141,7 @@ sequenceDiagram
   Relay-->>Desktop: session_id (sid), resolve_token (rt)
   Desktop->>Desktop: Computes SHA-256 fingerprint (fp)
   Desktop-->>User: Renders compact QR code: msm3:sid:purpose:rt:fp
-  Desktop->>Relay: Long-polling /status (Awaiting authorization)
+  Desktop->>Relay: Polling GET /session/{sid} (Headers: X-MSM-Device-Token, 800 ms interval)
 
   User->>Phone: Opens Smartcard Wallet (Landscape Mode)
   Phone->>Phone: High-speed background camera scans msm3 code (< 500 ms)
@@ -191,9 +191,9 @@ RSA-OAEP-2048 with SHA-256 can directly encrypt payloads of up to 190 bytes. Bec
 
 ## 6. Security Guarantees & Fail-Closed Behavior
 
-1. **Zero-Knowledge on Relay:** The relay server stores sessions strictly in volatile memory with a time-to-live of 180 seconds. Because payloads are encrypted with the target client's public key, the relay cannot inspect or manipulate keys or plaintext data.
-2. **Replay Defense:** Every session ID (`sid`) and resolve token (`rt`) can only be consumed once. Sessions are destroyed immediately upon resolution or expiration.
-3. **Canary Verification:** The destination client accepts a transferred key only if it successfully decrypts the vault canary item (`vault-canary`). If decryption fails, the key is wiped immediately without unlocking the interface.
+1. **Zero-Knowledge on Relay:** The relay server coordinates sessions using short-lived database challenges with a time-to-live of 180 seconds. Payloads are encrypted client-to-client with RSA-OAEP / AES-GCM (Zero-Knowledge relay). Crucially, the encrypted payload is destroyed immediately upon retrieval (overwritten with null in the database) to eliminate persistent relay storage. Expired challenges are purged periodically by background scheduler tasks and excluded from system backups (`PANEL_BACKUP_OHNE_DATEN`).
+2. **Replay Defense:** Every session ID (`sid`) and resolve token (`rt`) can only be consumed once. A second retrieval of an already resolved session immediately returns an `expired` status with no payload.
+3. **Canary Verification:** The destination client accepts a transferred key only if it successfully decrypts the vault canary item (`vault-canary`). On new devices without local storage cache, the canary is verified directly against the server-provided `vault_canary` (delivered via `/api/vault/salt`). If decryption fails, the key is wiped immediately without unlocking the interface.
 4. **Ephemeral Key Lifecycles:** The RSA keypair generated on the destination desktop exists only for the duration of the handshake and is purged from memory immediately after decryption.
 5. **Rate Limiting & Backoff:** Repeated failed unlock attempts on any device trigger exponential lockouts (`lockedUntilMs`) to prevent local brute-force attempts.
 

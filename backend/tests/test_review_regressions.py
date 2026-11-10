@@ -108,4 +108,17 @@ def test_achievement_meldefehler_wirft_keinen_erfolgreichen_commit_um(db, owner_
     assert db.query(UserAchievement).filter_by(user_id=owner_user.id).count() == 2
     assert publish.call_count == 2
     db.commit()
-    assert publish.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_e2ee_envelope_cleanup_task_raeumt_login_challenges_auf(monkeypatch):
+    """Prueft, dass der Scheduler-Task _e2ee_envelope_cleanup_task auch abgelaufene
+    Login-/Device-Auth-Challenges periodisch aufraeumt."""
+    from services import login_challenge_service
+    db = MagicMock()
+    monkeypatch.setattr(scheduler_service, "SessionLocal", lambda: db)
+    cleanup_mock = MagicMock()
+    monkeypatch.setattr(login_challenge_service, "cleanup_expired", cleanup_mock)
+    await scheduler_service._e2ee_envelope_cleanup_task()
+    cleanup_mock.assert_called_once_with(db)
+

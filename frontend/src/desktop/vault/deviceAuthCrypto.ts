@@ -142,19 +142,10 @@ export async function encryptAuthPayload(
   const encoder = new TextEncoder()
   const dataBytes = encoder.encode(JSON.stringify(payload))
 
-  // RSA-OAEP-2048 mit SHA-256 fasst direkt maximal 190 Bytes. Sobald ein
-  // Tresorschlüssel (`keyBase64`) mitreist oder die Nutzlast größer wird,
-  // verschlüsselt ein ephemerer AES-256-GCM-Schlüssel die Daten und RSA-OAEP
-  // verpackt nur die 32 Schlüsselbytes (`sv-device-auth-v2:`).
-  if (dataBytes.byteLength <= 180 && !('keyBase64' in payload)) {
-    const encryptedBuffer = await cryptoObj.subtle.encrypt(
-      { name: 'RSA-OAEP' },
-      publicKey,
-      dataBytes,
-    )
-    return arrayBufferToBase64(encryptedBuffer)
-  }
-
+  // Hybrider E2EE-Umschlag (RSA-OAEP-2048 + AES-256-GCM) gemäß Spezifikation:
+  // Jede Freigabe-Payload (sowohl unlock als auch authorize) wird mit einem
+  // ephemeren AES-256-GCM-Schlüssel verschlüsselt, der wiederum per RSA-OAEP
+  // verpackt wird (`sv-device-auth-v2:`).
   const aesKeyBuf = new SecureBuffer(32)
   try {
     return await aesKeyBuf.useAsync(async (rawAesKey) => {
@@ -184,6 +175,7 @@ export async function encryptAuthPayload(
   } finally {
     aesKeyBuf.destroy()
   }
+
 }
 
 /**

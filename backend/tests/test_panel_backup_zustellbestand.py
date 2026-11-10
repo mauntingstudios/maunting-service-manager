@@ -75,8 +75,13 @@ def test_nur_die_puffer_stehen_ohne_daten_in_der_liste() -> None:
         assert name in tabellen, name
 
     # Die Liste nennt genau die Puffer: die verschluesselten Anhaenge (eigene
-    # Frist) und die Kopplungen (kurzer Vorgang, kein Bestand).
-    assert set(pbs.PANEL_BACKUP_OHNE_DATEN) == {"chat_media", "device_pairings"}
+    # Frist), die Kopplungen (kurzer Vorgang, kein Bestand) und kurzlebige
+    # Login-/Freigabe-Challenges (ephemere ZK-Relais-Sitzungen).
+    assert set(pbs.PANEL_BACKUP_OHNE_DATEN) == {"chat_media", "device_pairings", "login_challenges"}
+
+    # Login-Challenges sind ephemere Puffer (180s - 300s TTL). Sie duerfen
+    # keinesfalls in ein dauerhaftes Backup gesichert werden.
+    assert "login_challenges" in pbs.PANEL_BACKUP_OHNE_DATEN
 
     # `e2ee_messages` traegt den bleibenden Nachrichtenbestand. Nur
     # verschwindende Nachrichten haben eine Frist; die Tabelle gehoert

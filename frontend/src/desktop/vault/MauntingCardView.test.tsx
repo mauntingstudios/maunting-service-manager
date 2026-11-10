@@ -54,6 +54,51 @@ describe('MauntingCard Component', () => {
     expect(screen.getByText(/VALID THRU/i)).toBeInTheDocument()
   })
 
+  it('zeigt Ablaufdatum basierend auf tatsaechlicher Schluesselrotation (vault_keys_rotated_at)', () => {
+    vi.mocked(useAuthStore).mockReturnValue({
+      user: {
+        id: 1,
+        username: 'MaikAdmin',
+        avatar_url: '/test-avatar.png',
+        created_at: '2022-01-01T00:00:00Z',
+        vault_keys_rotated_at: '2026-06-15T00:00:00Z',
+      },
+    } as any)
+
+    render(<MauntingCard />)
+    expect(screen.getByText('06/28')).toBeInTheDocument()
+    expect(screen.queryByText('01/24')).not.toBeInTheDocument()
+  })
+
+  it('verwendet vaultKeysRotatedAt aus dem Vault-Store, wenn user.vault_keys_rotated_at fehlt', () => {
+    vi.mocked(useAuthStore).mockReturnValue({
+      user: {
+        id: 1,
+        username: 'MaikAdmin',
+        avatar_url: '/test-avatar.png',
+        created_at: '2022-01-01T00:00:00Z',
+      },
+    } as any)
+
+    vi.mocked(useVaultStore).mockReturnValue({
+      isInitialized: true,
+      isUnlocked: false,
+      isDeviceAuthorized: true,
+      bucketId: 'mock-bucket-12345678901234567890',
+      getKnownBucketId: vi.fn().mockReturnValue('mock-bucket-12345678901234567890'),
+      unlock: vi.fn(),
+      authorizeDevice: vi.fn(),
+      lock: vi.fn(),
+      rotationState: null,
+      vaultKeysRotatedAt: '2025-10-20T00:00:00Z',
+    } as any)
+
+    render(<MauntingCard />)
+    expect(screen.getByText('10/27')).toBeInTheDocument()
+    expect(screen.queryByText('01/24')).not.toBeInTheDocument()
+  })
+
+
   it('dreht sich bei Klick um und zeigt Card-ID', () => {
     render(<MauntingCard />)
     const card = screen.getByRole('button', { name: /Maunting Card umdrehen/i })
@@ -66,6 +111,24 @@ describe('MauntingCard Component', () => {
 
     // Entsperren Button ist auf der Rückseite sichtbar
     expect(screen.getByText('Karte entsperren')).toBeInTheDocument()
+  })
+
+  it('zeigt auch im gesperrten Zustand die echte Card-ID über getKnownBucketId statt Fallback', () => {
+    vi.mocked(useVaultStore).mockReturnValue({
+      isInitialized: true,
+      isUnlocked: false,
+      isUnlocking: false,
+      unlockError: null,
+      bucketId: null, // Im gesperrten Zustand ist die flüchtige bucketId im Store null
+      getKnownBucketId: () => 'e3b0c44298fc1c149afbf4c8996fb924',
+      unlock: vi.fn(),
+      lock: vi.fn(),
+      rotationState: null,
+    } as any)
+
+    render(<MauntingCard />)
+    expect(screen.getByText('MSM-E3B0-C442-98FC')).toBeInTheDocument()
+    expect(screen.queryByText('MSM-0000-0000-0001')).not.toBeInTheDocument()
   })
 
   it('öffnet Entsperr-Dialog bei Klick auf Karte entsperren', () => {

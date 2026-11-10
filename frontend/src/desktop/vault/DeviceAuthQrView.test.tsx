@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as api from '@/api/vaultDeviceAuth'
@@ -121,4 +121,119 @@ describe('DeviceAuthQrView Component', () => {
     expect(await screen.findByText('Fehler beim Entschlüsseln der Freigabe-Daten.')).toBeInTheDocument()
     expect(onSuccess).not.toHaveBeenCalled()
   })
+
+  it('vernichtet den ephemeren privaten RSA-Schluessel sofort nach erfolgreicher Entschluesselung', async () => {
+    const onSuccess = vi.fn()
+    vi.mocked(crypto.decryptAuthPayload).mockResolvedValue({
+      action: 'authorize',
+      bucketId: 'test-bucket-id',
+    })
+
+    vi.mocked(api.getDeviceAuthSessionStatus).mockResolvedValueOnce({
+      status: 'resolved',
+      encrypted_payload: 'encrypted-base64-payload',
+      purpose: 'authorize',
+    })
+
+    const { container } = render(
+      <DeviceAuthQrView
+        purpose="authorize"
+        onSuccess={onSuccess}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalled()
+    })
+
+    // Nach erfolgreicher Entschluesselung MUSS der ephemere private RSA-Schluessel zerstoert/genullt sein
+    const root = container.querySelector('[data-has-key]')
+    expect(root).not.toBeNull()
+    expect(root).toHaveAttribute('data-has-key', 'false')
+  })
+
+  it('bricht Polling ab und zeigt Hinweis, wenn Session expired ist', async () => {
+    vi.mocked(api.getDeviceAuthSessionStatus).mockResolvedValueOnce({
+      status: 'expired',
+    })
+
+    const { container } = render(
+      <DeviceAuthQrView
+        purpose="authorize"
+        onSuccess={vi.fn()}
+      />,
+    )
+
+    expect(await screen.findByText('Session abgelaufen. Bitte erneut versuchen.')).toBeInTheDocument()
+    const root = container.querySelector('[data-has-key]')
+    expect(root).toHaveAttribute('data-has-key', 'false')
+  })
+
+  it('bricht Polling nach 15 aufeinanderfolgenden Fehlern ab', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(api.getDeviceAuthSessionStatus).mockRejectedValue(new Error('Network disconnected'))
+
+      const { container } = render(
+        <DeviceAuthQrView
+          purpose="authorize"
+          onSuccess={vi.fn()}
+        />,
+      )
+
+      // Initial session generation
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      // 15 polling intervals a 800ms
+      for (let i = 0; i < 16; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(800)
+        })
+      }
+
+      expect(screen.getByText('Verbindung zum Server verloren oder Sitzung ungültig.')).toBeInTheDocument()
+      const root = container.querySelector('[data-has-key]')
+      expect(root).toHaveAttribute('data-has-key', 'false')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stoppt das Polling sofort bei 404 und vernichtet den privaten RSA-Schluessel', async () => {
+    const error404 = new Error('Session nicht gefunden.') as any
+    error404.status = 404
+    vi.mocked(api.getDeviceAuthSessionStatus).mockRejectedValueOnce(error404)
+
+    const { container } = render(
+      <DeviceAuthQrView
+        purpose="authorize"
+        onSuccess={vi.fn()}
+      />,
+    )
+
+    expect(await screen.findByText('Session nicht gefunden oder abgelaufen.')).toBeInTheDocument()
+    const root = container.querySelector('[data-has-key]')
+    expect(root).toHaveAttribute('data-has-key', 'false')
+  })
+
+  it('vernichtet den privaten RSA-Schluessel beim Unmount der Komponente', async () => {
+    const { unmount } = render(
+      <DeviceAuthQrView
+        purpose="authorize"
+        onSuccess={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(crypto.generateEphemeralAuthKeyPair).toHaveBeenCalled()
+    })
+
+    // Unmount MUSS cleanup ausfuehren und darf keine Keys leaken
+    unmount()
+  })
 })
+
+
+

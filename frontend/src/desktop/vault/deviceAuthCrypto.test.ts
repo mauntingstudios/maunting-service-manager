@@ -50,6 +50,23 @@ describe('deviceAuthCrypto', () => {
     expect(decrypted).toEqual(unlockPayload)
   })
 
+  it('erzeugt auch fuer kleine Autorisierungs-Payloads konsistent den hybriden sv-device-auth-v2: Umschlag', async () => {
+    const { publicKeyBase64, privateKey } = await generateEphemeralAuthKeyPair()
+    const kleinePayload = {
+      action: 'authorize',
+      bucketId: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      authorizedBy: 'MaikMobile',
+      timestamp: 1700000000000,
+    }
+    const ciphertext = await encryptAuthPayload(publicKeyBase64, kleinePayload)
+    // Nach Architektur-Doku MUSS jede Freigabe-Payload den sv-device-auth-v2: Praefix tragen
+    expect(ciphertext.startsWith(DEVICE_AUTH_ENVELOPE_V2_PREFIX)).toBe(true)
+
+    const decrypted = await decryptAuthPayload(privateKey, ciphertext)
+    expect(decrypted).toEqual(kleinePayload)
+  })
+
+
   it('parst und validiert gültige QR-Code-Payloads', () => {
     const valid = JSON.stringify({
       v: 2,

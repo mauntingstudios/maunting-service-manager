@@ -73,10 +73,12 @@ export function MauntingCard({
     isDeviceAuthorized,
     unlockError,
     bucketId,
+    getKnownBucketId,
     unlock,
     authorizeDevice,
     lock,
     rotationState,
+    vaultKeysRotatedAt,
   } = useVaultStore()
 
   const [isFlipped, setIsFlipped] = useState(false)
@@ -163,12 +165,29 @@ export function MauntingCard({
   }, [externalAuthorizeTrigger, onExternalAuthorizeHandled])
 
   // Berechnete Karten-Attribute
-  const cardNumber = useMemo(() => formatCardNumber(bucketId, user?.id ?? 1), [bucketId, user?.id])
+  const knownBucketId = useMemo(() => {
+    return (
+      bucketId ||
+      getKnownBucketId?.() ||
+      (typeof localStorage !== 'undefined'
+        ? localStorage.getItem('mss:vault_server_bucket') || localStorage.getItem('msm_vault_server_bucket')
+        : null)
+    )
+  }, [bucketId, getKnownBucketId])
+
+  const cardNumber = useMemo(() => formatCardNumber(knownBucketId, user?.id ?? 1), [knownBucketId, user?.id])
 
   const expiry = useMemo(() => {
-    // Falls ein Registrierungsdatum existiert, sonst aktuelles Jahr
-    return calculateCardExpiry(user?.created_at, 24)
-  }, [user?.created_at])
+    // Gültigkeit basiert auf der tatsächlichen Schlüsselrotation, sonst auf Registrierungsdatum
+    return calculateCardExpiry(
+      {
+        vault_keys_rotated_at: user?.vault_keys_rotated_at ?? vaultKeysRotatedAt,
+        created_at: user?.created_at,
+      },
+      24,
+    )
+  }, [user?.vault_keys_rotated_at, vaultKeysRotatedAt, user?.created_at])
+
 
   const status: CardStatus = useMemo(() => {
     return getCardStatus({

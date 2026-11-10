@@ -31,6 +31,21 @@ describe('mauntingCard', () => {
     expect(isExpired).toBe(true)
   })
 
+  it('basiert Gueltigkeitsdatum auf tatsaechlicher Schluesselrotation (vault_keys_rotated_at) statt starr created_at', () => {
+    // Altes Konto erstellt 2022 (waere nach 24 Monaten laengst abgelaufen)
+    // Aber Schluessel wurden am 15.06.2026 rotiert
+    const { validThru, isExpired } = calculateCardExpiry(
+      {
+        created_at: '2022-01-01T00:00:00Z',
+        vault_keys_rotated_at: '2026-06-15T12:00:00Z',
+      },
+      24,
+    )
+    expect(validThru).toBe('06/28')
+    expect(isExpired).toBe(false)
+  })
+
+
   it('ermittelt korrekten Kartenstatus', () => {
     expect(getCardStatus({ isInitialized: false, isUnlocked: false })).toBe('uninitialized')
     expect(getCardStatus({ isInitialized: true, isUnlocked: false, isDeviceAuthorized: false })).toBe('unauthorized')
