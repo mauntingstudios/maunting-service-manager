@@ -41,7 +41,7 @@ class TestAccessToken:
 
     def test_token_type_must_be_access(self):
         # Manually encode a token without type
-        from jose import jwt
+        import jwt
         from config import settings
         token = jwt.encode(
             {"sub": "testuser", "exp": datetime.now(timezone.utc) + timedelta(hours=1)},

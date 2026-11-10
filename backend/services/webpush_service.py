@@ -13,7 +13,7 @@ Weil nichts uebrig bleibt, das es tun muesste. Ein WebPush-Versand ist ein
 POST mit zwei Kopfzeilen, und beide entstehen aus Bausteinen, die seit dem
 ersten Tag im Baum liegen: RFC 8291 ist ECDH auf P-256, HKDF-SHA256 und
 AES-128-GCM (alles `cryptography`, schon da fuer DIS und TLS), RFC 8292 ist ein
-ES256-JWT (`python-jose`, signiert bereits jede Panel-Sitzung), und der POST
+ES256-JWT (`PyJWT`, signiert bereits jede Panel-Sitzung), und der POST
 geht ueber `httpx`. `pywebpush` zoege `http-ece` und `py-vapid` nach — zwei
 Pakete fuer die rund achtzig Zeilen unter `_verschluesseln` und `_vapid_kopf`.
 Dieselbe Rechnung wie bei LiveKit, nachzulesen in
@@ -70,7 +70,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from jose import jwt
+import jwt
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 

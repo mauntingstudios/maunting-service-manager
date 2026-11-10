@@ -30,6 +30,11 @@ tauri-build = { version = "2", features = [] }
 # loszuwerden. Ohne dieses Feature weist Tauri `data:` beim Fensterbau ab. Es
 # zieht nur `data-url` neu in den Baum (Servo, MIT/Apache-2.0, reines Parsen,
 # kein I/O); `dom_query` fuer die CSP-Einbettung steht ohnehin schon im Lock.
+# Dependabot: `glib 0.18.5` kommt ueber `gtk 0.18` aus Tauri 2. Die gepatchte
+# Fassung 0.20 gehoert zu gtk 0.20 und ist mit Tauri 2 nicht aufloesbar
+# (`cargo update -p glib --precise 0.20.0` scheitert an `gtk = "^0.18"`).
+# Bleibt offen, bis Tauri auf den neueren GTK-Stack wechselt; betrifft nur
+# Linux-Bauten, nicht Windows oder Android.
 tauri = { version = "2", features = [
     "image-png",
     "webview-data-url",

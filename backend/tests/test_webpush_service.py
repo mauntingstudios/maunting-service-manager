@@ -26,7 +26,7 @@ import logging
 import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
-from jose import jwt
+import jwt
 from sqlalchemy.orm import Session
 
 from models import PushSubscription, User
@@ -108,7 +108,7 @@ def test_vapid_token_gilt_nur_fuer_diesen_push_dienst():
 
     token = kopf["Authorization"].split("t=")[1].split(",")[0]
     assert jwt.get_unverified_header(token)["alg"] == "ES256"
-    assert jwt.get_unverified_claims(token)["aud"] == "https://updates.push.services.mozilla.com"
+    assert jwt.decode(token, options={"verify_signature": False})["aud"] == "https://updates.push.services.mozilla.com"
     assert f"k={oeffentlich}" in kopf["Authorization"]
 
 

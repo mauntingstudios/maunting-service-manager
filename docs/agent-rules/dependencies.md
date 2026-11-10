@@ -908,10 +908,10 @@ Warum vorhandener Code reicht:
   Bausteinen, die seit dem ersten Tag im Baum liegen.
 
   - RFC 8291 (Nutzlast): ECDH auf P-256, HKDF-SHA256, AES-128-GCM. Alles in
-    `cryptography==42.0.8`, das ohnehin für DIS und `python-jose` da ist.
+    `cryptography==49.0.0`, das ohnehin für DIS und `PyJWT` da ist.
   - RFC 8188 (Kodierung): derselbe HKDF plus ein Kopf aus Salz, Satzlänge und
     Serverpunkt. Fünf Zeilen `struct.pack`.
-  - RFC 8292 (VAPID): ein ES256-JWT. `python-jose[cryptography]` signiert
+  - RFC 8292 (VAPID): ein ES256-JWT. `PyJWT[crypto]` signiert
     bereits jede Panel-Sitzung und liefert die JOSE-Signatur (r‖s) fertig, also
     entfällt auch die DER-Umrechnung, die man sonst selbst schreiben müsste.
   - Der POST: `httpx`.
@@ -952,8 +952,8 @@ Kapselung und Exit-Plan:
 ### Warum das Backend ohne `livekit-api` auskommt
 
 Ein LiveKit-Zugangstoken ist ein gewöhnliches HS256-JWT mit einem
-`video`-Anspruch; `python-jose` liegt seit dem ersten Tag im Baum und signiert
-bereits jede Panel-Sitzung. Die Room-API spricht Twirp über JSON, also
+`video`-Anspruch; `PyJWT` liegt seit dem Wechsel von `python-jose` im Baum und
+signiert bereits jede Panel-Sitzung. Die Room-API spricht Twirp über JSON, also
 gewöhnliches POST mit Bearer-Kopf, und dafür gibt es `httpx`. Das offizielle
 Python-SDK würde `aiohttp`, `protobuf` und `livekit-protocol` nachziehen — drei
 Pakete für rund vierzig Zeilen. Alles Nötige steht in

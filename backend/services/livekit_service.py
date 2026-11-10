@@ -3,9 +3,10 @@
 Die einzige Stelle im Backend, die LiveKit kennt. Alles andere fragt hier.
 
 **Warum kein `livekit-api`.** Ein LiveKit-Zugangstoken ist ein gewoehnliches
-HS256-JWT mit einem `video`-Anspruch; `python-jose` liegt seit dem ersten Tag im
-Abhaengigkeitsbaum und signiert bereits jede Panel-Sitzung. Die Room-API spricht
-Twirp ueber JSON, also gewoehnliches POST mit Bearer-Kopf, und dafuer gibt es
+HS256-JWT mit einem `video`-Anspruch; `PyJWT` liegt seit dem Wechsel von
+`python-jose` im Abhaengigkeitsbaum und signiert bereits jede Panel-Sitzung.
+Die Room-API spricht Twirp ueber JSON, also gewoehnliches POST mit Bearer-Kopf,
+und dafuer gibt es
 `httpx`. Das offizielle SDK wuerde `aiohttp`, `protobuf` und `livekit-protocol`
 nachziehen — drei Pakete fuer die rund vierzig Zeilen, die hier stehen.
 Entscheidung und Ausstiegsplan: docs/agent-rules/dependencies.md.
@@ -27,7 +28,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import httpx
-from jose import jwt
+import jwt
 from sqlalchemy.orm import Session
 
 from config import settings

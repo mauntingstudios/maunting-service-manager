@@ -6,7 +6,8 @@ import hmac
 import logging
 import secrets
 
-from jose import jwt, JWTError
+import jwt
+from jwt import PyJWTError as JWTError
 from passlib.context import CryptContext
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, object_session

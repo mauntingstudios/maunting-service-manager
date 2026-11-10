@@ -16,7 +16,14 @@ import threading
 import time
 from typing import Any
 
-from jsonschema import Draft202012Validator
+try:
+    from jsonschema import Draft202012Validator
+
+    _SCHEMA_PRUEFUNG = True
+except ImportError:  # pragma: no cover - nur ohne optionale Schema-Bibliothek
+    Draft202012Validator = None  # type: ignore[assignment,misc]
+    _SCHEMA_PRUEFUNG = False
+
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -157,6 +164,10 @@ def _pruefe_argumente(tool: dict, arguments: dict) -> None:
     schema = tool.get("schema")
     if not isinstance(schema, dict):
         return
+    if not _SCHEMA_PRUEFUNG:
+        raise AiActionValidationError(
+            "MCP-Schemapruefung ist nicht eingerichtet (jsonschema fehlt)"
+        )
     fehler = next(Draft202012Validator(schema).iter_errors(arguments), None)
     if fehler is None:
         return

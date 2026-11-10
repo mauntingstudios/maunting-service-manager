@@ -16,8 +16,15 @@ from __future__ import annotations
 import logging
 import os
 
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError
+try:
+    from jsonschema import Draft202012Validator
+    from jsonschema.exceptions import ValidationError
+
+    _SCHEMA_PRUEFUNG = True
+except ImportError:  # pragma: no cover - nur ohne optionale Schema-Bibliothek
+    Draft202012Validator = None  # type: ignore[assignment,misc]
+    ValidationError = Exception  # type: ignore[assignment,misc]
+    _SCHEMA_PRUEFUNG = False
 
 from services.ai_action_errors import AiActionValidationError
 
@@ -33,6 +40,10 @@ _VALIDATOREN: dict[str, Draft202012Validator] = {}
 
 
 def _validator(tool_name: str) -> Draft202012Validator:
+    if not _SCHEMA_PRUEFUNG:
+        raise AiActionValidationError(
+            "Werkzeugvalidierung ist nicht eingerichtet (jsonschema fehlt)"
+        )
     if tool_name not in _VALIDATOREN:
         parameter = ALLE[tool_name].funktion["function"]["parameters"]
         _VALIDATOREN[tool_name] = Draft202012Validator(parameter)

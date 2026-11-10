@@ -472,7 +472,7 @@ def test_collab_token_traegt_frische_kennung(db):
     """Befund 41: Jedes Token bekommt eine frische jti — zwei Tabs teilen
     sich nie eine Kennung, sonst sperrte die Verbindungsbindung den zweiten
     Tab. Am alten Stand kam die Kennung aus der Sitzung."""
-    from jose import jwt as jose_jwt
+    import jwt as jose_jwt
 
     from config import settings
 

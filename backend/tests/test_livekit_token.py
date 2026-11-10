@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from jose import jwt
+import jwt
 from sqlalchemy.orm import Session
 
 from services import livekit_service

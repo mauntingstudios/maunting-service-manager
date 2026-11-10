@@ -15,7 +15,7 @@ import uuid
 
 import httpx
 from fastapi import HTTPException
-from jose import jwt
+import jwt
 from sqlalchemy.orm import Session
 
 from config import settings

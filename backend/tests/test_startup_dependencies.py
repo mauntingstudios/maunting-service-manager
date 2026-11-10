@@ -44,7 +44,7 @@ KERN = {
     "sqlalchemy",
     "pydantic",
     "pydantic-settings",
-    "python-jose",
+    "pyjwt",
     "passlib",
     "python-multipart",
     "aiosmtplib",
@@ -85,7 +85,7 @@ def _module_je_verteilung() -> dict[str, set[str]]:
     """Paketname -> importierbare Modulnamen, aus der Installation gelesen.
 
     Von Hand gepflegt waere diese Zuordnung eine Fehlerquelle fuer sich:
-    pyyaml heisst `yaml`, python-jose heisst `jose`, psycopg2-binary heisst
+    pyyaml heisst `yaml`, PyJWT heisst `jwt`, psycopg2-binary heisst
     `psycopg2`. Die Installation weiss es besser als eine Tabelle im Test.
     """
     zuordnung: dict[str, set[str]] = {}

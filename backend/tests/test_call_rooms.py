@@ -12,7 +12,7 @@ import secrets
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 from sqlalchemy.orm import Session
 
 from models import User, UserFriend
