@@ -15,6 +15,7 @@ import type { ChatContact } from '@/components/social/sidebar/ConversationListIt
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import { ContactFilterTabs } from './ContactFilterTabs'
 import { ContactListItem, GroupListItem } from './ConversationListItem'
+import { StatusUpdatesView } from './StatusUpdatesView'
 
 beforeAll(async () => {
   await i18n.changeLanguage('de')
@@ -108,6 +109,36 @@ describe('Chatzeilen', () => {
     render(<ContactListItem kontakt={kontakt()} mid="m1" {...zeile} onOeffnen={onOeffnen} />)
     fireEvent.click(screen.getByRole('button', { name: /dora/ }))
     expect(onOeffnen).toHaveBeenCalledTimes(1)
+  })
+
+  it('hält den Status-Ring am runden Punkt, nicht an der eckigen Hülle', () => {
+    // Die Hülle ist ein eckiges inline-flex: ein Ring dort zeichnet ein
+    // schwarzes Viereck hinter den Kreis. Der Ring gehört an den runden Punkt.
+    render(<ContactListItem kontakt={kontakt()} mid="m1" {...zeile} />)
+    const punkt = screen.getByRole('img', { name: i18n.t('social.status.online') })
+    expect(punkt).toHaveClass('rounded-full', 'ring-2')
+    expect(punkt.parentElement).not.toHaveClass('ring-2')
+    expect(punkt.parentElement).not.toHaveClass('ring-surface')
+  })
+})
+
+describe('StatusUpdatesView', () => {
+  it('zeichnet den Status-Ring nur am runden Punkt, nicht an der Hülle', () => {
+    render(
+      <StatusUpdatesView
+        ich={{ username: 'dora' }}
+        eigeneStories={[]}
+        freunde={[]}
+        kontakte={[kontakt()]}
+        onOeffnen={() => {}}
+        onErstellen={() => {}}
+        onChat={() => {}}
+      />,
+    )
+    const punkt = screen.getByRole('img', { name: i18n.t('social.status.online') })
+    expect(punkt).toHaveClass('rounded-full', 'ring-2')
+    expect(punkt.parentElement).not.toHaveClass('ring-2')
+    expect(punkt.parentElement).not.toHaveClass('ring-surface')
   })
 })
 
