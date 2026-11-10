@@ -17,7 +17,8 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:classes": "node scripts/check-classes.mjs",
     "check:catches": "node scripts/check-leere-catches.mjs",
-    "check": "npm run check:i18n && npm run check:classes && npm run check:catches"
+    "check": "npm run check:i18n && npm run check:classes && npm run check:catches",
+    "twemoji:bauen": "node scripts/build-twemoji-catalog.mjs"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",

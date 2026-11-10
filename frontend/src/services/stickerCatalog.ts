@@ -2,11 +2,21 @@
  * Hauseigener 20-teiliger Singra-Sticker-Katalog und vollständige kategorisierte Emoji-Palette.
  */
 
-export interface InHouseSticker {
+/**
+ * Die Gestalt, die Picker und Mixer an `onSticker` übergeben.
+ *
+ * `mix` unterscheidet die gebauten Sticker von den handgezeichneten: bei ihnen
+ * steht die Emoji-Folge nur im `label` für Zitat und Vorlesen, nicht als Text
+ * unter dem Bild.
+ */
+export interface StickerMotiv {
   id: string
   label: string
   svg: string
+  mix?: boolean
 }
+
+export type InHouseSticker = StickerMotiv
 
 export const IN_HOUSE_STICKERS: InHouseSticker[] = [
   {

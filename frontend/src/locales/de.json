@@ -9102,6 +9102,56 @@
     "stateUndelivered": "Noch nicht zugestellt",
     "stickers": "Sticker & Emojis",
     "pickSticker": "Sticker auswählen",
+    "stickerImage": "Sticker",
+    "stickerTabs": {
+      "sticker": "Sticker",
+      "mixer": "Mixer",
+      "emojis": "Emojis"
+    },
+    "mixer": {
+      "title": "Sticker bauen",
+      "description": "Wähle bis zu drei Emoji, einen Hintergrund und schicke deinen Sticker.",
+      "open": "Mixer öffnen",
+      "openHint": "Baue deinen eigenen Sticker aus Emoji.",
+      "preview": "Vorschau",
+      "emptyPreview": "Wähle ein Emoji für die Vorschau.",
+      "add": "{{emoji}} hinzufügen",
+      "remove": "{{emoji}} entfernen",
+      "limit": "Höchstens drei Emoji.",
+      "presetsLabel": "Vorlagen",
+      "presets": {
+        "feuerkatze": "Feuerkatze",
+        "party": "Party",
+        "laessig": "Lässig",
+        "totlachen": "Totlachen",
+        "liebe": "Liebe",
+        "abflug": "Abflug"
+      },
+      "sendPreset": "{{name}} senden",
+      "sendMix": "{{emojis}} senden",
+      "mineLabel": "Meine Mixes",
+      "mineEmpty": "Gesendete Mixes erscheinen hier.",
+      "clear": "Sammlung leeren",
+      "backgroundsLabel": "Hintergrund",
+      "backgrounds": {
+        "ohne": "Ohne",
+        "sonne": "Sonne",
+        "nacht": "Nacht",
+        "minze": "Minze",
+        "pfirsich": "Pfirsich",
+        "beere": "Beere"
+      },
+      "sparkles": "Funken",
+      "categories": {
+        "gesichter": "Gesichter",
+        "tiere": "Tiere",
+        "symbole": "Symbole",
+        "essen": "Essen & Feiern"
+      },
+      "reset": "Zurücksetzen",
+      "send": "Senden",
+      "attribution": "Emoji-Grafiken: Twemoji (CC BY 4.0)"
+    },
     "addAttachment": "Anhang hinzufügen",
     "attachPhoto": "Foto anhängen",
     "cameraSnapshot": "Aufnahme mit der Kamera",

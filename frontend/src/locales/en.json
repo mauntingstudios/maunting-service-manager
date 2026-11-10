@@ -9102,6 +9102,56 @@
     "stateUndelivered": "Not delivered yet",
     "stickers": "Stickers & emojis",
     "pickSticker": "Choose sticker",
+    "stickerImage": "Sticker",
+    "stickerTabs": {
+      "sticker": "Stickers",
+      "mixer": "Mixer",
+      "emojis": "Emojis"
+    },
+    "mixer": {
+      "title": "Build a sticker",
+      "description": "Pick up to three emoji, choose a background, and send your sticker.",
+      "open": "Open mixer",
+      "openHint": "Build your own sticker from emoji.",
+      "preview": "Preview",
+      "emptyPreview": "Pick an emoji to see the preview.",
+      "add": "Add {{emoji}}",
+      "remove": "Remove {{emoji}}",
+      "limit": "Three emoji at most.",
+      "presetsLabel": "Presets",
+      "presets": {
+        "feuerkatze": "Fire cat",
+        "party": "Party",
+        "laessig": "Chill",
+        "totlachen": "Dying",
+        "liebe": "Love",
+        "abflug": "Liftoff"
+      },
+      "sendPreset": "Send {{name}}",
+      "sendMix": "Send {{emojis}}",
+      "mineLabel": "My mixes",
+      "mineEmpty": "Sent mixes show up here.",
+      "clear": "Clear collection",
+      "backgroundsLabel": "Background",
+      "backgrounds": {
+        "ohne": "None",
+        "sonne": "Sun",
+        "nacht": "Night",
+        "minze": "Mint",
+        "pfirsich": "Peach",
+        "beere": "Berry"
+      },
+      "sparkles": "Sparkles",
+      "categories": {
+        "gesichter": "Faces",
+        "tiere": "Animals",
+        "symbole": "Symbols",
+        "essen": "Food & party"
+      },
+      "reset": "Reset",
+      "send": "Send",
+      "attribution": "Emoji graphics: Twemoji (CC BY 4.0)"
+    },
     "addAttachment": "Add attachment",
     "attachPhoto": "Attach photo",
     "cameraSnapshot": "Snapshot with the camera",

@@ -273,6 +273,63 @@ describe('ChatMessageBubble Resilienz & Fehlerbehandlung', () => {
       expect(container.querySelector(`[aria-description="${i18n.t('messenger.takeNote')}"]`)).not.toBeNull()
     })
 
+    it('zeigt bei einem Mixer-Sticker kein Label, aber einen Namen', () => {
+      // Die Emoji-Folge steht bei Mixes nur im aria-label; unter dem Bild wäre
+      // sie doppelt und würde den Sticker kleiner wirken lassen.
+      const msg = {
+        id: 10,
+        senderId: 1,
+        text: '',
+        createdAt: '2026-11-10T10:00:00.000Z',
+        isSelf: true,
+        stickerAttachment: {
+          id: 'mix-abc',
+          label: '🔥🐱',
+          svg: '<svg viewBox="0 0 128 128"><rect width="128" height="128"/></svg>',
+          mix: true,
+        },
+      } as unknown as ChatMessage
+      render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={defaultAktionen}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+      expect(screen.getByRole('img', { name: '🔥🐱' })).toBeInTheDocument()
+      expect(screen.queryByText('🔥🐱')).toBeNull()
+    })
+
+    it('zeigt bei einem handgezeichneten Sticker weiter sein Label', () => {
+      const msg = {
+        id: 11,
+        senderId: 1,
+        text: '',
+        createdAt: '2026-11-10T10:00:00.000Z',
+        isSelf: true,
+        stickerAttachment: {
+          id: 'herz',
+          label: 'Herz',
+          svg: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>',
+        },
+      } as unknown as ChatMessage
+      render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={defaultAktionen}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+      expect(screen.getByText('Herz')).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: 'Herz' })).toBeInTheDocument()
+    })
+
     it('rendert ohne Absturz bei ungueltigem createdAt Zeitstempel', () => {
       const msg: ChatMessage = {
         id: 1,

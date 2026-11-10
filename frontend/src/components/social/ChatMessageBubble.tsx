@@ -105,6 +105,11 @@ export interface StickerAttachment {
   id: string
   label: string
   svg: string
+  /**
+   * Ein im Mixer gebauter Sticker. Die Emoji-Folge steht dann nur im `label`
+   * für Zitat und Vorlesen; unter dem Bild würde sie doppelt stehen.
+   */
+  mix?: boolean
 }
 
 export interface StoryReplyAttachment {
@@ -604,10 +609,18 @@ function ChatMessageBubbleContent({
         {!msg.isDeleted && msg.stickerAttachment && (
           <div className="py-1">
             <div
-              className="w-24 h-24 sm:w-28 sm:h-28 drop-shadow-md"
+              role="img"
+              aria-label={msg.stickerAttachment.label || t('messenger.stickerImage')}
+              className="w-24 h-24 sm:w-28 sm:h-28 drop-shadow-md [&>svg]:h-full [&>svg]:w-full"
               dangerouslySetInnerHTML={{ __html: sanitizeSvg(msg.stickerAttachment.svg) }}
             />
-            <div className="text-label-sm opacity-60 text-center mt-1">{msg.stickerAttachment.label}</div>
+            {!msg.stickerAttachment.mix && msg.stickerAttachment.label && (
+              // Der Name steht schon am Bild (`aria-label`); der sichtbare
+              // Text darunter würde sonst ein zweites Mal vorgelesen.
+              <div aria-hidden="true" className="text-label-sm opacity-60 text-center mt-1">
+                {msg.stickerAttachment.label}
+              </div>
+            )}
           </div>
         )}
 

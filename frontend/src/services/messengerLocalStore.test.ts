@@ -30,6 +30,10 @@ import {
   ladeOffeneNachrichten,
   schreibeOffeneNachricht,
   loescheOffeneNachricht,
+  speichereHintergrundZeile,
+  ladeHintergrundZeile,
+  ladeHintergrundZeilen,
+  schreibeHintergruendeBestandNeu,
   deleteMessageFromLocalStore,
   editMessageInLocalStore,
   type LocalStoredMessage,
@@ -107,6 +111,9 @@ function installMockIndexedDb() {
           key = String(item.mediaId)
         } else if (storeName === 'offene_nachrichten') {
           key = String(item.id)
+        } else if (storeName === 'hintergruende') {
+          // Der echte Store hat `keyPath: 'schluessel'`.
+          key = String(item.schluessel)
         } else {
           key = String(item.blindMailboxId)
         }
@@ -514,6 +521,19 @@ describe('messengerLocalStore (IndexedDB Chat Persistence & F5 Hydration)', () =
     expect(result).toHaveLength(0)
   })
 
+  it('räumt beim Abmelden auch die Chat-Hintergründe und die Mix-Sammlung', async () => {
+    // Beide liegen im selben Store. Bis 11/2026 fehlte er in der Liste und
+    // überlebte das Abmelden, obwohl er Nutzerinhalt ist (Regel 50).
+    await speichereHintergrundZeile('mix:sammlung', {
+      eintraege: [{ id: 'mix-1', emojis: ['🔥'], hintergrund: 'sonne', funken: true }],
+    })
+    expect(await ladeHintergrundZeilen()).toHaveLength(1)
+
+    await clearLocalMessengerStore()
+
+    expect(await ladeHintergrundZeilen()).toHaveLength(0)
+  })
+
   it('legt offene Umschläge ab, lässt die erste Fassung stehen und löscht sie wieder', async () => {
     const eingabe = {
       id: 'direct:7:uuid-offen',
@@ -916,6 +936,33 @@ describe('messengerLocalStore mit PIN', () => {
     const zeilen = [...(ablage.get('messages')?.values() ?? [])]
     expect(zeilen[0].v).toBeUndefined()
     expect(zeilen[0].text).toBe(nachricht.text)
+  })
+
+  it('schreibt die Mix-Sammlung beim Umsiegeln mit um', async () => {
+    // Sie liegt im Hintergrund-Store; ohne dessen Umstellung wäre sie nach dem
+    // Abschalten des Siegels für immer unlesbar.
+    const eintraege = [
+      {
+        id: 'mix-1',
+        rezept: { emojis: ['🔥'], hintergrund: 'sonne', funken: true },
+        zuletzt: 1,
+      },
+    ]
+    await speichereHintergrundZeile('mix:sammlung', { eintraege })
+
+    const versiegelt = [...(ablage.get('hintergruende')?.values() ?? [])]
+    expect(JSON.stringify(versiegelt)).not.toContain('sonne')
+
+    setzeSiegelAktiv(false)
+    await schreibeHintergruendeBestandNeu()
+
+    const sammlung = await ladeHintergrundZeile('mix:sammlung')
+    expect(sammlung?.eintraege).toEqual(eintraege)
+    // Die Sammelabfrage bleibt für den Chat-Hintergrund bestehen.
+    expect(await ladeHintergrundZeilen()).toHaveLength(1)
+
+    const offen = [...(ablage.get('hintergruende')?.values() ?? [])]
+    expect(offen[0].v).toBeUndefined()
   })
 
   it('verträgt einen Abbruch mitten in der Umstellung', async () => {

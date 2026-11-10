@@ -141,6 +141,22 @@ describe('baueNutzlast', () => {
     expect(nutzlast.erwaehnungen).toEqual([9])
     expect(nutzlast.verfaellt_am).toBe('2026-09-25T10:00:00.000Z')
   })
+
+  it('trägt die Kennzeichnung eines gebauten Stickers mit', () => {
+    // Ein Feld innerhalb von `sticker_attachment` reist unverändert durch
+    // Senden, Versiegeln und Empfangen. Der Empfänger blendet daran nur das
+    // Label unter dem Bild aus.
+    const nutzlast = baueNutzlast({
+      ...grund,
+      sticker: { id: 'mix-abc', label: '🔥🐱', svg: '<svg/>', mix: true },
+    })
+    expect(nutzlast.sticker_attachment).toEqual({
+      id: 'mix-abc',
+      label: '🔥🐱',
+      svg: '<svg/>',
+      mix: true,
+    })
+  })
 })
 
 describe('ladeAnhaengeHoch', () => {

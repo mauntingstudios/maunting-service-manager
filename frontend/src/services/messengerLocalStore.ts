@@ -792,6 +792,27 @@ export async function ladeHintergrundZeilen(): Promise<Record<string, unknown>[]
   )
 }
 
+/**
+ * Eine einzelne Hintergrundzeile.
+ *
+ * `ladeHintergrundZeilen` entsiegelt **alle** Zeilen; dort liegen auch die
+ * Wandbilder der Chats, mitunter mehrere Megabyte. Wer nur seinen eigenen
+ * Schlüssel braucht (die Mix-Sammlung), liest deshalb gezielt.
+ */
+export async function ladeHintergrundZeile(
+  schluessel: string,
+): Promise<Record<string, unknown> | null> {
+  if (!schluessel) return null
+  const db = await openLocalDatabase()
+  const roh = await new Promise<Record<string, any> | undefined>((resolve, reject) => {
+    const tx = db.transaction(STORE_HINTERGRUENDE, 'readonly')
+    const req = tx.objectStore(STORE_HINTERGRUENDE).get(schluessel)
+    req.onsuccess = () => resolve(req.result as Record<string, any> | undefined)
+    req.onerror = () => reject(req.error)
+  })
+  return entsiegleZeile<Record<string, unknown>>(roh ?? null, hintergrundAad(schluessel))
+}
+
 export async function speichereHintergrundZeile(
   schluessel: string,
   wert: Record<string, unknown>,
@@ -2767,6 +2788,10 @@ export async function clearLocalMessengerStore(): Promise<void> {
           // Mailbox und die Medienkennungen dieses Kontos. Mit der Sitzung des
           // naechsten Kontos duerfte es nicht hinausgehen.
           STORE_LOESCH_AUFTRAEGE,
+          // Die Chat-Hintergruende und die Mix-Sammlung sind Nutzerinhalt wie
+          // der Verlauf. Sie blieben bis 11/2026 beim Abmelden stehen, obwohl
+          // Regel 50 das Räumen verlangt.
+          STORE_HINTERGRUENDE,
         ],
         'readwrite'
       )
@@ -2781,6 +2806,7 @@ export async function clearLocalMessengerStore(): Promise<void> {
       tx.objectStore(STORE_OFFENE_NACHRICHTEN).clear()
       tx.objectStore(STORE_STEUER_AUFTRAEGE).clear()
       tx.objectStore(STORE_LOESCH_AUFTRAEGE).clear()
+      tx.objectStore(STORE_HINTERGRUENDE).clear()
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
     })
