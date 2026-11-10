@@ -1,24 +1,36 @@
 import { useState } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { rezeptId, STANDARD_REZEPT, type MixRezept, type MixSticker } from '@/services/stickerMixerTypen'
-
-vi.mock('@/services/stickerMixerAblage', () => ({
-  ladeMixSammlung: vi.fn(async () => []),
-  merkeMix: vi.fn(async () => {}),
-  leereMixSammlung: vi.fn(async () => {}),
-}))
-
-import { ladeMixSammlung, leereMixSammlung, merkeMix } from '@/services/stickerMixerAblage'
+import { STANDARD_REZEPT, type MixRezept } from '@/services/stickerMixerTypen'
+import type { StickerPack } from '@/services/stickerPacks'
 import { StickerMixer } from './StickerMixer'
 
+const PACK: StickerPack = {
+  id: 'pack-1',
+  name: 'Meine Mixes',
+  coverId: null,
+  createdAt: 1,
+  updatedAt: 1,
+}
+const PACK2: StickerPack = {
+  id: 'pack-2',
+  name: 'Urlaub',
+  coverId: null,
+  createdAt: 2,
+  updatedAt: 2,
+}
+
 function Pruefstand({
-  onSticker,
-  onOpenChange,
+  onMixFertig,
+  onOpenChange = vi.fn(),
+  onZielPack = vi.fn(),
+  onNeuesPack = vi.fn(async () => PACK2.id),
 }: {
-  onSticker: (sticker: MixSticker) => void
-  onOpenChange: (offen: boolean) => void
+  onMixFertig: (rezept: MixRezept, miniatur: string, senden: boolean) => Promise<void>
+  onOpenChange?: (offen: boolean) => void
+  onZielPack?: (id: string) => void
+  onNeuesPack?: () => Promise<string | null>
 }) {
   const [rezept, setRezept] = useState<MixRezept>({ ...STANDARD_REZEPT })
   return (
@@ -27,38 +39,34 @@ function Pruefstand({
       onOpenChange={onOpenChange}
       rezept={rezept}
       onRezept={setRezept}
-      onSticker={onSticker}
+      packs={[PACK, PACK2]}
+      zielPackId={PACK.id}
+      onZielPack={onZielPack}
+      onNeuesPack={onNeuesPack}
+      onMixFertig={onMixFertig}
     />
   )
 }
 
-/** Rendert und wartet die Sammlung ab, damit kein spätes `setState` aus `act` fällt. */
-async function zeige(
-  onSticker: (sticker: MixSticker) => void,
-  onOpenChange: (offen: boolean) => void = vi.fn(),
-) {
-  render(<Pruefstand onSticker={onSticker} onOpenChange={onOpenChange} />)
-  await act(async () => {})
-  return { onOpenChange }
+function zeige(onMixFertig = vi.fn(async () => {}), optionen: {
+  onOpenChange?: (offen: boolean) => void
+  onZielPack?: (id: string) => void
+  onNeuesPack?: () => Promise<string | null>
+} = {}) {
+  render(<Pruefstand onMixFertig={onMixFertig} {...optionen} />)
+  return onMixFertig
 }
 
 describe('StickerMixer', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    vi.mocked(ladeMixSammlung).mockResolvedValue([])
-    vi.mocked(merkeMix).mockResolvedValue()
-    vi.mocked(leereMixSammlung).mockResolvedValue()
-  })
-
   it('öffnet einen benannten Dialog mit Beschreibung', async () => {
-    await zeige(vi.fn())
+    zeige()
     const dialog = await screen.findByRole('dialog', { name: 'Sticker bauen' })
     expect(dialog).toBeInTheDocument()
     expect(screen.getByText('Wähle bis zu drei Emoji, einen Hintergrund und schicke deinen Sticker.')).toBeInTheDocument()
   })
 
   it('nimmt ein Emoji in die Vorschau und wieder heraus', async () => {
-    await zeige(vi.fn())
+    zeige()
     fireEvent.click(screen.getByRole('button', { name: '😀 hinzufügen' }))
 
     expect(screen.getByRole('img', { name: '😀' })).toBeInTheDocument()
@@ -70,15 +78,14 @@ describe('StickerMixer', () => {
   })
 
   it('zeigt in der Palette echte SVG-Grafiken statt nackter Pfade', async () => {
-    await zeige(vi.fn())
+    zeige()
     const knopf = screen.getByRole('button', { name: '😀 hinzufügen' })
-    // Die Asset-Module tragen nur den Innenraum; ohne Hülle bliebe die Kachel leer.
     expect(knopf.querySelector('svg')).not.toBeNull()
     expect(knopf.querySelector('svg path, svg g')).not.toBeNull()
   })
 
   it('lässt höchstens drei Emoji zu und sagt es', async () => {
-    await zeige(vi.fn())
+    zeige()
     for (const emoji of ['😀', '😃', '😄']) {
       fireEvent.click(screen.getByRole('button', { name: `${emoji} hinzufügen` }))
     }
@@ -88,7 +95,7 @@ describe('StickerMixer', () => {
   })
 
   it('wechselt den Hintergrund und zeigt ihn in der Vorschau', async () => {
-    await zeige(vi.fn())
+    zeige()
     fireEvent.click(screen.getByRole('button', { name: '😀 hinzufügen' }))
     expect(screen.getByRole('button', { name: 'Ohne' })).toHaveAttribute('aria-pressed', 'true')
 
@@ -101,7 +108,7 @@ describe('StickerMixer', () => {
   })
 
   it('schaltet Sternchen über einen benannten Schalter', async () => {
-    await zeige(vi.fn())
+    zeige()
     const schalter = screen.getByRole('switch', { name: 'Sternchen' })
     expect(schalter).toHaveAttribute('aria-checked', 'false')
 
@@ -111,7 +118,7 @@ describe('StickerMixer', () => {
   })
 
   it('setzt alles auf den Standard zurück', async () => {
-    await zeige(vi.fn())
+    zeige()
     fireEvent.click(screen.getByRole('button', { name: '😀 hinzufügen' }))
     fireEvent.click(screen.getByRole('button', { name: 'Blau' }))
     fireEvent.click(screen.getByRole('switch', { name: 'Sternchen' }))
@@ -124,59 +131,64 @@ describe('StickerMixer', () => {
     expect(screen.getByRole('button', { name: 'Senden' })).toBeDisabled()
   })
 
-  it('sendet den gebauten Sticker und merkt das Rezept', async () => {
-    const onSticker = vi.fn()
-    const { onOpenChange } = await zeige(onSticker)
+  it('sendet den gebauten Sticker und schließt den Dialog', async () => {
+    const onMixFertig = vi.fn(async () => {})
+    const onOpenChange = vi.fn()
+    zeige(onMixFertig, { onOpenChange })
 
     fireEvent.click(screen.getByRole('button', { name: '😀 hinzufügen' }))
     fireEvent.click(screen.getByRole('button', { name: 'Senden' }))
 
-    expect(merkeMix).toHaveBeenCalledWith({ emojis: ['😀'], hintergrund: 'ohne', sterne: false })
-    expect(onSticker).toHaveBeenCalledWith(
-      expect.objectContaining({ id: expect.stringMatching(/^mix-/), label: '😀', mix: true }),
+    expect(onMixFertig).toHaveBeenCalledWith(
+      { emojis: ['😀'], hintergrund: 'ohne', sterne: false },
+      expect.stringContaining('<svg'),
+      true,
     )
-    expect(onSticker.mock.calls[0][0].svg).toContain('<svg')
-    expect(onOpenChange).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    await act(async () => {})
+  })
+
+  it('speichert den Mix ohne zu senden', async () => {
+    const onMixFertig = vi.fn(async () => {})
+    zeige(onMixFertig)
+
+    fireEvent.click(screen.getByRole('button', { name: '😀 hinzufügen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+    expect(onMixFertig).toHaveBeenCalledWith(
+      expect.objectContaining({ emojis: ['😀'] }),
+      expect.stringContaining('<svg'),
+      false,
+    )
+    await act(async () => {})
   })
 
   it('sendet eine Vorlage beim Antippen', async () => {
-    const onSticker = vi.fn()
-    await zeige(onSticker)
+    const onMixFertig = vi.fn(async () => {})
+    zeige(onMixFertig)
 
     fireEvent.click(screen.getByRole('button', { name: 'Feuerkatze senden' }))
 
-    expect(onSticker).toHaveBeenCalledWith(expect.objectContaining({ label: '🔥🐱', mix: true }))
-    expect(merkeMix).toHaveBeenCalledWith({
-      emojis: ['🔥', '🐱'],
-      hintergrund: 'amber',
-      sterne: true,
-    })
+    expect(onMixFertig).toHaveBeenCalledWith(
+      { emojis: ['🔥', '🐱'], hintergrund: 'amber', sterne: true },
+      expect.stringContaining('<svg'),
+      true,
+    )
+    await act(async () => {})
   })
 
-  it('bietet die gesendete Sammlung an und leert sie', async () => {
-    const rezept: MixRezept = { emojis: ['🦄'], hintergrund: 'rose', sterne: false }
-    vi.mocked(ladeMixSammlung).mockResolvedValueOnce([
-      { id: rezeptId(rezept), rezept, zuletzt: 1 },
-    ])
-    const onSticker = vi.fn()
-    await zeige(onSticker)
+  it('bietet die Ziel-Packs an', async () => {
+    const onZielPack = vi.fn()
+    zeige(vi.fn(async () => {}), { onZielPack })
 
-    const kachel = await screen.findByRole('button', { name: '🦄 senden' })
-    fireEvent.click(kachel)
-    expect(onSticker).toHaveBeenCalledWith(expect.objectContaining({ label: '🦄' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ablage' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Urlaub' }))
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Sammlung leeren' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '🦄 senden' })).toBeNull())
-    expect(leereMixSammlung).toHaveBeenCalled()
-  })
-
-  it('zeigt einen leeren Zustand ohne Sammlung', async () => {
-    await zeige(vi.fn())
-    expect(await screen.findByText('Gesendete Mixes erscheinen hier.')).toBeInTheDocument()
+    expect(onZielPack).toHaveBeenCalledWith('pack-2')
   })
 
   it('setzt kein natives title und nennt die Herkunft der Grafiken', async () => {
-    await zeige(vi.fn())
+    zeige()
     await screen.findByRole('dialog', { name: 'Sticker bauen' })
 
     expect(document.querySelectorAll('[title]')).toHaveLength(0)

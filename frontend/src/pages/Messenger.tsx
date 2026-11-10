@@ -163,6 +163,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { still } from '@/lib/still'
 import { useMessengerNotificationStore, PINS_MAX } from '@/stores/messengerNotificationStore'
+import { STICKER_TRESOR_PARAM, STICKER_TRESOR_WERT } from '@/services/stickerTresor'
 
 /**
  * Was gesendet werden soll.
@@ -448,6 +449,22 @@ function MessengerSeite() {
   // Stickers / Emojis
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false)
   const [stickerTab, setStickerTab] = useState<PickerReiter>('stickers')
+  const [startFotoTresor, setStartFotoTresor] = useState(false)
+
+  /*
+   * Rückkehr aus dem Tresor: Dort wurde die Smartcard entsperrt. Der Merker
+   * steht im Rückweg, nicht in einem zweiten Zustand. Er wird nach dem Öffnen
+   * aus der Adresse entfernt, damit ein Neuladen nicht erneut öffnet.
+   */
+  useEffect(() => {
+    if (searchParams.get(STICKER_TRESOR_PARAM) !== STICKER_TRESOR_WERT) return
+    setStartFotoTresor(true)
+    setIsStickerPickerOpen(true)
+    setStickerTab('foto')
+    const naechste = new URLSearchParams(searchParams)
+    naechste.delete(STICKER_TRESOR_PARAM)
+    setSearchParams(naechste, { replace: true })
+  }, [searchParams, setSearchParams])
 
   // Group creation modal
 
@@ -2881,12 +2898,17 @@ function MessengerSeite() {
                       <StickerEmojiPicker
                         reiter={stickerTab}
                         onReiter={setStickerTab}
+                        startFotoTresor={startFotoTresor}
                         onSticker={(stk) => {
                           void handleSendMessage({ sticker: stk })
                           setIsStickerPickerOpen(false)
+                          setStartFotoTresor(false)
                         }}
                         onEmoji={(emoji) => setInputText((prev) => prev + emoji)}
-                        onSchliessen={() => setIsStickerPickerOpen(false)}
+                        onSchliessen={() => {
+                          setIsStickerPickerOpen(false)
+                          setStartFotoTresor(false)
+                        }}
                       />
                     )}
 
@@ -2985,7 +3007,10 @@ function MessengerSeite() {
                             >
                               <button
                                 type="button"
-                                onClick={() => setIsStickerPickerOpen((prev) => !prev)}
+                                onClick={() => {
+                                  if (isStickerPickerOpen) setStartFotoTresor(false)
+                                  setIsStickerPickerOpen((prev) => !prev)
+                                }}
                                 className={`grid h-9 w-9 place-items-center rounded-full transition-colors ${
                                   isStickerPickerOpen
                                     ? 'bg-primary/20 text-white border border-primary/50'

@@ -145,3 +145,21 @@ function loadImageElement(file: File): Promise<HTMLImageElement> {
     img.src = url
   })
 }
+
+/** Liest eine Bilddatei wie der Chat: erst komprimieren, sonst roh. */
+export async function bildAusDatei(datei: File): Promise<CompressedImageResult> {
+  if (!datei.type.startsWith('image/')) {
+    throw new Error('Keine Bilddatei')
+  }
+  try {
+    return await compressImageFile(datei)
+  } catch {
+    const dataUrl = await readFileAsDataUrl(datei)
+    return {
+      dataUrl,
+      name: datei.name,
+      mimeType: datei.type || 'image/jpeg',
+      sizeBytes: datei.size,
+    }
+  }
+}

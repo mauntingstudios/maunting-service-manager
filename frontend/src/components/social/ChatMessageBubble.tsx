@@ -66,6 +66,7 @@ import {
 } from '@/lib/gesten'
 import { reaktionsknoepfe, type Reaktionen } from '@/services/reaktionen'
 import { systemSticker } from '@/services/systemStickers'
+import { STICKER_BILD_MAX_ZEICHEN } from '@/services/stickerPacks'
 import { hervorzuhebendeWorte, teileText, type Textstueck } from '@/services/erwaehnungen'
 import type { ChatGroupItem } from '@/api/social'
 import type { Gruppenzustand } from '@/services/gruppenKonfig'
@@ -367,7 +368,15 @@ function ChatMessageBubbleContent({
   // Katalog, nie aus der Nutzlast. Foto-Sticker tragen ihr Bild eingebettet.
   const sticker = msg.stickerAttachment
   const systemStickerEintrag = sticker && !sticker.svg && !sticker.bild ? systemSticker(sticker.id) : undefined
-  const stickerBild = sticker?.bild?.startsWith('data:image/') ? sticker.bild : undefined
+  // Nur Rasterdaten bis zur vereinbarten Grenze. SVG ließe sich als Bild
+  // weiterhin mit fremden Verweisen bestücken; ein Austausch gegen `/api/`
+  // oder eine fremde Adresse wird gar nicht erst geladen.
+  const stickerBild =
+    sticker?.bild &&
+    /^data:image\/(?:png|jpe?g|webp|gif|avif);base64,/i.test(sticker.bild) &&
+    sticker.bild.length <= STICKER_BILD_MAX_ZEICHEN
+      ? sticker.bild
+      : undefined
   const {
     activeGroup,
     activeContact,

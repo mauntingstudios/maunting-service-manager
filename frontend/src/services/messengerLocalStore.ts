@@ -41,6 +41,20 @@ import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { entsiegleZeile, entsiegleZeilen, versiegleZeile } from './lokaleVersiegelung'
 import type { AugenblickMarke, RettungsMarke } from './funkenService'
 import { istSteuerzeile } from './nachrichtBezug'
+import { normalisiereRezept, rezeptId } from './stickerMixerTypen'
+import {
+  STICKER_BILD_MAX_ZEICHEN,
+  STICKER_MAX,
+  STICKER_PACKS_MAX,
+  StickerAblageFehler,
+  effektivesCover,
+  normalisierePackName,
+  type BildStickerEintrag,
+  type BildStickerStil,
+  type EigenSticker,
+  type MixStickerEintrag,
+  type StickerPack,
+} from './stickerPacks'
 export interface SteuerAuftrag {
   id: string
   mailbox: string
@@ -178,7 +192,7 @@ export interface OffeneNachricht {
 }
 
 const DB_PRAEFIX = 'msm_messenger_local'
-const DB_VERSION = 11
+const DB_VERSION = 12
 
 /** Die Ablage dieses Kontos. Ein anderes Konto, eine andere Datenbank. */
 function dbName(kontoId: number): string {
@@ -205,6 +219,10 @@ const STORE_LOESCH_AUFTRAEGE = 'loesch_auftraege'
 const STORE_OFFENE_NACHRICHTEN = 'offene_nachrichten'
 /** Chat-Hintergruende je Kontakt bzw. je Bereich (`global:messenger`, `global:ki`). */
 const STORE_HINTERGRUENDE = 'hintergruende'
+/** Eigene Sticker-Packs und ihre Einträge; die Vollbilder liegen getrennt. */
+const STORE_STICKER_PACKS = 'sticker_packs'
+const STORE_STICKER = 'sticker'
+const STORE_STICKER_BILDER = 'sticker_bilder'
 
 /**
  * So viele Grabsteine bleiben.
@@ -253,6 +271,18 @@ function offeneAad(id: string): string {
 /** Bindet einen Hintergrund an seinen Platz (Peer, global oder KI). */
 function hintergrundAad(schluessel: string): string {
   return `msm-hintergrund:${schluessel}`
+}
+
+function stickerPackAad(id: string): string {
+  return `msm-sticker-pack:${id}`
+}
+
+function stickerAad(id: string): string {
+  return `msm-sticker:${id}`
+}
+
+function stickerBildAad(id: string): string {
+  return `msm-sticker-bild:${id}`
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null
@@ -505,6 +535,24 @@ function openLocalDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_HINTERGRUENDE)) {
         db.createObjectStore(STORE_HINTERGRUENDE, { keyPath: 'schluessel' })
       }
+      /*
+       * Version 12: eigene Sticker-Packs.
+       *
+       * Eine Zeile je Pack und je Sticker; das Vollbild eines Foto-Stickers
+       * liegt in `sticker_bilder` und wird erst beim Senden gelesen. So bleibt
+       * das Raster leicht, und der Verlauf bekommt trotzdem ein selbst
+       * tragendes Bild. Alles hier ist Nutzerinhalt und geht durch dieselbe
+       * Versiegelung wie der Chat.
+       */
+      if (!db.objectStoreNames.contains(STORE_STICKER_PACKS)) {
+        db.createObjectStore(STORE_STICKER_PACKS, { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains(STORE_STICKER)) {
+        db.createObjectStore(STORE_STICKER, { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains(STORE_STICKER_BILDER)) {
+        db.createObjectStore(STORE_STICKER_BILDER, { keyPath: 'id' })
+      }
       // Die vorhandene Tabelle aus Version 6 bekommt ihren Index nach. In
       // einer frisch angelegten steht er schon oben.
       const upgrade = req.transaction
@@ -516,7 +564,34 @@ function openLocalDatabase(): Promise<IDBDatabase> {
       }
     }
 
-    req.onsuccess = () => resolve(req.result)
+    /*
+     * Version 12 ist die erste, die eine ältere Fassung der App nicht kennt.
+     * Hält ein altes Fenster die Ablage noch offen, wartet der Browser mit
+     * dem Upgrade. Statt stumm zu hängen, sagt der Aufruf das; ein späterer
+     * Erfolg wird geschlossen, damit die alte Verbindung nicht stehen bleibt.
+     */
+    let abgelehnt = false
+    req.onblocked = () => {
+      abgelehnt = true
+      dbPromise = null
+      offenesKonto = null
+      reject(new Error('Die lokale Ablage wird von einem anderen Fenster verwendet.'))
+    }
+    req.onsuccess = () => {
+      const db = req.result
+      if (abgelehnt) {
+        db.close()
+        return
+      }
+      // Ein anderes Fenster öffnet eine neue Version: diese Verbindung gibt
+      // den Platz frei, der nächste Zugriff öffnet die neue Fassung.
+      db.onversionchange = () => {
+        db.close()
+        dbPromise = null
+        offenesKonto = null
+      }
+      resolve(db)
+    }
     req.onerror = () => {
       dbPromise = null
       offenesKonto = null
@@ -842,6 +917,289 @@ export async function loescheHintergrundZeile(schluessel: string): Promise<void>
     tx.onerror = () => reject(tx.error)
     tx.onabort = () => reject(tx.error)
   })
+}
+
+// ==========================================
+// Eigene Sticker-Packs
+// ==========================================
+
+/** Der alte Ort der Mix-Sammlung; wird einmalig in das Standard-Pack übernommen. */
+const MIX_SAMMLUNG_ALT = 'mix:sammlung'
+
+async function stickerZeilen(storeName: string): Promise<Record<string, any>[]> {
+  const db = await openLocalDatabase()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readonly')
+    const req = tx.objectStore(storeName).getAll()
+    req.onsuccess = () => resolve((req.result || []) as Record<string, any>[])
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function stickerZeile(
+  storeName: string,
+  key: string,
+): Promise<Record<string, any> | undefined> {
+  const db = await openLocalDatabase()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readonly')
+    const req = tx.objectStore(storeName).get(key)
+    req.onsuccess = () => resolve(req.result as Record<string, any> | undefined)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function stickerSchreiben(storeName: string, wert: Record<string, any>): Promise<void> {
+  const db = await openLocalDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite')
+    tx.objectStore(storeName).put(wert)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
+async function stickerLoeschen(storeName: string, key: string): Promise<void> {
+  const db = await openLocalDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite')
+    tx.objectStore(storeName).delete(key)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
+async function speichereStickerPack(pack: StickerPack): Promise<void> {
+  const zeile = await versiegleZeile(pack, ['id'], stickerPackAad(pack.id))
+  await stickerSchreiben(STORE_STICKER_PACKS, zeile)
+}
+
+async function holeStickerPack(id: string): Promise<StickerPack | null> {
+  const roh = await stickerZeile(STORE_STICKER_PACKS, id)
+  if (!roh) return null
+  return entsiegleZeile<StickerPack>(roh, stickerPackAad(id))
+}
+
+export interface StickerBestand {
+  packs: StickerPack[]
+  sticker: EigenSticker[]
+}
+
+async function liesStickerBestand(): Promise<StickerBestand> {
+  await openLocalDatabase()
+  const packRoh = await stickerZeilen(STORE_STICKER_PACKS)
+  const stickerRoh = await stickerZeilen(STORE_STICKER)
+  const packs = await entsiegleZeilen<StickerPack>(packRoh, (zeile) =>
+    stickerPackAad(String(zeile.id || '')),
+  )
+  const sticker = await entsiegleZeilen<EigenSticker>(stickerRoh, (zeile) =>
+    stickerAad(String(zeile.id || '')),
+  )
+  const packIds = new Set(packs.map((pack) => pack.id))
+  return {
+    packs: packs.sort((a, b) => a.createdAt - b.createdAt),
+    // Ein Sticker ohne Pack ist ein Rest eines abgebrochenen Löschens; er
+    // gehört zu keinem Raster und wird nicht angezeigt.
+    sticker: sticker
+      .filter((eintrag) => packIds.has(eintrag.packId))
+      .sort((a, b) => a.createdAt - b.createdAt),
+  }
+}
+
+/**
+ * Lädt Packs und Stickerzeilen und übernimmt einmalig die alte Mix-Sammlung.
+ *
+ * Die Migration läuft nur, solange es noch kein Pack gibt. Sie liest das alte
+ * Dokument, macht daraus das Standard-Pack und entfernt es danach. Alte
+ * Rezepte (`funken`, frühere Hintergrund-Ids) werden dabei normalisiert.
+ */
+export async function ladeStickerBestand(ersatzName: string): Promise<StickerBestand> {
+  const bestand = await liesStickerBestand()
+  if (bestand.packs.length > 0 || bestand.sticker.length > 0) return bestand
+
+  const alt = await ladeHintergrundZeile(MIX_SAMMLUNG_ALT)
+  const eintraege = Array.isArray(alt?.eintraege)
+    ? (alt!.eintraege as Record<string, unknown>[])
+    : []
+  const rezepte = eintraege
+    .map((eintrag) => {
+      const quelle = (eintrag.rezept && typeof eintrag.rezept === 'object'
+        ? eintrag.rezept
+        : eintrag) as Record<string, unknown>
+      const rezept = normalisiereRezept({
+        emojis: Array.isArray(quelle.emojis) ? (quelle.emojis as string[]) : [],
+        hintergrund: quelle.hintergrund as never,
+        sterne: Boolean(quelle.sterne ?? quelle.funken),
+      })
+      return rezept.emojis.length ? rezept : null
+    })
+    .filter((rezept): rezept is ReturnType<typeof normalisiereRezept> => rezept !== null)
+    .slice(0, STICKER_MAX)
+
+  if (rezepte.length === 0) {
+    if (alt) await loescheHintergrundZeile(MIX_SAMMLUNG_ALT)
+    return bestand
+  }
+
+  const pack = await erstelleStickerPack(normalisierePackName(ersatzName, 'Meine Mixes'))
+  for (const rezept of rezepte) {
+    await speichereMixSticker(pack.id, rezept)
+  }
+  await loescheHintergrundZeile(MIX_SAMMLUNG_ALT)
+  return liesStickerBestand()
+}
+
+export async function erstelleStickerPack(name: string): Promise<StickerPack> {
+  const vorhandene = await stickerZeilen(STORE_STICKER_PACKS)
+  if (vorhandene.length >= STICKER_PACKS_MAX) {
+    throw new StickerAblageFehler('limit', 'Zu viele Sticker-Packs')
+  }
+  const sauber = normalisierePackName(name, '')
+  if (!sauber) throw new StickerAblageFehler('leer', 'Der Packname fehlt')
+  const jetzt = Date.now()
+  const pack: StickerPack = {
+    id: `pack-${crypto.randomUUID()}`,
+    name: sauber,
+    coverId: null,
+    createdAt: jetzt,
+    updatedAt: jetzt,
+  }
+  await speichereStickerPack(pack)
+  return pack
+}
+
+export async function benenneStickerPack(id: string, name: string): Promise<void> {
+  const pack = await holeStickerPack(id)
+  if (!pack) throw new StickerAblageFehler('unbekannt', 'Das Sticker-Pack gibt es nicht')
+  const sauber = normalisierePackName(name, '')
+  if (!sauber) throw new StickerAblageFehler('leer', 'Der Packname fehlt')
+  await speichereStickerPack({ ...pack, name: sauber, updatedAt: Date.now() })
+}
+
+export async function setzeStickerCover(packId: string, stickerId: string): Promise<void> {
+  const pack = await holeStickerPack(packId)
+  if (!pack) throw new StickerAblageFehler('unbekannt', 'Das Sticker-Pack gibt es nicht')
+  const sticker = await stickerZeile(STORE_STICKER, stickerId)
+  if (!sticker) throw new StickerAblageFehler('unbekannt', 'Den Sticker gibt es nicht')
+  const offen = await entsiegleZeile<EigenSticker>(sticker, stickerAad(stickerId))
+  if (!offen || offen.packId !== packId) {
+    throw new StickerAblageFehler('unbekannt', 'Der Sticker gehört nicht zu diesem Pack')
+  }
+  await speichereStickerPack({ ...pack, coverId: stickerId, updatedAt: Date.now() })
+}
+
+export async function speichereMixSticker(
+  packId: string,
+  rezept: Parameters<typeof normalisiereRezept>[0],
+  miniatur = '',
+): Promise<MixStickerEintrag> {
+  const normal = normalisiereRezept(rezept)
+  if (!normal.emojis.length) throw new StickerAblageFehler('leer', 'Der Mix ist leer')
+  const pack = await holeStickerPack(packId)
+  if (!pack) throw new StickerAblageFehler('unbekannt', 'Das Sticker-Pack gibt es nicht')
+
+  const id = rezeptId(normal)
+  const vorhanden = await stickerZeile(STORE_STICKER, id)
+  if (!vorhanden) {
+    const anzahl = (await stickerZeilen(STORE_STICKER)).length
+    if (anzahl >= STICKER_MAX) throw new StickerAblageFehler('limit', 'Zu viele eigene Sticker')
+  }
+
+  const jetzt = Date.now()
+  const eintrag: MixStickerEintrag = {
+    id,
+    packId,
+    art: 'mix',
+    rezept: normal,
+    ...(miniatur ? { miniatur } : {}),
+    createdAt: jetzt,
+  }
+  const zeile = await versiegleZeile(eintrag, ['id', 'packId'], stickerAad(id))
+  await stickerSchreiben(STORE_STICKER, zeile)
+  if (!pack.coverId) {
+    await speichereStickerPack({ ...pack, coverId: id, updatedAt: jetzt })
+  }
+  return eintrag
+}
+
+export async function speichereBildSticker(
+  packId: string,
+  daten: { bild: string; miniatur: string; text: string; stil: BildStickerStil },
+): Promise<BildStickerEintrag> {
+  const pack = await holeStickerPack(packId)
+  if (!pack) throw new StickerAblageFehler('unbekannt', 'Das Sticker-Pack gibt es nicht')
+  if (!daten.bild.startsWith('data:image/') || daten.bild.length > STICKER_BILD_MAX_ZEICHEN) {
+    throw new StickerAblageFehler('limit', 'Das Sticker-Bild ist ungültig oder zu groß')
+  }
+  const anzahl = (await stickerZeilen(STORE_STICKER)).length
+  if (anzahl >= STICKER_MAX) throw new StickerAblageFehler('limit', 'Zu viele eigene Sticker')
+
+  const id = `bild-${crypto.randomUUID()}`
+  const jetzt = Date.now()
+  const eintrag: BildStickerEintrag = {
+    id,
+    packId,
+    art: 'bild',
+    text: daten.text.trim().slice(0, 80),
+    stil: daten.stil,
+    miniatur: daten.miniatur.startsWith('data:image/') ? daten.miniatur : '',
+    createdAt: jetzt,
+  }
+  const zeile = await versiegleZeile(eintrag, ['id', 'packId'], stickerAad(id))
+  const bildZeile = await versiegleZeile({ id, bild: daten.bild }, ['id'], stickerBildAad(id))
+  await stickerSchreiben(STORE_STICKER, zeile)
+  await stickerSchreiben(STORE_STICKER_BILDER, bildZeile)
+  if (!pack.coverId) {
+    await speichereStickerPack({ ...pack, coverId: id, updatedAt: jetzt })
+  }
+  return eintrag
+}
+
+export async function ladeStickerBild(id: string): Promise<string | null> {
+  const roh = await stickerZeile(STORE_STICKER_BILDER, id)
+  if (!roh) return null
+  const offen = await entsiegleZeile<{ id: string; bild: string }>(roh, stickerBildAad(id))
+  return offen?.bild ?? null
+}
+
+export async function loescheSticker(id: string): Promise<void> {
+  const roh = await stickerZeile(STORE_STICKER, id)
+  const offen = roh ? await entsiegleZeile<EigenSticker>(roh, stickerAad(id)) : null
+  await stickerLoeschen(STORE_STICKER, id)
+  await stickerLoeschen(STORE_STICKER_BILDER, id)
+  if (!offen) return
+
+  const pack = await holeStickerPack(offen.packId)
+  if (!pack) return
+  const rest = (await liesStickerBestand()).sticker.filter((eintrag) => eintrag.packId === pack.id)
+  const cover = effektivesCover(
+    { ...pack, coverId: pack.coverId === id ? null : pack.coverId },
+    rest,
+  )
+  await speichereStickerPack({ ...pack, coverId: cover?.id ?? null, updatedAt: Date.now() })
+}
+
+export async function loescheStickerPack(id: string): Promise<void> {
+  const bestand = await liesStickerBestand()
+  for (const eintrag of bestand.sticker.filter((sticker) => sticker.packId === id)) {
+    await loescheSticker(eintrag.id)
+  }
+  await stickerLoeschen(STORE_STICKER_PACKS, id)
+}
+
+/**
+ * Schreibt alle drei Sticker-Ablagen beim PIN-Wechsel einmal neu.
+ */
+export async function schreibeStickerBestandNeu(): Promise<number> {
+  return (
+    (await bestandNeu(STORE_STICKER_PACKS, ['id'], (roh) =>
+      stickerPackAad(String(roh.id || '')),
+    )) +
+    (await bestandNeu(STORE_STICKER, ['id', 'packId'], (roh) => stickerAad(String(roh.id || '')))) +
+    (await bestandNeu(STORE_STICKER_BILDER, ['id'], (roh) => stickerBildAad(String(roh.id || ''))))
+  )
 }
 
 /**
@@ -2792,6 +3150,10 @@ export async function clearLocalMessengerStore(): Promise<void> {
           // der Verlauf. Sie blieben bis 11/2026 beim Abmelden stehen, obwohl
           // Regel 50 das Räumen verlangt.
           STORE_HINTERGRUENDE,
+          // Eigene Sticker-Packs samt Vollbildern gehören demselben Konto.
+          STORE_STICKER_PACKS,
+          STORE_STICKER,
+          STORE_STICKER_BILDER,
         ],
         'readwrite'
       )
@@ -2807,6 +3169,9 @@ export async function clearLocalMessengerStore(): Promise<void> {
       tx.objectStore(STORE_STEUER_AUFTRAEGE).clear()
       tx.objectStore(STORE_LOESCH_AUFTRAEGE).clear()
       tx.objectStore(STORE_HINTERGRUENDE).clear()
+      tx.objectStore(STORE_STICKER_PACKS).clear()
+      tx.objectStore(STORE_STICKER).clear()
+      tx.objectStore(STORE_STICKER_BILDER).clear()
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
     })

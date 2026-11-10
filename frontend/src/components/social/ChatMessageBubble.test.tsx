@@ -312,7 +312,7 @@ describe('ChatMessageBubble Resilienz & Fehlerbehandlung', () => {
         text: '',
         createdAt: '2026-11-10T10:00:00.000Z',
         isSelf: true,
-        stickerAttachment: { id: 'sys-emotes-hello-wave', label: 'Emotes' },
+        stickerAttachment: { id: 'sys-emotes-hello-wave', label: 'Winkende Hand' },
       } as unknown as ChatMessage
       const { container } = render(
         <ChatMessageBubble
@@ -325,8 +325,102 @@ describe('ChatMessageBubble Resilienz & Fehlerbehandlung', () => {
         />
       )
       expect(container.querySelector('img[src="/stickers/emotes/01_hello_wave.png"]')).not.toBeNull()
-      expect(screen.getByRole('img', { name: 'Emotes' })).toBeInTheDocument()
-      expect(screen.queryByText('Emotes')).toBeNull()
+      expect(screen.getByRole('img', { name: 'Winkende Hand' })).toBeInTheDocument()
+      expect(screen.queryByText('Winkende Hand')).toBeNull()
+    })
+
+    it('zeigt einen Foto-Sticker aus eingebetteten Bilddaten', () => {
+      const msg = {
+        id: 13,
+        senderId: 1,
+        text: '',
+        createdAt: '2026-11-10T10:00:00.000Z',
+        isSelf: true,
+        stickerAttachment: {
+          id: 'bild-1',
+          label: 'Hallo',
+          bild: 'data:image/webp;base64,AAAA',
+          mix: true,
+        },
+      } as unknown as ChatMessage
+      const { container } = render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={defaultAktionen}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+      expect(container.querySelector('img[src="data:image/webp;base64,AAAA"]')).not.toBeNull()
+      expect(screen.queryByText('Hallo')).toBeNull()
+    })
+
+    it('lädt kein Sticker-Bild aus einer fremden Adresse', () => {
+      // Ein Bildpfad in der Nutzlast ist eine Angabe des Absenders. Nur
+      // eingebettete Daten und der feste Systemkatalog werden angezeigt.
+      const msg = {
+        id: 14,
+        senderId: 1,
+        text: '',
+        createdAt: '2026-11-10T10:00:00.000Z',
+        isSelf: true,
+        stickerAttachment: {
+          id: 'bild-2',
+          label: 'Fremd',
+          bild: 'https://example.com/x.png',
+          mix: true,
+        },
+      } as unknown as ChatMessage
+      const { container } = render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={defaultAktionen}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+      expect(container.querySelector('img')).toBeNull()
+    })
+
+    it('zeigt kein SVG und kein übermäßig großes Sticker-Bild', () => {
+      const baue = (bild: string) =>
+        ({
+          id: 15,
+          senderId: 1,
+          text: '',
+          createdAt: '2026-11-10T10:00:00.000Z',
+          isSelf: true,
+          stickerAttachment: { id: 'bild-3', label: 'Fremd', bild, mix: true },
+        }) as unknown as ChatMessage
+      const { container, unmount } = render(
+        <ChatMessageBubble
+          msg={baue('data:image/svg+xml;base64,PHN2Zy8+')}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={defaultAktionen}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+      expect(container.querySelector('img')).toBeNull()
+      unmount()
+
+      const zuGross = `data:image/png;base64,${'A'.repeat(400_001)}`
+      const zweite = render(
+        <ChatMessageBubble
+          msg={baue(zuGross)}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={defaultAktionen}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+      expect(zweite.container.querySelector('img')).toBeNull()
     })
 
     it('zeigt bei einem handgezeichneten Sticker weiter sein Label', () => {

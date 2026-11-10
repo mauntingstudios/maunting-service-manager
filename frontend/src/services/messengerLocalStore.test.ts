@@ -34,6 +34,15 @@ import {
   ladeHintergrundZeile,
   ladeHintergrundZeilen,
   schreibeHintergruendeBestandNeu,
+  ladeStickerBestand,
+  erstelleStickerPack,
+  benenneStickerPack,
+  speichereMixSticker,
+  speichereBildSticker,
+  ladeStickerBild,
+  loescheSticker,
+  loescheStickerPack,
+  schreibeStickerBestandNeu,
   deleteMessageFromLocalStore,
   editMessageInLocalStore,
   type LocalStoredMessage,
@@ -114,6 +123,12 @@ function installMockIndexedDb() {
         } else if (storeName === 'hintergruende') {
           // Der echte Store hat `keyPath: 'schluessel'`.
           key = String(item.schluessel)
+        } else if (
+          storeName === 'sticker_packs' ||
+          storeName === 'sticker' ||
+          storeName === 'sticker_bilder'
+        ) {
+          key = String(item.id)
         } else {
           key = String(item.blindMailboxId)
         }
@@ -1480,6 +1495,148 @@ describe('Ablage je Konto', () => {
       expect(raw.find((m) => m.clientUuid === msgUuid)?.text ?? '').toBe('')
     })
 
+  })
+})
+
+describe('Eigene Sticker-Packs', () => {
+  let ablage: Map<string, Map<string, any>>
+
+  beforeEach(() => {
+    ablage = installMockIndexedDb().stores
+    installiereLocalStorage()
+    setzeAngemeldetesKonto(TEST_KONTO)
+    setzeSiegelAktiv(false)
+    setzeInhaltsSchluessel(null)
+  })
+
+  afterEach(() => {
+    setzeSiegelAktiv(false)
+    setzeInhaltsSchluessel(null)
+    setzeAngemeldetesKonto(null)
+  })
+
+  it('migriert die alte Mix-Sammlung in das Standard-Pack', async () => {
+    await speichereHintergrundZeile('mix:sammlung', {
+      eintraege: [
+        { rezept: { emojis: ['🔥', '🐱'], hintergrund: 'sonne', funken: true }, zuletzt: 1 },
+        { rezept: { emojis: ['🫠'], hintergrund: 'beere' }, zuletzt: 2 },
+      ],
+    })
+
+    const bestand = await ladeStickerBestand('Meine Mixes')
+
+    expect(bestand.packs).toHaveLength(1)
+    expect(bestand.packs[0].name).toBe('Meine Mixes')
+    expect(bestand.sticker).toHaveLength(1)
+    expect(bestand.sticker[0]).toMatchObject({
+      art: 'mix',
+      rezept: { emojis: ['🔥', '🐱'], hintergrund: 'ohne', sterne: true },
+    })
+    expect(await ladeHintergrundZeile('mix:sammlung')).toBeNull()
+  })
+
+  it('legt Packs an, benennt um und löscht sie samt Stickern und Vollbildern', async () => {
+    const pack = await erstelleStickerPack('Urlaub')
+    const mix = await speichereMixSticker(pack.id, {
+      emojis: ['🔥'],
+      hintergrund: 'primary',
+      sterne: false,
+    })
+    const bild = {
+      bild: 'data:image/webp;base64,AAAA',
+      miniatur: 'data:image/webp;base64,BBBB',
+      text: 'Hallo',
+      stil: 'fett' as const,
+    }
+    const foto = await speichereBildSticker(pack.id, bild)
+    expect(await ladeStickerBild(foto.id)).toBe(bild.bild)
+
+    let bestand = await ladeStickerBestand('Meine Mixes')
+    expect(bestand.packs[0].coverId).toBe(mix.id)
+
+    await benenneStickerPack(pack.id, 'Reisen')
+    bestand = await ladeStickerBestand('Meine Mixes')
+    expect(bestand.packs[0].name).toBe('Reisen')
+
+    await loescheSticker(foto.id)
+    expect(await ladeStickerBild(foto.id)).toBeNull()
+
+    await loescheStickerPack(pack.id)
+    bestand = await ladeStickerBestand('Meine Mixes')
+    expect(bestand.packs).toHaveLength(0)
+    expect(bestand.sticker).toHaveLength(0)
+  })
+
+  it('führt denselben Mix zusammen und verschiebt ihn ins Ziel-Pack', async () => {
+    const a = await erstelleStickerPack('A')
+    const b = await erstelleStickerPack('B')
+    const rezept = { emojis: ['🔥'], hintergrund: 'amber' as const, sterne: false }
+
+    await speichereMixSticker(a.id, rezept)
+    await speichereMixSticker(a.id, rezept)
+    await speichereMixSticker(b.id, rezept)
+
+    const bestand = await ladeStickerBestand('Meine Mixes')
+    expect(bestand.sticker).toHaveLength(1)
+    expect(bestand.sticker[0].packId).toBe(b.id)
+  })
+
+  it('weist leere Namen, unbekannte Packs und ungültige Bilder ab', async () => {
+    await expect(erstelleStickerPack('   ')).rejects.toMatchObject({ code: 'leer' })
+    await expect(
+      speichereMixSticker('gibt-es-nicht', {
+        emojis: ['🔥'],
+        hintergrund: 'ohne',
+        sterne: false,
+      }),
+    ).rejects.toMatchObject({ code: 'unbekannt' })
+
+    const pack = await erstelleStickerPack('A')
+    await expect(
+      speichereBildSticker(pack.id, {
+        bild: 'http://example.com/x.png',
+        miniatur: '',
+        text: '',
+        stil: 'fett',
+      }),
+    ).rejects.toMatchObject({ code: 'limit' })
+
+    await expect(
+      speichereBildSticker(pack.id, {
+        bild: 'data:image/webp;base64,AAAA',
+        miniatur: '',
+        text: '',
+        stil: 'fett',
+      }),
+    ).resolves.toMatchObject({ art: 'bild' })
+  })
+
+  it('versiegelt die Pack-Zeilen und schreibt sie beim PIN-Wechsel um', async () => {
+    setzeSiegelAktiv(true)
+    setzeInhaltsSchluessel(await generateAesGcmKey())
+    await erstelleStickerPack('Geheim')
+
+    const roh = [...(ablage.get('sticker_packs')?.values() ?? [])]
+    expect(JSON.stringify(roh)).not.toContain('Geheim')
+
+    setzeSiegelAktiv(false)
+    await schreibeStickerBestandNeu()
+
+    const bestand = await ladeStickerBestand('Meine Mixes')
+    expect(bestand.packs[0].name).toBe('Geheim')
+  })
+
+  it('räumt Packs beim Abmelden', async () => {
+    const pack = await erstelleStickerPack('A')
+    await speichereMixSticker(pack.id, {
+      emojis: ['🔥'],
+      hintergrund: 'ohne',
+      sterne: false,
+    })
+
+    await clearLocalMessengerStore()
+
+    expect(await ladeStickerBestand('Meine Mixes')).toEqual({ packs: [], sticker: [] })
   })
 })
 

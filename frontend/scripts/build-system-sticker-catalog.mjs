@@ -58,17 +58,23 @@ function kennung(dateiname) {
   return basis.replace(/^\d+_/, '').replace(/_/g, '-')
 }
 
+function namensSchluessel(slug) {
+  return slug.replace(/-([a-z0-9])/g, (_, zeichen) => zeichen.toUpperCase())
+}
+
 const eintraege = liesManifest()
 const proThema = new Map(THEMEN.map((thema) => [thema.id, 0]))
 const sticker = eintraege.map((eintrag) => {
   const nummer = (proThema.get(eintrag.category) ?? 0) + 1
   proThema.set(eintrag.category, nummer)
+  const slug = kennung(eintrag.filename)
   return {
-    id: `sys-${eintrag.category}-${kennung(eintrag.filename)}`,
+    id: `sys-${eintrag.category}-${slug}`,
     theme: eintrag.category,
     nummer,
     bild: `/stickers/${eintrag.filename}`,
     datei: eintrag.filename,
+    nameKey: `messenger.stickerNames.${namensSchluessel(slug)}`,
   }
 })
 
@@ -90,6 +96,8 @@ export interface SystemSticker {
   /** Pfad im öffentlichen Ordner; kein Nutzerinhalt, fest im Programm. */
   bild: string
   datei: string
+  /** Name in der App-Sprache, unter messenger.stickerNames.*. */
+  nameKey: string
 }
 
 export const SYSTEM_STICKERS: SystemSticker[] = ${JSON.stringify(sticker, null, 2)}

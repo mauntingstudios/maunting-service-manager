@@ -78,6 +78,7 @@ import { SmartcardWalletModal } from './vault/SmartcardWalletModal'
 import { kameraBeobachten } from './vault/kameraSicherung'
 import { eingangBeobachten } from './vault/tresorEingang'
 import { tresorAutoSperrQuelle, useVaultStore } from './vault/vaultStore'
+import { sichererStickerZurueck } from '@/services/stickerTresor'
 import { teamTresorAutoSperrQuelle, useTeamVaultStore } from './vault/teamVaultStore'
 import {
   beiFremdemSprachstart,
@@ -738,6 +739,22 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
   const navigate = useNavigate()
   const location = useLocation()
   const publicSettings = usePublicSettingsStore()
+  const vaultUnlocked = useVaultStore((s) => s.isUnlocked)
+
+  /*
+   * Der Foto-Sticker schickt zum Tresor, damit dort die Smartcard entsperrt.
+   * Sobald der private Tresor offen ist, geht es zurück in den Chat; der
+   * Merker `fotoSticker=tresor` steht im Rückweg. Die automatische Sperre
+   * bleibt die des Tresors (`useAutoSperre` in `DesktopApp`), dieser Weg
+   * entsperrt nichts selbst.
+   */
+  const stickerZurueck = sichererStickerZurueck(
+    new URLSearchParams(location.search).get('zurueck'),
+  )
+  useEffect(() => {
+    if (location.pathname !== '/tresor' || !vaultUnlocked || !stickerZurueck) return
+    navigate(stickerZurueck, { replace: true })
+  }, [location.pathname, location.search, vaultUnlocked, stickerZurueck, navigate])
 
   useEffect(() => {
     if (istMerkbareRoute(location.pathname) || location.pathname.startsWith('/dokumente/')) {

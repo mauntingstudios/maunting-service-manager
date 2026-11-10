@@ -41,6 +41,8 @@ export interface SystemSticker {
   /** Pfad im öffentlichen Ordner; kein Nutzerinhalt, fest im Programm. */
   bild: string
   datei: string
+  /** Name in der App-Sprache, unter messenger.stickerNames.*. */
+  nameKey: string
 }
 
 export const SYSTEM_STICKERS: SystemSticker[] = [
@@ -49,420 +51,480 @@ export const SYSTEM_STICKERS: SystemSticker[] = [
     "theme": "emotes",
     "nummer": 1,
     "bild": "/stickers/emotes/01_hello_wave.png",
-    "datei": "emotes/01_hello_wave.png"
+    "datei": "emotes/01_hello_wave.png",
+    "nameKey": "messenger.stickerNames.helloWave"
   },
   {
     "id": "sys-emotes-heart-hug",
     "theme": "emotes",
     "nummer": 2,
     "bild": "/stickers/emotes/02_heart_hug.png",
-    "datei": "emotes/02_heart_hug.png"
+    "datei": "emotes/02_heart_hug.png",
+    "nameKey": "messenger.stickerNames.heartHug"
   },
   {
     "id": "sys-emotes-rose-bouquet",
     "theme": "emotes",
     "nummer": 3,
     "bild": "/stickers/emotes/03_rose_bouquet.png",
-    "datei": "emotes/03_rose_bouquet.png"
+    "datei": "emotes/03_rose_bouquet.png",
+    "nameKey": "messenger.stickerNames.roseBouquet"
   },
   {
     "id": "sys-emotes-love-smile",
     "theme": "emotes",
     "nummer": 4,
     "bild": "/stickers/emotes/04_love_smile.png",
-    "datei": "emotes/04_love_smile.png"
+    "datei": "emotes/04_love_smile.png",
+    "nameKey": "messenger.stickerNames.loveSmile"
   },
   {
     "id": "sys-emotes-cozy-cuddle",
     "theme": "emotes",
     "nummer": 5,
     "bild": "/stickers/emotes/05_cozy_cuddle.png",
-    "datei": "emotes/05_cozy_cuddle.png"
+    "datei": "emotes/05_cozy_cuddle.png",
+    "nameKey": "messenger.stickerNames.cozyCuddle"
   },
   {
     "id": "sys-emotes-sleepy-cat",
     "theme": "emotes",
     "nummer": 6,
     "bild": "/stickers/emotes/06_sleepy_cat.png",
-    "datei": "emotes/06_sleepy_cat.png"
+    "datei": "emotes/06_sleepy_cat.png",
+    "nameKey": "messenger.stickerNames.sleepyCat"
   },
   {
     "id": "sys-emotes-dreamy-cat",
     "theme": "emotes",
     "nummer": 7,
     "bild": "/stickers/emotes/07_dreamy_cat.png",
-    "datei": "emotes/07_dreamy_cat.png"
+    "datei": "emotes/07_dreamy_cat.png",
+    "nameKey": "messenger.stickerNames.dreamyCat"
   },
   {
     "id": "sys-emotes-coffee-lover",
     "theme": "emotes",
     "nummer": 8,
     "bild": "/stickers/emotes/08_coffee_lover.png",
-    "datei": "emotes/08_coffee_lover.png"
+    "datei": "emotes/08_coffee_lover.png",
+    "nameKey": "messenger.stickerNames.coffeeLover"
   },
   {
     "id": "sys-emotes-music-headphones",
     "theme": "emotes",
     "nummer": 9,
     "bild": "/stickers/emotes/09_music_headphones.png",
-    "datei": "emotes/09_music_headphones.png"
+    "datei": "emotes/09_music_headphones.png",
+    "nameKey": "messenger.stickerNames.musicHeadphones"
   },
   {
     "id": "sys-emotes-heart-eyes",
     "theme": "emotes",
     "nummer": 10,
     "bild": "/stickers/emotes/10_heart_eyes.png",
-    "datei": "emotes/10_heart_eyes.png"
+    "datei": "emotes/10_heart_eyes.png",
+    "nameKey": "messenger.stickerNames.heartEyes"
   },
   {
     "id": "sys-love-sending-love",
     "theme": "love",
     "nummer": 1,
     "bild": "/stickers/love/11_sending_love.png",
-    "datei": "love/11_sending_love.png"
+    "datei": "love/11_sending_love.png",
+    "nameKey": "messenger.stickerNames.sendingLove"
   },
   {
     "id": "sys-love-cat-cuddle",
     "theme": "love",
     "nummer": 2,
     "bild": "/stickers/love/12_cat_cuddle.png",
-    "datei": "love/12_cat_cuddle.png"
+    "datei": "love/12_cat_cuddle.png",
+    "nameKey": "messenger.stickerNames.catCuddle"
   },
   {
     "id": "sys-love-couple-hug",
     "theme": "love",
     "nummer": 3,
     "bild": "/stickers/love/13_couple_hug.png",
-    "datei": "love/13_couple_hug.png"
+    "datei": "love/13_couple_hug.png",
+    "nameKey": "messenger.stickerNames.coupleHug"
   },
   {
     "id": "sys-love-sunset-together",
     "theme": "love",
     "nummer": 4,
     "bild": "/stickers/love/14_sunset_together.png",
-    "datei": "love/14_sunset_together.png"
+    "datei": "love/14_sunset_together.png",
+    "nameKey": "messenger.stickerNames.sunsetTogether"
   },
   {
     "id": "sys-love-forever-together",
     "theme": "love",
     "nummer": 5,
     "bild": "/stickers/love/15_forever_together.png",
-    "datei": "love/15_forever_together.png"
+    "datei": "love/15_forever_together.png",
+    "nameKey": "messenger.stickerNames.foreverTogether"
   },
   {
     "id": "sys-love-heart-hands",
     "theme": "love",
     "nummer": 6,
     "bild": "/stickers/love/16_heart_hands.png",
-    "datei": "love/16_heart_hands.png"
+    "datei": "love/16_heart_hands.png",
+    "nameKey": "messenger.stickerNames.heartHands"
   },
   {
     "id": "sys-love-love-letter",
     "theme": "love",
     "nummer": 7,
     "bild": "/stickers/love/17_love_letter.png",
-    "datei": "love/17_love_letter.png"
+    "datei": "love/17_love_letter.png",
+    "nameKey": "messenger.stickerNames.loveLetter"
   },
   {
     "id": "sys-love-heart-frame",
     "theme": "love",
     "nummer": 8,
     "bild": "/stickers/love/18_heart_frame.png",
-    "datei": "love/18_heart_frame.png"
+    "datei": "love/18_heart_frame.png",
+    "nameKey": "messenger.stickerNames.heartFrame"
   },
   {
     "id": "sys-love-heart-lock",
     "theme": "love",
     "nummer": 9,
     "bild": "/stickers/love/19_heart_lock.png",
-    "datei": "love/19_heart_lock.png"
+    "datei": "love/19_heart_lock.png",
+    "nameKey": "messenger.stickerNames.heartLock"
   },
   {
     "id": "sys-love-promise-rings",
     "theme": "love",
     "nummer": 10,
     "bild": "/stickers/love/20_promise_rings.png",
-    "datei": "love/20_promise_rings.png"
+    "datei": "love/20_promise_rings.png",
+    "nameKey": "messenger.stickerNames.promiseRings"
   },
   {
     "id": "sys-food-burger",
     "theme": "food",
     "nummer": 1,
     "bild": "/stickers/food/21_burger.png",
-    "datei": "food/21_burger.png"
+    "datei": "food/21_burger.png",
+    "nameKey": "messenger.stickerNames.burger"
   },
   {
     "id": "sys-food-pizza-slice",
     "theme": "food",
     "nummer": 2,
     "bild": "/stickers/food/22_pizza_slice.png",
-    "datei": "food/22_pizza_slice.png"
+    "datei": "food/22_pizza_slice.png",
+    "nameKey": "messenger.stickerNames.pizzaSlice"
   },
   {
     "id": "sys-food-ramen",
     "theme": "food",
     "nummer": 3,
     "bild": "/stickers/food/23_ramen.png",
-    "datei": "food/23_ramen.png"
+    "datei": "food/23_ramen.png",
+    "nameKey": "messenger.stickerNames.ramen"
   },
   {
     "id": "sys-food-sushi",
     "theme": "food",
     "nummer": 4,
     "bild": "/stickers/food/24_sushi.png",
-    "datei": "food/24_sushi.png"
+    "datei": "food/24_sushi.png",
+    "nameKey": "messenger.stickerNames.sushi"
   },
   {
     "id": "sys-food-heart-fries",
     "theme": "food",
     "nummer": 5,
     "bild": "/stickers/food/25_heart_fries.png",
-    "datei": "food/25_heart_fries.png"
+    "datei": "food/25_heart_fries.png",
+    "nameKey": "messenger.stickerNames.heartFries"
   },
   {
     "id": "sys-food-pancakes",
     "theme": "food",
     "nummer": 6,
     "bild": "/stickers/food/26_pancakes.png",
-    "datei": "food/26_pancakes.png"
+    "datei": "food/26_pancakes.png",
+    "nameKey": "messenger.stickerNames.pancakes"
   },
   {
     "id": "sys-food-chocolate-donut",
     "theme": "food",
     "nummer": 7,
     "bild": "/stickers/food/27_chocolate_donut.png",
-    "datei": "food/27_chocolate_donut.png"
+    "datei": "food/27_chocolate_donut.png",
+    "nameKey": "messenger.stickerNames.chocolateDonut"
   },
   {
     "id": "sys-food-cupcake",
     "theme": "food",
     "nummer": 8,
     "bild": "/stickers/food/28_cupcake.png",
-    "datei": "food/28_cupcake.png"
+    "datei": "food/28_cupcake.png",
+    "nameKey": "messenger.stickerNames.cupcake"
   },
   {
     "id": "sys-food-coffee-mug",
     "theme": "food",
     "nummer": 9,
     "bild": "/stickers/food/29_coffee_mug.png",
-    "datei": "food/29_coffee_mug.png"
+    "datei": "food/29_coffee_mug.png",
+    "nameKey": "messenger.stickerNames.coffeeMug"
   },
   {
     "id": "sys-food-bubble-tea",
     "theme": "food",
     "nummer": 10,
     "bild": "/stickers/food/30_bubble_tea.png",
-    "datei": "food/30_bubble_tea.png"
+    "datei": "food/30_bubble_tea.png",
+    "nameKey": "messenger.stickerNames.bubbleTea"
   },
   {
     "id": "sys-gaming-gaming-headset",
     "theme": "gaming",
     "nummer": 1,
     "bild": "/stickers/gaming/31_gaming_headset.png",
-    "datei": "gaming/31_gaming_headset.png"
+    "datei": "gaming/31_gaming_headset.png",
+    "nameKey": "messenger.stickerNames.gamingHeadset"
   },
   {
     "id": "sys-gaming-victory-gamer",
     "theme": "gaming",
     "nummer": 2,
     "bild": "/stickers/gaming/32_victory_gamer.png",
-    "datei": "gaming/32_victory_gamer.png"
+    "datei": "gaming/32_victory_gamer.png",
+    "nameKey": "messenger.stickerNames.victoryGamer"
   },
   {
     "id": "sys-gaming-vr-headset",
     "theme": "gaming",
     "nummer": 3,
     "bild": "/stickers/gaming/33_vr_headset.png",
-    "datei": "gaming/33_vr_headset.png"
+    "datei": "gaming/33_vr_headset.png",
+    "nameKey": "messenger.stickerNames.vrHeadset"
   },
   {
     "id": "sys-gaming-hooded-gamer",
     "theme": "gaming",
     "nummer": 4,
     "bild": "/stickers/gaming/34_hooded_gamer.png",
-    "datei": "gaming/34_hooded_gamer.png"
+    "datei": "gaming/34_hooded_gamer.png",
+    "nameKey": "messenger.stickerNames.hoodedGamer"
   },
   {
     "id": "sys-gaming-afk-cat",
     "theme": "gaming",
     "nummer": 5,
     "bild": "/stickers/gaming/35_afk_cat.png",
-    "datei": "gaming/35_afk_cat.png"
+    "datei": "gaming/35_afk_cat.png",
+    "nameKey": "messenger.stickerNames.afkCat"
   },
   {
     "id": "sys-gaming-health-hearts",
     "theme": "gaming",
     "nummer": 6,
     "bild": "/stickers/gaming/36_health_hearts.png",
-    "datei": "gaming/36_health_hearts.png"
+    "datei": "gaming/36_health_hearts.png",
+    "nameKey": "messenger.stickerNames.healthHearts"
   },
   {
     "id": "sys-gaming-game-controller",
     "theme": "gaming",
     "nummer": 7,
     "bild": "/stickers/gaming/37_game_controller.png",
-    "datei": "gaming/37_game_controller.png"
+    "datei": "gaming/37_game_controller.png",
+    "nameKey": "messenger.stickerNames.gameController"
   },
   {
     "id": "sys-gaming-gaming-pc",
     "theme": "gaming",
     "nummer": 8,
     "bild": "/stickers/gaming/38_gaming_pc.png",
-    "datei": "gaming/38_gaming_pc.png"
+    "datei": "gaming/38_gaming_pc.png",
+    "nameKey": "messenger.stickerNames.gamingPc"
   },
   {
     "id": "sys-gaming-gaming-monitor",
     "theme": "gaming",
     "nummer": 9,
     "bild": "/stickers/gaming/39_gaming_monitor.png",
-    "datei": "gaming/39_gaming_monitor.png"
+    "datei": "gaming/39_gaming_monitor.png",
+    "nameKey": "messenger.stickerNames.gamingMonitor"
   },
   {
     "id": "sys-gaming-winner-crown",
     "theme": "gaming",
     "nummer": 10,
     "bild": "/stickers/gaming/40_winner_crown.png",
-    "datei": "gaming/40_winner_crown.png"
+    "datei": "gaming/40_winner_crown.png",
+    "nameKey": "messenger.stickerNames.winnerCrown"
   },
   {
     "id": "sys-technology-laptop-cat",
     "theme": "technology",
     "nummer": 1,
     "bild": "/stickers/technology/41_laptop_cat.png",
-    "datei": "technology/41_laptop_cat.png"
+    "datei": "technology/41_laptop_cat.png",
+    "nameKey": "messenger.stickerNames.laptopCat"
   },
   {
     "id": "sys-technology-code-screen",
     "theme": "technology",
     "nummer": 2,
     "bild": "/stickers/technology/42_code_screen.png",
-    "datei": "technology/42_code_screen.png"
+    "datei": "technology/42_code_screen.png",
+    "nameKey": "messenger.stickerNames.codeScreen"
   },
   {
     "id": "sys-technology-tech-wrench",
     "theme": "technology",
     "nummer": 3,
     "bild": "/stickers/technology/43_tech_wrench.png",
-    "datei": "technology/43_tech_wrench.png"
+    "datei": "technology/43_tech_wrench.png",
+    "nameKey": "messenger.stickerNames.techWrench"
   },
   {
     "id": "sys-technology-settings-gears",
     "theme": "technology",
     "nummer": 4,
     "bild": "/stickers/technology/44_settings_gears.png",
-    "datei": "technology/44_settings_gears.png"
+    "datei": "technology/44_settings_gears.png",
+    "nameKey": "messenger.stickerNames.settingsGears"
   },
   {
     "id": "sys-technology-server-stack",
     "theme": "technology",
     "nummer": 5,
     "bild": "/stickers/technology/45_server_stack.png",
-    "datei": "technology/45_server_stack.png"
+    "datei": "technology/45_server_stack.png",
+    "nameKey": "messenger.stickerNames.serverStack"
   },
   {
     "id": "sys-technology-cloud-upload",
     "theme": "technology",
     "nummer": 6,
     "bild": "/stickers/technology/46_cloud_upload.png",
-    "datei": "technology/46_cloud_upload.png"
+    "datei": "technology/46_cloud_upload.png",
+    "nameKey": "messenger.stickerNames.cloudUpload"
   },
   {
     "id": "sys-technology-security-shield",
     "theme": "technology",
     "nummer": 7,
     "bild": "/stickers/technology/47_security_shield.png",
-    "datei": "technology/47_security_shield.png"
+    "datei": "technology/47_security_shield.png",
+    "nameKey": "messenger.stickerNames.securityShield"
   },
   {
     "id": "sys-technology-wifi-signal",
     "theme": "technology",
     "nummer": 8,
     "bild": "/stickers/technology/48_wifi_signal.png",
-    "datei": "technology/48_wifi_signal.png"
+    "datei": "technology/48_wifi_signal.png",
+    "nameKey": "messenger.stickerNames.wifiSignal"
   },
   {
     "id": "sys-technology-battery-full",
     "theme": "technology",
     "nummer": 9,
     "bild": "/stickers/technology/49_battery_full.png",
-    "datei": "technology/49_battery_full.png"
+    "datei": "technology/49_battery_full.png",
+    "nameKey": "messenger.stickerNames.batteryFull"
   },
   {
     "id": "sys-technology-idea-cat",
     "theme": "technology",
     "nummer": 10,
     "bild": "/stickers/technology/50_idea_cat.png",
-    "datei": "technology/50_idea_cat.png"
+    "datei": "technology/50_idea_cat.png",
+    "nameKey": "messenger.stickerNames.ideaCat"
   },
   {
     "id": "sys-cars_travel-sports-car",
     "theme": "cars_travel",
     "nummer": 1,
     "bild": "/stickers/cars_travel/51_sports_car.png",
-    "datei": "cars_travel/51_sports_car.png"
+    "datei": "cars_travel/51_sports_car.png",
+    "nameKey": "messenger.stickerNames.sportsCar"
   },
   {
     "id": "sys-cars_travel-cool-driver",
     "theme": "cars_travel",
     "nummer": 2,
     "bild": "/stickers/cars_travel/52_cool_driver.png",
-    "datei": "cars_travel/52_cool_driver.png"
+    "datei": "cars_travel/52_cool_driver.png",
+    "nameKey": "messenger.stickerNames.coolDriver"
   },
   {
     "id": "sys-cars_travel-racing-flag",
     "theme": "cars_travel",
     "nummer": 3,
     "bild": "/stickers/cars_travel/53_racing_flag.png",
-    "datei": "cars_travel/53_racing_flag.png"
+    "datei": "cars_travel/53_racing_flag.png",
+    "nameKey": "messenger.stickerNames.racingFlag"
   },
   {
     "id": "sys-cars_travel-tire",
     "theme": "cars_travel",
     "nummer": 4,
     "bild": "/stickers/cars_travel/54_tire.png",
-    "datei": "cars_travel/54_tire.png"
+    "datei": "cars_travel/54_tire.png",
+    "nameKey": "messenger.stickerNames.tire"
   },
   {
     "id": "sys-cars_travel-speedometer",
     "theme": "cars_travel",
     "nummer": 5,
     "bild": "/stickers/cars_travel/55_speedometer.png",
-    "datei": "cars_travel/55_speedometer.png"
+    "datei": "cars_travel/55_speedometer.png",
+    "nameKey": "messenger.stickerNames.speedometer"
   },
   {
     "id": "sys-cars_travel-fuel-pump",
     "theme": "cars_travel",
     "nummer": 6,
     "bild": "/stickers/cars_travel/56_fuel_pump.png",
-    "datei": "cars_travel/56_fuel_pump.png"
+    "datei": "cars_travel/56_fuel_pump.png",
+    "nameKey": "messenger.stickerNames.fuelPump"
   },
   {
     "id": "sys-cars_travel-road-trip",
     "theme": "cars_travel",
     "nummer": 7,
     "bild": "/stickers/cars_travel/57_road_trip.png",
-    "datei": "cars_travel/57_road_trip.png"
+    "datei": "cars_travel/57_road_trip.png",
+    "nameKey": "messenger.stickerNames.roadTrip"
   },
   {
     "id": "sys-cars_travel-camping-tent",
     "theme": "cars_travel",
     "nummer": 8,
     "bild": "/stickers/cars_travel/58_camping_tent.png",
-    "datei": "cars_travel/58_camping_tent.png"
+    "datei": "cars_travel/58_camping_tent.png",
+    "nameKey": "messenger.stickerNames.campingTent"
   },
   {
     "id": "sys-cars_travel-camping-coffee",
     "theme": "cars_travel",
     "nummer": 9,
     "bild": "/stickers/cars_travel/59_camping_coffee.png",
-    "datei": "cars_travel/59_camping_coffee.png"
+    "datei": "cars_travel/59_camping_coffee.png",
+    "nameKey": "messenger.stickerNames.campingCoffee"
   },
   {
     "id": "sys-cars_travel-mountains",
     "theme": "cars_travel",
     "nummer": 10,
     "bild": "/stickers/cars_travel/60_mountains.png",
-    "datei": "cars_travel/60_mountains.png"
+    "datei": "cars_travel/60_mountains.png",
+    "nameKey": "messenger.stickerNames.mountains"
   }
 ]
 

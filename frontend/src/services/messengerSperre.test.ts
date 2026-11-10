@@ -65,6 +65,7 @@ vi.mock('./messengerLocalStore', async (importOriginal) => ({
   schreibeLoeschAuftraegeBestandNeu: umstellung.loeschAuftraege,
   schreibeOffeneNachrichtenBestandNeu: umstellung.offeneNachrichten,
   schreibeHintergruendeBestandNeu: umstellung.hintergruende,
+  schreibeStickerBestandNeu: vi.fn(async () => 0),
 }))
 vi.mock('./gespraechsListe', () => ({
   schreibeGespraecheBestandNeu: vi.fn(async () => 0),

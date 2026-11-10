@@ -77,6 +77,7 @@ import {
   schreibeMedienTeileBestandNeu,
   schreibeOffeneNachrichtenBestandNeu,
   schreibeSteuerAuftraegeBestandNeu,
+  schreibeStickerBestandNeu,
 } from './messengerLocalStore'
 import {
   setzeInhaltsSchluessel,
@@ -328,6 +329,7 @@ async function stelleBestandUm(kontoId: number): Promise<void> {
   await schreibeEntwuerfeBestandNeu()
   await schreibeFunkenBestandNeu()
   await schreibeHintergruendeBestandNeu()
+  await schreibeStickerBestandNeu()
   await schreibeMedienBestandNeu()
   await schreibeMedienTeileBestandNeu()
   await schreibeMedienAuftraegeBestandNeu()

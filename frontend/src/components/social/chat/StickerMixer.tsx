@@ -6,7 +6,7 @@
  * Sticker; der Empfänger braucht weder Assets noch eine zweite Darstellung.
  */
 
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, Sparkles, X } from 'lucide-react'
 
@@ -18,11 +18,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Dropdown,
   Kurzinfo,
-  Spinner,
   Switch,
+  type DropdownOption,
 } from '@maunting/ui'
 import { EMOJI_KATEGORIEN, type EmojiKategorieId } from '@/assets/twemoji'
+import { still } from '@/lib/still'
 import { sanitizeSvg } from '@/lib/sanitizeSvg'
 import { baueSticker } from '@/services/stickerMixer'
 import {
@@ -30,15 +32,9 @@ import {
   MIX_HINTERGRUENDE,
   STANDARD_REZEPT,
   type MixRezept,
-  type MixSticker,
 } from '@/services/stickerMixerTypen'
 import { MIX_PRESETS } from '@/services/stickerMixerPresets'
-import {
-  ladeMixSammlung,
-  leereMixSammlung,
-  merkeMix,
-  type MixSammlungEintrag,
-} from '@/services/stickerMixerAblage'
+import type { StickerPack } from '@/services/stickerPacks'
 
 export interface StickerMixerProps {
   open: boolean
@@ -46,15 +42,26 @@ export interface StickerMixerProps {
   /** Bleibt beim Schließen des Dialogs erhalten, solange der Picker offen ist. */
   rezept: MixRezept
   onRezept: (rezept: MixRezept) => void
-  onSticker: (sticker: MixSticker) => void
+  packs: StickerPack[]
+  zielPackId: string | null
+  onZielPack: (id: string) => void
+  onNeuesPack: () => Promise<string | null>
+  /** Legt den Mix ab und sendet ihn, wenn `senden` gilt. */
+  onMixFertig: (rezept: MixRezept, miniatur: string, senden: boolean) => Promise<void>
 }
+
+const NEUES_PACK = '__neu__'
 
 export function StickerMixer({
   open,
   onOpenChange,
   rezept,
   onRezept,
-  onSticker,
+  packs,
+  zielPackId,
+  onZielPack,
+  onNeuesPack,
+  onMixFertig,
 }: StickerMixerProps) {
   const { t } = useTranslation()
   const titelId = useId()
@@ -62,23 +69,8 @@ export function StickerMixer({
   const sterneId = useId()
 
   const [kategorie, setKategorie] = useState<EmojiKategorieId>('gesichter')
-  const [sammlung, setSammlung] = useState<MixSammlungEintrag[]>([])
-  // Der Dialog wird nur geöffnet gemountet; bis zur Antwort gilt „lädt“.
-  const [sammlungLaedt, setSammlungLaedt] = useState(open)
-
-  useEffect(() => {
-    if (!open) return
-    let aktiv = true
-    setSammlungLaedt(true)
-    void ladeMixSammlung().then((eintraege) => {
-      if (!aktiv) return
-      setSammlung(eintraege)
-      setSammlungLaedt(false)
-    })
-    return () => {
-      aktiv = false
-    }
-  }, [open])
+  const [arbeitet, setArbeitet] = useState(false)
+  const [fehler, setFehler] = useState<string | null>(null)
 
   const voll = rezept.emojis.length >= MAX_MIX_EMOJI
   const vorschau = useMemo(() => baueSticker(rezept), [rezept])
@@ -93,14 +85,10 @@ export function StickerMixer({
     [],
   )
 
-  const eigene = useMemo(
-    () =>
-      sammlung.flatMap((eintrag) => {
-        const sticker = baueSticker(eintrag.rezept)
-        return sticker ? [{ ...eintrag, vorschau: sanitizeSvg(sticker.svg) }] : []
-      }),
-    [sammlung],
-  )
+  const packOptionen: DropdownOption[] = [
+    ...packs.map((pack) => ({ value: pack.id, label: pack.name })),
+    { value: NEUES_PACK, label: t('messenger.mixer.newPack') },
+  ]
 
   const grafiken = EMOJI_KATEGORIEN.find((eintrag) => eintrag.id === kategorie)?.grafiken ?? {}
 
@@ -113,17 +101,20 @@ export function StickerMixer({
     onRezept({ ...rezept, emojis: rezept.emojis.filter((_, i) => i !== index) })
   }
 
-  function senden(quelle: MixRezept) {
+  async function abschliessen(quelle: MixRezept, auchSenden: boolean) {
     const sticker = baueSticker(quelle)
-    if (!sticker) return
-    void merkeMix(quelle)
-    onSticker(sticker)
-    onOpenChange(false)
-  }
-
-  async function sammlungLeeren() {
-    await leereMixSammlung()
-    setSammlung([])
+    if (!sticker || arbeitet) return
+    setArbeitet(true)
+    setFehler(null)
+    try {
+      await onMixFertig(quelle, sticker.svg, auchSenden)
+      onOpenChange(false)
+    } catch (grund) {
+      still(grund, 'StickerMixer.abschliessen')
+      setFehler(t('messenger.mixer.packRequired'))
+    } finally {
+      setArbeitet(false)
+    }
   }
 
   return (
@@ -195,7 +186,7 @@ export function StickerMixer({
                   <button
                     key={preset.id}
                     type="button"
-                    onClick={() => senden(preset.rezept)}
+                    onClick={() => void abschliessen(preset.rezept, true)}
                     aria-label={t('messenger.mixer.sendPreset', { name: t(preset.nameKey) })}
                     className="flex w-20 shrink-0 flex-col items-center gap-1 rounded-2xl p-1.5 transition-colors hover:bg-surface-container-high"
                   >
@@ -210,37 +201,6 @@ export function StickerMixer({
                   </button>
                 ))}
               </div>
-            </section>
-
-            <section className="space-y-2">
-              <h4 className="text-xs font-medium text-on-surface-variant">
-                {t('messenger.mixer.mineLabel')}
-              </h4>
-              {sammlungLaedt ? (
-                <div className="flex h-8 items-center text-primary">
-                  <Spinner size="sm" />
-                </div>
-              ) : eigene.length === 0 ? (
-                <p className="text-xs text-on-surface-variant">{t('messenger.mixer.mineEmpty')}</p>
-              ) : (
-                <div className="msm-ohne-rollbalken flex gap-2 overflow-x-auto pb-1">
-                  {eigene.map((eintrag) => (
-                    <button
-                      key={eintrag.id}
-                      type="button"
-                      onClick={() => senden(eintrag.rezept)}
-                      aria-label={t('messenger.mixer.sendMix', { emojis: eintrag.rezept.emojis.join('') })}
-                      className="shrink-0 rounded-2xl p-1.5 transition-colors hover:bg-surface-container-high"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="block h-14 w-14 [&>svg]:h-full [&>svg]:w-full"
-                        dangerouslySetInnerHTML={{ __html: eintrag.vorschau }}
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
             </section>
 
             <section className="space-y-2">
@@ -347,6 +307,32 @@ export function StickerMixer({
 
           <DialogFooter className="flex-wrap gap-3">
             <div className="mr-auto flex min-w-0 flex-col items-start gap-1">
+              <span className="text-label-sm font-medium text-on-surface-variant">
+                {t('messenger.mixer.packLabel')}
+              </span>
+              <div className="min-w-44">
+                <Dropdown
+                  value={zielPackId}
+                  onChange={(wert) => {
+                    if (wert === NEUES_PACK) {
+                      void onNeuesPack().then((id) => {
+                        if (id) onZielPack(id)
+                      })
+                      return
+                    }
+                    onZielPack(wert)
+                  }}
+                  options={packOptionen}
+                  placeholder={t('messenger.stickerPacks.defaultName')}
+                  aria-label={t('messenger.mixer.packLabel')}
+                  disabled={arbeitet}
+                />
+              </div>
+              {fehler && (
+                <p role="alert" className="text-label-sm text-status-destructive">
+                  {fehler}
+                </p>
+              )}
               <a
                 href="https://github.com/jdecked/twemoji"
                 target="_blank"
@@ -355,17 +341,6 @@ export function StickerMixer({
               >
                 {t('messenger.mixer.attribution')}
               </a>
-              {!sammlungLaedt && eigene.length > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  fingerziel
-                  onClick={() => void sammlungLeeren()}
-                >
-                  {t('messenger.mixer.clear')}
-                </Button>
-              )}
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -384,11 +359,21 @@ export function StickerMixer({
               </Button>
               <Button
                 type="button"
+                variant="secondary"
+                size="sm"
+                fingerziel
+                disabled={!vorschau || arbeitet}
+                onClick={() => void abschliessen(rezept, false)}
+              >
+                {t('messenger.mixer.save')}
+              </Button>
+              <Button
+                type="button"
                 variant="primary"
                 size="sm"
                 fingerziel
-                disabled={!vorschau}
-                onClick={() => senden(rezept)}
+                disabled={!vorschau || arbeitet}
+                onClick={() => void abschliessen(rezept, true)}
               >
                 {t('messenger.mixer.send')}
               </Button>
