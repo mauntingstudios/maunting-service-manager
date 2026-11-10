@@ -4,7 +4,12 @@ import android.content.ContentUris
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -146,7 +151,7 @@ object ThumbnailLoader {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
                     val thumb = context.contentResolver.loadThumbnail(uri, android.util.Size(zielGroesse, zielGroesse), null)
-                    return zuschneidenQuadrat(thumb)
+                    return zuschneidenKreis(thumb)
                 } catch (_: Exception) {
                     // Fallback auf Stream
                 }
@@ -195,17 +200,31 @@ object ThumbnailLoader {
                 rohBitmap
             }
 
-            zuschneidenQuadrat(gedreht)
+            zuschneidenKreis(gedreht)
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun zuschneidenQuadrat(bitmap: Bitmap): Bitmap {
+    private fun zuschneidenKreis(bitmap: Bitmap): Bitmap {
         val dimension = minOf(bitmap.width, bitmap.height)
         val x = (bitmap.width - dimension) / 2
         val y = (bitmap.height - dimension) / 2
-        return Bitmap.createBitmap(bitmap, x, y, dimension, dimension)
+        val quadrat = Bitmap.createBitmap(bitmap, x, y, dimension, dimension)
+
+        val output = Bitmap.createBitmap(dimension, dimension, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val rect = RectF(0f, 0f, dimension.toFloat(), dimension.toFloat())
+
+        canvas.drawOval(rect, paint)
+        paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        canvas.drawBitmap(quadrat, 0f, 0f, paint)
+
+        if (quadrat != bitmap && !quadrat.isRecycled) {
+            quadrat.recycle()
+        }
+        return output
     }
 
     private fun fotoThumbnail(datei: File, zielGroesse: Int): Bitmap? {
@@ -250,7 +269,7 @@ object ThumbnailLoader {
                 rohBitmap
             }
 
-            zuschneidenQuadrat(gedreht)
+            zuschneidenKreis(gedreht)
         } catch (_: Exception) {
             null
         }
@@ -261,7 +280,7 @@ object ThumbnailLoader {
         return try {
             retriever.setDataSource(datei.absolutePath)
             val frame = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return null
-            zuschneidenQuadrat(frame)
+            zuschneidenKreis(frame)
         } catch (_: Exception) {
             null
         } finally {
