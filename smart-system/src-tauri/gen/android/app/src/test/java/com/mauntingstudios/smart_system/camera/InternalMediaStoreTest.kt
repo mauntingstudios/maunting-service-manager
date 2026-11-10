@@ -52,4 +52,11 @@ class InternalMediaStoreTest {
 
         tempDir.deleteRecursively()
     }
+
+    @Test
+    fun `Mindestspeicher-Schwellenwerte sind sicher dimensioniert`() {
+        assertEquals(20L * 1024 * 1024, InternalMediaStore.MIN_SPEICHER_FOTO)
+        assertEquals(100L * 1024 * 1024, InternalMediaStore.MIN_SPEICHER_VIDEO)
+        assertTrue(InternalMediaStore.MIN_SPEICHER_VIDEO > InternalMediaStore.MIN_SPEICHER_FOTO)
+    }
 }
