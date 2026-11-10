@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "project_zomboid",
+    "name": "Project Zomboid",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "Project Zomboid Dedicated Server via SteamCMD (App-ID 380870). Nativer Linux-Support."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/steamcmd:debian",
+    "workdir": "/data",
+    "user": "1000:1000",
+    "env": {
+      "HOME": "/data"
+    },
+    "startup": "./start-server.sh -servername {SERVER_NAME} -port {GAME_PORT} -udpport {CUSTOM_PORT_1}",
+    "ensureDirs": [
+      "Zomboid"
+    ],
+    "requiredFiles": [
+      "start-server.sh",
+      "ProjectZomboid64",
+      "ProjectZomboid64.json"
+    ],
+    "configPatches": [],
+    "stopGracePeriodSeconds": 90,
+    "startupCheckSeconds": 180.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "custom",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "380870",
+      "platform": "linux",
+      "compatibility": "native",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "startup": {
+      "grace_period_seconds": 180,
+      "timeout_seconds": 420,
+      "success_patterns": [
+        "SERVER STARTED"
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "Zomboid"
+    ]
+  },
+  "logs": {
+    "sources": [
+      "Zomboid/console.txt",
+      "stdout"
+    ],
+    "redact": []
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  }
+}
