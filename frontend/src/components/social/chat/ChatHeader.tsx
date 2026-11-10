@@ -94,7 +94,7 @@ export function ChatHeader({
             aria-label={seitenleisteEingeklappt ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
           >
             {seitenleisteEingeklappt ? (
-              <ChevronRight className="w-4 h-4 text-primary" />
+              <ChevronRight className="w-4 h-4" />
             ) : (
               <ChevronLeft className="w-4 h-4" />
             )}

@@ -2410,7 +2410,10 @@ function MessengerSeite() {
         {/* Desktop Navigation Rail */}
         <MessengerRail
           modus={mobileNavTab}
-          onModus={setMobileNavTab}
+          onModus={(neu) => {
+            setMobileNavTab(neu)
+            setIsSidebarCollapsed(false)
+          }}
           hatStories={stories.length > 0}
           ungelesenGesamt={Object.values(unreadCounts).reduce((a, b) => a + b, 0)}
           ungelesenChats={ungelesenChats}

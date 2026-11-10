@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, MessageSquare, Palette, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, MessageSquare, Palette, Plus } from 'lucide-react'
 import { Button, Kurzinfo } from '@maunting/ui'
 
 interface MessengerEmptyStateProps {
@@ -34,16 +34,23 @@ export function MessengerEmptyState({
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center relative z-10 select-none">
-      {isSidebarCollapsed && onSeitenleisteUmschalten && (
+      {onSeitenleisteUmschalten && (
         <div className="absolute top-4 left-4 z-20 hidden md:block">
-          <Kurzinfo text="Seitenleiste ausklappen" seite="anfang">
+          <Kurzinfo
+            text={isSidebarCollapsed ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
+            seite="anfang"
+          >
             <button
               type="button"
               onClick={onSeitenleisteUmschalten}
               className="flex items-center justify-center rounded-full h-10 w-10 sm:h-9 sm:w-9 bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
-              aria-label="Seitenleiste ausklappen"
+              aria-label={isSidebarCollapsed ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
             >
-              <ChevronRight className="w-4 h-4 text-primary" />
+              {isSidebarCollapsed ? (
+                <ChevronRight className="w-4 h-4" />
+              ) : (
+                <ChevronLeft className="w-4 h-4" />
+              )}
             </button>
           </Kurzinfo>
         </div>
