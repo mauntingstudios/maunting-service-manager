@@ -2491,13 +2491,13 @@ function MessengerSeite() {
                   <button
                     type="button"
                     onClick={() => setArchivOffen((offen) => !offen)}
-                    className="w-full min-h-11 px-2.5 py-2 mb-1 flex items-center gap-2.5 rounded-xl text-left hover:bg-white/5 transition-colors"
+                    className="w-full min-h-11 px-2.5 py-2 mb-1.5 flex items-center gap-2.5 rounded-2xl text-left bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 transition-colors"
                     aria-expanded={archivOffen}
                   >
-                    <span className="w-9 h-9 rounded-full bg-white/10 text-white/70 flex items-center justify-center shrink-0">
+                    <span className="w-9 h-9 rounded-full bg-white/10 text-on-surface-variant flex items-center justify-center shrink-0">
                       <Archive className="w-4 h-4" />
                     </span>
-                    <span className="min-w-0 flex-1 text-xs font-semibold text-white/80">
+                    <span className="min-w-0 flex-1 text-xs font-semibold text-on-surface">
                       Archiviert ({archivZahl})
                     </span>
                     {archivUngelesen > 0 && (
@@ -2506,7 +2506,7 @@ function MessengerSeite() {
                       </span>
                     )}
                     <ChevronDown
-                      className={`w-4 h-4 text-white/50 shrink-0 transition-transform ${
+                      className={`w-4 h-4 text-on-surface-variant/70 shrink-0 transition-transform ${
                         archivOffen ? 'rotate-180' : ''
                       }`}
                     />
@@ -2515,7 +2515,7 @@ function MessengerSeite() {
 
                 {/* Reine Kontaktliste */}
                 {filteredContacts.length > 0 && (
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     {(archivOffen
                       ? [...kontakteNachArchiv.sichtbar, ...kontakteNachArchiv.imArchiv]
                       : kontakteNachArchiv.sichtbar
@@ -2524,7 +2524,7 @@ function MessengerSeite() {
                 )}
 
                 {filteredContacts.length === 0 && (
-                  <p className="py-12 text-center text-xs text-white/50">
+                  <p className="py-12 text-center text-xs text-on-surface-variant/70">
                     {searchQuery.trim() ? 'Keine Kontakte gefunden.' : t('messenger.noContacts')}
                   </p>
                 )}
@@ -2535,7 +2535,7 @@ function MessengerSeite() {
                     <button
                       type="button"
                       onClick={() => void ueberall.oeffne('suche', searchQuery)}
-                      className="w-full min-h-11 px-2.5 flex items-center gap-2.5 rounded-xl text-left text-xs text-primary hover:bg-surface-container-high/60 transition-colors"
+                      className="w-full min-h-11 px-2.5 flex items-center gap-2.5 rounded-2xl text-left text-xs text-primary hover:bg-surface-container-high/60 transition-colors"
                     >
                       <Search className="w-4 h-4 shrink-0" />
                       <span className="truncate">{t('messenger.searchInMessages', { query: searchQuery.trim() })}</span>

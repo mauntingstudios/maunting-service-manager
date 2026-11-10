@@ -32,16 +32,16 @@ export function CommunityView({
   )
 
   return (
-    <div className="space-y-3 p-2">
+    <div className="space-y-3">
       {/* Kopfzeile mit Zähler und Aktion */}
       <div className="flex items-center justify-between px-1 pt-1">
         <div>
-          <div className="text-xs font-headline font-bold text-white flex items-center gap-1.5">
+          <div className="text-xs font-headline font-bold text-on-surface flex items-center gap-1.5">
             <UsersRound className="w-4 h-4 text-primary" />
             <span>{t('messenger.communitiesTitle')}</span>
-            <span className="text-label-sm text-white/50">({gruppen.length})</span>
+            <span className="text-label-sm text-on-surface-variant/70">({gruppen.length})</span>
           </div>
-          <p className="text-label-sm text-white/60">
+          <p className="text-label-sm text-on-surface-variant">
             {t('messenger.communitySubtitle')}
           </p>
         </div>
@@ -61,12 +61,12 @@ export function CommunityView({
       {/* Schnelle Gruppensuche */}
       {gruppen.length > 3 && (
         <div className="relative px-0.5">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50" />
           <Input
             value={suche}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSuche(e.target.value)}
             placeholder="Gruppen durchsuchen..."
-            className="text-xs pl-8 h-8 rounded-full bg-white/5 border-white/10 text-white placeholder:text-white/40 focus:border-primary/50 transition-all"
+            className="text-xs pl-8 h-8 rounded-full bg-surface-container-high/40 border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary/50 transition-all"
           />
         </div>
       )}
@@ -75,10 +75,10 @@ export function CommunityView({
       <div className="space-y-1.5 pt-1">
         {gefiltert.length === 0 ? (
           <div className="py-10 text-center space-y-2">
-            <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 text-white/40 flex items-center justify-center mx-auto">
+            <div className="w-12 h-12 rounded-full bg-surface-container-high/60 border border-outline-variant/30 text-on-surface-variant flex items-center justify-center mx-auto">
               <UsersRound className="w-6 h-6" />
             </div>
-            <p className="text-xs text-white/60">
+            <p className="text-xs text-on-surface-variant">
               {suche.trim() ? 'Keine passende Gruppe gefunden.' : t('messenger.noGroupsJoined')}
             </p>
             {!suche.trim() && (
@@ -104,8 +104,8 @@ export function CommunityView({
                 key={`comm-g-${g.id}`}
                 className={`group flex items-center justify-between p-2.5 rounded-2xl border transition-all cursor-pointer ${
                   istAktiv
-                    ? 'bg-primary/20 border-primary/40 shadow-sm'
-                    : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+                    ? 'bg-primary/20 border-primary/40 shadow-sm text-primary'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-on-surface'
                 }`}
                 onClick={() => onGruppe(g)}
               >
@@ -119,7 +119,7 @@ export function CommunityView({
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-white truncate group-hover:text-primary transition-colors">
+                      <span className="text-xs font-semibold text-on-surface truncate group-hover:text-primary transition-colors">
                         {g.name}
                       </span>
                       {ungelesen > 0 && (
@@ -128,7 +128,7 @@ export function CommunityView({
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-white/50 flex items-center gap-1.5 mt-0.5">
+                    <div className="text-label-sm text-on-surface-variant flex items-center gap-1.5 mt-0.5">
                       <span>{g.member_count} Mitglieder</span>
                     </div>
                   </div>
@@ -142,7 +142,7 @@ export function CommunityView({
                         variant="ghost"
                         size="sm"
                         onClick={() => onEinladungKopieren(g)}
-                        className="h-8 w-8 p-0 rounded-full text-white/60 hover:text-white hover:bg-white/10"
+                        className="h-8 w-8 p-0 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-white/10"
                         aria-description={t('messenger.copyInvite')}
                       >
                         <Share2 className="w-3.5 h-3.5" />

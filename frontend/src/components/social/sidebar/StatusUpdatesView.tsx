@@ -33,14 +33,14 @@ export function StatusUpdatesView({
   const eigeneOeffnen = () => (eigeneStories.length > 0 ? onOeffnen(eigeneStories) : onErstellen())
 
   return (
-    <div className="space-y-3.5 p-2">
+    <div className="space-y-3">
       <div className="flex items-center justify-between px-1 pt-1">
         <div>
-          <div className="text-xs font-headline font-bold text-white flex items-center gap-1.5">
+          <div className="text-xs font-headline font-bold text-on-surface flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-primary" />
             <span>{t('messenger.nav.updates', 'Aktuelles')}</span>
           </div>
-          <p className="text-label-sm text-white/60">
+          <p className="text-label-sm text-on-surface-variant">
             {t('social.story.badge24h', '24h Status & Aktivität')}
           </p>
         </div>
@@ -60,11 +60,11 @@ export function StatusUpdatesView({
       {/* Eigener Status */}
       <div
         onClick={eigeneOeffnen}
-        className="p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 shadow-sm transition-all cursor-pointer active:scale-[0.99]"
+        className="p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 shadow-sm transition-all cursor-pointer active:scale-[0.99]"
       >
-        <div className="flex items-center justify-between mb-2.5">
-          <span className="text-xs font-headline font-semibold text-white/90">{t('messenger.myStatus')}</span>
-          <span className="text-label-sm px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/60 font-medium">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-headline font-semibold text-on-surface">{t('messenger.myStatus')}</span>
+          <span className="text-label-sm px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-on-surface-variant font-medium">
             {t('social.story.badge24h')}
           </span>
         </div>
@@ -74,7 +74,7 @@ export function StatusUpdatesView({
             <div className={`w-12 h-12 rounded-full p-0.5 shrink-0 flex items-center justify-center ${
               eigeneStories.length > 0
                 ? 'bg-gradient-to-tr from-cyan-400 via-sky-500 to-indigo-500 ring-2 ring-primary/40 ring-offset-2 ring-offset-surface'
-                : 'border-2 border-dashed border-white/25'
+                : 'border-2 border-dashed border-outline-variant/40'
             }`}>
               <Avatar src={ich.avatarUrl} name={ich.username || 'Ich'} size="md" />
             </div>
@@ -83,10 +83,10 @@ export function StatusUpdatesView({
             </div>
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-white truncate">
+            <div className="text-xs font-semibold text-on-surface truncate">
               {eigeneStories.length > 0 ? t('messenger.viewStatus') : t('social.story.share')}
             </div>
-            <p className="text-label-sm text-white/60 truncate">
+            <p className="text-label-sm text-on-surface-variant truncate">
               {eigeneStories.length > 0
                 ? t('messenger.activeStories', { count: eigeneStories.length })
                 : t('messenger.statusHint')}
@@ -97,15 +97,15 @@ export function StatusUpdatesView({
 
       {/* Stories der Freunde */}
       <div className="space-y-2">
-        <div className="px-1 text-label-sm font-semibold text-white/60 uppercase tracking-wider flex items-center justify-between">
+        <div className="px-1 text-label-sm font-semibold text-on-surface-variant uppercase tracking-wider flex items-center justify-between">
           <span>{t('messenger.recentUpdates')}</span>
-          <span className="text-label-sm px-1.5 py-0.5 rounded-full bg-white/5 border border-white/10 font-mono text-white/70">
+          <span className="text-label-sm px-1.5 py-0.5 rounded-full bg-white/5 border border-white/10 font-mono text-on-surface-variant">
             {freunde.length}
           </span>
         </div>
 
         {freunde.length === 0 ? (
-          <div className="py-6 px-4 rounded-2xl bg-white/[0.03] border border-white/10 text-center text-xs text-white/50">
+          <div className="py-6 px-4 rounded-2xl bg-white/[0.04] border border-white/10 text-center text-xs text-on-surface-variant">
             {t('messenger.noStatusUpdates')}
           </div>
         ) : (
@@ -133,10 +133,10 @@ export function StatusUpdatesView({
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-white truncate">
+                  <div className="text-xs font-semibold text-on-surface truncate">
                     {grp.username}
                   </div>
-                  <div className="text-label-sm text-white/60 flex items-center gap-1">
+                  <div className="text-label-sm text-on-surface-variant flex items-center gap-1">
                     <Clock className="w-3 h-3" />
                     <span>
                       {grp.latestStory
@@ -147,7 +147,7 @@ export function StatusUpdatesView({
                         : ''}
                     </span>
                     {grp.stories.length > 1 && (
-                      <span className="text-white/50">• {grp.stories.length} Updates</span>
+                      <span className="text-on-surface-variant/70">• {grp.stories.length} Updates</span>
                     )}
                   </div>
                 </div>
@@ -158,8 +158,8 @@ export function StatusUpdatesView({
       </div>
 
       {/* Wer gerade da ist */}
-      <div className="space-y-2 pt-2 border-t border-white/10">
-        <div className="px-1 text-label-sm font-semibold text-white/60 uppercase tracking-wider">
+      <div className="space-y-2 pt-2 border-t border-outline-variant/20">
+        <div className="px-1 text-label-sm font-semibold text-on-surface-variant uppercase tracking-wider">
           {t('messenger.contactActivity')}
         </div>
         <div className="space-y-1.5">
@@ -167,21 +167,21 @@ export function StatusUpdatesView({
             <div
               key={c.listKey}
               onClick={() => onChat(c)}
-              className="flex items-center justify-between p-2.5 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] cursor-pointer transition-colors"
+              className="flex items-center justify-between p-2.5 rounded-2xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] cursor-pointer transition-colors text-on-surface"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="relative shrink-0">
                   <Avatar src={c.avatarUrl} name={c.username} size="sm" />
-                  <StatusDot status={c.status} size="sm" className="absolute bottom-0 right-0" />
+                  <StatusDot status={c.status} size="sm" className="absolute bottom-0 right-0 ring-2 ring-surface" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
+                  <div className="text-xs font-semibold text-on-surface truncate flex items-center gap-1.5">
                     <span>{c.username}</span>
                     {(c.status === 'online' || c.status === 'away') && (
                       <DeviceBadge client={c.client} deviceType={c.deviceType} />
                     )}
                   </div>
-                  <div className="text-label-sm text-white/60 truncate">
+                  <div className="text-label-sm text-on-surface-variant truncate">
                     {((c.status === 'online' || c.status === 'away') &&
                       aktivitaetText(c.activityKey, t)) ||
                       t(`social.status.${c.status === 'online' || c.status === 'away' ? c.status : 'offline'}`)}

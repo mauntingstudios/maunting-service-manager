@@ -102,7 +102,7 @@ export function ChatZeilenGeste({
   }
 
   return (
-    <div className="group relative overflow-hidden rounded-xl">
+    <div className="group relative overflow-hidden rounded-2xl">
       {/* Was unter der Zeile zum Vorschein kommt, während sie wandert. */}
       {weg !== 0 && (
         <div className="absolute inset-0 flex items-center justify-between px-4 pointer-events-none">
@@ -127,7 +127,7 @@ export function ChatZeilenGeste({
 
       <div
         style={{ transform: weg ? `translateX(${weg}px)` : undefined }}
-        className={`relative bg-surface ${weg ? '' : 'transition-transform duration-150'}`}
+        className={`relative ${weg ? 'bg-surface-container' : 'bg-transparent'} ${weg ? '' : 'transition-transform duration-150'}`}
         onPointerDown={beiDown}
         onPointerMove={beiMove}
         onPointerUp={beiUp}
