@@ -57,6 +57,11 @@ class PhotoCaptureController {
             return
         }
 
+        if (!InternalMediaStore.hatAusreichendSpeicher(context, InternalMediaStore.MIN_SPEICHER_FOTO)) {
+            listener.onCaptureError(IllegalStateException("Nicht genug freier Speicherplatz für Fotoaufnahme"))
+            return
+        }
+
         val zielfile = InternalMediaStore.neueFotoDatei(context)
         val outputOptions = ImageCapture.OutputFileOptions.Builder(zielfile).build()
 

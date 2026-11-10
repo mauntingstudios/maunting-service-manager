@@ -5,15 +5,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -29,10 +30,12 @@ import com.mauntingstudios.smart_system.R
 import com.mauntingstudios.smart_system.camera.capture.CaptureListener
 import com.mauntingstudios.smart_system.camera.core.CameraEngine
 import com.mauntingstudios.smart_system.camera.core.CameraExtension
+import com.mauntingstudios.smart_system.camera.core.CaptureMode
 import com.mauntingstudios.smart_system.camera.core.FlashMode
 import com.mauntingstudios.smart_system.camera.media.InternalMediaStore
 import com.mauntingstudios.smart_system.camera.media.ThumbnailLoader
 import java.io.File
+import java.util.Locale
 
 /**
  * Native Kamera-Activity für Maunting Smart System.
@@ -47,6 +50,7 @@ class CameraActivity : AppCompatActivity() {
 
     private lateinit var previewView: androidx.camera.view.PreviewView
     private lateinit var focusRing: View
+    private lateinit var txtRecordingTimer: TextView
     private lateinit var btnBack: ImageButton
     private lateinit var btnFlash: ImageButton
     private lateinit var btnHdr: ImageButton
@@ -96,6 +100,13 @@ class CameraActivity : AppCompatActivity() {
         aktualisiereLetztesThumbnail()
     }
 
+    override fun onPause() {
+        super.onPause()
+        if (::cameraEngine.isInitialized && cameraEngine.isRecordingVideo) {
+            cameraEngine.stopVideoRecording()
+        }
+    }
+
     private fun hatKameraBerechtigung(): Boolean {
         return ContextCompat.checkSelfPermission(
             this,
@@ -106,6 +117,7 @@ class CameraActivity : AppCompatActivity() {
     private fun initialisiereViews() {
         previewView = findViewById(R.id.previewView)
         focusRing = findViewById(R.id.focusRing)
+        txtRecordingTimer = findViewById(R.id.txtRecordingTimer)
         btnBack = findViewById(R.id.btnBack)
         btnFlash = findViewById(R.id.btnFlash)
         btnHdr = findViewById(R.id.btnHdr)
@@ -124,19 +136,45 @@ class CameraActivity : AppCompatActivity() {
             this,
             object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
                 override fun onScale(detector: ScaleGestureDetector): Boolean {
-                    cameraEngine.setZoomRatio(detector.scaleFactor)
+                    cameraEngine.applyZoomFactor(detector.scaleFactor)
                     return true
                 }
             }
         )
 
+        var startY = 0f
+        var isDraggingExposure = false
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+
         previewView.setOnTouchListener { view, event ->
             scaleGestureDetector.onTouchEvent(event)
 
-            if (event.action == MotionEvent.ACTION_UP && !scaleGestureDetector.isInProgress) {
-                zeigeFokusRing(event.x, event.y)
-                cameraEngine.focusAt(event.x, event.y)
-                view.performClick()
+            if (event.pointerCount > 1) {
+                isDraggingExposure = false
+                return@setOnTouchListener true
+            }
+
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startY = event.y
+                    isDraggingExposure = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaY = startY - event.y
+                    if (Math.abs(deltaY) > touchSlop) {
+                        isDraggingExposure = true
+                        cameraEngine.stepExposure(if (deltaY > 0) 1 else -1)
+                        startY = event.y
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!isDraggingExposure && !scaleGestureDetector.isInProgress) {
+                        zeigeFokusRing(event.x, event.y)
+                        cameraEngine.focusAt(event.x, event.y)
+                        view.performClick()
+                    }
+                    isDraggingExposure = false
+                }
             }
             true
         }
@@ -200,12 +238,65 @@ class CameraActivity : AppCompatActivity() {
             cameraEngine.switchLens()
         }
 
+        txtModePhoto.setOnClickListener {
+            if (cameraEngine.isRecordingVideo) return@setOnClickListener
+            wechsleModus(CaptureMode.PHOTO)
+        }
+
+        txtModeVideo.setOnClickListener {
+            if (cameraEngine.isRecordingVideo) return@setOnClickListener
+            wechsleModus(CaptureMode.VIDEO)
+        }
+
         btnShutter.setOnClickListener {
-            loeseAus()
+            if (cameraEngine.captureMode == CaptureMode.PHOTO) {
+                loeseFotoAus()
+            } else {
+                toggleVideoAufnahme()
+            }
         }
 
         btnThumbnailContainer.setOnClickListener {
             oeffneTresorOderVorschau()
+        }
+    }
+
+    private fun wechsleModus(modus: CaptureMode) {
+        cameraEngine.switchCaptureMode(modus)
+        val density = resources.displayMetrics.density
+        val size66 = (66 * density).toInt()
+
+        if (modus == CaptureMode.PHOTO) {
+            txtModePhoto.setTextColor(Color.WHITE)
+            txtModePhoto.setTypeface(null, Typeface.BOLD)
+            txtModeVideo.setTextColor(Color.parseColor("#80ffffff"))
+            txtModeVideo.setTypeface(null, Typeface.NORMAL)
+
+            shutterInner.setBackgroundResource(R.drawable.bg_shutter_inner)
+            val params = shutterInner.layoutParams
+            params.width = size66
+            params.height = size66
+            shutterInner.layoutParams = params
+
+            val features = cameraEngine.currentFeatureSet
+            btnHdr.visibility = if (features?.isHdrSupported == true) View.VISIBLE else View.GONE
+            btnNight.visibility = if (features?.isNightSupported == true) View.VISIBLE else View.GONE
+            aktualisiereBlitzIcon(cameraEngine.flashMode)
+        } else {
+            txtModeVideo.setTextColor(Color.WHITE)
+            txtModeVideo.setTypeface(null, Typeface.BOLD)
+            txtModePhoto.setTextColor(Color.parseColor("#80ffffff"))
+            txtModePhoto.setTypeface(null, Typeface.NORMAL)
+
+            shutterInner.setBackgroundResource(R.drawable.bg_shutter_video_idle)
+            val params = shutterInner.layoutParams
+            params.width = size66
+            params.height = size66
+            shutterInner.layoutParams = params
+
+            btnHdr.visibility = View.GONE
+            btnNight.visibility = View.GONE
+            aktualisiereBlitzIcon(if (cameraEngine.isTorchEnabled) FlashMode.ON else FlashMode.OFF)
         }
     }
 
@@ -215,8 +306,13 @@ class CameraActivity : AppCompatActivity() {
         cameraEngine.setOnFeaturesUpdatedListener { features ->
             runOnUiThread {
                 btnFlash.visibility = if (features.hasFlash) View.VISIBLE else View.GONE
-                btnHdr.visibility = if (features.isHdrSupported) View.VISIBLE else View.GONE
-                btnNight.visibility = if (features.isNightSupported) View.VISIBLE else View.GONE
+                if (cameraEngine.captureMode == CaptureMode.PHOTO) {
+                    btnHdr.visibility = if (features.isHdrSupported) View.VISIBLE else View.GONE
+                    btnNight.visibility = if (features.isNightSupported) View.VISIBLE else View.GONE
+                } else {
+                    btnHdr.visibility = View.GONE
+                    btnNight.visibility = View.GONE
+                }
             }
         }
 
@@ -227,7 +323,7 @@ class CameraActivity : AppCompatActivity() {
         }
     }
 
-    private fun loeseAus() {
+    private fun loeseFotoAus() {
         haptikFeedback()
 
         shutterInner.animate()
@@ -241,7 +337,7 @@ class CameraActivity : AppCompatActivity() {
 
         cameraEngine.takePhoto(object : CaptureListener {
             override fun onCaptureStarted() {
-                // Aufnahme läuft
+                // Fotoaufnahme gestartet
             }
 
             override fun onPhotoSaved(file: File) {
@@ -261,6 +357,90 @@ class CameraActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    private fun toggleVideoAufnahme() {
+        haptikFeedback()
+        if (cameraEngine.isRecordingVideo) {
+            cameraEngine.stopVideoRecording()
+        } else {
+            starteVideoAufnahme()
+        }
+    }
+
+    private fun starteVideoAufnahme() {
+        val density = resources.displayMetrics.density
+        val size38 = (38 * density).toInt()
+
+        shutterInner.setBackgroundResource(R.drawable.bg_shutter_video_recording)
+        val params = shutterInner.layoutParams
+        params.width = size38
+        params.height = size38
+        shutterInner.layoutParams = params
+
+        txtRecordingTimer.text = "00:00"
+        txtRecordingTimer.visibility = View.VISIBLE
+
+        txtModePhoto.isEnabled = false
+        txtModeVideo.isEnabled = false
+        btnSwitchLens.isEnabled = false
+        btnSwitchLens.alpha = 0.4f
+
+        cameraEngine.startVideoRecording(
+            listener = object : CaptureListener {
+                override fun onVideoRecordingChanged(isRecording: Boolean) {
+                    runOnUiThread {
+                        if (!isRecording) {
+                            setzeVideoUiZurueck()
+                        }
+                    }
+                }
+
+                override fun onVideoSaved(file: File) {
+                    runOnUiThread {
+                        setzeVideoUiZurueck()
+                        ThumbnailLoader.ladeFuer(file) { bmp ->
+                            if (bmp != null) {
+                                imgThumbnail.setImageBitmap(bmp)
+                                imgThumbnail.animate().alpha(1.0f).setDuration(200).start()
+                            }
+                        }
+                    }
+                }
+
+                override fun onCaptureError(error: Throwable) {
+                    runOnUiThread {
+                        setzeVideoUiZurueck()
+                        Toast.makeText(this@CameraActivity, error.localizedMessage ?: "Aufnahmefehler", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onDurationUpdate = { dauerMs ->
+                runOnUiThread {
+                    val gesamtSek = dauerMs / 1000
+                    val min = gesamtSek / 60
+                    val sek = gesamtSek % 60
+                    txtRecordingTimer.text = String.format(Locale.US, "%02d:%02d", min, sek)
+                }
+            }
+        )
+    }
+
+    private fun setzeVideoUiZurueck() {
+        val density = resources.displayMetrics.density
+        val size66 = (66 * density).toInt()
+
+        shutterInner.setBackgroundResource(R.drawable.bg_shutter_video_idle)
+        val params = shutterInner.layoutParams
+        params.width = size66
+        params.height = size66
+        shutterInner.layoutParams = params
+
+        txtRecordingTimer.visibility = View.GONE
+        txtModePhoto.isEnabled = true
+        txtModeVideo.isEnabled = true
+        btnSwitchLens.isEnabled = true
+        btnSwitchLens.alpha = 1.0f
     }
 
     private fun aktualisiereLetztesThumbnail() {

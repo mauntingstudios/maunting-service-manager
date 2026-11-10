@@ -19,6 +19,25 @@
         android:background="@drawable/bg_focus_ring"
         android:visibility="gone" />
 
+    <!-- Videoaufnahme-Zeitanzeige -->
+    <TextView
+        android:id="@+id/txtRecordingTimer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="96dp"
+        android:background="@drawable/bg_timer_badge"
+        android:gravity="center"
+        android:paddingStart="16dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="6dp"
+        android:text="00:00"
+        android:textColor="#ffffff"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
     <!-- Obere Steuerleiste (Glassmorphism-Knöpfe) -->
     <LinearLayout
         android:id="@+id/topBar"

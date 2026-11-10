@@ -1,6 +1,7 @@
 package com.mauntingstudios.smart_system.camera.media
 
 import android.content.Context
+import android.os.StatFs
 import java.io.File
 import java.io.RandomAccessFile
 import java.text.SimpleDateFormat
@@ -19,6 +20,28 @@ object InternalMediaStore {
 
     private const val UNTERORDNER = "kamera/aufnahmen"
     private const val NULLUNG_BYTES = 64 * 1024 // Erste 64 KiB vor dem Löschen nullen
+
+    /** Mindestreserve für Fotoaufnahmen: 20 MiB */
+    const val MIN_SPEICHER_FOTO = 20L * 1024 * 1024
+
+    /** Mindestreserve für Videoaufnahmen: 100 MiB */
+    const val MIN_SPEICHER_VIDEO = 100L * 1024 * 1024
+
+    /**
+     * Prüft den freien Speicherplatz im Dateisystem des geschützten App-Speichers.
+     */
+    fun freierSpeicher(context: Context): Long {
+        return try {
+            val stat = StatFs(aufnahmenOrdner(context).absolutePath)
+            stat.availableBytes
+        } catch (_: Exception) {
+            Long.MAX_VALUE
+        }
+    }
+
+    fun hatAusreichendSpeicher(context: Context, mindestBytes: Long): Boolean {
+        return freierSpeicher(context) >= mindestBytes
+    }
 
     fun aufnahmenOrdner(context: Context): File {
         return File(context.noBackupFilesDir, UNTERORDNER).apply {

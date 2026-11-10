@@ -17,6 +17,7 @@ import com.mauntingstudios.smart_system.camera.capabilities.CameraCapabilityDete
 import com.mauntingstudios.smart_system.camera.capabilities.CameraFeatureSet
 import com.mauntingstudios.smart_system.camera.capture.CaptureListener
 import com.mauntingstudios.smart_system.camera.capture.PhotoCaptureController
+import com.mauntingstudios.smart_system.camera.capture.VideoCaptureController
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 
@@ -37,6 +38,7 @@ class CameraEngine(
 
     private var activeCamera: Camera? = null
     private val photoController = PhotoCaptureController()
+    private val videoController = VideoCaptureController()
 
     var lensFacing: LensFacing = LensFacing.BACK
         private set
@@ -46,6 +48,16 @@ class CameraEngine(
         private set
     var captureMode: CaptureMode = CaptureMode.PHOTO
         private set
+    var isTorchEnabled: Boolean = false
+        private set
+    var currentExposureIndex: Int = 0
+        private set
+
+    val isRecordingVideo: Boolean
+        get() = videoController.isRecording
+
+    val currentZoomRatio: Float
+        get() = activeCamera?.cameraInfo?.zoomState?.value?.zoomRatio ?: 1.0f
 
     var currentFeatureSet: CameraFeatureSet? = null
         private set
@@ -91,7 +103,7 @@ class CameraEngine(
     }
 
     /**
-     * Bindet Preview und ImageCapture an den aktuellen Lebenszyklus.
+     * Bindet Preview und die passenden Use-Cases an den aktuellen Lebenszyklus.
      */
     fun bindUseCases() {
         val provider = cameraProvider ?: return
@@ -101,44 +113,61 @@ class CameraEngine(
         val baseSelector = lensFacing.selector
         val extManager = extensionsManager
 
-        // Prüfe gewählte Extension oder falle kontrolliert zurück
-        val effectiveSelector = when (extension) {
-            CameraExtension.HDR -> {
-                if (extManager != null && extManager.isExtensionAvailable(baseSelector, ExtensionMode.HDR)) {
-                    extManager.getExtensionEnabledCameraSelector(baseSelector, ExtensionMode.HDR)
-                } else {
-                    extension = CameraExtension.NONE
-                    baseSelector
-                }
-            }
-            CameraExtension.NIGHT -> {
-                if (extManager != null && extManager.isExtensionAvailable(baseSelector, ExtensionMode.NIGHT)) {
-                    extManager.getExtensionEnabledCameraSelector(baseSelector, ExtensionMode.NIGHT)
-                } else {
-                    extension = CameraExtension.NONE
-                    baseSelector
-                }
-            }
-            CameraExtension.NONE -> baseSelector
-        }
-
         val preview = Preview.Builder().build().also {
             it.surfaceProvider = previewView.surfaceProvider
         }
 
-        val imageCapture = photoController.createUseCase(
-            flashMode = flashMode,
-            enableUltraHdr = (extension != CameraExtension.NIGHT)
-        )
-
         try {
-            val camera = provider.bindToLifecycle(
-                lifecycleOwner,
-                effectiveSelector,
-                preview,
-                imageCapture
-            )
+            val camera = if (captureMode == CaptureMode.VIDEO) {
+                // Extensions sind im Videomodus nicht verfügbar; direkte Bindung an Basissensor
+                val videoUseCase = videoController.createUseCase()
+                provider.bindToLifecycle(
+                    lifecycleOwner,
+                    baseSelector,
+                    preview,
+                    videoUseCase
+                )
+            } else {
+                // Foto-Modus: Prüfe gewählte Extension oder falle kontrolliert zurück
+                val effectiveSelector = when (extension) {
+                    CameraExtension.HDR -> {
+                        if (extManager != null && extManager.isExtensionAvailable(baseSelector, ExtensionMode.HDR)) {
+                            extManager.getExtensionEnabledCameraSelector(baseSelector, ExtensionMode.HDR)
+                        } else {
+                            extension = CameraExtension.NONE
+                            baseSelector
+                        }
+                    }
+                    CameraExtension.NIGHT -> {
+                        if (extManager != null && extManager.isExtensionAvailable(baseSelector, ExtensionMode.NIGHT)) {
+                            extManager.getExtensionEnabledCameraSelector(baseSelector, ExtensionMode.NIGHT)
+                        } else {
+                            extension = CameraExtension.NONE
+                            baseSelector
+                        }
+                    }
+                    CameraExtension.NONE -> baseSelector
+                }
+
+                val imageCapture = photoController.createUseCase(
+                    flashMode = flashMode,
+                    enableUltraHdr = (extension != CameraExtension.NIGHT)
+                )
+
+                provider.bindToLifecycle(
+                    lifecycleOwner,
+                    effectiveSelector,
+                    preview,
+                    imageCapture
+                )
+            }
+
             activeCamera = camera
+
+            // Taschenlampe im Videomodus wiederherstellen
+            if (isTorchEnabled && captureMode == CaptureMode.VIDEO && camera.cameraInfo.hasFlashUnit()) {
+                camera.cameraControl.enableTorch(true)
+            }
 
             // Fähigkeiten des gewählten Sensors ermitteln
             val features = CameraCapabilityDetector.detect(camera.cameraInfo, baseSelector, extManager)
@@ -151,20 +180,57 @@ class CameraEngine(
     }
 
     /**
+     * Wechselt zwischen Foto- und Videoaufnahme.
+     */
+    fun switchCaptureMode(mode: CaptureMode) {
+        if (captureMode == mode) return
+        if (videoController.isRecording) {
+            stopVideoRecording()
+        }
+        if (isTorchEnabled) {
+            setTorch(false)
+        }
+        captureMode = mode
+        bindUseCases()
+    }
+
+    /**
      * Wechselt zwischen Front- und Rückkamera.
      */
     fun switchLens() {
+        if (videoController.isRecording) {
+            stopVideoRecording()
+        }
+        isTorchEnabled = false
         lensFacing = lensFacing.toggle()
         bindUseCases()
     }
 
     /**
-     * Schaltet den Blitzmodus um (OFF -> ON -> AUTO -> OFF).
+     * Schaltet die Beleuchtung um:
+     * - Im Fotomodus: OFF -> ON -> AUTO -> OFF
+     * - Im Videomodus: Taschenlampe EIN / AUS
      */
     fun toggleFlash(): FlashMode {
+        if (captureMode == CaptureMode.VIDEO) {
+            val neuerStatus = !isTorchEnabled
+            setTorch(neuerStatus)
+            return if (neuerStatus) FlashMode.ON else FlashMode.OFF
+        }
         flashMode = flashMode.next()
         photoController.setFlashMode(flashMode)
         return flashMode
+    }
+
+    /**
+     * Aktiviert oder deaktiviert die Dauerbeleuchtung (Torch).
+     */
+    fun setTorch(enabled: Boolean) {
+        val control = activeCamera?.cameraControl ?: return
+        if (activeCamera?.cameraInfo?.hasFlashUnit() == true) {
+            isTorchEnabled = enabled
+            control.enableTorch(enabled)
+        }
     }
 
     /**
@@ -199,7 +265,7 @@ class CameraEngine(
     }
 
     /**
-     * Passt das Zoomverhältnis direkt an (z. B. bei Pinch-to-Zoom).
+     * Passt das Zoomverhältnis direkt an (z. B. Preset-Stufen 1.0x, 2.0x).
      */
     fun setZoomRatio(ratio: Float) {
         val control = activeCamera?.cameraControl ?: return
@@ -210,13 +276,34 @@ class CameraEngine(
     }
 
     /**
+     * Wendet einen relativen Zoom-Faktor auf die aktuelle Vergrößerung an (Pinch-to-Zoom).
+     */
+    fun applyZoomFactor(factor: Float) {
+        val control = activeCamera?.cameraControl ?: return
+        val current = currentZoomRatio
+        val features = currentFeatureSet ?: return
+        val min = features.zoomRange.lower
+        val max = features.zoomRange.upper
+        val target = (current * factor).coerceIn(min, max)
+        control.setZoomRatio(target)
+    }
+
+    /**
      * Stellt den Belichtungskorrekturwert ein.
      */
     fun setExposureIndex(index: Int) {
         val control = activeCamera?.cameraControl ?: return
         val features = currentFeatureSet ?: return
         val clamped = index.coerceIn(features.exposureRange.lower, features.exposureRange.upper)
+        currentExposureIndex = clamped
         control.setExposureCompensationIndex(clamped)
+    }
+
+    /**
+     * Verschiebt die Belichtungskorrektur relativ um [delta] Stufen.
+     */
+    fun stepExposure(delta: Int) {
+        setExposureIndex(currentExposureIndex + delta)
     }
 
     /**
@@ -224,5 +311,26 @@ class CameraEngine(
      */
     fun takePhoto(listener: CaptureListener) {
         photoController.takePhoto(context, mainExecutor, listener)
+    }
+
+    /**
+     * Startet eine neue Videoaufnahme.
+     */
+    fun startVideoRecording(listener: CaptureListener, onDurationUpdate: ((Long) -> Unit)? = null) {
+        videoController.startRecording(context, mainExecutor, listener, onDurationUpdate)
+    }
+
+    /**
+     * Beendet die laufende Videoaufnahme geordnet.
+     */
+    fun stopVideoRecording() {
+        videoController.stopRecording()
+    }
+
+    /**
+     * Bricht die Videoaufnahme sofort ab.
+     */
+    fun cancelVideoRecording() {
+        videoController.cancelRecording()
     }
 }

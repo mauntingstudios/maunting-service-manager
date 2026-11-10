@@ -1,11 +1,11 @@
 package com.mauntingstudios.smart_system.camera
 
 import com.mauntingstudios.smart_system.camera.media.InternalMediaStore
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
-import java.io.RandomAccessFile
 import java.nio.file.Files
 
 /**
@@ -35,5 +35,21 @@ class InternalMediaStoreTest {
     fun `sicheres Loeschen einer nicht existierenden Datei schlaegt nicht fehl`() {
         val datei = File("nicht_vorhanden_${System.currentTimeMillis()}.jpg")
         assertTrue(InternalMediaStore.sicherLoeschen(datei))
+    }
+
+    @Test
+    fun `Dateien werden nach gueltigen Medienendungen gefiltert`() {
+        val tempDir = Files.createTempDirectory("kamera_test_filter").toFile()
+        val jpg = File(tempDir, "IMG_1.jpg").apply { writeText("bild") }
+        val mp4 = File(tempDir, "VID_1.mp4").apply { writeText("video") }
+        val txt = File(tempDir, "unbekannt.txt").apply { writeText("text") }
+
+        val gefiltert = tempDir.listFiles()?.filter { it.isFile && (it.extension == "jpg" || it.extension == "mp4") }
+        assertEquals(2, gefiltert?.size)
+        assertTrue(gefiltert!!.contains(jpg))
+        assertTrue(gefiltert.contains(mp4))
+        assertFalse(gefiltert.contains(txt))
+
+        tempDir.deleteRecursively()
     }
 }
