@@ -258,11 +258,23 @@ def test_externe_herkunft_steht_im_ausgelieferten_connect_src(db: Session) -> No
     assert "'self'" in connect_src
 
 
-def test_lokaler_modus_braucht_keine_zusaetzliche_csp_herkunft(db: Session) -> None:
-    """Der Sidecar liegt hinter Caddy auf derselben Herkunft, `'self'` deckt ihn."""
+def test_lokaler_modus_braucht_keine_zusaetzliche_csp_herkunft(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Der Sidecar liegt hinter Caddy auf derselben Herkunft, `'self'` deckt ihn.
+
+    Die CORS-Liste wird hier leer gesetzt, weil die Suite `MSM_DEBUG=true`
+    fährt und `get_cors_origins` dann die Dev-Herkünfte anhängt. Ohne diesen
+    Schritt vergliche der Test die ganze Liste gegen `'self'` und scheiterte an
+    einer Tatsache, die nichts mit LiveKit zu tun hat. Was er prüft, ist der
+    Beitrag des Sprachdienstes — und der ist im Lokalmodus keiner.
+    """
     import main
 
+    monkeypatch.setattr(main, "_cors_origins", [])
+
     assert livekit_service.modus(db) == "lokal"
+    assert livekit_service.csp_origin(db) == ""
     assert main._csp_connect_src().strip() == "'self'"
 
 

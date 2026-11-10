@@ -817,6 +817,19 @@ def execute_read_tool(
     if tool_name not in READ_TOOLS:
         raise AiActionValidationError("Read-Tool ist in diesem Kontext nicht erlaubt")
 
+    # Private Schluessel kommen nie aus dem Modelltext. Sie werden immer
+    # entfernt und nur als eigener Server-Parameter uebergeben. Das muss
+    # **vor** der Pruefung geschehen: das Schema ist der Vertrag mit dem Modell
+    # und sagt `additionalProperties: false`. Pruefte es die vom Server
+    # eingesetzten Felder mit, wiese es einen legitimen Aufruf als
+    # „unerlaubtes Feld“ ab, statt ihn zu bereinigen.
+    if tool_name == "worker_start":
+        arguments = {
+            key: value
+            for key, value in arguments.items()
+            if key not in ("_docs_document_uid", "_docs_team_id")
+        }
+
     # Nur fuer umgestellte Werkzeuge: die uebrigen behalten ihren Weg, bis
     # ihre Domaene folgt.
     pruefe_argumente(tool_name, arguments)
@@ -858,14 +871,6 @@ def execute_read_tool(
     # allgemeinen Zweig, kaeme jeder Aufruf ohne Kontext an und endete mit
     # „Dokumentkontext fehlt“.
     if tool_name in GLOBAL_READ_TOOLS:
-        if tool_name == "worker_start":
-            # Private Schluessel kommen nie aus dem Modelltext. Sie werden
-            # immer entfernt und nur als eigener Server-Parameter uebergeben.
-            arguments = {
-                key: value
-                for key, value in arguments.items()
-                if key not in ("_docs_document_uid", "_docs_team_id")
-            }
         return _execute_global_read_tool(
             db, user=user, tool_name=tool_name, arguments=arguments,
             herkunft=herkunft, familie=familie, prefetch_session_id=prefetch_session_id,

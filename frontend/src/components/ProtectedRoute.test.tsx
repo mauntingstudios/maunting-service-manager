@@ -206,7 +206,13 @@ describe('ProtectedRoute: Namenswahl', () => {
 
     expect(screen.getByText(i18n.t('benutzername.fehlerForm'))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: i18n.t('common.continue') })).toBeDisabled()
-    expect(client.api).not.toHaveBeenCalled()
+    // Verboten ist das Speichern, nicht jeder Aufruf: die Karte traegt eine
+    // Fusszeile, die beim Mount Legal-Angaben und Version laedt. Ein pauschales
+    // „nie aufgerufen“ traf diese harmlosen Abrufe mit.
+    expect(client.api).not.toHaveBeenCalledWith(
+      '/auth/me/username',
+      expect.anything(),
+    )
   })
 })
 

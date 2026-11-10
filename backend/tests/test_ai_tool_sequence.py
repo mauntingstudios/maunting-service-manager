@@ -1642,13 +1642,16 @@ async def test_nach_einem_formfehler_versucht_das_modell_es_richtig(
 
     # Der Benutzer verliert seine Antwort nicht.
     assert _error_codes(events) == []
-    # Das Modell hat den Grund gelesen …
+    # Das Modell hat den Grund gelesen. Geprueft wird die Aussage, nicht die
+    # Schreibweise: die Meldung kam frueher aus dem Aufgaben-Bauer („… hat
+    # ungueltige Argumente“) und kommt jetzt aus der zentralen Pruefung
+    # („Ungueltige Argumente fuer …“). Ein Satzanfang darf gross sein.
     gruende = [
         ergebnis.get("error") or ""
         for antwort in _werkzeugantworten(gesehen)
         for ergebnis in antwort.get("outcomes") or []
     ]
-    assert any("ungueltige Argumente" in grund for grund in gruende)
+    assert any("ungueltige argumente" in grund.lower() for grund in gruende)
     # … und der zweite Versuch ist durchgegangen.
     assert db.query(AiActionProposal).filter(
         AiActionProposal.tool_name == "propose_task_set",

@@ -685,7 +685,7 @@
     "maxAttachmentStorageMbHint": "Limits total storage for uploaded files and attachments for this role. Empty means unlimited.",
     "allowAllModels": "Allow all global models for this role",
     "allowAllModelsHint": "When enabled, this role can use all globally configured AI providers and models. When disabled, allowed providers and specific models can be restricted.",
-    "providerModelAccess": "Provider & Model Access",
+    "providerModelAccess": "Provider & model access",
     "providerModelAccessDesc": "Controls which globally configured AI providers and models are available to users of this role.",
     "providerAccessBlocked": "Blocked",
     "providerAccessAll": "All enabled models",
