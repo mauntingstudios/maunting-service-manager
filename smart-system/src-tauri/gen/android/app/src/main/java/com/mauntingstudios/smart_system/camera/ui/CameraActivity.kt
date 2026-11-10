@@ -178,6 +178,14 @@ class CameraActivity : AppCompatActivity() {
         txtModeVideo = findViewById(R.id.txtModeVideo)
         btnThumbnailContainer = findViewById(R.id.btnThumbnailContainer)
         imgThumbnail = findViewById(R.id.imgThumbnail)
+
+        btnThumbnailContainer.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: android.graphics.Outline) {
+                outline.setOval(0, 0, view.width, view.height)
+            }
+        }
+        btnThumbnailContainer.clipToOutline = true
+
         btnShutter = findViewById(R.id.btnShutter)
         shutterInner = findViewById(R.id.shutterInner)
         btnSwitchLens = findViewById(R.id.btnSwitchLens)
