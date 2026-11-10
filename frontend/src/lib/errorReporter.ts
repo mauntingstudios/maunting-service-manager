@@ -6,6 +6,8 @@
  * an Sentry/GlitchTip weiter, falls VITE_SENTRY_DSN konfiguriert ist.
  */
 
+import { internenKonsolenEintragProtokollieren } from '@/browser/entwickler/konsoleStore'
+
 export interface ErrorReportContext {
   errorId?: string
   requestId?: string
@@ -125,6 +127,14 @@ class ErrorReporter {
       errorId: context.errorId,
       requestId: context.requestId,
     })
+
+    try {
+      internenKonsolenEintragProtokollieren(
+        'error',
+        cleanMsg,
+        context.filename ? { url: String(context.filename), zeile: typeof context.lineno === 'number' ? context.lineno : 1 } : undefined
+      )
+    } catch {}
 
     const Sentry = this.sentryClient || (typeof window !== 'undefined' ? (window as any).Sentry : null)
     if (this.dsn && Sentry) {

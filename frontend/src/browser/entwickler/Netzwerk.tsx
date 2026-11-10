@@ -9,6 +9,8 @@ import { useTranslation } from 'react-i18next'
 
 import { Checkbox, Dropdown, Input } from '@maunting/ui'
 
+import { useTabsStore } from '../services/tabsStore'
+import { OBERFLAECHE_TAB } from './EntwicklerPanel'
 import { Knopf, Leiste } from './Leiste'
 import { NetzDetails } from './NetzDetails'
 import { TYPEN, typfilter, useNetz, type Anfrage, type Typfilter } from './netzStore'
@@ -65,13 +67,21 @@ export function Netzwerk({ tab }: { tab: string }) {
     void rufen(tab, 'Network.emulateNetworkConditions', DROSSELUNG[wert]).catch(() => null)
   }
 
+  const neuLaden = () => {
+    if (tab === OBERFLAECHE_TAB) {
+      useTabsStore.getState().aktion('neu_laden')
+    } else {
+      void rufen(tab, 'Page.reload', { ignoreCache: cacheAus }).catch(() => null)
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Leiste>
         <Knopf text={t('browser.entwickler.netz.leeren')} onClick={() => useNetz.getState().leeren(tab)}>
           <Trash2 className="h-4 w-4" aria-hidden="true" />
         </Knopf>
-        <Knopf text={t('browser.entwickler.neuLaden')} onClick={() => void rufen(tab, 'Page.reload', { ignoreCache: cacheAus }).catch(() => null)}>
+        <Knopf text={t('browser.entwickler.neuLaden')} onClick={neuLaden}>
           <RotateCw className="h-4 w-4" aria-hidden="true" />
         </Knopf>
         <div className="w-36 min-w-32 flex-1">

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-devtools-oeffnen"
+description = "Enables the devtools_oeffnen command without any pre-configured scope."
+commands.allow = ["devtools_oeffnen"]
+
+[[permission]]
+identifier = "deny-devtools-oeffnen"
+description = "Denies the devtools_oeffnen command without any pre-configured scope."
+commands.deny = ["devtools_oeffnen"]

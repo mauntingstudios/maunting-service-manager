@@ -73,6 +73,8 @@ interface NetzZustand {
   setBeibehalten: (an: boolean) => void
   setCacheAus: (an: boolean) => void
   tabWeg: (tab: string) => void
+  internStart: (tab: string, a: Anfrage) => void
+  internEnde: (tab: string, kennung: string, daten: Partial<Anfrage>) => void
 }
 
 /** `…ExtraInfo` kommt manchmal vor der Anfrage selbst. */
@@ -263,8 +265,71 @@ export const useNetz = create<NetzZustand>()((set, get) => {
         delete hauptFrame[tab]
         return { anfragen, hauptFrame }
       }),
+    internStart: (tab, a) => anhaengen(tab, a),
+    internEnde: (tab, kennung, daten) => aendern(tab, kennung, (a) => ({ ...a, ...daten })),
   }
 })
+
+let internerZaehler = 1
+
+export function netzwerkAnfrageProtokollieren(details: {
+  url: string
+  methode: string
+  typ?: string
+  postData?: string
+  headers?: Record<string, string>
+}) {
+  const kennung = `intern-${Date.now()}-${internerZaehler++}`
+  const start = performance.now() / 1000
+  const anfrage: Anfrage = {
+    nr: kennung,
+    kennung,
+    url: details.url,
+    methode: details.methode,
+    typ: details.typ ?? 'Fetch',
+    status: null,
+    statusText: '',
+    mime: '',
+    anfrageKoepfe: details.headers ?? {},
+    antwortKoepfe: {},
+    roheAnfrageKoepfe: null,
+    roheAntwortKoepfe: null,
+    hatNutzlast: !!details.postData,
+    nutzlast: details.postData ?? null,
+    protokoll: 'http/2',
+    adresse: '',
+    ausCache: false,
+    start,
+    ende: null,
+    zeitablauf: null,
+    groesse: null,
+    fehler: null,
+    ausloeser: { type: 'script', url: 'pontis://intern' },
+    rahmen: [],
+  }
+
+  useNetz.getState().internStart('tab-oberflaeche', anfrage)
+
+  return (antwort: {
+    status?: number
+    statusText?: string
+    mime?: string
+    groesse?: number
+    fehler?: string
+    headers?: Record<string, string>
+  }) => {
+    const ende = performance.now() / 1000
+    useNetz.getState().internEnde('tab-oberflaeche', kennung, {
+      status: antwort.status ?? null,
+      statusText: antwort.statusText ?? (antwort.status === 200 ? 'OK' : ''),
+      mime: antwort.mime ?? '',
+      groesse: antwort.groesse ?? null,
+      fehler: antwort.fehler ?? null,
+      antwortKoepfe: antwort.headers ?? {},
+      ende,
+    })
+  }
+}
 
 /** Filter der Liste, wie in jedem Browser. */
 export const TYPEN = ['alle', 'fetch', 'doc', 'css', 'js', 'schrift', 'bild', 'medien', 'ws', 'sonst'] as const

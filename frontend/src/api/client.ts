@@ -2,6 +2,7 @@ import i18n from '@/i18n'
 import { apiUrl } from '@/config/api'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
+import { netzwerkAnfrageProtokollieren } from '@/browser/entwickler/netzStore'
 
 export { API_BASE, apiUrl } from '@/config/api'
 import { getEffectiveApiUrl } from '@/config/api'
@@ -439,9 +440,22 @@ export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
     }
   }
 
+  const protokollEnde = netzwerkAnfrageProtokollieren({
+    url,
+    methode: method,
+    typ: path.includes('/bild') ? 'Image' : 'Fetch',
+    postData: typeof options?.body === 'string' ? options.body : undefined,
+    headers,
+  })
+
   let res: Response
   try {
     res = await doFetchWithTimeout(headers)
+    protokollEnde({
+      status: res.status,
+      statusText: res.statusText,
+      mime: res.headers.get('content-type') ?? '',
+    })
     if (isCurrentlyOffline) {
       isCurrentlyOffline = false
       if (typeof window !== 'undefined') {
@@ -449,6 +463,11 @@ export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
       }
     }
   } catch (fetchErr) {
+    protokollEnde({
+      status: 0,
+      statusText: 'Fehler',
+      fehler: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+    })
     const isTimeout =
       (fetchErr && typeof fetchErr === 'object' && (fetchErr as any).name === 'TimeoutError') ||
       (fetchErr instanceof Error && fetchErr.message.toLowerCase().includes('timeout'))
@@ -642,7 +661,31 @@ export async function apiStream(path: string, options: RequestInit): Promise<Res
     headers,
     cache: 'no-store',
   }
-  let res = await fetch(url, fetchOptions)
+
+  const protokollEnde = netzwerkAnfrageProtokollieren({
+    url,
+    methode: method,
+    typ: path.includes('/bild') ? 'Image' : path.includes('/zusammenfassung') ? 'EventSource' : 'Fetch',
+    postData: typeof options?.body === 'string' ? options.body : undefined,
+    headers,
+  })
+
+  let res: Response
+  try {
+    res = await fetch(url, fetchOptions)
+    protokollEnde({
+      status: res.status,
+      statusText: res.statusText,
+      mime: res.headers.get('content-type') ?? '',
+    })
+  } catch (streamErr) {
+    protokollEnde({
+      status: 0,
+      statusText: 'Fehler',
+      fehler: streamErr instanceof Error ? streamErr.message : String(streamErr),
+    })
+    throw streamErr
+  }
   captureCsrfFromResponse(res)
 
   if (res.status === 401 && isInternal && path !== '/auth/refresh' && path !== '/auth/login') {

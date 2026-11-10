@@ -10,12 +10,13 @@
  * nicht, dort bleibt der Leerzustand.
  */
 import { useEffect } from 'react'
-import { Code2, Database, FileCode, Gauge, MousePointerClick, Network, Smartphone, SquareTerminal } from 'lucide-react'
+import { Code2, Database, ExternalLink, FileCode, Gauge, MousePointerClick, Network, Smartphone, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { TabBar, Zustandsflaeche, TabDef } from '@maunting/ui'
 
 import { istAndroid } from '../services/plattform'
+import { nativ } from '../services/nativ'
 import { useAktiverTab } from '../services/tabsStore'
 import { Anwendung } from './Anwendung'
 import { Elemente } from './Elemente'
@@ -84,11 +85,18 @@ export function EntwicklerPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-start gap-1 border-b border-outline-variant px-2 py-1.5">
-        <Knopf text={t('browser.entwickler.waehlen')} an={waehlen} onClick={() => void waehlenUmschalten(id, !waehlen)}>
-          <MousePointerClick className="h-4 w-4" aria-hidden="true" />
-        </Knopf>
-        <TabBar tabs={ANSICHTEN} active={ansicht} onChange={useAnsicht.getState().setAnsicht} embedded kompakt ariaLabel={t('browser.entwickler.titel')} />
+      <div className="flex shrink-0 items-center justify-between gap-1 border-b border-outline-variant px-2 py-1.5">
+        <div className="flex min-w-0 items-center gap-1">
+          <Knopf text={t('browser.entwickler.waehlen')} an={waehlen} onClick={() => void waehlenUmschalten(id, !waehlen)}>
+            <MousePointerClick className="h-4 w-4" aria-hidden="true" />
+          </Knopf>
+          <TabBar tabs={ANSICHTEN} active={ansicht} onChange={useAnsicht.getState().setAnsicht} embedded kompakt ariaLabel={t('browser.entwickler.titel')} />
+        </div>
+        {!istAndroid() && (
+          <Knopf text="Native DevTools öffnen (Strg+F12)" onClick={() => void nativ.devtoolsOeffnen()}>
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </Knopf>
+        )}
       </div>
       {ansicht === 'elemente' && <Elemente tab={id} />}
       {ansicht === 'konsole' && <Konsole tab={id} />}

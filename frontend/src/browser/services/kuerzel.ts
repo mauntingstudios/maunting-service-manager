@@ -40,6 +40,7 @@ export type Kuerzel =
   | 'zuruecksuchen'
   | 'drucken'
   | 'entwickler'
+  | 'native_devtools'
   | 'einstellungen'
   | 'still'
   | 'lesemodus'
@@ -110,6 +111,9 @@ export function kuerzelAusfuehren(taste: string, ziele: KuerzelZiele): void {
     case 'entwickler':
       ziele.panel('entwickler')
       break
+    case 'native_devtools':
+      void nativ.devtoolsOeffnen()
+      break
     case 'einstellungen':
       tabs.einstellungen()
       break
@@ -136,6 +140,11 @@ export function kuerzelAusTaste(e: KeyboardEvent): Kuerzel | null {
     if (taste === 'g') return 'zuruecksuchen'
     return null
   }
+  if (strg && e.altKey) {
+    if (taste === 'i' || taste === 'j' || taste === 'c') return 'native_devtools'
+    return null
+  }
+  if (strg && e.key === 'F12') return 'native_devtools'
   if (strg && !e.altKey) {
     if (taste === 't' || taste === 'n') return 'neuer_tab'
     if (taste === 'w') return 'tab_schliessen'

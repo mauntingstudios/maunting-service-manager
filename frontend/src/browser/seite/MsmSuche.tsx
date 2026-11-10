@@ -82,7 +82,7 @@ type Stand =
       weitereLaedt: boolean
       dauerSek: number
     }
-  | { art: 'fehler'; zuViele: boolean }
+  | { art: 'fehler'; zuViele: boolean; abgemeldet?: boolean }
   | { art: 'offline' }
   | { art: 'nichtEingerichtet' }
 
@@ -248,7 +248,13 @@ export function MsmSuche({ tab }: { tab: Tab }) {
   const [medienVorschau, setMedienVorschau] = useState<{ treffer: Treffer; art: 'bild' | 'video' } | null>(null)
 
   const speicherSchluessel = `${tab.url}::${region}::${kategorie}`
-  const [stand, setStand] = useState<Stand>(() => gemerkt.get(speicherSchluessel) ?? { art: 'laedt' })
+  const [stand, setStand] = useState<Stand>(() => {
+    if ((tab.ladeZaehler ?? 0) > 0) {
+      gemerkt.delete(speicherSchluessel)
+      return { art: 'laedt' }
+    }
+    return gemerkt.get(speicherSchluessel) ?? { art: 'laedt' }
+  })
   const [versuch, setVersuch] = useState(0)
 
   // Aktuelle News aus dem lokalen Nachrichten-Spiegel/Cache als Ergänzung
@@ -256,6 +262,9 @@ export function MsmSuche({ tab }: { tab: Tab }) {
   const lokaleNews = nachrichtenStand ? auswahl(nachrichtenStand, NACHRICHTEN_THEMEN, begriff, 6) : []
 
   useEffect(() => {
+    if ((tab.ladeZaehler ?? 0) > 0) {
+      gemerkt.delete(speicherSchluessel)
+    }
     const schon = gemerkt.get(speicherSchluessel)
     if (schon && versuch === 0) {
       setStand(schon)
@@ -325,6 +334,8 @@ export function MsmSuche({ tab }: { tab: Tab }) {
 
         if (code === 'BROWSER_SUCHE_NICHT_EINGERICHTET') {
           setStand({ art: 'nichtEingerichtet' })
+        } else if (status === 401 || code === 'UNAUTHORIZED' || code === 'SESSION_EXPIRED') {
+          setStand({ art: 'fehler', zuViele: false, abgemeldet: true })
         } else if (code === 'BROWSER_SUCHE_ZU_VIELE' || status === 429) {
           setStand({ art: 'fehler', zuViele: true })
         } else if (isTimeout || (!code?.startsWith('BROWSER_SUCHE_') && isNetworkOrOfflineError(fehler))) {
@@ -651,15 +662,29 @@ export function MsmSuche({ tab }: { tab: Tab }) {
   } else if (stand.art === 'offline') {
     inhalt = <Zustandsflaeche art="offline" titel={t('browser.msmSuche.offlineTitel')} text={t('browser.msmSuche.offlineText')} />
   } else if (stand.art === 'fehler') {
-    inhalt = (
-      <Zustandsflaeche
-        art="fehler"
-        titel={t('browser.msmSuche.fehlerTitel')}
-        text={t(stand.zuViele ? 'browser.msmSuche.zuVieleText' : 'browser.msmSuche.fehlerText')}
-        erneutLabel={t('common.retry')}
-        onErneut={() => setVersuch((v) => v + 1)}
-      />
-    )
+    if (stand.abgemeldet) {
+      inhalt = (
+        <Zustandsflaeche
+          art="fehler"
+          titel={t('browser.msmSuche.anmeldungErforderlichTitel', { defaultValue: 'Anmeldung erforderlich' })}
+          text={t('browser.msmSuche.anmeldungErforderlichText', {
+            defaultValue: 'Deine Sitzung ist abgelaufen oder du bist nicht angemeldet. Bitte melde dich mit deinem Maunting-Konto an, um Maunting Search und die Singra-KI zu nutzen.',
+          })}
+          erneutLabel={t('browser.einstellungen.anmeldenKoppeln', { defaultValue: 'In Einstellungen anmelden' })}
+          onErneut={() => oeffnen('pontis://einstellungen?teil=dienste', tab.id)}
+        />
+      )
+    } else {
+      inhalt = (
+        <Zustandsflaeche
+          art="fehler"
+          titel={t('browser.msmSuche.fehlerTitel')}
+          text={t(stand.zuViele ? 'browser.msmSuche.zuVieleText' : 'browser.msmSuche.fehlerText')}
+          erneutLabel={t('common.retry')}
+          onErneut={() => setVersuch((v) => v + 1)}
+        />
+      )
+    }
   } else if (stand.art === 'nichtEingerichtet') {
     inhalt = (
       <Zustandsflaeche art="leer" titel={t('browser.msmSuche.nichtEingerichtetTitel')} text={t('browser.msmSuche.nichtEingerichtetText')}>

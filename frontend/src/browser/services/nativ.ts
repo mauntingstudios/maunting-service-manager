@@ -244,6 +244,7 @@ export const nativ = {
   tabsDarstellung: (an: boolean) => rufen('tabs_darstellung', { an }),
   fensterAktion: (aktion: 'minimieren' | 'maximieren' | 'schliessen' | 'neustarten') => rufen('fenster_aktion', { aktion }),
   neustarten: () => rufen('fenster_aktion', { aktion: 'neustarten' }),
+  devtoolsOeffnen: () => rufen('devtools_oeffnen'),
   /** Startinformationen dieses Browserfenster-Prozesses (z. B. ausgelagertes Einzelfenster). */
   fensterStartInfo: () => rufen<FensterStartInfo>('fenster_start_info'),
   /** Namensblase über der Seite (`kurzinfo.rs`); `null` verbirgt sie. */

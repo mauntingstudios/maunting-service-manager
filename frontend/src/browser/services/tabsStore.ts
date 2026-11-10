@@ -426,7 +426,12 @@ export const useTabsStore = create<TabsZustand>()(
             laden(zielId, tab.vorher, true)
             return
           }
-          if (!tab?.nativDa) return
+          if (!tab?.nativDa) {
+            if (akt === 'neu_laden' && tab) {
+              aendern(zielId, { ladeZaehler: (tab.ladeZaehler ?? 0) + 1 })
+            }
+            return
+          }
           if (akt === 'neu_laden' && (tab.abgestuerzt || tab.fehler)) {
             laden(zielId, tab.url)
             return

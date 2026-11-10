@@ -74,6 +74,7 @@ export function SuchzusammenfassungKachel({
   const [verlauf, setVerlauf] = useState<SuchNachricht[]>([])
   const [nachfrage, setNachfrage] = useState('')
   const [folgeFehler, setFolgeFehler] = useState<string | null>(null)
+  const [hauptFehler, setHauptFehler] = useState<string | null>(null)
   const [denkstufe, setDenkstufe] = useState<string>('fast')
   const [kopiert, setKopiert] = useState(false)
   const [konfig, setKonfig] = useState<SuchKonfig | null>(null)
@@ -145,6 +146,7 @@ export function SuchzusammenfassungKachel({
 
     setLaedt(true)
     setFolgeFehler(null)
+    setHauptFehler(null)
     setGedankenText('')
     setRecherche([])
 
@@ -174,7 +176,11 @@ export function SuchzusammenfassungKachel({
 
       if (!res.ok) {
         if (dialogVerlauf.length === 0) {
-          setDeaktiviert(true)
+          const fehlerText =
+            res.status === 429
+              ? 'Zu viele Anfragen. Bitte warte einen kurzen Moment.'
+              : t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' })
+          setHauptFehler(fehlerText)
         } else {
           fehlerSetzen(controller, dialogVerlauf, t('browser.msmSuche.zusammenfassungFehler'))
           return
@@ -186,6 +192,7 @@ export function SuchzusammenfassungKachel({
       const reader = res.body?.getReader()
       if (!reader) {
         if (dialogVerlauf.length === 0) {
+          setHauptFehler(t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' }))
           if (istAktuell(controller)) setLaedt(false)
         } else {
           fehlerSetzen(controller, dialogVerlauf, t('browser.msmSuche.zusammenfassungFehler'))
@@ -263,7 +270,11 @@ export function SuchzusammenfassungKachel({
                 typeof data.message === 'string' && data.message.trim()
                   ? data.message
                   : t('browser.msmSuche.zusammenfassungFehler')
-              fehlerSetzen(controller, dialogVerlauf, meldung)
+              if (dialogVerlauf.length === 0) {
+                setHauptFehler(meldung)
+              } else {
+                fehlerSetzen(controller, dialogVerlauf, meldung)
+              }
               try {
                 await reader.cancel()
               } catch {
@@ -283,15 +294,27 @@ export function SuchzusammenfassungKachel({
           }
         }
       }
+
+      if (!akkumulierterText && !deaktiviert) {
+        if (dialogVerlauf.length === 0) {
+          setHauptFehler(t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' }))
+        } else {
+          fehlerSetzen(controller, dialogVerlauf, t('browser.msmSuche.zusammenfassungFehler'))
+        }
+      }
     } catch (err: unknown) {
       // Ein abgebrochener Vorgänger-Stream darf den neuen Lauf nicht stoppen.
       if (controller.signal.aborted || (err as { name?: string })?.name === 'AbortError') {
         return
       }
       if (dialogVerlauf.length === 0) {
-        if (istAktuell(controller)) setLaedt(false)
+        setHauptFehler(t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' }))
       } else {
         fehlerSetzen(controller, dialogVerlauf, t('browser.msmSuche.zusammenfassungFehler'))
+      }
+    } finally {
+      if (istAktuell(controller)) {
+        setLaedt(false)
       }
     }
   }
@@ -319,8 +342,32 @@ export function SuchzusammenfassungKachel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [begriff])
 
-  if (deaktiviert || (!laedt && !hauptText)) {
+  if (deaktiviert || (!laedt && !hauptText && !hauptFehler)) {
     return null
+  }
+
+  if (hauptFehler && !hauptText) {
+    return (
+      <div className="mb-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/70 p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-on-surface">
+            <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
+            <span className="text-title-sm font-semibold">{t('browser.msmSuche.zusammenfassungTitel', { defaultValue: 'Singra-Überblick' })}</span>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setHauptFehler(null)
+              void starteStream(begriff, [])
+            }}
+          >
+            {t('common.retry', { defaultValue: 'Erneut versuchen' })}
+          </Button>
+        </div>
+        <p className="mt-2 text-body-sm text-on-surface-variant">{hauptFehler}</p>
+      </div>
+    )
   }
 
   const stelleFolgefrage = (frageText: string) => {

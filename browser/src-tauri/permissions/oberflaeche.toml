@@ -80,6 +80,7 @@ permissions = [
   "allow-download-pruefen",
   "allow-fenster-aktion",
   "allow-fenster-start-info",
+  "allow-devtools-oeffnen",
   "allow-oeffne-browser",
   "allow-kurzinfo",
   "allow-seitendaten-loeschen",

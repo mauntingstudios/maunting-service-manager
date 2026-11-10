@@ -49,6 +49,8 @@ export interface Tab {
   lesbar?: boolean
   /** Ob für diesen Tab der puristische Lesemodus aktiv ist */
   lesemodus?: boolean
+  /** Zähler für Neuladen interner Seiten (`Strg+R`, `F5`) */
+  ladeZaehler?: number
 }
 
 /**

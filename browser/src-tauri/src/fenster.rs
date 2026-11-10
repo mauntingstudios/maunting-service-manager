@@ -102,6 +102,23 @@ pub fn oeffne_browser(app: AppHandle, url: String) -> Result<(), String> {
         .map_err(|e| format!("Browser konnte nicht geöffnet werden: {e}"))
 }
 
+/// Öffnet oder schließt die nativen WebView2-DevTools für die Haupt-Oberfläche.
+#[tauri::command]
+pub fn devtools_oeffnen(app: AppHandle) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        if let Some(fenster) = app.get_webview_window("main") {
+            if fenster.is_devtools_open() {
+                fenster.close_devtools();
+            } else {
+                fenster.open_devtools();
+            }
+            return Ok(());
+        }
+    }
+    Err("Nicht verfügbar".to_string())
+}
+
 /// Nur http und https sind Webseiten; alles andere öffnet kein Programm.
 fn pruefe_externe_adresse(url: &str) -> Result<&str, String> {
     let adresse = url.trim();

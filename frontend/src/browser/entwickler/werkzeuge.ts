@@ -89,7 +89,10 @@ export function einschalten(tab: string): Promise<void> {
 
 async function einschaltenJetzt(tab: string): Promise<void> {
   // `Runtime.enable` schickt alle Meldungen der Seite noch einmal; ohne Leeren stünden sie doppelt da.
-  useKonsole.getState().leeren(tab)
+  // Bei der Oberfläche selbst behalten wir Protokolleinträge, damit vor dem Öffnen aufgetretene Fehler nicht verloren gehen.
+  if (tab !== 'tab-oberflaeche' && !useKonsole.getState().beibehalten) {
+    useKonsole.getState().leeren(tab)
+  }
   // Erst aus, dann an: war ein Bereich noch an (Oberfläche neu geladen), schickte er sonst
   // nichts nach, weder Meldungen noch Skripte, und alte Knotenkennungen gälten weiter.
   for (const bereich of ['Runtime', 'Log', 'Network', 'DOM', 'CSS', 'Overlay', 'Page']) {

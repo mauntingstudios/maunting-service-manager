@@ -41,6 +41,7 @@ interface KonsoleZustand {
   leeren: (tab: string) => void
   setBeibehalten: (an: boolean) => void
   tabWeg: (tab: string) => void
+  internEintrag: (tab: string, e: Omit<Eintrag, 'nr' | 'anzahl'>) => void
 }
 
 const STUFE: Record<string, Stufe> = {
@@ -150,5 +151,22 @@ export const useKonsole = create<KonsoleZustand>()((set, get) => {
         delete ebenen[tab]
         return { eintraege, ebene: ebenen }
       }),
+    internEintrag: (tab, e) => anhaengen(tab, e),
   }
 })
+
+export function internenKonsolenEintragProtokollieren(
+  stufe: Stufe,
+  text: string,
+  quelle?: { url: string; zeile: number }
+) {
+  const eintrag: Omit<Eintrag, 'nr' | 'anzahl'> = {
+    art: 'meldung',
+    stufe,
+    text,
+    werte: [{ type: 'string', value: text, description: text }],
+    quelle: quelle ?? { url: 'pontis://intern', zeile: 1 },
+    ebene: 0,
+  }
+  useKonsole.getState().internEintrag('tab-oberflaeche', eintrag)
+}

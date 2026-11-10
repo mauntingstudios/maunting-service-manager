@@ -42,12 +42,12 @@ function EinzelInhalt({ tab, aktion }: { tab?: Tab; aktion: (a: 'zurueck' | 'vor
     return <Startseite privat={!!tab?.privat} />
   }
   if (intern?.seite === 'suche') {
-    return <MsmSuche key={tab.url} tab={tab} />
+    return <MsmSuche key={`${tab.url}-${tab.ladeZaehler ?? 0}`} tab={tab} />
   }
   if (intern) {
     return (
       <Suspense fallback={null}>
-        <EinstellungenSeite teil={intern.teil} />
+        <EinstellungenSeite key={`${tab.url}-${tab.ladeZaehler ?? 0}`} teil={intern.teil} />
       </Suspense>
     )
   }
