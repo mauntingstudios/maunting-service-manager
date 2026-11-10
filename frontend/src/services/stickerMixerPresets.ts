@@ -17,31 +17,31 @@ export const MIX_PRESETS: MixPreset[] = [
   {
     id: 'feuerkatze',
     nameKey: 'messenger.mixer.presets.feuerkatze',
-    rezept: { emojis: ['🔥', '🐱'], hintergrund: 'sonne', funken: true },
+    rezept: { emojis: ['🔥', '🐱'], hintergrund: 'amber', sterne: true },
   },
   {
     id: 'party',
     nameKey: 'messenger.mixer.presets.party',
-    rezept: { emojis: ['🥳', '🎉', '✨'], hintergrund: 'beere', funken: true },
+    rezept: { emojis: ['🥳', '🎉', '✨'], hintergrund: 'purple', sterne: true },
   },
   {
     id: 'laessig',
     nameKey: 'messenger.mixer.presets.laessig',
-    rezept: { emojis: ['😎', '👍'], hintergrund: 'minze', funken: false },
+    rezept: { emojis: ['😎', '👍'], hintergrund: 'emerald', sterne: false },
   },
   {
     id: 'totlachen',
     nameKey: 'messenger.mixer.presets.totlachen',
-    rezept: { emojis: ['💀', '😂'], hintergrund: 'nacht', funken: false },
+    rezept: { emojis: ['💀', '😂'], hintergrund: 'cyan', sterne: false },
   },
   {
     id: 'liebe',
     nameKey: 'messenger.mixer.presets.liebe',
-    rezept: { emojis: ['❤️', '✨'], hintergrund: 'pfirsich', funken: true },
+    rezept: { emojis: ['❤️', '✨'], hintergrund: 'rose', sterne: true },
   },
   {
     id: 'abflug',
     nameKey: 'messenger.mixer.presets.abflug',
-    rezept: { emojis: ['🚀', '🔥'], hintergrund: 'nacht', funken: true },
+    rezept: { emojis: ['🚀', '🔥'], hintergrund: 'primary', sterne: true },
   },
 ]

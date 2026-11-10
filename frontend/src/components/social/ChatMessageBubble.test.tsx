@@ -303,6 +303,32 @@ describe('ChatMessageBubble Resilienz & Fehlerbehandlung', () => {
       expect(screen.queryByText('🔥🐱')).toBeNull()
     })
 
+    it('zeigt einen System-Sticker aus dem festen Katalog', () => {
+      // Die Nutzlast trägt nur die Kennung; das Bild kommt aus dem Programm,
+      // damit keine fremde Adresse aus einer Nachricht geladen wird.
+      const msg = {
+        id: 12,
+        senderId: 1,
+        text: '',
+        createdAt: '2026-11-10T10:00:00.000Z',
+        isSelf: true,
+        stickerAttachment: { id: 'sys-emotes-hello-wave', label: 'Emotes' },
+      } as unknown as ChatMessage
+      const { container } = render(
+        <ChatMessageBubble
+          msg={msg}
+          kontext={defaultKontext}
+          ton={defaultTon}
+          aktionen={defaultAktionen}
+          auswahl={defaultAuswahl}
+          medienBindung={() => ({} as any)}
+        />
+      )
+      expect(container.querySelector('img[src="/stickers/emotes/01_hello_wave.png"]')).not.toBeNull()
+      expect(screen.getByRole('img', { name: 'Emotes' })).toBeInTheDocument()
+      expect(screen.queryByText('Emotes')).toBeNull()
+    })
+
     it('zeigt bei einem handgezeichneten Sticker weiter sein Label', () => {
       const msg = {
         id: 11,

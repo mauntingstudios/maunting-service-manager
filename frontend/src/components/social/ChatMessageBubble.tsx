@@ -65,6 +65,7 @@ import {
   WISCH_SCHWELLE_PX,
 } from '@/lib/gesten'
 import { reaktionsknoepfe, type Reaktionen } from '@/services/reaktionen'
+import { systemSticker } from '@/services/systemStickers'
 import { hervorzuhebendeWorte, teileText, type Textstueck } from '@/services/erwaehnungen'
 import type { ChatGroupItem } from '@/api/social'
 import type { Gruppenzustand } from '@/services/gruppenKonfig'
@@ -104,7 +105,10 @@ export interface CalendarAttachment {
 export interface StickerAttachment {
   id: string
   label: string
-  svg: string
+  /** Ein gebauter Mixer-Sticker. System- und Foto-Sticker brauchen ihn nicht. */
+  svg?: string
+  /** Ein eingebettetes Bild als `data:image/…` für Foto-Sticker. */
+  bild?: string
   /**
    * Ein im Mixer gebauter Sticker. Die Emoji-Folge steht dann nur im `label`
    * für Zitat und Vorlesen; unter dem Bild würde sie doppelt stehen.
@@ -359,6 +363,11 @@ function ChatMessageBubbleContent({
   medienBindung,
 }: ChatMessageBubbleProps) {
   const { t } = useTranslation()
+  // System-Sticker reisen nur mit ihrer Kennung; das Bild kommt aus dem festen
+  // Katalog, nie aus der Nutzlast. Foto-Sticker tragen ihr Bild eingebettet.
+  const sticker = msg.stickerAttachment
+  const systemStickerEintrag = sticker && !sticker.svg && !sticker.bild ? systemSticker(sticker.id) : undefined
+  const stickerBild = sticker?.bild?.startsWith('data:image/') ? sticker.bild : undefined
   const {
     activeGroup,
     activeContact,
@@ -606,19 +615,41 @@ function ChatMessageBubbleContent({
         )}
 
         {/* Sticker Attachment */}
-        {!msg.isDeleted && msg.stickerAttachment && (
+        {!msg.isDeleted && sticker && (
           <div className="py-1">
             <div
               role="img"
-              aria-label={msg.stickerAttachment.label || t('messenger.stickerImage')}
-              className="w-24 h-24 sm:w-28 sm:h-28 drop-shadow-md [&>svg]:h-full [&>svg]:w-full"
-              dangerouslySetInnerHTML={{ __html: sanitizeSvg(msg.stickerAttachment.svg) }}
-            />
-            {!msg.stickerAttachment.mix && msg.stickerAttachment.label && (
+              aria-label={sticker.label || t('messenger.stickerImage')}
+              className="w-24 h-24 sm:w-28 sm:h-28 drop-shadow-md"
+            >
+              {systemStickerEintrag ? (
+                <img
+                  src={systemStickerEintrag.bild}
+                  alt=""
+                  aria-hidden="true"
+                  loading="lazy"
+                  decoding="async"
+                  className="h-full w-full object-contain"
+                />
+              ) : stickerBild ? (
+                <img
+                  src={stickerBild}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-full w-full object-contain"
+                />
+              ) : sticker.svg ? (
+                <div
+                  className="h-full w-full [&>svg]:h-full [&>svg]:w-full"
+                  dangerouslySetInnerHTML={{ __html: sanitizeSvg(sticker.svg) }}
+                />
+              ) : null}
+            </div>
+            {!sticker.mix && !systemStickerEintrag && !stickerBild && sticker.label && (
               // Der Name steht schon am Bild (`aria-label`); der sichtbare
               // Text darunter würde sonst ein zweites Mal vorgelesen.
               <div aria-hidden="true" className="text-label-sm opacity-60 text-center mt-1">
-                {msg.stickerAttachment.label}
+                {sticker.label}
               </div>
             )}
           </div>

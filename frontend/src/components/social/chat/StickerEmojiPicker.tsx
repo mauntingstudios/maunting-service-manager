@@ -2,8 +2,8 @@ import { lazy, Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import { Button, Kurzinfo, Spinner } from '@maunting/ui'
-import { sanitizeSvg } from '@/lib/sanitizeSvg'
-import { CATEGORIZED_EMOJIS, IN_HOUSE_STICKERS, type StickerMotiv } from '@/services/stickerCatalog'
+import { CATEGORIZED_EMOJIS, type StickerMotiv } from '@/services/stickerCatalog'
+import { STICKER_THEMES, SYSTEM_STICKERS, type StickerThemeId } from '@/services/systemStickers'
 import { STANDARD_REZEPT, type MixRezept } from '@/services/stickerMixerTypen'
 
 /**
@@ -43,9 +43,12 @@ export function StickerEmojiPicker({
 }: StickerEmojiPickerProps) {
   const { t } = useTranslation()
   const [mixerOffen, setMixerOffen] = useState(false)
-  // Der Entwurf überlebt das Schließen des Dialogs. Erst wenn die Auswahl
-  // selbst zugemacht wird, fällt er mit ihr weg.
   const [mixRezept, setMixRezept] = useState<MixRezept>({ ...STANDARD_REZEPT })
+  const [stickerThema, setStickerThema] = useState<StickerThemeId>('emotes')
+
+  const thema = STICKER_THEMES.find((eintrag) => eintrag.id === stickerThema) ?? STICKER_THEMES[0]
+  const themaLabel = t(thema.labelKey)
+  const stickerImThema = SYSTEM_STICKERS.filter((eintrag) => eintrag.theme === thema.id)
 
   return (
     <div className="mb-2 p-2.5 rounded-xl bg-surface-container border border-outline-variant/30 shadow-lg animate-slide-up">
@@ -80,27 +83,55 @@ export function StickerEmojiPicker({
       </div>
 
       {reiter === 'stickers' && (
-        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 max-h-48 overflow-y-auto p-1.5">
-          {IN_HOUSE_STICKERS.map((stk) => (
-            // Der Name ist unter dem Sticker oft abgeschnitten; die Kurzinfo zeigt
-            // ihn ganz. `ende`, weil eine mittige Blase in der rechten Spalte
-            // über den Rand der Rollfläche ragte und eine Querleiste aufschöbe.
-            <Kurzinfo key={stk.id} text={stk.label} seite="ende" aussen="min-w-0 w-full">
-              <button
+        <div className="space-y-1.5">
+          <div
+            className="msm-ohne-rollbalken flex gap-1.5 overflow-x-auto pb-1"
+            role="group"
+            aria-label={t('messenger.stickerThemes.label')}
+          >
+            {STICKER_THEMES.map((eintrag) => (
+              <Button
+                key={eintrag.id}
                 type="button"
-                onClick={() => onSticker(stk)}
-                className="w-full min-w-0 flex flex-col items-center justify-center p-1.5 rounded-xl hover:bg-surface-container-high transition-transform hover:scale-105"
+                variant={stickerThema === eintrag.id ? 'primary' : 'ghost'}
+                size="sm"
+                fingerziel
+                aria-pressed={stickerThema === eintrag.id}
+                onClick={() => setStickerThema(eintrag.id)}
+                className="shrink-0 rounded-full px-2.5 text-xs"
               >
-                <div
-                  className="w-11 h-11 flex items-center justify-center [&>svg]:h-full [&>svg]:w-full"
-                  dangerouslySetInnerHTML={{ __html: sanitizeSvg(stk.svg) }}
-                />
-                <span className="text-label-sm text-on-surface-variant/80 truncate w-full text-center mt-1 font-medium">
-                  {stk.label}
-                </span>
-              </button>
-            </Kurzinfo>
-          ))}
+                {t(eintrag.labelKey)}
+              </Button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 max-h-48 overflow-y-auto p-1.5">
+            {stickerImThema.map((stk) => {
+              const name = `${themaLabel} ${stk.nummer}`
+              return (
+                // Der Name steht unter dem Bild oft abgeschnitten; die Kurzinfo
+                // zeigt ihn ganz. `ende`, weil eine mittige Blase in der rechten
+                // Spalte über den Rand der Rollfläche ragte.
+                <Kurzinfo key={stk.id} text={name} seite="ende" aussen="min-w-0 w-full">
+                  <button
+                    type="button"
+                    onClick={() => onSticker({ id: stk.id, label: themaLabel })}
+                    aria-label={name}
+                    className="w-full min-w-0 flex flex-col items-center justify-center p-1.5 rounded-xl hover:bg-surface-container-high transition-transform hover:scale-105"
+                  >
+                    <img
+                      src={stk.bild}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      aria-hidden="true"
+                      className="h-11 w-11 object-contain"
+                    />
+                  </button>
+                </Kurzinfo>
+              )
+            })}
+          </div>
         </div>
       )}
 

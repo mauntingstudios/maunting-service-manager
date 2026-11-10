@@ -21,6 +21,14 @@ export interface Farbwahl {
   id: string
   /** Schlüssel unter `common.palette.*`. */
   labelKey: string
+  /**
+   * Der kräftige Grundton als Hex-Wert, für Flächen, die keine
+   * Tailwind-Klasse annehmen können (SVG im Sticker-Mixer).
+   *
+   * Die sechs Töne sind dieselben wie in `ROLE_COLOR_PRESETS` aus
+   * `@maunting/ui`; ein Test hält beide Listen zusammen.
+   */
+  ton: string
   /** Zarte Fläche — eine Karte, die den Ton nur andeutet. */
   flaeche: string
   /** Kräftige Fläche — eine Pille, die für sich steht. */
@@ -35,6 +43,7 @@ export const FARB_PALETTE: Farbwahl[] = [
   {
     id: 'primary',
     labelKey: 'common.palette.blue',
+    ton: '#3b82f6',
     flaeche: 'bg-primary/10',
     flaecheStark: 'bg-primary/20',
     text: 'text-primary',
@@ -44,6 +53,7 @@ export const FARB_PALETTE: Farbwahl[] = [
   {
     id: 'emerald',
     labelKey: 'common.palette.green',
+    ton: '#10b981',
     flaeche: 'bg-status-success/10',
     flaecheStark: 'bg-status-success/20',
     text: 'text-status-success',
@@ -53,6 +63,7 @@ export const FARB_PALETTE: Farbwahl[] = [
   {
     id: 'amber',
     labelKey: 'common.palette.yellow',
+    ton: '#f59e0b',
     flaeche: 'bg-status-warning/10',
     flaecheStark: 'bg-status-warning/20',
     text: 'text-status-warning',
@@ -62,6 +73,7 @@ export const FARB_PALETTE: Farbwahl[] = [
   {
     id: 'rose',
     labelKey: 'common.palette.red',
+    ton: '#f43f5e',
     flaeche: 'bg-rose-500/10',
     flaecheStark: 'bg-rose-500/20',
     text: 'text-rose-400',
@@ -71,6 +83,7 @@ export const FARB_PALETTE: Farbwahl[] = [
   {
     id: 'purple',
     labelKey: 'common.palette.purple',
+    ton: '#8b5cf6',
     flaeche: 'bg-purple-500/10',
     flaecheStark: 'bg-purple-500/20',
     text: 'text-purple-400',
@@ -80,6 +93,7 @@ export const FARB_PALETTE: Farbwahl[] = [
   {
     id: 'cyan',
     labelKey: 'common.palette.cyan',
+    ton: '#06b6d4',
     flaeche: 'bg-cyan-500/10',
     flaecheStark: 'bg-cyan-500/20',
     text: 'text-cyan-400',

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { ROLE_COLOR_PRESETS } from '@maunting/ui'
+import { FARB_PALETTE } from '@/config/farbpalette'
 import { sanitizeSvg } from '@/lib/sanitizeSvg'
 
 import { baueSticker } from './stickerMixer'
@@ -9,7 +11,7 @@ import { MIX_KATEGORIEN, MIX_HINTERGRUENDE, type MixRezept } from './stickerMixe
 const rezept = (teile: Partial<MixRezept> = {}): MixRezept => ({
   emojis: ['🔥'],
   hintergrund: 'ohne',
-  funken: false,
+  sterne: false,
   ...teile,
 })
 
@@ -51,28 +53,42 @@ describe('stickerMixer', () => {
     expect(baueSticker(rezept({ emojis: ['🫠'] }))).toBeNull()
   })
 
-  it('ist deterministisch und unterscheidet Funken', () => {
-    const a = baueSticker(rezept({ emojis: ['🔥', '🐱'], hintergrund: 'sonne', funken: true }))
-    const b = baueSticker(rezept({ emojis: ['🔥', '🐱'], hintergrund: 'sonne', funken: true }))
-    const ohneFunken = baueSticker(rezept({ emojis: ['🔥', '🐱'], hintergrund: 'sonne', funken: false }))
+  it('ist deterministisch und unterscheidet Sterne', () => {
+    const a = baueSticker(rezept({ emojis: ['🔥', '🐱'], hintergrund: 'amber', sterne: true }))
+    const b = baueSticker(rezept({ emojis: ['🔥', '🐱'], hintergrund: 'amber', sterne: true }))
+    const ohneSterne = baueSticker(rezept({ emojis: ['🔥', '🐱'], hintergrund: 'amber', sterne: false }))
     expect(a!.id).toBe(b!.id)
     expect(a!.svg).toBe(b!.svg)
-    expect(a!.id).not.toBe(ohneFunken!.id)
+    expect(a!.id).not.toBe(ohneSterne!.id)
   })
 
   it('teilt die Verlaufsdefinition je Hintergrund und trennt verschiedene', () => {
-    const sonne = baueSticker(rezept({ emojis: ['🔥'], hintergrund: 'sonne' }))!.svg
-    const sonneZwei = baueSticker(rezept({ emojis: ['🐱'], hintergrund: 'sonne' }))!.svg
-    const nacht = baueSticker(rezept({ emojis: ['🔥'], hintergrund: 'nacht' }))!.svg
-    expect(sonne).toContain('id="mx-bg-sonne"')
-    expect(sonneZwei).toContain('id="mx-bg-sonne"')
-    expect(nacht).toContain('id="mx-bg-nacht"')
-    expect(nacht).not.toContain('mx-bg-sonne')
+    const blau = baueSticker(rezept({ emojis: ['🔥'], hintergrund: 'primary' }))!.svg
+    const blauZwei = baueSticker(rezept({ emojis: ['🐱'], hintergrund: 'primary' }))!.svg
+    const cyan = baueSticker(rezept({ emojis: ['🔥'], hintergrund: 'cyan' }))!.svg
+    expect(blau).toContain('id="mx-bg-primary"')
+    expect(blauZwei).toContain('id="mx-bg-primary"')
+    expect(cyan).toContain('id="mx-bg-cyan"')
+    expect(cyan).not.toContain('mx-bg-primary')
+  })
+
+  it('nimmt die Hintergrundtöne aus der Rollenpalette', () => {
+    const rollen = new Set(ROLE_COLOR_PRESETS.map((preset) => preset.value.toLowerCase()))
+    for (const hintergrund of MIX_HINTERGRUENDE.filter((eintrag) => eintrag.id !== 'ohne')) {
+      const farbe = FARB_PALETTE.find((eintrag) => eintrag.id === hintergrund.id)
+      expect(farbe, hintergrund.id).toBeDefined()
+      expect(hintergrund.ton, hintergrund.id).toBe(farbe!.ton)
+      expect(rollen.has(hintergrund.ton.toLowerCase()), hintergrund.id).toBe(true)
+
+      const svg = baueSticker(rezept({ emojis: ['😀'], hintergrund: hintergrund.id, sterne: false }))!.svg
+      expect(svg, hintergrund.id).toContain(`id="mx-bg-${hintergrund.id}"`)
+      expect(svg, hintergrund.id).toContain(hintergrund.ton)
+    }
   })
 
   it('enthält keine verbotenen Elemente und bleibt unter dem Größenbudget', () => {
     for (const hintergrund of MIX_HINTERGRUENDE.map((eintrag) => eintrag.id)) {
-      const svg = baueSticker(rezept({ emojis: ['🔥', '🐱', '✨'], hintergrund, funken: true }))!.svg
+      const svg = baueSticker(rezept({ emojis: ['🔥', '🐱', '✨'], hintergrund, sterne: true }))!.svg
       expect(svg).not.toMatch(/<use[\s>]/i)
       expect(svg).not.toMatch(/<script[\s>]/i)
       expect(svg).not.toMatch(/<image[\s>]/i)
@@ -97,11 +113,11 @@ describe('stickerMixer', () => {
     const alle = MIX_KATEGORIEN.flatMap((kategorie) => kategorie.emojis)
     expect(alle.length).toBeGreaterThan(100)
     for (const emoji of alle) {
-      const sticker = baueSticker(rezept({ emojis: [emoji], hintergrund: 'beere', funken: true }))
+      const sticker = baueSticker(rezept({ emojis: [emoji], hintergrund: 'purple', sterne: true }))
       expect(sticker, emoji).not.toBeNull()
       const einmal = sanitizeSvg(sticker!.svg)
       expect(einmal.length, emoji).toBeGreaterThan(0)
-      expect(einmal).toContain('mx-bg-beere')
+      expect(einmal).toContain('mx-bg-purple')
       expect(sanitizeSvg(einmal), emoji).toBe(einmal)
     }
   })

@@ -2,9 +2,9 @@
  * Baut aus einem Rezept ein selbsttragendes Sticker-SVG.
  *
  * Das Ergebnis reist als `sticker_attachment` im verschlüsselten Payload, wie
- * die handgezeichneten Sticker aus `stickerCatalog`. Der Empfänger braucht
- * dadurch keine Emoji-Assets und keine zweite Darstellung: was hier steht, ist
- * überall dasselbe Bild.
+ * die System-Sticker aus `systemStickers`. Der Empfänger braucht dadurch keine
+ * Emoji-Assets und keine zweite Darstellung: was hier steht, ist überall
+ * dasselbe Bild.
  *
  * Alles ist deterministisch. Gleiches Rezept ergibt denselben String und
  * dieselbe Kennung; es gibt keine Zufallswerte in Layout oder Effekt.
@@ -63,7 +63,7 @@ const LAGEN: Record<number, Lage[]> = {
   ],
 }
 
-const FUNKEN: { x: number; y: number; scale: number; drehung: number }[] = [
+const STERNE: { x: number; y: number; scale: number; drehung: number }[] = [
   { x: 24, y: 30, scale: 0.55, drehung: 0 },
   { x: 104, y: 38, scale: 0.4, drehung: 15 },
   { x: 98, y: 100, scale: 0.5, drehung: -10 },
@@ -71,7 +71,7 @@ const FUNKEN: { x: number; y: number; scale: number; drehung: number }[] = [
   { x: 112, y: 72, scale: 0.3, drehung: 0 },
 ]
 
-const FUNKE_PFAD =
+const STERN_PFAD =
   'M0 -7 L1.8 -1.8 L7 0 L1.8 1.8 L0 7 L-1.8 1.8 L-7 0 L-1.8 -1.8 Z'
 
 /** Zwei Nachkommastellen reichen und halten den String über Läufe gleich. */
@@ -79,12 +79,30 @@ function zahl(wert: number): string {
   return String(Math.round(wert * 100) / 100)
 }
 
-function funkenSvg(): string {
-  const sterne = FUNKEN.map(
-    (funke) =>
-      `<g transform="translate(${funke.x} ${funke.y}) rotate(${funke.drehung}) scale(${funke.scale})"><path d="${FUNKE_PFAD}"/></g>`,
+function sterneSvg(): string {
+  const sterne = STERNE.map(
+    (stern) =>
+      `<g transform="translate(${stern.x} ${stern.y}) rotate(${stern.drehung}) scale(${stern.scale})"><path d="${STERN_PFAD}"/></g>`,
   ).join('')
   return `<g fill="#FEF3C7" opacity="0.95">${sterne}</g>`
+}
+
+/** Mischt zwei Hex-Farben; `anteil` ist der Weg von `hex` nach `ziel`. */
+function mische(hex: string, ziel: string, anteil: number): string {
+  const lese = (wert: string): [number, number, number] => {
+    const sauber = wert.replace('#', '')
+    if (!/^[0-9a-fA-F]{6}$/.test(sauber)) return [0, 0, 0]
+    return [
+      parseInt(sauber.slice(0, 2), 16),
+      parseInt(sauber.slice(2, 4), 16),
+      parseInt(sauber.slice(4, 6), 16),
+    ]
+  }
+  const [r1, g1, b1] = lese(hex)
+  const [r2, g2, b2] = lese(ziel)
+  const mischen = (a: number, b: number) => Math.round(a + (b - a) * anteil)
+  const teil = (n: number) => n.toString(16).padStart(2, '0')
+  return `#${teil(mischen(r1, r2))}${teil(mischen(g1, g2))}${teil(mischen(b1, b2))}`
 }
 
 function emojiGruppe(emoji: string, lage: Lage): string {
@@ -100,9 +118,12 @@ function emojiGruppe(emoji: string, lage: Lage): string {
  * Sticker mit demselben Hintergrund teilen damit dieselbe Definition; eine
  * Kollision im Dokument ändert nichts, weil die Stops gleich sind.
  */
-function hintergrundSvg(id: string, von: string, bis: string): string[] {
+function hintergrundSvg(id: string, ton: string): string[] {
+  // Der helle Stop kommt aus demselben Ton, damit die Rollenfarbe die Fläche
+  // bestimmt und nicht eine zweite, frei gewählte Farbe daneben.
+  const hell = mische(ton, '#FFFFFF', 0.24)
   return [
-    `<defs><linearGradient id="mx-bg-${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${von}"/><stop offset="1" stop-color="${bis}"/></linearGradient></defs>`,
+    `<defs><linearGradient id="mx-bg-${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${hell}"/><stop offset="1" stop-color="${ton}"/></linearGradient></defs>`,
     `<rect x="6" y="6" width="116" height="116" rx="34" fill="url(#mx-bg-${id})" stroke="#FFFFFF" stroke-width="4"/>`,
     '<ellipse cx="46" cy="38" rx="30" ry="20" fill="#FFFFFF" opacity="0.16"/>',
   ]
@@ -114,8 +135,8 @@ export function baueSticker(rezept: MixRezept): MixSticker | null {
 
   const hintergrund = MIX_HINTERGRUENDE.find((eintrag) => eintrag.id === normal.hintergrund)
   const teile: string[] = []
-  if (hintergrund && hintergrund.id !== 'ohne') {
-    teile.push(...hintergrundSvg(hintergrund.id, hintergrund.von, hintergrund.bis))
+  if (hintergrund?.ton) {
+    teile.push(...hintergrundSvg(hintergrund.id, hintergrund.ton))
   }
 
   const lagen = LAGEN[normal.emojis.length] ?? LAGEN[3]
@@ -123,7 +144,7 @@ export function baueSticker(rezept: MixRezept): MixSticker | null {
     teile.push(emojiGruppe(emoji, lagen[index]))
   })
 
-  if (normal.funken) teile.push(funkenSvg())
+  if (normal.sterne) teile.push(sterneSvg())
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" aria-hidden="true" focusable="false">${teile.join('')}</svg>`
 

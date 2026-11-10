@@ -9108,6 +9108,15 @@
       "mixer": "Mixer",
       "emojis": "Emojis"
     },
+    "stickerThemes": {
+      "label": "Thema",
+      "emotes": "Emotes",
+      "love": "Liebe",
+      "food": "Essen",
+      "gaming": "Gaming",
+      "technology": "Technik",
+      "carsTravel": "Auto & Reisen"
+    },
     "mixer": {
       "title": "Sticker bauen",
       "description": "Wähle bis zu drei Emoji, einen Hintergrund und schicke deinen Sticker.",
@@ -9134,14 +9143,9 @@
       "clear": "Sammlung leeren",
       "backgroundsLabel": "Hintergrund",
       "backgrounds": {
-        "ohne": "Ohne",
-        "sonne": "Sonne",
-        "nacht": "Nacht",
-        "minze": "Minze",
-        "pfirsich": "Pfirsich",
-        "beere": "Beere"
+        "ohne": "Ohne"
       },
-      "sparkles": "Funken",
+      "sparkles": "Sternchen",
       "categories": {
         "gesichter": "Gesichter",
         "tiere": "Tiere",

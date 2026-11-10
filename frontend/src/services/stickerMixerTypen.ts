@@ -7,32 +7,54 @@
  * `assets/twemoji` und wird nur von `stickerMixer` geladen.
  */
 
+import { FARB_PALETTE } from '@/config/farbpalette'
+
 export const MAX_MIX_EMOJI = 3
 
-export type MixHintergrundId = 'ohne' | 'sonne' | 'nacht' | 'minze' | 'pfirsich' | 'beere'
+/**
+ * Die Hintergründe sind die sechs Grundtöne der Rollen- und Kalenderpalette
+ * (`FARB_PALETTE`, dieselben Werte wie `ROLE_COLOR_PRESETS`). So gibt es keine
+ * eigene Farbliste im Mixer, und ein neuer Ton kommt an einer Stelle dazu.
+ */
+export type MixHintergrundId =
+  | 'ohne'
+  | 'primary'
+  | 'emerald'
+  | 'amber'
+  | 'rose'
+  | 'purple'
+  | 'cyan'
 
 export interface MixHintergrund {
   id: MixHintergrundId
   labelKey: string
-  /** Leer bei `ohne`: dort wird keine Fläche gezeichnet. */
-  von: string
-  bis: string
+  /** Der kräftige Grundton; leer bei `ohne`. */
+  ton: string
 }
 
+const MIX_FARBEN: Exclude<MixHintergrundId, 'ohne'>[] = [
+  'primary',
+  'emerald',
+  'amber',
+  'rose',
+  'purple',
+  'cyan',
+]
+
 export const MIX_HINTERGRUENDE: MixHintergrund[] = [
-  { id: 'ohne', labelKey: 'messenger.mixer.backgrounds.ohne', von: '', bis: '' },
-  { id: 'sonne', labelKey: 'messenger.mixer.backgrounds.sonne', von: '#FDBA74', bis: '#F43F5E' },
-  { id: 'nacht', labelKey: 'messenger.mixer.backgrounds.nacht', von: '#475569', bis: '#0F172A' },
-  { id: 'minze', labelKey: 'messenger.mixer.backgrounds.minze', von: '#6EE7B7', bis: '#059669' },
-  { id: 'pfirsich', labelKey: 'messenger.mixer.backgrounds.pfirsich', von: '#FDA4AF', bis: '#E11D48' },
-  { id: 'beere', labelKey: 'messenger.mixer.backgrounds.beere', von: '#C084FC', bis: '#6D28D9' },
+  { id: 'ohne', labelKey: 'messenger.mixer.backgrounds.ohne', ton: '' },
+  ...MIX_FARBEN.flatMap((id) => {
+    const farbe = FARB_PALETTE.find((eintrag) => eintrag.id === id)
+    return farbe ? [{ id, labelKey: farbe.labelKey, ton: farbe.ton }] : []
+  }),
 ]
 
 export interface MixRezept {
   /** 1 bis 3 Emoji; Duplikate sind erlaubt. */
   emojis: string[]
   hintergrund: MixHintergrundId
-  funken: boolean
+  /** Kleine Sterne um das Motiv. */
+  sterne: boolean
 }
 
 export interface MixSticker {
@@ -42,7 +64,7 @@ export interface MixSticker {
   mix: true
 }
 
-export const STANDARD_REZEPT: MixRezept = { emojis: [], hintergrund: 'ohne', funken: false }
+export const STANDARD_REZEPT: MixRezept = { emojis: [], hintergrund: 'ohne', sterne: false }
 
 export type MixKategorieId = 'gesichter' | 'tiere' | 'symbole' | 'essen'
 
@@ -124,14 +146,14 @@ export function normalisiereRezept(rezept: Partial<MixRezept> | null | undefined
   return {
     emojis: emojis.slice(0, MAX_MIX_EMOJI),
     hintergrund,
-    funken: Boolean(rezept?.funken),
+    sterne: Boolean(rezept?.sterne),
   }
 }
 
 /** FNV-1a über das normalisierte Rezept: gleicher Mix, gleiche Kennung. */
 export function mischerHash(rezept: MixRezept): string {
   const normal = normalisiereRezept(rezept)
-  const text = `${normal.emojis.join('')}|${normal.hintergrund}|${normal.funken ? '1' : '0'}`
+  const text = `${normal.emojis.join('')}|${normal.hintergrund}|${normal.sterne ? '1' : '0'}`
   let hash = 0x811c9dc5
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i)

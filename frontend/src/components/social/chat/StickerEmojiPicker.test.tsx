@@ -40,10 +40,17 @@ describe('StickerEmojiPicker', () => {
     expect(onReiter).toHaveBeenCalledWith('mixer')
   })
 
-  it('sendet einen handgezeichneten Sticker unverändert', () => {
+  it('sendet einen System-Sticker nur mit seiner Kennung', () => {
     const { onSticker } = zeige('stickers')
-    fireEvent.click(screen.getByRole('button', { name: /Singra Shield/ }))
-    expect(onSticker).toHaveBeenCalledWith(expect.objectContaining({ id: 'singra-logo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Emotes 1' }))
+    expect(onSticker).toHaveBeenCalledWith({ id: 'sys-emotes-hello-wave', label: 'Emotes' })
+  })
+
+  it('sortiert die System-Sticker nach Thema', () => {
+    const { onSticker } = zeige('stickers')
+    fireEvent.click(screen.getByRole('button', { name: 'Essen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Essen 1' }))
+    expect(onSticker).toHaveBeenCalledWith({ id: 'sys-food-burger', label: 'Essen' })
   })
 
   it('öffnet den Mixer, baut einen Sticker und sendet ihn', async () => {

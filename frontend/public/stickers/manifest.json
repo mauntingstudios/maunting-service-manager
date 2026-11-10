@@ -1,0 +1,902 @@
+[
+  {
+    "index": 1,
+    "category": "emotes",
+    "filename": "emotes/01_hello_wave.png",
+    "center": [
+      91.2,
+      98.3
+    ],
+    "source_bbox": [
+      19,
+      17,
+      166,
+      173
+    ]
+  },
+  {
+    "index": 2,
+    "category": "emotes",
+    "filename": "emotes/02_heart_hug.png",
+    "center": [
+      250.9,
+      97.0
+    ],
+    "source_bbox": [
+      182,
+      17,
+      329,
+      174
+    ]
+  },
+  {
+    "index": 3,
+    "category": "emotes",
+    "filename": "emotes/03_rose_bouquet.png",
+    "center": [
+      404.2,
+      94.1
+    ],
+    "source_bbox": [
+      334,
+      19,
+      472,
+      173
+    ]
+  },
+  {
+    "index": 4,
+    "category": "emotes",
+    "filename": "emotes/04_love_smile.png",
+    "center": [
+      546.4,
+      95.5
+    ],
+    "source_bbox": [
+      480,
+      17,
+      611,
+      171
+    ]
+  },
+  {
+    "index": 5,
+    "category": "emotes",
+    "filename": "emotes/05_cozy_cuddle.png",
+    "center": [
+      697.6,
+      108.5
+    ],
+    "source_bbox": [
+      627,
+      24,
+      767,
+      174
+    ]
+  },
+  {
+    "index": 6,
+    "category": "emotes",
+    "filename": "emotes/06_sleepy_cat.png",
+    "center": [
+      851.7,
+      106.5
+    ],
+    "source_bbox": [
+      783,
+      19,
+      926,
+      173
+    ]
+  },
+  {
+    "index": 7,
+    "category": "emotes",
+    "filename": "emotes/07_dreamy_cat.png",
+    "center": [
+      1005.4,
+      94.5
+    ],
+    "source_bbox": [
+      935,
+      16,
+      1074,
+      173
+    ]
+  },
+  {
+    "index": 8,
+    "category": "emotes",
+    "filename": "emotes/08_coffee_lover.png",
+    "center": [
+      1164.3,
+      104.4
+    ],
+    "source_bbox": [
+      1088,
+      32,
+      1240,
+      174
+    ]
+  },
+  {
+    "index": 9,
+    "category": "emotes",
+    "filename": "emotes/09_music_headphones.png",
+    "center": [
+      1312.6,
+      97.8
+    ],
+    "source_bbox": [
+      1250,
+      23,
+      1377,
+      170
+    ]
+  },
+  {
+    "index": 10,
+    "category": "emotes",
+    "filename": "emotes/10_heart_eyes.png",
+    "center": [
+      1456.9,
+      99.8
+    ],
+    "source_bbox": [
+      1387,
+      20,
+      1524,
+      170
+    ]
+  },
+  {
+    "index": 11,
+    "category": "love",
+    "filename": "love/11_sending_love.png",
+    "center": [
+      83.5,
+      273.4
+    ],
+    "source_bbox": [
+      11,
+      199,
+      158,
+      343
+    ]
+  },
+  {
+    "index": 12,
+    "category": "love",
+    "filename": "love/12_cat_cuddle.png",
+    "center": [
+      247.2,
+      272.9
+    ],
+    "source_bbox": [
+      182,
+      196,
+      315,
+      332
+    ]
+  },
+  {
+    "index": 13,
+    "category": "love",
+    "filename": "love/13_couple_hug.png",
+    "center": [
+      392.7,
+      270.7
+    ],
+    "source_bbox": [
+      330,
+      203,
+      458,
+      331
+    ]
+  },
+  {
+    "index": 14,
+    "category": "love",
+    "filename": "love/14_sunset_together.png",
+    "center": [
+      545.5,
+      268.5
+    ],
+    "source_bbox": [
+      477,
+      198,
+      616,
+      334
+    ]
+  },
+  {
+    "index": 15,
+    "category": "love",
+    "filename": "love/15_forever_together.png",
+    "center": [
+      700.4,
+      268.7
+    ],
+    "source_bbox": [
+      631,
+      199,
+      771,
+      333
+    ]
+  },
+  {
+    "index": 16,
+    "category": "love",
+    "filename": "love/16_heart_hands.png",
+    "center": [
+      853.2,
+      267.0
+    ],
+    "source_bbox": [
+      790,
+      201,
+      916,
+      328
+    ]
+  },
+  {
+    "index": 17,
+    "category": "love",
+    "filename": "love/17_love_letter.png",
+    "center": [
+      1001.6,
+      261.0
+    ],
+    "source_bbox": [
+      931,
+      201,
+      1073,
+      322
+    ]
+  },
+  {
+    "index": 18,
+    "category": "love",
+    "filename": "love/18_heart_frame.png",
+    "center": [
+      1158.9,
+      254.8
+    ],
+    "source_bbox": [
+      1087,
+      196,
+      1232,
+      327
+    ]
+  },
+  {
+    "index": 19,
+    "category": "love",
+    "filename": "love/19_heart_lock.png",
+    "center": [
+      1307.0,
+      259.5
+    ],
+    "source_bbox": [
+      1245,
+      197,
+      1370,
+      328
+    ]
+  },
+  {
+    "index": 20,
+    "category": "love",
+    "filename": "love/20_promise_rings.png",
+    "center": [
+      1454.6,
+      269.0
+    ],
+    "source_bbox": [
+      1388,
+      200,
+      1524,
+      322
+    ]
+  },
+  {
+    "index": 21,
+    "category": "food",
+    "filename": "food/21_burger.png",
+    "center": [
+      84.0,
+      432.2
+    ],
+    "source_bbox": [
+      19,
+      358,
+      154,
+      497
+    ]
+  },
+  {
+    "index": 22,
+    "category": "food",
+    "filename": "food/22_pizza_slice.png",
+    "center": [
+      242.9,
+      422.2
+    ],
+    "source_bbox": [
+      173,
+      357,
+      302,
+      491
+    ]
+  },
+  {
+    "index": 23,
+    "category": "food",
+    "filename": "food/23_ramen.png",
+    "center": [
+      396.7,
+      422.1
+    ],
+    "source_bbox": [
+      327,
+      353,
+      472,
+      497
+    ]
+  },
+  {
+    "index": 24,
+    "category": "food",
+    "filename": "food/24_sushi.png",
+    "center": [
+      558.7,
+      435.6
+    ],
+    "source_bbox": [
+      492,
+      362,
+      628,
+      502
+    ]
+  },
+  {
+    "index": 25,
+    "category": "food",
+    "filename": "food/25_heart_fries.png",
+    "center": [
+      697.2,
+      425.4
+    ],
+    "source_bbox": [
+      633,
+      358,
+      761,
+      491
+    ]
+  },
+  {
+    "index": 26,
+    "category": "food",
+    "filename": "food/26_pancakes.png",
+    "center": [
+      852.5,
+      431.6
+    ],
+    "source_bbox": [
+      776,
+      356,
+      929,
+      491
+    ]
+  },
+  {
+    "index": 27,
+    "category": "food",
+    "filename": "food/27_chocolate_donut.png",
+    "center": [
+      1008.4,
+      422.5
+    ],
+    "source_bbox": [
+      941,
+      359,
+      1076,
+      486
+    ]
+  },
+  {
+    "index": 28,
+    "category": "food",
+    "filename": "food/28_cupcake.png",
+    "center": [
+      1160.0,
+      425.3
+    ],
+    "source_bbox": [
+      1095,
+      349,
+      1221,
+      494
+    ]
+  },
+  {
+    "index": 29,
+    "category": "food",
+    "filename": "food/29_coffee_mug.png",
+    "center": [
+      1308.4,
+      425.9
+    ],
+    "source_bbox": [
+      1246,
+      343,
+      1380,
+      495
+    ]
+  },
+  {
+    "index": 30,
+    "category": "food",
+    "filename": "food/30_bubble_tea.png",
+    "center": [
+      1462.5,
+      424.0
+    ],
+    "source_bbox": [
+      1405,
+      345,
+      1526,
+      498
+    ]
+  },
+  {
+    "index": 31,
+    "category": "gaming",
+    "filename": "gaming/31_gaming_headset.png",
+    "center": [
+      83.4,
+      593.8
+    ],
+    "source_bbox": [
+      11,
+      520,
+      156,
+      660
+    ]
+  },
+  {
+    "index": 32,
+    "category": "gaming",
+    "filename": "gaming/32_victory_gamer.png",
+    "center": [
+      245.1,
+      591.5
+    ],
+    "source_bbox": [
+      170,
+      522,
+      321,
+      657
+    ]
+  },
+  {
+    "index": 33,
+    "category": "gaming",
+    "filename": "gaming/33_vr_headset.png",
+    "center": [
+      397.5,
+      591.8
+    ],
+    "source_bbox": [
+      335,
+      524,
+      461,
+      657
+    ]
+  },
+  {
+    "index": 34,
+    "category": "gaming",
+    "filename": "gaming/34_hooded_gamer.png",
+    "center": [
+      547.9,
+      595.9
+    ],
+    "source_bbox": [
+      482,
+      524,
+      616,
+      657
+    ]
+  },
+  {
+    "index": 35,
+    "category": "gaming",
+    "filename": "gaming/35_afk_cat.png",
+    "center": [
+      701.8,
+      594.5
+    ],
+    "source_bbox": [
+      633,
+      516,
+      768,
+      659
+    ]
+  },
+  {
+    "index": 36,
+    "category": "gaming",
+    "filename": "gaming/36_health_hearts.png",
+    "center": [
+      854.8,
+      597.5
+    ],
+    "source_bbox": [
+      792,
+      544,
+      928,
+      658
+    ]
+  },
+  {
+    "index": 37,
+    "category": "gaming",
+    "filename": "gaming/37_game_controller.png",
+    "center": [
+      1013.4,
+      591.2
+    ],
+    "source_bbox": [
+      940,
+      538,
+      1085,
+      648
+    ]
+  },
+  {
+    "index": 38,
+    "category": "gaming",
+    "filename": "gaming/38_gaming_pc.png",
+    "center": [
+      1163.8,
+      591.8
+    ],
+    "source_bbox": [
+      1102,
+      522,
+      1223,
+      659
+    ]
+  },
+  {
+    "index": 39,
+    "category": "gaming",
+    "filename": "gaming/39_gaming_monitor.png",
+    "center": [
+      1311.5,
+      585.9
+    ],
+    "source_bbox": [
+      1242,
+      522,
+      1378,
+      652
+    ]
+  },
+  {
+    "index": 40,
+    "category": "gaming",
+    "filename": "gaming/40_winner_crown.png",
+    "center": [
+      1461.1,
+      592.6
+    ],
+    "source_bbox": [
+      1396,
+      537,
+      1527,
+      639
+    ]
+  },
+  {
+    "index": 41,
+    "category": "technology",
+    "filename": "technology/41_laptop_cat.png",
+    "center": [
+      81.3,
+      760.8
+    ],
+    "source_bbox": [
+      9,
+      691,
+      165,
+      819
+    ]
+  },
+  {
+    "index": 42,
+    "category": "technology",
+    "filename": "technology/42_code_screen.png",
+    "center": [
+      243.3,
+      752.8
+    ],
+    "source_bbox": [
+      184,
+      681,
+      303,
+      823
+    ]
+  },
+  {
+    "index": 43,
+    "category": "technology",
+    "filename": "technology/43_tech_wrench.png",
+    "center": [
+      392.8,
+      748.3
+    ],
+    "source_bbox": [
+      321,
+      682,
+      461,
+      824
+    ]
+  },
+  {
+    "index": 44,
+    "category": "technology",
+    "filename": "technology/44_settings_gears.png",
+    "center": [
+      547.3,
+      755.3
+    ],
+    "source_bbox": [
+      474,
+      685,
+      612,
+      824
+    ]
+  },
+  {
+    "index": 45,
+    "category": "technology",
+    "filename": "technology/45_server_stack.png",
+    "center": [
+      690.6,
+      755.6
+    ],
+    "source_bbox": [
+      626,
+      686,
+      756,
+      823
+    ]
+  },
+  {
+    "index": 46,
+    "category": "technology",
+    "filename": "technology/46_cloud_upload.png",
+    "center": [
+      846.4,
+      754.2
+    ],
+    "source_bbox": [
+      768,
+      690,
+      925,
+      815
+    ]
+  },
+  {
+    "index": 47,
+    "category": "technology",
+    "filename": "technology/47_security_shield.png",
+    "center": [
+      1002.8,
+      747.7
+    ],
+    "source_bbox": [
+      935,
+      665,
+      1073,
+      826
+    ]
+  },
+  {
+    "index": 48,
+    "category": "technology",
+    "filename": "technology/48_wifi_signal.png",
+    "center": [
+      1152.4,
+      751.6
+    ],
+    "source_bbox": [
+      1088,
+      683,
+      1217,
+      822
+    ]
+  },
+  {
+    "index": 49,
+    "category": "technology",
+    "filename": "technology/49_battery_full.png",
+    "center": [
+      1301.5,
+      753.9
+    ],
+    "source_bbox": [
+      1240,
+      676,
+      1373,
+      821
+    ]
+  },
+  {
+    "index": 50,
+    "category": "technology",
+    "filename": "technology/50_idea_cat.png",
+    "center": [
+      1454.9,
+      748.9
+    ],
+    "source_bbox": [
+      1391,
+      666,
+      1518,
+      825
+    ]
+  },
+  {
+    "index": 51,
+    "category": "cars_travel",
+    "filename": "cars_travel/51_sports_car.png",
+    "center": [
+      94.0,
+      927.7
+    ],
+    "source_bbox": [
+      14,
+      852,
+      170,
+      993
+    ]
+  },
+  {
+    "index": 52,
+    "category": "cars_travel",
+    "filename": "cars_travel/52_cool_driver.png",
+    "center": [
+      255.3,
+      928.4
+    ],
+    "source_bbox": [
+      185,
+      852,
+      334,
+      994
+    ]
+  },
+  {
+    "index": 53,
+    "category": "cars_travel",
+    "filename": "cars_travel/53_racing_flag.png",
+    "center": [
+      400.5,
+      917.3
+    ],
+    "source_bbox": [
+      340,
+      864,
+      467,
+      987
+    ]
+  },
+  {
+    "index": 54,
+    "category": "cars_travel",
+    "filename": "cars_travel/54_tire.png",
+    "center": [
+      538.0,
+      932.9
+    ],
+    "source_bbox": [
+      449,
+      861,
+      609,
+      994
+    ]
+  },
+  {
+    "index": 55,
+    "category": "cars_travel",
+    "filename": "cars_travel/55_speedometer.png",
+    "center": [
+      694.0,
+      926.4
+    ],
+    "source_bbox": [
+      622,
+      860,
+      766,
+      985
+    ]
+  },
+  {
+    "index": 56,
+    "category": "cars_travel",
+    "filename": "cars_travel/56_fuel_pump.png",
+    "center": [
+      844.6,
+      928.1
+    ],
+    "source_bbox": [
+      780,
+      855,
+      916,
+      998
+    ]
+  },
+  {
+    "index": 57,
+    "category": "cars_travel",
+    "filename": "cars_travel/57_road_trip.png",
+    "center": [
+      1002.3,
+      929.0
+    ],
+    "source_bbox": [
+      933,
+      858,
+      1072,
+      996
+    ]
+  },
+  {
+    "index": 58,
+    "category": "cars_travel",
+    "filename": "cars_travel/58_camping_tent.png",
+    "center": [
+      1157.4,
+      925.4
+    ],
+    "source_bbox": [
+      1077,
+      848,
+      1236,
+      994
+    ]
+  },
+  {
+    "index": 59,
+    "category": "cars_travel",
+    "filename": "cars_travel/59_camping_coffee.png",
+    "center": [
+      1307.1,
+      932.5
+    ],
+    "source_bbox": [
+      1250,
+      850,
+      1374,
+      992
+    ]
+  },
+  {
+    "index": 60,
+    "category": "cars_travel",
+    "filename": "cars_travel/60_mountains.png",
+    "center": [
+      1452.6,
+      928.2
+    ],
+    "source_bbox": [
+      1382,
+      863,
+      1524,
+      987
+    ]
+  }
+]

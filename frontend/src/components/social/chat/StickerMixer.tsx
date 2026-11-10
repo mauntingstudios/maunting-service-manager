@@ -1,5 +1,5 @@
 /**
- * Der Sticker-Mixer: Emoji wählen, Hintergrund und Funken einstellen, senden.
+ * Der Sticker-Mixer: Emoji wählen, Hintergrund und Sterne einstellen, senden.
  *
  * Der Dialog lebt im Picker und wird nur beim Öffnen geladen. Gesendet wird ein
  * fertiges SVG über denselben `sticker_attachment`-Weg wie die handgezeichneten
@@ -59,7 +59,7 @@ export function StickerMixer({
   const { t } = useTranslation()
   const titelId = useId()
   const beschreibungId = useId()
-  const funkenId = useId()
+  const sterneId = useId()
 
   const [kategorie, setKategorie] = useState<EmojiKategorieId>('gesichter')
   const [sammlung, setSammlung] = useState<MixSammlungEintrag[]>([])
@@ -272,9 +272,7 @@ export function StickerMixer({
                           <span
                             aria-hidden="true"
                             className="h-8 w-8 rounded-full"
-                            style={{
-                              background: `linear-gradient(135deg, ${hintergrund.von} 0%, ${hintergrund.bis} 100%)`,
-                            }}
+                            style={{ backgroundColor: hintergrund.ton }}
                           />
                         )}
                         {gewaehlt && (
@@ -293,14 +291,14 @@ export function StickerMixer({
             </section>
 
             <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface-container/60 px-3 py-2">
-              <span id={funkenId} className="flex items-center gap-2 text-sm text-on-surface">
+              <span id={sterneId} className="flex items-center gap-2 text-sm text-on-surface">
                 <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
                 {t('messenger.mixer.sparkles')}
               </span>
               <Switch
-                checked={rezept.funken}
-                aria-labelledby={funkenId}
-                onCheckedChange={(geprueft) => onRezept({ ...rezept, funken: geprueft })}
+                checked={rezept.sterne}
+                aria-labelledby={sterneId}
+                onCheckedChange={(geprueft) => onRezept({ ...rezept, sterne: geprueft })}
               />
             </div>
 
@@ -378,7 +376,7 @@ export function StickerMixer({
                 disabled={
                   rezept.emojis.length === 0 &&
                   rezept.hintergrund === STANDARD_REZEPT.hintergrund &&
-                  !rezept.funken
+                  !rezept.sterne
                 }
                 onClick={() => onRezept({ ...STANDARD_REZEPT })}
               >

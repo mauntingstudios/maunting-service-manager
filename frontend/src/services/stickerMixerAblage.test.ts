@@ -26,8 +26,8 @@ import { ladeHintergrundZeile, speichereHintergrundZeile } from './messengerLoca
 
 const rezept = (teile: Partial<MixRezept> = {}): MixRezept => ({
   emojis: ['🔥'],
-  hintergrund: 'sonne',
-  funken: true,
+  hintergrund: 'amber',
+  sterne: true,
   ...teile,
 })
 
@@ -88,15 +88,15 @@ describe('stickerMixerAblage', () => {
     speicher.zeilen.set('mix:sammlung', {
       schluessel: 'mix:sammlung',
       eintraege: [
-        { rezept: { emojis: ['🔥', '🫠'], hintergrund: 'gibt-es-nicht', funken: 1 }, zuletzt: 5 },
-        { rezept: { emojis: [], hintergrund: 'sonne', funken: false }, zuletzt: 9 },
+        { rezept: { emojis: ['🔥', '🫠'], hintergrund: 'gibt-es-nicht', sterne: 1 }, zuletzt: 5 },
+        { rezept: { emojis: [], hintergrund: 'amber', sterne: false }, zuletzt: 9 },
         'kaputt',
       ],
     })
 
     const geladen = await ladeMixSammlung()
     expect(geladen).toHaveLength(1)
-    expect(geladen[0].rezept).toEqual({ emojis: ['🔥'], hintergrund: 'ohne', funken: true })
+    expect(geladen[0].rezept).toEqual({ emojis: ['🔥'], hintergrund: 'ohne', sterne: true })
   })
 
   it('leert die Sammlung', async () => {

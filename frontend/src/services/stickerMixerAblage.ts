@@ -41,7 +41,7 @@ function alsEintrag(roh: unknown): MixSammlungEintrag | null {
   const rezept = normalisiereRezept({
     emojis: Array.isArray(quelle.emojis) ? (quelle.emojis as string[]) : [],
     hintergrund: quelle.hintergrund as MixRezept['hintergrund'],
-    funken: Boolean(quelle.funken),
+    sterne: Boolean(quelle.sterne),
   })
   if (!rezept.emojis.length) return null
   const zuletzt = Number(daten.zuletzt)

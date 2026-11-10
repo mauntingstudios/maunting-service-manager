@@ -92,17 +92,17 @@ describe('StickerMixer', () => {
     fireEvent.click(screen.getByRole('button', { name: '😀 hinzufügen' }))
     expect(screen.getByRole('button', { name: 'Ohne' })).toHaveAttribute('aria-pressed', 'true')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sonne' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Blau' }))
 
     const vorschau = screen.getByRole('img', { name: '😀' })
-    expect(vorschau.querySelector('[id="mx-bg-sonne"]')).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Sonne' })).toHaveAttribute('aria-pressed', 'true')
+    expect(vorschau.querySelector('[id="mx-bg-primary"]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Blau' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Ohne' })).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('schaltet Funken über einen benannten Schalter', async () => {
+  it('schaltet Sternchen über einen benannten Schalter', async () => {
     await zeige(vi.fn())
-    const schalter = screen.getByRole('switch', { name: 'Funken' })
+    const schalter = screen.getByRole('switch', { name: 'Sternchen' })
     expect(schalter).toHaveAttribute('aria-checked', 'false')
 
     fireEvent.click(schalter)
@@ -113,14 +113,14 @@ describe('StickerMixer', () => {
   it('setzt alles auf den Standard zurück', async () => {
     await zeige(vi.fn())
     fireEvent.click(screen.getByRole('button', { name: '😀 hinzufügen' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Sonne' }))
-    fireEvent.click(screen.getByRole('switch', { name: 'Funken' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Blau' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Sternchen' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }))
 
     expect(screen.queryByRole('img', { name: '😀' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Ohne' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('switch', { name: 'Funken' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('switch', { name: 'Sternchen' })).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('button', { name: 'Senden' })).toBeDisabled()
   })
 
@@ -131,7 +131,7 @@ describe('StickerMixer', () => {
     fireEvent.click(screen.getByRole('button', { name: '😀 hinzufügen' }))
     fireEvent.click(screen.getByRole('button', { name: 'Senden' }))
 
-    expect(merkeMix).toHaveBeenCalledWith({ emojis: ['😀'], hintergrund: 'ohne', funken: false })
+    expect(merkeMix).toHaveBeenCalledWith({ emojis: ['😀'], hintergrund: 'ohne', sterne: false })
     expect(onSticker).toHaveBeenCalledWith(
       expect.objectContaining({ id: expect.stringMatching(/^mix-/), label: '😀', mix: true }),
     )
@@ -148,13 +148,13 @@ describe('StickerMixer', () => {
     expect(onSticker).toHaveBeenCalledWith(expect.objectContaining({ label: '🔥🐱', mix: true }))
     expect(merkeMix).toHaveBeenCalledWith({
       emojis: ['🔥', '🐱'],
-      hintergrund: 'sonne',
-      funken: true,
+      hintergrund: 'amber',
+      sterne: true,
     })
   })
 
   it('bietet die gesendete Sammlung an und leert sie', async () => {
-    const rezept: MixRezept = { emojis: ['🦄'], hintergrund: 'beere', funken: false }
+    const rezept: MixRezept = { emojis: ['🦄'], hintergrund: 'rose', sterne: false }
     vi.mocked(ladeMixSammlung).mockResolvedValueOnce([
       { id: rezeptId(rezept), rezept, zuletzt: 1 },
     ])
