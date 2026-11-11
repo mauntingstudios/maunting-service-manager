@@ -514,6 +514,67 @@ def test_browser_suche_zusammenfassung_route(db, monkeypatch) -> None:
     assert 'data: {"type": "done"}' in body
 
 
+def test_zusammenfassung_route_streamt_nach_dem_ende_der_request_sitzung(clean_db, monkeypatch) -> None:
+    """FastAPI gibt die Request-Session frei, bevor der Strom läuft.
+
+    Bis 11/2026 griff der Generator danach auf `user.is_owner` zu und starb mit
+    `DetachedInstanceError`; der Client sah nur eine leere Antwort. Hier läuft
+    die echte Rechteprüfung (kein Mock) über die Route.
+    """
+    from database import SessionLocal
+
+    sitzung = SessionLocal()
+    try:
+        user = User(
+            username="stream_owner",
+            password_hash="pw",
+            is_active=True,
+            is_owner=True,
+        )
+        p = AiProvider(
+            name="Stream Provider",
+            provider_kind="openai",
+            default_model="gpt-4o",
+            enabled=True,
+            requires_api_key=False,
+            search_summary_enabled=True,
+            search_summary_model="gpt-4o-mini",
+        )
+        sitzung.add(user)
+        sitzung.add(p)
+        sitzung.commit()
+        user_id = user.id
+    finally:
+        sitzung.close()
+
+    app = FastAPI()
+    app.include_router(browser_suche.router)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=user_id)
+    app.dependency_overrides[verify_csrf] = lambda: None
+
+    async def fake_stream(*args, **kwargs) -> AsyncIterator[StreamChunk]:
+        yield StreamChunk(kind="content", text="Antwort")
+
+    monkeypatch.setattr(ai_search_summary_service, "stream_chat_completion", fake_stream)
+
+    client = TestClient(app)
+    with client.stream(
+        "POST",
+        "/api/browser/suche/zusammenfassung",
+        json={
+            "q": "Wann kommt GTA 6?",
+            "treffer": [{"index": 1, "titel": "GTA 6", "url": "https://test.local", "inhalt": "19.11.2026"}],
+            "verlauf": [],
+        },
+    ) as resp:
+        assert resp.status_code == 200
+        body = "".join(resp.iter_text())
+
+    assert '"type": "start"' in body
+    assert "Antwort" in body
+    assert '"type": "done"' in body
+
+
 def test_browser_suche_konfig_route(db, monkeypatch) -> None:
     app = FastAPI()
     app.include_router(browser_suche.router)

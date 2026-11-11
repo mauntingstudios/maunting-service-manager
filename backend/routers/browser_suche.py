@@ -185,7 +185,6 @@ def suche_bild_proxy(
 async def suchzusammenfassung_stream(
     req: SucheZusammenfassungAnfrage,
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
     __=Depends(verify_csrf),
 ) -> StreamingResponse:
     if not limiter.limiter.hit(_zusammenfassung_grenze, f"browser-suche-zusammenfassung:{user.id}"):
@@ -194,10 +193,11 @@ async def suchzusammenfassung_stream(
     treffer_dict = [t.model_dump() for t in req.treffer]
     verlauf_dict = [v.model_dump() for v in req.verlauf]
 
+    # Nur die Kennung mitgeben: FastAPI gibt die Request-Session frei, bevor
+    # der Strom läuft. Der Dienst öffnet sich seine eigene (siehe dort).
     return StreamingResponse(
         ai_search_summary_service.stream_suchzusammenfassung(
-            db=db,
-            user=user,
+            user_id=user.id,
             q=req.q,
             treffer=treffer_dict,
             verlauf=verlauf_dict,

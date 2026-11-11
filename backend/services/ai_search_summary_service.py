@@ -391,6 +391,47 @@ def baue_nachrichten(
 
 
 async def stream_suchzusammenfassung(
+    db: Session | None = None,
+    user: User | None = None,
+    q: str = "",
+    treffer: list[dict[str, Any]] | None = None,
+    verlauf: list[dict[str, Any]] | None = None,
+    bevorzugte_id: int | None = None,
+    denkstufe: str | None = None,
+    neue_suche: bool = True,
+    user_id: int | None = None,
+) -> AsyncIterator[str]:
+    """Streamt die Suchzusammenfassung als SSE (text/event-stream).
+
+    Ohne `db`/`user` (so ruft die Route auf) öffnet der Strom seine **eigene**
+    Sitzung. FastAPI gibt die Request-Session frei, bevor der Streaming-Body
+    läuft; mit ihr endete jeder Lauf nach den Kopfzeilen in einem
+    `DetachedInstanceError`. Die Sitzung lebt hier so lange wie der Strom.
+    """
+    if db is not None and user is not None:
+        async for ereignis in _stream_mit_sitzung(
+            db, user, q, treffer or [], verlauf, bevorzugte_id, denkstufe, neue_suche
+        ):
+            yield ereignis
+        return
+
+    from database import SessionLocal
+
+    sitzung = SessionLocal()
+    try:
+        geladen = sitzung.get(User, user_id) if user_id is not None else None
+        if geladen is None:
+            yield f"data: {json.dumps({'type': 'disabled', 'reason': 'permission'})}\n\n"
+            return
+        async for ereignis in _stream_mit_sitzung(
+            sitzung, geladen, q, treffer or [], verlauf, bevorzugte_id, denkstufe, neue_suche
+        ):
+            yield ereignis
+    finally:
+        sitzung.close()
+
+
+async def _stream_mit_sitzung(
     db: Session,
     user: User,
     q: str,
@@ -400,7 +441,6 @@ async def stream_suchzusammenfassung(
     denkstufe: str | None = None,
     neue_suche: bool = True,
 ) -> AsyncIterator[str]:
-    """Streamt die Suchzusammenfassung als SSE (text/event-stream)."""
     # 1. Rechteprüfung
     if not permission_service.has_global_permission(db, user, "ai.chat.use"):
         logger.warning("Suchzusammenfassung abgelehnt grund=permission nutzer=%s", user.id)
