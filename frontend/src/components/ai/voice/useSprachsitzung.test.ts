@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { duckingTestReset, istDuckingAktiv } from '@/lib/audioDucking'
 import { FakeMediaStream, installFakeAudio, type FakeAudioContext } from '@/test/fakeAudio'
 import { FakeWebSocket, installFakeWebSocket } from '@/test/fakeWebSocket'
 import { useSprachsitzung } from './useSprachsitzung'
@@ -40,12 +41,14 @@ async function sitzung() {
 
 describe('useSprachsitzung', () => {
   beforeEach(() => {
+    duckingTestReset()
     audio = installFakeAudio()
     sockets = installFakeWebSocket()
     vi.useFakeTimers({ shouldAdvanceTime: true })
   })
 
   afterEach(() => {
+    duckingTestReset()
     vi.useRealTimers()
     sockets.restore()
     audio.restore()
@@ -981,5 +984,102 @@ describe('useSprachsitzung', () => {
       country: '',
       coordinates: mockGeo.coordinates,
     })
+  })
+
+  it('aktiviert Audio-Ducking für Legacy-Sprachsitzungen erst bei Mikrofonstart und gibt bei Beenden, Fehler und Unmount frei', async () => {
+    const { result, unmount } = renderHook(() => useSprachsitzung())
+    expect(istDuckingAktiv()).toBe(false)
+
+    await act(() => result.current.starten())
+    // Vor Socket-Open ist noch kein Mikrofon offen.
+    expect(istDuckingAktiv()).toBe(false)
+
+    await act(async () => {
+      leitung().simulateOpen()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(istDuckingAktiv()).toBe(true)
+
+    act(() => result.current.beenden())
+    expect(istDuckingAktiv()).toBe(false)
+
+    // Zweiter Lauf: Unmount räumt ebenfalls auf
+    await act(() => result.current.starten())
+    await act(async () => {
+      leitung(1).simulateOpen()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(istDuckingAktiv()).toBe(true)
+
+    unmount()
+    expect(istDuckingAktiv()).toBe(false)
+  })
+
+  it('lässt bei verweigerter Mikrofonfreigabe kein Ducking aktiv', async () => {
+    audio.restore()
+    audio = installFakeAudio({ verweigern: true })
+    const haken = renderHook(() => useSprachsitzung())
+
+    await act(() => haken.result.current.starten())
+    await act(async () => {
+      leitung().simulateOpen()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(haken.result.current.fehler).toBe('ai.voice.errors.microphone'))
+    expect(istDuckingAktiv()).toBe(false)
+  })
+
+  it('aktiviert Audio-Ducking im WebRTC-Realtime-Modus und nimmt das KI-Ausgabe-Audio vom Ducking aus', async () => {
+    class StimmPeer {
+      static instances: StimmPeer[] = []
+      localDescription: RTCSessionDescriptionInit | null = null
+      ontrack: ((event: RTCTrackEvent) => void) | null = null
+      constructor() {
+        StimmPeer.instances.push(this)
+      }
+      addTrack() {}
+      createDataChannel() { return {} }
+      async createOffer() { return { type: 'offer' as const, sdp: 'v=0\r\noffer' } }
+      async setLocalDescription(value: RTCSessionDescriptionInit) { this.localDescription = value }
+      async setRemoteDescription() {}
+      close() {}
+    }
+    const originalPeer = globalThis.RTCPeerConnection
+    ;(globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection = StimmPeer
+    let kiAudio: HTMLMediaElement | null = null
+    const abspielen = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
+      kiAudio = this
+      return Promise.resolve()
+    })
+    try {
+      const haken = renderHook(() => useSprachsitzung(undefined, 'openai_realtime'))
+      await act(() => haken.result.current.starten())
+      await act(async () => {
+        leitung().simulateOpen()
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(istDuckingAktiv()).toBe(true)
+
+      await act(async () => {
+        StimmPeer.instances[0].ontrack?.({ streams: [new FakeMediaStream()] } as unknown as RTCTrackEvent)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(kiAudio).not.toBeNull()
+      expect(kiAudio!.dataset.msmDuckExempt).toBe('true')
+
+      act(() => haken.result.current.beenden())
+      expect(istDuckingAktiv()).toBe(false)
+    } finally {
+      abspielen.mockRestore()
+      if (originalPeer) globalThis.RTCPeerConnection = originalPeer
+      else delete (globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection
+    }
   })
 })

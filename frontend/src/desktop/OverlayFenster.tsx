@@ -44,6 +44,8 @@ import {
   type Sprachzustand,
 } from '@/components/ai/voice/useSprachsitzung'
 import { aiApi } from '@/api/ai'
+import { syncNativeDuckingSettings } from '@/lib/audioSettings'
+import { still } from '@/lib/still'
 import { Aufraeumkarte } from './Aufraeumkarte'
 import { DesktopAktionKarte } from './DesktopAktionKarte'
 import { Uebernahmekarte } from './Uebernahmekarte'
@@ -178,8 +180,9 @@ export function OverlayFenster({ inApp = false }: OverlayFensterProps) {
               autogain: k.audio_autogain,
               verstaerkung: k.audio_verstaerkung,
             })
+            syncNativeDuckingSettings(k.audio_ducking_aktiv, k.audio_ducking_prozent)
           })
-          .catch(() => undefined)
+          .catch((err) => still(err, 'overlay.konfigLaden'))
         // Dieselbe Frage wie das Panel vor seinem Sprachmodus (`Ai.tsx`).
         // Scheitert sie, bleibt der letzte bekannte Weg; der Socket sagt dann
         // selbst, was fehlt.

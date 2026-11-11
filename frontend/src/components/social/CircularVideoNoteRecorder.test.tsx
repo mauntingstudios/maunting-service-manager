@@ -13,6 +13,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
+import { duckingTestReset, istDuckingAktiv } from '@/lib/audioDucking'
 import { saveAudioSettings } from '@/lib/audioSettings'
 import { videoNotizBitraten } from '@/lib/videoNotiz'
 import { videoNotizBudgetBytes } from '@/lib/videoNotiz'
@@ -46,10 +47,12 @@ async function stueck(recorder: (typeof rtc.recorders)[number], bytes: number) {
 
 beforeEach(() => {
   localStorage.clear()
+  duckingTestReset()
   rtc = installFakeWebRtc()
 })
 
 afterEach(() => {
+  duckingTestReset()
   rtc.restore()
   vi.restoreAllMocks()
 })
@@ -307,5 +310,46 @@ describe('Größenwächter', () => {
     await waitFor(() => expect(onComplete).toHaveBeenCalled())
 
     expect(onComplete.mock.calls[0][0].blob.size).toBeLessThanOrEqual(maxAnhangBytes())
+  })
+})
+
+describe('Audio-Ducking bei Videonotiz-Aufnahme', () => {
+  it('aktiviert Ducking während der Aufnahme und gibt es bei Senden, Abbrechen, Fehler und Unmount frei', async () => {
+    // 1. Senden
+    const { unmount } = render(<CircularVideoNoteRecorder onCancel={vi.fn()} onComplete={vi.fn()} />)
+    await rekorder()
+    expect(istDuckingAktiv()).toBe(true)
+
+    await klick(screen.getByRole('button', { name: t('social.videoNote.send') }))
+    await waitFor(() => expect(istDuckingAktiv()).toBe(false))
+    unmount()
+
+    // 2. Abbrechen
+    rtc.restore()
+    rtc = installFakeWebRtc()
+    const ansichtAbbruch = render(<CircularVideoNoteRecorder onCancel={vi.fn()} onComplete={vi.fn()} />)
+    await rekorder()
+    expect(istDuckingAktiv()).toBe(true)
+
+    await klick(screen.getByRole('button', { name: t('common.cancel') }))
+    expect(istDuckingAktiv()).toBe(false)
+    ansichtAbbruch.unmount()
+
+    // 3. Unmount mitten in der Aufnahme
+    rtc.restore()
+    rtc = installFakeWebRtc()
+    const ansichtUnmount = render(<CircularVideoNoteRecorder onCancel={vi.fn()} onComplete={vi.fn()} />)
+    await rekorder()
+    expect(istDuckingAktiv()).toBe(true)
+    ansichtUnmount.unmount()
+    expect(istDuckingAktiv()).toBe(false)
+
+    // 4. Verweigerte Berechtigung lässt kein Ducking aktiv
+    rtc.restore()
+    rtc = installFakeWebRtc({ denyPermission: true })
+    const onCancel = vi.fn()
+    render(<CircularVideoNoteRecorder onCancel={onCancel} onComplete={vi.fn()} />)
+    await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1))
+    expect(istDuckingAktiv()).toBe(false)
   })
 })

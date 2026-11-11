@@ -21,7 +21,9 @@ import { Mic } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button, ProgressBar, Slider, Switch } from '@maunting/ui'
+import { duckingBelegen } from '@/lib/audioDucking'
 import { KI_NAME } from '@/lib/kiName'
+import { still } from '@/lib/still'
 import {
   konfigAendern,
   konfigLaden,
@@ -70,6 +72,12 @@ export function WakewordEinrichtung() {
   /** Bricht die laufende Kalibrierungsschleife ab, ohne zu rendern. */
   const abbruch = useRef(false)
   const schwelleTimer = useRef<number | null>(null)
+  const duckingFrei = useRef<(() => void) | null>(null)
+
+  function freigebenDucking() {
+    duckingFrei.current?.()
+    duckingFrei.current = null
+  }
 
   async function standLaden(): Promise<WakewordStand | null> {
     try {
@@ -110,6 +118,7 @@ export function WakewordEinrichtung() {
     })
     return () => {
       abbruch.current = true
+      freigebenDucking()
       // Der Schwellen-Timer wird bewusst NICHT geräumt: seine Schließung ist
       // in sich geschlossen (frisches Laden, Speichern, Durchstart) — räumen
       // hieße, die letzte gezogene Schwelle wegzuwerfen.
@@ -167,13 +176,16 @@ export function WakewordEinrichtung() {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
           stream.getTracks().forEach((t) => t.stop())
-        } catch (e: any) {
+        } catch (e: unknown) {
+          still(e, 'wakeword.permission')
           setBeschaeftigt(null)
           setMeldung(t('mss.wakeword.keinMikrofon'))
           return
         }
       }
 
+      freigebenDucking()
+      duckingFrei.current = duckingBelegen('wakeword-calibration')
       let aktueller = await standLaden()
       let fehlversuche = 0
       while (
@@ -202,6 +214,7 @@ export function WakewordEinrichtung() {
         setMeldung(t('mss.wakeword.kalibrierungFertig'))
       }
     } finally {
+      freigebenDucking()
       setBeschaeftigt(null)
     }
   }

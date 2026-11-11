@@ -47,6 +47,8 @@ serde_json = "1"
 updater_core = { path = "../../crates/updater_core" }
 # Gemeinsame Fensterform (DWM-Rundung) mit Pontis.
 fensteroptik = { path = "../../crates/fensteroptik" }
+# Gemeinsames WASAPI-Audio-Ducking mit Pontis.
+audio_ducking = { path = "../../crates/audio_ducking" }
 
 # Refresh-Token im OS-Tresor über das geteilte Schlüsselfach (schluesselfach crate).
 schluesselfach = { path = "../../crates/schluesselfach" }

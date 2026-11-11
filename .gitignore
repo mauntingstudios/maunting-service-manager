@@ -171,6 +171,7 @@ logdump.txt
 /frontend/packages/maunting-ui/storybook-static
 
 /crates/fensteroptik/target
+/crates/audio_ducking/target
 
 /frontend/packages/*/node_modules
 /vault-dashboard-template*

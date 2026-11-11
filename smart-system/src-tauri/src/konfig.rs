@@ -65,6 +65,10 @@ pub struct AppKonfig {
     pub audio_autogain: bool,
     /// Software-Eingangsverstärkung der Sprachsitzung (1,0 = neutral).
     pub audio_verstaerkung: f32,
+    /// Ob fremde Audioquellen während aktiver Mikrofonnutzung abgesenkt werden.
+    pub audio_ducking_aktiv: bool,
+    /// Stärke der Audio-Absenkung in Prozent (10–90, Vorgabe 60 = 40 % Restlautstärke).
+    pub audio_ducking_prozent: u8,
     /// Ob Computer-Use (Maus, Tastatur, Bildschirmsteuerung) durch die KI
     /// erlaubt ist. Vorgabe ist `false` (Datenschutz & Sicherheit).
     pub computer_use_aktiv: bool,
@@ -129,6 +133,8 @@ impl Default for AppKonfig {
             audio_rauschen: true,
             audio_autogain: true,
             audio_verstaerkung: 1.0,
+            audio_ducking_aktiv: true,
+            audio_ducking_prozent: audio_ducking::PROZENT_STANDARD,
             computer_use_aktiv: false,
             artifact_install_aktiv: false,
             max_download_bytes: STANDARD_DOWNLOAD_LIMIT_BYTES,
@@ -207,6 +213,7 @@ fn aus_text(text: &str) -> Result<AppKonfig, String> {
     if konfig.backend_url.as_deref().is_some_and(backend_url_verboten) {
         konfig.backend_url = None;
     }
+    konfig.audio_ducking_prozent = audio_ducking::prozent_klemmen(konfig.audio_ducking_prozent);
     Ok(konfig)
 }
 
@@ -321,6 +328,7 @@ pub fn felder_einmischen(konfig: &mut AppKonfig, patch: serde_json::Value) -> Re
         ziel.insert(name, wert);
     }
     *konfig = serde_json::from_value(ganz).map_err(|e| format!("Ungültige Einstellung: {e}"))?;
+    konfig.audio_ducking_prozent = audio_ducking::prozent_klemmen(konfig.audio_ducking_prozent);
     Ok(())
 }
 
@@ -418,6 +426,31 @@ mod tests {
         assert!(konfig.audio_autogain);
         assert_eq!(konfig.audio_verstaerkung, 1.0);
         assert_eq!(konfig.wakeword_schwelle, super::WAKEWORD_SCHWELLE_VORGABE);
+    }
+
+    #[test]
+    fn ducking_vorgaben_in_alten_dateien_und_klemmung_bei_laden_und_einmischen() {
+        let alt = r#"{"eingerichtet": true}"#;
+        let standard = aus_text(alt).unwrap();
+        assert!(standard.audio_ducking_aktiv);
+        assert_eq!(standard.audio_ducking_prozent, audio_ducking::PROZENT_STANDARD);
+
+        let zu_klein = aus_text(r#"{"audio_ducking_prozent": 2}"#).unwrap();
+        assert_eq!(zu_klein.audio_ducking_prozent, audio_ducking::PROZENT_MIN);
+        let zu_gross = aus_text(r#"{"audio_ducking_prozent": 99}"#).unwrap();
+        assert_eq!(zu_gross.audio_ducking_prozent, audio_ducking::PROZENT_MAX);
+
+        let mut konfig = AppKonfig::default();
+        felder_einmischen(
+            &mut konfig,
+            serde_json::json!({"audio_ducking_aktiv": false, "audio_ducking_prozent": 0}),
+        )
+        .unwrap();
+        assert!(!konfig.audio_ducking_aktiv);
+        assert_eq!(konfig.audio_ducking_prozent, audio_ducking::PROZENT_MIN);
+
+        felder_einmischen(&mut konfig, serde_json::json!({"audio_ducking_prozent": 120})).unwrap();
+        assert_eq!(konfig.audio_ducking_prozent, audio_ducking::PROZENT_MAX);
     }
 
     #[test]

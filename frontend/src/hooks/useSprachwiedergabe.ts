@@ -14,11 +14,17 @@ import {
   type MedienBindungsKontext,
 } from '@/components/social/ChatMediaAttachments'
 import type { TonZustand } from '@/components/social/ChatMessageBubble'
+import { registriereDuckerbaresMedium } from '@/lib/audioDucking'
 import { toast } from '@/stores/toastStore'
 
 const TEMPI = [1, 1.5, 2]
 
-function halteAn(laufend: MutableRefObject<HTMLAudioElement | null>) {
+function halteAn(
+  laufend: MutableRefObject<HTMLAudioElement | null>,
+  duckingAbmelden: MutableRefObject<(() => void) | null>,
+) {
+  duckingAbmelden.current?.()
+  duckingAbmelden.current = null
   const audio = laufend.current
   if (!audio) return
   audio.pause()
@@ -34,9 +40,10 @@ export function useSprachwiedergabe(): TonZustand {
   const [audioCurrentTime, setAudioCurrentTime] = useState(0)
   const [audioPlaybackRate, setAudioPlaybackRate] = useState(1)
   const laufend = useRef<HTMLAudioElement | null>(null)
+  const duckingAbmelden = useRef<(() => void) | null>(null)
 
   // Wer den Messenger verlässt, lässt nichts weiterspielen.
-  useEffect(() => () => halteAn(laufend), [])
+  useEffect(() => () => halteAn(laufend, duckingAbmelden), [])
 
   /** Hält die laufende Aufnahme an und spielt diese ab `start` Sekunden. */
   const spiele = async (
@@ -45,7 +52,7 @@ export function useSprachwiedergabe(): TonZustand {
     bindung: MedienBindungsKontext,
     start: number,
   ) => {
-    halteAn(laufend)
+    halteAn(laufend, duckingAbmelden)
     // Die eigene Aufnahme, solange sie lokal liegt; sonst aus dem Medienspeicher.
     const quelle = anhang.dataUrl || (await holeAnhangUrl(anhang, bindung))
     if (!quelle) {
@@ -57,25 +64,34 @@ export function useSprachwiedergabe(): TonZustand {
     audio.playbackRate = audioPlaybackRate
     if (start > 0) audio.currentTime = start
     laufend.current = audio
+    duckingAbmelden.current = registriereDuckerbaresMedium(audio)
     setPlayingAudioId(messageId)
     setAudioCurrentTime(start)
 
     audio.ontimeupdate = () => setAudioCurrentTime(audio.currentTime)
     audio.onended = () => {
+      duckingAbmelden.current?.()
+      duckingAbmelden.current = null
       setPlayingAudioId(null)
       setAudioCurrentTime(0)
       laufend.current = null
     }
     audio.onerror = () => {
+      duckingAbmelden.current?.()
+      duckingAbmelden.current = null
       setPlayingAudioId(null)
       toast.error(t('messenger.voicePlayFailed'))
     }
-    audio.play().catch(() => setPlayingAudioId(null))
+    audio.play().catch(() => {
+      duckingAbmelden.current?.()
+      duckingAbmelden.current = null
+      setPlayingAudioId(null)
+    })
   }
 
   const onTogglePlay: TonZustand['onTogglePlay'] = (messageId, anhang, bindung) => {
     if (playingAudioId === messageId) {
-      halteAn(laufend)
+      halteAn(laufend, duckingAbmelden)
       setPlayingAudioId(null)
       return
     }

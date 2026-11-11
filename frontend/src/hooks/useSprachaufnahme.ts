@@ -11,7 +11,9 @@ import { useTranslation } from 'react-i18next'
 
 import { messengerSocket } from '@/services/messengerSocket'
 import type { AudioAttachment } from '@/components/social/ChatMediaAttachments'
+import { duckingBelegen } from '@/lib/audioDucking'
 import { getAudioTrackConstraints } from '@/lib/audioSettings'
+import { still } from '@/lib/still'
 import { toast } from '@/stores/toastStore'
 
 function getSupportedAudioMimeType(): string {
@@ -47,12 +49,22 @@ export function useSprachaufnahme({ blindMailboxId, chatType, chatId, onFertig }
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const mountAktivRef = useRef(true)
+  const duckingFreiRef = useRef<(() => void) | null>(null)
+
+  const freigebenDucking = () => {
+    duckingFreiRef.current?.()
+    duckingFreiRef.current = null
+  }
 
   // Wer den Messenger verlässt, gibt das Mikrofon frei.
   useEffect(() => {
+    mountAktivRef.current = true
     return () => {
+      mountAktivRef.current = false
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
+      freigebenDucking()
     }
   }, [])
 
@@ -67,7 +79,8 @@ export function useSprachaufnahme({ blindMailboxId, chatType, chatId, onFertig }
       let stream: MediaStream
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: constraints })
-      } catch {
+      } catch (err) {
+        still(err, 'voiceNote.fallbackMic')
         // Fallback without exact deviceId if preferred mic is unavailable
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -76,6 +89,10 @@ export function useSprachaufnahme({ blindMailboxId, chatType, chatId, onFertig }
             autoGainControl: true,
           },
         })
+      }
+      if (!mountAktivRef.current) {
+        stream.getTracks().forEach((t) => t.stop())
+        return
       }
       mediaStreamRef.current = stream
       audioChunksRef.current = []
@@ -92,6 +109,8 @@ export function useSprachaufnahme({ blindMailboxId, chatType, chatId, onFertig }
 
       recorder.start(100)
       mediaRecorderRef.current = recorder
+      freigebenDucking()
+      duckingFreiRef.current = duckingBelegen('voice-note')
       setLaeuft(true)
       setDauer(0)
 
@@ -100,13 +119,16 @@ export function useSprachaufnahme({ blindMailboxId, chatType, chatId, onFertig }
       timerIntervalRef.current = setInterval(() => {
         setDauer((prev) => prev + 1)
       }, 1000)
-    } catch {
+    } catch (err) {
+      still(err, 'voiceNote.start')
+      freigebenDucking()
       toast.error(t('messenger.micDenied'))
     }
   }
 
   /** Beendet die Aufnahme; mit `senden` geht sie an `onFertig`, sonst wird sie verworfen. */
   const beende = (senden: boolean) => {
+    freigebenDucking()
     if (blindMailboxId) tippen('idle')
 
     if (timerIntervalRef.current) {

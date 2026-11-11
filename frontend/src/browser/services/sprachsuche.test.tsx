@@ -1,9 +1,15 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { duckingTestReset, istDuckingAktiv } from '@/lib/audioDucking'
 import { useToastStore } from '@/stores/toastStore'
 import { fehlerKurztext, istSprachsucheMoeglich, useSprachsuche } from './sprachsuche'
-import { istLokalesWhisperMoeglich, starteAudioAufnahme } from './lokalesWhisper'
+import {
+  istLokalesWhisperMoeglich,
+  ladeWhisperModell,
+  starteAudioAufnahme,
+  transkribiereAudioMitWhisper,
+} from './lokalesWhisper'
 import { SprachsucheKnopf } from '../kopf/SprachsucheKnopf'
 
 const { android, sprachEingabe } = vi.hoisted(() => ({
@@ -51,14 +57,20 @@ class FakeSpeechRecognition {
 
 describe('Sprachsuche Hook & Knopf', () => {
   beforeEach(() => {
+    duckingTestReset()
     FakeSpeechRecognition.instanz = null
     android.wert = false
     sprachEingabe.mockReset()
     vi.mocked(starteAudioAufnahme).mockReset()
+    vi.mocked(transkribiereAudioMitWhisper).mockReset()
     ;(window as any).SpeechRecognition = FakeSpeechRecognition
     delete (window as any).webkitSpeechRecognition
     useToastStore.getState().clearAll()
     vi.mocked(istLokalesWhisperMoeglich).mockReturnValue(false)
+  })
+
+  afterEach(() => {
+    duckingTestReset()
   })
 
   it('erkennt, ob Spracherkennung im Browser vorhanden ist', () => {
@@ -197,5 +209,103 @@ describe('Sprachsuche Hook & Knopf', () => {
 
     // Kehrt wieder in Bereitschaft zurück
     expect(screen.getByRole('button', { name: /Sprachsuche starten/i })).toBeInTheDocument()
+  })
+
+  it('aktiviert Audio-Ducking während Web-Speech-Aufnahme und gibt es bei Ende, Fehler und Unmount frei', async () => {
+    const { result, unmount } = renderHook(() => useSprachsuche({ onErgebnis: vi.fn() }))
+    expect(istDuckingAktiv()).toBe(false)
+
+    await act(async () => {
+      await result.current.starten()
+    })
+    expect(istDuckingAktiv()).toBe(true)
+
+    act(() => {
+      FakeSpeechRecognition.instanz?.onerror?.({ error: 'no-speech' })
+    })
+    expect(istDuckingAktiv()).toBe(false)
+
+    // Zweiter Lauf: Freigabe durch Unmount
+    await act(async () => {
+      await result.current.starten()
+    })
+    expect(istDuckingAktiv()).toBe(true)
+
+    unmount()
+    expect(istDuckingAktiv()).toBe(false)
+  })
+
+  it('aktiviert Audio-Ducking im Whisper-Modus und gibt es noch vor der Transkription frei', async () => {
+    vi.mocked(istLokalesWhisperMoeglich).mockReturnValue(true)
+    vi.mocked(ladeWhisperModell).mockResolvedValue(undefined)
+    const abbrechen = vi.fn()
+    vi.mocked(starteAudioAufnahme).mockResolvedValue({
+      stoppen: async () => new Float32Array([0.1, 0.2]),
+      abbrechen,
+    })
+
+    let duckingBeiTranskription: boolean | null = null
+    let loeseTranskription!: (text: string) => void
+    vi.mocked(transkribiereAudioMitWhisper).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          duckingBeiTranskription = istDuckingAktiv()
+          loeseTranskription = resolve
+        }),
+    )
+
+    const { result, unmount } = renderHook(() => useSprachsuche({ onErgebnis: vi.fn() }))
+    await act(async () => {
+      await result.current.starten()
+    })
+    expect(istDuckingAktiv()).toBe(true)
+
+    let stopPromise!: Promise<void>
+    await act(async () => {
+      stopPromise = result.current.stoppen()
+      await Promise.resolve()
+    })
+    // Während bereits lokal transkribiert wird, läuft das Mikrofon nicht mehr -> Ducking aus.
+    expect(duckingBeiTranskription).toBe(false)
+    expect(istDuckingAktiv()).toBe(false)
+
+    await act(async () => {
+      loeseTranskription('fertig')
+      await stopPromise
+    })
+    expect(istDuckingAktiv()).toBe(false)
+
+    // Unmount während aktiver Whisper-Aufnahme gibt ebenfalls frei
+    await act(async () => {
+      await result.current.starten()
+    })
+    expect(istDuckingAktiv()).toBe(true)
+    unmount()
+    expect(abbrechen).toHaveBeenCalledTimes(1)
+    expect(istDuckingAktiv()).toBe(false)
+  })
+
+  it('aktiviert Audio-Ducking während nativer Android-Spracheingabe und räumt beim Abschluss auf', async () => {
+    android.wert = true
+    let loeseEingabe!: (wert: { text: string | null; fehler: null }) => void
+    sprachEingabe.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          loeseEingabe = resolve
+        }),
+    )
+
+    const { result } = renderHook(() => useSprachsuche({ onErgebnis: vi.fn() }))
+    let startPromise!: Promise<void>
+    act(() => {
+      startPromise = result.current.starten()
+    })
+    expect(istDuckingAktiv()).toBe(true)
+
+    await act(async () => {
+      loeseEingabe({ text: 'ok', fehler: null })
+      await startPromise
+    })
+    expect(istDuckingAktiv()).toBe(false)
   })
 })

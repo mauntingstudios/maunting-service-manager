@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   aiApi,
@@ -18,6 +18,7 @@ import {
 import * as client from '@/api/client'
 import i18n from '@/i18n'
 import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
+import { duckingTestReset, istDuckingAktiv } from '@/lib/audioDucking'
 import { entwurfUebergeben } from '@/lib/aiEntwurf'
 import { useAuthStore } from '@/stores/authStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
@@ -180,6 +181,7 @@ const geoKameraNachricht: AiMessage = {
 
 describe('AiChat', () => {
   beforeEach(async () => {
+    duckingTestReset()
     Element.prototype.scrollIntoView = vi.fn()
     // Der Chat merkt sich Modell und Denkstufe im localStorage. Ohne dieses
     // Leeren truege ein Test die Wahl des vorigen in den naechsten — genau
@@ -237,6 +239,10 @@ describe('AiChat', () => {
     vi.mocked(aiApi.typing).mockReset().mockResolvedValue(undefined)
     vi.mocked(attachAiRun).mockReset().mockResolvedValue(undefined)
     vi.mocked(streamAiMessage).mockReset().mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    duckingTestReset()
   })
 
   it('sendet im Dokument-Scope über die Dokument-API', async () => {
@@ -1536,5 +1542,72 @@ describe('AiChat', () => {
 
     const statusIcon = screen.getByRole('img', { name: 'Von Singra gelesen' })
     expect(statusIcon).toBeInTheDocument()
+  })
+
+  it('regelt beim KI-Diktat das Audio-Ducking ein und vor der Transkription sowie bei Abbruch/Unmount wieder frei', async () => {
+    const { starteAufnahme } = await import('./voice/audioAufnahme')
+    usePermissionsStore.setState({
+      me: {
+        is_owner: false, role_id: null, role_name: null,
+        global_keys: ['ai.chat.use', 'ai.voice.use'],
+        server_keys: {},
+      },
+      isLoading: false,
+      error: null,
+    })
+    vi.mocked(aiApi.getVoiceConfig).mockResolvedValue({
+      available: true,
+      mode: 'openai_realtime',
+      model: 'gpt-realtime',
+      voice: 'marin',
+      language: 'de',
+      dictation_available: true,
+      sample_rate: 24_000,
+      max_seconds: 900,
+    })
+    let duckingBeiTranskription: boolean | null = null
+    let loeseTranskription!: (res: { text: string }) => void
+    vi.mocked(aiApi.transcribeVoice).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          duckingBeiTranskription = istDuckingAktiv()
+          loeseTranskription = resolve
+        }),
+    )
+    let audioLiefern: (chunk: ArrayBuffer) => void = () => undefined
+    const beenden = vi.fn()
+    vi.mocked(starteAufnahme).mockImplementation(async (onChunk) => {
+      audioLiefern = onChunk
+      return { beenden, pegel: () => 0 }
+    })
+
+    const ansicht = render(<MemoryRouter><AiChat /></MemoryRouter>)
+    expect(istDuckingAktiv()).toBe(false)
+
+    // 1. Aufnahme starten -> Ducking an, Bestätigen -> Ducking aus noch vor transcribeVoice
+    fireEvent.click(await screen.findByRole('button', { name: 'Nachricht diktieren' }))
+    await waitFor(() => expect(istDuckingAktiv()).toBe(true))
+    act(() => audioLiefern(new Int16Array([1, -1]).buffer))
+    fireEvent.click(screen.getByRole('button', { name: 'Aufnahme beenden' }))
+
+    await waitFor(() => expect(aiApi.transcribeVoice).toHaveBeenCalledTimes(1))
+    expect(duckingBeiTranskription).toBe(false)
+    expect(istDuckingAktiv()).toBe(false)
+
+    await act(async () => {
+      loeseTranskription({ text: 'Hallo' })
+    })
+
+    // 2. Aufnahme abbrechen -> Ducking sofort wieder aus
+    fireEvent.click(await screen.findByRole('button', { name: 'Nachricht diktieren' }))
+    await waitFor(() => expect(istDuckingAktiv()).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('ai.chat.dictationCancel') }))
+    expect(istDuckingAktiv()).toBe(false)
+
+    // 3. Unmount während aktiver Aufnahme -> Ducking wird freigegeben
+    fireEvent.click(await screen.findByRole('button', { name: 'Nachricht diktieren' }))
+    await waitFor(() => expect(istDuckingAktiv()).toBe(true))
+    ansicht.unmount()
+    expect(istDuckingAktiv()).toBe(false)
   })
 })

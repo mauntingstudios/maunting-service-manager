@@ -9,6 +9,7 @@ import {
   MAX_VIDEO_NOTE_DURATION_SEC,
 } from '@/lib/videoNotiz'
 import { getAudioTrackConstraints } from '@/lib/audioSettings'
+import { duckingBelegen } from '@/lib/audioDucking'
 import { getVideoNoteConstraints, VIDEONOTIZ_KANTE } from '@/lib/videoSettings'
 import { toast } from '@/stores/toastStore'
 
@@ -74,6 +75,12 @@ export const CircularVideoNoteRecorder: React.FC<CircularVideoNoteRecorderProps>
 
   /** Einmal beenden. Zeitgeber, Wächter und Knopf können sonst alle zuschlagen. */
   const beendet = useRef(false)
+  const duckingFreiRef = useRef<(() => void) | null>(null)
+
+  const freigebenDucking = useCallback(() => {
+    duckingFreiRef.current?.()
+    duckingFreiRef.current = null
+  }, [])
 
   /**
    * Die veränderlichen Dinge liegen in Refs, damit `handleStopAndFinish` eine
@@ -125,6 +132,7 @@ export const CircularVideoNoteRecorder: React.FC<CircularVideoNoteRecorderProps>
 
     // Erst jetzt. Eine gestoppte Spur kann den Abschluss nicht mehr liefern.
     streamRef.current?.getTracks().forEach((spur) => spur.stop())
+    freigebenDucking()
 
     const mimeType = recorder?.mimeType || 'video/webm'
     onCompleteRef.current({
@@ -137,7 +145,13 @@ export const CircularVideoNoteRecorder: React.FC<CircularVideoNoteRecorderProps>
       height: masse?.height ?? VIDEONOTIZ_KANTE,
       mimeType,
     })
-  }, [])
+  }, [freigebenDucking])
+
+  const abbrechen = useCallback(() => {
+    freigebenDucking()
+    streamRef.current?.getTracks().forEach((spur) => spur.stop())
+    onCancelRef.current()
+  }, [freigebenDucking])
 
   // Start camera and recording
   useEffect(() => {
@@ -191,13 +205,17 @@ export const CircularVideoNoteRecorder: React.FC<CircularVideoNoteRecorderProps>
       }
 
       recorder.start(250)
+      freigebenDucking()
+      duckingFreiRef.current = duckingBelegen('video-note')
     }).catch(() => {
+      freigebenDucking()
       toast.error(t('social.videoNote.cameraFailed'))
       onCancelRef.current()
     })
 
     return () => {
       active = false
+      freigebenDucking()
       streamRef.current?.getTracks().forEach((spur) => spur.stop())
     }
     // Genau einmal beim Öffnen. Die Rückrufe von aussen sind Inline-Funktionen
@@ -301,7 +319,7 @@ export const CircularVideoNoteRecorder: React.FC<CircularVideoNoteRecorderProps>
         <Kurzinfo text={t('common.cancel')}>
           <button
             type="button"
-            onClick={onCancel}
+            onClick={abbrechen}
             className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-transform hover:scale-105"
             aria-label={t('common.cancel')}
           >

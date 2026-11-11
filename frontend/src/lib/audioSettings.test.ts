@@ -7,13 +7,18 @@
  * nirgends an. Diese Tests halten fest, dass beides überlebt.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  DUCKING_PROZENT_MAX,
+  DUCKING_PROZENT_MIN,
+  DUCKING_PROZENT_STANDARD,
   GAIN_MAX,
   GAIN_MIN,
   getAudioSettings,
   getAudioTrackConstraints,
   saveAudioSettings,
+  subscribeAudioSettings,
+  syncNativeDuckingSettings,
 } from './audioSettings'
 
 beforeEach(() => {
@@ -21,7 +26,7 @@ beforeEach(() => {
 })
 
 describe('Vorgaben', () => {
-  it('hat die Filterkette an und die Verstärkung neutral', () => {
+  it('hat die Filterkette an, die Verstärkung neutral und Audio-Ducking auf 60 % aktiv', () => {
     // Chromiums Filter sind der Grund, warum ein Anruf ohne Kopfhörer nicht
     // rückkoppelt. Sie dürfen nie stillschweigend aus sein.
     expect(getAudioSettings()).toEqual({
@@ -31,7 +36,10 @@ describe('Vorgaben', () => {
       preferredMicId: null,
       preferredSpeakerId: null,
       micGain: 1,
+      audioDuckingEnabled: true,
+      audioDuckingPercent: DUCKING_PROZENT_STANDARD,
     })
+    expect(DUCKING_PROZENT_STANDARD).toBe(60)
   })
 })
 
@@ -92,5 +100,49 @@ describe('getAudioTrackConstraints', () => {
 
   it('lässt die Gerätewahl weg, wenn keine getroffen wurde', () => {
     expect(getAudioTrackConstraints()).not.toHaveProperty('deviceId')
+  })
+})
+
+describe('Audio-Ducking Einstellungen', () => {
+  it('klemmt Prozentwerte auf 10..90 und bereinigt ungültige Werte', () => {
+    expect(DUCKING_PROZENT_MIN).toBe(10)
+    expect(DUCKING_PROZENT_MAX).toBe(90)
+
+    saveAudioSettings({ audioDuckingPercent: 2 })
+    expect(getAudioSettings().audioDuckingPercent).toBe(DUCKING_PROZENT_MIN)
+
+    saveAudioSettings({ audioDuckingPercent: 120 })
+    expect(getAudioSettings().audioDuckingPercent).toBe(DUCKING_PROZENT_MAX)
+
+    saveAudioSettings({ audioDuckingPercent: 64.6 })
+    expect(getAudioSettings().audioDuckingPercent).toBe(65)
+
+    localStorage.setItem('msm_audio_ducking_percent', 'unsinn')
+    expect(getAudioSettings().audioDuckingPercent).toBe(DUCKING_PROZENT_STANDARD)
+  })
+
+  it('speichert Ausschalten ohne die übrigen Audioeinstellungen zu verändern', () => {
+    saveAudioSettings({ preferredMicId: 'mic-1', audioDuckingEnabled: false, audioDuckingPercent: 45 })
+    const gelesen = getAudioSettings()
+    expect(gelesen.preferredMicId).toBe('mic-1')
+    expect(gelesen.audioDuckingEnabled).toBe(false)
+    expect(gelesen.audioDuckingPercent).toBe(45)
+  })
+
+  it('benachrichtigt Abonnenten bei Speichern und beim nativen Sync', () => {
+    const lauscher = vi.fn()
+    const weg = subscribeAudioSettings(lauscher)
+
+    saveAudioSettings({ audioDuckingPercent: 70 })
+    expect(lauscher).toHaveBeenCalledTimes(1)
+
+    syncNativeDuckingSettings(false, 35)
+    expect(lauscher).toHaveBeenCalledTimes(2)
+    expect(getAudioSettings().audioDuckingEnabled).toBe(false)
+    expect(getAudioSettings().audioDuckingPercent).toBe(35)
+
+    weg()
+    saveAudioSettings({ audioDuckingEnabled: true })
+    expect(lauscher).toHaveBeenCalledTimes(2)
   })
 })

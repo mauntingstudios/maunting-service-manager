@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
 import { istAbbruch } from '@/lib/networkErrors'
+import { syncNativeDuckingSettings } from '@/lib/audioSettings'
 import { still } from '@/lib/still'
 import { AiTab } from '@/pages/profile/AiTab'
 import { AiRunNotice } from '@/components/ai/AiRunNotice'
@@ -210,8 +211,11 @@ export function DesktopApp() {
   const ladeKonfigNeu = useCallback(async () => {
     try {
       const geladen = await konfigLaden()
+      syncNativeDuckingSettings(geladen.audio_ducking_aktiv, geladen.audio_ducking_prozent)
       setKonfig(geladen)
-    } catch {}
+    } catch (err) {
+      still(err, 'desktop.ladeKonfigNeu')
+    }
   }, [])
 
   const splashBeenden = useCallback(() => {
@@ -256,6 +260,7 @@ export function DesktopApp() {
     void (async () => {
       try {
         const geladen = await konfigLaden()
+        syncNativeDuckingSettings(geladen.audio_ducking_aktiv, geladen.audio_ducking_prozent)
         setKonfig(geladen)
         if (geladen.splash_gesehen) {
           setSplash(false)

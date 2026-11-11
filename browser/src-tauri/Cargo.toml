@@ -23,6 +23,8 @@ schluesselfach = { path = "../../crates/schluesselfach" }
 updater_core = { path = "../../crates/updater_core" }
 # Gemeinsame Fensterform (DWM-Rundung) mit dem Smart System.
 fensteroptik = { path = "../../crates/fensteroptik" }
+# Gemeinsames WASAPI-Audio-Ducking mit dem Smart System.
+audio_ducking = { path = "../../crates/audio_ducking" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"

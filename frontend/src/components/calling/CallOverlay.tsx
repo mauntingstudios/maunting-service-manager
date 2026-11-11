@@ -67,7 +67,14 @@ const ShareStage: React.FC<{ track: Track; ownerName: string; isSelf: boolean }>
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-2xl border border-primary/25 bg-surface-container-lowest">
-      <video ref={ref} autoPlay playsInline muted={isSelf} className="h-full w-full object-contain" />
+      <video
+        ref={ref}
+        autoPlay
+        playsInline
+        muted={isSelf}
+        data-msm-duck-exempt="true"
+        className="h-full w-full object-contain"
+      />
       <span className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 truncate rounded-full bg-surface/85 px-2.5 py-1 text-label-sm uppercase tracking-[0.16em] text-primary backdrop-blur-sm">
         <Monitor className="h-3 w-3 shrink-0" />
         <span className="truncate">

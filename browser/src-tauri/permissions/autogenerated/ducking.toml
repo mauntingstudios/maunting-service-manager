@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ducking"
+description = "Enables the ducking command without any pre-configured scope."
+commands.allow = ["ducking"]
+
+[[permission]]
+identifier = "deny-ducking"
+description = "Denies the ducking command without any pre-configured scope."
+commands.deny = ["ducking"]

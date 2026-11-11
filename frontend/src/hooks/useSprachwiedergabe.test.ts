@@ -6,9 +6,10 @@
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import '@/i18n'
+import { duckingBelegen, duckingTestReset } from '@/lib/audioDucking'
 
 const { holeAnhangUrl, toastError } = vi.hoisted(() => ({
   holeAnhangUrl: vi.fn(),
@@ -24,13 +25,18 @@ class FakeAudio {
   src: string
   playbackRate = 1
   currentTime = 0
+  volume = 1
   paused = true
+  dataset: Record<string, string> = {}
   ontimeupdate: (() => void) | null = null
   onended: (() => void) | null = null
   onerror: (() => void) | null = null
   constructor(src: string) {
     this.src = src
     FakeAudio.alle.push(this)
+  }
+  closest() {
+    return null
   }
   play() {
     this.paused = false
@@ -49,7 +55,12 @@ beforeEach(() => {
   FakeAudio.alle = []
   holeAnhangUrl.mockReset()
   toastError.mockReset()
+  duckingTestReset()
   vi.stubGlobal('Audio', FakeAudio)
+})
+
+afterEach(() => {
+  duckingTestReset()
 })
 
 describe('useSprachwiedergabe', () => {
@@ -124,5 +135,25 @@ describe('useSprachwiedergabe', () => {
     await waitFor(() => expect(result.current.playingAudioId).toBe(1))
     unmount()
     expect(FakeAudio.alle[0].paused).toBe(true)
+  })
+
+  it('regelt laufende Sprachnachrichten über das globale Ducking herunter und stellt sie wieder her', async () => {
+    const { result, unmount } = renderHook(() => useSprachwiedergabe())
+    act(() => result.current.onTogglePlay(1, anhang('data:a'), bindung))
+    await waitFor(() => expect(result.current.playingAudioId).toBe(1))
+
+    expect(FakeAudio.alle[0].volume).toBeCloseTo(1, 3)
+
+    const frei = duckingBelegen('call')
+    expect(FakeAudio.alle[0].volume).toBeCloseTo(0.4, 3)
+
+    // Eine zweite Sprachnachricht, die während des Duckings startet, übernimmt die Absenkung direkt.
+    act(() => result.current.onTogglePlay(2, anhang('data:b'), bindung))
+    await waitFor(() => expect(result.current.playingAudioId).toBe(2))
+    expect(FakeAudio.alle[1].volume).toBeCloseTo(0.4, 3)
+
+    frei()
+    expect(FakeAudio.alle[1].volume).toBeCloseTo(1, 3)
+    unmount()
   })
 })

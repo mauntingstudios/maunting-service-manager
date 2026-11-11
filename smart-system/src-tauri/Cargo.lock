@@ -268,6 +268,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "audio_ducking"
+version = "0.1.0"
+dependencies = [
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "auto-launch"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3065,6 +3072,7 @@ dependencies = [
 name = "maunting-smart-system"
 version = "5.8.0"
 dependencies = [
+ "audio_ducking",
  "aws-lc-rs",
  "base64 0.22.1",
  "cpal",

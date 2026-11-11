@@ -51,6 +51,10 @@ export interface AppKonfig {
   splash_gesehen?: boolean
   /** Ob der Autostart beim Systemstart (Windows / Android) aktiviert ist. */
   autostart_aktiv?: boolean
+  /** Ob Hintergrundaudio während aktiver Mikrofonnutzung abgesenkt wird. */
+  audio_ducking_aktiv?: boolean
+  /** Stärke der Absenkung in Prozent (10..90). */
+  audio_ducking_prozent?: number
 }
 
 export async function konfigLaden(): Promise<AppKonfig> {
@@ -136,9 +140,9 @@ export async function audioGeraete(): Promise<AudioGeraete> {
   return await invoke<AudioGeraete>('audio_geraete')
 }
 
-/** Senkt Hintergrundton um 60 % ab (an=true) bzw. stellt ihn wieder her. */
-export async function duckingSetzen(an: boolean): Promise<void> {
-  await invoke('ducking', { an })
+/** Senkt Hintergrundton ab (an=true, Standard oder gewählter Prozentsatz) bzw. stellt ihn wieder her. */
+export async function duckingSetzen(an: boolean, prozent?: number): Promise<void> {
+  await invoke('ducking', prozent !== undefined ? { an, prozent } : { an })
 }
 
 /**

@@ -25,6 +25,7 @@ import { aiApi, type AiRegionalAnalysis } from '@/api/ai'
 import { wsProtokolle } from '@/api/client'
 import { wsUrl } from '@/config/api'
 import { voiceDebug, voiceWarn, voiceError } from '@/lib/voiceDebug'
+import { duckingBelegen } from '@/lib/audioDucking'
 import { applyGeoCameraCommand, normalizeRegionalAnalysis } from '../geo/regionalAnalysis'
 import { AufnahmeAbbruch, starteAufnahme, type Aufnahme } from './audioAufnahme'
 import { Wiedergabe } from './audioWiedergabe'
@@ -340,8 +341,15 @@ export function useSprachsitzung(
   const planmaessig = useRef(false)
   /** Verhindert, dass ein Neustart eine bereits beendete Sitzung wiederbelebt. */
   const gewollt = useRef(false)
+  const duckingFrei = useRef<(() => void) | null>(null)
+
+  const freigebenDucking = useCallback(() => {
+    duckingFrei.current?.()
+    duckingFrei.current = null
+  }, [])
 
   const aufraeumen = useCallback(() => {
+    freigebenDucking()
     mikro.current?.beenden()
     mikro.current = null
     lautsprecher.current?.schliessen()
@@ -361,7 +369,7 @@ export function useSprachsitzung(
     const offen = ws.current
     ws.current = null
     if (offen && offen.readyState <= WebSocket.OPEN) offen.close()
-  }, [])
+  }, [freigebenDucking])
 
   const beenden = useCallback(() => {
     gewollt.current = false
@@ -489,6 +497,8 @@ export function useSprachsitzung(
             return
           }
           rtcMikro.current = strom
+          freigebenDucking()
+          duckingFrei.current = duckingBelegen('ai-voice')
           const peer = new RTCPeerConnection()
           rtc.current = peer
           const kontext = new AudioContext()
@@ -508,6 +518,7 @@ export function useSprachsitzung(
           peer.createDataChannel('oai-events')
           peer.ontrack = (event) => {
             const audio = new Audio()
+            audio.dataset.msmDuckExempt = 'true'
             audio.autoplay = true
             const stimme = event.streams[0] ?? new MediaStream([event.track])
             audio.srcObject = stimme
@@ -563,6 +574,8 @@ export function useSprachsitzung(
             return
           }
           mikro.current = laufend
+          freigebenDucking()
+          duckingFrei.current = duckingBelegen('ai-voice')
         })
         .catch((fehler: unknown) => {
           // Der Grund kommt aus der Aufnahme und wird hier nicht geraten. Ein
@@ -886,6 +899,7 @@ export function useSprachsitzung(
 
     verbindung.onclose = () => {
       window.clearTimeout(verbindungTimeout)
+      freigebenDucking()
       mikro.current?.beenden()
       mikro.current = null
       lautsprecher.current?.schliessen()
@@ -930,7 +944,7 @@ export function useSprachsitzung(
       setAbgelaufen(false)
       setZustand('aus')
     }
-  }, [beenden, documentUid, modus, providerId, zeileAnhaengen])
+  }, [beenden, documentUid, freigebenDucking, modus, providerId, zeileAnhaengen])
 
   // Wer die Seite verlässt, lässt kein offenes Mikrofon zurück.
   useEffect(() => () => {
@@ -939,8 +953,8 @@ export function useSprachsitzung(
   }, [aufraeumen])
 
   // Den Zustand nach draussen melden — als DOM-Ereignis, nicht als Callback.
-  // Die Desktop-App (MSS) hängt daran Tray-Farbe und Audio-Ducking; im Panel
-  // hört niemand zu, und das ist in Ordnung. Ein Callback müsste durch
+  // Die Desktop-App (MSS) hängt daran die Tray-Farbe; Audio-Ducking läuft
+  // direkt über `audioDucking` ab Start des Mikrofons.
   // SprachAnsicht und pages/Ai durchgereicht werden, nur damit eine Hülle ihn
   // je nach Bau anders füllt.
   useEffect(() => {

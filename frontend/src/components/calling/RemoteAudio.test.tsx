@@ -82,6 +82,8 @@ describe('RemoteAudio', () => {
     expect(ton.element.hasAttribute('playsinline')).toBe(true)
     // Ein stummes Element wäre derselbe Fehler mit mehr Code.
     expect(ton.element.muted).toBe(false)
+    // Gesprächston darf durch das eigene Mikrofon-Ducking niemals leiser werden.
+    expect(ton.element.dataset.msmDuckExempt).toBe('true')
   })
 
   it('hängt auch den Ton einer Bildschirmfreigabe an', () => {

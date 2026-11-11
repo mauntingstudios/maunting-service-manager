@@ -2,7 +2,15 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mic, Volume2, Radio, Sliders, ShieldAlert, Video } from 'lucide-react'
 import { Button, Dropdown, DropdownOption, Slider, Switch, ProgressBar } from '@maunting/ui'
-import { getAudioSettings, saveAudioSettings } from '@/lib/audioSettings'
+import {
+  DUCKING_PROZENT_MAX,
+  DUCKING_PROZENT_MIN,
+  DUCKING_PROZENT_STANDARD,
+  DUCKING_SCHRITT,
+  getAudioSettings,
+  saveAudioSettings,
+  subscribeAudioSettings,
+} from '@/lib/audioSettings'
 import {
   AUFLOESUNGEN as AUFLOESUNG_WERTE,
   getVideoSettings,
@@ -31,6 +39,8 @@ export function AudioTab() {
   const [echoCancellation, setEchoCancellation] = useState<boolean>(true)
   const [autoGainControl, setAutoGainControl] = useState<boolean>(true)
   const [gainPercent, setGainPercent] = useState<number>(100)
+  const [duckingEnabled, setDuckingEnabled] = useState<boolean>(true)
+  const [duckingPercent, setDuckingPercent] = useState<number>(DUCKING_PROZENT_STANDARD)
 
   // Bildqualität. Gilt für die Kamera im Anruf und für Videonotizen.
   const [videoAufloesung, setVideoAufloesung] = useState<VideoAufloesung>('1080p')
@@ -57,14 +67,19 @@ export function AudioTab() {
   const unmountedRef = useRef(false)
   const runIdRef = useRef(0)
 
-  // Load saved settings on mount
+  // Load saved settings on mount and keep in sync with global audio settings
   useEffect(() => {
-    const saved = getAudioSettings()
-    setNoiseSuppression(saved.noiseSuppression)
-    setEchoCancellation(saved.echoCancellation)
-    setAutoGainControl(saved.autoGainControl)
-    setSelectedInputId(saved.preferredMicId || '')
-    setSelectedOutputId(saved.preferredSpeakerId || '')
+    const uebernehmen = () => {
+      const saved = getAudioSettings()
+      setNoiseSuppression(saved.noiseSuppression)
+      setEchoCancellation(saved.echoCancellation)
+      setAutoGainControl(saved.autoGainControl)
+      setSelectedInputId(saved.preferredMicId || '')
+      setSelectedOutputId(saved.preferredSpeakerId || '')
+      setDuckingEnabled(saved.audioDuckingEnabled)
+      setDuckingPercent(saved.audioDuckingPercent)
+    }
+    uebernehmen()
 
     const currentVerarbeitung = aktuelleVerarbeitung()
     setGainPercent(Math.round(currentVerarbeitung.verstaerkung * 100))
@@ -72,6 +87,8 @@ export function AudioTab() {
     const bild = getVideoSettings()
     setVideoAufloesung(bild.aufloesung)
     setVideoBildrate(bild.bildrate)
+
+    return subscribeAudioSettings(uebernehmen)
   }, [])
 
   const handleSelectAufloesung = (wert: string) => {
@@ -280,6 +297,16 @@ export function AudioTab() {
     registriereAudioVerarbeitung({ verstaerkung: percent / 100 })
   }
 
+  const handleToggleDucking = (val: boolean) => {
+    setDuckingEnabled(val)
+    saveAudioSettings({ audioDuckingEnabled: val })
+  }
+
+  const handleDuckingPercentChange = (percent: number) => {
+    setDuckingPercent(percent)
+    saveAudioSettings({ audioDuckingPercent: percent })
+  }
+
   return (
     <div className="space-y-6">
       {/* Device Selection Card */}
@@ -413,6 +440,36 @@ export function AudioTab() {
               label={t('mss.audio.verstaerkung')}
               hint={`${gainPercent} %`}
             />
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container-low/40 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <span className="text-sm font-medium text-on-surface block">
+                  {t('mss.audio.ducking')}
+                </span>
+                <span className="text-xs text-on-surface-variant">
+                  {t('mss.audio.duckingHinweis')}
+                </span>
+              </div>
+              <Switch
+                checked={duckingEnabled}
+                onCheckedChange={handleToggleDucking}
+                aria-label={t('mss.audio.ducking')}
+              />
+            </div>
+
+            <Slider
+              value={duckingPercent}
+              min={DUCKING_PROZENT_MIN}
+              max={DUCKING_PROZENT_MAX}
+              step={DUCKING_SCHRITT}
+              disabled={!duckingEnabled}
+              onValueChange={handleDuckingPercentChange}
+              label={t('mss.audio.duckingProzent')}
+              hint={`-${duckingPercent} %`}
+            />
+            <p className="text-xs text-on-surface-variant">{t('mss.audio.duckingProzentHinweis')}</p>
           </div>
         </div>
       </section>

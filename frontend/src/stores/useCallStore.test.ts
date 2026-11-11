@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RoomEvent, Track } from 'livekit-client'
 import type { ActiveCallInfo } from '@/api/calls'
 import { E2eeNichtUnterstuetzt } from '@/services/livekitGrundlagen'
+import { duckingTestReset, istDuckingAktiv } from '@/lib/audioDucking'
 import i18n from '@/i18n'
 
 // ── Gefälschter Raum ────────────────────────────────────────────────────────
@@ -166,6 +167,7 @@ async function verbundenerAnruf() {
 }
 
 beforeEach(() => {
+  duckingTestReset()
   aktuellerRaum = new FakeRoom()
   vi.clearAllMocks()
   gruppenNamen.clear()
@@ -190,6 +192,7 @@ beforeEach(() => {
 
 afterEach(() => {
   useCallStore.setState(FRISCH, true)
+  duckingTestReset()
   setzeAnrufIdentitaet(null)
 })
 
@@ -1386,5 +1389,62 @@ describe('Geräteübergreifendes Anruf-Handoff (Cross-Device)', () => {
       room_token: 'grp_supp_7',
       participant_count: 2,
     })
+  })
+})
+
+describe('Audio-Ducking während Anrufen', () => {
+  it('ducked nicht bei idle, incoming oder klingelndem outgoing', async () => {
+    expect(istDuckingAktiv()).toBe(false)
+
+    useCallStore.getState().receiveCall(PARTNER, 'audio', 'raum-ring')
+    expect(useCallStore.getState().state).toBe('incoming')
+    expect(istDuckingAktiv()).toBe(false)
+    useCallStore.getState().rejectCall()
+
+    api.holeZugang.mockImplementationOnce(() => new Promise(() => {}))
+    void useCallStore.getState().initiateCall(PARTNER, 'audio')
+    await vi.waitFor(() => expect(useCallStore.getState().state).toBe('outgoing'))
+    expect(istDuckingAktiv()).toBe(false)
+
+    useCallStore.getState().endCall()
+    expect(istDuckingAktiv()).toBe(false)
+  })
+
+  it('ducked ab aktivem Gespräch und reagiert auf Stummschalten, Taubheit, Serverstumm und Auflegen', async () => {
+    await verbundenerAnruf()
+    expect(istDuckingAktiv()).toBe(true)
+
+    useCallStore.getState().toggleMute()
+    expect(istDuckingAktiv()).toBe(false)
+
+    useCallStore.getState().toggleMute()
+    expect(istDuckingAktiv()).toBe(true)
+
+    useCallStore.getState().toggleDeafen()
+    expect(istDuckingAktiv()).toBe(false)
+
+    useCallStore.getState().toggleMute()
+    expect(istDuckingAktiv()).toBe(true)
+
+    // Moderator entzieht Mikrofonrecht -> Serverstumm gibt Ducking sofort frei
+    ;(aktuellerRaum.localParticipant as unknown as { permissions: unknown }).permissions = {
+      canPublishSources: [1, 3, 4],
+    }
+    aktuellerRaum.feuere(RoomEvent.ParticipantPermissionsChanged)
+    expect(useCallStore.getState().serverStumm).toBe(true)
+    expect(istDuckingAktiv()).toBe(false)
+
+    // Recht wieder da -> bleibt stumm bis Nutzer entstummt
+    ;(aktuellerRaum.localParticipant as unknown as { permissions: unknown }).permissions = {
+      canPublishSources: [1, 2, 3, 4],
+    }
+    aktuellerRaum.feuere(RoomEvent.ParticipantPermissionsChanged)
+    expect(istDuckingAktiv()).toBe(false)
+
+    useCallStore.getState().toggleMute()
+    expect(istDuckingAktiv()).toBe(true)
+
+    useCallStore.getState().endCall()
+    expect(istDuckingAktiv()).toBe(false)
   })
 })

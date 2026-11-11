@@ -6,6 +6,16 @@ import {
   registriereAudioGeraete,
   registriereAudioVerarbeitung,
 } from '@/components/ai/voice/audioGeraete'
+import {
+  DUCKING_PROZENT_MAX,
+  DUCKING_PROZENT_MIN,
+  DUCKING_SCHRITT,
+  getAudioSettings,
+  saveAudioSettings,
+  subscribeAudioSettings,
+  syncNativeDuckingSettings,
+} from '@/lib/audioSettings'
+import { still } from '@/lib/still'
 import { Button, Dropdown, DropdownOption, Slider, Switch } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import {
@@ -28,6 +38,7 @@ const isAndroidClient = typeof navigator !== 'undefined' && /android/i.test(navi
  * (und damit hörbar) ist jede Änderung sofort, nur das Schreiben wartet.
  */
 const VERARBEITUNG_SPEICHERN_MS = 400
+const DUCKING_SPEICHERN_MS = 200
 
 /**
  * Der Audio-Reiter: welches Mikrofon hört, welcher Lautsprecher spricht —
@@ -42,19 +53,52 @@ export function AudioEinstellungen() {
   const [konfig, setKonfig] = useState<AppKonfig | null>(null)
   const [duckt, setDuckt] = useState(false)
   const [istAmTesten, setIstAmTesten] = useState(false)
+  const [duckingEnabled, setDuckingEnabled] = useState(() => getAudioSettings().audioDuckingEnabled)
+  const [duckingPercent, setDuckingPercent] = useState(() => getAudioSettings().audioDuckingPercent)
   // Bündelt das Speichern der Verarbeitung. Beim Unmount bewusst NICHT
   // geräumt: die Timeout-Schließung ist in sich geschlossen (frisches Laden,
   // Speichern, kein React-State) — räumen hieße, die letzte Änderung des
   // Benutzers wegzuwerfen.
   const speicherTimer = useRef<number | null>(null)
+  const duckingSpeicherTimer = useRef<number | null>(null)
+  const duckingVomNutzerGeaendertRef = useRef(false)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
+    mountedRef.current = true
+    const uebernehmen = () => {
+      if (!mountedRef.current) return
+      const aktuell = getAudioSettings()
+      setDuckingEnabled(aktuell.audioDuckingEnabled)
+      setDuckingPercent(aktuell.audioDuckingPercent)
+    }
+    const abbestellen = subscribeAudioSettings(uebernehmen)
+
     void audioGeraete()
-      .then(setGeraete)
-      .catch(() => setGeraete(null))
+      .then((g) => {
+        if (mountedRef.current) setGeraete(g)
+      })
+      .catch((err) => {
+        still(err, 'audioEinstellungen.audioGeraete')
+        if (mountedRef.current) setGeraete(null)
+      })
     void konfigLaden()
-      .then(setKonfig)
-      .catch(() => setKonfig(null))
+      .then((geladen) => {
+        if (!mountedRef.current) return
+        setKonfig(geladen)
+        if (!duckingVomNutzerGeaendertRef.current) {
+          syncNativeDuckingSettings(geladen.audio_ducking_aktiv, geladen.audio_ducking_prozent)
+        }
+      })
+      .catch((err) => {
+        still(err, 'audioEinstellungen.konfigLaden')
+        if (mountedRef.current) setKonfig(null)
+      })
+
+    return () => {
+      mountedRef.current = false
+      abbestellen()
+    }
   }, [])
 
   async function waehlen(feld: 'audio_eingabe' | 'audio_ausgabe', wert: string) {
@@ -120,13 +164,52 @@ export function AudioEinstellungen() {
   async function duckingTesten() {
     setDuckt(true)
     try {
-      await duckingSetzen(true)
+      await duckingSetzen(true, getAudioSettings().audioDuckingPercent)
       meldeErrungenschaft('starter_audio_ducking')
       await new Promise((fertig) => setTimeout(fertig, 3000))
-      await duckingSetzen(false)
     } finally {
-      setDuckt(false)
+      await duckingSetzen(false).catch((err) => still(err, 'audioEinstellungen.duckingTestReset'))
+      if (mountedRef.current) setDuckt(false)
     }
+  }
+
+  async function duckingUmschalten(an: boolean) {
+    duckingVomNutzerGeaendertRef.current = true
+    const vorher = duckingEnabled
+    setDuckingEnabled(an)
+    saveAudioSettings({ audioDuckingEnabled: an })
+    setKonfig((k) => (k ? { ...k, audio_ducking_aktiv: an } : k))
+    try {
+      const neu = await konfigAendern({ audio_ducking_aktiv: an })
+      if (mountedRef.current) setKonfig(neu)
+    } catch (fehler) {
+      still(fehler, 'audioEinstellungen.duckingAktiv')
+      setDuckingEnabled(vorher)
+      saveAudioSettings({ audioDuckingEnabled: vorher })
+      if (mountedRef.current) {
+        setKonfig((k) => (k ? { ...k, audio_ducking_aktiv: vorher } : k))
+      }
+      toast.error(String(fehler))
+    }
+  }
+
+  function duckingProzentSetzen(prozent: number) {
+    duckingVomNutzerGeaendertRef.current = true
+    setDuckingPercent(prozent)
+    saveAudioSettings({ audioDuckingPercent: prozent })
+    setKonfig((k) => (k ? { ...k, audio_ducking_prozent: prozent } : k))
+    if (duckingSpeicherTimer.current !== null) window.clearTimeout(duckingSpeicherTimer.current)
+    duckingSpeicherTimer.current = window.setTimeout(() => {
+      duckingSpeicherTimer.current = null
+      void konfigAendern({ audio_ducking_prozent: prozent })
+        .then((neu) => {
+          if (mountedRef.current) setKonfig(neu)
+        })
+        .catch((fehler) => {
+          still(fehler, 'audioEinstellungen.duckingProzent')
+          toast.error(String(fehler))
+        })
+    }, DUCKING_SPEICHERN_MS)
   }
 
   function verarbeitungSetzen(
@@ -206,21 +289,42 @@ export function AudioEinstellungen() {
           </div>
         </div>
 
-        {!isAndroidClient && (
-          <div className="flex items-center justify-between gap-3 border-t border-outline-variant/30 pt-4 mt-6 max-w-2xl">
+        <div className="border-t border-outline-variant/30 pt-4 mt-6 max-w-2xl space-y-4">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <span className="text-xs font-medium text-on-surface block">{t('mss.audio.ducking')}</span>
-              <span className="text-label-sm text-on-surface-variant">
+              <span className="text-sm font-medium text-on-surface block">{t('mss.audio.ducking')}</span>
+              <span className="text-xs text-on-surface-variant">
                 {t('mss.audio.duckingHinweis')}
               </span>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => void duckingTesten()} disabled={duckt}>
-              {duckt
-                ? t('mss.einstellungen.duckingLaeuft')
-                : t('mss.einstellungen.duckingTesten')}
-            </Button>
+            <div className="flex items-center gap-3 shrink-0">
+              {!isAndroidClient && (
+                <Button variant="secondary" size="sm" onClick={() => void duckingTesten()} disabled={duckt}>
+                  {duckt
+                    ? t('mss.einstellungen.duckingLaeuft')
+                    : t('mss.einstellungen.duckingTesten')}
+                </Button>
+              )}
+              <Switch
+                checked={duckingEnabled}
+                onCheckedChange={(an) => void duckingUmschalten(an)}
+                aria-label={t('mss.audio.ducking')}
+              />
+            </div>
           </div>
-        )}
+
+          <Slider
+            value={duckingPercent}
+            min={DUCKING_PROZENT_MIN}
+            max={DUCKING_PROZENT_MAX}
+            step={DUCKING_SCHRITT}
+            disabled={!duckingEnabled}
+            onValueChange={duckingProzentSetzen}
+            label={t('mss.audio.duckingProzent')}
+            hint={`-${duckingPercent} %`}
+          />
+          <p className="text-xs text-on-surface-variant">{t('mss.audio.duckingProzentHinweis')}</p>
+        </div>
       </section>
 
       {/* 2. Signalverarbeitung & Filter */}

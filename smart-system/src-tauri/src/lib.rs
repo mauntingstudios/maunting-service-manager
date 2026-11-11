@@ -33,8 +33,6 @@ mod deinstallation;
 mod dienst;
 pub mod discord;
 mod durchklick;
-#[cfg(windows)]
-mod ducking;
 mod erinnerung;
 mod kamera_krypto;
 mod konfig;
@@ -128,24 +126,13 @@ fn setze_status(app: tauri::AppHandle, status: String) -> Result<(), String> {
     tray::set_status(&app, &status)
 }
 
-/// Senkt Hintergrundton um 60 % ab (WASAPI) bzw. stellt ihn wieder her.
-/// Auf anderen Plattformen ein stiller No-Op — die App zielt auf Windows,
-/// aber ein Linux-CI-Check soll daran nicht scheitern.
+/// Senkt Hintergrundton über WASAPI um den eingestellten Prozentsatz ab
+/// (Vorgabe: 60 %) bzw. stellt ihn wieder her. Auf Nicht-Windows-Systemen
+/// ein stiller No-Op.
 #[tauri::command(async)]
-fn ducking(an: bool) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        if an {
-            ducking::starten()
-        } else {
-            ducking::stoppen()
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = an;
-        Ok(())
-    }
+fn ducking(an: bool, prozent: Option<u8>) -> Result<(), String> {
+    let staerke = prozent.unwrap_or(audio_ducking::PROZENT_STANDARD);
+    audio_ducking::setzen(an, staerke, &[std::process::id()])
 }
 
 #[tauri::command(async)]
@@ -734,13 +721,13 @@ pub(crate) fn beenden_erzwingen(app: &tauri::AppHandle) {
     // den einen Ausgang von der Gesundheit der App abhängig zu machen.
     wakeword::lauschen_stoppen();
     // Und den Ton der anderen zurückdrehen. Die Originallautstärken leben
-    // nur in diesem Prozess (`ducking::ORIGINALE`); wer hier ohne sie
-    // hinausgeht, lässt Musik, Spiel und Discord dauerhaft auf 40 % zurück,
-    // und niemand kann das danach noch auflösen — der Benutzer regelt jede
-    // App von Hand hoch und errät den Zusammenhang nicht.
+    // nur in diesem Prozess (`audio_ducking`); wer hier ohne sie hinausgeht,
+    // lässt Musik, Spiel und Discord dauerhaft abgesenkt zurück, und niemand
+    // kann das danach noch auflösen — der Benutzer regelt jede App von Hand
+    // hoch und errät den Zusammenhang nicht.
     //
     // In einem eigenen Faden mit kurzer Frist: `stoppen()` nimmt dasselbe
-    // Schloss, das ein laufendes `starten()` über die COM-Enumeration und
+    // Schloss, das ein laufendes `setzen()` über die COM-Enumeration und
     // die 200-ms-Rampe hält. Hängt WASAPI, wartet dieser Aufruf sonst
     // endlos — und der Fehler, wegen dem `app.exit` hier verschwand, wäre
     // zurück. Nach einer Sekunde geht es so oder so weiter.
@@ -748,7 +735,7 @@ pub(crate) fn beenden_erzwingen(app: &tauri::AppHandle) {
     {
         let (fertig, warten) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = ducking::stoppen();
+            let _ = audio_ducking::stoppen();
             let _ = fertig.send(());
         });
         let _ = warten.recv_timeout(std::time::Duration::from_secs(1));

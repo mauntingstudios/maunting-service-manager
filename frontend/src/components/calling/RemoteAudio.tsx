@@ -44,6 +44,8 @@ export function RemoteAudio({ room }: { room: Room | null }) {
       element.autoplay = true
       // Ohne `playsInline` blendet iOS Safari einen Vollbildspieler ein.
       element.setAttribute('playsinline', '')
+      // Gesprächston im Anruf bleibt vom eigenen Mikrofon-Ducking ausgenommen.
+      element.dataset.msmDuckExempt = 'true'
       ziel.appendChild(element)
       elemente.set(veroeffentlichung.trackSid, element)
 

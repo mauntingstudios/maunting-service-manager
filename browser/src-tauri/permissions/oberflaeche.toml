@@ -6,6 +6,7 @@ description = "Befehle der Browser-Oberfläche"
 permissions = [
   "allow-konfig-laden",
   "allow-konfig-aendern",
+  "allow-ducking",
   "allow-refresh-token-speichern",
   "allow-refresh-token-laden",
   "allow-refresh-token-loeschen",

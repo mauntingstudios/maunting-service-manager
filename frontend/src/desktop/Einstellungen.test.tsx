@@ -74,10 +74,12 @@ vi.mock('@/pages/profile/DatenexportKarte', () => ({
   },
 }))
 
+import { getAudioSettings } from '@/lib/audioSettings'
 import i18n from '@/i18n'
 import { api } from '@/api/client'
 import { usePublicSettingsStore, DEFAULT_PUBLIC_SETTINGS } from '@/stores/publicSettingsStore'
 import { toast } from '@/stores/toastStore'
+import { duckingSetzen } from './tauri'
 import { Einstellungen } from './Einstellungen'
 import { useVaultStore, type VaultItem } from './vault/vaultStore'
 
@@ -426,5 +428,36 @@ describe('Einstellungen Component', () => {
       expect(await screen.findByRole('heading', { name: txt('profile.timezoneTitle') })).toBeInTheDocument()
       expect(screen.queryByText(txt('mss.einstellungen.offline.titel'))).not.toBeInTheDocument()
     })
+  })
+
+  it('zeigt im Audio-Reiter Ducking-Schalter (an) und Prozentregler (60 %) und testet mit gewählter Stärke', async () => {
+    konfigLadenMock.mockResolvedValue({
+      ...mockKonfig,
+      audio_ducking_aktiv: true,
+      audio_ducking_prozent: 60,
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/einstellungen?tab=audio']}>
+        <Einstellungen />
+      </MemoryRouter>,
+    )
+
+    const schalter = await screen.findByRole('switch', { name: txt('mss.audio.ducking') })
+    expect(schalter).toHaveAttribute('aria-checked', 'true')
+
+    const regler = screen.getByRole('slider', { name: txt('mss.audio.duckingProzent') })
+    expect(regler).toHaveValue('60')
+
+    fireEvent.change(regler, { target: { value: '70' } })
+    expect(getAudioSettings().audioDuckingPercent).toBe(70)
+    await waitFor(() => expect(konfigAendernMock).toHaveBeenCalledWith(expect.objectContaining({ audio_ducking_prozent: 70 })))
+
+    fireEvent.click(screen.getByRole('button', { name: txt('mss.einstellungen.duckingTesten') }))
+    await waitFor(() => expect(duckingSetzen).toHaveBeenCalledWith(true, 70))
+
+    fireEvent.click(schalter)
+    await waitFor(() => expect(konfigAendernMock).toHaveBeenCalledWith({ audio_ducking_aktiv: false }))
+    expect(getAudioSettings().audioDuckingEnabled).toBe(false)
   })
 })

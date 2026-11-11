@@ -112,6 +112,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
           autoPlay
           playsInline
           muted={participant.isSelf}
+          data-msm-duck-exempt="true"
           className={`h-full w-full object-cover ${participant.isSelf ? '-scale-x-100' : ''}`}
         />
       ) : (

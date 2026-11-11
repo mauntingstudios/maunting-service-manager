@@ -452,6 +452,8 @@ export interface BrowserKonfig {
   download_fragen: boolean
   vergessen_beim_schliessen: boolean
   hardwarebeschleunigung?: boolean
+  audio_ducking_aktiv?: boolean
+  audio_ducking_prozent?: number
 }
 
 export const konfig = {

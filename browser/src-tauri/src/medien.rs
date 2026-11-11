@@ -9,7 +9,24 @@
 //! Die Kamera fehlte bis 27.10.2026. Ein Videoanruf verband sich dann ohne
 //! Bild, und die Oberfläche behauptete trotzdem, die Kamera sei an.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use tauri::{AppHandle, Manager};
+
+/// Die BrowserProcessId der eigenen Oberfläche (`main` WebView2), damit
+/// WASAPI-Audio-Ducking die eigene Sprach-/Call-Ausgabe nicht absenkt, wohl
+/// aber Webseiten-Tabs in getrennten WebView2-Umgebungen (`seitenprofil`).
+static HAUPT_WEBVIEW_PID: AtomicU32 = AtomicU32::new(0);
+
+/// Liefert die bekannte PID des Haupt-WebView2-Prozesses (`main`), sofern
+/// bereits erfasst.
+pub fn haupt_webview_pid() -> Vec<u32> {
+    let pid = HAUPT_WEBVIEW_PID.load(Ordering::Relaxed);
+    if pid != 0 {
+        vec![pid]
+    } else {
+        Vec::new()
+    }
+}
 
 /// Nur die gebaute Oberfläche und der Vite-Dev-Server.
 pub(crate) fn eigene_oberflaeche(uri: &str) -> bool {
@@ -47,6 +64,10 @@ pub fn freigeben(app: &AppHandle) {
     let Some(fenster) = app.get_webview_window("main") else { return };
     let _ = fenster.with_webview(|webview| unsafe {
         let Ok(core) = webview.controller().CoreWebView2() else { return };
+        let mut pid = 0_u32;
+        if core.BrowserProcessId(&mut pid).is_ok() && pid != 0 {
+            HAUPT_WEBVIEW_PID.store(pid, Ordering::Relaxed);
+        }
         let mut merkzettel = 0_i64;
         let _ = core.add_PermissionRequested(
             &PermissionRequestedEventHandler::create(Box::new(|_, args| {

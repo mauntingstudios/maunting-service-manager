@@ -8,15 +8,14 @@
  *
  * Dazu die Verdrahtung nach draussen: `useSprachsitzung` meldet jeden
  * Zustandswechsel als DOM-Ereignis (`msm:sprachzustand`), und
- * `sprachzustandVerdrahten` übersetzt ihn in Tray-Farbe und Audio-Ducking.
- * Ducking nur beim Sprechen: gesenkt wird fremder Ton, damit man die Antwort
- * versteht — nicht schon beim Zuhören, sonst verstummt die Musik bei jedem
- * versehentlichen Wake-Word.
+ * `sprachzustandVerdrahten` übersetzt ihn in die Tray-Farbe. Audio-Ducking
+ * wird unabhängig davon direkt am offenen Mikrofon über `audioDucking` gesteuert.
  */
 import { emit, listen } from '@tauri-apps/api/event'
 
 import type { Sprachzustand } from '@/components/ai/voice/useSprachsitzung'
-import { duckingSetzen, setzeStatus, type AgentStatus } from './tauri'
+import { still } from '@/lib/still'
+import { setzeStatus, type AgentStatus } from './tauri'
 
 /** Global an beide Fenster: eine Sprachsitzung beginnt an `quelle`. */
 export const SPRACHE_STARTET = 'mss:sprache-startet'
@@ -68,21 +67,19 @@ const TRAY_JE_ZUSTAND: Record<Sprachzustand, AgentStatus> = {
 }
 
 /**
- * Hängt Tray und Ducking an die Zustandsmeldungen dieses Fensters.
- * Gibt die Abmeldefunktion zurück; sie stellt beides zurück auf Ruhe.
+ * Hängt das Tray-Symbol an die Zustandsmeldungen dieses Fensters.
+ * Gibt die Abmeldefunktion zurück; sie stellt den Zustand zurück auf Ruhe.
  */
 export function sprachzustandVerdrahten(): () => void {
   const horcher = (ereignis: Event) => {
     const zustand = (ereignis as CustomEvent<{ zustand: Sprachzustand }>).detail
       ?.zustand
     if (!zustand) return
-    void setzeStatus(TRAY_JE_ZUSTAND[zustand]).catch(() => {})
-    void duckingSetzen(zustand === 'spricht').catch(() => {})
+    void setzeStatus(TRAY_JE_ZUSTAND[zustand]).catch((err) => still(err, 'tray.setStatus'))
   }
   window.addEventListener('msm:sprachzustand', horcher)
   return () => {
     window.removeEventListener('msm:sprachzustand', horcher)
-    void setzeStatus('bereit').catch(() => {})
-    void duckingSetzen(false).catch(() => {})
+    void setzeStatus('bereit').catch((err) => still(err, 'tray.resetStatus'))
   }
 }

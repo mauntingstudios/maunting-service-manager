@@ -7,16 +7,20 @@
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import '@/i18n'
+import { duckingTestReset, istDuckingAktiv } from '@/lib/audioDucking'
 
 const { sendTyping, toastError } = vi.hoisted(() => ({
   sendTyping: vi.fn(),
   toastError: vi.fn(),
 }))
 vi.mock('@/services/messengerSocket', () => ({ messengerSocket: { sendTyping } }))
-vi.mock('@/lib/audioSettings', () => ({ getAudioTrackConstraints: () => ({}) }))
+vi.mock('@/lib/audioSettings', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/lib/audioSettings')>()
+  return { ...original, getAudioTrackConstraints: () => ({}) }
+})
 vi.mock('@/stores/toastStore', () => ({ toast: { error: toastError } }))
 
 import { useSprachaufnahme } from './useSprachaufnahme'
@@ -119,5 +123,29 @@ describe('useSprachaufnahme', () => {
     await act(() => result.current.starte())
     expect(toastError).toHaveBeenCalledTimes(1)
     expect(result.current.laeuft).toBe(false)
+    expect(istDuckingAktiv()).toBe(false)
+  })
+})
+
+describe('useSprachaufnahme Ducking', () => {
+  afterEach(() => {
+    duckingTestReset()
+  })
+
+  it('belegt Ducking während der Sprachnachricht und gibt es bei Ende oder Unmount frei', async () => {
+    const { result, unmount } = aufnahme()
+    expect(istDuckingAktiv()).toBe(false)
+
+    await act(() => result.current.starte())
+    expect(istDuckingAktiv()).toBe(true)
+
+    act(() => result.current.beende(true))
+    expect(istDuckingAktiv()).toBe(false)
+
+    await act(() => result.current.starte())
+    expect(istDuckingAktiv()).toBe(true)
+
+    unmount()
+    expect(istDuckingAktiv()).toBe(false)
   })
 })

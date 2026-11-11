@@ -85,6 +85,19 @@ async fn benachrichtigung_berechtigung_anfragen(app: tauri::AppHandle) -> Result
     Ok(zustand == tauri_plugin_notification::PermissionState::Granted)
 }
 
+/// Senkt fremde Audioquellen (externe Apps sowie Webseiten-Tabs, aber nicht
+/// die eigene Pontis-Oberfläche `main`) per WASAPI ab oder stellt sie wieder
+/// her. Auf Nicht-Windows-Systemen ein stiller No-Op.
+#[tauri::command(async)]
+fn ducking(an: bool, prozent: Option<u8>) -> Result<(), String> {
+    let staerke = prozent.unwrap_or(audio_ducking::PROZENT_STANDARD);
+    #[cfg(windows)]
+    let ausschluss = medien::haupt_webview_pid();
+    #[cfg(not(windows))]
+    let ausschluss: Vec<u32> = Vec::new();
+    audio_ducking::setzen(an, staerke, &ausschluss)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     schluesselfach::einrichten(schluesselfach::Dienst {
@@ -240,6 +253,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             konfig::konfig_laden,
             konfig::konfig_aendern,
+            ducking,
             benachrichtigung_senden,
             benachrichtigung_berechtigung_anfragen,
             dienst::dienst_starten,
@@ -362,6 +376,15 @@ pub fn run() {
 
                 if fenster.label() == "main" && !ist_unterfenster {
                     schild::gesamt::speichern(&app);
+                    #[cfg(windows)]
+                    {
+                        let (fertig, warten) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            let _ = audio_ducking::stoppen();
+                            let _ = fertig.send(());
+                        });
+                        let _ = warten.recv_timeout(std::time::Duration::from_secs(1));
+                    }
                 }
                 let vergessen = app
                     .try_state::<konfig::KonfigZustand>()

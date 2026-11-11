@@ -9,6 +9,7 @@
 const BEFEHLE: &[&str] = &[
     "konfig_laden",
     "konfig_aendern",
+    "ducking",
     "refresh_token_speichern",
     "refresh_token_laden",
     "refresh_token_loeschen",

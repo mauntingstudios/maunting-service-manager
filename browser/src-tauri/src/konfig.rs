@@ -38,6 +38,10 @@ pub struct Konfig {
     pub vergessen_beim_schliessen: bool,
     /// Hardwarebeschleunigung (GPU) für Webseiten und Oberfläche nutzen.
     pub hardwarebeschleunigung: bool,
+    /// Ob fremde Audioquellen während aktiver Mikrofonnutzung abgesenkt werden.
+    pub audio_ducking_aktiv: bool,
+    /// Stärke der Audio-Absenkung in Prozent (10–90, Vorgabe 60 = 40 % Restlautstärke).
+    pub audio_ducking_prozent: u8,
 }
 
 impl Default for Konfig {
@@ -51,6 +55,8 @@ impl Default for Konfig {
             download_fragen: false,
             vergessen_beim_schliessen: false,
             hardwarebeschleunigung: true,
+            audio_ducking_aktiv: true,
+            audio_ducking_prozent: audio_ducking::PROZENT_STANDARD,
         }
     }
 }
@@ -75,6 +81,12 @@ fn pfad(app: &AppHandle) -> Result<PathBuf, String> {
 /// Steht darin mehr, als `Konfig` kennt, wird sie gleich neu geschrieben. Die
 /// erste Fassung des Browsers legte dort das Access-Token im Klartext ab; ohne
 /// das Neuschreiben bliebe es in der Datei liegen.
+pub(crate) fn aus_wert(roh: &serde_json::Value) -> Konfig {
+    let mut konfig: Konfig = serde_json::from_value(roh.clone()).unwrap_or_default();
+    konfig.audio_ducking_prozent = audio_ducking::prozent_klemmen(konfig.audio_ducking_prozent);
+    konfig
+}
+
 pub fn laden(app: &AppHandle) -> Konfig {
     let Ok(p) = pfad(app) else {
         return Konfig::default();
@@ -82,7 +94,7 @@ pub fn laden(app: &AppHandle) -> Konfig {
     let Some(roh) = fs::read_to_string(&p).ok().and_then(|i| serde_json::from_str::<serde_json::Value>(&i).ok()) else {
         return Konfig::default();
     };
-    let konfig: Konfig = serde_json::from_value(roh.clone()).unwrap_or_default();
+    let konfig = aus_wert(&roh);
     if hat_fremde_felder(&roh) {
         if let Err(fehler) = speichern(app, &konfig) {
             eprintln!("[MSB] Alte Konfiguration nicht bereinigt: {fehler}");
@@ -160,6 +172,7 @@ pub fn felder_einmischen(basis: &Konfig, felder: serde_json::Value) -> Result<Ko
         .collect();
     konfig.schild_ausnahmen.sort();
     konfig.schild_ausnahmen.dedup();
+    konfig.audio_ducking_prozent = audio_ducking::prozent_klemmen(konfig.audio_ducking_prozent);
     Ok(konfig)
 }
 
@@ -235,5 +248,30 @@ mod tests {
         // nicht in ihr liegen bleibt.
         assert!(hat_fremde_felder(&serde_json::from_str(alt).unwrap()));
         assert!(!hat_fremde_felder(&serde_json::to_value(Konfig::default()).unwrap()));
+    }
+
+    #[test]
+    fn ducking_vorgaben_und_klemmung_gelten_fuer_laden_und_einmischen() {
+        let standard = Konfig::default();
+        assert!(standard.audio_ducking_aktiv);
+        assert_eq!(standard.audio_ducking_prozent, audio_ducking::PROZENT_STANDARD);
+
+        let alt = aus_wert(&json!({"eingerichtet": true}));
+        assert!(alt.audio_ducking_aktiv);
+        assert_eq!(alt.audio_ducking_prozent, audio_ducking::PROZENT_STANDARD);
+
+        assert_eq!(aus_wert(&json!({"audio_ducking_prozent": 4})).audio_ducking_prozent, 10);
+        assert_eq!(aus_wert(&json!({"audio_ducking_prozent": 99})).audio_ducking_prozent, 90);
+
+        let neu = felder_einmischen(
+            &standard,
+            json!({"audio_ducking_aktiv": false, "audio_ducking_prozent": 0}),
+        )
+        .unwrap();
+        assert!(!neu.audio_ducking_aktiv);
+        assert_eq!(neu.audio_ducking_prozent, 10);
+
+        let hoch = felder_einmischen(&neu, json!({"audio_ducking_prozent": 120})).unwrap();
+        assert_eq!(hoch.audio_ducking_prozent, 90);
     }
 }

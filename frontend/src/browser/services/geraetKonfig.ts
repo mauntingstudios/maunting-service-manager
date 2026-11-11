@@ -5,6 +5,8 @@
  */
 import { create } from 'zustand'
 
+import { syncNativeDuckingSettings } from '@/lib/audioSettings'
+import { still } from '@/lib/still'
 import { konfig, type BrowserKonfig } from './nativ'
 
 interface KonfigZustand {
@@ -16,12 +18,21 @@ interface KonfigZustand {
 export const useGeraetKonfig = create<KonfigZustand>()((set) => ({
   konfig: null,
   laden: async () => {
-    const geladen = await konfig.laden().catch(() => null)
-    if (geladen) set({ konfig: geladen })
+    const geladen = await konfig.laden().catch((err) => {
+      still(err, 'geraetKonfig.laden')
+      return null
+    })
+    if (geladen) {
+      syncNativeDuckingSettings(geladen.audio_ducking_aktiv, geladen.audio_ducking_prozent)
+      set({ konfig: geladen })
+    }
   },
   aendern: async (felder) => {
     const neu = await konfig.aendern(felder)
-    if (neu) set({ konfig: neu })
+    if (neu) {
+      syncNativeDuckingSettings(neu.audio_ducking_aktiv, neu.audio_ducking_prozent)
+      set({ konfig: neu })
+    }
   },
 }))
 

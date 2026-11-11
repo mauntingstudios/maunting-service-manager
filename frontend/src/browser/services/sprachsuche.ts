@@ -14,6 +14,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { duckingBelegen } from '@/lib/audioDucking'
+import { still } from '@/lib/still'
 import { toast } from '@/stores/toastStore'
 import {
   istLokalesWhisperMoeglich,
@@ -106,6 +108,13 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
   const aktivRef = useRef(false)
   /** Zählt native Aufrufe; ein spätes Ergebnis nach Abbruch/Unmount wird verworfen. */
   const nativeLaufRef = useRef(0)
+  const mountAktivRef = useRef(true)
+  const duckingFreiRef = useRef<(() => void) | null>(null)
+
+  const freigebenDucking = useCallback(() => {
+    duckingFreiRef.current?.()
+    duckingFreiRef.current = null
+  }, [])
 
   const stoppen = useCallback(async () => {
     // Android: die System-Activity lässt sich von hier nicht abbrechen. Wir
@@ -113,6 +122,7 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
     if (istAndroid()) {
       nativeLaufRef.current++
       aktivRef.current = false
+      freigebenDucking()
       setZustand('bereit')
       return
     }
@@ -125,7 +135,12 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
       setZustand('transkribiert')
 
       try {
-        const audio = await handle.stoppen()
+        let audio: Float32Array
+        try {
+          audio = await handle.stoppen()
+        } finally {
+          freigebenDucking()
+        }
         if (audio.length > 0) {
           const transkription = await transkribiereAudioMitWhisper(
             audio,
@@ -152,16 +167,18 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
     }
 
     // 2. Web Speech API Fallback stoppen
+    freigebenDucking()
     if (recognizerRef.current) {
       try {
         recognizerRef.current.stop()
-      } catch {
+      } catch (err) {
         // Ignorieren falls bereits beendet
+        still(err, 'sprachsuche.stopRecognizer')
       }
     }
     aktivRef.current = false
     setZustand('bereit')
-  }, [i18n.language, onErgebnis, sprache, t])
+  }, [freigebenDucking, i18n.language, onErgebnis, sprache, t])
 
   const starten = useCallback(async () => {
     if (aktivRef.current) return
@@ -172,6 +189,8 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
       const lauf = ++nativeLaufRef.current
       aktivRef.current = true
       setZustand('zuhoeren')
+      freigebenDucking()
+      duckingFreiRef.current = duckingBelegen('browser-voice-android')
       try {
         const antwort = await nativ.sprachEingabe()
         if (nativeLaufRef.current !== lauf) return
@@ -188,6 +207,7 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
         }
       } finally {
         if (nativeLaufRef.current === lauf) {
+          freigebenDucking()
           aktivRef.current = false
           setZustand('bereit')
         }
@@ -199,13 +219,20 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
     if (istLokalesWhisperMoeglich()) {
       try {
         const handle = await starteAudioAufnahme()
+        if (!mountAktivRef.current) {
+          handle.abbrechen()
+          return
+        }
         aufnahmeHandleRef.current = handle
         aktivRef.current = true
+        freigebenDucking()
+        duckingFreiRef.current = duckingBelegen('browser-voice-whisper')
         setZustand('zuhoeren')
 
         // Im Hintergrund das Modell vorwärmen, damit es direkt bereit ist
-        void ladeWhisperModell().catch(() => {
+        void ladeWhisperModell().catch((err) => {
           // Fehler wird beim Transkribieren behandelt
+          still(err, 'sprachsuche.preloadWhisper')
         })
         return
       } catch (err: unknown) {
@@ -234,7 +261,17 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
       recognizer.lang = sprache || i18n.language || 'de-DE'
 
       recognizer.onstart = () => {
+        if (!mountAktivRef.current) {
+          try {
+            recognizer.abort()
+          } catch (err) {
+            still(err, 'sprachsuche.abortUnmounted')
+          }
+          return
+        }
         aktivRef.current = true
+        freigebenDucking()
+        duckingFreiRef.current = duckingBelegen('browser-voice-webspeech')
         setZustand('zuhoeren')
       }
 
@@ -263,7 +300,9 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
       }
 
       recognizer.onerror = (ev: IRecognitionErrorEvent) => {
+        freigebenDucking()
         if (ev.error === 'no-speech') {
+          aktivRef.current = false
           setZustand('bereit')
           return
         }
@@ -277,18 +316,21 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
       }
 
       recognizer.onend = () => {
+        freigebenDucking()
         aktivRef.current = false
         setZustand('bereit')
       }
 
       recognizerRef.current = recognizer
       recognizer.start()
-    } catch {
+    } catch (err) {
+      still(err, 'sprachsuche.startRecognizer')
+      freigebenDucking()
       toast.error(t('browser.sprachsuche.fehler'))
       setZustand('bereit')
       aktivRef.current = false
     }
-  }, [i18n.language, onErgebnis, onZwischenergebnis, sprache, t])
+  }, [freigebenDucking, i18n.language, onErgebnis, onZwischenergebnis, sprache, t])
 
   const umschalten = useCallback(() => {
     if (zustand === 'zuhoeren' || aktivRef.current) {
@@ -299,8 +341,11 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
   }, [starten, stoppen, zustand])
 
   useEffect(() => {
+    mountAktivRef.current = true
     return () => {
+      mountAktivRef.current = false
       nativeLaufRef.current++
+      freigebenDucking()
       if (aufnahmeHandleRef.current) {
         aufnahmeHandleRef.current.abbrechen()
         aufnahmeHandleRef.current = null
@@ -308,13 +353,14 @@ export function useSprachsuche({ onErgebnis, onZwischenergebnis, sprache }: Spra
       if (recognizerRef.current) {
         try {
           recognizerRef.current.abort()
-        } catch {
+        } catch (err) {
           // Ignorieren
+          still(err, 'sprachsuche.unmountAbort')
         }
         recognizerRef.current = null
       }
     }
-  }, [])
+  }, [freigebenDucking])
 
   return {
     zustand,

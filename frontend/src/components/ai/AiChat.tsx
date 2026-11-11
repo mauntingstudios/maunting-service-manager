@@ -74,6 +74,7 @@ import { AI_IS_BETA } from './AiBetaBanner'
 import { chatScopeApi, PRIMARY_CHAT_SCOPE, type AiChatScope } from './chatScope'
 
 import { Spinner } from '@maunting/ui'
+import { duckingBelegen } from '@/lib/audioDucking'
 import { still } from '@/lib/still'
 import { KI_NAME } from '@/lib/kiName'
 interface ServerOption {
@@ -332,9 +333,15 @@ export function AiChat({
   const providerRef = useRef<number | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const dictationRef = useRef<Aufnahme | null>(null)
+  const dictationDuckingRef = useRef<(() => void) | null>(null)
   const dictationChunksRef = useRef<ArrayBuffer[]>([])
   const dictationSelectionRef = useRef<{ start: number; end: number } | null>(null)
   providerRef.current = providerId
+
+  const freigebenDiktatDucking = useCallback(() => {
+    dictationDuckingRef.current?.()
+    dictationDuckingRef.current = null
+  }, [])
 
   // Eingabefeld-Höhe synchronisieren: Beim Leeren (z. B. nach Absenden) sofort
   // auf Normalgröße zurücksetzen, bei Textinhalt passend bis max. 160px wachsen.
@@ -377,6 +384,7 @@ export function AiChat({
   }, [providerId, canUseVoice])
 
   const diktatAbbrechen = useCallback(() => {
+    freigebenDiktatDucking()
     if (dictationRef.current) {
       dictationRef.current.beenden()
       dictationRef.current = null
@@ -384,7 +392,7 @@ export function AiChat({
     dictationChunksRef.current = []
     setDictating(false)
     setDictationElapsed(0)
-  }, [])
+  }, [freigebenDiktatDucking])
 
   const diktatUmschalten = useCallback(async () => {
     if (!providerId || transcribing) return
@@ -403,14 +411,24 @@ export function AiChat({
       dictationSelectionRef.current = { start, end }
       dictationChunksRef.current = []
       try {
-        dictationRef.current = await starteAufnahme((chunk) => dictationChunksRef.current.push(chunk))
+        const aufnahme = await starteAufnahme((chunk) => dictationChunksRef.current.push(chunk))
+        if (!mountedRef.current) {
+          aufnahme.beenden()
+          return
+        }
+        dictationRef.current = aufnahme
+        freigebenDiktatDucking()
+        dictationDuckingRef.current = duckingBelegen('ai-dictation')
         setDictating(true)
         setDictationElapsed(0)
-      } catch {
+      } catch (err) {
+        still(err, 'ai.dictation.start')
+        freigebenDiktatDucking()
         toast.error(t('ai.chat.dictationError'))
       }
       return
     }
+    freigebenDiktatDucking()
     dictationRef.current.beenden()
     dictationRef.current = null
     setDictating(false)
@@ -448,13 +466,14 @@ export function AiChat({
           used_seconds: config.dictation_used_seconds ?? 0,
           remaining_seconds: config.dictation_remaining_seconds ?? null,
         })
-      }).catch(() => {})
-    } catch {
+      }).catch((err) => still(err, 'ai.dictation.quota'))
+    } catch (err) {
+      still(err, 'ai.dictation.transcribe')
       toast.error(t('ai.chat.dictationError'))
     } finally {
       setTranscribing(false)
     }
-  }, [dictationQuota, input, providerId, t, transcribing])
+  }, [dictationQuota, freigebenDiktatDucking, input, providerId, t, transcribing])
 
   useEffect(() => {
     if (!dictating) {
@@ -494,7 +513,10 @@ export function AiChat({
     }
   }, [dictating, dictationQuota, diktatUmschalten])
 
-  useEffect(() => () => dictationRef.current?.beenden(), [])
+  useEffect(() => () => {
+    dictationRef.current?.beenden()
+    freigebenDiktatDucking()
+  }, [freigebenDiktatDucking])
 
   useEffect(() => {
     const el = eingabeRef.current

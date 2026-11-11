@@ -38,6 +38,7 @@ import {
   verteileAnAlle,
 } from '@/services/raumSchluessel'
 import { toneAbgang, toneAufgelegt, toneBeitritt } from '@/components/calling/anrufToene'
+import { aktiveDuckingQuellen, duckingBelegen } from '@/lib/audioDucking'
 import { saveAudioSettings } from '@/lib/audioSettings'
 import { toast } from '@/stores/toastStore'
 import type { Participant, Room } from 'livekit-client'
@@ -804,6 +805,27 @@ useAuthStore.subscribe((state, prevState) => {
     setzeAnrufIdentitaet(null)
   }
 })
+
+let callDuckingFrei: (() => void) | null = null
+
+function synchronisiereAnrufDucking(state: UseCallState): void {
+  const sollDucken =
+    state.state === 'active' &&
+    !state.isMuted &&
+    !state.isDeafened &&
+    !state.serverStumm
+  if (sollDucken) {
+    if (!callDuckingFrei || !aktiveDuckingQuellen().includes('call')) {
+      callDuckingFrei?.()
+      callDuckingFrei = duckingBelegen('call')
+    }
+  } else if (callDuckingFrei) {
+    callDuckingFrei()
+    callDuckingFrei = null
+  }
+}
+
+useCallStore.subscribe(synchronisiereAnrufDucking)
 
 // Im Entwicklungsmodus von der Konsole aus erreichbar. Ein Anruffenster mit
 // acht Teilnehmern laesst sich sonst nur mit acht Konten ansehen, und genau
