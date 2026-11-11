@@ -1,11 +1,10 @@
 /**
- * Ein runder Symbolknopf der Navigationsleiste. Die Kurzinfo steht darüber
- * (`lage="oben"`): darunter beginnt die Seite, und eine Webview liegt immer
- * über der Oberfläche.
+ * Ein runder Symbolknopf der Navigationsleiste. Die Kurzinfo steht darunter
+ * (`richtung="unten"`), gezeichnet von Windows über der Seite (`kurzinfo.rs`).
  */
 import { forwardRef, type ReactNode } from 'react'
 
-import { Kurzinfo } from '@maunting/ui'
+import { useLeistenname } from '../leiste/leistenname'
 
 /** Am Finger 44 px (Punkt 86); im MSB nach dem Zeiger, nicht nach der Breite (Punkt 127). */
 export const KNOPF =
@@ -19,21 +18,29 @@ interface KnopfProps {
   /** Die Kurzinfo nennt den Namen; `beschriftung` ersetzt ihn für Screenreader (etwa mit Zahl). */
   beschriftung?: string
   seite?: 'mitte' | 'ende'
-  /** Oben, solange der Knopf über der Seite steht; in einer Leiste am oberen Rand unten. */
   lage?: 'oben' | 'unten'
   children: ReactNode
 }
 
 export const Knopf = forwardRef<HTMLButtonElement, KnopfProps & { 'aria-expanded'?: boolean; 'aria-haspopup'?: 'dialog' }>(function Knopf(
-  { name, onClick, disabled, aktiv, beschriftung, seite, lage = 'oben', children, ...rest },
+  { name, onClick, disabled, aktiv, beschriftung, seite, lage = 'unten', children, ...rest },
   ref,
 ) {
+  const namen = useLeistenname(name, 'unten')
   return (
-    <Kurzinfo text={name} lage={lage} seite={seite}>
-      <button ref={ref} type="button" onClick={onClick} disabled={disabled} aria-label={beschriftung ?? name} aria-pressed={aktiv} className={KNOPF} {...rest}>
-        {children}
-      </button>
-    </Kurzinfo>
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={beschriftung ?? name}
+      aria-pressed={aktiv}
+      className={KNOPF}
+      {...namen}
+      {...rest}
+    >
+      {children}
+    </button>
   )
 })
 

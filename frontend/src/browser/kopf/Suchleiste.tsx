@@ -7,7 +7,8 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Input, Kurzinfo } from '@maunting/ui'
+import { Input } from '@maunting/ui'
+import { useLeistenname } from '../leiste/leistenname'
 
 import { nativ } from '../services/nativ'
 import { useSuche } from '../services/suche'
@@ -68,21 +69,35 @@ export function Suchleiste() {
       <span className="min-w-16 text-label-sm tabular-nums text-on-surface-variant" aria-live="polite">
         {stand}
       </span>
-      <Kurzinfo text={t('browser.suche.zurueck')} lage="oben">
-        <button type="button" className={KNOPF} aria-label={t('browser.suche.zurueck')} disabled={!anzahl} onClick={() => springen('zurueck')}>
-          <ChevronUp className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </Kurzinfo>
-      <Kurzinfo text={t('browser.suche.weiter')} lage="oben">
-        <button type="button" className={KNOPF} aria-label={t('browser.suche.weiter')} disabled={!anzahl} onClick={() => springen('weiter')}>
-          <ChevronDown className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </Kurzinfo>
-      <Kurzinfo text={t('browser.suche.schliessen')} lage="oben">
-        <button type="button" className={KNOPF} aria-label={t('browser.suche.schliessen')} onClick={schliessen}>
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </Kurzinfo>
+      <button
+        type="button"
+        className={KNOPF}
+        aria-label={t('browser.suche.zurueck')}
+        disabled={!anzahl}
+        onClick={() => springen('zurueck')}
+        {...useLeistenname(t('browser.suche.zurueck'), 'unten')}
+      >
+        <ChevronUp className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className={KNOPF}
+        aria-label={t('browser.suche.weiter')}
+        disabled={!anzahl}
+        onClick={() => springen('weiter')}
+        {...useLeistenname(t('browser.suche.weiter'), 'unten')}
+      >
+        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className={KNOPF}
+        aria-label={t('browser.suche.schliessen')}
+        onClick={schliessen}
+        {...useLeistenname(t('browser.suche.schliessen'), 'unten')}
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
     </div>
   )
 }

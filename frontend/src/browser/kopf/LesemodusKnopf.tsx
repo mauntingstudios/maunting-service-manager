@@ -5,7 +5,7 @@
  */
 import { BookOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Kurzinfo } from '@maunting/ui'
+import { useLeistenname } from '../leiste/leistenname'
 
 import type { Tab } from '../services/tab'
 import { istWebseite } from '../services/intern'
@@ -38,21 +38,22 @@ export function LesemodusKnopf({ tab, className = '', groesse = 'sm' }: Lesemodu
     ? `${t('browser.lesemodus.beenden')} ${t('browser.lesemodus.kuerzelHinweis')}`
     : `${t('browser.lesemodus.aktivieren')} ${t('browser.lesemodus.kuerzelHinweis')}`
 
+  const namen = useLeistenname(hinweis, 'unten')
+
   return (
-    <Kurzinfo text={hinweis} lage="unten">
-      <button
-        type="button"
-        onClick={() => void lesemodusUmschalten(tab.id)}
-        aria-label={hinweis}
-        aria-pressed={aktiv}
-        className={`relative flex items-center justify-center rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${dimensionen} ${
-          aktiv
-            ? 'bg-primary/15 text-primary'
-            : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface'
-        } ${className}`}
-      >
-        <BookOpen className={iconGroesse} aria-hidden="true" />
-      </button>
-    </Kurzinfo>
+    <button
+      type="button"
+      onClick={() => void lesemodusUmschalten(tab.id)}
+      aria-label={hinweis}
+      aria-pressed={aktiv}
+      className={`relative flex items-center justify-center rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${dimensionen} ${
+        aktiv
+          ? 'bg-primary/15 text-primary'
+          : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface'
+      } ${className}`}
+      {...namen}
+    >
+      <BookOpen className={iconGroesse} aria-hidden="true" />
+    </button>
   )
 }

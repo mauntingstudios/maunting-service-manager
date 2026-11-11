@@ -74,3 +74,20 @@ def test_write_modlist_empty_lines(tmp_path: Path) -> None:
     server = _Server(id=5, install_dir=str(tmp_path))
     write_workshop_modlist(server, "Mods/empty.txt", [])
     assert (tmp_path / "Mods" / "empty.txt").read_text() == ""
+
+
+def test_write_modlist_updates_a_flat_config_key_without_losing_other_settings(tmp_path: Path) -> None:
+    server = _Server(id=6, install_dir=str(tmp_path))
+    config = tmp_path / "Zomboid" / "Server" / "My Server.ini"
+    config.parent.mkdir(parents=True)
+    config.write_text("PublicName=My Server\nWorkshopItems=old\nMods=keep\n", encoding="utf-8")
+
+    write_workshop_modlist(
+        server,
+        "Zomboid/Server/My Server.ini",
+        ["123", "456"],
+        config_key="WorkshopItems",
+        separator=";",
+    )
+
+    assert config.read_text(encoding="utf-8") == "PublicName=My Server\nWorkshopItems=123;456\nMods=keep\n"

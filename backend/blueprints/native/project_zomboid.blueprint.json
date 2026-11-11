@@ -14,7 +14,7 @@
     "env": {
       "HOME": "/data"
     },
-    "startup": "./start-server.sh -servername {SERVER_NAME} -port {GAME_PORT} -udpport {CUSTOM_PORT_1}",
+    "startup": "./start-server.sh -cachedir=/data -servername {SERVER_NAME} -port {GAME_PORT} -udpport {CUSTOM_PORT_1}",
     "ensureDirs": [
       "Zomboid"
     ],
@@ -49,13 +49,15 @@
     "updateStrategy": "checkBased"
   },
   "mods": {
-    "supportsMods": false,
-    "supportsSteamWorkshop": false,
-    "workshopAppId": null,
-    "modInjection": "none",
+    "supportsMods": true,
+    "supportsSteamWorkshop": true,
+    "workshopAppId": "108600",
+    "modInjection": "file",
     "modStartupArgumentFormat": null,
-    "modListFilePath": null,
-    "modListContent": "workshopIds",
+    "modListFilePath": "Zomboid/Server/{SERVER_NAME}.ini",
+    "modListContent": "iniKey",
+    "modListKey": "WorkshopItems",
+    "modListSeparator": ";",
     "postInstall": []
   },
   "health": {

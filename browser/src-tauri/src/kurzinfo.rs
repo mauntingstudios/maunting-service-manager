@@ -28,6 +28,8 @@ pub enum Richtung {
     /// Oben in der Mitte des Bildschirms, größer; `x` und `y` zählen nicht.
     /// Der Hinweis beim Vollbild einer Seite (`vollbildHinweis.ts`).
     Oben,
+    /// Unter dem Element: `x` ist die waagerechte Mitte, `y` die untere Kante des Auslösers.
+    Unten,
 }
 
 /// Eine Blase: Text, Ankerpunkt in CSS-Pixeln der Oberfläche, Farben als RGB
@@ -68,7 +70,7 @@ fn linke_kante(x: i32, breite: i32, richtung: Richtung) -> i32 {
     match richtung {
         Richtung::Rechts => x,
         Richtung::Links => x - breite,
-        Richtung::Oben => x - breite / 2,
+        Richtung::Oben | Richtung::Unten => x - breite / 2,
     }
 }
 
@@ -194,7 +196,12 @@ mod fenster {
             let _ = ClientToScreen(besitzer, &mut punkt);
         }
         let links = super::linke_kante(punkt.x, breite, b.richtung);
-        let _ = SetWindowPos(f, Some(HWND_TOP), links, punkt.y - hoch / 2, breite, hoch, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        let oben_pos = if b.richtung == super::Richtung::Unten {
+            punkt.y + px(6.0)
+        } else {
+            punkt.y - hoch / 2
+        };
+        let _ = SetWindowPos(f, Some(HWND_TOP), links, oben_pos, breite, hoch, SWP_NOACTIVATE | SWP_SHOWWINDOW);
         let _ = InvalidateRect(Some(f), None, true);
     }
 

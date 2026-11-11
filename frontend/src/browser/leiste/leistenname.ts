@@ -59,13 +59,14 @@ export function blaseSenden(blase: Record<string, unknown> | null): void {
 let sichtbar = false
 let wartet: ReturnType<typeof setTimeout> | undefined
 
-export type Richtung = 'rechts' | 'links'
+export type Richtung = 'rechts' | 'links' | 'unten'
 
 function zeigen(element: Element, text: string, richtung: Richtung): void {
   const r = element.getBoundingClientRect()
   sichtbar = true
-  const x = richtung === 'rechts' ? r.right + ABSTAND : r.left - ABSTAND
-  senden({ text, x, y: r.top + r.height / 2, richtung, ...farbenLesen() })
+  const x = richtung === 'rechts' ? r.right + ABSTAND : richtung === 'links' ? r.left - ABSTAND : r.left + r.width / 2
+  const y = richtung === 'unten' ? r.bottom : r.top + r.height / 2
+  senden({ text, x, y, richtung, ...farbenLesen() })
 }
 
 export function namenVerbergen(): void {

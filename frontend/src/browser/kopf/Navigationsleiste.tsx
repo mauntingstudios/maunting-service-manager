@@ -4,14 +4,15 @@
  * Module (`Modulmenue.tsx`). Neu laden, Schild, Stern und Screenshot lassen
  * sich ausblenden.
  *
- * Kurzinfos stehen hier über den Knöpfen (`lage="oben"`): darunter beginnt die
- * Seite, und eine Webview liegt immer über der Oberfläche.
+ * Kurzinfos stehen unter den Knöpfen (`richtung="unten"`), gezeichnet
+ * von Windows über der Seite (`kurzinfo.rs`).
  */
 import { forwardRef, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, RotateCw, ShieldCheck, ShieldOff, Star, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Ankerfenster, Kurzinfo, Switch } from '@maunting/ui'
+import { Ankerfenster, Switch } from '@maunting/ui'
+import { useLeistenname, useLeistennameAufraeumen } from '../leiste/leistenname'
 
 import { useEinstellungenStore } from '../services/einstellungenStore'
 
@@ -42,6 +43,7 @@ export function Schild() {
   const an = global && !pausiert
   const summe = (tab?.werbung ?? 0) + (tab?.tracker ?? 0)
   const name = an ? t('browser.schild.knopf', { anzahl: summe }) : t('browser.schild.knopfAus')
+  const namen = useLeistenname(name, 'unten')
 
   const umschalten = async (schuetzen: boolean) => {
     if (!host) return
@@ -53,20 +55,19 @@ export function Schild() {
 
   return (
     <>
-      <Kurzinfo text={name} lage="oben" seite="ende">
-        <button
-          ref={anker}
-          type="button"
-          onClick={() => setOffen((o) => !o)}
-          aria-label={name}
-          aria-expanded={offen}
-          aria-haspopup="dialog"
-          className={`${KNOPF} relative w-auto gap-1 px-2`}
-        >
-          {an ? <ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" /> : <ShieldOff className="h-4 w-4" aria-hidden="true" />}
-          {an && summe > 0 && <span className="text-label-sm tabular-nums text-on-surface" aria-hidden="true">{summe}</span>}
-        </button>
-      </Kurzinfo>
+      <button
+        ref={anker}
+        type="button"
+        onClick={() => setOffen((o) => !o)}
+        aria-label={name}
+        aria-expanded={offen}
+        aria-haspopup="dialog"
+        className={`${KNOPF} relative w-auto gap-1 px-2`}
+        {...namen}
+      >
+        {an ? <ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" /> : <ShieldOff className="h-4 w-4" aria-hidden="true" />}
+        {an && summe > 0 && <span className="text-label-sm tabular-nums text-on-surface" aria-hidden="true">{summe}</span>}
+      </button>
       <Ankerfenster offen={offen} onSchliessen={() => setOffen(false)} anker={anker} label={t('browser.schild.titel')} ausrichtung="ende" className="w-72">
         <p className="text-title-sm text-on-surface">{t('browser.schild.titel')}</p>
         {host && <p className="mt-0.5 truncate text-body-sm text-on-surface-variant">{host}</p>}
@@ -98,6 +99,7 @@ export function Schild() {
 
 export const Navigationsleiste = forwardRef<AdresszeileGriff>(function Navigationsleiste(_, adresszeile) {
   const { t } = useTranslation()
+  useLeistennameAufraeumen()
   const tab = useAktiverTab()
   const aktion = useTabsStore((s) => s.aktion)
   const lesezeichen = useVerlaufStore((s) => s.lesezeichen)

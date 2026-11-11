@@ -184,7 +184,7 @@ pub(super) unsafe fn einrichten(
         Err(_) => core.AddWebResourceRequestedFilter(&alle, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)?,
     }
     {
-        let (app, id, hauptadresse) = (app.clone(), id.to_string(), hauptadresse.clone());
+        let (app, id, hauptadresse, umgebung_web) = (app.clone(), id.to_string(), hauptadresse.clone(), umgebung.clone());
         core.add_WebResourceRequested(
             &WebResourceRequestedEventHandler::create(Box::new(move |sender, args| {
                 let (Some(core), Some(args)) = (sender, args) else { return Ok(()) };
@@ -208,7 +208,7 @@ pub(super) unsafe fn einrichten(
                 };
                 if blocken {
                     let (status, text) = art.sperrantwort();
-                    let antwort = umgebung.CreateWebResourceResponse(
+                    let antwort = umgebung_web.CreateWebResourceResponse(
                         None,
                         status,
                         &HSTRING::from(text),
@@ -302,7 +302,7 @@ pub(super) unsafe fn einrichten(
     }
 
     super::ohne_edge::anbinden(app, id, &core)?;
-    super::rueckfragen::anbinden(app, id, &core)?;
+    super::rueckfragen::anbinden(app, id, &core, &umgebung)?;
     super::entwickler::anbinden(app, id, &core)?;
     Ok(())
 }

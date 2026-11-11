@@ -57,8 +57,8 @@ export interface BlueprintDraft {
   mods?: {
     supportsMods: boolean; supportsSteamWorkshop: boolean; workshopAppId?: string; filterTags: string[]
     supportsCurseForge?: boolean; curseforgeGameId?: string; curseforgeClassId?: string; curseforgeInstallPath?: string
-    modInjection: 'none' | 'startupArg' | 'file'; modStartupArgumentFormat?: string; modStartupArgumentSeparator?: string; modListFilePath?: string
-    modListContent: 'workshopIds' | 'postInstallTargetBasenames'
+    modInjection: 'none' | 'startupArg' | 'file'; modStartupArgumentFormat?: string; modStartupArgumentSeparator?: string; modListFilePath?: string; modListKey?: string; modListSeparator?: string
+    modListContent: 'workshopIds' | 'postInstallTargetBasenames' | 'iniKey'
     postInstall: Array<{ operation: 'copy' | 'symlink'; source: string; target: string; required: boolean }>
   }
   backup?: { includePaths: string[] }

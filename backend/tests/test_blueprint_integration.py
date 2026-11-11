@@ -123,6 +123,7 @@ def _bp_with_update_strategy(source_type: str, strategy: str | None, extra_sourc
         ("dayz", "steam_game"),
         ("hytale", "non_steam_game"),
         ("minecraft_vanilla", "non_steam_game"),
+        ("project_zomboid", "steam_game"),
         ("scum_server", "steam_game"),
         ("seven_days_to_die", "steam_game"),
     ],
@@ -137,6 +138,32 @@ def test_native_blueprints_load_and_create_generic_plugin(bpid: str, expected_ca
     # Grace immer lesbar (Default oder explizit)
     grace = plugin.stop_grace_period_seconds(None)
     assert 5 <= grace <= 600
+
+
+def test_project_zomboid_blueprint_uses_the_native_linux_dedicated_server() -> None:
+    """Project Zomboid muss das Linux-Depot nutzen, nie Wine oder Proton."""
+    bp = _load_native("project_zomboid")
+
+    assert bp.meta.category.value == "steam_game"
+    assert bp.source.steam is not None
+    assert bp.source.steam.appId == "380870"
+    assert bp.source.steam.platform.value == "linux"
+    assert bp.source.steam.compatibility.value == "native"
+    assert bp.runtime.startup == (
+        "./start-server.sh -cachedir=/data -servername {SERVER_NAME} "
+        "-port {GAME_PORT} -udpport {CUSTOM_PORT_1}"
+    )
+    mods = bp.effective_mods()
+    assert mods.supportsSteamWorkshop is True
+    assert mods.workshopAppId == "108600"
+    assert mods.modInjection.value == "file"
+    assert mods.modListFilePath == "Zomboid/Server/{SERVER_NAME}.ini"
+    assert mods.modListContent.value == "iniKey"
+    assert mods.modListKey == "WorkshopItems"
+    assert [(port.name.value, port.protocol.value) for port in bp.ports] == [
+        ("game", "udp"),
+        ("custom", "udp"),
+    ]
 
 
 def test_minimal_valid_docker_blueprint_roundtrip():

@@ -17,6 +17,8 @@ Welcome to the technical documentation of **Maunting Server Manager** and the **
 
 ## Additional System Documentation
 
+- [vault-architecture.md](file:///e:/Github-Projekte/maunting-server-manager/docs/vault-architecture.md): Zero-Knowledge Vault architecture, DIS integration, chunked media streaming, Google Photos-style private gallery, and mobile camera background inbox protocol.
+- [smartcard-architecture.md](file:///e:/Github-Projekte/maunting-server-manager/docs/smartcard-architecture.md): Maunting Smartcard wallet protocol, physical security metaphor, and camera-based remote desktop unlock.
 - [ai-system-architecture.md](file:///e:/Github-Projekte/maunting-server-manager/docs/ai-system-architecture.md): Deep-dive into AI streaming architecture and agent roles.
 - [mcp-integrationen.md](file:///e:/Github-Projekte/maunting-server-manager/docs/mcp-integrationen.md): Model Context Protocol server configuration and presets.
 - [maunting-search.md](file:///e:/Github-Projekte/maunting-server-manager/docs/maunting-search.md): SearXNG web research integration and privacy-preserving search synthesis.

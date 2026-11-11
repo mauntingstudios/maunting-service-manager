@@ -340,6 +340,17 @@ pub fn run() {
             browserimport::import_browser_data,
         ])
         .on_window_event(move |fenster, ereignis| {
+            #[cfg(desktop)]
+            if fenster.label() == "kontextmenue" {
+                if let tauri::WindowEvent::Focused(false) = ereignis {
+                    let _ = fenster.hide();
+                }
+                if let tauri::WindowEvent::CloseRequested { api, .. } = ereignis {
+                    api.prevent_close();
+                    let _ = fenster.hide();
+                    return;
+                }
+            }
             // „Beim Schließen vergessen“: erst die Seitendaten löschen, dann
             // beenden. Das Fenster bleibt dafür einen Moment stehen.
             if let tauri::WindowEvent::CloseRequested { api, .. } = ereignis {

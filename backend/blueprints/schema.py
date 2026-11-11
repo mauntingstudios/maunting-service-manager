@@ -147,6 +147,7 @@ class BlueprintWorkshopFileOperation(str, Enum):
 class BlueprintModListContent(str, Enum):
     WORKSHOP_IDS = "workshopIds"
     POST_INSTALL_TARGET_BASENAMES = "postInstallTargetBasenames"
+    INI_KEY = "iniKey"
 
 
 class BlueprintConfigPatchType(str, Enum):
@@ -816,6 +817,8 @@ class BlueprintMods(BaseModel):
     modStartupArgumentSeparator: str = Field(default=";", max_length=8)
     modListFilePath: str | None = Field(default=None, max_length=512)
     modListContent: BlueprintModListContent = BlueprintModListContent.WORKSHOP_IDS
+    modListKey: str | None = Field(default=None, min_length=1, max_length=128)
+    modListSeparator: str = Field(default=";", max_length=8)
     postInstall: list["BlueprintWorkshopFileAction"] = Field(default_factory=list, max_length=32)
 
     @field_validator("filterTags")
@@ -903,6 +906,24 @@ class BlueprintMods(BaseModel):
             )
         return v
 
+    @field_validator("modListKey")
+    @classmethod
+    def _check_modlist_key(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", v):
+            raise ValueError("mods.modListKey darf nur Buchstaben, Zahlen und '_' enthalten.")
+        return v
+
+    @field_validator("modListSeparator")
+    @classmethod
+    def _check_modlist_separator(cls, v: str) -> str:
+        if not v:
+            return ";"
+        if any(ch in v for ch in ("\n", "\r", "\x00", "=")):
+            raise ValueError("mods.modListSeparator enthaelt ein unzulaessiges Zeichen.")
+        return v
+
     @model_validator(mode="after")
     def _check_consistency(self) -> "BlueprintMods":
         if self.supportsSteamWorkshop:
@@ -935,6 +956,8 @@ class BlueprintMods(BaseModel):
                 raise ValueError(
                     "mods.postInstall ist Pflicht bei modListContent=postInstallTargetBasenames."
                 )
+        if self.modListContent == BlueprintModListContent.INI_KEY and not self.modListKey:
+            raise ValueError("mods.modListKey ist Pflicht bei modListContent=iniKey.")
         return self
 
 

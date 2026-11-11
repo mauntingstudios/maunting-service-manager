@@ -855,7 +855,28 @@ def _finalize_modlist_lines(server, lines: list[str]) -> list[str]:
     return out
 
 
-def write_workshop_modlist(server, relative_path: str, lines: list[str]) -> None:
+def _set_flat_config_value(content: str, key: str, value: str) -> str:
+    """Setzt einen ``key=value``-Eintrag in einer sektionslosen Config-Datei."""
+    prefix = f"{key}="
+    lines = content.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if line.rstrip("\r\n").startswith(prefix):
+            newline = "\r\n" if line.endswith("\r\n") else "\n"
+            lines[index] = f"{prefix}{value}{newline}"
+            return "".join(lines)
+    if content and not content.endswith(("\n", "\r")):
+        content += "\n"
+    return f"{content}{prefix}{value}\n"
+
+
+def write_workshop_modlist(
+    server,
+    relative_path: str,
+    lines: list[str],
+    *,
+    config_key: str | None = None,
+    separator: str = ";",
+) -> None:
     """Schreibt eine Workshop-Modliste in eine sichere Datei unter ``install_dir``.
 
     Sicherheits-Invarianten:
@@ -880,8 +901,17 @@ def write_workshop_modlist(server, relative_path: str, lines: list[str]) -> None
         try:
             from services.node_client import NodeClient
 
-            content = "".join(f"{line}\n" for line in _finalize_modlist_lines(server, lines))
-            NodeClient.from_node(node).files_write(server.id, relative_path, content)
+            client = NodeClient.from_node(node)
+            final_lines = _finalize_modlist_lines(server, lines)
+            if config_key:
+                try:
+                    current = client.files_read(server.id, relative_path)
+                except Exception:
+                    current = ""
+                content = _set_flat_config_value(current, config_key, separator.join(final_lines))
+            else:
+                content = "".join(f"{line}\n" for line in final_lines)
+            client.files_write(server.id, relative_path, content)
         except Exception:
             _append_console_log(server.id, "[MSM] Modliste: Schreiben auf Node fehlgeschlagen\n")
         return
@@ -905,9 +935,17 @@ def write_workshop_modlist(server, relative_path: str, lines: list[str]) -> None
     lines = _finalize_modlist_lines(server, lines)
     try:
         os.makedirs(target_dir, exist_ok=True)
+        if config_key:
+            try:
+                with open(target, "r", encoding="utf-8", errors="replace") as f:
+                    current = f.read()
+            except FileNotFoundError:
+                current = ""
+            content = _set_flat_config_value(current, config_key, separator.join(lines))
+        else:
+            content = "".join(f"{line}\n" for line in lines)
         with open(target, "w", encoding="utf-8") as f:
-            for line in lines:
-                f.write(f"{line}\n")
+            f.write(content)
     except OSError as exc:
         _append_console_log(server.id, f"[MSM] Modliste: Schreiben fehlgeschlagen: {exc}\n")
 
@@ -1491,6 +1529,18 @@ class GamePlugin(ABC):
         if bp_mods.modInjection != BlueprintModInjection.FILE:
             return
         rel_path = bp_mods.modListFilePath or ""
+        if "{SERVER_NAME}" in rel_path:
+            server_name = str(getattr(server, "name", ""))
+            if not server_name or any(ch in server_name for ch in ("/", "\\", "\x00")) or server_name in {".", ".."}:
+                _append_console_log(server.id, "[MSM] Modliste: unsicherer Servername im Blueprint-Pfad abgelehnt\n")
+                return
+            rel_path = rel_path.replace("{SERVER_NAME}", server_name)
         if not rel_path:
             return
-        write_workshop_modlist(server, rel_path, self.format_modlist_lines(server, _query_active_mods(server.id)))
+        write_workshop_modlist(
+            server,
+            rel_path,
+            self.format_modlist_lines(server, _query_active_mods(server.id)),
+            config_key=bp_mods.modListKey if bp_mods.modListContent.value == "iniKey" else None,
+            separator=bp_mods.modListSeparator,
+        )

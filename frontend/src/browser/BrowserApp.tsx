@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
+import { listen } from '@tauri-apps/api/event'
 
 import { ThirdPartyPrivacyDialog } from '@/features/privacy/ThirdPartyPrivacyDialog'
 import { BrowserBestaetigungDialog } from '@/components/BrowserBestaetigungDialog'
@@ -55,8 +56,9 @@ import { useDrittanbieterHinweisStore } from './services/drittanbieterHinweisSto
 import { useEinstellungenStore } from './services/einstellungenStore'
 import { useDownloadHinweis } from './services/useDownloadHinweis'
 import { useGeraetKonfig } from './services/geraetKonfig'
+import { useAnsicht } from './entwickler/werkzeuge'
 import { kuerzelAusfuehren, useKuerzel, type KuerzelZiele } from './services/kuerzel'
-import { tabEreignisse } from './services/nativ'
+import { neuerTabEreignisse, tabEreignisse, untersuchenEreignisse } from './services/nativ'
 import { erweiterungenStarten } from './erweiterungen/erweiterungen'
 import { useLeistung } from './services/leistung'
 import { useDarstellung } from './services/darstellung'
@@ -218,6 +220,68 @@ function Wurzel() {
       aus?.()
     }
   }, [])
+
+  useEffect(() => {
+    let unlistenUntersuchen: (() => void) | null = null
+    let unlistenNeuerTab: (() => void) | null = null
+    let unlistenKontextBefehl: (() => void) | null = null
+    let aktiv = true
+
+    void untersuchenEreignisse((daten) => {
+      const { setUntersuchen, setAnsicht } = useAnsicht.getState()
+      setUntersuchen({ tab: daten.tab, x: daten.x / window.devicePixelRatio, y: daten.y / window.devicePixelRatio })
+      setAnsicht('elemente')
+      navigate('/entwickler')
+    }).then((weg) => {
+      if (aktiv) unlistenUntersuchen = weg
+      else weg()
+    })
+
+    void neuerTabEreignisse((daten) => {
+      useTabsStore.getState().neuerTab(daten.url, { privat: daten.privat })
+    }).then((weg) => {
+      if (aktiv) unlistenNeuerTab = weg
+      else weg()
+    })
+
+    void listen<{ aktion: string; tab: string; url?: string; privat?: boolean; hintergrund?: boolean; x?: number; y?: number }>(
+      'msb:kontext-befehl',
+      (e) => {
+        const d = e.payload
+        if (d.aktion === 'neu_laden') {
+          useTabsStore.getState().aktion('neu_laden')
+        } else if (d.aktion === 'zurueck') {
+          useTabsStore.getState().aktion('zurueck')
+        } else if (d.aktion === 'vor') {
+          useTabsStore.getState().aktion('vor')
+        } else if (d.aktion === 'neuer_tab' && d.url) {
+          useTabsStore.getState().neuerTab(d.url, { nach: d.tab, privat: d.privat, hintergrund: d.hintergrund })
+        } else if (d.aktion === 'untersuchen') {
+          const { setUntersuchen, setAnsicht } = useAnsicht.getState()
+          setUntersuchen({ tab: d.tab, x: (d.x ?? 0) / window.devicePixelRatio, y: (d.y ?? 0) / window.devicePixelRatio })
+          setAnsicht('elemente')
+          navigate('/entwickler')
+        }
+      },
+    ).then((weg) => {
+      if (aktiv) unlistenKontextBefehl = weg
+      else weg()
+    })
+
+    const aufGeheZu = (e: Event) => {
+      const ce = e as CustomEvent<string>
+      if (typeof ce.detail === 'string') navigate(ce.detail)
+    }
+    window.addEventListener('msb:gehe-zu', aufGeheZu)
+
+    return () => {
+      aktiv = false
+      window.removeEventListener('msb:gehe-zu', aufGeheZu)
+      unlistenUntersuchen?.()
+      unlistenNeuerTab?.()
+      unlistenKontextBefehl?.()
+    }
+  }, [navigate])
 
   const ziele = useMemo<KuerzelZiele>(
     () => ({

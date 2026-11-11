@@ -28,18 +28,23 @@ import { transportEinrichten } from '@/desktop/transport'
 import { initOfflineSync } from '@/lib/offlineSync'
 import { cleanupPreloadUrlParam } from '@/lib/preloadSelbstheilung'
 import { BrowserApp } from './BrowserApp'
+import { KontextOverlay } from './seite/KontextOverlay'
 
-transportEinrichten()
-initOfflineSync()
-// Die Marke steht, bevor das erste Bild gezeichnet wird.
-fensterStilAnwenden()
+const istKontextOverlay = typeof window !== 'undefined' && window.location.search.includes('kontext=1')
+
+if (!istKontextOverlay) {
+  transportEinrichten()
+  initOfflineSync()
+  // Die Marke steht, bevor das erste Bild gezeichnet wird.
+  fensterStilAnwenden()
+}
 
 void textBereit.finally(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <MotionProvider>
         <ErrorBoundary>
-          <BrowserApp />
+          {istKontextOverlay ? <KontextOverlay /> : <BrowserApp />}
         </ErrorBoundary>
       </MotionProvider>
     </StrictMode>,

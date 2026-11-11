@@ -32,6 +32,8 @@ Willkommen im Dokumentationsverzeichnis von **Maunting Server Manager** und dem 
 
 ## Weitere Fachdokumente
 
+- [tresor-architektur.md](file:///e:/Github-Projekte/maunting-server-manager/docs/de-docs/tresor-architektur.md): Zero-Knowledge-Tresorarchitektur, DIS-Integration, gestreamte Medien-Chunks, private Google-Fotos-Alternative und Kamerasicherung per Posteingang-Protokoll.
+- [smartcard-architektur.md](file:///e:/Github-Projekte/maunting-server-manager/docs/de-docs/smartcard-architektur.md): Maunting Smartcard Wallet-Protokoll, physische Sicherheitsmetapher und kamerabasierte E2EE-Sitzungsfreigabe.
 - [ai-system-architecture.md](file:///e:/Github-Projekte/maunting-server-manager/docs/de-docs/ai-system-architecture.md): Streaming-Architektur und Agentenrollen im Detail.
 - [maunting-search.md](file:///e:/Github-Projekte/maunting-server-manager/docs/de-docs/maunting-search.md): SearXNG-Webrecherche und quellenbasierte Zusammenfassungen.
 - [self-hosting.md](file:///e:/Github-Projekte/maunting-server-manager/docs/de-docs/self-hosting.md): Betriebsanleitung, Docker Compose, Rootless-Setup und DIS-Sicherheitsarchitektur.

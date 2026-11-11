@@ -1,6 +1,6 @@
 import { Loader2, Mic } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Kurzinfo } from '@maunting/ui'
+import { useLeistenname } from '../leiste/leistenname'
 import { useSprachsuche } from '../services/sprachsuche'
 
 interface SprachsucheKnopfProps {
@@ -37,28 +37,29 @@ export function SprachsucheKnopf({
         ? t('browser.sprachsuche.starten')
         : t('browser.sprachsuche.nichtUnterstuetzt')
 
+  const namen = useLeistenname(hinweis, 'unten')
+
   return (
-    <Kurzinfo text={hinweis} lage="unten">
-      <button
-        type="button"
-        onClick={umschalten}
-        aria-label={hinweis}
-        aria-pressed={laeuft}
-        disabled={transkribiert}
-        className={`relative flex items-center justify-center rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${dimensionen} ${
-          transkribiert
-            ? 'bg-primary/10 text-primary animate-pulse'
-            : laeuft
-              ? 'bg-status-destructive/15 text-status-destructive animate-pulse ring-2 ring-status-destructive/40'
-              : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface'
-        } ${className}`}
-      >
-        {transkribiert ? (
-          <Loader2 className={`${iconGroesse} animate-spin text-primary`} aria-hidden="true" />
-        ) : (
-          <Mic className={`${iconGroesse} ${laeuft ? 'text-status-destructive' : ''}`} aria-hidden="true" />
-        )}
-      </button>
-    </Kurzinfo>
+    <button
+      type="button"
+      onClick={umschalten}
+      aria-label={hinweis}
+      aria-pressed={laeuft}
+      disabled={transkribiert}
+      className={`relative flex items-center justify-center rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${dimensionen} ${
+        transkribiert
+          ? 'bg-primary/10 text-primary animate-pulse'
+          : laeuft
+            ? 'bg-status-destructive/15 text-status-destructive animate-pulse ring-2 ring-status-destructive/40'
+            : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface'
+      } ${className}`}
+      {...namen}
+    >
+      {transkribiert ? (
+        <Loader2 className={`${iconGroesse} animate-spin text-primary`} aria-hidden="true" />
+      ) : (
+        <Mic className={`${iconGroesse} ${laeuft ? 'text-status-destructive' : ''}`} aria-hidden="true" />
+      )}
+    </button>
   )
 }

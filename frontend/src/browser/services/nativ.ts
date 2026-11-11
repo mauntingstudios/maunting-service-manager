@@ -373,6 +373,18 @@ export async function schutzEreignisse(rueckruf: () => void): Promise<() => void
   return listen('msb:schutz', () => rueckruf())
 }
 
+/** Rust meldet `msb:untersuchen`, wenn im nativen Menü "Untersuchen" gewählt wurde. */
+export async function untersuchenEreignisse(rueckruf: (daten: { tab: string; x: number; y: number }) => void): Promise<() => void> {
+  if (!istTauri()) return () => {}
+  return listen<{ tab: string; x: number; y: number }>('msb:untersuchen', (e) => rueckruf(e.payload))
+}
+
+/** Rust meldet `msb:neuer-tab`, wenn im nativen Menü ein Tab geöffnet werden soll (z. B. privat). */
+export async function neuerTabEreignisse(rueckruf: (daten: { url: string; privat?: boolean }) => void): Promise<() => void> {
+  if (!istTauri()) return () => {}
+  return listen<{ url: string; privat?: boolean }>('msb:neuer-tab', (e) => rueckruf(e.payload))
+}
+
 /** Ein installiertes Browserprofil (`browserimport/profile.rs`). */
 export interface BrowserProfil {
   id: string

@@ -26,6 +26,20 @@
         "transparent": false,
         "focus": true,
         "dragDropEnabled": false
+      },
+      {
+        "label": "kontextmenue",
+        "title": "Kontextmenü",
+        "url": "browser.html?kontext=1",
+        "width": 260,
+        "height": 380,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "shadow": false
       }
     ],
     "security": {

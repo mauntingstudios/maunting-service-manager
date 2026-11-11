@@ -12,12 +12,14 @@
  */
 import { useEffect, useState, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, ArrowRight, Copy, Search } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Code, Copy, RotateCw, Search, TextSelect } from 'lucide-react'
 
 import { Kontextmenue } from '@maunting/ui'
 import type { ActionMenuItem } from '@maunting/ui'
 
+import { useAnsicht } from '../entwickler/werkzeuge'
 import { useEinstellungenStore, useWirksameSuche } from '../services/einstellungenStore'
+import { istAndroid } from '../services/plattform'
 import { baueZielUrl, suchmaschine } from '../services/searchEngines'
 import { suchName } from '../services/suchwahl'
 import type { Tab } from '../services/tab'
@@ -69,6 +71,32 @@ export function useEigenesMenue(tab: Tab | undefined) {
     }
     if (tab.zurueck || tab.vorher) eintrag('back', t('browser.menue.back'), <ArrowLeft />, () => aktion('zurueck'), items.length > 0)
     if (tab.vor) eintrag('forward', t('browser.menue.forward'), <ArrowRight />, () => aktion('vor'), items.length > 0 && !(tab.zurueck || tab.vorher))
+    if (tab.url) {
+      eintrag('reload', t('common.reload'), <RotateCw />, () => aktion('neu_laden'), items.length > 0)
+      eintrag(
+        'selectAll',
+        t('browser.menue.selectAll'),
+        <TextSelect />,
+        () => {
+          document.execCommand('selectAll')
+        },
+        true,
+      )
+      if (!istAndroid()) {
+        eintrag(
+          'untersuchen',
+          t('browser.menue.untersuchen'),
+          <Code />,
+          () => {
+            const { setUntersuchen, setAnsicht } = useAnsicht.getState()
+            setUntersuchen({ tab: tab.id, x: menue.ort.x, y: menue.ort.y })
+            setAnsicht('elemente')
+            window.dispatchEvent(new CustomEvent('msb:gehe-zu', { detail: '/entwickler' }))
+          },
+          true,
+        )
+      }
+    }
   }
 
   const ansicht =

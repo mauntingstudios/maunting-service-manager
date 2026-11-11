@@ -13,20 +13,21 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager};
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::{
-    BasicAuthenticationRequestedEventHandler, ContextMenuRequestedEventHandler, PermissionRequestedEventHandler,
-    ScriptDialogOpeningEventHandler, SetPermissionStateCompletedHandler,
+    BasicAuthenticationRequestedEventHandler, ContextMenuRequestedEventHandler, CustomItemSelectedEventHandler,
+    PermissionRequestedEventHandler, ScriptDialogOpeningEventHandler, SetPermissionStateCompletedHandler,
 };
 use windows::core::{Interface, BOOL, HSTRING};
 use windows::Win32::Foundation::POINT;
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use super::webview2::text;
-use crate::tabs::{melden, Antwort, MenueEintrag, TabEreignis};
+use crate::tabs::{melden, Antwort, TabEreignis};
 
 enum Anfrage {
-    Menue(ICoreWebView2ContextMenuRequestedEventArgs),
     Dialog(ICoreWebView2ScriptDialogOpeningEventArgs),
     Recht {
         args: ICoreWebView2PermissionRequestedEventArgs,
@@ -71,7 +72,6 @@ pub fn erledigen(nr: u64, antwort: Antwort) {
     let Some(offen) = OFFEN.with(|o| o.borrow_mut().remove(&nr)) else { return };
     unsafe {
         let _ = match (offen.anfrage, antwort) {
-            (Anfrage::Menue(args), Antwort::Menue { befehl: Some(befehl) }) => args.SetSelectedCommandId(befehl),
             (Anfrage::Dialog(args), Antwort::Dialog { ok: true, text }) => {
                 if let Some(text) = text {
                     let _ = args.SetResultText(&HSTRING::from(text));
@@ -101,7 +101,7 @@ pub fn erledigen(nr: u64, antwort: Antwort) {
             }
             (Anfrage::Recht { args, .. }, _) => args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY),
             (Anfrage::Anmeldung(args), _) => args.SetCancel(true),
-            // Menü ohne Wahl, Dialog abgelehnt: nichts setzen heißt abbrechen.
+            // Dialog abgelehnt: nichts setzen heißt abbrechen.
             _ => Ok(()),
         };
         let _ = offen.aufschub.Complete();
@@ -113,7 +113,7 @@ pub fn vergessen(tab: &str) {
     let nummern: Vec<u64> =
         OFFEN.with(|o| o.borrow().iter().filter(|(_, v)| v.tab == tab).map(|(nr, _)| *nr).collect());
     for nr in nummern {
-        erledigen(nr, Antwort::Menue { befehl: None });
+        erledigen(nr, Antwort::Dialog { ok: false, text: None });
     }
 }
 
@@ -167,67 +167,308 @@ unsafe fn profil_von(core: &ICoreWebView2) -> Option<ICoreWebView2Profile4> {
     profil.cast::<ICoreWebView2Profile4>().ok()
 }
 
-/// Höchstens so viel markierten Text gibt das Menü weiter (für „Suchen nach …“).
-const AUSWAHL_MAX: usize = 200;
+#[allow(dead_code)]
+fn ist_unerwuenscht(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n == "back"
+        || n == "forward"
+        || n == "reload"
+        || n.contains("capture")
+        || n.contains("share")
+        || n.contains("readaloud")
+        || n.contains("smartscreen")
+        || n.contains("collection")
+        || n.contains("math")
+        || n.contains("sidebar")
+        || n.contains("copilot")
+        || n.contains("bing")
+        || n.contains("devices")
+        || n.contains("qrcode")
+        || n.contains("cast")
+        || n.contains("visualsearch")
+        || n == "searchwebfor"
+}
 
-unsafe fn menue_eintraege(args: &ICoreWebView2ContextMenuRequestedEventArgs) -> windows::core::Result<Vec<MenueEintrag>> {
+#[allow(dead_code)]
+unsafe fn liste_separatoren_bereinigen(liste: &ICoreWebView2ContextMenuItemCollection) {
+    let mut anzahl = 0u32;
+    if liste.Count(&mut anzahl).is_err() || anzahl == 0 {
+        return;
+    }
+    let mut vorher_war_separator = false;
+    for i in (0..anzahl).rev() {
+        if let Ok(eintrag) = liste.GetValueAtIndex(i) {
+            let mut art = COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND;
+            if eintrag.Kind(&mut art).is_ok() {
+                if art == COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_SEPARATOR {
+                    if vorher_war_separator {
+                        let _ = liste.RemoveValueAtIndex(i);
+                    } else {
+                        vorher_war_separator = true;
+                    }
+                } else {
+                    vorher_war_separator = false;
+                }
+            }
+        }
+    }
+    let mut anzahl = 0u32;
+    if liste.Count(&mut anzahl).is_ok() && anzahl > 0 {
+        if let Ok(letzter) = liste.GetValueAtIndex(anzahl - 1) {
+            let mut art = COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND;
+            if letzter.Kind(&mut art).is_ok() && art == COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_SEPARATOR {
+                let _ = liste.RemoveValueAtIndex(anzahl - 1);
+            }
+        }
+    }
+    let mut anzahl = 0u32;
+    if liste.Count(&mut anzahl).is_ok() && anzahl > 0 {
+        if let Ok(erster) = liste.GetValueAtIndex(0) {
+            let mut art = COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND;
+            if erster.Kind(&mut art).is_ok() && art == COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_SEPARATOR {
+                let _ = liste.RemoveValueAtIndex(0);
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+unsafe fn kontextmenue_aufbereiten(
+    app: &AppHandle,
+    id: &str,
+    core: &ICoreWebView2,
+    args: &ICoreWebView2ContextMenuRequestedEventArgs,
+    umgebung: &ICoreWebView2Environment,
+) -> windows::core::Result<()> {
     let liste = args.MenuItems()?;
     let mut anzahl = 0u32;
     liste.Count(&mut anzahl)?;
-    let mut eintraege = Vec::new();
-    for i in 0..anzahl {
-        let eintrag = liste.GetValueAtIndex(i)?;
-        let mut art = COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND;
-        eintrag.Kind(&mut art)?;
-        let mut aktiv = BOOL::default();
-        eintrag.IsEnabled(&mut aktiv)?;
-        if art != COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND || !aktiv.as_bool() {
-            continue;
+
+    // 1. Edge-Bloatware herausfiltern
+    for i in (0..anzahl).rev() {
+        if let Ok(eintrag) = liste.GetValueAtIndex(i) {
+            let name = text(|p| eintrag.Name(p));
+            if ist_unerwuenscht(&name) {
+                let _ = liste.RemoveValueAtIndex(i);
+            }
         }
-        let mut befehl = 0i32;
-        eintrag.CommandId(&mut befehl)?;
-        eintraege.push(MenueEintrag { befehl, name: text(|p| eintrag.Name(p)) });
     }
-    Ok(eintraege)
+
+    // 2. Doppelte und unpassende Trenner bereinigen
+    liste_separatoren_bereinigen(&liste);
+
+    // 3. Eigene Menüeinträge ergänzen
+    if let Ok(u9) = umgebung.cast::<ICoreWebView2Environment9>() {
+        let ziel = args.ContextMenuTarget()?;
+        let ja = |lesen: &dyn Fn(*mut BOOL) -> windows::core::Result<()>| {
+            let mut wert = BOOL::default();
+            lesen(&mut wert).is_ok() && wert.as_bool()
+        };
+        let link = ja(&|p| ziel.HasLinkUri(p)).then(|| text(|p| ziel.LinkUri(p)));
+        let bild = ja(&|p| ziel.HasSourceUri(p));
+        let auswahl = ja(&|p| ziel.HasSelection(p));
+        let bearbeitbar = ja(&|p| ziel.IsEditable(p));
+
+        if let Some(link_url) = link {
+            if !link_url.is_empty() {
+                let privater_tab = u9.CreateContextMenuItem(
+                    &HSTRING::from("Link in privatem Tab öffnen"),
+                    None::<&windows::Win32::System::Com::IStream>,
+                    COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND,
+                )?;
+                let app_p = app.clone();
+                let mut token_privat = 0i64;
+                privater_tab.add_CustomItemSelected(
+                    &CustomItemSelectedEventHandler::create(Box::new(move |_, _| {
+                        let _ = app_p.emit_to(
+                            "main",
+                            "msb:neuer-tab",
+                            serde_json::json!({ "url": link_url, "privat": true }),
+                        );
+                        Ok(())
+                    })),
+                    &mut token_privat,
+                )?;
+                let mut akt_anzahl = 0u32;
+                let _ = liste.Count(&mut akt_anzahl);
+                let _ = liste.InsertValueAtIndex(1.min(akt_anzahl), &privater_tab);
+            }
+        } else if !bild && !auswahl && !bearbeitbar {
+            let mut kann_zurueck = BOOL::default();
+            let _ = core.CanGoBack(&mut kann_zurueck);
+            if kann_zurueck.as_bool() {
+                let zurueck = u9.CreateContextMenuItem(
+                    &HSTRING::from("Zurück"),
+                    None::<&windows::Win32::System::Com::IStream>,
+                    COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND,
+                )?;
+                let core_z = core.clone();
+                let mut token_z = 0i64;
+                zurueck.add_CustomItemSelected(
+                    &CustomItemSelectedEventHandler::create(Box::new(move |_, _| {
+                        let _ = core_z.GoBack();
+                        Ok(())
+                    })),
+                    &mut token_z,
+                )?;
+                let _ = liste.InsertValueAtIndex(0, &zurueck);
+            }
+            let mut akt_anzahl = 0u32;
+            let _ = liste.Count(&mut akt_anzahl);
+            let neu_laden = u9.CreateContextMenuItem(
+                &HSTRING::from("Neu laden"),
+                None::<&windows::Win32::System::Com::IStream>,
+                COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND,
+            )?;
+            let core_r = core.clone();
+            let mut token_r = 0i64;
+            neu_laden.add_CustomItemSelected(
+                &CustomItemSelectedEventHandler::create(Box::new(move |_, _| {
+                    let _ = core_r.Reload();
+                    Ok(())
+                })),
+                &mut token_r,
+            )?;
+            let _ = liste.InsertValueAtIndex(1.min(akt_anzahl), &neu_laden);
+        }
+
+        let mut ort = POINT::default();
+        let _ = args.Location(&mut ort);
+        let mut akt_anzahl = 0u32;
+        let _ = liste.Count(&mut akt_anzahl);
+
+        let trenner = u9.CreateContextMenuItem(
+            &HSTRING::new(),
+            None::<&windows::Win32::System::Com::IStream>,
+            COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_SEPARATOR,
+        )?;
+        let _ = liste.InsertValueAtIndex(akt_anzahl, &trenner);
+        akt_anzahl += 1;
+
+        let untersuchen = u9.CreateContextMenuItem(
+            &HSTRING::from("Untersuchen"),
+            None::<&windows::Win32::System::Com::IStream>,
+            COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND,
+        )?;
+        let app_u = app.clone();
+        let id_u = id.to_string();
+        let mut token_u = 0i64;
+        untersuchen.add_CustomItemSelected(
+            &CustomItemSelectedEventHandler::create(Box::new(move |_, _| {
+                let _ = app_u.emit_to(
+                    "main",
+                    "msb:untersuchen",
+                    serde_json::json!({ "tab": id_u, "x": ort.x, "y": ort.y }),
+                );
+                Ok(())
+            })),
+            &mut token_u,
+        )?;
+        let _ = liste.InsertValueAtIndex(akt_anzahl, &untersuchen);
+    }
+
+    Ok(())
 }
 
-pub unsafe fn anbinden(app: &AppHandle, id: &str, core: &ICoreWebView2) -> windows::core::Result<()> {
+unsafe fn zeige_kontext_overlay(
+    app: &AppHandle,
+    id: &str,
+    core: &ICoreWebView2,
+    args: &ICoreWebView2ContextMenuRequestedEventArgs,
+) -> windows::core::Result<()> {
+    let ziel = args.ContextMenuTarget()?;
+    let ja = |lesen: &dyn Fn(*mut BOOL) -> windows::core::Result<()>| {
+        let mut wert = BOOL::default();
+        lesen(&mut wert).is_ok() && wert.as_bool()
+    };
+    let link = ja(&|p| ziel.HasLinkUri(p)).then(|| text(|p| ziel.LinkUri(p)));
+    let bild = ja(&|p| ziel.HasSourceUri(p)).then(|| text(|p| ziel.SourceUri(p)));
+    let text_auswahl = ja(&|p| ziel.HasSelection(p)).then(|| text(|p| ziel.SelectionText(p)));
+    let ist_editierbar = ja(&|p| ziel.IsEditable(p));
+
+    let mut kann_zurueck = BOOL::default();
+    let _ = core.CanGoBack(&mut kann_zurueck);
+    let mut kann_vor = BOOL::default();
+    let _ = core.CanGoForward(&mut kann_vor);
+
+    let uri = text(|p| core.Source(p));
+    let titel = text(|p| core.DocumentTitle(p));
+
+    let mut cursor = POINT::default();
+    let (px_x, px_y) = if GetCursorPos(&mut cursor).is_ok() {
+        (cursor.x, cursor.y)
+    } else {
+        let mut ort = POINT::default();
+        let _ = args.Location(&mut ort);
+        (ort.x, ort.y)
+    };
+
+    if let Some(popup) = app.get_webview_window("kontextmenue") {
+        let monitor = MonitorFromPoint(POINT { x: px_x, y: px_y }, MONITOR_DEFAULTTONEAREST);
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        let mut final_x = px_x;
+        let mut final_y = px_y;
+        let popup_breite = 270;
+        let popup_hoehe = 380;
+        if GetMonitorInfoW(monitor, &mut info).as_bool() {
+            if final_x + popup_breite > info.rcWork.right {
+                final_x = info.rcWork.right - popup_breite;
+            }
+            if final_y + popup_hoehe > info.rcWork.bottom {
+                final_y = info.rcWork.bottom - popup_hoehe;
+            }
+            if final_x < info.rcWork.left {
+                final_x = info.rcWork.left;
+            }
+            if final_y < info.rcWork.top {
+                final_y = info.rcWork.top;
+            }
+        }
+
+        let _ = popup.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(final_x, final_y)));
+        let _ = popup.show();
+        let _ = popup.set_focus();
+        let _ = popup.emit(
+            "msb:kontext-daten",
+            serde_json::json!({
+                "tab": id,
+                "x": px_x,
+                "y": px_y,
+                "link": link,
+                "bild": bild,
+                "auswahl": text_auswahl,
+                "editierbar": ist_editierbar,
+                "kann_zurueck": kann_zurueck.as_bool(),
+                "kann_vor": kann_vor.as_bool(),
+                "url": uri,
+                "titel": titel
+            }),
+        );
+    }
+
+    Ok(())
+}
+
+pub unsafe fn anbinden(
+    app: &AppHandle,
+    id: &str,
+    core: &ICoreWebView2,
+    _umgebung: &ICoreWebView2Environment,
+) -> windows::core::Result<()> {
     let mut token = 0i64;
 
     if let Ok(core11) = core.cast::<ICoreWebView2_11>() {
-        let (app, id) = (app.clone(), id.to_string());
+        let (app, id, core_ref) = (app.clone(), id.to_string(), core.clone());
         core11.add_ContextMenuRequested(
             &ContextMenuRequestedEventHandler::create(Box::new(move |_, args| {
                 let Some(args) = args else { return Ok(()) };
-                let ziel = args.ContextMenuTarget()?;
-                let mut ort = POINT::default();
-                args.Location(&mut ort)?;
-                let ja = |lesen: &dyn Fn(*mut BOOL) -> windows::core::Result<()>| {
-                    let mut wert = BOOL::default();
-                    lesen(&mut wert).is_ok() && wert.as_bool()
-                };
-                let link = ja(&|p| ziel.HasLinkUri(p)).then(|| text(|p| ziel.LinkUri(p)));
-                let bild = ja(&|p| ziel.HasSourceUri(p)).then(|| text(|p| ziel.SourceUri(p)));
-                let auswahl = ja(&|p| ziel.HasSelection(p))
-                    .then(|| text(|p| ziel.SelectionText(p)).chars().take(AUSWAHL_MAX).collect::<String>());
-                let bearbeitbar = ja(&|p| ziel.IsEditable(p));
-                let eintraege = menue_eintraege(&args)?;
-                args.SetHandled(true)?;
-                let nr = ablegen(&id, Anfrage::Menue(args.clone()), args.GetDeferral()?);
-                melden(
-                    &app,
-                    TabEreignis::Kontextmenue {
-                        id: id.clone(),
-                        nr,
-                        x: ort.x,
-                        y: ort.y,
-                        eintraege,
-                        link,
-                        bild,
-                        auswahl,
-                        bearbeitbar,
-                    },
-                );
+                // Edge-Standard-Kontextmenü unterdrücken
+                let _ = args.SetHandled(true);
+                // Pontis-Overlay-Kontextmenü anzeigen (Option C: absolut ruckelfrei, kein Video-Freeze)
+                let _ = zeige_kontext_overlay(&app, &id, &core_ref, &args);
                 Ok(())
             })),
             &mut token,
