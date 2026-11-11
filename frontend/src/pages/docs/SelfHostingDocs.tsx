@@ -90,6 +90,7 @@ export function SelfHostingDocs() {
           { id: 'credentials-scoping', label: t('docsSelfHosting.credentials.title') },
           { id: 'hoster-integration', label: t('docsSelfHosting.hoster.title') },
           { id: 'voice-mode', label: t('docsSelfHosting.voice.title') },
+          { id: 'ai-custom-providers', label: t('docsSelfHosting.aiCustom.title') },
           { id: 'messenger-calls', label: t('docsSelfHosting.calls.title') },
           { id: 'e2ee-delivery-state', label: t('docsSelfHosting.e2eeState.title') },
           { id: 'docs-sidecar', label: t('docsSelfHosting.docsSidecar.title') },
@@ -441,6 +442,33 @@ export function SelfHostingDocs() {
         <div className="mt-4 flex gap-3 rounded-xl border border-status-warning/30 bg-status-warning/10 p-4 text-status-warning">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <p className="text-sm leading-6">{t('docsSelfHosting.voice.spokenLimit')}</p>
+        </div>
+      </section>
+
+      {/* Lokale Runtimes und eigene GPU-/Whisper-Server ueber provider_kind="custom". */}
+      <section aria-labelledby="ai-custom-providers" className="msm-card mb-10 p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <Server className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+          <div>
+            <h2 id="ai-custom-providers" className={`${SPRUNGZIEL_ABSTAND} font-headline text-headline-md text-on-surface`}>
+              {t('docsSelfHosting.aiCustom.title')}
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-on-surface-variant">
+              {t('docsSelfHosting.aiCustom.intro')}
+            </p>
+          </div>
+        </div>
+        <dl className="mt-5 grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant md:grid-cols-2">
+          {(['architecture', 'localRuntime', 'remoteGpu', 'ssrf', 'protocols', 'whisper'] as const).map(item => (
+            <div key={item} className="bg-surface-container p-4">
+              <dt className="text-sm font-semibold text-on-surface">{t(`docsSelfHosting.aiCustom.${item}.title`)}</dt>
+              <dd className="mt-1 text-sm leading-6 text-on-surface-variant">{t(`docsSelfHosting.aiCustom.${item}.body`)}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-4 flex gap-3 rounded-xl border border-status-warning/30 bg-status-warning/10 p-4 text-status-warning">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <p className="text-sm leading-6">{t('docsSelfHosting.aiCustom.realtimeLimit')}</p>
         </div>
       </section>
 

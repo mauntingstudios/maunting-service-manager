@@ -262,14 +262,14 @@ def test_prewarming_covers_key_bound_catalogs_too(monkeypatch: pytest.MonkeyPatc
     # herausfällt — der schluesselpflichtige `openai` fehlte hier genau so.
     #
     # „Alle **Kataloge**" heisst seit Azure nicht mehr „alle Anbieter": ein
-    # Anbieter ohne ``catalog_url`` hat nichts vorzuwärmen, und ihn anzustossen
-    # ergäbe eine Aufgabe je Start, die sofort mit der leeren Liste
-    # zurückkäme. Die Zusage dieses Tests bleibt davon unberührt — sie lautet
-    # „kein Katalog bleibt aussen vor, weil er einen Schlüssel verlangt" und
-    # nicht „jede Zeile der Registry wird abgefragt".
+    # Anbieter ohne ``catalog_url`` — sowie ``custom`` mit je Zeile eigener
+    # Adresse (`adresse_eintragbar`) — hat keinen globalen Katalog zum
+    # Vorwärmen. Die Zusage dieses Tests bleibt davon unberührt — sie lautet
+    # „kein fester Katalog bleibt aussen vor, weil er einen Schlüssel verlangt"
+    # und nicht „jede Zeile der Registry wird abgefragt".
     mit_katalog = {
         kind for kind, spec in ai_provider_registry.ANBIETER.items()
-        if spec.catalog_url is not None
+        if spec.catalog_url and not spec.adresse_eintragbar
     }
     assert set(angestossen) == mit_katalog
     assert any(

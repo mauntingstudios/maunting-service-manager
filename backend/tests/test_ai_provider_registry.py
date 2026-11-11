@@ -38,26 +38,25 @@ from services import ai_provider_registry, ai_provider_service
 
 
 def test_a_provider_has_no_operator_supplied_address() -> None:
-    """Kein Feld dieser Tabelle darf eine frei eintragbare Adresse tragen.
+    """Kein Feld dieser Tabelle darf eine ungeprüfte ``base_url`` tragen.
 
     Der Test greift bewusst am **Modell** an und nicht am Formular: ein Schema
-    ließe sich umgehen, indem jemand direkt schreibt. Solange die Spalte fehlt,
-    gibt es die Angriffsfläche nicht.
+    ließe sich umgehen, indem jemand direkt schreibt. Die Spalte ``base_url``
+    bleibt für feste Anbieter weiterhin verboten; ``custom_base_url`` darf
+    ausschließlich über `ai_custom_ssrf` validiert und per IP-Pinning
+    (`PinnedAsyncTransport`) angesprochen werden.
     """
     spalten = set(AiProvider.__table__.columns.keys())
     assert "base_url" not in spalten, (
-        "base_url ist zurück. Mit einer frei eintragbaren Adresse braucht MSM "
-        "wieder eine SSRF-Prüfung mit IP-Pinning — siehe die Historie von "
-        "test_ai_provider_ssrf_rebinding.py."
+        "base_url ist zurück. Frei eintragbare Adressen gehören ausschließlich in "
+        "custom_base_url mit SSRF-Prüfung und IP-Pinning durch ai_custom_ssrf."
     )
     assert "allow_private_network" not in spalten
     assert "provider_kind" in spalten
-    # ``azure_resource_name`` ist die eine erlaubte Ausnahme, und sie ist auf
-    # ein Label beschränkt — festgehalten in
-    # `test_only_a_dns_label_ever_reaches_a_host`. Sie steht hier ausdrücklich
-    # in der Liste, damit die nächste Spalte dieser Art nicht unbemerkt daneben
-    # entsteht.
-    assert spalten >= {"azure_resource_name"}
+    # ``azure_resource_name`` (einzelnes DNS-Label) und ``custom_base_url``
+    # (ausschliesslich fuer ``provider_kind='custom'``, immer SSRF-validiert
+    # und IP-gepinnt) sind die beiden ausdrücklich erlaubten Adressspalten.
+    assert spalten >= {"azure_resource_name", "custom_base_url"}
 
 
 def test_the_address_comes_from_the_registry() -> None:
@@ -100,10 +99,23 @@ def test_every_registry_entry_is_complete_and_addressable() -> None:
     DNS-Fehler — an einer Stelle, an der niemand die Ursache abliest.
     """
     for spec in ai_provider_registry.alle():
-        assert spec.base_url.startswith("https://"), spec.kind
-        if spec.catalog_url is not None:
-            assert spec.catalog_url.startswith("https://"), spec.kind
-        assert spec.key_url.startswith("https://"), spec.kind
+        if spec.adresse_eintragbar:
+            # Custom-Provider tragen keine feste Adresse in der Registry —
+            # Basis-URL und Katalogziel kommen vom jeweiligen Datensatz und
+            # werden erst nach `validate_custom_base_url` verwendet. Realtime
+            # bleibt bewusst deaktiviert.
+            assert spec.kind == "custom"
+            assert spec.base_url == ""
+            assert spec.catalog_url == ""
+            assert spec.key_url == ""
+            assert spec.sprachwege == ()
+            assert not spec.realtime_tauglich
+            assert not spec.ressource_noetig
+        else:
+            assert spec.base_url.startswith("https://"), spec.kind
+            if spec.catalog_url is not None:
+                assert spec.catalog_url.startswith("https://"), spec.kind
+            assert spec.key_url.startswith("https://"), spec.kind
         assert spec.label.strip()
         assert ai_provider_registry.anbieter(spec.kind) is spec
         # Vorlage und Marke gehören zusammen, in beide Richtungen.

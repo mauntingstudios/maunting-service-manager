@@ -11,19 +11,108 @@ import {
   type AiProviderTestResult,
   type AiProviderWrite,
   type AiSprachweg,
+  type CustomChatProtocol,
+  type CustomReasoningDialect,
 } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
 import i18n from '@/i18n'
-import { Button, Dropdown, Switch } from '@maunting/ui'
+import { Button, Dropdown, Input, Spinner, Switch } from '@maunting/ui'
 import { eingabeInMicroUsd, microUsdInEingabe } from '@/utils/geld'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
-import { Spinner } from '@maunting/ui'
 interface ProviderDraft extends AiProviderWrite {
   id?: number
   operator_key_configured?: boolean
   operator_key_hint?: string | null
+  saved_custom_base_url?: string | null
+  saved_custom_chat_protocol?: CustomChatProtocol
+}
+
+const CUSTOM_MAX_TOKENS = 10_000_000
+
+const CUSTOM_PRESETS: readonly {
+  id: 'ollama' | 'lmstudio' | 'llamacpp' | 'vllm' | 'anthropic' | 'whisper'
+  url: string
+  protocol: CustomChatProtocol
+  reasoningDialect: CustomReasoningDialect
+  requiresApiKey: boolean
+  skipAutoDefaultModel?: boolean
+}[] = [
+  {
+    id: 'ollama',
+    url: 'http://127.0.0.1:11434/v1',
+    protocol: 'chat_completions',
+    reasoningDialect: 'think_tags',
+    requiresApiKey: false,
+  },
+  {
+    id: 'lmstudio',
+    url: 'http://127.0.0.1:1234/v1',
+    protocol: 'chat_completions',
+    reasoningDialect: 'think_tags',
+    requiresApiKey: false,
+  },
+  {
+    id: 'llamacpp',
+    url: 'http://127.0.0.1:8080/v1',
+    protocol: 'chat_completions',
+    reasoningDialect: 'think_tags',
+    requiresApiKey: false,
+  },
+  {
+    id: 'vllm',
+    url: 'https://gpu.example.com/v1',
+    protocol: 'chat_completions',
+    reasoningDialect: 'reasoning',
+    requiresApiKey: true,
+  },
+  {
+    id: 'anthropic',
+    url: 'https://api.example.com/v1',
+    protocol: 'anthropic_messages',
+    reasoningDialect: 'anthropic_thinking',
+    requiresApiKey: true,
+  },
+  {
+    id: 'whisper',
+    url: 'http://127.0.0.1:8000/v1',
+    protocol: 'chat_completions',
+    reasoningDialect: 'none',
+    requiresApiKey: false,
+    skipAutoDefaultModel: true,
+  },
+]
+
+function canonicalComparableUrl(raw: string | null | undefined): string {
+  return (raw ?? '').trim().replace(/\/+$/, '')
+}
+
+function customUrlFormatOk(raw: string | null | undefined): boolean {
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed || trimmed.length > 512) return false
+  if (/[?#\s]/.test(trimmed)) return false
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+    if (parsed.username || parsed.password || trimmed.includes('@') || trimmed.includes('%')) {
+      return false
+    }
+    return Boolean(parsed.hostname)
+  } catch {
+    return false
+  }
+}
+
+function parseTokenOverride(raw: string): { valid: boolean; value: number | null } {
+  const trimmed = raw.trim()
+  if (!trimmed) return { valid: true, value: null }
+  if (!/^\d+$/.test(trimmed)) return { valid: false, value: null }
+  const parsed = Number(trimmed)
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > CUSTOM_MAX_TOKENS) {
+    return { valid: false, value: null }
+  }
+  return { valid: true, value: parsed }
 }
 
 /**
@@ -314,10 +403,17 @@ const EMPTY_PROVIDER: ProviderDraft = {
   // Nur Anbieter mit `ressource_noetig` brauchen ihn; ohne Vorbelegung, weil
   // MSM die Ressourcen des fremden Kontos nicht kennt.
   azure_resource_name: null,
+  custom_base_url: null,
+  custom_chat_protocol: 'chat_completions',
+  custom_reasoning_dialect: 'none',
+  custom_context_tokens: null,
+  custom_max_output_tokens: null,
+  custom_supports_vision: null,
   operator_api_key: '',
 }
 
 function toDraft(provider: AiProviderAdmin): ProviderDraft {
+  const customProtocol = provider.custom_chat_protocol ?? 'chat_completions'
   return {
     id: provider.id,
     name: provider.name,
@@ -372,6 +468,14 @@ function toDraft(provider: AiProviderAdmin): ProviderDraft {
     memory_model: provider.memory_model ?? null,
     search_summary_model: provider.search_summary_model ?? null,
     azure_resource_name: provider.azure_resource_name,
+    custom_base_url: provider.custom_base_url ?? null,
+    custom_chat_protocol: customProtocol,
+    custom_reasoning_dialect: provider.custom_reasoning_dialect ?? 'none',
+    custom_context_tokens: provider.custom_context_tokens ?? null,
+    custom_max_output_tokens: provider.custom_max_output_tokens ?? null,
+    custom_supports_vision: provider.custom_supports_vision ?? null,
+    saved_custom_base_url: provider.custom_base_url ?? null,
+    saved_custom_chat_protocol: customProtocol,
     disable_safety: provider.disable_safety ?? false,
     operator_api_key: '',
     operator_key_configured: provider.operator_key_configured,
@@ -526,6 +630,16 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
       ...(gewaehlt?.ressource_noetig
         ? { azure_resource_name: draft.azure_resource_name?.trim() || null }
         : {}),
+      ...(gewaehlt?.adresse_eintragbar
+        ? {
+            custom_base_url: draft.custom_base_url?.trim() || null,
+            custom_chat_protocol: draft.custom_chat_protocol || 'chat_completions',
+            custom_reasoning_dialect: draft.custom_reasoning_dialect || 'none',
+            custom_context_tokens: draft.custom_context_tokens ?? null,
+            custom_max_output_tokens: draft.custom_max_output_tokens ?? null,
+            custom_supports_vision: draft.custom_supports_vision ?? null,
+          }
+        : {}),
       ...(draft.operator_api_key ? { operator_api_key: draft.operator_api_key } : {}),
       ...(draft.clear_operator_api_key ? { clear_operator_api_key: true } : {}),
     }
@@ -632,6 +746,7 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
             draft={provider}
             kinds={kinds}
             costPolicy={costPolicy}
+            canWrite={canWrite}
             disabled={!canWrite || busyId !== null}
             saving={busyId === provider.id}
             onChange={(patch) => update(index, patch)}
@@ -646,9 +761,14 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
       )}
       {creating && (
         <ProviderForm
-          draft={{ ...EMPTY_PROVIDER, provider_kind: kinds[0]?.kind ?? '' }}
+          draft={{
+            ...EMPTY_PROVIDER,
+            provider_kind: kinds[0]?.kind ?? '',
+            requires_api_key: !kinds[0]?.adresse_eintragbar,
+          }}
           kinds={kinds}
           costPolicy={costPolicy}
+          canWrite={canWrite}
           disabled={busyId !== null}
           saving={busyId === 'new'}
           onChange={() => undefined}
@@ -665,6 +785,7 @@ function ProviderForm({
   draft: initialDraft,
   kinds,
   costPolicy,
+  canWrite,
   disabled,
   saving,
   localDraft = false,
@@ -679,6 +800,7 @@ function ProviderForm({
   kinds: AiProviderKind[]
   /** `null`, solange die Politik nicht geladen ist — dann gilt USD 1:1. */
   costPolicy: AiCostPolicy | null
+  canWrite: boolean
   disabled: boolean
   saving: boolean
   localDraft?: boolean
@@ -697,6 +819,17 @@ function ProviderForm({
   const [loadingModels, setLoadingModels] = useState(false)
   const [modelFilterQuery, setModelFilterQuery] = useState('')
   const [modelFilterCategory, setModelFilterCategory] = useState<'all' | 'chat' | 'reasoning' | 'vision'>('chat')
+  const [urlTouched, setUrlTouched] = useState(false)
+  const [catalogPreviewError, setCatalogPreviewError] = useState<string | null>(null)
+  const [skipAutoDefaultModel, setSkipAutoDefaultModel] = useState(false)
+  const [contextTokensText, setContextTokensText] = useState(() => (
+    initialDraft.custom_context_tokens != null ? String(initialDraft.custom_context_tokens) : ''
+  ))
+  const [contextTokensTouched, setContextTokensTouched] = useState(false)
+  const [maxOutputTokensText, setMaxOutputTokensText] = useState(() => (
+    initialDraft.custom_max_output_tokens != null ? String(initialDraft.custom_max_output_tokens) : ''
+  ))
+  const [maxOutputTokensTouched, setMaxOutputTokensTouched] = useState(false)
   const draft = localDraft ? local : initialDraft
 
   const gefilterteModelle = useMemo(() => {
@@ -721,6 +854,56 @@ function ProviderForm({
   // ist bei jedem Rendern ein neues Objekt und loeste den Effekt endlos aus.
   // `null` heisst „Anbieterliste noch nicht geladen" und nicht „fuehrt keinen".
   const fuehrtKatalog = spec?.fuehrt_katalog ?? null
+  const isCustom = Boolean(spec?.adresse_eintragbar)
+  const hatEingetipptenSchluessel = Boolean(draft.operator_api_key?.trim())
+  const customUrlValid = customUrlFormatOk(draft.custom_base_url)
+  const urlNorm = canonicalComparableUrl(draft.custom_base_url)
+  const savedUrlNorm = canonicalComparableUrl(draft.saved_custom_base_url)
+  const savedKeyStillValidForUrl = Boolean(
+    draft.id && !draft.clear_operator_api_key && urlNorm !== '' && urlNorm === savedUrlNorm,
+  )
+  const customUrlChangedSinceSave = Boolean(
+    isCustom &&
+    draft.id &&
+    draft.operator_key_configured &&
+    !draft.clear_operator_api_key &&
+    !hatEingetipptenSchluessel &&
+    urlNorm !== savedUrlNorm,
+  )
+  const customMatchesSavedReadOnly = Boolean(
+    isCustom &&
+    savedKeyStillValidForUrl &&
+    !hatEingetipptenSchluessel &&
+    (draft.custom_chat_protocol || 'chat_completions') === (draft.saved_custom_chat_protocol || 'chat_completions'),
+  )
+  const parsedContextTokens = parseTokenOverride(contextTokensText)
+  const parsedMaxOutputTokens = parseTokenOverride(maxOutputTokensText)
+
+  useEffect(() => {
+    setUrlTouched(false)
+    setCatalogPreviewError(null)
+    setContextTokensTouched(false)
+    setMaxOutputTokensTouched(false)
+    setContextTokensText(draft.custom_context_tokens != null ? String(draft.custom_context_tokens) : '')
+    setMaxOutputTokensText(draft.custom_max_output_tokens != null ? String(draft.custom_max_output_tokens) : '')
+  }, [draft.id])
+
+  useEffect(() => {
+    const parsed = parseTokenOverride(contextTokensText)
+    const nextVal = draft.custom_context_tokens ?? null
+    if (parsed.valid && parsed.value !== nextVal) {
+      setContextTokensText(nextVal != null ? String(nextVal) : '')
+    }
+  }, [draft.custom_context_tokens])
+
+  useEffect(() => {
+    const parsed = parseTokenOverride(maxOutputTokensText)
+    const nextVal = draft.custom_max_output_tokens ?? null
+    if (parsed.valid && parsed.value !== nextVal) {
+      setMaxOutputTokensText(nextVal != null ? String(nextVal) : '')
+    }
+  }, [draft.custom_max_output_tokens])
+
   // Die Adresse, wie der Betreiber sie sehen soll. Traegt `base_url` eine
   // Vorlage, steht dort sein eigener Name statt des rohen `{ressource}` —
   // solange er noch keinen eingetragen hat, das Beispiel aus dem Platzhalter.
@@ -747,15 +930,36 @@ function ProviderForm({
   const ladeModelle = async (refresh = false) => {
     if (!draft.provider_kind || loadingModels) return
     if (spec && !spec.fuehrt_katalog) return
+    if (isCustom) {
+      if (!customUrlValid) {
+        setUrlTouched(true)
+        return
+      }
+      if (!customMatchesSavedReadOnly && !canWrite) return
+    }
     setLoadingModels(true)
     try {
       const apiKey = draft.operator_api_key?.trim() || undefined
-      const rows = apiKey
-        ? await aiApi.listCatalogModels(draft.provider_kind, refresh, draft.id, apiKey)
-        : await aiApi.listCatalogModels(draft.provider_kind, refresh, draft.id)
+      let rows: AiCatalogModel[]
+      if (isCustom && !customMatchesSavedReadOnly) {
+        rows = await aiApi.previewCustomCatalogModels(
+          {
+            custom_base_url: draft.custom_base_url!.trim(),
+            custom_chat_protocol: draft.custom_chat_protocol || 'chat_completions',
+            ...(savedKeyStillValidForUrl && draft.id ? { provider_id: draft.id } : {}),
+          },
+          apiKey,
+        )
+      } else {
+        rows = apiKey
+          ? await aiApi.listCatalogModels(draft.provider_kind, refresh, draft.id, apiKey)
+          : await aiApi.listCatalogModels(draft.provider_kind, refresh, draft.id)
+      }
+      setCatalogPreviewError(null)
       setModels(rows)
-    } catch {
+    } catch (error: unknown) {
       setModels(null)
+      setCatalogPreviewError(isCustom && error instanceof SanitizedApiError ? error.message : null)
     } finally {
       setLoadingModels(false)
     }
@@ -763,14 +967,74 @@ function ProviderForm({
 
   useEffect(() => {
     let active = true
-    if (!draft.provider_kind) { setModels(null); return }
+    if (!draft.provider_kind) {
+      setModels(null)
+      setCatalogPreviewError(null)
+      return
+    }
     // Ein Anbieter ohne Katalog wird nicht gefragt — siehe `ladeModelle`.
     // ``[]`` und nicht ``null``: „führt keine Liste" ist eine Auskunft, „noch
     // nicht geladen" ein Zustand, und nur der zweite darf eine Ladeanzeige
     // rechtfertigen.
-    if (fuehrtKatalog === false) { setModels([]); return }
+    if (fuehrtKatalog === false) {
+      setModels([])
+      setCatalogPreviewError(null)
+      return
+    }
 
-    const hatEingetipptenSchluessel = Boolean(draft.operator_api_key?.trim())
+    if (isCustom) {
+      if (!customUrlValid) {
+        setModels([])
+        setCatalogPreviewError(null)
+        setLoadingModels(false)
+        return
+      }
+      if (!customMatchesSavedReadOnly && !canWrite) {
+        setModels([])
+        setCatalogPreviewError(null)
+        setLoadingModels(false)
+        return
+      }
+      setLoadingModels(true)
+      const apiKey = draft.operator_api_key?.trim() || undefined
+      const delay = customMatchesSavedReadOnly ? 0 : 400
+      const timer = window.setTimeout(() => {
+        const req = customMatchesSavedReadOnly
+          ? aiApi.listCatalogModels(draft.provider_kind, false, draft.id)
+          : aiApi.previewCustomCatalogModels(
+              {
+                custom_base_url: draft.custom_base_url!.trim(),
+                custom_chat_protocol: draft.custom_chat_protocol || 'chat_completions',
+                ...(savedKeyStillValidForUrl && draft.id ? { provider_id: draft.id } : {}),
+              },
+              apiKey,
+            )
+        req
+          .then((rows) => {
+            if (!active) return
+            setCatalogPreviewError(null)
+            setModels(rows)
+            if (rows && rows.length > 0 && !draft.default_model && !skipAutoDefaultModel) {
+              const empf = rows.find((r) => r.recommended)?.model_id || rows[0]?.model_id
+              if (empf) {
+                change({ default_model: empf })
+              }
+            }
+          })
+          .catch((error: unknown) => {
+            if (!active) return
+            setModels(null)
+            setCatalogPreviewError(error instanceof SanitizedApiError ? error.message : null)
+          })
+          .finally(() => { if (active) setLoadingModels(false) })
+      }, delay)
+      return () => {
+        active = false
+        window.clearTimeout(timer)
+      }
+    }
+
+    setCatalogPreviewError(null)
     const hatGespeichertenSchluessel = Boolean(
       draft.id && draft.operator_key_configured && !draft.clear_operator_api_key,
     )
@@ -816,7 +1080,17 @@ function ProviderForm({
     draft.operator_api_key,
     draft.operator_key_configured,
     draft.clear_operator_api_key,
+    draft.custom_base_url,
+    draft.custom_chat_protocol,
+    draft.saved_custom_base_url,
+    draft.saved_custom_chat_protocol,
     fuehrtKatalog,
+    isCustom,
+    customUrlValid,
+    customMatchesSavedReadOnly,
+    savedKeyStillValidForUrl,
+    canWrite,
+    skipAutoDefaultModel,
     spec?.katalog_braucht_schluessel,
   ])
 
@@ -914,6 +1188,9 @@ function ProviderForm({
   const suchzusammenfassungsModellId = useId()
   const ttsModellId = useId()
   const ressourceId = useId()
+  const customProtocolId = useId()
+  const customDialectId = useId()
+  const customVisionId = useId()
   const realtimeModelId = useId()
   const realtimeVoiceId = useId()
   const realtimeReasoningId = useId()
@@ -956,8 +1233,34 @@ function ProviderForm({
     // Ein Azure-Zugang ohne Ressourcennamen hat keine Adresse. Der Server
     // lehnt ihn ohnehin ab; hier gesperrt, damit der Betreiber die Absage
     // nicht erst nach dem Klick liest.
-    (!spec?.ressource_noetig || Boolean(draft.azure_resource_name?.trim()))
+    (!spec?.ressource_noetig || Boolean(draft.azure_resource_name?.trim())) &&
+    (!isCustom || (customUrlValid && parsedContextTokens.valid && parsedMaxOutputTokens.valid))
   )
+
+  const customUrlError = urlTouched
+    ? !draft.custom_base_url?.trim()
+      ? t('ai.providers.custom.baseUrlMissing')
+      : !customUrlValid
+        ? t('ai.providers.custom.baseUrlInvalid')
+        : undefined
+    : undefined
+
+  const contextTokensError =
+    contextTokensTouched && !parsedContextTokens.valid
+      ? t('ai.providers.custom.tokenOverrideInvalid', { max: tokenzahl(CUSTOM_MAX_TOKENS) })
+      : undefined
+
+  const maxOutputTokensError =
+    maxOutputTokensTouched && !parsedMaxOutputTokens.valid
+      ? t('ai.providers.custom.tokenOverrideInvalid', { max: tokenzahl(CUSTOM_MAX_TOKENS) })
+      : undefined
+
+  const customVisionValue: 'auto' | 'true' | 'false' =
+    draft.custom_supports_vision === true
+      ? 'true'
+      : draft.custom_supports_vision === false
+        ? 'false'
+        : 'auto'
 
   return (
     <form className="msm-card space-y-6 p-6" onSubmit={(event) => {
@@ -976,7 +1279,25 @@ function ProviderForm({
             <Dropdown
               id={kindId}
               value={draft.provider_kind || null}
-              onChange={(kind) => change({ provider_kind: kind, default_model: '' })}
+              onChange={(kind) => {
+                const nextSpec = kinds.find((item) => item.kind === kind) ?? null
+                const nextCustom = Boolean(nextSpec?.adresse_eintragbar)
+                const patch: Partial<ProviderDraft> = {
+                  provider_kind: kind,
+                  default_model: '',
+                }
+                if (nextCustom && !isCustom) {
+                  patch.requires_api_key = false
+                  patch.custom_chat_protocol = draft.custom_chat_protocol || 'chat_completions'
+                  patch.custom_reasoning_dialect = draft.custom_reasoning_dialect || 'none'
+                } else if (!nextCustom && isCustom) {
+                  patch.requires_api_key = true
+                }
+                setUrlTouched(false)
+                setCatalogPreviewError(null)
+                setSkipAutoDefaultModel(false)
+                change(patch)
+              }}
               placeholder={t('ai.providers.kindMissing')}
               options={kinds.map((item) => ({
                 value: item.kind,
@@ -991,12 +1312,19 @@ function ProviderForm({
                 ),
               }))}
             />
-            {spec && (
+            {spec && !spec.adresse_eintragbar && (
               <p className="text-xs text-on-surface-variant">
                 {t('ai.providers.kindHint', { url: adresse })}
-                {' '}
-                <a href={spec.key_url} target="_blank" rel="noreferrer" className="underline">{t('ai.providers.keyLink')}</a>
+                {spec.key_url && (
+                  <>
+                    {' '}
+                    <a href={spec.key_url} target="_blank" rel="noreferrer" className="underline">{t('ai.providers.keyLink')}</a>
+                  </>
+                )}
               </p>
+            )}
+            {spec?.adresse_eintragbar && (
+              <p className="text-xs text-on-surface-variant">{t('ai.providers.custom.kindHint')}</p>
             )}
             {spec?.protokoll === 'tts' && (
               <p className="text-xs text-on-surface-variant">{t('ai.providers.ttsHint')}</p>
@@ -1033,6 +1361,184 @@ function ProviderForm({
             {!draft.azure_resource_name?.trim() && (
               <p className="text-xs text-status-destructive">{t('ai.providers.azureResourceMissing')}</p>
             )}
+          </div>
+        )}
+
+        {/* Custom / Self-Hosted Endpunkt-Konfiguration (`adresse_eintragbar`) */}
+        {isCustom && (
+          <div className="space-y-4 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4">
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                {t('ai.providers.custom.sectionTitle')}
+              </h4>
+              <p className="msm-field-help mt-1">{t('ai.providers.custom.sectionHint')}</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                {t('ai.providers.custom.presetsLabel')}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {CUSTOM_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      setUrlTouched(false)
+                      setCatalogPreviewError(null)
+                      setSkipAutoDefaultModel(Boolean(preset.skipAutoDefaultModel))
+                      change({
+                        custom_base_url: preset.url,
+                        custom_chat_protocol: preset.protocol,
+                        custom_reasoning_dialect: preset.reasoningDialect,
+                        requires_api_key: preset.requiresApiKey,
+                      })
+                    }}
+                    className="rounded-lg border border-outline-variant/40 bg-surface-container px-2.5 py-1 text-xs font-medium text-on-surface transition-colors hover:border-primary/50 hover:bg-primary/10"
+                  >
+                    {t(`ai.providers.custom.presets.${preset.id}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Input
+                label={t('ai.providers.custom.baseUrl')}
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={draft.custom_base_url ?? ''}
+                onChange={(event) => change({ custom_base_url: event.target.value })}
+                onBlur={() => setUrlTouched(true)}
+                placeholder="http://127.0.0.1:11434/v1"
+                error={customUrlError}
+              />
+              <p className="msm-field-help">{t('ai.providers.custom.baseUrlHint')}</p>
+            </div>
+
+            {customUrlChangedSinceSave && (
+              <p
+                role="status"
+                className="flex items-start gap-2 rounded-lg border border-status-warning/40 bg-status-warning/10 p-3 text-xs leading-5 text-status-warning"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>{t('ai.providers.custom.keyWipeWarning')}</span>
+              </p>
+            )}
+
+            <div className="space-y-1">
+              <Toggle
+                label={t('ai.providers.custom.requiresApiKey')}
+                checked={draft.requires_api_key}
+                onChange={(requires_api_key) => change({ requires_api_key })}
+              />
+              <p className="msm-field-help">{t('ai.providers.custom.requiresApiKeyHint')}</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <label htmlFor={customProtocolId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  {t('ai.providers.custom.chatProtocol')}
+                </label>
+                <Dropdown
+                  id={customProtocolId}
+                  value={draft.custom_chat_protocol || 'chat_completions'}
+                  onChange={(custom_chat_protocol) => change({
+                    custom_chat_protocol: custom_chat_protocol as CustomChatProtocol,
+                  })}
+                  options={(['chat_completions', 'responses', 'anthropic_messages'] as const).map((proto) => ({
+                    value: proto,
+                    label: t(`ai.providers.custom.chatProtocols.${proto}`),
+                  }))}
+                />
+                <p className="msm-field-help">{t('ai.providers.custom.chatProtocolHint')}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor={customDialectId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  {t('ai.providers.custom.reasoningDialect')}
+                </label>
+                <Dropdown
+                  id={customDialectId}
+                  value={draft.custom_reasoning_dialect || 'none'}
+                  onChange={(custom_reasoning_dialect) => change({
+                    custom_reasoning_dialect: custom_reasoning_dialect as CustomReasoningDialect,
+                  })}
+                  options={(['none', 'think_tags', 'reasoning_effort', 'reasoning', 'anthropic_thinking'] as const).map((dialect) => ({
+                    value: dialect,
+                    label: t(`ai.providers.custom.reasoningDialects.${dialect}`),
+                  }))}
+                />
+                <p className="msm-field-help">{t('ai.providers.custom.reasoningDialectHint')}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="space-y-1.5">
+                <Input
+                  label={t('ai.providers.custom.contextTokens')}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={contextTokensText}
+                  onChange={(event) => {
+                    const text = event.target.value
+                    setContextTokensText(text)
+                    const parsed = parseTokenOverride(text)
+                    if (parsed.valid) {
+                      change({ custom_context_tokens: parsed.value })
+                    }
+                  }}
+                  onBlur={() => setContextTokensTouched(true)}
+                  placeholder="32768"
+                  error={contextTokensError}
+                />
+                <p className="msm-field-help">{t('ai.providers.custom.contextTokensHint')}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Input
+                  label={t('ai.providers.custom.maxOutputTokens')}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={maxOutputTokensText}
+                  onChange={(event) => {
+                    const text = event.target.value
+                    setMaxOutputTokensText(text)
+                    const parsed = parseTokenOverride(text)
+                    if (parsed.valid) {
+                      change({ custom_max_output_tokens: parsed.value })
+                    }
+                  }}
+                  onBlur={() => setMaxOutputTokensTouched(true)}
+                  placeholder="8192"
+                  error={maxOutputTokensError}
+                />
+                <p className="msm-field-help">{t('ai.providers.custom.maxOutputTokensHint')}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor={customVisionId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  {t('ai.providers.custom.supportsVision')}
+                </label>
+                <Dropdown
+                  id={customVisionId}
+                  value={customVisionValue}
+                  onChange={(val) => change({
+                    custom_supports_vision: val === 'true' ? true : val === 'false' ? false : null,
+                  })}
+                  options={(['auto', 'true', 'false'] as const).map((option) => ({
+                    value: option,
+                    label: t(`ai.providers.custom.visionOptions.${option}`),
+                  }))}
+                />
+                <p className="msm-field-help">{t('ai.providers.custom.supportsVisionHint')}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-on-surface-variant">{t('ai.providers.custom.noRealtimeNote')}</p>
           </div>
         )}
 
@@ -1155,7 +1661,17 @@ function ProviderForm({
                       />
                     )}
                   </div>
-                  <Button type="button" variant="ghost" disabled={!draft.provider_kind || loadingModels || fuehrtKatalog === false} onClick={() => void ladeModelle(true)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={
+                      !draft.provider_kind ||
+                      loadingModels ||
+                      fuehrtKatalog === false ||
+                      (isCustom && (!customUrlValid || (!customMatchesSavedReadOnly && !canWrite)))
+                    }
+                    onClick={() => void ladeModelle(true)}
+                  >
                     <RefreshCw className={`h-4 w-4 ${loadingModels ? 'animate-spin' : ''}`} aria-hidden="true" />
                     <span className="sr-only">{t('ai.providers.reloadModels')}</span>
                   </Button>
@@ -1171,10 +1687,13 @@ function ProviderForm({
                   <p className="msm-field-help">{t('ai.providers.catalogNone')}</p>
                 ) : (
                   <>
-                    {models === null && !loadingModels && draft.provider_kind && (
+                    {catalogPreviewError && !loadingModels && (
+                      <p className="text-xs text-status-destructive" role="status">{catalogPreviewError}</p>
+                    )}
+                    {!catalogPreviewError && models === null && !loadingModels && draft.provider_kind && (
                       <p className="msm-field-help">{t('ai.providers.catalogUnavailable')}</p>
                     )}
-                    {models !== null && models.length === 0 && !loadingModels
+                    {!catalogPreviewError && models !== null && models.length === 0 && !loadingModels
                       && spec?.katalog_braucht_schluessel && (
                       <p className="msm-field-help">{t('ai.providers.catalogNeedsKey')}</p>
                     )}

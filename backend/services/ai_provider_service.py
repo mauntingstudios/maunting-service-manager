@@ -39,13 +39,15 @@ wieder eine Prüfung nach der Namensauflösung.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import re
 from sqlalchemy.orm import Session
 
 from models import AiProvider, AiRun, User
 
-from services import ai_provider_registry, ai_model_price_service
+from services import ai_custom_ssrf, ai_provider_registry, ai_model_price_service
+from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_reasoning import RANGFOLGE
 from services.ai_voice.sprachwege import (
     SPRACHEN as REALTIME_SPRACHEN,
@@ -57,33 +59,112 @@ from services.ai_voice.sprachwege import (
 from services.dis_client import DisClient
 
 
-class AiProviderConfigurationError(ValueError):
-    """Die Provider-Konfiguration ist nicht schlüssig."""
+CUSTOM_PROTOCOLS = ("chat_completions", "responses", "anthropic_messages")
+CUSTOM_REASONING_DIALECTS = (
+    "none",
+    "think_tags",
+    "reasoning_effort",
+    "reasoning",
+    "anthropic_thinking",
+)
+
+
+def _assert_custom_chat_protocol(value: str | None) -> str:
+    cleaned = (value or "chat_completions").strip().lower() or "chat_completions"
+    if cleaned not in CUSTOM_PROTOCOLS:
+        raise AiProviderConfigurationError(
+            "Unbekanntes Chat-Protokoll für Custom-Provider. Zulässig sind: "
+            + ", ".join(CUSTOM_PROTOCOLS)
+        )
+    return cleaned
+
+
+def _assert_custom_reasoning_dialect(value: str | None) -> str:
+    cleaned = (value or "none").strip().lower() or "none"
+    if cleaned not in CUSTOM_REASONING_DIALECTS:
+        raise AiProviderConfigurationError(
+            "Unbekannter Reasoning-Dialekt für Custom-Provider. Zulässig sind: "
+            + ", ".join(CUSTOM_REASONING_DIALECTS)
+        )
+    return cleaned
+
+
+def _assert_optional_positive_int(value: int | None, *, label: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1 or value > 10_000_000:
+        raise AiProviderConfigurationError(
+            f"{label} muss eine ganze Zahl zwischen 1 und 10.000.000 sein"
+        )
+    return value
+
+
+def effective_spec(
+    provider: AiProvider, *, mit_adresse: bool = False
+) -> ai_provider_registry.Anbieter:
+    """Effektive Anbieter-Spezifikation unter Beruecksichtigung von ``custom``-Feldern.
+
+    Bei festen Anbietern wird unveraendert der Eintrag aus `ai_provider_registry`
+    zurueckgegeben. Bei ``provider_kind == "custom"`` (``adresse_eintragbar``)
+    stammen Protokoll, Denk-Erweiterungen und Schluesselkopf aus der Zeile.
+
+    ``mit_adresse=False`` vermeidet bei reinen Dialekt-Abfragen (`spricht_responses`,
+    `spricht_messages`, `launcher`) eine SSRF-Pruefung, solange keine Anfrage
+    hinausgeht. Mit ``mit_adresse=True`` (z. B. beim Katalogabruf) werden
+    ``base_url`` und ``catalog_url`` immer ueber `ai_custom_ssrf` geprueft.
+    """
+    spec = ai_provider_registry.anbieter(provider.provider_kind)
+    if not spec.adresse_eintragbar:
+        return spec
+
+    protokoll = _assert_custom_chat_protocol(getattr(provider, "custom_chat_protocol", None))
+    dialekt = _assert_custom_reasoning_dialect(getattr(provider, "custom_reasoning_dialect", None))
+    if protokoll == "anthropic_messages":
+        schluessel_kopf = "x-api-key"
+        schluessel_praefix = ""
+    else:
+        schluessel_kopf = spec.schluessel_kopf
+        schluessel_praefix = spec.schluessel_praefix
+
+    if dialekt == "reasoning":
+        erweiterungen = frozenset({"reasoning"})
+    elif dialekt == "reasoning_effort":
+        erweiterungen = frozenset({"reasoning_effort"})
+    else:
+        erweiterungen = frozenset()
+
+    neue_base_url = spec.base_url
+    neue_catalog_url = spec.catalog_url
+    if mit_adresse:
+        neue_base_url = ai_custom_ssrf.validate_custom_base_url(
+            getattr(provider, "custom_base_url", None)
+        )
+        neue_catalog_url = ai_custom_ssrf.custom_catalog_target(neue_base_url, protokoll)
+
+    return replace(
+        spec,
+        base_url=neue_base_url,
+        catalog_url=neue_catalog_url,
+        protokoll_chat=protokoll,
+        anfrage_erweiterungen=erweiterungen,
+        schluessel_kopf=schluessel_kopf,
+        schluessel_praefix=schluessel_praefix,
+    )
 
 
 def base_url(provider: AiProvider) -> str:
-    """Die Adresse dieses Providers — aus der Registry, nicht aus der Zeile.
+    """Die Adresse dieses Providers — aus der Registry oder validierter Custom-URL.
 
-    Eine eigene Funktion statt einer Spalte, damit es genau **eine** Wahrheit
-    gibt. Als gespeicherter Wert wäre sie eine Kopie, die nach einer Änderung
-    an der Registry still veraltet: der Anbieter zieht auf einen neuen Pfad um,
-    das Programm weiß es, die Datenbank nicht.
-
-    Bei einem Anbieter mit ``ressource_noetig`` ist der Eintrag eine **Vorlage**
-    und die Zeile steuert genau ein DNS-Label bei. Geprüft wird es hier
-    **erneut**, obwohl `create_provider` und `update_provider` es schon getan
-    haben: diese Funktion ist die letzte Station vor dem HTTP-Aufruf, und eine
-    Zeile aus einem Seed, einem Import oder einer Zukunftsversion soll nicht
-    ungeprüft in einen Hostnamen geraten. Ein ungeprüfter Wert in
-    ``httpx.URL`` wirft nämlich **nicht** — er ergibt einen prozentkodierten
-    Host und stirbt erst als DNS-Fehler, an dem niemand die Ursache abliest.
-
-    ``AiProviderConfigurationError``, nicht ``KeyError``: anders als ein
-    unbekannter Anbieter ist ein fehlender Ressourcenname etwas, das der
-    Betreiber selbst beheben kann — und die Router übersetzen diese Klasse
-    bereits in eine 400 mit Text.
+    Bei einem Anbieter mit ``adresse_eintragbar`` (`custom`) laeuft die URL
+    vor jedem HTTP-Aufruf erneut durch `ai_custom_ssrf.validate_custom_base_url`.
+    Bei einem Anbieter mit ``ressource_noetig`` steuert die Zeile genau ein
+    DNS-Label bei.
     """
     spec = ai_provider_registry.anbieter(provider.provider_kind)
+    if spec.adresse_eintragbar:
+        return ai_custom_ssrf.validate_custom_base_url(
+            getattr(provider, "custom_base_url", None)
+        )
     if not spec.ressource_noetig:
         return spec.base_url
     return spec.base_url.format(
@@ -750,6 +831,12 @@ def create_provider(
     # ändern, und ein stillschweigend gelöschter Name wäre ärgerlicher als ein
     # ungenutzter.
     azure_resource_name: str | None = None,
+    custom_base_url: str | None = None,
+    custom_chat_protocol: str = "chat_completions",
+    custom_reasoning_dialect: str = "none",
+    custom_context_tokens: int | None = None,
+    custom_max_output_tokens: int | None = None,
+    custom_supports_vision: bool | None = None,
     disable_safety: bool = False,
 ) -> AiProvider:
     if not (name or "").strip():
@@ -797,13 +884,28 @@ def create_provider(
     }
     ai_model_price_service.fill_missing_role_prices(kind, automatic_prices)
     schluessel = _assert_key_passt(kind, operator_api_key)
+    spec_kind = ai_provider_registry.anbieter(kind)
     ressource = _assert_ressource(
         azure_resource_name,
         # Beim Anlegen gleich verlangt, statt eine Zeile zuzulassen, die
         # niemand benutzen kann: ohne Namen gibt es für diesen Anbieter keine
         # Adresse, und der Fehler fiele erst beim ersten Chat auf.
-        pflicht=ai_provider_registry.anbieter(kind).ressource_noetig,
+        pflicht=spec_kind.ressource_noetig,
     )
+    raw_custom_url = (custom_base_url or "").strip() or None
+    if spec_kind.adresse_eintragbar or raw_custom_url is not None:
+        validated_custom_url = ai_custom_ssrf.validate_custom_base_url(raw_custom_url)
+    else:
+        validated_custom_url = None
+    custom_proto = _assert_custom_chat_protocol(custom_chat_protocol)
+    custom_dialekt = _assert_custom_reasoning_dialect(custom_reasoning_dialect)
+    custom_ctx = _assert_optional_positive_int(
+        custom_context_tokens, label="Kontextfenster"
+    )
+    custom_max_out = _assert_optional_positive_int(
+        custom_max_output_tokens, label="Ausgabetokens"
+    )
+    custom_vision = bool(custom_supports_vision) if custom_supports_vision is not None else None
     provider = AiProvider(
         name=name.strip(),
         provider_kind=kind,
@@ -855,6 +957,12 @@ def create_provider(
         memory_model=gedaechtnismodell,
         search_summary_model=suchmodell,
         azure_resource_name=ressource,
+        custom_base_url=validated_custom_url,
+        custom_chat_protocol=custom_proto,
+        custom_reasoning_dialect=custom_dialekt,
+        custom_context_tokens=custom_ctx,
+        custom_max_output_tokens=custom_max_out,
+        custom_supports_vision=custom_vision,
         disable_safety=bool(disable_safety),
     )
     db.add(provider)
@@ -898,6 +1006,8 @@ def update_provider(
     # mitgeschickter neuer Schluessel wird unten regulaer gespeichert.
     #
     # Zwei Wege fuehren zu einer anderen Gegenstelle, und beide zaehlen:
+    old_kind = provider.provider_kind
+    old_custom_url = getattr(provider, "custom_base_url", None)
     schluessel_verfaellt = False
     if "provider_kind" in values and values["provider_kind"] != provider.provider_kind:
         # Ein anderer Anbieter. Die Praefixpruefung beim Anlegen verhindert
@@ -919,6 +1029,21 @@ def update_provider(
         # Regel darueber nicht anschlaegt.
         schluessel_verfaellt = True
     provider.azure_resource_name = neue_ressource
+    if "custom_base_url" in values:
+        raw_custom_url = (values["custom_base_url"] or "").strip() or None
+        neue_custom_url = (
+            ai_custom_ssrf.validate_custom_base_url(raw_custom_url)
+            if raw_custom_url is not None
+            else None
+        )
+    else:
+        neue_custom_url = old_custom_url
+    if neue_custom_url != old_custom_url:
+        # Auch bei Custom-Providern ist der Schluessel an eine konkrete
+        # Zieladresse gebunden. Aendert sich `custom_base_url`, muss ein
+        # gespeicherter Key geloescht werden, sofern kein neuer mitgeschickt wurde.
+        schluessel_verfaellt = True
+    provider.custom_base_url = neue_custom_url
     if schluessel_verfaellt:
         provider.operator_api_key_encrypted = None
         provider.operator_api_key_hint = None
@@ -1036,13 +1161,33 @@ def update_provider(
     # betriebsbereit aus, stünde in der Providerauswahl des Chats und liefe
     # beim ersten Absenden in einen Fehler aus `base_url()` — weit entfernt von
     # dem Feld, das leer geblieben ist.
+    if "custom_chat_protocol" in values and values["custom_chat_protocol"] is not None:
+        provider.custom_chat_protocol = _assert_custom_chat_protocol(values["custom_chat_protocol"])
+    if "custom_reasoning_dialect" in values and values["custom_reasoning_dialect"] is not None:
+        provider.custom_reasoning_dialect = _assert_custom_reasoning_dialect(
+            values["custom_reasoning_dialect"]
+        )
+    if "custom_context_tokens" in values:
+        provider.custom_context_tokens = _assert_optional_positive_int(
+            values["custom_context_tokens"], label="Kontextfenster"
+        )
+    if "custom_max_output_tokens" in values:
+        provider.custom_max_output_tokens = _assert_optional_positive_int(
+            values["custom_max_output_tokens"], label="Ausgabetokens"
+        )
+    if "custom_supports_vision" in values:
+        val_vision = values["custom_supports_vision"]
+        provider.custom_supports_vision = bool(val_vision) if val_vision is not None else None
     if provider.enabled and ai_provider_registry.bekannt(provider.provider_kind):
+        target_spec = ai_provider_registry.anbieter(provider.provider_kind)
         _assert_ressource(
             provider.azure_resource_name,
-            pflicht=ai_provider_registry.anbieter(
-                provider.provider_kind
-            ).ressource_noetig,
+            pflicht=target_spec.ressource_noetig,
         )
+        if target_spec.adresse_eintragbar:
+            provider.custom_base_url = ai_custom_ssrf.validate_custom_base_url(
+                provider.custom_base_url
+            )
     if "token_price_micro_usd_per_million" in values:
         provider.token_price_micro_usd_per_million = values[
             "token_price_micro_usd_per_million"
@@ -1064,6 +1209,10 @@ def update_provider(
         verlangt=values.get("realtime_default") if "realtime_default" in values else None,
     )
     db.flush()
+    if old_kind == "custom" or provider.provider_kind == "custom":
+        from services import ai_model_catalog
+
+        ai_model_catalog.cache_invalidieren(f"custom:{provider.id}")
     return provider
 
 

@@ -889,7 +889,57 @@
         "minutePriceHint": "GPT-Live bills the session per second. Creating a session bills 15 seconds up front, credited against its running time. The backend model is billed separately by its tokens.",
         "legacyPaused": "While this access is active, voice mode does not use ElevenLabs, Pipecat or the transcription model."
       },
-      "geminiSafetyOffHint": "Sets all 5 default safety filters (hate speech, harassment, dangerous content and so on) to BLOCK_NONE for Gemini and Gemma models via the Google AI Studio API."
+      "geminiSafetyOffHint": "Sets all 5 default safety filters (hate speech, harassment, dangerous content and so on) to BLOCK_NONE for Gemini and Gemma models via the Google AI Studio API.",
+      "custom": {
+        "kindHint": "Requests go directly from the panel backend to your configured URL (without exposing user IP addresses).",
+        "sectionTitle": "Custom endpoint",
+        "sectionHint": "Connects local runtimes (Ollama, LM Studio, llama.cpp, Speaches) or dedicated GPU servers directly through the MSM backend.",
+        "presetsLabel": "Quick presets",
+        "presets": {
+          "ollama": "Ollama (local)",
+          "lmstudio": "LM Studio (local)",
+          "llamacpp": "llama.cpp server",
+          "vllm": "vLLM / SGLang (GPU server)",
+          "anthropic": "Anthropic compatible",
+          "whisper": "Whisper STT (Speaches)"
+        },
+        "baseUrl": "Base URL",
+        "baseUrlHint": "Usually ends with /v1 on OpenAI-compatible servers (without /chat/completions). External GPU hosts over the internet require HTTPS by default.",
+        "baseUrlMissing": "Enter a base URL for this custom endpoint.",
+        "baseUrlInvalid": "Enter a valid http:// or https:// URL without username, query parameters, fragment, or whitespace.",
+        "keyWipeWarning": "Changing the base URL clears the stored API key when saved so credentials cannot be sent to a different host. Enter the key below again if the new target needs one.",
+        "requiresApiKey": "Endpoint requires an API key",
+        "requiresApiKeyHint": "Disable this for local runtimes without authentication (such as default Ollama or LM Studio).",
+        "chatProtocol": "Chat protocol",
+        "chatProtocols": {
+          "chat_completions": "OpenAI chat completions (/chat/completions)",
+          "responses": "OpenAI responses (/responses)",
+          "anthropic_messages": "Anthropic messages (/v1/messages)"
+        },
+        "chatProtocolHint": "Choose OpenAI chat completions for Ollama, LM Studio, llama.cpp, vLLM, and SGLang; responses for reasoning gateways; Anthropic messages for Claude-compatible proxies.",
+        "reasoningDialect": "Reasoning dialect",
+        "reasoningDialects": {
+          "none": "Off (visible answer only)",
+          "think_tags": "<think> tags in output stream",
+          "reasoning_effort": "OpenAI reasoning_effort parameter",
+          "reasoning": "Structured reasoning parameter",
+          "anthropic_thinking": "Anthropic thinking blocks"
+        },
+        "reasoningDialectHint": "Separates visible replies from internal reasoning traces. Pick <think> tags for DeepSeek-R1, QwQ, or Ollama models streaming embedded thought blocks.",
+        "contextTokens": "Context window (tokens, override)",
+        "contextTokensHint": "Optional manual token cap if /models reports no context window. Leave blank to use the catalog metadata or default fallback.",
+        "maxOutputTokens": "Max output tokens (override)",
+        "maxOutputTokensHint": "Optional output length cap for this endpoint. Leave blank to keep the catalog value.",
+        "tokenOverrideInvalid": "Enter a whole number between 1 and {{max}}, or leave the field blank.",
+        "supportsVision": "Image recognition (vision)",
+        "visionOptions": {
+          "auto": "From model catalog (automatic)",
+          "true": "Yes (endpoint accepts images)",
+          "false": "No (text only)"
+        },
+        "supportsVisionHint": "Overrides vision detection if /models on the target server omits image capabilities.",
+        "noRealtimeNote": "Realtime live voice is intentionally disabled for custom providers because no vendor-neutral local streaming standard exists. Chat and Whisper transcription (/audio/transcriptions) work normally."
+      }
     },
     "profile": {
       "title": "Singra",
@@ -5623,6 +5673,35 @@
       },
       "spokenLimit": "Server deletion and backup restores can be confirmed by voice if allowed by the operator. Spoken approvals are logged in the audit trail."
     },
+    "aiCustom": {
+      "title": "Local and self-hosted AI endpoints (custom provider)",
+      "intro": "The custom provider connects local runtimes on the same host (Ollama, LM Studio, llama.cpp, Speaches) or dedicated GPU servers (vLLM, SGLang, Anthropic-compatible gateways) without sending data to third-party cloud vendors.",
+      "architecture": {
+        "title": "Panel backend proxy only",
+        "body": "All chat, catalog, and transcription requests travel solely from the MSM backend to the configured base URL. Browsers and desktop clients never connect directly to the GPU host and never expose user IP addresses to it. Configured URLs and keys stay out of user-facing provider lists."
+      },
+      "localRuntime": {
+        "title": "Local models (loopback / LAN / Docker)",
+        "body": "Loopback and LAN addresses (127.0.0.1, ::1, RFC 1918, Tailscale/CGNAT 100.64.0.0/10, and local hostnames like localhost or host.docker.internal) are blocked by default. Set MSM_AI_CUSTOM_ALLOW_PRIVATE_ENDPOINTS=true in backend/.env and restart msm-panel for local runtimes."
+      },
+      "remoteGpu": {
+        "title": "Remote GPU server over HTTPS",
+        "body": "Remote endpoints require HTTPS by default (MSM_AI_CUSTOM_REQUIRE_HTTPS=true). Terminate TLS in front of vLLM, SGLang, or Speaches with a reverse proxy such as Caddy and require a bearer token, then store that key DIS-encrypted in the panel."
+      },
+      "ssrf": {
+        "title": "SSRF blocking and DNS pinning",
+        "body": "Link-local and cloud metadata ranges (169.254.0.0/16, fe80::/10, fd00:ec2::/112), multicast, and 6to4/Teredo stay blocked even when private endpoints are enabled. Before every request, the backend resolves the host, checks every returned IP, pins the socket while keeping Host and SNI intact, and disables redirects. Changing the base URL automatically wipes any previously stored API key."
+      },
+      "protocols": {
+        "title": "Chat protocols and reasoning dialects",
+        "body": "Supports Chat Completions (/chat/completions), OpenAI Responses (/responses), and Anthropic Messages (/v1/messages) with tool calls, vision, and context compaction. The reasoning dialect separates visible replies from thinking traces via <think> tags, reasoning_effort, reasoning, or Anthropic thinking blocks."
+      },
+      "whisper": {
+        "title": "Local Whisper STT and /models",
+        "body": "Dictation and legacy voice mode call POST /audio/transcriptions as multipart/form-data (for example Speaches or faster-whisper-server). MSM inspects GET /models for context windows, output token caps, and vision flags, and lets operators override missing metadata on the provider."
+      },
+      "realtimeLimit": "Native Realtime live voice (WebRTC/WebSocket) is intentionally disabled for custom providers because no vendor-neutral local streaming standard exists. Chat and Whisper transcription work normally."
+    },
     "vaultCloud": {
       "title": "Vault cloud: files in the vault",
       "intro": "The app encrypts photos, videos and documents on the device before they are uploaded, in pieces of 4 MiB. The panel only stores those pieces, in /opt/msm/vault-blobs. The path is fixed; to use another disk, mount it there. Name, type, real size and key are kept in the encrypted vault entry.",
@@ -5906,7 +5985,8 @@
           "guardian": "With autonomy granted, a Guardian incident can trigger processing while the user is not present: the incident type, its status and the server data already shared with Singra are transmitted; log excerpts are additionally stripped of public IP addresses and email addresses. Usage and responsibility remain with the grantor. The result report sent by email contains model-generated text.",
           "tasks": "A standing task created in chat or in the task list (“AI task”) stores its name, instruction, schedule, time zone and delivery channel, and triggers processing at the agreed time while the user is not present. It runs in the background with the permissions and quota of whoever created it; on each due run the instruction and the server data it retrieves are transmitted to the selected model provider. On request the result is additionally sent by email to the stored address and contains model-generated text. Tasks can be listed, paused and deleted from the chat and the task list at any time.",
           "mailboxes": "Linked email mailboxes (IMAP / SMTP): Stored credentials (passwords, app passwords, or OAuth tokens) are encrypted with DIS AES-256-GCM and never leave the panel in plaintext. Emails are searched or read solely upon your explicit instruction. Singra never sends emails autonomously: every email transmission is presented in the chat as an action proposal card with subject, recipient, and content, and is only sent after your explicit confirmation.",
-          "calendars": "Integrated & linked calendar: Events of the native calendar remain within the local panel database under full user data sovereignty. For external CalDAV accounts, credentials are encrypted with DIS AES-256-GCM. The AI only reads events upon specific request. Creating, modifying, or deleting events produces an action proposal card in the chat and is executed only after user confirmation (or logged automatically when autonomous mode is enabled)."
+          "calendars": "Integrated & linked calendar: Events of the native calendar remain within the local panel database under full user data sovereignty. For external CalDAV accounts, credentials are encrypted with DIS AES-256-GCM. The AI only reads events upon specific request. Creating, modifying, or deleting events produces an action proposal card in the chat and is executed only after user confirmation (or logged automatically when autonomous mode is enabled).",
+          "customProviders": "Operator-configured local or self-hosted endpoints (such as Ollama, LM Studio, llama.cpp, vLLM, or a dedicated GPU or Whisper server): Requests are sent solely by the panel backend to the operator's configured base URL. Browsers and desktop clients never connect directly to the model host and do not expose their IP addresses to it. Only the same minimized conversation context (or the recorded audio clip for Whisper transcription) is transmitted; optional API keys are DIS-encrypted in the panel and cleared automatically if the base URL changes. Location, logging, and retention on the target host remain the operator's responsibility."
         }
       },
       "desktopApp": {

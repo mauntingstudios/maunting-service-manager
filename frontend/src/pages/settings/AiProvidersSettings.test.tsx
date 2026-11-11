@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { aiApi, type AiProviderAdmin, type AiSprachweg } from '@/api/ai'
+import { SanitizedApiError } from '@/api/client'
 import i18n from '@/i18n'
 import { AiProvidersSettings } from './AiProvidersSettings'
 
@@ -10,6 +11,7 @@ vi.mock('@/api/ai', () => ({
     listProviderSettings: vi.fn(),
     listProviderKinds: vi.fn(),
     listCatalogModels: vi.fn(),
+    previewCustomCatalogModels: vi.fn(),
     findCatalogModel: vi.fn(),
     createProvider: vi.fn(),
     updateProvider: vi.fn(),
@@ -136,7 +138,22 @@ describe('AiProvidersSettings', () => {
       ressource_noetig: true,
       fuehrt_katalog: false,
       kann_hoeren: false,
+    }, {
+      kind: 'custom',
+      label: 'Custom / Lokal (Ollama, vLLM, LM Studio, Whisper)',
+      base_url: '',
+      key_url: '',
+      key_prefix: null,
+      protokoll: 'chat_completions',
+      katalog_braucht_schluessel: false,
+      ressource_noetig: false,
+      fuehrt_katalog: true,
+      kann_hoeren: true,
+      adresse_eintragbar: true,
+      realtime_tauglich: false,
+      sprachwege: [],
     }])
+    vi.mocked(aiApi.previewCustomCatalogModels).mockReset().mockResolvedValue([])
     vi.mocked(aiApi.findCatalogModel).mockReset().mockResolvedValue(null)
     vi.mocked(aiApi.getCostPolicy).mockReset().mockResolvedValue({
       currency: 'EUR',
@@ -821,6 +838,233 @@ describe('AiProvidersSettings', () => {
       // Enter wählt das gesuchte Modell aus
       fireEvent.keyDown(suchfeld, { key: 'Enter' })
       await waitFor(() => expect(screen.getByRole('button', { name: 'Standardmodell' })).toHaveTextContent('google/gemini-2.5-pro'))
+    })
+  })
+
+  describe('Custom Provider (lokal & selbst gehostet)', () => {
+    const savedCustom: AiProviderAdmin = {
+      ...provider,
+      id: 9,
+      name: 'Lokales Ollama',
+      provider_kind: 'custom',
+      base_url: 'http://127.0.0.1:11434/v1',
+      default_model: 'llama3.3:70b',
+      transcription_model: null,
+      requires_api_key: true,
+      operator_key_configured: true,
+      operator_key_hint: '****9999',
+      custom_base_url: 'http://127.0.0.1:11434/v1',
+      custom_chat_protocol: 'chat_completions',
+      custom_reasoning_dialect: 'think_tags',
+      custom_context_tokens: 32768,
+      custom_max_output_tokens: 8192,
+      custom_supports_vision: true,
+    }
+
+    it('setzt Ollama-Preset, lädt Modell-Vorschau ohne Schlüssel und blendet Realtime aus', async () => {
+      vi.mocked(aiApi.listProviderSettings).mockResolvedValue([])
+      vi.mocked(aiApi.previewCustomCatalogModels).mockResolvedValue([{
+        model_id: 'qwen3:32b',
+        name: 'Qwen 3 32B',
+        reasoning: true,
+        efforts: [],
+        default_effort: null,
+        mandatory: false,
+        recommended: false,
+        vision: false,
+        context_tokens: 65536,
+      }])
+      vi.mocked(aiApi.createProvider).mockResolvedValue({
+        ...savedCustom,
+        id: 12,
+        name: 'Mein Ollama',
+        default_model: 'qwen3:32b',
+        requires_api_key: false,
+        operator_key_configured: false,
+        operator_key_hint: null,
+      })
+
+      render(<AiProvidersSettings canWrite />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Provider hinzufügen' }))
+
+      fireEvent.click(screen.getByLabelText('Anbieter'))
+      fireEvent.click(await screen.findByRole('option', { name: /Custom \/ Lokal/ }))
+
+      expect(screen.getByText(/Echtzeit-Live-Voice ist für Custom-Provider bewusst nicht verfügbar/i)).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: /OpenAI Realtime/i })).not.toBeInTheDocument()
+      expect(screen.getByRole('switch', { name: 'Endpunkt verlangt einen API-Schlüssel' }))
+        .toHaveAttribute('aria-checked', 'false')
+
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Mein Ollama' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Ollama (lokal)' }))
+
+      expect(screen.getByLabelText('Basis-URL')).toHaveValue('http://127.0.0.1:11434/v1')
+      expect(screen.getByLabelText('Chat-Protokoll')).toHaveTextContent('OpenAI Chat Completions (/chat/completions)')
+      expect(screen.getByLabelText('Reasoning-Dialekt')).toHaveTextContent('<think>-Tags im Ausgabestrom')
+
+      await waitFor(() => expect(aiApi.previewCustomCatalogModels).toHaveBeenCalledWith(
+        {
+          custom_base_url: 'http://127.0.0.1:11434/v1',
+          custom_chat_protocol: 'chat_completions',
+        },
+        undefined,
+      ), { timeout: 2000 })
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Standardmodell' })).toHaveTextContent('qwen3:32b'))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+      await waitFor(() => expect(aiApi.createProvider).toHaveBeenCalledWith(expect.objectContaining({
+        provider_kind: 'custom',
+        name: 'Mein Ollama',
+        custom_base_url: 'http://127.0.0.1:11434/v1',
+        custom_chat_protocol: 'chat_completions',
+        custom_reasoning_dialect: 'think_tags',
+        requires_api_key: false,
+        default_model: 'qwen3:32b',
+      })))
+    })
+
+    it('überspringt bei Whisper-Preset die automatische Vorbelegung des Standardmodells', async () => {
+      vi.mocked(aiApi.listProviderSettings).mockResolvedValue([])
+      vi.mocked(aiApi.previewCustomCatalogModels).mockResolvedValue([{
+        model_id: 'Systran/faster-whisper-large-v3',
+        name: 'Whisper Large v3',
+        reasoning: null,
+        efforts: [],
+        default_effort: null,
+        mandatory: false,
+        recommended: false,
+        vision: false,
+      }])
+
+      render(<AiProvidersSettings canWrite />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Provider hinzufügen' }))
+
+      fireEvent.click(screen.getByLabelText('Anbieter'))
+      fireEvent.click(await screen.findByRole('option', { name: /Custom \/ Lokal/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Whisper STT (Speaches)' }))
+
+      expect(screen.getByLabelText('Basis-URL')).toHaveValue('http://127.0.0.1:8000/v1')
+      expect(screen.getByLabelText('Reasoning-Dialekt')).toHaveTextContent('Aus (nur sichtbare Antwort)')
+
+      await waitFor(() => expect(aiApi.previewCustomCatalogModels).toHaveBeenCalledWith(
+        {
+          custom_base_url: 'http://127.0.0.1:8000/v1',
+          custom_chat_protocol: 'chat_completions',
+        },
+        undefined,
+      ), { timeout: 2000 })
+
+      // Katalog ist geladen, Standardmodell bleibt aber leer fuer dedizierte STT-Nutzung.
+      const modellButton = await screen.findByRole('button', { name: 'Standardmodell' })
+      expect(modellButton).toHaveTextContent('Modell wählen …')
+      expect(screen.getByLabelText('Modell für Gesprochenes')).toBeInTheDocument()
+    })
+
+    it('validiert ungültige URLs beim Verlassen und zeigt Vorschau-Fehler als Statusmeldung', async () => {
+      vi.mocked(aiApi.listProviderSettings).mockResolvedValue([])
+      vi.mocked(aiApi.previewCustomCatalogModels).mockRejectedValue(
+        new SanitizedApiError('Lokale oder private Endpunkte sind deaktiviert', {
+          status: 422,
+          code: 'AI_PROVIDER_CONFIG_INVALID',
+        }),
+      )
+
+      render(<AiProvidersSettings canWrite />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Provider hinzufügen' }))
+      fireEvent.click(screen.getByLabelText('Anbieter'))
+      fireEvent.click(await screen.findByRole('option', { name: /Custom \/ Lokal/ }))
+
+      const urlFeld = screen.getByLabelText('Basis-URL')
+      fireEvent.change(urlFeld, { target: { value: 'ftp://invalid-host' } })
+      fireEvent.blur(urlFeld)
+
+      expect(screen.getByText(/Bitte eine gültige http:\/\/- oder https:\/\/-URL/i)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
+      expect(aiApi.previewCustomCatalogModels).not.toHaveBeenCalled()
+
+      fireEvent.change(urlFeld, { target: { value: 'http://127.0.0.1:8080/v1' } })
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Lokale oder private Endpunkte sind deaktiviert'), { timeout: 2000 })
+    })
+
+    it('warnt bei URL-Änderung vor Schlüssel-Löschung und unterstützt leerbare Token-/Vision-Überschreibungen', async () => {
+      vi.mocked(aiApi.listProviderSettings).mockResolvedValue([savedCustom])
+      vi.mocked(aiApi.listCatalogModels).mockResolvedValue([{
+        model_id: 'llama3.3:70b',
+        name: 'Llama 3.3 70B',
+        reasoning: false,
+        efforts: [],
+        default_effort: null,
+        mandatory: false,
+        recommended: false,
+        vision: true,
+        context_tokens: 32768,
+        max_output_tokens: 8192,
+      }])
+      vi.mocked(aiApi.updateProvider).mockResolvedValue({
+        ...savedCustom,
+        custom_base_url: 'https://gpu2.example.com/v1',
+        custom_chat_protocol: 'anthropic_messages',
+        custom_reasoning_dialect: 'anthropic_thinking',
+        custom_context_tokens: null,
+        custom_max_output_tokens: 16384,
+        custom_supports_vision: false,
+        operator_key_configured: false,
+        operator_key_hint: null,
+      })
+
+      render(<AiProvidersSettings canWrite />)
+
+      // Unveraenderter Bestand laedt direkt ueber read-only listCatalogModels statt preview.
+      await waitFor(() =>
+        expect(aiApi.listCatalogModels).toHaveBeenCalledWith('custom', false, 9))
+      expect(aiApi.previewCustomCatalogModels).not.toHaveBeenCalled()
+      expect(screen.queryByText(/gespeicherte API-Schlüssel beim Speichern gelöscht/i)).not.toBeInTheDocument()
+
+      const urlFeld = screen.getByLabelText('Basis-URL')
+      fireEvent.change(urlFeld, { target: { value: 'https://gpu2.example.com/v1' } })
+
+      // URL-Wechsel warnt und verzichtet bei der Vorschau auf provider_id.
+      expect(screen.getByRole('status')).toHaveTextContent(/gespeicherte API-Schlüssel beim Speichern gelöscht/i)
+      await waitFor(() => expect(aiApi.previewCustomCatalogModels).toHaveBeenCalledWith(
+        {
+          custom_base_url: 'https://gpu2.example.com/v1',
+          custom_chat_protocol: 'chat_completions',
+        },
+        undefined,
+      ), { timeout: 2000 })
+
+      // Ungueltige Token-Eingabe blockiert Speichern und zeigt Hinweis.
+      const maxOutputFeld = screen.getByLabelText('Max. Ausgabetokens (Überschreibung)')
+      fireEvent.change(maxOutputFeld, { target: { value: 'abc' } })
+      fireEvent.blur(maxOutputFeld)
+      expect(screen.getByText(/Bitte eine ganze Zahl zwischen 1 und/i)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
+
+      // Kontextfenster leer lassen -> null, Ausgabetokens -> 16384, Vision -> false, Protokoll + Dialekt umstellen.
+      fireEvent.change(screen.getByLabelText('Kontextfenster (Tokens, Überschreibung)'), { target: { value: '' } })
+      fireEvent.change(maxOutputFeld, { target: { value: '16384' } })
+
+      fireEvent.click(screen.getByLabelText('Bilderkennung (Vision)'))
+      fireEvent.click(await screen.findByRole('option', { name: 'Nein (nur Text)' }))
+
+      fireEvent.click(screen.getByLabelText('Chat-Protokoll'))
+      fireEvent.click(await screen.findByRole('option', { name: 'Anthropic Messages (/v1/messages)' }))
+
+      fireEvent.click(screen.getByLabelText('Reasoning-Dialekt'))
+      fireEvent.click(await screen.findByRole('option', { name: 'Anthropic-Thinking-Blöcke' }))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+      await waitFor(() => expect(aiApi.updateProvider).toHaveBeenCalledWith(9, expect.objectContaining({
+        custom_base_url: 'https://gpu2.example.com/v1',
+        custom_chat_protocol: 'anthropic_messages',
+        custom_reasoning_dialect: 'anthropic_thinking',
+        custom_context_tokens: null,
+        custom_max_output_tokens: 16384,
+        custom_supports_vision: false,
+      })))
     })
   })
 })

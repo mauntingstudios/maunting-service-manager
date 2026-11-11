@@ -45,7 +45,7 @@ import logging
 import httpx
 
 from models import AiProvider, User
-from services import ai_model_catalog
+from services import ai_model_catalog, ai_provider_registry
 from services.ai_provider_registry import Modell
 
 
@@ -227,8 +227,18 @@ async def ermitteln(
                 client, db, provider, user_id=user_id
             )
         else:
+            kind = provider.provider_kind
+            finde_kwargs: dict[str, object] = (
+                {"provider": provider}
+                if ai_provider_registry.bekannt(kind)
+                and ai_provider_registry.anbieter(kind).adresse_eintragbar
+                else {}
+            )
             modell = await ai_model_catalog.finde(
-                client, provider.provider_kind, provider.default_model or ""
+                client,
+                kind,
+                provider.default_model or "",
+                **finde_kwargs,
             )
     except Exception as exc:
         # Der Katalog faengt seine eigenen Fehler ab; was hier noch ankommt,

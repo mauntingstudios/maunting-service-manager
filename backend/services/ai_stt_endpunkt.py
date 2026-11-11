@@ -54,8 +54,9 @@ import logging
 import httpx
 
 from models import AiProvider
-from services.ai_provider_service import base_url as anbieter_adresse
-from services.ai_provider_registry import anbieter as anbieter_spec
+from services.ai_custom_ssrf import pinned_http_client_async
+from services.ai_provider_errors import AiProviderConfigurationError
+from services.ai_provider_service import base_url as anbieter_adresse, effective_spec
 from services.openai_compatible_adapter import (
     AiProviderRequestError,
     StreamUsage,
@@ -87,7 +88,7 @@ async def abschrift(
     """
     from services.ai_stt import ZEITGRENZE, messwerte_uebernehmen
 
-    spec = anbieter_spec(provider.provider_kind)
+    spec = effective_spec(provider)
     adresse = anbieter_adresse(provider).rstrip("/") + "/audio/transcriptions"
 
     kopf: dict[str, str] = {}
@@ -118,12 +119,24 @@ async def abschrift(
             }
         }
 
+    eff_client: httpx.AsyncClient | None = None
+    owned_client = False
     try:
-        antwort = await client.post(adresse, headers=kopf, timeout=ZEITGRENZE, **anfrage)
+        eff_client, owned_client = (
+            await pinned_http_client_async(client, adresse)
+            if spec.adresse_eintragbar
+            else (client, False)
+        )
+        antwort = await eff_client.post(adresse, headers=kopf, timeout=ZEITGRENZE, **anfrage)
+    except AiProviderConfigurationError:
+        raise
     except httpx.TimeoutException as exc:
         raise AiProviderRequestError("AI_PROVIDER_STREAM_TIMEOUT") from exc
     except httpx.HTTPError as exc:
         raise AiProviderRequestError("AI_PROVIDER_UNAVAILABLE") from exc
+    finally:
+        if owned_client and eff_client is not None:
+            await eff_client.aclose()
 
     if antwort.status_code >= 400:
         # Derselbe Fehlercode wie im Chat, aus derselben Funktion. Eine eigene

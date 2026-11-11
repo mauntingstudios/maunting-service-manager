@@ -19,22 +19,17 @@ class AiProvider(Base):
     Dienst, und ein eigener Schlüssel wäre ein zweiter Abrechnungspfad neben
     dem kalkulierten.
 
-    **Die frei eintragbare Basis-URL ist entfallen** (`provider_kind` statt
-    `base_url`). Sie war flexibel und teuer zugleich: MSM wusste nichts über
-    das Ziel, brauchte deshalb eine SSRF-Prüfung mit IP-Pinning, und konnte
-    über das Modell dahinter keine Aussage treffen — welche Denkstufen es
-    kennt, ob es abschaltbar ist, ob es überhaupt nachdenkt. Genau das braucht
-    ein Panel, das Denktiefe je Rolle begrenzen will.
+    **Die frei eintragbare Basis-URL bleibt für Standard-Anbieter entfallen**
+    (`provider_kind` statt `base_url`), damit feste Endpunkte ohne
+    Angriffsfläche aus `ai_provider_registry` kommen. Ausschließlich für
+    lokale bzw. selbst gehostete KI-Server (`provider_kind="custom"`) existiert
+    mit ``custom_base_url`` wieder eine konfigurierbare Zieladresse, die durch
+    `services.ai_custom_ssrf` (DNS-Auflösung, IP-Pinning, Link-Local-Sperre,
+    Opt-in für private Netze und Redirect-Verbot) abgesichert wird.
 
-    Mit einem Anbieter aus `ai_provider_registry` gehört die Adresse dem
-    Programm, und mit ihr kommt der Modellkatalog. Was ein Modell kann, steht
-    deshalb **nicht** in dieser Tabelle: es kommt bei Bedarf aus
-    `ai_model_catalog` und wäre hier eine Kopie, die still veraltet.
-
-    Seit Azure trägt die Tabelle mit `azure_resource_name` wieder **ein Stück**
+    Seit Azure trägt die Tabelle mit `azure_resource_name` außerdem **ein Stück**
     Adresse — ein DNS-Label, keine URL. Warum das nötig ist, was daran anders
-    ist als die alte `base_url` und was an Restrisiko bleibt, steht bei der
-    Spalte selbst.
+    ist und was an Restrisiko bleibt, steht bei der Spalte selbst.
     """
 
     __tablename__ = "ai_providers"
@@ -221,6 +216,19 @@ class AiProvider(Base):
     # und eine Spalte, die knapper ist als das Erlaubte, verwandelte einen
     # erklärbaren Formfehler in einen Datenbankfehler.
     azure_resource_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Konfiguration ausschliesslich fuer ``provider_kind == "custom"``
+    # (lokale Runtimes wie Ollama/LM Studio/llama.cpp und eigene GPU-Server
+    # wie vLLM/SGLang/Speaches). Geprueft ueber `services.ai_custom_ssrf`.
+    custom_base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    custom_chat_protocol: Mapped[str] = mapped_column(
+        String(32), default="chat_completions", server_default=text("'chat_completions'"), nullable=False
+    )
+    custom_reasoning_dialect: Mapped[str] = mapped_column(
+        String(32), default="none", server_default=text("'none'"), nullable=False
+    )
+    custom_context_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    custom_max_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    custom_supports_vision: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     requires_api_key: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     operator_api_key_encrypted: Mapped[str | None] = mapped_column(String(4096), nullable=True)

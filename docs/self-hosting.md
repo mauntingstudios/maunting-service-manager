@@ -213,6 +213,17 @@ MSM integrates a native AI orchestration layer designed for server operations, a
 
 ---
 
+## Local & Self-Hosted AI Endpoints (Custom Provider)
+
+Operators who prefer running models on their own hardware instead of commercial APIs can add **Custom / Lokal (Ollama, vLLM, LM Studio, Whisper)** (`provider_kind="custom"`) under **Settings → AI → Providers**:
+
+- **Supported Targets & Protocols:** Connects Ollama, LM Studio, llama.cpp, vLLM, SGLang, Anthropic-compatible gateways, and Speaches / Whisper STT via `chat_completions`, `responses`, or `anthropic_messages`, plus `<think>...</think>` stream splitting (`custom_reasoning_dialect="think_tags"`).
+- **Live Catalog & Nullable Overrides:** Fetches `/models` directly (`custom:<provider_id>` cache or `/api/ai/settings/providers/custom-models-preview` before saving) while letting operators override missing `custom_context_tokens`, `custom_max_output_tokens`, and `custom_supports_vision` (`auto` / `true` / `false`).
+- **Whisper STT Without Realtime:** Standard Whisper transcription via `POST /audio/transcriptions` (`multipart/form-data`) works normally. Native bidirectional Realtime Voice (`OpenAI Realtime` / `Gemini Live` over WebRTC) is excluded because no vendor-neutral local streaming standard exists.
+- **SSRF Protection & Private Opt-In (`backend/services/ai_custom_ssrf.py`):** Client browsers never see `custom_base_url` or stored credentials and never connect directly to GPU hosts. Loopback, LAN (`10/8`, `172.16/12`, `192.168/16`), CGNAT/Tailscale (`100.64.0.0/10`), IPv6 ULA (`fc00::/7`), and local hostnames are blocked by default unless `MSM_AI_CUSTOM_ALLOW_PRIVATE_ENDPOINTS=true` is set in `backend/.env`. Public targets require HTTPS unless `MSM_AI_CUSTOM_REQUIRE_HTTPS=false`. Link-local/IMDS (`169.254.0.0/16`, `fe80::/10`, `fd00:ec2::/112`), multicast, unspecified, 6to4/Teredo, IPv4-mapped IPv6 bypasses, and redirects remain blocked unconditionally, with per-request DNS resolution and IP pinning (`PinnedAsyncTransport`). Changing `custom_base_url` wipes the stored API key automatically on save.
+
+---
+
 ## Weather Sidecar & Mobile Widgets
 
 The self-hosted Weather Sidecar provides hyper-local weather data and official severe weather warnings:

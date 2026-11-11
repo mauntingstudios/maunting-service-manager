@@ -71,6 +71,8 @@ def fill_missing_role_prices(provider_kind: str, values: dict[str, Any]) -> None
     Kein Katalogtreffer und Netzwerkfehler sind regulär: manuelle Felder und
     der bestehende Rückfallpreis bleiben unverändert.
     """
+    if provider_kind == "custom":
+        return
     catalog = _catalog()
     for role, model_field in (
         ("standard", "default_model"),

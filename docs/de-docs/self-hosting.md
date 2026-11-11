@@ -391,9 +391,10 @@ Betreiber aktiviert sind:
 - Die **Versionsanzeige** fragt ausschließlich das eigene Backend
   (`/api/system/version`) ab. Der Browser spricht niemals mit GitHub; eventuelle
   Versionsprüfungen und Release-Caches laufen rein serverseitig.
-- **KI, Websuche und Umgebungssignale** (OpenAI, Anthropic, TomTom, Open-Meteo,
-  Copernicus, Brave Search etc.) laufen ausnahmslos über das Backend. Drittanbieter
-  sehen ausschließlich die IP-Adresse des Servers, niemals die des Endnutzers.
+- **KI, Websuche und Umgebungssignale** (OpenAI, Anthropic, eigene/lokale
+  Custom-Endpunkte, TomTom, Open-Meteo, Copernicus, Brave Search etc.) laufen
+  ausnahmslos über das Backend. Externe Anbieter und eigene GPU-Server sehen
+  ausschließlich die IP-Adresse des Backend-Servers, niemals die des Endnutzers.
 - Das **Bild einer Regionsanalyse** (Sentinel-2-Vorschau oder das schlüsselfreie
   ArcGIS-Kartenbild, auch jeder Ausschnitt, auf den die Kamera ohne MapTiler
   zoomt) holt ebenfalls das Backend (`/api/ai/geo/image`); der
@@ -1718,12 +1719,12 @@ ElevenLabs-Stimme nutzen möchten oder keine direkte Audioverbindung zu OpenAI
 zulassen. Pipecat ordnet dabei ausschließlich Audio- und Steuerframes; die
 fachliche Ausführung bleibt im normalen Chatlauf.
 
-Der Betreiber braucht dafür zweierlei. Erstens **an einem Chatzugang** —
-OpenRouter oder OpenAI — ein Modell, das zuhört:
+Der Betreiber braucht dafür zweierlei. Erstens **an einem Chatzugang**
+(OpenRouter, OpenAI oder Custom) ein Modell, das zuhört:
 
 | Feld | Wert |
 |---|---|
-| Modell für Gesprochenes | ein Transkriptionsmodell, z. B. `openai/gpt-transcribe` (OpenRouter) oder `gpt-transcribe` (OpenAI) |
+| Modell für Gesprochenes | ein Transkriptionsmodell, z. B. `openai/gpt-transcribe` (OpenRouter), `gpt-transcribe` (OpenAI) oder `Systran/faster-whisper-large-v3` (Custom / Speaches) |
 
 > **Es steht nicht in der Modellliste — und das ist kein Fehler.** MSMs
 > Modellauswahl liest den `/models`-Katalog des Anbieters, und dort stehen
@@ -2043,6 +2044,69 @@ vollständig — es erscheint nicht einmal eine Freigabefrage, der Sprachmodus
 meldet nur einen Verbindungsfehler und die Kamera im Messenger lässt sich nicht
 einschalten. Wer nicht neu installieren will, ändert die Zeile in der eigenen
 Caddy-Site von Hand und lädt Caddy neu (`systemctl reload caddy`).
+
+---
+
+## Lokale und eigene KI-Endpunkte (Custom Provider)
+
+Für Betreiber, die Chat- oder Transkriptionsmodelle auf eigener Hardware statt
+über Konzern-APIs betreiben möchten, unterstützt MSM den Anbieter
+*Custom / Lokal (Ollama, vLLM, LM Studio, Whisper)* unter
+*Einstellungen → KI → Anbieter*. Die Anfragen laufen direkt vom Backend an den
+konfigurierten Endpunkt; Browser und Desktop-App sprechen nie direkt mit dem
+GPU-Host und erhalten weder `custom_base_url` noch gespeicherte API-Schlüssel.
+
+### Typische Ziele und Protokolle
+
+| Laufzeit / Server | Typische Basis-URL | Chat-Protokoll | Hinweis |
+|---|---|---|---|
+| **Ollama (lokal)** | `http://127.0.0.1:11434/v1` | `chat_completions` | Standardmäßig ohne Schlüssel (`requires_api_key=false`); `think_tags` für DeepSeek-R1/QwQ |
+| **LM Studio (lokal)** | `http://127.0.0.1:1234/v1` | `chat_completions` | Schlüssel optional; meldet `max_context_length` meist über `/models` |
+| **llama.cpp-Server** | `http://127.0.0.1:8080/v1` | `chat_completions` | Ggf. Kontextfenster manuell eintragen, falls `/models` kein Limit liefert |
+| **vLLM / SGLang (GPU-Server)** | `https://gpu.example.com/v1` | `chat_completions` oder `responses` | Hinter Caddy mit TLS und Bearer-Token absichern |
+| **Anthropic-kompatibler Proxy** | `https://proxy.example.com` | `anthropic_messages` | Sendet an `/v1/messages` (ohne doppeltes `/v1`) und unterstützt `anthropic_thinking` |
+| **Speaches / Whisper STT** | `http://127.0.0.1:8000/v1` | `chat_completions` | Für `POST /audio/transcriptions` (`multipart/form-data`) im Sprach- oder Diktiermodus |
+
+Nicht enthalten ist **Echtzeit-Live-Voice** (`OpenAI Realtime` / `Gemini Live`
+über WebRTC), weil für selbst gehostete Inferenzserver kein
+herstellerübergreifender Streaming-Standard existiert. Chat, Werkzeuge, Vision,
+Kontextkomprimierung, Gedächtnis sowie Whisper-Transkription funktionieren
+vollständig.
+
+### Schalter in `backend/.env` und SSRF-Schutz
+
+Freie Zieladressen sind standardmäßig eng abgesichert (`backend/services/ai_custom_ssrf.py`):
+
+| Variable | Standard | Wirkung |
+|---|---|---|
+| `MSM_AI_CUSTOM_ALLOW_PRIVATE_ENDPOINTS` | `false` | Schaltet Loopback (`127.0.0.1`, `::1`), LAN (`10/8`, `172.16/12`, `192.168/16`), IPv6 ULA (`fc00::/7`), CGNAT/Tailscale (`100.64.0.0/10`) und lokale Hostnamen (`localhost`, `host.docker.internal`, einfache Servicenamen) frei. Für lokale Runtimes auf `true` setzen und Backend neu starten. |
+| `MSM_AI_CUSTOM_REQUIRE_HTTPS` | `true` | Erzwingt `https://` für öffentliche Ziele. Mit `MSM_AI_CUSTOM_ALLOW_PRIVATE_ENDPOINTS=true` bleibt `http://` für freigegebene private/Loopback-Ziele erlaubt. |
+
+Unabhängig von diesen Schaltern blockiert MSM stets Link-Local- und
+Cloud-Metadaten (`169.254.0.0/16`, `fe80::/10`, `fd00:ec2::/112`), Multicast,
+Broadcast, `0.0.0.0/8`, 6to4-/Teredo-Tunnel, IPv4-mapped IPv6-Umgehungen sowie
+Query-Strings, Fragmente, Benutzerangaben (`@`) und Zone-IDs (`%`). Vor jeder
+Verbindung löst das Backend den Hostnamen auf, prüft jede zurückgegebene
+IP-Adresse gegen die Policy, pinnt die Verbindung per `PinnedAsyncTransport`
+auf die geprüfte IP (mit ursprünglichem `Host`-Header und TLS-SNI) und
+deaktiviert HTTP-Weiterleitungen (`follow_redirects=False`).
+
+Ändert ein Administrator bei einem bestehenden Zugang die Basis-URL, löscht das
+Backend den gespeicherten API-Schlüssel beim Speichern automatisch (sofern
+kein neuer Schlüssel mitgeschickt wird), damit keine Zugangsdaten an ein
+fremdes Ziel abfließen.
+
+### Modellkatalog und manuelle Überschreibungen
+
+Beim Anlegen oder Bearbeiten liest MSM verfügbare Modelle live über `GET /models`
+(für ungespeicherte Entwürfe über `POST /api/ai/settings/providers/custom-models-preview`,
+bei gespeicherten Zugängen im Katalog unter `custom:<provider_id>`). Viele
+lokale Server liefern jedoch kein Kontextfenster oder keine Vision-Kennung mit.
+Deshalb bleiben diese drei Felder direkt im Formular leerbar und überschreibbar:
+
+- **Kontextfenster (`custom_context_tokens`)**: manueller Grenzwert in Tokens; leer übernimmt den Katalogwert oder den Fallback.
+- **Max. Ausgabetokens (`custom_max_output_tokens`)**: optionale Obergrenze je Antwort.
+- **Bilderkennung (`custom_supports_vision`)**: `auto` (Katalog), `true` oder `false`.
 
 ---
 

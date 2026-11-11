@@ -26,6 +26,7 @@ from services import (
 from services.ai_chat_service import get_owned_conversation
 from services.ai_context_service import build_provider_messages, estimate_reserved_tokens
 from services.ai_guardian_service import briefing_nachricht
+from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_provider_service import estimate_cost_microunits
 from services.ai_redaction import redact_sensitive_text
 from services.ai_stream.context import _modell_fuer, _rolle_ableiten
@@ -178,10 +179,10 @@ def lauf_beginnen(
         # Modellnamens; ein unbekannter Anbieter faellt auf die verbreitete
         # Chat-Completions-Form zurueck.
         try:
-            provider_protokoll = ai_provider_registry.anbieter(
-                provider.provider_kind
+            provider_protokoll = ai_provider_service.effective_spec(
+                provider
             ).protokoll_chat
-        except KeyError:
+        except (KeyError, AiProviderConfigurationError):
             provider_protokoll = None
         provider_messages = build_provider_messages(
             db, conversation, query=safe_content, server_id=serverbezug,

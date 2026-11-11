@@ -79,9 +79,16 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
+from typing import Any
 
 import httpx
 
+from services.ai_custom_ssrf import (
+    custom_catalog_target,
+    pinned_http_client_async,
+    validate_custom_base_url,
+)
+from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_provider_registry import ANBIETER, Anbieter, Modell, anbieter, katalog_leser
 
 
@@ -355,9 +362,25 @@ def vorwaermen_anstossen() -> None:
     nachdem der ``lifespan`` weitergelaufen ist.
     """
     for kind, spec in ANBIETER.items():
-        if spec.catalog_url is None:
+        if spec.adresse_eintragbar or not spec.catalog_url:
             continue
         _auffrischen_anstossen(kind)
+
+
+def cache_invalidieren(schluessel_name: str) -> None:
+    """Entfernt einen zwischengespeicherten Katalog (z. B. ``custom:42``)."""
+    _cache.pop(schluessel_name, None)
+    aufgabe = _auffrischungen.pop(schluessel_name, None)
+    if aufgabe is not None and not aufgabe.done():
+        aufgabe.cancel()
+
+
+def _cache_key(kind: str, provider: Any | None) -> str:
+    if provider is not None and anbieter(kind).adresse_eintragbar:
+        pid = getattr(provider, "id", None)
+        if pid is not None:
+            return f"custom:{pid}"
+    return kind
 
 
 def _fingerabdruck(schluessel: str) -> str:
@@ -369,6 +392,14 @@ def _fingerabdruck(schluessel: str) -> str:
     fest, obwohl er Schluessel auseinanderhaelt.
     """
     return hashlib.sha256(schluessel.encode("utf-8")).hexdigest()
+
+
+def _aktueller_fingerabdruck(spec: Anbieter, schluessel: str | None) -> str | None:
+    if spec.adresse_eintragbar:
+        return _fingerabdruck(f"{spec.catalog_url or ''}|{schluessel or ''}")
+    if spec.katalog_braucht_schluessel and schluessel:
+        return _fingerabdruck(schluessel)
+    return None
 
 
 def _gehoert_dem_frager(eintrag: _Eintrag, spec: Anbieter, schluessel: str | None) -> bool:
@@ -384,13 +415,11 @@ def _gehoert_dem_frager(eintrag: _Eintrag, spec: Anbieter, schluessel: str | Non
     ungenau, sondern zweimal falsch: er zeigt dort Modelle, die es fuer B nicht
     gibt, und verschweigt die, die nur B hat.
 
-    Dass ``katalog_braucht_schluessel`` diese Frage mitbeantwortet, ist kein
-    Kurzschluss, sondern die vorsichtige Richtung: ein Katalog, der einen
-    Schluessel verlangt, antwortet ihm auch. Waere er ausnahmsweise doch fuer
-    alle gleich, kostet die Annahme einen zusaetzlichen Abruf je Zugang — die
-    umgekehrte Annahme kostet die Trennung zweier Konten. Ein eigenes Feld
-    bekommt der Fall, wenn es ihn gibt.
+    Bei Custom-Providern traegt der Abdruck Ziel-URL und optionalen Schluessel,
+    damit nach einer Aenderung sofort neu geholt wird.
     """
+    if spec.adresse_eintragbar:
+        return eintrag.fingerabdruck == _aktueller_fingerabdruck(spec, schluessel)
     if not spec.katalog_braucht_schluessel:
         return True
     return schluessel is not None and eintrag.fingerabdruck == _fingerabdruck(schluessel)
@@ -453,26 +482,37 @@ async def _hole(
     )
     kopf = (
         {kopf_name: f"{praefix}{schluessel}"}
-        if spec.katalog_braucht_schluessel and schluessel
+        if (spec.katalog_braucht_schluessel or spec.adresse_eintragbar) and schluessel
         else None
+    )
+    eff_client, owned_client = (
+        await pinned_http_client_async(client, spec.catalog_url or "")
+        if spec.adresse_eintragbar
+        else (client, False)
     )
     # Stückweise gelesen und nicht am Stück geholt: nur so wirkt die Grenze
     # darunter **während** der Übertragung. Ein ``client.get`` hätte den ganzen
     # Körper längst im Speicher, wenn die Prüfung ihn verwirft.
     roh = bytearray()
-    async with client.stream(
-        "GET", spec.catalog_url, timeout=ABRUF_TIMEOUT, headers=kopf
-    ) as antwort:
-        antwort.raise_for_status()
-        async for stueck in antwort.aiter_bytes():
-            roh += stueck
-            if len(roh) > MAX_KATALOG_BYTES:
-                raise ValueError("Katalog ist unerwartet groß")
+    try:
+        async with eff_client.stream(
+            "GET", spec.catalog_url, timeout=ABRUF_TIMEOUT, headers=kopf
+        ) as antwort:
+            antwort.raise_for_status()
+            async for stueck in antwort.aiter_bytes():
+                roh += stueck
+                if len(roh) > MAX_KATALOG_BYTES:
+                    raise ValueError("Katalog ist unerwartet groß")
+    finally:
+        if owned_client:
+            await eff_client.aclose()
 
     nutzlast = json.loads(bytes(roh))
-    if spec.katalog_liste_feld is None:
+    if spec.katalog_liste_feld is None or (
+        spec.adresse_eintragbar and isinstance(nutzlast, list)
+    ):
         # Die Antwort **ist** die Liste. Kein Sonderfall, nur eine andere
-        # Hausordnung — ElevenLabs macht es so.
+        # Hausordnung — ElevenLabs macht es so, manche OpenAI-Clones auch.
         rohliste = nutzlast
     else:
         rohliste = (
@@ -498,43 +538,118 @@ async def _hole(
     return sorted(modelle, key=lambda item: item.model_id)
 
 
+def _custom_overrides_aktiv(provider: Any | None) -> bool:
+    if provider is None:
+        return False
+    return (
+        getattr(provider, "custom_context_tokens", None) is not None
+        or getattr(provider, "custom_max_output_tokens", None) is not None
+        or getattr(provider, "custom_supports_vision", None) is not None
+        or (getattr(provider, "custom_reasoning_dialect", None) or "none").strip().lower()
+        != "none"
+    )
+
+
+def _mit_custom_ueberschreibung(modell: Modell, provider: Any | None) -> Modell:
+    if provider is None:
+        return modell
+    kontext = getattr(provider, "custom_context_tokens", None)
+    max_ausgabe = getattr(provider, "custom_max_output_tokens", None)
+    sieht = getattr(provider, "custom_supports_vision", None)
+    dialekt = (
+        getattr(provider, "custom_reasoning_dialect", None) or "none"
+    ).strip().lower()
+
+    denkt = modell.denkt
+    stufen = modell.stufen
+    standard_stufe = modell.standard_stufe
+    if dialekt != "none":
+        denkt = True
+        if dialekt in {"reasoning_effort", "anthropic_thinking"} and not stufen:
+            stufen = ("low", "medium", "high")
+            standard_stufe = standard_stufe or "medium"
+
+    return replace(
+        modell,
+        denkt=denkt,
+        stufen=stufen,
+        standard_stufe=standard_stufe,
+        kontext_tokens=kontext if kontext is not None else modell.kontext_tokens,
+        max_ausgabe_tokens=(
+            max_ausgabe if max_ausgabe is not None else modell.max_ausgabe_tokens
+        ),
+        sieht=sieht if sieht is not None else modell.sieht,
+    )
+
+
 async def modelle(
     client: httpx.AsyncClient,
     kind: str,
     *,
     erzwingen: bool = False,
     schluessel: str | None = None,
+    provider: Any | None = None,
 ) -> list[Modell]:
     """Die Modelle eines Anbieters, gecacht.
 
-    ``schluessel`` wird nur von Anbietern mit ``katalog_braucht_schluessel``
-    ausgewertet — und bei genau diesen entscheidet er auch, **wessen** Liste
-    zurueckkommt. Hier stand einmal das Gegenteil („welche Modelle es gibt,
-    haengt nicht daran, wer fragt"), und fuer OpenRouters offene Liste stimmt es
-    weiterhin. Fuer einen Katalog hinter einem Schluessel stimmt es nicht: er
-    antwortet mit dem, was dieses Konto sehen darf, samt seiner eigenen
-    Feinabstimmungen — und deren Kennungen tragen den Firmennamen, den der
-    Betreiber ihnen gegeben hat.
-
-    Der Speicher bleibt trotzdem nach ``kind`` geschluesselt; getrennt wird
-    nicht durch einen zweiten Platz, sondern durch einen Abdruck **im** Eintrag
-    (`_gehoert_dem_frager`). Ein Stand, der einem anderen Zugang gehoert, wird
-    dann nicht ausgegeben, sondern neu geholt. Zwei Zugaenge desselben Anbieters
-    kosten so einen Abruf mehr; die Kennungen des einen im Auswahlfeld des
-    anderen kosten mehr als das.
-
-    ``erzwingen=True`` umgeht die Frist — das ist der Knopf „Modelle neu laden“
-    in den Provider-Einstellungen. Er ist nötig, weil der häufigste Fall nicht
-    „unbekanntes Modell“ ist, sondern „der Katalog ist ein paar Stunden alt“.
-    Er umgeht **auch** die Ruhefrist nach einem Fehlversuch: wer den Knopf
-    drueckt, hat gerade beim Anbieter nachgesehen und will jetzt eine Antwort,
-    keine gespeicherte Absage. Und er wartet als einziger Weg noch auf den
-    Abruf — das ist genau das, was der Knopf verspricht.
+    Bei Custom-Providern (`adresse_eintragbar`) wird ein zeilenspezifischer
+    Cache-Schluessel (``custom:<id>``) genutzt und optionale Betreiber-Overrides
+    (Kontextfenster, Ausgabetokens, Vision, Reasoning-Dialekt) werden ueberlagert.
     """
+    spec_override: Anbieter | None = None
+    cache_key: str | None = None
+    basis_spec = anbieter(kind)
+    if provider is not None and basis_spec.adresse_eintragbar:
+        from services import ai_provider_service
+
+        try:
+            spec_override = ai_provider_service.effective_spec(
+                provider, mit_adresse=True
+            )
+        except AiProviderConfigurationError:
+            return []
+        cache_key = _cache_key(kind, provider)
+
     eigene = await _besorgen(
-        client, kind, erzwingen=erzwingen, sofort=True, schluessel=schluessel
+        client,
+        kind,
+        erzwingen=erzwingen,
+        sofort=True,
+        schluessel=schluessel,
+        spec_override=spec_override,
+        cache_key=cache_key,
     )
-    return await _mit_faehigkeiten(client, anbieter(kind), eigene, erzwingen=erzwingen)
+    ziel_spec = spec_override or basis_spec
+    angereichert = await _mit_faehigkeiten(
+        client, ziel_spec, eigene, erzwingen=erzwingen
+    )
+    if provider is not None and ziel_spec.adresse_eintragbar:
+        return [_mit_custom_ueberschreibung(m, provider) for m in angereichert]
+    return angereichert
+
+
+async def modelle_vorschau_custom(
+    client: httpx.AsyncClient,
+    *,
+    custom_base_url: str,
+    custom_chat_protocol: str = "chat_completions",
+    schluessel: str | None = None,
+) -> list[Modell]:
+    """Laedt ``/models`` einmalig fuer eine noch ungespeicherte Custom-Konfiguration."""
+    canonical = validate_custom_base_url(custom_base_url)
+    proto = (custom_chat_protocol or "chat_completions").strip().lower()
+    spec = anbieter("custom")
+    kopf = "x-api-key" if proto == "anthropic_messages" else spec.schluessel_kopf
+    praefix = "" if proto == "anthropic_messages" else spec.schluessel_praefix
+    temp_spec = replace(
+        spec,
+        base_url=canonical,
+        catalog_url=custom_catalog_target(canonical, proto),
+        protokoll_chat=proto,
+        schluessel_kopf=kopf,
+        schluessel_praefix=praefix,
+    )
+    return await _hole(client, temp_spec, schluessel=schluessel)
 
 
 def _anreichern(eigen: Modell, fremd: Modell | None) -> Modell:
@@ -716,6 +831,8 @@ async def _besorgen(
     sofort: bool,
     schluessel: str | None = None,
     mindestens: datetime | None = None,
+    spec_override: Anbieter | None = None,
+    cache_key: str | None = None,
 ) -> list[Modell]:
     """Der gemeinsame Weg fuer Vordergrund und Hintergrund.
 
@@ -729,9 +846,10 @@ async def _besorgen(
     geholt wurde, gilt als abgelaufen, auch wenn ``CACHE_TTL`` noch laeuft.
     Warum es das braucht, steht bei `_fremdkatalog`.
     """
-    spec = anbieter(kind)
+    spec = spec_override if spec_override is not None else anbieter(kind)
+    schluessel_cache = cache_key or kind
 
-    if spec.catalog_url is None:
+    if not spec.catalog_url:
         # **Kein Katalog ist kein Fehlschlag.** Der Unterschied ist der ganze
         # Grund fuer diesen frueh gesetzten Ausstieg: ein Fehlschlag wuerde
         # vermerkt, brächte eine Ruhefrist mit sich und liesse die Oberflaeche
@@ -764,12 +882,16 @@ async def _besorgen(
             )
         )
 
-    eintrag = _cache.get(kind)
+    eintrag = _cache.get(schluessel_cache)
     if eintrag is not None and bedient(eintrag, schluessel):
         return eintrag.modelle
 
-    if not erzwingen and sofort and _auffrischen_anstossen(
-        kind, schluessel, mindestens=mindestens
+    if (
+        not erzwingen
+        and sofort
+        and not spec.adresse_eintragbar
+        and spec_override is None
+        and _auffrischen_anstossen(kind, schluessel, mindestens=mindestens)
     ):
         # Ab hier holt jemand anders den frischen Stand. Also nicht warten —
         # aber nur mit einem Stand antworten, der auch diesem Frager gehoert.
@@ -793,7 +915,7 @@ async def _besorgen(
             # Zeit abgelaufen, Aufgabe verschwunden oder gescheitert — alles
             # drei enden gleich: mit dem, was da ist. Und da ist notfalls nichts.
             pass
-        bestand = _cache.get(kind)
+        bestand = _cache.get(schluessel_cache)
         if bestand is None or not _gehoert_dem_frager(bestand, spec, schluessel):
             # Die laufende Auffrischung holte den Katalog eines anderen Zugangs.
             # „Noch unbekannt" ist hier die einzige ehrliche Antwort; der
@@ -801,13 +923,13 @@ async def _besorgen(
             return []
         return bestand.modelle
 
-    async with _schloss(kind):
+    async with _schloss(schluessel_cache):
         # Zweite Prüfung im Schloss: während des Wartens kann ein anderer
         # Aufruf den Katalog bereits geholt haben — oder erfolglos versucht
         # haben, ihn zu holen. Ohne sie holen ihn beim Start alle gleichzeitig
         # wartenden Anfragen nacheinander erneut, und bei einem haengenden
         # Anbieter wartet jede von ihnen ihre eigene volle ``ABRUF_TIMEOUT``.
-        eintrag = _cache.get(kind)
+        eintrag = _cache.get(schluessel_cache)
         if eintrag is not None and bedient(eintrag, schluessel):
             return eintrag.modelle
 
@@ -836,12 +958,13 @@ async def _besorgen(
                 # Minute lang die leere Liste zurueck, obwohl der Schluessel
                 # neben ihr gespeichert ist, und zeigte „kennt keine Modelle".
                 logger.info(
-                    "Modellkatalog %s nicht abgerufen grund=kein_schluessel", kind
+                    "Modellkatalog %s nicht abgerufen grund=kein_schluessel",
+                    schluessel_cache,
                 )
                 ohne = eintrag if eintrag is not None else _Eintrag()
                 ohne.fehler_am = datetime.now(timezone.utc)
                 ohne.schluessel_fehlte = True
-                _cache[kind] = ohne
+                _cache[schluessel_cache] = ohne
                 return ohne.modelle
 
             # Mit dem Schluessel in der Hand ist erst jetzt zu erkennen, ob der
@@ -854,7 +977,9 @@ async def _besorgen(
             frisch = await _hole(client, spec, schluessel)
         except Exception as exc:
             logger.warning(
-                "Modellkatalog %s nicht abrufbar error=%s", kind, type(exc).__name__
+                "Modellkatalog %s nicht abrufbar error=%s",
+                schluessel_cache,
+                type(exc).__name__,
             )
             # Der alte Stand überlebt den Fehlversuch — ohne aufgefrischtes
             # ``geholt_am``, damit nach der Ruhefrist wirklich wieder abgerufen
@@ -891,25 +1016,17 @@ async def _besorgen(
             # richtige Grenze: derselbe Zugang wartet, ein anderer nicht. Ein
             # abgelehnter Schluessel ist die Sache seines Kontos, und ein Konto
             # soll nicht das andere aussperren.
-            gescheitert.fingerabdruck = (
-                _fingerabdruck(schluessel)
-                if spec.katalog_braucht_schluessel and schluessel
-                else None
-            )
-            _cache[kind] = gescheitert
+            gescheitert.fingerabdruck = _aktueller_fingerabdruck(spec, schluessel)
+            _cache[schluessel_cache] = gescheitert
             return gescheitert.modelle
         # Erfolg setzt den Eintrag neu auf und loescht damit auch einen
         # frueheren ``fehler_am`` — ein geglueckter Abruf ist die Antwort auf
         # alles, was vorher schiefging. Der Abdruck geht mit: er sagt, wem diese
         # Liste gehoert, und bei einem offenen Katalog gehoert sie allen.
-        _cache[kind] = _Eintrag(
+        _cache[schluessel_cache] = _Eintrag(
             modelle=frisch,
             geholt_am=datetime.now(timezone.utc),
-            fingerabdruck=(
-                _fingerabdruck(schluessel)
-                if spec.katalog_braucht_schluessel and schluessel
-                else None
-            ),
+            fingerabdruck=_aktueller_fingerabdruck(spec, schluessel),
         )
         return frisch
 
@@ -920,11 +1037,16 @@ async def finde(
     model_id: str,
     *,
     schluessel: str | None = None,
+    provider: Any | None = None,
 ) -> Modell | None:
     """Ein einzelnes Modell, oder ``None``, wenn der Katalog es nicht führt.
 
     Geht über `modelle` und damit über dieselbe Ergänzung — die Frage „was kann
     dieses eine Modell?" ist genau die, für die `_mit_faehigkeiten` da ist.
+
+    Bei Custom-Providern (`adresse_eintragbar`) werden aktive Betreiber-Overrides
+    (Kontextfenster, Ausgabetokens, Vision, Reasoning-Dialekt) auch dann
+    angewendet, wenn ``/models`` die Kennung nicht liefert.
 
     **Der zweite Weg gilt nur für Anbieter ohne eigenen Katalog** (Azure). Dort
     gibt es keine Liste, die sich anreichern liesse, und ohne diesen Nachschlag
@@ -948,11 +1070,20 @@ async def finde(
     gesucht = (model_id or "").strip()
     if not gesucht:
         return None
-    for modell in await modelle(client, kind, schluessel=schluessel):
+    spec = anbieter(kind)
+    modelle_kwargs: dict[str, Any] = {"schluessel": schluessel}
+    if spec.adresse_eintragbar and provider is not None:
+        modelle_kwargs["provider"] = provider
+    for modell in await modelle(client, kind, **modelle_kwargs):
         if modell.model_id == gesucht:
             return modell
 
-    spec = anbieter(kind)
+    if spec.adresse_eintragbar:
+        if provider is not None and _custom_overrides_aktiv(provider):
+            return _mit_custom_ueberschreibung(
+                Modell(model_id=gesucht, name=gesucht, denkt=None), provider
+            )
+        return None
     if spec.catalog_url is not None:
         return None
     fremd = (await _fremdkatalog(client, spec)).get(
@@ -1009,7 +1140,11 @@ async def fuer_provider(
         return None
 
     schluessel: str | None = None
-    if ai_provider_registry.anbieter(kind).katalog_braucht_schluessel:
+    spec = ai_provider_registry.anbieter(kind)
+    if spec.katalog_braucht_schluessel or (
+        spec.adresse_eintragbar
+        and getattr(provider, "operator_api_key_encrypted", None)
+    ):
         try:
             schluessel = await run_in_threadpool(
                 resolve_api_key, db, provider, user_id
@@ -1020,7 +1155,10 @@ async def fuer_provider(
                 kind, type(exc).__name__,
             )
 
-    return await finde(client, kind, modell_id, schluessel=schluessel)
+    finde_kwargs: dict[str, Any] = {"schluessel": schluessel}
+    if spec.adresse_eintragbar:
+        finde_kwargs["provider"] = provider
+    return await finde(client, kind, modell_id, **finde_kwargs)
 
 
 async def aufraeumen() -> None:

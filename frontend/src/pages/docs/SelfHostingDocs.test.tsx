@@ -216,4 +216,20 @@ describe('SelfHostingDocs', () => {
     expect(marken.sort()).toEqual(abschnitte.sort())
     for (const id of marken) expect(document.getElementById(id)).toBeInTheDocument()
   })
+
+  it('dokumentiert Custom-Provider-Schutzgrenzen, lokale Runtimes und Realtime-Ausschluss', async () => {
+    renderPage()
+
+    expect(document.querySelector('a[href="#ai-custom-providers"]')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Local and self-hosted AI endpoints (custom provider)' })).toBeInTheDocument()
+    expect(screen.getByText(/MSM_AI_CUSTOM_ALLOW_PRIVATE_ENDPOINTS=true/)).toBeInTheDocument()
+    expect(screen.getByText(/MSM_AI_CUSTOM_REQUIRE_HTTPS=true/)).toBeInTheDocument()
+    expect(screen.getByText(/never expose user IP addresses/i)).toBeInTheDocument()
+    expect(screen.getByText(/169\.254\.0\.0\/16/)).toBeInTheDocument()
+    expect(screen.getByText(/Realtime live voice .* intentionally disabled/i)).toBeInTheDocument()
+
+    await i18n.changeLanguage('de')
+    renderPage()
+    expect(screen.getByRole('heading', { name: 'Lokale und eigene KI-Endpunkte (Custom Provider)' })).toBeInTheDocument()
+  })
 })

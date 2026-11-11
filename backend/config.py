@@ -146,6 +146,21 @@ class Settings(BaseSettings):
     # Weg, weil sich jemand vertippt hat. Siehe `ai_stt.weg_fuer`.
     ai_stt_weg: str = ""
 
+    # Erlaubt beim Custom-Provider (`provider_kind="custom"`) Verbindungen zu
+    # Loopback- (`127.0.0.1`, `::1`), LAN- (`10/8`, `172.16/12`, `192.168/16`),
+    # IPv6-ULA- (`fc00::/7`) und CGNAT-/Tailscale-Adressen (`100.64.0.0/10`)
+    # sowie lokalen Hostnamen (`localhost`, `host.docker.internal`).
+    # Standard ``False`` schuetzt Cloud- und Multi-Tenant-Panels gegen SSRF in
+    # interne Netze. Cloud-Metadata (`169.254.0.0/16`, `fe80::/10`,
+    # `fd00:ec2::254`) bleibt in beiden Modi blockiert.
+    ai_custom_allow_private_endpoints: bool = False
+
+    # Erzwingt HTTPS beim Custom-Provider. Bei ``True`` (Standard) ist
+    # unverschluesseltes ``http://`` nur fuer explizit erlaubte private/Loopback-
+    # Ziele zulaessig (`ai_custom_allow_private_endpoints=True`). Externe Hosts
+    # muessen dann zwingend ``https://`` verwenden.
+    ai_custom_require_https: bool = True
+
     # SearXNG Search Sidecar (lokaler Docker-Prozess, lauscht per Default auf Port 8888)
     searxng_url: str = "http://127.0.0.1:8888"
 

@@ -22,6 +22,7 @@ from services import (
     ai_guardian_service,
     ai_meldestelle,
     ai_model_catalog,
+    ai_provider_registry,
     ai_provider_service,
     ai_reasoning,
     ai_run_broker,
@@ -1081,6 +1082,14 @@ async def _werkzeuge_und_grenze(
     # danebenliegt. Ein schlüsselpflichtiger Katalog käme sonst zwar auch an
     # seinen (`ai_model_catalog.schluesselquelle_setzen`), aber über einen
     # zweiten Gang zum DIS-Sidecar für dasselbe Geheimnis.
+    finde_kwargs: dict[str, object] = {"schluessel": vorbereitung.api_key}
+    if (
+        ai_provider_registry.bekannt(vorbereitung.provider.provider_kind)
+        and ai_provider_registry.anbieter(
+            vorbereitung.provider.provider_kind
+        ).adresse_eintragbar
+    ):
+        finde_kwargs["provider"] = vorbereitung.provider
     modell = await ai_model_catalog.finde(
         client,
         vorbereitung.provider.provider_kind,
@@ -1088,7 +1097,7 @@ async def _werkzeuge_und_grenze(
         # Arbeitsmodell — Cache-Marke und Denkstufen-Klemme gehoeren zu dem
         # Modell, das gleich wirklich antwortet.
         _modell_fuer(vorbereitung.provider, rolle, zustand),
-        schluessel=vorbereitung.api_key,
+        **finde_kwargs,
     )
     cache_marke = modell is not None and modell.cache_marke_noetig
     # Ob dieses Modell Bilder lesen kann. Aus demselben Katalog und aus

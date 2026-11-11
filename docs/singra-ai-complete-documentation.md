@@ -324,11 +324,16 @@ Singra provides four runtime thinking levels (`Denkstufen`), selectable per sess
 
 ### 6.1 Pluggable Provider Architecture
 Singra features a modular provider registry (`backend/services/ai_provider_registry/`):
-- **Commercial APIs**: OpenAI (GPT-4o, GPT-5/Luna, o1/o3), Anthropic / Azure Anthropic (Claude 3.5 Sonnet, Claude 3.5 Haiku), Azure OpenAI, Google (Gemini 1.5 Pro, Gemini 2.0 Flash), OpenRouter, and ElevenLabs (speech synthesis).
-- **Elimination of SSRF Risk**: Base URLs are defined as constants within provider modules. For Azure instances requiring custom endpoints, only a single validated DNS label is accepted via strict regex (`_assert_ressource`), completely preventing Server-Side Request Forgery (SSRF).
+- **Fixed Providers & Custom Kind:** OpenAI, Anthropic / Azure Anthropic, Azure OpenAI, Google Gemini, OpenRouter, Grok-Voice (xAI), ElevenLabs, plus the user-configurable `custom` provider (`Custom / Lokal`).
+- **Effective Spec Resolution (`effective_spec`):** Fixed providers keep compile-time base URLs (Azure validates a DNS label via `_assert_ressource`). For `provider_kind="custom"`, `effective_spec(provider)` dynamically binds the base URL, chat protocol (`chat_completions`, `responses`, `anthropic_messages`), catalog target, and nullable vision override from the database record.
 
-### 6.2 Local Sovereign Inference (Ollama / vLLM)
-For air-gapped or privacy-restricted sovereign deployments, Singra integrates local inference engines via `backend/services/openai_compatible_adapter.py`. Local models (Ollama, vLLM, llama.cpp) provide complete offline autonomy without external API dependencies.
+### 6.2 Local & Self-Hosted Inference (`provider_kind="custom"`)
+For air-gapped or privacy-sensitive setups, Singra connects local runtimes (Ollama, LM Studio, llama.cpp, Speaches) and dedicated GPU servers (vLLM, SGLang, Anthropic-compatible gateways) through the backend:
+- **Backend Proxy Isolation:** `/api/ai/providers` never leaks `custom_base_url` or stored API keys to client browsers or desktop apps; all inference traffic originates from the backend.
+- **Fail-Closed SSRF Guard (`services/ai_custom_ssrf.py`):** Link-local, cloud IMDS (`169.254.0.0/16`, `fe80::/10`, `fd00:ec2::/112`), multicast, unspecified, 6to4/Teredo, IPv4-mapped IPv6, and non-canonical IP forms are unconditionally blocked. Loopback, RFC 1918 LAN, CGNAT/Tailscale (`100.64.0.0/10`), and local hostnames require `MSM_AI_CUSTOM_ALLOW_PRIVATE_ENDPOINTS=true`; external endpoints enforce `https://` when `MSM_AI_CUSTOM_REQUIRE_HTTPS=true`. Each request resolves DNS right before connecting, validates every returned IP, pins TCP/TLS directly via `PinnedAsyncTransport` (preserving `Host` header and TLS SNI), and disables redirects (`follow_redirects=False`, `trust_env=False`).
+- **Key Wipe on URL Change:** Updating `custom_base_url` clears `operator_api_key_encrypted` and `operator_api_key_hint` on save unless a replacement key is sent in the same request.
+- **Reasoning & Chunk-Safe `<think>` Splitting:** Supports `reasoning_effort`, `reasoning`, `anthropic_thinking`, and `think_tags` (handled across arbitrary stream chunks by `_ThinkTagSplitter` in `openai_compatible_adapter.py`).
+- **Preview Catalog & Manual Overrides:** `POST /api/ai/settings/providers/custom-models-preview` queries `/models` for unsaved drafts; saved providers cache under `custom:<provider.id>`. Operators can explicitly set or clear `custom_context_tokens`, `custom_max_output_tokens`, and `custom_supports_vision`.
 
 ### 6.3 Rolling Quota Windows
 Token limits are enforced across rolling temporal windows (`services/ai_limit_service.py`):
@@ -784,8 +789,8 @@ To prevent broken user interfaces from reaching production, Singra integrates au
 
 ### 12.1 Dual-Transport Voice Architecture
 Singra provides two real-time voice architectures (`routers/ai_voice.py`, `services/ai_voice_bridge.py`):
-1. **WebRTC OpenAI Realtime Mode**: Direct peer-to-peer audio stream with sub-400ms latency. A sideband WebSocket signals MSM tool state and UI animations.
-2. **WebSocket PCM Audio Mode**: Raw PCM audio streamed over authenticated WebSockets. Pipeline: VAD -> Whisper STT -> LLM -> ElevenLabs / Local TTS. Fully supports air-gapped on-premises setups.
+1. **WebRTC / Native Realtime Mode**: Direct low-latency audio stream reserved for native Realtime providers (OpenAI Realtime, GPT-Live, Gemini Live). Custom providers are intentionally excluded (`sprachwege=()`, `realtime_tauglich=False`) because no open cross-vendor local streaming standard exists.
+2. **WebSocket PCM & Dictation Mode**: Raw PCM audio over authenticated WebSockets plus multipart transcription (`POST /audio/transcriptions` via OpenRouter, OpenAI, or Custom / Speaches Whisper STT). Full pipeline: VAD -> STT -> LLM -> ElevenLabs.
 
 ### 12.2 Speculative UI Dispatching
 To eliminate perceived latency, Singra implements **Speculative UI Dispatching**:

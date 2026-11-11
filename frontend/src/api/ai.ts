@@ -1,5 +1,13 @@
 import { api, apiStream } from './client'
 
+export type CustomChatProtocol = 'chat_completions' | 'responses' | 'anthropic_messages'
+export type CustomReasoningDialect =
+  | 'none'
+  | 'think_tags'
+  | 'reasoning_effort'
+  | 'reasoning'
+  | 'anthropic_thinking'
+
 export interface AiProviderAdmin {
   id: number
   name: string
@@ -99,6 +107,12 @@ export interface AiProviderAdmin {
    * nur der Bequemlichkeit halber — verbindlich prueft der Server.
    */
   azure_resource_name: string | null
+  custom_base_url?: string | null
+  custom_chat_protocol?: CustomChatProtocol
+  custom_reasoning_dialect?: CustomReasoningDialect
+  custom_context_tokens?: number | null
+  custom_max_output_tokens?: number | null
+  custom_supports_vision?: boolean | null
   disable_safety?: boolean
   enabled: boolean
   requires_api_key: boolean
@@ -253,6 +267,11 @@ export interface AiProviderKind {
    * einrichten kann.
    */
   ressource_noetig: boolean
+  /**
+   * Ob dieser Anbieter eine frei eingetragene Basis-URL samt Protokoll,
+   * Reasoning-Dialekt und optionalen Modellgrenzen entgegennimmt (`custom`).
+   */
+  adresse_eintragbar?: boolean
   /**
    * Ob dieser Anbieter ueberhaupt eine Modelliste fuehrt.
    *
@@ -1515,6 +1534,12 @@ export interface AiProviderWrite {
    * gespeicherten Schluessel, ein nicht mitgeschickter nicht.
    */
   azure_resource_name?: string | null
+  custom_base_url?: string | null
+  custom_chat_protocol?: CustomChatProtocol
+  custom_reasoning_dialect?: CustomReasoningDialect
+  custom_context_tokens?: number | null
+  custom_max_output_tokens?: number | null
+  custom_supports_vision?: boolean | null
   disable_safety?: boolean
   enabled_models?: string[] | null
   allow_all_models?: boolean
@@ -1972,10 +1997,29 @@ export const aiApi = {
    * hängt. `null` heisst „unter dieser Kennung ist nichts bekannt" — dann
    * zeigt die Oberfläche keine Stufen statt erfundener.
    */
-  findCatalogModel: (kind: string, name: string) =>
-    api<AiCatalogModel | null>(
-      `/ai/settings/provider-kinds/${encodeURIComponent(kind)}/model?name=${encodeURIComponent(name)}`,
-    ),
+  findCatalogModel: (kind: string, name: string, providerId?: number) => {
+    const base = `/ai/settings/provider-kinds/${encodeURIComponent(kind)}/model?name=${encodeURIComponent(name)}`
+    const url = providerId !== undefined ? `${base}&provider_id=${encodeURIComponent(String(providerId))}` : base
+    return api<AiCatalogModel | null>(url)
+  },
+  previewCustomCatalogModels: (
+    payload: {
+      custom_base_url: string
+      custom_chat_protocol: CustomChatProtocol
+      provider_id?: number
+    },
+    apiKey?: string,
+  ) => {
+    const headers: Record<string, string> = {}
+    if (apiKey?.trim()) {
+      headers['X-Provider-Api-Key'] = apiKey.trim()
+    }
+    return api<AiCatalogModel[]>('/ai/settings/providers/custom-models-preview', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      ...(apiKey?.trim() ? { headers } : {}),
+    })
+  },
   testProvider: (id: number) => api<AiProviderTestResult>(`/ai/settings/providers/${id}/test`, {
     method: 'POST',
   }),

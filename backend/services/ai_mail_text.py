@@ -47,6 +47,7 @@ import httpx
 from database import SessionLocal
 from models import AiProvider, User
 from services import ai_reasoning
+from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_provider_service import (
     anbieter_ohne_auswahl,
     estimate_cost_microunits,
@@ -421,7 +422,7 @@ async def verfassen(
                 tool_choice={"type": "function", "function": {"name": WERKZEUG_NAME}},
             ):
                 pass
-        except (AiProviderRequestError, httpx.HTTPError) as exc:
+        except (AiProviderConfigurationError, AiProviderRequestError, httpx.HTTPError) as exc:
             logger.info(
                 "KI-Mailtext fehlgeschlagen (%s) error=%s", anlass, type(exc).__name__
             )

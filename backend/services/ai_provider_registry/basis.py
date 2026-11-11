@@ -304,6 +304,10 @@ class Anbieter:
     #:
     #: Nur Namen, damit diese Datei weiter nichts aus anderen Paketen braucht.
     sprachwege: tuple[str, ...] = ()
+    #: Ob der Betreiber für diesen Anbieter selbst eine Basis-URL eintragen
+    #: darf (``custom_base_url`` in ``ai_providers``). Nur für ``custom`` wahr —
+    #: alle übrigen Anbieter behalten ihre programmfeste Zieladresse.
+    adresse_eintragbar: bool = False
 
     @property
     def realtime_tauglich(self) -> bool:

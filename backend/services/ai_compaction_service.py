@@ -56,6 +56,7 @@ from services.ai_context_service import (
     teilbudgets,
 )
 from services.ai_redaction import redact_sensitive_text
+from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_provider_service import estimate_cost_microunits, resolve_api_key
 from services.ai_usage_service import (
     AiQuotaExceeded,
@@ -446,7 +447,7 @@ async def compact_conversation(
         ):
             if chunk.kind == "content":
                 summary_parts.append(chunk.text)
-    except (AiProviderRequestError, httpx.HTTPError) as exc:
+    except (AiProviderConfigurationError, AiProviderRequestError, httpx.HTTPError) as exc:
         logger.info("AI-Kompression fehlgeschlagen error=%s", type(exc).__name__)
         with SessionLocal() as db:
             reservierung_abrechnen(

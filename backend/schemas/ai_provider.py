@@ -2,7 +2,7 @@
 
 import re
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, Field, SecretStr
 
@@ -141,6 +141,20 @@ Ressourcenname = Annotated[str | None, BeforeValidator(_ressource_lesen)]
 Stufenwort = Annotated[str | None, BeforeValidator(_modell_lesen)]
 
 
+def _custom_base_url_lesen(wert: object) -> str | None:
+    if wert is None:
+        return None
+    cleaned = str(wert).strip()
+    return cleaned or None
+
+
+CustomBaseUrl = Annotated[str | None, BeforeValidator(_custom_base_url_lesen)]
+CustomChatProtocol = Literal["chat_completions", "responses", "anthropic_messages"]
+CustomReasoningDialect = Literal[
+    "none", "think_tags", "reasoning_effort", "reasoning", "anthropic_thinking"
+]
+
+
 class AiProviderCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     # Schluessel aus `services/ai_provider_registry.ANBIETER`. Die Adresse
@@ -227,6 +241,12 @@ class AiProviderCreate(BaseModel):
     # Das Modell fuer die neutrale Suchzusammenfassung (SearXNG AI Overviews).
     search_summary_model: Modellkennung = Field(default=None, max_length=256)
     azure_resource_name: Ressourcenname = Field(default=None, max_length=64)
+    custom_base_url: CustomBaseUrl = Field(default=None, max_length=512)
+    custom_chat_protocol: CustomChatProtocol = "chat_completions"
+    custom_reasoning_dialect: CustomReasoningDialect = "none"
+    custom_context_tokens: int | None = Field(default=None, ge=1, le=10_000_000)
+    custom_max_output_tokens: int | None = Field(default=None, ge=1, le=10_000_000)
+    custom_supports_vision: bool | None = None
     # Deaktiviert standardmäßige Sicherheitsfilter (z. B. Google AI Studio BLOCK_NONE)
     disable_safety: bool = False
     operator_api_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
@@ -303,6 +323,12 @@ class AiProviderUpdate(BaseModel):
     # Unterschied zaehlt hier doppelt — ein geaenderter Ressourcenname loescht
     # den gespeicherten Schluessel, ein nicht mitgeschickter nicht.
     azure_resource_name: Ressourcenname = Field(default=None, max_length=64)
+    custom_base_url: CustomBaseUrl = Field(default=None, max_length=512)
+    custom_chat_protocol: CustomChatProtocol | None = None
+    custom_reasoning_dialect: CustomReasoningDialect | None = None
+    custom_context_tokens: int | None = Field(default=None, ge=1, le=10_000_000)
+    custom_max_output_tokens: int | None = Field(default=None, ge=1, le=10_000_000)
+    custom_supports_vision: bool | None = None
     disable_safety: bool | None = None
     operator_api_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
     clear_operator_api_key: bool = False
@@ -371,6 +397,12 @@ class AiProviderResponse(BaseModel):
     #: mitzuteilen. ``None`` heisst „nichts hinterlegt", und bei jedem Anbieter
     #: ohne ``ressource_noetig`` ist das der Normalfall.
     azure_resource_name: str | None = None
+    custom_base_url: str | None = None
+    custom_chat_protocol: str = "chat_completions"
+    custom_reasoning_dialect: str = "none"
+    custom_context_tokens: int | None = None
+    custom_max_output_tokens: int | None = None
+    custom_supports_vision: bool | None = None
     disable_safety: bool = False
     enabled: bool
     requires_api_key: bool
@@ -449,6 +481,7 @@ class AiProviderKindResponse(BaseModel):
     #: Frontend waere die Registry an einem zweiten Ort, und der erste
     #: vergessene Eintrag darin ein Anbieter, den man nicht einrichten kann.
     ressource_noetig: bool
+    adresse_eintragbar: bool = False
     realtime_tauglich: bool = False
     #: Die Sprachwege dieses Anbieters in seiner Reihenfolge; leer heisst
     #: „kein Sprachmodus". `realtime_tauglich` bleibt fuer aeltere Leser stehen
@@ -560,6 +593,14 @@ class AiProviderAvailableResponse(BaseModel):
     can_disable: bool = True
     #: Was gilt, wenn der Benutzer nichts waehlt.
     default_effort: str | None = None
+
+
+class CustomModelsPreviewRequest(BaseModel):
+    """Vorschau-Abruf fuer /models eines Custom-Providers vor dem Speichern."""
+
+    custom_base_url: str = Field(min_length=1, max_length=512)
+    custom_chat_protocol: CustomChatProtocol = "chat_completions"
+    provider_id: int | None = None
 
 
 class AiProviderTestResponse(BaseModel):

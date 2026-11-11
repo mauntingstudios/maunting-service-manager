@@ -316,11 +316,16 @@ Singra stellt vier runtime-steuerbare Denkstufen zur Verfügung:
 
 ### 6.1 Modulare Provider-Architektur
 Die Provider-Schicht (`backend/services/ai_provider_registry/`) ist modular aufgebaut:
-- **Unterstützte Dienste**: OpenAI (GPT-4o, GPT-5/Luna, o1/o3), Anthropic / Azure Anthropic (Claude 3.5 Sonnet, Haiku), Azure OpenAI, Google (Gemini 1.5 Pro, Flash), OpenRouter und ElevenLabs (Sprachsynthese).
-- **Kein SSRF-Risiko**: Basis-URLs liegen als feste Konstanten im Programmcode vor. Bei Azure-Deployments wird lediglich ein geprüftes DNS-Label über Regex validiert (`_assert_ressource`).
+- **Feste Dienste:** OpenAI, Anthropic / Azure Anthropic, Azure OpenAI, Google Gemini, OpenRouter, Grok-Voice (xAI), ElevenLabs sowie die frei adressierbare Variante `custom` (`Custom / Lokal`).
+- **Effektive Spezifikation (`effective_spec`):** Feste Anbieter verwenden programmfeste Basis-URLs (Azure prüft lediglich das DNS-Label über `_assert_ressource`). Für `provider_kind="custom"` überschreibt `effective_spec(provider)` das Chat-Protokoll (`chat_completions`, `responses`, `anthropic_messages`), die Katalog-URL und das Vision-Flag dynamisch aus den Spalten des jeweiligen `AiProvider`-Datensatzes.
 
-### 6.2 Lokale souveräne Inferenz (Ollama / vLLM)
-Für isolierte oder datenschutzsensible Installationen bindet Singra lokale Inferenzdienste über `services/openai_compatible_adapter.py` an. Lokale Modelle (Ollama, vLLM) ermöglichen autarken Betrieb ohne Datenabfluss an externe Schnittstellen.
+### 6.2 Lokale und selbst gehostete Inferenz (`provider_kind="custom"`)
+Für datenschutzsensible oder abgeschottete Installationen bindet Singra lokale Runtimes (Ollama, LM Studio, `llama.cpp`, Speaches) sowie eigene GPU-Server (vLLM, SGLang, Anthropic-kompatible Proxys) direkt über das Backend an:
+- **Backend-Proxy ohne Client-Exposition:** `/api/ai/providers` gibt weder `custom_base_url` noch API-Schlüssel an Browser oder Desktop-Apps weiter; Endgeräte kommunizieren ausschließlich mit dem MSM-Backend.
+- **Zweistufiger SSRF-Schutz (`services/ai_custom_ssrf.py`):** Link-Local-, IMDS- (`169.254.0.0/16`, `fe80::/10`, `fd00:ec2::/112`), Multicast-, Broadcast-, 6to4-/Teredo-, IPv4-mapped- und non-canonical-Adressen bleiben immer gesperrt. Loopback, RFC-1918-LAN, CGNAT/Tailscale (`100.64.0.0/10`) und lokale Hostnamen erfordern `MSM_AI_CUSTOM_ALLOW_PRIVATE_ENDPOINTS=true`; öffentliche Endpunkte verlangen `https://` (`MSM_AI_CUSTOM_REQUIRE_HTTPS=true`). Jeder Request löst den Hostnamen vorab auf, prüft alle zurückgegebenen IPs, pinnt die Verbindung per `PinnedAsyncTransport` (inkl. `Host`-Header und TLS-SNI) auf die validierte IP und deaktiviert HTTP-Redirects (`follow_redirects=False`, `trust_env=False`).
+- **Key-Wipe bei URL-Wechsel:** Ändert sich `custom_base_url` bei einem gespeicherten Zugang ohne neuen Schlüssel im selben Request, werden `operator_api_key_encrypted` und `operator_api_key_hint` automatisch geleert.
+- **Reasoning und `<think>`-Splitter:** Neben `reasoning_effort`, `reasoning` und `anthropic_thinking` trennt `_ThinkTagSplitter` in `openai_compatible_adapter.py` eingebettete `<think>...</think>`-Blöcke chunk-sicher vom sichtbaren Antwortstrom, wenn `custom_reasoning_dialect == "think_tags"`.
+- **Katalog-Vorschau und Überschreibungen:** `POST /api/ai/settings/providers/custom-models-preview` testet `/models` schon vor dem Speichern (gespeicherte Kataloge cachen unter `custom:<provider.id>`). Über `custom_context_tokens`, `custom_max_output_tokens` und `custom_supports_vision` lassen sich fehlende Metadaten explizit überschreiben.
 
 ### 6.3 Gleitende Zeitfenster für Kontingente
 Token-Budgets werden über gleitende Zeitfenster überwacht (`services/ai_limit_service.py`):
@@ -771,8 +776,8 @@ Vor der Freigabe validiert Singra Webanwendungen headless mit Playwright:
 
 ### 12.1 Duale Spracharchitektur
 Singra bietet zwei Transportwege für Sprache (`routers/ai_voice.py`, `services/ai_voice_bridge.py`):
-1. **WebRTC OpenAI Realtime**: Direkter Peer-to-Peer-Audiostream mit Latenzen unter 400 ms. Ein WebSocket-Seitenkanal signalisiert Werkzeugzustände und Animationen.
-2. **WebSocket PCM**: Raw PCM-Audio über authentifizierte WebSockets. Pipeline: VAD -> Whisper STT -> LLM -> ElevenLabs / Lokale TTS. Vollständig on-premises lauffähig.
+1. **WebRTC / Native Realtime**: Direkter Audiostream für native Realtime-Anbieter (OpenAI Realtime, GPT-Live, Gemini Live). Custom-Provider bleiben hier bewusst ausgeschlossen (`sprachwege=()`, `realtime_tauglich=False`), weil kein offener herstellerübergreifender Streaming-Standard existiert.
+2. **WebSocket PCM / Diktiermodus**: Raw PCM-Audio über authentifizierte WebSockets bzw. Audio-Uploads für Diktat (`POST /audio/transcriptions` als `multipart/form-data`, z. B. OpenRouter, OpenAI oder Custom / Speaches Whisper STT). Pipeline im Vollmodus: VAD → STT → LLM → ElevenLabs.
 
 ### 12.2 Spekulative Oberflächen-Signalisierung
 Sobald das Backend das erste Werkzeug-Token erkennt (`tool_start`), sendet es ein Ereignis an die Oberfläche. Visuelle Elemente (wie der 3D-Globus-Flug) starten in unter 300 ms, synchron zur gesprochenen Modellausgabe.

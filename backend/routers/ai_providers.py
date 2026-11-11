@@ -30,6 +30,7 @@ from schemas.ai_provider import (
     AiProviderTestResponse,
     AiProviderUpdate,
     AiSprachwegResponse,
+    CustomModelsPreviewRequest,
 )
 from services import (
     ai_limit_service,
@@ -37,9 +38,12 @@ from services import (
     ai_provider_registry,
     ai_provider_service,
     ai_reasoning,
+    ai_stt,
+    ai_stt_endpunkt,
     ai_tts,
     audit_service,
 )
+from services.ai_custom_ssrf import validate_custom_base_url
 from services.ai_provider_service import AiProviderConfigurationError
 from services.ai_voice import sprachwege
 from services.dis_client import DisSidecarError
@@ -121,6 +125,12 @@ def _admin_response(provider: AiProvider) -> AiProviderResponse:
         memory_model=provider.memory_model,
         search_summary_model=provider.search_summary_model,
         azure_resource_name=provider.azure_resource_name,
+        custom_base_url=provider.custom_base_url,
+        custom_chat_protocol=getattr(provider, "custom_chat_protocol", None) or "chat_completions",
+        custom_reasoning_dialect=getattr(provider, "custom_reasoning_dialect", None) or "none",
+        custom_context_tokens=getattr(provider, "custom_context_tokens", None),
+        custom_max_output_tokens=getattr(provider, "custom_max_output_tokens", None),
+        custom_supports_vision=getattr(provider, "custom_supports_vision", None),
         disable_safety=bool(getattr(provider, "disable_safety", False)),
         enabled=provider.enabled,
         requires_api_key=provider.requires_api_key,
@@ -262,6 +272,8 @@ def delete_provider(
     if provider is None:
         raise HTTPException(status_code=404, detail="Provider nicht gefunden")
     try:
+        pid = provider.id
+        is_custom = provider.provider_kind == "custom"
         audit_service.record_privileged_action(
             db,
             user_id=actor.id,
@@ -272,6 +284,8 @@ def delete_provider(
         )
         db.delete(provider)
         db.commit()
+        if is_custom:
+            ai_model_catalog.cache_invalidieren(f"custom:{pid}")
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except SQLAlchemyError as exc:
         db.rollback()
@@ -325,11 +339,12 @@ async def test_provider(
     if ai_provider_service.spricht(provider, ai_provider_registry.TTS):
         return await _stimmzugang_pruefen(provider, api_key or "")
 
-    test_model = (
+    chat_model = (
         provider.default_model
         or provider.worker_model
         or provider.ethics_model
         or provider.memory_model
+        or provider.search_summary_model
         or (
             # `bekannt` und nicht `ALLE`: das Paket fuehrt keinen solchen
             # Namen. Die Zeile warf einen AttributeError, sobald ein Zugang
@@ -339,9 +354,39 @@ async def test_provider(
             if ai_provider_registry.bekannt(provider.provider_kind)
             else None
         )
-        or provider.transcription_model
-        or provider.realtime_model
     )
+    if not chat_model and (provider.transcription_model or "").strip():
+        stt_model = provider.transcription_model.strip()
+        spec = (
+            ai_provider_registry.anbieter(provider.provider_kind)
+            if ai_provider_registry.bekannt(provider.provider_kind)
+            else None
+        )
+        if spec is not None and ai_stt.WEG_ENDPUNKT in spec.gehoer_wege:
+            silent_wav = ai_stt.wav_verpacken(b"\x00\x00" * (ai_stt.ABTASTRATE // 2))
+            try:
+                await ai_stt_endpunkt.abschrift(
+                    request.app.state.ai_http_client,
+                    provider=provider,
+                    api_key=api_key,
+                    modell=stt_model,
+                    wav=silent_wav,
+                )
+                return AiProviderTestResponse(ok=True, code=None, detail=None)
+            except AiProviderConfigurationError as exc:
+                return AiProviderTestResponse(
+                    ok=False, code="AI_PROVIDER_URL_REJECTED", detail=str(exc)
+                )
+            except AiProviderRequestError as exc:
+                return AiProviderTestResponse(
+                    ok=False, code=exc.code, detail=exc.detail
+                )
+        if spec is not None and "chat" in spec.gehoer_wege:
+            chat_model = stt_model
+    if not chat_model:
+        return AiProviderTestResponse(
+            ok=False, code="AI_PROVIDER_MODEL_MISSING", detail=None
+        )
     usage = StreamUsage()
     try:
         received = False
@@ -352,7 +397,7 @@ async def test_provider(
             messages=[{"role": "user", "content": "ping"}],
             usage=usage,
             tools=None,
-            model=test_model,
+            model=chat_model,
         ):
             received = True
         return AiProviderTestResponse(
@@ -427,6 +472,7 @@ def list_provider_kinds(
             protokoll=spec.protokoll,
             katalog_braucht_schluessel=spec.katalog_braucht_schluessel,
             ressource_noetig=spec.ressource_noetig,
+            adresse_eintragbar=spec.adresse_eintragbar,
             realtime_tauglich=spec.realtime_tauglich,
             sprachwege=[
                 AiSprachwegResponse(**sprachwege.weg(name).als_dict())
@@ -487,14 +533,32 @@ async def list_catalog_models(
     if not ai_provider_registry.bekannt(kind):
         raise HTTPException(status_code=404, detail="Unbekannter KI-Anbieter")
 
+    spec = ai_provider_registry.anbieter(kind)
+    provider: AiProvider | None = None
     schluessel: str | None = None
     ephemeral_key = (request.headers.get("x-provider-api-key") or "").strip()
-    if ephemeral_key:
+
+    if spec.adresse_eintragbar:
+        provider = db.get(AiProvider, provider_id) if provider_id else None
+        if provider is None or provider.provider_kind != kind:
+            return []
+        if ephemeral_key:
+            schluessel = ephemeral_key
+        elif provider.operator_api_key_encrypted:
+            try:
+                schluessel = await run_in_threadpool(
+                    ai_provider_service.resolve_api_key, db, provider, user.id
+                )
+            except DisSidecarError as exc:
+                raise HTTPException(
+                    status_code=503, detail="Provider-Key konnte nicht gelesen werden"
+                ) from exc
+    elif ephemeral_key:
         try:
             schluessel = ai_provider_service._assert_key_passt(kind, ephemeral_key)
         except Exception:
             schluessel = ephemeral_key
-    elif ai_provider_registry.anbieter(kind).katalog_braucht_schluessel:
+    elif spec.katalog_braucht_schluessel:
         provider = db.get(AiProvider, provider_id) if provider_id else None
         # Der genannte Zugang muss zu **diesem** Anbieter gehoeren. Sonst holte
         # eine falsch gesetzte Kennung den Schluessel eines fremden Zugangs und
@@ -518,6 +582,7 @@ async def list_catalog_models(
             kind,
             erzwingen=refresh,
             schluessel=schluessel,
+            **({"provider": provider} if spec.adresse_eintragbar else {}),
         )
     except Exception as exc:
         logger.info("Katalogabruf fuer %s fehlgeschlagen: %s", kind, exc)
@@ -568,6 +633,8 @@ async def find_catalog_model(
     kind: str,
     name: str,
     request: Request,
+    provider_id: int | None = None,
+    db: Session = Depends(get_db),
     _: User = Depends(require_global("panel.settings.read")),
 ) -> AiCatalogModelResponse | None:
     """Ein **einzelnes** Modell, für Anbieter ohne Liste zum Durchblättern.
@@ -586,9 +653,9 @@ async def find_catalog_model(
     kommt ``null`` — und die Oberfläche zeigt dann eben keine Stufenauswahl
     statt einer erfundenen.
 
-    **Kein Schlüssel im Spiel.** Nachgeschlagen wird im fremden Katalog, und
-    der gehört nicht diesem Anbieter. Deshalb steht hier auch kein
-    ``provider_id``: es gäbe nichts, wofür er gebraucht würde.
+    Bei Custom-Providern (`adresse_eintragbar`) kann optional `provider_id`
+    mitgeschickt werden, um das Modell im gespeicherten Endpunkt-Katalog
+    samt Betreiber-Overrides aufzulösen.
     """
     if not ai_provider_registry.bekannt(kind):
         raise HTTPException(status_code=404, detail="Unbekannter KI-Anbieter")
@@ -597,12 +664,104 @@ async def find_catalog_model(
     if not kennung:
         return None
 
+    spec = ai_provider_registry.anbieter(kind)
+    if spec.adresse_eintragbar:
+        if provider_id is None:
+            return None
+        provider = db.get(AiProvider, provider_id)
+        if provider is None or provider.provider_kind != kind:
+            return None
+        schluessel: str | None = None
+        if provider.operator_api_key_encrypted:
+            try:
+                schluessel = await run_in_threadpool(
+                    ai_provider_service.resolve_api_key,
+                    db,
+                    provider,
+                    getattr(_, "id", 0),
+                )
+            except DisSidecarError as exc:
+                raise HTTPException(
+                    status_code=503, detail="Provider-Key konnte nicht gelesen werden"
+                ) from exc
+        modell = await ai_model_catalog.finde(
+            request.app.state.ai_http_client,
+            kind,
+            kennung,
+            schluessel=schluessel,
+            provider=provider,
+        )
+        if modell is None:
+            return None
+        return _katalogantwort(kind, modell)
+
     modell = await ai_model_catalog.finde(
         request.app.state.ai_http_client, kind, kennung
     )
     if modell is None:
         return None
     return _katalogantwort(kind, modell)
+
+
+@router.post(
+    "/settings/providers/custom-models-preview",
+    response_model=list[AiCatalogModelResponse],
+)
+async def preview_custom_catalog_models(
+    payload: CustomModelsPreviewRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> list[AiCatalogModelResponse]:
+    """Laedt ``/models`` fuer eine noch ungespeicherte Custom-Konfiguration."""
+    try:
+        canonical_url = validate_custom_base_url(payload.custom_base_url)
+    except AiProviderConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    schluessel: str | None = (
+        request.headers.get("x-provider-api-key") or ""
+    ).strip() or None
+    if schluessel is None and payload.provider_id is not None:
+        provider = db.get(AiProvider, payload.provider_id)
+        if (
+            provider is not None
+            and provider.provider_kind == "custom"
+            and provider.operator_api_key_encrypted
+            and provider.custom_base_url
+        ):
+            try:
+                stored_canonical = validate_custom_base_url(provider.custom_base_url)
+            except AiProviderConfigurationError:
+                stored_canonical = None
+            if stored_canonical == canonical_url:
+                try:
+                    schluessel = await run_in_threadpool(
+                        ai_provider_service.resolve_api_key, db, provider, user.id
+                    )
+                except DisSidecarError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Provider-Key konnte nicht gelesen werden",
+                    ) from exc
+
+    try:
+        modelle = await ai_model_catalog.modelle_vorschau_custom(
+            request.app.state.ai_http_client,
+            custom_base_url=canonical_url,
+            custom_chat_protocol=payload.custom_chat_protocol,
+            schluessel=schluessel,
+        )
+    except AiProviderConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.info("Custom-Modellvorschau fehlgeschlagen: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Der Modellkatalog des Endpunkts konnte nicht abgerufen werden",
+        ) from exc
+    return [_katalogantwort("custom", modell) for modell in modelle]
 
 
 @router.get("/providers", response_model=list[AiProviderAvailableResponse])
@@ -678,18 +837,21 @@ async def list_available_providers(
                 or bool(provider.operator_api_key_encrypted)
             ),
         )
+        spec = ai_provider_registry.anbieter(provider.provider_kind)
         schluessel: str | None = None
-        if ai_provider_registry.anbieter(
-            provider.provider_kind
-        ).katalog_braucht_schluessel and provider.operator_api_key_encrypted:
+        if (
+            spec.katalog_braucht_schluessel or spec.adresse_eintragbar
+        ) and provider.operator_api_key_encrypted:
             schluessel = await run_in_threadpool(
                 ai_provider_service.resolve_api_key, db, provider, user.id
             )
+        extra_provider = {"provider": provider} if spec.adresse_eintragbar else {}
         modell = await ai_model_catalog.finde(
             request.app.state.ai_http_client,
             provider.provider_kind,
             std_model,
             schluessel=schluessel,
+            **extra_provider,
         )
         if modell is not None:
             antwort.reasoning = ai_reasoning.darf_nachdenken(modell, deckel)
@@ -706,6 +868,7 @@ async def list_available_providers(
                     provider.provider_kind,
                     erzwingen=False,
                     schluessel=schluessel,
+                    **extra_provider,
                 )
             except Exception:
                 katalog_modelle = []
@@ -733,6 +896,7 @@ async def list_available_providers(
                     provider.provider_kind,
                     mid,
                     schluessel=schluessel,
+                    **extra_provider,
                 )
                 if km is not None:
                     effs = ai_reasoning.waehlbare_stufen(km, deckel)

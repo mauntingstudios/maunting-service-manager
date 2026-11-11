@@ -57,6 +57,7 @@ from database import SessionLocal
 from models import AiConversation, AiMemoryEntry, AiMessage, AiProvider, AiRun, Server, Team, User
 from models.dis_text import vorab_entschluesselt
 from services import ai_lage, ai_limit_service, ai_memory_service, ai_reasoning, permission_service
+from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_provider_service import (
     anbieter_ohne_auswahl,
     fuer_chat,
@@ -1474,7 +1475,7 @@ async def _formular(
             tool_choice={"type": "function", "function": {"name": name}},
         ):
             pass
-    except (AiProviderRequestError, httpx.HTTPError) as exc:
+    except (AiProviderConfigurationError, AiProviderRequestError, httpx.HTTPError) as exc:
         logger.info("Gedaechtnis: Anbieter scheiterte error=%s", type(exc).__name__)
         gescheitert = True
     finally:

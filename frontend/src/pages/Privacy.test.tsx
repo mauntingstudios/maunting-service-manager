@@ -66,6 +66,7 @@ const KI_PUNKTE = [
   'tasks',
   'mailboxes',
   'calendars',
+  'customProviders',
 ] as const;
 
 describe('Privacy page', () => {
@@ -149,12 +150,20 @@ describe('Privacy page', () => {
    * ist praktisch eine stille Aenderung — deshalb haengt die Zusage hier an den
    * konkreten Werten und nicht an "irgendeiner" Version.
    */
-  it('weist die Fassung 3.46 vom 2026-10-25 aus (ein Transportweg)', () => {
+  it('weist die Fassung 3.47 vom 2026-11-11 aus (Custom-Provider und Backend-Proxy)', () => {
     const { container } = renderPrivacy();
 
     expect(
-      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.46`)),
+      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.47`)),
     ).toBeInTheDocument();
+    const customDe = i18n.t('privacyPolicy.sections.ai.items.customProviders', { lng: 'de' });
+    expect(customDe).toMatch(/Panel-Backend/);
+    expect(customDe).toMatch(/keine Direktverbindung/);
+    expect(customDe).toMatch(/IP-Adresse/);
+    const customEn = i18n.t('privacyPolicy.sections.ai.items.customProviders', { lng: 'en' });
+    expect(customEn).toMatch(/panel backend/i);
+    expect(customEn).toMatch(/never connect directly/i);
+    expect(customEn).toMatch(/IP addresses/i);
     expect(
       i18n.t('privacyPolicy.sections.browser.items.mauntingSearch'),
     ).toMatch(/Maunting Search/);
@@ -418,8 +427,9 @@ describe('Privacy page', () => {
     // Sprachmodus, fuenfzehn seit die KI den Messenger nicht mehr erreicht,
     // sechzehn seit dem Google-Rückfall der Bedeutungssuche (24.09.2026),
     // siebzehn seit ein Hintergrundschritt das Gedächtnis schreibt (06.10.2026),
-    // achtzehn seit der Import mit dem Gedächtnis-Modell liest (07.10.2026).
-    expect(gerendert).toHaveLength(18);
+    // achtzehn seit der Import mit dem Gedächtnis-Modell liest (07.10.2026),
+    // neunzehn seit frei konfigurierbare lokale/eigene Endpunkte dokumentiert sind (11.11.2026).
+    expect(gerendert).toHaveLength(19);
   });
 
   /**

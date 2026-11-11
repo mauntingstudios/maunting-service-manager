@@ -27,6 +27,7 @@ from services import (
     ai_worker_limits,
 )
 from services.ai_action_errors import AiActionValidationError
+from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_context_service import (
     auf_budget_kuerzen,
     message_character_count,
@@ -1042,6 +1043,12 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 "AI-Lauf am Anbieter gescheitert run_id=%s code=%s grund=%s",
                 run_id, code, redact_sensitive_text(exc.detail or "")[:200],
             )
+        elif isinstance(exc, AiProviderConfigurationError):
+            logger.warning(
+                "AI-Lauf an Provider-Konfiguration gescheitert run_id=%s error=%s",
+                run_id, type(exc).__name__,
+            )
+            code, message_key = "AI_PROVIDER_URL_REJECTED", "ai.chat.errors.provider"
         elif isinstance(exc, AiActionValidationError):
             # Der Grund gehoert ins Log. Vorher stand hier gar nichts: der
             # Benutzer sah `AI_TOOL_REJECTED` und der Betreiber hatte keine

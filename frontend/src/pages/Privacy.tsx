@@ -183,6 +183,7 @@ export function Privacy({ zurueck, zurueckAktion }: { zurueck?: string; zurueckA
           // E-Mail-Versand oder Terminanlage ohne manuelle Freigabekarte.
           t('privacyPolicy.sections.ai.items.mailboxes'),
           t('privacyPolicy.sections.ai.items.calendars'),
+          t('privacyPolicy.sections.ai.items.customProviders'),
         ],
       },
       {

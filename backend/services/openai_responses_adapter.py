@@ -31,7 +31,9 @@ from typing import Any, AsyncIterator
 import httpx
 
 from services import ai_provider_registry
-from services.ai_provider_service import base_url as provider_base_url
+from services.ai_custom_ssrf import pinned_http_client_async
+from services.ai_provider_errors import AiProviderConfigurationError
+from services.ai_provider_service import base_url as provider_base_url, effective_spec
 from services.openai_compatible_adapter import (
     MAX_ASSISTANT_CHARS,
     MAX_REASONING_CHARS,
@@ -334,9 +336,8 @@ async def stream_responses_http(
     if provider.requires_api_key and not api_key:
         raise AiProviderRequestError("AI_PROVIDER_KEY_MISSING")
 
-    headers = schluesselkopf(
-        ai_provider_registry.anbieter(provider.provider_kind), api_key
-    )
+    spec = effective_spec(provider)
+    headers = schluesselkopf(spec, api_key)
     headers["OpenAI-Beta"] = "responses=v1"
 
     request_body: dict[str, Any] = {
@@ -355,7 +356,8 @@ async def stream_responses_http(
     elif reasoning_effort:
         request_body["reasoning"] = {"effort": reasoning_effort}
 
-    target = httpx.URL(provider_base_url(provider).rstrip("/") + "/responses")
+    target_url = provider_base_url(provider).rstrip("/") + "/responses"
+    target = httpx.URL(target_url)
     deadline = time.monotonic() + MAX_STREAM_SECONDS
     frames = 0
     aufrufe: dict[str, dict[str, str]] = {}
@@ -377,8 +379,15 @@ async def stream_responses_http(
             id=eintrag["call_id"], name=eintrag["name"], arguments=argumente
         )
 
+    eff_client: httpx.AsyncClient | None = None
+    owned_client = False
     try:
-        async with client.stream(
+        eff_client, owned_client = (
+            await pinned_http_client_async(client, target_url)
+            if spec.adresse_eintragbar
+            else (client, False)
+        )
+        async with eff_client.stream(
             "POST", target, headers=headers, json=request_body
         ) as response:
             if response.status_code != 200:
@@ -514,6 +523,8 @@ async def stream_responses_http(
                 fertige_aufrufe.add(kennung)
                 usage.tool_calls.append(call)
                 yield StreamChunk("tool_ready", tool_call=call)
+    except AiProviderConfigurationError:
+        raise
     except AiProviderRequestError:
         raise
     except (httpx.TimeoutException, httpx.NetworkError) as exc:
@@ -528,6 +539,9 @@ async def stream_responses_http(
             provider.id, type(exc).__name__,
         )
         raise AiProviderRequestError("AI_PROVIDER_UNAVAILABLE") from exc
+    finally:
+        if owned_client and eff_client is not None:
+            await eff_client.aclose()
 
 
 async def stream_responses(
@@ -677,9 +691,8 @@ async def create_background_response(
     if provider.requires_api_key and not api_key:
         raise AiProviderRequestError("AI_PROVIDER_KEY_MISSING")
 
-    headers = schluesselkopf(
-        ai_provider_registry.anbieter(provider.provider_kind), api_key
-    )
+    spec = effective_spec(provider)
+    headers = schluesselkopf(spec, api_key)
     headers["OpenAI-Beta"] = "responses=v1"
 
     request_body: dict[str, Any] = {
@@ -705,16 +718,27 @@ async def create_background_response(
     elif reasoning_effort:
         request_body["reasoning"] = {"effort": reasoning_effort}
 
-    target = httpx.URL(provider_base_url(provider).rstrip("/") + "/responses")
+    target_url = provider_base_url(provider).rstrip("/") + "/responses"
+    target = httpx.URL(target_url)
+    eff_client: httpx.AsyncClient | None = None
+    owned_client = False
     try:
-        response = await client.post(target, headers=headers, json=request_body, timeout=30.0)
+        eff_client, owned_client = (
+            await pinned_http_client_async(client, target_url)
+            if spec.adresse_eintragbar
+            else (client, False)
+        )
+        response = await eff_client.post(target, headers=headers, json=request_body, timeout=30.0)
         if response.status_code not in (200, 202):
             raise AiProviderRequestError(*await fehler_der_antwort(response))
         return response.json()
-    except AiProviderRequestError:
+    except (AiProviderConfigurationError, AiProviderRequestError):
         raise
     except Exception as exc:
         raise AiProviderRequestError("AI_PROVIDER_UNAVAILABLE") from exc
+    finally:
+        if owned_client and eff_client is not None:
+            await eff_client.aclose()
 
 
 async def get_background_response(
@@ -728,20 +752,30 @@ async def get_background_response(
     if provider.requires_api_key and not api_key:
         raise AiProviderRequestError("AI_PROVIDER_KEY_MISSING")
 
-    headers = schluesselkopf(
-        ai_provider_registry.anbieter(provider.provider_kind), api_key
-    )
+    spec = effective_spec(provider)
+    headers = schluesselkopf(spec, api_key)
     headers["OpenAI-Beta"] = "responses=v1"
-    target = httpx.URL(f"{provider_base_url(provider).rstrip('/')}/responses/{response_id}")
+    target_url = f"{provider_base_url(provider).rstrip('/')}/responses/{response_id}"
+    target = httpx.URL(target_url)
+    eff_client: httpx.AsyncClient | None = None
+    owned_client = False
     try:
-        response = await client.get(target, headers=headers, timeout=30.0)
+        eff_client, owned_client = (
+            await pinned_http_client_async(client, target_url)
+            if spec.adresse_eintragbar
+            else (client, False)
+        )
+        response = await eff_client.get(target, headers=headers, timeout=30.0)
         if response.status_code != 200:
             raise AiProviderRequestError(*await fehler_der_antwort(response))
         return response.json()
-    except AiProviderRequestError:
+    except (AiProviderConfigurationError, AiProviderRequestError):
         raise
     except Exception as exc:
         raise AiProviderRequestError("AI_PROVIDER_UNAVAILABLE") from exc
+    finally:
+        if owned_client and eff_client is not None:
+            await eff_client.aclose()
 
 
 async def cancel_background_response(
@@ -755,20 +789,30 @@ async def cancel_background_response(
     if provider.requires_api_key and not api_key:
         raise AiProviderRequestError("AI_PROVIDER_KEY_MISSING")
 
-    headers = schluesselkopf(
-        ai_provider_registry.anbieter(provider.provider_kind), api_key
-    )
+    spec = effective_spec(provider)
+    headers = schluesselkopf(spec, api_key)
     headers["OpenAI-Beta"] = "responses=v1"
-    target = httpx.URL(f"{provider_base_url(provider).rstrip('/')}/responses/{response_id}/cancel")
+    target_url = f"{provider_base_url(provider).rstrip('/')}/responses/{response_id}/cancel"
+    target = httpx.URL(target_url)
+    eff_client: httpx.AsyncClient | None = None
+    owned_client = False
     try:
-        response = await client.post(target, headers=headers, timeout=30.0)
+        eff_client, owned_client = (
+            await pinned_http_client_async(client, target_url)
+            if spec.adresse_eintragbar
+            else (client, False)
+        )
+        response = await eff_client.post(target, headers=headers, timeout=30.0)
         if response.status_code != 200:
             raise AiProviderRequestError(*await fehler_der_antwort(response))
         return response.json()
-    except AiProviderRequestError:
+    except (AiProviderConfigurationError, AiProviderRequestError):
         raise
     except Exception as exc:
         raise AiProviderRequestError("AI_PROVIDER_UNAVAILABLE") from exc
+    finally:
+        if owned_client and eff_client is not None:
+            await eff_client.aclose()
 
 
 async def poll_background_response(
@@ -877,9 +921,6 @@ async def stream_background_response(
 def spricht_responses(provider) -> bool:
     """Ob dieser Zugang den Responses-Weg spricht."""
     try:
-        return (
-            ai_provider_registry.anbieter(provider.provider_kind).protokoll_chat
-            == "responses"
-        )
-    except KeyError:
+        return effective_spec(provider).protokoll_chat == "responses"
+    except (KeyError, AiProviderConfigurationError):
         return False

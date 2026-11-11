@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from models import AiProvider, User
 from services import ai_limit_service, ai_model_catalog, ai_provider_registry
+from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_provider_registry import Modell
 
 
@@ -143,7 +144,7 @@ def darf_abschalten(modell: Modell) -> bool:
     return bool(modell.denkt) and not modell.zwingend
 
 
-def _kennt_schalter(kind: str) -> bool:
+def _kennt_schalter(kind: str, provider: AiProvider | None = None) -> bool:
     """Ob dieser Anbieter „aus“ auch **ohne** Stufenwort ausdrücken kann.
 
     Gefragt wird der Wortschatz, nicht der Name: wer ``reasoning`` in
@@ -157,8 +158,14 @@ def _kennt_schalter(kind: str) -> bool:
     mitnehmen.
     """
     try:
-        return "reasoning" in ai_provider_registry.anbieter(kind).anfrage_erweiterungen
-    except KeyError:
+        if provider is not None:
+            from services.ai_provider_service import effective_spec
+
+            spec = effective_spec(provider)
+        else:
+            spec = ai_provider_registry.anbieter(kind)
+        return "reasoning" in spec.anfrage_erweiterungen
+    except (KeyError, AiProviderConfigurationError):
         return False
 
 
@@ -361,7 +368,7 @@ async def vorgabe(
     deckel = ai_limit_service.resolve_effective_limits(db, user).max_reasoning_effort
     if modell is None:
         if deckel is not None and deckel <= MIN_RANG:
-            if not _kennt_schalter(provider.provider_kind):
+            if not _kennt_schalter(provider.provider_kind, provider):
                 logger.warning(
                     "Denkdeckel greift nicht: Modell %s bei %s ist dem Katalog "
                     "unbekannt, und dieser Anbieter kennt kein Aus ohne Stufe",
@@ -402,11 +409,17 @@ async def aus_fuer(
     Schweigt der Katalog, bleibt es bei ``(False, None)`` — aus demselben Grund
     wie bei `vorgabe`, und mit demselben Preis.
     """
+    finde_kwargs: dict[str, object] = {"schluessel": api_key}
+    if (
+        ai_provider_registry.bekannt(provider.provider_kind)
+        and ai_provider_registry.anbieter(provider.provider_kind).adresse_eintragbar
+    ):
+        finde_kwargs["provider"] = provider
     modell = await ai_model_catalog.finde(
         client,
         provider.provider_kind,
         model_id or provider.default_model,
-        schluessel=api_key,
+        **finde_kwargs,
     )
     if modell is None:
         return False, None

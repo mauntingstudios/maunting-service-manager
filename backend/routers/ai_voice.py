@@ -324,8 +324,11 @@ async def transcribe_voice_input(
         raise HTTPException(status_code=403, detail="Nicht erlaubt")
     if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/octet-stream":
         raise HTTPException(status_code=415, detail="Audio muss als PCM übertragen werden")
+    gewaehlt = db.get(AiProvider, provider_id)
+    if gewaehlt is None or not gewaehlt.enabled:
+        raise HTTPException(status_code=400, detail="Kein Transkriptionsmodell eingerichtet")
     zugang = _hoerender_zugang(db, provider_id)
-    if zugang is None or zugang.id != provider_id:
+    if zugang is None:
         raise HTTPException(status_code=400, detail="Kein Transkriptionsmodell eingerichtet")
     max_bytes = ai_voice_vad.ABTASTRATE * 2 * 180
     content_length = request.headers.get("content-length")
@@ -346,7 +349,7 @@ async def transcribe_voice_input(
     ergebnis = await transkribieren(
         client=request.app.state.ai_http_client,
         user_id=user.id,
-        provider_id=provider_id,
+        provider_id=zugang.id,
         pcm=pcm,
         resolve_api_key=ai_provider_service.resolve_api_key,
     )

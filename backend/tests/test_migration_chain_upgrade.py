@@ -30,7 +30,7 @@ from database import Base
 
 # Letzte Revision auf `main`. Alles danach ist neu in diesem Branch.
 BASE_REVISION = "20260731_01"
-HEAD_REVISION = "20261111_02"
+HEAD_REVISION = "20261112_01"
 
 BRANCH_TABLES = (
     "user_roles",

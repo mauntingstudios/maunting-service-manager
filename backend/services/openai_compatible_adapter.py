@@ -13,7 +13,9 @@ import httpx
 
 from models import AiProvider
 from services import ai_provider_registry
-from services.ai_provider_service import base_url as provider_base_url
+from services.ai_custom_ssrf import pinned_http_client_async
+from services.ai_provider_errors import AiProviderConfigurationError
+from services.ai_provider_service import base_url as provider_base_url, effective_spec
 from services.ai_redaction import redact_sensitive_text
 
 
@@ -647,6 +649,77 @@ def ensure_google_thought_signatures(messages: list[dict]) -> list[dict]:
     return angepasst
 
 
+class _ThinkTagSplitter:
+    """Trennt ``<think>...</think>``-Bloecke ueber beliebige Chunk-Grenzen hinweg."""
+
+    _OPEN = "<think>"
+    _CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self._in_think = False
+        self._buf = ""
+
+    def process(self, delta: str) -> list[tuple[str, str]]:
+        if not delta:
+            return []
+        self._buf += delta
+        out: list[tuple[str, str]] = []
+        while self._buf:
+            if not self._in_think:
+                idx = self._buf.find(self._OPEN)
+                if idx != -1:
+                    if idx > 0:
+                        out.append(("content", self._buf[:idx]))
+                    self._buf = self._buf[idx + len(self._OPEN) :]
+                    self._in_think = True
+                    continue
+                hold = 0
+                max_k = min(len(self._buf), len(self._OPEN) - 1)
+                for k in range(max_k, 0, -1):
+                    if self._OPEN.startswith(self._buf[-k:]):
+                        hold = k
+                        break
+                if hold:
+                    if len(self._buf) > hold:
+                        out.append(("content", self._buf[:-hold]))
+                    self._buf = self._buf[-hold:]
+                else:
+                    out.append(("content", self._buf))
+                    self._buf = ""
+                break
+
+            idx = self._buf.find(self._CLOSE)
+            if idx != -1:
+                if idx > 0:
+                    out.append(("reasoning", self._buf[:idx]))
+                self._buf = self._buf[idx + len(self._CLOSE) :]
+                self._in_think = False
+                continue
+            hold = 0
+            max_k = min(len(self._buf), len(self._CLOSE) - 1)
+            for k in range(max_k, 0, -1):
+                if self._CLOSE.startswith(self._buf[-k:]):
+                    hold = k
+                    break
+            if hold:
+                if len(self._buf) > hold:
+                    out.append(("reasoning", self._buf[:-hold]))
+                self._buf = self._buf[-hold:]
+            else:
+                out.append(("reasoning", self._buf))
+                self._buf = ""
+            break
+        return out
+
+    def flush(self) -> list[tuple[str, str]]:
+        if not self._buf:
+            return []
+        kind = "reasoning" if self._in_think else "content"
+        text = self._buf
+        self._buf = ""
+        return [(kind, text)]
+
+
 async def stream_chat_completion(
     client: httpx.AsyncClient,
     *,
@@ -840,7 +913,7 @@ async def stream_chat_completion(
             yield stueck
         return
 
-    spec = ai_provider_registry.anbieter(provider.provider_kind)
+    spec = effective_spec(provider)
     headers = schluesselkopf(spec, api_key)
 
     # **Wer Googles Signaturzwang bedienen muss, sagt der Zugang — nicht der
@@ -911,11 +984,25 @@ async def stream_chat_completion(
     # Anbieter nach seinem eigenen Default denkt und abrechnet.
     if cache_marke and "cache_control" in erweiterungen:
         request_body["cache_control"] = {"type": "ephemeral"}
-    target = httpx.URL(provider_base_url(provider).rstrip("/") + "/chat/completions")
+    target_url_str = provider_base_url(provider).rstrip("/") + "/chat/completions"
+    target = httpx.URL(target_url_str)
+    use_think_splitter = (
+        spec.adresse_eintragbar
+        and (getattr(provider, "custom_reasoning_dialect", None) or "none").strip().lower()
+        == "think_tags"
+    )
+    splitter = _ThinkTagSplitter() if use_think_splitter else None
     deadline = time.monotonic() + MAX_STREAM_SECONDS
     frames = 0
+    eff_client: httpx.AsyncClient | None = None
+    owned_client = False
     try:
-        async with client.stream(
+        eff_client, owned_client = (
+            await pinned_http_client_async(client, target_url_str)
+            if spec.adresse_eintragbar
+            else (client, False)
+        )
+        async with eff_client.stream(
             "POST",
             target,
             headers=headers,
@@ -1115,10 +1202,22 @@ async def stream_chat_completion(
 
                 content = delta.get("content") if isinstance(delta, dict) else None
                 if isinstance(content, str) and content:
-                    usage.output_chars += len(content)
-                    if usage.output_chars > MAX_ASSISTANT_CHARS:
-                        raise AiProviderRequestError("AI_PROVIDER_RESPONSE_TOO_LARGE")
-                    yield StreamChunk("content", content)
+                    if splitter is not None:
+                        for kind_piece, piece in splitter.process(content):
+                            if kind_piece == "reasoning":
+                                usage.reasoning_chars += len(piece)
+                                if usage.reasoning_chars <= MAX_REASONING_CHARS:
+                                    yield StreamChunk("reasoning", piece)
+                            else:
+                                usage.output_chars += len(piece)
+                                if usage.output_chars > MAX_ASSISTANT_CHARS:
+                                    raise AiProviderRequestError("AI_PROVIDER_RESPONSE_TOO_LARGE")
+                                yield StreamChunk("content", piece)
+                    else:
+                        usage.output_chars += len(content)
+                        if usage.output_chars > MAX_ASSISTANT_CHARS:
+                            raise AiProviderRequestError("AI_PROVIDER_RESPONSE_TOO_LARGE")
+                        yield StreamChunk("content", content)
 
                 finish_reason = (
                     choices[0].get("finish_reason")
@@ -1126,6 +1225,17 @@ async def stream_chat_completion(
                     else None
                 )
                 if finish_reason == "tool_calls":
+                    if splitter is not None:
+                        for kind_piece, piece in splitter.flush():
+                            if kind_piece == "reasoning":
+                                usage.reasoning_chars += len(piece)
+                                if usage.reasoning_chars <= MAX_REASONING_CHARS:
+                                    yield StreamChunk("reasoning", piece)
+                            else:
+                                usage.output_chars += len(piece)
+                                if usage.output_chars > MAX_ASSISTANT_CHARS:
+                                    raise AiProviderRequestError("AI_PROVIDER_RESPONSE_TOO_LARGE")
+                                yield StreamChunk("content", piece)
                     for index in sorted(tool_buffers):
                         if index in emitted_tool_calls:
                             continue
@@ -1135,6 +1245,17 @@ async def stream_chat_completion(
                         yield StreamChunk("tool_ready", tool_call=call)
             if not saw_done:
                 raise AiProviderRequestError("AI_PROVIDER_STREAM_INCOMPLETE")
+            if splitter is not None:
+                for kind_piece, piece in splitter.flush():
+                    if kind_piece == "reasoning":
+                        usage.reasoning_chars += len(piece)
+                        if usage.reasoning_chars <= MAX_REASONING_CHARS:
+                            yield StreamChunk("reasoning", piece)
+                    else:
+                        usage.output_chars += len(piece)
+                        if usage.output_chars > MAX_ASSISTANT_CHARS:
+                            raise AiProviderRequestError("AI_PROVIDER_RESPONSE_TOO_LARGE")
+                        yield StreamChunk("content", piece)
             for index in sorted(tool_buffers):
                 if index in emitted_tool_calls:
                     continue
@@ -1142,6 +1263,8 @@ async def stream_chat_completion(
                 emitted_tool_calls.add(index)
                 usage.tool_calls.append(call)
                 yield StreamChunk("tool_ready", tool_call=call)
+    except AiProviderConfigurationError:
+        raise
     except AiProviderRequestError:
         raise
     except (httpx.TimeoutException, httpx.NetworkError) as exc:
@@ -1158,3 +1281,6 @@ async def stream_chat_completion(
             type(exc).__name__,
         )
         raise AiProviderRequestError("AI_PROVIDER_UNAVAILABLE") from exc
+    finally:
+        if owned_client and eff_client is not None:
+            await eff_client.aclose()

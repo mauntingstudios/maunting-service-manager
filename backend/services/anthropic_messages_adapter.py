@@ -51,7 +51,9 @@ from typing import Any, AsyncIterator
 import httpx
 
 from services import ai_provider_registry
-from services.ai_provider_service import base_url as provider_base_url
+from services.ai_custom_ssrf import anthropic_messages_target, pinned_http_client_async
+from services.ai_provider_errors import AiProviderConfigurationError
+from services.ai_provider_service import base_url as provider_base_url, effective_spec
 from services.openai_compatible_adapter import (
     MAX_ASSISTANT_CHARS,
     MAX_REASONING_CHARS,
@@ -491,9 +493,8 @@ async def stream_messages(
     if provider.requires_api_key and not api_key:
         raise AiProviderRequestError("AI_PROVIDER_KEY_MISSING")
 
-    headers = schluesselkopf(
-        ai_provider_registry.anbieter(provider.provider_kind), api_key
-    )
+    spec = effective_spec(provider)
+    headers = schluesselkopf(spec, api_key)
     headers["anthropic-version"] = ANTHROPIC_VERSION
 
     system, verlauf = nachrichten_uebersetzen(messages)
@@ -515,13 +516,11 @@ async def stream_messages(
         # steht daneben, im Wortschatz von `ai_reasoning.RANGFOLGE`.
         request_body["thinking"] = {"type": "adaptive"}
         request_body["output_config"] = {"effort": reasoning_effort}
+    elif reasoning and spec.adresse_eintragbar:
+        request_body["thinking"] = {"type": "adaptive"}
 
-    # ``/v1/messages`` und nicht nur ``/messages``: die Adresse des Anbieters
-    # endet bei Anthropic **vor** der Version. Azure zeigt sie im Portal genau
-    # so an (``…/anthropic``), Anthropics eigenes SDK haengt ebenfalls
-    # ``/v1/messages`` an eine ``base_url`` — ein ``/v1`` in der Registry
-    # ergaebe mit beiden zusammen ``…/anthropic/v1/v1/messages``.
-    target = httpx.URL(provider_base_url(provider).rstrip("/") + "/v1/messages")
+    target_url = anthropic_messages_target(provider_base_url(provider))
+    target = httpx.URL(target_url)
     deadline = time.monotonic() + MAX_STREAM_SECONDS
     frames = 0
     # Aufrufe werden ueber den ``index`` ihres Inhaltsblocks gesammelt: die
@@ -549,8 +548,15 @@ async def stream_messages(
             id=eintrag["id"], name=eintrag["name"], arguments=argumente
         )
 
+    eff_client: httpx.AsyncClient | None = None
+    owned_client = False
     try:
-        async with client.stream(
+        eff_client, owned_client = (
+            await pinned_http_client_async(client, target_url)
+            if spec.adresse_eintragbar
+            else (client, False)
+        )
+        async with eff_client.stream(
             "POST", target, headers=headers, json=request_body
         ) as response:
             if response.status_code != 200:
@@ -686,7 +692,7 @@ async def stream_messages(
                 fertige_aufrufe.add(index)
                 usage.tool_calls.append(call)
                 yield StreamChunk("tool_ready", tool_call=call)
-    except AiProviderRequestError:
+    except (AiProviderConfigurationError, AiProviderRequestError):
         raise
     except (httpx.TimeoutException, httpx.NetworkError) as exc:
         logger.warning(
@@ -700,6 +706,9 @@ async def stream_messages(
             provider.id, type(exc).__name__,
         )
         raise AiProviderRequestError("AI_PROVIDER_UNAVAILABLE") from exc
+    finally:
+        if owned_client and eff_client is not None:
+            await eff_client.aclose()
 
 
 def spricht_messages(provider) -> bool:
@@ -710,9 +719,6 @@ def spricht_messages(provider) -> bool:
     diesem Modul.
     """
     try:
-        return (
-            ai_provider_registry.anbieter(provider.provider_kind).protokoll_chat
-            == "anthropic_messages"
-        )
-    except KeyError:
+        return effective_spec(provider).protokoll_chat == "anthropic_messages"
+    except (KeyError, AiProviderConfigurationError):
         return False
