@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -9,6 +10,7 @@ from services.console_stream_service import (
     _STATES,
     _STATES_LOCK,
     RING_BUFFER_SIZE,
+    append_msm_log_to_memory,
     ingest_line,
     connect,
     reset_state_for_tests,
@@ -22,6 +24,26 @@ def setup_teardown():
     reset_state_for_tests()
     yield
     reset_state_for_tests()
+
+
+def test_append_msm_log_to_memory_blockiert_sich_nicht_selbst() -> None:
+    """Regression 11.11.2026: Appenden hielt `_SYNC_STATES_LOCK` und rief darin
+    `_get_state`, das denselben Lock erneut wollte. Mit einem nicht reentranten
+    Lock blieb der Install-Thread fuer immer dort stehen; der naechste
+    Konsolen-Connect wartete im Event-Loop und fror das ganze Panel ein."""
+    fertig = threading.Event()
+
+    def schreibe() -> None:
+        append_msm_log_to_memory(4711, "Installationszeile")
+        fertig.set()
+
+    thread = threading.Thread(target=schreibe, daemon=True)
+    thread.start()
+    assert fertig.wait(5.0), "append_msm_log_to_memory wartet auf seinen eigenen Lock"
+    thread.join(1.0)
+
+    # Der Connect-Pfad nimmt denselben Lock; vor dem Fix haette er hier gehangen.
+    assert _get_state(4711).lines[-1].text == "Installationszeile"
 
 
 def test_agent_file_envelope_is_classified_without_reclassifying_plain_json() -> None:

@@ -86,7 +86,12 @@ class DeclaredLogConfig:
 _STATES: dict[int, _ServerState] = {}
 _NEXT_IDS: dict[int, int] = {}
 _STATES_LOCK = asyncio.Lock()
-_SYNC_STATES_LOCK = threading.Lock()
+# Reentrant, weil `append_msm_log_to_memory` den Lock haelt und darin
+# `_get_state` ruft, das ueber `cleanup_inactive_states` denselben Lock
+# erneut nimmt. Mit einem einfachen Lock blockierte sich der Install-Thread
+# selbst und hielt ihn fuer immer; der naechste Konsolen-Connect blockierte
+# dann im Event-Loop das gesamte Panel (11.11.2026).
+_SYNC_STATES_LOCK = threading.RLock()
 
 
 def cleanup_inactive_states(max_age_seconds: float = 300.0) -> int:
@@ -103,13 +108,6 @@ def cleanup_inactive_states(max_age_seconds: float = 300.0) -> int:
             _STATES.pop(s_id, None)
             removed += 1
     return removed
-
-
-def append_msm_log_to_memory(server_id: int, text: str, timestamp: str) -> None:
-    """Synchronous, thread-safe function to append an MSM log line to the in-memory
-    state of a server, if it is currently loaded.
-    """
-    pass
 
 
 async def ingest_line(server_id: int, text: str, source: str, timestamp: str | None = None) -> None:
