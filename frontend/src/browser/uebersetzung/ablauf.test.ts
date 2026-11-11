@@ -12,6 +12,7 @@ vi.mock('./modelle', async (original) => ({
 }))
 
 import { useUebersetzung } from './ablauf'
+import { useUebersetzungDomainStore } from './domainStore'
 
 const TAB = { id: 'tab-a', url: 'https://example.org/seite' }
 const zustand = () => useUebersetzung.getState()
@@ -32,6 +33,7 @@ const warten = () => new Promise((r) => setTimeout(r, 0))
 
 beforeEach(() => {
   zustand().seiteWeg(TAB.id)
+  useUebersetzungDomainStore.setState({ domains: {} })
   nativ.tabUebersetzen.mockReset()
   engine.bereitmachen.mockReset().mockResolvedValue(undefined)
   engine.uebersetzen.mockReset().mockImplementation(async (_p: string[], texte: string[]) => texte.map((t) => t.toUpperCase()))

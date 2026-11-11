@@ -14,6 +14,7 @@ import { useVerlaufStore } from './verlaufStore'
 import { istSeiteLesbarPruefen } from './lesemodusService'
 import { protokollEreignis } from '../entwickler/werkzeuge'
 import { useUebersetzung } from '../uebersetzung/ablauf'
+import { useUebersetzungDomainStore } from '../uebersetzung/domainStore'
 
 /** Alles außer dem Ereignis, das alle Tabs zugleich betrifft (`umgebung_neu`). */
 export type TabEinzelEreignis = Exclude<TabEreignis, { art: 'umgebung_neu' }>
@@ -92,6 +93,11 @@ export function ereignisAnwenden(e: TabEinzelEreignis, z: TabZugriff): void {
         useVerlaufStore.getState().besucht(e.url, z.finden(e.id)?.titel || e.url)
       }
       if (istWebseite(e.url || tab.url)) {
+        const aktUrl = e.url || tab.url
+        const domainEintrag = useUebersetzungDomainStore.getState().getDomainEintrag(aktUrl)
+        if (domainEintrag?.auto) {
+          void useUebersetzung.getState().oeffnen({ id: e.id, url: aktUrl }, 'de')
+        }
         void istSeiteLesbarPruefen(e.id)
           .then((lesbar) => {
             const akt = z.finden(e.id)

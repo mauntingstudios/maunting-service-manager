@@ -69,8 +69,8 @@ async function auswahl(android) {
   const beste = new Map()
   for (const r of alle) {
     // Jedes Paar hat Englisch auf einer Seite: alles nach Englisch, und von
-    // Englisch in die übrigen Ziele (fr → de geht über Englisch).
-    if (r.toLang !== 'en' && !(r.fromLang === 'en' && ZIELE.includes(r.toLang))) continue
+    // Englisch in die übrigen Ziele (jede Sprache kann in jede übersetzt werden).
+    if (r.toLang !== 'en' && r.fromLang !== 'en') continue
     const k = `${r.fromLang}-${r.toLang}`
     const bisher = beste.get(k)
     if (!bisher || neuer(r.version, bisher.version)) beste.set(k, { version: r.version, dateien: {} })

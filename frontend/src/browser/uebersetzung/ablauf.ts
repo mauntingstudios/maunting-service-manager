@@ -16,6 +16,8 @@ import { istWebseite } from '../services/intern'
 import { nativ, type TabEreignis } from '../services/nativ'
 import type { Tab } from '../services/tab'
 
+import { useUebersetzungDomainStore } from './domainStore'
+
 // Modellliste und Engine kommen erst beim ersten Übersetzen ins Spiel, nicht
 // ins Startbündel (AGENTS.md Punkt 48).
 const modelle = () => import('./modelle')
@@ -130,7 +132,13 @@ export const useUebersetzung = create<Zustand>()((set, get) => {
       } catch {
         // Ohne Antwort wählt der Nutzer selbst.
       }
-      const nach = von === appSprache ? (appSprache === 'en' ? 'de' : 'en') : appSprache
+      let nach = von === appSprache ? (appSprache === 'en' ? 'de' : 'en') : appSprache
+      const domainInfo = useUebersetzungDomainStore.getState().getDomainEintrag(url)
+      if (domainInfo?.paar && domainInfo.auto) {
+        const [dVon, dNach] = domainInfo.paar.split(/-(?=[^-]+$)/)
+        if (dVon && !von) von = dVon
+        if (dNach && dNach !== von) nach = dNach
+      }
       if (!gilt(id, lauf, { von, nach })) return
       // Eine erkannte, aber nicht unterstützte Sprache nennen; sonst steht die
       // Leiste nur vor der Sprachwahl und sagt nicht, warum.
@@ -175,6 +183,7 @@ export const useUebersetzung = create<Zustand>()((set, get) => {
           if (!gilt(tab, lauf)) return
         }
         gilt(tab, lauf, { stand: { art: 'fertig' } })
+        useUebersetzungDomainStore.getState().merkeDomain(e.url, `${e.von}-${e.nach}`)
       } catch (f) {
         const grund = f instanceof Error && (GRUENDE as readonly string[]).includes(f.message) ? f.message : 'engine'
         gilt(tab, lauf, { stand: { art: 'fehler', grund } })

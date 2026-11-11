@@ -233,7 +233,7 @@ export const nativ = {
   sprachdatenLaden: (ort: string, fortschritt: (bytes: number) => void) => {
     const kanal = new Channel<number>()
     kanal.onmessage = fortschritt
-    return rufen<ArrayBuffer>('sprachdaten_laden', { ort, fortschritt: kanal })
+    return rufen<ArrayBuffer | Uint8Array | number[]>('sprachdaten_laden', { ort, fortschritt: kanal })
   },
   oberflaecheFokussieren: () => rufen('oberflaeche_fokussieren'),
   tabStumm: (id: string, stumm: boolean) => rufen('tab_stumm', { id, stumm }),

@@ -73,6 +73,10 @@ import { useUeberdeckungBeobachten } from './services/ueberdeckung'
 import { useVerlaufFrist } from './services/verlaufStore'
 import { zurueckSchliessenOffen } from '@maunting/ui'
 import { Uebersetzungsleiste } from './uebersetzung/Uebersetzungsleiste'
+import { useUebersetzung } from './uebersetzung/ablauf'
+import { nativ } from './services/nativ'
+import { normalizePanelLanguage } from '@/config/panelLocales'
+import i18n from '@/i18n'
 import { vollbildHinweis } from './seite/vollbildHinweis'
 import { useSuche } from './services/suche'
 import { SaisonDeko } from '@/season/SaisonDeko'
@@ -261,6 +265,21 @@ function Wurzel() {
           setUntersuchen({ tab: d.tab, x: (d.x ?? 0) / window.devicePixelRatio, y: (d.y ?? 0) / window.devicePixelRatio })
           setAnsicht('elemente')
           navigate('/entwickler')
+        } else if (d.aktion === 'uebersetzen') {
+          const tab = useTabsStore.getState().tabs.find((t) => t.id === d.tab)
+          if (tab) {
+            const sprache = normalizePanelLanguage(i18n.language)
+            void useUebersetzung.getState().oeffnen(tab, sprache)
+          }
+        } else if (d.aktion === 'drucken') {
+          void nativ.tabDrucken(d.tab)
+        } else if (d.aktion === 'seite_speichern') {
+          const tab = useTabsStore.getState().tabs.find((t) => t.id === d.tab)
+          if (tab?.url) {
+            void nativ.downloadOeffnen(tab.url).catch(() => null)
+          }
+        } else if (d.aktion === 'bild_speichern' && d.url) {
+          void nativ.downloadOeffnen(d.url).catch(() => null)
         }
       },
     ).then((weg) => {
@@ -399,7 +418,7 @@ function Wurzel() {
         {!imVollbild && !handy && tabAusrichtung === 'vertikal' && <VertikaleTableiste />}
         {!imVollbild && !handy && leiste === 'links' && <Seitenleiste seite="links" />}
         {!imVollbild && !handy && panelSeite === 'links' && <Panel seite="links" />}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col relative">
           {!imVollbild && <Meldungsleiste />}
           {!imVollbild && <FormularLeiste />}
           {!imVollbild && <Uebersetzungsleiste />}

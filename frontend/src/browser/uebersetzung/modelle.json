@@ -245,6 +245,206 @@
         "name": "vocab.elen.spm"
       }
     },
+    "en-af": {
+      "lex": {
+        "ort": "main-workspace/translations-models/20260831143334--a5b4cc20-b5f5-4af7-aaf2-604612bdf57e--9c2f64d1-8eb1-4dd3-96d1-aff79842bc26.bin",
+        "groesse": 3193340,
+        "sha256": "591e3465c6e5e8920e911cae36e1d92c61abe92b2d5ef9bf2f1d8b5825bba20f",
+        "name": "lex.50.50.enaf.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260831143345--ec36146d-a3db-4fea-a08f-b9af89bd9789--2a0374f0-4539-4477-ad1e-642dc951f217.spm",
+        "groesse": 809195,
+        "sha256": "8d19c43df2142696227eb3462c6693bbc8c62cbd47b9a7372f86df2698864438",
+        "name": "vocab.enaf.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260831143343--ff4582bd-2cc8-4b84-856c-c34434d8c376--bf1692b0-711d-4a8f-a4bb-6dbbf570312c.bin",
+        "groesse": 31561787,
+        "sha256": "afc1dcb25774e61f513fe722e037744a18c23063ba799bb01f5cdec5cc79b502",
+        "name": "model.enaf.intgemm.alphas.bin"
+      }
+    },
+    "en-ar": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/793d9667-7929-4375-855d-96bbed2f113d.spm",
+        "groesse": 863591,
+        "sha256": "8d93c54aa5e2044c416ec680b5ff9af0227bd698521666e8b1a1ea1b041fbae8",
+        "name": "vocab.enar.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/d821aec4-485b-4747-b643-6e63cda5117d.bin",
+        "groesse": 3139692,
+        "sha256": "2b7194817c5dd9225ca90c0d908cc92e1d6d1f45625781a5feb037ac568d6a61",
+        "name": "lex.50.50.enar.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/e282aa49-a77e-466e-b1b7-f98f34a9ea58.bin",
+        "groesse": 31561787,
+        "sha256": "ae659d7045fc2e5d6ba50583586a5d94ee4358d92c019847e37b57a0e627faa8",
+        "name": "model.enar.intgemm.alphas.bin"
+      }
+    },
+    "en-az": {
+      "model": {
+        "ort": "main-workspace/translations-models/20261006203228--b54a8f81-7b8b-4a46-81e9-2bc40528020b--492ed9b0-dbe4-4a20-a6c9-96c5a6392606.bin",
+        "groesse": 31561787,
+        "sha256": "fcf1f5f36dd586db7078e938252f17ecb90ae6f2d1b28952fc3878738f81336a",
+        "name": "model.enaz.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20261006203230--297335ec-ee05-42bf-bdfd-8fff8b151da7--d0b3d6a9-ef61-4bdc-a0fe-8bfa18068476.spm",
+        "groesse": 840767,
+        "sha256": "ebe0ebd2e652a03e2f23c2209b8c297930df2c5da9391c4afe7762ec04af899a",
+        "name": "vocab.enaz.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20261006203232--e2aa7fcc-0dc3-4951-9114-4ce606d2bae3--b25ae7b3-b26d-40f6-8650-a984e9154d10.bin",
+        "groesse": 3166552,
+        "sha256": "6b2f36c13a98c677af7a5f4e0087636fe2af44e004dd142add1ac2207cfa8ad1",
+        "name": "lex.50.50.enaz.s2t.bin"
+      }
+    },
+    "en-be": {
+      "model": {
+        "ort": "main-workspace/translations-models/20261006203645--d9266c59-4798-4467-8e1a-5bbaf1dfd19f--38c8924c-7e2a-4380-9b9f-45e273bbeca9.bin",
+        "groesse": 31561787,
+        "sha256": "88fb3a6e2cc4b936313596eef445a548e63e1ca3ef0dfa54b88229c3ce877116",
+        "name": "model.enbe.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20261006203648--848334d8-90a9-4ced-8c16-03aac68eb98b--202cf9cb-6ee2-4d35-a1f2-967fe5040b04.bin",
+        "groesse": 2623776,
+        "sha256": "992bd4fe0c88dc5693515c5e872459c32bc43329db775d3d3349d480449354ec",
+        "name": "lex.50.50.enbe.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20261006203634--4259fe38-2bdc-4536-a0f3-af21b4085269--1c83e2a1-85ce-4b77-84c7-65038de47c63.spm",
+        "groesse": 941727,
+        "sha256": "19981e67e5359fef1cd6c08a868a42c17b010f1c62bfbf48037d7be55c0e2756",
+        "name": "vocab.enbe.spm"
+      }
+    },
+    "en-bg": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/a8ce512a-c98e-4ec3-83f4-10b1b91c75c2.spm",
+        "groesse": 922482,
+        "sha256": "4bafad5fcc0e771ed82233d1e99d69dcb96487b430702f7e688615c8a61f3df4",
+        "name": "vocab.enbg.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/934075f0-9235-4921-964c-3de9d19d904b.bin",
+        "groesse": 3075948,
+        "sha256": "93d4ca4412db269cc4164cbfa04c08edd0f65690c8264d6215a0522d4a13ec1a",
+        "name": "lex.50.50.enbg.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/d6370002-bed8-4add-bf86-50f1ab67e6d6.bin",
+        "groesse": 31561787,
+        "sha256": "e2b30db98ac6706efc893067a74e51f36f015a8f820fe8a4f0f5052fa6a22f30",
+        "name": "model.enbg.intgemm.alphas.bin"
+      }
+    },
+    "en-bn": {
+      "model": {
+        "ort": "main-workspace/translations-models/9a2075cf-632f-4ecb-80ab-3d35a0e400d3.bin",
+        "groesse": 17141051,
+        "sha256": "b63c8d5f8fdc1fcb8bbb2d20c751faab94af67ee1822427665119c93a11f6596",
+        "name": "model.enbn.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/63327f5f-9489-4757-a90a-a0f2b43f78e1.spm",
+        "groesse": 981226,
+        "sha256": "8895bebb290adc2a5ef46710d81be13d341883a8c6c233e0c060f968df0deef4",
+        "name": "vocab.enbn.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/e9b2433f-8399-4384-a6e6-6fd503486072.bin",
+        "groesse": 3207488,
+        "sha256": "74ad4234a0a9cf57b21d99b34fefc14f7c731d7e76da7940eb0155c13a234b5e",
+        "name": "lex.50.50.enbn.s2t.bin"
+      }
+    },
+    "en-bs": {
+      "lex": {
+        "ort": "main-workspace/translations-models/20260522192529--bc21738d-bea2-4e66-bc44-e61cdf5e396d--0682af00-d069-4865-a5fc-e4871dec96b6.bin",
+        "groesse": 3214628,
+        "sha256": "6847523f4d5df9425cda606e73f404c07e19452dac7659bdcc92743c46cba3c0",
+        "name": "lex.50.50.enbs.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260522192531--fa88b6e0-55a7-4b12-b71e-5c1c6f29d23a--c3539411-be49-4b90-a2ac-79db102c8bc0.spm",
+        "groesse": 823444,
+        "sha256": "dfed9c3e08e85a22feac7748a20fa981dca94f358115af2f45d704b9cc944cc8",
+        "name": "vocab.enbs.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260522192526--41a84edd-7e70-4a36-ba50-0f544acfb51d--f2daa80a-0ee1-4e4e-956f-f89b512c8e2a.bin",
+        "groesse": 31561787,
+        "sha256": "27575113fffad6c45a0bad36bd1823c4f319ed30f65ec134815b67bdae0d9f8d",
+        "name": "model.enbs.intgemm.alphas.bin"
+      }
+    },
+    "en-ca": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/6f3f4782-5c23-4f61-bcd5-3234441c59e6.spm",
+        "groesse": 810653,
+        "sha256": "64ebcb5f6cb5a954ced615e48a44a85e77a644e4910544014b299b8ee0fa1b1f",
+        "name": "vocab.enca.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/deeec29e-faaa-4273-bef6-2827edf193f6.bin",
+        "groesse": 31561787,
+        "sha256": "735881c99ff303e55eb2e92a3b86762523d5dd1a4797b2574b851062051426ee",
+        "name": "model.enca.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/d2065bc0-e4bf-4810-a0cf-a0cd1163b3c0.bin",
+        "groesse": 4344092,
+        "sha256": "8f2151a7fb75454f5167a8df8758ec02ab02c0302893851bad7caa6b729822fb",
+        "name": "lex.50.50.enca.s2t.bin"
+      }
+    },
+    "en-cs": {
+      "lex": {
+        "ort": "main-workspace/translations-models/0b6ddbc2-b4cc-45a9-b2db-fe9369ad2064.bin",
+        "groesse": 3572436,
+        "sha256": "699b9b59fe3acbcddf831380024b2e139f2cbe225dce96d59ade2b159318f58b",
+        "name": "lex.50.50.encs.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/008ef5e3-4ba0-4d97-9dd6-5898c7348e28.spm",
+        "groesse": 815154,
+        "sha256": "ee4b8ce15c8e1237c5f7a2d04741341beb0a5d5c09820f7ec08f13ee2b212755",
+        "name": "vocab.encs.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/6dc79644-4994-4816-8d12-418b11df69ff.bin",
+        "groesse": 31561787,
+        "sha256": "1d7855f91c3e2b8ef79fbea62707d46ceb8a1ad01834ef6dd500f32a7006cc2c",
+        "name": "model.encs.intgemm.alphas.bin"
+      }
+    },
+    "en-da": {
+      "lex": {
+        "ort": "main-workspace/translations-models/3ef0b3ec-7989-47b3-affb-7098159745a0.bin",
+        "groesse": 3864788,
+        "sha256": "d183786cae59a5df06d5b00c58e3ec2a5791d302240a65540fc6a1da2b66eada",
+        "name": "lex.50.50.enda.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/b832f3bb-5961-4c78-93de-509b9c750abe.bin",
+        "groesse": 17141051,
+        "sha256": "0157ed1162dd5a7a0fc6a3cc86014ec21cb47a8febf77164df24d8921270bb29",
+        "name": "model.enda.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/8dbcff2f-5e41-4163-adc5-5e5caea9b675.spm",
+        "groesse": 795349,
+        "sha256": "b06349522bf053e4a6f01efc4d1450e4fe35717a938a82831988c087229c9619",
+        "name": "vocab.enda.spm"
+      }
+    },
     "en-de": {
       "model": {
         "ort": "main-workspace/translations-models/23db71e7-b6d9-45eb-a47d-0290d7d8ef63.bin",
@@ -263,6 +463,944 @@
         "groesse": 4347672,
         "sha256": "7ed39f1cffbd68a27ddf05bbfe068de2060f1d7e69f1a20e27ae923551dd7393",
         "name": "lex.50.50.ende.s2t.bin"
+      }
+    },
+    "en-el": {
+      "lex": {
+        "ort": "main-workspace/translations-models/73568803-85e3-423a-8fb8-7f755a6ffed2.bin",
+        "groesse": 2856724,
+        "sha256": "c2acd9241eb8a1e5b13a43efa5723628839d6e3b3dc7b93e2f20990a6ab81e24",
+        "name": "lex.50.50.enel.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/26dead91-e46c-442c-85d0-a6fe13fad55a.bin",
+        "groesse": 17141051,
+        "sha256": "724b358d399c6b23444de36d76e9e2630c7024c29d9e617323b820a11631535a",
+        "name": "model.enel.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/79a76f88-a4c4-4b1d-b726-15c6a60bebcc.spm",
+        "groesse": 896168,
+        "sha256": "0ffc5569d7f400f03539c5fc3e28ff35f1d0381eba0ec866c44aef0c26f3ce5e",
+        "name": "vocab.enel.spm"
+      }
+    },
+    "en-es": {
+      "model": {
+        "ort": "main-workspace/translations-models/a4ba0e94-16de-4058-9a44-5bbbbb3c8640.bin",
+        "groesse": 31561787,
+        "sha256": "3b1c399511c01c84c36fae5c0524df44096288efdc8236e182b5c97d7ad2244c",
+        "name": "model.enes.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/170634fd-511a-4a28-b723-0a1025c67feb.spm",
+        "groesse": 816054,
+        "sha256": "5ae254fa9b15aa182e70fd2a6186b1333c63a29a48043a9224c6aa4fcac058ad",
+        "name": "vocab.enes.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/1834a61e-0331-4c4a-bbc0-dda02afa8188.bin",
+        "groesse": 4198436,
+        "sha256": "7d51237c0a07027dcd61643cfbbb0f8c48597d19907ef53d2cae9d6bec2cf25c",
+        "name": "lex.50.50.enes.s2t.bin"
+      }
+    },
+    "en-et": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/957b94c4-d106-40b7-b4e2-176f2a923d32.spm",
+        "groesse": 817574,
+        "sha256": "89a3deea4ae7d674fb46a4dae39135dd4dfaac9786f2868d0b5bc5c0aca2ef83",
+        "name": "vocab.enet.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/4c2378de-a52b-4773-9f1a-73ca396520e1.bin",
+        "groesse": 31561787,
+        "sha256": "36bdc87f8d500861a5d286ebd3ea58df530da87e31b8a233f5e9c46c300c281d",
+        "name": "model.enet.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/074d0851-cd04-4494-8037-ac14bab5663c.bin",
+        "groesse": 3488368,
+        "sha256": "259c60582f49449c226a6e5a369481c68322013f367e459e54c595686c05d4d8",
+        "name": "lex.50.50.enet.s2t.bin"
+      }
+    },
+    "en-eu": {
+      "model": {
+        "ort": "main-workspace/translations-models/20260522192556--eab96ef5-5666-40b0-a384-68f0a8f364e2--31f6154b-707f-430a-9cfe-0084c1b6ad99.bin",
+        "groesse": 31561787,
+        "sha256": "f28d03817b718806c9262e3d76960efb8cbd04d0721307c8e23edcae9364150a",
+        "name": "model.eneu.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260522192546--5f7809e6-5fdf-4f00-8540-6bf4060a8340--06a3091e-196c-429c-86a9-1f2151e9164e.spm",
+        "groesse": 820820,
+        "sha256": "d0cbd7a04e20c3a45bcf29260967db26a97c4787c03a9d867df0465bc104cec2",
+        "name": "vocab.eneu.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20260522192543--c0d951c2-820d-42f1-9654-cd6318e04e81--c53edb46-65e3-4743-8dd0-987508c9b0d8.bin",
+        "groesse": 3149580,
+        "sha256": "a6a856a89acc6bbf970b6c5e51fe705bee6fe2b8007a3c31ae54ca2c6fd69aad",
+        "name": "lex.50.50.eneu.s2t.bin"
+      }
+    },
+    "en-fa": {
+      "model": {
+        "ort": "main-workspace/translations-models/8e412aee-68b4-46cd-aa00-1e7357db24c1.bin",
+        "groesse": 17141051,
+        "sha256": "456ad3952bcc59d208c76baba4dcef340ee4239416bd760d6fec27f9a16228f8",
+        "name": "model.enfa.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/8ec72d9b-f5b6-40bd-a23d-cedb2c757e92.bin",
+        "groesse": 3631332,
+        "sha256": "8542e7fb2bfa3a11b89f8392b8adb0dbbf863cd34569488b7c4535a91c3ae6b4",
+        "name": "lex.50.50.enfa.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/203a10f4-6885-49c2-89e3-e7a4f3e3e738.spm",
+        "groesse": 843133,
+        "sha256": "6435d3d9d766159fe192ab90892540b438ad7adb7ab4ea4049f68d0b4cdea3bd",
+        "name": "vocab.enfa.spm"
+      }
+    },
+    "en-fi": {
+      "model": {
+        "ort": "main-workspace/translations-models/b23aac5b-1f93-407d-be1a-aff19bcd86b4.bin",
+        "groesse": 31561787,
+        "sha256": "88b0caa4cc6980d632801cb2b1950748f1dc43ad2ac83678917ad86c720b5cdd",
+        "name": "model.enfi.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/a32029c0-5216-49a3-ba89-8f48c29e7188.bin",
+        "groesse": 3490092,
+        "sha256": "26e95a87f87e4b0fa9a35524cf9fea691204504453877ba4ac81ccc66af1488c",
+        "name": "lex.50.50.enfi.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/f98de766-1b61-4245-83f3-0d300232ebe4.spm",
+        "groesse": 818770,
+        "sha256": "6a866911427f2916609ae89c7f2f04a78de3fdd8aa183039ecba986635d4f246",
+        "name": "vocab.enfi.spm"
+      }
+    },
+    "en-fr": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/c7c1bcf3-71f6-425a-a6ed-403bd9a0a759.spm",
+        "groesse": 814404,
+        "sha256": "783abf3abe075afdf8d85d233994bef2c3a064e935ab1bed946820aff6ac002a",
+        "name": "vocab.enfr.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/293d1823-ff05-48c9-837b-cff8fd33f197.bin",
+        "groesse": 4372936,
+        "sha256": "2585ed98d3af0bc949865aedeb390493d591f56870814376e73e4144c41ed059",
+        "name": "lex.50.50.enfr.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/e0d7f3ee-163a-4b0a-8e44-8b208b39477d.bin",
+        "groesse": 31561787,
+        "sha256": "6322e296d4fecfe395a8d5723da4ec37ecbe6d7613bb1dfcf4b28e2a47498b68",
+        "name": "model.enfr.intgemm.alphas.bin"
+      }
+    },
+    "en-gl": {
+      "lex": {
+        "ort": "main-workspace/translations-models/20260603153847--5503a4ee-15d9-4cc0-ab84-33de89e97ab1--910f6134-7bea-4a7e-beab-00bc391e7ebd.bin",
+        "groesse": 3007680,
+        "sha256": "28621d3797a945ca0112c872640686586e77957b5421b0ef95886806b09d8874",
+        "name": "lex.50.50.engl.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260603153833--30d1a7a7-1b42-43a2-8df8-0accf391ff1b--88306c26-9356-4156-827b-4efd76343d52.spm",
+        "groesse": 827026,
+        "sha256": "da044600f961c4c977e747cc9fb8afd4c05829629033d344a575a93807ea1cba",
+        "name": "vocab.engl.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260603153845--3408c3e9-a4a9-4eb6-b791-e8bb0dde1d51--9d656b6e-0c5e-43a7-8cc3-367c0befe133.bin",
+        "groesse": 31561787,
+        "sha256": "bec08e5408932c3813ccfb565ab7003d334dd6ca148c9d2bd074e17b8c0be1b1",
+        "name": "model.engl.intgemm.alphas.bin"
+      }
+    },
+    "en-gu": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/1aca3a35-aa44-4893-a1da-355b5a4108bf.spm",
+        "groesse": 965095,
+        "sha256": "74ce11b041bfc527eedded78594498419c781c81a3fcb3384a3485af70cc2325",
+        "name": "vocab.engu.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/5b0e3636-9bdd-4997-9a67-7eb67308e22d.bin",
+        "groesse": 3179500,
+        "sha256": "5699d5f0f6265766c57e8e860596091d16a7ea68e9e181a3310b8b52d79f8b5e",
+        "name": "lex.50.50.engu.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/a2576987-0797-4a60-a266-5f155d067135.bin",
+        "groesse": 17141051,
+        "sha256": "0f2c8bc7f13ecb9b89459e8fd9af6d8736e0f6b1c8f8a80f747fcdc030d0a588",
+        "name": "model.engu.intgemm.alphas.bin"
+      }
+    },
+    "en-he": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/bf209be5-23fb-476e-91dc-ad902de664a1.spm",
+        "groesse": 845017,
+        "sha256": "672b334afa84011200fdaee02c2fc7810910c35ae9ea7619be073c851703ce9e",
+        "name": "vocab.enhe.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/507ad0e2-1a10-419f-867c-04bb09c4566b.bin",
+        "groesse": 17141051,
+        "sha256": "e37ac6e6f131704c85deb94a657aa20afbb44db2879f44aec9c33a34f4467587",
+        "name": "model.enhe.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/31eb1832-fdd0-41f2-91f6-355866dd4232.bin",
+        "groesse": 3066048,
+        "sha256": "8795f4c5e19b4a196c9ed394c275a28a09e5ddbbf47ae16faa4446bf2b8bc7d9",
+        "name": "lex.50.50.enhe.s2t.bin"
+      }
+    },
+    "en-hi": {
+      "model": {
+        "ort": "main-workspace/translations-models/32ad63e2-0283-4c87-8fa8-d843c322c87b.bin",
+        "groesse": 17141051,
+        "sha256": "18682fa6aa1c1b2f78a6fcbcb354755094d623e65436ef7821720c5213e11a49",
+        "name": "model.enhi.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/e69b3f71-49b1-4e61-83f5-2abf46666476.bin",
+        "groesse": 3504820,
+        "sha256": "b473f6fe41cdb7c1dbeeb714fc50314feab77b0af2b2da6f7830ee14492dd847",
+        "name": "lex.50.50.enhi.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/5d4cb145-1f61-4913-973f-d7643c06b917.spm",
+        "groesse": 925360,
+        "sha256": "8017cbf812bae400794c424699b89de90db06ac7a4ca67a420013a9f68b270c1",
+        "name": "vocab.enhi.spm"
+      }
+    },
+    "en-hr": {
+      "model": {
+        "ort": "main-workspace/translations-models/08947d77-90d5-40ef-a896-560e7cf3c0c7.bin",
+        "groesse": 17141051,
+        "sha256": "29ba32235778da3e38cfeb0d7f36eaf8dc37c961ff8651d86f7cae7e29e97d88",
+        "name": "model.enhr.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/15b77cc4-84ff-47c2-b54c-6075910ef1ce.spm",
+        "groesse": 796935,
+        "sha256": "7b75fe5ee12743c787a393489d8810adc3ca6cefe0142e8993227dd125d224b3",
+        "name": "vocab.enhr.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/9d7acc73-dba2-4d5e-9e6b-3b58a6ef6a27.bin",
+        "groesse": 3319896,
+        "sha256": "b811d67aca11e12e6bd956c1b4a1e74c6162d71e9ac259bfff415fbb90c3f666",
+        "name": "lex.50.50.enhr.s2t.bin"
+      }
+    },
+    "en-hu": {
+      "lex": {
+        "ort": "main-workspace/translations-models/20260831143554--213b291c-d628-4fed-a285-0331287508ef--ed861d94-a183-4994-9db7-32eb890e797d.bin",
+        "groesse": 3419024,
+        "sha256": "b1c9763567bfa24082fee43a9c4cc05b8ceada949fa52f6686b11f70ce481238",
+        "name": "lex.50.50.enhu.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260831143546--2ab0221b-e8b4-4784-a6bd-ee4ae4344c35--d6f29656-f614-49c1-ad8d-75076a588832.spm",
+        "groesse": 832855,
+        "sha256": "8c3038afc15c5a3f7bb3c6fc4c4962907632b6f6d0ce7444974504bef19ef57b",
+        "name": "vocab.enhu.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260831143551--daed5bc9-2f4d-42c9-9762-4fbedec7ca80--a6957748-3ebd-4d43-82c0-ab7e7ad3e67d.bin",
+        "groesse": 31561787,
+        "sha256": "0c42f56edca74b3f732a74c64553c47d0005b50cf095f43024601985fab5d461",
+        "name": "model.enhu.intgemm.alphas.bin"
+      }
+    },
+    "en-id": {
+      "model": {
+        "ort": "main-workspace/translations-models/0d494914-73de-49af-804a-a4bd443f0554.bin",
+        "groesse": 17141051,
+        "sha256": "f81f13eef703a4e0650ffc3138a0f4bab7b6c8bfd173ef1b7bda68d16b8bc7e8",
+        "name": "model.enid.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/a9610c56-2593-4513-b4ac-954276327788.bin",
+        "groesse": 3515428,
+        "sha256": "d37f72bcab6e7bc52fd223350f95521b5810bb2486a97275f86077988fced3f4",
+        "name": "lex.50.50.enid.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/6c49d51b-167b-4bdc-aab8-2abe32105529.spm",
+        "groesse": 773211,
+        "sha256": "61bc7db24d3b6de638a02a280580a273fe0c942ecbe8a8204b2f81978211db22",
+        "name": "vocab.enid.spm"
+      }
+    },
+    "en-is": {
+      "model": {
+        "ort": "main-workspace/translations-models/6fc94b8f-3dfd-4c2c-8d11-df3d07e0cfba.bin",
+        "groesse": 31561787,
+        "sha256": "459626236a49158aa555facd23e5f594e2f8416f4ebad32e0548af94c5b1ae0c",
+        "name": "model.enis.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/f166d353-90b1-4ae7-adc7-c4fdc44744a5.bin",
+        "groesse": 3837564,
+        "sha256": "4927d2bed702141b4ddd8a5e7034b27fb17312fdb7e3cc5f455ccf2e2f6670e0",
+        "name": "lex.50.50.enis.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/8e36da15-fa26-4ae3-a661-e6f5f92e8ff4.spm",
+        "groesse": 809991,
+        "sha256": "61b2ea10edbe4cc61e36c833cacc2f55778ed9ca860cd382729060634d4b0adb",
+        "name": "vocab.enis.spm"
+      }
+    },
+    "en-it": {
+      "model": {
+        "ort": "main-workspace/translations-models/29ae0d70-5e37-49e8-8da6-3e2c58da61d1.bin",
+        "groesse": 31561787,
+        "sha256": "248f47568788ecc351da7e5e07064d4153b4f71e011364ae2c931ffeec4d1cc2",
+        "name": "model.enit.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/d9d5ffa9-b919-4491-9ab6-3dec34459768.spm",
+        "groesse": 812724,
+        "sha256": "3ef0211d4ae6db21440892f180f2019fe2bfc110a330ffa9d2eca9665e4f2bc5",
+        "name": "vocab.enit.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/3730ff60-2291-4c87-888d-2dc4593b20db.bin",
+        "groesse": 4133192,
+        "sha256": "8b21914804625b2777dae7fdb636eb78f02a3eb8b7bceaa50f29ac740961da93",
+        "name": "lex.50.50.enit.s2t.bin"
+      }
+    },
+    "en-ja": {
+      "srcvocab": {
+        "ort": "main-workspace/translations-models/cdea5422-fe0d-4941-a653-ca090423e8f8.spm",
+        "groesse": 796275,
+        "sha256": "970c98d174fc01e0339fbabbf45af36a4be3f26f819ec1a5ea1189f71e091889",
+        "name": "srcvocab.enja.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/4e19636e-4644-4072-8a05-9ef695d4a3ae.bin",
+        "groesse": 43849787,
+        "sha256": "59ae659f9bb63e4f81f474fe3c03d3f4499434b5f9e779fab7c12a45f31fd562",
+        "name": "model.enja.intgemm.alphas.bin"
+      },
+      "trgvocab": {
+        "ort": "main-workspace/translations-models/5c1a663f-5736-4100-b681-c6737fe79cb5.spm",
+        "groesse": 827144,
+        "sha256": "3b3d9f8f3a034d98d0a476f1794fa79c01e4e98a967ceb6777a66ba2d03ec1e1",
+        "name": "trgvocab.enja.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/87258444-8fac-4d3c-a175-9275e9d10ffa.bin",
+        "groesse": 4128360,
+        "sha256": "edfb7eb47b98a2689b804ab3614c31b24f1257aa54b1154da3d85e1ae8152d9f",
+        "name": "lex.50.50.enja.s2t.bin"
+      }
+    },
+    "en-kn": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/5999f7f2-21e7-439e-bf95-f8a1926ea499.spm",
+        "groesse": 1065180,
+        "sha256": "1d41f1f6b67a8c29fa3aabbc7758b766bdd9acdbeec7d1277ab60c8e492c8b7a",
+        "name": "vocab.enkn.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/5f0a491a-4a14-4591-b1a6-0a442f4e5ad5.bin",
+        "groesse": 17141051,
+        "sha256": "17a5ddc86e24f62c04aa15272930275812b5c1674bec50a877528680d5834d2d",
+        "name": "model.enkn.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/a77bf1a9-68fc-4331-8b9d-9cb918ff0e8b.bin",
+        "groesse": 2808304,
+        "sha256": "94b660f37c9c29a904b48498a7202846faaeef16f30668f356336c29cefc0f63",
+        "name": "lex.50.50.enkn.s2t.bin"
+      }
+    },
+    "en-ko": {
+      "lex": {
+        "ort": "main-workspace/translations-models/f8a94a6b-264c-4c06-8016-2b57364fbd90.bin",
+        "groesse": 6676356,
+        "sha256": "7734265822ce315c72334ad538e698ab3900ab8e8f04bd43768d0aecad6b6df7",
+        "name": "lex.50.50.enko.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/2143a895-2f68-4f00-8ebc-40c9563f304d.spm",
+        "groesse": 1406926,
+        "sha256": "709bf0e425345e0e92ce41ed84348a1296a2107c92bdb6624404450ffecbd1f9",
+        "name": "vocab.enko.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/4041be52-9e75-41f1-9d4f-04801f112553.bin",
+        "groesse": 59504955,
+        "sha256": "1c310a79b61b8824b2eb26b045db043d92722f3e66ea06998f7c89f48da9f6bc",
+        "name": "model.enko.intgemm.alphas.bin"
+      }
+    },
+    "en-lt": {
+      "lex": {
+        "ort": "main-workspace/translations-models/20a0b36e-ed89-40fd-be51-b1badb85100c.bin",
+        "groesse": 3421640,
+        "sha256": "5972c834218c7beea241dc8fe77c2e577a8d8b4eb3d3dc286d10ad890c64d374",
+        "name": "lex.50.50.enlt.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/72ab709b-d7ed-432e-9104-4424bbd2da2e.spm",
+        "groesse": 806827,
+        "sha256": "5d38fe70ff4a50368af756b715b69519c9ee064c27cbceeabc90d4e1a10f25a8",
+        "name": "vocab.enlt.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/15cfcaf2-881d-4b3e-94de-7b508c001c7e.bin",
+        "groesse": 31561787,
+        "sha256": "d27c676d9d761c2abfffec83956e32b2923f3f745b56acdbd84c49d888cdc94e",
+        "name": "model.enlt.intgemm.alphas.bin"
+      }
+    },
+    "en-lv": {
+      "model": {
+        "ort": "main-workspace/translations-models/658c63b1-d9b4-45dc-b250-47f9c33c8455.bin",
+        "groesse": 31561787,
+        "sha256": "715f9f444dffa0b39e71955c28bffd30afa4cc8300a192ec8fabb766cc5ba11d",
+        "name": "model.enlv.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/da291a80-d6f6-4511-a5ed-1c78f27e2650.spm",
+        "groesse": 816287,
+        "sha256": "63146b49ce46ba1283b6956e38efdd4899d1a409cad9d2b6a06cbd4e32ca0808",
+        "name": "vocab.enlv.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/a53e1550-53ca-42ed-9c43-a9938ff1d16c.bin",
+        "groesse": 3359096,
+        "sha256": "d54b9bc278558444c5c25df5ae7339b73eee55cf79705f19fec672b6d55d959c",
+        "name": "lex.50.50.enlv.s2t.bin"
+      }
+    },
+    "en-ml": {
+      "model": {
+        "ort": "main-workspace/translations-models/061d2693-671d-448f-87a7-7fe7c2332180.bin",
+        "groesse": 17141051,
+        "sha256": "c461749c8315f6417104cf4df32e5063e86cb101203f9629512294c1c8ab5337",
+        "name": "model.enml.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/8bd87d61-2179-402f-b6c4-314a3e750812.spm",
+        "groesse": 1109000,
+        "sha256": "8282614894087e4ffab325cbdb3aeeba35677f770ef8f253c189b392fe1f4d52",
+        "name": "vocab.enml.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/2de144bc-7239-482c-9df0-f5c3135a7e6d.bin",
+        "groesse": 2532960,
+        "sha256": "4a37286742244a130548b79823c9707bc0e56f373361e2cb56402f82e862c2b0",
+        "name": "lex.50.50.enml.s2t.bin"
+      }
+    },
+    "en-mr": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260824134722--c5f546d6-9229-457d-aed8-2d36f9abc6d0--2605c853-2e7d-4ea1-88fb-ed24c86c1117.spm",
+        "groesse": 1009700,
+        "sha256": "f71f279069e19a9a9317fd4fcbdffa6b2c621ee6fcaa369a92046fb7fb572735",
+        "name": "vocab.enmr.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20260824134731--2fae9b1a-4df4-479a-98b9-714e86c3847e--a7a45cf5-8b2a-4bea-9dfc-d6e85af5fad8.bin",
+        "groesse": 2731352,
+        "sha256": "5f343589941c5445e9c27ee2d5329b6da65867590a4df79c09532aeef379bca9",
+        "name": "lex.50.50.enmr.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260824134729--07838b7f-0536-4c3f-8315-d68b59e31267--2df02735-8195-4429-8849-e0b52b633b74.bin",
+        "groesse": 31561787,
+        "sha256": "1520f77c2f1c703b6148e4452b376ac28aec1e63c467eedec8a986864827ce8c",
+        "name": "model.enmr.intgemm.alphas.bin"
+      }
+    },
+    "en-ms": {
+      "model": {
+        "ort": "main-workspace/translations-models/c389f1da-0c97-47d5-adc3-6ceaa0c4af07.bin",
+        "groesse": 17141051,
+        "sha256": "3d6961462ffa711413d513624d7e6399b3560c2b0994daa73b0a45699e657af8",
+        "name": "model.enms.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/2db20d9c-6a6c-4d0a-b909-1763b402e064.bin",
+        "groesse": 3936428,
+        "sha256": "be8fec4866c9ed2cf669adaea2e259c4c22f34838032eb0ee117c10fcb968c4c",
+        "name": "lex.50.50.enms.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/136a7b29-aea9-483d-b96d-2683a55ecdb3.spm",
+        "groesse": 802440,
+        "sha256": "c1f182330fb8c80778da36dd6e5bde59464db2390f623ea62817081cc759695a",
+        "name": "vocab.enms.spm"
+      }
+    },
+    "en-nb": {
+      "model": {
+        "ort": "main-workspace/translations-models/20260522192648--58c9706b-c41c-4717-813b-a1140166c93c--2253e5e8-c1f4-4bed-8046-4054e5315ba3.bin",
+        "groesse": 17141051,
+        "sha256": "78429eb7f544361061c9d9ec2f0872adf30b76e4c9ef3dbaab1210a0f2aa19b5",
+        "name": "model.ennb.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260522192642--b1c57385-f3cf-4e06-a95c-3fa639f9bdcb--0f8e2778-c18e-47ac-9d85-21d991acc7c4.spm",
+        "groesse": 802190,
+        "sha256": "cad75f2c3eccb9545b571ca32f235e6ffaae6d8a77bfa808cf8068948c421f10",
+        "name": "vocab.ennb.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20260522192641--2b4cba8d-58c6-4a21-8352-9b041654d010--02a468ad-759c-40b0-ba2e-ef68bd2bfd3d.bin",
+        "groesse": 4234572,
+        "sha256": "0780a1659ef460864ba92da6d58ca6f9056fb8ec8be507c189aeb25ce23e429f",
+        "name": "lex.50.50.ennb.s2t.bin"
+      }
+    },
+    "en-nl": {
+      "model": {
+        "ort": "main-workspace/translations-models/f0f9326d-b77a-4c9f-92ac-2c9bc62e16bc.bin",
+        "groesse": 31561787,
+        "sha256": "7e8402da61972dc2fdcf7147c7f1e12f7916a6d9349514ee7a731288357575a9",
+        "name": "model.ennl.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/aea15ce7-3431-4186-b922-29b3f5d687ee.spm",
+        "groesse": 807708,
+        "sha256": "c09588ca5662b230ed65bd39a07f58d9f7dd21c3a19e4aeb1bff39bf3b297c56",
+        "name": "vocab.ennl.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/c1f02d64-5e29-4181-b85a-0f70a9ac1c70.bin",
+        "groesse": 4030624,
+        "sha256": "bb4922718f8ca6d746ad090c0a88110a664dc050ee3f311bce33698b4e1679e9",
+        "name": "lex.50.50.ennl.s2t.bin"
+      }
+    },
+    "en-pl": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/dd8a3019-bd2f-405e-b95d-0cce7a29be2d.spm",
+        "groesse": 821612,
+        "sha256": "2000f182efa8ce5f69bc3f9e574666b5bc2c0af684eedd32f69d15aa9021ea85",
+        "name": "vocab.enpl.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/640bd7ef-a977-417f-903c-00b5217cb7de.bin",
+        "groesse": 31561787,
+        "sha256": "b0b59716bcc8f46b8dc6ab5c32a2732acaad42a5a6d9ae9b472526a1bb0d71d4",
+        "name": "model.enpl.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/12451e17-4901-4327-b78d-903e9ff7529d.bin",
+        "groesse": 3540052,
+        "sha256": "d7d7b364673f633763c9f8f2e8ee9c7a184e92f4086e8b84abe870a2a8dbe5d5",
+        "name": "lex.50.50.enpl.s2t.bin"
+      }
+    },
+    "en-pt": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/e5688e52-a5c1-458b-9dbb-459fdcec0b7d.spm",
+        "groesse": 816726,
+        "sha256": "d9f46182823d5bbc84201252b2dfcac28f63e561f0ec827ed858f241864c9def",
+        "name": "vocab.enpt.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/c4192576-e76a-4edc-9346-1f90af10f6ae.bin",
+        "groesse": 3970340,
+        "sha256": "ccb4c31c9e1899d77a200e71a86958e6ef6c8649627d0bbf3f873b57d9f236bd",
+        "name": "lex.50.50.enpt.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/357d1004-e004-4f93-bbb5-b6b90641e9b4.bin",
+        "groesse": 31561787,
+        "sha256": "07892fd2544ee79dcb643615d8f2debb9793fae16842e87c328e27a3dd26a770",
+        "name": "model.enpt.intgemm.alphas.bin"
+      }
+    },
+    "en-ro": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/41f055b0-76a8-4dae-a18c-44d8c1293bf0.spm",
+        "groesse": 801522,
+        "sha256": "d89eedf6cbbcb30d7ed4b0b092189196ac2b010ec0c3ede33a6676b17ea1c95e",
+        "name": "vocab.enro.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/f12620b2-d705-4d7a-82e0-e16f0aa29d74.bin",
+        "groesse": 17141051,
+        "sha256": "aa98c415e5beb1c5ee2f7d2508a3bbba949be223d7d9e5e1788ad0ae8598dda5",
+        "name": "model.enro.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/0b9db082-327d-4ab0-bad6-17e7631ec163.bin",
+        "groesse": 3739880,
+        "sha256": "508bce64a8bc906a99043ad2f4855b4662e06f8827c1c6a75ab83181b4f17f81",
+        "name": "lex.50.50.enro.s2t.bin"
+      }
+    },
+    "en-ru": {
+      "model": {
+        "ort": "main-workspace/translations-models/a6257317-71eb-4ca0-83ce-279c77f7b613.bin",
+        "groesse": 42992955,
+        "sha256": "0ef9a209c5edc46692750e7505b3695655b1c7c3ec73058b641201ef18c481ce",
+        "name": "model.enru.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/fcd0f93e-defa-4990-9592-370fb368e81d.spm",
+        "groesse": 904455,
+        "sha256": "56ee63e14e8cb926c394242adc3ed7cc602644c3d33058cff2ce2959d52a6258",
+        "name": "vocab.enru.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/bec0fc43-6cb1-4e63-a37f-7f6653fdda77.bin",
+        "groesse": 2768468,
+        "sha256": "3587f93c10c1d457f874c2ba7ff4d5e2686fdaf7f3fd179cfefeacab3c6990b9",
+        "name": "lex.50.50.enru.s2t.bin"
+      }
+    },
+    "en-sk": {
+      "model": {
+        "ort": "main-workspace/translations-models/12877c48-8898-4f14-bae8-ef4cf35a54c8.bin",
+        "groesse": 31561787,
+        "sha256": "e33af359fd58c8958104b1b74b3ea302800ccba2f125c1629e09d7f9dd9a3804",
+        "name": "model.ensk.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/f6894c37-5ceb-4f57-82f3-9fa8ece22eaa.bin",
+        "groesse": 3356348,
+        "sha256": "f3d1aec4ee5246d6a6ee5dc7ed4c6b18f6071c7baca69bf1344aef675b95515d",
+        "name": "lex.50.50.ensk.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/eabd7f47-1ca3-45a4-b04d-45b9a3e05ec0.spm",
+        "groesse": 808888,
+        "sha256": "cfa6a9e601d74686b117f041eb1ad9de94c34219110b67367d570a9e27026a46",
+        "name": "vocab.ensk.spm"
+      }
+    },
+    "en-sl": {
+      "model": {
+        "ort": "main-workspace/translations-models/610871e1-4cd4-4100-a755-a95b2d0a9d77.bin",
+        "groesse": 31561787,
+        "sha256": "a34fc5cc2f52733f64e37f8512cf1ddc4723c08a7a1a59d01fc2b6e641fc2280",
+        "name": "model.ensl.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/2f02539c-c552-41ba-8ccc-a2c10372226f.bin",
+        "groesse": 3428300,
+        "sha256": "2190798297bc12505f917189defcf451ab5bd2e815bc05df244dc291dc2ae63b",
+        "name": "lex.50.50.ensl.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/9e2de2b5-cfd8-4a7a-bb2b-59300824e168.spm",
+        "groesse": 803212,
+        "sha256": "7cd295383c46824c05a05db76b543d3595f2516537dd22b77190a45c8919224d",
+        "name": "vocab.ensl.spm"
+      }
+    },
+    "en-sq": {
+      "model": {
+        "ort": "main-workspace/translations-models/20261006203105--2f245b76-ac9c-4b19-ad91-b6dc5d352cea--5e6e9da3-4cd9-4307-9d40-4c6406700843.bin",
+        "groesse": 17141051,
+        "sha256": "8a90d17ab2798509e639e544caa1d577f7cf87c31b9ab7e53890c8d1d59b6eee",
+        "name": "model.ensq.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20261006203109--3c39f44e-f638-441a-a759-fe1fa0044a91--979febee-cd48-4bdf-ab36-2c44a43c2490.spm",
+        "groesse": 820048,
+        "sha256": "f27814dffca6102255ed7a338f2a83c16905a07e09444016187c768aaf9ac7b6",
+        "name": "vocab.ensq.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20261006203107--4873da54-ad1c-4667-a916-1781a0824ea9--63617a36-e436-4665-a63e-6ea7f96cabd3.bin",
+        "groesse": 3303648,
+        "sha256": "c901d1f5910315e0791720fa6f1275d79565e59d85013cf66b2f98cd9ba58ce1",
+        "name": "lex.50.50.ensq.s2t.bin"
+      }
+    },
+    "en-sr": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260522192736--6dc4626d-ca16-4fb5-a935-28e13eee3f98--a66e2d92-458c-4afd-9e46-3a64050e0f24.spm",
+        "groesse": 922599,
+        "sha256": "7f54ba1554b7b1a89299a0ec5950535432f062b50a5f8c9bcd664a2444fa882a",
+        "name": "vocab.ensr.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20260522192721--e24992f7-ee9c-4966-9a9e-01f432e76323--7568705b-d3b5-490c-b77f-bca96d59cf48.bin",
+        "groesse": 2542096,
+        "sha256": "b2ae22b4d7bc4295d25b8a55559ebbdbd8f728bc8de5c3d6f110bd44ce7d8962",
+        "name": "lex.50.50.ensr.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260522192734--a80412e9-fa33-4c4d-9bd8-b3a1f5896acc--78cdbec0-371c-4284-89de-8742beda6c85.bin",
+        "groesse": 31561787,
+        "sha256": "d26e1c5a01f917c38ccda17d1bf116024ac4d988105e1bbf70bc5e8f9191c57a",
+        "name": "model.ensr.intgemm.alphas.bin"
+      }
+    },
+    "en-sv": {
+      "model": {
+        "ort": "main-workspace/translations-models/15a011f5-97aa-4153-acdb-b3235bb27e77.bin",
+        "groesse": 17141051,
+        "sha256": "65ea0db8e658435846f297384face62dbf1804cfc92de8388b0e368e6ecc25a7",
+        "name": "model.ensv.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/8ef77dbe-f4c7-40ac-ba1c-7bc13492b853.bin",
+        "groesse": 3948180,
+        "sha256": "5761c39887a0e0cd3dd38d22cadc31cecd2a43b0514c4bba96b426736e7fd72d",
+        "name": "lex.50.50.ensv.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/080a36dd-80d7-442e-a682-ffc7c581b979.spm",
+        "groesse": 793868,
+        "sha256": "ff7e366ff4228107e58d76ca348e7dea2eb325452363d68e0047e97fb483e40e",
+        "name": "vocab.ensv.spm"
+      }
+    },
+    "en-ta": {
+      "model": {
+        "ort": "main-workspace/translations-models/20260715140532--7019230f-6fcc-43eb-b800-ef36471354ae--0cee705e-78e5-4065-a867-f97fc24c0fea.bin",
+        "groesse": 31561787,
+        "sha256": "83266ea604611756d1c3c358d7bed1fdf79a646c1f701b42c1db501c237c0f3b",
+        "name": "model.enta.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260715140526--b4aaebba-4117-45f2-8acd-45a665cb0308--df414eec-8420-499b-94af-efc2a97a648c.spm",
+        "groesse": 1097357,
+        "sha256": "c4fd3cbcec4e7c8a80b7c0656092fb482b9f266b1e8c6cb171f81af394f0f899",
+        "name": "vocab.enta.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20260715140524--f9961af7-9710-4cba-a799-a3f08d8ebbaf--68c57263-7c4c-45d7-8668-a429b259b926.bin",
+        "groesse": 2746824,
+        "sha256": "3a40b2175a114f3ca0ee5501c12e9636ef46f282304b041001f282baf4a5bc6f",
+        "name": "lex.50.50.enta.s2t.bin"
+      }
+    },
+    "en-te": {
+      "model": {
+        "ort": "main-workspace/translations-models/ed071e54-c2ea-4f38-bbcc-1d6908c50b78.bin",
+        "groesse": 17141051,
+        "sha256": "a3fee2fcd39df975da28666c536adff60147dce59062fca6097bb42fb2a52500",
+        "name": "model.ente.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/765d3164-3fe7-4a90-add7-358e799097e4.bin",
+        "groesse": 2832156,
+        "sha256": "ea44d146f6b4614586654d91d7b677ee617e2367be2eccd72e81aa0fa359b92c",
+        "name": "lex.50.50.ente.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/2856b6b5-b3ef-4032-b2b3-f8923450de91.spm",
+        "groesse": 1056424,
+        "sha256": "41d0828d103a07e0608c604102ba4418fcb06e82b3742c1abc6d3ec343673e93",
+        "name": "vocab.ente.spm"
+      }
+    },
+    "en-th": {
+      "lex": {
+        "ort": "main-workspace/translations-models/20260522192813--1deee5a6-eaef-4499-9443-20093491c48e--6300f5fe-62db-4288-8c14-7f1cee1b6a97.bin",
+        "groesse": 3016612,
+        "sha256": "6961ce07f38e6c113a70855706aa7cad4cc828f986d1751c33f14699f885a2e8",
+        "name": "lex.50.50.enth.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260522192810--5cccab3e-c1fb-4de9-b2a1-607dc2280cb2--f3cb18dc-47f6-4ad8-bede-9319e0e6c88c.bin",
+        "groesse": 31561787,
+        "sha256": "80e326097655fca75f841130da3338a849aa245374e1616448bcf37b9523a05a",
+        "name": "model.enth.intgemm.alphas.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260522192803--a787bf34-c470-405e-a69c-83fa1f38afe4--bf006223-e68d-4785-b86a-040edbb6a6a4.spm",
+        "groesse": 993517,
+        "sha256": "5deff7093d558768f8c22406449202e27595f023cc383a2b66beed240ed46443",
+        "name": "vocab.enth.spm"
+      }
+    },
+    "en-tl": {
+      "model": {
+        "ort": "main-workspace/translations-models/20261006203353--f94ba813-04ce-4d0b-8466-8bc775d5a33c--8de5fd33-7ca2-495e-abf4-e53679753fb6.bin",
+        "groesse": 31561787,
+        "sha256": "33b71965ab9c9c533c63444551c9483e811dd540e75e4cfe21d062a83a60b72f",
+        "name": "model.entl.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20261006203347--c13b4b3c-8822-4ad3-9cd5-0e3baacf5d4f--92c2b8af-7fe9-47a7-a43e-0d8fd01394cd.bin",
+        "groesse": 2782328,
+        "sha256": "6e129305669e4b79ac6fed8f9f4bea3b7f1372440bc26670d94b40a4f3398164",
+        "name": "lex.50.50.entl.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20261006203355--2c7137a9-09e9-41be-8fab-06e2afd766de--f792b894-1b0a-4077-af40-8bd1808e67df.spm",
+        "groesse": 812108,
+        "sha256": "bc9fe1743f2ef0b91c71506c47b0344ef9d3ce6047becfbced81c6c6dbb6109b",
+        "name": "vocab.entl.spm"
+      }
+    },
+    "en-tr": {
+      "model": {
+        "ort": "main-workspace/translations-models/f48948a5-06b1-465b-a0dc-ea1a1a52323d.bin",
+        "groesse": 17141051,
+        "sha256": "ea3cd4ee09de190df265c78d84260e277a9a8a3ddff05eb55d72afe7fc0fdbf4",
+        "name": "model.entr.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/ed96fb89-d560-415b-9391-e5dc8edd13fa.bin",
+        "groesse": 3261300,
+        "sha256": "3aba0be842bd4c192659c781e6fdce8eb9b2b1fff29a40d22f75da369d59f46f",
+        "name": "lex.50.50.entr.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/462a6fc1-0f2d-4b61-ae3f-147bd9f9d588.spm",
+        "groesse": 798793,
+        "sha256": "a220363d60391f7ce3df8ec9785424dbc00c24d5786d1a4308cf8ca3ed3385c2",
+        "name": "vocab.entr.spm"
+      }
+    },
+    "en-ug": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/20261006203513--caadc61a-351c-4294-a4c7-07517a7a4382--431bdda1-2d10-4076-9aa6-11aee4f9a47f.spm",
+        "groesse": 869060,
+        "sha256": "730c6534e78e36115aae8df060359b9c85db5c7c6c43279f3eb76c3fbdd7f80c",
+        "name": "vocab.enug.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20261006203511--1951ad7d-9f86-4a1f-86ea-df09c9667ca5--40e1d990-9dfb-4f2c-9689-6c0ec929c119.bin",
+        "groesse": 31561635,
+        "sha256": "0fe41f8efab57c8f763d82af523f0219f5e4b90d559abccb4bf0c51d6af16660",
+        "name": "model.enug.intgemm.alphas.bin"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20261006203515--bf612d8e-ac8d-4af3-b10f-51b5cbd4859a--53a82cb0-b6f3-4215-8f27-552027700c2f.bin",
+        "groesse": 2044456,
+        "sha256": "adae8854b9d17cb4c2b72ec8a6a67e44a3d800497b5bb360376d07c74f88688f",
+        "name": "lex.50.50.enug.s2t.bin"
+      }
+    },
+    "en-uk": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/ffea5811-fcfe-486e-8812-6284bd33ee3a.spm",
+        "groesse": 922077,
+        "sha256": "4dd6a91feff71e745395dcc0d52f885848ca0d843d5f70628ca51b3be1b70b45",
+        "name": "vocab.enuk.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/e7b2fd05-abf2-4e30-a612-59bce8a6702c.bin",
+        "groesse": 3054364,
+        "sha256": "dbfd4f8dc95da9c575164f7fc95ef00a2fb5f7d9f51b656559f99eeebdb57c87",
+        "name": "lex.50.50.enuk.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/6c69578a-1f77-44ce-993d-4d37c81e081e.bin",
+        "groesse": 31561787,
+        "sha256": "ed8bb4a811e1c45a259e91052080d25e5c8b4e2df0e59cb1521c04a57855ef97",
+        "name": "model.enuk.intgemm.alphas.bin"
+      }
+    },
+    "en-ur": {
+      "lex": {
+        "ort": "main-workspace/translations-models/20260824134610--2e99b5c4-0265-4e75-bc86-10611e9638e4--16ad2691-87c9-4f25-af54-10f6b9177a3c.bin",
+        "groesse": 3067772,
+        "sha256": "64fb95c1f2c782cc76227b5d3a09e08cb30fea7b14a27aad69b929ad25f24401",
+        "name": "lex.50.50.enur.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260824134608--9800133e-bfe1-42b7-95ad-b1f0cc530aab--d059795e-dfed-4528-af77-637e840e9a67.spm",
+        "groesse": 842549,
+        "sha256": "24be4dacbcb080e4dba5cd025fbb90113de346dcb49930520f49fed484ac2d1f",
+        "name": "vocab.enur.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260824134606--396ed26c-84a7-470d-92d3-88c3bcd03788--887c2b23-bac9-49e1-8904-ddfd223aee5f.bin",
+        "groesse": 31561787,
+        "sha256": "0c29a5776a42ccb68f7969f41e64c0cd7a16ff00a5bfed0ed2809039febc202e",
+        "name": "model.enur.intgemm.alphas.bin"
+      }
+    },
+    "en-vi": {
+      "vocab": {
+        "ort": "main-workspace/translations-models/20260522192839--8cf85580-732e-484a-8b75-7417bbef3c69--a5f5c4c0-3c8f-452d-ba95-68948247d1a4.spm",
+        "groesse": 785200,
+        "sha256": "76daa9a49e393e50c865c889290e4dc36e9453e5e1ec9df7b9f3bc39ea782537",
+        "name": "vocab.envi.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20260522192836--32f34bd8-c481-4c26-aad9-eeddaac9cd79--cd40019d-37ce-4a14-8f11-ccddc804e7a2.bin",
+        "groesse": 4597684,
+        "sha256": "18116817fcd3d24dcdfd97cb57e9e60472800dae3b8a007f6f36d61d645f699c",
+        "name": "lex.50.50.envi.s2t.bin"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260522192834--e5c737d0-a39d-4bb8-8832-2bcc5ef45e5c--991fc4d6-87c3-476d-b879-ddeff0b6cae0.bin",
+        "groesse": 31561787,
+        "sha256": "04fa6044593a404c2aa02b3096f203880852df6f8f41e5eb966ed9f2b4366737",
+        "name": "model.envi.intgemm.alphas.bin"
+      }
+    },
+    "en-zh-Hans": {
+      "model": {
+        "ort": "main-workspace/translations-models/a7ff7d5e-e67e-406c-a34b-a7edea35b10e.bin",
+        "groesse": 43849787,
+        "sha256": "4e5accc141373565ddc8fa1565bceaa8d0c3482a82cab8131c719ebcc6c2157c",
+        "name": "model.enzh.intgemm.alphas.bin"
+      },
+      "srcvocab": {
+        "ort": "main-workspace/translations-models/ea98c52c-58dc-45d5-af23-38f2b029d020.spm",
+        "groesse": 806952,
+        "sha256": "bd9b65504acc6d9726dd281f7defc2adb7c2c22d0688fe2f84697de25197c8c5",
+        "name": "srcvocab.enzh.spm"
+      },
+      "trgvocab": {
+        "ort": "main-workspace/translations-models/bddbda68-d4d2-4317-a0a1-119caa47525e.spm",
+        "groesse": 772004,
+        "sha256": "aded6993c36e440284d11cec3f6b8aef9c0e43188a772d80be342a713adf223d",
+        "name": "trgvocab.enzh.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/da8fccc0-31df-4665-9703-96d36606e019.bin",
+        "groesse": 6506248,
+        "sha256": "4a5e5827788060f1d718a8132b69440929387514a045796e9b77f935db68c055",
+        "name": "lex.50.50.enzh.s2t.bin"
+      }
+    },
+    "en-zh-Hant": {
+      "trgvocab": {
+        "ort": "main-workspace/translations-models/20260522194157--52f509a0-ac8b-48bf-ba9f-0c61a064a00a--85418cc0-208e-440b-ac6f-c56d242ca430.spm",
+        "groesse": 751671,
+        "sha256": "22b91a4436d70b91ab8777c677252ab5fae2bc284d71f977df5206c110e3444c",
+        "name": "trgvocab.enzh.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/20260522194155--76d2a34e-7ef2-4829-ac1a-a1319b852dc5--72be7771-db83-4218-bec5-44f021cbf00b.bin",
+        "groesse": 43849787,
+        "sha256": "559ab90d723a58c1f1e2ab7cc12137bc667af5ba3e325e3eb30b5cdc930db520",
+        "name": "model.enzh.intgemm.alphas.bin"
+      },
+      "srcvocab": {
+        "ort": "main-workspace/translations-models/20260522194144--b93467f8-2c0b-43f4-a662-19cae5c7f899--ae44a945-6ed0-44d2-88ac-d4b9c25f6c3a.spm",
+        "groesse": 803694,
+        "sha256": "2266df70492162a249ab1c0154f929bd6098b246544c666c1a0d5a24dde7d2ea",
+        "name": "srcvocab.enzh.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/20260522194159--13a8d548-8d6a-46f6-ab8d-ea19098b7fe8--6cf4bdcb-dbe5-4e2d-af40-a02b440fdcc9.bin",
+        "groesse": 4057188,
+        "sha256": "d891404d1436a7334df12539fe30a26f9e9f2b80bd42fdb8b5f8849e8a1e942b",
+        "name": "lex.50.50.enzh.s2t.bin"
       }
     },
     "es-en": {
@@ -1173,6 +2311,52 @@
     }
   },
   "android": {
+    "en-ko": {
+      "trgvocab": {
+        "ort": "main-workspace/translations-models/bef3bc40-bc91-4739-981d-c82a9d22fd31.spm",
+        "groesse": 815353,
+        "sha256": "2ece21b28dd7022d36127d17423a74dabf544787dfc1cf614f7b565f93a4a1d3",
+        "name": "trgvocab.enko.spm"
+      },
+      "lex": {
+        "ort": "main-workspace/translations-models/85738400-bea4-4284-ba4c-e47e465f5331.bin",
+        "groesse": 6449612,
+        "sha256": "96efba97d4bb93ab362e5569bea0f115184d2f68d63b67305ee663c18e32fbeb",
+        "name": "lex.50.50.enko.s2t.bin"
+      },
+      "srcvocab": {
+        "ort": "main-workspace/translations-models/3d9dfbda-cd4f-445e-a69b-19e21e071385.spm",
+        "groesse": 791280,
+        "sha256": "8d4e3141868efd410eb86c2b60d41aa6bc6b46e4c4b2c0b85e3792493c69d802",
+        "name": "srcvocab.enko.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/29e88605-8576-4a8e-be94-a5ebb4a738f7.bin",
+        "groesse": 43849787,
+        "sha256": "ffe5ef2ce3f2e944055e35310bab186f6a70d533a0ee4394adf716a0e383afbb",
+        "name": "model.enko.intgemm.alphas.bin"
+      }
+    },
+    "en-ru": {
+      "lex": {
+        "ort": "main-workspace/translations-models/e88cc45c-0e0b-45d3-a957-8d1ba3a9b5aa.bin",
+        "groesse": 2774540,
+        "sha256": "4d91839726b960e70b6d05c53d0cffd16262832b1c0e1ea99d66f412dcc6a239",
+        "name": "lex.50.50.enru.s2t.bin"
+      },
+      "vocab": {
+        "ort": "main-workspace/translations-models/568807dd-9620-4c4d-a0b5-d651d64c0ab0.spm",
+        "groesse": 904455,
+        "sha256": "56ee63e14e8cb926c394242adc3ed7cc602644c3d33058cff2ce2959d52a6258",
+        "name": "vocab.enru.spm"
+      },
+      "model": {
+        "ort": "main-workspace/translations-models/db6b48bb-b563-4ea1-bbf4-b033fa9cc482.bin",
+        "groesse": 31561787,
+        "sha256": "184cb5cda528eeefc0f75f5d0035d787b71d74af135e3c5608d01ae02ecfb920",
+        "name": "model.enru.intgemm.alphas.bin"
+      }
+    },
     "ja-en": {
       "lex": {
         "ort": "main-workspace/translations-models/4e6b3270-8a2f-491d-b717-f99749328622.bin",

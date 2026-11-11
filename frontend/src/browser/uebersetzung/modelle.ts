@@ -54,6 +54,13 @@ export function quellen(nach: string): string[] {
   return [...alle].filter((s) => weg(s, nach)).sort()
 }
 
+/** Sprachen, in die sich aus `von` (oder generell) übersetzen lässt. */
+export function ziele(von?: string): string[] {
+  const alle = new Set(Object.keys(PAARE).flatMap((p) => p.split(/-(?=[^-]+$)/)))
+  if (!von) return [...alle].sort()
+  return [...alle].filter((s) => weg(von, s)).sort()
+}
+
 /** Die Sprache eines `lang`-Attributs, wie sie die Liste nennt (`de-DE` → `de`), oder `''`. */
 export function spracheVon(lang: string): string {
   const [haupt, ...rest] = lang.toLowerCase().split(/[-_]/)
@@ -80,6 +87,33 @@ async function sha256(daten: ArrayBuffer): Promise<string> {
   return Array.from(h, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * Wandelt rohe Daten aus Tauri-IPC (ArrayBuffer, Uint8Array oder number[])
+ * verlässlich in einen echten ArrayBuffer um, damit Prüfsummen und Worker-Transfers
+ * deterministisch funktionieren.
+ */
+export function zuArrayBuffer(daten: unknown): ArrayBuffer {
+  if (!daten) throw new Error('netz')
+  if (daten instanceof ArrayBuffer || Object.prototype.toString.call(daten) === '[object ArrayBuffer]') {
+    return daten as ArrayBuffer
+  }
+  if (ArrayBuffer.isView(daten)) {
+    return daten.byteOffset === 0 && daten.byteLength === daten.buffer.byteLength
+      ? (daten.buffer as ArrayBuffer)
+      : (daten.buffer.slice(daten.byteOffset, daten.byteOffset + daten.byteLength) as ArrayBuffer)
+  }
+  if (Array.isArray(daten)) {
+    return new Uint8Array(daten).buffer as ArrayBuffer
+  }
+  if (typeof daten === 'string') {
+    const roh = atob(daten)
+    const bytes = new Uint8Array(roh.length)
+    for (let i = 0; i < roh.length; i++) bytes[i] = roh.charCodeAt(i)
+    return bytes.buffer as ArrayBuffer
+  }
+  throw new Error('netz')
+}
+
 const passt = async (d: Datei, daten: ArrayBuffer) => daten.byteLength === d.groesse && (await sha256(daten)) === d.sha256
 
 /** Wie viele Bytes für diese Paare noch zu laden sind. */
@@ -104,7 +138,7 @@ export async function holen(d: Datei, fortschritt: (bytes: number) => void = () 
     await cache.delete(adresse)
   }
   let bisher = 0
-  const daten = await nativ
+  const datenRaw = await nativ
     .sprachdatenLaden(d.ort, (bytes) => {
       fortschritt(bytes - bisher)
       bisher = bytes
@@ -112,7 +146,8 @@ export async function holen(d: Datei, fortschritt: (bytes: number) => void = () 
     .catch((f) => {
       throw new Error(f === 'groesse' ? 'pruefsumme' : 'netz')
     })
-  if (!daten) throw new Error('netz')
+  if (!datenRaw) throw new Error('netz')
+  const daten = zuArrayBuffer(datenRaw)
   if (!(await passt(d, daten))) throw new Error('pruefsumme')
   // `Response` kopiert die Bytes; der Puffer darf danach an den Worker gehen.
   await cache.put(adresse, new Response(daten))

@@ -11000,6 +11000,9 @@
       }
     },
     "uebersetzung": {
+      "immerUebersetzen": "Auf {{domain}} immer automatisch übersetzen",
+      "andereSprache": "Andere Sprache wählen",
+      "auto": "Automatisch",
       "name": "Übersetzung",
       "schliessen": "Übersetzung schließen",
       "erkennen": "Erkennt die Sprache der Seite …",

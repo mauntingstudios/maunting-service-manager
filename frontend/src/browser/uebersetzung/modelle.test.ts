@@ -8,7 +8,7 @@ const plattform = vi.hoisted(() => ({ android: false }))
 vi.mock('../services/nativ', () => ({ nativ }))
 vi.mock('../services/plattform', () => ({ istAndroid: () => plattform.android }))
 
-import { CDN, dateienVon, entfernen, fehlendeGroesse, geladen, holen, quellen, spracheVon, weg, type Datei } from './modelle'
+import { CDN, dateienVon, entfernen, fehlendeGroesse, geladen, holen, quellen, spracheVon, weg, zuArrayBuffer, type Datei } from './modelle'
 
 describe('Wege zwischen Sprachen', () => {
   it('nimmt das direkte Modell oder geht über Englisch', () => {
@@ -98,6 +98,31 @@ describe('Laden und Prüfen', () => {
     // Beim zweiten Mal aus dem Cache.
     await holen(datei)
     expect(geholt).toHaveLength(1)
+  })
+
+  it('akzeptiert auch direkte Uint8Array-Rückgaben aus Tauri-IPC ohne Prüfsummenfehler', async () => {
+    nativ.sprachdatenLaden.mockImplementationOnce(async (ort: string, fortschritt: (n: number) => void) => {
+      fortschritt(inhalt.byteLength)
+      return inhalt // Uint8Array statt reines ArrayBuffer
+    })
+    expect(text(await holen(datei))).toBe('Sprachdaten')
+  })
+
+  it('akzeptiert auch JSON-nummern-Array-Rückgaben aus Tauri-IPC ohne Prüfsummenfehler', async () => {
+    nativ.sprachdatenLaden.mockImplementationOnce(async (ort: string, fortschritt: (n: number) => void) => {
+      fortschritt(inhalt.byteLength)
+      return Array.from(inhalt) // number[]
+    })
+    expect(text(await holen(datei))).toBe('Sprachdaten')
+  })
+
+  it('wandelt alle Eingabeformen per zuArrayBuffer verlustfrei in einen ArrayBuffer', () => {
+    const raw = new Uint8Array([1, 2, 3, 4])
+    expect(new Uint8Array(zuArrayBuffer(raw.buffer))).toEqual(raw)
+    expect(new Uint8Array(zuArrayBuffer(raw))).toEqual(raw)
+    expect(new Uint8Array(zuArrayBuffer([1, 2, 3, 4]))).toEqual(raw)
+    const teil = new Uint8Array([0, 1, 2, 3, 4, 5]).subarray(1, 5)
+    expect(new Uint8Array(zuArrayBuffer(teil))).toEqual(raw)
   })
 
   it('verwirft eine Datei mit falscher Prüfsumme und legt sie nicht ab', async () => {

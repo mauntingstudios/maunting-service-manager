@@ -17,8 +17,11 @@ import {
   ArrowRight,
   Code,
   Copy,
+  Download,
   ExternalLink,
+  Languages,
   Link2,
+  Printer,
   RotateCw,
   Search,
   VenetianMask,
@@ -145,6 +148,12 @@ export function KontextOverlay() {
         tun: () => void emit('msb:kontext-befehl', { aktion: 'neuer_tab', tab: daten.tab, url: bild, hintergrund: true }),
       })
       items.push({
+        key: 'bild_speichern',
+        label: t('browser.menue.saveImageAs', { defaultValue: 'Bild speichern unter …' }),
+        icon: <Download className="h-4 w-4" />,
+        tun: () => void emit('msb:kontext-befehl', { aktion: 'bild_speichern', tab: daten.tab, url: bild }),
+      })
+      items.push({
         key: 'bild_kopieren',
         label: t('browser.menue.bildAdresse', { defaultValue: 'Bildadresse kopieren' }),
         icon: <Link2 className="h-4 w-4" />,
@@ -168,6 +177,12 @@ export function KontextOverlay() {
         label: t('browser.menue.suchen', { defaultValue: `Im Web nach „${kurz}“ suchen`, text: kurz, maschine: 'DuckDuckGo' }),
         icon: <Search className="h-4 w-4" />,
         tun: () => void emit('msb:kontext-befehl', { aktion: 'neuer_tab', tab: daten.tab, url: suchUrl }),
+      })
+      items.push({
+        key: 'auswahl_uebersetzen',
+        label: t('browser.menue.uebersetzen', { defaultValue: 'Übersetzen' }),
+        icon: <Languages className="h-4 w-4" />,
+        tun: () => void emit('msb:kontext-befehl', { aktion: 'uebersetzen', tab: daten.tab }),
       })
     }
 
@@ -195,6 +210,25 @@ export function KontextOverlay() {
         separatorBefore: items.length > 0,
         tun: () => void emit('msb:kontext-befehl', { aktion: 'neu_laden', tab: daten.tab }),
       })
+      items.push({
+        key: 'uebersetzen',
+        label: t('browser.menue.uebersetzen', { defaultValue: 'Übersetzen' }),
+        icon: <Languages className="h-4 w-4" />,
+        separatorBefore: true,
+        tun: () => void emit('msb:kontext-befehl', { aktion: 'uebersetzen', tab: daten.tab }),
+      })
+      items.push({
+        key: 'speichern',
+        label: t('browser.menue.saveAs', { defaultValue: 'Seite speichern unter …' }),
+        icon: <Download className="h-4 w-4" />,
+        tun: () => void emit('msb:kontext-befehl', { aktion: 'seite_speichern', tab: daten.tab }),
+      })
+      items.push({
+        key: 'drucken',
+        label: t('browser.menue.drucken', { defaultValue: 'Drucken …' }),
+        icon: <Printer className="h-4 w-4" />,
+        tun: () => void emit('msb:kontext-befehl', { aktion: 'drucken', tab: daten.tab }),
+      })
     }
 
     items.push({
@@ -210,7 +244,7 @@ export function KontextOverlay() {
   useLayoutEffect(() => {
     if (menueRef.current && items.length > 0) {
       const box = menueRef.current.getBoundingClientRect()
-      const neueHoehe = Math.min(Math.ceil(box.height + 16), 460)
+      const neueHoehe = Math.min(Math.ceil(box.height + 16), 520)
       void getCurrentWindow().setSize(new LogicalSize(260, neueHoehe)).catch(() => null)
     }
   }, [items.length])

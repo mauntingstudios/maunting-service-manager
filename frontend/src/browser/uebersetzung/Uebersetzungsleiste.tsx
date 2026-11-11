@@ -15,8 +15,13 @@ export function Uebersetzungsleiste() {
   const eintrag = useUebersetzung((s) => (tab ? s.eintraege[tab.id] : undefined))
   if (!tab || !eintrag) return null
   return (
-    <Suspense fallback={null}>
-      <Leisteninhalt tab={tab.id} e={eintrag} />
-    </Suspense>
+    <div
+      data-ankerfenster="true"
+      className="absolute top-2 right-4 z-40 animate-scale-in"
+    >
+      <Suspense fallback={null}>
+        <Leisteninhalt tab={tab.id} e={eintrag} />
+      </Suspense>
+    </div>
   )
 }
