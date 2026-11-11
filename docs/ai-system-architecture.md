@@ -93,7 +93,8 @@ Die Kontingente rechnen in rollenden Fenstern (`ai_usage_service.FENSTER_TAG`, `
 `backend/routers/ai_chat.py` nimmt eine Nachricht entgegen, authentifiziert den Benutzer über die normale Session, prüft die Chat-Berechtigung und wählt einen zulässigen Provider. Der Router legt nicht selbst die Fachlogik fest. Er:
 
 1. redigiert die Nachricht (`redact_sensitive_text`),
-2. ermittelt Denkstufe und Kontextfenster (nutzbar höchstens
+2. ermittelt Denkstufe und Kontextfenster (nutzbar höchstens der Anfragedeckel
+   der Rolle aus `role_ai_limits.max_context_tokens`, standardmäßig
    `ai_context_window.ANFRAGE_DECKEL_TOKENS` = 44.000 Token je Anfrage, auch
    bei Modellen mit größerem Fenster; was darüber hinausgeht, fasst die
    Zusammenfassung ab der Faltmarke dieses Deckels zusammen),

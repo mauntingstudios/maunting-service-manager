@@ -31,14 +31,18 @@ from models import (
     Server,
     User,
 )
-from services import ai_memory_service, team_service
+from services import ai_context_window, ai_memory_service, team_service
 from services.ai_limit_service import (
+    KONTEXT_DECKEL_MAX,
+    KONTEXT_DECKEL_MIN,
     LIMIT_FIELDS,
     LIMIT_MAXIMA,
     MAX_MEMORY_ENTRIES_MAX,
     MAX_SYSTEM_SCOPE_ENTRIES,
+    resolve_context_ceiling,
     resolve_effective_limits,
     resolve_scope_memory_limit,
+    set_role_context_ceiling,
     set_role_limit,
 )
 from services.auth_service import AuthService
@@ -1470,4 +1474,194 @@ def test_das_formular_deckelt_bei_derselben_zahl_wie_das_backend() -> None:
     assert int(treffer.group(1).replace("_", "")) == MAX_MEMORY_ENTRIES_MAX, (
         f"{AI_TAB.name} deckelt bei {treffer.group(1)}, das Backend bei "
         f"{MAX_MEMORY_ENTRIES_MAX}."
+    )
+
+
+# ── Der Anfragedeckel je Rolle ────────────────────────────────────────
+#
+# Bis zum 11.11.2026 kappte `ai_context_window.ANFRAGE_DECKEL_TOKENS` jede
+# Anfrage bei 44.000 Token, unabhaengig vom Modell und vom Tarif. Der Deckel
+# steht jetzt an der Rolle. Dabei gilt eine Ausnahme, die hier festgehalten
+# wird: ``None`` heisst „nichts hinterlegt“ und nicht „unbegrenzt“. Ein
+# unbegrenzter Deckel waere der teuerste Zustand, den diese Tabelle herstellen
+# kann — der Grund, warum sie die uebrigen Felder mit ``max()`` und
+# ``None = unbegrenzt`` aufloest, greift hier nicht.
+
+
+def _deckel_rolle(db: Session, user: User, name: str, wert: int | None) -> Role:
+    """Legt eine Rolle an und setzt darin den Anfragedeckel."""
+    role = _role(db, name)
+    db.add(RoleAiLimit(role_id=role.id))
+    db.commit()
+    set_role_context_ceiling(db, role.id, wert)
+    db.commit()
+    return role
+
+
+def test_ohne_jede_rolle_gilt_der_standarddeckel(
+    db: Session,
+    regular_user: User,
+) -> None:
+    """Kein Benutzer, keine Rolle, kein Eintrag: 44.000 wie bisher."""
+    assert resolve_context_ceiling(db, regular_user) == ai_context_window.ANFRAGE_DECKEL_TOKENS
+    assert resolve_context_ceiling(db, None) == ai_context_window.ANFRAGE_DECKEL_TOKENS
+    assert ai_context_window.ANFRAGE_DECKEL_TOKENS == KONTEXT_DECKEL_MIN
+
+
+def test_ein_leeres_feld_senkt_den_deckel_nicht(
+    db: Session,
+    regular_user: User,
+) -> None:
+    """``None`` heisst „nichts hinterlegt“, nicht „unbegrenzt“ und nicht 0.
+
+    Die Verwechslung waere teuer: „unbegrenzt“ schickt wieder jede Anfrage mit
+    dem vollen Modellfenster hinaus, 0 wuerde jede Anfrage auf nichts kappen.
+    """
+    role = _deckel_rolle(db, regular_user, f"kontext-leer-{regular_user.id}", None)
+    set_user_roles(db, regular_user, [role.id])
+
+    assert resolve_context_ceiling(db, regular_user) == ai_context_window.ANFRAGE_DECKEL_TOKENS
+
+
+def test_der_hoechste_gesetzte_deckel_gewinnt(
+    db: Session,
+    regular_user: User,
+) -> None:
+    """Eine Rolle ist eine Freigabe: wer mehr haben darf, verliert es nicht.
+
+    Dieselbe Regel wie bei den Kontingenten. Sie ist der Grund, warum ein
+    Tarif mit mehr Kontext ueberhaupt verkaufbar ist — und warum eine zweite,
+    leere Rolle den Wert nicht wieder herunterzieht.
+    """
+    klein = _deckel_rolle(db, regular_user, f"kontext-klein-{regular_user.id}", 120_000)
+    gross = _deckel_rolle(db, regular_user, f"kontext-gross-{regular_user.id}", 200_000)
+    leer = _deckel_rolle(db, regular_user, f"kontext-neutral-{regular_user.id}", None)
+    set_user_roles(db, regular_user, [klein.id, gross.id, leer.id])
+
+    assert resolve_context_ceiling(db, regular_user) == 200_000
+
+
+def test_der_service_weist_unmoegliche_werte_ab(
+    db: Session,
+    regular_user: User,
+) -> None:
+    """Bool, Nicht-Zahl und alles ausserhalb der Grenzen erreichen die Spalte nicht."""
+    role = _deckel_rolle(db, regular_user, f"kontext-grenzen-{regular_user.id}", 200_000)
+
+    for unmoeglich in (True, 43_999, KONTEXT_DECKEL_MAX + 1, "200000"):
+        with pytest.raises(ValueError):
+            set_role_context_ceiling(db, role.id, unmoeglich)  # type: ignore[arg-type]
+
+    row = db.query(RoleAiLimit).filter(RoleAiLimit.role_id == role.id).one()
+    assert row.max_context_tokens == 200_000
+
+
+def test_der_deckel_ueberlebt_den_weg_durch_die_api(
+    client: TestClient,
+    db: Session,
+    owner_cookies: dict,
+) -> None:
+    """Speichern, wieder lesen, Grenzen pruefen, Teil-Update behaelt den Wert."""
+    role = _role(db, "ai-kontext-api")
+    payload = {**_limits(), "max_context_tokens": 200_000}
+
+    gespeichert = client.put(
+        f"/api/ai/settings/role-limits/{role.id}",
+        json=payload,
+        cookies=owner_cookies,
+        headers=_csrf(owner_cookies),
+    )
+
+    assert gespeichert.status_code == 200, gespeichert.text
+    assert gespeichert.json()["max_context_tokens"] == 200_000
+
+    listed = client.get("/api/ai/settings/role-limits", cookies=owner_cookies)
+    row = next(item for item in listed.json() if item["role_id"] == role.id)
+    assert row["max_context_tokens"] == 200_000
+
+    for unmoeglich in (KONTEXT_DECKEL_MIN - 1, KONTEXT_DECKEL_MAX + 1):
+        antwort = client.put(
+            f"/api/ai/settings/role-limits/{role.id}",
+            json={**_limits(), "max_context_tokens": unmoeglich},
+            cookies=owner_cookies,
+            headers=_csrf(owner_cookies),
+        )
+        assert antwort.status_code == 422, antwort.text
+
+    # Ein Browserfenster, das das Feld noch nicht kennt, darf den Deckel nicht
+    # auf den Standard zuruecksetzen.
+    teil = client.put(
+        f"/api/ai/settings/role-limits/{role.id}",
+        json=_limits(),
+        cookies=owner_cookies,
+        headers=_csrf(owner_cookies),
+    )
+    assert teil.status_code == 200, teil.text
+    assert teil.json()["max_context_tokens"] == 200_000
+
+    # Und ein ausdrueckliches null heisst „nichts hinterlegt“ — Standard.
+    geleert = client.put(
+        f"/api/ai/settings/role-limits/{role.id}",
+        json={**_limits(), "max_context_tokens": None},
+        cookies=owner_cookies,
+        headers=_csrf(owner_cookies),
+    )
+    assert geleert.status_code == 200, geleert.text
+    assert geleert.json()["max_context_tokens"] is None
+
+
+def test_der_deckel_steht_im_audit(
+    client: TestClient,
+    db: Session,
+    owner_cookies: dict,
+) -> None:
+    """Der Trail nennt den Deckel, sonst ist eine Kostenaenderung nicht nachvollziehbar."""
+    role = _role(db, "ai-kontext-audit")
+
+    antwort = client.put(
+        f"/api/ai/settings/role-limits/{role.id}",
+        json={**_limits(), "max_context_tokens": 150_000},
+        cookies=owner_cookies,
+        headers=_csrf(owner_cookies),
+    )
+
+    assert antwort.status_code == 200, antwort.text
+    # Der Schluessel heisst `max_context`, nicht `max_context_tokens`:
+    # `audit_service` maskiert jeden Schluessel mit „token“ zu „[redacted]“.
+    assert _letzter_limit_trail(db, role).get("max_context") == 150_000
+
+
+def test_das_formular_spiegelt_die_grenzen_des_deckels() -> None:
+    """Zahl im Formular und Zahl im Backend gehoeren zusammen.
+
+    Ist der Deckel im Formular hoeher, traegt der Betreiber einen Wert ein, den
+    das Speichern abweist. Ist er niedriger, haelt er einen erlaubten Wert fuer
+    unmoeglich. Beides faellt ohne diesen Vergleich nur dem Betreiber auf.
+    """
+    quelle = AI_TAB.read_text(encoding="utf-8")
+    treffer = {
+        name: re.search(rf"const {name} = ([\d_]+)", quelle) for name in
+        ("KONTEXT_DECKEL_MIN", "KONTEXT_DECKEL_MAX")
+    }
+    fehlend = [name for name, fund in treffer.items() if fund is None]
+
+    assert not fehlend, f"{AI_TAB.name} fuehrt {fehlend} nicht mehr — dann prueft dieser Test nichts."
+    assert int(treffer["KONTEXT_DECKEL_MIN"].group(1).replace("_", "")) == KONTEXT_DECKEL_MIN
+    assert int(treffer["KONTEXT_DECKEL_MAX"].group(1).replace("_", "")) == KONTEXT_DECKEL_MAX
+
+
+@pytest.mark.parametrize("sprache", SPRACHEN)
+def test_der_hinweis_nennt_den_standarddeckel(sprache: str) -> None:
+    """Unter dem Feld steht eine Zahl, die den Standard nennt — und nur ihn.
+
+    Eine zweite Zahl daneben waere eine Behauptung, fuer die dieser Test nicht
+    geradesteht: das Hinweisfeld soll den Standard nennen, nicht die Obergrenze.
+    """
+    daten = json.loads((LOCALES / f"{sprache}.json").read_text(encoding="utf-8"))
+    hinweis = daten.get("aiSettings", {}).get("maxContextTokensHint")
+
+    assert hinweis, f"{sprache}.json hat keinen Text unter aiSettings.maxContextTokensHint."
+    assert _zahlen(hinweis) == {ai_context_window.ANFRAGE_DECKEL_TOKENS}, (
+        f"Der Hinweis in {sprache}.json nennt nicht den Standarddeckel "
+        f"({ai_context_window.ANFRAGE_DECKEL_TOKENS}): {hinweis!r}"
     )

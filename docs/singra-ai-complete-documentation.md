@@ -25,7 +25,7 @@
    - 3.4 [GPU Prompt Caching & 10% Accounting Rule](#34-gpu-prompt-caching--10-accounting-rule)
    - 3.5 [The Non-Negotiable Axiom: Prompt is Not the Security Boundary](#35-the-non-negotiable-axiom-prompt-is-not-the-security-boundary)
 4. [Context Window Engineering & Compaction](#4-context-window-engineering--compaction)
-   - 4.1 [Token Calculations & The 44,000 Token Ceiling](#41-token-calculations--the-44000-token-ceiling)
+   - 4.1 [Token Calculations & The Per-Role Request Ceiling](#41-token-calculations--the-per-role-request-ceiling)
    - 4.2 [Dual-Tier Context Compaction](#42-dual-tier-context-compaction)
    - 4.3 [Sensitive Data Redaction Pipeline](#43-sensitive-data-redaction-pipeline)
 5. [Thinking Levels & Reasoning Engine (Denkstufen)](#5-thinking-levels--reasoning-engine-denkstufen)
@@ -273,11 +273,11 @@ System prompts provide behavioral guidance and prevent model confusion; they are
 
 ## 4. Context Window Engineering & Compaction
 
-### 4.1 Token Calculations & The 44,000 Token Ceiling
+### 4.1 Token Calculations & The Per-Role Request Ceiling
 Uncontrolled context window growth degrades model reasoning ("needle-in-a-haystack" degradation) and inflates operational costs. Singra implements deterministic context budgeting (`services/ai_context_window.py`):
 - **Universal Character-to-Token Ratio (`ZEICHEN_JE_TOKEN = 4`)**: Rapid token estimation without heavy tokenizer libraries.
 - **German Safety Factor (`SICHERHEIT = 0.9`)**: Accommodates compound German nouns (Komposita) and dense JSON payloads (~3.6 chars/token).
-- **The Input Ceiling Clamp (`ANFRAGE_DECKEL_TOKENS = 44,000`)**: Maximum input prompt payload clamped strictly to 44,000 tokens regardless of advertised provider limits (e.g. 1M+ tokens).
+- **The Per-Role Input Ceiling (`max_context_tokens`, default `ANFRAGE_DECKEL_TOKENS = 44,000`)**: Input payloads are clamped regardless of advertised provider limits (e.g. 1M+ tokens). The ceiling lives on the role ("Roles & quotas", 44,000 to 1,000,000 tokens); without an entry, 44,000 applies. The model window remains an additional hard limit.
 - **Output Reservation (`RESERVE_AUSGABE_TOKENS = 8,192`)**: Dedicated headroom for code generation and multi-file project synthesis.
 
 ### 4.2 Dual-Tier Context Compaction

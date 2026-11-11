@@ -47,6 +47,8 @@ const row: AiRoleLimits = {
   // Rang 4 = "hoch". Diese Rolle darf tief denken lassen, aber nicht maximal.
   max_reasoning_effort: 4,
   max_attachment_storage_mb: null,
+  // Eigener Anfragedeckel: diese Rolle darf mehr als die Standard-44.000.
+  max_context_tokens: 200_000,
   allow_all_models: true,
   model_access: [],
   updated_at: '2026-08-01T12:00:00Z',
@@ -65,6 +67,7 @@ const blankRow: AiRoleLimits = {
   max_memory_entries: null,
   max_reasoning_effort: null,
   max_attachment_storage_mb: null,
+  max_context_tokens: null,
   allow_all_models: true,
   model_access: [],
   updated_at: null,
@@ -157,8 +160,48 @@ describe('AiTab', () => {
           max_attachment_storage_mb: null,
           allow_all_models: true,
           model_access: [],
+          max_context_tokens: 200_000,
         }),
       })
+    })
+  })
+
+  it('zeigt den Anfragedeckel ohne „Unbegrenzt“-Schalter und mit Hinweis', async () => {
+    render(<AiTab />)
+    fireEvent.click(await screen.findByRole('tab', { name: /Rollen & Kontingente/i }))
+
+    const feld = (await screen.findByLabelText(
+      /Max\. Kontext je Anfrage: ai-vip/i,
+    )) as HTMLInputElement
+    expect(feld.value).toBe('200000')
+
+    // Der Schalter wäre an diesem Feld eine Lüge: null heißt Standard, nicht
+    // unbegrenzt. Deshalb steht der Deckel außerhalb des Felderrasters.
+    expect(
+      screen.queryByRole('switch', { name: /Unbegrenzt: Max\. Kontext je Anfrage/i }),
+    ).toBeNull()
+    expect(screen.getByText(/Ohne Eintrag gelten 44\.000/)).toBeInTheDocument()
+  })
+
+  it('zeigt ohne Eintrag die 44.000 und speichert weiter null', async () => {
+    vi.mocked(client.api).mockResolvedValue([blankRow])
+    render(<AiTab />)
+    fireEvent.click(await screen.findByRole('tab', { name: /Rollen & Kontingente/i }))
+
+    const feld = (await screen.findByLabelText(
+      /Max\. Kontext je Anfrage: user/i,
+    )) as HTMLInputElement
+    expect(feld.value).toBe('44000')
+
+    fireEvent.click(screen.getByRole('button', { name: /Speichern: user/i }))
+
+    await waitFor(() => {
+      const aufruf = vi.mocked(client.api).mock.calls.find(
+        ([pfad]) => pfad === '/ai/settings/role-limits/3',
+      )
+      expect(aufruf).toBeDefined()
+      const rumpf = JSON.parse(String((aufruf?.[1] as { body?: string })?.body))
+      expect(rumpf.max_context_tokens).toBeNull()
     })
   })
 
@@ -469,6 +512,7 @@ describe('AiTab', () => {
               allowed_models: ['openai/gpt-4o'],
             },
           ],
+          max_context_tokens: 200_000,
         }),
       })
     })

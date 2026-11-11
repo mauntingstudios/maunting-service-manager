@@ -26,6 +26,15 @@ zusammengefasst wird, ist eine Abwaegung zwischen Kosten und Gedaechtnis, und
 die faellt bei einem Hoster anders aus als bei einer Privatinstallation.
 Deshalb eine Einstellung und keine Konstante — aber nur **eine**, panelweit:
 je Rolle verschieden waere dieselbe Unterhaltung je nach Leser anders gefaltet.
+
+**Der Anfragedeckel gehoert der Rolle.** Wie viel Eingabe eine Anfrage
+ueberhaupt tragen darf, ist eine Kostenfrage des Tarifs und keine Eigenschaft
+des Modells: ein Modell mit einer Million Token Fenster wird trotzdem auf das
+gekappt, was der Betreiber fuer diese Rolle bezahlen will. Das Feld steht in
+`role_ai_limits.max_context_tokens`, aufgeloest von
+`ai_limit_service.resolve_context_ceiling`; ohne Eintrag gilt
+``ANFRAGE_DECKEL_TOKENS``. Der Deckel kann nur kappen, nie anheben — das
+Modellfenster bleibt in jedem Fall die kleinere der beiden Grenzen.
 """
 
 from __future__ import annotations
@@ -35,7 +44,7 @@ import logging
 
 import httpx
 
-from models import AiProvider
+from models import AiProvider, User
 from services import ai_model_catalog
 from services.ai_provider_registry import Modell
 
@@ -71,7 +80,22 @@ RESERVE_AUSGABE_TOKENS = 8_192
 #: bleibt eine volle Anfrage beim Anbieter unter 50.000 Token. Was darueber
 #: hinausgeht, faltet die Zusammenfassung — sie setzt an der Faltmarke dieses
 #: Deckels an und nicht mehr an der des Fensters.
+#:
+#: Das ist der **Standard**, nicht die feste Grenze: eine Rolle kann in
+#: `role_ai_limits.max_context_tokens` einen eigenen Wert zwischen
+#: ``DECKEL_MIN_TOKENS`` und ``DECKEL_MAX_TOKENS`` fuehren. Ein Tarif mit mehr
+#: Kontext laesst sich damit verkaufen, ohne dass ein anderer Tarif teurer wird.
 ANFRAGE_DECKEL_TOKENS = 44_000
+#: Untergrenze fuer den Rollenwert. 44.000 ist genau das bisherige Verhalten:
+#: darunter fuellt der Systemprompt den Grossteil des Budgets, der Verlauf
+#: wuerde dauerhaft abgeschnitten statt gefaltet.
+DECKEL_MIN_TOKENS = 44_000
+#: Obergrenze fuer den Rollenwert. Sie begrenzt nur, was der Betreiber als Zahl
+#: eintragen darf; das Modellfenster kappt in jedem Fall zuerst, und kein heute
+#: bekannter Katalog fuehrt mehr als eine Million Token. Das Formular in
+#: `frontend/src/pages/settings/AiTab.tsx` spiegelt die Zahl — beide gehoeren
+#: zusammen verschoben (`test_ai_role_limits.py` vergleicht sie).
+DECKEL_MAX_TOKENS = 1_000_000
 #: Was gilt, wenn ueber das Modell nichts bekannt ist. 6.000 Token sind die
 #: 24.000 Zeichen, die vor dieser Aenderung fuer jedes Modell galten — der
 #: Rueckfall ist damit wortwoertlich der alte Zustand.
@@ -116,11 +140,18 @@ def unbekannt() -> Fenster:
     )
 
 
-def aus_modell(modell: Modell | None) -> Fenster:
+def aus_modell(modell: Modell | None, deckel_tokens: int | None = None) -> Fenster:
     """Rechnet ein Katalogmodell in ein nutzbares Budget um.
 
     Rein rechnend, ohne Netz und ohne Datenbank — deshalb pruefbar, ohne etwas
-    zu stellen. Nutzbar ist hoechstens ``ANFRAGE_DECKEL_TOKENS``.
+    zu stellen. Nutzbar ist hoechstens ``deckel_tokens``; ohne Angabe
+    ``ANFRAGE_DECKEL_TOKENS``.
+
+    Der Deckel **kappt nur**, er hebt nie an. Ein Modell mit 4.096 Token Fenster
+    bleibt bei seinen rund 3.600 nutzbaren Token, auch wenn die Rolle eine
+    Million erlaubt — der Anbieter wuerde die Anfrage sonst schlicht abweisen.
+    Umgekehrt bekommt ein Modell mit einer Million Fenster nur so viel, wie der
+    Tarif bezahlt.
 
     Die Reserve wird auf ein Viertel des Fensters geklemmt, und das ist kein
     theoretischer Fall: der Katalog fuehrt Modelle, deren
@@ -142,7 +173,8 @@ def aus_modell(modell: Modell | None) -> Fenster:
         return unbekannt()
     fenster = modell.kontext_tokens
     reserve = min(modell.max_ausgabe_tokens or RESERVE_AUSGABE_TOKENS, fenster // 4)
-    nutzbar = min(max(int((fenster - reserve) * SICHERHEIT), 1), ANFRAGE_DECKEL_TOKENS)
+    deckel = deckel_tokens or ANFRAGE_DECKEL_TOKENS
+    nutzbar = min(max(int((fenster - reserve) * SICHERHEIT), 1), deckel)
     return Fenster(
         bekannt=True,
         fenster_tokens=fenster,
@@ -170,10 +202,11 @@ async def ermitteln(
     liefert den letzten Stand oder eine leere Liste; hier kommt dann ``None``
     an und daraus ``unbekannt()``.
 
-    ``db`` und ``user_id`` sind der Weg zum **Katalogschluessel**. Ohne sie
-    wird ohne Schluessel gefragt, und ein Katalog hinter einem Schluessel
-    (OpenAI) antwortet dann mit 401 — was hier als „Modell unbekannt\" ankommt
-    und auf ``RUECKFALL_NUTZBAR_TOKENS`` fuehrt. Gemessen am 19.08.2026:
+    ``db`` und ``user_id`` sind der Weg zum **Katalogschluessel** und zugleich
+    zum **Anfragedeckel der Rolle**. Ohne sie wird ohne Schluessel gefragt, und
+    ein Katalog hinter einem Schluessel (OpenAI) antwortet dann mit 401 — was
+    hier als „Modell unbekannt\" ankommt und auf ``RUECKFALL_NUTZBAR_TOKENS``
+    fuehrt. Gemessen am 19.08.2026:
 
         OpenAI ohne Schluessel -> bekannt=False, nutzbar=6.000
         OpenAI mit Schluessel  -> bekannt=True,  nutzbar=829.800
@@ -182,6 +215,11 @@ async def ermitteln(
     Fensters zusammengefasst. Beide Werte sind optional, damit Aufrufer ohne
     Sitzung (Tests, reine Anzeigepfade) nichts mitschleppen muessen, was sie
     nicht haben.
+
+    Der Deckel der Rolle wird hier und nur hier aufgeloest: eine zweite Stelle
+    waere eine zweite Auslegung derselben Grenze. Faellt die Aufloesung aus
+    (Datenbank, Rechte), gilt der Standard — ein unlesbares Limit darf keinen
+    Chat anhalten.
     """
     try:
         if db is not None and user_id is not None:
@@ -197,7 +235,25 @@ async def ermitteln(
         # ist unerwartet. Es darf trotzdem keinen Chat anhalten.
         logger.warning("Kontextfenster nicht ermittelbar error=%s", type(exc).__name__)
         return unbekannt()
-    return aus_modell(modell)
+    return aus_modell(modell, _deckel_der_rolle(db, user_id))
+
+
+def _deckel_der_rolle(db, user_id: int | None) -> int | None:
+    """Der Anfragedeckel dieses Benutzers, oder ``None`` fuer den Standard.
+
+    Spaeter Import: `ai_limit_service` zieht die Rollen-Aufloesung und die
+    Grenzen heran, und dieses Modul wird von ihm importiert. Ein Fehler endet
+    im Standard, nie in einer Ausnahme — dieselbe Regel wie beim Katalog.
+    """
+    if db is None or user_id is None:
+        return None
+    try:
+        from services import ai_limit_service
+
+        return ai_limit_service.resolve_context_ceiling(db, db.get(User, user_id))
+    except Exception as exc:
+        logger.warning("Kontextdeckel nicht ermittelbar error=%s", type(exc).__name__)
+        return None
 
 
 def schwelle_prozent() -> int:

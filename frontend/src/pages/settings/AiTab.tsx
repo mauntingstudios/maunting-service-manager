@@ -85,6 +85,14 @@ export interface AiRoleLimits {
    */
   max_reasoning_effort: number | null
   max_attachment_storage_mb: number | null
+  /**
+   * Obergrenze fuer die Eingabe **einer** Anfrage in Token, unabhaengig vom
+   * Fenster des gewaehlten Modells. `null` heisst hier „nichts hinterlegt" —
+   * dann gilt der Standard von 44.000. Anders als bei den Feldern darueber
+   * heisst `null` **nicht** unbegrenzt: ein unbegrenzter Deckel waere genau
+   * der Zustand, den diese Einstellung beendet.
+   */
+  max_context_tokens: number | null
   allow_all_models: boolean
   model_access?: RoleAiModelAccessItem[]
   updated_at: string | null
@@ -97,9 +105,30 @@ export interface AiRoleLimits {
  */
 const REASONING_RANKS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
+/**
+ * Grenzen des Anfragedeckels — spiegeln
+ * `ai_context_window.DECKEL_MIN_TOKENS` / `DECKEL_MAX_TOKENS` im Backend.
+ * Beide Zahlen werden von `test_ai_role_limits.py` gegen den Quelltext
+ * verglichen; wer eine Seite verschiebt, bekommt dort einen roten Test statt
+ * hier ein Formular, das gueltige Werte abweist.
+ */
+const KONTEXT_DECKEL_MIN = 44_000
+const KONTEXT_DECKEL_MAX = 1_000_000
+
+/**
+ * Die Felder des Rasters. `max_context_tokens` steht bewusst nicht hier: das
+ * Raster haengt an jedem Feld einen „Unbegrenzt"-Schalter, und `null` heisst
+ * beim Deckel „Standard", nicht „unbegrenzt". Er bekommt eine eigene Karte.
+ */
 type LimitField = Exclude<
   keyof AiRoleLimits,
-  'role_id' | 'role_name' | 'configured' | 'updated_at' | 'allow_all_models' | 'model_access'
+  | 'role_id'
+  | 'role_name'
+  | 'configured'
+  | 'updated_at'
+  | 'allow_all_models'
+  | 'model_access'
+  | 'max_context_tokens'
 >
 
 const FIELD_DEFINITIONS: Array<{
@@ -192,10 +221,10 @@ const FIELD_DEFINITIONS: Array<{
 ]
 
 /** Wandelt Stepper-Text nur dann um, wenn er eine sichere Ganzzahl darstellt. */
-function parseLimitValue(raw: string, max: number): number | null {
+function parseLimitValue(raw: string, max: number, min = 0): number | null {
   if (!/^\d+$/.test(raw)) return null
   const value = Number(raw)
-  return Number.isSafeInteger(value) && value >= 0 && value <= max ? value : null
+  return Number.isSafeInteger(value) && value >= min && value <= max ? value : null
 }
 
 export function AiTab() {
@@ -274,6 +303,13 @@ export function AiTab() {
     )))
   }
 
+  /** Der Anfragedeckel ist kein Kontingent: `null` heißt hier „Standard“. */
+  const updateContextCeiling = (roleId: number, value: number | null) => {
+    setRows((current) => current.map((row) => (
+      row.role_id === roleId ? { ...row, max_context_tokens: value } : row
+    )))
+  }
+
   const updateRoleAllowAllModels = (roleId: number, allowAll: boolean) => {
     setRows((current) => current.map((row) => (
       row.role_id === roleId ? { ...row, allow_all_models: allowAll } : row
@@ -341,6 +377,7 @@ export function AiTab() {
         ),
         allow_all_models: row.allow_all_models ?? true,
         model_access: row.model_access ?? [],
+        max_context_tokens: row.max_context_tokens,
       }
       const updated = await api<AiRoleLimits>(`/ai/settings/role-limits/${row.role_id}`, {
         method: 'PUT',
@@ -531,6 +568,42 @@ export function AiTab() {
                     </div>
                   )
                 })}
+              </div>
+
+              {/* Eigene Karte, kein Feld im Raster: neben jedem Rasterfeld steht
+                  ein „Unbegrenzt“-Schalter, und beim Deckel wäre der eine Lüge —
+                  ohne Eintrag gilt der Standard, nicht unbegrenzt. */}
+              <div className="mt-6 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-5">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label
+                      htmlFor={`ai-${selected.role_id}-max_context_tokens`}
+                      className="block min-h-10 text-xs font-semibold uppercase tracking-wider text-on-surface-variant"
+                    >
+                      {t('aiSettings.maxContextTokens')}
+                    </label>
+                    <NumberStepper
+                      id={`ai-${selected.role_id}-max_context_tokens`}
+                      min={KONTEXT_DECKEL_MIN}
+                      max={KONTEXT_DECKEL_MAX}
+                      step={10_000}
+                      value={selected.max_context_tokens ?? KONTEXT_DECKEL_MIN}
+                      disabled={!canWrite || saving}
+                      onValueChange={(raw) => {
+                        const parsed = parseLimitValue(raw, KONTEXT_DECKEL_MAX, KONTEXT_DECKEL_MIN)
+                        if (parsed !== null) updateContextCeiling(selected.role_id, parsed)
+                      }}
+                      aria-label={`${t('aiSettings.maxContextTokens')}: ${selected.role_name}`}
+                      aria-describedby={`ai-${selected.role_id}-max-context-hint`}
+                    />
+                  </div>
+                  <p
+                    id={`ai-${selected.role_id}-max-context-hint`}
+                    className="self-end text-xs leading-5 text-on-surface-variant"
+                  >
+                    {t('aiSettings.maxContextTokensHint')}
+                  </p>
+                </div>
               </div>
 
               {/* Master-Schalter für globale Modell-Freigaben */}

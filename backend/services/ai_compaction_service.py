@@ -214,10 +214,12 @@ def needs_compaction(
 
     Zwei Ausloeser. Der alte misst nur den faltbaren Verlauf gegen die Marke.
     Das genuegt, solange das Budget gross ist gegen Prompt und Katalog — seit
-    dem Anfragedeckel (`ai_context_window.ANFRAGE_DECKEL_TOKENS`, 176.000
-    Zeichen) ist es das nicht mehr: Systemprompt, Gedaechtnis, Werkzeugblock
-    und Katalog belegen davon leicht 90.000, der Verlauf wurde ab rund 80.000
-    Zeichen still von hinten abgeschnitten, gefaltet erst ab 132.000.
+    dem Anfragedeckel ist es das nicht mehr. Der Deckel ist der Standard von
+    ``ANFRAGE_DECKEL_TOKENS`` (176.000 Zeichen) oder der Wert, den die Rolle in
+    ``max_context_tokens`` fuehrt; in beiden Faellen belegen Systemprompt,
+    Gedaechtnis, Werkzeugblock und Katalog einen erheblichen Teil davon, und
+    der Verlauf wurde still von hinten abgeschnitten, bevor die alte Marke
+    ueberhaupt erreicht war.
 
     Deshalb der zweite: ``anfrage_zeichen`` ist, was die letzte Anfrage
     tatsaechlich trug, Katalog eingeschlossen (`_werkzeuge_und_grenze`).

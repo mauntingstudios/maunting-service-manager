@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, SecretStr
 
 from services.ai_limit_service import (
     DICTATION_MINUTES_LIMIT_MAX,
+    KONTEXT_DECKEL_MAX,
+    KONTEXT_DECKEL_MIN,
     MAX_ATTACHMENT_STORAGE_MB_MAX,
     MAX_MEMORY_ENTRIES_MAX,
     MAX_REASONING_EFFORT_MAX,
@@ -27,6 +29,12 @@ ReasoningLimit = Annotated[int | None, Field(ge=0, le=MAX_REASONING_EFFORT_MAX)]
 #: ``ai_limit_service.MAX_MEMORY_ENTRIES_MAX``.
 MemoryLimit = Annotated[int | None, Field(ge=0, le=MAX_MEMORY_ENTRIES_MAX)]
 AttachmentStorageLimit = Annotated[int | None, Field(ge=0, le=MAX_ATTACHMENT_STORAGE_MB_MAX)]
+#: Anfragedeckel je Rolle. Anders als die Felder darüber heißt ``None`` hier
+#: „nichts hinterlegt“ und nicht „unbegrenzt“: dann gilt
+#: ``ai_context_window.ANFRAGE_DECKEL_TOKENS``. Die Untergrenze ist kein
+#: Geschmack — darunter füllt der Systemprompt den Großteil des Budgets, und der
+#: Verlauf würde dauerhaft abgeschnitten statt gefaltet.
+ContextCeiling = Annotated[int | None, Field(ge=KONTEXT_DECKEL_MIN, le=KONTEXT_DECKEL_MAX)]
 
 
 class AiLimitsBase(BaseModel):
@@ -70,6 +78,10 @@ class AiRoleLimitsUpdate(AiLimitsBase):
 
     allow_all_models: bool | None = None
     model_access: list[RoleAiModelAccessItem] | None = None
+    # Steht bewusst nicht in ``AiLimitsBase``: dort heißt ``None`` in jedem Feld
+    # „unbegrenzt“, hier heißt es „Standard“. Fehlt das Feld im Rumpf, bleibt
+    # der gespeicherte Wert stehen (siehe Router).
+    max_context_tokens: ContextCeiling = None
 
 
 class AiRoleLimitsResponse(AiLimitsBase):
@@ -81,6 +93,7 @@ class AiRoleLimitsResponse(AiLimitsBase):
     allow_all_models: bool = True
     model_access: list[RoleAiModelAccessResponse] = Field(default_factory=list)
     updated_at: datetime | None = None
+    max_context_tokens: ContextCeiling = None
 
 
 class EffectiveAiLimitsResponse(AiLimitsBase):

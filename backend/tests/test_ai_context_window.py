@@ -85,6 +85,50 @@ def test_a_million_token_window_stops_at_the_request_cap() -> None:
     assert grenzen.historie_zeilen > 20
 
 
+def test_a_role_cap_replaces_the_default_up_to_the_model_window() -> None:
+    """Ein Tarif darf mehr Kontext kaufen — aber nie mehr, als das Modell hat.
+
+    Das ist der eigentliche Zweck des Rollenfeldes: ein Million-Fenster laesst
+    sich mit 200.000 bezahlen, ohne dass ein anderer Tarif teurer wird.
+    """
+    fenster = ai_context_window.aus_modell(_modell(1_000_000, 65_536), 200_000)
+
+    assert fenster.bekannt is True
+    assert fenster.fenster_tokens == 1_000_000
+    assert fenster.nutzbar_tokens == 200_000
+    assert fenster.zeichen == 200_000 * ai_context_window.ZEICHEN_JE_TOKEN
+
+
+def test_a_role_cap_never_raises_a_small_window() -> None:
+    """Ein Deckel kappt, er hebt nicht an.
+
+    Sonst schickte ein 4.096-Token-Modell Anfragen fuer 44.000, und der Anbieter
+    wiese sie ab — der Chat waere nicht groesser, sondern kaputt.
+    """
+    ohne = ai_context_window.aus_modell(_modell(4_096))
+    mit = ai_context_window.aus_modell(_modell(4_096), ai_context_window.DECKEL_MAX_TOKENS)
+
+    assert mit.nutzbar_tokens == ohne.nutzbar_tokens
+    assert mit.nutzbar_tokens < ai_context_window.DECKEL_MIN_TOKENS
+
+
+def test_without_a_role_cap_the_default_stays() -> None:
+    """Kein Eintrag heisst 44.000 — das Verhalten von vor dieser Aenderung."""
+    ohne = ai_context_window.aus_modell(_modell(1_000_000, 65_536))
+    ausdruecklich_none = ai_context_window.aus_modell(_modell(1_000_000, 65_536), None)
+
+    assert ohne.nutzbar_tokens == ai_context_window.ANFRAGE_DECKEL_TOKENS
+    assert ausdruecklich_none.nutzbar_tokens == ai_context_window.ANFRAGE_DECKEL_TOKENS
+    assert ai_context_window.ANFRAGE_DECKEL_TOKENS == ai_context_window.DECKEL_MIN_TOKENS
+
+
+def test_a_cap_above_the_model_window_changes_nothing() -> None:
+    """Die kleinere der beiden Grenzen gewinnt, und das ist meistens das Modell."""
+    fenster = ai_context_window.aus_modell(_modell(100_000, 8_192), 1_000_000)
+
+    assert fenster.nutzbar_tokens == int((100_000 - 8_192) * ai_context_window.SICHERHEIT)
+
+
 def test_a_model_that_reserves_its_whole_window_for_output_still_works() -> None:
     """``context_length == max_completion_tokens`` kommt im Katalog wirklich vor.
 
@@ -422,6 +466,51 @@ async def test_a_failing_key_lookup_does_not_stop_the_chat(
 
     assert fenster.bekannt is False
     assert fenster.nutzbar_tokens == ai_context_window.RUECKFALL_NUTZBAR_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_the_role_cap_reaches_the_run_budget(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Der Deckel der Rolle muss dort ankommen, wo das Budget entsteht.
+
+    `aus_modell` allein zu pruefen waere zu wenig: im Betrieb rechnet es nur,
+    was `ermitteln` ihm reicht. Diese Stelle ist die einzige, die Katalog und
+    Rolle zusammenfuehrt — eine zweite waere eine zweite Auslegung.
+    """
+    from models import RoleAiLimit
+    from services import ai_limit_service, ai_model_catalog
+
+    provider = AiProvider(
+        name="Deckel", provider_kind="openrouter", default_model="model-a",
+        enabled=True, requires_api_key=False,
+    )
+    db.add(provider)
+    db.flush()
+    role = Role(name=f"deckel-{regular_user.id}", is_system=False)
+    db.add(role)
+    db.flush()
+    db.add(RoleAiLimit(role_id=role.id))
+    db.commit()
+    set_user_roles(db, regular_user, [role.id])
+    ai_limit_service.set_role_context_ceiling(db, role.id, 200_000)
+    db.commit()
+
+    async def ein_millionen_fenster(client, db_, provider_, *, user_id):
+        return Modell(
+            model_id="model-a", name="model-a", denkt=False,
+            kontext_tokens=1_000_000, max_ausgabe_tokens=65_536,
+        )
+
+    monkeypatch.setattr(ai_model_catalog, "fuer_provider", ein_millionen_fenster)
+
+    fenster = await ai_context_window.ermitteln(
+        None, provider, db=db, user_id=regular_user.id
+    )
+
+    assert fenster.bekannt is True
+    assert fenster.nutzbar_tokens == 200_000
+    assert fenster.zeichen == 200_000 * ai_context_window.ZEICHEN_JE_TOKEN
 
 
 def test_die_zusammenfassung_geht_als_unvertrauenswürdige_daten_hinaus(

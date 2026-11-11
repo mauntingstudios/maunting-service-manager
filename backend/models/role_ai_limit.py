@@ -7,6 +7,10 @@ stehen einmalig in ``services/ai_limit_service``.
 
 Das gilt seit dem 05.10.2026 auch für ``max_memory_entries``; vorher hieß NULL
 dort „nichts hinterlegt“ und wurde beim Merken zur festen Systemgrenze.
+
+Eine Ausnahme: ``max_context_tokens`` liest ``None`` als „nichts hinterlegt“,
+nicht als „unbegrenzt“. Ein unbegrenzter Kontextdeckel wäre der teuerste
+Zustand, den diese Tabelle herstellen könnte; die Begründung steht an der Spalte.
 """
 
 from datetime import datetime, timezone
@@ -76,6 +80,20 @@ class RoleAiLimit(Base):
     # Maximaler Speicherplatz fuer hochgeladene KI-Dateianhaenge in Megabyte (MB).
     # ``None`` bedeutet unbegrenzt, 0 verbietet Uploads komplett.
     max_attachment_storage_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Obergrenze fuer die Eingabe **einer** Anfrage in Token, unabhaengig davon,
+    # wie gross das Fenster des gewaehlten Modells ist.
+    #
+    # ``None`` heisst hier **nicht** „unbegrenzt“, sondern „nichts hinterlegt“:
+    # dann gilt `ai_context_window.ANFRAGE_DECKEL_TOKENS`. Ein unbegrenzter
+    # Kontextdeckel waere genau der Zustand, den diese Spalte beendet — vorher
+    # schickte eine lange Unterhaltung mit einem Millionen-Fenster rund 200.000
+    # Token in jede Anfrage. Deshalb steht das Feld auch nicht in
+    # ``ai_limit_service.LIMIT_FIELDS``, wo ``None`` unbegrenzt heisst, und wird
+    # von ``resolve_context_ceiling`` mit einer eigenen, engeren Regel gelesen.
+    #
+    # Der hoechste gesetzte Wert gewinnt, wie bei den uebrigen Feldern dieser
+    # Tabelle: eine Rolle ist eine Freigabe, keine Sperre.
+    max_context_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Ob alle Provider und Modelle erlaubt sind (Standard True). Wenn False,
     # greifen die Eintraege in `role_ai_model_access`.
     allow_all_models: Mapped[bool] = mapped_column(

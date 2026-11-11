@@ -10,15 +10,18 @@ import { toast } from '@/stores/toastStore'
 /**
  * Ab wie viel Prozent des Kontextfensters zusammengefasst wird.
  *
- * Wie groß das Fenster ist, sagt der Modellkatalog des Anbieters — dafür gibt
- * es hier bewusst nichts einzustellen. Einstellbar ist nur die Abwägung, die
- * MSM nicht für den Betreiber treffen kann: früh falten heißt kleinere und
- * billigere Anfragen, spät falten heißt, dass die KI mehr vom Gespräch wörtlich
- * vor sich hat. Bei einem Hoster fällt das anders aus als bei einer
- * Privatinstallation.
+ * Wie groß das Fenster ist, sagt der Modellkatalog des Anbieters. Wie viel
+ * davon eine Anfrage höchstens nutzen darf, steht als Obergrenze an der Rolle
+ * („Rollen & Kontingente“) — hier ist dazu nichts einzustellen. Einstellbar ist
+ * nur die Abwägung, die MSM nicht für den Betreiber treffen kann: früh falten
+ * heißt kleinere und billigere Anfragen, spät falten heißt, dass die KI mehr
+ * vom Gespräch wörtlich vor sich hat. Bei einem Hoster fällt das anders aus als
+ * bei einer Privatinstallation.
  *
- * Panelweit und nicht je Rolle: sonst wäre dieselbe Unterhaltung je nachdem,
- * wer sie zuletzt fortgesetzt hat, verschieden stark gefaltet.
+ * Der Prozentsatz bleibt panelweit und nicht je Rolle: sonst wäre dieselbe
+ * Unterhaltung je nachdem, wer sie zuletzt fortgesetzt hat, verschieden stark
+ * gefaltet. Das Budget, auf das er sich bezieht, ist dagegen sehr wohl
+ * rollenabhängig — es kommt aus `ai_context_window`.
  */
 export function AiContextSettings({ canWrite }: { canWrite: boolean }) {
   const { t } = useTranslation()

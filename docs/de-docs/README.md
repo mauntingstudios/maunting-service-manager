@@ -14,7 +14,7 @@ Willkommen im Dokumentationsverzeichnis von **Maunting Server Manager** und dem 
   - Filtersets (`NUR_GETIPPT`) und Sprach-Suffixe (`GESPROCHEN`, `HINTER_DER_STIMME`),
   - GPU-Prompt-Caching und 10-%-Abrechnungsregel (`CACHE_ANRECHNUNG_PROZENT = 10`),
   - Mechanische Sicherheitsgrenzen (RBAC, `herkunft_schnitt`, `_resolve_server`, Bestätigungskarten `AiActionProposal`),
-  - Kontextfenster-Steuerung (44.000-Token-Eingabedeckel), Denkstufen (`schnell`, `durchdacht`, `tiefgründig`, `benutzerdefiniert`),
+  - Kontextfenster-Steuerung (Anfragedeckel je Rolle, Standard 44.000 Token), Denkstufen (`schnell`, `durchdacht`, `tiefgründig`, `benutzerdefiniert`),
   - Multi-Provider-Infrastruktur (OpenAI, Anthropic, Azure, Gemini, OpenRouter, ElevenLabs, lokale Inferenz via Ollama/vLLM),
   - Über 125 registrierte Werkzeuge, strikte JSON-Schema-Invarianz, Autonomie-Freigaben (`AiAutonomyGrant`) und Schleifenschutz (`MAX_GLEICHE_AUFRUFE = 4`),
   - Model Context Protocol (MCP) Integration über HTTP/SSE und Stdio,

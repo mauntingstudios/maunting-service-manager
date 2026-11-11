@@ -98,6 +98,7 @@ def _role_response(db: Session, role: Role) -> AiRoleLimitsResponse:
         allow_all_models=row.allow_all_models if row is not None else True,
         model_access=model_access,
         updated_at=row.updated_at if row is not None else None,
+        max_context_tokens=row.max_context_tokens if row is not None else None,
         **values,
     )
 
@@ -147,8 +148,17 @@ def update_role_limits(
         if "allow_all_models" in genannt
         else (bisher.allow_all_models if bisher else True)
     )
+    # Wie bei `allow_all_models`: ein fehlendes Feld behaelt den gespeicherten
+    # Wert. Ein ausdrueckliches ``null`` heisst hier „nichts hinterlegt“ —
+    # dann gilt der Standarddeckel, nicht „unbegrenzt“.
+    deckel = (
+        genannt["max_context_tokens"]
+        if "max_context_tokens" in genannt
+        else (bisher.max_context_tokens if bisher else None)
+    )
     try:
         ai_limit_service.set_role_limit(db, role.id, values, allow_all_models=allow_all_models)
+        ai_limit_service.set_role_context_ceiling(db, role.id, deckel)
         if "model_access" in genannt and genannt["model_access"] is not None:
             ai_limit_service.set_role_model_access(db, role.id, genannt["model_access"])
         # Ein leeres Feld heisst in jedem Feld „unbegrenzt“ — seit dem
@@ -168,6 +178,10 @@ def update_role_limits(
                     field for field, value in values.items() if value is None
                 ),
                 "allow_all_models": allow_all_models,
+                # Nicht `max_context_tokens`: `audit_service` maskiert jeden
+                # Schlüssel mit „token“, und im Trail stünde dann „[redacted]“
+                # statt der eingestellten Zahl.
+                "max_context": deckel,
             },
         )
         db.commit()

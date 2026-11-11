@@ -159,6 +159,7 @@ export interface AiRoleLimitsResponse {
   max_memory_entries: number | null
   max_reasoning_effort: number | null
   max_attachment_storage_mb: number | null
+  max_context_tokens: number | null
   allow_all_models: boolean
   model_access: RoleAiModelAccessItem[]
   updated_at: string | null
@@ -173,6 +174,7 @@ export interface AiRoleLimitsUpdate {
   max_memory_entries?: number | null
   max_reasoning_effort?: number | null
   max_attachment_storage_mb?: number | null
+  max_context_tokens?: number | null
   allow_all_models?: boolean
   model_access?: RoleAiModelAccessItem[]
 }

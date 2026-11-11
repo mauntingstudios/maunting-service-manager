@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from models import AiProvider, Role, RoleAiLimit, RoleAiModelAccess, Team, User
-from services import ai_provider_service
+from services import ai_context_window, ai_provider_service
 from services.role_service import effective_user_role_ids
 
 
@@ -110,6 +110,12 @@ MAX_REASONING_EFFORT_MAX = 6
 # mehr mit dem Vorrat wächst.
 MAX_MEMORY_ENTRIES_MAX = 5_000
 MAX_ATTACHMENT_STORAGE_MB_MAX = 100_000
+# Grenzen des Anfragedeckels je Rolle. Die Zahlen stehen in
+# `ai_context_window`, weil dort der Deckel wirkt — hier werden sie nur
+# durchgereicht, damit Schema, Service und Formular dieselbe Quelle lesen.
+KONTEXT_DECKEL_MIN = ai_context_window.DECKEL_MIN_TOKENS
+KONTEXT_DECKEL_MAX = ai_context_window.DECKEL_MAX_TOKENS
+KONTEXT_DECKEL_STANDARD = ai_context_window.ANFRAGE_DECKEL_TOKENS
 # Feste Systemgrenze fuer die Bereiche, die an keiner Benutzerrolle haengen:
 # `server_shared` gehoert der Anlage, `panel` dem Betreiber. Das Kontingent des
 # gerade schreibenden Benutzers waere dort das falsche Mass — es haengt daran,
@@ -316,6 +322,61 @@ def set_role_limit(
         row.updated_at = datetime.now(timezone.utc)
     db.flush()
     return row
+
+
+def set_role_context_ceiling(db: Session, role_id: int, tokens: int | None) -> RoleAiLimit:
+    """Setzt den Anfragedeckel einer Rolle — getrennt von den Kontingenten.
+
+    Getrennt, weil ``None`` hier „nichts hinterlegt“ heisst und nicht
+    „unbegrenzt“; ein Platz in ``LIMIT_FIELDS`` haette die Bedeutung der
+    uebrigen Felder verwischt. Die Zeile muss bereits bestehen
+    (``set_role_limit`` legt sie an), damit ein Aufruf allein wegen dieses
+    Feldes keine Rolle mit lauter unbegrenzten Kontingenten erzeugt.
+    """
+    if db.query(Role.id).filter(Role.id == role_id).first() is None:
+        raise ValueError("Rolle nicht gefunden")
+    if tokens is not None:
+        if isinstance(tokens, bool) or not isinstance(tokens, int):
+            raise ValueError("Anfragedeckel muss eine Zahl sein")
+        if not KONTEXT_DECKEL_MIN <= tokens <= KONTEXT_DECKEL_MAX:
+            raise ValueError("Anfragedeckel ausserhalb des zulaessigen Bereichs")
+    row = get_role_limit(db, role_id)
+    if row is None:
+        raise ValueError("Rolle hat keine KI-Limits")
+    row.max_context_tokens = tokens
+    row.updated_at = datetime.now(timezone.utc)
+    db.flush()
+    return row
+
+
+def resolve_context_ceiling(db: Session, user: User | None) -> int:
+    """Der Anfragedeckel dieses Benutzers in Token — nie ``None``.
+
+    Ohne Benutzer gilt der Standard. Sonst der hoechste ausdruecklich gesetzte
+    Wert seiner Rollen; hat keine Rolle einen, ebenfalls der Standard. ``None``
+    in der Spalte heisst „nichts hinterlegt“ und nicht „unbegrenzt“ (siehe
+    ``models/role_ai_limit``); deshalb kann diese Funktion auch nie ``None``
+    zurueckgeben.
+
+    Der Wert wird zusaetzlich auf die Grenzen geklemmt: eine gespeicherte Zeile
+    kann aus einer Fassung mit anderen Grenzen stammen, und ein unmoeglicher
+    Deckel darf weder eine Anfrage sprengen noch sie auf null setzen.
+    """
+    if user is None:
+        return KONTEXT_DECKEL_STANDARD
+    role_ids = effective_user_role_ids(db, user)
+    if not role_ids:
+        return KONTEXT_DECKEL_STANDARD
+    gesetzt = [
+        wert
+        for (wert,) in db.query(RoleAiLimit.max_context_tokens)
+        .filter(RoleAiLimit.role_id.in_(role_ids))
+        .all()
+        if wert is not None
+    ]
+    if not gesetzt:
+        return KONTEXT_DECKEL_STANDARD
+    return max(KONTEXT_DECKEL_MIN, min(max(gesetzt), KONTEXT_DECKEL_MAX))
 
 
 def _resolve_field(rows: list[RoleAiLimit], field: str) -> int | None:

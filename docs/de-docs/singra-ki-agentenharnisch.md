@@ -25,7 +25,7 @@
    - 3.4 [GPU-Prompt-Caching und die 10-%-Abrechnungsregel](#34-gpu-prompt-caching-und-die-10--abrechnungsregel)
    - 3.5 [Der Sicherheitsgrundsatz: Der Prompt ist nicht die Sicherheitsgrenze](#35-der-sicherheitsgrundsatz-der-prompt-ist-nicht-die-sicherheitsgrenze)
 4. [Kontextfenster-Steuerung und Kompaktierung](#4-kontextfenster-steuerung-und-kompaktierung)
-   - 4.1 [Token-Berechnung und der 44.000-Token-Eingabedeckel](#41-token-berechnung-und-der-44000-token-eingabedeckel)
+   - 4.1 [Token-Berechnung und der Eingabedeckel je Rolle](#41-token-berechnung-und-der-eingabedeckel-je-rolle)
    - 4.2 [Zweistufige Kontext-Kompaktierung](#42-zweistufige-kontext-kompaktierung)
    - 4.3 [Schwärzung sensibler Daten](#43-schwärzung-sensibler-daten)
 5. [Denkstufen und Reasoning-Engine](#5-denkstufen-und-reasoning-engine)
@@ -272,11 +272,11 @@ Systemprompts leiten das Modell sprachlich an, bilden jedoch keine Sicherheitsgr
 
 ## 4. Kontextfenster-Steuerung und Kompaktierung
 
-### 4.1 Token-Berechnung und der 44.000-Token-Eingabedeckel
+### 4.1 Token-Berechnung und der Eingabedeckel je Rolle
 Ein unkontrolliert anwachsender Kontext verschlechtert die logische Präzision von Sprachmodellen. Singra implementiert eine deterministische Budgetierung (`services/ai_context_window.py`):
 - **Zeichen-Token-Verhältnis (`ZEICHEN_JE_TOKEN = 4`)**: Schnelle Berechnung ohne externe Tokenizer-Bibliotheken.
 - **Sicherheitsfaktor (`SICHERHEIT = 0.9`)**: Berücksichtigt deutsche Komposita und JSON-Strukturen (~3,6 Zeichen pro Token).
-- **Eingabedeckel (`ANFRAGE_DECKEL_TOKENS = 44.000`)**: Unabhängig von beworbenen Modellfenstern (z. B. 1 Million Tokens) kappt Singra Eingaben strikt bei 44.000 Tokens.
+- **Eingabedeckel je Rolle (`max_context_tokens`, Standard `ANFRAGE_DECKEL_TOKENS = 44.000`)**: Unabhängig von beworbenen Modellfenstern (z. B. 1 Million Tokens) kappt Singra Eingaben. Die Obergrenze steht an der Rolle („Rollen & Kontingente“, 44.000 bis 1.000.000 Token); ohne Eintrag gelten 44.000. Das Fenster des Modells bleibt zusätzlich die harte Grenze.
 - **Ausgabe-Reserve (`RESERVE_AUSGABE_TOKENS = 8.192`)**: Reservierter Platz für Modellantworten und Codeerzeugung.
 
 ### 4.2 Zweistufige Kontext-Kompaktierung
@@ -823,7 +823,7 @@ Integrierter Infrastruktur-Wachdienst (`services/ai_guardian_service.py`):
 | **Herkunfts-Schnittstellen (`herkunft_schnitt`)** | Web-Schwachstellen könnten Desktop-Übernahme auslösen. | Desktop-Befehle sind strikt an kryptografisch gekoppelte Desktop-Tokens gebunden. |
 | **DIS-Zero-Knowledge-Gedächtnis** | Datenbank-Leaks legen vertrauliche Betriebsinformationen offen. | Inhalte mit AES-256-GCM verschlüsselt; Suchen laufen über Blind-HMACs. Datenbank-Dumps enthalten keinen Klartext. |
 | **Strikte JSON-Schema-Invarianz** | Strenge Modelle verweigern unvollständige Werkzeugdefinitionen. | Pflicht zu `type: "object"` und expliziten `properties` verhindert `400 Bad Request` Fehler zuverlässig. |
-| **Eingabedeckel (44.000 Tokens)** | Riesige Kontexte führen zu Halluzinationen und extremen Kosten. | Begrenzt Prompts unabhängig von Modellangaben und sichert präzise Denkabläufe bei stabilen Kosten. |
+| **Eingabedeckel je Rolle (Standard 44.000 Tokens)** | Riesige Kontexte führen zu Halluzinationen und extremen Kosten. | Begrenzt Prompts unabhängig von Modellangaben und sichert präzise Denkabläufe bei stabilen Kosten; ein Tarif kann mehr Kontext bekommen. |
 | **Bestätigungskarten für Schreibwerkzeuge** | Fehlgeleitete Modelle könnten Server beschädigen. | Verändernde Aktionen erzeugen `AiActionProposal`-Karten mit Freigabepflicht, außer bei aktiver Autonomie-Freigabe. |
 | **Browserseitiges Preview-Bundling** | Server-Build-Container sind langsam und ressourcenintensiv. | Kompiliert React und Tailwind in unter 200 ms im Browser-Iframe ohne Belastung des Host-Servers. |
 | **Offline-Wake-Word („Singra“)** | Permanente Cloud-Audioübertragung verletzt die Privatsphäre. | `rustpotter` läuft lokal auf der CPU; Mikrofon-Audiokanäle öffnen erst nach lokaler Erkennung. |

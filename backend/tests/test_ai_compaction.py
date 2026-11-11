@@ -502,6 +502,27 @@ def test_the_operator_mark_moves_the_fold(db: Session, regular_user: User) -> No
     assert ai_compaction_service.needs_compaction(db, conversation, budget) is True
 
 
+def test_the_role_cap_moves_the_fold_without_touching_the_mark(
+    db: Session, regular_user: User
+) -> None:
+    """Derselbe Prozentsatz, zwei Role-Budgets, zwei Antworten.
+
+    Der Deckel ist die neue Stellschraube: er bestimmt `context_chars`, und die
+    Faltmarke rechnet weiter mit dem eingestellten Anteil davon. Wer einem
+    Tarif weniger Kontext gibt, bekommt die Faltung also frueher, ohne dass
+    jemand `ai_context_compaction_percent` anfasst.
+    """
+    conversation = _conversation(db, regular_user, messages=40, chars=3_000)
+    ai_context_window.set_schwelle_prozent(75)
+    # Faltbar sind rund 84.000 Zeichen. Die Marke bei 75 % liegt mit 75.000
+    # darunter (eng) bzw. mit 600.000 darueber (weit).
+    eng = 100_000
+    weit = 800_000
+
+    assert ai_compaction_service.needs_compaction(db, conversation, weit) is False
+    assert ai_compaction_service.needs_compaction(db, conversation, eng) is True
+
+
 def test_an_unknown_window_keeps_the_old_constant(
     db: Session, regular_user: User
 ) -> None:
