@@ -260,3 +260,28 @@ def test_path_traversal_protection(mock_server):
     with pytest.raises(HTTPException) as exc_info:
         sqlite_studio_service.inspect_file(server, "../secret.db")
     assert exc_info.value.status_code == 400
+
+
+def test_router_overview_audit_action():
+    """Stellt sicher, dass der Router eine in audit_service.READ_ACCESS_ACTIONS erlaubte Aktion nutzt."""
+    from unittest.mock import patch
+    from routers.sqlite_studio import get_database_overview
+    from services.audit_service import READ_ACCESS_ACTIONS
+
+    assert "server.files.read" in READ_ACCESS_ACTIONS
+
+    mock_user = MagicMock()
+    mock_user.id = 42
+    mock_db = MagicMock()
+    mock_server_obj = MagicMock()
+
+    with patch("routers.sqlite_studio.require_server_permission"), \
+         patch("routers.sqlite_studio._server", return_value=mock_server_obj), \
+         patch("routers.sqlite_studio.sqlite_studio_service.get_overview", return_value={"status": "ok"}), \
+         patch("routers.sqlite_studio.audit_service.record_read_access") as mock_record:
+        res = get_database_overview(server_id=135, path="db/Project Zomboid.db", db=mock_db, user=mock_user)
+        assert res == {"status": "ok"}
+        mock_record.assert_called_once_with(
+            mock_db, user_id=42, server_id=135, action="server.files.read", details={"path": "db/Project Zomboid.db"}
+        )
+

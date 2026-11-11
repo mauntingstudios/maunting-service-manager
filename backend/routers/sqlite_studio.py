@@ -55,7 +55,7 @@ def get_database_overview(
     """Liefert Übersicht und Tabellenliste für das Studio."""
     require_server_permission(user, server_id, db, "server.files.read")
     audit_service.record_read_access(
-        db, user_id=user.id, server_id=server_id, action="server.sqlite.read_overview"
+        db, user_id=user.id, server_id=server_id, action="server.files.read", details={"path": path}
     )
     server = _server(server_id, db)
     # Prüfe ob Nutzer Schreibrechte hat
