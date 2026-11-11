@@ -145,6 +145,15 @@ describe('LesemodusAnsicht', () => {
     expect(saveNoteOffline).not.toHaveBeenCalled()
   })
 
+  it('deaktiviert KI-Zusammenfassen bei fehlender Kopplung', async () => {
+    useSitzung.setState({ stand: 'aus' }) // ungekoppelt
+
+    rendernMitRouter(<LesemodusAnsicht tab={tab} />)
+
+    const zusammenfassenKnopf = screen.getByLabelText(/Mit KI zusammenfassen/i)
+    expect(zusammenfassenKnopf).toBeDisabled()
+  })
+
   it('kopiert Artikeltext in die Zwischenablage', async () => {
     const writeTextSpy = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, {

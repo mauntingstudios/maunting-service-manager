@@ -183,6 +183,10 @@ export function LesemodusAnsicht({ tab }: LesemodusAnsichtProps) {
 
   // An Singra Haupt-Chat übergeben
   const mitKiZusammenfassen = () => {
+    if (!gekoppelt) {
+      toast.error(t('browser.lesemodus.kiNurGekoppelt'))
+      return
+    }
     if (!artikel) return
     const text = `Fasse bitte folgenden Artikel verständlich und prägnant zusammen:\n\n${artikel.titel}\n${artikel.url}\n\n${artikel.reintext}`
     entwurfUebergeben(text)
@@ -508,7 +512,7 @@ export function LesemodusAnsicht({ tab }: LesemodusAnsichtProps) {
 
           {/* Mit KI zusammenfassen */}
           <Kurzinfo
-            text={t('browser.lesemodus.zusammenfassen')}
+            text={gekoppelt ? t('browser.lesemodus.zusammenfassen') : t('browser.lesemodus.kiNurGekoppelt')}
             lage="unten"
             seite="ende"
             className="max-w-[min(18rem,calc(100vw-2rem))]"
@@ -517,7 +521,12 @@ export function LesemodusAnsicht({ tab }: LesemodusAnsichtProps) {
               type="button"
               onClick={mitKiZusammenfassen}
               aria-label={t('browser.lesemodus.zusammenfassen')}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              disabled={!gekoppelt}
+              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                gekoppelt
+                  ? 'text-primary hover:bg-primary/10'
+                  : 'cursor-not-allowed opacity-40 text-on-surface-variant'
+              }`}
             >
               <Sparkles className="h-4 w-4" aria-hidden="true" />
             </button>
