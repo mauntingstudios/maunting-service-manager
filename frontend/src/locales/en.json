@@ -11704,6 +11704,8 @@
       "zusammenfassungTitel": "Singra AI overview",
       "zusammenfassungLaedt": "Generating response …",
       "zusammenfassungFehler": "The response could not be generated. Please try again.",
+      "zusammenfassungNichtVerfuegbarRecht": "Your role may not use the Singra overview.",
+      "zusammenfassungNichtVerfuegbarEinrichtung": "The Singra overview is not set up on this instance.",
       "zusammenfassungRecherche": "Researching further",
       "zusammenfassungSchliessen": "Dismiss",
       "zusammenfassungEinklappen": "Collapse",

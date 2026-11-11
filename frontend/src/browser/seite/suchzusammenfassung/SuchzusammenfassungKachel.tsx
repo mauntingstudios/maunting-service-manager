@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import { apiStream } from '@/api/client'
+import { apiStream, SanitizedApiError } from '@/api/client'
 import { Badge, Button, Dropdown, Input, Kurzinfo, DropdownOption } from '@maunting/ui'
 
 import type { Treffer } from '../MsmSuche'
@@ -65,7 +65,8 @@ export function SuchzusammenfassungKachel({
   // lesen, dann die Quellen. Genau andersherum wäre es überladen.
   const [quellenOffen, setQuellenOffen] = useState(false)
   const [hervorgehoben, setHervorgehoben] = useState<number | null>(null)
-  const [deaktiviert, setDeaktiviert] = useState(false)
+  // Der Grund gehört zum Zustand: „deaktiviert" allein sagt niemandem, was fehlt.
+  const [deaktiviertGrund, setDeaktiviertGrund] = useState<'permission' | 'not_configured' | 'no_key' | null>(null)
   const [laedt, setLaedt] = useState(false)
   const [modellName, setModellName] = useState<string | null>(null)
   const [hauptText, setHauptText] = useState('')
@@ -166,6 +167,9 @@ export function SuchzusammenfassungKachel({
       const res = await apiStream('/browser/suche/zusammenfassung', {
         method: 'POST',
         signal: controller.signal,
+        // Das Backend liest vor dem ersten Byte bis zu acht Seiten ein. Ohne
+        // Frist bliebe die Kachel bei einem hängenden Lauf unbegrenzt im Ladezustand.
+        connectTimeoutMs: 30_000,
         body: JSON.stringify({
           q: frage,
           treffer: trefferPayload,
@@ -173,21 +177,6 @@ export function SuchzusammenfassungKachel({
           denkstufe: gewaehlteStufe === 'fast' ? undefined : gewaehlteStufe,
         }),
       })
-
-      if (!res.ok) {
-        if (dialogVerlauf.length === 0) {
-          const fehlerText =
-            res.status === 429
-              ? 'Zu viele Anfragen. Bitte warte einen kurzen Moment.'
-              : t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' })
-          setHauptFehler(fehlerText)
-        } else {
-          fehlerSetzen(controller, dialogVerlauf, t('browser.msmSuche.zusammenfassungFehler'))
-          return
-        }
-        if (istAktuell(controller)) setLaedt(false)
-        return
-      }
 
       const reader = res.body?.getReader()
       if (!reader) {
@@ -222,8 +211,12 @@ export function SuchzusammenfassungKachel({
           try {
             const data = JSON.parse(jsonStr)
             if (data.type === 'disabled') {
+              const grund =
+                data.reason === 'permission' || data.reason === 'no_key' || data.reason === 'not_configured'
+                  ? data.reason
+                  : 'not_configured'
               if (dialogVerlauf.length === 0) {
-                setDeaktiviert(true)
+                setDeaktiviertGrund(grund)
                 if (istAktuell(controller)) setLaedt(false)
               } else {
                 fehlerSetzen(controller, dialogVerlauf, t('browser.msmSuche.zusammenfassungFehler'))
@@ -295,7 +288,7 @@ export function SuchzusammenfassungKachel({
         }
       }
 
-      if (!akkumulierterText && !deaktiviert) {
+      if (!akkumulierterText && !deaktiviertGrund) {
         if (dialogVerlauf.length === 0) {
           setHauptFehler(t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' }))
         } else {
@@ -307,10 +300,16 @@ export function SuchzusammenfassungKachel({
       if (controller.signal.aborted || (err as { name?: string })?.name === 'AbortError') {
         return
       }
+      // Die Meldung des Servers (z. B. „Zu viele Anfragen") ist bereits für die
+      // Anzeige aufbereitet; alles andere (Netzfehler) bekommt den festen Text.
+      const meldung =
+        err instanceof SanitizedApiError && err.message
+          ? err.message
+          : t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' })
       if (dialogVerlauf.length === 0) {
-        setHauptFehler(t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' }))
+        setHauptFehler(meldung)
       } else {
-        fehlerSetzen(controller, dialogVerlauf, t('browser.msmSuche.zusammenfassungFehler'))
+        fehlerSetzen(controller, dialogVerlauf, meldung)
       }
     } finally {
       if (istAktuell(controller)) {
@@ -324,14 +323,16 @@ export function SuchzusammenfassungKachel({
     abbruchRef.current?.abort()
   }, [])
 
-  // Initialer Start beim Laden der Suchbegriffe. Hängt bewusst nur am Begriff:
-  // frische Treffer via onNeueTreffer dürfen den laufenden Stream nicht abbrechen.
+  // Initialer Start beim Laden der Suchbegriffe. Frische Treffer via onNeueTreffer
+  // dürfen den laufenden Stream nicht abbrechen; kommt die Trefferliste erst nach
+  // dem ersten Rendern, startet der Lauf hier nach.
+  const hatTreffer = treffer.length > 0
   useEffect(() => {
-    if (!begriff || treffer.length === 0) return
+    if (!begriff || !hatTreffer) return
     if (begonneneSucheRef.current === begriff) return
 
     begonneneSucheRef.current = begriff
-    setDeaktiviert(false)
+    setDeaktiviertGrund(null)
     setHauptText('')
     setGedankenText('')
     setVerlauf([])
@@ -340,9 +341,27 @@ export function SuchzusammenfassungKachel({
 
     void starteStream(begriff, [])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [begriff])
+  }, [begriff, hatTreffer])
 
-  if (deaktiviert || (!laedt && !hauptText && !hauptFehler)) {
+  if (deaktiviertGrund) {
+    return (
+      <div className="mb-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/70 px-4 py-3">
+        <p className="flex items-start gap-2 text-body-sm text-on-surface-variant">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+          <span>
+            {t(
+              deaktiviertGrund === 'permission'
+                ? 'browser.msmSuche.zusammenfassungNichtVerfuegbarRecht'
+                : 'browser.msmSuche.zusammenfassungNichtVerfuegbarEinrichtung',
+              { defaultValue: 'Der Singra-Überblick ist nicht verfügbar.' }
+            )}
+          </span>
+        </p>
+      </div>
+    )
+  }
+
+  if (!laedt && !hauptText && !hauptFehler) {
     return null
   }
 

@@ -11704,6 +11704,8 @@
       "zusammenfassungTitel": "Singra AI Überblick",
       "zusammenfassungLaedt": "Antwort wird generiert …",
       "zusammenfassungFehler": "Die Antwort konnte nicht erzeugt werden. Bitte erneut versuchen.",
+      "zusammenfassungNichtVerfuegbarRecht": "Deine Rolle darf den Singra-Überblick nicht nutzen.",
+      "zusammenfassungNichtVerfuegbarEinrichtung": "Der Singra-Überblick ist auf dieser Instanz nicht eingerichtet.",
       "zusammenfassungRecherche": "Sucht weiter",
       "zusammenfassungSchliessen": "Ausblenden",
       "zusammenfassungEinklappen": "Einklappen",

@@ -34,7 +34,7 @@ from services import (
     permission_service,
 )
 from services.ai_provider_service import fuer_suchzusammenfassung, resolve_api_key
-from services.openai_compatible_adapter import StreamUsage, stream_chat_completion
+from services.openai_compatible_adapter import AiProviderRequestError, StreamUsage, stream_chat_completion
 
 logger = logging.getLogger(__name__)
 
@@ -403,18 +403,21 @@ async def stream_suchzusammenfassung(
     """Streamt die Suchzusammenfassung als SSE (text/event-stream)."""
     # 1. Rechteprüfung
     if not permission_service.has_global_permission(db, user, "ai.chat.use"):
+        logger.warning("Suchzusammenfassung abgelehnt grund=permission nutzer=%s", user.id)
         yield f"data: {json.dumps({'type': 'disabled', 'reason': 'permission'})}\n\n"
         return
 
     # 2. Anbieter- und Modellauswahl
     anbieter_tupel = suchzusammenfassung_anbieter(db, user, bevorzugte_id)
     if anbieter_tupel is None:
+        logger.warning("Suchzusammenfassung abgelehnt grund=not_configured nutzer=%s", user.id)
         yield f"data: {json.dumps({'type': 'disabled', 'reason': 'not_configured'})}\n\n"
         return
 
     provider, model = anbieter_tupel
     api_key = resolve_api_key(db, provider, user.id)
     if provider.requires_api_key and not api_key:
+        logger.warning("Suchzusammenfassung abgelehnt grund=no_key nutzer=%s", user.id)
         yield f"data: {json.dumps({'type': 'disabled', 'reason': 'no_key'})}\n\n"
         return
 
@@ -524,6 +527,7 @@ async def stream_suchzusammenfassung(
 
             # 6. Streamen
             usage = StreamUsage()
+            zeichen = 0
             yield f"data: {json.dumps({'type': 'start', 'model': model, 'provider': provider.name, 'denkstufen': erlaubte_stufen, 'max_denkstufe': max_stufe})}\n\n"
 
             denken, stufe = await ai_reasoning.vorgabe(
@@ -548,8 +552,20 @@ async def stream_suchzusammenfassung(
                 if chunk.kind == "thought" and chunk.text:
                     yield f"data: {json.dumps({'type': 'thought', 'text': chunk.text})}\n\n"
                 elif chunk.kind == "content" and chunk.text:
+                    zeichen += len(chunk.text)
                     yield f"data: {json.dumps({'type': 'content', 'text': chunk.text})}\n\n"
 
             yield f"data: {json.dumps({'type': 'done', 'model': model})}\n\n"
+            logger.info(
+                "Suchzusammenfassung fertig modell=%s zeichen=%d nutzer=%s",
+                model,
+                zeichen,
+                user.id,
+            )
     except Exception as exc:
+        # Abgelehnt und fehlgeschlagen sind gut sichtbar (WARNING), damit sich
+        # „keine Zusammenfassung" im Log einem Grund zuordnen lässt. Der Suchtext
+        # und der Inhalt gehören nicht ins Log.
+        fehler = str(exc) if isinstance(exc, AiProviderRequestError) else type(exc).__name__
+        logger.warning("Suchzusammenfassung fehlgeschlagen fehler=%s nutzer=%s", fehler, user.id)
         yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"

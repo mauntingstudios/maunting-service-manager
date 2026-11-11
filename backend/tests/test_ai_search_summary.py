@@ -6,6 +6,7 @@ und `routers/browser_suche.py`).
 from __future__ import annotations
 
 import json
+import logging
 from types import SimpleNamespace
 from typing import AsyncIterator
 
@@ -155,7 +156,7 @@ def test_suchzusammenfassung_anbieter_auswahl(db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_stream_suchzusammenfassung_deaktiviert(db, monkeypatch) -> None:
+async def test_stream_suchzusammenfassung_deaktiviert(db, monkeypatch, caplog) -> None:
     user = User(
         username="stream_user",
         password_hash="pw",
@@ -168,21 +169,25 @@ async def test_stream_suchzusammenfassung_deaktiviert(db, monkeypatch) -> None:
     monkeypatch.setattr("services.permission_service.has_global_permission", lambda _db, _u, _k: True)
 
     # Keine Anbieter aktiv
-    events = [
-        event async for event in ai_search_summary_service.stream_suchzusammenfassung(
-            db=db,
-            user=user,
-            q="Test",
-            treffer=[],
-        )
-    ]
+    with caplog.at_level(logging.WARNING, logger="services.ai_search_summary_service"):
+        events = [
+            event async for event in ai_search_summary_service.stream_suchzusammenfassung(
+                db=db,
+                user=user,
+                q="Geheimnisvolle Suchanfrage",
+                treffer=[],
+            )
+        ]
     assert len(events) == 1
     assert "disabled" in events[0]
     assert "not_configured" in events[0]
+    # Der Grund steht im Log, der Suchtext nicht.
+    assert "grund=not_configured" in caplog.text
+    assert "Geheimnisvolle Suchanfrage" not in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_stream_suchzusammenfassung_erfolg(db, monkeypatch) -> None:
+async def test_stream_suchzusammenfassung_erfolg(db, monkeypatch, caplog) -> None:
     user = User(
         username="stream_user_ok",
         password_hash="pw",
@@ -210,14 +215,15 @@ async def test_stream_suchzusammenfassung_erfolg(db, monkeypatch) -> None:
 
     monkeypatch.setattr(ai_search_summary_service, "stream_chat_completion", fake_stream)
 
-    events = [
-        event async for event in ai_search_summary_service.stream_suchzusammenfassung(
-            db=db,
-            user=user,
-            q="Test",
-            treffer=[{"index": 1, "titel": "Titel", "url": "https://example.com", "inhalt": "Text"}],
-        )
-    ]
+    with caplog.at_level(logging.INFO, logger="services.ai_search_summary_service"):
+        events = [
+            event async for event in ai_search_summary_service.stream_suchzusammenfassung(
+                db=db,
+                user=user,
+                q="Test",
+                treffer=[{"index": 1, "titel": "Titel", "url": "https://example.com", "inhalt": "Text"}],
+            )
+        ]
 
     # start, content 1, content 2, done
     assert len(events) == 4
@@ -225,6 +231,10 @@ async def test_stream_suchzusammenfassung_erfolg(db, monkeypatch) -> None:
     assert '"text": "Hier ist "' in events[1]
     assert '"text": "die Zusammenfassung [1]."' in events[2]
     assert '"type": "done"' in events[3]
+    # Fertig-Lauf ist mit Modell und Zeichenzahl nachvollziehbar, ohne Inhalt.
+    assert "Suchzusammenfassung fertig modell=gpt-4o-mini" in caplog.text
+    assert "zeichen=33" in caplog.text
+    assert "die Zusammenfassung" not in caplog.text
 
 
 def test_deute_umschreibung_gueltig_und_rueckfall() -> None:

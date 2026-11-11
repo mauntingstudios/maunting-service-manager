@@ -22,7 +22,7 @@ describe('SuchzusammenfassungKachel', () => {
     vi.clearAllMocks()
   })
 
-  it('bleibt unsichtbar wenn das Feature deaktiviert ist', async () => {
+  it('sagt, dass der Überblick nicht eingerichtet ist, statt stumm zu verschwinden', async () => {
     // SSE stream liefert sofort "disabled"
     apiStream.mockResolvedValueOnce({
       ok: true,
@@ -41,10 +41,62 @@ describe('SuchzusammenfassungKachel', () => {
       },
     })
 
-    const { container } = render(<SuchzusammenfassungKachel begriff="Testsuche" treffer={TREFFER} />)
-    await waitFor(() => {
-      expect(container.firstChild).toBeNull()
+    render(<SuchzusammenfassungKachel begriff="Testsuche" treffer={TREFFER} />)
+    expect(await screen.findByText(/nicht eingerichtet|not set up/i)).toBeInTheDocument()
+  })
+
+  it('nennt das fehlende Recht, wenn die Rolle den Überblick nicht nutzen darf', async () => {
+    apiStream.mockResolvedValueOnce({
+      ok: true,
+      body: {
+        getReader: () => {
+          let gesendet = false
+          return {
+            read: () => {
+              if (gesendet) return Promise.resolve({ done: true, value: undefined })
+              gesendet = true
+              const chunk = new TextEncoder().encode('data: {"type": "disabled", "reason": "permission"}\n\n')
+              return Promise.resolve({ done: false, value: chunk })
+            },
+          }
+        },
+      },
     })
+
+    render(<SuchzusammenfassungKachel begriff="Testsuche" treffer={TREFFER} />)
+    expect(await screen.findByText(/Singra-Überblick nicht nutzen|may not use the Singra overview/i)).toBeInTheDocument()
+  })
+
+  it('zeigt die Meldung des Servers, wenn der Stream abgelehnt wird', async () => {
+    const { SanitizedApiError } = await import('@/api/client')
+    apiStream.mockRejectedValueOnce(
+      new SanitizedApiError('Zu viele Anfragen. Bitte warte einen kurzen Moment.', { status: 429 }),
+    )
+
+    render(<SuchzusammenfassungKachel begriff="Testsuche" treffer={TREFFER} />)
+
+    expect(
+      await screen.findByText('Zu viele Anfragen. Bitte warte einen kurzen Moment.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Erneut versuchen|Try again/i })).toBeInTheDocument()
+    // Der Aufbau bekommt eine Frist, damit ein hängender Lauf nicht ewig lädt.
+    expect(apiStream.mock.calls[0][1].connectTimeoutMs).toBe(30_000)
+  })
+
+  it('zeigt eine Fehlerkarte, wenn der Stream ohne Inhalt endet', async () => {
+    apiStream.mockResolvedValueOnce({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: () => Promise.resolve({ done: true, value: undefined }),
+        }),
+      },
+    })
+
+    render(<SuchzusammenfassungKachel begriff="Testsuche" treffer={TREFFER} />)
+    expect(
+      await screen.findByText(/Die Antwort konnte nicht erzeugt werden|The response could not be generated/i),
+    ).toBeInTheDocument()
   })
 
   it('zeigt Ladezustand und streamt Markdown-Inhalt mit klickbaren Quellenverweisen', async () => {
