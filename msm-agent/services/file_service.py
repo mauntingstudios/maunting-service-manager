@@ -332,15 +332,85 @@ def workshop_files(
     workshop_id: str,
     actions: list[dict[str, Any]],
     mode: str,
+    resolvers: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Apply, inspect, or remove blueprint Workshop runtime artifacts on-node."""
-    if mode not in {"apply", "inspect", "cleanup"}:
+    if mode not in {"apply", "inspect", "cleanup", "resolve_ids"}:
         raise PathValidationError("Invalid workshop operation")
     if not str(workshop_app_id).isdigit() or not str(workshop_id).isdigit():
         raise PathValidationError("Invalid workshop identifier")
 
     root = server_root(server_id)
     root.mkdir(parents=True, exist_ok=True)
+
+    if mode == "resolve_ids":
+        resolved_map: dict[str, list[str]] = {}
+        error_map: dict[str, str] = {}
+        safe_re = re.compile(r"^[A-Za-z0-9_.\-]+$")
+        for res in resolvers or []:
+            name = str(res.get("name") or "")
+            file_glob = str(res.get("file_glob") or "")
+            format_val = str(res.get("format") or "iniKey")
+            key_val = str(res.get("key") or "id").strip().lower()
+            regex_val = res.get("regex")
+            max_matches = int(res.get("max_matches") or 16)
+            fallback = str(res.get("fallback") or "skip")
+
+            rel_pattern = (
+                file_glob
+                .replace("{WORKSHOP_APP_ID}", str(workshop_app_id))
+                .replace("{WORKSHOP_ID}", str(workshop_id))
+            )
+            matches = glob.glob(str(root / rel_pattern), recursive=True)
+            found: list[str] = []
+            valid_files: list[Path] = []
+            for m in matches:
+                p = Path(m).resolve()
+                try:
+                    p.relative_to(root)
+                    if p.is_file():
+                        valid_files.append(p)
+                except ValueError:
+                    continue
+            valid_files.sort()
+            for p in valid_files:
+                try:
+                    content = p.read_bytes()[:65536].decode("utf-8", errors="replace")
+                except Exception:
+                    continue
+                if format_val == "iniKey":
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if not line or line.startswith(("#", ";")):
+                            continue
+                        if "=" in line:
+                            k, v = line.split("=", 1)
+                            if k.strip().lower() == key_val:
+                                val = v.strip().strip("'\"")
+                                if val and safe_re.match(val) and len(val) <= 64:
+                                    found.append(val)
+                elif format_val == "regex" and regex_val:
+                    pat = re.compile(regex_val)
+                    for match in pat.finditer(content):
+                        val = match.group(1) if match.groups() else match.group(0)
+                        val = val.strip().strip("'\"")
+                        if val and safe_re.match(val) and len(val) <= 64:
+                            found.append(val)
+            dedup = list(dict.fromkeys(found))[:max_matches]
+            if dedup:
+                resolved_map[name] = dedup
+            else:
+                if fallback == "workshopId":
+                    resolved_map[name] = [str(workshop_id)]
+                else:
+                    resolved_map[name] = []
+                    error_map[name] = "mod_info_missing"
+        return {
+            "ok": True,
+            "resolved": resolved_map,
+            "resolve_errors": error_map,
+        }
+
     targets: list[Path] = []
 
     for action in actions:
@@ -374,7 +444,29 @@ def workshop_files(
             targets.extend(_workshop_target(root, target_pattern, name) for name in basenames)
 
         if mode == "apply":
+            purge_templates = [str(p) for p in action.get("purge_before") or []]
             for source in sources:
+                stem = source.stem
+                for tmpl in purge_templates:
+                    rendered = tmpl.replace("{STEM}", stem).replace("{BASENAME}", source.name)
+                    if any(ch in rendered for ch in ("*", "?", "[")):
+                        for m in glob.glob(str(root / rendered)):
+                            p = Path(m).resolve()
+                            try:
+                                p.relative_to(root)
+                                if p.is_file():
+                                    p.unlink(missing_ok=True)
+                            except ValueError:
+                                pass
+                    else:
+                        p = (root / rendered).resolve()
+                        try:
+                            p.relative_to(root)
+                            if p.is_file():
+                                p.unlink(missing_ok=True)
+                        except ValueError:
+                            pass
+
                 target = _workshop_target(root, target_pattern, source.name)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if operation == "copy":

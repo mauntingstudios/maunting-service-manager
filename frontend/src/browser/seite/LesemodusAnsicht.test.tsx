@@ -11,6 +11,7 @@ import { leererTab, type Tab } from '../services/tab'
 import { useSitzung } from '../services/sitzung'
 import { useTabsStore } from '../services/tabsStore'
 import { useLesemodusStore } from '../services/lesemodusStore'
+import * as lesemodusService from '../services/lesemodusService'
 import type { ExtrahierterArtikel } from '../services/lesemodusService'
 import { LesemodusAnsicht } from './LesemodusAnsicht'
 
@@ -316,5 +317,52 @@ describe('LesemodusAnsicht', () => {
     })
     inhaltDiv = container.querySelector('.prose')
     expect(inhaltDiv?.className).toContain('pointer-events-none')
+  })
+
+  it('zeigt nach asynchroner Extraktion den Artikel sofort an und bleibt nicht im Ladezyklus hängen', async () => {
+    useLesemodusStore.setState({
+      artikelCache: {},
+    })
+
+    let resolveExtraktion!: (artikel: ExtrahierterArtikel) => void
+    const extraktionPromise = new Promise<ExtrahierterArtikel>((res) => {
+      resolveExtraktion = res
+    })
+    vi.spyOn(lesemodusService, 'artikelExtrahieren').mockReturnValueOnce(extraktionPromise)
+
+    rendernMitRouter(<LesemodusAnsicht tab={tab} />)
+
+    // Zu Beginn: Ladezyklus ist aktiv
+    expect(screen.getByText(/Artikel wird geladen/i)).toBeInTheDocument()
+
+    // Asynchrone Extraktion wird aufgelöst
+    await act(async () => {
+      resolveExtraktion(mockArtikel)
+    })
+
+    // Ladezyklus muss vollständig beendet sein und der Artikeltext muss sofort erscheinen
+    await waitFor(() => {
+      expect(screen.queryByText(/Artikel wird geladen/i)).not.toBeInTheDocument()
+      expect(screen.getByText('Test Artikel Titel')).toBeInTheDocument()
+      expect(screen.getByText(/Erster Test-Absatz/)).toBeInTheDocument()
+    })
+  })
+
+  it('beendet den Ladezyklus auch bei fehlgeschlagener Extraktion und zeigt Fehler an', async () => {
+    useLesemodusStore.setState({
+      artikelCache: {},
+    })
+
+    vi.spyOn(lesemodusService, 'artikelExtrahieren').mockRejectedValueOnce(
+      new Error('Netzwerk-Timeout beim Auslesen des Artikels'),
+    )
+
+    rendernMitRouter(<LesemodusAnsicht tab={tab} />)
+
+    // Nach Fehlschlag: Ladeanzeige verschwindet und Fehlermeldung ist sichtbar
+    await waitFor(() => {
+      expect(screen.queryByText(/Artikel wird geladen/i)).not.toBeInTheDocument()
+      expect(screen.getByText(/Netzwerk-Timeout beim Auslesen des Artikels/i)).toBeInTheDocument()
+    })
   })
 })

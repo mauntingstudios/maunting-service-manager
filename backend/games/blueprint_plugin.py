@@ -187,28 +187,161 @@ def _steam_install_is_reinstall(install_dir: str, app_id: str) -> bool:
         return False
 
 
-def _purge_conan_extracted_mod_cache(install_base: Path, pak_basename: str) -> list[str]:
-    """Loescht gecachte LinuxServer-Extracts nach Pak-Update (Conan-Mount)."""
-    stem = Path(pak_basename).stem
-    extracted = install_base / "ConanSandbox" / "Saved" / "ExtractedMods"
-    if not extracted.is_dir():
-        return []
+def _purge_before_paths(
+    install_base: Path,
+    purge_templates: list[str],
+    source_name: str,
+) -> list[str]:
+    """Löscht deklarierte Cache-Dateien vor dem Kopieren/Aktualisieren einer Mod."""
+    stem = Path(source_name).stem
+    basename = source_name
+    base_resolved = install_base.resolve()
     removed: list[str] = []
-    for name in (
-        f"{stem}-LinuxServer.pak",
-        f"{stem}-LinuxServer.utoc",
-        f"{stem}-LinuxServer.ucas",
-    ):
-        path = extracted / name
-        if not path.is_file():
-            continue
+
+    for template in purge_templates:
+        rendered = (
+            template
+            .replace("{STEM}", stem)
+            .replace("{BASENAME}", basename)
+        )
+        if any(ch in rendered for ch in ("*", "?", "[")):
+            for match in glob.glob(str(base_resolved / rendered)):
+                path = Path(match).resolve()
+                try:
+                    path.relative_to(base_resolved)
+                except ValueError:
+                    continue
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+                    try:
+                        removed.append(str(path.relative_to(base_resolved)))
+                    except ValueError:
+                        pass
+        else:
+            path = (base_resolved / rendered).resolve()
+            try:
+                path.relative_to(base_resolved)
+            except ValueError:
+                continue
+            if path.is_file():
+                path.unlink(missing_ok=True)
+                try:
+                    removed.append(str(path.relative_to(base_resolved)))
+                except ValueError:
+                    pass
+    return removed
+
+
+def _purge_conan_extracted_mod_cache(install_base: Path, pak_basename: str) -> list[str]:
+    """Rückwärtskompatibler Wrapper; delegiert an das generische _purge_before_paths."""
+    return _purge_before_paths(
+        install_base,
+        [
+            "ConanSandbox/Saved/ExtractedMods/{STEM}-LinuxServer.pak",
+            "ConanSandbox/Saved/ExtractedMods/{STEM}-LinuxServer.utoc",
+            "ConanSandbox/Saved/ExtractedMods/{STEM}-LinuxServer.ucas",
+        ],
+        pak_basename,
+    )
+
+
+_SAFE_MOD_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _resolve_mod_ids(
+    server,
+    *,
+    workshop_app_id: str,
+    workshop_id: str,
+    resolver: Any,
+) -> tuple[list[str], str | None]:
+    """Löst interne Mod-IDs deklarativ aus Workshop-Dateien auf."""
+    node = getattr(server, "node", None)
+    if node is not None and not getattr(node, "is_local", False):
         try:
-            path.resolve(strict=False).relative_to(install_base.resolve())
+            from services.node_client import NodeClient
+
+            client = NodeClient.from_node(node)
+            payload = {
+                "workshop_app_id": str(workshop_app_id),
+                "workshop_id": str(workshop_id),
+                "mode": "resolve_ids",
+                "resolvers": [
+                    {
+                        "name": resolver.name,
+                        "file_glob": resolver.fileGlob,
+                        "format": resolver.format.value if hasattr(resolver.format, "value") else str(resolver.format),
+                        "key": resolver.key,
+                        "regex": resolver.regex,
+                        "max_matches": resolver.maxMatches,
+                        "fallback": resolver.fallback.value if hasattr(resolver.fallback, "value") else str(resolver.fallback),
+                    }
+                ],
+            }
+            res = client.files_workshop(server.id, payload)
+            resolved = res.get("resolved", {}).get(resolver.name, [])
+            error = res.get("resolve_errors", {}).get(resolver.name)
+            return list(resolved), error
+        except Exception as exc:
+            return [], f"remote_resolve_failed: {exc}"
+
+    install_base = Path(server.install_dir).resolve()
+    rel_glob = (
+        resolver.fileGlob
+        .replace("{WORKSHOP_APP_ID}", str(workshop_app_id))
+        .replace("{WORKSHOP_ID}", str(workshop_id))
+    )
+    matches = glob.glob(str(install_base / rel_glob), recursive=True)
+    valid_paths: list[Path] = []
+    for match in matches:
+        p = Path(match).resolve()
+        try:
+            p.relative_to(install_base)
+            if p.is_file():
+                valid_paths.append(p)
         except ValueError:
             continue
-        path.unlink(missing_ok=True)
-        removed.append(str(path.relative_to(install_base)))
-    return removed
+
+    valid_paths.sort()
+    found_ids: list[str] = []
+
+    format_val = resolver.format.value if hasattr(resolver.format, "value") else str(resolver.format)
+    target_key = (resolver.key or "id").strip().lower()
+
+    for p in valid_paths:
+        try:
+            content = p.read_bytes()[:65536].decode("utf-8", errors="replace")
+        except Exception:
+            continue
+
+        if format_val == "iniKey":
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith(("#", ";")):
+                    continue
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    if k.strip().lower() == target_key:
+                        mod_id = v.strip().strip("'\"")
+                        if mod_id and _SAFE_MOD_ID_RE.match(mod_id) and len(mod_id) <= 64:
+                            found_ids.append(mod_id)
+        elif format_val == "regex" and resolver.regex:
+            pattern = re.compile(resolver.regex)
+            for match in pattern.finditer(content):
+                mod_id = match.group(1) if match.groups() else match.group(0)
+                mod_id = mod_id.strip().strip("'\"")
+                if mod_id and _SAFE_MOD_ID_RE.match(mod_id) and len(mod_id) <= 64:
+                    found_ids.append(mod_id)
+
+    unique_ids = list(dict.fromkeys(found_ids))[: resolver.maxMatches]
+
+    fallback_val = resolver.fallback.value if hasattr(resolver.fallback, "value") else str(resolver.fallback)
+    if not unique_ids:
+        if fallback_val == "workshopId":
+            return [str(workshop_id)], None
+        return [], "mod_info_missing"
+
+    return unique_ids, None
 
 
 class BlueprintPlugin(GamePlugin):
@@ -1107,8 +1240,16 @@ class BlueprintPlugin(GamePlugin):
 
     def format_modlist_lines(self, server, mods: list) -> list[str]:
         bp_mods = self._blueprint.effective_mods()
-        if bp_mods.modListContent != BlueprintModListContent.POST_INSTALL_TARGET_BASENAMES:
+        if bp_mods.modListContent != BlueprintModListContent.POST_INSTALL_TARGET_BASENAMES and not any(
+            t.valueSource == "postInstallTargetBasenames" for t in bp_mods.effective_mod_list_targets()
+        ):
             return [m.workshop_id for m in mods]
+
+        entry_template = None
+        for t in bp_mods.effective_mod_list_targets():
+            if t.valueSource == "postInstallTargetBasenames" and t.entryTemplate:
+                entry_template = t.entryTemplate
+                break
 
         lines: list[str] = []
         node = getattr(server, "node", None)
@@ -1122,8 +1263,11 @@ class BlueprintPlugin(GamePlugin):
                     self._workshop_agent_payload(str(mod.workshop_id), mode="inspect"),
                 )
                 lines.extend(str(name) for name in result.get("target_basenames", []) if name)
-            if self._blueprint.meta.id == "conan_exiles_ue5":
-                return [f"*{line}" if line and not line.startswith("*") else line for line in lines]
+            if entry_template:
+                lines = [
+                    entry_template.replace("{VALUE}", line) if not line.startswith("*") else line
+                    for line in lines
+                ]
             return lines
 
         base = Path(server.install_dir).resolve()
@@ -1145,8 +1289,11 @@ class BlueprintPlugin(GamePlugin):
                         continue
                     if target_path.exists():
                         lines.append(target_path.name)
-        if self._blueprint.meta.id == "conan_exiles_ue5":
-            return [f"*{line}" if line and not line.startswith("*") else line for line in lines]
+        if entry_template:
+            lines = [
+                entry_template.replace("{VALUE}", line) if not line.startswith("*") else line
+                for line in lines
+            ]
         return lines
 
     def _run_workshop_post_install_actions(self, server, workshop_id: str) -> dict:
@@ -1186,12 +1333,12 @@ class BlueprintPlugin(GamePlugin):
                 if action.operation == BlueprintWorkshopFileOperation.COPY:
                     if not source.is_file():
                         return {"error": f"postInstall copy erwartet Datei: {source.name}"}
-                    if target_rel.replace("\\", "/").startswith("ConanSandbox/Mods/"):
-                        purged = _purge_conan_extracted_mod_cache(base, source.name)
+                    if action.purgeBefore:
+                        purged = _purge_before_paths(base, action.purgeBefore, source.name)
                         if purged:
                             _append_console_log(
                                 server.id,
-                                f"[MSM] Mod {workshop_id}: ExtractedMods-Cache geleert "
+                                f"[MSM] Mod {workshop_id}: Cache geleert "
                                 f"({len(purged)} Datei(en)) vor Pak-Kopie.\n",
                             )
                     try:
@@ -1451,6 +1598,10 @@ class BlueprintPlugin(GamePlugin):
                     "operation": action.operation.value,
                     "source": self._render_workshop_path(action.source, str(workshop_id)),
                     "target": self._render_workshop_path(action.target, str(workshop_id)),
+                    "purge_before": [
+                        self._render_workshop_path(p, str(workshop_id))
+                        for p in action.purgeBefore
+                    ],
                     "required": action.required,
                 }
                 for action in bp_mods.postInstall
@@ -1463,11 +1614,15 @@ class BlueprintPlugin(GamePlugin):
         workshop_id: str,
         *,
         basename: str = "",
+        stem: str = "",
     ) -> str:
         bp_mods = self._blueprint.effective_mods()
+        if not stem and basename:
+            stem = Path(basename).stem
         return (
             template
             .replace("{WORKSHOP_APP_ID}", bp_mods.workshopAppId or "")
             .replace("{WORKSHOP_ID}", workshop_id)
             .replace("{BASENAME}", basename)
+            .replace("{STEM}", stem)
         )

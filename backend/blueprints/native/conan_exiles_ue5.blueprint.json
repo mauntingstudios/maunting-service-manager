@@ -85,12 +85,24 @@
     "modInjection": "file",
     "modStartupArgumentFormat": null,
     "modListFilePath": "ConanSandbox/Mods/modlist.txt",
-    "modListContent": "postInstallTargetBasenames",
+    "modListTargets": [
+      {
+        "file": "ConanSandbox/Mods/modlist.txt",
+        "valueSource": "postInstallTargetBasenames",
+        "separator": "\n",
+        "entryTemplate": "*{VALUE}"
+      }
+    ],
     "postInstall": [
       {
         "operation": "copy",
         "source": "steamapps/workshop/content/{WORKSHOP_APP_ID}/{WORKSHOP_ID}/**/*.pak",
         "target": "ConanSandbox/Mods/{BASENAME}",
+        "purgeBefore": [
+          "ConanSandbox/Saved/ExtractedMods/{STEM}-LinuxServer.pak",
+          "ConanSandbox/Saved/ExtractedMods/{STEM}-LinuxServer.utoc",
+          "ConanSandbox/Saved/ExtractedMods/{STEM}-LinuxServer.ucas"
+        ],
         "required": true
       }
     ]

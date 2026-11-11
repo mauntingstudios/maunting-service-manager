@@ -217,6 +217,7 @@ _ALLOWED_WORKSHOP_PATH_TOKENS: frozenset[str] = frozenset({
     "WORKSHOP_APP_ID",
     "WORKSHOP_ID",
     "BASENAME",
+    "STEM",
 })
 
 
@@ -801,6 +802,75 @@ class BlueprintSource(BaseModel):
         return defaults[self.type]
 
 
+class BlueprintModIdResolverFormat(str, Enum):
+    INI_KEY = "iniKey"
+    REGEX = "regex"
+
+
+class BlueprintModIdResolverFallback(str, Enum):
+    SKIP = "skip"
+    WORKSHOP_ID = "workshopId"
+
+
+class BlueprintModIdResolver(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    name: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$")
+    fileGlob: str = Field(..., min_length=1, max_length=512)
+    format: BlueprintModIdResolverFormat = BlueprintModIdResolverFormat.INI_KEY
+    key: str | None = Field(default=None, max_length=64)
+    regex: str | None = Field(default=None, max_length=256)
+    maxMatches: int = Field(default=16, ge=1, le=64)
+    fallback: BlueprintModIdResolverFallback = BlueprintModIdResolverFallback.SKIP
+
+    @field_validator("fileGlob")
+    @classmethod
+    def _check_file_glob(cls, v: str) -> str:
+        if not _is_safe_relative_template(
+            v,
+            allowed_tokens=_ALLOWED_WORKSHOP_PATH_TOKENS,
+            allow_glob=True,
+        ):
+            raise ValueError(
+                "modIdResolver.fileGlob muss ein sicherer relativer Pfad mit "
+                "whitelisted Workshop-Tokens sein."
+            )
+        return v
+
+
+class BlueprintModListTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    file: str = Field(..., min_length=1, max_length=512)
+    key: str | None = Field(default=None, min_length=1, max_length=128)
+    valueSource: str = Field(..., min_length=1, max_length=128)
+    separator: str = Field(default=";", max_length=8)
+    entryTemplate: str | None = Field(default=None, max_length=64)
+
+    @field_validator("file")
+    @classmethod
+    def _check_file(cls, v: str) -> str:
+        if not _is_safe_relative_template(
+            v,
+            allowed_tokens=frozenset({"SERVER_NAME"}),
+            allow_glob=False,
+        ):
+            raise ValueError(
+                "modListTarget.file muss ein sicherer relativer Pfad sein (optional mit {SERVER_NAME})."
+            )
+        return v
+
+    @field_validator("valueSource")
+    @classmethod
+    def _check_value_source(cls, v: str) -> str:
+        if v in ("workshopIds", "postInstallTargetBasenames") or v.startswith("resolvedIds:"):
+            return v
+        raise ValueError(
+            "modListTarget.valueSource muss 'workshopIds', 'postInstallTargetBasenames' "
+            "oder 'resolvedIds:<name>' sein."
+        )
+
+
 class BlueprintMods(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -819,6 +889,8 @@ class BlueprintMods(BaseModel):
     modListContent: BlueprintModListContent = BlueprintModListContent.WORKSHOP_IDS
     modListKey: str | None = Field(default=None, min_length=1, max_length=128)
     modListSeparator: str = Field(default=";", max_length=8)
+    modIdResolvers: list[BlueprintModIdResolver] = Field(default_factory=list, max_length=8)
+    modListTargets: list[BlueprintModListTarget] = Field(default_factory=list, max_length=16)
     postInstall: list["BlueprintWorkshopFileAction"] = Field(default_factory=list, max_length=32)
 
     @field_validator("filterTags")
@@ -947,18 +1019,51 @@ class BlueprintMods(BaseModel):
                     "mods.modStartupArgumentFormat muss den Platzhalter '{mods}' enthalten."
                 )
         if self.modInjection == BlueprintModInjection.FILE:
-            if not self.modListFilePath:
+            if not self.modListFilePath and not self.modListTargets:
                 raise ValueError(
-                    "mods.modListFilePath ist Pflicht bei modInjection=file."
+                    "mods.modListFilePath oder mods.modListTargets ist Pflicht bei modInjection=file."
                 )
-        if self.modListContent == BlueprintModListContent.POST_INSTALL_TARGET_BASENAMES:
+        if self.modListTargets:
+            resolver_names = {r.name for r in self.modIdResolvers}
+            for target in self.modListTargets:
+                if target.valueSource.startswith("resolvedIds:"):
+                    r_name = target.valueSource.split(":", 1)[1]
+                    if r_name not in resolver_names:
+                        raise ValueError(
+                            f"modListTarget referenziert unbekannten Resolver '{r_name}'."
+                        )
+        if self.modListContent == BlueprintModListContent.POST_INSTALL_TARGET_BASENAMES and not self.modListTargets:
             if not self.postInstall:
                 raise ValueError(
                     "mods.postInstall ist Pflicht bei modListContent=postInstallTargetBasenames."
                 )
-        if self.modListContent == BlueprintModListContent.INI_KEY and not self.modListKey:
+        if self.modListContent == BlueprintModListContent.INI_KEY and not self.modListKey and not self.modListTargets:
             raise ValueError("mods.modListKey ist Pflicht bei modListContent=iniKey.")
         return self
+
+    def effective_mod_list_targets(self) -> list[BlueprintModListTarget]:
+        if self.modListTargets:
+            return self.modListTargets
+        if self.modInjection != BlueprintModInjection.FILE or not self.modListFilePath:
+            return []
+
+        value_source = "workshopIds"
+        if self.modListContent == BlueprintModListContent.POST_INSTALL_TARGET_BASENAMES:
+            value_source = "postInstallTargetBasenames"
+        elif self.modListContent == BlueprintModListContent.WORKSHOP_IDS:
+            value_source = "workshopIds"
+        elif self.modListContent == BlueprintModListContent.INI_KEY:
+            value_source = "workshopIds"
+
+        return [
+            BlueprintModListTarget(
+                file=self.modListFilePath,
+                key=self.modListKey if self.modListContent == BlueprintModListContent.INI_KEY else None,
+                valueSource=value_source,
+                separator=self.modListSeparator,
+                entryTemplate=None,
+            )
+        ]
 
 
 class BlueprintWorkshopFileAction(BaseModel):
@@ -967,7 +1072,23 @@ class BlueprintWorkshopFileAction(BaseModel):
     operation: BlueprintWorkshopFileOperation
     source: str = Field(min_length=1, max_length=512)
     target: str = Field(min_length=1, max_length=512)
+    purgeBefore: list[str] = Field(default_factory=list, max_length=16)
     required: bool = False
+
+    @field_validator("purgeBefore")
+    @classmethod
+    def _check_purge_before(cls, v: list[str]) -> list[str]:
+        for p in v:
+            if not _is_safe_relative_template(
+                p,
+                allowed_tokens=_ALLOWED_WORKSHOP_PATH_TOKENS,
+                allow_glob=True,
+            ):
+                raise ValueError(
+                    f"mods.postInstall.purgeBefore Pfad '{p}' muss ein sicherer relativer Pfad mit "
+                    "whitelisted Workshop-Tokens sein."
+                )
+        return v
 
     @field_validator("source")
     @classmethod

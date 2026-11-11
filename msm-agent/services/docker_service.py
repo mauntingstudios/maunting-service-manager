@@ -307,7 +307,7 @@ def create_container(
         "working_dir": workdir,
         "network": network,
         "tmpfs": {
-            path: "rw,size=64m,mode=1777" for path in (tmpfs_paths or [])
+            path: "rw,exec,nosuid,nodev,size=128m,mode=1777" for path in (tmpfs_paths or [])
         } or None,
     }
     if cpu_limit_percent is not None and cpu_limit_percent > 0:

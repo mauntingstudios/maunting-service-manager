@@ -23,6 +23,9 @@ class ModResponse(BaseModel):
     update_status: str
     update_reason: str | None
     update_checked_at: datetime | None
+    resolved_ids_json: str | None = None
+    resolved_at: datetime | None = None
+    resolve_error: str | None = None
 
     class Config:
         from_attributes = True

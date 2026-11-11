@@ -916,11 +916,13 @@ def should_preserve_file(path: Path) -> bool:
       Datenfiles, die zufällig auf Muster passen.
     - Manuelle Configs des Users (außerhalb dieser Bereiche) bleiben erhalten.
     """
-    p = str(path).lower()
-    if any(x in p for x in (
+    p = str(path).replace("\\", "/").lower()
+    norm = f"/{p.lstrip('/')}"
+    if any(x in norm for x in (
         "steamapps/", "workshop/", "logs/", ".msm-uploads/",
         "/content/", "/saved/", "/data/", "/maps/", "/shaders/",
-        "/textures/", "/binaries/", "/thirdparty/", "/core/"
+        "/textures/", "/binaries/", "/thirdparty/", "/core/",
+        "/media/", "/scripts/", "/assets/", "/localization/", "/translations/"
     )):
         return False
     if path.suffix.lower() in {".exe", ".so", ".dll", ".pak", ".ucas", ".utoc", ".vpk", ".png", ".jpg", ".jpeg", ".wav", ".mp3"}:

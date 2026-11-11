@@ -389,7 +389,7 @@ def ensure_network(name: str, *, internal: bool = False) -> dict:
 def _tmpfs_dict(tmpfs_paths: list[str] | None) -> dict[str, str] | None:
     if not tmpfs_paths:
         return None
-    return {path: "rw,size=64m,mode=1777" for path in tmpfs_paths}
+    return {path: "rw,exec,nosuid,nodev,size=128m,mode=1777" for path in tmpfs_paths}
 
 
 def _split_image_ref(image: str) -> tuple[str, str | None]:

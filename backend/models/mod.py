@@ -29,5 +29,8 @@ class Mod(Base):
     update_status: Mapped[str] = mapped_column(String(24), default="unknown", nullable=False)
     update_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
     update_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolve_error: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     server: Mapped["Server"] = relationship("Server", back_populates="mods")

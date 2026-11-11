@@ -836,23 +836,27 @@ def active_mod_ids(server) -> list[str]:
 
 
 def _finalize_modlist_lines(server, lines: list[str]) -> list[str]:
-    """Conan UE5: * vor .pak-Zeilen (Funcom/Hosting-Doku), dedupliziert."""
-    game_type = (getattr(server, "game_type", None) or "").strip()
-    if game_type != "conan_exiles_ue5":
-        return lines
+    """Dedupliziert Modlist-Zeilen stabil unter Erhalt der Reihenfolge."""
     out: list[str] = []
     seen: set[str] = set()
     for raw in lines:
         line = (raw or "").strip()
-        if not line:
-            continue
-        if line.endswith(".pak") and not line.startswith("*"):
-            line = f"*{line}"
-        if line in seen:
+        if not line or line in seen:
             continue
         seen.add(line)
         out.append(line)
     return out
+
+
+def _format_target_line(raw: str, entry_template: str | None) -> str:
+    line = (raw or "").strip()
+    if not line:
+        return ""
+    if not entry_template:
+        return line
+    if entry_template == "*{VALUE}":
+        return line if line.startswith("*") else f"*{line}"
+    return entry_template.replace("{VALUE}", line)
 
 
 def _set_flat_config_value(content: str, key: str, value: str) -> str:
@@ -869,6 +873,97 @@ def _set_flat_config_value(content: str, key: str, value: str) -> str:
     return f"{content}{prefix}{value}\n"
 
 
+def write_workshop_modlist_targets(
+    server,
+    targets: list[Any],
+    target_values: dict[Any, list[str]],
+) -> None:
+    """Schreibt ein oder mehrere BlueprintModListTargets sicher in Dateien unter install_dir."""
+    install_dir = getattr(server, "install_dir", None) or ""
+    if not install_dir:
+        _append_console_log(server.id, "[MSM] Modliste: kein install_dir gesetzt\n")
+        return
+
+    server_name = str(getattr(server, "name", ""))
+    if any(ch in server_name for ch in ("/", "\\", "\x00")) or server_name in {".", ".."}:
+        _append_console_log(server.id, "[MSM] Modliste: unsicherer Servername abgelehnt\n")
+        return
+
+    file_targets: dict[str, list[Any]] = {}
+    for target in targets:
+        rel_path = target.file.replace("{SERVER_NAME}", server_name)
+        if not rel_path or rel_path.startswith("/") or "\x00" in rel_path or any(part == ".." for part in rel_path.split("/")):
+            _append_console_log(server.id, f"[MSM] Modliste: unsicherer Pfad abgelehnt: {rel_path}\n")
+            continue
+        file_targets.setdefault(rel_path, []).append(target)
+
+    node = getattr(server, "node", None)
+    is_remote = node is not None and not getattr(node, "is_local", False)
+
+    client = None
+    if is_remote:
+        try:
+            from services.node_client import NodeClient
+
+            client = NodeClient.from_node(node)
+        except Exception:
+            _append_console_log(server.id, "[MSM] Modliste: NodeClient-Initialisierung fehlgeschlagen\n")
+            return
+
+    for rel_path, group in file_targets.items():
+        current_content = ""
+        install_real = ""
+        if is_remote:
+            try:
+                current_content = client.files_read(server.id, rel_path)
+            except Exception:
+                current_content = ""
+        else:
+            try:
+                install_real = os.path.realpath(install_dir)
+                target_path = os.path.realpath(os.path.join(install_real, rel_path))
+                rel = os.path.relpath(target_path, install_real)
+                if rel.startswith("..") or os.path.isabs(rel):
+                    _append_console_log(server.id, f"[MSM] Modliste: Pfad {rel_path} verlaesst install_dir — abgelehnt\n")
+                    continue
+                if os.path.isfile(target_path):
+                    with open(target_path, "r", encoding="utf-8", errors="replace") as f:
+                        current_content = f.read()
+            except OSError as exc:
+                _append_console_log(server.id, f"[MSM] Modliste: Fehler beim Lesen von {rel_path}: {exc}\n")
+                continue
+
+        content = current_content
+        for target in group:
+            raw_vals = target_values.get(target.key, target_values.get(target.file, target_values.get(None, [])))
+            formatted_lines = []
+            seen = set()
+            for r in raw_vals:
+                formatted = _format_target_line(str(r), target.entryTemplate)
+                if formatted and formatted not in seen:
+                    seen.add(formatted)
+                    formatted_lines.append(formatted)
+
+            if target.key:
+                content = _set_flat_config_value(content, target.key, target.separator.join(formatted_lines))
+            else:
+                content = "".join(f"{line}\n" for line in formatted_lines)
+
+        if is_remote:
+            try:
+                client.files_write(server.id, rel_path, content)
+            except Exception:
+                _append_console_log(server.id, f"[MSM] Modliste: Schreiben auf Node fehlgeschlagen ({rel_path})\n")
+        else:
+            try:
+                target_path = os.path.realpath(os.path.join(install_real, rel_path))
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                with open(target_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            except OSError as exc:
+                _append_console_log(server.id, f"[MSM] Modliste: Schreiben fehlgeschlagen ({rel_path}): {exc}\n")
+
+
 def write_workshop_modlist(
     server,
     relative_path: str,
@@ -876,19 +971,9 @@ def write_workshop_modlist(
     *,
     config_key: str | None = None,
     separator: str = ";",
+    entry_template: str | None = None,
 ) -> None:
-    """Schreibt eine Workshop-Modliste in eine sichere Datei unter ``install_dir``.
-
-    Sicherheits-Invarianten:
-    - ``relative_path`` MUSS relativ sein und darf nach ``realpath``-Aufloesung
-      nicht aus ``install_dir`` ausbrechen (Symlink-Escape-Schutz).
-    - Bei jedem Fehler wird in das Console-Log geschrieben, NICHT geraised —
-      sonst wuerden Mod-Mutationen im Router crashen.
-    """
-    install_dir = getattr(server, "install_dir", None) or ""
-    if not install_dir:
-        _append_console_log(server.id, "[MSM] Modliste: kein install_dir gesetzt\n")
-        return
+    """Rückwärtskompatibler Wrapper; delegiert an write_workshop_modlist_targets."""
     if not relative_path or relative_path.startswith("/") or "\x00" in relative_path:
         _append_console_log(server.id, "[MSM] Modliste: unsicherer Pfad abgelehnt\n")
         return
@@ -896,58 +981,20 @@ def write_workshop_modlist(
         _append_console_log(server.id, "[MSM] Modliste: Pfad enthaelt '..'\n")
         return
 
-    node = getattr(server, "node", None)
-    if node is not None and not getattr(node, "is_local", False):
-        try:
-            from services.node_client import NodeClient
+    if entry_template is None and (getattr(server, "game_type", "") or "").strip() == "conan_exiles_ue5":
+        entry_template = "*{VALUE}"
 
-            client = NodeClient.from_node(node)
-            final_lines = _finalize_modlist_lines(server, lines)
-            if config_key:
-                try:
-                    current = client.files_read(server.id, relative_path)
-                except Exception:
-                    current = ""
-                content = _set_flat_config_value(current, config_key, separator.join(final_lines))
-            else:
-                content = "".join(f"{line}\n" for line in final_lines)
-            client.files_write(server.id, relative_path, content)
-        except Exception:
-            _append_console_log(server.id, "[MSM] Modliste: Schreiben auf Node fehlgeschlagen\n")
-        return
+    from blueprints.schema import BlueprintModListTarget
 
-    try:
-        install_real = os.path.realpath(install_dir)
-        target = os.path.realpath(os.path.join(install_real, relative_path))
-    except OSError as exc:
-        _append_console_log(server.id, f"[MSM] Modliste: realpath fehlgeschlagen: {exc}\n")
-        return
-
-    rel = os.path.relpath(target, install_real)
-    if rel.startswith("..") or os.path.isabs(rel):
-        _append_console_log(
-            server.id,
-            f"[MSM] Modliste: Pfad {relative_path} verlaesst install_dir — abgelehnt\n",
-        )
-        return
-
-    target_dir = os.path.dirname(target)
-    lines = _finalize_modlist_lines(server, lines)
-    try:
-        os.makedirs(target_dir, exist_ok=True)
-        if config_key:
-            try:
-                with open(target, "r", encoding="utf-8", errors="replace") as f:
-                    current = f.read()
-            except FileNotFoundError:
-                current = ""
-            content = _set_flat_config_value(current, config_key, separator.join(lines))
-        else:
-            content = "".join(f"{line}\n" for line in lines)
-        with open(target, "w", encoding="utf-8") as f:
-            f.write(content)
-    except OSError as exc:
-        _append_console_log(server.id, f"[MSM] Modliste: Schreiben fehlgeschlagen: {exc}\n")
+    target = BlueprintModListTarget(
+        file=relative_path,
+        key=config_key,
+        valueSource="workshopIds",
+        separator=separator,
+        entryTemplate=entry_template,
+    )
+    target_values = {config_key: lines} if config_key else {None: lines}
+    write_workshop_modlist_targets(server, [target], target_values)
 
 
 # ── Plugin-Basis ───────────────────────────────────────────────────────────
@@ -1528,19 +1575,64 @@ class GamePlugin(ABC):
             return
         if bp_mods.modInjection != BlueprintModInjection.FILE:
             return
-        rel_path = bp_mods.modListFilePath or ""
-        if "{SERVER_NAME}" in rel_path:
-            server_name = str(getattr(server, "name", ""))
-            if not server_name or any(ch in server_name for ch in ("/", "\\", "\x00")) or server_name in {".", ".."}:
-                _append_console_log(server.id, "[MSM] Modliste: unsicherer Servername im Blueprint-Pfad abgelehnt\n")
-                return
-            rel_path = rel_path.replace("{SERVER_NAME}", server_name)
-        if not rel_path:
+
+        targets = bp_mods.effective_mod_list_targets()
+        if not targets:
             return
-        write_workshop_modlist(
-            server,
-            rel_path,
-            self.format_modlist_lines(server, _query_active_mods(server.id)),
-            config_key=bp_mods.modListKey if bp_mods.modListContent.value == "iniKey" else None,
-            separator=bp_mods.modListSeparator,
-        )
+
+        active_mods = _query_active_mods(server.id)
+        active_mods.sort(key=lambda m: (m.load_order if m.load_order is not None else 0, m.id if m.id is not None else 0))
+
+        target_values: dict[Any, list[str]] = {}
+        for target in targets:
+            lookup_key = target.key if target.key is not None else target.file
+            if target.valueSource == "workshopIds":
+                target_values[lookup_key] = [str(m.workshop_id) for m in active_mods if m.workshop_id]
+            elif target.valueSource == "postInstallTargetBasenames":
+                target_values[lookup_key] = self.format_modlist_lines(server, active_mods)
+            elif target.valueSource.startswith("resolvedIds:"):
+                resolver_name = target.valueSource.split(":", 1)[1]
+                resolver = next((r for r in bp_mods.modIdResolvers if r.name == resolver_name), None)
+                collected_ids: list[str] = []
+                for mod in active_mods:
+                    raw_json = getattr(mod, "resolved_ids_json", None)
+                    if raw_json is None and resolver is not None:
+                        from games.blueprint_plugin import _resolve_mod_ids
+
+                        res_ids, err = _resolve_mod_ids(
+                            server,
+                            workshop_app_id=bp_mods.workshopAppId or "",
+                            workshop_id=str(mod.workshop_id),
+                            resolver=resolver,
+                        )
+                        try:
+                            from database import SessionLocal
+                            from models.mod import Mod
+                            import json
+                            from datetime import datetime, timezone
+
+                            db = SessionLocal()
+                            try:
+                                db_mod = db.query(Mod).filter(Mod.id == mod.id).first()
+                                if db_mod:
+                                    db_mod.resolved_ids_json = json.dumps(res_ids)
+                                    db_mod.resolved_at = datetime.now(timezone.utc)
+                                    db_mod.resolve_error = err
+                                    db.commit()
+                            finally:
+                                db.close()
+                        except Exception:
+                            pass
+                        collected_ids.extend(res_ids)
+                    elif raw_json:
+                        try:
+                            import json
+
+                            parsed = json.loads(raw_json)
+                            if isinstance(parsed, list):
+                                collected_ids.extend(str(x) for x in parsed)
+                        except Exception:
+                            pass
+                target_values[lookup_key] = collected_ids
+
+        write_workshop_modlist_targets(server, targets, target_values)

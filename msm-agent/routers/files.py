@@ -74,14 +74,16 @@ class WorkshopFileAction(BaseModel):
     operation: str = Field(..., pattern="^(copy|symlink)$")
     source: str = Field(..., min_length=1, max_length=512)
     target: str = Field(..., min_length=1, max_length=512)
+    purge_before: list[str] = Field(default_factory=list, max_length=16)
     required: bool = False
 
 
 class WorkshopFilesBody(BaseModel):
     workshop_app_id: str = Field(..., pattern="^[0-9]+$")
     workshop_id: str = Field(..., pattern="^[0-9]+$")
-    mode: str = Field(..., pattern="^(apply|inspect|cleanup)$")
+    mode: str = Field(..., pattern="^(apply|inspect|cleanup|resolve_ids)$")
     actions: list[WorkshopFileAction] = Field(default_factory=list, max_length=32)
+    resolvers: list[dict[str, Any]] = Field(default_factory=list, max_length=8)
 
 
 class ArchiveBody(BaseModel):
@@ -321,6 +323,7 @@ def workshop_files(body: WorkshopFilesBody, server_id: str = Query(...)) -> dict
             workshop_id=body.workshop_id,
             actions=[action.model_dump() for action in body.actions],
             mode=body.mode,
+            resolvers=body.resolvers,
         )
     except Exception as exc:
         raise _map_path_errors(exc) from exc

@@ -104,3 +104,61 @@ def test_workshop_copy_does_not_overwrite_external_hardlink(
     assert response.status_code == 200, response.text
     assert target.read_bytes() == b"new-content"
     assert outside.read_bytes() == b"must-not-change"
+
+
+def test_workshop_resolve_ids_mode(client, auth_headers, servers_dir: Path) -> None:
+    source = servers_dir / "77" / "steamapps" / "workshop" / "content" / "108600" / "2282429356" / "mods" / "MyMod"
+    source.mkdir(parents=True)
+    (source / "mod.info").write_text("name=My Test Mod\nid=my_test_mod\n", encoding="utf-8")
+
+    payload = {
+        "workshop_app_id": "108600",
+        "workshop_id": "2282429356",
+        "mode": "resolve_ids",
+        "resolvers": [
+            {
+                "name": "zomboid_mod_info",
+                "file_glob": "steamapps/workshop/content/{WORKSHOP_APP_ID}/{WORKSHOP_ID}/mods/*/mod.info",
+                "format": "iniKey",
+                "key": "id",
+                "max_matches": 16,
+                "fallback": "skip",
+            }
+        ],
+    }
+
+    response = client.post("/files/workshop?server_id=77", json=payload, headers=auth_headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["resolved"]["zomboid_mod_info"] == ["my_test_mod"]
+
+
+def test_workshop_apply_executes_purge_before(client, auth_headers, servers_dir: Path) -> None:
+    source = servers_dir / "77" / "steamapps" / "workshop" / "content" / "440900" / "999"
+    source.mkdir(parents=True)
+    (source / "HeroMod.pak").write_bytes(b"new-pak")
+
+    extracted = servers_dir / "77" / "ConanSandbox" / "Saved" / "ExtractedMods"
+    extracted.mkdir(parents=True)
+    (extracted / "HeroMod-LinuxServer.pak").write_bytes(b"old-cache")
+
+    payload = {
+        "workshop_app_id": "440900",
+        "workshop_id": "999",
+        "mode": "apply",
+        "actions": [
+            {
+                "operation": "copy",
+                "source": "steamapps/workshop/content/440900/999/*.pak",
+                "target": "ConanSandbox/Mods/{BASENAME}",
+                "purge_before": [
+                    "ConanSandbox/Saved/ExtractedMods/{STEM}-LinuxServer.pak",
+                ],
+                "required": True,
+            }
+        ],
+    }
+
+    response = client.post("/files/workshop?server_id=77", json=payload, headers=auth_headers)
+    assert response.status_code == 200, response.text
+    assert not (extracted / "HeroMod-LinuxServer.pak").exists()
+    assert (servers_dir / "77" / "ConanSandbox" / "Mods" / "HeroMod.pak").read_bytes() == b"new-pak"

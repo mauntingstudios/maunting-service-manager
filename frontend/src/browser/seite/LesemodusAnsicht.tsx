@@ -59,13 +59,19 @@ export function LesemodusAnsicht({ tab }: LesemodusAnsichtProps) {
     setSchriftart,
     setBreite,
     setLinksModus,
-    artikelCache,
-    artikelCachen,
   } = useLesemodusStore()
 
+  const cacheKey = `${tab.id}:${tab.url}`
+  const cachedArtikel = useLesemodusStore((s) => s.artikelCache[cacheKey])
+  const artikelCachen = useLesemodusStore((s) => s.artikelCachen)
+
   const [typografieOffen, setTypografieOffen] = useState(false)
-  const [laedt, setLaedt] = useState(false)
+  const [laedtExtraktion, setLaedtExtraktion] = useState(false)
   const [fehler, setFehler] = useState<string | null>(null)
+  const [lokalerArtikel, setLokalerArtikel] = useState<ExtrahierterArtikel | null>(cachedArtikel ?? null)
+
+  const artikel = cachedArtikel ?? lokalerArtikel
+  const laedt = !artikel && !fehler && laedtExtraktion
   const typografieKnopfRef = useRef<HTMLButtonElement | null>(null)
   const typografieMenueRef = useRef<HTMLDivElement | null>(null)
   const hauptRef = useRef<HTMLElement | null>(null)
@@ -110,19 +116,16 @@ export function LesemodusAnsicht({ tab }: LesemodusAnsichtProps) {
     }
   }, [typografieOffen])
 
-  const cacheKey = `${tab.id}:${tab.url}`
-  const cachedArtikel = artikelCache[cacheKey]
-  const [artikel, setArtikel] = useState<ExtrahierterArtikel | null>(cachedArtikel ?? null)
-
   useEffect(() => {
     if (cachedArtikel) {
-      setArtikel(cachedArtikel)
+      setLokalerArtikel(cachedArtikel)
       setFehler(null)
+      setLaedtExtraktion(false)
       return
     }
 
     let aktiv = true
-    setLaedt(true)
+    setLaedtExtraktion(true)
     setFehler(null)
 
     void artikelExtrahieren(tab.id, tab.url)
@@ -130,20 +133,22 @@ export function LesemodusAnsicht({ tab }: LesemodusAnsichtProps) {
         if (!aktiv) return
         if (!extrahiert || (!extrahiert.reintext && !extrahiert.inhaltHtml)) {
           setFehler(null)
-          setArtikel(null)
+          setLokalerArtikel(null)
           return
         }
         artikelCachen(cacheKey, extrahiert)
-        setArtikel(extrahiert)
+        setLokalerArtikel(extrahiert)
       })
       .catch((err) => {
         if (!aktiv) return
         console.warn('Fehler bei der Lese-Extraktion:', err)
         setFehler(err instanceof Error ? err.message : String(err || t('browser.lesemodus.nichtVerfuegbar')))
-        setArtikel(null)
+        setLokalerArtikel(null)
       })
       .finally(() => {
-        if (aktiv) setLaedt(false)
+        if (aktiv) {
+          setLaedtExtraktion(false)
+        }
       })
 
     return () => {

@@ -166,7 +166,7 @@ def test_create_preserves_runtime_hardening_and_attaches_extra_network(monkeypat
     assert result["ok"] is True
     kwargs = run.call_args.kwargs
     assert kwargs["read_only"] is True
-    assert kwargs["tmpfs"] == {"/tmp": "rw,size=64m,mode=1777"}
+    assert kwargs["tmpfs"] == {"/tmp": "rw,exec,nosuid,nodev,size=128m,mode=1777"}
     assert kwargs["restart_policy"] == {"Name": "on-failure"}
     network.connect.assert_called_once_with(container)
 
