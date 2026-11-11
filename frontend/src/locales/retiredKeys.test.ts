@@ -321,6 +321,14 @@ const ABGELOESTE_SCHLUESSEL = [
   'benutzername.weiter',
   'ai.profile.deviceInactive',
   'mss.vault.dateien.kurz.offline',
+  // 11/2026: Google Programmable Search (Custom Search JSON API) wegen Einstellung der API entfernt.
+  'searchEngineSettings.googleTitle',
+  'searchEngineSettings.googleDescription',
+  'searchEngineSettings.googleApiKey',
+  'searchEngineSettings.googleApiKeyPlaceholder',
+  'searchEngineSettings.googleCx',
+  'searchEngineSettings.googleCxPlaceholder',
+  'searchEngineSettings.googleRemoveConfirm',
 ]
 
 /** Die Nachfolger muss es geben — sonst wäre das Löschen ein Verlust. */

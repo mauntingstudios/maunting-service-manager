@@ -70,9 +70,8 @@ def test_a_missing_key_is_reported_honestly_not_as_no_results(
     _allow_search(db, regular_user)
     monkeypatch.setattr(ai_web_search_service, "api_key", lambda: None)
     # Ohne weitere Quelle bleibt nur der fehlende Brave-Schluessel. Sonst
-    # traegt eine SearXNG-Seitenwagen-Instanz oder Google CSE die Suche.
+    # traegt eine SearXNG-Seitenwagen-Instanz die Suche.
     monkeypatch.setattr(ai_web_search_service, "searxng_url", lambda: None)
-    monkeypatch.setattr(ai_web_search_service, "google_cse_credentials", lambda: None)
 
     result = ai_action_service.execute_read_tool(
         db, user=regular_user, tool_name="web_search",
@@ -198,10 +197,9 @@ def test_session_scoped_cache_reuses_only_the_same_voice_session(
     ai_web_search_service.shutdown_http_client()
     monkeypatch.setattr(ai_web_search_service, "api_key", lambda: "test-schluessel")
     monkeypatch.setattr(ai_web_search_service, "_http_client", lambda: FakeClient())
-    # Nur Brave: eine Seitenwagen-SearXNG oder Google CSE wuerde je Suche
-    # einen zweiten Aufruf ausloesen und die Zaehlung verwischen.
+    # Nur Brave: eine Seitenwagen-SearXNG wuerde je Suche einen zweiten
+    # Aufruf ausloesen und die Zaehlung verwischen.
     monkeypatch.setattr(ai_web_search_service, "searxng_url", lambda: None)
-    monkeypatch.setattr(ai_web_search_service, "google_cse_credentials", lambda: None)
 
     assert ai_web_search_service.search("MSM update", cache_scope="voice:1:a") == []
     assert ai_web_search_service.search("MSM update", cache_scope="voice:1:a") == []
@@ -548,7 +546,6 @@ def test_additive_multi_engine_fusion(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ai_web_search_service, "_http_client", lambda: FakeClient())
     monkeypatch.setattr(ai_web_search_service, "api_key", lambda: "brave-key")
     monkeypatch.setattr(ai_web_search_service, "searxng_url", lambda: "http://127.0.0.1:8888")
-    monkeypatch.setattr(ai_web_search_service, "google_cse_credentials", lambda: None)
     monkeypatch.setattr(ai_web_search_service, "ai_web_search_enabled", lambda: True)
 
     # In searxng_ergebnis
@@ -641,26 +638,25 @@ def test_read_web_page_tool(db: Session, regular_user: User, monkeypatch: pytest
 
 
 def test_multi_engine_fusion_interleaves_without_starvation() -> None:
-    """Wenn Brave 15 Treffer liefert, werden SearXNG und Google nicht verdrängt, sondern verzahnt."""
+    """Wenn Brave 15 Treffer liefert, wird SearXNG nicht verdrängt, sondern 2:1 verzahnt."""
     brave_hits = [{"title": f"Brave {i}", "url": f"https://b.example.com/{i}"} for i in range(15)]
     searx_hits = [{"title": f"Searx {i}", "url": f"https://s.example.com/{i}"} for i in range(15)]
-    google_hits = [{"title": f"Google {i}", "url": f"https://g.example.com/{i}"} for i in range(10)]
 
-    fused = ai_web_search_service._mische_treffer([brave_hits, searx_hits, google_hits], limit=15)
+    fused = ai_web_search_service._mische_treffer([brave_hits, searx_hits], limit=15)
     assert len(fused) == 15
 
     b_count = sum(1 for r in fused if "Brave" in r["title"])
     s_count = sum(1 for r in fused if "Searx" in r["title"])
-    g_count = sum(1 for r in fused if "Google" in r["title"])
 
-    assert b_count == 8
-    assert s_count == 4
-    assert g_count == 3
-    # Reihenfolge beginnt mit Top-Brave, enthält aber frühzeitig SearXNG und Google
+    assert b_count == 10
+    assert s_count == 5
+    # Reihenfolge beginnt mit Top-Brave (Gewicht 2), gefolgt von SearXNG (Gewicht 1)
     assert "Brave" in fused[0]["title"]
     assert "Brave" in fused[1]["title"]
     assert "Searx" in fused[2]["title"]
-    assert "Google" in fused[3]["title"]
+    assert "Brave" in fused[3]["title"]
+    assert "Brave" in fused[4]["title"]
+    assert "Searx" in fused[5]["title"]
 
 
 def test_normalisiere_url_strips_tracking_params() -> None:
@@ -926,5 +922,128 @@ def test_scrape_url_deep_and_effective_max(monkeypatch: pytest.MonkeyPatch) -> N
     assert len(deep_res["content"]) > 15000
     assert len(deep_res["content"]) <= 25000
 
+
+def test_legacy_google_cse_settings_and_env_have_no_effect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Alte Google-CSE-Reste in panel_settings oder ENV werden vollstaendig ignoriert."""
+    import config
+    from services.auth_service import AuthService
+    from services.panel_settings_service import PanelSettingsService
+
+    monkeypatch.setattr(config.settings, "searxng_url", "")
+    for var in (
+        "MSM_BRAVE_SEARCH_API_KEY",
+        "BRAVE_SEARCH_API_KEY",
+        "BRAVE_API_KEY",
+        "MSM_SEARXNG_URL",
+        "SEARXNG_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(ai_web_search_service, "is_sidecar_running", lambda *_: False)
+
+    # Altdaten in panel_settings + Umgebungsvariablen hinterlegen
+    PanelSettingsService.set(
+        "search_google_cse_credentials_encrypted",
+        AuthService.encrypt_secret(
+            json.dumps({"api_key": "synthetic-legacy-google-key", "cx": "synthetic-cx"}),
+            aad="msm:panel:ai:web_search:google_cse:v1",
+        ),
+    )
+    monkeypatch.setenv("MSM_GOOGLE_CSE_API_KEY", "synthetic-legacy-google-key")
+    monkeypatch.setenv("MSM_GOOGLE_CSE_CX", "synthetic-cx")
+    monkeypatch.setenv("GOOGLE_CSE_API_KEY", "synthetic-legacy-google-key")
+    monkeypatch.setenv("GOOGLE_CSE_CX", "synthetic-cx")
+
+    assert ai_web_search_service.is_search_engine_configured() is False
+    assert ai_web_search_service.is_configured() is False
+
+    seen_urls: list[str] = []
+
+    def fake_get(url, *, params=None, headers=None):
+        seen_urls.append(url)
+        if "127.0.0.1:8888" in url:
+            return httpx.Response(200, json={"results": [{"title": "SearXNG Hit", "url": "https://example.com/ok", "content": "ok"}]})
+        raise AssertionError(f"Unerwartetes Suchziel aufgerufen: {url}")
+
+    class FakeClient:
+        get = staticmethod(fake_get)
+
+    ai_web_search_service.shutdown_http_client()
+    monkeypatch.setattr(ai_web_search_service, "_http_client", lambda: FakeClient())
+
+    with pytest.raises(ai_web_search_service.WebSearchUnavailable) as exc_info:
+        ai_web_search_service.search("synthetic query without searxng")
+    assert exc_info.value.code == "AI_WEB_SEARCH_NOT_CONFIGURED"
+    assert seen_urls == []
+
+    # Auch mit aktivem SearXNG darf niemals customsearch.googleapis.com angefragt werden
+    monkeypatch.setattr(ai_web_search_service, "searxng_url", lambda: "http://127.0.0.1:8888")
+    erg = ai_web_search_service.searxng_ergebnis("synthetic query with searxng")
+    hits = ai_web_search_service.search("synthetic query with searxng")
+    assert len(erg["treffer"]) == 1
+    assert len(hits) == 1
+    assert all("customsearch.googleapis.com" not in u for u in seen_urls)
+    assert all("127.0.0.1:8888" in u for u in seen_urls)
+
+
+def test_web_search_settings_api_rbac_and_schema_without_google_cse(
+    client,
+    owner_cookies: dict,
+    csrf_token: str | None,
+    user_cookies: dict,
+    user_csrf_token: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """/api/ai/settings/web-search prueft Rechte, leakt kein Secret und fuehrt kein Google CSE."""
+    monkeypatch.setattr(ai_web_search_service, "is_sidecar_running", lambda *_: False)
+
+    # Ohne Anmeldung -> 401
+    assert client.get("/api/ai/settings/web-search").status_code == 401
+
+    # Ohne panel.settings.read / panel.settings.write -> 403
+    assert client.get("/api/ai/settings/web-search", cookies=user_cookies).status_code == 403
+    assert (
+        client.put(
+            "/api/ai/settings/web-search",
+            json={"api_key": "synthetic-unauthorized-key"},
+            cookies=user_cookies,
+            headers={"X-CSRF-Token": user_csrf_token or ""},
+        ).status_code
+        == 403
+    )
+
+    # Owner liest Status: keine Google-CSE-Felder in der Antwort
+    resp_get = client.get("/api/ai/settings/web-search", cookies=owner_cookies)
+    assert resp_get.status_code == 200
+    data_get = resp_get.json()
+    assert "has_google_cse" not in data_get
+    assert "google_cse_cx" not in data_get
+    assert data_get["has_api_key"] is False
+
+    # Owner speichert Brave-API-Schluessel: Status true, Klartext nie in Response
+    synthetic_secret = "synthetic-brave-secret-not-real-01"
+    resp_put = client.put(
+        "/api/ai/settings/web-search",
+        json={"api_key": synthetic_secret},
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token or ""},
+    )
+    assert resp_put.status_code == 200
+    assert synthetic_secret not in resp_put.text
+    data_put = resp_put.json()
+    assert data_put["has_api_key"] is True
+    assert "has_google_cse" not in data_put
+    assert "google_cse_cx" not in data_put
+
+    # Owner entfernt Brave-API-Schluessel sauber
+    resp_clear = client.put(
+        "/api/ai/settings/web-search",
+        json={"api_key": None},
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token or ""},
+    )
+    assert resp_clear.status_code == 200
+    assert resp_clear.json()["has_api_key"] is False
 
 

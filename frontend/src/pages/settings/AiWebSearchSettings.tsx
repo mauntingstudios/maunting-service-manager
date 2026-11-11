@@ -10,11 +10,10 @@ import { toast } from '@/stores/toastStore'
 /**
  * Websuche-Schalter für Singra (KI-Einstellungen -> Funktionen).
  *
- * Die Suchmaschine selbst (SearXNG-Sidecar, eigene Instanz, Brave-API,
- * Google-CSE-API) wird zentral im Einstellungen-Tab „Suchmaschine“ (Maunting
- * Search) eingerichtet. Hier legt der Betreiber nur fest, ob Singra das
- * Werkzeug `web_search` nutzen darf — ohne doppelte Schlüssel- oder
- * Adressfelder.
+ * Die Suchmaschine selbst (SearXNG-Sidecar, eigene Instanz, Brave-API) wird
+ * zentral im Einstellungen-Tab „Suchmaschine“ (Maunting Search) eingerichtet.
+ * Hier legt der Betreiber nur fest, ob Singra das Werkzeug `web_search` nutzen
+ * darf — ohne doppelte Schlüssel- oder Adressfelder.
  */
 export function AiWebSearchSettings({
   canWrite,
@@ -28,7 +27,6 @@ export function AiWebSearchSettings({
   const [searchEngineConfigured, setSearchEngineConfigured] = useState(false)
   const [sidecarRunning, setSidecarRunning] = useState(false)
   const [hasBrave, setHasBrave] = useState(false)
-  const [hasGoogle, setHasGoogle] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
@@ -42,7 +40,6 @@ export function AiWebSearchSettings({
           setSearchEngineConfigured(Boolean(status.search_engine_configured ?? status.configured))
           setSidecarRunning(Boolean(status.sidecar_running))
           setHasBrave(Boolean(status.has_api_key))
-          setHasGoogle(Boolean(status.has_google_cse))
         }
       })
       .catch(() => {
@@ -118,7 +115,6 @@ export function AiWebSearchSettings({
               sources: [
                 sidecarRunning ? 'SearXNG' : null,
                 hasBrave ? 'Brave API' : null,
-                hasGoogle ? 'Google CSE' : null,
               ]
                 .filter(Boolean)
                 .join(' · ') || 'Maunting Search',

@@ -691,7 +691,7 @@ User memories contain sensitive operational information. Singra secures memory s
 ### 10.1 Architecture & Self-Hosted Meta-Search
 Singra integrates with an internal or dedicated SearXNG instance (`backend/services/ai_web_search_service.py`, `ai_search_summary_service.py`):
 - Local SearXNG sidecar (`http://127.0.0.1:8888`) provides private meta-search across web, images, news, and Wikipedia knowledge graphs.
-- Optional official APIs (Brave Search, Google Custom Search) can be configured with encrypted credentials.
+- Optional official API (Brave Search) can be configured with encrypted credentials.
 - Governed by master toggle (`ai_web_search_enabled`) and RBAC permission (`ai.web_search.use`).
 
 ### 10.2 Query Reformulation & Co-Reference Resolution

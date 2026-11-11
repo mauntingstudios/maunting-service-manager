@@ -31,7 +31,6 @@ describe('SearchEngineTab', () => {
     vi.mocked(aiApi.getWebSearchStatus).mockResolvedValue({
       configured: true,
       has_api_key: false,
-      has_google_cse: false,
       searxng_url: 'http://127.0.0.1:8888',
       default_searxng_url: 'http://127.0.0.1:8888',
       is_default_searxng: true,
@@ -54,13 +53,13 @@ describe('SearchEngineTab', () => {
     expect(input.value).toBe('')
     expect(input.placeholder).toContain('Standard: http://127.0.0.1:8888')
     expect(screen.queryByRole('button', { name: 'Löschen' })).not.toBeInTheDocument()
+    expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
   })
 
   it('displays custom endpoint status and allows resetting to default sidecar', async () => {
     vi.mocked(aiApi.getWebSearchStatus).mockResolvedValue({
       configured: true,
       has_api_key: false,
-      has_google_cse: false,
       searxng_url: 'http://custom-searxng.lan:8080',
       default_searxng_url: 'http://127.0.0.1:8888',
       is_default_searxng: false,
@@ -72,7 +71,6 @@ describe('SearchEngineTab', () => {
     vi.mocked(aiApi.setWebSearchConfig).mockResolvedValue({
       configured: true,
       has_api_key: false,
-      has_google_cse: false,
       searxng_url: 'http://127.0.0.1:8888',
       default_searxng_url: 'http://127.0.0.1:8888',
       is_default_searxng: true,
@@ -110,7 +108,6 @@ describe('SearchEngineTab', () => {
     vi.mocked(aiApi.getWebSearchStatus).mockResolvedValue({
       configured: false,
       has_api_key: false,
-      has_google_cse: false,
       searxng_url: null,
       default_searxng_url: 'http://127.0.0.1:8888',
       is_default_searxng: true,
@@ -119,17 +116,27 @@ describe('SearchEngineTab', () => {
       external_apis_on_custom: false,
     })
 
-    vi.mocked(aiApi.setWebSearchConfig).mockResolvedValue({
-      configured: true,
-      has_api_key: true,
-      has_google_cse: false,
-      searxng_url: null,
-      default_searxng_url: 'http://127.0.0.1:8888',
-      is_default_searxng: true,
-      custom_searxng_url: null,
-      sidecar_running: false,
-      external_apis_on_custom: false,
-    })
+    vi.mocked(aiApi.setWebSearchConfig)
+      .mockResolvedValueOnce({
+        configured: true,
+        has_api_key: true,
+        searxng_url: null,
+        default_searxng_url: 'http://127.0.0.1:8888',
+        is_default_searxng: true,
+        custom_searxng_url: null,
+        sidecar_running: false,
+        external_apis_on_custom: false,
+      })
+      .mockResolvedValueOnce({
+        configured: false,
+        has_api_key: false,
+        searxng_url: null,
+        default_searxng_url: 'http://127.0.0.1:8888',
+        is_default_searxng: true,
+        custom_searxng_url: null,
+        sidecar_running: false,
+        external_apis_on_custom: false,
+      })
 
     render(<SearchEngineTab />)
 
@@ -138,62 +145,74 @@ describe('SearchEngineTab', () => {
     })
 
     const apiKeyInput = screen.getByLabelText('Brave-Search-API-Schlüssel (Optional)')
-    fireEvent.change(apiKeyInput, { target: { value: 'BSA_test_key_12345' } })
+    fireEvent.change(apiKeyInput, { target: { value: 'synthetic-brave-key' } })
 
     const saveButtons = screen.getAllByRole('button', { name: /speichern/i })
-    fireEvent.click(saveButtons[1]) // Save Brave key
+    fireEvent.click(saveButtons[1])
 
     await waitFor(() => {
-      expect(aiApi.setWebSearchConfig).toHaveBeenCalledWith({ apiKey: 'BSA_test_key_12345' })
+      expect(aiApi.setWebSearchConfig).toHaveBeenCalledWith({ apiKey: 'synthetic-brave-key' })
+      expect(screen.getByText('Aktiv & hinterlegt')).toBeInTheDocument()
+    })
+
+    const deleteBraveButton = screen.getByRole('button', { name: 'Löschen' })
+    fireEvent.click(deleteBraveButton)
+
+    await waitFor(() => {
+      expect(confirm).toHaveBeenCalled()
+      expect(aiApi.setWebSearchConfig).toHaveBeenCalledWith({ apiKey: '' })
     })
   })
 
-  it('saves and deletes Google CSE credentials', async () => {
+  it('omits Google Programmable Search completely and toggles external API guard on custom SearXNG', async () => {
     vi.mocked(aiApi.getWebSearchStatus).mockResolvedValue({
-      configured: false,
-      has_api_key: false,
-      has_google_cse: false,
-      searxng_url: null,
+      configured: true,
+      has_api_key: true,
+      searxng_url: 'http://custom-searxng.lan:8080',
       default_searxng_url: 'http://127.0.0.1:8888',
-      is_default_searxng: true,
-      custom_searxng_url: null,
+      is_default_searxng: false,
+      custom_searxng_url: 'http://custom-searxng.lan:8080',
       sidecar_running: false,
       external_apis_on_custom: false,
     })
 
     vi.mocked(aiApi.setWebSearchConfig).mockResolvedValue({
       configured: true,
-      has_api_key: false,
-      has_google_cse: true,
-      google_cse_cx: 'test-cx-123',
-      searxng_url: null,
+      has_api_key: true,
+      searxng_url: 'http://custom-searxng.lan:8080',
       default_searxng_url: 'http://127.0.0.1:8888',
-      is_default_searxng: true,
-      custom_searxng_url: null,
+      is_default_searxng: false,
+      custom_searxng_url: 'http://custom-searxng.lan:8080',
       sidecar_running: false,
-      external_apis_on_custom: false,
+      external_apis_on_custom: true,
     })
 
     render(<SearchEngineTab />)
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Google API-Schlüssel')).toBeInTheDocument()
+      expect(screen.getByTestId('custom-searxng-api-guard')).toBeInTheDocument()
     })
 
-    const gKeyInput = screen.getByLabelText('Google API-Schlüssel')
-    const gCxInput = screen.getByLabelText('Suchmaschinen-ID (cx)')
+    expect(screen.queryByText(/Google Programmable Search/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Google API-Schlüssel/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Suchmaschinen-ID/i)).not.toBeInTheDocument()
 
-    fireEvent.change(gKeyInput, { target: { value: 'AIzaSyGoogleKey123' } })
-    fireEvent.change(gCxInput, { target: { value: 'test-cx-123' } })
+    expect(
+      screen.getByText(/wird der unten hinterlegte API-Schlüssel derzeit nicht abgefragt/i),
+    ).toBeInTheDocument()
 
-    const saveButtons = screen.getAllByRole('button', { name: /speichern/i })
-    fireEvent.click(saveButtons[2]) // Save Google CSE
+    const guardSwitch = screen.getByRole('switch', {
+      name: 'Eigenen API-Schlüssel trotz fremder SearXNG-Adresse mitbenutzen',
+    })
+    expect(guardSwitch).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(guardSwitch)
 
     await waitFor(() => {
-      expect(aiApi.setWebSearchConfig).toHaveBeenCalledWith({
-        googleCseApiKey: 'AIzaSyGoogleKey123',
-        googleCseCx: 'test-cx-123',
-      })
+      expect(aiApi.setWebSearchConfig).toHaveBeenCalledWith({ externalApisOnCustom: true })
     })
+    await waitFor(() => {
+      expect(guardSwitch).toHaveAttribute('aria-checked', 'true')
+    })
+    expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
   })
 })

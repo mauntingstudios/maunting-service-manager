@@ -678,7 +678,7 @@ Statt bei jeder Anfrage die gesamte Datenbank zu durchsuchen, teilt Singra den A
 ### 10.1 Architektur und private Metasuche
 Singra nutzt eine angebundene SearXNG-Instanz (`backend/services/ai_web_search_service.py`, `ai_search_summary_service.py`):
 - Lokaler SearXNG-Sidecar (`http://127.0.0.1:8888`) für private Metasuchen (Web, Bilder, News, Wikipedia).
-- Optionale offizielle Such-APIs (Brave Search, Google Custom Search) mit verschlüsselten Schlüsseln.
+- Optionale offizielle Such-API (Brave Search) mit verschlüsseltem Schlüssel.
 - Gesteuert über den Panel-Schalter `ai_web_search_enabled` und das Rollenrecht `ai.web_search.use`.
 
 ### 10.2 Frage-Umschreibung und Koreferenzauflösung
