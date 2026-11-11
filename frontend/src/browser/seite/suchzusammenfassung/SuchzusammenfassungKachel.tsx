@@ -331,31 +331,36 @@ export function SuchzusammenfassungKachel({
   }
 
   // Abbruch bei Unmount, damit kein Stream nach dem Schließen weiterläuft.
-  // StrictMode (Dev-Bau) mountet jeden Effekt doppelt: erst der Abriss, dann
-  // der zweite Lauf. Ohne das Zurücksetzen der Marke hielte der zweite Lauf
-  // die Suche für erledigt — im Netz blieb dann nur der Preflight ohne POST.
   useEffect(() => () => {
     abbruchRef.current?.abort()
-    begonneneSucheRef.current = null
   }, [])
 
   // Initialer Start beim Laden der Suchbegriffe. Frische Treffer via onNeueTreffer
   // dürfen den laufenden Stream nicht abbrechen; kommt die Trefferliste erst nach
   // dem ersten Rendern, startet der Lauf hier nach.
+  //
+  // Der Start liegt bewusst in einem Timer: StrictMode (Dev-Bau) mountet jeden
+  // Effekt doppelt. Startete der Lauf direkt, gingen zwei Anfragen mit gleichem
+  // CORS-Preflight raus; der Abriss der ersten nimmt der zweiten den Preflight,
+  // und sie hängt bis zur Zeitüberschreitung, ohne je beim Server anzukommen.
+  // Der Cleanup verwirft den ersten Anlauf, bevor er feuert.
   const hatTreffer = treffer.length > 0
   useEffect(() => {
     if (!begriff || !hatTreffer) return
     if (begonneneSucheRef.current === begriff) return
 
-    begonneneSucheRef.current = begriff
-    setDeaktiviertGrund(null)
-    setHauptText('')
-    setGedankenText('')
-    setVerlauf([])
-    setNachfrage('')
-    setFolgeFehler(null)
+    const timer = setTimeout(() => {
+      begonneneSucheRef.current = begriff
+      setDeaktiviertGrund(null)
+      setHauptText('')
+      setGedankenText('')
+      setVerlauf([])
+      setNachfrage('')
+      setFolgeFehler(null)
 
-    void starteStream(begriff, [])
+      void starteStream(begriff, [])
+    }, 0)
+    return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [begriff, hatTreffer])
 

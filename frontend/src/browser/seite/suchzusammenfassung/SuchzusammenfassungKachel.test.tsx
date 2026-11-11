@@ -333,6 +333,9 @@ describe('SuchzusammenfassungKachel', () => {
     )
 
     expect(await screen.findByText('Im StrictMode angekommen')).toBeInTheDocument()
+    // Genau ein Aufruf: ein abgebrochener erster Anlauf würde der zweiten
+    // Anfrage den gemeinsamen CORS-Preflight nehmen.
+    expect(apiStream).toHaveBeenCalledTimes(1)
   })
 
   it('sendet bei der ersten Folgefrage Ausgangsfrage und Antwort als alternierenden Verlauf', async () => {
