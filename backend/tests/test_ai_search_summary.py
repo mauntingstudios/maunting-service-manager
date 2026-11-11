@@ -237,6 +237,51 @@ async def test_stream_suchzusammenfassung_erfolg(db, monkeypatch, caplog) -> Non
     assert "die Zusammenfassung" not in caplog.text
 
 
+@pytest.mark.asyncio
+async def test_stream_suchzusammenfassung_leere_antwort(db, monkeypatch, caplog) -> None:
+    """Ein Lauf, der nur denkt und nichts schreibt, ist ein Fehler, kein Erfolg."""
+    user = User(
+        username="stream_user_leer",
+        password_hash="pw",
+        is_active=True,
+        is_owner=True,
+    )
+    p = AiProvider(
+        name="Search Provider",
+        provider_kind="openai",
+        default_model="gpt-4o",
+        enabled=True,
+        requires_api_key=False,
+        search_summary_enabled=True,
+        search_summary_model="gpt-4o-mini",
+    )
+    db.add(user)
+    db.add(p)
+    db.flush()
+
+    monkeypatch.setattr("services.permission_service.has_global_permission", lambda _db, _u, _k: True)
+
+    async def fake_stream(*args, **kwargs) -> AsyncIterator[StreamChunk]:
+        yield StreamChunk(kind="reasoning", text="Ich denke nur.")
+
+    monkeypatch.setattr(ai_search_summary_service, "stream_chat_completion", fake_stream)
+
+    with caplog.at_level(logging.WARNING, logger="services.ai_search_summary_service"):
+        events = [
+            event async for event in ai_search_summary_service.stream_suchzusammenfassung(
+                db=db,
+                user=user,
+                q="Test",
+                treffer=[{"index": 1, "titel": "Titel", "url": "https://example.com", "inhalt": "Text"}],
+            )
+        ]
+
+    assert '"type": "start"' in events[0]
+    assert '"type": "error"' in events[-1]
+    assert "AI_PROVIDER_EMPTY_RESPONSE" in events[-1]
+    assert "fehler=leere_antwort" in caplog.text
+
+
 def test_deute_umschreibung_gueltig_und_rueckfall() -> None:
     gut = ai_search_summary_service._deute_umschreibung(
         '{"suchanfragen": ["GTA 6 Release Datum", "GTA 6 Preis"], "themenwechsel": true}',

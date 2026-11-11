@@ -282,7 +282,7 @@ function extractErrorMessage(detail: unknown): string | null {
  * Code nicht, bleibt es beim bisherigen Rückfall: ein Statustext ist immer noch
  * besser als ein roher Schlüssel in der Oberfläche.
  */
-function translateErrorCode(code: string): string | null {
+export function translateErrorCode(code: string): string | null {
   const key = `ai.errors.codes.${code}`
   return i18n.exists(key) ? i18n.t(key) : null
 }

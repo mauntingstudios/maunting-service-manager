@@ -96,7 +96,7 @@ describe('SuchzusammenfassungKachel', () => {
 
     render(<SuchzusammenfassungKachel begriff="Testsuche" treffer={TREFFER} />)
     expect(
-      await screen.findByText(/Die Antwort konnte nicht erzeugt werden|The response could not be generated/i),
+      await screen.findByText(/Die KI hat keine Antwort geliefert|The AI returned no answer/i),
     ).toBeInTheDocument()
   })
 

@@ -555,6 +555,13 @@ async def stream_suchzusammenfassung(
                     zeichen += len(chunk.text)
                     yield f"data: {json.dumps({'type': 'content', 'text': chunk.text})}\n\n"
 
+            if zeichen == 0:
+                # Fertig ohne einen einzigen Text: Das ist keine Antwort, und der
+                # Client soll den Grund sehen statt „konnte nicht erzeugt werden".
+                logger.warning("Suchzusammenfassung fehlgeschlagen fehler=leere_antwort nutzer=%s", user.id)
+                yield f"data: {json.dumps({'type': 'error', 'message': 'AI_PROVIDER_EMPTY_RESPONSE'})}\n\n"
+                return
+
             yield f"data: {json.dumps({'type': 'done', 'model': model})}\n\n"
             logger.info(
                 "Suchzusammenfassung fertig modell=%s zeichen=%d nutzer=%s",
@@ -568,4 +575,6 @@ async def stream_suchzusammenfassung(
         # und der Inhalt gehören nicht ins Log.
         fehler = str(exc) if isinstance(exc, AiProviderRequestError) else type(exc).__name__
         logger.warning("Suchzusammenfassung fehlgeschlagen fehler=%s nutzer=%s", fehler, user.id)
-        yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+        # Eine leere Ausnahme (z. B. ein nackter TimeoutError) ergäbe eine leere
+        # Meldung; dann nennt der Client wenigstens die Fehlerklasse.
+        yield f"data: {json.dumps({'type': 'error', 'message': str(exc) or fehler})}\n\n"

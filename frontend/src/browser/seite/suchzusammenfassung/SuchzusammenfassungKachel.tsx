@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import { apiStream, SanitizedApiError } from '@/api/client'
+import { apiStream, SanitizedApiError, translateErrorCode } from '@/api/client'
 import { Badge, Button, Dropdown, Input, Kurzinfo, DropdownOption } from '@maunting/ui'
 
 import type { Treffer } from '../MsmSuche'
@@ -122,6 +122,21 @@ export function SuchzusammenfassungKachel({
   }
 
   const istAktuell = (controller: AbortController) => abbruchRef.current === controller
+
+  const fehlerText = () =>
+    t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' })
+  // Kein Text im Strom ist etwas anderes als keine Verbindung: Das sagt der
+  // Nutzerin, woran sie ist, und dem Betrieb, wo er nachsehen muss.
+  const leerText = () =>
+    t('browser.msmSuche.zusammenfassungLeer', { defaultValue: 'Die KI hat keine Antwort geliefert.' })
+  // Der Dienst schickt teils stabile Codes statt Sätzen; die Oberfläche sagt
+  // den Satz aus dem Katalog, nie den Schlüssel.
+  const serverMeldung = (message: unknown) => {
+    const text = typeof message === 'string' ? message.trim() : ''
+    if (!text) return fehlerText()
+    if (/^[A-Z][A-Z0-9_]+$/.test(text)) return translateErrorCode(text) ?? fehlerText()
+    return text
+  }
 
   const fehlerSetzen = (controller: AbortController, dialogVerlauf: SuchNachricht[], meldung: string) => {
     setFolgeFehler(meldung)
@@ -259,10 +274,7 @@ export function SuchzusammenfassungKachel({
                 })
               }
             } else if (data.type === 'error') {
-              const meldung =
-                typeof data.message === 'string' && data.message.trim()
-                  ? data.message
-                  : t('browser.msmSuche.zusammenfassungFehler')
+              const meldung = serverMeldung(data.message)
               if (dialogVerlauf.length === 0) {
                 setHauptFehler(meldung)
               } else {
@@ -278,7 +290,7 @@ export function SuchzusammenfassungKachel({
               if (istAktuell(controller)) setLaedt(false)
               // Leere Antwort ohne Inhalt ist ein Fehler, kein ewiger Spinner.
               if (!akkumulierterText && dialogVerlauf.length > 0) {
-                fehlerSetzen(controller, dialogVerlauf, t('browser.msmSuche.zusammenfassungFehler'))
+                fehlerSetzen(controller, dialogVerlauf, leerText())
                 return
               }
             }
@@ -290,9 +302,9 @@ export function SuchzusammenfassungKachel({
 
       if (!akkumulierterText && !deaktiviertGrund) {
         if (dialogVerlauf.length === 0) {
-          setHauptFehler(t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' }))
+          setHauptFehler(leerText())
         } else {
-          fehlerSetzen(controller, dialogVerlauf, t('browser.msmSuche.zusammenfassungFehler'))
+          fehlerSetzen(controller, dialogVerlauf, leerText())
         }
       }
     } catch (err: unknown) {
@@ -305,7 +317,7 @@ export function SuchzusammenfassungKachel({
       const meldung =
         err instanceof SanitizedApiError && err.message
           ? err.message
-          : t('browser.msmSuche.zusammenfassungFehler', { defaultValue: 'Antwort konnte nicht generiert werden.' })
+          : fehlerText()
       if (dialogVerlauf.length === 0) {
         setHauptFehler(meldung)
       } else {
