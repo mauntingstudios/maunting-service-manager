@@ -563,6 +563,12 @@ class GeminiLiveSitzung:
 
             self.lage.rahmen_hin += 1
             if "bytes" in nachricht and nachricht["bytes"]:
+                # Google BidiGenerateContent Protokoll:
+                # Vor Erhalt der Setup-Bestätigung (setupComplete) darf KEIN realtimeInput
+                # an Google gesendet werden, da dies den Handshake blockiert / stört.
+                if not self._setup_fertig.is_set():
+                    continue
+
                 raw_pcm = nachricht["bytes"]
                 pcm_16k = downsample_24k_to_16k(raw_pcm)
                 if pcm_16k and self._google_ws is not None:
@@ -835,8 +841,8 @@ class GeminiLiveSitzung:
         url = f"{GEMINI_LIVE_WS_BASE}?key={quote_plus(self.v.api_key)}"
         model_raw = (self.v.model or "").strip()
         if not model_raw or "gemini" not in model_raw.lower():
-            logger.info("Kein gültiges Gemini-Live-Modell angegeben ('%s'), nutze gemini-2.0-flash", model_raw)
-            model_raw = "gemini-2.0-flash"
+            logger.info("Kein gültiges Gemini-Live-Modell angegeben ('%s'), nutze gemini-3.8-live", model_raw)
+            model_raw = "gemini-3.8-live"
         model_name = model_raw if model_raw.startswith("models/") else f"models/{model_raw}"
         # Hier gehoert die Kleinschreibung hin und nicht nur in
         # `_build_setup_payload`: die Werkzeugschleife unten fragt dieselbe
@@ -893,8 +899,12 @@ class GeminiLiveSitzung:
                             await self._panel_senden({
                                 "art": "fehler",
                                 "code": "GEMINI_HANDSHAKE_TIMEOUT",
-                                "detail": f"Keine Antwort von Google für Modell '{model_name}'. Bitte wechsle in den AI-Provider-Einstellungen zu 'gemini-2.0-flash' oder 'gemini-3.8-live'.",
+                                "detail": f"Keine Antwort von Google für Modell '{model_name}'. Bitte prüfe in den AI-Provider-Einstellungen das Live-Modell ('gemini-3.8-live' empfohlen) und deinen Google API-Key.",
                             })
+                        self._beendet = True
+                        if self._google_ws is not None:
+                            with contextlib.suppress(Exception):
+                                await self._google_ws.close()
 
             watchdog_task = asyncio.create_task(_handshake_watchdog())
             client_task = asyncio.create_task(self._client_lesen())

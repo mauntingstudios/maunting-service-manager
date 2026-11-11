@@ -1525,6 +1525,40 @@ async def test_live_zeitlimit_meldet_ablauf_und_beendet_leser(monkeypatch):
     assert {"art": "abgelaufen"} in [c.args[0] for c in panel.send_json.call_args_list]
 
 
+@pytest.mark.asyncio
+async def test_client_audio_nicht_vor_setup_complete_senden() -> None:
+    """Verifiziert, dass Audiodaten vom Browser nicht vor Empfang von setupComplete an Google
+    gesendet werden, um Handshake-Blockaden und GEMINI_HANDSHAKE_TIMEOUT abzuwenden."""
+    sitzung, panel = _gemini_sitzung()
+    google_ws = AsyncMock()
+    google_ws.send = AsyncMock()
+    sitzung._google_ws = google_ws
+
+    fake_pcm = b"\x00\x00" * 300
+    nachrichten = [{"bytes": fake_pcm}]
+
+    async def fake_receive():
+        if nachrichten:
+            return nachrichten.pop(0)
+        sitzung._beendet = True
+        return {"bytes": b""}
+
+    panel.receive = AsyncMock(side_effect=fake_receive)
+
+    # 1. Fall: setup_fertig ist noch NICHT gesetzt -> darf NICHT an Google senden
+    assert not sitzung._setup_fertig.is_set()
+    await sitzung._client_lesen()
+    google_ws.send.assert_not_called()
+
+    # 2. Fall: setup_fertig ist gesetzt -> Audio wird weitergeleitet
+    sitzung._beendet = False
+    sitzung._setup_fertig.set()
+    nachrichten.append({"bytes": fake_pcm})
+    await sitzung._client_lesen()
+    google_ws.send.assert_called_once()
+
+
+
 @pytest.mark.parametrize("indices", [[1, 0], [0], [0, 0], [0, 2], [False, 1], [None, 1]])
 def test_embedding_antwort_ordnet_texte_eindeutig_zu(indices):
     response = MagicMock(status_code=200)
