@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -285,6 +286,53 @@ describe('SuchzusammenfassungKachel', () => {
     // Ein Klick klappt die Vorschaukarten mit Titel auf.
     fireEvent.click(screen.getByRole('button', { name: /Top-Quellen 2 ein- oder ausblenden/ }))
     expect(await screen.findByText('Zweiter Treffer')).toBeInTheDocument()
+  })
+
+  it('startet im StrictMode einen Lauf, statt nach dem Abriss leer zu bleiben', async () => {
+    // StrictMode mountet Effekte doppelt: erst der Abriss, dann der zweite Lauf.
+    // Der Abbruch muss den Neustart erlauben, sonst bleibt die Kachel leer –
+    // im Netz sah das wie ein Preflight ohne POST aus.
+    apiStream.mockImplementation(
+      (_pfad: string, optionen: { signal?: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          optionen.signal?.addEventListener('abort', () =>
+            reject(Object.assign(new Error('abgebrochen'), { name: 'AbortError' })),
+          )
+          setTimeout(
+            () =>
+              resolve({
+                ok: true,
+                status: 200,
+                body: {
+                  getReader: () => {
+                    let fertig = false
+                    return {
+                      read: () => {
+                        if (fertig) return Promise.resolve({ done: true, value: undefined })
+                        fertig = true
+                        return Promise.resolve({
+                          done: false,
+                          value: new TextEncoder().encode(
+                            'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Im StrictMode angekommen"}\n\ndata: {"type": "done"}\n\n',
+                          ),
+                        })
+                      },
+                    }
+                  },
+                },
+              }),
+            5,
+          )
+        }),
+    )
+
+    render(
+      <StrictMode>
+        <SuchzusammenfassungKachel begriff="Testsuche" treffer={TREFFER} />
+      </StrictMode>,
+    )
+
+    expect(await screen.findByText('Im StrictMode angekommen')).toBeInTheDocument()
   })
 
   it('sendet bei der ersten Folgefrage Ausgangsfrage und Antwort als alternierenden Verlauf', async () => {

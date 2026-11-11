@@ -319,8 +319,12 @@ export function SuchzusammenfassungKachel({
   }
 
   // Abbruch bei Unmount, damit kein Stream nach dem Schließen weiterläuft.
+  // StrictMode (Dev-Bau) mountet jeden Effekt doppelt: erst der Abriss, dann
+  // der zweite Lauf. Ohne das Zurücksetzen der Marke hielte der zweite Lauf
+  // die Suche für erledigt — im Netz blieb dann nur der Preflight ohne POST.
   useEffect(() => () => {
     abbruchRef.current?.abort()
+    begonneneSucheRef.current = null
   }, [])
 
   // Initialer Start beim Laden der Suchbegriffe. Frische Treffer via onNeueTreffer
