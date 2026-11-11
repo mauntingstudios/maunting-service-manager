@@ -4917,6 +4917,23 @@
     "host": "Host",
     "port": "Port"
   },
+  "sqliteStudio": {
+    "title": "SQLite Studio",
+    "subtitle": "Lokale Spieldatenbanken dieses Servers",
+    "badge": "SQLite 3",
+    "pickDatabase": "Datenbank auswählen",
+    "searchTables": "Tabelle suchen...",
+    "noTables": "Keine Tabellen gefunden",
+    "selectTable": "Wähle links eine Tabelle aus, um ihre Daten anzuzeigen",
+    "viewData": "Daten",
+    "viewStructure": "Struktur",
+    "tablesCount": "{{count}} Tabellen",
+    "tablesCount_one": "{{count}} Tabelle",
+    "tabs": {
+      "data": "Tabellen & Daten",
+      "sql": "SQL-Konsole"
+    }
+  },
   "language": {
     "label": "Sprache",
     "de": "DE",

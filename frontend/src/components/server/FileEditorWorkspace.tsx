@@ -37,6 +37,8 @@ import {
 import { detectLanguage, detectIndentation, fileName } from './fileHelpers'
 import type { EditorTab } from './fileWorkspaceTypes'
 import { Button, Input, Kurzinfo } from '@maunting/ui'
+import { formatBytes } from '@/lib/format'
+import { SqliteStudioWorkspace } from '@/components/sqlite/SqliteStudioWorkspace'
 
 interface FileEditorWorkspaceProps {
   tabs: EditorTab[]
@@ -56,6 +58,7 @@ interface FileEditorWorkspaceProps {
    * Dokument, auch wenn der Fokus auf einem Knopf daneben liegt.
    */
   vollbild?: boolean
+  serverId?: number
 }
 
 export function languageExtension(path: string): LanguageSupport | ReturnType<typeof StreamLanguage.define> | null {
@@ -219,6 +222,7 @@ export function FileEditorWorkspace({
   onReload,
   ortLabel,
   vollbild = false,
+  serverId,
 }: FileEditorWorkspaceProps) {
   const { t } = useTranslation()
   const activeTab = tabs.find((tab) => tab.path === activePath) ?? null
@@ -423,6 +427,11 @@ export function FileEditorWorkspace({
               >
                 <FileCode2 className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{fileName(tab.path)}</span>
+                {tab.isSqlite && (
+                  <span className="rounded bg-primary/15 px-1.5 py-0.5 text-xs font-mono uppercase text-primary shrink-0">
+                    SQLite
+                  </span>
+                )}
                 {tab.saveState !== 'clean' && tab.saveState !== 'saving' && (
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tab.saveState === 'conflict' || tab.saveState === 'error' ? 'bg-status-destructive' : 'bg-status-warning'}`} />
                 )}
@@ -447,48 +456,64 @@ export function FileEditorWorkspace({
         <>
           <div className="flex min-h-10 items-center justify-between gap-3 border-b border-outline-variant px-3">
             <p className="min-w-0 truncate font-mono text-label-sm text-on-surface-variant">{ortLabel ?? `${t('files.serverFiles')} / ${activeTab.path}`}</p>
-            <div className="flex shrink-0 items-center gap-2">
-              <span className={`hidden items-center gap-1.5 text-label-sm sm:inline-flex ${activeTab.saveState === 'conflict' || activeTab.saveState === 'error' ? 'text-status-destructive' : activeTab.saveState === 'clean' ? 'text-status-success' : 'text-status-warning'}`}>
-                {saveIndicator}
-              </span>
-              {canWrite && (
-                <Kurzinfo text="Code sauber einrücken und formatieren">
-                  <Button variant="ghost" size="sm"
-                    type="button"
-                    onClick={() => {
-                      const formatted = formatDocumentContent(activeTab.path, activeTab.content)
-                      if (formatted !== activeTab.content) {
-                        onChange(activeTab.path, formatted)
-                      }
-                    }}
-                    className="inline-flex items-center gap-1.5 text-xs"
-                    aria-label="Formatieren"
-                  >
-                    <Wand2 className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Formatieren</span>
-                  </Button>
-                </Kurzinfo>
-              )}
-              <Button variant="ghost" size="sm"
-                type="button"
-                onClick={() => (searchOpen ? closeSearch() : openSearch('find'))}
-                className="flex w-8 items-center justify-center"
-                aria-label={t('files.editor.searchAndReplace')}
-                aria-pressed={searchOpen}
-              >
-                <Search className="h-4 w-4" />
-              </Button>
-              {canWrite && (
-                <Button variant="secondary" size="sm"
+            {!activeTab.isSqlite ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <span className={`hidden items-center gap-1.5 text-label-sm sm:inline-flex ${activeTab.saveState === 'conflict' || activeTab.saveState === 'error' ? 'text-status-destructive' : activeTab.saveState === 'clean' ? 'text-status-success' : 'text-status-warning'}`}>
+                  {saveIndicator}
+                </span>
+                {canWrite && (
+                  <Kurzinfo text="Code sauber einrücken und formatieren">
+                    <Button variant="ghost" size="sm"
+                      type="button"
+                      onClick={() => {
+                        const formatted = formatDocumentContent(activeTab.path, activeTab.content)
+                        if (formatted !== activeTab.content) {
+                          onChange(activeTab.path, formatted)
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs"
+                      aria-label="Formatieren"
+                    >
+                      <Wand2 className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Formatieren</span>
+                    </Button>
+                  </Kurzinfo>
+                )}
+                <Button variant="ghost" size="sm"
                   type="button"
-                  onClick={() => onSave(activeTab.path)}
-                  disabled={activeTab.saveState === 'saving' || activeTab.saveState === 'clean' || activeTab.saveState === 'conflict'}
-                  className="inline-flex items-center gap-1.5 disabled:opacity-40"
+                  onClick={() => (searchOpen ? closeSearch() : openSearch('find'))}
+                  className="flex w-8 items-center justify-center"
+                  aria-label={t('files.editor.searchAndReplace')}
+                  aria-pressed={searchOpen}
                 >
-                  <Save className="h-3.5 w-3.5" /> {t('common.save')}
+                  <Search className="h-4 w-4" />
                 </Button>
-              )}
-            </div>
+                {canWrite && (
+                  <Button variant="secondary" size="sm"
+                    type="button"
+                    onClick={() => onSave(activeTab.path)}
+                    disabled={activeTab.saveState === 'saving' || activeTab.saveState === 'clean' || activeTab.saveState === 'conflict'}
+                    className="inline-flex items-center gap-1.5 disabled:opacity-40"
+                  >
+                    <Save className="h-3.5 w-3.5" /> {t('common.save')}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => onReload(activeTab.path)}
+                  className="inline-flex items-center gap-1.5 text-xs"
+                  aria-label={t('common.refresh')}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{t('common.refresh')}</span>
+                </Button>
+              </div>
+            )}
           </div>
 
           {activeTab.saveState === 'conflict' && (
@@ -546,7 +571,13 @@ export function FileEditorWorkspace({
           )}
 
           <div id="file-editor-panel" role="tabpanel" className="relative min-h-0 flex-1 overflow-hidden">
-            {activeTab.loading ? (
+            {activeTab.isSqlite && serverId != null ? (
+              <SqliteStudioWorkspace
+                serverId={serverId}
+                path={activeTab.path}
+                canWrite={canWrite}
+              />
+            ) : activeTab.loading ? (
               <div className="flex h-full min-h-80 items-center justify-center"><LoaderCircle className="h-6 w-6 animate-spin text-secondary" /></div>
             ) : (
               <CodeMirror
@@ -567,14 +598,25 @@ export function FileEditorWorkspace({
             )}
           </div>
           <footer className="flex min-h-8 flex-wrap items-center gap-x-4 gap-y-1 border-t border-outline-variant bg-surface-container-low/80 px-3 py-1 font-mono text-label-sm text-on-surface-variant">
-            <span>{t('files.editor.cursorPosition', { zeile: cursor.line, spalte: cursor.column })}</span>
-            <span>{t('files.editor.selection', { anzahl: cursor.selected })}</span>
-            <span>{detectIndentation(activeTab.content)}</span>
-            <span>UTF-8</span>
-            <span>{activeTab.lineEnding === '\r\n' ? 'CRLF' : 'LF'}</span>
-            <span>{detectLanguage(activeTab.path).toUpperCase()}</span>
-            <span className="sm:hidden">{horizontalScrollHint}</span>
-            <span className={`ml-auto inline-flex items-center gap-1.5 ${activeTab.saveState === 'clean' ? 'text-status-success' : activeTab.saveState === 'conflict' || activeTab.saveState === 'error' ? 'text-status-destructive' : 'text-status-warning'}`}>{saveIndicator}</span>
+            {activeTab.isSqlite ? (
+              <>
+                <span>SQLite 3</span>
+                {activeTab.sqliteInfo?.journal_mode && <span>{activeTab.sqliteInfo.journal_mode.toUpperCase()}</span>}
+                {activeTab.sqliteInfo?.table_count != null && <span>{t('sqliteStudio.tablesCount', { count: activeTab.sqliteInfo.table_count, defaultValue: `${activeTab.sqliteInfo.table_count} Tabellen` })}</span>}
+                <span>{formatBytes(activeTab.size)}</span>
+              </>
+            ) : (
+              <>
+                <span>{t('files.editor.cursorPosition', { zeile: cursor.line, spalte: cursor.column })}</span>
+                <span>{t('files.editor.selection', { anzahl: cursor.selected })}</span>
+                <span>{detectIndentation(activeTab.content)}</span>
+                <span>UTF-8</span>
+                <span>{activeTab.lineEnding === '\r\n' ? 'CRLF' : 'LF'}</span>
+                <span>{detectLanguage(activeTab.path).toUpperCase()}</span>
+                <span className="sm:hidden">{horizontalScrollHint}</span>
+                <span className={`ml-auto inline-flex items-center gap-1.5 ${activeTab.saveState === 'clean' ? 'text-status-success' : activeTab.saveState === 'conflict' || activeTab.saveState === 'error' ? 'text-status-destructive' : 'text-status-warning'}`}>{saveIndicator}</span>
+              </>
+            )}
           </footer>
         </>
       ) : (

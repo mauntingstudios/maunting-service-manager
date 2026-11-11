@@ -61,4 +61,6 @@ export interface EditorTab extends FileMetadata {
   lineEnding: '\n' | '\r\n'
   loading: boolean
   saveState: EditorSaveState
+  isSqlite?: boolean
+  sqliteInfo?: { table_count: number; wal_mode: boolean; journal_mode?: string }
 }

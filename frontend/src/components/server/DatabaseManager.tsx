@@ -4,6 +4,9 @@ import { Database, Plus, Shield } from 'lucide-react'
 import { api } from '@/api/client'
 import { PostgresStudio } from '@/components/postgres/PostgresStudio'
 import { PostgresCredentialsDialog } from '@/components/server/PostgresCredentialsDialog'
+import { SqliteStudioWorkspace } from '@/components/sqlite/SqliteStudioWorkspace'
+import { formatBytes } from '@/lib/format'
+import { still } from '@/lib/still'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { prompt } from '@/stores/promptStore'
 import { toast } from '@/stores/toastStore'
@@ -26,6 +29,8 @@ export function DatabaseManager({ serverId, dedicated = false }: Props) {
   const [resources, setResources] = useState<PostgresResources>({ databases: [], users: [] })
   const [loaded, setLoaded] = useState(false)
   const [selectedDbId, setSelectedDbId] = useState<number | null>(null)
+  const [sqliteDbs, setSqliteDbs] = useState<Array<{ path: string; name: string; size: number; modified: number }>>([])
+  const [selectedSqlitePath, setSelectedSqlitePath] = useState<string | null>(null)
   const [credentials, setCredentials] = useState<PostgresCredential[]>([])
   const [powerDialog, setPowerDialog] = useState<{ db: PostgresDatabase; password: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -51,6 +56,19 @@ export function DatabaseManager({ serverId, dedicated = false }: Props) {
     // geprüft. Sonst bleibt nach dem Löschen die verschwundene Datenbank
     // ausgewählt und das Studio fragt weiter nach ihr.
     setSelectedDbId((current) => (data.databases.some((db) => db.id === current) ? current : data.databases[0]?.id ?? null))
+
+    try {
+      const sqliteRes = await api<{ databases: Array<{ path: string; name: string; size: number; modified: number }> }>(
+        `/servers/${serverId}/sqlite/discover`,
+      )
+      const list = sqliteRes.databases || []
+      setSqliteDbs(list)
+      if (list.length > 0) {
+        setSelectedSqlitePath((curr) => (list.some((d) => d.path === curr) ? curr : list[0].path))
+      }
+    } catch (err) {
+      still(err, 'DatabaseManager.loadResources.discoverSqlite')
+    }
   }
 
   useEffect(() => {
@@ -145,6 +163,41 @@ export function DatabaseManager({ serverId, dedicated = false }: Props) {
     })
 
   if (loaded && databases.length === 0) {
+    if (sqliteDbs.length > 0 && selectedSqlitePath) {
+      return (
+        <div className="space-y-4">
+          <div className="msm-card flex flex-wrap items-center justify-between gap-3 p-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <Database className="h-5 w-5 text-secondary" />
+              <div className="min-w-0">
+                <h2 className="font-headline text-lg font-semibold text-on-surface">{t('sqliteStudio.title', { defaultValue: 'SQLite Studio' })}</h2>
+                <p className="text-xs text-on-surface-variant">{t('sqliteStudio.subtitle', { defaultValue: 'Lokale Spieldatenbanken dieses Servers' })}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {sqliteDbs.length > 1 && (
+                <Dropdown
+                  value={selectedSqlitePath}
+                  onChange={(val) => setSelectedSqlitePath(val)}
+                  options={sqliteDbs.map((d) => ({ value: d.path, label: d.name, hint: formatBytes(d.size) }))}
+                  className="w-64"
+                  aria-label={t('sqliteStudio.pickDatabase', { defaultValue: 'Datenbank wählen' })}
+                />
+              )}
+              {canAdmin && (
+                <Button variant="secondary" size="sm" onClick={() => void bootstrap()} disabled={busy}>
+                  <Plus className="h-4 w-4" />
+                  {t('databaseManager.createDatabase')}
+                </Button>
+              )}
+            </div>
+          </div>
+          <SqliteStudioWorkspace serverId={serverId} path={selectedSqlitePath} canWrite={canAdmin} />
+          <PostgresCredentialsDialog credentials={credentials} onClose={() => setCredentials([])} />
+        </div>
+      )
+    }
+
     return (
       <div className="msm-card p-8 text-center">
         <Database className="mx-auto h-8 w-8 text-on-surface-variant" />

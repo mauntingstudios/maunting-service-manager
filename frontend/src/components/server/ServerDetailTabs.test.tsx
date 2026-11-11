@@ -1,9 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { FileText, Terminal } from 'lucide-react'
 
-import { Topbar } from '@/components/layout/Topbar'
 import { ServerDetailTabs } from './ServerDetailTabs'
 
 const tabs = [
@@ -20,7 +18,7 @@ describe('ServerDetailTabs', () => {
     expect(screen.getByRole('tab', { name: 'Konsole' })).toHaveAttribute('aria-selected', 'false')
   })
 
-  it('meldet die Wahl per onSelect', () => {
+  it('meldet die Wahl per onSelect auf Desktop', () => {
     const onSelect = vi.fn()
     render(<ServerDetailTabs tabs={tabs} activeTab="files" onSelect={onSelect} />)
 
@@ -28,56 +26,36 @@ describe('ServerDetailTabs', () => {
     expect(onSelect).toHaveBeenCalledWith('console')
   })
 
-  it('kompakt am Handy: nur der aktive Reiter zeigt seinen Namen, ohne Wischleiste', () => {
-    render(<ServerDetailTabs tabs={tabs} activeTab="files" onSelect={() => {}} />)
+  it('bietet am Handy einen Design-DNA Dropdown zur bequemen Direktwahl ohne Quetschen', () => {
+    const onSelect = vi.fn()
+    render(<ServerDetailTabs tabs={tabs} activeTab="files" onSelect={onSelect} />)
 
-    const aktiv = screen.getByRole('tab', { name: 'Dateimanager' })
-    const inaktiv = screen.getByRole('tab', { name: 'Konsole' })
-    // Unter md nur das Symbol, der Name bleibt für Screenreader.
-    expect(aktiv.querySelector('[class~="max-md:sr-only"]')).toBeNull()
-    expect(inaktiv.querySelector('[class~="max-md:sr-only"]')).toHaveTextContent('Konsole')
-    expect(inaktiv.className).toMatch(/(^|\s)max-md:px-2(\s|$)/)
-    expect(aktiv.className).not.toMatch(/max-md:px-2/)
+    // Mobile Dropdown-Container ist vorhanden
+    const mobileContainer = screen.getByTestId('mobile-tab-dropdown')
+    expect(mobileContainer).toBeInTheDocument()
+    expect(mobileContainer.className).toMatch(/md:hidden/)
 
-    // Kein seitliches Wischen am Handy: die Leiste bricht um, erst ab md
-    // stehen volle Namen in der Wischleiste wie bisher.
-    const leiste = screen.getByRole('tablist')
-    expect(leiste.className).not.toMatch(/(^|\s)overflow-x-auto(\s|$)/)
-    expect(leiste.className).toMatch(/(^|\s)md:overflow-x-auto(\s|$)/)
-    const reihe = leiste.firstElementChild
-    expect(reihe?.className).toMatch(/(^|\s)flex-wrap(\s|$)/)
-    expect(reihe?.className).toMatch(/(^|\s)md:flex-nowrap(\s|$)/)
-    expect(reihe?.className).toMatch(/(^|\s)md:min-w-max(\s|$)/)
+    // Der Trigger zeigt den aktiven Tab an
+    const trigger = mobileContainer.querySelector('button')
+    expect(trigger).toBeInTheDocument()
+    expect(trigger).toHaveTextContent('Dateimanager')
+
+    // Dropdown oeffnen und Konsole auswaehlen
+    if (trigger) {
+      fireEvent.click(trigger)
+      const konsoleOption = screen.getByRole('option', { name: /Konsole/ })
+      expect(konsoleOption).toBeInTheDocument()
+      fireEvent.click(konsoleOption)
+      expect(onSelect).toHaveBeenCalledWith('console')
+    }
   })
 
-  it('nennt den Namen inaktiver Reiter per Kurzinfo, nur am Handy', () => {
-    const { container } = render(<ServerDetailTabs tabs={tabs} activeTab="files" onSelect={() => {}} />)
+  it('stellt auf Desktop die semantische Reiterleiste bereit', () => {
+    render(<ServerDetailTabs tabs={tabs} activeTab="files" onSelect={() => {}} ariaLabel="TestServer" />)
 
-    const aktiveBlase = container.querySelector('[data-kurzinfo="Dateimanager"]')
-    const inaktiveBlase = container.querySelector('[data-kurzinfo="Konsole"]')
-    expect(aktiveBlase?.getAttribute('class')).toMatch(/(^|\s)!hidden(\s|$)/)
-    expect(aktiveBlase?.getAttribute('class')).not.toMatch(/md:!hidden/)
-    expect(inaktiveBlase?.getAttribute('class')).toMatch(/(^|\s)md:!hidden(\s|$)/)
-  })
-
-  it('klebt direkt unter der mobilen Topbar und steht ab md statisch', () => {
-    // Wie Sprungleiste: die Topbar ist 48 px hoch (h-12) und ab lg
-    // ausgeblendet. Ändert sich die Topbar, muss dieser Versatz mitgehen.
-    render(
-      <MemoryRouter>
-        <Topbar />
-        <ServerDetailTabs tabs={tabs} activeTab="files" onSelect={() => {}} />
-      </MemoryRouter>,
-    )
-
-    const topbar = screen.getByRole('banner')
-    expect(topbar.className).toMatch(/(^|\s)h-12(\s|$)/)
-    expect(topbar.className).toMatch(/(^|\s)lg:hidden(\s|$)/)
-
-    const leiste = screen.getByRole('tablist')
-    expect(leiste.className).toMatch(/(^|\s)sticky(\s|$)/)
-    expect(leiste.className).toMatch(/(^|\s)top-12(\s|$)/)
-    expect(leiste.className).toMatch(/(^|\s)md:static(\s|$)/)
+    const leiste = screen.getByRole('tablist', { name: 'TestServer' })
+    expect(leiste).toHaveClass('hidden')
+    expect(leiste).toHaveClass('md:block')
   })
 
   it('behält beim Reiterwechsel denselben Knopf, damit der Fokus bleibt', () => {

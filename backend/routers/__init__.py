@@ -15,6 +15,7 @@ from .oauth import router as oauth_router
 from .databases import router as databases_router
 from .postgres_studio import panel_router as panel_database_studio_router
 from .postgres_studio import router as postgres_studio_router
+from .sqlite_studio import router as sqlite_studio_router
 from .webhooks_outbound import router as webhooks_outbound_router
 from .singra_webhook import router as singra_webhook_router
 from .backup_config import router as backup_config_router
@@ -117,4 +118,5 @@ __all__ = [
     "livekit_admin_router",
     "browser_suche_router",
     "browser_wetter_router",
+    "sqlite_studio_router",
 ]  # noqa: E501

@@ -26,6 +26,7 @@ import { usePermissionsStore } from '@/stores/permissionsStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { Ablageflaeche, Button, ActionMenu, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Kontextmenue, Pfadleiste, Switch, Versionsliste, ActionMenuItem } from '@maunting/ui'
 import { formatBytes, formatZeitpunkt } from '@/lib/format'
+import { still } from '@/lib/still'
 import { FileTree } from '@/components/server/FileTree'
 import { FileEditorWorkspace } from '@/components/server/FileEditorWorkspace'
 import {
@@ -309,6 +310,45 @@ export function FileManager({ serverId }: FileManagerProps) {
       saveState: 'clean',
       ...UNKNOWN_METADATA,
     }])
+
+    const lower = path.toLowerCase()
+    const isDbExt = lower.endsWith('.db') || lower.endsWith('.sqlite') || lower.endsWith('.sqlite3') || lower.endsWith('.db3')
+    if (isDbExt) {
+      try {
+        const inspect = await api<{
+          is_sqlite: boolean
+          size: number
+          modified: number
+          table_count: number
+          wal_mode: boolean
+          journal_mode?: string
+        }>(`/servers/${serverId}/sqlite/inspect?path=${encodeURIComponent(path)}`)
+
+        if (inspect.is_sqlite) {
+          setTabs((current) => current.map((tab) => tab.path === path ? {
+            ...tab,
+            content: '',
+            savedContent: '',
+            revision: '',
+            lineEnding: '\n',
+            loading: false,
+            saveState: 'clean',
+            size: inspect.size,
+            modified: inspect.modified,
+            isSqlite: true,
+            sqliteInfo: {
+              table_count: inspect.table_count,
+              wal_mode: inspect.wal_mode,
+              journal_mode: inspect.journal_mode,
+            },
+          } : tab))
+          return
+        }
+      } catch (err) {
+        still(err, 'FileManager.openFile.inspectSqlite')
+      }
+    }
+
     try {
       const response = await api<ReadResponse>(`/files/${serverId}/read?path=${encodeURIComponent(path)}`)
       setTabs((current) => current.map((tab) => tab.path === path ? {
@@ -757,7 +797,7 @@ export function FileManager({ serverId }: FileManagerProps) {
         </aside>
 
         <div className="min-h-0 min-w-0 lg:flex">
-          <FileEditorWorkspace tabs={tabs} activePath={activePath} canWrite={canWrite} tabListLabel={t('files.openFiles')} horizontalScrollHint={t('files.horizontalScrollHint')} onActivate={setActivePath} onChange={updateTabContent} onSave={(path) => void saveTab(path)} onClose={(path) => void closeTab(path)} onReload={(path) => void reloadTab(path)} />
+          <FileEditorWorkspace tabs={tabs} activePath={activePath} canWrite={canWrite} serverId={serverId} tabListLabel={t('files.openFiles')} horizontalScrollHint={t('files.horizontalScrollHint')} onActivate={setActivePath} onChange={updateTabContent} onSave={(path) => void saveTab(path)} onClose={(path) => void closeTab(path)} onReload={(path) => void reloadTab(path)} />
         </div>
 
         <aside ref={inspectorPanelRef} tabIndex={inspectorOpen ? -1 : undefined} aria-label={t('files.detailsDrawer')} className={`${inspectorOpen ? 'fixed inset-x-3 bottom-3 top-24 z-40 block overflow-y-auto shadow-panel-strong' : 'hidden'} border-l border-outline-variant bg-surface-container-low/95 outline-none lg:col-span-2 lg:max-h-full lg:overflow-y-auto lg:border-l-0 lg:border-t lg:border-outline-variant xl:static xl:col-span-1 xl:block xl:border-l xl:border-t-0 xl:shadow-none`}>

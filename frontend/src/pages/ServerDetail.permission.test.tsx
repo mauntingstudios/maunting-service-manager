@@ -544,4 +544,26 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
       expect(statusAufrufe).toBe(2)
     })
   })
+
+  // -------------------------------------------------------------------------
+  // DOM-Layout-Reihenfolge: Aktionen & Kennzahlen oben, Reiter & Inhalte unten
+  // -------------------------------------------------------------------------
+
+  describe('DOM-Layout-Reihenfolge', () => {
+    it('rendert Aktionen und Ressourcen-Metriken vor der Reiter-Navigation (ServerDetailTabs)', async () => {
+      setPermissions(OWNER_ME)
+      renderServerDetail()
+      await waitForServerToLoad()
+
+      const restartButton = screen.getByRole('button', { name: /restart/i })
+      const tabList = screen.getByRole('tablist')
+
+      // Der Restart-Button und die Dashboard-Aktionen müssen VOR der Reiter-Navigation im DOM stehen:
+      // compareDocumentPosition mit DOCUMENT_POSITION_FOLLOWING (4) bedeutet: tabList folgt nach restartButton.
+      const isTabListAfterActions = Boolean(
+        restartButton.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING
+      )
+      expect(isTabListAfterActions).toBe(true)
+    })
+  })
 })
