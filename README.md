@@ -3,12 +3,12 @@
 # Maunting Service Manager (MSM)
 
 **A modern, self-hosted management panel for game servers, applications, and Linux services.**  
-Autonomous monitoring with the Guardian Engine, rootless container security, E2EE backups, and AI-assisted operations.
+Autonomous monitoring with the Guardian Engine, rootless container security, encrypted backup uploads, and AI-assisted operations.
 
 [![Status](https://img.shields.io/badge/Status-Active%20Development-orange)](https://github.com/mauntingstudios/maunting-service-manager)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
-[Quick Start](#installation) • [Key Features](#what-msm-can-do) • [Comparison](#msm-compared) • [Architecture](#how-everything-connects) • [Documentation](docs/self-hosting.md)
+[Quick Start](#installation) • [Key Features](#what-msm-can-do) • [Feature Reference](docs/features.md) • [Comparison](#msm-compared) • [Architecture](#how-everything-connects) • [Documentation](docs/self-hosting.md)
 
 <br />
 
@@ -25,7 +25,7 @@ Autonomous monitoring with the Guardian Engine, rootless container security, E2E
 ---
 
 > [!IMPORTANT]
-> MSM is actively under development. Please avoid running it in mission-critical environments without performing regular, verified backups.
+> MSM is actively under development. Please avoid running it in mission-critical environments without performing regular, verified backups. Development started in May 2026; the current release is v5.9.1.
 
 > [!NOTE]
 > 🧪 **Experimental Feature: Kubernetes**  
@@ -45,51 +45,62 @@ The Documents module uses a dedicated collaboration sidecar. Production installs
 - **Multi-Server Management:** Control any number of bare-metal servers or VPS instances from a single, centralized dashboard.
 
 ### What MSM is not
-- **Not a Hosting Provider:** You bring your own Linux servers (e.g., Hetzner, OVH, netcup, or your local homelab).
-- **Not a Windows Application:** Both the panel and node agents run exclusively on Linux.
-- **Not completely rootless during setup:** The bootstrap script requires root rights once during initial installation. Afterwards, the panel daemon and all service containers run entirely rootless.
+- **Not a hosting service:** MSM is self-hosted. You bring the Linux hosts (Hetzner, OVH, netcup or a homelab). A hoster API exists for providers who want to automate provisioning, but it stays dormant unless configured.
+- **Not a Windows server product:** The panel and the node agents run on Linux. The desktop application MSS runs on Windows and Android and connects to the same panel.
+- **Not rootless during setup:** The bootstrap script needs root once. Afterwards the panel daemon, the agent and every service container run unprivileged.
 
 ---
 
 ## What MSM Can Do
 
-### 1. Multi-Node by Design
-One panel manages unlimited nodes. New nodes join through a secure enrollment protocol (mTLS backed by HMAC challenge verification) and require explicit administrator approval.
+The list below is an overview. Every capability with its backend routes, security boundaries and limits is documented in the [Feature Reference](docs/features.md).
 
-### 2. Autonomous Guardian Engine
-Every node runs the Guardian Engine to supervise local containers. It continuously evaluates container health, HTTP/TCP probes, and log patterns. If a service becomes unresponsive, Guardian initiates local recovery procedures or quarantines the container—even during panel or network outages. All incident logs synchronize once the panel reconnects.
+### Run game servers and applications
+- Create servers from 32 native blueprints (18 Steam games, 10 non-Steam games, backends, databases, a static frontend) plus one community example; resource limits, bind IP and ports are handled by the panel.
+- Start, stop, restart and kill. Automatic restarts on an interval or at a fixed time, scheduled from the last successful run so intervals do not drift.
+- Live console with stdin input and an optional `exec` inside the container; file manager with editor, version history, content search and chunked uploads.
+- Backups with per-blueprint paths, retention, restore, scheduling and optional S3 upload.
+- Webhooks, metrics, incident log and a change timeline.
 
-### 3. Declarative Blueprints
-Services are defined via structured blueprints (YAML or JSON), declaring container images, ports, environment variables, persistent volumes, config templates, and Guardian check routines. This allows MSM to manage any containerized workload, not just game servers.
+### Mods, databases and files
+- Steam Workshop through SteamCMD, CurseForge mods and modpacks, load order, enable/disable, update checks and cleanup of aborted installs. Modrinth is not integrated.
+- Managed PostgreSQL databases plus an in-house PostgreSQL Studio (structure, data, SQL, dump/restore, monitoring) and a SQLite Studio for database files inside a server.
 
-### 4. Built-in Steam Workshop
-For supported games, nodes handle Steam Workshop mods natively through SteamCMD, keeping files updated and mapped directly into containers.
+### Multi-node
+- One panel, any number of nodes. A node joins with a short-lived command, mutual TLS with certificate pinning and explicit approval.
+- Capacity-aware placement, migration of a server to another node, automatic firewall rules for declared ports.
 
-### 5. Rootless Container Security
-All service containers run inside the rootless Docker namespace of the dedicated unprivileged user `msm` (`unix:///run/user/<uid>/docker.sock`). The panel process does not belong to the host `docker` group. All game server ports operate above 1024, eliminating the need for elevated rights or `setcap` binaries.
+### Identity, permissions and audit
+- 91 permission keys, Discord-style roles, server grants, teams with their own roles, shared AI knowledge and a team vault.
+- Audit log with export and read access for the AI, limited by the caller's permissions.
+- Optional hoster/shop API with idempotent provisioning and signed SSO handoffs.
 
-### 6. Zero-Knowledge Backups (DIS)
-Backups for servers and databases are encrypted client-side prior to leaving your infrastructure (AES-256-GCM, key derivation via Argon2id) before transmission to S3-compatible object storage. Encryption keys and S3 credentials are never stored in plaintext.
+### AI (Singra)
+- Six provider adapters, five cost roles and per-role daily, weekly and monthly token limits.
+- 125 backend tools for servers, files, backups, databases, DNS, documents, audit, users and more. Writes become confirmation cards unless autonomy was granted for that exact tool.
+- Memory with local embeddings and encrypted storage, web search through SearXNG or Brave with citations, a classic voice pipeline and OpenAI Realtime, MCP at global, team and user scope, background workers and a coding sandbox.
 
-### 7. Component Migration Wizard
-Using `migrate-panel-components.sh`, you can relocate the panel, web frontend, or individual server workloads to another node. Migrations run transactionally, featuring automated rollbacks should any step fail.
+### Messenger
+- Direct chats, groups, stories, attachments, voice and video notes, stickers, reactions, edits, deletions, pins, disappearing messages and calls over LiveKit.
+- End-to-end encrypted with a double ratchet per device. The server stores ciphertext; a new device receives history only after the security number is compared.
 
-### 8. Optional Hoster & Store Integration
-External store systems can automate server provisioning, suspensions, and terminations through a standardized API. Requests are idempotent to prevent duplicate processing. Customers can access their provisioned servers via signed single-sign-on (SSO) links without secondary credentials. **Unless configured, this subsystem remains dormant.** See [`docs/self-hosting.md`](docs/self-hosting.md#hoster--und-shop-anbindung-optional-phase-6) and [`docs/hoster-api.md`](docs/hoster-api.md).
+### Vault
+- Zero-knowledge storage for passwords, TOTP codes, notes, files and photos, with a gallery, folders, trash and archive, import/export and a breach check.
+- Team vault with per-member wrapped keys, Windows Hello and passkey unlock, QR device approval, and an Android camera backup with a post-quantum hybrid envelope.
 
-### 9. Voice & AI Interaction (Optional)
-Supports standard voice pipelines (transcription, chat models, Pipecat, ElevenLabs) as well as direct low-latency OpenAI Realtime integration over WebRTC between browser/desktop clients and endpoints. The backend maintains strict enforcement of tool execution permissions, Guardian actions, and quotas. API keys never reach the client. See [`docs/self-hosting.md`](docs/self-hosting.md#sprachmodus-mit-der-ki-reden).
+### Productivity
+- End-to-end encrypted calendar (series, CalDAV, ICS, reminders) and notes with a per-account key shared by signed device records.
+- A document editor with realtime collaboration, comments, revisions, sharing links, assets and offline editing.
 
-### 10. Centralized Secrets Management
-GitHub tokens and Steam account credentials can be stored centrally at panel scope, user scope, or per server instance. Servers reference credential aliases rather than copying raw secrets. Once saved, secrets cannot be retrieved in plaintext.
+### Clients
+- **Maunting Pontis**, a Tauri browser for Windows and Android: isolated tabs, adblock with EasyList and EasyPrivacy, cookie-banner rejection, youth protection with self-binding, quarantined downloads, vault autofill, local Bergamot translation, reader mode and devtools.
+- **MSS**, the Windows and Android desktop app: pairing instead of a password, tray, global hotkeys, wake word, overlay, screenshot, computer use only after local approval, sandboxed file jobs, reminders and Velopack updates.
+- **Recovery**, a small app that decrypts a backup offline when the panel is gone.
 
-### 11. AI Assistant, Search & Organization
-The AI assistant operates against a defined tool registry verified by the backend. Subject to your permissions, it can review server telemetry, parse logs, inspect backups, manage reminders, and structure maintenance workflows. Sensitive modifications always require explicit user confirmation.
-
-**Maunting Search** integrates a private research interface powered by your server's local SearXNG instance (AGPLv3), complete with AI overviews, citations, and Wikipedia panels. For geographic inquiries, it pulls coordinates, weather reports, and optional Sentinel-2 satellite imagery (via Copernicus). For architecture details, review [`docs/ai-system-architecture.md`](docs/ai-system-architecture.md).
-
-### 12. Integrated PostgreSQL Studio
-Manage panel and application databases directly inside the browser: edit table structures, import/export datasets, manage indexes, execute raw queries, and handle dump restorations. Custom SQL commands execute under their respective database user privileges, never as superuser. See [`docs/self-hosting.md`](docs/self-hosting.md#postgresql-datenbanken-und-das-studio).
+### Security and operations
+- Rootless Docker with `cap_drop=ALL` and `no-new-privileges`; the panel never joins the host `docker` group.
+- User content in the database is encrypted through DIS. Backups are encrypted on S3 upload, and locally when a backup password is set.
+- Single-command installation with checksum verification, automated HTTPS, PostgreSQL included, and a transactional migration wizard for components.
 
 ---
 
@@ -109,16 +120,19 @@ This repository includes **Maunting Pontis**, a privacy-focused desktop applicat
 
 ## MSM Compared
 
-| Feature | MSM | Pelican Panel | Classical Panels (Pterodactyl v1, AMP) |
+| Feature | MSM | Pelican Panel | Pterodactyl v1 / AMP |
 |---|---|---|---|
-| **Architecture** | Single panel, unlimited nodes | Panel and node daemon (Wings) | Monolithic application or panel + daemon |
-| **Container Security** | **Rootless Docker** per node user | Root Docker daemon | Root Docker daemon |
-| **Self-Healing** | **Yes (Guardian)**: Independent local checks & repairs during network partition | **No**: Dependent on continuous panel connection | **No**: Daemon processes passive commands only |
-| **Workload Definition** | **Blueprints (YAML/JSON)** for games, services, databases | Eggs (JSON format) | Eggs or vendor-locked modules |
-| **Steam Workshop** | **Native**: SteamCMD downloads & updates managed automatically | **Partial**: Via community eggs or scripts | **Partial**: Via community addons or manual steps |
-| **Backup Encryption** | **Yes, client-side** (AES-256-GCM, Argon2id) | Plaintext or server-side S3 encryption | Plaintext, local or S3 |
-| **Migration Tooling** | **Interactive wizard** for panel, frontends, and servers | Manual CLI procedures | Manual SSH dumps and transfers |
-| **Installation & TLS** | Single command, automated HTTPS via Caddy, PostgreSQL included | Multi-step installer or compose | Manual web server and database configuration |
+| **Licence** | AGPL-3.0 | AGPL-3.0 | MIT / commercial |
+| **Architecture** | Panel plus own agent per node | Panel, Wings, Eggs and Yolks | Panel and Wings (Pterodactyl); ADS and instance manager (AMP) |
+| **Container isolation** | Rootless Docker, `cap_drop=ALL`, `no-new-privileges` | Docker container per instance | Docker container per instance (Pterodactyl); Docker optional (AMP). Not verified as rootless. |
+| **Local self-healing** | Guardian runs on each node and repairs within blueprint policies | Not documented | Not documented |
+| **Workload definition** | Data-only blueprints, 32 native | Eggs and Yolks | Eggs / vendor modules |
+| **Steam Workshop** | Native through SteamCMD | Not verified as built-in | Not verified as built-in |
+| **Backup encryption** | Local `tar.gz`, or `.enc` when a backup password is set; S3 upload encrypted through DIS (AES-256-GCM, Argon2id) | Not verified | Not verified |
+| **Migration tooling** | Transactional wizard with rollback | Manual procedures | Manual procedures |
+| **Installation and TLS** | One command with checksum verification, Caddy HTTPS, PostgreSQL included | Multi-step installer | Varies by setup |
+
+The comparison reflects the official documentation of each project as retrieved on 11 November 2026: full table, sources and open questions are in the [Feature Reference](docs/features.md#21-comparison-with-other-open-source-projects). "Not verified" means the project documentation checked for this table did not answer the question, not that the feature is absent.
 
 ---
 
@@ -188,7 +202,7 @@ curl -fsSL https://raw.githubusercontent.com/mauntingstudios/maunting-service-ma
 *Replace `panel.example.com` with your designated DNS hostname.*
 
 The bootstrap installer automates:
-- PostgreSQL database setup and Redis caching services
+- PostgreSQL database setup and optional Redis for rate limiting
 - Rootless Docker setup for the dedicated `msm` system account
 - The Data Isolation & Security service (DIS)
 - Docs sidecar for realtime document collaboration (`/api/docs/collab`)
@@ -319,7 +333,7 @@ and sidecar share `SIDECAR_TOKEN` and `COLLAB_SECRET`; rotating
 ---
 ## Community & Support
 
-- **Documentation:** Review comprehensive guides in [`docs/self-hosting.md`](docs/self-hosting.md) and inside the panel under **Documentation**.
+- **Documentation:** Review the [Feature Reference](docs/features.md) for every capability with its implementation, the comprehensive guides in [`docs/self-hosting.md`](docs/self-hosting.md), and the built-in documentation under **Documentation** in the panel.
 - **Issue Tracker:** Report issues or submit enhancements on [GitHub Issues](https://github.com/mauntingstudios/maunting-service-manager/issues).
 
 ---
