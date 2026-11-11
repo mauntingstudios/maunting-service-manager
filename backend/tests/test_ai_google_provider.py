@@ -606,6 +606,77 @@ def test_clean_gemini_schema() -> None:
     assert cleaned["properties"]["filter"]["nullable"] is True
 
 
+def test_clean_gemini_schema_array_items_guarantee() -> None:
+    """Prüft, dass Arrays ohne items oder mit unvollständigem items-Typ abgesichert werden,
+    um WebSocket 1007 (invalid frame payload data / missing field items) abzuwenden.
+    Prüft auch das echte Werkzeug-Schema von project_workspace (interactions)."""
+    from services.ai_voice.gemini_live_session import _clean_gemini_schema
+    from services.ai_tools.project_tools import _WORKSPACE
+
+    # 1. Array ohne items (exakter Absturz-Grund des Users)
+    raw_missing_items = {
+        "type": "object",
+        "properties": {
+            "interactions": {
+                "type": "array",
+            }
+        }
+    }
+    cleaned_missing = _clean_gemini_schema(raw_missing_items)
+    inter_prop = cleaned_missing["properties"]["interactions"]
+    assert inter_prop["type"] == "ARRAY"
+    assert "items" in inter_prop, "Array-Property muss ein items-Objekt besitzen!"
+    assert isinstance(inter_prop["items"], dict)
+    assert "type" in inter_prop["items"], "Array items muss ein type-Feld haben!"
+    assert inter_prop["items"]["type"] != ""
+
+    # 2. Array mit leerem items-Objekt {}
+    raw_empty_items = {
+        "type": "object",
+        "properties": {
+            "tags": {
+                "type": "array",
+                "items": {}
+            }
+        }
+    }
+    cleaned_empty = _clean_gemini_schema(raw_empty_items)
+    tags_prop = cleaned_empty["properties"]["tags"]
+    assert tags_prop["type"] == "ARRAY"
+    assert "items" in tags_prop
+    assert "type" in tags_prop["items"]
+    assert tags_prop["items"]["type"] == "STRING"
+
+    # 3. Array mit items ohne type aber mit properties
+    raw_obj_items = {
+        "type": "object",
+        "properties": {
+            "steps": {
+                "type": "array",
+                "items": {
+                    "properties": {
+                        "name": {"type": "string"}
+                    }
+                }
+            }
+        }
+    }
+    cleaned_obj = _clean_gemini_schema(raw_obj_items)
+    steps_prop = cleaned_obj["properties"]["steps"]
+    assert steps_prop["type"] == "ARRAY"
+    assert steps_prop["items"]["type"] == "OBJECT"
+    assert "name" in steps_prop["items"]["properties"]
+
+    # 4. Das reale Werkzeug project_workspace
+    cleaned_ws = _clean_gemini_schema(_WORKSPACE["function"]["parameters"])
+    ws_inter = cleaned_ws["properties"]["interactions"]
+    assert ws_inter["type"] == "ARRAY"
+    assert "items" in ws_inter
+    assert "type" in ws_inter["items"]
+    assert ws_inter["items"]["type"] == "OBJECT"
+    assert "selector" in ws_inter["items"]["properties"]
+
+
 def test_google_catalog_models_prefix_and_native_limits() -> None:
     """Prüft models/ Präfix-Bereinigung und Einlesen von Google-REST Token-Limits."""
     raw = {

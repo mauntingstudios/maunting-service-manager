@@ -154,6 +154,17 @@ def _clean_gemini_schema(schema: Any) -> Any:
     if "items" in schema and isinstance(schema["items"], dict):
         cleaned["items"] = _clean_gemini_schema(schema["items"])
 
+    # 7. Absicherung für Google Gemini Protobuf-Validierung (Verhinderung von Code 1007):
+    # Jedes Schema vom Typ ARRAY MUSS zwingend ein items-Objekt mit deklariertem type besitzen.
+    if cleaned.get("type") == "ARRAY":
+        if "items" not in cleaned or not isinstance(cleaned["items"], dict):
+            cleaned["items"] = {"type": "STRING"}
+        elif "type" not in cleaned["items"]:
+            if "properties" in cleaned["items"]:
+                cleaned["items"]["type"] = "OBJECT"
+            else:
+                cleaned["items"]["type"] = "STRING"
+
     return cleaned
 
 

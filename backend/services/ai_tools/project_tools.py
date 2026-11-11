@@ -65,6 +65,16 @@ _WORKSPACE = _function(
             },
             "interactions": {
                 "type": "array",
+                "description": "Optionale Interaktionsschritte für die Vorschau (Klick/Eingabe).",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "selector": {"type": "string", "description": "CSS-Selektor des Zielelements."},
+                        "action": {"type": "string", "enum": ["click", "input"], "description": "Aktion: click oder input."},
+                        "value": {"type": "string", "description": "Eingabewert bei action=input."},
+                    },
+                    "required": ["selector"],
+                },
             },
             "content": {"type": "string", "maxLength": 200000},
             "find": {"type": "string", "maxLength": 50000, "description": "Exakter zu ersetzender Codeblock (patch_file)."},
