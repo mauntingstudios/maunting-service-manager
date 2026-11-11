@@ -4929,6 +4929,11 @@
     "viewStructure": "Structure",
     "tablesCount": "{{count}} tables",
     "tablesCount_one": "{{count}} table",
+    "fullscreen": "Full screen",
+    "exitFullscreen": "Exit full screen",
+    "toggleSidebar": "Toggle tables list",
+    "selectTableMobile": "Select table...",
+    "refresh": "Refresh",
     "tabs": {
       "data": "Tables & Data",
       "sql": "SQL Console"
@@ -9749,6 +9754,7 @@
     },
     "data": {
       "addFilter": "Add filter",
+      "clearFilters": "Reset filters",
       "ctidHint": "Without a primary key, rows are edited by their physical position (ctid). This is safe, but a primary key is better.",
       "deleteMessage": "Permanently delete the selected rows ({{count}}) from \"{{table}}\"?",
       "deleteSelected": "Delete ({{count}})",
@@ -9756,7 +9762,10 @@
       "deleted": "Rows deleted: {{count}}",
       "duplicate": "Duplicate",
       "duplicateTitle": "Duplicate row in \"{{table}}\"",
-      "editHint": "Double-click a cell to edit it.",
+      "edit": "Edit",
+      "editHint": "Double-click a cell to edit it or adjust row details using the pencil icon in the form.",
+      "editRow": "Edit row",
+      "editTitle": "Edit row in \"{{table}}\"",
       "empty": "No rows.",
       "estimate": "Estimate",
       "export": "Export",
@@ -9764,6 +9773,8 @@
       "filterColumn": "Column",
       "filterOperator": "Condition",
       "filterValue": "Value",
+      "filters": "Filters",
+      "filtersActive": "Filters ({{count}})",
       "formatJson": "Format",
       "import": "Import",
       "insert": "Insert row",
@@ -9794,8 +9805,11 @@
       "perPage": "{{count}} per page",
       "readOnlyNoKey": "Read-only: this relation has no key to change rows safely.",
       "rows": "Rows: {{formatted}}",
+      "rowsCount": "{{count}} rows",
+      "rowsCount_one": "{{count}} row",
       "selectAll": "Select all",
       "selectRow": "Select row {{row}}",
+      "updated": "Row saved successfully.",
       "useDefault": "Default: {{value}}"
     },
     "designer": {

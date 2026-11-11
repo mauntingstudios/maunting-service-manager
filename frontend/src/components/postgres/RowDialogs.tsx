@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Wand2 } from 'lucide-react'
-import { Button, Checkbox, Dropdown, Input, Textarea } from '@maunting/ui'
+import { Badge, Button, Checkbox, Dropdown, Input, Textarea } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { FormDialog } from './FormDialog'
 import { useStudio } from './StudioContext'
-import type { Json, StudioColumn, StudioTableDetails } from './studioApi'
+import type { Json, StudioColumn, StudioRowKey, StudioTableDetails } from './studioApi'
 
 const isJsonType = (type: string) => /^jsonb?$/.test(type)
 
@@ -72,11 +72,12 @@ interface FieldState {
   useDefault: boolean
 }
 
-/** Neue Zeile oder Kopie einer Zeile. */
-export function RowDialog({ table, mode, initial, onClose, onSaved }: {
+/** Neue Zeile, Kopie oder Bearbeiten einer bestehenden Zeile. */
+export function RowDialog({ table, mode, initial, rowKey, onClose, onSaved }: {
   table: StudioTableDetails
-  mode: 'insert' | 'duplicate'
+  mode: 'insert' | 'duplicate' | 'edit'
   initial: Record<string, Json>
+  rowKey?: StudioRowKey
   onClose: () => void
   onSaved: () => void
 }) {
@@ -87,6 +88,9 @@ export function RowDialog({ table, mode, initial, onClose, onSaved }: {
     Object.fromEntries(
       columns.map((c) => {
         const has = Object.prototype.hasOwnProperty.call(initial, c.name)
+        if (mode === 'edit') {
+          return [c.name, { text: has ? toText(initial[c.name]) : '', isNull: has && initial[c.name] === null, useDefault: false }]
+        }
         return [c.name, { text: has ? toText(initial[c.name]) : '', isNull: has && initial[c.name] === null, useDefault: !has && (Boolean(c.default) || Boolean(c.identity) || c.nullable) }]
       }),
     ),
@@ -99,7 +103,7 @@ export function RowDialog({ table, mode, initial, onClose, onSaved }: {
     const values: Record<string, Json> = {}
     for (const column of columns) {
       const field = fields[column.name]
-      if (field.useDefault) continue
+      if (mode !== 'edit' && field.useDefault) continue
       if (field.isNull) {
         values[column.name] = null
         continue
@@ -118,8 +122,16 @@ export function RowDialog({ table, mode, initial, onClose, onSaved }: {
     setBusy(true)
     setError(null)
     try {
-      await api.insertRow(table.schema, table.table, values)
-      toast.success(t('postgresStudio.data.inserted'))
+      if (mode === 'edit') {
+        if (!rowKey) {
+          throw new Error('Missing rowKey for edit')
+        }
+        await api.updateRow(table.schema, table.table, rowKey, values)
+        toast.success(t('postgresStudio.data.updated'))
+      } else {
+        await api.insertRow(table.schema, table.table, values)
+        toast.success(t('postgresStudio.data.inserted'))
+      }
       onSaved()
     } catch (err) {
       setError((err as Error).message)
@@ -128,12 +140,24 @@ export function RowDialog({ table, mode, initial, onClose, onSaved }: {
     }
   }
 
+  const title =
+    mode === 'insert'
+      ? t('postgresStudio.data.insertTitle', { table: table.table })
+      : mode === 'duplicate'
+        ? t('postgresStudio.data.duplicateTitle', { table: table.table })
+        : t('postgresStudio.data.editTitle', { table: table.table })
+
+  const description =
+    mode === 'edit'
+      ? t('postgresStudio.data.editHint')
+      : t('postgresStudio.data.insertHint')
+
   return (
     <FormDialog
       open
       wide
-      title={mode === 'insert' ? t('postgresStudio.data.insertTitle', { table: table.table }) : t('postgresStudio.data.duplicateTitle', { table: table.table })}
-      description={t('postgresStudio.data.insertHint')}
+      title={title}
+      description={description}
       error={error}
       onClose={onClose}
       submitLabel={busy ? t('common.saving') : t('common.save')}
@@ -141,16 +165,33 @@ export function RowDialog({ table, mode, initial, onClose, onSaved }: {
       testId="row-dialog"
     >
       {columns.map((column) => (
-        <RowField key={column.name} column={column} state={fields[column.name]} onChange={(patch) => set(column.name, patch)} />
+        <RowField
+          key={column.name}
+          column={column}
+          isPrimaryKey={table.primary_key.includes(column.name)}
+          isEditMode={mode === 'edit'}
+          state={fields[column.name]}
+          onChange={(patch) => set(column.name, patch)}
+        />
       ))}
     </FormDialog>
   )
 }
 
-function RowField({ column, state, onChange }: { column: StudioColumn; state: FieldState; onChange: (patch: Partial<FieldState>) => void }) {
+function RowField({
+  column,
+  isPrimaryKey,
+  isEditMode,
+  state,
+  onChange,
+}: {
+  column: StudioColumn
+  isPrimaryKey: boolean
+  isEditMode: boolean
+  state: FieldState
+  onChange: (patch: Partial<FieldState>) => void
+}) {
   const { t } = useTranslation()
-  // Nur NULL sperrt das Feld. „Weglassen" ist bloß der Ausgangszustand: wer
-  // tippt, meint einen Wert — sonst schrieb die Zeile stumm den Standardwert.
   const disabled = state.isNull
   const edit = (text: string) => onChange({ text, useDefault: false })
   let editor
@@ -170,11 +211,18 @@ function RowField({ column, state, onChange }: { column: StudioColumn; state: Fi
   return (
     <div className="space-y-1.5 rounded-lg border border-outline-variant p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-mono text-xs text-on-surface">
-          {column.name} <span className="text-secondary">{column.type}</span>
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-xs text-on-surface">
+            {column.name} <span className="text-secondary">{column.type}</span>
+          </span>
+          {isPrimaryKey && (
+            <Badge variant="default" className="text-label-sm px-1.5 py-0 uppercase">
+              PK
+            </Badge>
+          )}
+        </div>
         <div className="flex items-center gap-4 text-xs text-on-surface-variant">
-          {(column.default || column.identity || column.nullable) && (
+          {!isEditMode && (column.default || column.identity || column.nullable) && (
             <label className="flex items-center gap-1.5">
               <Checkbox checked={state.useDefault} onCheckedChange={(useDefault) => onChange({ useDefault, isNull: false })} />
               {column.default ? t('postgresStudio.data.useDefault', { value: column.default }) : t('postgresStudio.data.omit')}

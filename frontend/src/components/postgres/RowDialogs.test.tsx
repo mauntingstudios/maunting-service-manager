@@ -11,9 +11,10 @@ import type { StudioColumn, StudioTableDetails } from './studioApi'
 import i18n from '@/i18n'
 
 const insertRow = vi.fn(async () => ({}))
+const updateRow = vi.fn(async () => ({}))
 
 vi.mock('./StudioContext', () => ({
-  useStudio: () => ({ api: { insertRow } }),
+  useStudio: () => ({ api: { insertRow, updateRow } }),
 }))
 
 vi.mock('@/stores/toastStore', () => ({
@@ -34,12 +35,14 @@ const TABELLE = {
     spalte('profil', 'jsonb'),
     spalte('notiz', 'text'),
   ],
+  primary_key: ['id'],
 } as unknown as StudioTableDetails
 
 describe('RowDialog', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('de')
     insertRow.mockClear()
+    updateRow.mockClear()
   })
 
   it('schreibt Getipptes auch in nullbare Spalten, lässt Unberührtes weg', async () => {
@@ -53,5 +56,38 @@ describe('RowDialog', () => {
 
     await waitFor(() => expect(insertRow).toHaveBeenCalled())
     expect(insertRow).toHaveBeenCalledWith('public', 'kunden', { name: 'Anna', profil: { plan: 'pro' } })
+  })
+
+  it('bearbeitet eine bestehende Zeile mit vorausgefüllten Daten und ruft updateRow auf', async () => {
+    const editTabelle: StudioTableDetails = {
+      ...TABELLE,
+      columns: [
+        spalte('id', 'bigint', { nullable: false }),
+        spalte('name', 'text', { nullable: false }),
+        spalte('profil', 'jsonb'),
+        spalte('notiz', 'text'),
+      ],
+      primary_key: ['id'],
+    }
+    const rowKey = { values: { id: 42 } }
+    render(
+      <RowDialog
+        table={editTabelle}
+        mode="edit"
+        initial={{ id: 42, name: 'Berta', profil: null, notiz: 'Testnotiz' }}
+        rowKey={rowKey}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('PK')).toBeInTheDocument()
+    const nameInput = screen.getByLabelText('name')
+    expect(nameInput).toHaveValue('Berta')
+    fireEvent.change(nameInput, { target: { value: 'Berta Updated' } })
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.save') }))
+
+    await waitFor(() => expect(updateRow).toHaveBeenCalled())
+    expect(updateRow).toHaveBeenCalledWith('public', 'kunden', rowKey, expect.objectContaining({ name: 'Berta Updated' }))
   })
 })

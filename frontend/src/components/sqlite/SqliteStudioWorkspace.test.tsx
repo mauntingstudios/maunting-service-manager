@@ -119,4 +119,31 @@ describe('SqliteStudioWorkspace', () => {
 
     expect(await screen.findByRole('button', { name: i18n.t('postgresStudio.sql.run') })).toBeInTheDocument()
   })
+
+  it('schaltet in den Vollbildmodus und reagiert auf Escape', async () => {
+    render(<SqliteStudioWorkspace serverId={1} path="saves/game.db" canWrite={true} />)
+    await screen.findByText('game.db')
+
+    const studio = screen.getByTestId('sqlite-studio')
+    expect(studio).not.toHaveClass('fixed')
+
+    const fullscreenBtn = screen.getByTitle(i18n.t('sqliteStudio.fullscreen'))
+    fireEvent.click(fullscreenBtn)
+    expect(studio).toHaveClass('fixed')
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(studio).not.toHaveClass('fixed')
+  })
+
+  it('klappt die Desktop-Seitenleiste ein und aus', async () => {
+    render(<SqliteStudioWorkspace serverId={1} path="saves/game.db" canWrite={true} />)
+    await screen.findByText('game.db')
+
+    const sidebar = screen.getByTestId('sqlite-tables-sidebar')
+    expect(sidebar).toHaveClass('md:flex')
+
+    const toggleBtn = screen.getByTitle(i18n.t('sqliteStudio.toggleSidebar'))
+    fireEvent.click(toggleBtn)
+    expect(sidebar).toHaveClass('md:hidden')
+  })
 })

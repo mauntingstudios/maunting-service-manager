@@ -739,7 +739,11 @@ export function FileManager({ serverId }: FileManagerProps) {
       </div>
 
       <div
-        className="relative grid min-h-[560px] grid-cols-1 lg:h-[clamp(560px,calc(100vh-300px),760px)] lg:min-h-0 lg:grid-cols-[280px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[260px_minmax(0,1fr)_230px]"
+        className={`relative grid min-h-[560px] grid-cols-1 lg:h-[clamp(560px,calc(100vh-300px),760px)] lg:min-h-0 lg:overflow-hidden ${
+          activeTab?.isSqlite
+            ? 'lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)]'
+            : 'lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_230px]'
+        }`}
         onDragOver={(event) => {
           if (!canWrite) return
           event.preventDefault()
@@ -800,7 +804,20 @@ export function FileManager({ serverId }: FileManagerProps) {
           <FileEditorWorkspace tabs={tabs} activePath={activePath} canWrite={canWrite} serverId={serverId} tabListLabel={t('files.openFiles')} horizontalScrollHint={t('files.horizontalScrollHint')} onActivate={setActivePath} onChange={updateTabContent} onSave={(path) => void saveTab(path)} onClose={(path) => void closeTab(path)} onReload={(path) => void reloadTab(path)} />
         </div>
 
-        <aside ref={inspectorPanelRef} tabIndex={inspectorOpen ? -1 : undefined} aria-label={t('files.detailsDrawer')} className={`${inspectorOpen ? 'fixed inset-x-3 bottom-3 top-24 z-40 block overflow-y-auto shadow-panel-strong' : 'hidden'} border-l border-outline-variant bg-surface-container-low/95 outline-none lg:col-span-2 lg:max-h-full lg:overflow-y-auto lg:border-l-0 lg:border-t lg:border-outline-variant xl:static xl:col-span-1 xl:block xl:border-l xl:border-t-0 xl:shadow-none`}>
+        <aside
+          ref={inspectorPanelRef}
+          tabIndex={inspectorOpen ? -1 : undefined}
+          aria-label={t('files.detailsDrawer')}
+          className={`${
+            inspectorOpen
+              ? 'fixed inset-x-3 bottom-3 top-24 z-40 block overflow-y-auto shadow-panel-strong'
+              : 'hidden'
+          } border-l border-outline-variant bg-surface-container-low/95 outline-none lg:col-span-2 lg:max-h-full lg:overflow-y-auto lg:border-l-0 lg:border-t lg:border-outline-variant ${
+            activeTab?.isSqlite
+              ? 'xl:hidden'
+              : 'xl:static xl:col-span-1 xl:block xl:border-l xl:border-t-0 xl:shadow-none'
+          }`}
+        >
           <div className="flex min-h-11 items-center justify-between border-b border-outline-variant px-3"><h3 className="text-xs font-semibold text-on-surface">{t('files.details')}</h3>{inspectorOpen && <Button variant="ghost" size="sm" type="button" onClick={() => { setInspectorOpen(false); window.requestAnimationFrame(() => inspectorTriggerRef.current?.focus()) }} className="inline-flex items-center justify-center gap-2 xl:hidden" aria-label={t('common.close')}><X className="h-4 w-4" /><span>{t('common.close')}</span></Button>}</div>
           {activeTab ? <>
             <div className="border-b border-outline-variant p-3"><div className="flex items-start gap-2"><ArchiveRestore className="mt-0.5 h-4 w-4 text-secondary" /><div className="min-w-0"><p className="truncate text-xs font-semibold text-on-surface">{fileName(activeTab.path)}</p><p className="mt-0.5 truncate font-mono text-label-sm text-on-surface-variant">{activeTab.path}</p></div></div></div>

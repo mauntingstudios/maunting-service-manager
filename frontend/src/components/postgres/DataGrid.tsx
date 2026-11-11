@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowDown, ArrowUp, Copy, Filter, Link2, Plus, RefreshCw, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Copy, Filter, Link2, Pencil, Plus, RefreshCw, Trash2, Upload, X } from 'lucide-react'
 import { ActionMenu, Badge, Button, Checkbox, Dropdown, Input, Pagination } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
@@ -40,6 +40,7 @@ export function DataGrid({ table, initialFilters, onJump }: {
   const { t, i18n } = useTranslation()
   const { api, canWrite, revision } = useStudio()
   const [filters, setFilters] = useState<RowFilter[]>(initialFilters || [])
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false)
   const [draft, setDraft] = useState<RowFilter>({ column: table.columns[0]?.name || '', operator: 'eq', value: '' })
   const [sort, setSort] = useState<RowSort[]>([])
   const [pageSize, setPageSize] = useState<PageSize>(50)
@@ -50,7 +51,7 @@ export function DataGrid({ table, initialFilters, onJump }: {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [editing, setEditing] = useState<{ row: number; column: string; value: string } | null>(null)
   const [jsonEdit, setJsonEdit] = useState<{ row: number; column: string; value: Json } | null>(null)
-  const [rowDialog, setRowDialog] = useState<{ mode: 'insert' | 'duplicate'; values: Record<string, Json> } | null>(null)
+  const [rowDialog, setRowDialog] = useState<{ mode: 'insert' | 'duplicate' | 'edit'; values: Record<string, Json>; key?: StudioRowKey } | null>(null)
   const [importOpen, setImportOpen] = useState(false)
 
   useEffect(() => {
@@ -160,6 +161,22 @@ export function DataGrid({ table, initialFilters, onJump }: {
     }
   }
 
+  const openEditRow = (rowIndex: number) => {
+    if (!data) return
+    const row = data.rows[rowIndex]
+    const values: Record<string, Json> = {}
+    for (const column of visibleColumns) {
+      values[column] = valueOf(row, column)
+    }
+    setRowDialog({ mode: 'edit', values, key: keyOf(row) })
+  }
+
+  const editSelected = () => {
+    if (!data || selected.size !== 1) return
+    const rowIndex = [...selected][0]
+    openEditRow(rowIndex)
+  }
+
   const duplicate = () => {
     if (!data || selected.size !== 1) return
     const row = data.rows[[...selected][0]]
@@ -184,63 +201,71 @@ export function DataGrid({ table, initialFilters, onJump }: {
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
-      <div className="flex flex-wrap items-end gap-2">
-        <Dropdown
-          value={draft.column || null}
-          onChange={(column) => setDraft((d) => ({ ...d, column }))}
-          options={table.columns.map((c) => ({ value: c.name, label: c.name, hint: c.type }))}
-          searchable
-          className="w-44"
-          aria-label={t('postgresStudio.data.filterColumn')}
-        />
-        <Dropdown
-          value={draft.operator}
-          onChange={(operator) => setDraft((d) => ({ ...d, operator: operator as FilterOperator }))}
-          options={OPERATORS.map((op) => ({ value: op, label: t(`postgresStudio.data.operators.${op}`) }))}
-          className="w-40"
-          aria-label={t('postgresStudio.data.filterOperator')}
-        />
-        {!NO_VALUE.includes(draft.operator) && (
-          <div className="w-52">
-            <Input
-              value={String(draft.value ?? '')}
-              onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))}
-              onKeyDown={(e) => e.key === 'Enter' && addFilter()}
-              placeholder={draft.operator === 'in' ? 'a, b, c' : draft.operator === 'contains' ? '{"key": "value"}' : t('postgresStudio.data.filterValue')}
-              aria-label={t('postgresStudio.data.filterValue')}
-              className="h-10 text-xs"
-            />
-          </div>
-        )}
-        <Button variant="secondary" onClick={addFilter} data-testid="add-filter">
-          <Filter className="h-4 w-4" />
-          {t('postgresStudio.data.addFilter')}
-        </Button>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => void load()} aria-label={t('common.refresh')}>
+      {/* Obere Haupt-Aktionsleiste: Tabelle, Reload, Filter-Toggle und Aktionen */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void load()}
+            title={t('common.refresh')}
+            aria-label={t('common.refresh')}
+            className="h-9 gap-1.5"
+          >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">{t('common.refresh')}</span>
           </Button>
+
+          <Button
+            variant={filters.length > 0 ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setFilterPanelOpen((open) => !open)}
+            aria-expanded={filterPanelOpen}
+            className="h-9 gap-1.5"
+          >
+            <Filter className="h-4 w-4" />
+            <span>
+              {filters.length > 0
+                ? t('postgresStudio.data.filtersActive', { count: filters.length })
+                : t('postgresStudio.data.filters')}
+            </span>
+          </Button>
+
+          {data && (
+            <span className="font-mono text-xs text-on-surface-variant">
+              {data.total.toLocaleString(i18n.language)} {t('postgresStudio.data.rowsCount', { count: data.total })}
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
           {editable && selected.size === 1 && (
-            <Button variant="secondary" onClick={duplicate}>
+            <Button variant="secondary" size="sm" onClick={editSelected} className="h-9 gap-1.5" data-testid="edit-selected-row">
+              <Pencil className="h-4 w-4" />
+              <span>{t('postgresStudio.data.edit')}</span>
+            </Button>
+          )}
+          {editable && selected.size === 1 && (
+            <Button variant="secondary" size="sm" onClick={duplicate} className="h-9 gap-1.5">
               <Copy className="h-4 w-4" />
-              {t('postgresStudio.data.duplicate')}
+              <span className="hidden sm:inline">{t('postgresStudio.data.duplicate')}</span>
             </Button>
           )}
           {editable && selected.size > 0 && (
-            <Button variant="destructive" onClick={() => void deleteSelected()} data-testid="delete-rows">
+            <Button variant="destructive" size="sm" onClick={() => void deleteSelected()} data-testid="delete-rows" className="h-9 gap-1.5">
               <Trash2 className="h-4 w-4" />
-              {t('postgresStudio.data.deleteSelected', { count: selected.size })}
+              <span>{t('postgresStudio.data.deleteSelected', { count: selected.size })}</span>
             </Button>
           )}
           {canWrite && table.kind !== 'v' && table.kind !== 'm' && (
             <>
-              <Button onClick={() => setRowDialog({ mode: 'insert', values: {} })} data-testid="insert-row">
+              <Button onClick={() => setRowDialog({ mode: 'insert', values: {} })} data-testid="insert-row" size="sm" className="h-9 gap-1.5">
                 <Plus className="h-4 w-4" />
-                {t('postgresStudio.data.insert')}
+                <span>{t('postgresStudio.data.insert')}</span>
               </Button>
-              <Button variant="secondary" onClick={() => setImportOpen(true)}>
+              <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)} className="h-9 gap-1.5 hidden md:inline-flex">
                 <Upload className="h-4 w-4" />
-                {t('postgresStudio.data.import')}
+                <span>{t('postgresStudio.data.import')}</span>
               </Button>
             </>
           )}
@@ -251,17 +276,58 @@ export function DataGrid({ table, initialFilters, onJump }: {
         </div>
       </div>
 
-      {filters.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {filters.map((filter, index) => (
-            <span key={`${filter.column}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-secondary/40 bg-secondary/10 px-3 py-1 font-mono text-xs text-secondary">
-              {filter.column} {t(`postgresStudio.data.operators.${filter.operator}`)} {NO_VALUE.includes(filter.operator) ? '' : cellText(filter.value as Json)}
-              <button type="button" aria-label={t('common.remove')} onClick={() => setFilters((list) => list.filter((_, i) => i !== index))} className="ml-1 hover:text-on-surface">
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-          <Button size="sm" variant="ghost" onClick={() => setFilters([])}>{t('common.clear')}</Button>
+      {/* Ausklappbare Filterleiste */}
+      {(filterPanelOpen || filters.length > 0) && (
+        <div className="flex flex-col gap-2 rounded-lg border border-outline-variant/40 bg-surface-container-low p-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <Dropdown
+              value={draft.column || null}
+              onChange={(column) => setDraft((d) => ({ ...d, column }))}
+              options={table.columns.map((c) => ({ value: c.name, label: c.name, hint: c.type }))}
+              searchable
+              className="w-44"
+              aria-label={t('postgresStudio.data.filterColumn')}
+            />
+            <Dropdown
+              value={draft.operator}
+              onChange={(operator) => setDraft((d) => ({ ...d, operator: operator as FilterOperator }))}
+              options={OPERATORS.map((op) => ({ value: op, label: t(`postgresStudio.data.operators.${op}`) }))}
+              className="w-40"
+              aria-label={t('postgresStudio.data.filterOperator')}
+            />
+            {!NO_VALUE.includes(draft.operator) && (
+              <div className="min-w-44 flex-1 sm:max-w-xs">
+                <Input
+                  value={String(draft.value ?? '')}
+                  onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && addFilter()}
+                  placeholder={draft.operator === 'in' ? 'a, b, c' : draft.operator === 'contains' ? '{"key": "value"}' : t('postgresStudio.data.filterValue')}
+                  aria-label={t('postgresStudio.data.filterValue')}
+                  className="h-10 text-xs"
+                />
+              </div>
+            )}
+            <Button variant="secondary" onClick={addFilter} data-testid="add-filter" className="h-10">
+              <Filter className="h-4 w-4" />
+              {t('postgresStudio.data.addFilter')}
+            </Button>
+          </div>
+
+          {filters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-outline-variant/30">
+              {filters.map((filter, index) => (
+                <span key={`${filter.column}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-secondary/40 bg-secondary/10 px-3 py-1 font-mono text-xs text-secondary">
+                  {filter.column} {t(`postgresStudio.data.operators.${filter.operator}`)} {NO_VALUE.includes(filter.operator) ? '' : cellText(filter.value as Json)}
+                  <button type="button" aria-label={t('common.remove')} onClick={() => setFilters((list) => list.filter((_, i) => i !== index))} className="ml-1 hover:text-on-surface">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              <Button size="sm" variant="ghost" onClick={() => setFilters([])} className="h-7 text-xs">
+                {t('postgresStudio.data.clearFilters')}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -275,16 +341,21 @@ export function DataGrid({ table, initialFilters, onJump }: {
       {data && (
         <div className="min-h-0 overflow-auto rounded-lg border border-outline-variant">
           <table className="w-full text-left text-xs" data-testid="data-grid">
-            <thead className="sticky top-0 bg-surface-container-high text-on-surface-variant">
+            <thead className="sticky top-0 z-10 bg-surface-container-high text-on-surface-variant">
               <tr>
                 {editable && (
-                  <th className="w-8 px-2 py-2">
-                    <Checkbox
-                      checked={data.rows.length > 0 && selected.size === data.rows.length}
-                      onCheckedChange={(all) => setSelected(all ? new Set(data.rows.map((_, i) => i)) : new Set())}
-                      aria-label={t('postgresStudio.data.selectAll')}
-                    />
-                  </th>
+                  <>
+                    <th className="w-8 px-2 py-2">
+                      <Checkbox
+                        checked={data.rows.length > 0 && selected.size === data.rows.length}
+                        onCheckedChange={(all) => setSelected(all ? new Set(data.rows.map((_, i) => i)) : new Set())}
+                        aria-label={t('postgresStudio.data.selectAll')}
+                      />
+                    </th>
+                    <th className="w-8 px-1 py-2 text-center" title={t('postgresStudio.data.edit')}>
+                      <span className="sr-only">{t('postgresStudio.data.edit')}</span>
+                    </th>
+                  </>
                 )}
                 {visibleColumns.map((column) => {
                   const current = sort.find((s) => s.column === column)
@@ -304,20 +375,35 @@ export function DataGrid({ table, initialFilters, onJump }: {
               {data.rows.map((row, rowIndex) => (
                 <tr key={rowIndex} className={`border-t border-outline-variant/50 ${selected.has(rowIndex) ? 'bg-secondary/10' : 'hover:bg-surface-container-high/50'}`}>
                   {editable && (
-                    <td className="px-2 py-1.5">
-                      <Checkbox
-                        checked={selected.has(rowIndex)}
-                        onCheckedChange={(checked) =>
-                          setSelected((set) => {
-                            const next = new Set(set)
-                            if (checked) next.add(rowIndex)
-                            else next.delete(rowIndex)
-                            return next
-                          })
-                        }
-                        aria-label={t('postgresStudio.data.selectRow', { row: rowIndex + 1 })}
-                      />
-                    </td>
+                    <>
+                      <td className="px-2 py-1.5">
+                        <Checkbox
+                          checked={selected.has(rowIndex)}
+                          onCheckedChange={(checked) =>
+                            setSelected((set) => {
+                              const next = new Set(set)
+                              if (checked) next.add(rowIndex)
+                              else next.delete(rowIndex)
+                              return next
+                            })
+                          }
+                          aria-label={t('postgresStudio.data.selectRow', { row: rowIndex + 1 })}
+                        />
+                      </td>
+                      <td className="px-1 py-1.5 text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          onClick={() => openEditRow(rowIndex)}
+                          title={t('postgresStudio.data.editRow')}
+                          aria-label={t('postgresStudio.data.editRow')}
+                          className="h-7 w-7 p-0 hover:bg-surface-container-highest"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-on-surface-variant hover:text-primary" />
+                        </Button>
+                      </td>
+                    </>
                   )}
                   {visibleColumns.map((column) => {
                     const value = valueOf(row, column)
@@ -413,6 +499,7 @@ export function DataGrid({ table, initialFilters, onJump }: {
           table={table}
           mode={rowDialog.mode}
           initial={rowDialog.values}
+          rowKey={rowDialog.key}
           onClose={() => setRowDialog(null)}
           onSaved={() => {
             setRowDialog(null)

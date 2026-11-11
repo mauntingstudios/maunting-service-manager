@@ -4929,6 +4929,11 @@
     "viewStructure": "Struktur",
     "tablesCount": "{{count}} Tabellen",
     "tablesCount_one": "{{count}} Tabelle",
+    "fullscreen": "Vollbild",
+    "exitFullscreen": "Vollbild beenden",
+    "toggleSidebar": "Tabellenliste umschalten",
+    "selectTableMobile": "Tabelle wählen...",
+    "refresh": "Aktualisieren",
     "tabs": {
       "data": "Tabellen & Daten",
       "sql": "SQL-Konsole"
@@ -9749,6 +9754,7 @@
     },
     "data": {
       "addFilter": "Filter hinzufügen",
+      "clearFilters": "Filter zurücksetzen",
       "ctidHint": "Ohne Primärschlüssel werden Zeilen über ihre physische Position (ctid) bearbeitet. Das ist sicher, aber ein Primärschlüssel ist besser.",
       "deleteMessage": "Ausgewählte Zeilen ({{count}}) aus „{{table}}“ unwiderruflich löschen?",
       "deleteSelected": "Löschen ({{count}})",
@@ -9756,7 +9762,10 @@
       "deleted": "Gelöschte Zeilen: {{count}}",
       "duplicate": "Duplizieren",
       "duplicateTitle": "Zeile in „{{table}}“ duplizieren",
-      "editHint": "Doppelklick auf eine Zelle zum Bearbeiten.",
+      "edit": "Bearbeiten",
+      "editHint": "Doppelklick auf eine Zelle zum schnellen Bearbeiten oder Zeilen über das Stift-Symbol im Detailformular anpassen.",
+      "editRow": "Zeile bearbeiten",
+      "editTitle": "Zeile in „{{table}}“ bearbeiten",
       "empty": "Keine Zeilen.",
       "estimate": "Schätzung",
       "export": "Exportieren",
@@ -9764,6 +9773,8 @@
       "filterColumn": "Spalte",
       "filterOperator": "Bedingung",
       "filterValue": "Wert",
+      "filters": "Filter",
+      "filtersActive": "Filter ({{count}})",
       "formatJson": "Formatieren",
       "import": "Importieren",
       "insert": "Zeile einfügen",
@@ -9794,8 +9805,11 @@
       "perPage": "{{count}} je Seite",
       "readOnlyNoKey": "Nur lesbar: Diese Relation hat keinen Schlüssel, über den sich Zeilen sicher ändern lassen.",
       "rows": "Zeilen: {{formatted}}",
+      "rowsCount": "{{count}} Zeilen",
+      "rowsCount_one": "{{count}} Zeile",
       "selectAll": "Alle auswählen",
       "selectRow": "Zeile {{row}} auswählen",
+      "updated": "Zeile erfolgreich gespeichert.",
       "useDefault": "Standard: {{value}}"
     },
     "designer": {
