@@ -107,12 +107,18 @@ def test_get_table_details(mock_server):
     details = sqlite_studio_service.get_table_details(server, "test.db", "users")
     assert details["table"] == "users"
     assert "id" in details["primary_key"]
+    assert details["kind"] == "r"
+    assert isinstance(details["constraints"], list)
+    assert any(c["type"] == "primary_key" for c in details["constraints"])
+    assert isinstance(details["indexes"], list)
+    assert isinstance(details["referenced_by"], list)
     
     col_names = [c["name"] for c in details["columns"]]
     assert col_names == ["id", "username", "role", "score"]
     
     id_col = next(c for c in details["columns"] if c["name"] == "id")
     assert id_col["is_primary_key"] is True
+    assert id_col["position"] == 1
 
 
 def test_get_rows_pagination_and_sorting(mock_server):

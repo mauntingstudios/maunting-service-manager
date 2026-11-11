@@ -220,6 +220,7 @@ def get_table_details(server: Server, relative_path: str, table_name: str) -> di
 
         for c in col_rows:
             # c: cid, name, type, notnull, dflt_value, pk
+            cid = int(c[0])
             c_name = str(c[1])
             c_type = str(c[2]).upper() if c[2] else "TEXT"
             c_notnull = bool(c[3])
@@ -229,16 +230,21 @@ def get_table_details(server: Server, relative_path: str, table_name: str) -> di
                 pk_cols.append(c_name)
 
             columns.append({
+                "position": cid + 1,
                 "name": c_name,
                 "type": c_type,
                 "nullable": not c_notnull,
-                "has_default": c_dflt is not None,
+                "default": c_dflt,
                 "default_value": c_dflt,
+                "has_default": c_dflt is not None,
                 "is_primary_key": c_pk,
+                "identity": None,
                 "is_identity": False,
+                "generated": False,
                 "is_generated": False,
                 "comment": None,
-                "references": None,
+                "category": "s",
+                "enum_values": None,
             })
 
         # Zeilenanzahl
@@ -267,6 +273,35 @@ def get_table_details(server: Server, relative_path: str, table_name: str) -> di
         except Exception:
             pass
 
+        # Constraints (Primary Key + Foreign Keys) für DataGrid & TableStructure
+        constraints: list[dict[str, Any]] = []
+        if pk_cols:
+            constraints.append({
+                "name": f"pk_{table_name}",
+                "type": "primary_key",
+                "definition": f"PRIMARY KEY ({', '.join(pk_cols)})",
+                "columns": pk_cols,
+                "ref_schema": None,
+                "ref_table": None,
+                "ref_columns": [],
+                "on_delete": None,
+                "on_update": None,
+                "deferrable": False,
+            })
+        for fk in foreign_keys:
+            constraints.append({
+                "name": fk["name"],
+                "type": "foreign_key",
+                "definition": f"FOREIGN KEY ({', '.join(fk['columns'])}) REFERENCES {fk['ref_table']}({', '.join(fk['ref_columns'])})",
+                "columns": fk["columns"],
+                "ref_schema": fk["ref_schema"],
+                "ref_table": fk["ref_table"],
+                "ref_columns": fk["ref_columns"],
+                "on_delete": fk["on_delete"],
+                "on_update": fk["on_update"],
+                "deferrable": False,
+            })
+
         # Indizes
         indexes: list[dict[str, Any]] = []
         try:
@@ -289,18 +324,28 @@ def get_table_details(server: Server, relative_path: str, table_name: str) -> di
     return {
         "schema": "main",
         "table": table_name,
-        "kind": t_kind,
-        "columns": columns,
+        "oid": 0,
+        "kind": "r" if t_kind == "table" else "v",
+        "rls_enabled": False,
+        "rls_forced": False,
+        "comment": None,
+        "estimated_rows": total_rows,
+        "owner": "sqlite",
+        "partition_key": None,
+        "partition_bound": None,
+        "view_definition": None,
+        "size_bytes": None,
+        "index_size_bytes": None,
         "primary_key": pk_cols if pk_cols else ["rowid"],
-        "foreign_keys": foreign_keys,
-        "unique_constraints": [],
-        "check_constraints": [],
+        "columns": columns,
+        "constraints": constraints,
+        "referenced_by": [],
         "indexes": indexes,
         "triggers": [],
-        "rules": [],
         "policies": [],
-        "estimated_rows": total_rows,
-        "total_size_bytes": None,
+        "partitions": [],
+        "grants": [],
+        "stats": None,
     }
 
 
