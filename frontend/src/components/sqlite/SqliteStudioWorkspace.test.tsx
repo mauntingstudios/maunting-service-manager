@@ -120,19 +120,22 @@ describe('SqliteStudioWorkspace', () => {
     expect(await screen.findByRole('button', { name: i18n.t('postgresStudio.sql.run') })).toBeInTheDocument()
   })
 
-  it('schaltet in den Vollbildmodus und reagiert auf Escape', async () => {
+  it('schaltet in den Vollbildmodus und reagiert auf Escape oder Beenden-Button', async () => {
     render(<SqliteStudioWorkspace serverId={1} path="saves/game.db" canWrite={true} />)
     await screen.findByText('game.db')
 
-    const studio = screen.getByTestId('sqlite-studio')
-    expect(studio).not.toHaveClass('fixed')
+    expect(screen.queryByRole('dialog')).toBeNull()
 
-    const fullscreenBtn = screen.getByTitle(i18n.t('sqliteStudio.fullscreen'))
+    const fullscreenBtn = screen.getByTestId('enter-fullscreen-button')
     fireEvent.click(fullscreenBtn)
-    expect(studio).toHaveClass('fixed')
 
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+    expect(within(dialog).getByTestId('exit-fullscreen-button')).toBeInTheDocument()
+
+    // Beenden per Escape
     fireEvent.keyDown(window, { key: 'Escape' })
-    expect(studio).not.toHaveClass('fixed')
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('klappt die Desktop-Seitenleiste ein und aus', async () => {

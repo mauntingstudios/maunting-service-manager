@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Database,
   Eye,
   Maximize2,
-  Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
   Search,
   Table2,
   TerminalSquare,
+  X,
 } from 'lucide-react'
 import { Badge, Button, Dropdown, Input, TabBar, TabDef } from '@maunting/ui'
 import { DataGrid } from '@/components/postgres/DataGrid'
@@ -100,6 +101,247 @@ export function SqliteStudioWorkspace({ serverId, path, canWrite }: Props) {
   const data = overview.data
   const journalMode = (data.server as any)?.version || 'SQLite'
 
+  const studioContent = (
+    <div className="flex h-full w-full flex-col overflow-hidden bg-surface" data-testid="sqlite-studio">
+      {/* Kopfzeile: Status, Badges & Reiter */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/30 bg-surface-container-low px-4 py-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="grid h-8 w-8 place-items-center rounded-lg border border-outline-variant/40 bg-surface-container">
+            <Database className="h-4 w-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="truncate font-headline text-sm font-semibold text-on-surface">{fileName}</span>
+              <Badge variant="default" className="font-mono text-xs tracking-wider uppercase">
+                SQLite
+              </Badge>
+              {journalMode.includes('WAL') && (
+                <Badge variant="success" className="font-mono text-xs uppercase">
+                  WAL
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <TabBar
+            tabs={tabs}
+            active={mainTab}
+            onChange={setMainTab}
+            ariaLabel={t('sqliteStudio.title', { defaultValue: 'SQLite Studio' })}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setRefreshKey((k) => k + 1)}
+            title={t('common.refresh')}
+            aria-label={t('common.refresh')}
+            className="h-8 gap-1.5"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('sqliteStudio.refresh', { defaultValue: 'Aktualisieren' })}</span>
+          </Button>
+
+          {isFullscreen ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsFullscreen(false)}
+              title={t('sqliteStudio.exitFullscreen')}
+              aria-label={t('sqliteStudio.exitFullscreen')}
+              className="h-8 px-2.5 gap-1.5 border border-outline-variant/60 bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold shadow-sm text-on-surface"
+              data-testid="exit-fullscreen-button"
+            >
+              <X className="h-4 w-4 text-primary" />
+              <span>{t('sqliteStudio.exitFullscreen')}</span>
+              <kbd className="hidden sm:inline-block rounded bg-surface-container px-1.5 py-0.5 text-label-sm font-mono text-on-surface-variant border border-outline-variant/40">
+                ESC
+              </kbd>
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsFullscreen(true)}
+              title={t('sqliteStudio.fullscreen')}
+              aria-label={t('sqliteStudio.fullscreen')}
+              className="h-8 gap-1.5"
+              data-testid="enter-fullscreen-button"
+            >
+              <Maximize2 className="h-4 w-4" />
+              <span className="hidden md:inline">{t('sqliteStudio.fullscreen')}</span>
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Hauptbereich */}
+      {mainTab === 'explorer' ? (
+        <div className="flex flex-1 min-h-0 flex-col md:flex-row overflow-hidden">
+          {/* Mobile Dropdown Tabellen-Auswahl (auf Handy volle Breite ohne gequetschte Seitenleiste) */}
+          <div className="md:hidden border-b border-outline-variant/30 bg-surface-container-low px-3 py-2">
+            <Dropdown
+              value={selectedTable}
+              onChange={(val) => val && setSelectedTable(val)}
+              options={relations.map((r) => ({
+                value: r.name,
+                label: `${r.name} (${formatNumber(Math.max(0, r.estimated_rows), i18n.language)})`,
+              }))}
+              searchable
+              placeholder={t('sqliteStudio.selectTableMobile', { defaultValue: 'Tabelle wählen...' })}
+            />
+          </div>
+
+          {/* Linke Leiste: Tabellenliste (auf Desktop einklappbar für maximalen Platz) */}
+          <aside
+            data-testid="sqlite-tables-sidebar"
+            className={`${
+              sidebarOpen ? 'md:w-60 lg:w-64 md:flex' : 'md:hidden'
+            } hidden shrink-0 flex-col border-r border-outline-variant/30 bg-surface-container-low/50`}
+          >
+            <div className="p-2.5 border-b border-outline-variant/20 flex items-center gap-1.5">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant" />
+                <Input
+                  value={tableSearch}
+                  onChange={(e) => setTableSearch(e.target.value)}
+                  placeholder={t('sqliteStudio.searchTables', { defaultValue: 'Tabelle suchen...' })}
+                  className="pl-8 text-xs h-8"
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSidebarOpen(false)}
+                title={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste einklappen' })}
+                aria-label={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste einklappen' })}
+                className="h-8 w-8 p-0"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+              {filteredRelations.map((rel) => {
+                const isActive = rel.name === selectedTable
+                return (
+                  <button
+                    key={rel.name}
+                    type="button"
+                    onClick={() => setSelectedTable(rel.name)}
+                    className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+                      isActive
+                        ? 'bg-primary/10 font-semibold text-primary'
+                        : 'text-on-surface hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      {rel.kind === 'view' ? (
+                        <Eye className="h-3.5 w-3.5 text-secondary shrink-0" />
+                      ) : (
+                        <Table2 className="h-3.5 w-3.5 text-on-surface-variant shrink-0" />
+                      )}
+                      <span className="truncate">{rel.name}</span>
+                    </div>
+                    <span className="font-mono text-xs text-on-surface-variant shrink-0 ml-1">
+                      {formatNumber(Math.max(0, rel.estimated_rows), i18n.language)}
+                    </span>
+                  </button>
+                )
+              })}
+              {filteredRelations.length === 0 && (
+                <p className="px-3 py-6 text-center text-xs text-on-surface-variant">
+                  {t('sqliteStudio.noTables', { defaultValue: 'Keine Tabellen gefunden' })}
+                </p>
+              )}
+            </div>
+          </aside>
+
+          {/* Rechter Bereich: Tabellendaten oder Struktur */}
+          <main className="flex flex-1 flex-col min-w-0 overflow-hidden bg-surface">
+            {selectedTable ? (
+              <>
+                {/* Umschalter Daten / Struktur & Sidebar-Wiederöffner wenn eingeklappt */}
+                <div className="flex items-center justify-between border-b border-outline-variant/20 bg-surface-container-low px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    {!sidebarOpen && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSidebarOpen(true)}
+                        title={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste ausklappen' })}
+                        aria-label={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste ausklappen' })}
+                        className="hidden md:inline-flex h-7 w-7 p-0"
+                      >
+                        <PanelLeftOpen className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <span className="font-headline text-sm font-semibold text-on-surface">{selectedTable}</span>
+                  </div>
+                  <div className="inline-flex rounded-lg border border-outline-variant/30 bg-surface-container-high/50 p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setTableViewMode('data')}
+                      className={`rounded px-2.5 py-1 font-medium transition-colors ${
+                        tableViewMode === 'data' ? 'bg-surface text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      {t('sqliteStudio.viewData', { defaultValue: 'Daten' })}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTableViewMode('structure')}
+                      className={`rounded px-2.5 py-1 font-medium transition-colors ${
+                        tableViewMode === 'structure' ? 'bg-surface text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      {t('sqliteStudio.viewStructure', { defaultValue: 'Struktur' })}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Ansicht Daten oder Struktur */}
+                <div className="flex-1 overflow-auto p-3">
+                  {tableDetails.loading && !tableDetails.data && <Loading />}
+                  {tableDetails.error && <ErrorBox message={tableDetails.error} />}
+                  {tableDetails.data && (
+                    tableViewMode === 'data' ? (
+                      <DataGrid
+                        key={`${selectedTable}-${refreshKey}`}
+                        table={tableDetails.data}
+                        onJump={({ table }) => setSelectedTable(table)}
+                      />
+                    ) : (
+                      <TableStructure
+                        key={`${selectedTable}-${refreshKey}`}
+                        table={tableDetails.data}
+                        relations={relations}
+                        enums={[]}
+                        onOpenTable={(_schema, name) => {
+                          setSelectedTable(name)
+                          setTableViewMode('data')
+                        }}
+                      />
+                    )
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-xs text-on-surface-variant">
+                {t('sqliteStudio.selectTable', { defaultValue: 'Wähle links eine Tabelle aus' })}
+              </div>
+            )}
+          </main>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto p-4">
+          <SqlTab key={refreshKey} />
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <StudioProvider
       ziel={{ art: 'server', serverId, databaseId: 0 }}
@@ -113,233 +355,28 @@ export function SqliteStudioWorkspace({ serverId, path, canWrite }: Props) {
         },
       }}
     >
-      <div
-        className={
-          isFullscreen
-            ? 'fixed inset-0 z-50 flex flex-col bg-surface p-2 sm:p-4 shadow-2xl'
-            : 'flex h-full min-h-[520px] flex-col overflow-hidden bg-surface'
-        }
-        data-testid="sqlite-studio"
-      >
-        {/* Kopfzeile: Status, Badges & Reiter */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/30 bg-surface-container-low px-4 py-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="grid h-8 w-8 place-items-center rounded-lg border border-outline-variant/40 bg-surface-container">
-              <Database className="h-4 w-4 text-primary" />
+      {isFullscreen && typeof document !== 'undefined' ? (
+        createPortal(
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-5 md:p-6 lg:p-8 animate-fade-in"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsFullscreen(false)
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('sqliteStudio.title', { defaultValue: 'SQLite Studio' })}
+          >
+            <div className="flex h-full w-full max-w-full flex-col overflow-hidden rounded-2xl border border-outline-variant/50 bg-surface shadow-2xl animate-scale-in">
+              {studioContent}
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="truncate font-headline text-sm font-semibold text-on-surface">{fileName}</span>
-                <Badge variant="default" className="font-mono text-xs tracking-wider uppercase">
-                  SQLite
-                </Badge>
-                {journalMode.includes('WAL') && (
-                  <Badge variant="success" className="font-mono text-xs uppercase">
-                    WAL
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <TabBar
-              tabs={tabs}
-              active={mainTab}
-              onChange={setMainTab}
-              ariaLabel={t('sqliteStudio.title', { defaultValue: 'SQLite Studio' })}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setRefreshKey((k) => k + 1)}
-              title={t('common.refresh')}
-              aria-label={t('common.refresh')}
-              className="h-8 gap-1.5"
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span className="hidden sm:inline">{t('sqliteStudio.refresh', { defaultValue: 'Aktualisieren' })}</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsFullscreen((f) => !f)}
-              title={isFullscreen ? t('sqliteStudio.exitFullscreen') : t('sqliteStudio.fullscreen')}
-              aria-label={isFullscreen ? t('sqliteStudio.exitFullscreen') : t('sqliteStudio.fullscreen')}
-              className="h-8 gap-1.5"
-            >
-              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              <span className="hidden md:inline">
-                {isFullscreen ? t('sqliteStudio.exitFullscreen') : t('sqliteStudio.fullscreen')}
-              </span>
-            </Button>
-          </div>
+          </div>,
+          document.body
+        )
+      ) : (
+        <div className="flex h-full min-h-[520px] flex-col overflow-hidden bg-surface">
+          {studioContent}
         </div>
-
-        {/* Hauptbereich */}
-        {mainTab === 'explorer' ? (
-          <div className="flex flex-1 min-h-0 flex-col md:flex-row overflow-hidden">
-            {/* Mobile Dropdown Tabellen-Auswahl (auf Handy volle Breite ohne gequetschte Seitenleiste) */}
-            <div className="md:hidden border-b border-outline-variant/30 bg-surface-container-low px-3 py-2">
-              <Dropdown
-                value={selectedTable}
-                onChange={(val) => val && setSelectedTable(val)}
-                options={relations.map((r) => ({
-                  value: r.name,
-                  label: `${r.name} (${formatNumber(Math.max(0, r.estimated_rows), i18n.language)})`,
-                }))}
-                searchable
-                placeholder={t('sqliteStudio.selectTableMobile', { defaultValue: 'Tabelle wählen...' })}
-              />
-            </div>
-
-            {/* Linke Leiste: Tabellenliste (auf Desktop einklappbar für maximalen Platz) */}
-            <aside
-              data-testid="sqlite-tables-sidebar"
-              className={`${
-                sidebarOpen ? 'md:w-60 lg:w-64 md:flex' : 'md:hidden'
-              } hidden shrink-0 flex-col border-r border-outline-variant/30 bg-surface-container-low/50`}
-            >
-              <div className="p-2.5 border-b border-outline-variant/20 flex items-center gap-1.5">
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant" />
-                  <Input
-                    value={tableSearch}
-                    onChange={(e) => setTableSearch(e.target.value)}
-                    placeholder={t('sqliteStudio.searchTables', { defaultValue: 'Tabelle suchen...' })}
-                    className="pl-8 text-xs h-8"
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSidebarOpen(false)}
-                  title={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste einklappen' })}
-                  aria-label={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste einklappen' })}
-                  className="h-8 w-8 p-0"
-                >
-                  <PanelLeftClose className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
-                {filteredRelations.map((rel) => {
-                  const isActive = rel.name === selectedTable
-                  return (
-                    <button
-                      key={rel.name}
-                      type="button"
-                      onClick={() => setSelectedTable(rel.name)}
-                      className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
-                        isActive
-                          ? 'bg-primary/10 font-semibold text-primary'
-                          : 'text-on-surface hover:bg-surface-container-high'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        {rel.kind === 'view' ? (
-                          <Eye className="h-3.5 w-3.5 text-secondary shrink-0" />
-                        ) : (
-                          <Table2 className="h-3.5 w-3.5 text-on-surface-variant shrink-0" />
-                        )}
-                        <span className="truncate">{rel.name}</span>
-                      </div>
-                      <span className="font-mono text-xs text-on-surface-variant shrink-0 ml-1">
-                        {formatNumber(Math.max(0, rel.estimated_rows), i18n.language)}
-                      </span>
-                    </button>
-                  )
-                })}
-                {filteredRelations.length === 0 && (
-                  <p className="px-3 py-6 text-center text-xs text-on-surface-variant">
-                    {t('sqliteStudio.noTables', { defaultValue: 'Keine Tabellen gefunden' })}
-                  </p>
-                )}
-              </div>
-            </aside>
-
-            {/* Rechter Bereich: Tabellendaten oder Struktur */}
-            <main className="flex flex-1 flex-col min-w-0 overflow-hidden bg-surface">
-              {selectedTable ? (
-                <>
-                  {/* Umschalter Daten / Struktur & Sidebar-Wiederöffner wenn eingeklappt */}
-                  <div className="flex items-center justify-between border-b border-outline-variant/20 bg-surface-container-low px-4 py-2">
-                    <div className="flex items-center gap-2">
-                      {!sidebarOpen && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSidebarOpen(true)}
-                          title={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste ausklappen' })}
-                          aria-label={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste ausklappen' })}
-                          className="hidden md:inline-flex h-7 w-7 p-0"
-                        >
-                          <PanelLeftOpen className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <span className="font-headline text-sm font-semibold text-on-surface">{selectedTable}</span>
-                    </div>
-                    <div className="inline-flex rounded-lg border border-outline-variant/30 bg-surface-container-high/50 p-0.5 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => setTableViewMode('data')}
-                        className={`rounded px-2.5 py-1 font-medium transition-colors ${
-                          tableViewMode === 'data' ? 'bg-surface text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
-                        }`}
-                      >
-                        {t('sqliteStudio.viewData', { defaultValue: 'Daten' })}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTableViewMode('structure')}
-                        className={`rounded px-2.5 py-1 font-medium transition-colors ${
-                          tableViewMode === 'structure' ? 'bg-surface text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
-                        }`}
-                      >
-                        {t('sqliteStudio.viewStructure', { defaultValue: 'Struktur' })}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Ansicht Daten oder Struktur */}
-                  <div className="flex-1 overflow-auto p-3">
-                    {tableDetails.loading && !tableDetails.data && <Loading />}
-                    {tableDetails.error && <ErrorBox message={tableDetails.error} />}
-                    {tableDetails.data && (
-                      tableViewMode === 'data' ? (
-                        <DataGrid
-                          key={`${selectedTable}-${refreshKey}`}
-                          table={tableDetails.data}
-                          onJump={({ table }) => setSelectedTable(table)}
-                        />
-                      ) : (
-                        <TableStructure
-                          key={`${selectedTable}-${refreshKey}`}
-                          table={tableDetails.data}
-                          relations={relations}
-                          enums={[]}
-                          onOpenTable={(_schema, name) => {
-                            setSelectedTable(name)
-                            setTableViewMode('data')
-                          }}
-                        />
-                      )
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="flex flex-1 items-center justify-center text-xs text-on-surface-variant">
-                  {t('sqliteStudio.selectTable', { defaultValue: 'Wähle links eine Tabelle aus' })}
-                </div>
-              )}
-            </main>
-          </div>
-        ) : (
-          <div className="flex-1 overflow-auto p-4">
-            <SqlTab key={refreshKey} />
-          </div>
-        )}
-      </div>
+      )}
     </StudioProvider>
   )
 }
