@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { api, clearCsrfTokenMemory } from '@/api/client'
-import { isNetworkOrOfflineError } from '@/lib/networkErrors'
+import { isNetworkOrOfflineError, istZeitueberschreitung } from '@/lib/networkErrors'
 import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { gehoertDemKonto, leereOfflineAblage } from '@/lib/offlineAblage'
 import { usePermissionsStore } from '@/stores/permissionsStore'
@@ -271,14 +271,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Wurde inzwischen geräumt, ist nichts mehr zu tun: ein zweiter Griff
       // würde nur eine danach begonnene Anmeldung wieder abräumen.
       if (stand !== raeumungen) return
-      if (isNetworkOrOfflineError(err)) {
+      // Ein Timeout ist kein Sitzungsende, sondern ein langsamer Server. Wer
+      // deshalb ausgeloggt wird, verliert bei jedem Hänger seine Anmeldung.
+      const netzOderZeit = isNetworkOrOfflineError(err) || istZeitueberschreitung(err)
+      if (netzOderZeit) {
         const cached = loadCachedUser()
         if (cached) {
           set({ user: cached, isAuthenticated: true, isLoading: false })
         } else {
           set({ isLoading: false })
         }
-        if (typeof window !== 'undefined') {
+        if (typeof window !== 'undefined' && isNetworkOrOfflineError(err)) {
           window.dispatchEvent(new CustomEvent('msm:network-offline'))
         }
         return

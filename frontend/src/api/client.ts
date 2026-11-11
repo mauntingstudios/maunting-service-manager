@@ -91,7 +91,7 @@ export class SanitizedApiError extends Error {
   }
 }
 
-import { isNetworkOrOfflineError, istAbbruch } from '@/lib/networkErrors'
+import { isNetworkOrOfflineError, istAbbruch, istZeitueberschreitung } from '@/lib/networkErrors'
 export { isNetworkOrOfflineError }
 
 /**
@@ -296,6 +296,13 @@ export class AuthExpiredError extends Error {
 
 let refreshPromise: Promise<void> | null = null
 
+/**
+ * Wie lange ein einzelner Refresh auf Antwort warten darf. Ohne Frist hing
+ * `refreshPromise` beliebig lange, und jeder weitere 401 wartete auf dasselbe
+ * Versprechen — ein hängender Server fror damit die ganze Oberfläche ein.
+ */
+export const REFRESH_TIMEOUT_MS = 10_000
+
 async function doRefresh(): Promise<void> {
   // Nativ (Desktop-App): die Rotation läuft über den OS-Tresor, nicht über
   // Cookies — aber durch denselben Trichter hier, damit gleichzeitige 401er
@@ -316,15 +323,35 @@ async function doRefresh(): Promise<void> {
     return
   }
   let res: Response
+  // Kein `abort(reason)`: die Mindest-WebView kennt das Argument nicht und
+  // würde nur ein AbortError ohne Grund liefern. Ein Merker sagt, warum.
+  let zeitAbgelaufen = false
+  const tCtrl = new AbortController()
+  const tid = setTimeout(() => {
+    zeitAbgelaufen = true
+    tCtrl.abort()
+  }, REFRESH_TIMEOUT_MS)
   try {
     res = await fetch(apiUrl('/auth/refresh'), {
       method: 'POST',
       credentials: 'include',
+      signal: tCtrl.signal,
     })
   } catch (err) {
-    // Verbindungsabbruch, Offline, Timeout etc.
+    // Ein Timeout ist kein Ablauf der Sitzung: der Server ist nur langsam.
+    if (zeitAbgelaufen || istZeitueberschreitung(err)) {
+      throw new SanitizedApiError(
+        i18n.t('errors.REQUEST_TIMEOUT', {
+          defaultValue: 'Zeitüberschreitung der Anfrage (Server antwortet nicht rechtzeitig).',
+        }),
+        { status: 408, code: 'timeout' }
+      )
+    }
+    // Verbindungsabbruch, Offline etc.
     // Das ist KEIN Ablauf der Sitzung; Fehler werfen, ohne die Sitzung zu räumen.
     throw err
+  } finally {
+    clearTimeout(tid)
   }
   captureCsrfFromResponse(res)
   if (res.status === 401 || res.status === 403) {
@@ -625,18 +652,29 @@ export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
   return res.json()
 }
 
+export interface StreamOptions extends RequestInit {
+  /**
+   * Wie lange der Aufbau höchstens dauern darf (bis die Antwort-Köpfe da
+   * sind). Ohne Frist wartet ein hängender Upstream unbegrenzt, und der
+   * Aufrufer bemerkt es nie — der Live-Kanal startete dann nie sein
+   * Ersatz-Polling. 0 oder weggelassen heißt: unbegrenzt.
+   */
+  connectTimeoutMs?: number
+}
+
 /**
  * Fuehrt einen authentifizierten API-Request aus, ohne den Response-Body zu
  * konsumieren. Das ist fuer POST-SSE notwendig: EventSource unterstuetzt
  * weder POST noch den CSRF-Header. Auth-, CSRF- und Fehlerverhalten bleiben
  * damit identisch zum normalen API-Client.
  */
-export async function apiStream(path: string, options: RequestInit): Promise<Response> {
-  const method = (options.method || 'GET').toUpperCase()
+export async function apiStream(path: string, options: StreamOptions): Promise<Response> {
+  const { connectTimeoutMs = 0, ...rest } = options
+  const method = (rest.method || 'GET').toUpperCase()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
-    ...((options.headers as Record<string, string>) || {}),
+    ...((rest.headers as Record<string, string>) || {}),
   }
 
   const url = apiUrl(path)
@@ -655,18 +693,33 @@ export async function apiStream(path: string, options: RequestInit): Promise<Res
   }
 
   const fetchOptions: RequestInit = {
-    ...options,
+    ...rest,
     method,
     credentials: isInternal ? 'include' : 'omit',
     headers,
     cache: 'no-store',
   }
 
+  // Nur der Aufbau bekommt eine Frist. Danach lebt der Strom weiter, und
+  // `options.signal` muss ihn jederzeit abbrechen können — deshalb bleibt die
+  // kombinierte Signalkette bestehen und wird nicht aufgeräumt.
+  const ctrl = connectTimeoutMs > 0 ? new AbortController() : null
+  let zeitAbgelaufen = false
+  const { signal } = combineSignals([rest.signal, ctrl?.signal])
+  fetchOptions.signal = signal
+  const tid =
+    ctrl && connectTimeoutMs > 0
+      ? setTimeout(() => {
+          zeitAbgelaufen = true
+          ctrl.abort()
+        }, connectTimeoutMs)
+      : null
+
   const protokollEnde = netzwerkAnfrageProtokollieren({
     url,
     methode: method,
     typ: path.includes('/bild') ? 'Image' : path.includes('/zusammenfassung') ? 'EventSource' : 'Fetch',
-    postData: typeof options?.body === 'string' ? options.body : undefined,
+    postData: typeof rest.body === 'string' ? rest.body : undefined,
     headers,
   })
 
@@ -684,7 +737,17 @@ export async function apiStream(path: string, options: RequestInit): Promise<Res
       statusText: 'Fehler',
       fehler: streamErr instanceof Error ? streamErr.message : String(streamErr),
     })
+    if (zeitAbgelaufen || istZeitueberschreitung(streamErr)) {
+      throw new SanitizedApiError(
+        i18n.t('errors.REQUEST_TIMEOUT', {
+          defaultValue: 'Zeitüberschreitung der Anfrage (Server antwortet nicht rechtzeitig).',
+        }),
+        { status: 408, code: 'timeout' }
+      )
+    }
     throw streamErr
+  } finally {
+    if (tid) clearTimeout(tid)
   }
   captureCsrfFromResponse(res)
 

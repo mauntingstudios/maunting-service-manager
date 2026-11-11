@@ -45,6 +45,18 @@ export function isNetworkOrOfflineError(err: unknown): boolean {
 }
 
 /**
+ * Eine Zeitüberschreitung ist kein Sitzungsende. Ein langsamer Server darf
+ * niemanden abmelden; nur eine echte Abweisung (401/403) tut das.
+ */
+export function istZeitueberschreitung(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  if ((err as { status?: unknown }).status === 408) return true
+  const name = 'name' in err ? String((err as { name: unknown }).name) : ''
+  const message = err instanceof Error ? err.message.toLowerCase() : ''
+  return name === 'TimeoutError' || message.includes('request timeout after')
+}
+
+/**
  * Ein bewusst abgebrochener Request oder Client-Timeout. Beides belegt nicht,
  * dass das Netz weg ist: Ansichten brechen Ladevorgänge beim Aufräumen ab oder
  * ein Server antwortet verzögert, daraus darf kein globaler Offline-Zustand werden.

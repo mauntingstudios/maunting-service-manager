@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useNodeStore } from '@/stores/nodeStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
 import { useToastStore } from '@/stores/toastStore'
-import { api, apiStream, getCsrfToken, SanitizedApiError } from './client'
+import { api, apiStream, getCsrfToken, SanitizedApiError, REFRESH_TIMEOUT_MS } from './client'
 
 // Locking the language guarantees the test does not silently break, wenn der
 // LanguageDetector im jsdom-Env eine andere Sprache als Fallback waehlt.
@@ -327,6 +327,63 @@ describe('api client', () => {
       await expect(api('/auth/refresh', { method: 'POST' })).rejects.toThrow('Invalid refresh')
       expect(fetchSpy).toHaveBeenCalledTimes(1)
     })
+
+    it('gibt einen hängenden Refresh nach der Frist frei, statt alle Anfragen zu blockieren', async () => {
+      vi.useFakeTimers()
+      try {
+        let refreshAufrufe = 0
+        fetchSpy.mockImplementation((url: any, init?: RequestInit) => {
+          if (String(url) === '/api/auth/refresh') {
+            refreshAufrufe += 1
+            return new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () =>
+                reject(new DOMException('aborted', 'AbortError')),
+              )
+            })
+          }
+          return mockResponse(401, { detail: 'Unauthorized' })
+        })
+
+        const anfrage = api('/test')
+        anfrage.catch(() => {})
+        await vi.advanceTimersByTimeAsync(0)
+        expect(refreshAufrufe).toBe(1)
+
+        await vi.advanceTimersByTimeAsync(REFRESH_TIMEOUT_MS + 1)
+        await expect(anfrage).rejects.toMatchObject({ status: 408, code: 'timeout' })
+
+        // Das geteilte Versprechen ist frei: die nächste 401 darf neu versuchen.
+        const zweite = api('/test')
+        zweite.catch(() => {})
+        await vi.advanceTimersByTimeAsync(0)
+        expect(refreshAufrufe).toBe(2)
+        await vi.advanceTimersByTimeAsync(REFRESH_TIMEOUT_MS + 1)
+        await expect(zweite).rejects.toMatchObject({ status: 408, code: 'timeout' })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  describe('apiStream Verbindungsfrist', () => {
+    it('bricht einen Aufbau ab, der die Frist reißt, statt ewig zu warten', async () => {
+      vi.useFakeTimers()
+      try {
+        fetchSpy.mockImplementation((_url: any, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError')),
+            )
+          }),
+        )
+        const strom = apiStream('/events/live', { method: 'GET', connectTimeoutMs: 5_000 })
+        strom.catch(() => {})
+        await vi.advanceTimersByTimeAsync(5_001)
+        await expect(strom).rejects.toMatchObject({ status: 408, code: 'timeout' })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   describe('rate limiting', () => {
@@ -413,6 +470,7 @@ describe('api client', () => {
       fetchSpy.mockReturnValueOnce({
         ok: false,
         status: 502,
+        headers: new Headers(),
         json: () => Promise.reject(new Error('bad json')),
         text: () => Promise.resolve('bad gateway'),
       } as Response)
@@ -628,6 +686,7 @@ describe('api client', () => {
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
+        headers: new Headers(),
         json: () => Promise.reject(new Error('bad json')),
         text: () => Promise.resolve(''),
       } as Response)

@@ -1823,6 +1823,9 @@ export function startLiveSync(): () => void {
       const res = await apiStream('/events/live', {
         method: 'GET',
         signal: controller?.signal,
+        // Ohne Frist blieb ein hängender Aufbau ewig offen: `finally` lief
+        // nie, also startete auch nie das Ersatz-Polling.
+        connectTimeoutMs: 15_000,
       })
 
       if (!res.ok || !res.body) {

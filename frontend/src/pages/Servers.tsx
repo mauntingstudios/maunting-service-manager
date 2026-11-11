@@ -45,6 +45,10 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
   const [nodes, setNodes] = useState<Node[]>([])
   const [activeTab, setActiveTab] = useState<'own' | 'customers'>('own')
   const [loading, setLoading] = useState(true)
+  // Der Takt ist kürzer als der Anfrage-Timeout. Ohne diesen Riegel stapelten
+  // sich während eines Hängers bis zu sechs Anfragen, die alle auf dieselbe
+  // überlastete Stelle zuliefen.
+  const abfrageLaeuft = useRef(false)
 
   const stunde = useMemo(() => new Date().getHours(), [])
   const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'dashboard'), [stunde])
@@ -88,12 +92,15 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
   }, [defaultBindIp])
 
   const fetchServers = async () => {
+    if (abfrageLaeuft.current) return
+    abfrageLaeuft.current = true
     try {
       setServers(await api<Server[]>('/servers'))
       setLoadError(false)
     } catch {
       setLoadError(true)
     } finally {
+      abfrageLaeuft.current = false
       setLoading(false)
     }
   }

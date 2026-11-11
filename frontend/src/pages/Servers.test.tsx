@@ -177,6 +177,22 @@ describe('Servers — Takt und Katalog', () => {
       if (echt) Object.defineProperty(Document.prototype, 'visibilityState', echt)
     }
   })
+
+  it('stapelt keine Anfragen, solange /servers noch nicht geantwortet hat', async () => {
+    vi.mocked(client.api).mockImplementation((path: string) => {
+      if (path === '/servers') return new Promise<never>(() => {}) as any
+      if (path === '/system/games') return Promise.resolve(GAMES as any)
+      return Promise.resolve([] as any)
+    })
+    vi.useFakeTimers()
+    renderServers()
+    await act(async () => {})
+
+    await act(async () => { vi.advanceTimersByTime(20_000) })
+
+    // Ohne Riegel wären es fünf Anfragen, die alle an derselben Stelle warten.
+    expect(pfade('/servers')).toHaveLength(1)
+  })
 })
 
 /**
