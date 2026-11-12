@@ -27,7 +27,7 @@ import { Switch } from '@maunting/ui'
 import { teamsApi, type Team } from '@/api/teams'
 import { Spinner } from '@maunting/ui'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
+import { begruessungSchluessel, tagesSeed, useTageszeitMotiv } from '@/lib/tageszeit'
 import { useAuthStore } from '@/stores/authStore'
 import { NotizschluesselHinweis } from '@/components/notes/NotizschluesselHinweis'
 import {
@@ -90,10 +90,7 @@ export function Notes() {
   const [jetzt] = useState(() => new Date())
   const stunde = jetzt.getHours()
   const zufall = useMemo(() => tagesSeed(jetzt), [jetzt])
-  const headerMotiv = useMemo(
-    () => headerHintergrundWaehlen(stunde, zufall, 'notes'),
-    [stunde, zufall]
-  )
+  const headerMotiv = useTageszeitMotiv('notes')
   const begruessung = user?.username
     ? t(begruessungSchluessel(stunde, false, zufall), { name: user.username })
     : t('common.begruessung.ohneName')

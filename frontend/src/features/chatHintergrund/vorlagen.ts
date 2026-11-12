@@ -1,4 +1,4 @@
-import { Compass, Layers, Moon, RotateCcw, Sparkles, Sun, SunMoon, Sunrise, Sunset } from 'lucide-react'
+import { Compass, Flower2, Layers, Leaf, Moon, RotateCcw, Snowflake, Sparkles, Sun, SunMoon, Sunrise, Sunset } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -26,6 +26,18 @@ export type HintergrundVorlageId =
   | 'singra_day'
   | 'singra_evening'
   | 'singra_night'
+  | 'singra_spring_morning'
+  | 'singra_spring_day'
+  | 'singra_spring_evening'
+  | 'singra_spring_night'
+  | 'singra_autumn_morning'
+  | 'singra_autumn_day'
+  | 'singra_autumn_evening'
+  | 'singra_autumn_night'
+  | 'singra_winter_morning'
+  | 'singra_winter_day'
+  | 'singra_winter_evening'
+  | 'singra_winter_night'
 
 /** Die Vorlagen plus „eigenes Bild" — alles, was als Hintergrund stehen kann. */
 export type HintergrundId = HintergrundVorlageId | 'custom'
@@ -101,6 +113,102 @@ export const HINTERGRUND_VORLAGEN: readonly HintergrundVorlage[] = [
     bildUrl: '/assets/singra/singra-bg-night.jpg',
   },
   {
+    id: 'singra_spring_morning',
+    nameKey: 'social.wallpaper.singraSpringMorning',
+    hinweisKey: 'social.wallpaper.singraSpringMorningHint',
+    icon: Flower2,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/fruehling/singra-bg-morning.jpg',
+  },
+  {
+    id: 'singra_spring_day',
+    nameKey: 'social.wallpaper.singraSpringDay',
+    hinweisKey: 'social.wallpaper.singraSpringDayHint',
+    icon: Flower2,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/fruehling/singra-bg-day.jpg',
+  },
+  {
+    id: 'singra_spring_evening',
+    nameKey: 'social.wallpaper.singraSpringEvening',
+    hinweisKey: 'social.wallpaper.singraSpringEveningHint',
+    icon: Flower2,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/fruehling/singra-bg-evening.jpg',
+  },
+  {
+    id: 'singra_spring_night',
+    nameKey: 'social.wallpaper.singraSpringNight',
+    hinweisKey: 'social.wallpaper.singraSpringNightHint',
+    icon: Flower2,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/fruehling/singra-bg-night.jpg',
+  },
+  {
+    id: 'singra_autumn_morning',
+    nameKey: 'social.wallpaper.singraAutumnMorning',
+    hinweisKey: 'social.wallpaper.singraAutumnMorningHint',
+    icon: Leaf,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/herbst/singra-bg-morning.jpg',
+  },
+  {
+    id: 'singra_autumn_day',
+    nameKey: 'social.wallpaper.singraAutumnDay',
+    hinweisKey: 'social.wallpaper.singraAutumnDayHint',
+    icon: Leaf,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/herbst/singra-bg-day.jpg',
+  },
+  {
+    id: 'singra_autumn_evening',
+    nameKey: 'social.wallpaper.singraAutumnEvening',
+    hinweisKey: 'social.wallpaper.singraAutumnEveningHint',
+    icon: Leaf,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/herbst/singra-bg-evening.jpg',
+  },
+  {
+    id: 'singra_autumn_night',
+    nameKey: 'social.wallpaper.singraAutumnNight',
+    hinweisKey: 'social.wallpaper.singraAutumnNightHint',
+    icon: Leaf,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/herbst/singra-bg-night.jpg',
+  },
+  {
+    id: 'singra_winter_morning',
+    nameKey: 'social.wallpaper.singraWinterMorning',
+    hinweisKey: 'social.wallpaper.singraWinterMorningHint',
+    icon: Snowflake,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/winter/singra-bg-morning.jpg',
+  },
+  {
+    id: 'singra_winter_day',
+    nameKey: 'social.wallpaper.singraWinterDay',
+    hinweisKey: 'social.wallpaper.singraWinterDayHint',
+    icon: Snowflake,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/winter/singra-bg-day.jpg',
+  },
+  {
+    id: 'singra_winter_evening',
+    nameKey: 'social.wallpaper.singraWinterEvening',
+    hinweisKey: 'social.wallpaper.singraWinterEveningHint',
+    icon: Snowflake,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/winter/singra-bg-evening.jpg',
+  },
+  {
+    id: 'singra_winter_night',
+    nameKey: 'social.wallpaper.singraWinterNight',
+    hinweisKey: 'social.wallpaper.singraWinterNightHint',
+    icon: Snowflake,
+    klassen: 'object-cover object-center',
+    bildUrl: '/assets/singra/jahreszeiten/winter/singra-bg-night.jpg',
+  },
+  {
     id: 'cyber',
     nameKey: 'social.wallpaper.cyber',
     hinweisKey: 'social.wallpaper.cyberHint',
@@ -145,6 +253,18 @@ export const MESSENGER_VORLAGEN_IDS: readonly HintergrundVorlageId[] = [
   'singra_day',
   'singra_evening',
   'singra_night',
+  'singra_spring_morning',
+  'singra_spring_day',
+  'singra_spring_evening',
+  'singra_spring_night',
+  'singra_autumn_morning',
+  'singra_autumn_day',
+  'singra_autumn_evening',
+  'singra_autumn_night',
+  'singra_winter_morning',
+  'singra_winter_day',
+  'singra_winter_evening',
+  'singra_winter_night',
 ]
 
 export const KI_VORLAGEN_IDS: readonly HintergrundVorlageId[] = [
@@ -153,6 +273,18 @@ export const KI_VORLAGEN_IDS: readonly HintergrundVorlageId[] = [
   'singra_day',
   'singra_evening',
   'singra_night',
+  'singra_spring_morning',
+  'singra_spring_day',
+  'singra_spring_evening',
+  'singra_spring_night',
+  'singra_autumn_morning',
+  'singra_autumn_day',
+  'singra_autumn_evening',
+  'singra_autumn_night',
+  'singra_winter_morning',
+  'singra_winter_day',
+  'singra_winter_evening',
+  'singra_winter_night',
 ]
 
 export function vorlageMitId(id: HintergrundId): HintergrundVorlage | undefined {

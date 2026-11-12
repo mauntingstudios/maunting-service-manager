@@ -1,7 +1,7 @@
-import { useMemo, useRef, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { headerHintergrundWaehlen } from '@/lib/tageszeit'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { Logo } from '@/components/Logo'
 import { VersionFooter } from '@/components/VersionFooter'
 
@@ -23,9 +23,7 @@ export interface AuthRahmenProps {
  */
 export function AuthRahmen({ children, breite = 'max-w-md' }: AuthRahmenProps) {
   const { t } = useTranslation()
-  const zufall = useRef(Math.random() * 5)
-  const stunde = new Date().getHours()
-  const motiv = useMemo(() => headerHintergrundWaehlen(stunde, zufall.current), [stunde])
+  const motiv = useTageszeitMotiv()
 
   return (
     <div className="relative isolate flex min-h-screen flex-col overflow-hidden bg-background text-on-surface">

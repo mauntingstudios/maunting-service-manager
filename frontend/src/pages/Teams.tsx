@@ -29,7 +29,7 @@ import { toast } from '@/stores/toastStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
 import { Spinner } from '@maunting/ui'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { headerHintergrundWaehlen } from '@/lib/tageszeit'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { TeamsOverview } from '@/components/teams/TeamsOverview'
 import { TeamModal } from '@/components/teams/TeamModal'
 import { TeamServerManager } from '@/components/teams/TeamServerManager'
@@ -65,8 +65,7 @@ export function Teams() {
   const canReadUsers = useHasPermission('users.read')
   const benutzerId = useAuthStore((state) => state.user?.id ?? null)
 
-  const stunde = useMemo(() => new Date().getHours(), [])
-  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'teams'), [stunde])
+  const headerMotiv = useTageszeitMotiv('teams')
 
   const [reiter, setReiterState] = useState<TeamReiter>(() => {
     if (typeof localStorage !== 'undefined') {

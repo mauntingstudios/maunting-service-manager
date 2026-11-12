@@ -20,7 +20,7 @@ import { ActionMenu, useZurueckSchliesst, ActionMenuItem } from '@maunting/ui'
 import { Bot } from 'lucide-react'
 import { DASHBOARD_SEITEN, dashboardElternroute } from './dashboardWege'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { headerHintergrundWaehlen } from '@/lib/tageszeit'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((modul) => ({ default: modul.Dashboard })))
 const Servers = lazy(() => import('@/pages/Servers').then((modul) => ({ default: modul.Servers })))
@@ -42,8 +42,7 @@ export function DashboardBereich() {
   const { items } = usePanelNavigation()
   const inhaltRef = useRef<HTMLDivElement>(null)
 
-  const stunde = useMemo(() => new Date().getHours(), [])
-  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'dashboard'), [stunde])
+  const headerMotiv = useTageszeitMotiv('dashboard')
 
   const eltern = dashboardElternroute(location.pathname)
   // Unter Android beendet Zurück sonst die App: eine Unterseite bekommt einen

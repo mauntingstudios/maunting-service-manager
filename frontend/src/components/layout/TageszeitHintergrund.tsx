@@ -2,7 +2,7 @@ import type { HeaderHintergrundVariante } from '@/lib/tageszeit'
 
 export interface TageszeitHintergrundProps {
   motiv: HeaderHintergrundVariante
-  /** Höhe der Bildfläche (Tailwind-Klasse), z. B. `h-64` oder `h-[70%]` */
+  /** Höhe der Bildfläche (Tailwind-Klasse), z. B. `h-64`, `h-[70%]` oder `h-full` */
   hoehe?: string
   /** Deckkraft des Bildes (Tailwind-Klasse) */
   deckkraft?: string
@@ -10,6 +10,8 @@ export interface TageszeitHintergrundProps {
   verlauf?: string
   /** Positionsklassen der Ebenen, z. B. `-z-10` hinter Inhalten */
   ebene?: string
+  /** Eigener Auslauf-Verlauf (Maske), um das Bild nach unten hin wunschgemäß auswässern zu lassen */
+  auslaufMaske?: string
 }
 
 const AUSLAUF =
@@ -26,7 +28,10 @@ export function TageszeitHintergrund({
   deckkraft = 'opacity-55',
   verlauf = 'msm-tageszeit-verlauf',
   ebene = '',
+  auslaufMaske,
 }: TageszeitHintergrundProps) {
+  const maske = auslaufMaske ?? AUSLAUF
+
   return (
     <>
       <div
@@ -34,8 +39,8 @@ export function TageszeitHintergrund({
         style={{
           backgroundImage: `url('${motiv.pfad}')`,
           backgroundPosition: motiv.position,
-          maskImage: AUSLAUF,
-          WebkitMaskImage: AUSLAUF,
+          maskImage: maske,
+          WebkitMaskImage: maske,
         }}
         aria-hidden="true"
       />
@@ -44,8 +49,8 @@ export function TageszeitHintergrund({
           className={`pointer-events-none absolute inset-x-0 top-0 ${ebene} ${hoehe}`}
           style={{
             background: motiv.ueberlagerung,
-            maskImage: AUSLAUF,
-            WebkitMaskImage: AUSLAUF,
+            maskImage: maske,
+            WebkitMaskImage: maske,
           }}
           aria-hidden="true"
         />

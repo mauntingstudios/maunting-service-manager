@@ -1,49 +1,45 @@
+import { existsSync } from 'fs'
+import { resolve } from 'path'
 import { describe, expect, it } from 'vitest'
 
 import {
   aktuellesWechselBild,
   BILD_HINTERGRUENDE,
   FARB_HINTERGRUENDE,
+  HINTERGRUND_GRUPPEN,
   HINTERGRUND_OPTIONEN,
   hintergrundStil,
 } from './hintergruende'
 
 describe('Hintergruende Logik', () => {
-  it('haelt genau 10 KI-Standardhintergruende vor', () => {
-    expect(BILD_HINTERGRUENDE).toHaveLength(10)
-    expect(BILD_HINTERGRUENDE.map((b) => b.id)).toEqual([
-      'erde',
-      'sonnensystem',
-      'bergwald',
-      'ozean',
-      'feld',
-      'balkon',
-      'bergsee',
-      'bahnhof',
-      'mars',
-      'wasserfaelle',
-    ])
+  it('hält alle 26 Bildhintergründe mit real vorhandenen Dateien bereit', () => {
+    const publicDir = resolve(import.meta.dirname, '../../../public')
+    expect(BILD_HINTERGRUENDE).toHaveLength(26)
     for (const bild of BILD_HINTERGRUENDE) {
-      expect(bild.pfad).toMatch(/^\/hintergruende\/[a-z]+\.webp$/)
+      expect(bild.pfad).toMatch(/^(\/hintergruende\/[a-z]+\.webp|\/assets\/singra\/.*\.jpg)$/)
+      expect(existsSync(resolve(publicDir, bild.pfad.slice(1))), bild.pfad).toBe(true)
     }
   })
 
-  it('wechselt das Hintergrundbild alle 30 Minuten deterministisch durch', () => {
-    const basis = 0
-    const halbeStunde = 30 * 60 * 1000
+  it('wählt im Wechselmodus gezielt ein zur Jahres- und Tageszeit passendes Bild', () => {
+    const winterTag = new Date(2026, 0, 15, 13, 0, 0).getTime()
+    const fruehlingMorgen = new Date(2026, 3, 15, 8, 0, 0).getTime()
+    const herbstAbend = new Date(2026, 9, 15, 19, 0, 0).getTime()
+    const sommerTag = new Date(2026, 6, 15, 14, 0, 0).getTime()
 
-    expect(aktuellesWechselBild(basis).id).toBe(BILD_HINTERGRUENDE[0].id)
-    expect(aktuellesWechselBild(basis + halbeStunde).id).toBe(BILD_HINTERGRUENDE[1].id)
-    expect(aktuellesWechselBild(basis + 2 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[2].id)
-    expect(aktuellesWechselBild(basis + 3 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[3].id)
-    expect(aktuellesWechselBild(basis + 4 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[4].id)
-    expect(aktuellesWechselBild(basis + 5 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[5].id)
-    expect(aktuellesWechselBild(basis + 6 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[6].id)
-    expect(aktuellesWechselBild(basis + 7 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[7].id)
-    expect(aktuellesWechselBild(basis + 8 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[8].id)
-    expect(aktuellesWechselBild(basis + 9 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[9].id)
-    // Nach 10 Intervallen wieder am Anfang
-    expect(aktuellesWechselBild(basis + 10 * halbeStunde).id).toBe(BILD_HINTERGRUENDE[0].id)
+    expect(aktuellesWechselBild(winterTag).pfad).toContain('/winter/singra-bg-day.jpg')
+    expect(aktuellesWechselBild(herbstAbend).pfad).toContain('/herbst/singra-bg-evening.jpg')
+    expect(aktuellesWechselBild(fruehlingMorgen).pfad).toMatch(/\/fruehling\/(singra|teams)-bg-morning\.jpg$/)
+
+    // Im Sommer bleibt der Weltraum-/Mars-/Ozean-Katalog draußen, dafür rotieren Sommerszenen
+    const sommerPfade = new Set(
+      [0, 1, 2, 3, 4].map((slot) => aktuellesWechselBild(sommerTag + slot * 30 * 60 * 1000).pfad),
+    )
+    expect(sommerPfade.size).toBeGreaterThanOrEqual(3)
+    for (const pfad of sommerPfade) {
+      expect(pfad).not.toContain('mars')
+      expect(pfad).not.toContain('erde')
+    }
   })
 
   it('erzeugt passenden Hintergrundstil fuer Farben, feste Bilder und Wechselmodus', () => {
@@ -55,17 +51,26 @@ describe('Hintergruende Logik', () => {
     const erdeStil = hintergrundStil('erde', null)
     expect(erdeStil.backgroundImage).toContain('/hintergruende/erde.webp')
 
-    // Wechselndes Bild
-    const wechselStil = hintergrundStil('wechsel', null, 0)
-    expect(wechselStil.backgroundImage).toContain(BILD_HINTERGRUENDE[0].pfad)
+    // Wechselndes Bild (nimmt direkt das zur Zeit passende Motiv)
+    const zeit = new Date(2026, 0, 15, 13, 0, 0).getTime()
+    const wechselStil = hintergrundStil('wechsel', null, zeit)
+    expect(wechselStil.backgroundImage).toContain(aktuellesWechselBild(zeit).pfad)
 
     // Eigenes Bild
     const eigenStil = hintergrundStil('eigen', 'data:image/webp;base64,abc')
     expect(eigenStil.backgroundImage).toBe('url("data:image/webp;base64,abc")')
   })
 
-  it('bietet alle Hintergrundoptionen in definierter Reihenfolge an', () => {
+  it('bietet alle Hintergrundoptionen in aufgeräumten Gruppen an', () => {
+    expect(HINTERGRUND_GRUPPEN.map((g) => g.id)).toEqual([
+      'automatisch',
+      'jahreszeiten',
+      'landschaften',
+      'weltraum',
+      'farben',
+    ])
     expect(HINTERGRUND_OPTIONEN).toContain('wechsel')
+    expect(HINTERGRUND_OPTIONEN).toContain('alpen_winter_tag')
     expect(HINTERGRUND_OPTIONEN).toContain('erde')
     expect(HINTERGRUND_OPTIONEN).toContain('schlicht')
   })

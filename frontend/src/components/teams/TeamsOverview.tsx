@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { headerHintergrundWaehlen, begruessungSchluessel } from '@/lib/tageszeit'
+import { begruessungSchluessel, useTageszeitMotiv } from '@/lib/tageszeit'
 import { TeamStatCard } from './TeamStatCard'
 import { TeamCard } from './TeamCard'
 import { getTeamMetadata, type TeamMetadata } from './teamMeta'
@@ -72,7 +72,7 @@ export function TeamsOverview({
 
   // Tageszeitabhängiges Motiv & Begrüßung für nahtlosen Header-Auslauf (wie im Tresor)
   const stunde = useMemo(() => new Date().getHours(), [])
-  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'teams'), [stunde])
+  const headerMotiv = useTageszeitMotiv('teams')
   const greetingKey = useMemo(() => begruessungSchluessel(stunde, true), [stunde])
   const greeting = useMemo(() => {
     if (!currentUser?.username) return t('teams.title', 'Deine Teams')

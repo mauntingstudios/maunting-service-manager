@@ -5,7 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 
 import { Button, Kurzinfo, Zustandsflaeche } from '@maunting/ui'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
+import { begruessungSchluessel, tagesSeed, useTageszeitMotiv } from '@/lib/tageszeit'
 import type { DocDetail, UploadGrenzen } from '@/api/docs'
 import { DocEditor } from './DocEditor'
 import type { OutlineEntry } from './editor/Outline'
@@ -60,10 +60,7 @@ export function DocsMain({
   const [jetzt] = useState(() => new Date())
   const stunde = jetzt.getHours()
   const zufall = useMemo(() => tagesSeed(jetzt), [jetzt])
-  const headerMotiv = useMemo(
-    () => headerHintergrundWaehlen(stunde, zufall, 'docs'),
-    [stunde, zufall]
-  )
+  const headerMotiv = useTageszeitMotiv('docs')
   const begruessung = userName
     ? t(begruessungSchluessel(stunde, false, zufall), { name: userName })
     : t('common.begruessung.ohneName')

@@ -10,6 +10,7 @@ import {
   type ChatHintergrundKonfiguration,
   type ChatHintergrundScope,
 } from './speicher'
+import { useTageszeitBild } from '@/lib/tageszeit'
 import { vorlageMitId, STANDARD_VORLAGE, type HintergrundId } from './vorlagen'
 
 function alsKonfiguration(roh: {
@@ -138,14 +139,6 @@ export function useGruppenHintergrund(
   return konfiguration
 }
 
-function ermittleTageszeitBild(): string {
-  const stunde = new Date().getHours()
-  if (stunde >= 5 && stunde < 11) return '/assets/singra/singra-bg-morning.jpg'
-  if (stunde >= 11 && stunde < 17) return '/assets/singra/singra-bg-day.jpg'
-  if (stunde >= 17 && stunde < 22) return '/assets/singra/singra-bg-evening.jpg'
-  return '/assets/singra/singra-bg-night.jpg'
-}
-
 /**
  * Die Fläche einer einzelnen Vorlage — dieselbe im Chat wie auf der
  * Auswahlkachel. Positioniert sich selbst über dem nächsten `relative`-Kasten.
@@ -159,6 +152,7 @@ export function HintergrundFlaeche({
   eigenesBild?: string
   blurLevel?: number
 }) {
+  const dynamischesBild = useTageszeitBild(vorlage === 'dynamic_time')
   const blurPx = blurLevel > 0 ? (blurLevel / 100) * 24 : 0
   const bildStil: React.CSSProperties | undefined =
     blurPx > 0
@@ -184,7 +178,7 @@ export function HintergrundFlaeche({
   if (vorlage === 'dynamic_time') {
     return (
       <img
-        src={ermittleTageszeitBild()}
+        src={dynamischesBild}
         alt=""
         aria-hidden="true"
         style={bildStil}

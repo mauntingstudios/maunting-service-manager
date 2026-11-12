@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
@@ -13,7 +13,7 @@ import { CrossDeviceCallBanner } from '@/components/calling/CrossDeviceCallBanne
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { OfflineBanner } from './OfflineBanner'
 import { TageszeitHintergrund } from './TageszeitHintergrund'
-import { headerHintergrundWaehlen } from '@/lib/tageszeit'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { api } from '@/api/client'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
@@ -121,8 +121,7 @@ export function Shell() {
     || location.pathname.startsWith('/docs/')
     || location.pathname === '/privacy'
   const zeigeSeitenhintergrund = !isFullHeightPage && !istHilfeOderRecht
-  const stunde = useMemo(() => new Date().getHours(), [])
-  const seitenMotiv = useMemo(() => headerHintergrundWaehlen(stunde), [stunde])
+  const seitenMotiv = useTageszeitMotiv()
 
   return (
     // `overflow-x-clip` statt `overflow-x-hidden`: `hidden` auf einer Achse

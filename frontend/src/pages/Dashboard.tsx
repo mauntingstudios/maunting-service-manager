@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { UptimeDisplay } from '@/components/server/UptimeDisplay'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
+import { begruessungSchluessel, tagesSeed, useTageszeitMotiv } from '@/lib/tageszeit'
 import { ProgressBar, StackedProgressBar, Segment } from '@maunting/ui'
 import { Badge } from '@maunting/ui'
 
@@ -311,7 +311,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
 
   const user = useAuthStore((state) => state.user)
   const stunde = useMemo(() => new Date().getHours(), [])
-  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'dashboard'), [stunde])
+  const headerMotiv = useTageszeitMotiv('dashboard')
   const tagesZaehler = useMemo(() => tagesSeed(), [])
   const begruessung = user?.username
     ? t(begruessungSchluessel(stunde, false, tagesZaehler), { name: user.username })

@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
 import { Plus, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/authStore'
+import { begruessungSchluessel, tageszeit, useTageszeitMotiv } from '@/lib/tageszeit'
 
 export interface TeamsTageszeitBannerProps {
   onCreateTeam: () => void
@@ -9,43 +9,16 @@ export interface TeamsTageszeitBannerProps {
   className?: string
 }
 
-function getTeamsDaytimeBackground(): {
-  image: string
-  greetingKey: string
-  fallbackGreeting: string
-} {
-  const hour = new Date().getHours()
-  if (hour >= 5 && hour < 11) {
-    return {
-      image: '/assets/teams/teams-bg-morning.jpg',
-      greetingKey: 'common.begruessung.morgenKurz',
-      fallbackGreeting: 'Guten Morgen',
-    }
-  }
-  if (hour >= 11 && hour < 17) {
-    return {
-      image: '/assets/teams/teams-bg-day.jpg',
-      greetingKey: 'common.begruessung.tagKurz',
-      fallbackGreeting: 'Guten Tag',
-    }
-  }
-  if (hour >= 17 && hour < 22) {
-    return {
-      image: '/assets/teams/teams-bg-evening.jpg',
-      greetingKey: 'common.begruessung.abendKurz',
-      fallbackGreeting: 'Guten Abend',
-    }
-  }
-  return {
-    image: '/assets/teams/teams-bg-night.jpg',
-    greetingKey: 'common.begruessung.nachtKurz',
-    fallbackGreeting: 'Gute Nacht',
-  }
+const KURZ_FALLBACK: Record<'morgen' | 'tag' | 'abend' | 'nacht', string> = {
+  morgen: 'Guten Morgen',
+  tag: 'Guten Tag',
+  abend: 'Guten Abend',
+  nacht: 'Gute Nacht',
 }
 
 /**
  * Atmosphärischer Hero-Banner für die Team-Übersicht.
- * Wechselt passend zur Tageszeit (Morgen, Tag, Abend, Nacht) das Landschaftsmotiv
+ * Wechselt passend zur Tageszeit und Jahreszeit das Landschaftsmotiv
  * und bietet einen direkten Absprung zur Team-Erstellung.
  */
 export function TeamsTageszeitBanner({
@@ -56,10 +29,12 @@ export function TeamsTageszeitBanner({
   const { t } = useTranslation()
   const username = useAuthStore((s) => s.user?.username)
 
-  const { image, greetingKey, fallbackGreeting } = useMemo(
-    () => getTeamsDaytimeBackground(),
-    [],
-  )
+  const headerMotiv = useTageszeitMotiv('teams')
+  const stunde = new Date().getHours()
+  const zeit = tageszeit(stunde)
+  const greetingKey = begruessungSchluessel(stunde, true)
+  const image = headerMotiv.pfad
+  const fallbackGreeting = KURZ_FALLBACK[zeit]
 
   const greeting = username
     ? `${t(greetingKey, fallbackGreeting)}, ${username}!`

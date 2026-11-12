@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
@@ -14,7 +14,7 @@ import { Badge } from '@maunting/ui'
 import { Dropdown } from '@maunting/ui'
 import { TabBar } from '@maunting/ui'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { headerHintergrundWaehlen } from '@/lib/tageszeit'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { Button, Checkbox, Input, Kurzinfo, Switch } from '@maunting/ui'
 import { PasswordInput } from '@maunting/ui'
 import { Spinner } from '@maunting/ui'
@@ -50,8 +50,7 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
   // überlastete Stelle zuliefen.
   const abfrageLaeuft = useRef(false)
 
-  const stunde = useMemo(() => new Date().getHours(), [])
-  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'dashboard'), [stunde])
+  const headerMotiv = useTageszeitMotiv('dashboard')
   // Ohne dieses Flag wird aus einem fehlgeschlagenen Laden die Aussage
   // "Keine Server vorhanden" — der Betreiber liest, seine Server seien weg.
   const [loadError, setLoadError] = useState(false)

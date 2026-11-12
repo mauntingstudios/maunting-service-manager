@@ -24,7 +24,7 @@ import { apiUrl } from '@/config/api'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
+import { begruessungSchluessel, tagesSeed, useTageszeitMotiv } from '@/lib/tageszeit'
 import { DateTimePicker, Dropdown, Kurzinfo, NumberStepper, useZurueckSchliesst } from '@maunting/ui'
 import { Button } from '@maunting/ui'
 import { sendeGeraeteBenachrichtigung, pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
@@ -783,7 +783,7 @@ export function Calendar() {
 
   const user = useAuthStore((state) => state.user)
   const stunde = useMemo(() => new Date().getHours(), [])
-  const headerMotiv = useMemo(() => headerHintergrundWaehlen(stunde, undefined, 'calendar'), [stunde])
+  const headerMotiv = useTageszeitMotiv('calendar')
   const tagesZaehler = useMemo(() => tagesSeed(), [])
   const begruessung = user?.username
     ? t(begruessungSchluessel(stunde, false, tagesZaehler), { name: user.username })

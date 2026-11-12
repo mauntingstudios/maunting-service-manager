@@ -1,4 +1,20 @@
+import { ermittleTageszeitBild, tageszeit, type Tageszeit } from '@/lib/tageszeit'
+
 export type SingraTimeOfDay = 'morning' | 'day' | 'evening' | 'night'
+
+const PERIOD_MAP: Record<Tageszeit, SingraTimeOfDay> = {
+  morgen: 'morning',
+  tag: 'day',
+  abend: 'evening',
+  nacht: 'night',
+}
+
+const GREETING_MAP: Record<Tageszeit, string> = {
+  morgen: 'Guten Morgen',
+  tag: 'Hallo',
+  abend: 'Guten Abend',
+  nacht: 'Guten Abend',
+}
 
 export interface SingraStarterCategory {
   id: string
@@ -14,32 +30,11 @@ export function getSingraTimeOfDay(date: Date = new Date()): {
   bgImage: string
   greetingPrefix: string
 } {
-  const hour = date.getHours()
-  if (hour >= 5 && hour < 11) {
-    return {
-      period: 'morning',
-      bgImage: '/assets/singra/singra-bg-morning.jpg',
-      greetingPrefix: 'Guten Morgen',
-    }
-  }
-  if (hour >= 11 && hour < 17) {
-    return {
-      period: 'day',
-      bgImage: '/assets/singra/singra-bg-day.jpg',
-      greetingPrefix: 'Hallo',
-    }
-  }
-  if (hour >= 17 && hour < 21) {
-    return {
-      period: 'evening',
-      bgImage: '/assets/singra/singra-bg-evening.jpg',
-      greetingPrefix: 'Guten Abend',
-    }
-  }
+  const zeit = tageszeit(date.getHours())
   return {
-    period: 'night',
-    bgImage: '/assets/singra/singra-bg-night.jpg',
-    greetingPrefix: 'Guten Abend',
+    period: PERIOD_MAP[zeit],
+    bgImage: ermittleTageszeitBild(date.getHours(), date),
+    greetingPrefix: GREETING_MAP[zeit],
   }
 }
 

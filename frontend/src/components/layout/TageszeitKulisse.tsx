@@ -1,6 +1,6 @@
-import { useMemo, useRef, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { TageszeitHintergrund } from './TageszeitHintergrund'
-import { headerHintergrundWaehlen } from '@/lib/tageszeit'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
 
 export interface TageszeitKulisseProps {
   children: ReactNode
@@ -14,9 +14,7 @@ export interface TageszeitKulisseProps {
  * Tresor-Sperre).
  */
 export function TageszeitKulisse({ children, className = '' }: TageszeitKulisseProps) {
-  const zufall = useRef(Math.random() * 5)
-  const stunde = new Date().getHours()
-  const motiv = useMemo(() => headerHintergrundWaehlen(stunde, zufall.current), [stunde])
+  const motiv = useTageszeitMotiv()
 
   return (
     <div className={`relative isolate flex h-full w-full flex-col overflow-hidden ${className}`}>

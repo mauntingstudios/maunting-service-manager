@@ -10,7 +10,7 @@ import { api } from '@/api/client'
 import { Button, FileButton, Input, Kurzinfo, MultiSelect, Slider } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 
-import { bildZuWebp, FARB_HINTERGRUENDE, HINTERGRUND_OPTIONEN } from '../seite/hintergruende'
+import { bildZuWebp, FARB_HINTERGRUENDE, HINTERGRUND_GRUPPEN } from '../seite/hintergruende'
 import { hintergrundStil } from '../seite/Startseite'
 
 
@@ -279,7 +279,6 @@ function Hintergrundwahl() {
   const hintergrundBlur = useEinstellungenStore((s) => s.hintergrundBlur)
   const eigenesBild = useEinstellungenStore((s) => s.eigenesBild)
   const setzen = useEinstellungenStore((s) => s.setzen)
-  const auswahl: Hintergrund[] = [...HINTERGRUND_OPTIONEN, ...(eigenesBild ? (['eigen'] as const) : [])]
 
   const bildLaden = async (datei: File) => {
     if (!datei.type.startsWith('image/')) {
@@ -309,22 +308,33 @@ function Hintergrundwahl() {
 
   return (
     <Abschnitt titel={t('browser.einstellungen.hintergrund')}>
-      <div role="radiogroup" aria-label={t('browser.einstellungen.hintergrund')} className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-        {auswahl.map((h) => (
-          <Kurzinfo key={h} text={t(`browser.hintergrund.${h}`)}>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={hintergrund === h}
-              aria-label={t(`browser.hintergrund.${h}`)}
-              onClick={() => hintergrundWaehlen(h)}
-              style={hintergrundStil(h, eigenesBild)}
-              className={`h-16 w-full rounded-lg border bg-surface transition-all ${
-                hintergrund === h ? 'border-primary ring-2 ring-primary/40' : 'border-outline-variant hover:border-primary/50'
-              }`}
-            />
-          </Kurzinfo>
-        ))}
+      <div role="radiogroup" aria-label={t('browser.einstellungen.hintergrund')} className="space-y-4">
+        {HINTERGRUND_GRUPPEN.map((gruppe) => {
+          const eintraege: Hintergrund[] =
+            gruppe.id === 'farben' && eigenesBild ? [...gruppe.optionen, 'eigen'] : gruppe.optionen
+          return (
+            <div key={gruppe.id} className="space-y-2">
+              <p className="text-label-sm font-medium text-on-surface-variant">{t(gruppe.titelKey)}</p>
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                {eintraege.map((h) => (
+                  <Kurzinfo key={h} text={t(`browser.hintergrund.${h}`)}>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={hintergrund === h}
+                      aria-label={t(`browser.hintergrund.${h}`)}
+                      onClick={() => hintergrundWaehlen(h)}
+                      style={hintergrundStil(h, eigenesBild)}
+                      className={`h-16 w-full rounded-lg border bg-surface transition-all ${
+                        hintergrund === h ? 'border-primary ring-2 ring-primary/40' : 'border-outline-variant hover:border-primary/50'
+                      }`}
+                    />
+                  </Kurzinfo>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </div>
       <p className="text-label-sm text-on-surface-variant -mt-1">
         {t('browser.einstellungen.kiBilderHinweis')}

@@ -1,9 +1,9 @@
-import { useMemo, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/authStore'
 import { useMedienabfrage } from '@/hooks/useMedienabfrage'
 import { TageszeitHintergrund } from './TageszeitHintergrund'
-import { begruessungSchluessel, headerHintergrundWaehlen, tagesSeed } from '@/lib/tageszeit'
+import { begruessungSchluessel, tagesSeed, useTageszeitMotiv } from '@/lib/tageszeit'
 
 export interface TageszeitBannerProps {
   /** Bereichsname über der Begrüßung (z. B. „Dashboard“, „Kalender“, „Notizen“, „Maunting Docs“) */
@@ -44,10 +44,7 @@ export function TageszeitBanner({
   const tagesZaehler = tagesSeed()
 
   const stunde = new Date().getHours()
-  const headerMotiv = useMemo(
-    () => headerHintergrundWaehlen(stunde, tagesZaehler),
-    [stunde, tagesZaehler],
-  )
+  const headerMotiv = useTageszeitMotiv()
 
   const begruessung = angemeldeterName
     ? t(begruessungSchluessel(stunde, istSchmal, tagesZaehler), { name: angemeldeterName })

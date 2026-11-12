@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Activity,
@@ -40,7 +40,7 @@ import {
   Zustandsflaeche,
 } from '@maunting/ui'
 import { formatBytes } from '@/lib/format'
-import { headerHintergrundWaehlen } from '@/lib/tageszeit'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
 import type { VaultItem } from './vaultEintrag'
 import {
@@ -283,12 +283,7 @@ export function VaultDashboard({
   const [sortierung, setSortierung] = useState<TresorSortierung>('zuletzt')
   const [darstellung, setDarstellung] = useState<'raster' | 'liste'>('raster')
   const [aktiveStandardKategorie, setAktiveStandardKategorie] = useState<StandardKategorieDef['schluessel'] | null>(null)
-  const headerZufall = useRef(Math.random() * 5)
-
-  const headerMotiv = useMemo(
-    () => headerHintergrundWaehlen(new Date().getHours(), headerZufall.current),
-    [],
-  )
+  const headerMotiv = useTageszeitMotiv()
 
   const anzahl = useMemo(() => zaehleEintraege(items), [items])
   const neue = useMemo(() => dieseWoche(items), [items])
