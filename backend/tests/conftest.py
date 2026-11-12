@@ -368,6 +368,19 @@ def _reset_dis_streaming_keys():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _such_cache_leeren():
+    """Der Suchcache lebt im Prozess; Tests mit gleicher Anfrage dürfen sich nicht sehen."""
+    from services import ai_web_search_service
+
+    with ai_web_search_service._cache_lock:
+        ai_web_search_service._cache.clear()
+        ai_web_search_service._inflight.clear()
+    with ai_web_search_service._wissen_lock:
+        ai_web_search_service._wissen_cache.clear()
+    yield
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _versionsspeicher_umlenken(tmp_path_factory):
     """Der Dateiversionsspeicher darf nie im Arbeitsverzeichnis landen.

@@ -34,6 +34,7 @@ import re
 import socket
 import threading
 import time
+import unicodedata
 import urllib.parse
 
 import httpx
@@ -65,6 +66,9 @@ MAX_SNIPPET_CHARS = 400
 MAX_URL_CHARS = 300
 _TIMEOUT = 8.0
 _CACHE_TTL_SECONDS = 15.0
+_CACHE_MAX = 256
+#: Suchtreffer sind öffentlich; Nachrichten veralten schneller als Bilder.
+_BROWSER_CACHE_TTL = {"general": 60.0, "images": 300.0, "videos": 300.0, "news": 30.0}
 _BILD_CACHE_MAX = 64
 _BILD_MAX_BYTES = 2 * 1024 * 1024
 _BILD_TYPEN = {
@@ -76,11 +80,24 @@ _BILD_TYPEN = {
 #: So viel Wikitext wird höchstens gelesen — die Infobox steht am Anfang.
 _WIKITEXT_MAX = 20000
 
+#: Ein Wissenseintrag gilt erst ab dieser Zuordnungssicherheit als passend.
+_WIKI_RELEVANZ_MIN = 0.75
+_WIKI_KANDIDATEN_MAX = 6
+_WIKI_CACHE_TTL = 600.0
+_WIKI_CACHE_TTL_OHNE = 120.0
+_WIKI_CACHE_MAX = 128
+_WIKI_HEADERS = {
+    "User-Agent": "MauntingSearch/1.0 (https://mauntingstudios.com; privacy-proxy)",
+    "Accept": "application/json",
+}
+
 _client: httpx.Client | None = None
 _client_lock = threading.Lock()
-_cache: dict[tuple[str, str, int], tuple[float, list[dict]]] = {}
-_inflight: dict[tuple[str, str, int], threading.Event] = {}
+_cache: dict[tuple, tuple[float, object]] = {}
+_inflight: dict[tuple, threading.Event] = {}
 _cache_lock = threading.Lock()
+_wissen_cache: dict[tuple[str, str], tuple[float, dict | None]] = {}
+_wissen_lock = threading.Lock()
 _sidecar_status_cache: dict[str, tuple[float, bool]] = {}
 _sidecar_cache_lock = threading.Lock()
 _bild_urls: dict[str, tuple[float, str]] = {}
@@ -117,16 +134,49 @@ def shutdown_http_client() -> None:
     with _cache_lock:
         _cache.clear()
         _inflight.clear()
+    with _wissen_lock:
+        _wissen_cache.clear()
     with _sidecar_cache_lock:
         _sidecar_status_cache.clear()
 
 
-def _finish_inflight(cache_key: tuple[str, str, int] | None, pending: threading.Event | None) -> None:
-    if cache_key is None or pending is None:
-        return
+def _cache_abrufen(schluessel: tuple, ttl: float, hole) -> tuple[bool, object | None]:
+    """Cache und Einzel-Flug: gleiche Anfragen zugleich teilen sich einen Lauf.
+
+    Wartende bekommen das Ergebnis des Eigentümers. Scheitert er, werden sie im
+    `finally` freigegeben und versuchen es selbst; ein Fehler wird nie
+    gespeichert.
+    """
+    owner = False
+    pending: threading.Event | None = None
     with _cache_lock:
-        _inflight.pop(cache_key, None)
-        pending.set()
+        eintrag = _cache.get(schluessel)
+        if eintrag and eintrag[0] > time.monotonic():
+            return True, eintrag[1]
+        pending = _inflight.get(schluessel)
+        if pending is None:
+            pending = threading.Event()
+            _inflight[schluessel] = pending
+            owner = True
+    if not owner:
+        pending.wait(_TIMEOUT + 0.5)
+        with _cache_lock:
+            eintrag = _cache.get(schluessel)
+            if eintrag and eintrag[0] > time.monotonic():
+                return True, eintrag[1]
+        return False, None
+    try:
+        wert = hole()
+    finally:
+        with _cache_lock:
+            _inflight.pop(schluessel, None)
+            pending.set()
+    with _cache_lock:
+        _cache.pop(schluessel, None)
+        _cache[schluessel] = (time.monotonic() + ttl, wert)
+        while len(_cache) > _CACHE_MAX:
+            _cache.pop(next(iter(_cache)), None)
+    return True, wert
 
 
 def _is_safe_public_url(url: str) -> bool:
@@ -738,6 +788,7 @@ def scrape_top_urls_parallel(
     max_chars: int = 3500,
     limit: int = 8,
     deep: bool = False,
+    timeout: float | None = 3.5,
 ) -> dict[str, str]:
     """Liest mehrere Webseiten parallel im Thread-Pool ein und liefert bereinigten Text."""
     gueltige_urls: list[str] = []
@@ -754,7 +805,8 @@ def scrape_top_urls_parallel(
         return {}
 
     ergebnisse: dict[str, str] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(limit, len(gueltige_urls))) as executor:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(limit, len(gueltige_urls)))
+    try:
         if deep:
             future_zu_url = {
                 executor.submit(scrape_url, u, max_chars, deep=True): u
@@ -765,16 +817,27 @@ def scrape_top_urls_parallel(
                 executor.submit(scrape_url, u, max_chars): u
                 for u in gueltige_urls
             }
-        for future in concurrent.futures.as_completed(future_zu_url):
-            u = future_zu_url[future]
-            try:
-                scraped = future.result()
-                if isinstance(scraped, dict) and "error" not in scraped:
-                    text = (scraped.get("content") or "").strip()
-                    if text:
-                        ergebnisse[u] = text
-            except Exception as exc:
-                logger.debug("Paralleles Scraping fehlgeschlagen url=%s: %s", u, exc)
+        try:
+            for future in concurrent.futures.as_completed(future_zu_url, timeout=timeout):
+                u = future_zu_url[future]
+                try:
+                    scraped = future.result()
+                    if isinstance(scraped, dict) and "error" not in scraped:
+                        text = (scraped.get("content") or "").strip()
+                        if text:
+                            ergebnisse[u] = text
+                except Exception as exc:
+                    logger.debug("Paralleles Scraping fehlgeschlagen url=%s: %s", u, exc)
+        except concurrent.futures.TimeoutError:
+            logger.debug(
+                "Paralleles Scraping nach %.1fs abgekürzt (%d/%d Seiten)",
+                timeout or 0.0,
+                len(ergebnisse),
+                len(gueltige_urls),
+            )
+    finally:
+        # Hängende Fremdseiten dürfen die KI-Übersicht nicht blockieren.
+        executor.shutdown(wait=False, cancel_futures=True)
     return ergebnisse
 
 
@@ -1181,6 +1244,29 @@ _FRAGE_SUFFIXE = re.compile(
     re.IGNORECASE,
 )
 
+# Typische Such-Zusätze hinter einem eigentlichen Thema („GTA 6 Release“,
+# „NVIDIA Aktienkurs“, „Berlin Einwohner“). Nur am Wortende und nur mit
+# vorangehendem Leerraum entfernt, damit Begriffe wie „Test“ alleine bleiben.
+_SUCHMODIFIER_ENDE = re.compile(
+    r"\s+(?:"
+    r"(?:(?:for|für|fuer|auf)\s+)?(?:pc|ps5|xbox(?:\s+series\s+[xs])?|nintendo\s+switch|switch|steam)\s+"
+    r"(?:release(?:\s+(?:date|datum|termin))?|trailer|gameplay|preis|price|test|review)|"
+    r"release(?:\s+(?:date|datum|termin))?|"
+    r"veröffentlichung(?:sdatum|stermin)?|veroeffentlichung(?:sdatum|stermin)?|"
+    r"erscheinungsdatum|"
+    r"trailer|gameplay|"
+    r"systemanforderungen|(?:system\s+)?requirements|spezifikationen|specs|"
+    r"aktienkurs|aktie|stock(?:\s+price)?|"
+    r"einwohner(?:zahl)?|population|"
+    r"preis|price|kosten|"
+    r"review|bewertung|test(?:bericht)?|"
+    r"download|wiki|wikipedia|"
+    r"wetter|weather|"
+    r"biografie|biography|steckbrief"
+    r")(?:\s+(?:deutsch|english|pc|ps5|xbox|20[2-3]\d))?$",
+    re.IGNORECASE,
+)
+
 
 def extrahiere_wissens_begriff(query: str) -> str:
     """Extrahiert aus natürlichsprachlichen Suchfragen den Kernbegriff für Wikipedia.
@@ -1189,6 +1275,7 @@ def extrahiere_wissens_begriff(query: str) -> str:
     - „Was ist Eisen und wofür braucht man das?“ -> „Eisen“
     - „Wie koche ich Gulasch?“ -> „Gulasch“
     - „Wann kommt GTA 6 raus?“ -> „GTA 6“
+    - „GTA 6 Release“ -> „GTA 6“
     - „Wer ist Elon Musk?“ -> „Elon Musk“
     - „spacex“ -> „spacex“
     """
@@ -1209,6 +1296,11 @@ def extrahiere_wissens_begriff(query: str) -> str:
         kandidat = _FRAGE_PRAEFIXE_EN.sub("", text).strip()
 
     kandidat = _FRAGE_SUFFIXE.sub("", kandidat).strip()
+    for _ in range(2):
+        gekuerzt = _SUCHMODIFIER_ENDE.sub("", kandidat).strip()
+        if gekuerzt == kandidat or len(gekuerzt) < 2:
+            break
+        kandidat = gekuerzt
     # Artikel am Anfang noch einmal abstreifen, falls nach dem Kürzen übrig
     kandidat = re.sub(r"^(?:ein|eine|einen|der|die|das|dem|den|a|an|the)\s+", "", kandidat, flags=re.IGNORECASE).strip()
     kandidat = kandidat.strip(" \"'„“”‚‘?!.,;:")
@@ -1251,6 +1343,13 @@ def _wiki_wert_ende(block: str, start: int) -> int:
     return len(block)
 
 
+_INFOBOX_IGNORIEREN = frozenset({
+    "bild", "image", "logo", "foto", "photo", "bildgröße", "bildgroesse", "bildbreite",
+    "bildhöhe", "bildhoehe", "bildbeschreibung", "caption", "alt", "width", "size",
+    "wappen", "flagge", "karte", "map", "poskarte", "signatur", "unterschrift",
+})
+
+
 def _wiki_infobox_felder(wikitext: str) -> list[dict]:
     """Eckdaten aus der Infobox-Vorlage einer Wikipedia-Seite.
 
@@ -1286,7 +1385,7 @@ def _wiki_infobox_felder(wikitext: str) -> list[dict]:
     felder: list[dict] = []
     for treffer in re.finditer(r"\n\s*\|\s*([^=|{}\[\]]{2,60}?)\s*=\s*", block):
         name = _wiki_markup_sauber(treffer.group(1))
-        if not name or len(felder) >= 10:
+        if not name or name.casefold() in _INFOBOX_IGNORIEREN or len(felder) >= 10:
             continue
         wert_roh = block[treffer.end() : _wiki_wert_ende(block, treffer.end())]
         if "{{" in wert_roh:
@@ -1296,6 +1395,36 @@ def _wiki_infobox_felder(wikitext: str) -> list[dict]:
             continue
         felder.append({"label": name[:80], "value": wert})
     return felder
+
+
+_WIKI_LINK_NAMENSRAUM = re.compile(
+    r"^(?:datei|file|bild|image|kategorie|category|wikipedia|hilfe|help|"
+    r"vorlage|template|portal|diskussion|talk|spezial|special|benutzer|user|"
+    r"modul|module|mediawiki|[a-z]{2,3}):",
+    re.IGNORECASE,
+)
+
+
+def _wiki_verwandte_themen(wikitext: str, titel: str) -> list[str]:
+    """Echte verwandte Wikipedia-Artikel aus Infobox und Einleitung, ohne Erfindung."""
+    abschnitt = (wikitext or "")[:4000]
+    eigen = _wiki_normalisiere(titel)
+    gesehen: set[str] = set()
+    ergebnis: list[str] = []
+    for treffer in re.finditer(r"\[\[([^\]|#\n]+)(?:\|[^\]]*)?\]\]", abschnitt):
+        ziel = treffer.group(1).strip()
+        if not ziel or _WIKI_LINK_NAMENSRAUM.match(ziel) or len(ziel) < 3 or len(ziel) > 60:
+            continue
+        if ziel.isdigit():
+            continue
+        norm = _wiki_normalisiere(ziel)
+        if not norm or norm == eigen or norm in gesehen:
+            continue
+        gesehen.add(norm)
+        ergebnis.append(redact_sensitive_text(ziel))
+        if len(ergebnis) >= 4:
+            break
+    return ergebnis
 
 
 def _wiki_wikitext(lang: str, page_title: str) -> str:
@@ -1336,8 +1465,249 @@ def _wiki_wikitext(lang: str, page_title: str) -> str:
         return ""
 
 
+_RÖMISCHE_ZAHLEN = {
+    "i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6, "vii": 7, "viii": 8,
+    "ix": 9, "x": 10, "xi": 11, "xii": 12, "xiii": 13, "xiv": 14, "xv": 15,
+    "xvi": 16, "xvii": 17, "xviii": 18, "xix": 19, "xx": 20,
+}
+
+
+def _wiki_normalisiere(text: str) -> str:
+    """Vergleichsform eines Begriffs; Schreibweise und Satzzeichen fallen weg."""
+    wert = unicodedata.normalize("NFKC", text or "").casefold()
+    wert = re.sub(r"[^\w\s]+", " ", wert, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", wert).strip()
+
+
+def _wiki_tokens(text: str) -> list[str]:
+    return [t for t in _wiki_normalisiere(text).split(" ") if t]
+
+
+def _wiki_zahl(token: str) -> int | None:
+    wert = (token or "").strip().casefold()
+    if wert.isdigit():
+        return int(wert)
+    return _RÖMISCHE_ZAHLEN.get(wert)
+
+
+def _wiki_wort_passt(begriff: str, titel_wort: str) -> bool:
+    if begriff == titel_wort:
+        return True
+    b_zahl, t_zahl = _wiki_zahl(begriff), _wiki_zahl(titel_wort)
+    if b_zahl is not None and b_zahl == t_zahl:
+        return True
+    if len(begriff) >= 4 and titel_wort.startswith(begriff):
+        return True
+    if len(titel_wort) >= 4 and begriff.startswith(titel_wort):
+        return True
+    return False
+
+
+def _wiki_akronym_ende(anfang: str, titel_tokens: list[str], start: int) -> int | None:
+    """Endindex einer Wortgruppe, deren Anfangsbuchstaben das Kürzel ergeben."""
+    if not (2 <= len(anfang) <= 10) or not anfang.isalpha():
+        return None
+    gesammelt = ""
+    for i in range(start, min(len(titel_tokens), start + 8)):
+        wort = titel_tokens[i]
+        if not wort:
+            continue
+        gesammelt += wort[0]
+        if gesammelt == anfang:
+            return i + 1
+        if not anfang.startswith(gesammelt):
+            return None
+    return None
+
+
+def _wiki_klammer(text: str) -> str:
+    treffer = re.search(r"\(([^()]{1,60})\)\s*$", text or "")
+    return treffer.group(1) if treffer else ""
+
+
+def _wiki_titel_passt(begriff: str, titel: str) -> bool:
+    """Jedes Wort der Anfrage muss im Titel stehen: gleich, Kürzel, Zahl oder Präfix."""
+    klammer = _wiki_klammer(titel)
+    if klammer:
+        q_menge = set(_wiki_tokens(begriff))
+        for wort in _wiki_tokens(klammer):
+            if wort not in q_menge and not any(_wiki_wort_passt(wort, q) for q in q_menge):
+                return False
+    q = _wiki_tokens(begriff)
+    t = _wiki_tokens(titel)
+    if not q or not t or len(t) > len(q) + 2:
+        return False
+
+    def passen(qi: int, ti: int, extras: int) -> bool:
+        if qi == len(q):
+            return True
+        if ti >= len(t):
+            return False
+        if _wiki_wort_passt(q[qi], t[ti]) and passen(qi + 1, ti + 1, extras):
+            return True
+        ende = _wiki_akronym_ende(q[qi], t, ti)
+        if ende is not None and passen(qi + 1, ende, extras):
+            return True
+        return extras > 0 and passen(qi, ti + 1, extras - 1)
+
+    return passen(0, 0, 2)
+
+
+def _wiki_relevanz(begriff: str, titel: str, beschreibung: str = "", weiterleitung_von: str = "") -> float:
+    """Wie sicher der Artikel zur Anfrage gehört: 0 bis 1, Schwelle `_WIKI_RELEVANZ_MIN`."""
+    b = _wiki_normalisiere(begriff)
+    t = _wiki_normalisiere(titel)
+    if not b or not t:
+        return 0.0
+    if b == t:
+        return 1.0
+    if weiterleitung_von and _wiki_normalisiere(weiterleitung_von) == b:
+        return 0.95
+    if not _wiki_titel_passt(begriff, titel):
+        return 0.0
+    wert = 0.8
+    besch = _wiki_normalisiere(beschreibung)
+    if besch:
+        b_tokens = _wiki_tokens(begriff)
+        besch_tokens = set(_wiki_tokens(beschreibung))
+        if b in besch or (b_tokens and all(tok in besch_tokens for tok in b_tokens)):
+            wert += 0.1
+    return min(wert, 0.9)
+
+
+def _wiki_pages(daten: object) -> list[dict]:
+    if not isinstance(daten, dict):
+        return []
+    query = daten.get("query")
+    pages = query.get("pages") if isinstance(query, dict) else None
+    if isinstance(pages, list):
+        return [p for p in pages if isinstance(p, dict)]
+    if isinstance(pages, dict):
+        return [p for p in pages.values() if isinstance(p, dict)]
+    return []
+
+
+def _wiki_titel_pruefen(lang: str, begriff: str) -> tuple[str, bool, str] | None:
+    """Direkter Titeltreffer samt Weiterleitung; `None`, wenn es die Seite nicht gibt."""
+    antwort = _http_client().get(
+        f"https://{lang}.wikipedia.org/w/api.php",
+        params={
+            "action": "query",
+            "titles": begriff,
+            "redirects": "1",
+            "prop": "pageprops",
+            "ppprop": "disambiguation",
+            "format": "json",
+            "formatversion": "2",
+        },
+        headers=_WIKI_HEADERS,
+    )
+    if antwort.status_code != 200:
+        return None
+    daten = antwort.json()
+    pages = _wiki_pages(daten)
+    if not pages:
+        return None
+    seite = pages[0]
+    if seite.get("missing"):
+        return None
+    titel = str(seite.get("title") or "").strip()
+    if not titel:
+        return None
+    props = seite.get("pageprops") if isinstance(seite.get("pageprops"), dict) else {}
+    weiterleitung = ""
+    query = daten.get("query") if isinstance(daten, dict) else None
+    redirects = query.get("redirects") if isinstance(query, dict) else None
+    ziel = _wiki_normalisiere(begriff)
+    for eintrag in redirects if isinstance(redirects, list) else []:
+        if not isinstance(eintrag, dict):
+            continue
+        von = str(eintrag.get("from") or "").strip()
+        if von and _wiki_normalisiere(von) == ziel:
+            weiterleitung = von
+            break
+    return titel, "disambiguation" in props, weiterleitung
+
+
+def _wiki_kandidaten(lang: str, begriff: str) -> list[dict]:
+    antwort = _http_client().get(
+        f"https://{lang}.wikipedia.org/w/api.php",
+        params={
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": begriff,
+            "gsrlimit": _WIKI_KANDIDATEN_MAX,
+            "gsrnamespace": 0,
+            "prop": "pageprops|description",
+            "ppprop": "disambiguation",
+            "format": "json",
+            "formatversion": "2",
+        },
+        headers=_WIKI_HEADERS,
+    )
+    if antwort.status_code != 200:
+        return []
+    ergebnis: list[dict] = []
+    for seite in _wiki_pages(antwort.json()):
+        titel = str(seite.get("title") or "").strip()
+        if not titel:
+            continue
+        props = seite.get("pageprops") if isinstance(seite.get("pageprops"), dict) else {}
+        ergebnis.append(
+            {
+                "titel": titel,
+                "beschreibung": str(seite.get("description") or "").strip(),
+                "begriffsklaerung": "disambiguation" in props,
+            }
+        )
+    return ergebnis
+
+
+def _wiki_ziel_titel(lang: str, begriff: str) -> tuple[str, str] | None:
+    """Der Artikel, der die Anfrage trägt — oder `None`, statt einen fremden zu zeigen."""
+    direkt = _wiki_titel_pruefen(lang, begriff)
+    if direkt is not None:
+        titel, begriffsklaerung, weiterleitung = direkt
+        if begriffsklaerung:
+            return None
+        if _wiki_relevanz(begriff, titel, "", weiterleitung) >= _WIKI_RELEVANZ_MIN:
+            return titel, weiterleitung
+    bester: tuple[float, str] | None = None
+    for kandidat in _wiki_kandidaten(lang, begriff):
+        if kandidat["begriffsklaerung"]:
+            continue
+        wert = _wiki_relevanz(begriff, kandidat["titel"], kandidat["beschreibung"])
+        if wert >= _WIKI_RELEVANZ_MIN and (bester is None or wert > bester[0]):
+            bester = (wert, kandidat["titel"])
+    return (bester[1], "") if bester else None
+
+
+def _infobox_ist_teilbegriff(begriff: str, titel: str) -> bool:
+    """Eine Infobox, deren Titel nur ein Teil der Anfrage ist, gehört zu etwas anderem."""
+    anfrage = set(_wiki_tokens(begriff))
+    eintrag = set(_wiki_tokens(titel))
+    return bool(eintrag) and eintrag < anfrage
+
+
+def _wissen_cache_holen(schluessel: tuple[str, str]) -> tuple[bool, dict | None]:
+    with _wissen_lock:
+        eintrag = _wissen_cache.get(schluessel)
+        if eintrag and eintrag[0] > time.monotonic():
+            return True, eintrag[1]
+    return False, None
+
+
+def _wissen_cache_legen(schluessel: tuple[str, str], wert: dict | None) -> None:
+    ttl = _WIKI_CACHE_TTL if wert is not None else _WIKI_CACHE_TTL_OHNE
+    with _wissen_lock:
+        _wissen_cache.pop(schluessel, None)
+        if len(_wissen_cache) >= _WIKI_CACHE_MAX:
+            _wissen_cache.pop(next(iter(_wissen_cache)), None)
+        _wissen_cache[schluessel] = (time.monotonic() + ttl, wert)
+
+
 def wikipedia_wissen(query: str, sprache: str = "de") -> dict | None:
-    """Holt eine kompakte Wikipedia-Zusammenfassung über das Backend, falls keine SearXNG-Infobox vorlag."""
+    """Holt eine kompakte Wikipedia-Zusammenfassung, aber nur bei belegter Zuordnung."""
     q_roh = (query or "").strip()
     if not q_roh or len(q_roh) > 200:
         return None
@@ -1345,43 +1715,21 @@ def wikipedia_wissen(query: str, sprache: str = "de") -> dict | None:
     if not q:
         return None
     lang = sprache if sprache in ("de", "en", "fr", "es", "it", "nl", "pl", "pt") else "de"
+    schluessel = (lang, _wiki_normalisiere(q))
+    getroffen, gemerkt = _wissen_cache_holen(schluessel)
+    if getroffen:
+        return gemerkt
     try:
-        # 1. Suche den besten Wikipedia-Artikeltitel (erst mit Kernbegriff, sonst mit Originalfrage)
-        page_title = ""
-        for suchbegriff in ([q, q_roh[:120]] if q != q_roh[:120] else [q]):
-            search_resp = _http_client().get(
-                f"https://{lang}.wikipedia.org/w/api.php",
-                params={
-                    "action": "query",
-                    "list": "search",
-                    "srsearch": suchbegriff,
-                    "srlimit": 1,
-                    "format": "json",
-                },
-                headers={
-                    "User-Agent": "MauntingSearch/1.0 (https://mauntingstudios.com; privacy-proxy)",
-                    "Accept": "application/json",
-                },
-            )
-            if search_resp.status_code != 200:
-                continue
-            s_data = search_resp.json()
-            search_hits = s_data.get("query", {}).get("search", []) if isinstance(s_data, dict) else []
-            if search_hits and isinstance(search_hits[0], dict):
-                page_title = str(search_hits[0].get("title") or "").strip()
-                if page_title:
-                    break
-        if not page_title:
+        ziel = _wiki_ziel_titel(lang, q)
+        if ziel is None:
+            _wissen_cache_legen(schluessel, None)
             return None
+        page_title, weiterleitung = ziel
 
-        # 2. Lade REST-Summary zu diesem Titel
         encoded_title = urllib.parse.quote(page_title.replace(" ", "_"), safe="")
         sum_resp = _http_client().get(
             f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{encoded_title}",
-            headers={
-                "User-Agent": "MauntingSearch/1.0 (https://mauntingstudios.com; privacy-proxy)",
-                "Accept": "application/json",
-            },
+            headers=_WIKI_HEADERS,
         )
         if sum_resp.status_code != 200:
             return None
@@ -1392,6 +1740,13 @@ def wikipedia_wissen(query: str, sprache: str = "de") -> dict | None:
         untertitel = redact_sensitive_text(str(w.get("description") or "")).strip()[:200]
         inhalt = redact_sensitive_text(str(w.get("extract") or "")).strip()[:1200]
         if not inhalt:
+            return None
+        # Die Zusammenfassung kann einen anderen Artikel nennen als die Suche.
+        if str(w.get("type") or "") == "disambiguation":
+            _wissen_cache_legen(schluessel, None)
+            return None
+        if _wiki_relevanz(q, titel, untertitel, weiterleitung) < _WIKI_RELEVANZ_MIN:
+            _wissen_cache_legen(schluessel, None)
             return None
         page_url = (
             str(w.get("content_urls", {}).get("desktop", {}).get("page") or "")
@@ -1406,19 +1761,19 @@ def wikipedia_wissen(query: str, sprache: str = "de") -> dict | None:
         if sicheres_bild:
             _merke_bild_url(sicheres_bild)
         wikitext = _wiki_wikitext(lang, page_title)
-        attribute = []
-        if untertitel:
-            label = "Beschreibung" if lang == "de" else "Description"
-            attribute.append({"label": label, "value": untertitel})
-        attribute.extend(_wiki_infobox_felder(wikitext))
-        return {
+        attribute = _wiki_infobox_felder(wikitext)
+        verwandte = _wiki_verwandte_themen(wikitext, titel)
+        ergebnis = {
             "titel": titel,
             "untertitel": untertitel,
             "inhalt": inhalt,
             **({"bild": sicheres_bild} if sicheres_bild else {}),
             "attribute": attribute,
             "urls": [{"title": "Wikipedia", "url": page_url}],
+            **({"verwandte": verwandte} if verwandte else {}),
         }
+        _wissen_cache_legen(schluessel, ergebnis)
+        return ergebnis
     except Exception as exc:
         logger.debug("Wikipedia-Wissensabruf fehlgeschlagen: %s", type(exc).__name__)
         return None
@@ -1452,11 +1807,77 @@ def searxng_autocomplete(query: str, sprache: str = "de", s_url: str | None = No
     return []
 
 
+def _bildmass(wert: object) -> int | None:
+    """Eine Pixelangabe, die als Platzhalter taugt; alles andere fällt weg."""
+    if isinstance(wert, bool):
+        return None
+    try:
+        zahl = int(wert)
+    except (TypeError, ValueError):
+        return None
+    return zahl if 1 <= zahl <= 20000 else None
+
+
+def _bild_felder_brave(entry: dict) -> dict:
+    """Vorschau, Original, Auflösung und Quelle aus einem Brave-Treffer."""
+    felder: dict = {}
+    thumb = entry.get("thumbnail")
+    props = entry.get("properties")
+    vorschau = ""
+    breite = hoehe = None
+    if isinstance(thumb, dict):
+        vorschau = str(thumb.get("src") or "").strip()
+        breite = _bildmass(thumb.get("width"))
+        hoehe = _bildmass(thumb.get("height"))
+    elif isinstance(thumb, str):
+        vorschau = thumb.strip()
+    original = str(props.get("url") or "").strip() if isinstance(props, dict) else ""
+    if not vorschau:
+        vorschau = original
+    if vorschau and len(vorschau) <= MAX_URL_CHARS and _is_safe_public_url(vorschau):
+        felder["bild"] = vorschau
+        _merke_bild_url(vorschau)
+    if original and len(original) <= MAX_URL_CHARS and _is_safe_public_url(original):
+        felder["bildOriginal"] = original
+    if breite and hoehe:
+        felder["bildBreite"] = breite
+        felder["bildHoehe"] = hoehe
+    meta = entry.get("meta_url")
+    if isinstance(meta, dict):
+        host = str(meta.get("hostname") or "").strip()
+        if host:
+            felder["quelle"] = host[:MAX_QUERY_CHARS]
+    return felder
+
+
+def _bild_felder_searxng(entry: dict) -> dict:
+    """Dieselben Felder aus einem SearXNG-Bildtreffer."""
+    felder: dict = {}
+    vorschau = str(entry.get("thumbnail") or entry.get("img_src") or "").strip()
+    original = str(entry.get("img_src") or "").strip()
+    if vorschau and len(vorschau) <= MAX_URL_CHARS and _is_safe_public_url(vorschau):
+        felder["bild"] = vorschau
+        _merke_bild_url(vorschau)
+    if original and len(original) <= MAX_URL_CHARS and _is_safe_public_url(original):
+        felder["bildOriginal"] = original
+    treffer = re.match(r"^(\d{1,5})\s*[x×]\s*(\d{1,5})$", str(entry.get("resolution") or "").strip())
+    if treffer:
+        breite, hoehe = int(treffer.group(1)), int(treffer.group(2))
+        if _bildmass(breite) and _bildmass(hoehe):
+            felder["bildBreite"] = breite
+            felder["bildHoehe"] = hoehe
+    quelle = str(entry.get("source") or "").strip()
+    if quelle:
+        felder["quelle"] = quelle[:MAX_QUERY_CHARS]
+    return felder
+
+
 def _brave_kategorie_treffer(
     query: str,
     *,
     key: str,
     limit: int = 10,
+    seite: int = 1,
     sicher: bool = False,
     sprache: str | None = None,
     kategorie: str | None = None,
@@ -1489,6 +1910,8 @@ def _brave_kategorie_treffer(
         params = {"q": query, "count": max(1, min(limit, 20))}
         if sicher:
             params["safesearch"] = "strict"
+    if seite > 1:
+        params["offset"] = min(seite - 1, 9)
     if sprache and endpunkt != _ENDPOINT:
         params["search_lang"] = sprache[:2].lower()
 
@@ -1530,19 +1953,22 @@ def _brave_kategorie_treffer(
         )[:MAX_SNIPPET_CHARS]
         hit: dict = {"title": title, "url": url, "snippet": snippet}
 
-        # Vorschaubild extrahieren und im Medien-Proxy freigeben
-        img_url = ""
-        props = entry.get("properties")
-        thumb = entry.get("thumbnail")
-        if isinstance(props, dict) and props.get("url"):
-            img_url = str(props.get("url") or "").strip()
-        elif isinstance(thumb, dict) and thumb.get("src"):
-            img_url = str(thumb.get("src") or "").strip()
-        elif isinstance(entry.get("thumbnail"), str):
-            img_url = str(entry.get("thumbnail") or "").strip()
-        if img_url and len(img_url) <= MAX_URL_CHARS and _is_safe_public_url(img_url):
-            hit["bild"] = img_url
-            _merke_bild_url(img_url)
+        # Vorschaubild und Original getrennt führen; geladen wird nur die Vorschau.
+        if kat == "images":
+            hit.update(_bild_felder_brave(entry))
+        else:
+            img_url = ""
+            props = entry.get("properties")
+            thumb = entry.get("thumbnail")
+            if isinstance(props, dict) and props.get("url"):
+                img_url = str(props.get("url") or "").strip()
+            elif isinstance(thumb, dict) and thumb.get("src"):
+                img_url = str(thumb.get("src") or "").strip()
+            elif isinstance(entry.get("thumbnail"), str):
+                img_url = str(entry.get("thumbnail") or "").strip()
+            if img_url and len(img_url) <= MAX_URL_CHARS and _is_safe_public_url(img_url):
+                hit["bild"] = img_url
+                _merke_bild_url(img_url)
 
         pub = _zeitpunkt(entry.get("page_age") or entry.get("age"))
         if pub:
@@ -1587,6 +2013,8 @@ def _mische_treffer(
     Quelle verhungert. Brave erhält dabei hohe Priorität für erstklassige Trefferqualität.
     Finden mehrere Quellen dieselbe URL, wird ein fehlendes Vorschaubild,
     Snippet oder Datum ergänzt, ohne dass ein doppelter Eintrag entsteht.
+    Eine Seite, die beide Quellen nennen, rückt danach nach vorn: das ist ein
+    echtes Signal, keine erfundene Bewertung. Alles andere behält die Reihenfolge.
     """
     if (
         isinstance(primaer_oder_listen, list)
@@ -1602,6 +2030,7 @@ def _mische_treffer(
 
     nach_norm_url: dict[str, dict] = {}
     reihenfolge: list[str] = []
+    gesehen_in: dict[str, set[int]] = {}
     pos = [0] * len(listen_kopien)
 
     while len(reihenfolge) < limit:
@@ -1618,6 +2047,7 @@ def _mische_treffer(
                 if not norm_u:
                     continue
                 fortschritt = True
+                gesehen_in.setdefault(norm_u, set()).add(idx)
                 if norm_u not in nach_norm_url:
                     nach_norm_url[norm_u] = dict(eintrag)
                     reihenfolge.append(norm_u)
@@ -1632,13 +2062,21 @@ def _mische_treffer(
                         vorhanden["published"] = eintrag["published"]
                     if not vorhanden.get("title") and eintrag.get("title"):
                         vorhanden["title"] = eintrag["title"]
+                    for feld in ("bildOriginal", "bildBreite", "bildHoehe", "quelle"):
+                        if not vorhanden.get(feld) and eintrag.get(feld):
+                            vorhanden[feld] = eintrag[feld]
         if not fortschritt:
             break
 
-    return [nach_norm_url[norm_u] for norm_u in reihenfolge[:limit]]
+    # Eine Seite, die zwei Quellen unabhängig nennen, trägt mehr als eine, die
+    # nur eine nennt. Das ist ein echtes Signal und keine erfundene Bewertung.
+    auswahl = reihenfolge[:limit]
+    mehrfach = [u for u in auswahl if len(gesehen_in.get(u, ())) > 1]
+    einfach = [u for u in auswahl if len(gesehen_in.get(u, ())) <= 1]
+    return [nach_norm_url[norm_u] for norm_u in (mehrfach + einfach)[:limit]]
 
 
-def searxng_ergebnis(
+def _searxng_ergebnis_berechnen(
     query: str,
     *,
     limit: int = MAX_RESULTS,
@@ -1706,10 +2144,13 @@ def searxng_ergebnis(
                         "url": u,
                         "snippet": redact_sensitive_text(str(r.get("content") or ""))[:MAX_SNIPPET_CHARS],
                     }
-                    img = str(r.get("thumbnail") or r.get("img_src") or "")
-                    if img and len(img) <= MAX_URL_CHARS and _is_safe_public_url(img):
-                        hit["bild"] = img
-                        _merke_bild_url(img)
+                    if kategorie == "images":
+                        hit.update(_bild_felder_searxng(r))
+                    else:
+                        img = str(r.get("thumbnail") or r.get("img_src") or "")
+                        if img and len(img) <= MAX_URL_CHARS and _is_safe_public_url(img):
+                            hit["bild"] = img
+                            _merke_bild_url(img)
                     published = _zeitpunkt(r.get("publishedDate"))
                     if published:
                         hit["published"] = published
@@ -1726,6 +2167,8 @@ def searxng_ergebnis(
                 else []
             )
             infobox = _parse_infobox(data.get("infoboxes") if isinstance(data, dict) else None)
+            if infobox and _infobox_ist_teilbegriff(query, str(infobox.get("titel") or "")):
+                infobox = None
             antworten = _parse_answers(data.get("answers") if isinstance(data, dict) else None)
         except WebSearchUnavailable as exc:
             searxng_fehler = exc
@@ -1735,13 +2178,14 @@ def searxng_ergebnis(
 
     def _abfrage_brave() -> None:
         nonlocal brave_hits, brave_fehler
-        if not (brave_key and seite == 1):
+        if not (brave_key and 1 <= seite <= 10):
             return
         try:
             brave_hits = _brave_kategorie_treffer(
                 query,
                 key=brave_key,
                 limit=limit,
+                seite=seite,
                 sicher=sicher,
                 sprache=sprache,
                 kategorie=kategorie,
@@ -1754,7 +2198,7 @@ def searxng_ergebnis(
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         f_s = executor.submit(_abfrage_searxng) if target_url else None
-        f_b = executor.submit(_abfrage_brave) if (brave_key and seite == 1) else None
+        f_b = executor.submit(_abfrage_brave) if (brave_key and 1 <= seite <= 10) else None
         for f in (f_s, f_b):
             if f:
                 try:
@@ -1784,6 +2228,55 @@ def searxng_ergebnis(
     if antworten:
         ergebnis_dict["antworten"] = antworten
     return ergebnis_dict
+
+
+def searxng_ergebnis(
+    query: str,
+    *,
+    limit: int = MAX_RESULTS,
+    seite: int = 1,
+    sicher: bool = False,
+    sprache: str | None = None,
+    kategorie: str | None = None,
+    zeitraum: str | None = None,
+    s_url: str | None = None,
+    cache_scope: str | None = None,
+) -> dict:
+    """Treffer, Vorschläge, Infobox und Antworten; optional kurz zwischengespeichert.
+
+    Der Browser übergibt `cache_scope="browser"`. Die KI und die Sprachsuche
+    rufen ohne Bereich auf und bleiben ungecacht, damit eine Nachfrage nicht die
+    Antwort einer früheren Anfrage sieht.
+    """
+    def _lauf() -> dict:
+        return _searxng_ergebnis_berechnen(
+            query,
+            limit=limit,
+            seite=seite,
+            sicher=sicher,
+            sprache=sprache,
+            kategorie=kategorie,
+            zeitraum=zeitraum,
+            s_url=s_url,
+        )
+
+    if not cache_scope:
+        return _lauf()
+    schluessel = (
+        cache_scope,
+        re.sub(r"\s+", " ", (query or "").strip()).casefold(),
+        seite,
+        limit,
+        kategorie or "general",
+        sprache or "",
+        bool(sicher),
+        zeitraum or "",
+    )
+    ttl = _BROWSER_CACHE_TTL.get(kategorie or "general", _BROWSER_CACHE_TTL["general"])
+    gefunden, wert = _cache_abrufen(schluessel, ttl, _lauf)
+    if gefunden and isinstance(wert, dict):
+        return wert
+    return _lauf()
 
 
 def searxng_treffer(
@@ -1893,105 +2386,88 @@ def search(query: str, count: int = DEFAULT_SEARCH_COUNT, *, cache_scope: str | 
         raise WebSearchUnavailable("AI_WEB_SEARCH_NOT_CONFIGURED")
 
     cache_key = (cache_scope, safe_query.casefold(), limit) if cache_scope else None
-    owner = False
-    pending: threading.Event | None = None
+
+    def _lauf() -> list[dict]:
+        searxng_res: list[dict] = []
+        brave_res: list[dict] = []
+        brave_err: WebSearchUnavailable | None = None
+
+        def _search_searxng_thread() -> None:
+            nonlocal searxng_res
+            if s_url:
+                searxng_res = _search_searxng(safe_query, limit, s_url=s_url)
+
+        def _search_brave_thread() -> None:
+            nonlocal brave_res, brave_err
+            if not (key and _apis_aktiv_fuer_instanz(s_url)):
+                return
+            try:
+                with measure("web_search", "provider_request"):
+                    response = _http_client().get(
+                        _ENDPOINT,
+                        params={"q": safe_query, "count": limit},
+                        headers={
+                            "Accept": "application/json",
+                            "X-Subscription-Token": key,
+                        },
+                    )
+                if response.status_code in {401, 403}:
+                    logger.warning("Websuche Authentifizierung fehlgeschlagen status=%s", response.status_code)
+                    brave_err = WebSearchUnavailable("AI_WEB_SEARCH_AUTH_FAILED")
+                    return
+                if response.status_code == 429:
+                    logger.warning("Websuche Rate-Limit erreicht (429)")
+                    brave_err = WebSearchUnavailable("AI_WEB_SEARCH_RATE_LIMITED")
+                    return
+                if response.status_code == 200:
+                    payload = response.json()
+                    web = payload.get("web") if isinstance(payload, dict) else None
+                    entries = web.get("results") if isinstance(web, dict) else None
+                    if isinstance(entries, list):
+                        for entry in entries[:limit]:
+                            if not isinstance(entry, dict):
+                                continue
+                            url = str(entry.get("url") or "")[:MAX_URL_CHARS]
+                            if not url.startswith(("http://", "https://")):
+                                continue
+                            brave_res.append({
+                                "title": redact_sensitive_text(str(entry.get("title") or ""))[:MAX_TITLE_CHARS],
+                                "url": url,
+                                "snippet": redact_sensitive_text(str(entry.get("description") or ""))[:MAX_SNIPPET_CHARS],
+                            })
+                else:
+                    logger.warning("Websuche abgelehnt status=%s text=%s", response.status_code, response.text[:200])
+                    brave_err = WebSearchUnavailable("AI_WEB_SEARCH_REJECTED")
+            except WebSearchUnavailable as exc:
+                brave_err = exc
+            except Exception as exc:
+                logger.info("Brave API nicht erreichbar error=%s", type(exc).__name__)
+                brave_err = WebSearchUnavailable("AI_WEB_SEARCH_UNAVAILABLE")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            f_s = executor.submit(_search_searxng_thread) if s_url else None
+            f_b = executor.submit(_search_brave_thread) if (key and _apis_aktiv_fuer_instanz(s_url)) else None
+            for f in (f_s, f_b):
+                if f:
+                    f.result()
+
+        if not searxng_res and not brave_res:
+            if not key and s_url:
+                searxng_res = _search_duckduckgo(safe_query, limit)
+            if not searxng_res and brave_err is not None:
+                raise brave_err
+
+        quellen: list[list[dict]] = []
+        if brave_res:
+            quellen.append(brave_res)
+        if searxng_res:
+            quellen.append(searxng_res)
+
+        return _mische_treffer(quellen, limit=limit) if quellen else []
+
     if cache_key:
-        with _cache_lock:
-            cached = _cache.get(cache_key)
-            if cached and cached[0] > time.monotonic():
-                return cached[1]
-            pending = _inflight.get(cache_key)
-            if pending is None:
-                pending = threading.Event()
-                _inflight[cache_key] = pending
-                owner = True
-        if not owner:
-            pending.wait(_TIMEOUT + 0.5)
-            with _cache_lock:
-                cached = _cache.get(cache_key)
-                return cached[1] if cached and cached[0] > time.monotonic() else []
-
-    searxng_res: list[dict] = []
-    brave_res: list[dict] = []
-    brave_err: WebSearchUnavailable | None = None
-
-    def _search_searxng_thread() -> None:
-        nonlocal searxng_res
-        if s_url:
-            searxng_res = _search_searxng(safe_query, limit, s_url=s_url)
-
-    def _search_brave_thread() -> None:
-        nonlocal brave_res, brave_err
-        if not (key and _apis_aktiv_fuer_instanz(s_url)):
-            return
-        try:
-            with measure("web_search", "provider_request"):
-                response = _http_client().get(
-                    _ENDPOINT,
-                    params={"q": safe_query, "count": limit},
-                    headers={
-                        "Accept": "application/json",
-                        "X-Subscription-Token": key,
-                    },
-                )
-            if response.status_code in {401, 403}:
-                logger.warning("Websuche Authentifizierung fehlgeschlagen status=%s", response.status_code)
-                brave_err = WebSearchUnavailable("AI_WEB_SEARCH_AUTH_FAILED")
-                return
-            if response.status_code == 429:
-                logger.warning("Websuche Rate-Limit erreicht (429)")
-                brave_err = WebSearchUnavailable("AI_WEB_SEARCH_RATE_LIMITED")
-                return
-            if response.status_code == 200:
-                payload = response.json()
-                web = payload.get("web") if isinstance(payload, dict) else None
-                entries = web.get("results") if isinstance(web, dict) else None
-                if isinstance(entries, list):
-                    for entry in entries[:limit]:
-                        if not isinstance(entry, dict):
-                            continue
-                        url = str(entry.get("url") or "")[:MAX_URL_CHARS]
-                        if not url.startswith(("http://", "https://")):
-                            continue
-                        brave_res.append({
-                            "title": redact_sensitive_text(str(entry.get("title") or ""))[:MAX_TITLE_CHARS],
-                            "url": url,
-                            "snippet": redact_sensitive_text(str(entry.get("description") or ""))[:MAX_SNIPPET_CHARS],
-                        })
-            else:
-                logger.warning("Websuche abgelehnt status=%s text=%s", response.status_code, response.text[:200])
-                brave_err = WebSearchUnavailable("AI_WEB_SEARCH_REJECTED")
-        except WebSearchUnavailable as exc:
-            brave_err = exc
-        except Exception as exc:
-            logger.info("Brave API nicht erreichbar error=%s", type(exc).__name__)
-            brave_err = WebSearchUnavailable("AI_WEB_SEARCH_UNAVAILABLE")
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        f_s = executor.submit(_search_searxng_thread) if s_url else None
-        f_b = executor.submit(_search_brave_thread) if (key and _apis_aktiv_fuer_instanz(s_url)) else None
-        for f in (f_s, f_b):
-            if f:
-                f.result()
-
-    if not searxng_res and not brave_res:
-        if not key and s_url:
-            searxng_res = _search_duckduckgo(safe_query, limit)
-        if not searxng_res and brave_err is not None:
-            _finish_inflight(cache_key, pending)
-            raise brave_err
-
-    quellen: list[list[dict]] = []
-    if brave_res:
-        quellen.append(brave_res)
-    if searxng_res:
-        quellen.append(searxng_res)
-
-    results = _mische_treffer(quellen, limit=limit) if quellen else []
-
-    if cache_key and pending:
-        with _cache_lock:
-            _cache[cache_key] = (time.monotonic() + _CACHE_TTL_SECONDS, results)
-            _inflight.pop(cache_key, None)
-            pending.set()
-    return results
+        gefunden, wert = _cache_abrufen(cache_key, _CACHE_TTL_SECONDS, _lauf)
+        if gefunden and isinstance(wert, list):
+            return wert
+        return _lauf()
+    return _lauf()

@@ -178,14 +178,16 @@ def test_wissen_holt_zusammenfassung_und_eckdaten(monkeypatch: pytest.MonkeyPatc
     class Client:
         def get(self, url, params=None, headers=None):
             gesehen[url] = {"params": dict(params or {}), "headers": dict(headers or {})}
-            if url.endswith("/w/api.php") and params.get("action") == "query" and "list" in params:
-                return Antwort({"query": {"search": [{"title": "SpaceX"}]}})
-            if url.endswith("/w/api.php"):
+            if url.endswith("/w/api.php") and params.get("prop") == "revisions":
                 return Antwort({"query": {"pages": {"1": {"revisions": [{"slots": {"main": {"*":
                     "{{Infobox Unternehmen\n| Gruendung = 14. März 2002\n"
                     "| Sitz = Starbase (Boca Chica), Texas\n"
                     "| Umsatz = {{USD|4.6e9}}\n}}\nText"
                 }}}]}}}})
+            if url.endswith("/w/api.php") and params.get("titles"):
+                return Antwort({"query": {"pages": [{"title": "SpaceX"}]}})
+            if url.endswith("/w/api.php") and params.get("generator"):
+                return Antwort({"query": {"pages": []}})
             if "/page/summary/" in url:
                 return Antwort({
                     "title": "SpaceX",

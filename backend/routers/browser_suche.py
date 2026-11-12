@@ -118,6 +118,7 @@ def suchen(
             sicher=req.sicher,
             sprache=req.sprache,
             kategorie=req.kategorie,
+            cache_scope="browser",
         )
     except WebSearchUnavailable as exc:
         if exc.code == "AI_WEB_SEARCH_NOT_CONFIGURED":
@@ -131,6 +132,11 @@ def suchen(
                 "inhalt": t["snippet"],
                 **({"bild": t["bild"]} if "bild" in t else {}),
                 **({"published": t["published"]} if "published" in t else {}),
+                **{
+                    feld: t[feld]
+                    for feld in ("bildOriginal", "bildBreite", "bildHoehe", "quelle")
+                    if feld in t
+                },
             }
             for t in ergebnis.get("treffer", [])
         ],

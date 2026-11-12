@@ -67,6 +67,12 @@ NACHSUCHE_MAX_RUNDEN = 2
 UMSCHREIBEN_MAX_ANFRAGEN = 3
 #: So viele frische Trefferseiten werden höchstens geöffnet, wenn Snippets dünn sind.
 SEITEN_MAX = 2
+#: Der KI-Kontext ist begrenzt: ganze Treffer fallen hinten weg, nie mitten im Satz.
+KONTEXT_MAX_TREFFER = 15
+KONTEXT_SNIPPET = 600
+KONTEXT_VOLLTEXT = 2500
+KONTEXT_VOLLTEXT_DEEP = 15000
+KONTEXT_MAX_ZEICHEN = 18000
 
 _MEHRFACH_FRAGE_MUSTER = re.compile(
     r"\b(?:und|sowie|außerdem|ausserdem)\s+(?:wie|was|wofür|wofuer|warum|wann|wer|wo|welche|welcher|welches)\b|\?.+\?",
@@ -155,23 +161,61 @@ def suchzusammenfassung_konfig(db: Session, user: User) -> dict[str, Any]:
     }
 
 
-def baue_suchkontext(treffer: list[dict[str, Any]]) -> str:
+def _treffer_kosten(t: dict[str, Any]) -> int:
+    """Ungefährer Platz, den ein Treffer im Kontext belegt."""
+    inhalt = str(t.get("inhalt") or "")
+    volltext = str(t.get("volltext") or "")
+    kosten = min(len(inhalt), KONTEXT_SNIPPET)
+    if volltext:
+        kosten += min(len(volltext), KONTEXT_VOLLTEXT_DEEP if t.get("deep") else KONTEXT_VOLLTEXT)
+    return kosten + 120
+
+
+def waehle_suchkontext(
+    treffer: list[dict[str, Any]],
+    budget: int = KONTEXT_MAX_ZEICHEN,
+) -> list[dict[str, Any]]:
+    """Nur so viele Treffer, wie ins Budget passen. Reihenfolge und [n] bleiben.
+
+    Deep-Dive-Quellen hat der Nutzer ausdrücklich verlangt; sie bleiben drin.
+    Von den übrigen fällt der hintere Rest weg, sobald das Budget erreicht ist.
+    """
+    kandidaten = treffer[:KONTEXT_MAX_TREFFER]
+    gewaehlt: set[int] = set()
+    verbraucht = 0
+    for t in kandidaten:
+        if t.get("deep"):
+            gewaehlt.add(id(t))
+            verbraucht += _treffer_kosten(t)
+    for t in kandidaten:
+        if id(t) in gewaehlt:
+            continue
+        kosten = _treffer_kosten(t)
+        if verbraucht + kosten > budget:
+            break
+        gewaehlt.add(id(t))
+        verbraucht += kosten
+    return [t for t in kandidaten if id(t) in gewaehlt]
+
+
+def baue_suchkontext(treffer: list[dict[str, Any]], *, budget: int = KONTEXT_MAX_ZEICHEN) -> str:
     """Formatiert die Suchergebnisse in eine durchnummerierte Referenzliste."""
-    if not treffer:
+    auswahl = waehle_suchkontext(treffer, budget)
+    if not auswahl:
         return "Keine Suchergebnisse verfügbar."
 
     zeilen: list[str] = ["Suchergebnisse:"]
-    for t in treffer:
+    for t in auswahl:
         idx = t.get("index", 1)
         titel = (t.get("titel") or "").strip()
         url = (t.get("url") or "").strip()
         inhalt = (t.get("inhalt") or "").strip()
         volltext = (t.get("volltext") or "").strip()
         # Kürze den Auszug pro Treffer sinnvoll, um Token-Budget sparsam zu halten
-        if len(inhalt) > 600:
-            inhalt = inhalt[:597] + "..."
+        if len(inhalt) > KONTEXT_SNIPPET:
+            inhalt = inhalt[: KONTEXT_SNIPPET - 3] + "..."
         if volltext:
-            max_volltext = 15000 if t.get("deep") else 2500
+            max_volltext = KONTEXT_VOLLTEXT_DEEP if t.get("deep") else KONTEXT_VOLLTEXT
             if len(volltext) > max_volltext:
                 volltext = volltext[:max_volltext - 3] + "..."
             label = "Volltext-Auszug (Deep-Dive)" if t.get("deep") else "Volltext-Auszug"
@@ -359,11 +403,13 @@ def baue_nachrichten(
     if frische_ab is None or frische_ab <= 0 or frische_ab >= len(treffer):
         kontext = baue_suchkontext(treffer)
     else:
+        # Beide Abschnitte teilen sich ein Budget; frische Treffer behalten ihren Anteil.
+        budget_alt = max(1, int(KONTEXT_MAX_ZEICHEN * frische_ab / len(treffer)))
         kontext = (
             "Treffer zur Ausgangssuche:\n"
-            + baue_suchkontext(treffer[:frische_ab])
+            + baue_suchkontext(treffer[:frische_ab], budget=budget_alt)
             + "\n\nFrische Treffer zur Nachfrage:\n"
-            + baue_suchkontext(treffer[frische_ab:])
+            + baue_suchkontext(treffer[frische_ab:], budget=max(1, KONTEXT_MAX_ZEICHEN - budget_alt))
         )
     erster_nutzer_text = f"{kontext}\n\nNutzeranfrage:\n{q}"
 
@@ -514,9 +560,9 @@ async def _stream_mit_sitzung(
                 if frische_eintraege:
                     yield f"data: {json.dumps({'type': 'neue_treffer', 'treffer': frische_eintraege})}\n\n"
 
-            # Top-Webseiten im Volltext einlesen (bis zu 8 Seiten parallel im Thread-Pool)
+            # Top-Webseiten im Volltext einlesen (bis zu 5 Seiten parallel im Thread-Pool)
             seiten_kandidaten = [
-                t for t in gesamt_treffer[:8]
+                t for t in gesamt_treffer[:5]
                 if t.get("url") and not t.get("volltext")
             ]
             if seiten_kandidaten:
