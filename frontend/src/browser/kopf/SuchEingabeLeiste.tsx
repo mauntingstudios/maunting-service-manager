@@ -157,17 +157,17 @@ export function SuchEingabeLeiste({
     >
       <div
         ref={huelleRef}
-        className={`relative flex w-full items-start border transition-all duration-200 focus-within:border-primary/65 focus-within:bg-surface-container/95 focus-within:ring-2 focus-within:ring-primary/20 overflow-hidden ${shellKlassen} ${
+        className={`relative flex w-full items-start border transition-[border-color,background-color,box-shadow] duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10 overflow-hidden ${shellKlassen} ${
           istMehrzeilig ? 'rounded-2xl' : 'rounded-full'
         }`}
       >
         <div
-          className={`absolute left-2 z-10 flex items-center gap-1 ${
-            kompakt ? 'top-1.5 [@media(pointer:coarse)]:top-2' : 'top-2 [@media(pointer:coarse)]:top-2.5'
+          className={`shrink-0 pl-2 pr-2 flex items-center gap-1.5 ${
+            kompakt ? 'mt-1.5 [@media(pointer:coarse)]:mt-2' : 'mt-2 [@media(pointer:coarse)]:mt-2.5'
           }`}
         >
           <SuchwahlKnopf kompakt={kompakt} />
-          <span className="h-4 w-px shrink-0 bg-outline-variant/40" aria-hidden="true" />
+          <span className="h-3.5 w-px shrink-0 bg-outline-variant/45" aria-hidden="true" />
         </div>
         <textarea
           ref={feldRef}
@@ -210,11 +210,11 @@ export function SuchEingabeLeiste({
           aria-controls={zeigeDropdown ? listenId : undefined}
           aria-activedescendant={zeigeDropdown && markiert >= 0 ? `${listenId}-${markiert}` : undefined}
           placeholder={t('browser.adresse.platzhalter', { suchmaschine: suchName(suche, t) })}
-          className={`w-full resize-none bg-transparent text-body-sm sm:text-body-md text-on-surface placeholder:text-on-surface-variant/75 outline-none max-h-48 overflow-y-auto leading-6 msm-suchleiste-rollbalken transition-[padding] duration-150 ${
+          className={`min-w-0 flex-1 resize-none bg-transparent text-body-sm sm:text-body-md text-on-surface placeholder:text-on-surface-variant/75 outline-none max-h-48 overflow-y-auto leading-6 msm-suchleiste-rollbalken transition-[padding] duration-150 ${
             kompakt
-              ? 'pl-[3.5rem] py-2 min-h-[2.5rem] [@media(pointer:coarse)]:min-h-[2.75rem] [@media(pointer:coarse)]:py-2.5'
-              : 'pl-[4.25rem] py-3 min-h-[3rem] [@media(pointer:coarse)]:min-h-[3.25rem] [@media(pointer:coarse)]:py-3.5'
-          } ${text.length > 0 ? 'pr-[7.5rem] [@media(pointer:coarse)]:pr-[9rem]' : 'pr-20 [@media(pointer:coarse)]:pr-24'}`}
+              ? 'py-2 min-h-[2.5rem] [@media(pointer:coarse)]:min-h-[2.75rem] [@media(pointer:coarse)]:py-2.5'
+              : 'py-3 min-h-[3rem] [@media(pointer:coarse)]:min-h-[3.25rem] [@media(pointer:coarse)]:py-3.5'
+          }`}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="none"
@@ -224,8 +224,8 @@ export function SuchEingabeLeiste({
           style={{ fieldSizing: 'content' }}
         />
         <div
-          className={`absolute right-1.5 z-10 flex items-center gap-1 ${
-            kompakt ? 'top-1 [@media(pointer:coarse)]:top-1.5' : 'top-2 [@media(pointer:coarse)]:top-2.5'
+          className={`shrink-0 pl-1.5 pr-1.5 flex items-center gap-1 ${
+            kompakt ? 'mt-1 [@media(pointer:coarse)]:mt-1.5' : 'mt-2 [@media(pointer:coarse)]:mt-2.5'
           }`}
         >
           {text.length > 0 && (

@@ -520,5 +520,257 @@ describe('SuchzusammenfassungKachel', () => {
     expect(key2).toBe(false)
     expect(apiStream).toHaveBeenCalledTimes(1)
   })
+
+  it('zeigt Lese-Bestätigung (An Singra übergeben -> Von Singra gelesen) für Folgefragen', async () => {
+    // 1. Initiale Zusammenfassung
+    apiStream.mockResolvedValueOnce({
+      ok: true,
+      body: {
+        getReader: () => {
+          let gesendet = false
+          return {
+            read: () => {
+              if (gesendet) return Promise.resolve({ done: true, value: undefined })
+              gesendet = true
+              return Promise.resolve({
+                done: false,
+                value: new TextEncoder().encode(
+                  'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Initiale Übersicht"}\n\ndata: {"type": "done"}\n\n',
+                ),
+              })
+            },
+          }
+        },
+      },
+    })
+
+    // 2. Folgefrage mit kontrollierter Stream-Auslieferung
+    let gebeStartFrei: (() => void) | null = null
+    apiStream.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          gebeStartFrei = () =>
+            resolve({
+              ok: true,
+              body: {
+                getReader: () => {
+                  let gesendet = false
+                  return {
+                    read: () => {
+                      if (gesendet) return Promise.resolve({ done: true, value: undefined })
+                      gesendet = true
+                      return Promise.resolve({
+                        done: false,
+                        value: new TextEncoder().encode(
+                          'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Folgeantwort"}\n\ndata: {"type": "done"}\n\n',
+                        ),
+                      })
+                    },
+                  }
+                },
+              },
+            })
+        }),
+    )
+
+    render(<SuchzusammenfassungKachel begriff="Ausgangsfrage" treffer={TREFFER} />)
+    expect(await screen.findByText('Initiale Übersicht')).toBeInTheDocument()
+
+    const eingabe = screen.getByRole('textbox')
+    fireEvent.change(eingabe, { target: { value: 'Wie genau?' } })
+    fireEvent.click(screen.getByRole('button', { name: /Senden|Send/i }))
+
+    // Ausgangsfrage/Übersicht wird im Verlauf nicht doppelt gerendert
+    expect(screen.getAllByText('Initiale Übersicht')).toHaveLength(1)
+    // Zunächst „An Singra übergeben“ (zwei graue Haken)
+    expect(await screen.findByRole('img', { name: 'An Singra übergeben' })).toBeInTheDocument()
+
+    // Sobald SSE antwortet -> „Von Singra gelesen“ (zwei blaue Haken)
+    gebeStartFrei?.()
+    expect(await screen.findByRole('img', { name: 'Von Singra gelesen' })).toBeInTheDocument()
+    expect(await screen.findByText('Folgeantwort')).toBeInTheDocument()
+  })
+
+  it('nutzt die KI-Chat-Eingabelogik (Shift+Enter, Stopp, Warteschlange & Alt+Enter)', async () => {
+    // 1. Initiale Zusammenfassung
+    apiStream.mockResolvedValueOnce({
+      ok: true,
+      body: {
+        getReader: () => {
+          let gesendet = false
+          return {
+            read: () => {
+              if (gesendet) return Promise.resolve({ done: true, value: undefined })
+              gesendet = true
+              return Promise.resolve({
+                done: false,
+                value: new TextEncoder().encode(
+                  'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Startantwort"}\n\ndata: {"type": "done"}\n\n',
+                ),
+              })
+            },
+          }
+        },
+      },
+    })
+
+    // 2. Erste Folgefrage bleibt offen bis wir sie beenden
+    let schliesseErste: (() => void) | null = null
+    apiStream.mockImplementationOnce(() => ({
+      ok: true,
+      body: {
+        getReader: () => {
+          let phase = 0
+          return {
+            read: () => {
+              phase += 1
+              if (phase === 1) {
+                return Promise.resolve({
+                  done: false,
+                  value: new TextEncoder().encode(
+                    'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Antwort eins"}\n\n',
+                  ),
+                })
+              }
+              if (phase === 2) {
+                return new Promise((resolve) => {
+                  schliesseErste = () =>
+                    resolve({
+                      done: false,
+                      value: new TextEncoder().encode('data: {"type": "done"}\n\n'),
+                    })
+                })
+              }
+              return Promise.resolve({ done: true, value: undefined })
+            },
+            cancel: vi.fn(),
+          }
+        },
+      },
+    }))
+
+    // 3. Warteschlangen-Folgefrage läuft automatisch nach
+    apiStream.mockResolvedValueOnce({
+      ok: true,
+      body: {
+        getReader: () => {
+          let gesendet = false
+          return {
+            read: () => {
+              if (gesendet) return Promise.resolve({ done: true, value: undefined })
+              gesendet = true
+              return Promise.resolve({
+                done: false,
+                value: new TextEncoder().encode(
+                  'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Antwort zwei"}\n\ndata: {"type": "done"}\n\n',
+                ),
+              })
+            },
+          }
+        },
+      },
+    })
+
+    render(<SuchzusammenfassungKachel begriff="Basis" treffer={TREFFER} />)
+    expect(await screen.findByText('Startantwort')).toBeInTheDocument()
+
+    const eingabe = screen.getByRole('textbox')
+    // Shift+Enter sendet nicht ab
+    fireEvent.change(eingabe, { target: { value: 'Frage eins' } })
+    fireEvent.keyDown(eingabe, { key: 'Enter', shiftKey: true })
+    expect(apiStream).toHaveBeenCalledTimes(1)
+
+    // Enter sendet ab; während Antwort streamt bleibt das Feld bedienbar + Stopp-Button sichtbar
+    fireEvent.keyDown(eingabe, { key: 'Enter' })
+    expect(await screen.findByText('Antwort eins')).toBeInTheDocument()
+    expect(eingabe).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /KI stoppen|Stop the AI/i })).toBeInTheDocument()
+
+    // Tippen während Stream blendet Warteschlange + Unterbrechen ein
+    fireEvent.change(eingabe, { target: { value: 'Zweite aus Queue' } })
+    expect(screen.getByRole('button', { name: /In Warteschlange einreihen|Add to queue/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Sofort senden und unterbrechen|Send now and interrupt/i })).toBeInTheDocument()
+
+    // Enter reiht in Warteschlange ein und zeigt Banner
+    fireEvent.keyDown(eingabe, { key: 'Enter' })
+    expect(screen.getByText(/Warteschlange \(1\)|Queue \(1\)/)).toBeInTheDocument()
+    expect(apiStream).toHaveBeenCalledTimes(2)
+
+    // Sobald Stream 1 fertig ist, wird Frage 2 aus der Warteschlange automatisch gesendet
+    schliesseErste?.()
+    await waitFor(() => expect(apiStream).toHaveBeenCalledTimes(3))
+    expect(await screen.findByText('Antwort zwei')).toBeInTheDocument()
+
+    // 4. Alt+Enter unterbricht laufenden Stream und sendet sofort; Stopp-Button bricht ab
+    let schliesseDritte: (() => void) | null = null
+    apiStream.mockImplementationOnce(() => ({
+      ok: true,
+      body: {
+        getReader: () => {
+          let phase = 0
+          return {
+            read: () => {
+              phase += 1
+              if (phase === 1) {
+                return Promise.resolve({
+                  done: false,
+                  value: new TextEncoder().encode(
+                    'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Teilantwort drei"}\n\n',
+                  ),
+                })
+              }
+              if (phase === 2) {
+                return new Promise((resolve) => {
+                  schliesseDritte = () => resolve({ done: true, value: undefined })
+                })
+              }
+              return Promise.resolve({ done: true, value: undefined })
+            },
+            cancel: vi.fn(),
+          }
+        },
+      },
+    }))
+    apiStream.mockImplementationOnce(() => ({
+      ok: true,
+      body: {
+        getReader: () => {
+          let phase = 0
+          return {
+            read: () => {
+              phase += 1
+              if (phase === 1) {
+                return Promise.resolve({
+                  done: false,
+                  value: new TextEncoder().encode(
+                    'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Sofortantwort vier"}\n\n',
+                  ),
+                })
+              }
+              return new Promise(() => {})
+            },
+            cancel: vi.fn(),
+          }
+        },
+      },
+    }))
+
+    fireEvent.change(eingabe, { target: { value: 'Dritte Frage' } })
+    fireEvent.keyDown(eingabe, { key: 'Enter' })
+    expect(await screen.findByText('Teilantwort drei')).toBeInTheDocument()
+
+    fireEvent.change(eingabe, { target: { value: 'Vierte sofort' } })
+    fireEvent.keyDown(eingabe, { key: 'Enter', altKey: true })
+    schliesseDritte?.()
+    expect(await screen.findByText('Sofortantwort vier')).toBeInTheDocument()
+    expect(apiStream).toHaveBeenCalledTimes(5)
+
+    // Stopp-Knopf beendet laufenden Stream sofort
+    const stoppBtn = screen.getByRole('button', { name: /KI stoppen|Stop the AI/i })
+    fireEvent.click(stoppBtn)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Senden|Send/i })).toBeInTheDocument()
+    })
+  })
 })
 

@@ -12,13 +12,22 @@
  *   zeigt die Kachel den Denkprozess und klappt ihn mit der Antwort ein.
  */
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, Brain, Check, ChevronDown, ChevronUp, Copy, Loader2, Send, Sparkles } from 'lucide-react'
+import { AlertCircle, Brain, Check, ChevronDown, ChevronUp, Copy, ListPlus, Loader2, Mic, Send, Sparkles, Square, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import { aiApi } from '@/api/ai'
+import { starteAufnahme, type Aufnahme } from '@/components/ai/voice/audioAufnahme'
+import { useHasPermission } from '@/hooks/useHasPermission'
+import { duckingBelegen } from '@/lib/audioDucking'
+import { still } from '@/lib/still'
+import { useAuthStore } from '@/stores/authStore'
+import { toast } from '@/stores/toastStore'
 import { apiStream, SanitizedApiError, translateErrorCode } from '@/api/client'
-import { Button, ChatInputBar, Kurzinfo } from '@maunting/ui'
+import { formatMessageTime } from '@/components/ai/AiVerlauf'
+import { KI_NAME } from '@/lib/kiName'
+import { Button, ChatBubbleSurface, ChatMessageMetaRow, Kurzinfo, NachrichtStatus, VoiceRecordingBar, type NachrichtZustand } from '@maunting/ui'
 
 import type { Treffer } from '../MsmSuche'
 import { SeitenSymbol } from '../SeitenSymbol'
@@ -28,6 +37,10 @@ interface SuchNachricht {
   role: 'user' | 'assistant'
   content: string
   fehler?: boolean
+  erstelltAm?: string
+  deliveryStatus?: NachrichtZustand
+  /** Initialer Suchüberblick wird oben bereits gezeigt; nur für alternierenden API-Verlauf mitführen. */
+  nurKontext?: boolean
 }
 
 interface SuchzusammenfassungKachelProps {
@@ -70,12 +83,158 @@ export function SuchzusammenfassungKachel({
   const [recherche, setRecherche] = useState<string[]>([])
   const [verlauf, setVerlauf] = useState<SuchNachricht[]>([])
   const [nachfrage, setNachfrage] = useState('')
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
   const [folgeFehler, setFolgeFehler] = useState<string | null>(null)
   const [hauptFehler, setHauptFehler] = useState<string | null>(null)
   const [kopierStand, setKopierStand] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [kopierAnsage, setKopierAnsage] = useState('')
 
   const abbruchRef = useRef<AbortController | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // Diktat über das Whisper-Modell des Servers, genau wie im KI-Chat.
+  const darfDiktieren = useHasPermission('ai.voice.use')
+  const [diktatAnbieter, setDiktatAnbieter] = useState<number | null>(null)
+  const [diktatVerfuegbar, setDiktatVerfuegbar] = useState(false)
+  const [diktiert, setDiktiert] = useState(false)
+  const [diktatSekunden, setDiktatSekunden] = useState(0)
+  const [diktatPegel, setDiktatPegel] = useState(0)
+  const [diktatKontingent, setDiktatKontingent] = useState<{
+    monthly_limit_minutes: number | null
+    used_seconds: number
+    remaining_seconds: number | null
+  } | null>(null)
+  const [transkribiert, setTranskribiert] = useState(false)
+  const diktatRef = useRef<Aufnahme | null>(null)
+  const diktatChunksRef = useRef<ArrayBuffer[]>([])
+  const diktatDuckingRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    if (!darfDiktieren) {
+      setDiktatVerfuegbar(false)
+      return
+    }
+    let aktiv = true
+    void (async () => {
+      try {
+        const liste = await aiApi.listProviders()
+        const benutzbar = liste.filter((p) => p.available)
+        const wahl = useAuthStore.getState().user?.ai_provider_id ?? null
+        const id = (wahl !== null && benutzbar.some((p) => p.id === wahl) ? wahl : benutzbar[0]?.id) ?? null
+        if (!id) throw new Error('kein Anbieter')
+        const konfig = await aiApi.getVoiceConfig(id)
+        if (aktiv) {
+          setDiktatAnbieter(id)
+          setDiktatVerfuegbar(Boolean(konfig.dictation_available))
+          setDiktatKontingent({
+            monthly_limit_minutes: konfig.dictation_monthly_limit_minutes ?? null,
+            used_seconds: konfig.dictation_used_seconds ?? 0,
+            remaining_seconds: konfig.dictation_remaining_seconds ?? null,
+          })
+        }
+      } catch (err) {
+        still(err, 'ai.dictation.config')
+        if (aktiv) setDiktatVerfuegbar(false)
+      }
+    })()
+    return () => { aktiv = false }
+  }, [darfDiktieren])
+
+  useEffect(() => () => {
+    diktatDuckingRef.current?.()
+    diktatRef.current?.beenden()
+  }, [])
+
+  const diktatAbbrechen = () => {
+    diktatDuckingRef.current?.()
+    diktatDuckingRef.current = null
+    diktatRef.current?.beenden()
+    diktatRef.current = null
+    diktatChunksRef.current = []
+    setDiktiert(false)
+  }
+
+  // Laufzeit und Pegel während der Aufnahme, Abbruch bei aufgebrauchtem Kontingent.
+  useEffect(() => {
+    if (!diktiert) {
+      setDiktatSekunden(0)
+      setDiktatPegel(0)
+      return
+    }
+    const timer = setInterval(() => {
+      setDiktatSekunden((prev) => prev + 1)
+    }, 1000)
+    let animId = 0
+    let laeuft = true
+    const pegelLesen = () => {
+      if (!laeuft) return
+      if (diktatRef.current) setDiktatPegel(diktatRef.current.pegel())
+      animId = requestAnimationFrame(pegelLesen)
+    }
+    animId = requestAnimationFrame(pegelLesen)
+    return () => {
+      clearInterval(timer)
+      laeuft = false
+      cancelAnimationFrame(animId)
+    }
+  }, [diktiert])
+
+  useEffect(() => {
+    const rest = diktatKontingent?.remaining_seconds
+    if (diktiert && rest != null && diktatSekunden >= rest) void diktatUmschalten()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diktatSekunden])
+
+  const diktatUmschalten = async () => {
+    if (!diktatAnbieter || transkribiert) return
+    if (!diktatRef.current) {
+      diktatChunksRef.current = []
+      try {
+        diktatRef.current = await starteAufnahme((chunk) => diktatChunksRef.current.push(chunk))
+        diktatDuckingRef.current?.()
+        diktatDuckingRef.current = duckingBelegen('ai-dictation')
+        setDiktiert(true)
+      } catch (err) {
+        still(err, 'ai.dictation.start')
+        toast.error(t('ai.chat.dictationError'))
+      }
+      return
+    }
+    diktatDuckingRef.current?.()
+    diktatDuckingRef.current = null
+    diktatRef.current.beenden()
+    diktatRef.current = null
+    setDiktiert(false)
+    const chunks = diktatChunksRef.current
+    diktatChunksRef.current = []
+    const bytes = chunks.reduce((summe, chunk) => summe + chunk.byteLength, 0)
+    if (!bytes) return
+    const pcm = new Uint8Array(bytes)
+    let offset = 0
+    for (const chunk of chunks) {
+      pcm.set(new Uint8Array(chunk), offset)
+      offset += chunk.byteLength
+    }
+    setTranskribiert(true)
+    try {
+      const { text } = await aiApi.transcribeVoice(diktatAnbieter, pcm.buffer)
+      aiApi.getVoiceConfig(diktatAnbieter).then((konfig) => {
+        setDiktatKontingent({
+          monthly_limit_minutes: konfig.dictation_monthly_limit_minutes ?? null,
+          used_seconds: konfig.dictation_used_seconds ?? 0,
+          remaining_seconds: konfig.dictation_remaining_seconds ?? null,
+        })
+      }).catch((err) => still(err, 'ai.dictation.quota'))
+      setNachfrage((alt) => (alt ? `${alt.trimEnd()} ${text}` : text).slice(0, 16_000))
+      requestAnimationFrame(() => textareaRef.current?.focus())
+    } catch (err) {
+      still(err, 'ai.dictation.transcribe')
+      toast.error(t('ai.chat.dictationError'))
+    } finally {
+      setTranskribiert(false)
+    }
+  }
+  const nutzerAbgebrochenRef = useRef(false)
   const begonneneSucheRef = useRef<string | null>(null)
   const kopierTimerRef = useRef<number | null>(null)
   const letzteAnsageRef = useRef('')
@@ -144,10 +303,19 @@ export function SuchzusammenfassungKachel({
       setVerlauf((prev) => {
         const kopie = [...prev]
         if (kopie.length > 0 && kopie[kopie.length - 1].role === 'assistant') {
-          kopie[kopie.length - 1] = { role: 'assistant', content: meldung, fehler: true }
-          return kopie
+          kopie[kopie.length - 1] = { ...kopie[kopie.length - 1], role: 'assistant', content: meldung, fehler: true }
+        } else {
+          kopie.push({ role: 'assistant', content: meldung, fehler: true, erstelltAm: new Date().toISOString() })
         }
-        return [...kopie, { role: 'assistant', content: meldung, fehler: true }]
+        for (let i = kopie.length - 1; i >= 0; i -= 1) {
+          if (kopie[i].role === 'user') {
+            if (kopie[i].deliveryStatus !== 'read') {
+              kopie[i] = { ...kopie[i], deliveryStatus: 'failed' }
+            }
+            break
+          }
+        }
+        return kopie
       })
     }
     if (istAktuell(controller)) setLaedt(false)
@@ -159,6 +327,24 @@ export function SuchzusammenfassungKachel({
     }
     const controller = new AbortController()
     abbruchRef.current = controller
+    nutzerAbgebrochenRef.current = false
+
+    let nutzerGelesen = false
+    const markiereNutzerGelesen = () => {
+      if (nutzerGelesen || dialogVerlauf.length === 0) return
+      nutzerGelesen = true
+      setVerlauf((prev) => {
+        const kopie = [...prev]
+        for (let i = kopie.length - 1; i >= 0; i -= 1) {
+          if (kopie[i].role === 'user') {
+            if (kopie[i].deliveryStatus === 'read') return prev
+            kopie[i] = { ...kopie[i], deliveryStatus: 'read' }
+            return kopie
+          }
+        }
+        return prev
+      })
+    }
 
     setLaedt(true)
     setFolgeFehler(null)
@@ -243,14 +429,20 @@ export function SuchzusammenfassungKachel({
               }
               return
             }
-            if (data.type === 'thought' && typeof data.text === 'string') {
+            if (data.type === 'start') {
+              markiereNutzerGelesen()
+            } else if (data.type === 'thought' && typeof data.text === 'string') {
+              markiereNutzerGelesen()
               setGedankenText((prev) => prev + data.text)
               setDenkenOffen(true)
             } else if (data.type === 'recherche' && typeof data.anfrage === 'string') {
+              markiereNutzerGelesen()
               setRecherche((prev) => (prev.includes(data.anfrage) ? prev : [...prev, data.anfrage]))
             } else if (data.type === 'neue_treffer' && Array.isArray(data.treffer)) {
+              markiereNutzerGelesen()
               onNeueTreffer?.(data.treffer as Treffer[])
             } else if (data.type === 'content' && typeof data.text === 'string') {
+              markiereNutzerGelesen()
               akkumulierterText += data.text
               setDenkenOffen(false)
               if (dialogVerlauf.length === 0) {
@@ -259,10 +451,18 @@ export function SuchzusammenfassungKachel({
                 setVerlauf((prev) => {
                   const kopie = [...prev]
                   if (kopie.length > 0 && kopie[kopie.length - 1].role === 'assistant') {
-                    kopie[kopie.length - 1] = { role: 'assistant', content: akkumulierterText }
+                    kopie[kopie.length - 1] = {
+                      ...kopie[kopie.length - 1],
+                      role: 'assistant',
+                      content: akkumulierterText,
+                      fehler: false,
+                    }
                     return kopie
                   }
-                  return [...kopie, { role: 'assistant', content: akkumulierterText }]
+                  return [
+                    ...kopie,
+                    { role: 'assistant', content: akkumulierterText, erstelltAm: new Date().toISOString() },
+                  ]
                 })
               }
             } else if (data.type === 'error') {
@@ -281,16 +481,27 @@ export function SuchzusammenfassungKachel({
             } else if (data.type === 'done') {
               if (istAktuell(controller)) setLaedt(false)
               // Leere Antwort ohne Inhalt ist ein Fehler, kein ewiger Spinner.
-              if (!akkumulierterText && dialogVerlauf.length > 0) {
-                fehlerSetzen(controller, dialogVerlauf, leerText())
-                return
+              if (!akkumulierterText && !deaktiviertGrund) {
+                if (dialogVerlauf.length > 0) {
+                  fehlerSetzen(controller, dialogVerlauf, leerText())
+                } else {
+                  setHauptFehler(leerText())
+                }
               }
+              try {
+                await reader.cancel?.()
+              } catch {
+                // Ignorieren falls Stream bereits geschlossen ist
+              }
+              return
             }
           } catch {
             // Ignoriere unvollständige JSON-Chunks
           }
         }
       }
+
+      if (controller.signal.aborted) return
 
       if (!akkumulierterText && !deaktiviertGrund) {
         if (dialogVerlauf.length === 0) {
@@ -344,18 +555,86 @@ export function SuchzusammenfassungKachel({
 
     const timer = setTimeout(() => {
       begonneneSucheRef.current = begriff
+      nutzerAbgebrochenRef.current = false
       setDeaktiviertGrund(null)
       setHauptText('')
       setGedankenText('')
       setVerlauf([])
       setNachfrage('')
+      setQueuedMessages([])
       setFolgeFehler(null)
+      if (textareaRef.current) {
+        textareaRef.current.style.height = ''
+      }
 
       void starteStream(begriff, [])
     }, 0)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [begriff, hatTreffer])
+
+  const eingabeZuruecksetzen = () => {
+    setNachfrage('')
+    if (textareaRef.current) {
+      textareaRef.current.style.height = ''
+    }
+  }
+
+  const stelleFolgefrage = (frageText: string, erzwingen = false) => {
+    const text = frageText.trim()
+    if (!text || (laedt && !erzwingen)) return
+
+    // Verwaiste leere Assistenten-Blase nach hartem Unterbrechen entfernen,
+    // damit der nächste API-Lauf nur gültige nicht-leere Züge erhält.
+    const saubererVerlauf = verlauf.filter((m, i, arr) => {
+      if (m.role === 'assistant' && !m.content && !m.fehler && i === arr.length - 1) return false
+      if (
+        m.role === 'user' &&
+        i === arr.length - 2 &&
+        arr[i + 1]?.role === 'assistant' &&
+        !arr[i + 1].content &&
+        !arr[i + 1].fehler
+      ) {
+        return false
+      }
+      return true
+    })
+
+    // Verlauf strikt alternierend aufbauen: Nutzer (Ausgangsfrage) -> Assistent
+    // (initiale Zusammenfassung) -> Nutzer (Folgefrage) -> Assistent (Antwort).
+    // hauptText lebt außerhalb von verlauf, deshalb bei der ersten Folgefrage
+    // explizit als Assistent-Turn voranstellen, sonst sendet das Frontend zwei
+    // aufeinanderfolgende user-Turns und die LLM-API antwortet mit HTTP 400.
+    const basis: SuchNachricht[] =
+      saubererVerlauf.length === 0 && hauptText
+        ? [
+            { role: 'user', content: begriff, nurKontext: true },
+            { role: 'assistant', content: hauptText, nurKontext: true },
+          ]
+        : saubererVerlauf
+
+    const jetzt = new Date().toISOString()
+    const neuerVerlauf: SuchNachricht[] = [
+      ...basis,
+      { role: 'user', content: text, erstelltAm: jetzt, deliveryStatus: 'delivered' },
+      { role: 'assistant', content: '', erstelltAm: jetzt },
+    ]
+
+    setVerlauf(neuerVerlauf)
+    eingabeZuruecksetzen()
+    setFolgeFehler(null)
+    void starteStream(text, neuerVerlauf.slice(0, -1))
+  }
+
+  // Abarbeiten der Warteschlange, sobald der vorherige Lauf beendet ist (wie im KI-Chat)
+  useEffect(() => {
+    if (!laedt && queuedMessages.length > 0 && hauptText && !nutzerAbgebrochenRef.current) {
+      const nextContent = queuedMessages[0]
+      setQueuedMessages((q) => q.slice(1))
+      stelleFolgefrage(nextContent)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hauptText, laedt, queuedMessages])
 
   if (deaktiviertGrund) {
     return (
@@ -406,50 +685,22 @@ export function SuchzusammenfassungKachel({
     )
   }
 
-  const stelleFolgefrage = (frageText: string) => {
-    const text = frageText.trim()
-    if (!text || laedt) return
-
-    // Verlauf strikt alternierend aufbauen: Nutzer (Ausgangsfrage) -> Assistent
-    // (initiale Zusammenfassung) -> Nutzer (Folgefrage) -> Assistent (Antwort).
-    // hauptText lebt außerhalb von verlauf, deshalb bei der ersten Folgefrage
-    // explizit als Assistent-Turn voranstellen, sonst sendet das Frontend zwei
-    // aufeinanderfolgende user-Turns und die LLM-API antwortet mit HTTP 400.
-    const basis: SuchNachricht[] =
-      verlauf.length === 0 && hauptText
-        ? [
-            { role: 'user', content: begriff },
-            { role: 'assistant', content: hauptText },
-          ]
-        : verlauf
-
-    const neuerVerlauf: SuchNachricht[] = [
-      ...basis,
-      { role: 'user', content: text },
-      { role: 'assistant', content: '' },
-    ]
-
-    setVerlauf(neuerVerlauf)
-    setNachfrage('')
-    setFolgeFehler(null)
-    void starteStream(text, neuerVerlauf.slice(0, -1))
-  }
-
   const letzteFolgefrageErneut = () => {
     for (let i = verlauf.length - 1; i >= 0; i -= 1) {
-      if (verlauf[i].role === 'user') {
+      if (verlauf[i].role === 'user' && !verlauf[i].nurKontext) {
         const ohneFehler = verlauf.slice(0, i)
         const basis: SuchNachricht[] =
           ohneFehler.length === 0 && hauptText
             ? [
-                { role: 'user', content: begriff },
-                { role: 'assistant', content: hauptText },
+                { role: 'user', content: begriff, nurKontext: true },
+                { role: 'assistant', content: hauptText, nurKontext: true },
               ]
             : ohneFehler
+        const jetzt = new Date().toISOString()
         const erneut: SuchNachricht[] = [
           ...basis,
-          { role: 'user', content: verlauf[i].content },
-          { role: 'assistant', content: '' },
+          { role: 'user', content: verlauf[i].content, erstelltAm: jetzt, deliveryStatus: 'delivered' },
+          { role: 'assistant', content: '', erstelltAm: jetzt },
         ]
         setVerlauf(erneut)
         setFolgeFehler(null)
@@ -459,8 +710,38 @@ export function SuchzusammenfassungKachel({
     }
   }
 
+  const einreihenNachfrage = (frageText: string) => {
+    const text = frageText.trim()
+    if (!text) return
+    setQueuedMessages((q) => [...q, text])
+    eingabeZuruecksetzen()
+  }
+
+  const stoppeLauf = () => {
+    nutzerAbgebrochenRef.current = true
+    abbruchRef.current?.abort()
+    abbruchRef.current = null
+    setLaedt(false)
+  }
+
+  const sofortSendenUndUnterbrechen = (frageText: string) => {
+    const text = frageText.trim()
+    if (!text) return
+    if (laedt) {
+      abbruchRef.current?.abort()
+      abbruchRef.current = null
+    }
+    stelleFolgefrage(text, true)
+  }
+
   const absendenNachfrage = () => {
-    stelleFolgefrage(nachfrage)
+    const text = nachfrage.trim()
+    if (!text) return
+    if (laedt) {
+      einreihenNachfrage(text)
+      return
+    }
+    stelleFolgefrage(text)
   }
 
   const renderMarkdown = (text: string) => {
@@ -776,61 +1057,95 @@ export function SuchzusammenfassungKachel({
             </div>
           )}
 
-          {/* Dialogverlauf (Folgefragen) — ruhige redaktionelle Struktur ohne verschachtelte Boxen */}
-          {verlauf.length > 0 && (
+          {/* Dialogverlauf (Folgefragen) im einheitlichen Singra-Chat-Design inkl. Lese-Bestätigung */}
+          {verlauf.some((n) => !n.nurKontext) && (
             <div className="space-y-3 border-t border-outline-variant/25 pt-3.5">
-              {verlauf.map((nachricht, idx) => (
-                <div
-                  key={idx}
-                  className={
-                    nachricht.role === 'user'
-                      ? 'pt-2 first:pt-0 text-label-md font-semibold text-primary'
-                      : 'pb-2 text-body-sm sm:text-body-md text-on-surface border-b border-outline-variant/20 last:border-b-0 last:pb-0'
-                  }
-                >
-                  {nachricht.role === 'user' ? (
-                    <p className="flex items-start gap-2">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                      <span>{nachricht.content}</span>
-                    </p>
-                  ) : nachricht.fehler ? (
-                    <div className="flex flex-wrap items-center gap-2.5 text-body-sm text-on-surface-variant">
-                      <span>{nachricht.content || t('browser.msmSuche.zusammenfassungFehler')}</span>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={letzteFolgefrageErneut}
-                        disabled={laedt}
-                        className="h-8 rounded-full px-3 text-label-sm"
-                      >
-                        {t('common.retry')}
-                      </Button>
+              {verlauf.map((nachricht, idx) => {
+                if (nachricht.nurKontext) return null
+                const istLetzteAssistentenAntwort =
+                  nachricht.role === 'assistant' && idx === verlauf.length - 1
+                const streamtGerade = istLetzteAssistentenAntwort && laedt && !nachricht.fehler
+
+                if (nachricht.role === 'user') {
+                  return (
+                    <article key={idx} className="group flex flex-col items-end">
+                      <ChatBubbleSurface isSelf className="ml-auto">
+                        <p className="w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface">
+                          {nachricht.content}
+                        </p>
+                      </ChatBubbleSurface>
+                      <ChatMessageMetaRow
+                        align="end"
+                        timestamp={nachricht.erstelltAm ? formatMessageTime(nachricht.erstelltAm) : null}
+                        statusSlot={
+                          <NachrichtStatus
+                            status={nachricht.deliveryStatus ?? (nachricht.fehler ? 'failed' : 'read')}
+                            empfaengerName={KI_NAME}
+                            onErneutSenden={
+                              nachricht.deliveryStatus === 'failed' && !laedt
+                                ? letzteFolgefrageErneut
+                                : undefined
+                            }
+                            seite="ende"
+                            lage="oben"
+                          />
+                        }
+                      />
+                    </article>
+                  )
+                }
+
+                return (
+                  <article key={idx} className="group flex flex-col items-start">
+                    <div className="w-fit max-w-[92%] md:max-w-[85%]">
+                      <ChatBubbleSurface isSelf={false} size="wide" className="w-full text-body-sm sm:text-body-md">
+                        {nachricht.fehler ? (
+                          <div className="flex flex-wrap items-center gap-2.5 text-body-sm text-on-surface-variant">
+                            <span>{nachricht.content || t('browser.msmSuche.zusammenfassungFehler')}</span>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={letzteFolgefrageErneut}
+                              disabled={laedt}
+                              className="h-8 rounded-full px-3 text-label-sm"
+                            >
+                              {t('common.retry')}
+                            </Button>
+                          </div>
+                        ) : nachricht.content ? (
+                          renderMarkdown(nachricht.content)
+                        ) : laedt ? (
+                          <div className="flex items-center gap-2 text-body-sm text-on-surface-variant">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" aria-hidden="true" />
+                            <span>{t('browser.msmSuche.zusammenfassungLaedt')}</span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2.5 text-body-sm text-on-surface-variant">
+                            <span>{t('browser.msmSuche.zusammenfassungFehler')}</span>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={letzteFolgefrageErneut}
+                              disabled={laedt}
+                              className="h-8 rounded-full px-3 text-label-sm"
+                            >
+                              {t('common.retry')}
+                            </Button>
+                          </div>
+                        )}
+                      </ChatBubbleSurface>
+                      {!streamtGerade && (
+                        <ChatMessageMetaRow
+                          align="end"
+                          timestamp={nachricht.erstelltAm ? formatMessageTime(nachricht.erstelltAm) : null}
+                        />
+                      )}
                     </div>
-                  ) : nachricht.content ? (
-                    renderMarkdown(nachricht.content)
-                  ) : laedt ? (
-                    <div className="flex items-center gap-2 text-body-sm text-on-surface-variant">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" aria-hidden="true" />
-                      <span>{t('browser.msmSuche.zusammenfassungLaedt')}</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-2.5 text-body-sm text-on-surface-variant">
-                      <span>{t('browser.msmSuche.zusammenfassungFehler')}</span>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={letzteFolgefrageErneut}
-                        disabled={laedt}
-                        className="h-8 rounded-full px-3 text-label-sm"
-                      >
-                        {t('common.retry')}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                  </article>
+                )
+              })}
             </div>
           )}
 
@@ -858,45 +1173,206 @@ export function SuchzusammenfassungKachel({
             </div>
           )}
 
-          {/* Nachfrage-Eingabezeile über gemeinsame Design-DNA ChatInputBar */}
+          {/* Nachfrage-Eingabe mit derselben Input-Logik und Glass-Optik wie der reguläre KI-Chat */}
           {hauptText && (
             <div className="border-t border-outline-variant/25 pt-3.5">
+              {queuedMessages.length > 0 && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-outline-variant/30 bg-surface-container-high/60 px-2.5 py-1.5 text-xs text-on-surface-variant">
+                  <span className="flex items-center gap-1 font-medium text-on-surface">
+                    <ListPlus className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                    {t('browser.msmSuche.warteschlange', { count: queuedMessages.length })}
+                  </span>
+                  {queuedMessages.map((msg, qIdx) => (
+                    <Kurzinfo key={qIdx} text={msg} aussen="max-w-[220px]">
+                      <span className="inline-flex max-w-[220px] items-center gap-1 rounded bg-surface-container-highest px-2 py-0.5 text-on-surface border border-outline-variant/40">
+                        <span className="truncate">{msg}</span>
+                        <button
+                          type="button"
+                          className="text-on-surface-variant hover:text-status-destructive transition-colors"
+                          onClick={() => setQueuedMessages((q) => q.filter((_, i) => i !== qIdx))}
+                          aria-label={t('browser.msmSuche.warteschlangeEntfernen')}
+                        >
+                          <X className="h-3 w-3" aria-hidden="true" />
+                        </button>
+                      </span>
+                    </Kurzinfo>
+                  ))}
+                  {queuedMessages.length > 1 && (
+                    <button
+                      type="button"
+                      className="ml-auto text-label-sm text-on-surface-variant hover:text-status-destructive underline transition-colors"
+                      onClick={() => setQueuedMessages([])}
+                    >
+                      {t('browser.msmSuche.warteschlangeLeeren')}
+                    </button>
+                  )}
+                </div>
+              )}
+
               <form
                 onSubmit={(ev) => {
                   ev.preventDefault()
                   absendenNachfrage()
                 }}
               >
-                <ChatInputBar
-                  variant="glass"
-                  value={nachfrage}
-                  onChange={setNachfrage}
-                  onSubmit={absendenNachfrage}
-                  onKeyDown={(ev) => {
-                    if (ev.key === 'Enter' && (ev.nativeEvent.isComposing || ev.keyCode === 229)) {
-                      ev.preventDefault()
-                    }
-                  }}
-                  placeholder={t('browser.msmSuche.zusammenfassungNachfragePlaceholder')}
-                  aria-label={t('browser.msmSuche.zusammenfassungNachfragePlaceholder')}
-                  disabled={laedt}
-                  minHeight={40}
-                  maxHeight={40}
-                  className="rounded-full border-outline-variant/50 bg-surface-container-low/90 shadow-[inset_0_1px_0_hsl(0_0%_100%/0.07),0_10px_28px_rgba(0,0,0,0.3)] focus-within:ring-2 focus-within:ring-primary/20"
-                  textareaClassName="px-3"
-                  rightActions={
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      size="icon"
-                      disabled={!nachfrage.trim() || laedt}
-                      className="h-8 w-8 rounded-full shrink-0 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10"
-                      aria-label={t('browser.msmSuche.zusammenfassungSenden')}
-                    >
-                      <Send className="h-3.5 w-3.5" aria-hidden="true" />
-                    </Button>
+                <div
+                  className={
+                    diktiert
+                      ? 'w-full rounded-2xl border border-outline-variant/50 bg-surface-container-low/50 p-2'
+                      : 'flex flex-row items-end gap-2 rounded-3xl border border-white/15 bg-black/55 backdrop-blur-xl py-1.5 pl-4 pr-1.5 shadow-[0_10px_28px_rgba(0,0,0,0.35)] focus-within:border-primary/35 transition-[border-color] duration-200'
                   }
-                />
+                >
+                  {diktiert ? (
+                    <VoiceRecordingBar
+                      durationSeconds={diktatSekunden}
+                      statusLabel="Jetzt sprechen …"
+                      variant="danger"
+                      kompakt={false}
+                      className="w-full border-0 bg-transparent"
+                      extraInfo={
+                        <Kurzinfo
+                          text={
+                            diktatKontingent?.monthly_limit_minutes != null
+                              ? t('ai.chat.dictationMonthlyLimit', { min: diktatKontingent.monthly_limit_minutes })
+                              : t('ai.chat.dictationUnlimitedHint')
+                          }
+                          lage="oben"
+                          aussen="hidden sm:inline-flex shrink-0"
+                        >
+                          <div className="flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low/60 px-2 py-0.5 text-xs text-on-surface-variant">
+                            <span className="tabular-nums font-medium text-on-surface">
+                              {diktatKontingent?.monthly_limit_minutes != null
+                                ? t('ai.chat.dictationRemaining', {
+                                    min: Math.max(
+                                      0,
+                                      Math.ceil(((diktatKontingent.remaining_seconds ?? 0) - diktatSekunden) / 60),
+                                    ),
+                                  })
+                                : t('ai.chat.dictationUnlimited')}
+                            </span>
+                          </div>
+                        </Kurzinfo>
+                      }
+                      onCancel={diktatAbbrechen}
+                      onConfirm={() => void diktatUmschalten()}
+                      audioLevel={diktatPegel}
+                      cancelLabel={t('ai.chat.dictationCancel')}
+                      confirmLabel={t('ai.chat.dictationStop')}
+                      cancelIcon={<X className="h-4 w-4" aria-hidden="true" />}
+                      confirmIcon={<Check className="h-3.5 w-3.5" aria-hidden="true" />}
+                    />
+                  ) : (
+                  <>
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
+                    maxLength={16000}
+                    value={nachfrage}
+                    onChange={(event) => {
+                      const val = event.target.value
+                      setNachfrage(val)
+                      event.target.style.height = 'auto'
+                      event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                          event.preventDefault()
+                          return
+                        }
+                        event.preventDefault()
+                        if (event.altKey && laedt) {
+                          sofortSendenUndUnterbrechen(nachfrage)
+                        } else {
+                          absendenNachfrage()
+                        }
+                      }
+                    }}
+                    placeholder={
+                      laedt
+                        ? t('browser.msmSuche.zusammenfassungWarteschlangePlaceholder')
+                        : t('browser.msmSuche.zusammenfassungNachfragePlaceholder')
+                    }
+                    aria-label={t('browser.msmSuche.zusammenfassungNachfragePlaceholder')}
+                    className="max-h-40 min-h-8 min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-1 text-sm leading-6 text-white placeholder:text-white/55 focus:outline-none"
+                  />
+
+                  <div className="flex shrink-0 items-center justify-end gap-1.5">
+                    {diktatVerfuegbar && (
+                      <Kurzinfo text={t('ai.chat.dictationStart')} lage="oben">
+                        <button
+                          type="button"
+                          onClick={() => void diktatUmschalten()}
+                          disabled={transkribiert}
+                          aria-label={t('ai.chat.dictationStart')}
+                          aria-pressed={diktiert}
+                          className={`grid h-8 w-8 place-items-center rounded-full border transition-all active:scale-95 shrink-0 disabled:opacity-50 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10 ${
+                            diktiert
+                              ? 'border-status-destructive/40 bg-status-destructive/20 text-status-destructive animate-pulse'
+                              : 'border-white/10 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white'
+                          }`}
+                        >
+                          {transkribiert ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Mic className="h-3.5 w-3.5" aria-hidden="true" />
+                          )}
+                        </button>
+                      </Kurzinfo>
+                    )}
+                    {laedt ? (
+                      !nachfrage.trim() ? (
+                        <Kurzinfo text={t('ai.chat.stopRun')} lage="oben" seite="ende">
+                          <button
+                            type="button"
+                            onClick={stoppeLauf}
+                            aria-label={t('ai.chat.stopRun')}
+                            className="grid h-8 w-8 place-items-center rounded-full bg-status-destructive/15 text-status-destructive hover:bg-status-destructive/25 border border-status-destructive/30 transition-all active:scale-95 shrink-0 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10"
+                          >
+                            <Square className="h-3 w-3 fill-current" aria-hidden="true" />
+                          </button>
+                        </Kurzinfo>
+                      ) : (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Kurzinfo text={`${t('ai.chat.enqueue')} (Enter)`} lage="oben">
+                            <button
+                              type="button"
+                              onClick={() => einreihenNachfrage(nachfrage)}
+                              aria-label={t('ai.chat.enqueue')}
+                              className="flex h-8 items-center gap-1 px-2.5 rounded-full bg-primary text-on-primary hover:brightness-110 text-xs font-medium transition-all active:scale-95 shrink-0 [@media(pointer:coarse)]:h-10"
+                            >
+                              <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                              <span className="hidden sm:inline">{t('ai.chat.enqueueShort', 'Einreihen')}</span>
+                            </button>
+                          </Kurzinfo>
+                          <Kurzinfo text={`${t('ai.chat.sendNowInterrupt')} (Alt+Enter)`} lage="oben" seite="ende">
+                            <button
+                              type="button"
+                              onClick={() => sofortSendenUndUnterbrechen(nachfrage)}
+                              aria-label={t('ai.chat.sendNowInterrupt')}
+                              className="grid h-8 w-8 place-items-center rounded-full bg-status-destructive/20 text-status-destructive hover:bg-status-destructive/30 border border-status-destructive/40 transition-all active:scale-95 shrink-0 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10"
+                            >
+                              <Zap className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          </Kurzinfo>
+                        </div>
+                      )
+                    ) : (
+                      <Kurzinfo text={`${t('browser.msmSuche.zusammenfassungSenden')} (Enter)`} lage="oben" seite="ende">
+                        <button
+                          type="submit"
+                          disabled={!nachfrage.trim()}
+                          aria-label={t('browser.msmSuche.zusammenfassungSenden')}
+                          className="grid h-8 w-8 place-items-center rounded-full bg-primary text-on-primary hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 transition-all active:scale-95 shrink-0 shadow-sm [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10"
+                        >
+                          <Send className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </Kurzinfo>
+                    )}
+                  </div>
+                  </>
+                  )}
+                </div>
               </form>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5 text-label-sm text-on-surface-variant/80">

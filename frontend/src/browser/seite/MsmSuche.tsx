@@ -920,7 +920,7 @@ export function MsmSuche({ tab }: { tab: Tab }) {
                 </div>
 
                 {/* Wiederverwendete DNA-Suchleiste mit Live-Autocomplete */}
-                <div className="order-3 w-full min-w-0 md:order-2 md:max-w-[780px] md:flex-1">
+                <div className="order-3 w-full min-w-0 md:order-2 md:max-w-[680px] md:flex-1">
                   <SuchEingabeLeiste
                     initialWert={begriff}
                     onSuchen={(neu) => oeffnen(msmSucheAdresse(neu), tab.id)}
