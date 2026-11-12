@@ -150,12 +150,25 @@ describe('Privacy page', () => {
    * ist praktisch eine stille Aenderung — deshalb haengt die Zusage hier an den
    * konkreten Werten und nicht an "irgendeiner" Version.
    */
-  it('weist die Fassung 3.47 vom 2026-11-11 aus (Custom-Provider und Backend-Proxy)', () => {
+  it('weist die Fassung 3.48 vom 2026-11-12 aus (Such-Denkstufe und Themen-Nachrichten)', () => {
     const { container } = renderPrivacy();
 
     expect(
-      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.47`)),
+      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.48`)),
     ).toBeInTheDocument();
+    // 3.48: die Denkstufe der Suchzusammenfassung legt der Betreiber je Anbieter
+    // fest, Denktexte bleiben flüchtig; die Suchseite holt Nachrichten zum Begriff.
+    const suchDe = i18n.t('privacyPolicy.sections.browser.items.suchzusammenfassung', { lng: 'de' });
+    expect(suchDe).toMatch(/einmal je Anbieter/);
+    expect(suchDe).toMatch(/Denktexte .* nicht gespeichert/);
+    const suchEn = i18n.t('privacyPolicy.sections.browser.items.suchzusammenfassung', { lng: 'en' });
+    expect(suchEn).toMatch(/once per provider/);
+    expect(suchEn).toMatch(/not stored/);
+    const newsDe = i18n.t('privacyPolicy.sections.browser.items.nachrichten', { lng: 'de' });
+    expect(newsDe).toMatch(/Nachrichten zum Suchbegriff/);
+    expect(newsDe).toMatch(/Kategorie „news“/);
+    const newsEn = i18n.t('privacyPolicy.sections.browser.items.nachrichten', { lng: 'en' });
+    expect(newsEn).toMatch(/news on the search term/);
     const customDe = i18n.t('privacyPolicy.sections.ai.items.customProviders', { lng: 'de' });
     expect(customDe).toMatch(/Panel-Backend/);
     expect(customDe).toMatch(/keine Direktverbindung/);

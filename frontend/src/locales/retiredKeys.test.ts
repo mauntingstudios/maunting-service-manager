@@ -228,6 +228,7 @@ const ABGELOESTE_SCHLUESSEL = [
   'browser.fenster.schliessen',
   'browser.msmSuche.schliessen',
   'browser.msmSuche.medienVorschauSchliessen',
+  'browser.msmSuche.anSingraUebergeben',
   'ai.memory.import.edit',
   'settings.oauth.edit',
   'mss.vault.bearbeiten.knopf',
@@ -329,6 +330,34 @@ const ABGELOESTE_SCHLUESSEL = [
   'searchEngineSettings.googleCx',
   'searchEngineSettings.googleCxPlaceholder',
   'searchEngineSettings.googleRemoveConfirm',
+  // 11/2026: die Maunting-Search-Oberfläche zeigt die Quelle als Wikipedia-Zeile,
+  // die Vorschläge als flache Liste und keinen Modellnamen. Die fünf Schlüssel
+  // hatten danach keinen Aufruf mehr.
+  'browser.msmSuche.wissensgraphBadge',
+  'browser.msmSuche.dazuSuchenNutzer',
+  'browser.msmSuche.kontextGeneriert',
+  'browser.msmSuche.kontextVorschlaege',
+  'browser.msmSuche.zusammenfassungSynthese',
+  // 11/2026: inline Quellen-Zeile nutzt direkt `quellenLabel`, und der
+  // KI-Prüfhinweis steht an der Zusammenfassung selbst (`zusammenfassungDisclaimer`).
+  'browser.msmSuche.quellenAnzahl',
+  'browser.msmSuche.footerKi',
+  // 11/2026: Redaktionelle & Produkt-Straffung von Maunting Search: Konto-Knopf,
+  // Slogan/Einstellungs-/AGPLv3-Fußzeilentexte (Lizenzhinweis bleibt in der
+  // Datenschutzerklärung) und Ephemer-Hinweis in der KI-Box sind entfallen;
+  // die drei älteren unbenutzten Schlüssel lagen bereits ohne Aufruf im Katalog.
+  'browser.msmSuche.kontoAnsehen',
+  'browser.msmSuche.footerDienst',
+  'browser.msmSuche.footerLizenz',
+  'browser.msmSuche.zusammenfassungEphemerHinweis',
+  'browser.msmSuche.zusammenfassungSchliessen',
+  'browser.msmSuche.weitereFragenHinweis',
+  'browser.msmSuche.imKiChatWeiter',
+  // 11/2026: Denkstufe ist feste Anbieter-Einstellung (kein UI-Dropdown mehr),
+  // Singra-Transfer ersetzt altes Clipboard-Weiterführen.
+  'browser.msmSuche.zusammenfassungDenkstufe',
+  'browser.msmSuche.imChatWeiterfuehren',
+  'browser.msmSuche.imChatWeiterKopiert',
 ]
 
 /** Die Nachfolger muss es geben — sonst wäre das Löschen ein Verlust. */
@@ -381,6 +410,14 @@ const NACHFOLGER = [
   'auth.zweitfaktor.passkeyHintApp',
   'profile.zweitfaktoren.appEinrichten',
   'profile.zweitfaktoren.passkeyHinzufuegen',
+  'browser.msmSuche.quellenLabel',
+  'browser.msmSuche.verwandteThemen',
+  'browser.msmSuche.kopierenFehlgeschlagen',
+  'browser.msmSuche.topErgebnis',
+  'browser.msmSuche.meintestDu',
+  'browser.msmSuche.nachrichtenZumThema',
+  'browser.msmSuche.footerClaim',
+  'browser.msmSuche.footerDatenschutz',
 ]
 
 // Die beiden Panelsprachen — seit 09/2026 gibt es keine weiteren. Die neun

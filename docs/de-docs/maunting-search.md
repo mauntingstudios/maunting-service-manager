@@ -28,27 +28,34 @@ Die Seite folgt einem festen Aufbau, der auf Desktop und Handy gleich bleibt:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Kopfzeile (fixiert)                                          │
-│   MSB-Logo · Maunting Search · DNA-Suchleiste · Region/Sprache │
-│   Kategorie-Tabs: Web · Bilder · Videos · News   + Statistik │
+│ Tageszeit-Atmosphäre (Morgen · Tag · Abend · Nacht, oben)    │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │ Kopfzeile (sticky + scroll-state)                        │ │
+│ │   Logo · Maunting Search · Suchleiste (glass) · Region   │ │
+│ │   Alle · Bilder · Videos · Nachrichten       + Statistik │ │
+│ └──────────────────────────────────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────────┤
-│ Links (7/12)                      │ Rechts (5/12)           │
-│  1. KI-Überblick (Singra)         │  Wikipedia-/            │
-│     · Kopieren · Quellen n        │  Wissens-Panel         │
-│     · Quellen-Karten (3 Stück)    │  · Artikelbild         │
-│     · Folgefragen-Eingabe         │  · Steckbrief          │
-│  2. Weitere Fragen zum Thema      │  · „Dazu suchen …"     │
-│  3. Organische Treffer            │                        │
-│  4. Ähnliche Suchanfragen         │                        │
-│  5. Seitennavigation              │                        │
+│ Links (680 px)                    │ Rechts (320 px)          │
+│  1. KI-Überblick (Singra)         │  Wikipedia-/             │
+│     · Kopieren · Quellen n        │  Wissens-Panel           │
+│     · Quellen-Chips / Karten      │  · Artikelbild           │
+│     · ChatInputBar (glass)        │  · Steckbrief            │
+│  2. Weitere Fragen zum Thema      │  · Verwandte Themen      │
+│  3. Organische Treffer            │  · Aktuelle Schlagzeilen │
+│  4. Bilderstreifen                │                          │
+│  5. Ähnliche Suchanfragen         │                          │
+│  6. Seitennavigation              │                          │
 ├──────────────────────────────────────────────────────────────┤
-│ Fußzeile: Maunting Search · AGPLv3-Hinweis                   │
+│ Fußzeile: Region · optionales Impressum · Maunting Search    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 Am Handy wird das Raster einspaltig: Das Wissens-Panel reiht sich einklappbar
 unter der KI-Box ein, Snippets werden auf zwei Zeilen gekürzt, Tabs und
 Quellen-Karten lassen sich seitlich wischen. Es gibt nie waagerechtes Scrollen.
+Über `TageszeitHintergrund` und `headerHintergrundWaehlen` greift der obere
+Kopfbereich dieselbe Tageszeit-Stimmung wie Dashboard und Singra-Chat auf und
+blendet über `.msm-tageszeit-verlauf` ruhig in `--mui-canvas` über.
 
 ## Datenfluss
 
@@ -147,7 +154,9 @@ hervor und springen zum Treffer. Folgefragen laufen über denselben Strom: Das
 Backend schreibt die Nachfrage in eigenständige Suchanfragen um, sucht höchstens
 zweimal nach, öffnet höchstens zwei Trefferseiten und reiht frische Treffer in
 den Kontext ein (Details in `docs/ai-system-architecture.md`). Der
-Recherche-Modus (Schnell/Tiefgehend) steht als DNA-Dropdown neben der Eingabe.
+Recherche-Modus (Schnell/Tiefgehend) steht als DNA-Dropdown direkt in der
+`ChatInputBar` (`variant="glass"`). Interne Modellnamen oder technische
+Sitzungshinweise erscheinen nicht.
 
 ## Seitennavigation
 
@@ -288,8 +297,9 @@ SearXNG ist freie Software unter der **GNU Affero General Public License
 (AGPLv3)**. Maunting Search ist eine eigene Oberfläche dafür; die Metasuche-Architektur
 basiert technisch auf SearXNG. Der Quellcode der Instanz wird vom Betreiber
 vorgehalten und kann Nutzern auf Anfrage angeboten werden — genau dieses
-Versprechen verlangt die AGPLv3. Der Fußzeilen-Hinweis der Suchseite weist darauf
-hin, damit die Zuschreibung nicht verloren geht.
+Versprechen verlangt die AGPLv3. Dieser Hinweis steht in der
+Datenschutzerklärung (`Privacy.tsx`), während die Fußzeile der Suchseite nur
+Region, optionales Impressum und die ruhige Wortmarke zeigt.
 
 Drei Dinge bleiben bei jeder Anpassung der InstanzPflicht:
 

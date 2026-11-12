@@ -28,27 +28,33 @@ Die Seite folgt einem festen Aufbau, der auf Desktop und Handy gleich bleibt:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Kopfzeile (fixiert)                                          │
-│   MSB-Logo · Maunting Search · DNA-Suchleiste · Region/Sprache │
-│   Kategorie-Tabs: Web · Bilder · Videos · News   + Statistik │
+│ Tageszeit-Atmosphäre (Morgen · Tag · Abend · Nacht, oben)    │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │ Kopfzeile (sticky + scroll-state)                        │ │
+│ │   Logo · Maunting Search · Suchleiste (glass) · Region   │ │
+│ │   Alle · Bilder · Videos · Nachrichten       + Statistik │ │
+│ └──────────────────────────────────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────────┤
-│ Links (7/12)                      │ Rechts (5/12)           │
-│  1. KI-Überblick (Singra)         │  Wikipedia-/            │
-│     · Kopieren · Quellen n        │  Wissens-Panel         │
-│     · Quellen-Karten (3 Stück)    │  · Artikelbild         │
-│     · Folgefragen-Eingabe         │  · Steckbrief          │
-│  2. Weitere Fragen zum Thema      │  · „Dazu suchen …"     │
-│  3. Organische Treffer            │                        │
-│  4. Ähnliche Suchanfragen         │                        │
-│  5. Seitennavigation              │                        │
+│ Links (680 px Lesebreite)         │ Rechts (320 px)          │
+│  1. KI-Zusammenfassung            │  Wissenskarte            │
+│     · Quellen-Chips · Folgefragen │  · Bild, Quelle          │
+│     · ChatInputBar (glass)        │  · Steckbrief            │
+│  2. Weitere Fragen (eingeklappt)  │  · Verwandte Themen      │
+│  3. Trefferliste (flach)          │  · Aktuelle Schlagzeilen │
+│  4. Bilderstreifen                │                          │
+│  5. Ähnliche Suchanfragen (Cards) │                          │
+│  6. Weitere Ergebnisse + Seiten   │                          │
 ├──────────────────────────────────────────────────────────────┤
-│ Fußzeile: Maunting Search · AGPLv3-Hinweis                   │
+│ Fußzeile: Region · optionales Impressum · Maunting Search    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Am Handy wird das Raster einspaltig: Das Wissens-Panel reiht sich einklappbar
+Am Handy wird das Raster einspaltig: Die Wissenskarte reiht sich einklappbar
 unter der KI-Box ein, Snippets werden auf zwei Zeilen gekürzt, Tabs und
-Quellen-Karten lassen sich seitlich wischen. Es gibt nie waagerechtes Scrollen.
+Quellen-Chips lassen sich seitlich wischen. Es gibt nie waagerechtes Scrollen.
+Über `TageszeitHintergrund` und `headerHintergrundWaehlen` greift der obere
+Kopfbereich die jeweilige Tageszeit-Stimmung aus Dashboard und Singra-Chat auf
+und läuft über `.msm-tageszeit-verlauf` ruhig in `--mui-canvas` aus.
 
 ## Datenfluss
 
@@ -90,14 +96,23 @@ sie um und gibt ein PNG zurück (`frontend/src/browser/seite/start/KachelSymbol.
 → `browser/src-tauri/src/kachelsymbol.rs`). Der Browser spricht nie mit einer
 Favicon-API.
 
+### Bilddaten
+
+Brave liefert Vorschau (`thumbnail.src`), Breite/Höhe und Original
+(`properties.url`). `bild` ist die Vorschau über den Proxy; `bildOriginal`,
+`bildBreite`, `bildHoehe` und `quelle` stehen nur bei Bildtreffern. Die Vorschau
+zeigt Auflösung, Format (nur bei erkennbarer Endung), Quelle und die
+Originaladresse. Lizenzen liefert Brave nicht; es wird keine erfunden. Bilder
+laden `loading="lazy"` und mit stabiler Fläche.
+
 ## Kategorien
 
 | Kategorie | Parameter | Was die Seite zeigt |
 |---|---|---|
-| Web | (keiner) | KI-Überblick, Fragen, Treffer, Verwandtes, Paginierung |
-| Bilder | `categories: images` | Raster mit Vorschau über den Medien-Proxy |
+| Alle | (keiner) | KI-Überblick, Fragen, flache Trefferliste, Bilderstreifen, ähnliche Anfragen, Pager |
+| Bilder | `categories: images` | Masonry-Raster; Vorschau mit Auflösung, Quelle und Originaladresse |
 | Videos | `categories: videos` | Karten mit Wiedergabe-Symbol und Domain |
-| News | `categories: news` | Chronologische Meldungen, lokal gefiltert |
+| Nachrichten | `categories: news` | Flache Meldungsliste, lokal gefiltert |
 
 Kategorien brauchen **keine** eigene Freigabe in der Instanz: Die Tabs schicken
 `categories=…` als Suchparameter, SearXNG filtert danach selbst. Leere Tabs
@@ -126,6 +141,23 @@ Vorlage lesbar ist, kommen durch. `Gründung = 14. März 2002` erscheint,
 `Umsatz = {{USD|4.6e9}}` fällt weg. Ein Wert, den das Panel nicht lesen kann,
 wird nicht durch eine Schätzung ersetzt. Kein Treffer bedeutet: kein Panel.
 
+### Zuordnung (seit 11/2026)
+
+Der Fallback nimmt nicht mehr den ersten Volltexttreffer. Er prüft zuerst den
+Titel samt Weiterleitung, danach bis zu sechs Kandidaten — bei Bedarf in einem
+zweiten Durchlauf ohne nachgestellte Such-Modifikatoren wie `Release`,
+`PC Release`, Jahreszahlen, `Aktienkurs` oder `Einwohner`, damit etwa
+`GTA 6 Release` zuverlässig zu `Grand Theft Auto VI` aufgelöst wird. Ein Titel
+trägt die Anfrage nur, wenn jedes Anfragewort vorkommt: gleich, als Kürzel
+(`GTA` → Grand Theft Auto), als Zahl (`6` = `VI`) oder als Präfix ab vier
+Zeichen. Eine Begriffsklärung und alles unter 0,75 werden verworfen; dann bleibt
+die Karte leer (und zeigt auch keinen leeren Initialen-Platzhalter). Aus dem
+Wikitext übernimmt der Fallback zusätzlich bis zu vier interne
+„Verwandte Themen“ (`verwandte`) für klickbare Anschluss-Suchen in der
+Wissenskarte. Das Ergebnis liegt 10 Minuten im Prozesscache, eine negative
+Antwort 2 Minuten. Eine Infobox, deren Titel nur ein Teil der Anfrage ist
+(`GTA` bei `GTA 6`), wird ebenfalls verworfen.
+
 ## Kontextfragen statt Satz-Schablonen
 
 Früher baute die Seite aus dem Suchbegriff Sätze wie *„Was sind die wichtigsten
@@ -139,21 +171,60 @@ Details zu X?“*. Das war immer gleich und selten hilfreich. Heute:
   Bleibt beides leer, erscheint die Box nicht — das entscheidet das Material,
   nicht der Code.
 
-## KI-Überblick (Singra)
+## KI-Zusammenfassung
 
 Die Zusammenfassung ist neutral und flüchtig: 0 Bytes in der Datenbank, nur im
-Speicher des Tabs. Quellenverweise `[1]`, `[2]` heben die passende Quellen-Karte
-hervor und springen zum Treffer. Folgefragen laufen über denselben Strom: Das
-Backend schreibt die Nachfrage in eigenständige Suchanfragen um, sucht höchstens
-zweimal nach, öffnet höchstens zwei Trefferseiten und reiht frische Treffer in
-den Kontext ein (Details in `docs/ai-system-architecture.md`). Der
-Recherche-Modus (Schnell/Tiefgehend) steht als DNA-Dropdown neben der Eingabe.
+Speicher des Tabs. Quellenverweise `[1]`, `[2]` heben die passende Quellen-Chip
+bzw. -Karte hervor und springen zum Treffer; die „Quellen:“-Zeile lässt sich bei
+Bedarf auf drei Vorschaukarten aufklappen. Für den Startkontext liest das
+Backend vor dem ersten Token die besten fünf Trefferseiten parallel ein,
+begrenzt durch ein Zeitbudget von 3,5 Sekunden je Pre-Scrape-Durchlauf, damit
+langsame Zielseiten den Stream-Start nicht blockieren. Folgefragen laufen über
+denselben Strom: Das Backend schreibt die Nachfrage in eigenständige Suchanfragen
+um, sucht höchstens zweimal nach, öffnet höchstens zwei Trefferseiten und reiht
+frische Treffer in den Kontext ein (Details in `docs/ai-system-architecture.md`).
+Der Recherche-Modus (Schnell/Tiefgehend) steht als DNA-Dropdown in der
+`ChatInputBar` (`variant="glass"`) für Folgefragen.
+
+Der Kontext ist gedeckelt: höchstens 15 Treffer, 600 Zeichen Auszug, 2500
+Zeichen Volltext (15000 bei Deep-Dive) und 18000 Zeichen gesamt. Ganze hintere
+Treffer fallen weg; die `[n]`-Nummern bleiben an die Quellen gebunden, die die
+Oberfläche zeigt. Deep-Dive-Quellen bleiben drin. Interne Modellnamen oder
+technische Sitzungs-Hinweise erscheinen nicht in der Oberfläche.
 
 ## Seitennavigation
 
-Web zeigt die Seiten 1–4 plus „Weitere Ergebnisse“. Seite 1..3 lädt jeweils eine
-frische Trefferseite; „Weitere“ hängt die nächste Seite an, ohne Doppelte.
-Bilder, Videos und News zeigen keine Seitennavigation.
+Die Leiste zeigt ein Fenster von fünf Seiten um die aktuelle (begrenzt auf
+Seiten 1–10 inklusive `offset`-Weiterleitung an Brave Search), dazu zurück und
+weiter. „Weitere Ergebnisse“ hängt die nächste Seite an und entfernt Doppelte;
+ein Seitenwechsel ersetzt die Liste. Veraltete Paginierungs-Antworten werden
+beim Suchbegriff-, Kategorie- oder Regionswechsel verworfen (`AbortController`
+plus Generationszähler). Bilder, Videos und Nachrichten zeigen keine
+Seitennavigation.
+
+## Cache und Tempo
+
+- Der Browser cached Treffer 60 s (Bilder/Videos 300 s, Nachrichten 30 s) im
+  Prozess, geschlüsselt nach Anfrage, Seite, Kategorie, Sprache, Safe-Search
+  und Zeitraum. Ohne Nutzerkennung; gespeichert werden nur öffentliche Treffer.
+- Gleichzeitige gleiche Anfragen teilen einen Lauf (Einzel-Flug). Fehler werden
+  nicht gespeichert.
+- SearXNG und Brave laufen parallel; jede Anfrage hat ihre HTTP-Frist, die
+  gemeinsame Wartezeit bleibt 10 s. Eine langsame Quelle hält die andere nicht
+  auf.
+- Der Schutzstand (Safe Search) wird 30 s gemerkt, damit nicht jede Suche auf
+  die IPC wartet.
+- Treffer, die beide Quellen nennen, rücken nach vorn; sonst bleibt die
+  Quellenreihenfolge.
+
+## Fußzeile
+
+Schmale einzeilige Produkt-Fußzeile am Seitenende: aktive Region links, dazu
+„Impressum“ nur dann, wenn `/api/system/legal` `imprint_enabled` und eine
+`imprint_url` liefert, sowie dezent die Wortmarke „Maunting Search“ rechts.
+Browser-Einstellungslinks, Slogans und Lizenzhinweise erscheinen hier bewusst
+nicht; die vollständige SearXNG-/AGPLv3-Zuschreibung steht zentral in der
+Datenschutzerklärung (`privacyPolicy.sections.browser.items.mauntingSearch`).
 
 ## Instanz anpassen
 
@@ -288,8 +359,9 @@ SearXNG ist freie Software unter der **GNU Affero General Public License
 (AGPLv3)**. Maunting Search ist eine eigene Oberfläche dafür; die Metasuche-Architektur
 basiert technisch auf SearXNG. Der Quellcode der Instanz wird vom Betreiber
 vorgehalten und kann Nutzern auf Anfrage angeboten werden — genau dieses
-Versprechen verlangt die AGPLv3. Der Fußzeilen-Hinweis der Suchseite weist darauf
-hin, damit die Zuschreibung nicht verloren geht.
+Versprechen verlangt die AGPLv3. Dieser Hinweis steht in der
+Datenschutzerklärung (`Privacy.tsx`), während die Suchoberfläche selbst ruhig
+und frei von technischen Lizenzbannern bleibt.
 
 Drei Dinge bleiben bei jeder Anpassung der InstanzPflicht:
 
@@ -307,6 +379,10 @@ Drei Dinge bleiben bei jeder Anpassung der InstanzPflicht:
 | Bereich | Datei |
 |---|---|
 | Suchseite | `frontend/src/browser/seite/MsmSuche.tsx` |
+| Bausteine der Suchseite | `frontend/src/browser/seite/suche/` |
+| Wikipedia-Zuordnung | `_wiki_*` in `backend/services/ai_web_search_service.py` |
+| Treffer-Cache | `_cache_abrufen`, `searxng_ergebnis(cache_scope=…)` |
+| Kontextdeckel | `waehle_suchkontext` in `ai_search_summary_service.py` |
 | KI-Kachel | `frontend/src/browser/seite/suchzusammenfassung/SuchzusammenfassungKachel.tsx` |
 | Gemeinsame Suchleiste | `frontend/src/browser/kopf/SuchEingabeLeiste.tsx` (auch auf der Startseite) |
 | Medien-Proxy-Anzeige | `frontend/src/browser/seite/SuchBild.tsx` |
