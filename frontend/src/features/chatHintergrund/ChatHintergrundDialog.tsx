@@ -196,7 +196,7 @@ function DialogInhalt({
 
   if (!gespeichert) {
     return (
-      <DialogContent className="max-w-md w-full">
+      <DialogContent className="max-w-md w-full max-h-[calc(100dvh-2rem)]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ImageIcon className="w-5 h-5 shrink-0 text-primary" />
@@ -215,7 +215,7 @@ function DialogInhalt({
     // Fläche, Rand und Radius mit, und `DialogHeader`/`DialogFooter` sind
     // Bänder über die volle Breite. Mit `p-5` am Fenster schwebte die Kopfzeile
     // als Kasten darin — ein Kasten im Kasten, den niemand gemeint hat.
-    <DialogContent className="max-w-md w-full">
+    <DialogContent className="max-w-md w-full max-h-[calc(100dvh-2rem)]">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
           <ImageIcon className="w-5 h-5 shrink-0 text-primary" />
@@ -224,7 +224,7 @@ function DialogInhalt({
         <DialogDescription>{t('social.wallpaper.description')}</DialogDescription>
       </DialogHeader>
 
-      <div className="space-y-4 px-5 py-4">
+      <div className="min-h-0 overflow-y-auto overscroll-contain space-y-4 px-5 py-4">
         {/* Die Vorlagen — eine Kachel je Eintrag des Katalogs */}
         <div className="space-y-3">
           <label className="text-xs font-semibold text-on-surface flex items-center gap-1.5">

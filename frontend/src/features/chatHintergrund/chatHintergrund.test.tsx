@@ -319,6 +319,16 @@ describe('Einstellungsfenster', () => {
     expect(await screen.findByText(i18n.t('social.wallpaper.badType'))).toBeInTheDocument()
     expect((await ladeChatHintergrund('ki')).preset).toBe(STANDARD_HINTERGRUND_KI.preset)
   })
+
+  it('hält den Dialog auf kleinen Viewports im Fenster und macht die Vorlagen scrollbar', async () => {
+    render(<Probeflaeche bereich="ki" />)
+    fireEvent.click(screen.getByText('einstellen'))
+
+    const dialog = await screen.findByRole('dialog')
+    await screen.findByText(i18n.t('social.wallpaper.kiPresets'))
+    expect(dialog.querySelector('.max-h-\\[calc\\(100dvh-2rem\\)\\]')).toBeInTheDocument()
+    expect(dialog.querySelector('.overflow-y-auto')).toBeInTheDocument()
+  })
 })
 
 describe('Einstieg über das Blattmenü', () => {

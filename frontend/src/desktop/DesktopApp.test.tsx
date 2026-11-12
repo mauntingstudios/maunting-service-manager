@@ -90,6 +90,9 @@ vi.mock('@/pages/PanelDatabase', () => ({
 vi.mock('@/pages/Docs', () => ({
   Docs: () => <div data-testid="hilfe-seite" />,
 }))
+vi.mock('@/docs/DocsEmbedded', () => ({
+  DocsEmbedded: () => <div data-testid="dokumente-seite" />,
+}))
 vi.mock('@/pages/Messenger', () => ({
   Messenger: () => <div data-testid="messenger-seite" />,
 }))
@@ -728,6 +731,30 @@ describe('DesktopApp', () => {
       expect(screen.getByRole('heading', { level: 1, name: i18n.t('mss.app.messenger') })).toBeInTheDocument()
     })
     expect(screen.queryByRole('heading', { level: 1, name: 'Singra' })).toBeNull()
+  })
+
+  it('zeigt das Beta-Badge von Maunting Docs am Titel und im mobilen Menü', async () => {
+    localStorage.setItem(LETZTE_ROUTE_KEY, '/dokumente')
+    localStorage.setItem('msm_cached_user', JSON.stringify(BENUTZER))
+    useAuthStore.setState({ user: BENUTZER, isAuthenticated: true })
+    konfigMock({ backend_url: 'https://api.example.com', sandbox_pfad: 'C:\\Users\\tester\\MSS-Sandbox', eingerichtet: true })
+    vi.stubGlobal('fetch', vi.fn((eingabe: RequestInfo | URL) => {
+      const url = String(eingabe)
+      if (url.includes('/auth/refresh')) return Promise.resolve(new Response(JSON.stringify({ access_token: 'a', refresh_token: 'r' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      if (url.includes('/auth/me')) return Promise.resolve(new Response(JSON.stringify(BENUTZER), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }))
+
+    render(<DesktopApp />)
+
+    await screen.findByTestId('dokumente-seite')
+    const titel = screen.getByRole('heading', { level: 1, name: i18n.t('mss.app.dokumente') })
+    expect(titel.parentElement).toHaveTextContent(i18n.t('docs.betaBadge'))
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.app.menueOeffnen') }))
+    const mobilNavigation = screen.getAllByRole('navigation', { name: i18n.t('mss.app.bereiche') }).at(-1)!
+    const docsButton = within(mobilNavigation).getByRole('button', { name: new RegExp(i18n.t('mss.app.dokumente')) })
+    expect(within(docsButton).getByText(i18n.t('docs.betaBadge'))).toBeInTheDocument()
   })
 
   it('setzt in Kopfzeile und Navigation kein natives title; inaktive Reiter nennen ihren Namen per Kurzinfo', async () => {
