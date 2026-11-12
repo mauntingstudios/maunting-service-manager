@@ -4,4 +4,4 @@ from main import app_version
 def test_app_version_returns_correct_version():
     res = app_version()
     assert isinstance(res, dict)
-    assert res["version"] == "5.8.0"
+    assert res["version"] == "6.0.0"

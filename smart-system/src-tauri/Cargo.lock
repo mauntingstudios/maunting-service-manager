@@ -3070,7 +3070,7 @@ dependencies = [
 
 [[package]]
 name = "maunting-smart-system"
-version = "5.8.0"
+version = "6.0.0"
 dependencies = [
  "audio_ducking",
  "aws-lc-rs",

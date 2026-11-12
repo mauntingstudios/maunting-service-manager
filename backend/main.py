@@ -1293,7 +1293,7 @@ def redoc_ui(_: object = Depends(require_global("panel.settings.read"))):
 
 @app.get("/api/version")
 def app_version():
-    return {"name": settings.app_name, "version": "5.8.0"}
+    return {"name": settings.app_name, "version": "6.0.0"}
 
 
 from services.health_service import pruefe_gesundheit
