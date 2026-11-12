@@ -240,6 +240,8 @@ class AiProviderCreate(BaseModel):
     memory_model: Modellkennung = Field(default=None, max_length=256)
     # Das Modell fuer die neutrale Suchzusammenfassung (SearXNG AI Overviews).
     search_summary_model: Modellkennung = Field(default=None, max_length=256)
+    # Feste Denkstufe der Suchzusammenfassung; leer heisst ohne Denken.
+    search_summary_reasoning_effort: Stufenwort = Field(default=None, max_length=16)
     azure_resource_name: Ressourcenname = Field(default=None, max_length=64)
     custom_base_url: CustomBaseUrl = Field(default=None, max_length=512)
     custom_chat_protocol: CustomChatProtocol = "chat_completions"
@@ -318,6 +320,7 @@ class AiProviderUpdate(BaseModel):
     ethics_mode: str | None = Field(default=None, max_length=32)
     memory_model: Modellkennung = Field(default=None, max_length=256)
     search_summary_model: Modellkennung = Field(default=None, max_length=256)
+    search_summary_reasoning_effort: Stufenwort = Field(default=None, max_length=16)
     # Wie die Felder darueber: „nicht mitgeschickt" laesst den Namen stehen,
     # ausdrueckliches ``null`` (bzw. leeres Feld) nimmt ihn zurueck. Der
     # Unterschied zaehlt hier doppelt — ein geaenderter Ressourcenname loescht
@@ -391,6 +394,7 @@ class AiProviderResponse(BaseModel):
     ethics_mode: str = "auto"
     memory_model: str | None = None
     search_summary_model: str | None = None
+    search_summary_reasoning_effort: str | None = None
     #: Der Azure-Ressourcenname, roh aus der Zeile — wie `default_voice`
     #: ungeprueft gelesen und aus demselben Grund: eine 500 beim blossen
     #: Anzeigen waere die schlechteste Art, dem Betreiber einen Formfehler

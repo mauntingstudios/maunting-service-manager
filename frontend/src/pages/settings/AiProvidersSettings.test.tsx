@@ -786,6 +786,52 @@ describe('AiProvidersSettings', () => {
     })
   })
 
+  describe('Suchzusammenfassung', () => {
+    it('sperrt die Such-Denkstufe ohne Suchmodell und startet bei „Aus“', async () => {
+      render(<AiProvidersSettings canWrite />)
+
+      const stufe = await screen.findByRole('button', { name: 'Denkstufe (Obergrenze)' })
+      expect(stufe).toHaveTextContent('Aus (schnellste Antwort)')
+      expect(stufe).toBeDisabled()
+    })
+
+    it('speichert die gewählte Obergrenze und nimmt sie mit „Aus“ zurück', async () => {
+      vi.mocked(aiApi.listProviderSettings).mockResolvedValue([{
+        ...provider, search_summary_model: 'anthropic/claude-opus-5', search_summary_enabled: true,
+      }])
+      render(<AiProvidersSettings canWrite />)
+
+      const stufe = await screen.findByRole('button', { name: 'Denkstufe (Obergrenze)' })
+      await waitFor(() => expect(stufe).not.toBeDisabled())
+      fireEvent.click(stufe)
+      fireEvent.click(screen.getByRole('option', { name: 'Hoch' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+      await waitFor(() => expect(aiApi.updateProvider).toHaveBeenCalledWith(4, expect.objectContaining({
+        search_summary_model: 'anthropic/claude-opus-5',
+        search_summary_reasoning_effort: 'high',
+      })))
+    })
+
+    it('liest eine gespeicherte Stufe und schickt „Aus“ als null', async () => {
+      vi.mocked(aiApi.listProviderSettings).mockResolvedValue([{
+        ...provider,
+        search_summary_model: 'anthropic/claude-opus-5',
+        search_summary_enabled: true,
+        search_summary_reasoning_effort: 'medium',
+      }])
+      render(<AiProvidersSettings canWrite />)
+
+      const stufe = await screen.findByRole('button', { name: 'Denkstufe (Obergrenze)' })
+      await waitFor(() => expect(stufe).toHaveTextContent('Mittel'))
+      fireEvent.click(stufe)
+      fireEvent.click(screen.getByRole('option', { name: 'Aus (schnellste Antwort)' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+      await waitFor(() => expect(aiApi.updateProvider).toHaveBeenCalledWith(4, expect.objectContaining({
+        search_summary_reasoning_effort: null,
+      })))
+    })
+  })
+
   describe('Modellsuche und alphabetische Sortierung', () => {
     it('sortiert die Modellliste alphabetisch und filtert über die Suchleiste', async () => {
       vi.mocked(aiApi.listProviderSettings).mockResolvedValue([{

@@ -27,8 +27,6 @@ from sqlalchemy.orm import Session
 from models.ai_provider import AiProvider
 from models.user import User
 from services import (
-    ai_limit_service,
-    ai_provider_service,
     ai_reasoning,
     ai_web_search_service,
     permission_service,
@@ -132,33 +130,20 @@ def suchzusammenfassung_anbieter(
 
 
 def suchzusammenfassung_konfig(db: Session, user: User) -> dict[str, Any]:
-    """Liefert Status, Modell und für die Rolle erlaubte Denkstufen."""
+    """Liefert Status und Modell der Suchzusammenfassung.
+
+    Die Denkstufe ist eine feste Einstellung am Anbieter, keine Wahl je
+    Anfrage; deshalb steht sie hier nicht mehr.
+    """
     if not permission_service.has_global_permission(db, user, "ai.chat.use"):
-        return {"aktiviert": False, "modell": None, "denkstufen": [], "max_denkstufe": None}
+        return {"aktiviert": False, "modell": None}
 
     anbieter_tupel = suchzusammenfassung_anbieter(db, user)
     if anbieter_tupel is None:
-        return {"aktiviert": False, "modell": None, "denkstufen": [], "max_denkstufe": None}
+        return {"aktiviert": False, "modell": None}
 
     _provider, model = anbieter_tupel
-    deckel = ai_limit_service.resolve_effective_limits(db, user).max_reasoning_effort
-
-    if deckel is not None and deckel <= ai_reasoning.MIN_RANG:
-        erlaubte_stufen: list[str] = []
-        max_stufe = None
-    elif deckel is None:
-        erlaubte_stufen = list(ai_reasoning.RANGFOLGE)
-        max_stufe = "max"
-    else:
-        erlaubte_stufen = list(ai_reasoning.RANGFOLGE[:deckel])
-        max_stufe = ai_reasoning.stufe_fuer_rang(deckel)
-
-    return {
-        "aktiviert": True,
-        "modell": model,
-        "denkstufen": erlaubte_stufen,
-        "max_denkstufe": max_stufe,
-    }
+    return {"aktiviert": True, "modell": model}
 
 
 def _treffer_kosten(t: dict[str, Any]) -> int:
@@ -443,7 +428,6 @@ async def stream_suchzusammenfassung(
     treffer: list[dict[str, Any]] | None = None,
     verlauf: list[dict[str, Any]] | None = None,
     bevorzugte_id: int | None = None,
-    denkstufe: str | None = None,
     neue_suche: bool = True,
     user_id: int | None = None,
 ) -> AsyncIterator[str]:
@@ -456,7 +440,7 @@ async def stream_suchzusammenfassung(
     """
     if db is not None and user is not None:
         async for ereignis in _stream_mit_sitzung(
-            db, user, q, treffer or [], verlauf, bevorzugte_id, denkstufe, neue_suche
+            db, user, q, treffer or [], verlauf, bevorzugte_id, neue_suche
         ):
             yield ereignis
         return
@@ -470,7 +454,7 @@ async def stream_suchzusammenfassung(
             yield f"data: {json.dumps({'type': 'disabled', 'reason': 'permission'})}\n\n"
             return
         async for ereignis in _stream_mit_sitzung(
-            sitzung, geladen, q, treffer or [], verlauf, bevorzugte_id, denkstufe, neue_suche
+            sitzung, geladen, q, treffer or [], verlauf, bevorzugte_id, neue_suche
         ):
             yield ereignis
     finally:
@@ -484,7 +468,6 @@ async def _stream_mit_sitzung(
     treffer: list[dict[str, Any]],
     verlauf: list[dict[str, Any]] | None = None,
     bevorzugte_id: int | None = None,
-    denkstufe: str | None = None,
     neue_suche: bool = True,
 ) -> AsyncIterator[str]:
     # 1. Rechteprüfung
@@ -600,13 +583,11 @@ async def _stream_mit_sitzung(
                                 ziel["volltext"] = inhalt
                                 ziel["deep"] = True
 
-            # 4. Denkstufe auflösen und prüfen
-            aktiv_denken = bool(denkstufe and denkstufe.lower() not in ("fast", "schnell", "aus", "none"))
-            wunsch_stufe = denkstufe.lower().strip() if aktiv_denken and denkstufe else None
-
-            konfig_daten = suchzusammenfassung_konfig(db, user)
-            erlaubte_stufen = konfig_daten.get("denkstufen", [])
-            max_stufe = konfig_daten.get("max_denkstufe")
+            # 4. Denkstufe aus der Anbieter-Einstellung (leer = schnellste
+            #    Antwort). Die Suche fragt nicht je Anfrage danach; das
+            #    Rollenlimit kappt die Stufe in `vorgabe` nach oben.
+            wunsch_stufe = (provider.search_summary_reasoning_effort or "").strip().lower() or None
+            aktiv_denken = bool(wunsch_stufe)
 
             # 5. Nachrichten zusammenstellen
             messages = baue_nachrichten(q, gesamt_treffer, verlauf, frische_ab)
@@ -614,7 +595,7 @@ async def _stream_mit_sitzung(
             # 6. Streamen
             usage = StreamUsage()
             zeichen = 0
-            yield f"data: {json.dumps({'type': 'start', 'model': model, 'provider': provider.name, 'denkstufen': erlaubte_stufen, 'max_denkstufe': max_stufe})}\n\n"
+            yield f"data: {json.dumps({'type': 'start', 'model': model, 'provider': provider.name})}\n\n"
 
             denken, stufe = await ai_reasoning.vorgabe(
                 client,
@@ -635,7 +616,7 @@ async def _stream_mit_sitzung(
                 reasoning=denken,
                 reasoning_effort=stufe,
             ):
-                if chunk.kind == "thought" and chunk.text:
+                if chunk.kind == "reasoning" and chunk.text:
                     yield f"data: {json.dumps({'type': 'thought', 'text': chunk.text})}\n\n"
                 elif chunk.kind == "content" and chunk.text:
                     zeichen += len(chunk.text)

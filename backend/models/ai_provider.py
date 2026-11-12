@@ -186,6 +186,10 @@ class AiProvider(Base):
     # ``None`` oder `search_summary_enabled=False` heisst: keine Zusammenfassung (deaktiviert).
     search_summary_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     search_summary_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    # Die feste Denkstufe der Suchzusammenfassung (aus `ai_reasoning.RANGFOLGE`).
+    # ``None`` heisst: ohne Denken, die schnellste Antwort. Die Suche fragt nicht
+    # je Anfrage danach; das Rollenlimit kappt die Stufe nach oben.
+    search_summary_reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     search_summary_input_price_micro_usd_per_million: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     search_summary_output_price_micro_usd_per_million: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     search_summary_cache_price_micro_usd_per_million: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

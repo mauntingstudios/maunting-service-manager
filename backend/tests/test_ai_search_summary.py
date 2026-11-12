@@ -238,6 +238,141 @@ async def test_stream_suchzusammenfassung_erfolg(db, monkeypatch, caplog) -> Non
 
 
 @pytest.mark.asyncio
+async def test_stream_sendet_thought_bei_reasoning_chunk(db, monkeypatch) -> None:
+    """Die Adapter emittieren Denktexte als `reasoning`, nicht als `thought`.
+
+    Der Strom muss sie trotzdem als SSE-`thought` herausgeben, sonst sieht die
+    Oberfläche den Denkprozess nie, obwohl das Modell denkt.
+    """
+    user = User(
+        username="stream_user_denkt",
+        password_hash="pw",
+        is_active=True,
+        is_owner=True,
+    )
+    p = AiProvider(
+        name="Search Provider",
+        provider_kind="openai",
+        default_model="gpt-4o",
+        enabled=True,
+        requires_api_key=False,
+        search_summary_enabled=True,
+        search_summary_model="gpt-4o-mini",
+    )
+    db.add(user)
+    db.add(p)
+    db.flush()
+
+    monkeypatch.setattr("services.permission_service.has_global_permission", lambda _db, _u, _k: True)
+
+    async def fake_stream(*args, **kwargs) -> AsyncIterator[StreamChunk]:
+        yield StreamChunk(kind="reasoning", text="Ich wäge die Quellen ab. ")
+        yield StreamChunk(kind="content", text="Die Antwort [1].")
+
+    monkeypatch.setattr(ai_search_summary_service, "stream_chat_completion", fake_stream)
+
+    events = [
+        event async for event in ai_search_summary_service.stream_suchzusammenfassung(
+            db=db,
+            user=user,
+            q="Test",
+            treffer=[{"index": 1, "titel": "Titel", "url": "https://example.com", "inhalt": "Text"}],
+        )
+    ]
+
+    gedanken = [json.loads(e.removeprefix("data: ")) for e in events if '"type": "thought"' in e]
+    assert gedanken, "reasoning-Chunks müssen als thought-Ereignis ankommen"
+    assert gedanken[0]["text"] == "Ich wäge die Quellen ab. "
+    assert any('"type": "content"' in e for e in events)
+    assert any('"type": "done"' in e for e in events)
+
+
+@pytest.mark.asyncio
+async def test_denkstufe_kommt_aus_dem_anbieter_nicht_aus_der_anfrage(db, monkeypatch) -> None:
+    """Die Suche denkt nur, wenn der Betreiber am Zugang eine Stufe gesetzt hat."""
+    user = User(
+        username="stream_user_stufe",
+        password_hash="pw",
+        is_active=True,
+        is_owner=True,
+    )
+    p = AiProvider(
+        name="Search Provider",
+        provider_kind="openai",
+        default_model="gpt-4o",
+        enabled=True,
+        requires_api_key=False,
+        search_summary_enabled=True,
+        search_summary_model="gpt-4o-mini",
+        search_summary_reasoning_effort="high",
+    )
+    db.add(user)
+    db.add(p)
+    db.flush()
+
+    monkeypatch.setattr("services.permission_service.has_global_permission", lambda _db, _u, _k: True)
+
+    erfasst: dict = {}
+
+    async def fake_vorgabe(client, _db, *, user, provider, aktiv, wunsch):
+        erfasst["aktiv"] = aktiv
+        erfasst["wunsch"] = wunsch
+        return aktiv, wunsch
+
+    monkeypatch.setattr(ai_search_summary_service.ai_reasoning, "vorgabe", fake_vorgabe)
+
+    async def fake_stream(*args, **kwargs) -> AsyncIterator[StreamChunk]:
+        yield StreamChunk(kind="content", text="Antwort [1].")
+
+    monkeypatch.setattr(ai_search_summary_service, "stream_chat_completion", fake_stream)
+
+    async def lauf() -> list[str]:
+        return [
+            event async for event in ai_search_summary_service.stream_suchzusammenfassung(
+                db=db,
+                user=user,
+                q="Test",
+                treffer=[{"index": 1, "titel": "Titel", "url": "https://example.com", "inhalt": "Text"}],
+            )
+        ]
+
+    events = await lauf()
+    assert erfasst == {"aktiv": True, "wunsch": "high"}
+    assert '"denkstufen"' not in events[0]
+    assert '"max_denkstufe"' not in events[0]
+
+    p.search_summary_reasoning_effort = None
+    events = await lauf()
+    assert erfasst == {"aktiv": False, "wunsch": None}
+
+
+def test_zusammenfassung_route_lehnt_denkstufe_feld_ab(db) -> None:
+    """Die Stufe ist keine Wahl je Anfrage mehr; das Feld ist hart entfernt."""
+    app = FastAPI()
+    app.include_router(browser_suche.router)
+
+    user = User(
+        username="route_user_stufe",
+        password_hash="pw",
+        is_active=True,
+        is_owner=True,
+    )
+    db.add(user)
+    db.flush()
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[verify_csrf] = lambda: None
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/browser/suche/zusammenfassung",
+        json={"q": "Test", "treffer": [], "verlauf": [], "denkstufe": "high"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_stream_suchzusammenfassung_leere_antwort(db, monkeypatch, caplog) -> None:
     """Ein Lauf, der nur denkt und nichts schreibt, ist ein Fehler, kein Erfolg."""
     user = User(
@@ -594,7 +729,7 @@ def test_browser_suche_konfig_route(db, monkeypatch) -> None:
     monkeypatch.setattr(
         ai_search_summary_service,
         "suchzusammenfassung_konfig",
-        lambda db, user: {"aktiviert": True, "modell": "test-model", "denkstufen": ["minimal", "low"], "max_denkstufe": "low"},
+        lambda db, user: {"aktiviert": True, "modell": "test-model"},
     )
 
     client = TestClient(app)
@@ -603,8 +738,9 @@ def test_browser_suche_konfig_route(db, monkeypatch) -> None:
     daten = resp.json()
     assert daten["aktiviert"] is True
     assert daten["modell"] == "test-model"
-    assert daten["denkstufen"] == ["minimal", "low"]
-    assert daten["max_denkstufe"] == "low"
+    # Die Denkstufe ist eine Anbieter-Einstellung, keine Wahl je Anfrage.
+    assert "denkstufen" not in daten
+    assert "max_denkstufe" not in daten
 
 
 def test_baue_suchkontext_mit_volltext() -> None:

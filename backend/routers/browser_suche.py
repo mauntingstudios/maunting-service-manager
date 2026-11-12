@@ -87,7 +87,6 @@ class SucheZusammenfassungAnfrage(BaseModel):
     treffer: list[SuchTrefferInhalt] = Field(default_factory=list, max_length=50)
     verlauf: list[SuchVerlaufEintrag] = Field(default_factory=list, max_length=50)
     provider_id: StrictInt | None = None
-    denkstufe: Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)] | None = None
 
 
 def _mit_code(status_code: int, code: str) -> HTTPException:
@@ -146,6 +145,8 @@ def suchen(
         antwort["infobox"] = ergebnis["infobox"]
     if "antworten" in ergebnis:
         antwort["antworten"] = ergebnis["antworten"]
+    if "korrekturen" in ergebnis:
+        antwort["korrekturen"] = ergebnis["korrekturen"]
     return antwort
 
 
@@ -208,7 +209,6 @@ async def suchzusammenfassung_stream(
             treffer=treffer_dict,
             verlauf=verlauf_dict,
             bevorzugte_id=req.provider_id,
-            denkstufe=req.denkstufe,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},

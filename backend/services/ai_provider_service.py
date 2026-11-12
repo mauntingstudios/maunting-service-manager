@@ -48,7 +48,6 @@ from models import AiProvider, AiRun, User
 
 from services import ai_custom_ssrf, ai_provider_registry, ai_model_price_service
 from services.ai_provider_errors import AiProviderConfigurationError
-from services.ai_reasoning import RANGFOLGE
 from services.ai_voice.sprachwege import (
     SPRACHEN as REALTIME_SPRACHEN,
     VAD_STUFEN as REALTIME_VAD,
@@ -451,6 +450,12 @@ def _assert_ressource(name: str | None, *, pflicht: bool = False) -> str | None:
     return kennung
 
 
+def _denkstufen_rangfolge() -> tuple[str, ...]:
+    from services.ai_reasoning import RANGFOLGE
+
+    return RANGFOLGE
+
+
 def _assert_worker_rolle(
     worker_model: str | None,
     worker_reasoning_effort: str | None,
@@ -477,9 +482,10 @@ def _assert_worker_rolle(
     """
     modell = (worker_model or "").strip() or None
     stufe = (worker_reasoning_effort or "").strip() or None
-    if stufe is not None and stufe not in RANGFOLGE:
+    rangfolge = _denkstufen_rangfolge()
+    if stufe is not None and stufe not in rangfolge:
         raise AiProviderConfigurationError(
-            "Unbekannte Worker-Denkstufe. Zulässig sind: " + ", ".join(RANGFOLGE)
+            "Unbekannte Worker-Denkstufe. Zulässig sind: " + ", ".join(rangfolge)
         )
     if stufe is not None and modell is None:
         raise AiProviderConfigurationError(
@@ -490,6 +496,22 @@ def _assert_worker_rolle(
             "Ein Worker-Modell braucht ein Standardmodell am selben Zugang"
         )
     return modell, stufe
+
+
+def _assert_such_denkstufe(stufe: str | None) -> str | None:
+    """Die Denkstufe der Suchzusammenfassung — ein Wort aus dem Katalog oder keins.
+
+    Anders als beim Worker braucht die Stufe hier kein eigenes Modell: sie
+    gilt, sobald eine Suchzusammenfassung eingerichtet ist, und bleibt sonst
+    wirkungslos stehen.
+    """
+    wert = (stufe or "").strip().lower() or None
+    rangfolge = _denkstufen_rangfolge()
+    if wert is not None and wert not in rangfolge:
+        raise AiProviderConfigurationError(
+            "Unbekannte Such-Denkstufe. Zulässig sind: " + ", ".join(rangfolge)
+        )
+    return wert
 
 
 ETHICS_MODI = ("off", "auto", "always", "critical")
@@ -735,9 +757,10 @@ def _assert_ethics_rolle(
         raise AiProviderConfigurationError(
             f"Unbekannter Ethik-Modus '{modus}'. Zulässig sind: {', '.join(ETHICS_MODI)}"
         )
-    if stufe is not None and stufe not in RANGFOLGE:
+    rangfolge = _denkstufen_rangfolge()
+    if stufe is not None and stufe not in rangfolge:
         raise AiProviderConfigurationError(
-            "Unbekannte Ethik-Denkstufe. Zulässig sind: " + ", ".join(RANGFOLGE)
+            "Unbekannte Ethik-Denkstufe. Zulässig sind: " + ", ".join(rangfolge)
         )
     if stufe is not None and modell is None:
         raise AiProviderConfigurationError(
@@ -824,6 +847,8 @@ def create_provider(
     memory_model: str | None = None,
     # Optional: das Modell für die neutrale Suchzusammenfassung.
     search_summary_model: str | None = None,
+    # Optional: die feste Denkstufe der Suchzusammenfassung (leer = ohne Denken).
+    search_summary_reasoning_effort: str | None = None,
     # Optional: der Name der Azure-Ressource dieses Zugangs. Nur Anbieter mit
     # ``ressource_noetig`` brauchen ihn; bei allen anderen bleibt er leer und
     # unbeachtet. Er wird trotzdem **nicht** gegen `provider_kind` geprüft —
@@ -859,6 +884,7 @@ def create_provider(
     )
     gedaechtnismodell = (memory_model or "").strip() or None
     suchmodell = (search_summary_model or "").strip() or None
+    suchstufe = _assert_such_denkstufe(search_summary_reasoning_effort)
     kind = _assert_kind(provider_kind)
     automatic_prices: dict[str, object] = {
         "default_model": modell,
@@ -956,6 +982,7 @@ def create_provider(
         ethics_mode=ethikmodus,
         memory_model=gedaechtnismodell,
         search_summary_model=suchmodell,
+        search_summary_reasoning_effort=suchstufe,
         azure_resource_name=ressource,
         custom_base_url=validated_custom_url,
         custom_chat_protocol=custom_proto,
@@ -1092,6 +1119,11 @@ def update_provider(
         if "search_summary_model" in values
         else provider.search_summary_model
     )
+    new_search_summary_effort = _assert_such_denkstufe(
+        values["search_summary_reasoning_effort"]
+        if "search_summary_reasoning_effort" in values
+        else provider.search_summary_reasoning_effort
+    )
     price_values: dict[str, object] = {
         "default_model": new_default_model,
         "worker_model": new_worker_model,
@@ -1118,6 +1150,7 @@ def update_provider(
     provider.ethics_mode = new_ethics_mode
     provider.memory_model = new_memory_model
     provider.search_summary_model = new_search_summary_model
+    provider.search_summary_reasoning_effort = new_search_summary_effort
     for flag, model in (
         ("standard_enabled", new_default_model),
         ("worker_enabled", new_worker_model),

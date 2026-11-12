@@ -127,6 +127,13 @@ const KEIN_WORKER = '__aus__'
 const KEINE_ETHICS = '__aus__'
 const KEIN_GEDAECHTNIS = '__aus__'
 const KEINE_SUCHZUSAMMENFASSUNG = '__aus__'
+/**
+ * Die Obergrenze der Such-Denkstufe. Dieselben Wörter wie
+ * `ai_reasoning.RANGFOLGE` im Backend; das Rollenlimit kappt danach weiter.
+ * Ohne Wahl antwortet die Suche ohne Denken, also am schnellsten.
+ */
+const SUCH_DENKSTUFEN = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+const KEINE_SUCHSTUFE = '__aus__'
 const KEINE_TRANSKRIPTION = '__aus__'
 /** Keine Denkstufe des Sprachwegs — die Vorgabe des Modells gilt. */
 const KEINE_SPRACHSTUFE = '__aus__'
@@ -396,6 +403,7 @@ const EMPTY_PROVIDER: ProviderDraft = {
   // sonst mit dem Standardmodell (`gedaechtnis_anbieter`).
   memory_model: null,
   search_summary_model: null,
+  search_summary_reasoning_effort: null,
   search_summary_enabled: false,
   search_summary_input_price_micro_usd_per_million: null,
   search_summary_output_price_micro_usd_per_million: null,
@@ -467,6 +475,7 @@ function toDraft(provider: AiProviderAdmin): ProviderDraft {
     ethics_mode: provider.ethics_mode || 'auto',
     memory_model: provider.memory_model ?? null,
     search_summary_model: provider.search_summary_model ?? null,
+    search_summary_reasoning_effort: provider.search_summary_reasoning_effort ?? null,
     azure_resource_name: provider.azure_resource_name,
     custom_base_url: provider.custom_base_url ?? null,
     custom_chat_protocol: customProtocol,
@@ -599,6 +608,7 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
             ethics_mode: draft.ethics_mode || 'auto',
             memory_model: draft.memory_model?.trim() || null,
             search_summary_model: draft.search_summary_model?.trim() || null,
+            search_summary_reasoning_effort: draft.search_summary_reasoning_effort || null,
             ...(sprachwege.length > 0 ? {
               realtime_default: Boolean(draft.realtime_default || draft.realtime_enabled),
               realtime_enabled: Boolean(draft.realtime_enabled || draft.realtime_default),
@@ -1186,6 +1196,7 @@ function ProviderForm({
   const ethicsModusId = useId()
   const gedaechtnisModellId = useId()
   const suchzusammenfassungsModellId = useId()
+  const suchStufeId = useId()
   const ttsModellId = useId()
   const ressourceId = useId()
   const customProtocolId = useId()
@@ -2491,6 +2502,28 @@ function ProviderForm({
                     onCacheChange={(value) => change({ search_summary_cache_price_micro_usd_per_million: value })}
                   />
                 )}
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor={suchStufeId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  {t('ai.providers.searchSummaryEffort')}
+                </label>
+                <Dropdown
+                  id={suchStufeId}
+                  value={draft.search_summary_reasoning_effort || KEINE_SUCHSTUFE}
+                  onChange={(stufe) => change({
+                    search_summary_reasoning_effort: stufe === KEINE_SUCHSTUFE ? null : stufe,
+                  })}
+                  disabled={!draft.search_summary_model?.trim()}
+                  options={[
+                    { value: KEINE_SUCHSTUFE, label: t('ai.providers.searchSummaryEffortOff') },
+                    ...SUCH_DENKSTUFEN.map((effort) => ({
+                      value: effort,
+                      label: t(`ai.reasoning.levels.${effort}`, { defaultValue: effort }),
+                    })),
+                  ]}
+                  aria-label={t('ai.providers.searchSummaryEffort')}
+                />
+                <p className="msm-field-help">{t('ai.providers.searchSummaryEffortHint')}</p>
               </div>
             </div>
           </div>

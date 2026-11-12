@@ -124,6 +124,7 @@ def _admin_response(provider: AiProvider) -> AiProviderResponse:
         ethics_mode=provider.ethics_mode or "auto",
         memory_model=provider.memory_model,
         search_summary_model=provider.search_summary_model,
+        search_summary_reasoning_effort=getattr(provider, "search_summary_reasoning_effort", None),
         azure_resource_name=provider.azure_resource_name,
         custom_base_url=provider.custom_base_url,
         custom_chat_protocol=getattr(provider, "custom_chat_protocol", None) or "chat_completions",

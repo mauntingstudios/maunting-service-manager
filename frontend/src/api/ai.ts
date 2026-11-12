@@ -97,6 +97,8 @@ export interface AiProviderAdmin {
   ethics_mode: 'off' | 'auto' | 'always' | 'critical'
   memory_model?: string | null
   search_summary_model?: string | null
+  /** Feste Denkstufe der Suchzusammenfassung; `null` heißt ohne Denken (schnellste Antwort). */
+  search_summary_reasoning_effort?: string | null
   /**
    * Der Name der Azure-Ressource dieses Zugangs — das eine Stueck Adresse, das
    * MSM nicht selbst weiss. Nur Anbieter mit `ressource_noetig` brauchen ihn;
@@ -1527,6 +1529,8 @@ export interface AiProviderWrite {
   ethics_mode?: 'off' | 'auto' | 'always' | 'critical'
   memory_model?: string | null
   search_summary_model?: string | null
+  /** Feste Denkstufe der Suchzusammenfassung; `null` heißt ohne Denken (schnellste Antwort). */
+  search_summary_reasoning_effort?: string | null
   /**
    * Wie `default_voice`: „nicht genannt" laesst den Namen stehen,
    * ausdrueckliches `null` nimmt ihn zurueck. Der Unterschied zaehlt hier
