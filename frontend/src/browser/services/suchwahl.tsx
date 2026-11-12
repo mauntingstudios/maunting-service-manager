@@ -108,7 +108,7 @@ export function SuchwahlKnopf({
         aria-label={ariaLabel ?? t('browser.start.suchmaschine')}
         aria-haspopup="listbox"
         aria-expanded={offen}
-        className={`flex items-center gap-1 rounded-full text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 transition-colors ${
+        className={`flex items-center gap-1 rounded-full text-on-surface-variant hover:bg-surface-container-highest/80 hover:text-on-surface active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 transition-all duration-150 ${
           kompakt ? 'h-7 px-1.5' : 'h-8 pl-2 pr-1.5'
         } ${className}`}
       >
@@ -124,15 +124,15 @@ export function SuchwahlKnopf({
             ref={popupRef}
             style={lage}
             data-msm-dropdown-menu=""
-            className="flex min-w-[210px] max-w-[280px] flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-high py-1 shadow-panel z-50 animate-fade-in"
+            className="flex min-w-[220px] max-w-[280px] flex-col overflow-hidden rounded-2xl border border-outline-variant/45 bg-surface-container-high/95 p-1 shadow-panel backdrop-blur-2xl z-50 animate-fade-in"
           >
-            <div className="px-3 py-1.5 text-label-sm font-semibold text-on-surface-variant border-b border-outline-variant/40">
+            <div className="px-3 py-1.5 text-label-sm font-semibold text-on-surface-variant border-b border-outline-variant/30">
               {t('browser.start.suchmaschine')}
             </div>
             <ul
               role="listbox"
               aria-label={t('browser.start.suchmaschine')}
-              className="max-h-64 overflow-y-auto p-1"
+              className="max-h-64 overflow-y-auto pt-1 space-y-0.5"
               onMouseDown={(e) => e.preventDefault()}
             >
               {suchwahl.optionen.map((opt) => {
@@ -148,10 +148,10 @@ export function SuchwahlKnopf({
                         setOffen(false)
                         ankerRef.current?.focus()
                       }}
-                      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                      className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm transition-colors ${
                         aktiv
-                          ? 'bg-primary/10 text-primary font-medium'
-                          : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface'
+                          ? 'bg-primary/12 text-primary font-medium'
+                          : 'text-on-surface-variant hover:bg-surface-container-highest/65 hover:text-on-surface'
                       }`}
                     >
                       <span className="flex h-4 w-4 shrink-0 items-center justify-center">{opt.icon}</span>

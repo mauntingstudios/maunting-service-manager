@@ -8,7 +8,7 @@ import { useLeistenname } from '../leiste/leistenname'
 
 /** Am Finger 44 px (Punkt 86); im MSB nach dem Zeiger, nicht nach der Breite (Punkt 127). */
 export const KNOPF =
-  'relative flex h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-40 disabled:hover:bg-transparent'
+  'relative flex h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-all duration-150 hover:bg-surface-container-high/85 hover:text-on-surface active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-40 disabled:hover:bg-transparent disabled:active:scale-100'
 
 interface KnopfProps {
   name: string

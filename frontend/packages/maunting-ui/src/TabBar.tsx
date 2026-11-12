@@ -53,6 +53,8 @@ interface TabBarProps<TId extends string> {
    * Namen der übrigen nennt eine Kurzinfo.
    */
   kompakt?: boolean
+  /** Visuelle Form: Kachel-Reiter (`pill`, Standard) oder flache Unterstrich-Reiter (`underline`). */
+  variante?: 'pill' | 'underline'
   /** Zusätzliche CSS-Klassen für den äußeren Container */
   className?: string
 }
@@ -70,10 +72,12 @@ export function TabBar<TId extends string>({
   embedded = false,
   einzeilig = false,
   kompakt = false,
+  variante = 'pill',
   className = '',
 }: TabBarProps<TId>) {
   const { t } = useTranslation()
   const aktiverReiter = useRef<HTMLButtonElement | null>(null)
+  const istUnterstrich = variante === 'underline'
 
   // Beim Öffnen einer Seite kann der aktive Reiter außerhalb der sichtbaren
   // Leiste liegen; dann sieht man nicht, wo man ist. Nur die wischbare
@@ -87,8 +91,15 @@ export function TabBar<TId extends string>({
       role="tablist"
       aria-label={ariaLabel}
       data-msm-tabbar=""
-      className={`${embedded ? `rounded-xl bg-surface-container-low/50 ${kompakt ? 'p-0.5' : 'p-1'}` : 'msm-card p-2'} inline-flex flex-wrap ${kompakt ? 'gap-0.5' : 'gap-1'} ${
-        einzeilig ? 'max-md:flex max-md:w-full max-md:flex-nowrap max-md:overflow-x-auto msm-ohne-rollbalken' : ''
+      data-tab-variante={variante}
+      className={`${
+        istUnterstrich
+          ? `inline-flex ${einzeilig ? 'flex-nowrap' : 'flex-wrap'} items-center ${kompakt ? 'gap-1 sm:gap-2' : 'gap-2 sm:gap-3'}`
+          : `${embedded ? `rounded-xl bg-surface-container-low/50 ${kompakt ? 'p-0.5' : 'p-1'}` : 'msm-card p-2'} inline-flex ${einzeilig ? 'md:flex-wrap' : 'flex-wrap'} ${kompakt ? 'gap-0.5' : 'gap-1'}`
+      } ${
+        einzeilig
+          ? `${istUnterstrich ? 'max-w-full overflow-x-auto msm-ohne-rollbalken max-md:w-full' : 'max-md:flex max-md:w-full max-md:flex-nowrap max-md:overflow-x-auto msm-ohne-rollbalken'}`
+          : ''
       } ${className}`.trim()}
     >
       {tabs.map((tab, index) => {
@@ -100,21 +111,14 @@ export function TabBar<TId extends string>({
         // ohne Gruppe verhalten sich wie bisher.
         const gruppeDavor = index > 0 ? tabs[index - 1].group : undefined
         const trennt = index > 0 && tab.group !== undefined && gruppeDavor !== undefined && tab.group !== gruppeDavor
-        const nurSymbol = kompakt && !!Icon && !isActive
-        const knopf = (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            data-tab-variant={tab.variant ?? 'default'}
-            ref={isActive ? aktiverReiter : undefined}
-            onClick={(e) => {
-              onChange(tab.id)
-              if (einzeilig) e.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
-            }}
-            className={`${kompakt ? `gap-1.5 px-2.5 py-1 text-xs [@media(pointer:coarse)]:min-h-11 ${nurSymbol ? 'max-md:px-1.5' : ''}` : 'gap-2 px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold'} rounded-lg inline-flex shrink-0 items-center justify-center transition-all ${
-              einzeilig ? 'max-md:min-h-11' : ''
-            } ${
+        const nurSymbol = kompakt && !!Icon && !isActive && !istUnterstrich
+        const tabKlassen = istUnterstrich
+          ? `relative rounded-md gap-1.5 px-2.5 py-2 text-label-md [@media(pointer:coarse)]:min-h-11 ${
+              isActive
+                ? 'font-semibold text-primary after:pointer-events-none after:absolute after:inset-x-1.5 after:bottom-0 after:border-b-2 after:border-primary'
+                : 'font-medium text-on-surface-variant hover:bg-surface-container/60 hover:text-on-surface'
+            }`
+          : `${kompakt ? `gap-1.5 px-2.5 py-1 text-xs [@media(pointer:coarse)]:min-h-11 ${nurSymbol ? 'max-md:px-1.5' : ''}` : 'gap-2 px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold'} rounded-lg ${
               isActive
                 ? isDanger
                   ? 'bg-status-destructive/15 text-status-destructive'
@@ -122,6 +126,39 @@ export function TabBar<TId extends string>({
                 : isDanger
                   ? 'text-status-destructive/80 hover:bg-status-destructive/10'
                   : 'text-on-surface-variant hover:bg-surface-container-high'
+            }`
+        const knopf = (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            data-tab-variant={tab.variant ?? 'default'}
+            ref={isActive ? aktiverReiter : undefined}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Home' && e.key !== 'End') return
+              const liste = e.currentTarget.closest('[role="tablist"]')
+              const knoepfe = liste
+                ? Array.from(liste.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'))
+                : []
+              const pos = knoepfe.indexOf(e.currentTarget)
+              if (pos < 0 || knoepfe.length < 2) return
+              e.preventDefault()
+              const ziel =
+                e.key === 'Home'
+                  ? 0
+                  : e.key === 'End'
+                    ? knoepfe.length - 1
+                    : e.key === 'ArrowRight'
+                      ? (pos + 1) % knoepfe.length
+                      : (pos - 1 + knoepfe.length) % knoepfe.length
+              knoepfe[ziel]?.focus()
+            }}
+            onClick={(e) => {
+              onChange(tab.id)
+              if (einzeilig) e.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+            }}
+            className={`${tabKlassen} inline-flex shrink-0 items-center justify-center transition-colors ${
+              einzeilig ? 'max-md:min-h-11' : ''
             }`}
           >
             {Icon && <Icon className={kompakt ? 'h-3.5 w-3.5' : 'h-4 w-4'} aria-hidden="true" />}

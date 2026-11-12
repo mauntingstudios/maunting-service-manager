@@ -48,4 +48,17 @@ describe('Suchleiste mit Wallet-Eintrag', () => {
     fireEvent.keyDown(feld(), { key: 'Enter' })
     expect(onSuchen).toHaveBeenCalledWith('wetter')
   })
+
+  it('sendet während laufender IME-Komposition bei Enter nicht ab (isComposing und keyCode 229)', () => {
+    const onSuchen = vi.fn()
+    zeigen(onSuchen)
+    tippen('nihongo')
+
+    fireEvent.keyDown(feld(), { key: 'Enter', isComposing: true })
+    fireEvent.keyDown(feld(), { key: 'Enter', keyCode: 229, which: 229 })
+    expect(onSuchen).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(feld(), { key: 'Enter' })
+    expect(onSuchen).toHaveBeenCalledWith('nihongo')
+  })
 })

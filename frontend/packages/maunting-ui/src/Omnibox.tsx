@@ -19,12 +19,12 @@ export const Omnibox = forwardRef<HTMLDivElement, OmniboxProps>(function Omnibox
   return (
     <div
       ref={ref}
-      className={`msm-omnibox h-9 px-2 min-w-0 flex-1 [@media(pointer:coarse)]:h-11 ${className}`}
+      className={`msm-omnibox h-9 gap-1 px-2.5 min-w-0 flex-1 [@media(pointer:coarse)]:h-11 ${className}`}
       {...props}
     >
-      {links && <div className="flex shrink-0 items-center gap-1.5 mr-2">{links}</div>}
+      {links && <div className="flex shrink-0 items-center gap-1.5 mr-1.5">{links}</div>}
       {children}
-      {rechts && <div className="flex shrink-0 items-center gap-1.5 ml-2">{rechts}</div>}
+      {rechts && <div className="flex shrink-0 items-center gap-1 ml-1.5">{rechts}</div>}
     </div>
   )
 })

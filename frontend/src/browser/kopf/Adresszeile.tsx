@@ -110,6 +110,7 @@ export const Adresszeile = forwardRef<AdresszeileGriff>(function Adresszeile(_, 
       links={
         <>
           <SuchwahlKnopf kompakt beiOffenAenderung={setSuchwahlOffen} />
+          <span className="h-3.5 w-px shrink-0 bg-outline-variant/45" aria-hidden="true" />
           {zeigeSicherheit && (
             <>
               <button
@@ -117,7 +118,7 @@ export const Adresszeile = forwardRef<AdresszeileGriff>(function Adresszeile(_, 
                 type="button"
                 onClick={() => setSicherheitOffen((o) => !o)}
                 aria-label={t(sicher ? 'browser.adresse.sicher' : 'browser.adresse.unsicher')}
-                className="flex h-5 w-5 items-center justify-center rounded hover:bg-surface-container-highest transition-colors text-on-surface-variant focus:outline-none focus:ring-1 focus:ring-primary"
+                className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-surface-container-highest/80 active:scale-95 transition-all text-on-surface-variant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/65"
               >
                 {sicher ? (
                   <Lock className="h-3.5 w-3.5 text-status-success" role="img" aria-label={t('browser.adresse.sicher')} />
@@ -140,7 +141,7 @@ export const Adresszeile = forwardRef<AdresszeileGriff>(function Adresszeile(_, 
       rechts={
         <>
           {!tippt && tab?.status && (
-            <span className="pointer-events-none max-w-[200px] truncate rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant">
+            <span className="pointer-events-none hidden sm:inline-flex max-w-[180px] truncate rounded-full border border-outline-variant/30 bg-surface-container-high/75 px-2.5 py-0.5 text-label-sm text-on-surface-variant">
               {tab.status}
             </span>
           )}
@@ -162,12 +163,15 @@ export const Adresszeile = forwardRef<AdresszeileGriff>(function Adresszeile(_, 
         aria-label={t('browser.adresse.label')}
         placeholder={t('browser.adresse.platzhalter', { suchmaschine: suchName(suche, t) })}
         spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="none"
+        enterKeyHint="go"
         autoComplete="off"
         role="combobox"
         aria-expanded={offen}
         aria-controls={listenId}
         aria-activedescendant={offen ? `${listenId}-${markiert}` : undefined}
-        className="h-full min-w-0 flex-1 bg-transparent text-body-sm text-on-surface placeholder:text-on-surface-variant outline-none p-0"
+        className="h-full min-w-0 flex-1 bg-transparent text-body-sm tracking-[-0.005em] text-on-surface placeholder:text-on-surface-variant/75 outline-none p-0"
         onFocus={(e) => {
           e.currentTarget.select()
           setTippt(true)
@@ -227,7 +231,7 @@ export const Adresszeile = forwardRef<AdresszeileGriff>(function Adresszeile(_, 
             role="listbox"
             aria-label={t('browser.adresse.vorschlaege')}
             style={lage}
-            className="max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-high py-1 shadow-xl"
+            className="max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-2xl border border-outline-variant/45 bg-surface-container-high/95 p-1.5 shadow-panel backdrop-blur-2xl animate-fade-in"
           >
             {treffer.map((v, i) => (
               <li
@@ -240,8 +244,10 @@ export const Adresszeile = forwardRef<AdresszeileGriff>(function Adresszeile(_, 
                   waehlen(v)
                 }}
                 onPointerEnter={() => setMarkiert(i)}
-                className={`flex cursor-default items-center gap-3 px-3 py-2 text-body-sm ${
-                  i === markiert ? 'bg-surface-container-highest' : ''
+                className={`flex cursor-default items-center gap-3 rounded-xl px-3 py-2 text-body-sm transition-colors ${
+                  i === markiert
+                    ? 'bg-primary/12 text-on-surface'
+                    : 'text-on-surface-variant hover:bg-surface-container-highest/55 hover:text-on-surface'
                 }`}
               >
                 {v.art === 'eingabe' ? (

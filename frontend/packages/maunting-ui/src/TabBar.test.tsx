@@ -95,6 +95,49 @@ describe('TabBar', () => {
     expect(screen.getByRole('tab', { name: 'settings.tabs.email' })).toBe(email)
     expect(document.activeElement).toBe(email)
   })
+
+  it('unterstützt variante="underline" mit Border-Unterstrich statt Pill-Rahmen', () => {
+    render(
+      <TabBar
+        tabs={tabs}
+        active="general"
+        onChange={() => {}}
+        ariaLabel="Suche"
+        variante="underline"
+        einzeilig
+        kompakt
+      />,
+    )
+    const tablist = screen.getByRole('tablist', { name: 'Suche' })
+    expect(tablist).toHaveAttribute('data-tab-variante', 'underline')
+    expect(tablist.className).not.toMatch(/msm-card/)
+
+    const aktiv = screen.getByRole('tab', { name: 'settings.tabs.general' })
+    expect(aktiv.className).toMatch(/after:border-b-2/)
+    expect(aktiv.className).toMatch(/after:border-primary/)
+  })
+
+  it('bewegt den Fokus mit Pfeiltasten, Home und End zwischen Reitern ohne vorschnelles Aktivieren', () => {
+    const onChange = vi.fn()
+    render(<TabBar tabs={tabs} active="general" onChange={onChange} ariaLabel="Suche" variante="underline" />)
+
+    const general = screen.getByRole('tab', { name: 'settings.tabs.general' })
+    const email = screen.getByRole('tab', { name: 'settings.tabs.email' })
+
+    general.focus()
+    fireEvent.keyDown(general, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(email)
+    expect(onChange).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(email, { key: 'ArrowLeft' })
+    expect(document.activeElement).toBe(general)
+
+    fireEvent.keyDown(general, { key: 'End' })
+    expect(document.activeElement).toBe(email)
+
+    fireEvent.keyDown(email, { key: 'Home' })
+    expect(document.activeElement).toBe(general)
+  })
 })
 
 describe('TabBar Gruppen', () => {
