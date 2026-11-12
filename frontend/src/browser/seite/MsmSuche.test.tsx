@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { schutz, api } = vi.hoisted(() => ({
@@ -16,7 +16,10 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@/api/client', async (original) => ({ ...(await original<object>()), api }))
 
 const { SanitizedApiError } = await import('@/api/client')
-const { MsmSuche, gemerktLeeren, sichereSuche, kontextFragen } = await import('./MsmSuche')
+const { MsmSuche, gemerktLeeren, sichereSuche } = await import('./MsmSuche')
+const { kontextFragen } = await import('./suche/fragen')
+const { useEinstellungenStore } = await import('../services/einstellungenStore')
+const { useSitzung } = await import('../services/sitzung')
 const { useTabsStore } = await import('../services/tabsStore')
 const { msmSucheAdresse } = await import('../services/intern')
 
@@ -43,8 +46,10 @@ const suchAufrufe: Record<string, unknown>[] = []
 let suchAntwort: (koerper: Record<string, unknown>, aufrufe: number) => Promise<Record<string, unknown>> =
   () => Promise.resolve({ treffer: [], vorschlaege: [] })
 
+const webAufrufe = () => suchAufrufe.filter((a) => a.kategorie !== 'news')
+
 function koerper(aufruf = 0) {
-  return suchAufrufe[aufruf]
+  return webAufrufe()[aufruf]
 }
 
 beforeEach(() => {
@@ -55,6 +60,8 @@ beforeEach(() => {
   suchAntwort = () => Promise.resolve({ treffer: [], vorschlaege: [] })
   schutz.stand = schutzMit(false, [])
   schutz.wirft = false
+  useEinstellungenStore.setState({ suchRegion: null })
+  useSitzung.setState({ stand: 'aus' })
   useTabsStore.setState({ tabs: [tab()], aktivId: 'tab-s', geschlossen: [] })
 
   api.mockImplementation((pfad: string, optionen?: { body?: string }) => {
@@ -92,7 +99,8 @@ describe('MSM-Suche', () => {
 
   it('hängt weitere Ergebnisse an, ohne doppelte', async () => {
     let aufrufe = 0
-    suchAntwort = () => {
+    suchAntwort = (daten) => {
+      if (daten.kategorie === 'news') return Promise.resolve({ treffer: [] })
       aufrufe += 1
       if (aufrufe === 1) return Promise.resolve({ treffer: treffer(10), vorschlaege: [] })
       return Promise.resolve({ treffer: [...treffer(1, 9), ...treffer(3, 10)], vorschlaege: [] })
@@ -102,12 +110,16 @@ describe('MSM-Suche', () => {
     expect(await screen.findByText('Titel 12')).toBeInTheDocument()
     expect(koerper(1).seite).toBe(2)
     expect(screen.getAllByText('Titel 9')).toHaveLength(1)
-    expect(screen.getAllByRole('listitem')).toHaveLength(13)
+    // 13 Treffer: 1 Top-Ergebnis vor der Liste + 12 Treffer in der Liste
+    expect(
+      within(screen.getByRole('list', { name: /Treffer für/ })).getAllByRole('listitem'),
+    ).toHaveLength(12)
   })
 
   it('blättert über die Seitennavigation zu einer bestimmten Seite', async () => {
     let aufrufe = 0
-    suchAntwort = () => {
+    suchAntwort = (daten) => {
+      if (daten.kategorie === 'news') return Promise.resolve({ treffer: [] })
       aufrufe += 1
       if (aufrufe === 1) return Promise.resolve({ treffer: treffer(10), vorschlaege: [] })
       return Promise.resolve({ treffer: treffer(4, 20), vorschlaege: [] })
@@ -122,10 +134,11 @@ describe('MSM-Suche', () => {
     suchAntwort = () => Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
     const { unmount } = render(<MsmSuche tab={tab()} />)
     await screen.findByText('Titel 0')
+    const vorherLaenge = webAufrufe().length
     unmount()
     render(<MsmSuche tab={tab()} />)
     expect(screen.getByText('Titel 0')).toBeInTheDocument()
-    expect(suchAufrufe).toHaveLength(1)
+    expect(webAufrufe()).toHaveLength(vorherLaenge)
   })
 
   it.each([
@@ -212,6 +225,69 @@ describe('MSM-Suche', () => {
     expect(await screen.findByText('Keine Treffer für „Wetter Köln“')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Weitere Ergebnisse' })).not.toBeInTheDocument()
   })
+
+  it('zeigt das Impressum im Footer nur mit eingerichtetem Link', async () => {
+    suchAntwort = () => Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
+    api.mockImplementation((pfad: string, optionen?: { body?: string }) => {
+      if (pfad === '/system/legal') {
+        return Promise.resolve({ imprint_enabled: true, imprint_url: 'https://example.org/impressum' })
+      }
+      if (pfad === '/browser/suche') {
+        const daten = JSON.parse(optionen?.body ?? '{}') as Record<string, unknown>
+        suchAufrufe.push(daten)
+        return suchAntwort(daten, suchAufrufe.length - 1)
+      }
+      return Promise.resolve({ wissen: null, vorschlaege: [] })
+    })
+    render(<MsmSuche tab={tab()} />)
+    const link = await screen.findByRole('link', { name: 'Impressum' })
+    expect(link).toHaveAttribute('href', 'https://example.org/impressum')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('zeigt keinen Impressum-Eintrag ohne Link', async () => {
+    suchAntwort = () => Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
+    render(<MsmSuche tab={tab()} />)
+    await screen.findByText('Titel 0')
+    await waitFor(() =>
+      expect(screen.queryByRole('link', { name: 'Impressum' })).not.toBeInTheDocument(),
+    )
+  })
+
+  it('zeigt keine Wissenskarte, wenn der Server keinen passenden Eintrag liefert', async () => {
+    suchAntwort = () => Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
+    render(<MsmSuche tab={tab()} />)
+    await screen.findByText('Titel 0')
+    await waitFor(() =>
+      expect(screen.queryByText('Quelle: Wikipedia')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('zeigt in der Bildvorschau Auflösung und Originaladresse', async () => {
+    suchAntwort = () =>
+      Promise.resolve({
+        treffer: [
+          {
+            titel: 'Sonnenuntergang',
+            url: 'https://bild.example/seite',
+            inhalt: 'Ein Bild',
+            bild: 'https://bild.example/klein.jpg',
+            bildOriginal: 'https://bild.example/gross.jpg',
+            bildBreite: 480,
+            bildHoehe: 270,
+            quelle: 'bild.example',
+          },
+        ],
+        vorschlaege: [],
+      })
+    render(<MsmSuche tab={tab()} />)
+    await screen.findByText('Sonnenuntergang')
+    fireEvent.click(screen.getByRole('tab', { name: 'Bilder' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Sonnenuntergang/ }))
+    expect(await screen.findByText('480 × 270')).toBeInTheDocument()
+    expect(screen.getByText('JPEG')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'https://bild.example/gross.jpg' })).toBeInTheDocument()
+  })
 })
 
 describe('Kategorien von Maunting Search', () => {
@@ -226,7 +302,7 @@ describe('Kategorien von Maunting Search', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
     await waitFor(() => expect(suchAufrufe.at(-1)).toMatchObject({ kategorie: 'videos' }))
 
-    fireEvent.click(screen.getByRole('tab', { name: 'News' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Nachrichten' }))
     await waitFor(() => expect(suchAufrufe.at(-1)).toMatchObject({ kategorie: 'news' }))
 
     unmount()
@@ -243,15 +319,169 @@ describe('Kategorien von Maunting Search', () => {
 
     unmount()
   })
+
+  it('zeigt Top-Ergebnis vor Weiteren Fragen und startet bei Klick auf eine Frage eine neue Suche', async () => {
+    suchAntwort = () =>
+      Promise.resolve({
+        treffer: treffer(2),
+        vorschlaege: ['Wetter Köln 7 Tage', 'Wetter Köln morgen'],
+      })
+    render(<MsmSuche tab={tab()} />)
+    expect(await screen.findByText('Top-Ergebnis')).toBeInTheDocument()
+
+    const topErgebnis = screen.getByText('Top-Ergebnis')
+    const weitereFragen = screen.getByRole('region', { name: 'Weitere Fragen zum Thema' })
+    const frageBtn = within(weitereFragen).getByRole('button', { name: /Wetter Köln 7 Tage/i })
+    expect(
+      topErgebnis.compareDocumentPosition(frageBtn) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    fireEvent.click(frageBtn)
+    expect(useTabsStore.getState().tabs[0].url).toBe(msmSucheAdresse('Wetter Köln 7 Tage'))
+  })
+
+  it('zeigt in der Wissenskarte keinen leeren Initialen-Platzhalter und macht Verwandte Themen klickbar', async () => {
+    suchAntwort = () => Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
+    api.mockImplementation((pfad: string) => {
+      if (pfad === '/browser/suche') {
+        return Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
+      }
+      if (pfad === '/browser/suche/wissen') {
+        return Promise.resolve({
+          wissen: {
+            titel: 'Grand Theft Auto VI',
+            inhalt: 'Action-Adventure-Videospiel von Rockstar Games.',
+            verwandte: ['Rockstar Games', 'Vice City'],
+          },
+        })
+      }
+      return Promise.resolve({ vorschlaege: [] })
+    })
+
+    render(<MsmSuche tab={tab()} />)
+    const titel = await screen.findAllByText('Grand Theft Auto VI')
+    expect(titel.length).toBeGreaterThan(0)
+    // Ohne Bild erscheint kein großer Einzelbuchstaben-Platzhalter („G“)
+    expect(screen.queryByText('G')).not.toBeInTheDocument()
+
+    const themaKnopf = screen.getAllByRole('button', { name: 'Vice City' })[0]
+    fireEvent.click(themaKnopf)
+    expect(useTabsStore.getState().tabs[0].url).toBe(msmSucheAdresse('Vice City'))
+  })
+
+  it('verzichtet auf Konto-Knopf, Einstellungslinks, Slogan und AGPLv3-Hinweis im Footer und bindet Tageszeit-Kulisse ein', async () => {
+    suchAntwort = () => Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
+    const { container } = render(<MsmSuche tab={tab()} />)
+    await screen.findByText('Titel 0')
+
+    expect(screen.queryByRole('button', { name: 'Konto & Einstellungen' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/AGPLv3/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Suchen\. Verstehen\. Entdecken\./)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Ein Dienst von Maunting Studios/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Jugendschutz' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('contentinfo')).getByText('Deutschland (Deutsch)')).toBeInTheDocument()
+
+    expect(container.querySelector('.msm-suche-kopf-huelle')).not.toBeNull()
+    expect(container.querySelector('.msm-suche-kopf')).not.toBeNull()
+    expect(container.querySelector('.msm-tageszeit-verlauf')).not.toBeNull()
+  })
+
+  it('verwirft veraltete Paginierungs-Antworten nach einem Suchwechsel', async () => {
+    let resolveSeite2!: (val: Record<string, unknown>) => void
+    let seite2Signal: AbortSignal | undefined
+
+    api.mockImplementation((pfad: string, optionen?: { body?: string; signal?: AbortSignal }) => {
+      if (pfad === '/browser/suche/autocomplete' || pfad === '/browser/suche/wissen') {
+        return Promise.resolve({ vorschlaege: [], wissen: null })
+      }
+      if (pfad === '/browser/suche') {
+        const daten = JSON.parse(optionen?.body ?? '{}') as { q: string; seite: number; kategorie?: string }
+        suchAufrufe.push(daten)
+        if (daten.kategorie === 'news') {
+          return Promise.resolve({ treffer: [] })
+        }
+        if (daten.q === 'Wetter Köln' && daten.seite === 1) {
+          return Promise.resolve({ treffer: treffer(10), vorschlaege: [] })
+        }
+        if (daten.q === 'Wetter Köln' && daten.seite === 2) {
+          seite2Signal = optionen?.signal
+          return new Promise((resolve) => {
+            resolveSeite2 = resolve
+          })
+        }
+        return Promise.resolve({ treffer: [{ titel: 'Neuer Suchtreffer', url: 'https://neu.example', inhalt: 'Frisch' }], vorschlaege: [] })
+      }
+      return Promise.resolve({})
+    })
+
+    const { rerender } = render(<MsmSuche tab={tab()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Weitere Ergebnisse' }))
+    await waitFor(() => expect(resolveSeite2).toBeTypeOf('function'))
+
+    rerender(<MsmSuche tab={{ ...tab(), url: msmSucheAdresse('Berlin') }} />)
+    expect(await screen.findByText('Neuer Suchtreffer')).toBeInTheDocument()
+    expect(seite2Signal?.aborted).toBe(true)
+
+    resolveSeite2({ treffer: [{ titel: 'Veraltete Seite 2', url: 'https://alt2.example', inhalt: 'Alt' }], vorschlaege: [] })
+    await waitFor(() => expect(screen.getByText('Neuer Suchtreffer')).toBeInTheDocument())
+    expect(screen.queryByText('Veraltete Seite 2')).not.toBeInTheDocument()
+  })
+
+  it('zeigt Meintest du bei Korrekturen und startet bei Klick die korrigierte Suche', async () => {
+    suchAntwort = () =>
+      Promise.resolve({
+        treffer: treffer(1),
+        vorschlaege: [],
+        korrekturen: ['Wetter Bonn'],
+      })
+    render(<MsmSuche tab={tab()} />)
+    const btn = await screen.findByRole('button', { name: 'Wetter Bonn' })
+    expect(screen.getByText(/Meintest du:/)).toBeInTheDocument()
+    fireEvent.click(btn)
+    expect(useTabsStore.getState().tabs[0].url).toBe(msmSucheAdresse('Wetter Bonn'))
+  })
+
+  it('fragt Nachrichten mit kategorie: news ab und blendet die Spalte bei 0 Treffern aus', async () => {
+    suchAntwort = (koerper) => {
+      if (koerper.kategorie === 'news') {
+        return Promise.resolve({
+          kategorie: 'news',
+          treffer: [{ titel: 'Unwetterwarnung für Köln', url: 'https://news.example/1', inhalt: 'Sturm zieht auf' }],
+        })
+      }
+      return Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
+    }
+    const { unmount } = render(<MsmSuche tab={tab()} />)
+    expect(await screen.findByText('Unwetterwarnung für Köln')).toBeInTheDocument()
+    expect(suchAufrufe.some((a) => a.kategorie === 'news')).toBe(true)
+    unmount()
+
+    // Bei 0 Nachrichten ausgeblendet
+    suchAntwort = (koerper) => {
+      if (koerper.kategorie === 'news') return Promise.resolve({ kategorie: 'news', treffer: [] })
+      return Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
+    }
+    render(<MsmSuche tab={tab()} />)
+    await screen.findByText('Titel 0')
+    expect(screen.queryByText('Nachrichten zum Thema')).not.toBeInTheDocument()
+  })
+
+  it('öffnet über den Datenschutz-Link im Footer die Datenschutzerklärung', async () => {
+    suchAntwort = () => Promise.resolve({ treffer: treffer(1), vorschlaege: [] })
+    const einstellungenSpy = vi.spyOn(useTabsStore.getState(), 'einstellungen')
+    render(<MsmSuche tab={tab()} />)
+    const dsBtn = await screen.findByRole('button', { name: 'Datenschutz' })
+    fireEvent.click(dsBtn)
+    expect(einstellungenSpy).toHaveBeenCalledWith('datenschutzerklaerung')
+    einstellungenSpy.mockRestore()
+  })
 })
 
 describe('Kontextbezogene Fragen', () => {
   it('zeigt Fragen auch bei kurzen und einzelnen Suchbegriffen', () => {
-    // Es gibt keine Sperrliste: welche Vertiefung sinnvoll ist, entscheiden die
-    // Vorschläge der Suche. „hallo" liefert ebenso echte wie „spacex".
-    expect(kontextFragen('hallo', ['hallo bedeutung duden'], [])[0].frage).toBe('Hallo bedeutung duden')
-    expect(kontextFragen('hi', ['hi gadget 2026'], [])[0].frage).toBe('Hi gadget 2026')
-    expect(kontextFragen('', ['leere suche hinweis'], [])[0].frage).toBe('Leere suche hinweis')
+    expect(kontextFragen('hallo', ['hallo bedeutung duden'], [])[0]).toBe('Hallo bedeutung duden')
+    expect(kontextFragen('hi', ['hi gadget 2026'], [])[0]).toBe('Hi gadget 2026')
+    expect(kontextFragen('', ['leere suche hinweis'], [])[0]).toBe('Leere suche hinweis')
   })
 
   it('nimmt echte Suchvorschläge statt Satz-Schablonen', () => {
@@ -261,8 +491,8 @@ describe('Kontextbezogene Fragen', () => {
       'spacex starship nächster testflug',
     ], [])
     expect(frageliste).toHaveLength(2)
-    expect(frageliste[0].frage).toBe('Spacex starship nächster testflug')
-    expect(frageliste.some((f) => /Was sind die wichtigsten Details/.test(f.frage))).toBe(false)
+    expect(frageliste[0]).toBe('Spacex starship nächster testflug')
+    expect(frageliste.some((f) => /Was sind die wichtigsten Details/.test(f))).toBe(false)
   })
 
   it('fällt ohne Vorschläge auf die Titel der Treffer zurück', () => {
@@ -272,13 +502,10 @@ describe('Kontextbezogene Fragen', () => {
       [
         {
           titel: 'Tauri Update schlägt fehl – Windows Signatur prüfen',
-          url: 'https://example.com/a',
-          inhalt: 'Wenn das Update unter Windows scheitert, prüft der Browser die Signatur des Installern.',
         },
       ],
     )
     expect(frageliste).toHaveLength(1)
-    expect(frageliste[0].frage).toBe('Tauri Update schlägt fehl')
-    expect(frageliste[0].antwort).toContain('Signatur')
+    expect(frageliste[0]).toBe('Tauri Update schlägt fehl')
   })
 })

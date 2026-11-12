@@ -607,9 +607,18 @@ html[data-season] [data-mss-reiter="aktiv"] {
   color: hsl(var(--season-accent-strong));
 }
 
-html[data-season] [data-msm-tabbar] [role="tab"][aria-selected="true"]:not([data-tab-variant="danger"]) {
+html[data-season] [data-msm-tabbar]:not([data-tab-variante="underline"]) [role="tab"][aria-selected="true"]:not([data-tab-variant="danger"]) {
   background-color: hsl(var(--season-accent) / .16);
   color: hsl(var(--season-accent-strong));
+}
+
+html[data-season] [data-msm-tabbar][data-tab-variante="underline"] [role="tab"][aria-selected="true"]:not([data-tab-variant="danger"]) {
+  background-color: transparent;
+  color: hsl(var(--season-accent-strong));
+}
+
+html[data-season] [data-msm-tabbar][data-tab-variante="underline"] [role="tab"][aria-selected="true"]:not([data-tab-variant="danger"])::after {
+  border-color: hsl(var(--season-accent));
 }
 
 html[data-season] button[role="switch"][aria-checked="true"] {
@@ -798,5 +807,96 @@ html[data-season="christmas"] .season-logo-christmas {
   .season-partikel {
     display: none !important;
     animation: none;
+  }
+}
+
+/* Maunting Search: ruhige Disclosure-Bewegung für „Weitere Fragen“ (Progressive Enhancement). */
+.msm-suche-details::details-content {
+  overflow: clip;
+}
+
+@supports (interpolate-size: allow-keywords) {
+  @media (prefers-reduced-motion: no-preference) {
+    .msm-suche-details {
+      interpolate-size: allow-keywords;
+    }
+
+    .msm-suche-details::details-content {
+      block-size: 0;
+      opacity: 0;
+      transition:
+        block-size 220ms var(--mui-ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+        opacity 180ms ease,
+        content-visibility 220ms allow-discrete;
+    }
+
+    .msm-suche-details[open]::details-content {
+      block-size: auto;
+      opacity: 1;
+    }
+  }
+}
+
+/* Maunting Search: Zustand-bewusste Kopfzeile (Progressive Enhancement),
+   Swipe-Quellenleiste und Forced-Colors-Rueckfall. */
+.msm-suche-kopf-huelle {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  container-type: scroll-state;
+  container-name: msm-suche-kopf;
+}
+
+.msm-suche-kopf {
+  border-bottom: 1px solid hsl(var(--mui-line-strong) / 0.25);
+  background-color: hsl(var(--mui-canvas) / 0.68);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition:
+    background-color var(--mui-motion-base) var(--mui-ease-out),
+    border-color var(--mui-motion-base) var(--mui-ease-out),
+    box-shadow var(--mui-motion-base) var(--mui-ease-out);
+}
+
+@container msm-suche-kopf scroll-state(stuck: top) {
+  .msm-suche-kopf {
+    border-color: hsl(var(--mui-line-strong) / 0.5);
+    background-color: hsl(var(--mui-surface-1) / 0.92);
+    box-shadow: 0 12px 32px hsl(0 0% 0% / 0.36);
+  }
+}
+
+.msm-suche-quellen-scrolle {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.msm-suche-quellen-scrolle::-webkit-scrollbar {
+  display: none;
+}
+
+.msm-suche-quellen-scrolle > * {
+  scroll-snap-align: start;
+}
+
+@media (forced-colors: active) {
+  .msm-suche-kopf {
+    background-color: Canvas;
+    border-bottom: 1px solid CanvasText;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .msm-omnibox {
+    border: 1px solid ButtonText;
+    box-shadow: none;
+  }
+
+  .msm-omnibox:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
   }
 }

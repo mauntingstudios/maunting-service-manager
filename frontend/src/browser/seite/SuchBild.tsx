@@ -6,21 +6,41 @@
  * sein, blendet sich das Element sauber aus (oder zeigt den optionalen
  * DNA-Fallback), sodass niemals ein kaputtes Browser-Bild-Symbol erscheint.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import { useBildquelle } from '@/components/ai/geo/Regionalbild'
+import { useBildquelle, vorladenBildquelle } from '@/components/ai/geo/Regionalbild'
 
 export interface SuchBildProps {
   url?: string | null
   alt?: string
   className?: string
   fallback?: React.ReactNode
+  width?: number
+  height?: number
+  priority?: 'high' | 'low'
 }
 
-export function SuchBild({ url, alt = '', className = '', fallback = null }: SuchBildProps) {
+/** Lädt ein Such- oder Wikipedia-Bild vorab, noch bevor `Wissenskarte` rendert. */
+export function vorladenSuchBild(url?: string | null): void {
+  if (!url) return
+  vorladenBildquelle(`/browser/suche/bild?u=${encodeURIComponent(url)}`, 'high')
+}
+
+export function SuchBild({ url, alt = '', className = '', fallback = null, width, height, priority }: SuchBildProps) {
   const pfad = url ? `/browser/suche/bild?u=${encodeURIComponent(url)}` : null
   const { quelle, fehlgeschlagen, bildFehler } = useBildquelle(pfad)
-  const [geladen, setGeladen] = useState(false)
+  const hoch = priority === 'high'
+  const [geladen, setGeladen] = useState(hoch)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+
+  useEffect(() => {
+    if (hoch) {
+      setGeladen(true)
+      return
+    }
+    const el = imgRef.current
+    setGeladen(Boolean(el && el.complete && el.naturalWidth > 0))
+  }, [quelle, hoch])
 
   if (!url || fehlgeschlagen || !quelle) {
     return fallback ? <>{fallback}</> : null
@@ -28,12 +48,17 @@ export function SuchBild({ url, alt = '', className = '', fallback = null }: Suc
 
   return (
     <img
+      ref={imgRef}
       src={quelle}
       alt={alt}
-      loading="lazy"
+      width={width}
+      height={height}
+      loading={hoch ? 'eager' : 'lazy'}
+      decoding={hoch ? 'sync' : 'async'}
+      {...(priority ? ({ fetchpriority: priority } as Record<string, string>) : {})}
       onLoad={() => setGeladen(true)}
       onError={bildFehler}
-      className={`${className} transition-opacity duration-200 ${geladen ? 'opacity-100' : 'opacity-0'}`}
+      className={`${className} ${hoch ? 'opacity-100' : `transition-opacity duration-150 ${geladen ? 'opacity-100' : 'opacity-0'}`}`}
     />
   )
 }

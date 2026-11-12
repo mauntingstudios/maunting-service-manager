@@ -86,7 +86,7 @@ describe('Adversarial Stress Test: MsmSuche Performance & Stabilität (R2)', () 
       // Rapidly switch categories: 'images' -> 'videos' -> 'news'
       const bilderTab = screen.getByRole('tab', { name: 'Bilder' })
       const videosTab = screen.getByRole('tab', { name: 'Videos' })
-      const newsTab = screen.getByRole('tab', { name: 'News' })
+      const newsTab = screen.getByRole('tab', { name: 'Nachrichten' })
 
       act(() => {
         fireEvent.click(bilderTab)
@@ -145,6 +145,9 @@ describe('Adversarial Stress Test: MsmSuche Performance & Stabilität (R2)', () 
         }
         if (pfad === '/browser/suche') {
           const daten = JSON.parse(optionen?.body ?? '{}')
+          if (daten.kategorie === 'news') {
+            return Promise.resolve({ treffer: [] })
+          }
           const query = daten.q
           if (optionen?.signal) {
             capturedSignals.push(optionen.signal)
@@ -178,14 +181,14 @@ describe('Adversarial Stress Test: MsmSuche Performance & Stabilität (R2)', () 
       await act(async () => {
         deferredResolvers['gamma'](trefferErgebnis('GAMMA_FINAL'))
       })
-      expect(await screen.findByText('GAMMA_FINAL')).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: 'GAMMA_FINAL' })).toBeInTheDocument()
 
       await act(async () => {
         deferredResolvers['alpha'](trefferErgebnis('ALPHA_STALE'))
       })
 
-      expect(screen.queryByText('ALPHA_STALE')).not.toBeInTheDocument()
-      expect(screen.getByText('GAMMA_FINAL')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'ALPHA_STALE' })).not.toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'GAMMA_FINAL' })).toBeInTheDocument()
     })
   })
 
@@ -319,7 +322,10 @@ describe('Adversarial Stress Test: MsmSuche Performance & Stabilität (R2)', () 
 
       api.mockImplementation((pfad: string, optionen?: { body?: string }) => {
         if (pfad === '/browser/suche') {
-          capturedRequests.push(JSON.parse(optionen?.body ?? '{}'))
+          const daten = JSON.parse(optionen?.body ?? '{}')
+          if (daten.kategorie !== 'news') {
+            capturedRequests.push(daten)
+          }
           return Promise.resolve(trefferErgebnis('FALLBACK_TREFFER'))
         }
         return Promise.resolve({ vorschlaege: [], wissen: null })
@@ -346,7 +352,11 @@ describe('Adversarial Stress Test: MsmSuche Performance & Stabilität (R2)', () 
 
       api.mockImplementation((pfad: string, optionen?: { body?: string }) => {
         if (pfad === '/browser/suche') {
-          capturedRequests.push(JSON.parse(optionen?.body ?? '{}'))
+          const daten = JSON.parse(optionen?.body ?? '{}')
+          if (daten.kategorie === 'news') {
+            return Promise.resolve({ treffer: [] })
+          }
+          capturedRequests.push(daten)
           return Promise.resolve(trefferErgebnis('IPC_REJECT_RECOVERY'))
         }
         return Promise.resolve({ vorschlaege: [], wissen: null })

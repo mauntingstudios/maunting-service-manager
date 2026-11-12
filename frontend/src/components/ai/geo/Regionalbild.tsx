@@ -49,6 +49,64 @@ interface Nachfrage {
 /** Ein zweiter Anlauf braucht eine neue Adresse; dieselbe hielte der Browser für erledigt. */
 const zweiterAnlauf = (pfad: string) => `${pfad}${pfad.includes('?') ? '&' : '?'}versuch=2`
 
+const VORLADE_MAX = 24
+const vorgeladeneAdressen = new Set<string>()
+const blobAnfragen = new Map<string, Promise<Blob | null>>()
+
+function ladeBlobGemeinsam(pfad: string): Promise<Blob | null> {
+  const vorhanden = blobAnfragen.get(pfad)
+  if (vorhanden) return vorhanden
+  const stream = apiStream(pfad, { method: 'GET', headers: { Accept: 'image/*' } })
+  if (!stream || typeof stream.then !== 'function') {
+    return Promise.resolve(null)
+  }
+  const aufgabe = stream
+    .then(async (antwort) => {
+      if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`)
+      return await antwort.blob()
+    })
+    .catch(() => {
+      blobAnfragen.delete(pfad)
+      return null
+    })
+  blobAnfragen.delete(pfad)
+  blobAnfragen.set(pfad, aufgabe)
+  if (blobAnfragen.size > VORLADE_MAX) {
+    const aeltester = blobAnfragen.keys().next().value
+    if (aeltester) blobAnfragen.delete(aeltester)
+  }
+  return aufgabe
+}
+
+/** Lädt ein API-Bild vorab (Browser-Preload im Web, geteilter Blob-Abruf im Desktop-Modus). */
+export function vorladenBildquelle(pfad: string | null, priority: 'high' | 'low' = 'high'): void {
+  if (!pfad) return
+  if (!brauchtBlob()) {
+    const href = apiUrl(pfad)
+    if (vorgeladeneAdressen.has(href)) return
+    vorgeladeneAdressen.add(href)
+    if (vorgeladeneAdressen.size > VORLADE_MAX) {
+      const aelteste = vorgeladeneAdressen.values().next().value
+      if (aelteste) vorgeladeneAdressen.delete(aelteste)
+    }
+    if (typeof document !== 'undefined' && priority === 'high') {
+      const link = document.createElement('link')
+      link.rel = 'preload'
+      link.as = 'image'
+      link.href = href
+      link.setAttribute('fetchpriority', 'high')
+      document.head.appendChild(link)
+    }
+    if (typeof Image !== 'undefined') {
+      const img = new Image()
+      ;(img as HTMLImageElement & { fetchPriority?: string }).fetchPriority = priority
+      img.src = href
+    }
+    return
+  }
+  void ladeBlobGemeinsam(pfad)
+}
+
 /**
  * Die Quelle eines Panelbilds für ein `<img>`. Ein Blob gehört zu seinem Pfad
  * und wird freigegeben, sobald der Pfad wechselt oder das Bild verschwindet.
@@ -68,24 +126,17 @@ export function useBildquelle(pfad: string | null): Bildquelle {
     if (!pfad || direkt) return
     let aktiv = true
     let blobUrl: string | null = null
-    const abbruch = new AbortController()
-    const stream = apiStream(pfad, { method: 'GET', headers: { Accept: 'image/*' }, signal: abbruch.signal })
-    if (stream && typeof stream.then === 'function') {
-      void stream
-        .then(async (antwort) => {
-          if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`)
-          const inhalt = await antwort.blob()
-          if (!aktiv) return
-          blobUrl = URL.createObjectURL(inhalt)
-          setBlob({ pfad, quelle: blobUrl, fehlgeschlagen: false })
-        })
-        .catch(() => {
-          if (aktiv) setBlob({ pfad, quelle: null, fehlgeschlagen: true })
-        })
-    }
+    void ladeBlobGemeinsam(pfad).then((inhalt) => {
+      if (!aktiv) return
+      if (!inhalt) {
+        setBlob({ pfad, quelle: null, fehlgeschlagen: true })
+        return
+      }
+      blobUrl = URL.createObjectURL(inhalt)
+      setBlob({ pfad, quelle: blobUrl, fehlgeschlagen: false })
+    })
     return () => {
       aktiv = false
-      abbruch.abort()
       if (blobUrl) URL.revokeObjectURL(blobUrl)
     }
   }, [pfad, direkt])

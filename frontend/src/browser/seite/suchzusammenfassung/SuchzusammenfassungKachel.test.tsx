@@ -11,6 +11,11 @@ vi.mock('@/api/client', async (original) => ({
   apiStream,
 }))
 
+vi.mock('@/hooks/useHasPermission', async () => {
+  const { useState } = await import('react')
+  return { useHasPermission: () => useState(true)[0] }
+})
+
 const { SuchzusammenfassungKachel } = await import('./SuchzusammenfassungKachel')
 
 const TREFFER = [
@@ -134,9 +139,10 @@ describe('SuchzusammenfassungKachel', () => {
 
     render(<SuchzusammenfassungKachel begriff="Testsuche" treffer={TREFFER} />)
 
-    // Modellname und Text erscheinen
-    expect(await screen.findByText('gpt-6-luna')).toBeInTheDocument()
+    // Die Antwort erscheint; interne Modellnamen oder technische Tab-Hinweise bleiben unsichtbar.
     expect(await screen.findByText(/Hier ist die Antwort/)).toBeInTheDocument()
+    expect(screen.queryByText('gpt-6-luna')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Nur in diesem Tab aktiv|Active in this tab only/i)).not.toBeInTheDocument()
 
     // Quellenbutton [1] existiert und scrollt beim Klick zum Treffer. Der Name
     // nennt die Nummer, damit die Kachel mehrere Quellknöpfe zeigen kann.
@@ -218,7 +224,7 @@ describe('SuchzusammenfassungKachel', () => {
     expect(await screen.findByText(/So geht der Einbau/)).toBeInTheDocument()
   })
 
-  it('zeigt Denkprozess und erlaubt Denkstufe bei Nachfragen wenn erlaubt', async () => {
+  it('zeigt Denkprozess und klappt ihn bei Content zu, ohne Denkstufen-Dropdown', async () => {
     apiStream.mockResolvedValueOnce({
       ok: true,
       body: {
@@ -229,7 +235,7 @@ describe('SuchzusammenfassungKachel', () => {
               if (gesendet) return Promise.resolve({ done: true, value: undefined })
               gesendet = true
               const chunk = new TextEncoder().encode(
-                'data: {"type": "start", "model": "o3-mini", "denkstufen": ["low", "medium", "high"], "max_denkstufe": "high"}\n\n' +
+                'data: {"type": "start", "model": "o3-mini"}\n\n' +
                 'data: {"type": "thought", "text": "Ich analysiere die Quellen..."}\n\n' +
                 'data: {"type": "content", "text": "Ergebnis mit Denkstufe"}\n\n' +
                 'data: {"type": "done"}\n\n',
@@ -244,14 +250,12 @@ describe('SuchzusammenfassungKachel', () => {
     render(<SuchzusammenfassungKachel begriff="Testsuche" treffer={TREFFER} />)
 
     expect(await screen.findByText('Ergebnis mit Denkstufe')).toBeInTheDocument()
-    expect(screen.getByText('o3-mini')).toBeInTheDocument()
+    expect(screen.queryByText('o3-mini')).not.toBeInTheDocument()
     // Denkprozess ist in details vorhanden
     expect(screen.getByText('Ich analysiere die Quellen...')).toBeInTheDocument()
 
-    // DNA Dropdown-Button ist gerendert
-    const dropdownBtn = screen.getByRole('button', { name: /Denkstufe/i })
-    expect(dropdownBtn).toBeInTheDocument()
-    expect(screen.getByText(/Schnell|Fast/i)).toBeInTheDocument()
+    // Kein Denkstufen-Dropdown
+    expect(screen.queryByRole('button', { name: /Denkstufe/i })).not.toBeInTheDocument()
   })
 
   it('klappt die Quellen als Logo-Leiste und nur auf Wunsch als Karten', async () => {
@@ -432,6 +436,89 @@ describe('SuchzusammenfassungKachel', () => {
     // Fehlermeldung mit Retry statt "Antwort wird generiert …" im Dauer-Spinner
     expect(await screen.findByRole('button', { name: /Erneut versuchen|Try again/i })).toBeInTheDocument()
     expect(screen.queryByText('Upstream boom')).toBeInTheDocument()
+  })
+
+  it('lässt Kopierknopf aktiv und meldet Status in externer Live-Region', async () => {
+    apiStream.mockResolvedValueOnce({
+      ok: true,
+      body: {
+        getReader: () => {
+          let gesendet = false
+          return {
+            read: () => {
+              if (gesendet) return Promise.resolve({ done: true, value: undefined })
+              gesendet = true
+              const chunk = new TextEncoder().encode(
+                'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Kopierbarer Text"}\n\ndata: {"type": "done"}\n\n',
+              )
+              return Promise.resolve({ done: false, value: chunk })
+            },
+          }
+        },
+      },
+    })
+
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+
+    render(<SuchzusammenfassungKachel begriff="Kopie" treffer={TREFFER} />)
+    expect(await screen.findByText('Kopierbarer Text')).toBeInTheDocument()
+
+    const kopierBtn = screen.getByRole('button', { name: /Antwort kopieren|Copy answer/i })
+    fireEvent.click(kopierBtn)
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Kopierbarer Text'))
+    expect(kopierBtn).not.toBeDisabled()
+    expect(kopierBtn).toHaveAttribute('data-copied', '')
+
+    const liveRegionen = screen.getAllByRole('status')
+    expect(liveRegionen[0].textContent).toMatch(/Kopiert|Copied/)
+
+    // Wiederholtes Kopieren hängt U+00A0 an, damit Screenreader erneut vorlesen.
+    fireEvent.click(kopierBtn)
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
+    expect(liveRegionen[0].textContent?.endsWith('\u00A0')).toBe(true)
+
+    // Fehlerfall beim Kopieren
+    writeText.mockRejectedValueOnce(new Error('Clipboard blocked'))
+    fireEvent.click(kopierBtn)
+    await waitFor(() => expect(kopierBtn).toHaveAttribute('data-failed', ''))
+    expect(kopierBtn).not.toBeDisabled()
+    expect(liveRegionen[0].textContent).toMatch(/Kopieren fehlgeschlagen|Copy failed/i)
+  })
+
+  it('sendet Nachfrage bei IME-Enter (isComposing / keyCode 229) nicht ab', async () => {
+    apiStream.mockResolvedValueOnce({
+      ok: true,
+      body: {
+        getReader: () => {
+          let gesendet = false
+          return {
+            read: () => {
+              if (gesendet) return Promise.resolve({ done: true, value: undefined })
+              gesendet = true
+              const chunk = new TextEncoder().encode(
+                'data: {"type": "start", "model": "m"}\n\ndata: {"type": "content", "text": "Antwort"}\n\ndata: {"type": "done"}\n\n',
+              )
+              return Promise.resolve({ done: false, value: chunk })
+            },
+          }
+        },
+      },
+    })
+
+    render(<SuchzusammenfassungKachel begriff="Frage" treffer={TREFFER} />)
+    expect(await screen.findByText('Antwort')).toBeInTheDocument()
+
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: 'IME-Test' } })
+    const key1 = fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    const key2 = fireEvent.keyDown(input, { key: 'Enter', keyCode: 229, which: 229 })
+    expect(key1).toBe(false)
+    expect(key2).toBe(false)
+    expect(apiStream).toHaveBeenCalledTimes(1)
   })
 })
 

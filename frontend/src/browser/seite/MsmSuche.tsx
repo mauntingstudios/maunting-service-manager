@@ -1,44 +1,49 @@
 /**
- * Die Maunting-Search-Fläche (`msb://suche?q=…`).
+ * Die Maunting-Search-Fläche (`pontis://suche?q=…`).
  *
  * Die Treffer kommen vom eigenen Server (`POST /api/browser/suche`), der über
  * seine Metasuch-Instanz sucht. Keine Drittanbieter-Abhängigkeiten: Favicons
  * werden über die Rust-Brücke (`SeitenSymbol`) geholt, Vorschaubilder und
  * Wikipedia-Wissensdaten über den eigenen Server-Proxy.
+ *
+ * Aufbau der Web-Ansicht: Korrekturhinweis, Singra-Überblick, Direktantwort,
+ * hervorgehobenes Top-Ergebnis, Fragen zum Thema, die übrige Trefferliste,
+ * Bilderstreifen, verwandte Suchanfragen, Seitenwahl. Rechts laufen die
+ * Wissenskarte und Nachrichten zum Thema mit.
  */
-import { useEffect, useMemo, useState } from 'react'
-import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  ExternalLink,
-  Globe,
-  Image as ImageIcon,
-  Loader2,
-  Newspaper,
-  Play,
-  Search,
-  Sparkles,
-  Video,
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Globe, Image as ImageIcon, Newspaper, Play, Video } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { api, isNetworkOrOfflineError } from '@/api/client'
-import { Badge, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Dropdown, TabBar, DropdownOption, TabDef } from '@maunting/ui'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
+import { Button, Dropdown, TabBar, Zustandsflaeche, type DropdownOption, type TabDef } from '@maunting/ui'
 import { useZurueckSchliesst } from '@maunting/ui'
-import { Zustandsflaeche } from '@maunting/ui'
 
+import { DATENSCHUTZ_TEIL } from '../einstellungen/kategorien'
 import { SuchEingabeLeiste } from '../kopf/SuchEingabeLeiste'
-import { NACHRICHTEN_THEMEN, useEinstellungenStore } from '../services/einstellungenStore'
+import { useEinstellungenStore } from '../services/einstellungenStore'
 import { msmSucheAdresse, msmSucheBegriff } from '../services/intern'
 import { nativ, type SchutzStand } from '../services/nativ'
 import { suchAdresse } from '../services/searchEngines'
 import { useTabsStore, type Tab } from '../services/tabsStore'
-import { SeitenSymbol } from './SeitenSymbol'
-import { SuchBild } from './SuchBild'
-import { auswahl, useNachrichten } from './start/nachrichtenDaten'
+import { SuchBild, vorladenSuchBild } from './SuchBild'
 import { SuchzusammenfassungKachel } from './suchzusammenfassung/SuchzusammenfassungKachel'
+import { BilderStreifen } from './suche/BilderStreifen'
+import { DirektAntwort } from './suche/DirektAntwort'
+import { Ergebniszeile } from './suche/Ergebniszeile'
+import { FormatierterText } from './suche/FormatierterText'
+import { kontextFragen, verwandteSuchen } from './suche/fragen'
+import { KorrekturHinweis } from './suche/KorrekturHinweis'
+import { MedienVorschauDialog } from './suche/MedienVorschau'
+import { NachrichtenSpalte } from './suche/NachrichtenSpalte'
+import { SeitenPager } from './suche/SeitenPager'
+import { SuchFooter } from './suche/SuchFooter'
+import { VerwandteSuchen } from './suche/VerwandteSuchen'
+import { WeitereFragen } from './suche/WeitereFragen'
+import { Wissenskarte } from './suche/Wissenskarte'
+import { host } from './suche/helfer'
 
 export interface Treffer {
   titel: string
@@ -46,6 +51,10 @@ export interface Treffer {
   inhalt: string
   bild?: string
   published?: string
+  bildOriginal?: string
+  bildBreite?: number
+  bildHoehe?: number
+  quelle?: string
 }
 
 export interface WissensAttribut {
@@ -65,6 +74,7 @@ export interface WissensPanelDaten {
   bild?: string
   attribute?: WissensAttribut[]
   urls?: WissensUrl[]
+  verwandte?: string[]
 }
 
 export type SuchKategorie = 'web' | 'images' | 'videos' | 'news'
@@ -75,12 +85,14 @@ type Stand =
       art: 'da'
       treffer: Treffer[]
       vorschlaege: string[]
+      korrekturen: string[]
       infobox?: WissensPanelDaten | null
       antworten?: string[]
       seite: number
       mehr: boolean
       weitereLaedt: boolean
       dauerSek: number
+      sicher: boolean
     }
   | { art: 'fehler'; zuViele: boolean; abgemeldet?: boolean }
   | { art: 'offline' }
@@ -89,6 +101,7 @@ type Stand =
 /** Zuletzt gesehene Treffer, damit Zurück nicht noch einmal sucht. Nur im Speicher. */
 const GEMERKT_MAX = 15
 const gemerkt = new Map<string, Extract<Stand, { art: 'da' }>>()
+const wissenGemerkt = new Map<string, WissensPanelDaten | null>()
 
 function merken(schluessel: string, stand: Extract<Stand, { art: 'da' }>) {
   gemerkt.delete(schluessel)
@@ -96,9 +109,16 @@ function merken(schluessel: string, stand: Extract<Stand, { art: 'da' }>) {
   if (gemerkt.size > GEMERKT_MAX) gemerkt.delete(gemerkt.keys().next().value as string)
 }
 
+function wissenMerken(schluessel: string, daten: WissensPanelDaten | null) {
+  wissenGemerkt.delete(schluessel)
+  wissenGemerkt.set(schluessel, daten)
+  if (wissenGemerkt.size > GEMERKT_MAX) wissenGemerkt.delete(wissenGemerkt.keys().next().value as string)
+}
+
 /** Für Tests. */
 export function gemerktLeeren() {
   gemerkt.clear()
+  wissenGemerkt.clear()
 }
 
 /** Sichere Suche, sobald Erwachsenen-Inhalte gesperrt sind; im Zweifel ja. */
@@ -107,104 +127,27 @@ export function sichereSuche(stand: SchutzStand | null): boolean {
   return stand.regeln.aktiv && stand.regeln.kategorien.includes('erwachsene')
 }
 
-function host(url: string): string {
-  try {
-    return new URL(url).host
-  } catch {
-    return url
-  }
-}
-
-function pfad(url: string): string {
-  try {
-    const u = new URL(url)
-    const teile = u.pathname.split('/').filter(Boolean)
-    if (teile.length === 0) return ''
-    return ' › ' + teile.slice(0, 3).join(' › ')
-  } catch {
-    return ''
-  }
-}
-
-/**
- * Erzeugt echte, kontextbezogene Vertiefungen aus den Suchvorschlägen und den
- * Titeln der Treffer — immer, wenn es Material dazu gibt. Keine Sperrliste: was
- * eine sinnvolle Frage ist, entscheiden die Vorschläge der Suche und die
- * Treffer, nicht eine Wortliste im Code, die ohnehin nie alle Einzelwörter kennt.
- */
-export function kontextFragen(
-  begriff: string,
-  vorschlaege: string[],
-  treffer: Treffer[],
-): { frage: string; antwort?: string; url?: string }[] {
-  const fragen: { frage: string; antwort?: string; url?: string }[] = []
-  const gesehen = new Set<string>()
-  const bKlein = begriff.trim().toLowerCase()
-
-  // 1. Echte Fragen oder vertiefende Aspekte aus den Suchvorschlägen
-  for (const v of vorschlaege) {
-    const text = v.trim()
-    if (!text || text.toLowerCase() === bKlein || gesehen.has(text.toLowerCase())) continue
-    gesehen.add(text.toLowerCase())
-    const passenderTreffer = treffer.find(
-      (tr) =>
-        tr.inhalt &&
-        text
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((w) => w.length > 3)
-          .some((w) => tr.inhalt.toLowerCase().includes(w) || tr.titel.toLowerCase().includes(w)),
-    )
-    fragen.push({
-      frage: text.endsWith('?') ? text : `${text.charAt(0).toUpperCase()}${text.slice(1)}`,
-      antwort: passenderTreffer?.inhalt || treffer[0]?.inhalt,
-      url: passenderTreffer?.url || treffer[0]?.url,
-    })
-    if (fragen.length >= 3) return fragen
-  }
-
-  // 2. Falls keine Suggestions vorlagen, kontextbezogene Themen aus den Top-Treffer-Titeln ableiten
-  for (const tr of treffer.slice(0, 5)) {
-    const titel = tr.titel.trim()
-    const auszug = tr.inhalt.trim()
-    if (!titel || !auszug || auszug.length < 40) continue
-    const teile = titel.split(/\s+[–—|-]\s+|\s+:\s+/)
-    const thema = teile[0]?.trim() || titel
-    if (!thema || thema.toLowerCase() === bKlein || gesehen.has(thema.toLowerCase())) continue
-    gesehen.add(thema.toLowerCase())
-    fragen.push({
-      frage: thema,
-      antwort: auszug,
-      url: tr.url,
-    })
-    if (fragen.length >= 3) break
-  }
-
-  return fragen
-}
-
 async function holen(
   begriff: string,
   seite: number,
   sprache: string,
   kategorie: SuchKategorie,
+  sicher: boolean,
   signal?: AbortSignal,
 ): Promise<{
   treffer: Treffer[]
   vorschlaege: string[]
+  korrekturen: string[]
   infobox?: WissensPanelDaten | null
   antworten: string[]
   dauerSek: number
 }> {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now()
-  const schutzStandPromise = nativ.schutzStand().catch(() => null)
-  const schutzTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))
-  const schutz = await Promise.race([schutzStandPromise, schutzTimeout])
-  const sicher = sichereSuche(schutz)
   const katParam = kategorie === 'web' ? undefined : kategorie
   const antwort = await api<{
     treffer: Treffer[]
     vorschlaege?: string[]
+    korrekturen?: string[]
     infobox?: WissensPanelDaten | null
     antworten?: string[]
   }>('/browser/suche', {
@@ -223,6 +166,7 @@ async function holen(
   return {
     treffer: antwort.treffer,
     vorschlaege: antwort.vorschlaege ?? [],
+    korrekturen: antwort.korrekturen ?? [],
     infobox: antwort.infobox ?? null,
     antworten: antwort.antworten ?? [],
     dauerSek,
@@ -234,6 +178,7 @@ export function MsmSuche({ tab }: { tab: Tab }) {
   const oeffnen = useTabsStore((s) => s.oeffnen)
   const neuerTab = useTabsStore((s) => s.neuerTab)
   const startseite = useTabsStore((s) => s.startseite)
+  const einstellungenOeffnen = useTabsStore((s) => s.einstellungen)
   const begriff = msmSucheBegriff(tab.url) ?? ''
   // Ohne eigene Wahl gilt die Sprache des Browsers; der gespeicherte Wert setzt
   // sich nicht wieder zurück, wenn der Nutzer unterwegs umgestellt hat.
@@ -246,6 +191,9 @@ export function MsmSuche({ tab }: { tab: Tab }) {
   const [wissenFallback, setWissenFallback] = useState<WissensPanelDaten | null>(null)
   const [wissenMobilOffen, setWissenMobilOffen] = useState(false)
   const [medienVorschau, setMedienVorschau] = useState<{ treffer: Treffer; art: 'bild' | 'video' } | null>(null)
+  // Nachrichten zum Thema: `null` heißt, die Abfrage läuft noch.
+  const [themaNews, setThemaNews] = useState<Treffer[] | null>(null)
+  const tagesMotiv = useTageszeitMotiv('suche')
 
   const speicherSchluessel = `${tab.url}::${region}::${kategorie}`
   const [stand, setStand] = useState<Stand>(() => {
@@ -257,11 +205,29 @@ export function MsmSuche({ tab }: { tab: Tab }) {
   })
   const [versuch, setVersuch] = useState(0)
 
-  // Aktuelle News aus dem lokalen Nachrichten-Spiegel/Cache als Ergänzung
-  const { stand: nachrichtenStand } = useNachrichten()
-  const lokaleNews = nachrichtenStand ? auswahl(nachrichtenStand, NACHRICHTEN_THEMEN, begriff, 6) : []
+  const aktiverLaufRef = useRef(0)
+  const seitenAbortRef = useRef<AbortController | null>(null)
+
+  // Der Schutzstand ändert sich selten; eine Suche soll nicht jedes Mal auf die
+  // IPC warten. Der erste Aufruf behält sein Rennen, danach gilt der Wert 30 s.
+  const schutzMerker = useRef<{ stand: SchutzStand | null; bis: number } | null>(null)
+  const sicherFuerSuche = useCallback(async (): Promise<boolean> => {
+    const jetzt = Date.now()
+    const gemerkt = schutzMerker.current
+    if (gemerkt && gemerkt.bis > jetzt) return sichereSuche(gemerkt.stand)
+    const versprechen = nativ.schutzStand().catch(() => null)
+    const frist = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))
+    const stand = await Promise.race([versprechen, frist])
+    schutzMerker.current = { stand, bis: jetzt + 30_000 }
+    return sichereSuche(stand)
+  }, [])
 
   useEffect(() => {
+    aktiverLaufRef.current += 1
+    const meinLauf = aktiverLaufRef.current
+    seitenAbortRef.current?.abort()
+    seitenAbortRef.current = null
+
     if ((tab.ladeZaehler ?? 0) > 0) {
       gemerkt.delete(speicherSchluessel)
     }
@@ -286,21 +252,24 @@ export function MsmSuche({ tab }: { tab: Tab }) {
     }, 12000)
 
     setStand({ art: 'laedt' })
-    holen(begriff, 1, region, kategorie, controller.signal).then(
-      ({ treffer, vorschlaege, infobox, antworten, dauerSek }) => {
+    void sicherFuerSuche().then((sicher) => holen(begriff, 1, region, kategorie, sicher, controller.signal).then(
+      ({ treffer, vorschlaege, korrekturen, infobox, antworten, dauerSek }) => {
         clearTimeout(timeoutId)
-        if (!aktiv) return
+        if (!aktiv || aktiverLaufRef.current !== meinLauf) return
         const neu: Extract<Stand, { art: 'da' }> = {
           art: 'da',
           treffer,
           vorschlaege,
+          korrekturen,
           infobox,
           antworten,
           seite: 1,
           mehr: treffer.length > 0,
           weitereLaedt: false,
           dauerSek,
+          sicher,
         }
+        if (infobox?.bild) vorladenSuchBild(infobox.bild)
         merken(speicherSchluessel, neu)
         setStand(neu)
       },
@@ -320,12 +289,13 @@ export function MsmSuche({ tab }: { tab: Tab }) {
             fehlerObj?.name === 'AbortError' ||
             controller.signal.aborted)
 
-        // If an AbortError occurs because of user navigation or category change, ignore it cleanly without flashing errors
+        // Ein Abbruch durch Navigation oder Kategoriewechsel endet sauber,
+        // ohne einen Fehler aufblitzen zu lassen.
         if (isUserAbort) {
           return
         }
 
-        if (!aktiv && !isTimeout) {
+        if ((!aktiv || aktiverLaufRef.current !== meinLauf) && !isTimeout) {
           return
         }
 
@@ -344,23 +314,57 @@ export function MsmSuche({ tab }: { tab: Tab }) {
           setStand({ art: 'fehler', zuViele: false })
         }
       },
-    )
+    ))
     return () => {
       aktiv = false
       clearTimeout(timeoutId)
       controller.abort()
+      seitenAbortRef.current?.abort()
+      seitenAbortRef.current = null
     }
-  }, [speicherSchluessel, begriff, region, kategorie, versuch])
+  }, [speicherSchluessel, begriff, region, kategorie, versuch, sicherFuerSuche])
 
-  // Dynamisches Wikipedia-Knowledge-Panel: die Suche liefert (bei manchen
-  // Instanzen) eine Infobox, sonst liest das Panel die Wikipedia-API.
-  // Gelesen wird nur auf der Web-Karte und nur mit einem echten Trefferstand.
-  const wissenNötig =
-    kategorie === 'web' && begriff.length > 1 && stand.art === 'da' && !stand.infobox
+  // Nachrichten zum Thema: dieselbe Metasuch-Instanz, Kategorie news, mit dem
+  // echten Suchbegriff. Läuft nur neben der Web-Ansicht und nur, wenn es
+  // Treffer gibt; ohne Ergebnis bleibt der Block unsichtbar.
+  const hatWebTreffer = kategorie === 'web' && stand.art === 'da' && stand.treffer.length > 0
+  useEffect(() => {
+    setThemaNews(null)
+    if (!hatWebTreffer || !begriff) return
+    let aktiv = true
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 12000)
+    void sicherFuerSuche().then((sicher) =>
+      holen(begriff, 1, region, 'news', sicher, controller.signal).then(
+        ({ treffer }) => {
+          if (aktiv) setThemaNews(treffer.slice(0, 5))
+        },
+        () => {
+          if (aktiv) setThemaNews([])
+        },
+      ),
+    )
+    return () => {
+      aktiv = false
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [hatWebTreffer, begriff, region, sicherFuerSuche])
+
+  // Dynamisches Wikipedia-Knowledge-Panel: startet sofort parallel zur Websuche,
+  // damit Fakten und Wikipedia-Bild ohne Wasserfall-Verzögerung bereitstehen.
+  const wissenMoeglich = kategorie === 'web' && begriff.length > 1
+  const wissenSchluessel = `${region.slice(0, 2)}\0${begriff.toLowerCase()}`
 
   useEffect(() => {
     setWissenFallback(null)
-    if (!wissenNötig) return
+    if (!wissenMoeglich) return
+    if (wissenGemerkt.has(wissenSchluessel)) {
+      const gespeichert = wissenGemerkt.get(wissenSchluessel) ?? null
+      setWissenFallback(gespeichert)
+      if (gespeichert?.bild) vorladenSuchBild(gespeichert.bild)
+      return
+    }
     let aktiv = true
     const controller = new AbortController()
     api<{ wissen?: WissensPanelDaten | null }>('/browser/suche/wissen', {
@@ -369,8 +373,11 @@ export function MsmSuche({ tab }: { tab: Tab }) {
       body: JSON.stringify({ q: begriff, sprache: region.slice(0, 2) }),
     })
       .then((res) => {
-        if (aktiv && res?.wissen) {
-          setWissenFallback(res.wissen)
+        const wissen = res?.wissen ?? null
+        wissenMerken(wissenSchluessel, wissen)
+        if (wissen?.bild) vorladenSuchBild(wissen.bild)
+        if (aktiv && wissen) {
+          setWissenFallback(wissen)
         }
       })
       .catch(() => {
@@ -380,7 +387,7 @@ export function MsmSuche({ tab }: { tab: Tab }) {
       aktiv = false
       controller.abort()
     }
-  }, [wissenNötig, begriff, region])
+  }, [wissenMoeglich, wissenSchluessel, begriff, region])
 
   // Ohne Netz lädt die Seite von selbst, sobald es wieder da ist.
   useEffect(() => {
@@ -390,21 +397,37 @@ export function MsmSuche({ tab }: { tab: Tab }) {
     return () => window.removeEventListener('online', wieder)
   }, [stand.art])
 
-  const weitere = () => {
+  const weitere = async () => {
     if (stand.art !== 'da' || stand.weitereLaedt) return
     const bisher = stand
-    setStand({ ...bisher, weitereLaedt: true })
+    const meinLauf = aktiverLaufRef.current
+    const startSchluessel = speicherSchluessel
+    seitenAbortRef.current?.abort()
     const controller = new AbortController()
+    seitenAbortRef.current = controller
+    let istTimeout = false
+
+    setStand({ ...bisher, weitereLaedt: true })
     const timer = setTimeout(() => {
+      istTimeout = true
       try {
         controller.abort(new DOMException('Timeout', 'TimeoutError'))
       } catch {
         controller.abort()
       }
     }, 12000)
-    holen(begriff, bisher.seite + 1, region, kategorie, controller.signal).then(
+
+    const sicher = await sicherFuerSuche()
+    if (controller.signal.aborted || aktiverLaufRef.current !== meinLauf) {
+      clearTimeout(timer)
+      return
+    }
+
+    holen(begriff, bisher.seite + 1, region, kategorie, sicher, controller.signal).then(
       ({ treffer: neu, vorschlaege: neueVorschlaege }) => {
         clearTimeout(timer)
+        if (seitenAbortRef.current === controller) seitenAbortRef.current = null
+        if (controller.signal.aborted || aktiverLaufRef.current !== meinLauf) return
         const bekannt = new Set(bisher.treffer.map((x) => x.url))
         const dazu = neu.filter((x) => !bekannt.has(x.url))
         const kombiniertVorschlaege = Array.from(new Set([...bisher.vorschlaege, ...neueVorschlaege]))
@@ -416,35 +439,53 @@ export function MsmSuche({ tab }: { tab: Tab }) {
           mehr: dazu.length > 0,
           weitereLaedt: false,
         }
-        merken(speicherSchluessel, naechster)
+        merken(startSchluessel, naechster)
         setStand(naechster)
       },
       () => {
         clearTimeout(timer)
+        if (seitenAbortRef.current === controller) seitenAbortRef.current = null
+        if (aktiverLaufRef.current !== meinLauf || (!istTimeout && controller.signal.aborted)) return
         setStand({ ...bisher, weitereLaedt: false, mehr: true })
       },
     )
   }
 
-  const seiteWechseln = (zielSeite: number) => {
+  const seiteWechseln = async (zielSeite: number) => {
     if (stand.art !== 'da' || stand.weitereLaedt || zielSeite < 1 || zielSeite === stand.seite) return
     if (zielSeite === stand.seite + 1) {
-      weitere()
+      void weitere()
       return
     }
     const bisher = stand
-    setStand({ ...bisher, weitereLaedt: true })
+    const meinLauf = aktiverLaufRef.current
+    const startSchluessel = speicherSchluessel
+    seitenAbortRef.current?.abort()
     const controller = new AbortController()
+    seitenAbortRef.current = controller
+    let istTimeout = false
+
+    setStand({ ...bisher, weitereLaedt: true })
     const timer = setTimeout(() => {
+      istTimeout = true
       try {
         controller.abort(new DOMException('Timeout', 'TimeoutError'))
       } catch {
         controller.abort()
       }
     }, 12000)
-    holen(begriff, zielSeite, region, kategorie, controller.signal).then(
+
+    const sicher = await sicherFuerSuche()
+    if (controller.signal.aborted || aktiverLaufRef.current !== meinLauf) {
+      clearTimeout(timer)
+      return
+    }
+
+    holen(begriff, zielSeite, region, kategorie, sicher, controller.signal).then(
       ({ treffer: neu, vorschlaege: neueVorschlaege, infobox, dauerSek }) => {
         clearTimeout(timer)
+        if (seitenAbortRef.current === controller) seitenAbortRef.current = null
+        if (controller.signal.aborted || aktiverLaufRef.current !== meinLauf) return
         const naechster: Extract<Stand, { art: 'da' }> = {
           ...bisher,
           treffer: neu,
@@ -455,11 +496,13 @@ export function MsmSuche({ tab }: { tab: Tab }) {
           weitereLaedt: false,
           dauerSek,
         }
-        merken(speicherSchluessel, naechster)
+        merken(startSchluessel, naechster)
         setStand(naechster)
       },
       () => {
         clearTimeout(timer)
+        if (seitenAbortRef.current === controller) seitenAbortRef.current = null
+        if (aktiverLaufRef.current !== meinLauf || (!istTimeout && controller.signal.aborted)) return
         setStand({ ...bisher, weitereLaedt: false })
       },
     )
@@ -496,16 +539,16 @@ export function MsmSuche({ tab }: { tab: Tab }) {
     regionSetzen({ suchRegion: wert })
   }
 
-  // Kategorie-Zähler: der aktive Tab nennt seine Trefferzahl als Badge (Design-DNA TabBar).
-  const kategorieTabs: TabDef<SuchKategorie>[] = useMemo(() => {
-    const anzahl = stand.art === 'da' ? stand.treffer.length : undefined
-    return [
-      { id: 'web', labelKey: 'browser.msmSuche.tabWeb', icon: Globe, badge: kategorie === 'web' ? anzahl : undefined },
-      { id: 'images', labelKey: 'browser.msmSuche.tabBilder', icon: ImageIcon, badge: kategorie === 'images' ? anzahl : undefined },
-      { id: 'videos', labelKey: 'browser.msmSuche.tabVideos', icon: Video, badge: kategorie === 'videos' ? anzahl : undefined },
-      { id: 'news', labelKey: 'browser.msmSuche.tabNews', icon: Newspaper, badge: kategorie === 'news' ? anzahl : undefined },
-    ]
-  }, [kategorie, stand])
+  // Kategorie-Reiter ohne Zähler-Badges (entspricht der schlichten Unterstrich-Leiste).
+  const kategorieTabs: TabDef<SuchKategorie>[] = useMemo(
+    () => [
+      { id: 'web', labelKey: 'browser.msmSuche.tabWeb', icon: Globe },
+      { id: 'images', labelKey: 'browser.msmSuche.tabBilder', icon: ImageIcon },
+      { id: 'videos', labelKey: 'browser.msmSuche.tabVideos', icon: Video },
+      { id: 'news', labelKey: 'browser.msmSuche.tabNews', icon: Newspaper },
+    ],
+    [],
+  )
 
   const regionOptionen: DropdownOption[] = useMemo(
     () => [
@@ -520,6 +563,7 @@ export function MsmSuche({ tab }: { tab: Tab }) {
     ],
     [t],
   )
+  const aktuellesRegionLabel = regionOptionen.find((opt) => opt.value === region)?.label ?? region
 
   // Ein Wissens-Panel ohne Titel ist ein leerer Platzhalter: es erscheint nicht,
   // statt eine leere Kachel zu zeigen. Ohne Web-Treffer gibt es keines.
@@ -532,120 +576,22 @@ export function MsmSuche({ tab }: { tab: Tab }) {
     () => (stand.art === 'da' ? kontextFragen(begriff, stand.vorschlaege, stand.treffer) : []),
     [begriff, stand],
   )
+  const verwandteListe = useMemo(
+    () => (stand.art === 'da' ? verwandteSuchen(begriff, stand.vorschlaege) : []),
+    [begriff, stand],
+  )
 
   const renderWissensPanel = (kompaktMobil = false) => {
     if (!wissensPanel) return null
     return (
-      <div className="msm-card overflow-hidden shadow-panel">
-        {/* Visueller Header des Knowledge Panels */}
-        <div className="relative flex min-h-[7rem] flex-col justify-between border-b border-outline-variant/40 bg-gradient-to-br from-surface-container-high via-surface-container to-primary-container/35 p-4 sm:p-5">
-          {wissensPanel.bild && (
-            <SuchBild
-              url={wissensPanel.bild}
-              alt={wissensPanel.titel}
-              className="pointer-events-none absolute right-4 top-4 h-16 w-16 rounded-xl border border-outline-variant/50 bg-surface-container object-cover shadow-md z-10"
-            />
-          )}
-          <div className="relative z-10 flex items-center justify-between gap-2 pr-20">
-            <Badge variant="info">{t('browser.msmSuche.wissensgraphBadge')}</Badge>
-          </div>
-          <div className="relative z-10 mt-3 pr-20">
-            <h2 className="text-title-lg font-bold tracking-tight text-on-surface">{wissensPanel.titel}</h2>
-            {wissensPanel.untertitel && (
-              <p className="mt-0.5 text-label-sm font-medium text-primary">{wissensPanel.untertitel}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Auf Mobilgeräten optional einklappbar für kompakte Übersicht */}
-        {kompaktMobil && (
-          <div className="border-b border-outline-variant/30 px-4 py-2 lg:hidden">
-            <button
-              type="button"
-              onClick={() => setWissenMobilOffen((v) => !v)}
-              className="flex w-full items-center justify-between text-label-sm font-medium text-primary"
-            >
-              <span>{t(wissenMobilOffen ? 'browser.msmSuche.zusammenfassungEinklappen' : 'browser.msmSuche.steckbriefZeigen')}</span>
-              {wissenMobilOffen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-          </div>
-        )}
-
-        <div className={`space-y-4 p-4 sm:p-5 ${kompaktMobil && !wissenMobilOffen ? 'hidden lg:block' : ''}`}>
-          <p className="text-body-sm leading-relaxed text-on-surface">
-            {wissensPanel.inhalt}
-            {wissensPanel.urls && wissensPanel.urls[0] && (
-              <button
-                type="button"
-                onClick={(ev) => zielOeffnen(wissensPanel.urls![0].url, ev.ctrlKey || ev.metaKey)}
-                className="ml-1.5 inline-flex items-center gap-1 text-label-sm font-semibold text-primary hover:underline"
-              >
-                <span>{wissensPanel.urls[0].title || 'Wikipedia'}</span>
-                <ExternalLink className="h-3 w-3" aria-hidden="true" />
-              </button>
-            )}
-          </p>
-
-          {/* Strukturierte Fakten / Eckdaten */}
-          {wissensPanel.attribute && wissensPanel.attribute.length > 0 && (
-            <div className="space-y-2 border-t border-outline-variant/30 pt-3">
-              <div className="text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">
-                {t('browser.msmSuche.steckbriefTitel')}
-              </div>
-              {wissensPanel.attribute.map((attr, idx) => (
-                <div
-                  key={`${attr.label}-${idx}`}
-                  className="grid grid-cols-12 gap-2 border-b border-outline-variant/20 py-1.5 text-label-sm last:border-0"
-                >
-                  <span className="col-span-5 font-medium text-on-surface-variant">{attr.label}</span>
-                  <span className="col-span-7 font-medium text-on-surface">{attr.value}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Weiterführende Links (Offizielle Website, Wikipedia etc.) */}
-          {wissensPanel.urls && wissensPanel.urls.length > 1 && (
-            <div className="flex flex-wrap gap-2 border-t border-outline-variant/30 pt-3">
-              {wissensPanel.urls.map((u) => (
-                <Button
-                  key={u.url}
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={(ev) => zielOeffnen(u.url, ev.ctrlKey || ev.metaKey)}
-                  className="text-label-sm"
-                >
-                  <span>{u.title}</span>
-                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                </Button>
-              ))}
-            </div>
-          )}
-
-          {/* Ähnliche Suchanfragen als DNA-Pills im Knowledge Panel */}
-          {stand.art === 'da' && stand.vorschlaege.length > 0 && (
-            <div className="border-t border-outline-variant/30 pt-3">
-              <div className="mb-2.5 text-label-sm font-semibold text-on-surface">
-                {t('browser.msmSuche.dazuSuchenNutzer')}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {stand.vorschlaege.slice(0, 6).map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => oeffnen(msmSucheAdresse(v), tab.id)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-surface-container px-3 py-1.5 text-label-sm font-medium text-on-surface transition-colors hover:border-primary/40 hover:bg-surface-container-high hover:text-primary"
-                  >
-                    <Search className="h-3 w-3 text-primary" aria-hidden="true" />
-                    <span className="truncate max-w-[200px]">{v}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      <Wissenskarte
+        daten={wissensPanel}
+        kompaktMobil={kompaktMobil}
+        mobilOffen={wissenMobilOffen}
+        onMobilToggle={() => setWissenMobilOffen((v) => !v)}
+        onOeffnen={zielOeffnen}
+        onThema={(thema) => oeffnen(msmSucheAdresse(thema), tab.id)}
+      />
     )
   }
 
@@ -654,10 +600,28 @@ export function MsmSuche({ tab }: { tab: Tab }) {
     inhalt = <Zustandsflaeche art="leer" titel={t('browser.msmSuche.ohneBegriff')} />
   } else if (stand.art === 'laedt') {
     inhalt = (
-      <p role="status" className="flex items-center gap-2 py-8 text-body-sm text-on-surface-variant">
-        <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
-        {t('browser.msmSuche.laedt')}
-      </p>
+      <div role="status" aria-label={t('browser.msmSuche.laedt')} className="max-w-[780px] space-y-5">
+        <span className="sr-only">{t('browser.msmSuche.laedt')}</span>
+        <div
+          aria-hidden="true"
+          className="animate-pulse motion-reduce:animate-none space-y-3 rounded-2xl border border-outline-variant/30 bg-surface-container/60 p-5"
+        >
+          <div className="h-3.5 w-36 rounded-full bg-surface-container-high/80" />
+          <div className="h-3 w-full rounded-full bg-surface-container-high/60" />
+          <div className="h-3 w-5/6 rounded-full bg-surface-container-high/45" />
+        </div>
+        {Array.from({ length: 4 }, (_, i) => (
+          <div
+            key={i}
+            aria-hidden="true"
+            className="animate-pulse motion-reduce:animate-none space-y-2 border-b border-outline-variant/20 pb-4"
+          >
+            <div className="h-3 w-40 rounded-full bg-surface-container-high/75" />
+            <div className="h-4 w-3/4 rounded-full bg-surface-container-high" />
+            <div className="h-3 w-full rounded-full bg-surface-container/80" />
+          </div>
+        ))}
+      </div>
     )
   } else if (stand.art === 'offline') {
     inhalt = <Zustandsflaeche art="offline" titel={t('browser.msmSuche.offlineTitel')} text={t('browser.msmSuche.offlineText')} />
@@ -693,12 +657,12 @@ export function MsmSuche({ tab }: { tab: Tab }) {
         </Button>
       </Zustandsflaeche>
     )
-  } else if (stand.treffer.length === 0 && (kategorie !== 'news' || lokaleNews.length === 0)) {
+  } else if (stand.treffer.length === 0) {
     inhalt = <Zustandsflaeche art="leer" ansagen titel={t('browser.msmSuche.keineTreffer', { begriff })} />
   } else if (kategorie === 'images') {
-    // TAB 2: BILDER-ANSICHT
+    // Bilder als Masonry-Raster: keine Kartenrahmen, natürliche Höhen.
     inhalt = (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 animate-fade-in">
+      <div className="columns-2 gap-3 sm:columns-3 lg:columns-4 animate-fade-in">
         {stand.treffer.map((x, idx) => {
           const domain = host(x.url)
           return (
@@ -707,42 +671,36 @@ export function MsmSuche({ tab }: { tab: Tab }) {
               type="button"
               onClick={() => setMedienVorschau({ treffer: x, art: 'bild' })}
               onAuxClick={(ev) => ev.button === 1 && zielOeffnen(x.url, true)}
-              className="msm-card group flex flex-col overflow-hidden text-left transition-all hover:border-primary/60"
+              className="group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container/75 text-left shadow-sm transition-all duration-200 hover:border-primary/50 hover:shadow-float"
+              style={
+                x.bildBreite && x.bildHoehe
+                  ? { aspectRatio: `${x.bildBreite} / ${x.bildHoehe}` }
+                  : { aspectRatio: '4 / 3' }
+              }
             >
-              <div className="relative flex h-44 w-full flex-col justify-between overflow-hidden border-b border-outline-variant/30 bg-gradient-to-br from-surface-container-high via-surface-container to-primary-container/25 p-3.5">
-                {x.bild && (
-                  <SuchBild
-                    url={x.bild}
-                    alt={x.titel}
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                )}
-                <div className="relative z-10 flex items-center justify-between">
-                  <span className="rounded bg-surface/80 px-2 py-0.5 text-label-sm font-medium text-primary backdrop-blur-sm">
-                    {domain}
-                  </span>
+              {x.bild ? (
+                <SuchBild
+                  url={x.bild}
+                  alt={x.titel}
+                  width={x.bildBreite}
+                  height={x.bildHoehe}
+                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-primary">
+                  <ImageIcon className="h-6 w-6" aria-hidden="true" />
                 </div>
-                {!x.bild && (
-                  <div className="relative z-10 my-auto flex items-center justify-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-outline-variant/40 bg-surface-container/80 text-primary">
-                      <ImageIcon className="h-6 w-6" aria-hidden="true" />
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="p-3.5">
-                <p className="line-clamp-2 text-body-sm font-semibold text-on-surface group-hover:text-primary">
-                  {x.titel || domain}
-                </p>
-                <p className="mt-1 truncate text-label-sm text-on-surface-variant">{domain}</p>
-              </div>
+              )}
+              <span className="absolute inset-x-0 bottom-0 block truncate bg-gradient-to-t from-black/80 via-black/35 to-transparent px-2.5 pb-2 pt-8 text-label-sm text-white transition-opacity duration-150 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
+                <span className="block truncate font-medium">{x.titel || domain}</span>
+                <span className="block truncate text-white/75">{domain}</span>
+              </span>
             </button>
           )
         })}
       </div>
     )
   } else if (kategorie === 'videos') {
-    // TAB 3: VIDEOS-ANSICHT
     inhalt = (
       <div className="grid max-w-4xl grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in">
         {stand.treffer.map((x, idx) => {
@@ -753,33 +711,36 @@ export function MsmSuche({ tab }: { tab: Tab }) {
               type="button"
               onClick={() => setMedienVorschau({ treffer: x, art: 'video' })}
               onAuxClick={(ev) => ev.button === 1 && zielOeffnen(x.url, true)}
-              className="msm-card group flex flex-col overflow-hidden text-left transition-all hover:border-primary/60"
+              className="group flex flex-col overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container/75 text-left backdrop-blur-xl shadow-hairline transition-all duration-200 hover:border-primary/55 hover:bg-surface-container/95 hover:shadow-float"
             >
-              <div className="relative flex h-44 w-full flex-col justify-between overflow-hidden border-b border-outline-variant/30 bg-gradient-to-br from-surface-container-high via-surface-container to-primary-container/30 p-4">
+              <div className="relative flex h-44 w-full flex-col justify-between overflow-hidden border-b border-outline-variant/25 bg-gradient-to-br from-surface-container-high via-surface-container to-primary-container/25 p-4">
                 {x.bild && (
                   <SuchBild
                     url={x.bild}
                     alt={x.titel}
-                    className="absolute inset-0 h-full w-full object-cover opacity-65 transition-transform duration-300 group-hover:scale-105"
+                    className="absolute inset-0 h-full w-full object-cover opacity-70 transition-transform duration-300 group-hover:scale-105"
                   />
                 )}
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/20" aria-hidden="true" />
                 <div className="relative z-10 flex items-center justify-between">
-                  <span className="rounded bg-surface/80 px-2 py-0.5 text-label-sm font-semibold text-on-surface backdrop-blur-sm">
+                  <span className="rounded-full border border-white/15 bg-black/55 px-2.5 py-0.5 text-label-sm font-medium text-white backdrop-blur-md">
                     {domain}
                   </span>
                 </div>
                 <div className="relative z-10 my-auto flex items-center justify-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-primary/50 bg-primary/20 text-primary shadow-md transition-transform group-hover:scale-110">
-                    <Play className="h-5 w-5 fill-current ml-0.5" aria-hidden="true" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white shadow-float backdrop-blur-md transition-all duration-200 group-hover:scale-110 group-hover:border-primary/60 group-hover:bg-primary group-hover:text-on-primary">
+                    <Play className="ml-0.5 h-5 w-5 fill-current" aria-hidden="true" />
                   </div>
                 </div>
               </div>
               <div className="p-4">
-                <h3 className="line-clamp-2 text-body-md font-semibold text-on-surface group-hover:text-primary">
-                  {x.titel || domain}
+                <h3 className="line-clamp-2 text-body-md font-semibold text-on-surface transition-colors group-hover:text-primary">
+                  <FormatierterText text={x.titel || domain} />
                 </h3>
                 {x.inhalt && (
-                  <p className="mt-1.5 line-clamp-2 text-label-sm text-on-surface-variant">{x.inhalt}</p>
+                  <p className="mt-1.5 line-clamp-2 text-label-sm text-on-surface-variant">
+                    <FormatierterText text={x.inhalt} />
+                  </p>
                 )}
               </div>
             </button>
@@ -788,29 +749,25 @@ export function MsmSuche({ tab }: { tab: Tab }) {
       </div>
     )
   } else if (kategorie === 'news') {
-    // TAB 4: NEWS-ANSICHT
-    const newsEintraege = stand.treffer.length > 0 ? stand.treffer : lokaleNews
     inhalt = (
-      <div className="max-w-3xl space-y-3.5 animate-fade-in">
-        {newsEintraege.map((n, idx) => {
+      <div className="max-w-[780px] divide-y divide-outline-variant/20 animate-fade-in">
+        {stand.treffer.map((n, idx) => {
           const domain = host(n.url)
           return (
-            <article key={`${n.url}-${idx}`}>
+            <article key={`${n.url}-${idx}`} className="flex flex-col py-1.5 first:pt-0 last:pb-0">
               <button
                 type="button"
                 onClick={(ev) => zielOeffnen(n.url, ev.ctrlKey || ev.metaKey)}
                 onAuxClick={(ev) => ev.button === 1 && zielOeffnen(n.url, true)}
-                className="msm-card group flex w-full flex-col gap-1.5 p-4 sm:p-5 text-left transition-all hover:border-primary/60"
+                className="group -mx-3 block rounded-2xl px-3 py-3 text-left transition-colors duration-150 hover:bg-surface-container-low/45"
               >
-                <div className="flex items-center gap-2 text-label-sm text-on-surface-variant">
-                  <span className="font-semibold text-primary">{domain}</span>
-                </div>
-                <h3 className="text-title-md font-semibold text-on-surface group-hover:text-primary group-hover:underline">
-                  {n.titel || domain}
+                <span className="text-label-sm font-medium text-primary">{domain}</span>
+                <h3 className="mt-1 text-title-sm font-semibold text-on-surface decoration-primary/60 underline-offset-4 group-hover:text-primary group-hover:underline">
+                  <FormatierterText text={n.titel || domain} />
                 </h3>
                 {n.inhalt && (
-                  <p className="line-clamp-2 sm:line-clamp-3 text-body-sm leading-relaxed text-on-surface-variant">
-                    {n.inhalt}
+                  <p className="mt-1 line-clamp-2 text-body-sm leading-relaxed text-on-surface-variant sm:line-clamp-3">
+                    <FormatierterText text={n.inhalt} />
                   </p>
                 )}
               </button>
@@ -820,395 +777,204 @@ export function MsmSuche({ tab }: { tab: Tab }) {
       </div>
     )
   } else {
-    // TAB 1: WEB-SUCHE (2-SPALTEN ENTERPRISE LAYOUT, 7 / 5)
+    // Web-Ansicht: breite Lesespalte, rechts Wissenskarte und Themen-Nachrichten.
     inhalt = (
-      <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-12 animate-fade-in">
-        {/* LINKE HAUPTSPALTE (7 von 12 Spalten) */}
-        <div className="space-y-5 lg:col-span-7">
-          {/* A. SINGRA AI ÜBERBLICK BOX */}
+      <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,1fr)_352px] animate-fade-in">
+        <div className="min-w-0 max-w-[780px] space-y-6">
+          {stand.korrekturen.length > 0 && (
+            <KorrekturHinweis
+              korrekturen={stand.korrekturen}
+              onSuchen={(neu) => oeffnen(msmSucheAdresse(neu), tab.id)}
+            />
+          )}
+
           <SuchzusammenfassungKachel
             begriff={begriff}
             treffer={stand.treffer}
-            vorschlaege={stand.vorschlaege}
+            vorschlaege={verwandteListe}
             onNeueTreffer={onNeueTreffer}
             onOeffnen={zielOeffnen}
           />
 
-          {/* A2. DIREKTANTWORTEN AUS SEARXNG ANSWERER-PLUGINS (Rechner, Einheiten, Hashes) */}
-          {stand.antworten && stand.antworten.length > 0 && (
-            <section
-              data-testid="searxng-direktantwort"
-              aria-label={t('browser.msmSuche.direktAntwortBadge')}
-              className="msm-card border-primary/35 bg-gradient-to-br from-primary-container/25 via-surface-container to-surface-container-low p-4 sm:p-5"
-            >
-              <div className="mb-2 flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
-                <Badge variant="info">{t('browser.msmSuche.direktAntwortBadge')}</Badge>
-              </div>
-              <div className="space-y-1.5">
-                {stand.antworten.map((antw, aIdx) => (
-                  <p key={aIdx} className="font-mono text-title-md font-semibold text-on-surface">
-                    {antw}
-                  </p>
-                ))}
-              </div>
-            </section>
-          )}
+          <DirektAntwort antworten={stand.antworten ?? []} />
 
-          {/* Auf Mobilgeräten / Tablets reiht sich das Wikipedia-Knowledge-Panel kompakt unter der KI-Box ein */}
+          {/* Der erste Treffer als hervorgehobene Karte direkt unter dem Überblick. */}
+          <div id="treffer-1">
+            <Ergebniszeile
+              treffer={stand.treffer[0]}
+              sprache={region}
+              hervorgehoben
+              sitelinks={stand.vorschlaege.slice(0, 4)}
+              onOeffnen={zielOeffnen}
+              onSitelink={(link) => oeffnen(msmSucheAdresse(link), tab.id)}
+            />
+          </div>
+
+          {/* Auf Mobilgeräten / Tablets reiht sich die Wissenskarte kompakt ein. */}
           {wissensPanel && <div className="lg:hidden">{renderWissensPanel(true)}</div>}
 
-          {/* B. KONTEXTBEZOGENE "WEITERE FRAGEN ZUM THEMA" — nur, wenn die Suche
-              echte Vorschläge oder Treffer mit Text geliefert hat. */}
-          {fragenListe.length > 0 && (
-            <section
-              className="msm-card p-4 sm:p-5"
-              aria-label={t('browser.msmSuche.weitereFragen')}
+          <WeitereFragen
+            fragen={fragenListe}
+            onFrage={(frage) => oeffnen(msmSucheAdresse(frage), tab.id)}
+          />
+
+          {/* Die übrigen Treffer: eine ruhige Liste, keine Karten. */}
+          {stand.treffer.length > 1 && (
+            <ol
+              className="divide-y divide-outline-variant/25"
+              aria-label={t('browser.msmSuche.trefferListe', { begriff })}
             >
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-title-sm font-semibold text-on-surface">
-                  {t('browser.msmSuche.weitereFragen')}
-                </h2>
-                <span className="text-label-sm text-on-surface-variant">
-                  {t('browser.msmSuche.kontextGeneriert')}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {fragenListe.map((item, fIdx) => (
-                  <details
-                    key={fIdx}
-                    name="weitere-fragen"
-                    open={fIdx === 0}
-                    className="group overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container-low/80 transition-colors hover:bg-surface-container"
-                  >
-                    <summary className="flex cursor-pointer list-none select-none items-center justify-between px-4 py-3 text-body-sm font-medium text-on-surface">
-                      <span>{item.frage}</span>
-                      <ChevronDown
-                        className="ml-3 h-4 w-4 shrink-0 text-on-surface-variant transition-transform duration-200 group-open:rotate-180 group-open:text-primary"
-                        aria-hidden="true"
-                      />
-                    </summary>
-                    <div className="border-t border-outline-variant/25 px-4 pb-3.5 pt-2.5 text-body-sm leading-relaxed text-on-surface-variant">
-                      {item.antwort && <p className="mb-2.5 line-clamp-3">{item.antwort}</p>}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => oeffnen(msmSucheAdresse(item.frage), tab.id)}
-                      >
-                        <Search className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                        <span>{item.frage}</span>
-                      </Button>
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* C. ORGANISCHE WEB-ERGEBNISSE (CLEAN CARDS OHNE KAPUTTE BILDER) */}
-          <ol className="space-y-3.5" aria-label={t('browser.msmSuche.trefferListe', { begriff })}>
-            {stand.treffer.map((x, idx) => {
-              const domain = host(x.url)
-              const breadcrumb = pfad(x.url)
-              // Beim Top-Ergebnis unterstützen wir Sitelinks / Unterseiten-Pills, sofern Vorschläge vorliegen
-              const sitelinks = idx === 0 ? stand.vorschlaege.slice(0, 4) : []
-
-              return (
-                <li key={x.url} id={`treffer-${idx + 1}`} className="group">
-                  <article className="msm-card p-4 sm:p-5 transition-colors hover:ring-1 hover:ring-primary/30">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <button
-                          type="button"
-                          onClick={(ev) => zielOeffnen(x.url, ev.ctrlKey || ev.metaKey)}
-                          onAuxClick={(ev) => ev.button === 1 && zielOeffnen(x.url, true)}
-                          className="flex w-full min-w-0 flex-col text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded-lg"
-                        >
-                          {/* Favicon + Seitenname + Breadcrumb */}
-                          <div className="mb-1.5 flex items-center gap-2.5">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/40 bg-surface-container-high text-label-sm font-bold text-primary">
-                              <SeitenSymbol url={x.url} host={domain} />
-                            </div>
-                            <div className="min-w-0 truncate">
-                              <div className="truncate text-label-sm font-medium leading-tight text-on-surface">
-                                {domain}
-                              </div>
-                              <div className="truncate text-label-sm text-on-surface-variant/80">
-                                {domain}
-                                {breadcrumb}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Klickbarer Titel */}
-                          <h3 className="mt-1 text-title-md font-semibold leading-snug text-primary group-hover:underline line-clamp-2">
-                            {x.titel || domain}
-                          </h3>
-
-                          {/* Beschreibungstext (Snippet mit Mobile-Line-Clamp) */}
-                          {x.inhalt && (
-                            <p className="mt-1.5 line-clamp-2 sm:line-clamp-3 text-body-sm leading-relaxed text-on-surface-variant">
-                              {x.inhalt}
-                            </p>
-                          )}
-                        </button>
-
-                        {/* Sitelinks beim Top-Ergebnis */}
-                        {sitelinks.length > 0 && (
-                          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-outline-variant/25 pt-2.5">
-                            {sitelinks.map((link) => (
-                              <button
-                                key={link}
-                                type="button"
-                                onClick={() => oeffnen(msmSucheAdresse(link), tab.id)}
-                                className="rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-1 text-label-sm font-medium text-primary transition-colors hover:border-primary/40 hover:bg-surface-container-high"
-                              >
-                                {link} ↗
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Rechtsseitiges Vorschaubild (nur wenn fehlerfrei über den eigenen Proxy ladbar) */}
-                      {x.bild && (
-                        <SuchBild
-                          url={x.bild}
-                          alt=""
-                          className="hidden sm:block h-24 w-32 shrink-0 rounded-xl border border-outline-variant/40 bg-surface-container-high object-cover"
-                        />
-                      )}
-                    </div>
-                  </article>
+              {stand.treffer.slice(1).map((x, idx) => (
+                <li key={x.url} id={`treffer-${idx + 2}`}>
+                  <Ergebniszeile
+                    treffer={x}
+                    sprache={region}
+                    onOeffnen={zielOeffnen}
+                    onSitelink={(link) => oeffnen(msmSucheAdresse(link), tab.id)}
+                  />
                 </li>
-              )
-            })}
-          </ol>
-
-          {/* D. ÄHNLICHE SUCHANFRAGEN (2-SPALTEN-GRID) */}
-          {stand.vorschlaege.length > 0 && (
-            <section
-              className="msm-card p-4 sm:p-5"
-              aria-label={t('browser.msmSuche.oftGesucht')}
-            >
-              <div className="mb-3.5 flex items-center justify-between gap-2">
-                <h2 className="text-title-sm font-semibold text-on-surface">
-                  {t('browser.msmSuche.oftGesucht')}
-                </h2>
-                <span className="text-label-sm text-on-surface-variant">
-                  {t('browser.msmSuche.kontextVorschlaege')}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {stand.vorschlaege.map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => oeffnen(msmSucheAdresse(v), tab.id)}
-                    className="group flex items-center justify-between rounded-xl border border-outline-variant/40 bg-surface-container-low px-3.5 py-2.5 text-left text-label-sm font-medium text-on-surface transition-colors hover:border-primary/40 hover:bg-surface-container-high hover:text-primary"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <Search className="h-3.5 w-3.5 shrink-0 text-on-surface-variant group-hover:text-primary" aria-hidden="true" />
-                      <span className="truncate">{v}</span>
-                    </div>
-                    <span className="ml-2 text-on-surface-variant group-hover:text-primary" aria-hidden="true">
-                      →
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
+              ))}
+            </ol>
           )}
 
-          {/* E. SEITENNAVIGATION (PAGINIERUNG IM DNA-DESIGN) */}
-          <nav
-            className="flex flex-wrap items-center justify-center gap-1.5 pt-2 pb-4 sm:justify-start"
-            aria-label={t('common.pagination.label')}
-          >
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={stand.weitereLaedt || stand.seite <= 1}
-              onClick={() => seiteWechseln(stand.seite - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-              <span>{t('common.back')}</span>
-            </Button>
+          <BilderStreifen
+            treffer={stand.treffer}
+            onBild={(x) => setMedienVorschau({ treffer: x, art: 'bild' })}
+            onAlle={() => setKategorie('images')}
+          />
 
-            {[1, 2, 3, 4].map((nr) => (
-              <Button
-                key={nr}
-                type="button"
-                variant={stand.seite === nr ? 'primary' : 'secondary'}
-                size="sm"
-                disabled={stand.weitereLaedt}
-                onClick={() => seiteWechseln(nr)}
-                className="w-9 px-0"
-              >
-                {nr}
-              </Button>
-            ))}
+          <VerwandteSuchen
+            suchen={verwandteListe}
+            onSuchen={(v) => oeffnen(msmSucheAdresse(v), tab.id)}
+          />
 
-            {stand.mehr && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={weitere}
-                disabled={stand.weitereLaedt}
-              >
-                {stand.weitereLaedt && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                <span>{t('browser.msmSuche.weitere')}</span>
-                <ChevronRight className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            )}
-          </nav>
+          <SeitenPager
+            seite={stand.seite}
+            mehr={stand.mehr}
+            laedt={stand.weitereLaedt}
+            onSeite={(nr) => void seiteWechseln(nr)}
+            onWeitere={() => void weitere()}
+          />
         </div>
 
-        {/* RECHTE KONTEXT-SPALTE: WIKIPEDIA / KNOWLEDGE PANEL (5 von 12 Spalten) */}
-        <aside className="hidden space-y-5 lg:col-span-5 lg:sticky lg:top-28 lg:block">
+        {/* Rechte Spalte: Wissenskarte und Nachrichten zum Thema, mitlaufend. */}
+        <aside className="hidden space-y-5 lg:sticky lg:top-[7.5rem] lg:block">
           {wissensPanel && renderWissensPanel(false)}
-
-          {/* Aktuelle Schlagzeiten zum gesuchten Thema, unter dem Wissens-Panel */}
-          {lokaleNews.length > 0 && (
-            <div
-              className="msm-card p-5"
-              aria-label={t('browser.msmSuche.aktuelleNews')}
-            >
-              <div className="mb-3 flex items-center gap-2 border-b border-outline-variant/30 pb-2.5">
-                <Newspaper className="h-4 w-4 text-primary" aria-hidden="true" />
-                <h2 className="text-title-sm font-semibold text-on-surface">
-                  {t('browser.msmSuche.aktuelleNews')}
-                </h2>
-              </div>
-              <div className="space-y-3">
-                {lokaleNews.slice(0, 4).map((item, idx) => (
-                  <div key={idx} className="border-b border-outline-variant/20 pb-2.5 last:border-b-0 last:pb-0">
-                    <button
-                      type="button"
-                      onClick={(ev) => zielOeffnen(item.url, ev.ctrlKey || ev.metaKey)}
-                      className="group w-full text-left"
-                    >
-                      <span className="mb-0.5 block truncate text-label-sm text-on-surface-variant">
-                        {host(item.url)}
-                      </span>
-                      <span className="line-clamp-2 text-body-sm font-medium leading-snug text-on-surface group-hover:text-primary group-hover:underline">
-                        {item.titel}
-                      </span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <NachrichtenSpalte news={themaNews} sprache={region} onOeffnen={zielOeffnen} />
         </aside>
       </div>
     )
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-background text-on-surface">
-      <h1 className="sr-only">{t('browser.msmSuche.titel', { begriff })}</h1>
-
-      {/* 1. STICKY SUCHMASCHINEN-HEADER (MAUNTING SEARCH) */}
-      <header className="sticky top-0 z-30 border-b border-outline-variant/40 bg-background/95 px-4 pt-3.5 backdrop-blur-md sm:px-6">
-        <div className="mx-auto max-w-[1360px]">
-          {/* Obere Header-Zeile: MSB-Globus-Logo + Maunting Search + DNA-Suchleiste + Regionsauswahl.
-              Ein einziges Region-Dropdown im DOM (keine doppelte Steuerung): am Handy rechts
-              neben dem Logo, am Rechner rechts außen hinter der Suchleiste. */}
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => startseite(tab.id)}
-              className="group order-1 flex shrink-0 items-center gap-2 text-left"
-            >
-              <img
-                src="/msp.png"
-                alt=""
-                className="h-8 w-8 shrink-0 rounded-full border border-primary/40 shadow-sm transition-transform group-hover:scale-105"
-              />
-              <div className="flex items-baseline gap-1.5 leading-none">
-                <span className="text-title-md font-semibold tracking-tight text-on-surface">Maunting</span>
-                <span className="text-title-md font-medium tracking-tight text-primary">Search</span>
-              </div>
-            </button>
-
-            {/* Regionsauswahl: Mobil neben dem Logo, Desktop rechts außen */}
-            <div className="order-2 w-36 shrink-0 md:order-5 md:ml-auto md:w-44">
-              <Dropdown
-                value={region}
-                onChange={regionWaehlen}
-                options={regionOptionen}
-                align="end"
-                buttonClassName="h-8 px-2.5 text-label-sm md:h-9 md:px-3"
-                aria-label={t('browser.msmSuche.regionLabel')}
-              />
-            </div>
-
-            {/* Wiederverwendete DNA-Suchleiste mit Live-Autocomplete */}
-            <div className="order-3 w-full min-w-0 md:order-2 md:max-w-[690px] md:flex-1">
-              <SuchEingabeLeiste
-                initialWert={begriff}
-                onSuchen={(neu) => oeffnen(msmSucheAdresse(neu), tab.id)}
-                kompakt
-                autocomplete={!tab.privat}
-                sprache={region}
-              />
-            </div>
-          </div>
-
-          {/* Untere Header-Zeile: Kategorie-Tabs (Web, Bilder, Videos, News) & Treffer-Statistik */}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 pb-2 md:pl-[211px]">
-            <TabBar
-              tabs={kategorieTabs}
-              active={kategorie}
-              onChange={setKategorie}
-              ariaLabel={t('browser.msmSuche.kategorienLabel')}
-              embedded
-              einzeilig
-              kompakt
-            />
-
-            {stand.art === 'da' && stand.treffer.length > 0 && (
-              <span className="hidden text-label-sm text-on-surface-variant sm:inline">
-                {t('browser.msmSuche.trefferStatistik', {
-                  anzahl: stand.treffer.length,
-                  dauer: stand.dauerSek.toFixed(2).replace('.', ','),
-                })}
-              </span>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* 2. HAUPTINHALT (kein zweites <main>: die Fläche des Browsers ist bereits eins) */}
-      <div className="mx-auto w-full max-w-[1360px] flex-1 px-4 py-6 sm:px-6 md:pl-[211px]">
-        {inhalt}
-      </div>
-
-      {/* Medien-Vorschau-Dialog (Design-DNA): Bilder/Videos zuerst prüfen, dann öffnen. Zurück schließt. */}
-      <MedienVorschauDialog
-        vorschau={medienVorschau}
-        onSchliessen={() => setMedienVorschau(null)}
-        onOeffnen={zielOeffnen}
+    <div className="relative isolate flex h-full flex-col overflow-hidden bg-background text-on-surface">
+      <TageszeitHintergrund
+        motiv={tagesMotiv}
+        hoehe="h-full min-h-full"
+        deckkraft="opacity-40"
+        verlauf="msm-tageszeit-verlauf"
+        ebene="z-0"
+        auslaufMaske="linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.92) 20%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.3) 70%, rgba(0,0,0,0.08) 88%, transparent 100%)"
+      />
+      <div
+        className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-b from-background/30 via-background/60 to-background/95"
+        aria-hidden="true"
       />
 
-      {/* 3. TRANSPARENTER ENTERPRISE FOOTER (AGPLv3-Hinweis) */}
-      <footer className="mt-auto border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 text-label-sm text-on-surface-variant sm:px-6">
-        <div className="mx-auto flex max-w-[1360px] flex-col items-center justify-between gap-2 sm:flex-row md:pl-[187px]">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-on-surface">Maunting Search</span>
-            <span aria-hidden="true">•</span>
-            <span>{t('browser.msmSuche.footerKi')}</span>
-            <span aria-hidden="true">•</span>
-            <span>{t('browser.msmSuche.footerLizenz')}</span>
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden scroll-pt-[9rem]">
+        <h1 className="sr-only">{t('browser.msmSuche.titel', { begriff })}</h1>
+
+        {/* Sticky Suchkopf: Wortmarke, Regionswahl, Suchfeld, Kategorien. */}
+        <header className="msm-suche-kopf-huelle">
+          <div className="msm-suche-kopf px-4 pt-3.5 sm:px-6">
+            <div className="mx-auto max-w-[1400px]">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => startseite(tab.id)}
+                  className="group order-1 flex shrink-0 items-center gap-2.5 text-left md:w-[196px]"
+                >
+                  <img
+                    src="/msp.png"
+                    alt=""
+                    className="h-8 w-8 shrink-0 rounded-full border border-primary/40 shadow-[0_0_16px_hsl(var(--mui-focus)/0.2)] transition-transform group-hover:scale-105"
+                  />
+                  <div className="flex items-baseline gap-1.5 leading-none">
+                    <span className="text-title-md font-semibold tracking-tight text-on-surface">Maunting</span>
+                    <span className="text-title-md font-medium tracking-tight text-primary">Search</span>
+                  </div>
+                </button>
+
+                {/* Regionsauswahl: Mobil neben dem Logo, Desktop rechts außen */}
+                <div className="order-2 ml-auto flex shrink-0 items-center md:order-5">
+                  <div className="w-36 shrink-0 sm:w-44">
+                    <Dropdown
+                      value={region}
+                      onChange={regionWaehlen}
+                      options={regionOptionen}
+                      align="end"
+                      buttonClassName="h-9 rounded-full border-outline-variant/45 bg-surface-container-low/80 px-3.5 text-label-sm shadow-hairline backdrop-blur-md hover:border-outline-variant/80 hover:bg-surface-container/90"
+                      aria-label={t('browser.msmSuche.regionLabel')}
+                    />
+                  </div>
+                </div>
+
+                {/* Wiederverwendete DNA-Suchleiste mit Live-Autocomplete */}
+                <div className="order-3 w-full min-w-0 md:order-2 md:max-w-[780px] md:flex-1">
+                  <SuchEingabeLeiste
+                    initialWert={begriff}
+                    onSuchen={(neu) => oeffnen(msmSucheAdresse(neu), tab.id)}
+                    kompakt
+                    autocomplete={!tab.privat}
+                    sprache={region}
+                    variante="glass"
+                  />
+                </div>
+              </div>
+
+              {/* Untere Header-Zeile: flache Unterstrich-Kategorien & Treffer-Statistik */}
+              <div className="mt-2.5 flex items-center justify-between gap-3 md:pl-[208px]">
+                <TabBar
+                  tabs={kategorieTabs}
+                  active={kategorie}
+                  onChange={setKategorie}
+                  ariaLabel={t('browser.msmSuche.kategorienLabel')}
+                  variante="underline"
+                  einzeilig
+                  kompakt
+                  className="-mb-px"
+                />
+
+                {stand.art === 'da' && stand.treffer.length > 0 && (
+                  <span className="hidden pb-1.5 text-label-sm tabular-nums text-on-surface-variant sm:inline">
+                    {t('browser.msmSuche.trefferStatistik', {
+                      anzahl: stand.treffer.length,
+                      dauer: stand.dauerSek.toFixed(2).replace('.', ','),
+                    })}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span>{t('browser.msmSuche.footerDienst')}</span>
-          </div>
+        </header>
+
+        {/* Hauptinhalt (kein zweites <main>: die Fläche des Browsers ist bereits eins) */}
+        <div className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 md:pl-[208px]">
+          {inhalt}
         </div>
-      </footer>
+
+        <MedienVorschauDialog
+          vorschau={medienVorschau}
+          onSchliessen={() => setMedienVorschau(null)}
+          onOeffnen={zielOeffnen}
+        />
+
+        <SuchFooter
+          regionLabel={aktuellesRegionLabel}
+          sicher={stand.art === 'da' ? stand.sicher : true}
+          onDatenschutz={() => einstellungenOeffnen(DATENSCHUTZ_TEIL)}
+        />
+      </div>
     </div>
   )
 }
@@ -1219,54 +985,6 @@ export function MsmSuche({ tab }: { tab: Tab }) {
  * dann in der Oberfläche; ein Verlaufseintrag dort geht diesen Weg, statt die
  * App zu beenden.
  */
-function MedienVorschauDialog({
-  vorschau,
-  onSchliessen,
-  onOeffnen,
-}: {
-  vorschau: { treffer: Treffer; art: 'bild' | 'video' } | null
-  onSchliessen: () => void
-  onOeffnen: (url: string, imNeuenTab?: boolean) => void
-}) {
-  const { t } = useTranslation()
-  useZurueckSchliesst(!!vorschau, onSchliessen)
-  return (
-    <Dialog open={!!vorschau} onOpenChange={(offen) => !offen && onSchliessen()}>
-      <DialogContent aria-label={t('browser.msmSuche.medienVorschauTitel')}>
-        <DialogHeader>
-          <DialogTitle>{vorschau?.treffer.titel || t('browser.msmSuche.medienVorschauTitel')}</DialogTitle>
-        </DialogHeader>
-        {vorschau && (
-          <div className="space-y-3">
-            {vorschau.treffer.bild && (
-              <SuchBild
-                url={vorschau.treffer.bild}
-                alt={vorschau.treffer.titel}
-                className="max-h-[50vh] w-full rounded-xl border border-outline-variant/40 bg-surface-container object-contain"
-              />
-            )}
-            {vorschau.treffer.inhalt && (
-              <p className="line-clamp-4 text-body-sm text-on-surface-variant">{vorschau.treffer.inhalt}</p>
-            )}
-            <p className="truncate text-label-sm text-on-surface-variant">{vorschau.treffer.url}</p>
-          </div>
-        )}
-        <DialogFooter>
-          <Button type="button" variant="secondary" onClick={onSchliessen}>
-            {t('common.close')}
-          </Button>
-          {vorschau && (
-            <Button type="button" variant="primary" onClick={() => onOeffnen(vorschau.treffer.url)}>
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>{t('browser.msmSuche.medienVorschauOeffnen')}</span>
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 export function useZurueckZurSuche(tab: Tab | undefined) {
   const aktion = useTabsStore((s) => s.aktion)
   const id = tab?.id
