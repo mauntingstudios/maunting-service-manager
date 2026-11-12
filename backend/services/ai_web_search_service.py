@@ -102,7 +102,9 @@ _sidecar_status_cache: dict[str, tuple[float, bool]] = {}
 _sidecar_cache_lock = threading.Lock()
 _bild_urls: dict[str, tuple[float, str]] = {}
 _bild_daten_cache: dict[str, tuple[float, bytes, str]] = {}
+_bild_inflight: dict[str, threading.Event] = {}
 _bild_lock = threading.Lock()
+_vorwaerm_sem = threading.Semaphore(2)
 
 
 class WebSearchUnavailable(RuntimeError):
@@ -1072,12 +1074,36 @@ def _merke_bild_url(url: str) -> None:
                 _bild_urls.pop(k, None)
 
 
+def _such_bild_vorwaermen(url: str) -> None:
+    """Lädt freigegebene Wikipedia-/Infobox-Bilder asynchron in den Proxy-Cache vor."""
+    clean = (url or "").strip()
+    if not clean or os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    jetzt = time.monotonic()
+    with _bild_lock:
+        cached = _bild_daten_cache.get(clean)
+        if (cached and cached[0] > jetzt) or clean in _bild_inflight:
+            return
+    if not _vorwaerm_sem.acquire(blocking=False):
+        return
+
+    def _lauf() -> None:
+        try:
+            hole_such_bild(clean)
+        finally:
+            _vorwaerm_sem.release()
+
+    threading.Thread(target=_lauf, name="suchbild-vorwaerm", daemon=True).start()
+
+
 def hole_such_bild(url: str) -> tuple[bytes, str] | None:
     """Lädt ein bereits durch eine Suche oder ein Wissens-Panel freigegebenes Bild über den Server-Proxy."""
     clean = (url or "").strip()
     if not clean or len(clean) > MAX_URL_CHARS or not _is_safe_public_url(clean):
         return None
     jetzt = time.monotonic()
+    wartender: threading.Event | None = None
+    eigener_event: threading.Event | None = None
     with _bild_lock:
         erlaubt = _bild_urls.get(clean)
         if not erlaubt or erlaubt[0] <= jetzt:
@@ -1085,6 +1111,19 @@ def hole_such_bild(url: str) -> tuple[bytes, str] | None:
         cached = _bild_daten_cache.get(clean)
         if cached and cached[0] > jetzt:
             return cached[1], cached[2]
+        wartender = _bild_inflight.get(clean)
+        if wartender is None:
+            eigener_event = threading.Event()
+            _bild_inflight[clean] = eigener_event
+
+    if wartender is not None:
+        wartender.wait(timeout=8.0)
+        jetzt_danach = time.monotonic()
+        with _bild_lock:
+            cached = _bild_daten_cache.get(clean)
+            if cached and cached[0] > jetzt_danach:
+                return cached[1], cached[2]
+        return None
 
     try:
         resp = _http_client().get(
@@ -1105,7 +1144,7 @@ def hole_such_bild(url: str) -> tuple[bytes, str] | None:
         if not media_type:
             return None
         with _bild_lock:
-            _bild_daten_cache[clean] = (jetzt + 900.0, data, media_type)
+            _bild_daten_cache[clean] = (time.monotonic() + 900.0, data, media_type)
             if len(_bild_daten_cache) > _BILD_CACHE_MAX:
                 aelteste = sorted(_bild_daten_cache.items(), key=lambda kv: kv[1][0])[:16]
                 for k, _ in aelteste:
@@ -1113,6 +1152,11 @@ def hole_such_bild(url: str) -> tuple[bytes, str] | None:
         return data, media_type
     except Exception:
         return None
+    finally:
+        with _bild_lock:
+            _bild_inflight.pop(clean, None)
+        if eigener_event is not None:
+            eigener_event.set()
 
 
 def _infobox_titel(box: dict, id_url: str) -> str:
@@ -1155,6 +1199,7 @@ def _parse_infobox(raw_boxes: object) -> dict | None:
         sicheres_bild = bild if (bild and len(bild) <= MAX_URL_CHARS and _is_safe_public_url(bild)) else None
         if sicheres_bild:
             _merke_bild_url(sicheres_bild)
+            _such_bild_vorwaermen(sicheres_bild)
         attribute = []
         raw_attrs = box.get("attributes")
         if isinstance(raw_attrs, list):
@@ -1727,40 +1772,45 @@ def wikipedia_wissen(query: str, sprache: str = "de") -> dict | None:
         page_title, weiterleitung = ziel
 
         encoded_title = urllib.parse.quote(page_title.replace(" ", "_"), safe="")
-        sum_resp = _http_client().get(
-            f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{encoded_title}",
-            headers=_WIKI_HEADERS,
-        )
-        if sum_resp.status_code != 200:
-            return None
-        w = sum_resp.json()
-        if not isinstance(w, dict):
-            return None
-        titel = redact_sensitive_text(str(w.get("title") or page_title)).strip()[:MAX_TITLE_CHARS]
-        untertitel = redact_sensitive_text(str(w.get("description") or "")).strip()[:200]
-        inhalt = redact_sensitive_text(str(w.get("extract") or "")).strip()[:1200]
-        if not inhalt:
-            return None
-        # Die Zusammenfassung kann einen anderen Artikel nennen als die Suche.
-        if str(w.get("type") or "") == "disambiguation":
-            _wissen_cache_legen(schluessel, None)
-            return None
-        if _wiki_relevanz(q, titel, untertitel, weiterleitung) < _WIKI_RELEVANZ_MIN:
-            _wissen_cache_legen(schluessel, None)
-            return None
-        page_url = (
-            str(w.get("content_urls", {}).get("desktop", {}).get("page") or "")
-            if isinstance(w.get("content_urls"), dict)
-            else ""
-        )
-        if not page_url or not _is_safe_public_url(page_url):
-            page_url = f"https://{lang}.wikipedia.org/wiki/{encoded_title}"
-        thumb = w.get("thumbnail")
-        bild = str(thumb.get("source") or "").strip() if isinstance(thumb, dict) else ""
-        sicheres_bild = bild if (bild and len(bild) <= MAX_URL_CHARS and _is_safe_public_url(bild)) else None
-        if sicheres_bild:
-            _merke_bild_url(sicheres_bild)
-        wikitext = _wiki_wikitext(lang, page_title)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            sum_fut = executor.submit(
+                _http_client().get,
+                f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{encoded_title}",
+                headers=_WIKI_HEADERS,
+            )
+            wt_fut = executor.submit(_wiki_wikitext, lang, page_title)
+            sum_resp = sum_fut.result()
+            if sum_resp.status_code != 200:
+                return None
+            w = sum_resp.json()
+            if not isinstance(w, dict):
+                return None
+            titel = redact_sensitive_text(str(w.get("title") or page_title)).strip()[:MAX_TITLE_CHARS]
+            untertitel = redact_sensitive_text(str(w.get("description") or "")).strip()[:200]
+            inhalt = redact_sensitive_text(str(w.get("extract") or "")).strip()[:1200]
+            if not inhalt:
+                return None
+            # Die Zusammenfassung kann einen anderen Artikel nennen als die Suche.
+            if str(w.get("type") or "") == "disambiguation":
+                _wissen_cache_legen(schluessel, None)
+                return None
+            if _wiki_relevanz(q, titel, untertitel, weiterleitung) < _WIKI_RELEVANZ_MIN:
+                _wissen_cache_legen(schluessel, None)
+                return None
+            page_url = (
+                str(w.get("content_urls", {}).get("desktop", {}).get("page") or "")
+                if isinstance(w.get("content_urls"), dict)
+                else ""
+            )
+            if not page_url or not _is_safe_public_url(page_url):
+                page_url = f"https://{lang}.wikipedia.org/wiki/{encoded_title}"
+            thumb = w.get("thumbnail")
+            bild = str(thumb.get("source") or "").strip() if isinstance(thumb, dict) else ""
+            sicheres_bild = bild if (bild and len(bild) <= MAX_URL_CHARS and _is_safe_public_url(bild)) else None
+            if sicheres_bild:
+                _merke_bild_url(sicheres_bild)
+                _such_bild_vorwaermen(sicheres_bild)
+            wikitext = wt_fut.result()
         attribute = _wiki_infobox_felder(wikitext)
         verwandte = _wiki_verwandte_themen(wikitext, titel)
         ergebnis = {
@@ -2104,13 +2154,14 @@ def _searxng_ergebnis_berechnen(
     suggestions: list[str] = []
     infobox: dict | None = None
     antworten: list[str] = []
+    korrekturen: list[str] = []
     searxng_fehler: WebSearchUnavailable | None = None
 
     brave_hits: list[dict] = []
     brave_fehler: WebSearchUnavailable | None = None
 
     def _abfrage_searxng() -> None:
-        nonlocal searxng_hits, suggestions, infobox, antworten, searxng_fehler
+        nonlocal searxng_hits, suggestions, infobox, antworten, korrekturen, searxng_fehler
         if not target_url:
             return
         params: dict[str, str | int] = {"q": query, "format": "json", "pageno": seite}
@@ -2167,8 +2218,21 @@ def _searxng_ergebnis_berechnen(
                 else []
             )
             infobox = _parse_infobox(data.get("infoboxes") if isinstance(data, dict) else None)
-            if infobox and _infobox_ist_teilbegriff(query, str(infobox.get("titel") or "")):
-                infobox = None
+            if infobox:
+                # Dieselbe Entitätsprüfung wie im bewerteten Wikipedia-Pfad:
+                # „Wann kommt GTA 6?“ darf nicht den Musiker GTA zeigen.
+                titel = str(infobox.get("titel") or "")
+                kern = extrahiere_wissens_begriff(query)
+                if _infobox_ist_teilbegriff(kern, titel) or not _wiki_titel_passt(kern, titel):
+                    infobox = None
+            raw_korr = data.get("corrections") if isinstance(data, dict) else []
+            for k in raw_korr if isinstance(raw_korr, list) else []:
+                if not isinstance(k, str):
+                    continue
+                text = redact_sensitive_text(k).strip()[:MAX_QUERY_CHARS]
+                if text and text.lower() != query.strip().lower() and text not in korrekturen:
+                    korrekturen.append(text)
+            korrekturen = korrekturen[:3]
             antworten = _parse_answers(data.get("answers") if isinstance(data, dict) else None)
         except WebSearchUnavailable as exc:
             searxng_fehler = exc
@@ -2227,6 +2291,8 @@ def _searxng_ergebnis_berechnen(
         ergebnis_dict["infobox"] = infobox
     if antworten:
         ergebnis_dict["antworten"] = antworten
+    if korrekturen:
+        ergebnis_dict["korrekturen"] = korrekturen
     return ergebnis_dict
 
 

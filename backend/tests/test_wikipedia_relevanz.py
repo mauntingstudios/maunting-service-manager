@@ -216,6 +216,59 @@ def test_infobox_mit_teilbegriff_wird_verworfen() -> None:
     assert dienst._infobox_ist_teilbegriff("Hauptstadt von Frankreich", "Paris") is False
 
 
+class SearxClient:
+    """Eine SearXNG-Antwort mit Treffern und einer Infobox."""
+
+    def __init__(self, infobox_id: str) -> None:
+        self.infobox_id = infobox_id
+
+    def get(self, url: str, *, params=None, headers=None) -> Antwort:
+        return Antwort(
+            {
+                "results": [
+                    {"title": "GTA 6 – alles zum Release", "url": "https://example.org/gta6", "content": "Auszug"}
+                ],
+                "suggestions": [],
+                "infoboxes": [
+                    {
+                        "infobox": "wikipedia",
+                        "id": self.infobox_id,
+                        "content": "Ein Eintrag aus Wikipedia.",
+                        "urls": [{"title": "Wikipedia", "url": self.infobox_id}],
+                    }
+                ],
+            }
+        )
+
+
+def test_searxng_infobox_mit_falscher_entitaet_faellt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """„Wann kommt GTA 6?“ darf nicht den Musikproduzenten GTA zeigen.
+
+    Die Such-Infobox lief bisher nur durch die Teilbegriff-Prüfung; der
+    Klammerzusatz „(music producer)“ passiert sie. Jetzt gilt dieselbe
+    Titelprüfung wie im bewerteten Wikipedia-Pfad.
+    """
+    monkeypatch.setattr(
+        dienst, "_http_client", lambda: SearxClient("https://en.wikipedia.org/wiki/GTA_(music_producer)")
+    )
+    monkeypatch.setattr(dienst, "api_key", lambda: None)
+
+    erg = dienst._searxng_ergebnis_berechnen("wann kommt gta 6", s_url="http://127.0.0.1:8888", sprache="de")
+
+    assert "infobox" not in erg
+
+
+def test_searxng_infobox_mit_passender_entitaet_bleibt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        dienst, "_http_client", lambda: SearxClient("https://de.wikipedia.org/wiki/Grand_Theft_Auto_VI")
+    )
+    monkeypatch.setattr(dienst, "api_key", lambda: None)
+
+    erg = dienst._searxng_ergebnis_berechnen("wann kommt gta 6", s_url="http://127.0.0.1:8888", sprache="de")
+
+    assert erg.get("infobox", {}).get("titel") == "Grand Theft Auto VI"
+
+
 def test_gta_6_release_modifier_findet_grand_theft_auto_vi(monkeypatch: pytest.MonkeyPatch) -> None:
     assert dienst.extrahiere_wissens_begriff("GTA 6 Release") == "GTA 6"
     assert dienst.extrahiere_wissens_begriff("GTA 6 PC Release 2026") == "GTA 6"

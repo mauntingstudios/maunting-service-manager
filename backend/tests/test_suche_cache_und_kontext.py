@@ -141,6 +141,21 @@ def test_doppelquelle_rueckt_nach_vorn() -> None:
     assert len(gemischt) == 3
 
 
+def test_korrekturen_werden_durchgereicht(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SearXNG kennt Rechtschreibkorrekturen; die Suche zeigt sie als „Meintest du“."""
+    client = Client(
+        {
+            "results": [_treffer("https://example.org/a")],
+            "suggestions": [],
+            "corrections": ["gta 6 release", "gta 6 release", "gta 6 releas"],
+        }
+    )
+
+    erg = _such(client, monkeypatch, q="gta 6 releas")
+
+    assert erg.get("korrekturen") == ["gta 6 release"]
+
+
 def test_bildfelder_trennen_vorschau_und_original(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(dienst, "_is_safe_public_url", lambda url: True)
 
