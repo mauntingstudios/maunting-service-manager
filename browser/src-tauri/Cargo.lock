@@ -2474,7 +2474,7 @@ version = "6.1.0"
 dependencies = [
  "adblock",
  "audio_ducking",
- "base64 0.22.1",
+ "base64 0.23.1",
  "fensteroptik",
  "image",
  "jni 0.21.1",
