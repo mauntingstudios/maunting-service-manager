@@ -285,7 +285,13 @@ pub fn mcp_stdio(anfrage: StdioAnfrage) -> Result<StdioAntwort, String> {
 mod tests {
     use super::*;
     use std::io::Cursor;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use serde_json::json;
+
+    // Zwei Tests schreiben denselben Mock, laufen aber nebeneinander. Mit
+    // einer gemeinsamen Datei ueberschrieb und loeschte der eine den Mock des
+    // anderen (CI-Flake am 13.11.2026: "Verbindung geschlossen").
+    static MOCK_NUMMER: AtomicU64 = AtomicU64::new(0);
 
     fn anfrage(command: &str, args: Vec<&str>, nachrichten: Vec<Value>, frist_ms: u64) -> StdioAnfrage {
         StdioAnfrage {
@@ -351,7 +357,8 @@ mod tests {
     }
 
     fn mock_pfad() -> PathBuf {
-        let pfad = std::env::temp_dir().join(format!("mock_mcp_{}.py", std::process::id()));
+        let nummer = MOCK_NUMMER.fetch_add(1, Ordering::SeqCst);
+        let pfad = std::env::temp_dir().join(format!("mock_mcp_{}_{}.py", std::process::id(), nummer));
         std::fs::write(&pfad, include_str!("../tests/mock_mcp.py")).unwrap();
         pfad
     }

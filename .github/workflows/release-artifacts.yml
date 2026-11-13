@@ -386,6 +386,12 @@ jobs:
           # Version in tauri.conf.json und Cargo.toml angleichen (nur [package], keine Dependencies!)
           python scripts/sync-tauri-version.py "${TAG}"
 
+      - name: Build Android APK (initial)
+        working-directory: smart-system
+        run: |
+          chmod +x src-tauri/gen/android/gradlew || true
+          npx tauri android build --apk --target aarch64 --target armv7 --target i686 --target x86_64
+
       # Die Kamera ist eine eigene App, aber kein zweiter Download: MSS
       # liefert ihre signierte APK als Asset mit und startet nur den
       # Android-Installer, wenn der Nutzer sie ausdruecklich will.
@@ -408,11 +414,14 @@ jobs:
           cp "$kamera_apk" smart-system/src-tauri/gen/android/kamera-assets/msm-kamera.apk
           ls -la smart-system/src-tauri/gen/android/kamera-assets/
 
-      - name: Build Android APK
+      # Zweiter Lauf: Der erste hat die Tauri-Plugins (tauri.settings.gradle)
+      # erzeugt, die Kamera-APK liegt jetzt als Asset bereit. Die schweren
+      # Schritte sind up-to-date; Gradle packt das Paket mit der Kamera neu.
+      - name: Rebuild Android APK with camera APK
         working-directory: smart-system
         run: |
-          chmod +x src-tauri/gen/android/gradlew || true
           npx tauri android build --apk --target aarch64 --target armv7 --target i686 --target x86_64
+
 
       # Gradle baut unsigniert; der Schluessel liegt nur in den Secrets.
       # Fehlt ein Secret, bricht das Skript ab, statt ein unsigniertes APK
