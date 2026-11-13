@@ -159,7 +159,9 @@ def test_every_write_tool_has_its_own_payload_branch() -> None:
     assert fehlend == []
 
 
-def test_the_tool_catalogue_stays_within_a_stated_budget() -> None:
+def test_the_tool_catalogue_stays_within_a_stated_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Der Katalog ist teurer als der ganze Systemprompt — und unsichtbar.
 
     `provider_tool_definitions()` geht in **jeder** Runde der Werkzeugschleife
@@ -457,7 +459,27 @@ def test_the_tool_catalogue_stays_within_a_stated_budget() -> None:
     **76.923** Zeichen, aus dem Panel **71.851**. Der freigewordene Platz ist
     nicht das Budget des nächsten Werkzeugs — darum steht der Deckel wieder
     knapp darüber.
+
+    **13.11.2026: Grenze 93.000, und gemessen wird der größte Fall.** Der
+    Katalog hing an Einstellungen: `web_search`/`read_web_page` und die beiden
+    Cloudflare-Werkzeuge kommen nur mit hinterlegtem Zugang dazu, `learn_skill`
+    trägt je nach Lernpolitik `global` in der Auswahl. Die CI hat keine `.env`
+    und sah deshalb weniger Werkzeuge als eine Entwicklungsumgebung: lokal
+    **92.060** Zeichen gegen **90.552** in der CI — der Test war dort grün,
+    während der Katalog real über der Grenze lag. Jetzt setzt der Test die drei
+    Schalter selbst und misst den größten Fall: **92.645** Zeichen aus der App
+    (122 Werkzeuge), **87.573** aus dem Panel (116 Werkzeuge). Die Luft beträgt
+    355 Zeichen.
      """
+    # Der größte Fall, nicht der gerade eingestellte: sonst entscheidet die
+    # `.env` des Rechners über die Zahl, und die CI prüft etwas anderes als der
+    # Betrieb.
+    from services import ai_learning_policy, ai_web_search_service, cloudflare_service
+
+    monkeypatch.setattr(ai_web_search_service, "is_configured", lambda: True)
+    monkeypatch.setattr(cloudflare_service, "is_configured", lambda: True)
+    monkeypatch.setattr(ai_learning_policy, "policy", lambda: "instant")
+
     for herkunft in ("panel", "desktop"):
         erlaubt = herkunft_schnitt(
             frozenset(ai_tool_registry.WERKZEUGE), herkunft
@@ -470,25 +492,17 @@ def test_the_tool_catalogue_stays_within_a_stated_budget() -> None:
             ],
             ensure_ascii=False,
         )
-        # Stand 30.10.2026, nachgemessen: Der Desktop-Fall liegt mit den vier
-        # Teamwerkzeugen (Notizen, Kalender, Gedaechtnis, Skill) bei 82.990
-        # Zeichen. Sie sind eine bewusste Betreiberentscheidung: Die
-        # Dokument-KI soll Teamwissen lesen und Team-Skills lernen koennen.
-        #
-        # Ebenfalls 30.10.2026, nachgemessen: 84.164 Zeichen mit
-        # `read_document_structure` und dem Batch-Schema von `edit_document`
-        # (Fingerabdruck, Index, bis zu 20 Teiländerungen).
-        #
-        # Stand 08.11.2026, nachgemessen: Der Desktop-Fall liegt mit der Singra
-        # Deploy-Pipeline, Dev-Sandbox und Git-Workflows bei 89.263 Zeichen
-        # (Panel: 84.191 Zeichen). Alle Beschreibungen in `project_workspace`
-        # sind bereits maximal entschlackt. Die Grenze steigt deshalb auf
-        # 91.000, mit rund 1.700 Zeichen Luft. Wer sie erneut anhebt, misst
-        # vorher nach und schreibt es hin.
-        assert len(katalog) < 91_000, (
+        # Stand 30.10.2026: 82.990 Zeichen mit den vier Teamwerkzeugen (Notizen,
+        # Kalender, Gedaechtnis, Skill), 84.164 mit `read_document_structure`
+        # und dem Batch-Schema von `edit_document`.
+        # Stand 08.11.2026: 89.263 Zeichen mit Singra Deploy-Pipeline,
+        # Dev-Sandbox und Git-Workflows (Panel: 84.191). Grenze damals 91.000.
+        # Stand 13.11.2026 siehe Docstring: 92.645 Zeichen im groessten Fall.
+        assert len(katalog) < 93_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
-            "taucht in keiner Budgetrechnung auf."
+            "taucht in keiner Budgetrechnung auf. Wer die Grenze anhebt, misst "
+            "vorher nach und schreibt es hier hin."
         )
 
 
