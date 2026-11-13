@@ -21,6 +21,12 @@ vi.mock('./deviceAuthCrypto', async (importOriginal) => {
     ...orig,
     generateEphemeralAuthKeyPair: vi.fn(),
     decryptAuthPayload: vi.fn(),
+    // Echtes `crypto.subtle.digest` loest unter Fake-Timern je nach Last des
+    // Rechners erst nach mehreren Advances auf. Dann steht das Polling-
+    // Intervall spaeter, es feuert weniger als 16 Mal, und der Test scheitert
+    // ohne Fehler im Code (CI 13.11.2026). Der Abdruck ist hier nicht das
+    // Thema, deshalb fest.
+    fingerprintPublicKey: vi.fn(),
   }
 })
 
@@ -35,6 +41,7 @@ describe('DeviceAuthQrView Component', () => {
       publicKeyBase64: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0mockkey',
       privateKey: {} as CryptoKey,
     })
+    vi.mocked(crypto.fingerprintPublicKey).mockResolvedValue('abdruck1')
 
     vi.mocked(api.createDeviceAuthSession).mockResolvedValue({
       session_id: 'session-xyz-123',
@@ -181,10 +188,11 @@ describe('DeviceAuthQrView Component', () => {
         />,
       )
 
-      // Initial session generation
+      // Initial session generation; danach steht das Polling-Intervall.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(50)
       })
+      expect(screen.getByText('Warte auf Smartphone-Scan (Zero-Knowledge E2EE)...')).toBeInTheDocument()
 
       // 15 polling intervals a 800ms
       for (let i = 0; i < 16; i++) {
