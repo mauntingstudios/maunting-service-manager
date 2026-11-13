@@ -994,6 +994,17 @@ def _tresor_schluessel_entziehen(db: Session, team: Team, member_user_id: int) -
     seinem Cache — erst die Rotation schliesst die Tuer. Committet nicht.
     """
     if not team.vault_bucket_id:
+        try:
+            db.refresh(team, ["vault_bucket_id"])
+        except Exception:
+            pass
+    if not team.vault_bucket_id:
+        deleted = db.query(TeamVaultKey).filter(
+            TeamVaultKey.team_id == team.id,
+            TeamVaultKey.user_id == member_user_id,
+        ).delete(synchronize_session=False)
+        if deleted > 0:
+            team.vault_needs_rotation = True
         return
     db.query(TeamVaultKey).filter(
         TeamVaultKey.team_id == team.id,

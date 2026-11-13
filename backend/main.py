@@ -941,6 +941,8 @@ app.add_middleware(
     expose_headers=[
         "X-CSRF-Token",
         "Content-Disposition",
+        "Content-Type",
+        "X-Conversation-ID",
         "X-MSM-Dump-Size",
         "X-MSM-Dump-SHA256",
         "X-MSM-Export-Truncated",
@@ -957,7 +959,7 @@ def _cors_headers_for_request(request: Request) -> dict[str, str]:
         return {
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Expose-Headers": "X-CSRF-Token, Content-Disposition, X-MSM-Dump-Size, X-Request-ID",
+            "Access-Control-Expose-Headers": "X-CSRF-Token, Content-Disposition, Content-Type, X-Conversation-ID, X-MSM-Dump-Size, X-Request-ID",
         }
     return {}
 

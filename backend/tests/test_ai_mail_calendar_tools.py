@@ -18,7 +18,10 @@ from services.dis_client import DisClient
 @pytest.fixture
 def mailbox_user(db: Session, regular_user: User) -> User:
     role = role_service.create_role(
-        db, name="mail_tester_role", description="Mail and Calendar", keys=["ai.mailbox.use", "ai.calendar.use"]
+        db,
+        name="mail_tester_role",
+        description="Mail and Calendar",
+        keys=["ai.mailbox.use", "ai.calendar.use", "calendar.use", "mailbox.use"],
     )
     regular_user.role_id = role.id
     db.commit()

@@ -1081,8 +1081,13 @@ def update_provider(
     if "enabled_models" in values and values["enabled_models"] is not None:
         new_enabled_models = _normalisiere_modellliste(values["enabled_models"], new_default_model)
     else:
-        new_enabled_models = _normalisiere_modellliste(freigegebene_modelle(provider), new_default_model)
-    if not new_default_model and new_enabled_models:
+        existing_models = freigegebene_modelle(provider)
+        if "default_model" in values and not new_default_model and provider.default_model:
+            existing_models = [m for m in existing_models if m != provider.default_model]
+        new_enabled_models = _normalisiere_modellliste(existing_models, new_default_model)
+    if "default_model" in values and not (values["default_model"] or "").strip():
+        new_default_model = None
+    elif not new_default_model and new_enabled_models:
         new_default_model = new_enabled_models[0]
     new_default_voice = _assert_stimme(values["default_voice"]) if "default_voice" in values else provider.default_voice
     new_transcription_model = (values["transcription_model"] or "").strip() or None if "transcription_model" in values else provider.transcription_model

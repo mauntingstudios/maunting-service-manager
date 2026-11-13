@@ -251,18 +251,24 @@ def lies_konfiguration(db: Session, *, user: User, server: Server, arguments: di
 werkzeug(
     _LIST,
     art="server_read",
+    gruppe="files",
+    angebot=("server.files.read",),
     hinweis="Listet ein Verzeichnis im Serververzeichnis auf.",
     handler=lies_dateien,
 )
 werkzeug(
     _SEARCH,
     art="server_read",
+    gruppe="files",
+    angebot=("server.files.read",),
     hinweis="Sucht Text in Serverdateien und liefert Pfad und Zeile.",
     handler=suche_dateien,
 )
 werkzeug(
     _READ,
     art="server_read",
+    gruppe="files",
+    angebot=("server.files.read",),
     hinweis="Liest ein Zeilenfenster einer Serverdatei, redigiert und gekuerzt.",
     handler=lies_konfiguration,
 )

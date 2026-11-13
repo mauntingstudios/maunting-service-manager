@@ -14,7 +14,7 @@ from services import permission_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
 from services.ai_tool_spec import werkzeug
-from services.ai_tools.base import MAX_LISTED_MODS, _require_no_arguments, _server_function
+from services.ai_tools.base import MAX_LISTED_MODS, MAX_SEARCH_QUERY_CHARS, _require_no_arguments, _server_function
 
 
 _MODS = _server_function(

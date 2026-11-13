@@ -24,12 +24,13 @@ from sqlalchemy.orm import Session
 
 from dependencies import get_current_user, get_db, verify_csrf
 from main import app
-from models import User
+from models import Role, RolePermission, User
 from models.calendar_event import CalendarEvent
 from models.note import Note
 from services import e2ee_device_service
 from services.calendar_service import CalendarService
 from services.notes_service import NotesService
+from services.role_service import set_user_roles
 from services.sync_event_service import SyncEventService
 
 WEB = "vA7+K8W+Ef77uJSwVVquOW"
@@ -66,8 +67,15 @@ def _unterschreibe(priv, daten: str) -> str:
 def konto(db: Session, clean_db):
     user = User(username="schluessel", email="schluessel@msm.local", password_hash="pw", is_active=True)
     db.add(user)
+    role = Role(name="notiz-schluessel-rolle", description=None, is_system=False)
+    db.add(role)
+    db.flush()
+    db.add(RolePermission(role_id=role.id, permission_key="notes.use"))
+    db.add(RolePermission(role_id=role.id, permission_key="calendar.use"))
     db.commit()
     db.refresh(user)
+    set_user_roles(db, user, [role.id])
+    db.commit()
     web_priv, web_ecdsa = _ecdsa_paar()
     neu_priv, neu_ecdsa = _ecdsa_paar()
     # Das erste Geraet ist freigegeben, das zweite wartet noch.

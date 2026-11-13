@@ -499,7 +499,7 @@ def _notes_tool_definitions() -> list[dict]:
                     "type": "object",
                 },
             },
-            ["action"],
+            [],
         ),
     ]
 

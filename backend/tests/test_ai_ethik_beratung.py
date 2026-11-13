@@ -850,7 +850,7 @@ def test_ohne_freigabe_steht_das_urteil_vor_der_entscheidung(
 def test_ein_schreibvorschlag_der_stimme_traegt_das_urteil(
     db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    unterhaltung = _benutzer(db, regular_user, autonom=False, rechte=("ai.notes.use",))
+    unterhaltung = _benutzer(db, regular_user, autonom=False, rechte=("ai.notes.use", "notes.use"))
     _ethikanbieter(db)
     _ethikmodell(monkeypatch)
 

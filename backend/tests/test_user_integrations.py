@@ -67,6 +67,16 @@ def test_user_mailbox_crud(client: TestClient, db: Session, regular_user: User, 
 
 
 def test_user_calendar_crud(client: TestClient, db: Session, regular_user: User, user_cookies: dict):
+    from models.role import Role, RolePermission
+    from services.role_service import set_user_roles
+    role = Role(name="cal-crud-role", is_system=False)
+    db.add(role)
+    db.flush()
+    db.add(RolePermission(role_id=role.id, permission_key="calendar.use"))
+    db.commit()
+    set_user_roles(db, regular_user, [role.id])
+    db.commit()
+
     # 1. List initially empty
     res = client.get("/api/user/integrations/calendars", cookies=user_cookies)
     assert res.status_code == 200

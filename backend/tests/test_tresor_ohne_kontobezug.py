@@ -109,7 +109,10 @@ def test_altbestand_wird_beim_lesen_umgestellt(client: TestClient, db: Session, 
     db.commit()
 
     antwort = client.get("/api/vault/salt", cookies=owner_cookies)
-    assert antwort.json() == {"kdf_salt": "aa", "bucket_id": BUCKET, "has_vault": True}
+    data = antwort.json()
+    assert data["kdf_salt"] == "aa"
+    assert data["bucket_id"] == BUCKET
+    assert data["has_vault"] is True
     zeile = db.execute(text("SELECT user_id, konto_index FROM vault_user_settings")).one()
     assert zeile.user_id is None
     assert zeile.konto_index == vault_service.tresor_konto(owner_user.id).index

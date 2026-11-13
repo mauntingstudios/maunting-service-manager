@@ -68,8 +68,14 @@ def test_run_project_browser_tests_origin_guard_and_persistence(tmp_path, monkey
         def __exit__(self, *args):
             pass
 
-    # Patch sync_playwright
-    monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeSyncPlaywright)
+    # Patch sync_playwright even if playwright package is not installed on runner
+    import sys
+    from types import ModuleType
+    fake_pw_mod = sys.modules.get("playwright") or ModuleType("playwright")
+    fake_sync_mod = sys.modules.get("playwright.sync_api") or ModuleType("playwright.sync_api")
+    monkeypatch.setattr(fake_sync_mod, "sync_playwright", FakeSyncPlaywright, raising=False)
+    monkeypatch.setitem(sys.modules, "playwright", fake_pw_mod)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_mod)
     monkeypatch.setattr(browser, "find_browser_executable", lambda: "/usr/bin/mock-browser")
 
     res = browser.run_project_browser_tests(

@@ -157,9 +157,14 @@ def test_project_zomboid_blueprint_uses_the_native_linux_dedicated_server() -> N
     assert mods.supportsSteamWorkshop is True
     assert mods.workshopAppId == "108600"
     assert mods.modInjection.value == "file"
-    assert mods.modListFilePath == "Zomboid/Server/{SERVER_NAME}.ini"
-    assert mods.modListContent.value == "iniKey"
-    assert mods.modListKey == "WorkshopItems"
+    targets = mods.effective_mod_list_targets()
+    assert len(targets) == 2
+    assert targets[0].file == "Zomboid/Server/{SERVER_NAME}.ini"
+    assert targets[0].key == "WorkshopItems"
+    assert targets[0].valueSource == "workshopIds"
+    assert targets[1].file == "Zomboid/Server/{SERVER_NAME}.ini"
+    assert targets[1].key == "Mods"
+    assert targets[1].valueSource == "resolvedIds:zomboid_mod_info"
     assert [(port.name.value, port.protocol.value) for port in bp.ports] == [
         ("game", "udp"),
         ("custom", "udp"),

@@ -1636,8 +1636,13 @@ class TestDiskSoftLimitReEvaluation:
         test_server.status = "stopped"
         db.commit()
 
+        captured_ids = []
+        def fake_eval(db_arg, s_arg):
+            captured_ids.append(s_arg.id)
+            return {"ok": True, "action": "none"}
+
         with patch("routers.servers.evaluate_disk_soft_limit",
-                   return_value={"ok": True, "action": "none"}) as mock_eval:
+                   side_effect=fake_eval) as mock_eval:
             response = client.patch(
                 f"/api/servers/{test_server.id}",
                 json={"disk_limit_gb": 50},
@@ -1646,9 +1651,7 @@ class TestDiskSoftLimitReEvaluation:
             )
         assert response.status_code == 200
         mock_eval.assert_called_once()
-        # Verify the server object was passed
-        call_args = mock_eval.call_args
-        assert call_args[0][1].id == test_server.id  # db, server positional
+        assert captured_ids == [test_server.id]
 
     def test_disk_noop_does_not_trigger_reevaluation(
         self, client: TestClient, owner_cookies: dict, csrf_token: str,

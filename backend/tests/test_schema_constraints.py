@@ -659,9 +659,10 @@ def test_die_datenbank_kennt_die_unterhaltungsarten(db: Session) -> None:
     from models.ai_conversation import ARTEN, EINZELFENSTER
 
     assert ARTEN == ("primary", "guardian", "worker", "docs")
-    # Die Eindeutigkeit gilt nur fuer die Einzelfenster — `worker` steht
-    # bewusst nicht darin (mehrere Auftraege gleichzeitig sind der Zweck).
-    assert EINZELFENSTER == ("primary", "guardian")
+    # Die Eindeutigkeit gilt nur fuer die Einzelfenster — `worker` und
+    # `primary` (Multi-Chat) stehen bewusst nicht darin; nur das guardian-Fenster
+    # ist je Benutzer eindeutig.
+    assert EINZELFENSTER == ("guardian",)
 
     user = User(
         username="artenpruefung",
@@ -834,7 +835,8 @@ def test_die_migration_traegt_worker_und_waiting_wake(tmp_path: Path, pg_wegwerf
         praedikat = indizes["uq_ai_conversations_user_kind"]["dialect_options"][
             "postgresql_where"
         ]
-        assert "'primary'" in str(praedikat) and "'guardian'" in str(praedikat)
+        assert "'guardian'" in str(praedikat)
+        assert "'primary'" not in str(praedikat)
         assert "'worker'" not in str(praedikat)
     finally:
         engine.dispose()

@@ -229,14 +229,11 @@ def _resolve_tokens(value: str, ports: dict[str, int]) -> str:
             
         port = ports.get(role)
         if port is None:
-            if role == "web" and "game" in ports:
-                port = ports["game"]
-            elif role == "game" and "web" in ports:
-                port = ports["web"]
-            elif ports:
-                port = next(iter(ports.values()))
-            else:
-                port = 27025
+            raise GuardianCompileError(
+                "unresolved_placeholder",
+                f"Guardian port role is not allocated: {role}",
+                details={"role": role},
+            )
         
         value = value.replace(f"{{{{{raw_placeholder}}}}}", str(port))
         
@@ -258,9 +255,6 @@ def _resolved_port(value: str, ports: dict[str, int]) -> int:
 def _target_host(server: Server) -> str:
     value = str(getattr(server, "public_bind_ip", "") or "").strip()
     if not value:
-        node = getattr(server, "node", None)
-        if node is None or getattr(node, "is_local", True):
-            return "127.0.0.1"
         raise GuardianCompileError(
             "probe_target_unavailable",
             "A concrete public_bind_ip is required for host-bound Guardian probes",

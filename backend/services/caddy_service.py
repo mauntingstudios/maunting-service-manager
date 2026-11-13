@@ -122,7 +122,7 @@ def get_caddy_log_path(server_id: int) -> Path:
 
 
 def _get_msm_caddy_bin() -> Path:
-    custom = getattr(settings, "msm_caddy_path", None)
+    custom = getattr(settings, "caddy_path", None) or getattr(settings, "msm_caddy_path", None)
     if custom:
         return Path(custom)
     return DEFAULT_MSM_CADDY_BIN

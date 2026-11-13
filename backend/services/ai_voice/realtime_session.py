@@ -242,6 +242,8 @@ def angebotene_werkzeuge(
         # ueberleben. Ausserhalb eines Dokuments entfernt der Dokumentfilter
         # sie wieder; `erlaubt` laesst sie dort ohnehin nicht durch.
         "list_documents",
+        "read_document",
+        "edit_document",
         "get_document_outline",
         "list_document_comments",
         "read_document_skill",

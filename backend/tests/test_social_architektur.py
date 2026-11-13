@@ -136,7 +136,7 @@ def test_sozialrouter_behaelt_allen_vertraegen() -> None:
         else:
             vertraege.append(("WEBSOCKET", route.path))
 
-    assert len(vertraege) == 83, f"Erwartet 83 Social-Routen, gefunden {len(vertraege)}"
+    assert len(vertraege) == 84, f"Erwartet 84 Social-Routen, gefunden {len(vertraege)}"
     doppelt = sorted({v for v in vertraege if vertraege.count(v) > 1})
     assert not doppelt, f"Doppelte Route-Verträge: {doppelt}"
 
@@ -144,6 +144,7 @@ def test_sozialrouter_behaelt_allen_vertraegen() -> None:
     for pfad in (
         "/api/social/friends",
         "/api/social/profile/{target_user_id}",
+        "/api/social/chat/conversations",
         "/api/social/messages/send",
         "/api/social/messages",
         "/api/social/e2ee/chat-keys",

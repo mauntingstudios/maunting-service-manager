@@ -1076,6 +1076,7 @@ _WEB_SEARCH = _function(
             {
                 "query": {"type": "string", "maxLength": 200, "description": "Suchbegriff oder Frage."},
                 "count": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS, "description": "Anzahl der Treffer (Standard: 10, maximal 15)."},
+                "server_id": {"type": "integer", "description": "Optional: Server-ID, um die Suche auf den Serverkontext zu beziehen."},
             },
             ["query"],
         )
@@ -1085,6 +1086,7 @@ _WEB_PAGE = _function(
             {
                 "url": {"type": "string", "maxLength": 2000, "description": "Die vollständige HTTP-, HTTPS- oder YouTube-Adresse der zu lesenden Seite."},
                 "deep": {"type": "boolean", "description": "Liest bei true ausführliche Berichte, vollständige Tabellen und lange Artikel mit bis zu 25.000 Zeichen ein (Standard: false für 8.000 Zeichen)."},
+                "server_id": {"type": "integer", "description": "Optional: Server-ID des Kontexts."},
             },
             ["url"],
         )

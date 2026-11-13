@@ -70,6 +70,8 @@ def test_fuer_chat_verlangt_protokoll_und_modell(db: Session) -> None:
     # Leerzeichen sind kein Modell. Über `create_provider` kommt so etwas nicht
     # herein (es trimmt), über eine von Hand gepflegte Zeile schon.
     voll.default_model = "   "
+    voll.enabled_models_json = "[]"
+    voll.allow_all_models = False
     assert ai_provider_service.fuer_chat(voll) is False
 
     # Und ein Stimmzugang fällt schon am Protokoll — ElevenLabs kennt kein

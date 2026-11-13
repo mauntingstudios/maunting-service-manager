@@ -179,7 +179,7 @@ def build_release(
 
         # Falls dist/index.html fehlt, aber Vite-Dateien vorhanden sind: versuche automatischen Vite-Build
         if not dist_index.exists():
-            has_vite = any((target_fe_dir / marker).exists() for marker in ("vite.config.ts", "vite.config.js", "vite.config.mjs")) or (target_fe_dir / "index.html").exists()
+            has_vite = any((target_fe_dir / marker).exists() for marker in ("vite.config.ts", "vite.config.js", "vite.config.mjs"))
             if has_vite:
                 log("dist/index.html fehlt nach 'npm run build'; führe automatischen 'vite build' Fallback aus...")
                 if docker_avail:

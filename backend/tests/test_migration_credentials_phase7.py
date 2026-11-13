@@ -4,7 +4,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 
 import models  # noqa: F401
 from config import settings
@@ -24,6 +24,10 @@ def test_scoped_credentials_migration_roundtrip(tmp_path: Path, pg_wegwerf) -> N
     config.set_main_option("script_location", str(backend_dir / "migrations"))
     try:
         Base.metadata.create_all(engine)
+        # Tabellen aus spaeteren Migrationen (z. B. ai_projects), die Fremdschluessel auf
+        # user_credentials halten, vor dem isolierten Phase-7-Downgrade entfernen.
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS ai_projects CASCADE"))
         command.stamp(config, "20260807_03")
 
         # Downgrade: eine Installation ohne eigene Zugangsdaten bleibt nutzbar.

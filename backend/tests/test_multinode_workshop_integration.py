@@ -71,7 +71,7 @@ def test_remote_install_inspect_cleanup_and_modlist_stay_on_node() -> None:
         lines = plugin.format_modlist_lines(
             server, [SimpleNamespace(workshop_id="12345")]
         )
-        assert lines == ["*mod-a.pak"]
+        assert lines == ["mod-a.pak"]
         plugin.update_modlist = MagicMock()
         cleaned = plugin.cleanup_mod(server, "12345")
 

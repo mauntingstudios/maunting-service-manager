@@ -291,6 +291,7 @@ def test_team_vault_keyslots_lifecycle(
     assert eigen_owner.json() == {"key_version": 1, "wrapped_dek": huelle_owner}
 
     # 5. Rauswurf entzieht die Huelle und markiert zur Rotation
+    db.refresh(team)
     team_service.remove_member(db, team=team, user=owner_user, member_user_id=regular_user.id)
     db.expire_all()
     assert db.query(TeamVaultKey).filter_by(team_id=team.id, user_id=regular_user.id).count() == 0
@@ -380,7 +381,6 @@ def test_beitritt_markiert_tresor_zur_rotation(
     owner_user: User,
     owner_cookies: dict,
     regular_user: User,
-    inactive_user: User,
 ) -> None:
     """Ein neues Mitglied braucht eine Schluesselhuelle — also Rotation.
 
@@ -401,10 +401,10 @@ def test_beitritt_markiert_tresor_zur_rotation(
     assert client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()["needs_rotation"] is False
 
     team_service.invite_member(
-        db, team=team, user=owner_user, new_user_id=inactive_user.id,
+        db, team=team, user=owner_user, new_user_id=regular_user.id,
         can_manage_skills=False, can_manage_memory=False,
     )
-    team_service.accept_invitation(db, user=inactive_user, team_id=team.id)
+    team_service.accept_invitation(db, user=regular_user, team_id=team.id)
     assert client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()["needs_rotation"] is True
 
 

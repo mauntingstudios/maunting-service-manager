@@ -112,9 +112,11 @@ class TestUpdateMod:
         db.commit()
         db.refresh(mod)
 
+        captured_ids = []
         with patch("routers.mods.get_plugin") as mock_get_plugin:
             plugin = mock_get_plugin.return_value
             plugin.supports_mods = True
+            plugin.update_modlist.side_effect = lambda s: captured_ids.append(s.id)
             response = client.patch(
                 f"/api/mods/{test_server.id}/{mod.id}?enabled=false",
                 cookies=owner_cookies,
@@ -124,7 +126,7 @@ class TestUpdateMod:
         assert response.status_code == 200
         assert response.json()["enabled"] is False
         plugin.update_modlist.assert_called_once()
-        assert plugin.update_modlist.call_args.args[0].id == test_server.id
+        assert captured_ids == [test_server.id]
 
 
 class TestModInstallActions:

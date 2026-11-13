@@ -64,10 +64,19 @@ _PROPOSE_SERVER_CREATE = _function(
             {
                 "name": {"type": "string", "maxLength": 128},
                 "server_kind": {"type": "string", "enum": ["application", "database"]},
-                "game_type": {"type": "string", "maxLength": 64, "description": "Blueprint-ID, z. B. 'valheim'."},
-                "ram_limit_mb": {"type": "integer", "minimum": 512, "maximum": 4_194_304},
-                "cpu_limit_percent": {"type": "integer", "minimum": 10, "maximum": 3_200, "description": "100 = 1 Kern."},
-                "disk_limit_gb": {"type": "integer", "minimum": 1, "maximum": 1_048_576},
+                "game_type": {"type": ["string", "null"], "maxLength": 64, "description": "Blueprint-ID, z. B. 'valheim'."},
+                "type": {"type": ["string", "null"], "maxLength": 64},
+                "ram_limit_mb": {"type": ["integer", "string", "null"], "minimum": 512, "maximum": 4_194_304},
+                "ram": {"type": ["integer", "string", "null"]},
+                "ram_mb": {"type": ["integer", "string", "null"]},
+                "memory_mb": {"type": ["integer", "string", "null"]},
+                "cpu_limit_percent": {"type": ["integer", "string", "null"], "minimum": 10, "maximum": 3_200, "description": "100 = 1 Kern."},
+                "cpu": {"type": ["integer", "string", "null"]},
+                "cpu_percent": {"type": ["integer", "string", "null"]},
+                "disk_limit_gb": {"type": ["integer", "string", "null"], "minimum": 1, "maximum": 1_048_576},
+                "disk": {"type": ["integer", "string", "null"]},
+                "disk_gb": {"type": ["integer", "string", "null"]},
+                "storage_gb": {"type": ["integer", "string", "null"]},
                 "node_id": {"type": ["integer", "null"]},
                 "public_bind_ip": {"type": ["string", "null"], "maxLength": 64},
                 "postgres_database_count": {
@@ -80,6 +89,7 @@ _PROPOSE_SERVER_CREATE = _function(
                     "properties": {
                         "database_name": {"type": "string", "maxLength": 63},
                         "username": {"type": "string", "maxLength": 59},
+                        "password": {"type": ["string", "null"]},
                         "allowed_cidrs": {"type": "array", "items": {"type": "string"}, "description": "Leer: nur intern."},
                         "ssl_required": {"type": "boolean"},
                         "port": {"type": ["integer", "null"], "minimum": 1024, "maximum": 65535},
@@ -92,10 +102,6 @@ _PROPOSE_SERVER_CREATE = _function(
             },
             [
                 "name",
-                "ram_limit_mb",
-                "cpu_limit_percent",
-                "disk_limit_gb",
-                *_RATIONALE_REQUIRED,
             ],
         )
 

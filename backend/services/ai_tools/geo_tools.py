@@ -231,7 +231,7 @@ _ANALYZE = _function(
         "analyze_region",
         "Karte, Globus, Wetter und Bild zu einem Ort oder einer Sehenswürdigkeit.",
         {
-            "location": {"type": "string"},
+            "location": {"type": ["string", "null"]},
             "camera": {"type": "string", "enum": ["overview", "focus", "detail"]},
         },
         ["location"],
@@ -241,7 +241,7 @@ _CAMERA = _function(
         "Bewegt nur die offene Regionskarte, ohne neue Abfrage.",
         {
             "action": {"type": "string", "enum": ["zoom_in", "zoom_out", "overview", "focus_location"]},
-            "location": {"type": "string"},
+            "location": {"type": ["string", "null"]},
         },
         ["action"],
     )
