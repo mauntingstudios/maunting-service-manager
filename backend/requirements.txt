@@ -29,14 +29,14 @@ apscheduler==3.10.4
 psutil==6.0.0
 python-dotenv==1.2.4
 slowapi==0.1.9
-limits[redis]==3.13.0
+limits[redis]==5.8.0
 # Traegt neben DIS und TLS auch den WebPush-Versand: RFC 8291 ist ECDH auf
 # P-256, HKDF-SHA256 und AES-128-GCM, und das VAPID-Token ist ein ES256-JWT
 # (PyJWT oben). `pywebpush` wuerde `http-ece` und `py-vapid` nachziehen —
 # zwei Pakete im Auth-nahen Pfad fuer rund achtzig Zeilen in
 # services/webpush_service.py, die gegen den Testvektor aus RFC 8291 §5 geprueft
 # sind. Bewertung: docs/agent-rules/dependencies.md
-cryptography==49.0.0
+cryptography==50.0.2
 # --- KI-Anhaenge: Bildnormalisierung und PDF-Text ---
 # Pillow: Bildformate pruefen, EXIF/GPS entfernen, auf eine sichere Groesse
 # normalisieren. pillow-heif: HEIC/HEIF von Android-Kameras. pypdf: reiner
