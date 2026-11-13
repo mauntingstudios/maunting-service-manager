@@ -3088,7 +3088,7 @@ dependencies = [
  "webpki-roots",
  "webview2-com",
  "windows 0.62.2",
- "windows-strings 0.4.2",
+ "windows-strings 0.5.1",
  "xcap",
  "zeroize",
 ]
