@@ -132,3 +132,17 @@ if backend_test_version.exists():
     backend_test_version.write_text(test_content, encoding="utf-8")
 
 print(f"Synchronized all application versions to {tag}")
+
+# Eigene Kamera-App (Android): eigene applicationId, aber dieselbe Version.
+kamera_gradle = Path("smart-system/src-tauri/gen/android/kamera/build.gradle.kts")
+if kamera_gradle.exists():
+    kamera_parts = [int(p) for p in re.findall(r"\d+", tag)]
+    kamera_major = kamera_parts[0] if len(kamera_parts) > 0 else 6
+    kamera_minor = kamera_parts[1] if len(kamera_parts) > 1 else 0
+    kamera_patch = kamera_parts[2] if len(kamera_parts) > 2 else 0
+    kamera_code = kamera_major * 1000000 + kamera_minor * 1000 + kamera_patch
+    kamera_content = kamera_gradle.read_text(encoding="utf-8")
+    kamera_content = re.sub(r'(versionCode\s*=\s*)\d+', rf'\g<1>{kamera_code}', kamera_content)
+    kamera_content = re.sub(r'(versionName\s*=\s*)"[^"]+"', rf'\g<1>"{tag}"', kamera_content)
+    kamera_gradle.write_text(kamera_content, encoding="utf-8")
+    print(f"Synchronized camera app version: versionName={tag}, versionCode={kamera_code}")

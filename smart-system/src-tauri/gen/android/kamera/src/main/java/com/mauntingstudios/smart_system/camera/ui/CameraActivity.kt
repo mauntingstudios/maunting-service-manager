@@ -26,15 +26,12 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
-import com.mauntingstudios.smart_system.KameraAblage
-import com.mauntingstudios.smart_system.MainActivity
-import com.mauntingstudios.smart_system.R
+import com.mauntingstudios.smart_system.camera.R
 import com.mauntingstudios.smart_system.camera.capture.CaptureListener
 import com.mauntingstudios.smart_system.camera.core.CameraEngine
 import com.mauntingstudios.smart_system.camera.core.CameraExtension
@@ -594,35 +591,32 @@ class CameraActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Das Vorschaubild führt in die MSS-App: Dort zeigt der Tresor die
+     * Aufnahme, und die Kamera-Sicherung lädt sie hoch, sobald sie an ist.
+     * Die Kamera-App selbst kennt den Tresor nicht (eigene App, eigene Daten).
+     */
     private fun oeffneTresorOderVorschau() {
-        val stand = KameraAblage.lesen(this)
-        if (stand == null) {
-            zeigeSicherungDeaktiviertDialog()
-            return
-        }
-
-        val intent = Intent(this, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_OPEN_VAULT
-            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val intent = Intent().apply {
+            setClassName(MSS_PAKET, MSS_HAUPTAKTIVITAET)
+            action = MSS_ACTION_OPEN_VAULT
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
             letztesAufnahmeUri?.let {
                 putExtra("aufnahmeUri", it.toString())
+                data = it
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
         }
-        startActivity(intent)
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Maunting Smart System ist nicht installiert.", Toast.LENGTH_LONG).show()
+        }
     }
 
-    private fun zeigeSicherungDeaktiviertDialog() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.kamera_sicherung_aus_titel)
-            .setMessage(R.string.kamera_sicherung_aus_nachricht)
-            .setPositiveButton(R.string.kamera_sicherung_einschalten) { _, _ ->
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    action = MainActivity.ACTION_OPEN_VAULT
-                    flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                }
-                startActivity(intent)
-            }
-            .setNegativeButton(R.string.kamera_schliessen, null)
-            .show()
+    private companion object {
+        const val MSS_PAKET = "com.mauntingstudios.smart_system"
+        const val MSS_HAUPTAKTIVITAET = "com.mauntingstudios.smart_system.MainActivity"
+        const val MSS_ACTION_OPEN_VAULT = "com.mauntingstudios.smart_system.OPEN_VAULT"
     }
 }

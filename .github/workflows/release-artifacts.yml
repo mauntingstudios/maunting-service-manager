@@ -386,6 +386,28 @@ jobs:
           # Version in tauri.conf.json und Cargo.toml angleichen (nur [package], keine Dependencies!)
           python scripts/sync-tauri-version.py "${TAG}"
 
+      # Die Kamera ist eine eigene App, aber kein zweiter Download: MSS
+      # liefert ihre signierte APK als Asset mit und startet nur den
+      # Android-Installer, wenn der Nutzer sie ausdruecklich will.
+      - name: Build and sign camera APK
+        shell: bash
+        env:
+          MSS_ANDROID_ALT_KEYSTORE_B64: ${{ secrets.MSS_ANDROID_ALT_KEYSTORE_B64 }}
+          MSS_ANDROID_ALT_KEYSTORE_PASSWORT: ${{ secrets.MSS_ANDROID_ALT_KEYSTORE_PASSWORT }}
+          MSS_ANDROID_KEYSTORE_B64: ${{ secrets.MSS_ANDROID_KEYSTORE_B64 }}
+          MSS_ANDROID_KEYSTORE_PASSWORT: ${{ secrets.MSS_ANDROID_KEYSTORE_PASSWORT }}
+        run: |
+          chmod +x smart-system/src-tauri/gen/android/gradlew || true
+          (cd smart-system/src-tauri/gen/android && ./gradlew :kamera:assembleRelease --console=plain)
+          mapfile -t roh < <(find smart-system/src-tauri/gen/android/kamera/build/outputs/apk/release -type f -name "*-release-unsigned.apk")
+          [ "${#roh[@]}" -gt 0 ] || { echo "Keine unsignierte Kamera-APK gefunden." >&2; exit 1; }
+          bash scripts/android-apk-signieren.sh "${roh[@]}"
+          kamera_apk="$(find smart-system/src-tauri/gen/android/kamera/build/outputs/apk/release -type f -name "*-release.apk" | head -n 1)"
+          [ -n "$kamera_apk" ] || { echo "Signierte Kamera-APK fehlt." >&2; exit 1; }
+          mkdir -p smart-system/src-tauri/gen/android/kamera-assets
+          cp "$kamera_apk" smart-system/src-tauri/gen/android/kamera-assets/msm-kamera.apk
+          ls -la smart-system/src-tauri/gen/android/kamera-assets/
+
       - name: Build Android APK
         working-directory: smart-system
         run: |
@@ -424,6 +446,7 @@ jobs:
           fi
           echo "Packaging selected APK for MauntingSmartSystem.apk: $APK_FILE"
           cp -v "$APK_FILE" android-release/MauntingSmartSystem.apk
+          unzip -l android-release/MauntingSmartSystem.apk | grep -q "assets/msm-kamera.apk"             || { echo "Kamera-APK fehlt im MSS-Paket." >&2; exit 1; }
           for f in $(find smart-system/src-tauri/gen/android/app/build/outputs/apk -type f -name "*.apk"); do
             cp -v "$f" "android-release/$(basename "$f")" || true
           done

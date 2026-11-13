@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="kamera_titel">MSS Kamera</string>
+    <string name="kamera_zurueck">Back</string>
+    <string name="kamera_blitz">Flash</string>
+    <string name="kamera_hdr">HDR</string>
+    <string name="kamera_nachtmodus">Night mode</string>
+    <string name="kamera_modus_foto">PHOTO</string>
+    <string name="kamera_modus_video">VIDEO</string>
+    <string name="kamera_letztes_bild">Latest capture</string>
+    <string name="kamera_wechseln">Switch camera</string>
+    <string name="kamera_keine_berechtigung">Camera permission required</string>
+    <string name="kamera_sicherung_aus_titel">Camera backup</string>
+    <string name="kamera_sicherung_aus_nachricht">Automatic camera backup is not yet turned on in the vault. Turn it on in the vault to automatically save your captures encrypted.</string>
+    <string name="kamera_sicherung_einschalten">Open vault</string>
+    <string name="kamera_schliessen">Close</string>
+</resources>

@@ -21,6 +21,11 @@ def _cargo(pfad: str) -> str:
     return tomllib.loads((ROOT / pfad).read_text(encoding="utf-8"))["package"]["version"]
 
 
+def _kamera() -> str:
+    text = (ROOT / "smart-system" / "src-tauri" / "gen" / "android" / "kamera" / "build.gradle.kts").read_text(encoding="utf-8")
+    return re.search(r'versionName\s*=\s*"([^"]+)"', text).group(1)
+
+
 def _api() -> str:
     main = (ROOT / "backend" / "main.py").read_text(encoding="utf-8")
     return re.search(r'"version":\s*"([^"]+)"', main).group(1)
@@ -38,6 +43,7 @@ def test_jede_versionsstelle_traegt_dieselbe_version() -> None:
         "browser/src-tauri/tauri.conf.json": _json("browser/src-tauri/tauri.conf.json"),
         "browser/src-tauri/Cargo.toml": _cargo("browser/src-tauri/Cargo.toml"),
         "backend/main.py (/api/version)": _api(),
+        "smart-system/src-tauri/gen/android/kamera/build.gradle.kts": _kamera(),
     }
     erwartet = stellen["frontend/package.json"]
     abweichend = {stelle: v for stelle, v in stellen.items() if v != erwartet}

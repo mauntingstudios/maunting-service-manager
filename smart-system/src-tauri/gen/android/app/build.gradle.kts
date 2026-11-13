@@ -63,6 +63,13 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    sourceSets {
+        getByName("main") {
+            // Die Kamera-APK wird im Release gebaut, signiert und hier
+            // abgelegt; sie ist ein Asset des MSS-Pakets, kein zweiter Download.
+            assets.srcDir("../kamera-assets")
+        }
+    }
 }
 
 rust {

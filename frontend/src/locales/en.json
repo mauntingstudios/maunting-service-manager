@@ -7902,6 +7902,8 @@
       "hinweisAnfordernFehler": "The hint could not be sent.",
       "kamera": {
         "titel": "Camera backup",
+        "oeffnen": "Open camera",
+        "installieren": "Install camera",
         "schalter": "Back up new photos and videos",
         "hinweis": "New photos and videos go encrypted into the vault, from the camera and from apps like WhatsApp, Telegram or Downloads, even when MSS is closed and the vault is locked. You see them after you next unlock. The unchanged original is backed up. It also stays in your gallery. Other files go in through \"Share\" and \"Vault\".",
         "gesperrt": "Unlock the vault to set up camera backup.",

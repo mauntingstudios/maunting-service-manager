@@ -4,7 +4,7 @@
  */
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
 import { ConfirmDialog } from '@/components/app/ConfirmDialog'
@@ -264,5 +264,35 @@ describe('Eingeschaltet', () => {
     zeigen()
     expect(await screen.findByText(i18n.t('mss.vault.kamera.freigebenAlt'))).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: i18n.t('mss.vault.kamera.freigebenKnopf') })).toBeNull()
+  })
+})
+
+describe('Kamera-App', () => {
+  afterEach(() => {
+    delete (window as unknown as { MsmRand?: unknown }).MsmRand
+  })
+
+  it('bietet die Installation an, solange die Kamera-APK fehlt', () => {
+    const installieren = vi.fn()
+    ;(window as unknown as { MsmRand?: Record<string, () => unknown> }).MsmRand = {
+      kameraInstalliert: () => false,
+      kameraInstallieren: installieren,
+      kameraOeffnen: vi.fn(),
+    }
+    zeigen()
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.kamera.installieren') }))
+    expect(installieren).toHaveBeenCalledTimes(1)
+  })
+
+  it('öffnet die installierte Kamera-App', () => {
+    const oeffnen = vi.fn()
+    ;(window as unknown as { MsmRand?: Record<string, () => unknown> }).MsmRand = {
+      kameraInstalliert: () => true,
+      kameraInstallieren: vi.fn(),
+      kameraOeffnen: oeffnen,
+    }
+    zeigen()
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.kamera.oeffnen') }))
+    expect(oeffnen).toHaveBeenCalledTimes(1)
   })
 })

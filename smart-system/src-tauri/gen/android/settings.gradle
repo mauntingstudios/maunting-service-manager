@@ -1,3 +1,4 @@
 include ':app'
+include ':kamera'
 
 apply from: 'tauri.settings.gradle'

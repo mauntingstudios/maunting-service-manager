@@ -19,6 +19,9 @@ import android.webkit.WebView
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -28,6 +31,10 @@ class MainActivity : TauriActivity() {
     const val ACTION_OPEN_WALLET = "com.mauntingstudios.smart_system.OPEN_WALLET"
     const val ACTION_OPEN_VAULT = "com.mauntingstudios.smart_system.OPEN_VAULT"
   }
+
+  /** Der Debug-Bau der Kamera traegt denselben Suffix wie MSS selbst. */
+  private fun kameraPaket(): String =
+    if (BuildConfig.DEBUG) "com.mauntingstudios.msm.kamera.dev" else "com.mauntingstudios.msm.kamera"
 
   /**
    * Ränder in CSS-Pixeln, die ältere WebViews nicht als env(safe-area-inset-*)
@@ -80,6 +87,22 @@ class MainActivity : TauriActivity() {
         val uri = vaultAufnahmeUri
         vaultAufnahmeUri = null
         return uri
+      }
+      @JavascriptInterface fun kameraInstalliert(): Boolean = try {
+        packageManager.getPackageInfo(kameraPaket(), 0)
+        true
+      } catch (_: Exception) {
+        false
+      }
+      @JavascriptInterface fun kameraOeffnen() {
+        runOnUiThread {
+          val start = packageManager.getLaunchIntentForPackage(kameraPaket())
+          if (start != null) startActivity(start)
+          else Toast.makeText(this@MainActivity, "Kamera-App ist nicht installiert.", Toast.LENGTH_LONG).show()
+        }
+      }
+      @JavascriptInterface fun kameraInstallieren() {
+        runOnUiThread { installiereKamera() }
       }
     }, "MsmRand")
     // Nur lesen, kein eigener OnApplyWindowInsetsListener: der ersetzt den des
@@ -141,6 +164,29 @@ class MainActivity : TauriActivity() {
           null
         )
       }
+    }
+  }
+
+  /**
+   * Reicht die mitgelieferte Kamera-APK an den Android-Installer weiter. Der
+   * Nutzer bestaetigt dort selbst; MSS installiert nichts im Hintergrund.
+   * Die APK liegt als Asset im MSS-Paket (CI baut und signiert sie vorher).
+   */
+  private fun installiereKamera() {
+    try {
+      val ziel = File(cacheDir, "msm-kamera.apk")
+      assets.open("msm-kamera.apk").use { eingabe ->
+        ziel.outputStream().use { ausgabe -> eingabe.copyTo(ausgabe) }
+      }
+      val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", ziel)
+      startActivity(
+        Intent(Intent.ACTION_VIEW).apply {
+          setDataAndType(uri, "application/vnd.android.package-archive")
+          addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+      )
+    } catch (_: Exception) {
+      Toast.makeText(this, "Kamera-APK ist in dieser Fassung nicht enthalten.", Toast.LENGTH_LONG).show()
     }
   }
 

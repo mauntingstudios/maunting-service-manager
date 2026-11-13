@@ -7902,6 +7902,8 @@
       "hinweisAnfordernFehler": "Der Hinweis konnte nicht verschickt werden.",
       "kamera": {
         "titel": "Kamera-Sicherung",
+        "oeffnen": "Kamera öffnen",
+        "installieren": "Kamera installieren",
         "schalter": "Neue Fotos und Videos sichern",
         "hinweis": "Neue Fotos und Videos gehen verschlüsselt in den Tresor, aus der Kamera und aus Apps wie WhatsApp, Telegram oder Downloads, auch wenn MSS geschlossen und der Tresor gesperrt ist. Du siehst sie nach dem nächsten Entsperren. Gesichert wird das unveränderte Original. Es bleibt auch in deiner Galerie. Andere Dateien legst du über „Teilen“ und „Tresor“ hinein.",
         "gesperrt": "Entsperre den Tresor, um die Kamera-Sicherung einzurichten.",

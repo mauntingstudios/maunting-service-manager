@@ -51,11 +51,28 @@ export function KameraSicherungKarte({ offline = false }: { offline?: boolean })
   const [papierkorb, setPapierkorb] = useState(false)
   const [nachweisOffen, setNachweisOffen] = useState(false)
   const [passwort, setPasswort] = useState('')
+  // null = keine native Bruecke (Web/Pontis); sonst installiert oder nicht.
+  const [kameraInstalliert, setKameraInstalliert] = useState<boolean | null>(null)
 
   const bucket = isUnlocked ? bucketId : null
   // Eingerichtet für einen anderen Tresor zählt hier nicht als an.
   const aktiv = bucket && stand?.eingerichtet && stand.bucket === bucket ? stand : null
   const zugangFehlt = aktiv?.warten === 'zugang'
+
+  useEffect(() => {
+    const bruecke = (window as unknown as { MsmRand?: { kameraInstalliert?: () => boolean } }).MsmRand
+    const lesen = () => {
+      try {
+        setKameraInstalliert(bruecke?.kameraInstalliert?.() ?? null)
+      } catch {
+        setKameraInstalliert(null)
+      }
+    }
+    lesen()
+    // Nach dem Installieren kommt der Nutzer aus dem System-Installer zurueck.
+    document.addEventListener('visibilitychange', lesen)
+    return () => document.removeEventListener('visibilitychange', lesen)
+  }, [])
 
   useEffect(() => {
     if (!bucket) return
@@ -149,13 +166,33 @@ export function KameraSicherungKarte({ offline = false }: { offline?: boolean })
 
   const nachweisZeigen = !!bucket && !offline && (nachweisOffen || zugangFehlt)
 
+  const kameraAktion = () => {
+    const bruecke = (window as unknown as {
+      MsmRand?: { kameraOeffnen?: () => void; kameraInstallieren?: () => void }
+    }).MsmRand
+    try {
+      if (kameraInstalliert) bruecke?.kameraOeffnen?.()
+      else bruecke?.kameraInstallieren?.()
+    } catch {
+      toast.error(t('mss.vault.kamera.fehler'))
+    }
+  }
+
   return (
     <div className="msm-card p-5 space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Camera className="h-5 w-5" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Camera className="h-5 w-5" />
+          </div>
+          <h2 className="text-sm font-semibold text-on-surface">{t('mss.vault.kamera.titel')}</h2>
         </div>
-        <h2 className="text-sm font-semibold text-on-surface">{t('mss.vault.kamera.titel')}</h2>
+        {kameraInstalliert !== null && (
+          <Button variant="secondary" size="sm" type="button" className="max-sm:min-h-11" onClick={kameraAktion}>
+            <Camera className="h-4 w-4" />
+            {t(kameraInstalliert ? 'mss.vault.kamera.oeffnen' : 'mss.vault.kamera.installieren')}
+          </Button>
+        )}
       </div>
 
       <div className="pt-2 border-t border-outline-variant/30 space-y-3">
