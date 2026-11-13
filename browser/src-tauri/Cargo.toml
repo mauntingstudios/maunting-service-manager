@@ -80,7 +80,7 @@ windows = { version = "0.62", features = [
     "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ] }
-windows-core = "0.62"
+windows-core = "0.100"
 # Erweiterungen aus dem Web Store (`erweiterungen/`): ring prüft die
 # Signaturen des CRX3-Pakets, zip entpackt es. Beide liegen über rustls und
 # den Updater schon im Baum.
