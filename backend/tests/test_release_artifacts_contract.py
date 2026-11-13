@@ -31,6 +31,49 @@ def test_release_workflow_publishes_explicit_component_assets() -> None:
     assert "vite_ws_url" in workflow
 
 
+def test_smart_system_release_builds_the_embedded_ui_before_rust_tests() -> None:
+    """`generate_context!` embeds `frontend/dist-desktop` during `cargo test`.
+
+    The release workflow used to run the Rust tests after a type check only.
+    That made the tagged Windows build fail although the ordinary CI workflow
+    had already documented the required desktop build step.
+    """
+    workflow = (ROOT / ".github" / "workflows" / "release-artifacts.yml").read_text(
+        encoding="utf-8"
+    )
+    job = workflow.split("name: Build Smart System (Windows)", 1)[1].split(
+        "name: Build Smart System (Android APK)", 1
+    )[0]
+    build = "npm run build:desktop"
+    tests = "run: cargo test"
+    assert build in job
+    assert job.index(build) < job.index(tests)
+
+
+def test_smart_system_android_uses_the_java_provided_by_the_runner() -> None:
+    """An absolute developer JDK path makes Linux release builds fail."""
+    gradle = (
+        ROOT / "smart-system" / "src-tauri" / "gen" / "android" / "gradle.properties"
+    ).read_text(encoding="utf-8")
+    assert "org.gradle.java.home" not in gradle
+
+
+def test_pontis_csp_in_tauri_conf_matches_rust_test_contract() -> None:
+    """Die CSP in tauri.conf.json und lib.rs müssen synchron sein.
+
+    Ein Update der CSP in tauri.conf.json (z. B. für Tauri IPC-Whitelisting)
+    muss synchron im Rust-Test der App nachgezogen werden, da der Windows-Bau
+    sonst während cargo test abbricht.
+    """
+    conf = json.loads(
+        (ROOT / "browser" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8")
+    )
+    csp = conf["app"]["security"]["csp"]
+    assert "ipc: http://ipc.localhost https://ipc.localhost" in csp
+    lib = (ROOT / "browser" / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
+    assert "connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost" in lib
+
+
 def test_updater_selects_only_the_panel_asset() -> None:
     updater = (ROOT / "update.sh").read_text(encoding="utf-8")
     assert 'expected = "msm-panel-{}.tar.gz"' in updater

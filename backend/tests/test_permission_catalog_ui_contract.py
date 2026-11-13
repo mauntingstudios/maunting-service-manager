@@ -30,7 +30,7 @@ from services.permission_catalog import ALL_KEYS
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EDITOR = ROOT / "frontend" / "src" / "Singra" / "UI" / "PermissionEditor.tsx"
+EDITOR = ROOT / "frontend" / "src" / "features" / "permissions" / "PermissionEditor.tsx"
 LOCALES = ROOT / "frontend" / "src" / "locales"
 
 # Nur diese beiden Sprachdateien tragen die Rechtetexte; alle anderen Sprachen

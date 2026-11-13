@@ -462,7 +462,7 @@ mod tests {
         // dort `http: ws:` für jeden Host.
         assert_eq!(
             quelle("connect-src"),
-            "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*"
+            "connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*"
         );
         for d in ["object-src 'none'", "base-uri 'self'", "form-action 'none'"] {
             assert_eq!(quelle(d.split(' ').next().unwrap()), d);

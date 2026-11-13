@@ -190,6 +190,13 @@ jobs:
         working-directory: frontend
         run: npx tsc --noEmit
 
+      # `tauri::generate_context!()` bettet das Ergebnis während `cargo test`
+      # ein. Ohne diesen Schritt fehlt `frontend/dist-desktop` bereits beim
+      # Kompilieren der Test-Binärdatei.
+      - name: Build desktop UI
+        working-directory: frontend
+        run: npm run build:desktop
+
       - name: Run Rust tests
         working-directory: smart-system/src-tauri
         run: cargo test

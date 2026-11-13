@@ -55,11 +55,12 @@ MENGEN = {
         "execute_server_action", "forget_skill", "get_document_outline", "learn_skill",
         "learn_team_skill", "list_blueprints", "list_document_comments", "list_documents",
         "list_my_servers", "list_roles", "list_tasks", "list_users", "notes_read",
-        "popups_read", "project_create", "project_workspace", "read_blueprint",
-        "read_chat_attachment", "read_docs", "read_document", "read_document_selection",
-        "read_document_skill", "read_document_structure", "read_hoster_integration_guide",
-        "read_hoster_setup", "read_node_capacity", "read_node_health", "read_skill",
-        "read_team_calendar", "read_team_notes", "read_user_permissions", "read_web_page",
+        "popups_read", "project_create", "project_workspace", "read_audit_summary",
+        "read_blueprint", "read_chat_attachment", "read_docs", "read_document",
+        "read_document_selection", "read_document_skill", "read_document_structure",
+        "read_hoster_integration_guide", "read_hoster_setup", "read_node_capacity",
+        "read_node_health", "read_skill", "read_team_calendar", "read_team_notes",
+        "read_user_permissions", "read_web_page", "search_audit_log",
         "search_chat_attachments", "search_curseforge_modpacks", "search_curseforge_mods",
         "search_docs", "search_memory", "search_team_memory", "send_test_email",
         "wait_until", "web_search", "worker_antwort", "worker_cancel", "worker_frage",
@@ -75,7 +76,7 @@ MENGEN = {
         "learn_team_skill", "list_blueprints", "list_document_comments", "list_documents",
         "list_my_servers", "list_roles", "list_server_files", "list_tasks", "list_users",
         "notes_read", "popups_read", "project_create", "project_workspace",
-        "read_ai_action_history", "read_blueprint", "read_chat_attachment", "read_config",
+        "read_ai_action_history", "read_audit_summary", "read_blueprint", "read_chat_attachment", "read_config",
         "read_database", "read_docs", "read_document", "read_document_selection",
         "read_document_skill", "read_document_structure", "read_guardian_incidents",
         "read_hoster_integration_guide", "read_hoster_setup", "read_mod_updates",
@@ -83,7 +84,7 @@ MENGEN = {
         "read_server_capacity", "read_server_logs", "read_server_mods",
         "read_server_network", "read_server_ports", "read_server_status", "read_skill",
         "read_team_calendar", "read_team_notes", "read_user_permissions", "read_web_page",
-        "search_chat_attachments", "search_curseforge_modpacks", "search_curseforge_mods",
+        "search_audit_log", "search_chat_attachments", "search_curseforge_modpacks", "search_curseforge_mods",
         "search_docs", "search_memory", "search_server_files", "search_team_memory",
         "search_workshop_mods", "send_test_email", "undo_ai_edit", "update_document_title",
         "wait_until", "web_search", "worker_antwort", "worker_cancel", "worker_frage",
@@ -219,14 +220,14 @@ MENGEN = {
 }
 
 KATALOG = [
-    (False, False, "off", 116, "67a93de8863df87e1026da93fd5584a8c5d5c754c11978aae9eca2b4008d0bd4"),
-    (False, False, "review", 116, "912b5cc0e2a1ae553728c7c4355cb6f2ef9e865f619ac924e842db95ae294268"),
-    (False, True, "off", 118, "72738b64de00db5b94ba7f7bdba7191b658c4c731b2efbcbe456be559f98c4ff"),
-    (False, True, "review", 118, "c4e2eab4bdb46f62963dde811602aaa5297984eee740b36c93fdba4eb630e307"),
-    (True, False, "off", 118, "85881b658b30f54e1da60bf14e5c1c36d2926a080db5ea8b06be6f6e1a92cac1"),
-    (True, False, "review", 118, "7f1fbebb4feded13137f420fb19f7e17a8a055e07954363f8783b3d0cb10309f"),
-    (True, True, "off", 120, "27af9de55d399ead8fa2fbbce8ce7df699a8d4d831237fce67c97cb7d404c987"),
-    (True, True, "review", 120, "090f3765d5a757a7d54f67682b689e6525a44b03d763a2dc0e220414ccd6bf44"),
+    (False, False, "off", 118, "e8bdcf964f4352faec14ba7c65e993ca26406910bdbd4536456aa33e877637fa"),
+    (False, False, "review", 118, "46b643940ff81492d16fd6ef32517669f7da6d14b9da81066db0138615d481eb"),
+    (False, True, "off", 120, "70f7d2b3270483d97325d7792d67c59c1effbbbb35ce852219e523a8002f8e88"),
+    (False, True, "review", 120, "d6d11e954d14c4effaed01ff8165adb8250130275d69d0229b0398fc24f50a28"),
+    (True, False, "off", 120, "21362bb995ee6f27751f08e43097bad72f103cd794a0d13c61e539d3b798e3dc"),
+    (True, False, "review", 120, "b2c737318269c2846d130696f515a96aa59acd1955d2a12b8fb562b488cd29c4"),
+    (True, True, "off", 122, "72a2a10e3b0e132f3e77ef3a1d2eae05dacd9cb32adf0dec488f8dc5e4ee79cc"),
+    (True, True, "review", 122, "8b25776139d9839d03f1bdb6c85f19cb8729bc840c0e321eda4e582158f949ef"),
 ]
 
 SPRACHE_KATALOG_HASH = "d616c67eee2793c462ef37b9540cffa53dc445688fbd8a890aa3e82bc41cf266"
@@ -336,4 +337,4 @@ def test_der_import_der_ki_schicht_bleibt_moeglich() -> None:
         "services.ai_tool_compat",
     ):
         importlib.import_module(modul)
-    assert len(registry.WERKZEUGE) == 123
+    assert len(registry.WERKZEUGE) == 125
