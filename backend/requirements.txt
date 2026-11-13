@@ -9,7 +9,7 @@ pydantic-settings==2.3.4
 # waere eine zweite Wahrheit daneben. Reines Python, keine C-Erweiterung.
 # Bewertung: docs/agent-rules/dependencies.md.
 jsonschema==4.25.0
-PyJWT[crypto]==2.12.1
+PyJWT[crypto]==2.15.0
 # Ersetzt python-jose (Dependabot #20, keine gepatchte Fassung). PyJWT signiert
 # HS256 fuer Sitzung und LiveKit und ES256 fuer VAPID; der Paketname heisst
 # `jwt`, die Fehlerbasis `PyJWTError`. Die Krypto-Extra zieht cryptography.
