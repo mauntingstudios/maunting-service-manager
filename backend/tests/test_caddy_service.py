@@ -111,7 +111,7 @@ def test_apply_vhost_via_msm_caddy_success(tmp_path, monkeypatch):
     fake_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
 
     monkeypatch.setattr(settings, "caddy_staging_dir", str(staging_dir))
-    monkeypatch.setattr(settings, "msm_caddy_path", str(fake_bin))
+    monkeypatch.setattr(settings, "caddy_path", str(fake_bin))
 
     called_cmds = []
 
@@ -142,7 +142,7 @@ def test_apply_vhost_via_msm_caddy_failure(tmp_path, monkeypatch):
     fake_bin = tmp_path / "msm-caddy"
     fake_bin.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
     monkeypatch.setattr(settings, "caddy_staging_dir", str(tmp_path / "staging"))
-    monkeypatch.setattr(settings, "msm_caddy_path", str(fake_bin))
+    monkeypatch.setattr(settings, "caddy_path", str(fake_bin))
 
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="caddy validate failed for server 55")
@@ -161,7 +161,7 @@ def test_remove_vhost_via_msm_caddy(tmp_path, monkeypatch):
 
     fake_bin = tmp_path / "msm-caddy"
     fake_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    monkeypatch.setattr(settings, "msm_caddy_path", str(fake_bin))
+    monkeypatch.setattr(settings, "caddy_path", str(fake_bin))
 
     called_cmds = []
 

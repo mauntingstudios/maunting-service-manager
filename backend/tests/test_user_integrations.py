@@ -67,7 +67,8 @@ def test_user_mailbox_crud(client: TestClient, db: Session, regular_user: User, 
 
 
 def test_user_calendar_crud(client: TestClient, db: Session, regular_user: User, user_cookies: dict):
-    from models.role import Role, RolePermission
+    from models.role import Role
+    from models.role_permission import RolePermission
     from services.role_service import set_user_roles
     role = Role(name="cal-crud-role", is_system=False)
     db.add(role)

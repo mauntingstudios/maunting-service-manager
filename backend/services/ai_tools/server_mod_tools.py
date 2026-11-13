@@ -30,7 +30,7 @@ _SEARCH = _server_function(
             "Sucht Mods im Steam Workshop oder bei CurseForge fuer das Spiel dieses Servers. "
             "Liefert Kennung, Titel und Tags.",
             {
-                "query": {"type": "string", "maxLength": 128},
+                "query": {"type": "string"},
                 "page": {"type": "integer", "minimum": 1, "maximum": 50},
             },
             ["query"],

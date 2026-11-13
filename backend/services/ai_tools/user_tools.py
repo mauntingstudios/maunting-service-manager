@@ -119,7 +119,7 @@ def _user_tool_definitions() -> list[dict]:
                 "name": {"type": "string", "maxLength": 64},
                 "description": {"type": "string", "maxLength": 255},
                 "permissions": rechte,
-                "vault_storage_gb": {"type": ["number", "string"], "description": "Tresorspeicher in GiB (1 GiB = 1024³ Byte, wie im Panel); 0: keiner"},
+                "vault_storage_gb": {"type": ["number", "string", "null"], "description": "Tresorspeicher in GiB (1 GiB = 1024³ Byte, wie im Panel); 0: keiner"},
                 **_RATIONALE_SCHEMA,
             },
             [*_RATIONALE_REQUIRED],

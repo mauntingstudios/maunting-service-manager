@@ -220,14 +220,14 @@ MENGEN = {
 }
 
 KATALOG = [
-    (False, False, "off", 118, "e8bdcf964f4352faec14ba7c65e993ca26406910bdbd4536456aa33e877637fa"),
-    (False, False, "review", 118, "46b643940ff81492d16fd6ef32517669f7da6d14b9da81066db0138615d481eb"),
-    (False, True, "off", 120, "70f7d2b3270483d97325d7792d67c59c1effbbbb35ce852219e523a8002f8e88"),
-    (False, True, "review", 120, "d6d11e954d14c4effaed01ff8165adb8250130275d69d0229b0398fc24f50a28"),
-    (True, False, "off", 120, "21362bb995ee6f27751f08e43097bad72f103cd794a0d13c61e539d3b798e3dc"),
-    (True, False, "review", 120, "b2c737318269c2846d130696f515a96aa59acd1955d2a12b8fb562b488cd29c4"),
-    (True, True, "off", 122, "72a2a10e3b0e132f3e77ef3a1d2eae05dacd9cb32adf0dec488f8dc5e4ee79cc"),
-    (True, True, "review", 122, "8b25776139d9839d03f1bdb6c85f19cb8729bc840c0e321eda4e582158f949ef"),
+    (False, False, "off", 118, "0a9f65f2149206d6045969a226df9248e301c24dc0a16ca61f27d3703a4f62e4"),
+    (False, False, "review", 118, "89b1048cefd0922a87976c7e4447187ed3c06c8381b2efd61b2ba00e0c88f80d"),
+    (False, True, "off", 120, "f4b026d396fbb991a9756778c216eafdc648863ca068332f73025d49597d6ff3"),
+    (False, True, "review", 120, "364b7578a4298cc8b0f47e34e7e8e05b3a295486bd348e2b01c583ef50460541"),
+    (True, False, "off", 120, "46f909f22a9c86cd3bbf56e3b37cbcce4ab9d4a36cb20f8bb10f9a4452861ce1"),
+    (True, False, "review", 120, "71703f66f3728848a27a9cf6a1fba02527176a0e9911bf44a51feb5f0969a182"),
+    (True, True, "off", 122, "8ec2600a7092ca64cfd30c2c05fc28ad188e0a5a8206329526adcd72d03ab476"),
+    (True, True, "review", 122, "6437051dd2614ca5fcd9b79e3997262ea55e9119475b9ff645b156a9dbb8b0e6"),
 ]
 
 SPRACHE_KATALOG_HASH = "d616c67eee2793c462ef37b9540cffa53dc445688fbd8a890aa3e82bc41cf266"
