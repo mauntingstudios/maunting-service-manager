@@ -54,7 +54,7 @@ tauri-plugin-single-instance = "2"
 # dort liegen Chromium- und Firefox-Profile als SQLite-Dateien. Gebündelt, damit
 # die Fassung der Bibliothek nicht von der Installation des Rechners abhängt;
 # der Import öffnet ausschließlich Kopien im eigenen Datenordner.
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 # Dieselben Versionen, die wry mitbringt: die Schnittstellen der WebView2
 # (Anfragen filtern, Adresse, Verlauf, Favicon) gibt Tauri nicht selbst heraus.
 webview2-com = "0.39"
