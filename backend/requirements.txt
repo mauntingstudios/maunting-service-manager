@@ -31,7 +31,7 @@ limits[redis]==3.13.0
 # zwei Pakete im Auth-nahen Pfad fuer rund achtzig Zeilen in
 # services/webpush_service.py, die gegen den Testvektor aus RFC 8291 §5 geprueft
 # sind. Bewertung: docs/agent-rules/dependencies.md
-cryptography==42.0.8
+cryptography==50.0.2
 # --- KI-Anhaenge: Bildnormalisierung und PDF-Text ---
 # Pillow: Bildformate pruefen, EXIF/GPS entfernen, auf eine sichere Groesse
 # normalisieren. pillow-heif: HEIC/HEIF von Android-Kameras. pypdf: reiner
