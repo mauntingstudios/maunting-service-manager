@@ -41,7 +41,7 @@ cryptography==50.0.2
 # Bewertung und Exit-Plan: docs/agent-rules/dependencies.md.
 Pillow==12.3.0
 pillow-heif==1.8.1
-pypdf==6.10.2
+pypdf==6.21.4
 psycopg2-binary==2.9.9
 asyncpg==0.29.0
 docker==7.1.0
