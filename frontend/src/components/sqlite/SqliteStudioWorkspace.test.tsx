@@ -145,7 +145,7 @@ describe('SqliteStudioWorkspace', () => {
     const sidebar = screen.getByTestId('sqlite-tables-sidebar')
     expect(sidebar).toHaveClass('md:flex')
 
-    const toggleBtn = screen.getByTitle(i18n.t('sqliteStudio.toggleSidebar'))
+    const toggleBtn = screen.getByRole('button', { name: i18n.t('sqliteStudio.toggleSidebar') })
     fireEvent.click(toggleBtn)
     expect(sidebar).toHaveClass('md:hidden')
   })

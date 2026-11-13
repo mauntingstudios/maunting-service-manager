@@ -37,6 +37,8 @@ const AKTIVE_SPRECH_ORTE: Record<string, string> = {
   '/src/components/ai/voice/useSprachsitzung.ts': 'Realtime-KI-Sprachsitzung (WebRTC & Legacy)',
   '/src/components/ai/AiChat.tsx': 'KI-Chat Diktat (Speech-to-Text)',
   '/src/browser/services/sprachsuche.ts': 'Pontis Browser Sprachsuche (Whisper, Web Speech & Android)',
+  '/src/browser/seite/suchzusammenfassung/SuchzusammenfassungKachel.tsx':
+    'KI-Suchzusammenfassung Diktat (Speech-to-Text)',
   '/src/hooks/useSprachaufnahme.ts': 'Messenger Sprachnachricht-Aufnahme',
   '/src/components/social/CircularVideoNoteRecorder.tsx': 'Messenger Videonotiz-Aufnahme mit Mikrofon',
   '/src/stores/useCallStore.ts': 'Messenger Anruf (Audio/Video via LiveKit)',

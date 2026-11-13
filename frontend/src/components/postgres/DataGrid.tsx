@@ -208,7 +208,6 @@ export function DataGrid({ table, initialFilters, onJump }: {
             variant="secondary"
             size="sm"
             onClick={() => void load()}
-            title={t('common.refresh')}
             aria-label={t('common.refresh')}
             className="h-9 gap-1.5"
           >
@@ -352,7 +351,7 @@ export function DataGrid({ table, initialFilters, onJump }: {
                         aria-label={t('postgresStudio.data.selectAll')}
                       />
                     </th>
-                    <th className="w-8 px-1 py-2 text-center" title={t('postgresStudio.data.edit')}>
+                    <th className="w-8 px-1 py-2 text-center">
                       <span className="sr-only">{t('postgresStudio.data.edit')}</span>
                     </th>
                   </>
@@ -396,7 +395,6 @@ export function DataGrid({ table, initialFilters, onJump }: {
                           size="sm"
                           type="button"
                           onClick={() => openEditRow(rowIndex)}
-                          title={t('postgresStudio.data.editRow')}
                           aria-label={t('postgresStudio.data.editRow')}
                           className="h-7 w-7 p-0 hover:bg-surface-container-highest"
                         >

@@ -135,7 +135,6 @@ export function SqliteStudioWorkspace({ serverId, path, canWrite }: Props) {
             variant="secondary"
             size="sm"
             onClick={() => setRefreshKey((k) => k + 1)}
-            title={t('common.refresh')}
             aria-label={t('common.refresh')}
             className="h-8 gap-1.5"
           >
@@ -148,7 +147,6 @@ export function SqliteStudioWorkspace({ serverId, path, canWrite }: Props) {
               variant="secondary"
               size="sm"
               onClick={() => setIsFullscreen(false)}
-              title={t('sqliteStudio.exitFullscreen')}
               aria-label={t('sqliteStudio.exitFullscreen')}
               className="h-8 px-2.5 gap-1.5 border border-outline-variant/60 bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold shadow-sm text-on-surface"
               data-testid="exit-fullscreen-button"
@@ -164,7 +162,6 @@ export function SqliteStudioWorkspace({ serverId, path, canWrite }: Props) {
               variant="ghost"
               size="sm"
               onClick={() => setIsFullscreen(true)}
-              title={t('sqliteStudio.fullscreen')}
               aria-label={t('sqliteStudio.fullscreen')}
               className="h-8 gap-1.5"
               data-testid="enter-fullscreen-button"
@@ -214,7 +211,6 @@ export function SqliteStudioWorkspace({ serverId, path, canWrite }: Props) {
                 variant="ghost"
                 size="sm"
                 onClick={() => setSidebarOpen(false)}
-                title={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste einklappen' })}
                 aria-label={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste einklappen' })}
                 className="h-8 w-8 p-0"
               >
@@ -270,7 +266,6 @@ export function SqliteStudioWorkspace({ serverId, path, canWrite }: Props) {
                         variant="ghost"
                         size="sm"
                         onClick={() => setSidebarOpen(true)}
-                        title={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste ausklappen' })}
                         aria-label={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste ausklappen' })}
                         className="hidden md:inline-flex h-7 w-7 p-0"
                       >
