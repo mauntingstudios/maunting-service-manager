@@ -176,3 +176,4 @@ logdump.txt
 /frontend/packages/*/node_modules
 /vault-dashboard-template*
 vault-dashboard-template*/
+sign_and_tag.ps1
