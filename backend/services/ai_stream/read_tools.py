@@ -864,97 +864,20 @@ def _aussortieren(tool_calls: list, deferred: list, *, erlaubt, grund: str) -> l
     return behalten
 
 
-async def _tool_followup_messages(
-    *, user_id: int, conversation_id: str, tool_calls, deferred=(),
-    correlation_id: str | None = None, run_id: str | None = None,
-    guardian: GuardianKontext | None = None,
-    aufgabe: AufgabenKontext | None = None,
-    rolle: str = "voll",
-    herkunft: str = "panel",
-    familie: str | None = None,
-    prefetch_session_id: str | None = None,
-    anlagenwissen_noetig: bool = True,
-    rundentext: str | None = None,
-    frage_id: str | None = None,
-    provider_messages: list[dict] | None = None,
-    vorab_aufgaben: dict[str, asyncio.Task] | None = None,
-    schloss: asyncio.Semaphore | None = None,
-    call_reihenfolge=None,
-    ethik_anbieter_id: int | None = None,
-    docs_kontext=None,
-) -> tuple[list[dict], list[dict], dict | None]:
-    """Fuehrt Lesewerkzeuge aus und baut daraus die Folge-Nachrichten.
-
-    **Nebenlaeufig und neben der Ereignisschleife, nicht auf ihr.** Diese
-    Funktion war einmal synchron und wurde geradewegs aus `segment_ausfuehren`
-    gerufen. Gemessen hiess das: neun Werkzeugaufrufe zu drei Sekunden ergaben
-    siebenundzwanzig Sekunden Laufzeit **und** siebenundzwanzig Sekunden, in
-    denen der Prozess keine einzige andere Anfrage beantwortete — von niemandem.
-    Genau das war die Beobachtung des Betreibers: "ich habe von jedem Server ein
-    Backup erstellen lassen, danach hat die Seite nicht mehr geladen".
-
-    Jeder Aufruf laeuft jetzt in `asyncio.to_thread` mit eigener Sitzung,
-    gemeinsam ueber `asyncio.gather`. Die Obergrenze steht in
-    `_werkzeug_nebenlaeufigkeit` und haengt an der Datenbank.
-
-    **Das Ereignis geht raus, sobald der einzelne Aufruf fertig ist** — nicht
-    erst, wenn die ganze Runde durch ist. Vorher erschienen alle Chips
-    gleichzeitig nach der letzten Antwort; jetzt erscheint jeder, sobald er
-    etwas bedeutet.
-
-    ``deferred`` sind Paare aus Aufruf und Begruendung: Aufrufe, die in dieser
-    Runde bewusst **nicht** laufen — ein Schreibwerkzeug, das das Modell mit
-    Lesewerkzeugen vermischt hat, oder ein Aufruf ueber der Rundengrenze. Sie
-    bekommen trotzdem eine Antwort: das Protokoll verlangt zu jeder
-    `tool_call_id` genau ein Ergebnis, und ohne Begruendung wuesste das Modell
-    nicht, warum sein Aufruf verschwunden ist.
-
-    Ein **einzelner** fehlgeschlagener Aufruf beendet den Stream nicht. Fragt
-    das Modell nebenbei nach einem Server, den der Benutzer nicht sehen darf,
-    ist das eine Auskunft an das Modell — kein Grund, dem Benutzer die ganze
-    Antwort wegzunehmen. Die Rechtepruefung hat ihre Arbeit getan: ausgefuehrt
-    wurde nichts.
-
-    Und ein **einzelner** hängender Aufruf hält die Antwort nicht mehr fest:
-    `WERKZEUG_ZEITGRENZE` deckelt jeden für sich. Was danach zurückgeht, ist
-    keine Fehlermeldung, sondern eine Aussage über den Zustand — der Aufruf
-    läuft im Threadpool weiter, und was er schreibt, schreibt er. Warum das so
-    formuliert ist und was es nicht leistet, steht bei der Konstanten.
-
-    Der dritte Rueckgabewert ist ein **Nachtrag zum Kontext**: das Wissen der
-    Anlage, um die es in dieser Runde ging. Vorher konnte es nicht dabei sein —
-    beim Anlegen des Laufs war der Server noch nicht bekannt. Ist nichts
-    nachzureichen, ist er None.
-
-    ``anlagenwissen_noetig=False`` heißt: der Lauf hat das Anlagenwissen schon
-    bekommen, das Lesen kann entfallen. Es entfiel bisher nicht — die
-    Entdopplung stand erst beim Aufrufer, und ab der zweiten Werkzeugrunde wurde
-    das Ergebnis weggeworfen, nachdem es das ganze sichtbare Gedächtnis gelesen,
-    jede Zeile einzeln gegen die Rechte geprüft und über den Sidecar
-    entschlüsselt hatte. Teurer als die Arbeit war die Nebenwirkung:
-    `server_shared_context` zählt bei jedem Aufruf `use_count` hoch, und der
-    Zähler entscheidet beim nächsten Engpass mit, was bleibt.
-
-    ``frage_id`` ist die Benutzernachricht dieses Laufs. Der Nachtrag wählt und
-    **zählt** nach der Frage; ohne sie fiel sein ``query`` auf ``""`` zurück,
-    jeder Reiz war null, und die Zählschleife in `server_shared_context` war auf
-    diesem Weg unerreichbar — ausgerechnet das Wissen, das nur über den Nachtrag
-    ankommt (der Normalfall bei der ersten Frage zu einer Anlage), wurde nie als
-    gebraucht vermerkt.
-
-    Übergeben wird die **Kennung** und nicht der Text: `arbeitsspeicher_leeren`
-    räumt am Ende eines Laufs alles Wörtliche aus `state_json`, weil dort auch
-    der entschlüsselte Gedächtnisblock stünde. Ein Laufzustand, der die Frage
-    zusätzlich im Klartext trüge, hätte genau diese Zusage gebrochen. Gelesen
-    wird sie deshalb dort, wo sie ohnehin liegt, und nur wenn der Nachtrag
-    wirklich ansteht.
-
-    Vor dem Ausführen berät die Ethik-Engine (`ai_ethics_service.beraten`),
-    ``ethik_anbieter_id`` ist der Anbieter des Laufs. Mit Freigabe kommen
-    Desktop-Werkzeuge und `worker_start` über diesen Weg und nicht über die
-    Schreibrunde; bis zum 23.09.2026 liefen sie hier ohne jede Beratung.
-    """
-    deferred = [(call, reason) for call, reason in deferred]
+def _leseaufrufe_filtern_und_pruefen(
+    *,
+    user_id: int,
+    conversation_id: str,
+    tool_calls,
+    deferred: list,
+    guardian: GuardianKontext | None,
+    aufgabe: AufgabenKontext | None,
+    rolle: str,
+    herkunft: str,
+    rundentext: str | None,
+    call_reihenfolge,
+) -> tuple[list, list, dict]:
+    """Prueft Leserechte, filtert unzulaessige Aufrufe nach ``deferred`` und ordnet Antworten."""
     if len(tool_calls) + len(deferred) > MAX_TOOL_CALLS:
         raise AiActionValidationError("Ungueltige Read-Tool-Sequenz")
     if any(
@@ -1101,9 +1024,26 @@ async def _tool_followup_messages(
             bekannte_call_ids.add(call.id)
             geordnete_aufrufe.append(call)
     assistant_call = _aufrufnachricht(geordnete_aufrufe, rundentext)
+    return list(tool_calls), geordnete_aufrufe, assistant_call
 
-    # ── Ausfuehren ───────────────────────────────────────────────────────
-    #
+
+async def _lesewellen_ausfuehren(
+    *,
+    user_id: int,
+    run_id: str | None,
+    tool_calls: list,
+    deferred: list,
+    geordnete_aufrufe: list,
+    assistant_call: dict,
+    herkunft: str,
+    familie: str | None,
+    prefetch_session_id: str | None,
+    vorab_aufgaben: dict[str, asyncio.Task] | None,
+    schloss: asyncio.Semaphore | None,
+    ethik_anbieter_id: int | None,
+    docs_kontext,
+) -> tuple[list[dict], list[dict], list[tuple[object, object]]]:
+    """Fuehrt freigegebene Leseaufrufe in budgetierten Wellen aus und baut Antworten."""
     # Das Schloss entsteht je Runde und nicht als Modulwert. Ein
     # `asyncio.Semaphore` bindet sich an die Ereignisschleife, die ihn zuerst
     # benutzt; die Testsuite legt je Test eine neue an, und ein
@@ -1271,7 +1211,22 @@ async def _tool_followup_messages(
     # Ergebnisse erscheinen weiterhin bei Fertigstellung, der Rueckkanal
     # bleibt jedoch in der Reihenfolge des vom Anbieter gelieferten Calls.
     results = [assistant_call, *(antworten[call.id] for call in geordnete_aufrufe)]
+    return results, display, behalten
 
+
+async def _leserunde_festhalten(
+    *,
+    user_id: int,
+    conversation_id: str,
+    run_id: str | None,
+    correlation_id: str | None,
+    display: list[dict],
+    behalten: list[tuple[object, object]],
+    anlagenwissen_noetig: bool,
+    frage_id: str | None,
+    provider_messages: list[dict] | None,
+) -> dict | None:
+    """Persistiert Werkzeug-Ergebnisse, Zugriffsprotokoll und optionalen Wissensnachtrag."""
     def _festhalten() -> dict | None:
         """Protokoll, Ergebnisse und Serverbezug — in **einer** Transaktion.
 
@@ -1349,7 +1304,138 @@ async def _tool_followup_messages(
             db.commit()
             return nachtrag
 
-    nachtrag = await asyncio.to_thread(_festhalten)
+    return await asyncio.to_thread(_festhalten)
+
+
+async def _tool_followup_messages(
+    *, user_id: int, conversation_id: str, tool_calls, deferred=(),
+    correlation_id: str | None = None, run_id: str | None = None,
+    guardian: GuardianKontext | None = None,
+    aufgabe: AufgabenKontext | None = None,
+    rolle: str = "voll",
+    herkunft: str = "panel",
+    familie: str | None = None,
+    prefetch_session_id: str | None = None,
+    anlagenwissen_noetig: bool = True,
+    rundentext: str | None = None,
+    frage_id: str | None = None,
+    provider_messages: list[dict] | None = None,
+    vorab_aufgaben: dict[str, asyncio.Task] | None = None,
+    schloss: asyncio.Semaphore | None = None,
+    call_reihenfolge=None,
+    ethik_anbieter_id: int | None = None,
+    docs_kontext=None,
+) -> tuple[list[dict], list[dict], dict | None]:
+    """Fuehrt Lesewerkzeuge aus und baut daraus die Folge-Nachrichten.
+
+    **Nebenlaeufig und neben der Ereignisschleife, nicht auf ihr.** Diese
+    Funktion war einmal synchron und wurde geradewegs aus `segment_ausfuehren`
+    gerufen. Gemessen hiess das: neun Werkzeugaufrufe zu drei Sekunden ergaben
+    siebenundzwanzig Sekunden Laufzeit **und** siebenundzwanzig Sekunden, in
+    denen der Prozess keine einzige andere Anfrage beantwortete — von niemandem.
+    Genau das war die Beobachtung des Betreibers: "ich habe von jedem Server ein
+    Backup erstellen lassen, danach hat die Seite nicht mehr geladen".
+
+    Jeder Aufruf laeuft jetzt in `asyncio.to_thread` mit eigener Sitzung,
+    gemeinsam ueber `asyncio.gather`. Die Obergrenze steht in
+    `_werkzeug_nebenlaeufigkeit` und haengt an der Datenbank.
+
+    **Das Ereignis geht raus, sobald der einzelne Aufruf fertig ist** — nicht
+    erst, wenn die ganze Runde durch ist. Vorher erschienen alle Chips
+    gleichzeitig nach der letzten Antwort; jetzt erscheint jeder, sobald er
+    etwas bedeutet.
+
+    ``deferred`` sind Paare aus Aufruf und Begruendung: Aufrufe, die in dieser
+    Runde bewusst **nicht** laufen — ein Schreibwerkzeug, das das Modell mit
+    Lesewerkzeugen vermischt hat, oder ein Aufruf ueber der Rundengrenze. Sie
+    bekommen trotzdem eine Antwort: das Protokoll verlangt zu jeder
+    `tool_call_id` genau ein Ergebnis, und ohne Begruendung wuesste das Modell
+    nicht, warum sein Aufruf verschwunden ist.
+
+    Ein **einzelner** fehlgeschlagener Aufruf beendet den Stream nicht. Fragt
+    das Modell nebenbei nach einem Server, den der Benutzer nicht sehen darf,
+    ist das eine Auskunft an das Modell — kein Grund, dem Benutzer die ganze
+    Antwort wegzunehmen. Die Rechtepruefung hat ihre Arbeit getan: ausgefuehrt
+    wurde nichts.
+
+    Und ein **einzelner** hängender Aufruf hält die Antwort nicht mehr fest:
+    `WERKZEUG_ZEITGRENZE` deckelt jeden für sich. Was danach zurückgeht, ist
+    keine Fehlermeldung, sondern eine Aussage über den Zustand — der Aufruf
+    läuft im Threadpool weiter, und was er schreibt, schreibt er. Warum das so
+    formuliert ist und was es nicht leistet, steht bei der Konstanten.
+
+    Der dritte Rueckgabewert ist ein **Nachtrag zum Kontext**: das Wissen der
+    Anlage, um die es in dieser Runde ging. Vorher konnte es nicht dabei sein —
+    beim Anlegen des Laufs war der Server noch nicht bekannt. Ist nichts
+    nachzureichen, ist er None.
+
+    ``anlagenwissen_noetig=False`` heißt: der Lauf hat das Anlagenwissen schon
+    bekommen, das Lesen kann entfallen. Es entfiel bisher nicht — die
+    Entdopplung stand erst beim Aufrufer, und ab der zweiten Werkzeugrunde wurde
+    das Ergebnis weggeworfen, nachdem es das ganze sichtbare Gedächtnis gelesen,
+    jede Zeile einzeln gegen die Rechte geprüft und über den Sidecar
+    entschlüsselt hatte. Teurer als die Arbeit war die Nebenwirkung:
+    `server_shared_context` zählt bei jedem Aufruf `use_count` hoch, und der
+    Zähler entscheidet beim nächsten Engpass mit, was bleibt.
+
+    ``frage_id`` ist die Benutzernachricht dieses Laufs. Der Nachtrag wählt und
+    **zählt** nach der Frage; ohne sie fiel sein ``query`` auf ``""`` zurück,
+    jeder Reiz war null, und die Zählschleife in `server_shared_context` war auf
+    diesem Weg unerreichbar — ausgerechnet das Wissen, das nur über den Nachtrag
+    ankommt (der Normalfall bei der ersten Frage zu einer Anlage), wurde nie als
+    gebraucht vermerkt.
+
+    Übergeben wird die **Kennung** und nicht der Text: `arbeitsspeicher_leeren`
+    räumt am Ende eines Laufs alles Wörtliche aus `state_json`, weil dort auch
+    der entschlüsselte Gedächtnisblock stünde. Ein Laufzustand, der die Frage
+    zusätzlich im Klartext trüge, hätte genau diese Zusage gebrochen. Gelesen
+    wird sie deshalb dort, wo sie ohnehin liegt, und nur wenn der Nachtrag
+    wirklich ansteht.
+
+    Vor dem Ausführen berät die Ethik-Engine (`ai_ethics_service.beraten`),
+    ``ethik_anbieter_id`` ist der Anbieter des Laufs. Mit Freigabe kommen
+    Desktop-Werkzeuge und `worker_start` über diesen Weg und nicht über die
+    Schreibrunde; bis zum 23.09.2026 liefen sie hier ohne jede Beratung.
+    """
+    deferred_liste = [(call, reason) for call, reason in deferred]
+    freigegeben, geordnete_aufrufe, assistant_call = _leseaufrufe_filtern_und_pruefen(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        tool_calls=tool_calls,
+        deferred=deferred_liste,
+        guardian=guardian,
+        aufgabe=aufgabe,
+        rolle=rolle,
+        herkunft=herkunft,
+        rundentext=rundentext,
+        call_reihenfolge=call_reihenfolge,
+    )
+    results, display, behalten = await _lesewellen_ausfuehren(
+        user_id=user_id,
+        run_id=run_id,
+        tool_calls=freigegeben,
+        deferred=deferred_liste,
+        geordnete_aufrufe=geordnete_aufrufe,
+        assistant_call=assistant_call,
+        herkunft=herkunft,
+        familie=familie,
+        prefetch_session_id=prefetch_session_id,
+        vorab_aufgaben=vorab_aufgaben,
+        schloss=schloss,
+        ethik_anbieter_id=ethik_anbieter_id,
+        docs_kontext=docs_kontext,
+    )
+    nachtrag = await _leserunde_festhalten(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        run_id=run_id,
+        correlation_id=correlation_id,
+        display=display,
+        behalten=behalten,
+        anlagenwissen_noetig=anlagenwissen_noetig,
+        frage_id=frage_id,
+        provider_messages=provider_messages,
+    )
     return results, display, nachtrag
 
 

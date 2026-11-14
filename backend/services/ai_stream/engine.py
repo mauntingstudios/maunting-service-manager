@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import time
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -196,6 +196,405 @@ def _docs_provider_nachricht(zustand: dict, run_id: str) -> dict | None:
     return {"role": "user", "content": "\n\n".join(teile)}
 
 
+def _rundendeckel_fuer_rolle(rolle: str, run_id: str) -> int:
+    """Liest das Rundenbudget fuer ein Segment einmal vor der Schleife."""
+    if rolle != "worker":
+        return MAX_TOOL_ROUNDS
+    from services import ai_worker_limits
+
+    try:
+        return min(ai_worker_limits.rundenbudget_je_worker(), MAX_TOOL_ROUNDS)
+    except Exception:
+        logger.warning("Worker-Rundenbudget nicht lesbar run_id=%s", run_id)
+        return MAX_TOOL_ROUNDS
+
+
+async def _segment_katalog_und_modell_vorbereiten(
+    *,
+    client: httpx.AsyncClient,
+    vorbereitung: _Vorbereitung,
+    guardian: GuardianKontext | None,
+    aufgabe: AufgabenKontext | None,
+    rolle: str,
+    herkunft: str,
+    zustand: dict,
+    provider_messages: list[dict],
+    run_id: str,
+):
+    """Schneidet Katalog & Budget zu, ergaenzt Werkzeugverzeichnis und waehlt das Modell."""
+    tools, cache_marke, kontextgrenze, denken, denkstufe = await ai_stream._werkzeuge_und_grenze(
+        client=client,
+        vorbereitung=vorbereitung,
+        guardian=guardian,
+        aufgabe=aufgabe,
+        rolle=rolle,
+        herkunft=herkunft,
+        zustand=zustand,
+    )
+    angebotene_werkzeuge = frozenset(
+        name
+        for tool in tools
+        if isinstance(tool, dict)
+        and isinstance(tool.get("function"), dict)
+        and isinstance((name := tool["function"].get("name")), str)
+    )
+    # Welche Werkzeuge es gerade gibt, sagt eine eigene Systemnachricht
+    # hinter dem Prompt. Der Prompt selbst bleibt byteweise statisch, und
+    # die Liste haengt an den Rechten dieses Laufs — zwei Laeufe mit
+    # denselben Rechten bekommen dieselbe Liste in derselben Reihenfolge.
+    from services.ai_prompt import werkzeug_index
+
+    index = werkzeug_index(angebotene_werkzeuge)
+    schon_da = any(
+        isinstance(nachricht, dict)
+        and isinstance(nachricht.get("content"), str)
+        and nachricht["content"].startswith("Werkzeugverzeichnis")
+        for nachricht in provider_messages
+    )
+    if (
+        index
+        and not schon_da
+        and provider_messages
+        and provider_messages[0].get("role") == "system"
+    ):
+        provider_messages = [
+            provider_messages[0],
+            {"role": "system", "content": index},
+            *provider_messages[1:],
+        ]
+    modellname = _modell_fuer(vorbereitung.provider, rolle, zustand)
+    # Einmal je Segment: der Dokumenttext aendert sich waehrend dieses
+    # Segments nicht, und eine Entschluesselung je Werkzeugrunde waere
+    # teuer und unnoetig.
+    docs_nachricht = (
+        _docs_provider_nachricht(zustand, run_id) if zustand.get("docs") else None
+    )
+    return (
+        tools,
+        angebotene_werkzeuge,
+        cache_marke,
+        kontextgrenze,
+        denken,
+        denkstufe,
+        modellname,
+        provider_messages,
+        docs_nachricht,
+    )
+
+
+async def _anbieter_runde_streamen(
+    *,
+    client: httpx.AsyncClient,
+    vorbereitung: _Vorbereitung,
+    anfrage_messages: list[dict],
+    current_usage: StreamUsage,
+    usage: StreamUsage,
+    modellname: str,
+    tools: list,
+    letzte_runde: bool,
+    denken: bool,
+    denkstufe: str | None,
+    cache_marke: bool,
+    last_response_id: str | None,
+    run_id: str,
+    user_id: int,
+    conversation_id: str,
+    herkunft: str,
+    zustand: dict,
+    angebotene_werkzeuge: frozenset[str],
+    fruehe_leseaufgaben: dict[str, asyncio.Task],
+    frueh_schloss: asyncio.Semaphore,
+    chunks: list[str],
+    thoughts: list[str],
+    denknaht: str,
+    gedachte_zeichen: int,
+) -> tuple[str | None, str, int]:
+    """Streamt genau eine Anbieterantwort und startet zulaessige Read-Tools fruehzeitig."""
+    provider_started_at = time.perf_counter()
+    first_provider_chunk = True
+    stream_extra_kw: dict[str, Any] = {}
+    if last_response_id is not None:
+        stream_extra_kw["previous_response_id"] = last_response_id
+
+    async for chunk in ai_stream.stream_chat_completion(
+        client,
+        provider=vorbereitung.provider,
+        api_key=vorbereitung.api_key,
+        messages=anfrage_messages,
+        usage=current_usage,
+        model=modellname,
+        tools=tools,
+        tool_choice="none" if letzte_runde else None,
+        reasoning=denken,
+        reasoning_effort=denkstufe,
+        cache_marke=cache_marke,
+        **stream_extra_kw,
+    ):
+        if first_provider_chunk:
+            metrics.record(
+                "ai_stream",
+                "first_provider_chunk",
+                (time.perf_counter() - provider_started_at) * 1000,
+            )
+            first_provider_chunk = False
+        if chunk.kind == "tool_start":
+            metrics.record(
+                "ai_stream",
+                "tool_start",
+                (time.perf_counter() - provider_started_at) * 1000,
+            )
+            ai_run_broker.veroeffentlichen(
+                run_id, "tool_start", {"tool_name": chunk.text, "spekulativ": True}
+            )
+            continue
+        if chunk.kind == "tool_ready":
+            call = chunk.tool_call
+            if (
+                call is not None
+                and call.id not in fruehe_leseaufgaben
+                and await asyncio.to_thread(
+                    _fruehstart_lesewerkzeug_erlaubt,
+                    run_id=run_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    call=call,
+                    angebotene_werkzeuge=angebotene_werkzeuge,
+                )
+            ):
+                from services.task_runner import sichere_aufgabe
+
+                fruehe_leseaufgaben[call.id] = sichere_aufgabe(
+                    _lesewerkzeug_ausfuehren(
+                        user_id=user_id,
+                        call=call,
+                        herkunft=herkunft,
+                        familie=familie_aus_zustand(zustand),
+                        prefetch_session_id=(
+                            str(zustand["prefetch_session_id"])
+                            if zustand.get("prefetch_session_id")
+                            else None
+                        ),
+                        schloss=frueh_schloss,
+                    ),
+                    name=f"fruehes-lesewerkzeug-{call.name}",
+                    extra={"run_id": run_id, "tool": call.name},
+                )
+            # Vollstaendige Tool-Calls sind intern. Ihre Anzeige und
+            # Persistenz bleiben ausschliesslich in der Rundenphase.
+            continue
+        if chunk.kind == "reasoning":
+            # Die Grenze steht hier und nicht erst beim Speichern.
+            # Geschnitten wird auch **innerhalb** eines Stücks: nur so
+            # ist der Denktext, den der Benutzer live gesehen hat,
+            # Zeichen für Zeichen derselbe, den er nach dem Neuladen
+            # wiederfindet.
+            rest = MAX_REASONING_CHARS - gedachte_zeichen
+            if rest <= 0:
+                continue
+            stueck = (denknaht + chunk.text)[:rest]
+            denknaht = ""
+            gedachte_zeichen += len(stueck)
+            thoughts.append(stueck)
+            ai_run_broker.veroeffentlichen(run_id, "reasoning", {"content": stueck})
+            continue
+        chunks.append(chunk.text)
+        ai_run_broker.veroeffentlichen(run_id, "delta", {"content": chunk.text})
+
+    if current_usage.response_id:
+        last_response_id = current_usage.response_id
+        zustand["last_response_id"] = last_response_id
+    if current_usage is not usage:
+        # Jede Werkzeugrunde ist eine eigene Anbieteranfrage mit eigenem
+        # Prompt — summiert, nicht ersetzt.
+        usage_addieren(usage, current_usage)
+    return last_response_id, denknaht, gedachte_zeichen
+
+
+def _alle_aufrufe_autonom_erlaubt(user_id: int, tool_calls: list) -> bool:
+    """Prueft in einer kurzen DB-Sitzung, ob alle Read-Tools autonom laufen duerfen."""
+    from services import ai_autonomy_service
+
+    with SessionLocal() as db_check:
+        benutzer = db_check.get(User, user_id)
+        if benutzer is None:
+            return False
+        return all(
+            call.name in READ_TOOLS
+            and ai_autonomy_service.autonomy_allows(
+                db_check,
+                user=benutzer,
+                server_id=(call.arguments or {}).get("server_id"),
+                tool_name=call.name,
+            )
+            for call in tool_calls
+        )
+
+
+async def _segment_erfolgreich_abschliessen(
+    *,
+    run_id: str,
+    message_id: str,
+    user_id: int,
+    conversation_id: str,
+    client: httpx.AsyncClient,
+    vorbereitung: _Vorbereitung,
+    zustand: dict,
+    provider_messages: list[dict],
+    signaturen: dict[str, int],
+    chunks: list[str],
+    rundenbeginn: int,
+    thoughts: list[str],
+    usage: StreamUsage,
+    gestellte_frage: dict | None,
+    geparkt: bool,
+    wecker: datetime | None,
+    parkgrund: str,
+    worker: dict | None,
+    budget_erschoepft: bool,
+    on_finalized=None,
+) -> None:
+    """Finalisiert das Ergebnis im Thread, parkt oder schliesst ab und verdichtet bei Bedarf."""
+    zustand["tool_signatures"] = signaturen
+    complete_content = "".join(chunks)
+    estimated_actual = max(
+        1,
+        (message_character_count(provider_messages) + len(complete_content) + 3) // 4,
+    )
+    await asyncio.to_thread(
+        ai_stream._finalize_stream,
+        message_id=message_id,
+        usage_event_id=vorbereitung.usage_event_id,
+        content=complete_content,
+        usage=usage,
+        estimated_actual_tokens=estimated_actual,
+        failed=False,
+        had_output=(
+            bool(chunks) or gestellte_frage is not None or geparkt or wecker is not None
+        ),
+        token_price_micro_usd_per_million=vorbereitung.token_price_micro_usd_per_million,
+        reasoning="".join(thoughts),
+        abschnitte=ai_run_broker.abschnitte(run_id),
+        question=gestellte_frage,
+    )
+    if on_finalized is not None:
+        on_finalized()
+    ai_run_broker.veroeffentlichen(run_id, "done", {"message_id": message_id})
+
+    if geparkt:
+        schlusstext = "".join(chunks[rundenbeginn:]).strip()
+        if schlusstext:
+            provider_messages.append({"role": "assistant", "content": schlusstext})
+        ai_stream._lauf_abschliessen(
+            run_id,
+            status="waiting_confirmation",
+            stop_reason="awaiting_confirmation",
+            zustand=zustand,
+        )
+        return
+    if wecker is not None:
+        ai_stream._lauf_abschliessen(
+            run_id,
+            status="waiting_wake",
+            stop_reason=parkgrund,
+            zustand=zustand,
+            wake_at=wecker,
+        )
+        return
+    if gestellte_frage is not None:
+        ai_stream._lauf_abschliessen(
+            run_id, status="waiting_user", stop_reason="question", zustand=zustand
+        )
+        await _gedaechtnis_vormerken(conversation_id)
+        if worker is not None:
+            try:
+                from services import ai_meldestelle
+
+                with SessionLocal() as db:
+                    benutzer = db.get(User, user_id)
+                    if benutzer is not None:
+                        ai_meldestelle.melden(
+                            db,
+                            user=benutzer,
+                            text=str(gestellte_frage.get("question") or ""),
+                            art="frage",
+                            kanal=str(worker.get("kanal") or "chat"),
+                            worker_id=str(
+                                worker.get("conversation_id") or conversation_id
+                            ),
+                            worker_titel=str(worker.get("titel") or "") or None,
+                            question=gestellte_frage,
+                        )
+            except Exception:
+                logger.warning("Worker-Frage nicht gemeldet run_id=%s", run_id)
+        return
+
+    try:
+        from services.ai_compaction_service import compact_conversation
+
+        if await compact_conversation(
+            client=client,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            provider_id=vorbereitung.provider.id,
+            context_chars=zustand.get("context_chars"),
+            anfrage_zeichen=zustand.get("anfrage_zeichen"),
+        ):
+            ai_run_broker.veroeffentlichen(
+                run_id, "compacted", {"conversation_id": conversation_id}
+            )
+    except Exception as exc:
+        logger.info("AI-Kompression uebersprungen error=%s", type(exc).__name__)
+
+    ai_stream._lauf_abschliessen(
+        run_id,
+        status="completed",
+        stop_reason="budget" if budget_erschoepft else "done",
+        zustand=zustand,
+    )
+    await _gedaechtnis_vormerken(conversation_id)
+
+
+def _segment_fehler_behandeln(
+    exc: Exception,
+    *,
+    run_id: str,
+    abgerechnet: bool,
+    abbruch_abrechnen,
+) -> None:
+    """Klassifiziert Ausnahmen aus dem Segment, bucht ehrlich ab und meldet den Fehler."""
+    if isinstance(exc, AiProviderRequestError):
+        code, message_key = exc.code, "ai.chat.errors.provider"
+        logger.warning(
+            "AI-Lauf am Anbieter gescheitert run_id=%s code=%s grund=%s",
+            run_id,
+            code,
+            redact_sensitive_text(exc.detail or "")[:200],
+        )
+    elif isinstance(exc, AiProviderConfigurationError):
+        logger.warning(
+            "AI-Lauf an Provider-Konfiguration gescheitert run_id=%s error=%s",
+            run_id,
+            type(exc).__name__,
+        )
+        code, message_key = "AI_PROVIDER_URL_REJECTED", "ai.chat.errors.provider"
+    elif isinstance(exc, AiActionValidationError):
+        logger.warning(
+            "AI-Werkzeugaufruf abgelehnt run_id=%s grund=%s",
+            run_id,
+            redact_sensitive_text(str(exc))[:200],
+        )
+        code, message_key = "AI_TOOL_REJECTED", "ai.chat.errors.toolRejected"
+    else:
+        logger.exception("AI-Lauf fehlgeschlagen error=%s", type(exc).__name__)
+        code, message_key = "AI_STREAM_FAILED", "ai.chat.errors.unavailable"
+    if not abgerechnet:
+        abbruch_abrechnen()
+    ai_run_broker.veroeffentlichen(
+        run_id, "error", {"code": code, "message_key": message_key}
+    )
+    ai_stream._lauf_abschliessen(run_id, status="failed", stop_reason=code)
+
+
 async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = None) -> None:
     """Fuehrt einen Lauf aus, bis er fertig ist, fragt oder auf einen Menschen wartet.
 
@@ -214,7 +613,9 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
     anlauf_started_at = time.perf_counter()
     anlauf = await ai_stream._segment_anlaufen(run_id, client)
     metrics.record(
-        "ai_stream", "segment_preparation", (time.perf_counter() - anlauf_started_at) * 1000,
+        "ai_stream",
+        "segment_preparation",
+        (time.perf_counter() - anlauf_started_at) * 1000,
         "ok" if anlauf is not None else "stopped",
     )
     if anlauf is None:
@@ -232,19 +633,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
     herkunft = anlauf.herkunft
     worker = anlauf.worker
     unbeaufsichtigt = anlauf.unbeaufsichtigt
-    # Das Rundenbudget dieses Laufs: fuer Worker der Betreiber-Deckel, sonst
-    # die Hauskonstante. Einmal je Segment gelesen — der Deckel eines
-    # laufenden Segments soll sich nicht mitten in der Schleife aendern.
-    rundendeckel = MAX_TOOL_ROUNDS
-    if rolle == "worker":
-        from services import ai_worker_limits
-
-        try:
-            rundendeckel = min(
-                ai_worker_limits.rundenbudget_je_worker(), MAX_TOOL_ROUNDS
-            )
-        except Exception:
-            logger.warning("Worker-Rundenbudget nicht lesbar run_id=%s", run_id)
+    rundendeckel = _rundendeckel_fuer_rolle(rolle, run_id)
 
     ai_run_broker.neues_segment(run_id)
     ai_run_broker.veroeffentlichen(
@@ -254,78 +643,27 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             "message_id": message_id,
             "request_id": vorbereitung.request_id,
             "run_id": run_id,
-            # Die Kennung der **Benutzer**nachricht dieses Laufs. Die Oberflaeche
-            # stellt eine Blase optimistisch dar, bevor der Server eine ID
-            # vergeben hat; ohne diesen Wert traegt sie fuer immer eine
-            # erfundene, und die Anhaenge dieser Frage fanden ihre Nachricht
-            # nicht.
             "user_message_id": zustand.get("user_message_id"),
         },
     )
 
     chunks: list[str] = []
     thoughts: list[str] = []
-    # Der Absatz, den die nächste Denkzeile vorangestellt bekommt. Gesetzt wird
-    # er an der Rundennaht ganz unten, eingelöst beim ersten Gedanken der neuen
-    # Runde — genau wie beim Antworttext, nur aufgeschoben. Ohne ihn klebte der
-    # letzte Gedanke einer Runde am ersten der nächsten: „…sehe ich mir zuerst
-    # die Logs an.Die Logs zeigen einen Portkonflikt…“.
     denknaht = ""
-    # Wie viel Denktext dieser **Lauf** schon gesammelt hat. Der Adapter zählt
-    # dasselbe, aber je Anfrage: er schreibt in `usage.reasoning_chars`, und
-    # `current_usage` wird nach jeder Werkzeugrunde neu angelegt — der Zähler
-    # fing also jede Runde wieder bei null an. `usage_addieren` übernimmt ihn
-    # ausdrücklich nicht ("die gehören der laufenden Runde und werden vom
-    # Aufrufer verwaltet"); genau dieser Zähler ist der Aufrufer, der das tut.
-    #
-    # Ohne ihn standen bei sechzehn Runden bis zu sechzehnmal 32.000 Zeichen im
-    # Vermittler und in `sections_json`, während `_finalize_stream` beim
-    # Speichern auf 32.000 kürzt: der Benutzer sah live den ganzen Denkverlauf
-    # und nach einem Neuladen dessen Anfang.
     gedachte_zeichen = 0
     usage = StreamUsage()
     abgerechnet = False
     gestellte_frage: dict | None = None
     geparkt = False
-    # Parkt der Lauf per `wait_until` oder wartet er auf den Rechner des
-    # Benutzers? Dann traegt `wecker` den Zeitpunkt, zu dem der Takt ihn
-    # spaetestens weckt (dritte Parkstelle), und `parkgrund` sagt, warum.
     wecker: datetime | None = None
     parkgrund = "wait_until"
-    # Wurde dieser Lauf waehrend der Arbeit von einer neuen Nachricht abgeloest?
-    # Dann gehoert er nicht mehr uns: abgerechnet wird noch ehrlich, geschrieben
-    # wird nichts mehr.
     abgeloest = False
-    # Endete der Lauf, weil ihm die Runden ausgingen? Ein solcher Lauf sieht im
-    # Ergebnis aus wie einer, der fertig war — er ist es aber nicht, und der
-    # Unterschied gehoert ins Protokoll. Genau dafuer stand `stop_reason`
-    # ('budget') im Modell und wurde nie gesetzt.
     budget_erschoepft = False
     fruehe_leseaufgaben: dict[str, asyncio.Task] = {}
     last_response_id: str | None = zustand.get("last_response_id")
 
-
     def _abbruch_abrechnen() -> None:
-        """Der ehrliche Abschluss eines Laufs, der nicht zu Ende kam.
-
-        Dreimal wörtlich derselbe Aufruf stand hier: abgelöst, abgebrochen,
-        gescheitert. Das ist die Stelle, an der abgerechnet wird — wer ein
-        Argument ergänzt und nur zwei der drei Kopien anfasst, verbucht
-        abgebrochene Läufe anders als abgelöste.
-
-        Parameterlos und unmittelbar neben den Zählern, aus denen sie liest.
-        Braucht sie einmal ein Argument, ist die Dopplung die ehrlichere
-        Fassung — dann gehört sie zurück an ihre drei Stellen.
-
-        **Sie wirft nicht, und sie läuft nur einmal.** Alle drei Aufrufer
-        stehen unmittelbar vor dem Abschluss des Laufs — dem Fehlerereignis und
-        `_lauf_abschliessen`. Warf die Abrechnung, fiel beides aus: am
-        25.09.2026 lehnte `fail_ai_usage` eine Reservierung ab, die ein zweites
-        Backend schon geschlossen hatte, der Fehlerzweig rief diese Funktion ein
-        zweites Mal und scheiterte ebenso, und der Chat wartete zehn Minuten
-        auf ein Ende, das nie kam. Eine offene Reservierung schließt der
-        nächste Startabgleich; einen Zuschauer ohne Ende erlöst niemand.
-        """
+        """Der ehrliche Abschluss eines Laufs, der nicht zu Ende kam."""
         nonlocal abgerechnet
         abgerechnet = True
         try:
@@ -345,7 +683,17 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             logger.exception("Abrechnung des abgebrochenen AI-Laufs gescheitert run_id=%s", run_id)
 
     try:
-        tools, cache_marke, kontextgrenze, denken, denkstufe = await ai_stream._werkzeuge_und_grenze(
+        (
+            tools,
+            angebotene_werkzeuge,
+            cache_marke,
+            kontextgrenze,
+            denken,
+            denkstufe,
+            modellname,
+            provider_messages,
+            docs_nachricht,
+        ) = await _segment_katalog_und_modell_vorbereiten(
             client=client,
             vorbereitung=vorbereitung,
             guardian=guardian,
@@ -353,205 +701,64 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             rolle=rolle,
             herkunft=herkunft,
             zustand=zustand,
+            provider_messages=provider_messages,
+            run_id=run_id,
         )
-        angebotene_werkzeuge = frozenset(
-            name
-            for tool in tools
-            if isinstance(tool, dict)
-            and isinstance(tool.get("function"), dict)
-            and isinstance((name := tool["function"].get("name")), str)
-        )
-        # Welche Werkzeuge es gerade gibt, sagt eine eigene Systemnachricht
-        # hinter dem Prompt. Der Prompt selbst bleibt byteweise statisch, und
-        # die Liste haengt an den Rechten dieses Laufs — zwei Laeufe mit
-        # denselben Rechten bekommen dieselbe Liste in derselben Reihenfolge.
-        from services.ai_prompt import werkzeug_index
-
-        index = werkzeug_index(angebotene_werkzeuge)
-        schon_da = any(
-            isinstance(nachricht, dict)
-            and isinstance(nachricht.get("content"), str)
-            and nachricht["content"].startswith("Werkzeugverzeichnis")
-            for nachricht in provider_messages
-        )
-        if (
-            index
-            and not schon_da
-            and provider_messages
-            and provider_messages[0].get("role") == "system"
-        ):
-            provider_messages = [
-                provider_messages[0],
-                {"role": "system", "content": index},
-                *provider_messages[1:],
-            ]
-        # Das Modell dieses Laufs — je Rolle, siehe `_modell_fuer`. Einmal je
-        # Segment: dieselbe Lebensdauer wie der Katalogzuschnitt darueber.
-        modellname = _modell_fuer(vorbereitung.provider, rolle, zustand)
-        # Ist die nächste Runde die abschließende? Dann darf das Modell keine
-        # Werkzeuge mehr aufrufen — der Katalog geht aber weiter mit.
-        #
-        # Hier stand `tools = None`, und das war teuer: bei Anthropic steht der
-        # Werkzeugkatalog ganz vorne im zwischengespeicherten Präfix. Fällt er
-        # weg, ändert sich die Anfrage an ihrer ersten Stelle, und der Treffer
-        # fällt ausgerechnet in der Runde, die den längsten Verlauf trägt.
-        # Dieselbe Absicht sagt `tool_choice="none"` (OpenRouter führt den Wert
-        # ausdrücklich), ohne den Präfix anzufassen.
-        #
-        # Die Grenze bleibt trotzdem auf unserer Seite: meldet der Anbieter
-        # danach doch Werkzeugaufrufe, werden sie verworfen — siehe unten.
         letzte_runde = False
+        rundenbeginn = 0
         current_usage = usage
         signaturen: dict[str, int] = dict(zustand.get("tool_signatures") or {})
-        # Einmal je Segment: der Dokumenttext aendert sich waehrend dieses
-        # Segments nicht, und eine Entschluesselung je Werkzeugrunde waere
-        # teuer und unnoetig.
-        docs_nachricht = (
-            _docs_provider_nachricht(zustand, run_id) if zustand.get("docs") else None
-        )
+
         while True:
             frueh_schloss = asyncio.Semaphore(ai_stream._werkzeug_nebenlaeufigkeit())
-            # Wo diese Runde im flachen Textpuffer beginnt. Daraus entsteht
-            # unten `rundentext`: der Text, den das Modell in derselben
-            # Anbieterantwort neben seinen Werkzeugaufrufen gesagt hat. Er geht
-            # als `content` der Aufrufnachricht zurueck — sonst kennt das
-            # Modell in der Folgerunde seine eigenen Ansagen und Zwischen-
-            # schluesse nicht (siehe `_aufrufnachricht`).
             rundenbeginn = len(chunks)
             provider_messages = auf_budget_kuerzen(provider_messages, kontextgrenze)
-            # **Direkt hinter der Kürzung**, nicht erst am Segmentende. Unter
-            # Budget gibt `auf_budget_kuerzen` dieselbe Liste zurück, darüber
-            # eine neue — ab der ersten Kürzung zeigte `zustand` also auf die
-            # alte, während der Kommentar weiter unten sagt, `provider_messages`
-            # *sei* die Liste im Zustand. Wer eine weitere Ausstiegsstelle
-            # einbaut, die den Zustand vor dem Segmentende schreibt, speicherte
-            # sonst einen Verlauf ohne alle seither gelesenen Werkzeugergebnisse.
+            # **Direkt hinter der Kuerzung**, damit jeder Ausstieg den aktuellen Verlauf sichert.
             zustand["provider_messages"] = provider_messages
-            provider_started_at = time.perf_counter()
-            first_provider_chunk = True
-            stream_extra_kw: dict[str, Any] = {}
-            if last_response_id is not None:
-                stream_extra_kw["previous_response_id"] = last_response_id
-
-            # Eigene Liste fuer die Anfrage: der Laufzustand bleibt frei von
-            # Dokumentklartext, auch wenn der Anbieter die Verbindung abbricht.
             anfrage_messages = (
                 [*provider_messages, docs_nachricht]
                 if docs_nachricht is not None
                 else provider_messages
             )
-            async for chunk in ai_stream.stream_chat_completion(
-                    client,
-                    provider=vorbereitung.provider,
-                    api_key=vorbereitung.api_key,
-                    messages=anfrage_messages,
-                usage=current_usage,
-                model=modellname,
+            last_response_id, denknaht, gedachte_zeichen = await _anbieter_runde_streamen(
+                client=client,
+                vorbereitung=vorbereitung,
+                anfrage_messages=anfrage_messages,
+                current_usage=current_usage,
+                usage=usage,
+                modellname=modellname,
                 tools=tools,
-                tool_choice="none" if letzte_runde else None,
-                reasoning=denken,
-                reasoning_effort=denkstufe,
+                letzte_runde=letzte_runde,
+                denken=denken,
+                denkstufe=denkstufe,
                 cache_marke=cache_marke,
-                **stream_extra_kw,
-            ):
-                if first_provider_chunk:
-                    metrics.record(
-                        "ai_stream", "first_provider_chunk",
-                        (time.perf_counter() - provider_started_at) * 1000,
-                    )
-                    first_provider_chunk = False
-                if chunk.kind == "tool_start":
-                    metrics.record(
-                        "ai_stream", "tool_start",
-                        (time.perf_counter() - provider_started_at) * 1000,
-                    )
-                    ai_run_broker.veroeffentlichen(run_id, "tool_start", {"tool_name": chunk.text, "spekulativ": True})
-                    continue
-                if chunk.kind == "tool_ready":
-                    call = chunk.tool_call
-                    if (
-                        call is not None
-                        and call.id not in fruehe_leseaufgaben
-                        and await asyncio.to_thread(
-                            _fruehstart_lesewerkzeug_erlaubt,
-                            run_id=run_id,
-                            user_id=user_id,
-                            conversation_id=conversation_id,
-                            call=call,
-                            angebotene_werkzeuge=angebotene_werkzeuge,
-                        )
-                    ):
-                        from services.task_runner import sichere_aufgabe
-
-                        fruehe_leseaufgaben[call.id] = sichere_aufgabe(
-                            _lesewerkzeug_ausfuehren(
-                                user_id=user_id,
-                                call=call,
-                                herkunft=herkunft,
-                                familie=familie_aus_zustand(zustand),
-                                prefetch_session_id=(
-                                    str(zustand["prefetch_session_id"])
-                                    if zustand.get("prefetch_session_id") else None
-                                ),
-                                schloss=frueh_schloss,
-                            ),
-                            name=f"fruehes-lesewerkzeug-{call.name}",
-                            extra={"run_id": run_id, "tool": call.name},
-                        )
-                    # Vollstaendige Tool-Calls sind intern. Ihre Anzeige und
-                    # Persistenz bleiben ausschliesslich in der Rundenphase.
-                    continue
-                if chunk.kind == "reasoning":
-                    # Die Grenze steht hier und nicht erst beim Speichern.
-                    # Geschnitten wird auch **innerhalb** eines Stücks: nur so
-                    # ist der Denktext, den der Benutzer live gesehen hat,
-                    # Zeichen für Zeichen derselbe, den er nach dem Neuladen
-                    # wiederfindet.
-                    rest = MAX_REASONING_CHARS - gedachte_zeichen
-                    if rest <= 0:
-                        continue
-                    # Vorne dran der Absatz, den die vorige Rundennaht bestellt
-                    # hat — erst hier, wo feststeht, dass wirklich ein zweiter
-                    # Gedanke kommt. Eine Runde ohne Denktext bekommt so keinen
-                    # leeren Denkkasten, und der Schlusstext keinen Umbruch am
-                    # Ende, hinter dem nichts mehr steht.
-                    stueck = (denknaht + chunk.text)[:rest]
-                    denknaht = ""
-                    gedachte_zeichen += len(stueck)
-                    thoughts.append(stueck)
-                    ai_run_broker.veroeffentlichen(run_id, "reasoning", {"content": stueck})
-                    continue
-                chunks.append(chunk.text)
-                ai_run_broker.veroeffentlichen(run_id, "delta", {"content": chunk.text})
-            if current_usage.response_id:
-                last_response_id = current_usage.response_id
-                zustand["last_response_id"] = last_response_id
-            if current_usage is not usage:
-                # Jede Werkzeugrunde ist eine eigene Anbieteranfrage mit eigenem
-                # Prompt — summiert, nicht ersetzt. Vorher wurden hier nur die
-                # Tokens addiert; Kosten, Aufschluesselung und die Zahl der
-                # Anfragen fielen weg.
-                usage_addieren(usage, current_usage)
+                last_response_id=last_response_id,
+                run_id=run_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                herkunft=herkunft,
+                zustand=zustand,
+                angebotene_werkzeuge=angebotene_werkzeuge,
+                fruehe_leseaufgaben=fruehe_leseaufgaben,
+                frueh_schloss=frueh_schloss,
+                chunks=chunks,
+                thoughts=thoughts,
+                denknaht=denknaht,
+                gedachte_zeichen=gedachte_zeichen,
+            )
             if not current_usage.tool_calls:
                 await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                 break
             if letzte_runde:
-                # Diese Runde war die abschließende: sie ging mit
-                # `tool_choice="none"` hinaus. Meldet der Anbieter trotzdem
-                # Werkzeugaufrufe, ist das keine Anfrage, die wir erfüllen —
-                # wir haben ausdrücklich keine erlaubt. Ein Anbieter, der sich
-                # nicht daran hält, hielte den Lauf sonst endlos offen; hier
-                # steht die Grenze auf unserer Seite.
                 logger.warning(
                     "Anbieter meldet Werkzeugaufrufe trotz tool_choice=none, "
                     "werden verworfen run_id=%s anzahl=%d",
-                    run_id, len(current_usage.tool_calls),
+                    run_id,
+                    len(current_usage.tool_calls),
                 )
                 await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                 break
 
-            # Was das Modell in dieser Runde neben den Aufrufen gesagt hat —
-            # geht als `content` der Aufrufnachricht mit zurueck.
             rundentext = "".join(chunks[rundenbeginn:])
 
             fragen = ai_stream._fragen_behandeln(
@@ -565,15 +772,14 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 rundendeckel=rundendeckel,
             )
             if fragen is not None:
+                await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                 if fragen.signal == "frage":
-                    await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                     gestellte_frage = fragen.frage
                     break
                 if fragen.budget_erschoepft:
                     budget_erschoepft = True
                 if fragen.letzte_runde:
                     letzte_runde = True
-                await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                 current_usage = StreamUsage()
                 continue
 
@@ -587,15 +793,14 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 rundendeckel=rundendeckel,
             )
             if warten is not None:
+                await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                 if warten.signal == "parken":
-                    await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                     wecker = warten.wake_at
                     break
                 if warten.budget_erschoepft:
                     budget_erschoepft = True
                 if warten.letzte_runde:
                     letzte_runde = True
-                await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                 current_usage = StreamUsage()
                 continue
 
@@ -621,23 +826,6 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 parkgrund = "desktop_jobs"
                 break
 
-            # **Ein frei erfundener Werkzeugname kostet die Runde, nicht den
-            # Lauf.** Hier stand ein `raise`, und damit endete der ganze Lauf
-            # als 'failed': im Chat verlor der Benutzer die Antwort, in einer
-            # Heilung brach der unbeaufsichtigte Lauf ab und verbrauchte einen
-            # der acht Reparaturanläufe. Jede andere Grenzverletzung — falsche
-            # Rolle, falsche Herkunft, Guardian-Menge, blindes Modell — wird
-            # längst begründet beantwortet; ausgerechnet der Name, den ein
-            # Modell aus injiziertem Material übernimmt (ein Beispiel-Toolcall
-            # in einer Logzeile, „Vorlage schlägt Regel"), war der eine Hebel,
-            # mit dem sich ein Lauf gezielt abwürgen ließ.
-            #
-            # Verworfen wird die **ganze** Runde und nicht nur der erfundene
-            # Aufruf — dasselbe Muster wie bei der abgewiesenen Rückfrage: ein
-            # Plan, der auf einem Werkzeug aufbaut, das es nicht gibt, ist als
-            # Ganzes hinfällig. Ausgeführt wird nichts, die Allowlist bleibt
-            # unverändert scharf, und gegen hartnäckige Wiederholung steht der
-            # Rundendeckel, den diese Runde mitbezahlt.
             mcp_namen = {
                 eintrag["function"]["name"]
                 for eintrag in vorbereitung.mcp_werkzeuge
@@ -651,20 +839,20 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 and call.name not in mcp_namen
                 for call in current_usage.tool_calls
             ):
-                provider_messages.extend(_rundenfehler_nachrichten(
-                    current_usage.tool_calls,
-                    rundentext,
-                    code="AI_TOOL_UNKNOWN",
-                    hinweis=(
-                        "Diese Runde enthielt einen Werkzeugnamen, den es nicht "
-                        "gibt, und wurde deshalb vollständig verworfen. Nutze "
-                        "ausschließlich die Werkzeuge aus deinem Katalog und "
-                        "rufe die Runde damit erneut auf."
-                    ),
-                ))
-                logger.info(
-                    "Erfundener Werkzeugname, Runde verworfen run_id=%s", run_id
+                provider_messages.extend(
+                    _rundenfehler_nachrichten(
+                        current_usage.tool_calls,
+                        rundentext,
+                        code="AI_TOOL_UNKNOWN",
+                        hinweis=(
+                            "Diese Runde enthielt einen Werkzeugnamen, den es nicht "
+                            "gibt, und wurde deshalb vollständig verworfen. Nutze "
+                            "ausschließlich die Werkzeuge aus deinem Katalog und "
+                            "rufe die Runde damit erneut auf."
+                        ),
+                    )
                 )
+                logger.info("Erfundener Werkzeugname, Runde verworfen run_id=%s", run_id)
                 if _runde_zaehlen(zustand, rundendeckel):
                     budget_erschoepft = True
                     letzte_runde = True
@@ -672,8 +860,6 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 current_usage = StreamUsage()
                 continue
 
-            # Ab hier ist jeder Aufruf entweder lesend oder schreibend/delegierend — die
-            # dritte Moeglichkeit hat die Pruefung darueber schon abgefangen.
             kinds = {
                 "write"
                 if call.name in WRITE_TOOLS
@@ -681,88 +867,37 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 else "read"
                 for call in current_usage.tool_calls
             }
-            if kinds == {"write"}:
-                await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
-                schreib = await ai_stream._schreibrunde_ausfuehren(
-                    run_id=run_id,
-                    user_id=user_id,
-                    conversation_id=conversation_id,
-                    vorbereitung=vorbereitung,
-                    guardian=guardian,
-                    aufgabe=aufgabe,
-                    unbeaufsichtigt=unbeaufsichtigt,
-                    rolle=rolle,
-                    rundendeckel=rundendeckel,
-                    rundentext=rundentext,
-                    current_usage=current_usage,
-                    provider_messages=provider_messages,
-                    zustand=zustand,
-                    chunks=chunks,
-                    thoughts=thoughts,
-                    denknaht=denknaht,
-                )
-                denknaht = schreib.denknaht
-                if schreib.abgeloest:
-                    abgeloest = True
-                    break
-                if schreib.geparkt:
-                    geparkt = True
-                if schreib.budget_erschoepft:
-                    budget_erschoepft = True
-                if schreib.letzte_runde:
-                    letzte_runde = True
-                current_usage = StreamUsage()
-                continue
-
             rundenaufrufe = list(current_usage.tool_calls)
-            deferred_calls, filter_signal = ai_stream._runde_filtern(
-                kinds=kinds,
-                current_usage=current_usage,
-                signaturen=signaturen,
-                zustand=zustand,
-                run_id=run_id,
-                rundendeckel=rundendeckel,
-            )
-            await _fruehe_leseaufgaben_filtern(
-                fruehe_leseaufgaben,
-                {call.id for call in current_usage.tool_calls},
-            )
-            if filter_signal == "budget":
-                budget_erschoepft = True
-                letzte_runde = True
-                await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
-                current_usage = StreamUsage()
-                continue
-            if filter_signal == "fertig":
-                await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
-                break
-
-            # Pruefen, ob die verbleibenden Werkzeugaufrufe Lesewerkzeuge sind
-            # UND autonom ausgefuehrt werden duerfen.
-            #
-            # Maunting Studios Grundsatz („Sicherheit braucht Vertrauen“):
-            # Der Autonomie-Modus beschreibt, dass die KI ohne Bestaetigung arbeiten kann.
-            # Ist der Autonomie-Modus an, braucht es keine Bestaetigung.
-            # Ist der Autonomie-Modus aus, verlangt ausnahmslos jede Handlung und jedes
-            # Werkzeug eine Bestaetigung ueber den Vorschlagspfad.
-            from services import ai_autonomy_service
-
-            with SessionLocal() as db_check:
-                benutzer = db_check.get(User, user_id)
+            if kinds != {"write"}:
+                deferred_calls, filter_signal = ai_stream._runde_filtern(
+                    kinds=kinds,
+                    current_usage=current_usage,
+                    signaturen=signaturen,
+                    zustand=zustand,
+                    run_id=run_id,
+                    rundendeckel=rundendeckel,
+                )
+                await _fruehe_leseaufgaben_filtern(
+                    fruehe_leseaufgaben,
+                    {call.id for call in current_usage.tool_calls},
+                )
+                if filter_signal == "budget":
+                    budget_erschoepft = True
+                    letzte_runde = True
+                    await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
+                    current_usage = StreamUsage()
+                    continue
+                if filter_signal == "fertig":
+                    await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
+                    break
+                alle_autonom = _alle_aufrufe_autonom_erlaubt(
+                    user_id, current_usage.tool_calls
+                )
+            else:
+                deferred_calls = []
                 alle_autonom = False
-                if benutzer is not None:
-                    alle_autonom = all(
-                        call.name in READ_TOOLS
-                        and ai_autonomy_service.autonomy_allows(
-                            db_check,
-                            user=benutzer,
-                            server_id=(call.arguments or {}).get("server_id"),
-                            tool_name=call.name,
-                        )
-                        for call in current_usage.tool_calls
-                    )
 
-            if not alle_autonom:
+            if kinds == {"write"} or not alle_autonom:
                 await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                 schreib = await ai_stream._schreibrunde_ausfuehren(
                     run_id=run_id,
@@ -794,9 +929,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                     letzte_runde = True
                 current_usage = StreamUsage()
                 continue
-            if filter_signal == "fertig":
-                await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
-                break
+
             denknaht = await ai_stream._leserunde_ausfuehren(
                 user_id=user_id,
                 conversation_id=conversation_id,
@@ -821,257 +954,55 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             current_usage = StreamUsage()
 
         if abgeloest:
-            # Kein `done` an den Vermittler und kein Zustand in die Datenbank:
-            # der Nachfolger arbeitet bereits in derselben Unterhaltung, und ein
-            # zweiter Schreiber auf demselben Lauf waere genau der Geist, den das
-            # Abloesen verhindern soll.
-            #
-            # Die Verbrauchszeile wird trotzdem geschlossen — nicht, weil hier
-            # etwas abzurechnen waere, sondern weil eine offene Reservierung
-            # Kontingent und Nebenlaeuferplatz des Benutzers dauerhaft blockiert.
-            # Kam Text durch, wird er abgerechnet; kam keiner durch, und das ist
-            # bei einer reinen Schreibrunde der Normalfall, gibt `had_output`
-            # False und die Reserve wird freigegeben.
             _abbruch_abrechnen()
-            # Schreibt nichts um: `_lauf_abschliessen` laesst Endzustaende stehen
-            # und meldet der Oberflaeche den tatsaechlichen.
             ai_stream._lauf_abschliessen(run_id, status="cancelled", stop_reason="superseded")
             return
 
-        zustand["tool_signatures"] = signaturen
-        complete_content = "".join(chunks)
-        estimated_actual = max(
-            1,
-            (message_character_count(provider_messages) + len(complete_content) + 3) // 4,
-        )
-        # Im Thread: der Abschluss verschluesselt Antwort, Denktext und
-        # Gliederung beim Sidecar und bucht den Verbrauch. Auf der
-        # Ereignisschleife hielt das bei jedem Laufende alle anderen Stroeme
-        # und den Ton laufender Sprachsitzungen an (bis 27.09.2026). Die
-        # Abschnitte liest der Vermittler vorher hier, er gehoert der Schleife.
-        #
-        # `abgerechnet` steht schon vor dem Warten: trifft ein Abbruch das
-        # Warten, bucht der Faden trotzdem zu Ende, und der Abbruchzweig darf
-        # nicht ein zweites Mal buchen. Scheitert die Buchung, gilt sie wie
-        # bisher als nicht geschehen.
         abgerechnet = True
+        finalized = False
         try:
-            await asyncio.to_thread(
-                ai_stream._finalize_stream,
+            def _mark_finalized() -> None:
+                nonlocal finalized
+                finalized = True
+
+            await _segment_erfolgreich_abschliessen(
+                run_id=run_id,
                 message_id=message_id,
-                usage_event_id=vorbereitung.usage_event_id,
-                content=complete_content,
-                usage=usage,
-                estimated_actual_tokens=estimated_actual,
-                failed=False,
-                # Eine Rueckfrage ist eine vollwertige Antwort, und ein Vorschlag
-                # ebenso — und ein geplantes Parken (`wait_until`) auch. Ohne das
-                # galten sie als "nichts geliefert" — genau der Fall, in dem der
-                # Chat "Keine Antwort erhalten" anzeigte.
-                had_output=(
-                    bool(chunks) or gestellte_frage is not None or geparkt
-                    or wecker is not None
-                ),
-                token_price_micro_usd_per_million=vorbereitung.token_price_micro_usd_per_million,
-                reasoning="".join(thoughts),
-                abschnitte=ai_run_broker.abschnitte(run_id),
-                question=gestellte_frage,
-            )
-        except Exception:
-            abgerechnet = False
-            raise
-        ai_run_broker.veroeffentlichen(run_id, "done", {"message_id": message_id})
-
-        if geparkt:
-            # Der Schlusstext der letzten Runde („Vorsicht: das Löschen
-            # entfernt auch die Backups — bitte bestätige.") gehoert in den
-            # gespeicherten Verlauf des Laufs. Die Fortsetzung nach der
-            # Bestaetigung haengt nur `_aktionsmeldung` an; ohne diese Zeile
-            # kannte das aufgeweckte Modell seine eigene Warnung und Zusage
-            # nicht. `chunks[rundenbeginn:]` ist genau der Text der
-            # abschliessenden Runde ohne Werkzeuge.
-            schlusstext = "".join(chunks[rundenbeginn:]).strip()
-            if schlusstext:
-                provider_messages.append(
-                    {"role": "assistant", "content": schlusstext}
-                )
-            ai_stream._lauf_abschliessen(
-                run_id,
-                status="waiting_confirmation",
-                stop_reason="awaiting_confirmation",
-                zustand=zustand,
-            )
-            return
-        if wecker is not None:
-            # Die dritte Parkstelle: `wait_until` hat den Lauf schlafen gelegt
-            # — oder er wartet auf den Rechner des Benutzers (`parkgrund`).
-            # Anders als beim Bestaetigungsparken darueber wird hier **kein**
-            # Schlusstext angehaengt: das Parken faellt in derselben Runde, und
-            # deren Text traegt bereits die Aufrufnachricht — ein zweites
-            # Anhaengen hiesse, das Modell laese nach dem Wecken seinen eigenen
-            # Satz doppelt.
-            ai_stream._lauf_abschliessen(
-                run_id,
-                status="waiting_wake",
-                stop_reason=parkgrund,
-                zustand=zustand,
-                wake_at=wecker,
-            )
-            return
-        if gestellte_frage is not None:
-            ai_stream._lauf_abschliessen(
-                run_id, status="waiting_user", stop_reason="question", zustand=zustand
-            )
-            await _gedaechtnis_vormerken(conversation_id)
-            if worker is not None:
-                # Die Frage eines Workers erreicht den Menschen nie direkt —
-                # sie geht als Meldung mit Worker-ID an die Meldestelle, und
-                # das Gehirn stellt sie in der naechsten Ruhephase
-                # (docs/agentic-framework.md, §3). Erst parken, dann melden:
-                # die Wahrheit ueber den Laufzustand kommt vor der Zustellung,
-                # und eine gescheiterte Meldung laesst die Frage im
-                # Worker-Fenster stehen, wo sie lesbar bleibt.
-                try:
-                    from services import ai_meldestelle
-
-                    with SessionLocal() as db:
-                        benutzer = db.get(User, user_id)
-                        if benutzer is not None:
-                            ai_meldestelle.melden(
-                                db,
-                                user=benutzer,
-                                text=str(gestellte_frage.get("question") or ""),
-                                art="frage",
-                                kanal=str(worker.get("kanal") or "chat"),
-                                worker_id=str(
-                                    worker.get("conversation_id") or conversation_id
-                                ),
-                                worker_titel=str(worker.get("titel") or "") or None,
-                                question=gestellte_frage,
-                            )
-                except Exception:
-                    logger.warning(
-                        "Worker-Frage nicht gemeldet run_id=%s", run_id
-                    )
-            return
-        # Falten, **bevor** der Lauf abgeschlossen wird. Der Text steht bereits
-        # vollständig auf dem Bildschirm: `done` ist raus und `_finalize_stream`
-        # hat committet. Danach zu falten war dagegen wirkungslos — der
-        # Abschluss veröffentlicht das ruhende `run`-Ereignis und schließt den
-        # Kanal, `lauf_verfolgen` steigt an genau diesem Ereignis aus, und
-        # `compacted` entstand erst danach. Der Hinweis "Ältere Nachrichten
-        # wurden zusammengefasst" erreichte deshalb keinen Browser, und der
-        # Kontextring blieb auf dem Stand von vor der Faltung stehen.
-        #
-        # Der Preis: die Eingabe bleibt während der Faltung gesperrt, weil die
-        # Oberfläche erst beim ruhenden `run` freigibt. Vertretbar, weil
-        # `compact_conversation` nur oberhalb der Marke überhaupt faltet.
-        try:
-            from services.ai_compaction_service import compact_conversation
-
-            if await compact_conversation(
-                client=client,
                 user_id=user_id,
                 conversation_id=conversation_id,
-                provider_id=vorbereitung.provider.id,
-                context_chars=zustand.get("context_chars"),
-                anfrage_zeichen=zustand.get("anfrage_zeichen"),
-            ):
-                ai_run_broker.veroeffentlichen(
-                    run_id, "compacted", {"conversation_id": conversation_id}
-                )
-        except Exception as exc:
-            logger.info("AI-Kompression uebersprungen error=%s", type(exc).__name__)
-
-        ai_stream._lauf_abschliessen(
-            run_id,
-            status="completed",
-            # "budget" heißt: die KI hatte noch etwas vor, durfte aber nicht
-            # mehr. Sie hat aus dem geantwortet, was sie hatte — das ist eine
-            # Antwort, aber keine erledigte Aufgabe, und wer das Protokoll liest
-            # soll den Unterschied sehen.
-            stop_reason="budget" if budget_erschoepft else "done",
-            zustand=zustand,
-        )
-        await _gedaechtnis_vormerken(conversation_id)
+                client=client,
+                vorbereitung=vorbereitung,
+                zustand=zustand,
+                provider_messages=provider_messages,
+                signaturen=signaturen,
+                chunks=chunks,
+                rundenbeginn=rundenbeginn,
+                thoughts=thoughts,
+                usage=usage,
+                gestellte_frage=gestellte_frage,
+                geparkt=geparkt,
+                wecker=wecker,
+                parkgrund=parkgrund,
+                worker=worker,
+                budget_erschoepft=budget_erschoepft,
+                on_finalized=_mark_finalized,
+            )
+        except Exception:
+            if not finalized:
+                abgerechnet = False
+            raise
     except asyncio.CancelledError:
-        # Der Prozess faehrt herunter. Nicht mehr als ehrlich abschliessen.
         await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
         if not abgerechnet:
             _abbruch_abrechnen()
-        # Der Abschluss steht **außerhalb** der Bedingung, so wie im Zweig
-        # darunter auch. Seit die Faltung vor dem Abschluss läuft, liegt genau
-        # dort ein Haltepunkt zwischen "abgerechnet" und "abgeschlossen":
-        # trifft der Abbruch ihn, hat der Benutzer seine Antwort, die Zeile
-        # stünde aber weiter auf 'running' — und der Abgleich beim nächsten
-        # Start machte daraus 'failed'. Einen bereits erreichten Endzustand
-        # lässt `_lauf_abschliessen` ohnehin stehen.
         ai_stream._lauf_abschliessen(run_id, status="cancelled", stop_reason="cancelled")
         raise
     except Exception as exc:
         await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
-        if isinstance(exc, AiProviderRequestError):
-            code, message_key = exc.code, "ai.chat.errors.provider"
-            # Der Satz des Anbieters endete hier lange im Nichts: der Adapter zog
-            # ihn sorgfaeltig aus der Antwort, redigierte und kuerzte ihn — und
-            # dann nahm diese Zeile nur `.code`. Uebrig blieb ein uebersetzter
-            # Allgemeinplatz, waehrend der Anbieter praezise geantwortet hatte
-            # („Insufficient credits", „No endpoints found for X"). Genau daran
-            # ist eine Ferndiagnose gescheitert.
-            #
-            # Behoben ist das eine Schicht frueher: `exc.code` ist seither nicht
-            # mehr pauschal `AI_PROVIDER_REQUEST_REJECTED`, sondern benennt den
-            # Fall (`AI_PROVIDER_PAYMENT_REQUIRED`, `AI_PROVIDER_RATE_LIMITED`,
-            # `AI_PROVIDER_AUTH_FAILED`), und zu jedem Code steht ein eigener
-            # Satz in `de.json`. Der Benutzer erfaehrt damit dasselbe — nur in
-            # MSMs Worten statt in denen des Anbieters.
-            #
-            # Der Wortlaut selbst geht **nicht** mit hinaus, sondern nur ins
-            # Protokoll. Er wurde einmal mitgeschickt, unter der Zusage, er sei
-            # „in `_kurzfassung` bereits von Schluesseln befreit". Die Zusage
-            # hielt nicht: `redact_sensitive_text` trifft `sk-` nur mit 16
-            # Folgezeichen aus `[A-Za-z0-9_-]`, und ein Anbieter nennt den
-            # Schluessel maskiert (`sk-pr***…xyZ4`) — das `*` bricht die Klasse.
-            # Und selbst mit dichterem Muster blieben Kontingentstand, Kontoname
-            # und Fine-Tune-Bezeichnungen stehen; die traegt kein Muster aus,
-            # weil sie wie gewoehnlicher Text aussehen. Ein Lauf gehoert einem
-            # Benutzer mit `ai.chat.use`, nicht dem Betreiber — der Zugang, an
-            # dem er haengt, gehoert aber dem Betreiber. Dieselbe Abwaegung ist
-            # bei `_stimmzugang_pruefen` schon getroffen, und die dort ist die
-            # strengere Probe: sie schweigt sogar gegenueber dem Betreiber.
-            logger.warning(
-                "AI-Lauf am Anbieter gescheitert run_id=%s code=%s grund=%s",
-                run_id, code, redact_sensitive_text(exc.detail or "")[:200],
-            )
-        elif isinstance(exc, AiProviderConfigurationError):
-            logger.warning(
-                "AI-Lauf an Provider-Konfiguration gescheitert run_id=%s error=%s",
-                run_id, type(exc).__name__,
-            )
-            code, message_key = "AI_PROVIDER_URL_REJECTED", "ai.chat.errors.provider"
-        elif isinstance(exc, AiActionValidationError):
-            # Der Grund gehoert ins Log. Vorher stand hier gar nichts: der
-            # Benutzer sah `AI_TOOL_REJECTED` und der Betreiber hatte keine
-            # Moeglichkeit herauszufinden, welcher Aufruf woran gescheitert war.
-            #
-            # Redigiert und gekuerzt, obwohl die Meldungen fast alle aus einer
-            # festen Menge stammen: bei `propose_blueprint_change` kann ein vom
-            # Modell gewaehlter Pfad woertlich im Text landen
-            # (`blueprint_service.py`), und dieses Modell hat seinerseits
-            # fremden Logtext gelesen. Ein Panel-Log ist kein Ort fuer
-            # ungefilterten Fremdtext.
-            logger.warning(
-                "AI-Werkzeugaufruf abgelehnt run_id=%s grund=%s",
-                run_id, redact_sensitive_text(str(exc))[:200],
-            )
-            code, message_key = "AI_TOOL_REJECTED", "ai.chat.errors.toolRejected"
-        else:
-            logger.exception("AI-Lauf fehlgeschlagen error=%s", type(exc).__name__)
-            code, message_key = "AI_STREAM_FAILED", "ai.chat.errors.unavailable"
-        if not abgerechnet:
-            _abbruch_abrechnen()
-        ai_run_broker.veroeffentlichen(
-            run_id, "error", {"code": code, "message_key": message_key}
+        _segment_fehler_behandeln(
+            exc,
+            run_id=run_id,
+            abgerechnet=abgerechnet,
+            abbruch_abrechnen=_abbruch_abrechnen,
         )
-        ai_stream._lauf_abschliessen(run_id, status="failed", stop_reason=code)
 

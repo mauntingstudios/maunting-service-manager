@@ -799,24 +799,16 @@ async def _segment_anlaufen(
     )
 
 
-async def _werkzeuge_und_grenze(
+def _erlaubte_werkzeuge_schneiden(
     *,
-    client: httpx.AsyncClient,
     vorbereitung: "_Vorbereitung",
     guardian: "GuardianKontext | None",
     aufgabe: "AufgabenKontext | None",
     rolle: str = "voll",
     herkunft: str = "panel",
     zustand: dict,
-) -> tuple[list, bool, int, bool, str | None]:
-    """Schneidet den Werkzeugkatalog zu und rechnet das Rundenbudget aus.
-
-    Rueckgabe ``(tools, cache_marke, kontextgrenze, denken, denkstufe)`` —
-    alles, was die Rundenschleife vom Katalog wissen muss. Einmal je Segment
-    und nicht je Runde: nach dem Zuschnitt aendert sich nichts davon mehr, und
-    auch die am Modell geklemmte Denkstufe (`_denken_am_modell`) gilt fuer das
-    ganze Segment.
-    """
+) -> tuple[list, set[str], set[str], object]:
+    """Filtert den gesamten Werkzeugkatalog auf die für diesen Lauf erlaubte Menge."""
     tools = provider_tool_definitions()
     if vorbereitung.mcp_werkzeuge:
         tools = [*tools, *vorbereitung.mcp_werkzeuge]
@@ -896,7 +888,19 @@ async def _werkzeuge_und_grenze(
         eintrag for eintrag in tools
         if str(eintrag.get("function", {}).get("name")) in erlaubt
     ]
+    return tools, set(erlaubt), mcp_namen, docs_kontext
 
+
+async def _werkzeuge_semantisch_routen(
+    *,
+    tools: list,
+    erlaubt: set[str],
+    mcp_namen: set[str],
+    docs_kontext,
+    herkunft: str,
+    zustand: dict,
+) -> list:
+    """Wählt bei größeren Werkzeugmengen die für diese Anfrage relevanten Werkzeuge per Routing/Budget."""
     def _content_text(c) -> str:
         if isinstance(c, str):
             return c
@@ -1041,6 +1045,18 @@ async def _werkzeuge_und_grenze(
             if str(e.get("function", {}).get("name")) not in mcp_namen
             or str(e.get("function", {}).get("name")) in mcp_gewaehlt
         ]
+    return tools
+
+
+async def _modellfaehigkeiten_und_kontextgrenze(
+    *,
+    client: httpx.AsyncClient,
+    vorbereitung: "_Vorbereitung",
+    tools: list,
+    rolle: str,
+    zustand: dict,
+) -> tuple[bool, int, bool, str | None]:
+    """Ermittelt Modellfaehigkeiten (Cache, Vision, Denken) und das effektive Kontextbudget."""
     # Was der Katalog selbst kostet. Er geht in Zeile `tools=tools` neben den
     # Nachrichten über dieselbe Leitung, wurde aber in keinem Budget
     # mitgezählt: `message_character_count` summiert nur `content`. Bei 51
@@ -1131,6 +1147,52 @@ async def _werkzeuge_und_grenze(
             katalog_zeichen=katalog_zeichen,
         ),
         MIN_HISTORY_CHARS,
+    )
+    return cache_marke, kontextgrenze, denken, denkstufe
+
+
+async def _werkzeuge_und_grenze(
+    *,
+    client: httpx.AsyncClient,
+    vorbereitung: "_Vorbereitung",
+    guardian: "GuardianKontext | None",
+    aufgabe: "AufgabenKontext | None",
+    rolle: str = "voll",
+    herkunft: str = "panel",
+    zustand: dict,
+) -> tuple[list, bool, int, bool, str | None]:
+    """Schneidet den Werkzeugkatalog zu und rechnet das Rundenbudget aus.
+
+    Rueckgabe ``(tools, cache_marke, kontextgrenze, denken, denkstufe)`` —
+    alles, was die Rundenschleife vom Katalog wissen muss. Einmal je Segment
+    und nicht je Runde: nach dem Zuschnitt aendert sich nichts davon mehr, und
+    auch die am Modell geklemmte Denkstufe (`_denken_am_modell`) gilt fuer das
+    ganze Segment.
+    """
+    tools, erlaubt, mcp_namen, docs_kontext = _erlaubte_werkzeuge_schneiden(
+        vorbereitung=vorbereitung,
+        guardian=guardian,
+        aufgabe=aufgabe,
+        rolle=rolle,
+        herkunft=herkunft,
+        zustand=zustand,
+    )
+    tools = await _werkzeuge_semantisch_routen(
+        tools=tools,
+        erlaubt=erlaubt,
+        mcp_namen=mcp_namen,
+        docs_kontext=docs_kontext,
+        herkunft=herkunft,
+        zustand=zustand,
+    )
+    cache_marke, kontextgrenze, denken, denkstufe = (
+        await _modellfaehigkeiten_und_kontextgrenze(
+            client=client,
+            vorbereitung=vorbereitung,
+            tools=tools,
+            rolle=rolle,
+            zustand=zustand,
+        )
     )
     return tools, cache_marke, kontextgrenze, denken, denkstufe
 
