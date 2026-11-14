@@ -711,3 +711,70 @@ def test_reconcile_continues_monitoring_when_desired_state_compilation_fails(db:
     err_stats = json.loads(server.guardian_sync_error_statistics)
     assert err_stats["code"] == "blueprint_unavailable"
 
+
+def test_set_desired_state_unreachable_preserves_sync_error_without_false_generation_mismatch(
+    db: Session,
+) -> None:
+    from services.guardian_sync_service import reconcile_guardian_server
+    from services.node_client import NodeClientError
+
+    blueprint = load_blueprint_dict(_base_blueprint_dict())
+    plugin = MagicMock()
+    plugin.get_blueprint.return_value = blueprint
+
+    node = Node(
+        id=1,
+        name="node-1",
+        host="http://127.0.0.1",
+        status="online",
+        auth_token_enc="enc",
+    )
+    server = _server()
+    server.node = node
+    server.id = None
+    server.desired_state_generation = 72
+    server.guardian_accepted_generation = 61
+    server.guardian_accepted_payload_hash = "sha256:" + ("0" * 64)
+    db.add_all([node, server])
+    db.commit()
+    db.refresh(server)
+
+    client = MagicMock()
+    client.get_guardian_capabilities.return_value = {
+        "guardian_schema_versions": [1],
+        "probe_types": ["process"],
+        "diagnostic_parsers": [],
+        "recovery_actions": [],
+    }
+    client.set_desired_state.side_effect = NodeClientError("Agent not reachable")
+    client.get_guardian_state.return_value = {
+        "schema_version": 1,
+        "supported_schema_version": 1,
+        "server_id": server.id,
+        "accepted_generation": 61,
+        "payload_hash": "sha256:" + ("0" * 64),
+        "guardian_observed_state": "stopped",
+        "observed_runtime_state": "stopped",
+        "container_state": "running",
+        "active_incident_uuid": None,
+        "last_probe_at": "2026-11-14T19:14:21Z",
+        "last_transition_at": "2026-11-14T19:20:00Z",
+        "quarantine": None,
+        "recovery_suspension": None,
+    }
+    client.get_incidents.return_value = []
+
+    with patch("services.guardian_sync_service.get_plugin", return_value=plugin):
+        res = reconcile_guardian_server(db, server, node_client=client)
+
+    db.refresh(server)
+    assert res["payload_hash"] is None
+    assert res["generation"] is None
+    assert server.guardian_container_status == "running"
+    assert server.guardian_sync_error_statistics is not None
+    err_stats = json.loads(server.guardian_sync_error_statistics)
+    assert err_stats.get("code") != "guardian_generation_mismatch"
+    assert err_stats["last_error"] == "NodeClientError"
+    assert "Agent not reachable" in err_stats["last_error_message"]
+
+

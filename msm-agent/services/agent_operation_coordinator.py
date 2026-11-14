@@ -13,6 +13,7 @@ import asyncio
 import threading
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import AsyncIterator, Iterator
 
 
@@ -20,9 +21,20 @@ class InvalidServerOperation(ValueError):
     """Raised when an operation is not scoped to a valid server ID."""
 
 
+@dataclass
+class _OperationLease:
+    """Active per-server lock lease bound to the acquiring task or thread."""
+
+    server_id: int
+    owner_task: int | None
+    owner_thread: int
+    inner_lock: threading.RLock = field(default_factory=threading.RLock)
+    active: bool = True
+
+
 _LOCKS: dict[int, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
-_HELD_BY_CONTEXT: ContextVar[dict[int, tuple[str, int]]] = ContextVar(
+_HELD_BY_CONTEXT: ContextVar[dict[int, _OperationLease]] = ContextVar(
     "msm_agent_operations_held",
     default={},
 )
@@ -57,23 +69,29 @@ def _lock_for(server_id: int) -> threading.Lock:
         return lock
 
 
-def _owner_identity() -> tuple[str, int]:
+def _current_task_id() -> int | None:
     try:
         task = asyncio.current_task()
     except RuntimeError:
         task = None
-    if task is not None:
-        return ("task", id(task))
-    return ("thread", threading.get_ident())
+    return id(task) if task is not None else None
 
 
-def _is_nested(server_id: int, owner: tuple[str, int]) -> bool:
-    return _HELD_BY_CONTEXT.get().get(server_id) == owner
+def _lease_matches_context(lease: _OperationLease | None) -> bool:
+    if lease is None or not lease.active:
+        return False
+    task_id = _current_task_id()
+    if task_id is not None:
+        return lease.owner_task == task_id
+    # Worker thread without a current asyncio task:
+    # - reentrant sync call on the owning thread matches owner_thread
+    # - asyncio.to_thread() inside operation_async inherits an active owner_task
+    return lease.owner_thread == threading.get_ident() or lease.owner_task is not None
 
 
-def _mark_held(server_id: int, owner: tuple[str, int]):
+def _mark_held(server_id: int, lease: _OperationLease):
     held = dict(_HELD_BY_CONTEXT.get())
-    held[server_id] = owner
+    held[server_id] = lease
     return _HELD_BY_CONTEXT.set(held)
 
 
@@ -81,18 +99,32 @@ def _mark_held(server_id: int, owner: tuple[str, int]):
 def operation(server_id: int | str) -> Iterator[None]:
     """Acquire the shared per-server mutation lock synchronously."""
     sid = _validated_server_id(server_id)
-    owner = _owner_identity()
-    if _is_nested(sid, owner):
-        yield
-        return
+    lease = _HELD_BY_CONTEXT.get().get(sid)
+    if _lease_matches_context(lease):
+        assert lease is not None
+        lease.inner_lock.acquire()
+        if lease.active:
+            try:
+                yield
+            finally:
+                lease.inner_lock.release()
+            return
+        lease.inner_lock.release()
 
     lock = _lock_for(sid)
     lock.acquire()
-    token = _mark_held(sid, owner)
+    new_lease = _OperationLease(
+        server_id=sid,
+        owner_task=_current_task_id(),
+        owner_thread=threading.get_ident(),
+    )
+    token = _mark_held(sid, new_lease)
     try:
         yield
     finally:
         _HELD_BY_CONTEXT.reset(token)
+        with new_lease.inner_lock:
+            new_lease.active = False
         lock.release()
 
 
@@ -100,26 +132,43 @@ def operation(server_id: int | str) -> Iterator[None]:
 async def operation_async(server_id: int | str) -> AsyncIterator[None]:
     """Acquire the shared per-server mutation lock without blocking the loop."""
     sid = _validated_server_id(server_id)
-    owner = _owner_identity()
-    if _is_nested(sid, owner):
+    lease = _HELD_BY_CONTEXT.get().get(sid)
+    if _lease_matches_context(lease):
+        assert lease is not None
         yield
         return
 
     lock = _lock_for(sid)
     await asyncio.to_thread(lock.acquire)
-    token = _mark_held(sid, owner)
+    new_lease = _OperationLease(
+        server_id=sid,
+        owner_task=_current_task_id(),
+        owner_thread=threading.get_ident(),
+    )
+    token = _mark_held(sid, new_lease)
     try:
         yield
     finally:
         _HELD_BY_CONTEXT.reset(token)
-        lock.release()
+        try:
+            if not new_lease.inner_lock.acquire(blocking=False):
+                await asyncio.to_thread(new_lease.inner_lock.acquire)
+            try:
+                new_lease.active = False
+            finally:
+                new_lease.inner_lock.release()
+        except BaseException:
+            new_lease.active = False
+            raise
+        finally:
+            lock.release()
 
 
 def is_operation_active(server_id: int | str) -> bool:
     """Return whether another logical context currently owns the server lock."""
     sid = _validated_server_id(server_id)
-    owner = _owner_identity()
-    if _is_nested(sid, owner):
+    lease = _HELD_BY_CONTEXT.get().get(sid)
+    if _lease_matches_context(lease):
         return False
     lock = _lock_for(sid)
     acquired = lock.acquire(blocking=False)
@@ -132,7 +181,8 @@ def is_operation_active(server_id: int | str) -> bool:
 def is_operation_held_by_context(server_id: int | str) -> bool:
     """Return whether this propagated logical context already owns the lock."""
     sid = _validated_server_id(server_id)
-    return sid in _HELD_BY_CONTEXT.get()
+    lease = _HELD_BY_CONTEXT.get().get(sid)
+    return bool(lease is not None and lease.active)
 
 
 def reset_operation_coordinator_for_tests() -> None:

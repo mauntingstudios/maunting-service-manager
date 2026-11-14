@@ -242,6 +242,7 @@ def reconcile_guardian_server(
         except GuardianSyncMismatchError:
             raise
         except Exception as compile_exc:
+            payload = None
             logger.warning(
                 "Guardian desired state compilation/sync failed for server %s: %s",
                 server.id,

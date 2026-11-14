@@ -756,3 +756,60 @@ def test_active_process_not_running_incident_resolved_when_server_stopped(
     assert len(incidents_after) == 1
     assert incidents_after[0]["status"] == "resolved"
 
+
+def test_desired_stop_with_coordinated_docker_stop_does_not_deadlock(
+    monkeypatch: pytest.MonkeyPatch,
+    guardian_paths: Path,
+) -> None:
+    """Regression: reconcile_server(operation_async) -> to_thread(docker_service.stop_container)
+    must not self-deadlock on the non-reentrant per-server coordinator lock."""
+
+    class FakeContainer:
+        status = "running"
+
+        def __init__(self) -> None:
+            self.stopped = False
+
+        def stop(self, timeout: int = 30) -> None:
+            self.stopped = True
+            self.status = "exited"
+
+        def reload(self) -> None:
+            return None
+
+    fake_container = FakeContainer()
+
+    class FakeContainers:
+        def get(self, name: str) -> FakeContainer:
+            assert name == "msm-srv-9135"
+            return fake_container
+
+    class FakeDockerClient:
+        containers = FakeContainers()
+
+    monkeypatch.setattr(guardian_service.docker_service, "_get_client", lambda force=False: FakeDockerClient())
+    monkeypatch.setattr(
+        guardian_service.docker_service,
+        "inspect_container_state",
+        lambda _name: {
+            "status": "exited" if fake_container.stopped else "running",
+            "running": not fake_container.stopped,
+            "oom_killed": False,
+            "started_at": "2026-11-14T19:20:00Z",
+            "port_bindings": {},
+        },
+    )
+    payload = _payload(desired_power_state="stopped")
+    payload["server_id"] = 9135
+    payload["payload_hash"] = canonical_payload_hash({k: v for k, v in payload.items() if k != "payload_hash"})
+    (Path(settings.servers_dir) / "9135").mkdir(exist_ok=True)
+    guardian_service.accept_desired_state(9135, payload)
+
+    asyncio.run(asyncio.wait_for(guardian_service.reconcile_server(9135), timeout=2.0))
+
+    observed = guardian_service.observed_state(9135)
+    assert fake_container.stopped is True
+    assert observed["guardian_observed_state"] == "stopped"
+    assert observed["container_state"] == "exited"
+
+

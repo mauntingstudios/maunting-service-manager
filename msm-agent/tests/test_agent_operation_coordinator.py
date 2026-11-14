@@ -114,3 +114,67 @@ def test_container_name_and_server_id_validation() -> None:
     for value in ("other-42", "msm-srv-", "msm-srv-0", "msm-srv-../1"):
         with pytest.raises(InvalidServerOperation):
             server_id_from_container_name(value, "msm-srv-")
+
+
+def test_operation_async_allows_nested_operation_via_to_thread() -> None:
+    async def scenario() -> tuple[bool, bool]:
+        worker_entered = False
+        second_entered_before_first_exit = False
+        first_exited = False
+        in_worker = asyncio.Event()
+        release_worker = threading.Event()
+
+        def sync_docker_mutation() -> None:
+            nonlocal worker_entered
+            with operation(42):
+                assert is_operation_held_by_context(42) is True
+                worker_entered = True
+                release_worker.wait(timeout=2.0)
+
+        async def first() -> None:
+            nonlocal first_exited
+            async with operation_async(42):
+                release_worker.set()
+                await asyncio.wait_for(asyncio.to_thread(sync_docker_mutation), timeout=1.0)
+                in_worker.set()
+                await asyncio.sleep(0.02)
+            first_exited = True
+
+        async def second() -> None:
+            nonlocal second_entered_before_first_exit
+            await in_worker.wait()
+            async with operation_async(42):
+                second_entered_before_first_exit = not first_exited
+
+        await asyncio.wait_for(asyncio.gather(first(), second()), timeout=2.0)
+        return worker_entered, second_entered_before_first_exit
+
+    worker_entered, leaked = asyncio.run(scenario())
+    assert worker_entered is True
+    assert leaked is False
+
+
+def test_spawned_background_task_does_not_bypass_lock() -> None:
+    async def scenario() -> bool:
+        first_exited = False
+        spawned_entered_early = False
+        first_acquired = asyncio.Event()
+        spawned_task: asyncio.Task[None] | None = None
+
+        async def spawned() -> None:
+            nonlocal spawned_entered_early
+            async with operation_async(43):
+                spawned_entered_early = not first_exited
+
+        async with operation_async(43):
+            first_acquired.set()
+            spawned_task = asyncio.create_task(spawned())
+            await asyncio.sleep(0.03)
+        first_exited = True
+
+        assert spawned_task is not None
+        await asyncio.wait_for(spawned_task, timeout=1.0)
+        return spawned_entered_early
+
+    assert asyncio.run(scenario()) is False
+
