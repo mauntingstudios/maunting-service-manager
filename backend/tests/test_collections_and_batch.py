@@ -829,3 +829,59 @@ class TestBulkModActionsAndDelete:
                 headers={"X-CSRF-Token": csrf_token},
             )
             assert res_fail.status_code == 502
+
+    def test_installed_mods_metadata_endpoint_returns_enriched_details_and_graceful_fallback(
+        self,
+        client: TestClient,
+        owner_cookies: dict,
+        test_server: Server,
+        db: Session,
+    ):
+        from datetime import datetime, timezone
+        from services.steam_service import SteamApiUnavailable, SteamModInfo
+
+        m1 = Mod(server_id=test_server.id, workshop_id="9001", name="Meta Mod", load_order=0, install_status="installed")
+        db.add(m1)
+        db.commit()
+
+        mock_plugin = MagicMock()
+        mock_plugin.supports_mods = True
+        mock_plugin.get_mod_support.return_value = {
+            "provider": "steam",
+            "workshop_id": "440900",
+        }
+
+        now = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+        steam_item = SteamModInfo(
+            publishedfileid="9001",
+            title="Meta Mod Full",
+            description="Detailed description",
+            creator="Author",
+            file_size=5 * 1024 * 1024,
+            created=now,
+            updated=now,
+            subscriptions=1200,
+            favorites=50,
+            tags=["Vehicles", "QoL"],
+            preview_url="https://steam.example/9001.jpg",
+            direct_url="https://steamcommunity.com/sharedfiles/filedetails/?id=9001",
+        )
+        mock_steam_service = AsyncMock()
+        mock_steam_service.get_details_batch = AsyncMock(return_value={"9001": steam_item})
+
+        with patch("routers.mods.get_plugin", return_value=mock_plugin), \
+             patch("services.steam_service.get_steam_service", new=AsyncMock(return_value=mock_steam_service)):
+            ok_res = client.get(f"/api/mods/{test_server.id}/metadata", cookies=owner_cookies)
+
+        assert ok_res.status_code == 200
+        payload = ok_res.json()
+        assert payload["9001"]["preview_url"] == "https://steam.example/9001.jpg"
+        assert payload["9001"]["file_size_mb"] == 5.0
+        assert payload["9001"]["tags"] == ["Vehicles", "QoL"]
+
+        with patch("routers.mods.get_plugin", return_value=mock_plugin), \
+             patch("services.steam_service.get_steam_service", new=AsyncMock(side_effect=SteamApiUnavailable("steam_api_key_missing"))):
+            fallback_res = client.get(f"/api/mods/{test_server.id}/metadata", cookies=owner_cookies)
+
+        assert fallback_res.status_code == 200
+        assert fallback_res.json() == {}

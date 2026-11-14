@@ -1015,3 +1015,26 @@ html[data-season="christmas"] .season-logo-christmas {
     box-shadow: none;
   }
 }
+
+.msm-mod-thumb {
+  overflow: hidden;
+  background-color: hsl(var(--mui-surface-2));
+  flex-shrink: 0;
+}
+
+.msm-mod-install-bar {
+  border: 1px solid hsl(var(--mui-primary) / 0.35);
+  background-color: hsl(var(--mui-surface-1) / 0.94);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 12px 32px hsl(0 0% 0% / 0.42);
+}
+
+@media (forced-colors: active) {
+  .msm-mod-install-bar {
+    border: 1px solid ButtonText;
+    background-color: Canvas;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+}

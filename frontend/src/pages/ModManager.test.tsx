@@ -557,10 +557,12 @@ describe('ModManager Reorder, Multi-Select & Bulk Operations', () => {
 
     expect(await screen.findByText('Alpha Mod')).toBeInTheDocument()
 
-    // 1. Move Beta Mod up -> order becomes [2, 1, 3]
-    const moveUpButtons = screen.getAllByRole('button', { name: 'mods.moveUp' })
-    expect(moveUpButtons[0]).toBeDisabled()
-    fireEvent.click(moveUpButtons[1])
+    // 1. Move Beta Mod up via row overflow menu -> order becomes [2, 1, 3]
+    const rowActionTriggers = screen.getAllByRole('button', { name: 'mods.modActions' })
+    expect(rowActionTriggers).toHaveLength(3)
+    fireEvent.click(rowActionTriggers[1])
+    const moveUpItem = await screen.findByRole('menuitem', { name: 'mods.moveUp' })
+    fireEvent.click(moveUpItem)
 
     await waitFor(() => {
       expect(mockApi).toHaveBeenCalledWith(
@@ -711,12 +713,14 @@ describe('ModManager Reorder, Multi-Select & Bulk Operations', () => {
       expect(screen.getByText('Mod C')).toBeInTheDocument()
     })
 
-    // Test Select All / Deselect All toggle, then Delete All
-    fireEvent.click(screen.getByRole('button', { name: 'mods.selectAll' }))
+    // Test Select All / Deselect All toggle and Delete All via header overflow menu
+    fireEvent.click(screen.getByRole('button', { name: 'mods.moreActions' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'mods.selectAll' }))
     expect(await screen.findByText('mods.selectedCount:1')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'mods.deselectAll' }).length).toBeGreaterThanOrEqual(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'mods.deleteAll' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mods.moreActions' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'mods.deleteAll' }))
     await waitFor(() => {
       expect(mockApi).toHaveBeenCalledWith(
         '/mods/50/bulk-delete',
@@ -727,5 +731,140 @@ describe('ModManager Reorder, Multi-Select & Bulk Operations', () => {
       )
     })
     expect(await screen.findByText('mods.noMods')).toBeInTheDocument()
+  })
+
+  it('filters library by status pills, game tags/sort, switches list view, toggles switches, and renders bottom live install bar', async () => {
+    const modsList = [
+      {
+        ...makeMod(1, 'Outdated Core Mod', 0),
+        workshop_id: '1001',
+        update_status: 'outdated',
+        install_status: 'installing',
+        install_action: 'update',
+        install_progress: 64,
+      },
+      {
+        ...makeMod(2, 'Second Queued Mod', 1),
+        workshop_id: '1002',
+        install_status: 'pending',
+        install_action: 'install',
+        install_progress: 0,
+      },
+    ]
+
+    mockApi.mockImplementation(async (path: string, options?: { method?: string }) => {
+      if (path === '/mods/50') {
+        return modsList
+      }
+      if (path === '/mods/50/metadata') {
+        return {
+          '1001': {
+            preview_url: 'https://steam.example/1001.jpg',
+            file_size_mb: 12.5,
+            tags: ['Vehicles'],
+            title: 'Outdated Core Mod',
+          },
+          '1002': {
+            preview_url: 'https://steam.example/1002.jpg',
+            file_size_mb: 4.2,
+            tags: ['UI'],
+            title: 'Second Queued Mod',
+          },
+        }
+      }
+      if (path === '/steam/workshop/filters?server_id=50') {
+        return {
+          appid: '108600',
+          source: 'steam_community',
+          tags: [
+            { id: 'Vehicles', name: 'Vehicles' },
+            { id: 'UI', name: 'UI' },
+          ],
+        }
+      }
+      if (path.startsWith('/steam/workshop/popular')) {
+        return [
+          {
+            publishedfileid: '1001',
+            title: 'Outdated Core Mod',
+            description: 'Already installed mod',
+            creator: 'Author',
+            file_size_mb: 12.5,
+            subscriptions: 5000,
+            favorites: 400,
+            tags: ['Vehicles'],
+            preview_url: 'https://steam.example/1001.jpg',
+            direct_url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=1001',
+          },
+          {
+            publishedfileid: '3003',
+            title: 'Brand New Mod',
+            description: 'Not yet installed',
+            creator: 'Creator',
+            file_size_mb: 8.1,
+            subscriptions: 900,
+            favorites: 70,
+            tags: ['UI'],
+            preview_url: 'https://steam.example/3003.jpg',
+            direct_url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=3003',
+          },
+        ]
+      }
+      if (path === '/mods/50/1' && options?.method === 'PATCH') {
+        return { ...modsList[0], enabled: false }
+      }
+      return []
+    })
+
+    render(
+      <ModManager
+        serverId={50}
+        gameInfo={{
+          id: 'project_zomboid',
+          name: 'Project Zomboid',
+          mod_support: true,
+        }}
+      />,
+    )
+
+    // Installed metadata thumbnail & size appear in Aktive Mods + Bottom live install bar renders
+    expect(await screen.findByText('12.5 MB')).toBeInTheDocument()
+    const liveStatusBar = screen.getByRole('status')
+    expect(liveStatusBar).toHaveTextContent('Outdated Core Mod')
+    expect(liveStatusBar).toHaveTextContent('64%')
+
+    // Expand queued mods list in live bar
+    fireEvent.click(screen.getByRole('button', { name: 'mods.installBarShowAll:2' }))
+    expect(screen.getAllByText('Second Queued Mod').length).toBeGreaterThanOrEqual(2)
+
+    // Filter pill: Nicht installiert hides 1001 and keeps 3003
+    expect(screen.getByText('Brand New Mod')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /mods\.filterNotInstalled/ }))
+    expect(screen.getByText('Brand New Mod')).toBeInTheDocument()
+
+    // Switch back to Installed pill & Updates pill
+    fireEvent.click(screen.getByRole('button', { name: /mods\.filterUpdates/ }))
+    expect(screen.getByRole('button', { name: 'mods.updateAvailable' })).toBeInTheDocument()
+
+    // Select dynamic game tag filter -> sends tags=Vehicles to Steam API
+    fireEvent.click(screen.getByRole('button', { name: /mods\.filterAll/ }))
+    const tagTrigger = await screen.findByRole('button', { name: 'mods.gameFilterPlaceholder' })
+    fireEvent.click(tagTrigger)
+    fireEvent.click(await screen.findByRole('option', { name: 'Vehicles' }))
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(expect.stringContaining('tags=Vehicles'))
+    })
+
+    // Toggle Switch on first active mod
+    const switches = screen.getAllByRole('switch')
+    expect(switches).toHaveLength(2)
+    fireEvent.click(switches[0])
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/mods/50/1?enabled=false',
+        expect.objectContaining({ method: 'PATCH' }),
+      )
+    })
   })
 })

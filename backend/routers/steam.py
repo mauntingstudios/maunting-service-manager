@@ -53,6 +53,35 @@ def _content_type_to_filetype(content_type: str) -> int:
     return 1 if content_type.strip().lower() in ("collections", "collection") else 0
 
 
+def _merge_tags(base_tags: list[str], extra_tags: Optional[str]) -> Optional[list[str]]:
+    merged: list[str] = [t.strip() for t in base_tags if t and t.strip()]
+    seen = {t.lower() for t in merged}
+    if extra_tags:
+        for raw in extra_tags.split(","):
+            clean = raw.strip()
+            if clean and clean.lower() not in seen:
+                seen.add(clean.lower())
+                merged.append(clean)
+    return merged or None
+
+
+@router.get("/workshop/filters")
+async def get_workshop_filters(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Return game-specific Steam Workshop tags for the server's game."""
+    workshop_id, _ = _resolve_steam_workshop_context(server_id, user, db)
+    try:
+        steam_service = await get_steam_service()
+        return await steam_service.get_workshop_filters(workshop_id)
+    except SteamApiUnavailable as e:
+        raise _steam_api_error(e)
+    except Exception:
+        return {"appid": workshop_id, "tags": [], "source": "none"}
+
+
 @router.get("/workshop/search")
 async def search_workshop_mods(
     server_id: int,
@@ -60,12 +89,16 @@ async def search_workshop_mods(
     page: int = Query(1, ge=1, description="Seitennummer"),
     per_page: int = Query(20, ge=1, le=50, description="Ergebnisse pro Seite"),
     content_type: str = Query("mods", description="Inhaltstyp: mods | collections"),
+    tags: Optional[str] = Query(None, description="Kommagetrennte zusätzliche Workshop-Tags"),
+    sort: Optional[str] = Query(None, description="Optionale Sortierung: trending | popular | newest | updated"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ) -> List[dict]:
     """Search workshop mods or collections for server's game."""
     workshop_id, required_tags = _resolve_steam_workshop_context(server_id, user, db)
     filetype = _content_type_to_filetype(content_type)
+    merged_tags = _merge_tags(required_tags, tags)
+    clean_sort = sort if sort in ("trending", "popular", "newest", "updated") else None
 
     try:
         steam_service = await get_steam_service()
@@ -74,8 +107,9 @@ async def search_workshop_mods(
             query=query,
             page=page,
             per_page=per_page,
-            required_tags=required_tags if required_tags else None,
+            required_tags=merged_tags,
             filetype=filetype,
+            sort=clean_sort,
         )
 
         return [_mod_to_dict(mod) for mod in mods]
@@ -93,12 +127,14 @@ async def get_popular_mods(
     page: int = Query(1, ge=1, description="Seitennummer (Pagination)"),
     sort: str = Query("trending", description="Sortierung: trending | popular | newest | updated"),
     content_type: str = Query("mods", description="Inhaltstyp: mods | collections"),
+    tags: Optional[str] = Query(None, description="Kommagetrennte zusätzliche Workshop-Tags"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ) -> List[dict]:
     """Get workshop mods or collections for server's game, sorted by the given criteria."""
     workshop_id, required_tags = _resolve_steam_workshop_context(server_id, user, db)
     filetype = _content_type_to_filetype(content_type)
+    merged_tags = _merge_tags(required_tags, tags)
 
     if sort not in ("trending", "popular", "newest", "updated"):
         sort = "trending"
@@ -108,7 +144,7 @@ async def get_popular_mods(
         mods = await steam_service.get_popular_mods(
             appid=workshop_id,
             limit=limit,
-            required_tags=required_tags if required_tags else None,
+            required_tags=merged_tags,
             sort=sort,
             page=page,
             filetype=filetype,

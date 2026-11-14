@@ -520,6 +520,78 @@ def list_mods(server_id: int, db: Session = Depends(get_db), user: User = Depend
     return db.query(Mod).filter(Mod.server_id == server_id).order_by(Mod.load_order.asc()).all()
 
 
+def _serialize_mod_metadata(item: object, provider: str) -> dict:
+    file_size = int(getattr(item, "file_size", 0) or 0)
+    updated_val = getattr(item, "updated", None)
+    return {
+        "provider": provider,
+        "title": getattr(item, "title", None) or "",
+        "description": getattr(item, "description", None) or "",
+        "creator": getattr(item, "creator", None) or "",
+        "preview_url": getattr(item, "preview_url", None),
+        "direct_url": getattr(item, "direct_url", None) or "",
+        "file_size": file_size,
+        "file_size_mb": round(file_size / (1024 * 1024), 2) if file_size > 0 else 0,
+        "tags": list(getattr(item, "tags", None) or []),
+        "subscriptions": int(getattr(item, "subscriptions", 0) or 0),
+        "updated": updated_val.isoformat() if hasattr(updated_val, "isoformat") else None,
+    }
+
+
+@router.get("/{server_id}/metadata")
+async def get_installed_mods_metadata(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, dict]:
+    """Liefert Thumbnails, Dateigrößen, Tags und Links für bereits abonnierte Mods ohne das Status-Polling zu verlangsamen."""
+    require_server_permission(user, server_id, db, "server.mods.read")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    plugin = get_plugin(server.game_type)
+    if not plugin or not plugin.supports_mods:
+        return {}
+
+    mods = db.query(Mod).filter(Mod.server_id == server_id).order_by(Mod.load_order.asc()).all()
+    if not mods:
+        return {}
+
+    wids = [str(m.workshop_id).strip() for m in mods if m.workshop_id and str(m.workshop_id).strip().isdigit()]
+    if not wids:
+        return {}
+
+    mod_support = plugin.get_mod_support() or {}
+    workshop_appid = mod_support.get("workshop_id")
+    cf_game_id = mod_support.get("curseforge_game_id")
+    provider_hint = str(mod_support.get("provider") or mod_support.get("mod_provider") or "").lower()
+    prefer_cf = bool(cf_game_id) and (provider_hint == "curseforge" or not workshop_appid)
+
+    metadata: dict[str, dict] = {}
+    if not prefer_cf and workshop_appid:
+        try:
+            from services.steam_service import get_steam_service
+            steam_service = await get_steam_service()
+            details = await steam_service.get_details_batch(wids, appid=str(workshop_appid))
+            for wid, info in (details or {}).items():
+                metadata[str(wid)] = _serialize_mod_metadata(info, "steam")
+        except Exception as exc:
+            logger.debug("Steam metadata batch lookup skipped for server %s: %s", server_id, type(exc).__name__)
+
+    remaining_wids = [wid for wid in wids if wid not in metadata]
+    if remaining_wids and cf_game_id:
+        try:
+            from services.curseforge_service import get_curseforge_service
+            cf_service = await get_curseforge_service()
+            items = await cf_service.get_mods_by_ids(remaining_wids)
+            for info in items or []:
+                metadata[str(info.publishedfileid)] = _serialize_mod_metadata(info, "curseforge")
+        except Exception as exc:
+            logger.debug("CurseForge metadata batch lookup skipped for server %s: %s", server_id, type(exc).__name__)
+
+    return metadata
+
+
 @router.post("/{server_id}", response_model=ModResponse)
 def subscribe_mod(
     server_id: int,

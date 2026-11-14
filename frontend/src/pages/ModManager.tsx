@@ -3,21 +3,24 @@ import { useTranslation } from 'react-i18next'
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronDown,
+  ChevronUp,
   ExternalLink,
   FolderArchive,
   Globe,
   GripVertical,
   HardDrive,
   Layers,
+  LayoutGrid,
+  List,
+  MoreHorizontal,
   Package,
   Plus,
   RefreshCw,
   RotateCcw,
   Search,
   Star,
-  ToggleLeft,
-  ToggleRight,
   Trash2,
   Upload,
   Users,
@@ -29,6 +32,7 @@ import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { getModInstallPresentation, hasActiveModInstall } from '@/services/modInstallStatus'
 import {
+  ActionMenu,
   Badge,
   Button,
   buttonClasses,
@@ -39,7 +43,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Dropdown,
   Kurzinfo,
+  Pagination,
+  ProgressBar,
+  Switch,
 } from '@maunting/ui'
 interface Mod {
   id: number
@@ -73,6 +81,7 @@ interface SteamMod {
   favorites: number
   preview_url: string | null
   direct_url: string
+  tags?: string[]
   last_updated?: string
   updated?: string
   item_type?: 'mod' | 'collection' | 'modpack'
@@ -94,6 +103,37 @@ interface CurseForgeClassOption {
   icon_url?: string | null
   kind: string
 }
+
+interface CurseForgeCategoryRaw {
+  id: number
+  name: string
+  slug?: string
+  isClass?: boolean
+  classId?: number
+  parentCategoryId?: number
+}
+
+interface GameFilterOption {
+  id: string
+  name: string
+}
+
+interface InstalledModMeta {
+  provider?: string
+  title?: string
+  description?: string
+  creator?: string
+  preview_url?: string | null
+  direct_url?: string
+  file_size?: number
+  file_size_mb?: number
+  tags?: string[]
+  subscriptions?: number
+  updated?: string | null
+}
+
+type LibraryFilter = 'all' | 'installed' | 'updates' | 'not_installed'
+type ViewMode = 'grid' | 'list'
 
 interface CollectionPreviewState {
   open: boolean
@@ -167,7 +207,7 @@ interface ModManagerProps {
   }
 }
 
-type BrowserCache = Partial<Record<BrowserTab, { mods: SteamMod[]; page: number; hasMore: boolean }>>
+type BrowserCache = Record<string, { mods: SteamMod[]; page: number; hasMore: boolean }>
 
 export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   const { t } = useTranslation()
@@ -222,9 +262,18 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   const [steamContentType, setSteamContentType] = useState<'mods' | 'collections'>('mods')
   const [contentType, setContentType] = useState<string>('all')
   const [curseforgeClasses, setCurseforgeClasses] = useState<CurseForgeClassOption[]>([])
+  const [curseforgeCategories, setCurseforgeCategories] = useState<GameFilterOption[]>([])
+  const [steamFilterTags, setSteamFilterTags] = useState<GameFilterOption[]>([])
+  const [selectedGameFilter, setSelectedGameFilter] = useState<string>('')
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all')
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [browserPage, setBrowserPage] = useState(1)
+  const [installedLibraryPage, setInstalledLibraryPage] = useState(1)
+  const [modMetadata, setModMetadata] = useState<Record<string, InstalledModMeta>>({})
+  const [installBarExpanded, setInstallBarExpanded] = useState(false)
+  const [mobileSection, setMobileSection] = useState<'library' | 'active'>('library')
   const [curseforgeUrlMap, setCurseforgeUrlMap] = useState<Record<string, string>>({})
-  // Cache pro Tab — verhindert Re-Fetch + Layout-Shift beim Tab-Wechsel,
-  // dadurch bleibt die Scroll-Position erhalten.
+  // Cache pro Tab+Filter+Seite — verhindert Re-Fetch bei Seiten-/Tab-Wechsel.
   const [browserCache, setBrowserCache] = useState<BrowserCache>({})
   const [browserLoading, setBrowserLoading] = useState(false)
   const [installedShown, setInstalledShown] = useState(INSTALLED_PAGE_SIZE)
@@ -312,11 +361,48 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     return () => window.clearInterval(intervalId)
   }, [loadMods, mods])
 
+  const modIdsSignature = mods.map((m) => m.workshop_id).sort().join(',')
+
   useEffect(() => {
-    if (!isCurseForge) {
-      setCurseforgeClasses([])
+    if (!modIdsSignature) {
+      setModMetadata({})
       return
     }
+    let cancelled = false
+    api<Record<string, InstalledModMeta>>(`/mods/${serverId}/metadata`)
+      .then((meta) => {
+        if (!cancelled && meta && typeof meta === 'object' && !Array.isArray(meta)) {
+          setModMetadata(meta)
+        }
+      })
+      .catch(() => {
+        // Metadaten sind rein anreichernd; kein Fehler-Toast beim Polling nötig.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [modIdsSignature, serverId])
+
+  useEffect(() => {
+    setSelectedGameFilter('')
+    if (!isCurseForge) {
+      setCurseforgeClasses([])
+      setCurseforgeCategories([])
+      let cancelled = false
+      api<{ tags?: GameFilterOption[] }>(`/steam/workshop/filters?server_id=${serverId}`)
+        .then((res) => {
+          if (!cancelled && res && !Array.isArray(res) && Array.isArray(res.tags)) {
+            setSteamFilterTags(res.tags.filter((item) => item?.id && item?.name))
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setSteamFilterTags([])
+        })
+      return () => {
+        cancelled = true
+      }
+    }
+    setSteamFilterTags([])
     let cancelled = false
     api<CurseForgeClassOption[]>(`/curseforge/classes?server_id=${serverId}`)
       .then((classes) => {
@@ -327,15 +413,38 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       .catch(() => {
         if (!cancelled) setCurseforgeClasses([])
       })
+    api<CurseForgeCategoryRaw[]>(`/curseforge/categories?server_id=${serverId}`)
+      .then((categories) => {
+        if (!cancelled && Array.isArray(categories)) {
+          const seen = new Set<string>()
+          const opts: GameFilterOption[] = []
+          for (const cat of categories) {
+            if (!cat || cat.isClass || !cat.id || !cat.name) continue
+            const idStr = String(cat.id)
+            if (seen.has(idStr)) continue
+            seen.add(idStr)
+            opts.push({ id: idStr, name: cat.name })
+          }
+          opts.sort((a, b) => a.name.localeCompare(b.name))
+          setCurseforgeCategories(opts)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCurseforgeCategories([])
+      })
     return () => {
       cancelled = true
     }
   }, [isCurseForge, serverId])
 
   useEffect(() => {
-    void loadBrowserTab(browserTab, 1, false, contentType, steamContentType)
+    if (searchActive && steamQuery.trim()) {
+      void searchSteam(1, false, contentType, steamContentType, browserTab, selectedGameFilter)
+    } else {
+      void loadBrowserTab(browserTab, 1, false, contentType, steamContentType, selectedGameFilter)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [browserTab, isCurseForge, contentType, steamContentType])
+  }, [browserTab, isCurseForge, contentType, steamContentType, selectedGameFilter])
 
   const buildCurseForgeClassParam = (typeFilter: string): string => {
     if (!isCurseForge) return ''
@@ -350,6 +459,23 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       return `&class_id=${gameInfo?.curseforge_class_id || 'mods'}`
     }
     return `&class_id=${encodeURIComponent(typeFilter)}`
+  }
+
+  const getBrowserCacheKey = (
+    tab: BrowserTab,
+    page: number,
+    typeFilter: string,
+    steamType: 'mods' | 'collections',
+    gameFilter: string,
+  ) => `${tab}::${typeFilter}::${steamType}::${gameFilter}::p${page}`
+
+  const buildGameFilterParam = (gameFilter: string, steamType: 'mods' | 'collections'): string => {
+    if (!gameFilter) return ''
+    if (isCurseForge) {
+      return `&category_id=${encodeURIComponent(gameFilter)}`
+    }
+    if (steamType === 'collections') return ''
+    return `&tags=${encodeURIComponent(gameFilter)}`
   }
 
   const cacheCurseForgeUrls = (items: SteamMod[]) => {
@@ -369,6 +495,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
 
   const resolveModPageUrl = (workshopId: string, title?: string | null, directUrl?: string | null): string => {
     if (directUrl) return directUrl
+    if (modMetadata[workshopId]?.direct_url) return modMetadata[workshopId].direct_url
     if (isCurseForge) {
       return (
         curseforgeUrlMap[workshopId] ||
@@ -392,33 +519,38 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     append: boolean,
     typeFilter: string = contentType,
     steamType: 'mods' | 'collections' = steamContentType,
+    gameFilter: string = selectedGameFilter,
   ) => {
+    const key = getBrowserCacheKey(tab, page, typeFilter, steamType, gameFilter)
+    if (!append && browserCache[key]) {
+      setBrowserPage(page)
+      return
+    }
     setBrowserLoading(true)
     try {
       const classParam = buildCurseForgeClassParam(typeFilter)
       const steamTypeParam = !isCurseForge && steamType === 'collections' ? '&content_type=collections' : ''
+      const filterParam = buildGameFilterParam(gameFilter, steamType)
       const endpoint = isCurseForge
-        ? `/curseforge/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${classParam}`
-        : `/steam/workshop/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${steamTypeParam}`
+        ? `/curseforge/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${classParam}${filterParam}`
+        : `/steam/workshop/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${steamTypeParam}${filterParam}`
       const data = await api<SteamMod[]>(endpoint)
       cacheCurseForgeUrls(data)
-      setBrowserCache((prev) => {
-        const existing = prev[tab]?.mods ?? []
-        return {
-          ...prev,
-          [tab]: {
-            mods: append ? [...existing, ...data] : data,
-            page,
-            hasMore: data.length === BROWSER_PAGE_SIZE,
-          },
-        }
-      })
+      setBrowserPage(page)
+      setBrowserCache((prev) => ({
+        ...prev,
+        [key]: {
+          mods: data,
+          page,
+          hasMore: data.length === BROWSER_PAGE_SIZE,
+        },
+      }))
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : String(err))
       if (!append) {
         setBrowserCache((prev) => ({
           ...prev,
-          [tab]: { mods: [], page: 1, hasMore: false },
+          [key]: { mods: [], page, hasMore: false },
         }))
       }
     } finally {
@@ -427,31 +559,31 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   }
 
   const switchTab = (tab: BrowserTab) => {
-    setBrowserTab(tab) // Cache bleibt erhalten → Scroll-Position stabil
+    setBrowserPage(1)
+    setBrowserTab(tab)
   }
 
   const [searchActive, setSearchActive] = useState(false)
 
   const handleContentTypeChange = (newType: string) => {
     setContentType(newType)
+    setBrowserPage(1)
     setBrowserCache({})
-    if (steamQuery.trim() && searchActive) {
-      void searchSteam(1, false, newType, steamContentType)
-    }
   }
 
   const handleSteamContentTypeChange = (newType: 'mods' | 'collections') => {
     setSteamContentType(newType)
-    setBrowserCache({})
-    if (steamQuery.trim() && searchActive) {
-      void searchSteam(1, false, contentType, newType)
+    if (newType === 'collections') {
+      setSelectedGameFilter('')
     }
+    setBrowserPage(1)
+    setBrowserCache({})
   }
 
-  const loadMoreBrowser = () => {
-    const entry = browserCache[browserTab]
-    if (!entry || !entry.hasMore || browserLoading) return
-    void loadBrowserTab(browserTab, entry.page + 1, true, contentType, steamContentType)
+  const handleGameFilterChange = (nextFilter: string) => {
+    setSelectedGameFilter(nextFilter)
+    setBrowserPage(1)
+    setInstalledLibraryPage(1)
   }
 
   const searchSteam = async (
@@ -459,6 +591,8 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     append: boolean,
     typeFilter: string = contentType,
     steamType: 'mods' | 'collections' = steamContentType,
+    sortTab: BrowserTab = browserTab,
+    gameFilter: string = selectedGameFilter,
   ) => {
     if (!steamQuery.trim()) return
     setSteamLoading(true)
@@ -466,9 +600,10 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       const q = encodeURIComponent(steamQuery.trim())
       const classParam = buildCurseForgeClassParam(typeFilter)
       const steamTypeParam = !isCurseForge && steamType === 'collections' ? '&content_type=collections' : ''
+      const filterParam = buildGameFilterParam(gameFilter, steamType)
       const endpoint = isCurseForge
-        ? `/curseforge/search?server_id=${serverId}&query=${q}&per_page=${BROWSER_PAGE_SIZE}&page=${page}${classParam}`
-        : `/steam/workshop/search?server_id=${serverId}&query=${q}&per_page=${BROWSER_PAGE_SIZE}&page=${page}${steamTypeParam}`
+        ? `/curseforge/search?server_id=${serverId}&query=${q}&per_page=${BROWSER_PAGE_SIZE}&page=${page}&sort=${sortTab}${classParam}${filterParam}`
+        : `/steam/workshop/search?server_id=${serverId}&query=${q}&per_page=${BROWSER_PAGE_SIZE}&page=${page}&sort=${sortTab}${steamTypeParam}${filterParam}`
       const data = await api<SteamMod[]>(endpoint)
       cacheCurseForgeUrls(data)
       setSteamResults((prev) => (append ? [...prev, ...data] : data))
@@ -483,8 +618,12 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
 
   const runSearch = () => {
     if (!steamQuery.trim()) return
+    if (libraryFilter === 'installed' || libraryFilter === 'updates') {
+      setInstalledLibraryPage(1)
+      return
+    }
     setSearchActive(true)
-    void searchSteam(1, false, contentType, steamContentType)
+    void searchSteam(1, false, contentType, steamContentType, browserTab, selectedGameFilter)
   }
 
   const clearSearch = () => {
@@ -493,11 +632,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     setSteamQuery('')
     setSteamPage(1)
     setSteamHasMore(false)
-  }
-
-  const loadMoreSearch = () => {
-    if (!steamHasMore || steamLoading) return
-    void searchSteam(steamPage + 1, true, contentType, steamContentType)
+    setInstalledLibraryPage(1)
   }
 
   const subscribeMod = async (workshopId: string, name?: string) => {
@@ -1523,7 +1658,10 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
 
   const visibleInstalled = filteredMods.slice(0, installedShown)
   const hasMoreInstalled = filteredMods.length > visibleInstalled.length
-  const anyModInstallActive = mods.some(hasActiveModInstall)
+  const activeInstallMods = mods.filter(hasActiveModInstall)
+  const anyModInstallActive = activeInstallMods.length > 0
+  const primaryActiveMod =
+    activeInstallMods.find((m) => m.install_status === 'installing') ?? activeInstallMods[0] ?? null
   const dragVisIndex =
     pointerDragActiveId !== null
       ? visibleInstalled.findIndex((m) => m.id === pointerDragActiveId)
@@ -1533,12 +1671,141 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       ? visibleInstalled.findIndex((m) => m.id === pointerDropTargetId)
       : -1
 
-  // Suche zeigt Suchtreffer-Grid, sonst das gewaehlte Browser-Tab-Grid.
-  const isSearchMode = searchActive || steamResults.length > 0
-  const browserEntry = browserCache[browserTab]
-  const displayedMods = isSearchMode ? steamResults : browserEntry?.mods ?? []
-  const showLoadMoreBrowser = !isSearchMode && !!browserEntry?.hasMore
-  const showLoadMoreSearch = isSearchMode && steamHasMore
+  const installedModByWorkshopId = new Map<string, Mod>(mods.map((m) => [m.workshop_id, m]))
+  const updatesMods = mods.filter(
+    (m) =>
+      m.update_status === 'outdated' ||
+      (m.install_status === 'pending' && m.install_action === 'update'),
+  )
+  const isInstalledView = libraryFilter === 'installed' || libraryFilter === 'updates'
+
+  // Dynamische Tags aus Backend-Filterabfrage, sonst aus geladenen Mods abgeleitet
+  const inferredSteamTags: GameFilterOption[] = (() => {
+    if (isCurseForge || steamFilterTags.length > 0) return []
+    const seen = new Set<string>()
+    const collected: GameFilterOption[] = []
+    const collectFrom = (items: Array<{ tags?: string[] }>) => {
+      for (const item of items) {
+        for (const tag of item.tags ?? []) {
+          const clean = tag.trim()
+          if (!clean) continue
+          const lower = clean.toLowerCase()
+          if (seen.has(lower)) continue
+          seen.add(lower)
+          collected.push({ id: clean, name: clean })
+        }
+      }
+    }
+    collectFrom(Object.values(browserCache).flatMap((entry) => entry?.mods ?? []))
+    collectFrom(steamResults)
+    collectFrom(Object.values(modMetadata))
+    return collected.slice(0, 35)
+  })()
+
+  const gameFilterOptions = isCurseForge
+    ? curseforgeCategories
+    : steamFilterTags.length > 0
+      ? steamFilterTags
+      : inferredSteamTags
+
+  const isSearchMode = !isInstalledView && (searchActive || steamResults.length > 0)
+  const currentBrowserKey = getBrowserCacheKey(
+    browserTab,
+    browserPage,
+    contentType,
+    steamContentType,
+    selectedGameFilter,
+  )
+  const browserEntry = browserCache[currentBrowserKey]
+  const catalogRawMods = isSearchMode ? steamResults : browserEntry?.mods ?? []
+
+  const filteredInstalledLibraryItems: SteamMod[] = isInstalledView
+    ? (libraryFilter === 'updates' ? updatesMods : mods)
+        .map((mod): SteamMod => {
+          const meta = modMetadata[mod.workshop_id]
+          const title = meta?.title || mod.name || `${providerLabel} Mod ${mod.workshop_id}`
+          return {
+            publishedfileid: mod.workshop_id,
+            title,
+            description: meta?.description || '',
+            creator: meta?.creator || '',
+            file_size_mb: meta?.file_size_mb ?? 0,
+            subscriptions: meta?.subscriptions ?? 0,
+            favorites: 0,
+            preview_url: meta?.preview_url ?? null,
+            direct_url: resolveModPageUrl(mod.workshop_id, title, meta?.direct_url),
+            tags: meta?.tags ?? [],
+            updated: meta?.updated ?? mod.last_updated ?? undefined,
+          }
+        })
+        .filter((item) => {
+          const q = steamQuery.trim().toLowerCase()
+          if (q) {
+            const matchesText =
+              item.title.toLowerCase().includes(q) ||
+              item.publishedfileid.toLowerCase().includes(q) ||
+              (item.tags ?? []).some((tag) => tag.toLowerCase().includes(q))
+            if (!matchesText) return false
+          }
+          if (selectedGameFilter) {
+            const targetTag = selectedGameFilter.toLowerCase()
+            if (!(item.tags ?? []).some((tag) => tag.toLowerCase() === targetTag)) {
+              return false
+            }
+          }
+          return true
+        })
+    : []
+
+  const installedLibraryTotalPages = Math.max(
+    1,
+    Math.ceil(filteredInstalledLibraryItems.length / BROWSER_PAGE_SIZE),
+  )
+  const safeInstalledLibraryPage = Math.min(installedLibraryPage, installedLibraryTotalPages)
+
+  const displayedMods = isInstalledView
+    ? filteredInstalledLibraryItems.slice(
+        (safeInstalledLibraryPage - 1) * BROWSER_PAGE_SIZE,
+        safeInstalledLibraryPage * BROWSER_PAGE_SIZE,
+      )
+    : libraryFilter === 'not_installed'
+      ? catalogRawMods.filter((item) => !installedModByWorkshopId.has(item.publishedfileid))
+      : catalogRawMods
+
+  const activeCatalogPage = isInstalledView
+    ? safeInstalledLibraryPage
+    : isSearchMode
+      ? steamPage
+      : browserPage
+  const activeHasMore = isInstalledView
+    ? safeInstalledLibraryPage < installedLibraryTotalPages
+    : isSearchMode
+      ? steamHasMore
+      : Boolean(browserEntry?.hasMore)
+  const libraryPageCount = isInstalledView
+    ? installedLibraryTotalPages
+    : activeHasMore
+      ? activeCatalogPage + 1
+      : activeCatalogPage
+
+  const handleLibraryPageChange = (nextPage: number) => {
+    if (nextPage < 1) return
+    if (isInstalledView) {
+      setInstalledLibraryPage(nextPage)
+      return
+    }
+    if (isSearchMode) {
+      void searchSteam(nextPage, false, contentType, steamContentType, browserTab, selectedGameFilter)
+      return
+    }
+    void loadBrowserTab(browserTab, nextPage, false, contentType, steamContentType, selectedGameFilter)
+  }
+
+  const handleLibraryFilterChange = (nextFilter: LibraryFilter) => {
+    setLibraryFilter(nextFilter)
+    setInstalledLibraryPage(1)
+  }
+
   const statusBadgeClass = {
     success: 'msm-badge-success',
     warning: 'msm-badge-warning',
@@ -1547,36 +1814,69 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   } as const
 
   const renderSteamModCard = (mod: SteamMod) => {
-    const isAdded = mods.some((m) => m.workshop_id === mod.publishedfileid)
+    const installedRecord = installedModByWorkshopId.get(mod.publishedfileid)
+    const isAdded = Boolean(installedRecord)
+    const hasPendingUpdate = Boolean(
+      installedRecord &&
+        (installedRecord.update_status === 'outdated' ||
+          (installedRecord.install_status === 'pending' && installedRecord.install_action === 'update')),
+    )
+    const isRowInstalling = Boolean(installedRecord && hasActiveModInstall(installedRecord))
     const isCollection = !isCurseForge && (mod.item_type === 'collection' || steamContentType === 'collections')
     const isModpack = isCurseForge && Boolean(mod.is_modpack || mod.item_type === 'modpack')
+    const displayTags = (mod.tags ?? []).slice(0, 2)
+    const isListMode = viewMode === 'list'
 
     return (
       <div
         key={mod.publishedfileid}
-        className="msm-card overflow-hidden flex flex-col hover:border-mint-accent/40 transition-all"
+        className={`msm-card overflow-hidden transition-all hover:border-primary/40 ${
+          isListMode ? 'flex flex-col sm:flex-row sm:items-center gap-3 p-3' : 'flex flex-col'
+        }`}
       >
-        <div className="relative">
+        <div className={isListMode ? 'relative shrink-0' : 'relative'}>
           {mod.preview_url ? (
             <img
               src={mod.preview_url}
               alt={mod.title}
-              className="w-full h-40 object-cover bg-surface-container-highest"
+              className={
+                isListMode
+                  ? 'w-full h-36 sm:w-28 sm:h-20 rounded-lg object-cover bg-surface-container-highest'
+                  : 'w-full h-40 object-cover bg-surface-container-highest'
+              }
               loading="lazy"
             />
           ) : (
-            <div className="w-full h-40 flex items-center justify-center bg-surface-container-highest">
+            <div
+              className={
+                isListMode
+                  ? 'w-full h-36 sm:w-28 sm:h-20 rounded-lg flex items-center justify-center bg-surface-container-highest'
+                  : 'w-full h-40 flex items-center justify-center bg-surface-container-highest'
+              }
+            >
               {isCollection ? (
-                <Layers className="w-10 h-10 text-on-surface-variant" />
+                <Layers className="w-8 h-8 text-on-surface-variant" />
               ) : isModpack ? (
-                <FolderArchive className="w-10 h-10 text-on-surface-variant" />
+                <FolderArchive className="w-8 h-8 text-on-surface-variant" />
               ) : (
-                <Package className="w-10 h-10 text-on-surface-variant" />
+                <Package className="w-8 h-8 text-on-surface-variant" />
               )}
             </div>
           )}
+          {isAdded && (
+            <span
+              className={`absolute top-2 right-2 inline-flex h-6 w-6 items-center justify-center rounded-full shadow-sm ${
+                hasPendingUpdate
+                  ? 'bg-status-warning text-surface'
+                  : 'bg-status-success text-surface'
+              }`}
+              aria-label={hasPendingUpdate ? t('mods.updateAvailable') : t('mods.added')}
+            >
+              {hasPendingUpdate ? <RefreshCw className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+            </span>
+          )}
           {(isCollection || isModpack || mod.has_server_pack || (!isCollection && !isModpack && (mod.dependencies_count ?? 0) > 0)) && (
-            <div className="absolute top-2 left-2 flex flex-wrap gap-1.5">
+            <div className="absolute top-2 left-2 flex flex-wrap gap-1">
               {isCollection && (
                 <Badge variant="info" className="bg-surface/90 backdrop-blur-sm">
                   {t('mods.collection')}
@@ -1605,33 +1905,61 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
             </div>
           )}
         </div>
-        <div className="p-4 flex flex-col gap-2 flex-1">
-          <h4 className="font-headline text-body-md text-on-surface line-clamp-2 leading-tight">
-            {mod.title}
-          </h4>
-          <p className="font-body-md text-xs text-on-surface-variant line-clamp-3 flex-1">
-            {mod.description}
-          </p>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-on-surface-variant font-mono-sm">
-            <span className="flex items-center gap-1">
-              <Users className="w-3 h-3" /> {mod.subscriptions.toLocaleString()}
-            </span>
-            <span className="flex items-center gap-1">
-              <Star className="w-3 h-3" /> {mod.favorites.toLocaleString()}
-            </span>
-            {mod.file_size_mb > 0 && (
-              <span className="flex items-center gap-1">
-                <HardDrive className="w-3 h-3" /> {mod.file_size_mb} MB
-              </span>
+
+        <div className={isListMode ? 'flex flex-col sm:flex-row sm:items-center gap-3 flex-1 min-w-0' : 'p-4 flex flex-col gap-2 flex-1'}>
+          <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+            <h4 className="font-headline text-body-md text-on-surface line-clamp-2 leading-tight">
+              {mod.title}
+            </h4>
+            {mod.description && (
+              <p className="font-body-md text-xs text-on-surface-variant line-clamp-2 flex-1">
+                {mod.description}
+              </p>
             )}
+            {displayTags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {displayTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center rounded-md border border-outline-variant/30 bg-surface-container px-2 py-0.5 text-label-sm font-body-md text-on-surface-variant"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-3 text-xs text-on-surface-variant font-mono-sm">
+              {mod.subscriptions > 0 && (
+                <span className="flex items-center gap-1">
+                  <Users className="w-3 h-3" /> {mod.subscriptions.toLocaleString()}
+                </span>
+              )}
+              {mod.favorites > 0 && (
+                <span className="flex items-center gap-1">
+                  <Star className="w-3 h-3" /> {mod.favorites.toLocaleString()}
+                </span>
+              )}
+              {mod.file_size_mb > 0 && (
+                <span className="flex items-center gap-1">
+                  <HardDrive className="w-3 h-3" /> {mod.file_size_mb} MB
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2.5 mt-3 pt-3 border-t border-outline-variant/20">
+
+          <div
+            className={
+              isListMode
+                ? 'flex items-center gap-2 shrink-0 sm:pl-2'
+                : 'flex items-center gap-2 mt-2 pt-3 border-t border-outline-variant/20'
+            }
+          >
             {isCollection ? (
               <Button
                 size="sm"
                 fingerziel
                 onClick={() => void openSteamCollectionPreview(mod)}
-                className="flex-1"
+                className={isListMode ? '' : 'flex-1'}
               >
                 <Layers className="w-4 h-4 shrink-0" />
                 {t('mods.inspectCollection')}
@@ -1642,18 +1970,31 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                 fingerziel
                 variant={isAdded ? 'secondary' : 'primary'}
                 onClick={() => void openCurseForgeBundlePreview(mod)}
-                className="flex-1"
+                className={isListMode ? '' : 'flex-1'}
               >
                 <FolderArchive className="w-4 h-4 shrink-0" />
                 {isAdded ? t('mods.added') : t('mods.inspectCollection')}
+              </Button>
+            ) : hasPendingUpdate && installedRecord ? (
+              <Button
+                size="sm"
+                fingerziel
+                variant="primary"
+                onClick={() => void installExistingMod(installedRecord, 'update')}
+                disabled={isRowInstalling}
+                className={isListMode ? '' : 'flex-1'}
+              >
+                <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                {t('mods.updateAvailable')}
               </Button>
             ) : (
               <Button
                 size="sm"
                 fingerziel
+                variant={isAdded ? 'secondary' : 'primary'}
                 onClick={() => void addSteamMod(mod)}
                 disabled={adding || isAdded}
-                className="flex-1"
+                className={isListMode ? '' : 'flex-1'}
               >
                 {checkingDepModId === mod.publishedfileid
                   ? t('common.loading')
@@ -1690,123 +2031,468 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     { key: 'updated', label: t('mods.tabUpdated') },
   ]
 
+  const libraryFilterPills: Array<{ key: LibraryFilter; label: string; count?: number; highlight?: boolean }> = [
+    { key: 'all', label: t('mods.filterAll') },
+    { key: 'installed', label: t('mods.filterInstalled'), count: mods.length },
+    {
+      key: 'updates',
+      label: t('mods.filterUpdates'),
+      count: updatesMods.length,
+      highlight: updatesMods.length > 0,
+    },
+    { key: 'not_installed', label: t('mods.filterNotInstalled') },
+  ]
+
+  const headerOverflowItems = [
+    {
+      key: 'add-id',
+      label: t('mods.addById'),
+      icon: <Plus className="w-4 h-4" />,
+      onSelect: () => setShowAddModal(true),
+    },
+    {
+      key: 'check-updates',
+      label: t('mods.checkUpdates'),
+      icon: <RefreshCw className="w-4 h-4" />,
+      onSelect: () => void checkModUpdates(),
+    },
+    ...(mods.length > 0
+      ? [
+          {
+            key: 'select-all',
+            label: allFilteredSelected ? t('mods.deselectAll') : t('mods.selectAll'),
+            icon: <Check className="w-4 h-4" />,
+            disabled: loading || filteredMods.length === 0,
+            onSelect: () => toggleSelectAllFiltered(),
+          },
+          {
+            key: 'reinstall-all',
+            label: t('mods.reinstallAll'),
+            icon: <RotateCcw className="w-4 h-4" />,
+            disabled: loading || reinstallingAll || anyModInstallActive,
+            separatorBefore: true,
+            onSelect: () => void reinstallAllMods(),
+          },
+          {
+            key: 'delete-all',
+            label: t('mods.deleteAll'),
+            icon: <Trash2 className="w-4 h-4" />,
+            disabled: loading || bulkActionLoading !== null || anyModInstallActive,
+            destructive: true,
+            onSelect: () => void deleteAllMods(),
+          },
+        ]
+      : []),
+    ...(anyModInstallActive
+      ? [
+          {
+            key: 'abort-installs',
+            label: t('mods.abortInstalls'),
+            icon: <X className="w-4 h-4" />,
+            destructive: true,
+            separatorBefore: true,
+            onSelect: () => void abortModInstalls(),
+          },
+        ]
+      : []),
+  ]
+
   return (
-    <div className="space-y-8">
-      {/* Tab-Body Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-outline-variant/20">
-        <p className="font-body-md text-body-md text-on-surface-variant">{t('mods.subtitle')}</p>
-        <Button
-          variant="secondary"
-          size="md"
-          fingerziel
-          onClick={() => setShowAddModal(true)}
-          className="w-full sm:w-auto shrink-0"
+    <div className="space-y-5 pb-4">
+      {/* Mobile-Ansichtsschalter zwischen Bibliothek und aktiven Mods */}
+      <div className="flex lg:hidden gap-1.5 bg-surface-container rounded-xl p-1 border border-outline-variant/25">
+        <button
+          type="button"
+          onClick={() => setMobileSection('library')}
+          className={`flex-1 min-h-11 px-3 py-2 rounded-lg text-sm font-body-md transition-colors ${
+            mobileSection === 'library'
+              ? 'bg-surface text-primary shadow-sm font-semibold'
+              : 'text-on-surface-variant hover:text-on-surface'
+          }`}
         >
-          <Plus className="w-4 h-4 shrink-0" />
-          {t('mods.addById')}
-        </Button>
+          {t('mods.mobileLibraryTab')}
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileSection('active')}
+          className={`flex-1 min-h-11 px-3 py-2 rounded-lg text-sm font-body-md transition-colors inline-flex items-center justify-center gap-2 ${
+            mobileSection === 'active'
+              ? 'bg-surface text-primary shadow-sm font-semibold'
+              : 'text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <span>{t('mods.mobileActiveTab', { count: mods.length })}</span>
+          {anyModInstallActive && (
+            <span className="inline-block h-2 w-2 rounded-full bg-primary animate-pulse" aria-hidden />
+          )}
+        </button>
       </div>
 
-      {/* Installed Mods Section */}
-      <section className="space-y-4">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Zweispaltiger Mod-Manager-Arbeitsbereich: Links Mod-Bibliothek, Rechts Aktive Mods */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24.5rem] gap-6 items-start">
+        {/* Linke Hauptspalte: Mod-Bibliothek */}
+        <section
+          className={`space-y-4 min-w-0 ${mobileSection === 'library' ? 'block' : 'hidden lg:block'}`}
+          aria-label={t('mods.libraryTitle')}
+        >
+          {/* Bibliotheks-Kopf mit Provider-Inhaltstypen */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h2 className="font-headline text-body-lg text-on-surface inline-flex items-center gap-2">
-              <Package className="w-4 h-4 text-secondary shrink-0" />
-              <span>{t('mods.installedTitle')}</span>
-              <span className="text-on-surface-variant text-sm font-mono tabular-nums">({mods.length})</span>
+              <Globe className="w-4 h-4 text-secondary shrink-0" />
+              <span>{t('mods.libraryTitle')}</span>
             </h2>
-            <div className="flex flex-wrap items-center gap-2.5">
-              {anyModInstallActive && (
-                <Kurzinfo text={t('mods.abortInstallsHint')} seite="ende">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    fingerziel
-                    onClick={() => void abortModInstalls()}
-                    disabled={loading}
-                    aria-description={t('mods.abortInstallsHint')}
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {!isCurseForge && (
+                <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25">
+                  <button
+                    type="button"
+                    onClick={() => handleSteamContentTypeChange('mods')}
+                    className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
+                      steamContentType === 'mods'
+                        ? 'bg-surface text-primary shadow-sm font-semibold'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
                   >
-                    <X className="w-3.5 h-3.5 shrink-0" />
-                    {t('mods.abortInstalls')}
-                  </Button>
-                </Kurzinfo>
+                    {t('mods.typeMods')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSteamContentTypeChange('collections')}
+                    className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors inline-flex items-center gap-1.5 ${
+                      steamContentType === 'collections'
+                        ? 'bg-surface text-primary shadow-sm font-semibold'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5 shrink-0" />
+                    {t('mods.tabCollections')}
+                  </button>
+                </div>
               )}
-              {mods.length > 0 && (
+
+              {isCurseForge && (curseforgeClasses.length > 0 || supportsModpacks) && (
+                <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleContentTypeChange('all')}
+                    className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
+                      contentType === 'all'
+                        ? 'bg-surface text-primary shadow-sm font-semibold'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {t('mods.tabAll')}
+                  </button>
+                  {curseforgeClasses.length > 0 ? (
+                    curseforgeClasses.map((cls) => {
+                      const clsKey = cls.kind === 'modpacks' ? 'modpacks' : String(cls.id)
+                      return (
+                        <button
+                          type="button"
+                          key={cls.id}
+                          onClick={() => handleContentTypeChange(clsKey)}
+                          className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
+                            contentType === clsKey
+                              ? 'bg-surface text-primary shadow-sm font-semibold'
+                              : 'text-on-surface-variant hover:text-on-surface'
+                          }`}
+                        >
+                          {cls.name}
+                        </button>
+                      )
+                    })
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleContentTypeChange('mods')}
+                        className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
+                          contentType === 'mods'
+                            ? 'bg-surface text-primary shadow-sm font-semibold'
+                            : 'text-on-surface-variant hover:text-on-surface'
+                        }`}
+                      >
+                        {t('mods.typeMods')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleContentTypeChange('modpacks')}
+                        className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
+                          contentType === 'modpacks'
+                            ? 'bg-surface text-primary shadow-sm font-semibold'
+                            : 'text-on-surface-variant hover:text-on-surface'
+                        }`}
+                      >
+                        {t('mods.typeModpacks')}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {isCurseForge && (
                 <>
+                  <input
+                    ref={manifestInputRef}
+                    type="file"
+                    accept=".zip,.json"
+                    className="hidden"
+                    onChange={(e) => void handleManifestFileSelected(e.target.files?.[0])}
+                  />
                   <Button
-                    variant="secondary"
                     size="sm"
                     fingerziel
-                    onClick={toggleSelectAllFiltered}
-                    disabled={loading || filteredMods.length === 0}
+                    variant="secondary"
+                    onClick={() => manifestInputRef.current?.click()}
+                    disabled={importingManifest}
                   >
-                    {allFilteredSelected ? t('mods.deselectAll') : t('mods.selectAll')}
+                    <Upload className="w-3.5 h-3.5 shrink-0" />
+                    {importingManifest ? t('common.loading') : t('mods.importManifest')}
                   </Button>
-                  <Kurzinfo text={t('mods.deleteAllHint')} seite="ende">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      fingerziel
-                      onClick={() => void deleteAllMods()}
-                      disabled={loading || bulkActionLoading !== null || anyModInstallActive}
-                      aria-description={t('mods.deleteAllHint')}
-                    >
-                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                      {t('mods.deleteAll')}
-                    </Button>
-                  </Kurzinfo>
                 </>
               )}
             </div>
           </div>
 
-          <div className="flex flex-col md:flex-row md:items-center gap-3">
+          {/* Bibliotheks-Suchleiste */}
+          <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center">
             <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant pointer-events-none" />
               <input
                 type="search"
-                placeholder={t('mods.searchPlaceholder')}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="msm-input h-10 max-md:h-11 pl-10 text-sm"
+                placeholder={
+                  isCurseForge
+                    ? supportsModpacks
+                      ? t('mods.searchPlaceholderCurseForge', { defaultValue: 'CurseForge Mods & Modpacks suchen …' })
+                      : t('mods.searchPlaceholderCurseForgeModsOnly', { defaultValue: 'CurseForge Mods suchen …' })
+                    : steamContentType === 'collections'
+                      ? t('mods.searchPlaceholderCollections')
+                      : t('mods.librarySearchPlaceholder')
+                }
+                value={steamQuery}
+                onChange={(e) => setSteamQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && runSearch()}
+                className="msm-input h-10 max-md:h-11 pl-10"
               />
             </div>
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
-              <Kurzinfo text={t('mods.reinstallAllHint')} aussen="flex-1 sm:flex-initial">
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                size="md"
+                fingerziel
+                onClick={runSearch}
+                disabled={steamLoading || !steamQuery.trim()}
+                className="flex-1 sm:flex-initial"
+              >
+                {steamLoading && steamPage === 1 ? t('common.loading') : t('common.search')}
+              </Button>
+              {(isSearchMode || (isInstalledView && steamQuery.trim())) && (
                 <Button
                   variant="secondary"
                   size="md"
                   fingerziel
-                  onClick={() => void reinstallAllMods()}
-                  disabled={loading || reinstallingAll || mods.length === 0 || anyModInstallActive}
-                  className="w-full sm:w-auto"
-                  aria-description={t('mods.reinstallAllHint')}
+                  onClick={clearSearch}
+                  className="flex-1 sm:flex-initial"
                 >
-                  <RotateCcw className={`w-4 h-4 shrink-0 ${reinstallingAll ? 'animate-spin' : ''}`} />
-                  {t('mods.reinstallAll')}
+                  {t('mods.clearSearch')}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Status-Filter-Pills + Dynamischer Spiel-Tag/Kategorie-Filter + Sortierung + Ansicht */}
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+            <div className="msm-suche-quellen-scrolle pb-0.5" role="group" aria-label={t('mods.libraryTitle')}>
+              {libraryFilterPills.map((pill) => {
+                const active = libraryFilter === pill.key
+                return (
+                  <button
+                    key={pill.key}
+                    type="button"
+                    onClick={() => handleLibraryFilterChange(pill.key)}
+                    aria-pressed={active}
+                    className={`min-h-10 sm:min-h-8 px-3.5 py-1.5 rounded-full text-xs font-body-md whitespace-nowrap border transition-colors inline-flex items-center gap-1.5 shrink-0 ${
+                      active
+                        ? 'border-primary/60 bg-primary/15 text-primary font-semibold'
+                        : pill.highlight
+                          ? 'border-status-warning/40 bg-status-warning/10 text-status-warning hover:border-status-warning/60'
+                          : 'border-outline-variant/30 bg-surface-container text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60'
+                    }`}
+                  >
+                    <span>{pill.label}</span>
+                    {typeof pill.count === 'number' && (
+                      <span className="font-mono tabular-nums opacity-85">({pill.count})</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
+              {gameFilterOptions.length > 0 && (isCurseForge || steamContentType === 'mods') && (
+                <Dropdown
+                  value={selectedGameFilter}
+                  onChange={handleGameFilterChange}
+                  options={[
+                    { value: '', label: t('mods.gameFilterAll') },
+                    ...gameFilterOptions.map((opt) => ({ value: opt.id, label: opt.name })),
+                  ]}
+                  placeholder={t('mods.gameFilterPlaceholder')}
+                  searchable={gameFilterOptions.length > 6}
+                  searchPlaceholder={t('mods.gameFilterSearch')}
+                  aria-label={t('mods.gameFilterPlaceholder')}
+                  className="w-full sm:w-44"
+                />
+              )}
+
+              {!isInstalledView && (
+                <Dropdown
+                  value={browserTab}
+                  onChange={(val) => switchTab(val as BrowserTab)}
+                  options={BROWSER_TABS.map((tab) => ({ value: tab.key, label: tab.label }))}
+                  placeholder={t('mods.sortLabel')}
+                  aria-label={t('mods.sortLabel')}
+                  className="flex-1 sm:flex-initial sm:w-40"
+                />
+              )}
+
+              <div className="inline-flex items-center rounded-lg border border-outline-variant/25 bg-surface-container p-0.5 shrink-0">
+                <Kurzinfo text={t('mods.viewGrid')}>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('grid')}
+                    aria-label={t('mods.viewGrid')}
+                    aria-pressed={viewMode === 'grid'}
+                    className={`inline-flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded-md transition-colors ${
+                      viewMode === 'grid'
+                        ? 'bg-surface text-primary shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                </Kurzinfo>
+                <Kurzinfo text={t('mods.viewList')} seite="ende">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('list')}
+                    aria-label={t('mods.viewList')}
+                    aria-pressed={viewMode === 'list'}
+                    className={`inline-flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded-md transition-colors ${
+                      viewMode === 'list'
+                        ? 'bg-surface text-primary shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </Kurzinfo>
+              </div>
+            </div>
+          </div>
+
+          {/* Katalog-Ergebnisse */}
+          {displayedMods.length > 0 ? (
+            <>
+              <div
+                className={
+                  viewMode === 'grid'
+                    ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4'
+                    : 'space-y-3'
+                }
+              >
+                {displayedMods.map((mod) => renderSteamModCard(mod))}
+              </div>
+              <Pagination
+                page={activeCatalogPage}
+                pageCount={libraryPageCount}
+                label={t('mods.paginationRange', { page: activeCatalogPage })}
+                disabled={browserLoading || steamLoading}
+                onChange={handleLibraryPageChange}
+              />
+            </>
+          ) : browserLoading || steamLoading ? (
+            <div className="text-center py-12 text-on-surface-variant font-body-md">
+              {t('common.loading')}
+            </div>
+          ) : (
+            <div className="msm-card p-10 text-center border-dashed border-2 border-outline-variant">
+              <Package className="w-10 h-10 text-on-surface-variant mx-auto mb-3" />
+              <p className="font-body-md text-sm text-on-surface-variant">
+                {libraryFilter === 'updates'
+                  ? t('mods.noUpdatesPending')
+                  : libraryFilter === 'installed'
+                    ? t('mods.noMods')
+                    : libraryFilter === 'not_installed' || selectedGameFilter
+                      ? t('mods.noFilteredMods')
+                      : !isCurseForge && steamContentType === 'collections'
+                        ? t('mods.noCollectionsFound')
+                        : isCurseForge && contentType === 'modpacks'
+                          ? t('mods.noModpacksFound')
+                          : t('mods.noSearchResults')}
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* Rechte Spalte: Aktive Mods (kompakte Arbeitsliste mit Thumbnail, Switch, DnD & Overflow-Menü) */}
+        <aside
+          className={`msm-card p-4 space-y-3 lg:sticky lg:top-4 ${
+            mobileSection === 'active' ? 'block' : 'hidden lg:block'
+          }`}
+          aria-label={t('mods.activeModsTitle')}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-headline text-body-lg text-on-surface inline-flex items-center gap-2 min-w-0">
+              <Package className="w-4 h-4 text-secondary shrink-0" />
+              <span className="truncate">{t('mods.activeModsTitle')}</span>
+              <span className="text-on-surface-variant text-sm font-mono tabular-nums">({mods.length})</span>
+            </h2>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Kurzinfo text={t('mods.addById')}>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  fingerziel
+                  onClick={() => setShowAddModal(true)}
+                  aria-label={t('mods.addById')}
+                >
+                  <Plus className="w-4 h-4" />
                 </Button>
               </Kurzinfo>
-              <Button
+              <ActionMenu
+                label={t('mods.moreActions')}
+                ariaLabel={t('mods.moreActions')}
+                icon={<MoreHorizontal className="w-4 h-4" />}
+                iconOnly
                 variant="secondary"
-                size="md"
-                fingerziel
-                onClick={() => void checkModUpdates()}
-                className="flex-1 sm:flex-initial"
-              >
-                <RefreshCw className="w-4 h-4 shrink-0" />
-                {t('mods.checkUpdates')}
-              </Button>
+                align="end"
+                surface="dna"
+                items={headerOverflowItems}
+              />
             </div>
+          </div>
+
+          {/* Eigene Suche nur für aktive/installierte Mods */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant pointer-events-none" />
+            <input
+              type="search"
+              placeholder={t('mods.activeSearchPlaceholder')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="msm-input h-10 max-md:h-11 pl-10 text-sm"
+            />
           </div>
 
           {selectedModIds.size > 0 && (
             <div
-              className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 flex flex-wrap items-center justify-between gap-3"
+              className="rounded-xl border border-primary/30 bg-primary/10 p-3 space-y-2.5"
               role="region"
               aria-label={t('mods.selectedCount', { count: selectedModIds.size })}
             >
-              <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="flex items-center justify-between gap-2">
                 <Badge variant="info">
                   {t('mods.selectedCount', { count: selectedModIds.size })}
                 </Badge>
@@ -1820,7 +2506,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                   {t('mods.deselectAll')}
                 </Button>
               </div>
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <Button
                   variant="primary"
                   size="sm"
@@ -1830,6 +2516,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                     bulkActionLoading !== null ||
                     mods.filter((m) => selectedModIds.has(m.id)).some(hasActiveModInstall)
                   }
+                  className="flex-1"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${bulkActionLoading === 'update' ? 'animate-spin' : ''}`} />
                   {t('mods.updateSelected')}
@@ -1843,6 +2530,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                     bulkActionLoading !== null ||
                     mods.filter((m) => selectedModIds.has(m.id)).some(hasActiveModInstall)
                   }
+                  className="flex-1"
                 >
                   <RotateCcw className={`w-3.5 h-3.5 shrink-0 ${bulkActionLoading === 'reinstall' ? 'animate-spin' : ''}`} />
                   {t('mods.reinstallSelected')}
@@ -1863,26 +2551,28 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               </div>
             </div>
           )}
-        </div>
 
-        <div ref={modsListRef} className="msm-mod-list space-y-2">
-          {loading ? (
-            <div className="text-center py-12 text-on-surface-variant font-body-md">
-              {t('common.loading')}
-            </div>
-          ) : filteredMods.length === 0 ? (
-            <div className="msm-card p-10 text-center border-dashed border-2 border-outline-variant">
-              <Package className="w-10 h-10 text-on-surface-variant mx-auto mb-3" />
-              <h3 className="font-headline text-body-lg text-on-surface mb-2">
-                {searchTerm ? t('mods.noSearchResults') : t('mods.noMods')}
-              </h3>
-              <p className="font-body-md text-sm text-on-surface-variant">
-                {searchTerm ? t('mods.searchHint') : t('mods.noModsHint')}
-              </p>
-            </div>
-          ) : (
-            visibleInstalled.map((mod, visIndex) => {
-              const installStatus = getModInstallPresentation(mod, t)
+          <div
+            ref={modsListRef}
+            className="msm-mod-list space-y-2 lg:max-h-[calc(100dvh-18rem)] lg:overflow-y-auto lg:pr-1"
+          >
+            {loading ? (
+              <div className="text-center py-8 text-on-surface-variant font-body-md text-sm">
+                {t('common.loading')}
+              </div>
+            ) : filteredMods.length === 0 ? (
+              <div className="rounded-xl p-6 text-center border-dashed border-2 border-outline-variant">
+                <Package className="w-8 h-8 text-on-surface-variant mx-auto mb-2" />
+                <h3 className="font-headline text-body-md text-on-surface mb-1">
+                  {searchTerm ? t('mods.noSearchResults') : t('mods.noMods')}
+                </h3>
+                <p className="font-body-md text-xs text-on-surface-variant">
+                  {searchTerm ? t('mods.searchHint') : t('mods.noModsHint')}
+                </p>
+              </div>
+            ) : (
+              visibleInstalled.map((mod, visIndex) => {
+                const installStatus = getModInstallPresentation(mod, t)
                 const isInstalling = hasActiveModInstall(mod)
                 const isSelected = selectedModIds.has(mod.id)
                 const fullIndex = mods.findIndex((m) => m.id === mod.id)
@@ -1910,23 +2600,92 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                 const hasPendingUpdate =
                   (mod.install_status === 'pending' && mod.install_action === 'update') ||
                   mod.update_status === 'outdated'
+                const meta = modMetadata[mod.workshop_id]
+                const showCompactStatus =
+                  isInstalling ||
+                  hasPendingUpdate ||
+                  mod.install_status === 'failed' ||
+                  mod.install_status === 'error' ||
+                  mod.update_status === 'missing'
+                const displayName = mod.name || meta?.title || `${providerLabel} Mod ${mod.workshop_id}`
+
+                const rowMenuItems = [
+                  ...(hasPendingUpdate
+                    ? [
+                        {
+                          key: 'update',
+                          label: t('mods.updateAvailable'),
+                          icon: <RefreshCw className="w-4 h-4" />,
+                          disabled: isInstalling,
+                          onSelect: () => void installExistingMod(mod, 'update'),
+                        },
+                      ]
+                    : []),
+                  ...(mods.length > 1
+                    ? [
+                        {
+                          key: 'up',
+                          label: t('mods.moveUp'),
+                          icon: <ArrowUp className="w-4 h-4" />,
+                          disabled: fullIndex <= 0,
+                          onSelect: () => void moveModStep(mod.id, -1),
+                        },
+                        {
+                          key: 'down',
+                          label: t('mods.moveDown'),
+                          icon: <ArrowDown className="w-4 h-4" />,
+                          disabled: fullIndex === -1 || fullIndex >= mods.length - 1,
+                          onSelect: () => void moveModStep(mod.id, 1),
+                        },
+                      ]
+                    : []),
+                  {
+                    key: 'reinstall',
+                    label: t('mods.reinstall'),
+                    icon: <RotateCcw className="w-4 h-4" />,
+                    disabled: isInstalling,
+                    separatorBefore: mods.length > 1 || hasPendingUpdate,
+                    onSelect: () => void installExistingMod(mod, 'reinstall'),
+                  },
+                  {
+                    key: 'open',
+                    label: ansehenText,
+                    icon: <ExternalLink className="w-4 h-4" />,
+                    onSelect: () => void openExternalUrl(resolveModPageUrl(mod.workshop_id, displayName)),
+                  },
+                  {
+                    key: 'remove',
+                    label: t('common.remove'),
+                    icon: <Trash2 className="w-4 h-4" />,
+                    destructive: true,
+                    separatorBefore: true,
+                    onSelect: () => void removeMod(mod.id),
+                  },
+                ]
 
                 return (
-                <div
-                  key={mod.id}
-                  data-mod-row-id={mod.id}
-                  style={siblingShiftY !== 0 ? { transform: `translate3d(0, ${siblingShiftY}px, 0)` } : undefined}
-                  className={`msm-card msm-mod-row p-4 ${mod.enabled ? '' : 'opacity-60'} ${
-                    isSelected ? 'border-primary/45 bg-primary/[0.04]' : ''
-                  } ${isDraggingThis ? 'msm-mod-row-dragging !opacity-100' : ''} ${
-                    isSettlingThis ? 'msm-mod-row-settle' : ''
-                  } ${isDropTarget && dragSlotPitch === 0 ? 'ring-2 ring-primary/60' : ''}`}
-                  onDragOver={onDragOver}
-                  onDrop={(e) => void onDrop(e, mod.id)}
-                >
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <label className="inline-flex h-10 w-10 md:h-8 md:w-8 items-center justify-center rounded-md hover:bg-surface-container-high/60 cursor-pointer">
+                  <div
+                    key={mod.id}
+                    data-mod-row-id={mod.id}
+                    style={siblingShiftY !== 0 ? { transform: `translate3d(0, ${siblingShiftY}px, 0)` } : undefined}
+                    className={`group rounded-xl border border-outline-variant/25 bg-surface-container/60 p-2.5 msm-mod-row ${
+                      mod.enabled ? '' : 'opacity-65'
+                    } ${isSelected ? 'border-primary/45 bg-primary/[0.06]' : ''} ${
+                      isDraggingThis ? 'msm-mod-row-dragging !opacity-100' : ''
+                    } ${isSettlingThis ? 'msm-mod-row-settle' : ''} ${
+                      isDropTarget && dragSlotPitch === 0 ? 'ring-2 ring-primary/60' : ''
+                    }`}
+                    onDragOver={onDragOver}
+                    onDrop={(e) => void onDrop(e, mod.id)}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <label
+                        className={`inline-flex h-8 w-6 items-center justify-center rounded cursor-pointer shrink-0 transition-opacity ${
+                          isSelected
+                            ? 'opacity-100'
+                            : 'opacity-45 group-hover:opacity-100 focus-within:opacity-100'
+                        }`}
+                      >
                         <Checkbox
                           checked={isSelected}
                           onClick={(e) => {
@@ -1937,13 +2696,13 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                             shiftSelectPendingRef.current = false
                             toggleSelectMod(mod.id, shiftKey)
                           }}
-                          aria-label={t('mods.selectMod', { name: mod.name || mod.workshop_id })}
+                          aria-label={t('mods.selectMod', { name: displayName })}
                         />
                       </label>
 
                       <Kurzinfo text={t('mods.dragHandleHint')}>
                         <div
-                          className={`touch-none select-none inline-flex h-10 w-8 md:h-8 md:w-7 items-center justify-center rounded-md transition-colors ${
+                          className={`touch-none select-none inline-flex h-9 w-6 items-center justify-center rounded-md shrink-0 transition-colors ${
                             isDraggingThis
                               ? 'cursor-grabbing bg-primary/20 text-primary'
                               : 'cursor-grab active:cursor-grabbing text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60'
@@ -1956,395 +2715,218 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                         </div>
                       </Kurzinfo>
 
-                      {mods.length > 1 && (
-                        <div className="inline-flex items-center rounded-lg border border-outline-variant/25 bg-surface-container/40 p-0.5">
-                          <Kurzinfo text={t('mods.moveUp')}>
-                            <button
-                              type="button"
-                              onClick={() => void moveModStep(mod.id, -1)}
-                              disabled={fullIndex <= 0}
-                              aria-label={t('mods.moveUp')}
-                              className="inline-flex h-9 w-9 md:h-7 md:w-7 items-center justify-center rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-35 disabled:pointer-events-none"
-                            >
-                              <ArrowUp className="w-3.5 h-3.5" />
-                            </button>
-                          </Kurzinfo>
-                          <Kurzinfo text={t('mods.moveDown')}>
-                            <button
-                              type="button"
-                              onClick={() => void moveModStep(mod.id, 1)}
-                              disabled={fullIndex === -1 || fullIndex >= mods.length - 1}
-                              aria-label={t('mods.moveDown')}
-                              className="inline-flex h-9 w-9 md:h-7 md:w-7 items-center justify-center rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-35 disabled:pointer-events-none"
-                            >
-                              <ArrowDown className="w-3.5 h-3.5" />
-                            </button>
-                          </Kurzinfo>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3
-                          className={`font-headline text-body-md ${mod.enabled ? 'text-on-surface' : 'text-on-surface-variant line-through'}`}
-                        >
-                          {mod.name || `${providerLabel} Mod ${mod.workshop_id}`}
-                        </h3>
-                        {isDraggingThis && dragVisIndex !== -1 && dropVisIndex !== -1 && dragVisIndex !== dropVisIndex && (
-                          <Badge variant="info" className="font-mono tabular-nums">
-                            #{dragVisIndex + 1} → #{dropVisIndex + 1}
-                          </Badge>
-                        )}
-                      </div>
-                    <div className="flex flex-wrap items-center gap-4 mt-1 text-sm text-on-surface-variant font-body-md">
-                      <span>ID: {mod.workshop_id}</span>
-                      {mod.last_updated && (
-                        <span>{new Date(mod.last_updated).toLocaleDateString()}</span>
-                      )}
-                      {mod.load_order !== null && (
-                        <span>
-                          {t('mods.loadOrder')}: {mod.load_order}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-2 space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={statusBadgeClass[installStatus.kind]}>
-                          {installStatus.label}
-                        </span>
-                        {installStatus.detail && (
-                          <span className="text-xs text-on-surface-variant font-body-md">
-                            {installStatus.detail}
-                          </span>
-                        )}
-                      </div>
-                      {installStatus.showProgress && (
-                        <div className="h-1.5 w-full max-w-md overflow-hidden rounded-full bg-surface-container-high border border-outline-variant">
-                          <div
-                            className="h-full rounded-full bg-primary transition-[width] duration-500"
-                            style={{ width: `${installStatus.progress ?? 0}%` }}
+                      <div className="msm-mod-thumb w-10 h-10 rounded-lg border border-outline-variant/25 flex items-center justify-center">
+                        {meta?.preview_url ? (
+                          <img
+                            src={meta.preview_url}
+                            alt={displayName}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
                           />
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                        ) : (
+                          <Package className="w-4 h-4 text-on-surface-variant" />
+                        )}
+                      </div>
 
-                  <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5 flex-shrink-0 w-full sm:w-auto pt-3 mt-1 border-t border-outline-variant/20 sm:border-t-0 sm:pt-0 sm:mt-0">
-                    <div className="flex items-center gap-2">
-                      {hasPendingUpdate && (
-                        <Button
-                          size="sm"
-                          fingerziel
-                          onClick={() => void installExistingMod(mod, 'update')}
-                          disabled={isInstalling}
+                      <div className="flex-1 min-w-0">
+                        <h3
+                          className={`font-headline text-sm leading-snug truncate ${
+                            mod.enabled ? 'text-on-surface' : 'text-on-surface-variant line-through'
+                          }`}
                         >
-                          <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-                          {t('mods.updateAvailable')}
-                        </Button>
-                      )}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        fingerziel
-                        onClick={() => void installExistingMod(mod, 'reinstall')}
-                        disabled={isInstalling}
-                      >
-                        <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                        {t('mods.reinstall')}
-                      </Button>
-                    </div>
-
-                    <div className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/25 bg-surface-container/40 p-0.5">
-                      <Kurzinfo text={mod.enabled ? t('mods.disable') : t('mods.enable')}>
-                        <button
-                          type="button"
-                          onClick={() => toggleEnabled(mod.id, mod.enabled)}
-                          aria-label={mod.enabled ? t('mods.disable') : t('mods.enable')}
-                          className="inline-flex h-10 w-10 md:h-7 md:w-7 items-center justify-center rounded-md hover:bg-surface-container-high transition-colors"
-                        >
-                          {mod.enabled ? (
-                            <ToggleRight className="w-4 h-4 text-primary" />
+                          {displayName}
+                        </h3>
+                        <div className="flex items-center gap-2 mt-0.5 text-xs text-on-surface-variant font-mono-sm min-w-0">
+                          {meta && (meta.file_size_mb ?? 0) > 0 ? (
+                            <span className="tabular-nums">{meta.file_size_mb} MB</span>
                           ) : (
-                            <ToggleLeft className="w-4 h-4 text-on-surface-variant" />
+                            <span className="tabular-nums">#{fullIndex + 1}</span>
                           )}
-                        </button>
-                      </Kurzinfo>
+                          {isDraggingThis && dragVisIndex !== -1 && dropVisIndex !== -1 && dragVisIndex !== dropVisIndex && (
+                            <Badge variant="info" className="font-mono tabular-nums">
+                              #{dragVisIndex + 1} → #{dropVisIndex + 1}
+                            </Badge>
+                          )}
+                          {showCompactStatus && (
+                            <span className={`${statusBadgeClass[installStatus.kind]} truncate`}>
+                              {installStatus.label}
+                            </span>
+                          )}
+                        </div>
+                        {installStatus.showProgress && (
+                          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-container-high">
+                            <div
+                              className="h-full rounded-full bg-primary transition-[width] duration-500"
+                              style={{ width: `${installStatus.progress ?? 0}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
 
-                      <Kurzinfo text={ansehenText}>
-                        <a
-                          href={resolveModPageUrl(mod.workshop_id, mod.name)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            void openExternalUrl(resolveModPageUrl(mod.workshop_id, mod.name))
-                          }}
-                          className="inline-flex h-10 w-10 md:h-7 md:w-7 items-center justify-center rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
-                          aria-label={ansehenText}
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
-                      </Kurzinfo>
-
-                      <Kurzinfo text={t('common.remove')} seite="ende">
-                        <button
-                          type="button"
-                          onClick={() => removeMod(mod.id)}
-                          className="inline-flex h-10 w-10 md:h-7 md:w-7 items-center justify-center rounded-md text-status-destructive hover:bg-status-destructive/15 transition-colors"
-                          aria-label={t('common.remove')}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </Kurzinfo>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Switch
+                          checked={mod.enabled}
+                          onCheckedChange={() => void toggleEnabled(mod.id, mod.enabled)}
+                          aria-label={mod.enabled ? t('mods.disable') : t('mods.enable')}
+                        />
+                        <ActionMenu
+                          label={t('mods.modActions', { name: displayName })}
+                          ariaLabel={t('mods.modActions', { name: displayName })}
+                          icon={<MoreHorizontal className="w-4 h-4" />}
+                          iconOnly
+                          compact
+                          variant="ghost"
+                          align="end"
+                          surface="dna"
+                          items={rowMenuItems}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-              )
-            })
-          )}
-          {hasMoreInstalled && (
-            <Button
-              variant="secondary"
-              fingerziel
-              onClick={() => setInstalledShown((n) => n + INSTALLED_PAGE_SIZE)}
-              className="w-full"
-            >
-              <ChevronDown className="w-4 h-4 shrink-0" />
-              {t('mods.loadMore')} ({filteredMods.length - visibleInstalled.length})
-            </Button>
-          )}
-        </div>
-      </section>
-
-      {/* Workshop / CurseForge Browser (Inline Section, breit) */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="font-headline text-body-lg text-on-surface inline-flex items-center gap-2">
-            <Globe className="w-4 h-4 text-secondary" />
-            {isCurseForge ? t('mods.curseforgeSearch', { defaultValue: 'CurseForge Browser' }) : t('mods.steamSearch')}
-          </h2>
-
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {!isCurseForge && (
-              <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25">
-                <button
-                  type="button"
-                  onClick={() => handleSteamContentTypeChange('mods')}
-                  className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
-                    steamContentType === 'mods'
-                      ? 'bg-surface text-primary shadow-sm font-semibold'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-                >
-                  {t('mods.typeMods')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSteamContentTypeChange('collections')}
-                  className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors inline-flex items-center gap-1.5 ${
-                    steamContentType === 'collections'
-                      ? 'bg-surface text-primary shadow-sm font-semibold'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5 shrink-0" />
-                  {t('mods.tabCollections')}
-                </button>
-              </div>
+                )
+              })
             )}
-
-            {isCurseForge && (curseforgeClasses.length > 0 || supportsModpacks) && (
-              <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleContentTypeChange('all')}
-                  className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
-                    contentType === 'all'
-                      ? 'bg-surface text-primary shadow-sm font-semibold'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-                >
-                  {t('mods.tabAll')}
-                </button>
-                {curseforgeClasses.length > 0 ? (
-                  curseforgeClasses.map((cls) => {
-                    const clsKey = cls.kind === 'modpacks' ? 'modpacks' : String(cls.id)
-                    return (
-                      <button
-                        type="button"
-                        key={cls.id}
-                        onClick={() => handleContentTypeChange(clsKey)}
-                        className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
-                          contentType === clsKey
-                            ? 'bg-surface text-primary shadow-sm font-semibold'
-                            : 'text-on-surface-variant hover:text-on-surface'
-                        }`}
-                      >
-                        {cls.name}
-                      </button>
-                    )
-                  })
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleContentTypeChange('mods')}
-                      className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
-                        contentType === 'mods'
-                          ? 'bg-surface text-primary shadow-sm font-semibold'
-                          : 'text-on-surface-variant hover:text-on-surface'
-                      }`}
-                    >
-                      {t('mods.typeMods')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleContentTypeChange('modpacks')}
-                      className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
-                        contentType === 'modpacks'
-                          ? 'bg-surface text-primary shadow-sm font-semibold'
-                          : 'text-on-surface-variant hover:text-on-surface'
-                      }`}
-                    >
-                      {t('mods.typeModpacks')}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
-            {isCurseForge && (
-              <>
-                <input
-                  ref={manifestInputRef}
-                  type="file"
-                  accept=".zip,.json"
-                  className="hidden"
-                  onChange={(e) => void handleManifestFileSelected(e.target.files?.[0])}
-                />
-                <Button
-                  size="sm"
-                  fingerziel
-                  variant="secondary"
-                  onClick={() => manifestInputRef.current?.click()}
-                  disabled={importingManifest}
-                >
-                  <Upload className="w-3.5 h-3.5 shrink-0" />
-                  {importingManifest ? t('common.loading') : t('mods.importManifest')}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 sm:items-center">
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant pointer-events-none" />
-            <input
-              type="search"
-              placeholder={
-                isCurseForge
-                  ? supportsModpacks
-                    ? t('mods.searchPlaceholderCurseForge', { defaultValue: 'CurseForge Mods & Modpacks suchen …' })
-                    : t('mods.searchPlaceholderCurseForgeModsOnly', { defaultValue: 'CurseForge Mods suchen …' })
-                  : steamContentType === 'collections'
-                    ? t('mods.searchPlaceholderCollections')
-                    : t('mods.searchPlaceholder')
-              }
-              value={steamQuery}
-              onChange={(e) => setSteamQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-              className="msm-input h-10 max-md:h-11 pl-10"
-            />
-          </div>
-          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-            <Button
-              size="md"
-              fingerziel
-              onClick={runSearch}
-              disabled={steamLoading || !steamQuery.trim()}
-              className="flex-1 sm:flex-initial"
-            >
-              {steamLoading && steamPage === 1 ? t('common.loading') : t('common.search')}
-            </Button>
-            {isSearchMode && (
+            {hasMoreInstalled && (
               <Button
                 variant="secondary"
-                size="md"
+                size="sm"
                 fingerziel
-                onClick={clearSearch}
-                className="flex-1 sm:flex-initial"
+                onClick={() => setInstalledShown((n) => n + INSTALLED_PAGE_SIZE)}
+                className="w-full"
               >
-                {t('mods.clearSearch')}
+                <ChevronDown className="w-4 h-4 shrink-0" />
+                {t('mods.loadMore')} ({filteredMods.length - visibleInstalled.length})
               </Button>
             )}
           </div>
-        </div>
+        </aside>
+      </div>
 
-        {/* Tabs nur ausserhalb des Suchmodus. Nicht sticky, damit der Scroll-
-            Anker (das Tab-Element) seine Position behaelt und der Browser beim
-            Wechsel zwischen Tabs nicht nach oben springt. */}
-        {!isSearchMode && (
-          <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25 overflow-x-auto">
-            {BROWSER_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => switchTab(tab.key)}
-                className={`flex-1 min-w-[110px] min-h-10 sm:min-h-8 px-3 py-1.5 rounded-md text-sm font-body-md transition-colors whitespace-nowrap ${
-                  browserTab === tab.key
-                    ? 'bg-surface text-primary shadow-sm font-semibold'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                }`}
+      {/* Untere Live-Installationsleiste (nur sichtbar während Installation/Update) */}
+      {primaryActiveMod && (() => {
+        const primaryStatus = getModInstallPresentation(primaryActiveMod, t)
+        const primaryMeta = modMetadata[primaryActiveMod.workshop_id]
+        const primaryName =
+          primaryActiveMod.name || primaryMeta?.title || `${providerLabel} Mod ${primaryActiveMod.workshop_id}`
+        return (
+          <div className="sticky bottom-3 z-20 space-y-2">
+            {installBarExpanded && activeInstallMods.length > 0 && (
+              <div
+                className="msm-mod-install-bar rounded-2xl p-3 space-y-2 max-h-60 overflow-y-auto"
+                role="region"
+                aria-label={t('mods.installBarTitle')}
               >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {displayedMods.length > 0 ? (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {displayedMods.map((mod) => renderSteamModCard(mod))}
-            </div>
-            {(showLoadMoreBrowser || showLoadMoreSearch) && (
-              <div className="flex justify-center pt-2">
-                <Button
-                  variant="secondary"
-                  fingerziel
-                  onClick={isSearchMode ? loadMoreSearch : loadMoreBrowser}
-                  disabled={browserLoading || steamLoading}
-                  className="w-full sm:w-auto"
-                >
-                  <ChevronDown className="w-4 h-4 shrink-0" />
-                  {isSearchMode
-                    ? steamLoading
-                      ? t('common.loading')
-                      : t('mods.loadMore')
-                    : browserLoading
-                      ? t('common.loading')
-                      : t('mods.loadMore')}
-                </Button>
+                {activeInstallMods.map((item) => {
+                  const st = getModInstallPresentation(item, t)
+                  const mMeta = modMetadata[item.workshop_id]
+                  const itemName = item.name || mMeta?.title || `${providerLabel} Mod ${item.workshop_id}`
+                  return (
+                    <div key={item.id} className="flex items-center gap-3 text-xs">
+                      <div className="msm-mod-thumb w-7 h-7 rounded-md flex items-center justify-center">
+                        {mMeta?.preview_url ? (
+                          <img src={mMeta.preview_url} alt={itemName} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package className="w-3.5 h-3.5 text-on-surface-variant" />
+                        )}
+                      </div>
+                      <span className="font-headline text-on-surface truncate flex-1 min-w-0">{itemName}</span>
+                      <span className="text-on-surface-variant shrink-0">{st.label}</span>
+                      <div className="w-24 shrink-0">
+                        <ProgressBar
+                          value={st.progress ?? 0}
+                          ariaLabel={itemName}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
-          </>
-        ) : browserLoading || steamLoading ? (
-          <div className="text-center py-12 text-on-surface-variant font-body-md">
-            {t('common.loading')}
+
+            <div
+              className="msm-mod-install-bar rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="msm-mod-thumb w-10 h-10 rounded-lg border border-outline-variant/30 flex items-center justify-center">
+                  {primaryMeta?.preview_url ? (
+                    <img
+                      src={primaryMeta.preview_url}
+                      alt={primaryName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Package className="w-4 h-4 text-primary" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-body-md text-primary font-semibold">
+                      {primaryStatus.label}
+                    </span>
+                    {activeInstallMods.length > 1 && (
+                      <span className="text-xs font-mono tabular-nums text-on-surface-variant">
+                        {t('mods.installBarQueueCount', {
+                          active: 1,
+                          total: activeInstallMods.length,
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-headline text-sm text-on-surface truncate">{primaryName}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 sm:w-64 md:w-80 shrink-0">
+                <ProgressBar
+                  value={primaryStatus.progress ?? 0}
+                  ariaLabel={primaryName}
+                  hint={
+                    typeof primaryStatus.progress === 'number'
+                      ? `${Math.round(primaryStatus.progress)}%`
+                      : undefined
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 shrink-0">
+                {activeInstallMods.length > 1 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    fingerziel
+                    onClick={() => setInstallBarExpanded((prev) => !prev)}
+                  >
+                    {installBarExpanded ? (
+                      <>
+                        <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+                        {t('mods.installBarHideAll')}
+                      </>
+                    ) : (
+                      <>
+                        <ChevronUp className="w-3.5 h-3.5 shrink-0" />
+                        {t('mods.installBarShowAll', { count: activeInstallMods.length })}
+                      </>
+                    )}
+                  </Button>
+                )}
+                <Kurzinfo text={t('mods.abortInstalls')} seite="ende">
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    fingerziel
+                    onClick={() => void abortModInstalls()}
+                    aria-label={t('mods.abortInstalls')}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </Kurzinfo>
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="text-center py-12 text-on-surface-variant font-body-md">
-            {!isCurseForge && steamContentType === 'collections'
-              ? t('mods.noCollectionsFound')
-              : isCurseForge && contentType === 'modpacks'
-                ? t('mods.noModpacksFound')
-                : t('mods.noSearchResults')}
-          </div>
-        )}
-      </section>
+        )
+      })()}
 
       {/* Steam Collection / CurseForge Manifest Preview Dialog */}
       <Dialog

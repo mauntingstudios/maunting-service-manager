@@ -411,4 +411,35 @@ def test_curseforge_search_with_semantic_modpacks_class(
     assert mock_service.search_mods.call_args[1]["class_id"] == 7777
 
 
+def test_curseforge_search_and_popular_forward_category_id_and_sort(
+    client: TestClient,
+    owner_user: User,
+    owner_cookies: dict,
+    test_server: Server,
+) -> None:
+    mock_service = AsyncMock()
+    mock_service.search_mods = AsyncMock(return_value=[])
+    mock_service.get_popular_mods = AsyncMock(return_value=[])
+
+    with (
+        patch("routers.curseforge.get_plugin", return_value=_mock_curseforge_plugin()),
+        patch("routers.curseforge.get_curseforge_service", new=AsyncMock(return_value=mock_service)),
+    ):
+        search_res = client.get(
+            f"/api/curseforge/search?server_id={test_server.id}&query=tech&category_id=412&sort=popular",
+            cookies=owner_cookies,
+        )
+        pop_res = client.get(
+            f"/api/curseforge/popular?server_id={test_server.id}&category_id=412&sort=updated",
+            cookies=owner_cookies,
+        )
+
+    assert search_res.status_code == 200
+    assert pop_res.status_code == 200
+    assert mock_service.search_mods.call_args.kwargs["category_id"] == 412
+    assert mock_service.search_mods.call_args.kwargs["sort"] == "popular"
+    assert mock_service.get_popular_mods.call_args.kwargs["category_id"] == 412
+    assert mock_service.get_popular_mods.call_args.kwargs["sort"] == "updated"
+
+
 

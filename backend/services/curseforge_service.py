@@ -541,6 +541,13 @@ class CurseForgeService:
 
         return None
 
+    _SORT_FIELD_MAP = {
+        "trending": SORT_FEATURED,
+        "popular": SORT_POPULAR,
+        "newest": SORT_TOTAL_DOWNLOADS,
+        "updated": SORT_UPDATED,
+    }
+
     async def search_mods(
         self,
         game_id: int | str,
@@ -550,6 +557,7 @@ class CurseForgeService:
         class_id: int | str | None = None,
         category_id: int | str | None = None,
         sort_field: int | None = None,
+        sort: str | None = None,
         sort_order: str = "desc",
         mod_loader_type: int | None = None,
         game_version: str | None = None,
@@ -563,6 +571,9 @@ class CurseForgeService:
         page = max(1, page)
         per_page = max(1, min(50, per_page))
         index = (page - 1) * per_page
+
+        if sort_field is None and sort is not None:
+            sort_field = self._SORT_FIELD_MAP.get(sort)
 
         if isinstance(game_id, str) and not game_id.strip().isdigit():
             resolved_gid = await self.resolve_game_id(game_id)
@@ -678,13 +689,7 @@ class CurseForgeService:
         only_distributable: bool = False,
     ) -> List[CurseForgeModInfo]:
         """Liefert Mods nach Sortierkriterium (trending, popular, newest, updated)."""
-        sort_map = {
-            "trending": self.SORT_FEATURED,
-            "popular": self.SORT_POPULAR,
-            "newest": self.SORT_TOTAL_DOWNLOADS,
-            "updated": self.SORT_UPDATED,
-        }
-        sort_field = sort_map.get(sort, self.SORT_FEATURED)
+        sort_field = self._SORT_FIELD_MAP.get(sort, self.SORT_FEATURED)
         return await self.search_mods(
             game_id=game_id,
             query="",
