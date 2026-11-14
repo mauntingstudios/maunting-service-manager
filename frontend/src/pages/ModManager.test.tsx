@@ -494,3 +494,238 @@ describe('ModManager Dependency Confirmation Dialog (Steam & CurseForge)', () =>
     expect(screen.queryByText('mods.dependenciesTitle')).not.toBeInTheDocument()
   })
 })
+
+describe('ModManager Reorder, Multi-Select & Bulk Operations', () => {
+  beforeEach(() => {
+    mockApi.mockReset()
+    mockOeffneBrowser.mockReset().mockResolvedValue(undefined)
+  })
+
+  const makeMod = (id: number, name: string, loadOrder: number) => ({
+    id,
+    server_id: 50,
+    workshop_id: String(1000 + id),
+    name,
+    last_updated: null,
+    installed_version: null,
+    load_order: loadOrder,
+    enabled: true,
+    dependencies_json: null,
+    install_status: 'installed',
+    install_action: null,
+    install_progress: 100,
+    install_eta_seconds: null,
+    install_started_at: null,
+    install_completed_at: null,
+    install_error: null,
+    update_status: 'up_to_date',
+    update_reason: null,
+    update_checked_at: null,
+  })
+
+  it('reorders mods via Up/Down buttons and pointer-event drag-and-drop (Tauri-compatible)', async () => {
+    let currentMods = [makeMod(1, 'Alpha Mod', 0), makeMod(2, 'Beta Mod', 1), makeMod(3, 'Gamma Mod', 2)]
+
+    mockApi.mockImplementation(async (path: string, options?: { method?: string; body?: string }) => {
+      if (path === '/mods/50') {
+        return currentMods
+      }
+      if (path === '/mods/50/reorder' && options?.method === 'POST') {
+        const order = JSON.parse(options.body || '[]') as number[]
+        currentMods = order.map((id, idx) => {
+          const found = currentMods.find((m) => m.id === id)!
+          return { ...found, load_order: idx }
+        })
+        return currentMods
+      }
+      if (path.startsWith('/steam/workshop/popular')) {
+        return []
+      }
+      return []
+    })
+
+    const { container } = render(
+      <ModManager
+        serverId={50}
+        gameInfo={{
+          id: 'conan_exiles',
+          name: 'Conan Exiles',
+          mod_support: true,
+        }}
+      />,
+    )
+
+    expect(await screen.findByText('Alpha Mod')).toBeInTheDocument()
+
+    // 1. Move Beta Mod up -> order becomes [2, 1, 3]
+    const moveUpButtons = screen.getAllByRole('button', { name: 'mods.moveUp' })
+    expect(moveUpButtons[0]).toBeDisabled()
+    fireEvent.click(moveUpButtons[1])
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/mods/50/reorder',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify([2, 1, 3]),
+        }),
+      )
+    })
+
+    // 2. Pointer drag from first row handle (mod 2) onto row 3 -> visual drag states + order [1, 3, 2]
+    const dragHandles = screen.getAllByLabelText('mods.dragHandleHint')
+    const listEl = container.querySelector('.msm-mod-list') as HTMLElement
+    const rowTwo = container.querySelector('[data-mod-row-id="2"]') as HTMLElement
+    const rowThree = container.querySelector('[data-mod-row-id="3"]') as HTMLElement
+    expect(rowThree).not.toBeNull()
+
+    fireEvent.pointerDown(dragHandles[0], { button: 0, pointerType: 'mouse', pointerId: 1, clientX: 50, clientY: 20 })
+    expect(listEl.getAttribute('data-dragging')).toBe('true')
+    expect(rowTwo.classList.contains('msm-mod-row-dragging')).toBe(true)
+
+    fireEvent.pointerMove(rowThree, { pointerId: 1, clientX: 50, clientY: 120 })
+    expect(screen.getByText('#1 → #3')).toBeInTheDocument()
+
+    fireEvent.pointerUp(rowThree, { pointerId: 1 })
+    expect(listEl.getAttribute('data-dragging')).toBeNull()
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/mods/50/reorder',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify([1, 3, 2]),
+        }),
+      )
+    })
+
+    // Settle highlight fades in on the newly dropped card
+    expect(container.querySelector('[data-mod-row-id="2"]')?.classList.contains('msm-mod-row-settle')).toBe(true)
+
+    // 3. Escape cancels an active drag without triggering /reorder
+    const reorderCountBeforeEsc = mockApi.mock.calls.filter(([p]) => p === '/mods/50/reorder').length
+    const handlesAfterDrop = screen.getAllByLabelText('mods.dragHandleHint')
+    fireEvent.pointerDown(handlesAfterDrop[0], { button: 0, pointerType: 'mouse', pointerId: 2, clientX: 40, clientY: 20 })
+    fireEvent.pointerMove(container.querySelector('[data-mod-row-id="2"]') as HTMLElement, { pointerId: 2, clientX: 40, clientY: 140 })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(listEl.getAttribute('data-dragging')).toBeNull()
+    expect(mockApi.mock.calls.filter(([p]) => p === '/mods/50/reorder').length).toBe(reorderCountBeforeEsc)
+  })
+
+  it('supports multi-select bulk update, bulk reinstall, bulk delete, and delete all', async () => {
+    let currentMods = [makeMod(1, 'Mod A', 0), makeMod(2, 'Mod B', 1), makeMod(3, 'Mod C', 2)]
+
+    mockApi.mockImplementation(async (path: string, options?: { method?: string; body?: string }) => {
+      if (path === '/mods/50') {
+        return currentMods
+      }
+      if (path === '/mods/50/bulk-action' && options?.method === 'POST') {
+        const body = JSON.parse(options.body || '{}') as { mod_ids: number[]; action: string }
+        currentMods = currentMods.map((m) =>
+          body.mod_ids.includes(m.id) ? { ...m, install_status: 'installed', install_action: body.action } : m,
+        )
+        return currentMods
+      }
+      if (path === '/mods/50/bulk-delete' && options?.method === 'POST') {
+        const body = JSON.parse(options.body || '{}') as { mod_ids: number[]; delete_all: boolean }
+        if (body.delete_all) {
+          const count = currentMods.length
+          currentMods = []
+          return { message: 'removed', deleted_count: count, mods: [] }
+        }
+        currentMods = currentMods.filter((m) => !body.mod_ids.includes(m.id))
+        return { message: 'removed', deleted_count: body.mod_ids.length, mods: currentMods }
+      }
+      if (path.startsWith('/steam/workshop/popular')) {
+        return []
+      }
+      return []
+    })
+
+    render(
+      <ModManager
+        serverId={50}
+        gameInfo={{
+          id: 'conan_exiles',
+          name: 'Conan Exiles',
+          mod_support: true,
+        }}
+      />,
+    )
+
+    expect(await screen.findByText('Mod A')).toBeInTheDocument()
+
+    // Select Mod A and Mod B via checkboxes
+    const checkboxes = screen.getAllByRole('checkbox')
+    expect(checkboxes).toHaveLength(3)
+    fireEvent.click(checkboxes[0])
+    fireEvent.click(checkboxes[1])
+
+    expect(await screen.findByText('mods.selectedCount:2')).toBeInTheDocument()
+
+    // Bulk Update selected
+    fireEvent.click(screen.getByRole('button', { name: 'mods.updateSelected' }))
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/mods/50/bulk-action',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ mod_ids: [1, 2], action: 'update' }),
+        }),
+      )
+    })
+
+    // Re-select Mod A & B and Reinstall selected
+    const checkboxesAfterUpdate = screen.getAllByRole('checkbox')
+    fireEvent.click(checkboxesAfterUpdate[0])
+    fireEvent.click(checkboxesAfterUpdate[1])
+    fireEvent.click(await screen.findByRole('button', { name: 'mods.reinstallSelected' }))
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/mods/50/bulk-action',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ mod_ids: [1, 2], action: 'reinstall' }),
+        }),
+      )
+    })
+
+    // Re-select Mod A & B and Delete selected
+    const checkboxesAfterReinstall = screen.getAllByRole('checkbox')
+    fireEvent.click(checkboxesAfterReinstall[0])
+    fireEvent.click(checkboxesAfterReinstall[1])
+    fireEvent.click(await screen.findByRole('button', { name: 'mods.deleteSelected' }))
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/mods/50/bulk-delete',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ mod_ids: [1, 2], delete_all: false }),
+        }),
+      )
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Mod A')).not.toBeInTheDocument()
+      expect(screen.queryByText('Mod B')).not.toBeInTheDocument()
+      expect(screen.getByText('Mod C')).toBeInTheDocument()
+    })
+
+    // Test Select All / Deselect All toggle, then Delete All
+    fireEvent.click(screen.getByRole('button', { name: 'mods.selectAll' }))
+    expect(await screen.findByText('mods.selectedCount:1')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'mods.deselectAll' }).length).toBeGreaterThanOrEqual(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'mods.deleteAll' }))
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/mods/50/bulk-delete',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ mod_ids: [], delete_all: true }),
+        }),
+      )
+    })
+    expect(await screen.findByText('mods.noMods')).toBeInTheDocument()
+  })
+})

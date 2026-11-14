@@ -1,6 +1,7 @@
 import logging
 import re
 import time
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -48,6 +49,16 @@ class BatchModsInstallRequest(BaseModel):
     auto_update: bool = True
     enabled: bool = True
     skip_existing: bool = True
+
+
+class BulkModActionRequest(BaseModel):
+    mod_ids: list[int] = Field(..., min_length=1, max_length=500)
+    action: Literal["reinstall", "update"]
+
+
+class BulkModDeleteRequest(BaseModel):
+    mod_ids: list[int] = Field(default_factory=list, max_length=500)
+    delete_all: bool = False
 
 
 def _safe_error(value: object) -> str:
@@ -344,6 +355,155 @@ def reinstall_all_mods_bg(server_id: int, workshop_ids: list[str]) -> None:
         logger.exception("reinstall-all fehlgeschlagen für Server %s", server_id)
         for wid in workshop_ids:
             mark_mod_failed(server_id, wid, "Neuinstallation abgebrochen")
+    finally:
+        release_install_update_lock(server_id)
+
+
+def bulk_mod_action_bg(
+    server_id: int,
+    workshop_ids: list[str],
+    action: Literal["reinstall", "update"],
+    remote_updated_map: dict[str, str | None] | None = None,
+) -> None:
+    """Führt Update oder Neuinstallation für ausgewählte Mods blockweise im Hintergrund aus."""
+    if not workshop_ids:
+        return
+
+    acquired = acquire_install_update_lock_blocking(server_id, f"mod_bulk_{action}")
+    if acquired is False:
+        for wid in workshop_ids:
+            mark_mod_failed(server_id, wid, "Eine andere Installation oder ein Update läuft bereits")
+        return
+
+    try:
+        db = SessionLocal()
+        try:
+            server = db.query(Server).filter(Server.id == server_id).first()
+            if not server:
+                logger.error("Server %s nicht gefunden (bulk-action)", server_id)
+                for wid in workshop_ids:
+                    mark_mod_failed(server_id, wid, "Server nicht gefunden")
+                return
+            plugin = get_plugin(server.game_type)
+            if not plugin or not plugin.supports_mods:
+                for wid in workshop_ids:
+                    mark_mod_failed(server_id, wid, "Mods in diesem Spiel nicht aktiviert")
+                return
+            # Relation vor expunge laden, damit DetachedInstanceError bei server.node ausbleibt.
+            _ = getattr(server, "node", None)
+            db.expunge(server)
+        finally:
+            db.close()
+
+        action_label = "Neuinstallation" if action == "reinstall" else "Update"
+        _append_console_log(
+            server_id,
+            f"[MSM] {action_label} für {len(workshop_ids)} ausgewählte Mod(s) gestartet.\n",
+        )
+
+        ok_count = 0
+        chunk_size = max(1, int(_BATCH_CHUNK_SIZE))
+        for offset in range(0, len(workshop_ids), chunk_size):
+            chunk = workshop_ids[offset:offset + chunk_size]
+
+            db_check = SessionLocal()
+            try:
+                pending_rows = (
+                    db_check.query(Mod.workshop_id)
+                    .filter(
+                        Mod.server_id == server_id,
+                        Mod.workshop_id.in_(chunk),
+                        Mod.install_status == "pending",
+                    )
+                    .all()
+                )
+                pending_set = {row[0] for row in pending_rows}
+            finally:
+                db_check.close()
+
+            active_chunk = [wid for wid in chunk if wid in pending_set]
+            if not active_chunk:
+                continue
+
+            for wid in active_chunk:
+                mark_mod_installing(server_id, wid, action)
+                if action == "reinstall":
+                    try:
+                        plugin.cleanup_mod(server, wid)
+                    except Exception as exc:
+                        _append_console_log(server_id, f"[MSM] Mod {wid} Cleanup-Warnung: {exc}\n")
+
+            try:
+                if hasattr(plugin, "install_mods"):
+                    result = plugin.install_mods(server, active_chunk)
+                else:
+                    per_item: dict[str, dict] = {}
+                    for wid in active_chunk:
+                        single_res = plugin.install_mod(server, wid)
+                        per_item[wid] = single_res if isinstance(single_res, dict) else {"ok": bool(single_res)}
+                    result = {
+                        "ok": all(v.get("ok", True) is not False and not v.get("error") for v in per_item.values()),
+                        "items": per_item,
+                    }
+            except Exception as exc:
+                err_msg = _safe_error(exc)
+                for wid in active_chunk:
+                    mark_mod_failed(server_id, wid, err_msg)
+                _append_console_log(server_id, f"[MSM] Bulk-{action_label}-Block fehlgeschlagen — {exc}\n")
+                continue
+
+            items_map = result.get("items") if isinstance(result, dict) and isinstance(result.get("items"), dict) else {}
+            global_ok = result.get("ok", True) is not False and not result.get("error") if isinstance(result, dict) else not bool(result)
+            global_err = (
+                (result.get("error") or ("; ".join(result.get("errors") or []) if result.get("errors") else None))
+                if isinstance(result, dict)
+                else str(result)
+            )
+
+            for wid in active_chunk:
+                item_res = items_map.get(wid)
+                if isinstance(item_res, dict):
+                    item_ok = item_res.get("ok", True) is not False and not item_res.get("error")
+                    item_err = item_res.get("error") or global_err
+                else:
+                    item_ok = global_ok
+                    item_err = global_err
+
+                if item_ok:
+                    remote_updated = remote_updated_map.get(wid) if remote_updated_map else None
+                    updater.update_mod_metadata_after_success(server_id, wid, remote_updated)
+                    mark_mod_installed(server_id, wid)
+                    ok_count += 1
+                else:
+                    mark_mod_failed(server_id, wid, _safe_error(item_err))
+
+        try:
+            plugin.update_modlist(server)
+        except Exception as exc:
+            logger.warning("Modlist-Update nach bulk-action fehlgeschlagen: %s", exc)
+
+        _append_console_log(
+            server_id,
+            f"[MSM] Bulk-{action_label} abgeschlossen ({ok_count}/{len(workshop_ids)} erfolgreich).\n",
+        )
+    except Exception:
+        logger.exception("bulk-action fehlgeschlagen für Server %s", server_id)
+        db_err = SessionLocal()
+        try:
+            unfinished = (
+                db_err.query(Mod.workshop_id)
+                .filter(
+                    Mod.server_id == server_id,
+                    Mod.workshop_id.in_(workshop_ids),
+                    Mod.install_status.in_((INSTALL_RUNNING, "pending")),
+                )
+                .all()
+            )
+            unfinished_ids = [row[0] for row in unfinished]
+        finally:
+            db_err.close()
+        for wid in unfinished_ids:
+            mark_mod_failed(server_id, wid, "Bulk-Aktion abgebrochen")
     finally:
         release_install_update_lock(server_id)
 
@@ -742,3 +902,149 @@ def reorder_mods(server_id: int, order: list[int], db: Session = Depends(get_db)
         if plugin and plugin.supports_mods:
             plugin.update_modlist(server)
     return db.query(Mod).filter(Mod.server_id == server_id).order_by(Mod.load_order.asc()).all()
+
+
+@router.post("/{server_id}/bulk-action", response_model=list[ModResponse])
+def bulk_action_mods(
+    server_id: int,
+    payload: BulkModActionRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+):
+    """Startet Update oder Neuinstallation für mehrere ausgewählte Mods."""
+    require_server_permission(user, server_id, db, "server.mods.write")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    plugin = get_plugin(server.game_type)
+    if not plugin or not plugin.supports_mods:
+        raise HTTPException(status_code=400, detail="Mods in diesem Spiel nicht aktiviert")
+
+    unique_ids: list[int] = []
+    seen_ids: set[int] = set()
+    for mid in payload.mod_ids:
+        if mid not in seen_ids:
+            seen_ids.add(mid)
+            unique_ids.append(mid)
+
+    mods = (
+        db.query(Mod)
+        .filter(Mod.server_id == server_id, Mod.id.in_(unique_ids))
+        .order_by(Mod.load_order.asc())
+        .all()
+    )
+    if len(mods) != len(unique_ids):
+        raise HTTPException(status_code=404, detail="Mindestens eine Mod nicht gefunden")
+    if any(m.install_status in (INSTALL_RUNNING, "pending") for m in mods):
+        raise HTTPException(status_code=409, detail="Mod-Installation läuft bereits")
+
+    remote_updated_map: dict[str, str | None] = {}
+    if payload.action == "update":
+        try:
+            updates = _refresh_mod_update_availability(db, server, plugin, force=False)
+            for item in updates:
+                wid_key = str(item.get("workshop_id") or "")
+                if wid_key:
+                    remote_updated_map[wid_key] = item.get("remote_updated")
+        except Exception as exc:
+            logger.debug("Update-Metadatenabruf vor Bulk-Update übersprungen: %s", exc)
+
+    workshop_ids: list[str] = []
+    for mod in mods:
+        _validate_workshop_id(mod.workshop_id)
+        if payload.action == "reinstall" and mod.workshop_id not in remote_updated_map and mod.last_updated:
+            remote_updated_map[mod.workshop_id] = mod.last_updated.isoformat()
+        mod.install_status = "pending"
+        mod.install_action = payload.action
+        mod.install_progress = 0
+        mod.install_eta_seconds = None
+        mod.install_error = None
+        workshop_ids.append(mod.workshop_id)
+    db.commit()
+
+    background_tasks.add_task(
+        bulk_mod_action_bg,
+        server.id,
+        workshop_ids,
+        payload.action,
+        remote_updated_map or None,
+    )
+    return db.query(Mod).filter(Mod.server_id == server_id).order_by(Mod.load_order.asc()).all()
+
+
+@router.post("/{server_id}/bulk-delete")
+def bulk_delete_mods(
+    server_id: int,
+    payload: BulkModDeleteRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Löscht ausgewählte oder alle Mods aus der DB sowie deren Dateien auf der Festplatte."""
+    require_server_permission(user, server_id, db, "server.mods.write")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    plugin = get_plugin(server.game_type)
+
+    if payload.delete_all:
+        targets = db.query(Mod).filter(Mod.server_id == server_id).order_by(Mod.load_order.asc()).all()
+    else:
+        unique_ids: list[int] = []
+        seen_ids: set[int] = set()
+        for mid in payload.mod_ids:
+            if mid not in seen_ids:
+                seen_ids.add(mid)
+                unique_ids.append(mid)
+        if not unique_ids:
+            raise HTTPException(status_code=400, detail="Keine Mods ausgewählt")
+        targets = (
+            db.query(Mod)
+            .filter(Mod.server_id == server_id, Mod.id.in_(unique_ids))
+            .order_by(Mod.load_order.asc())
+            .all()
+        )
+        if len(targets) != len(unique_ids):
+            raise HTTPException(status_code=404, detail="Mindestens eine Mod nicht gefunden")
+
+    if not targets:
+        raise HTTPException(status_code=400, detail="Keine Mods zum Löschen vorhanden")
+    if any(m.install_status == INSTALL_RUNNING for m in targets):
+        raise HTTPException(status_code=409, detail="Laufende Mod-Installation kann nicht gelöscht werden")
+
+    deleted_count = 0
+    for mod in targets:
+        if plugin and plugin.supports_mods:
+            try:
+                result = plugin.cleanup_mod(server, mod.workshop_id)
+                if isinstance(result, dict) and result.get("ok") is False:
+                    raise RuntimeError("cleanup_failed")
+            except Exception as exc:
+                logger.warning(
+                    "Bulk-Mod-Cleanup fehlgeschlagen fuer Server %s, Mod %s error_type=%s",
+                    server_id,
+                    mod.workshop_id,
+                    type(exc).__name__,
+                )
+                if deleted_count > 0:
+                    db.commit()
+                    plugin.update_modlist(server)
+                raise HTTPException(
+                    status_code=502,
+                    detail="Mod-Dateien konnten nicht entfernt werden",
+                ) from exc
+        db.delete(mod)
+        deleted_count += 1
+
+    db.commit()
+    if plugin and plugin.supports_mods:
+        plugin.update_modlist(server)
+
+    remaining = db.query(Mod).filter(Mod.server_id == server_id).order_by(Mod.load_order.asc()).all()
+    return {
+        "message": f"{deleted_count} Mod(s) entfernt",
+        "deleted_count": deleted_count,
+        "mods": [ModResponse.model_validate(m).model_dump(mode="json") for m in remaining],
+    }

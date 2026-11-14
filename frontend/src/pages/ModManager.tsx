@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ExternalLink,
   FolderArchive,
@@ -177,6 +179,33 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   const [newModName, setNewModName] = useState('')
   const [adding, setAdding] = useState(false)
   const [reinstallingAll, setReinstallingAll] = useState(false)
+  const [selectedModIds, setSelectedModIds] = useState<Set<number>>(new Set())
+  const [bulkActionLoading, setBulkActionLoading] = useState<'update' | 'reinstall' | 'delete' | 'deleteAll' | null>(null)
+  const lastSelectedModIdRef = useRef<number | null>(null)
+  const shiftSelectPendingRef = useRef(false)
+  const [pointerDragActiveId, setPointerDragActiveId] = useState<number | null>(null)
+  const [pointerDropTargetId, setPointerDropTargetId] = useState<number | null>(null)
+  const [dragSlotPitch, setDragSlotPitch] = useState(0)
+  const [settledModId, setSettledModId] = useState<number | null>(null)
+  const modsListRef = useRef<HTMLDivElement | null>(null)
+  const pendingFlipRectsRef = useRef<Map<number, { top: number; left: number }> | null>(null)
+  const lastReorderedIdRef = useRef<number | null>(null)
+  const settledTimerRef = useRef<number | null>(null)
+  const pointerDragMetaRef = useRef<{
+    modId: number
+    pointerId: number | undefined
+    handleEl: HTMLElement | null
+    rowEl: HTMLElement | null
+    startClientX: number
+    startClientY: number
+    containerTop0: number
+    slotPitch: number
+    rows: Array<{ id: number; index: number; relTop: number; relBottom: number; midY: number; height: number }>
+    hasRealLayout: boolean
+    lastClientX: number
+    lastClientY: number
+    targetId: number
+  } | null>(null)
 
   const isCurseForge = Boolean(gameInfo?.supports_curseforge || gameInfo?.mod_provider === 'curseforge')
   const supportsModpacks = isCurseForge && Boolean(gameInfo?.supports_modpacks ?? true)
@@ -258,6 +287,22 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     setLoading(true)
     void loadMods()
   }, [loadMods])
+
+  useEffect(() => {
+    const existingIds = new Set(mods.map((m) => m.id))
+    setSelectedModIds((prev) => {
+      let changed = false
+      const next = new Set<number>()
+      for (const id of prev) {
+        if (existingIds.has(id)) {
+          next.add(id)
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [mods])
 
   useEffect(() => {
     if (!mods.some(hasActiveModInstall)) return
@@ -897,7 +942,413 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     }
   }
 
-  // Drag & drop fuer Load-Order ──────────────────────────────────────────
+  // Drag & Drop + Tastatur-/Button-Sortierung fuer Load-Order (Web + Tauri + Mobil) ──
+  const captureFlipRects = useCallback(() => {
+    const container = modsListRef.current
+    if (!container) return null
+    const map = new Map<number, { top: number; left: number }>()
+    const rowNodes = container.querySelectorAll<HTMLElement>('[data-mod-row-id]')
+    rowNodes.forEach((el) => {
+      const id = Number(el.dataset.modRowId)
+      if (Number.isNaN(id)) return
+      const rect = el.getBoundingClientRect()
+      map.set(id, { top: rect.top, left: rect.left })
+    })
+    return map
+  }, [])
+
+  useLayoutEffect(() => {
+    const oldRects = pendingFlipRectsRef.current
+    pendingFlipRectsRef.current = null
+    const movedId = lastReorderedIdRef.current
+    lastReorderedIdRef.current = null
+
+    if (!oldRects || oldRects.size === 0 || !modsListRef.current) return
+
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    if (!reduceMotion) {
+      const rowNodes = modsListRef.current.querySelectorAll<HTMLElement>('[data-mod-row-id]')
+      rowNodes.forEach((el) => {
+        const id = Number(el.dataset.modRowId)
+        if (Number.isNaN(id)) return
+        const prev = oldRects.get(id)
+        if (!prev) return
+        const next = el.getBoundingClientRect()
+        const dy = prev.top - next.top
+        const dx = prev.left - next.left
+        if (Math.abs(dy) < 0.5 && Math.abs(dx) < 0.5) return
+        if (typeof el.animate === 'function') {
+          el.getAnimations?.().forEach((anim) => anim.cancel())
+          const isMoved = id === movedId
+          el.animate(
+            [
+              { transform: `translate3d(${dx}px, ${dy}px, 0) scale(${isMoved ? 1.02 : 1})` },
+              { transform: 'translate3d(0, 0, 0) scale(1)' },
+            ],
+            {
+              duration: isMoved ? 280 : 220,
+              easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            },
+          )
+        }
+      })
+    }
+
+    if (movedId !== null) {
+      if (settledTimerRef.current !== null) {
+        window.clearTimeout(settledTimerRef.current)
+      }
+      setSettledModId(movedId)
+      settledTimerRef.current = window.setTimeout(() => {
+        setSettledModId((curr) => (curr === movedId ? null : curr))
+        settledTimerRef.current = null
+      }, 600)
+    }
+  }, [mods])
+
+  useEffect(() => {
+    return () => {
+      if (settledTimerRef.current !== null) {
+        window.clearTimeout(settledTimerRef.current)
+      }
+    }
+  }, [])
+
+  const commitModOrder = useCallback(
+    async (newOrder: Mod[]) => {
+      setMods(newOrder)
+      try {
+        const data = await api<Mod[]>(`/mods/${serverId}/reorder`, {
+          method: 'POST',
+          body: JSON.stringify(newOrder.map((m) => m.id)),
+        })
+        setMods(data)
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : t('mods.reorderFailed'))
+        await loadMods()
+      }
+    },
+    [serverId, t, loadMods],
+  )
+
+  const moveModByIds = useCallback(
+    async (sourceId: number, targetId: number, preserveExistingFlipRects = false) => {
+      if (sourceId === targetId) return
+      const from = mods.findIndex((m) => m.id === sourceId)
+      const to = mods.findIndex((m) => m.id === targetId)
+      if (from === -1 || to === -1) return
+
+      if (!preserveExistingFlipRects || !pendingFlipRectsRef.current) {
+        pendingFlipRectsRef.current = captureFlipRects()
+      }
+      lastReorderedIdRef.current = sourceId
+
+      const newOrder = [...mods]
+      const [moved] = newOrder.splice(from, 1)
+      newOrder.splice(to, 0, moved)
+      await commitModOrder(newOrder)
+    },
+    [mods, commitModOrder, captureFlipRects],
+  )
+
+  const moveModStep = useCallback(
+    async (modId: number, delta: -1 | 1) => {
+      const from = mods.findIndex((m) => m.id === modId)
+      if (from === -1) return
+      const to = from + delta
+      if (to < 0 || to >= mods.length) return
+
+      pendingFlipRectsRef.current = captureFlipRects()
+      lastReorderedIdRef.current = modId
+
+      const newOrder = [...mods]
+      const [moved] = newOrder.splice(from, 1)
+      newOrder.splice(to, 0, moved)
+      await commitModOrder(newOrder)
+    },
+    [mods, commitModOrder, captureFlipRects],
+  )
+
+  const updateDropSlotStyles = useCallback(
+    (
+      meta: NonNullable<typeof pointerDragMetaRef.current>,
+      targetId: number,
+    ) => {
+      const listEl = modsListRef.current
+      if (!listEl) return
+      if (!meta.hasRealLayout || targetId === meta.modId) {
+        listEl.removeAttribute('data-drop')
+        listEl.style.removeProperty('--drop-x')
+        listEl.style.removeProperty('--drop-y')
+        listEl.style.removeProperty('--drop-w')
+        listEl.style.removeProperty('--drop-h')
+        return
+      }
+      const targetRow = meta.rows.find((r) => r.id === targetId)
+      if (!targetRow) {
+        listEl.removeAttribute('data-drop')
+        return
+      }
+      const listRect = listEl.getBoundingClientRect()
+      listEl.setAttribute('data-drop', 'true')
+      listEl.style.setProperty('--drop-x', `${listRect.left.toFixed(1)}px`)
+      listEl.style.setProperty('--drop-y', `${(listRect.top + targetRow.relTop).toFixed(1)}px`)
+      listEl.style.setProperty('--drop-w', `${listRect.width.toFixed(1)}px`)
+      listEl.style.setProperty('--drop-h', `${targetRow.height.toFixed(1)}px`)
+    },
+    [],
+  )
+
+  const startPointerDrag = (e: React.PointerEvent<HTMLElement>, modId: number) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    if (mods.length < 2) return
+    e.preventDefault()
+
+    const listEl = modsListRef.current
+    const containerTop0 = listEl?.getBoundingClientRect().top ?? 0
+    const rowNodes = Array.from(listEl?.querySelectorAll<HTMLElement>('[data-mod-row-id]') ?? [])
+    const rows = rowNodes
+      .map((el, index) => {
+        const id = Number(el.dataset.modRowId)
+        const rect = el.getBoundingClientRect()
+        const relTop = rect.top - containerTop0
+        const relBottom = rect.bottom - containerTop0
+        return {
+          id,
+          index,
+          relTop,
+          relBottom,
+          midY: relTop + rect.height / 2,
+          height: rect.height,
+        }
+      })
+      .filter((r) => !Number.isNaN(r.id))
+
+    const slotPitch =
+      rows.length >= 2
+        ? Math.max(0, rows[1].relTop - rows[0].relTop)
+        : (rows[0]?.height ?? 0) + 8
+    const hasRealLayout = rows.some((r) => r.height > 0)
+    const rowEl = listEl?.querySelector<HTMLElement>(`[data-mod-row-id="${modId}"]`) ?? null
+    const handleEl = e.currentTarget
+
+    try {
+      handleEl.setPointerCapture?.(e.pointerId)
+    } catch {
+      // Synthetic pointer events in tests may not map to an active native pointerId.
+    }
+
+    if (listEl) {
+      listEl.setAttribute('data-dragging', 'true')
+    }
+
+    pointerDragMetaRef.current = {
+      modId,
+      pointerId: e.pointerId,
+      handleEl,
+      rowEl,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      containerTop0,
+      slotPitch,
+      rows,
+      hasRealLayout,
+      lastClientX: e.clientX,
+      lastClientY: e.clientY,
+      targetId: modId,
+    }
+    setDragSlotPitch(slotPitch)
+    setPointerDragActiveId(modId)
+    setPointerDropTargetId(modId)
+  }
+
+  useEffect(() => {
+    if (pointerDragActiveId === null) return
+
+    let rafId: number | null = null
+
+    const updateDragFrame = (ev?: PointerEvent) => {
+      const meta = pointerDragMetaRef.current
+      if (!meta) return
+      const clientX = ev ? ev.clientX : meta.lastClientX
+      const clientY = ev ? ev.clientY : meta.lastClientY
+      meta.lastClientX = clientX
+      meta.lastClientY = clientY
+
+      const listEl = modsListRef.current
+      const containerTopNow = listEl?.getBoundingClientRect().top ?? meta.containerTop0
+      const scrollCompensation = meta.containerTop0 - containerTopNow
+      const dy = (clientY - meta.startClientY) + scrollCompensation
+      const dx = Math.max(-14, Math.min(14, (clientX - meta.startClientX) * 0.18))
+
+      if (meta.rowEl && meta.hasRealLayout) {
+        meta.rowEl.style.transform = `translate3d(${dx.toFixed(1)}px, ${dy.toFixed(1)}px, 0) scale(1.02)`
+      }
+
+      let nextTargetId = meta.targetId
+      if (meta.hasRealLayout && meta.rows.length > 0) {
+        const fromRow = meta.rows.find((r) => r.id === meta.modId)
+        const fromIndex = fromRow ? fromRow.index : 0
+        const relY = clientY - containerTopNow
+
+        let candidateId = meta.modId
+        for (const r of meta.rows) {
+          if (r.index < fromIndex && relY < r.midY) {
+            candidateId = r.id
+            break
+          }
+        }
+        if (candidateId === meta.modId) {
+          for (let i = meta.rows.length - 1; i >= 0; i--) {
+            const r = meta.rows[i]
+            if (r.index > fromIndex && relY > r.midY) {
+              candidateId = r.id
+              break
+            }
+          }
+        }
+        nextTargetId = candidateId
+      } else if (ev) {
+        const underPointer =
+          typeof document.elementFromPoint === 'function'
+            ? document.elementFromPoint(clientX, clientY)
+            : null
+        const rowEl =
+          underPointer?.closest<HTMLElement>('[data-mod-row-id]') ??
+          (ev.target instanceof Element ? ev.target.closest<HTMLElement>('[data-mod-row-id]') : null)
+        if (rowEl?.dataset.modRowId) {
+          const parsed = Number(rowEl.dataset.modRowId)
+          if (!Number.isNaN(parsed)) {
+            nextTargetId = parsed
+          }
+        }
+      }
+
+      if (nextTargetId !== meta.targetId) {
+        meta.targetId = nextTargetId
+        setPointerDropTargetId(nextTargetId)
+      }
+      updateDropSlotStyles(meta, nextTargetId)
+    }
+
+    const stepAutoScroll = () => {
+      const meta = pointerDragMetaRef.current
+      if (!meta || !meta.hasRealLayout) return
+      const edgeThreshold = 76
+      const y = meta.lastClientY
+      let delta = 0
+      if (y < edgeThreshold) {
+        delta = -Math.min(18, Math.ceil(((edgeThreshold - y) / edgeThreshold) * 14))
+      } else if (y > window.innerHeight - edgeThreshold) {
+        delta = Math.min(18, Math.ceil(((y - (window.innerHeight - edgeThreshold)) / edgeThreshold) * 14))
+      }
+      if (delta !== 0) {
+        window.scrollBy(0, delta)
+        updateDragFrame()
+      }
+      rafId = window.requestAnimationFrame(stepAutoScroll)
+    }
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      rafId = window.requestAnimationFrame(stepAutoScroll)
+    }
+
+    const handlePointerMove = (ev: PointerEvent) => {
+      const meta = pointerDragMetaRef.current
+      if (!meta) return
+      if (ev.pointerId !== undefined && meta.pointerId !== undefined && ev.pointerId !== meta.pointerId) {
+        return
+      }
+      updateDragFrame(ev)
+    }
+
+    const cleanupAndFinish = (ev: PointerEvent | null, commit: boolean) => {
+      const meta = pointerDragMetaRef.current
+      if (!meta) return
+      if (ev && ev.pointerId !== undefined && meta.pointerId !== undefined && ev.pointerId !== meta.pointerId) {
+        return
+      }
+
+      const { modId, targetId, rowEl, handleEl, pointerId } = meta
+      const willMove = commit && modId !== targetId
+
+      if (willMove) {
+        // Visuelle Position (inkl. live Transform & gewanderter Geschwister) fuer FLIP sichern.
+        pendingFlipRectsRef.current = captureFlipRects()
+      } else if (!commit && rowEl && meta.hasRealLayout && rowEl.style.transform && typeof rowEl.animate === 'function') {
+        const reduceMotion =
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        if (!reduceMotion) {
+          const currentTransform = rowEl.style.transform
+          rowEl.style.transform = ''
+          rowEl.animate(
+            [{ transform: currentTransform }, { transform: 'translate3d(0, 0, 0) scale(1)' }],
+            { duration: 220, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+          )
+        }
+      }
+
+      if (rowEl && !(!commit && rowEl.style.transform === '')) {
+        rowEl.style.transform = ''
+      }
+
+      const listEl = modsListRef.current
+      if (listEl) {
+        listEl.removeAttribute('data-dragging')
+        listEl.removeAttribute('data-drop')
+        listEl.style.removeProperty('--drop-x')
+        listEl.style.removeProperty('--drop-y')
+        listEl.style.removeProperty('--drop-w')
+        listEl.style.removeProperty('--drop-h')
+      }
+
+      try {
+        if (pointerId !== undefined && handleEl?.hasPointerCapture?.(pointerId)) {
+          handleEl.releasePointerCapture(pointerId)
+        }
+      } catch {
+        // Ignore if pointer capture already ended.
+      }
+
+      pointerDragMetaRef.current = null
+      setDragSlotPitch(0)
+      setPointerDragActiveId(null)
+      setPointerDropTargetId(null)
+
+      if (willMove) {
+        void moveModByIds(modId, targetId, true)
+      }
+    }
+
+    const handlePointerUp = (ev: PointerEvent) => cleanupAndFinish(ev, true)
+    const handlePointerCancel = (ev: PointerEvent) => cleanupAndFinish(ev, false)
+    const handleKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        ev.preventDefault()
+        cleanupAndFinish(null, false)
+      }
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerCancel)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      if (rafId !== null && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(rafId)
+      }
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [pointerDragActiveId, moveModByIds, captureFlipRects, updateDropSlotStyles])
+
   const onDragStart = (e: React.DragEvent, modId: number) => {
     dragId.current = modId
     e.dataTransfer.effectAllowed = 'move'
@@ -910,28 +1361,10 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
 
   const onDrop = async (e: React.DragEvent, targetId: number) => {
     e.preventDefault()
-    if (dragId.current === null || dragId.current === targetId) return
-
-    const from = mods.findIndex((m) => m.id === dragId.current)
-    const to = mods.findIndex((m) => m.id === targetId)
-    if (from === -1 || to === -1) return
-
-    const newOrder = [...mods]
-    const [moved] = newOrder.splice(from, 1)
-    newOrder.splice(to, 0, moved)
-    setMods(newOrder)
-
-    try {
-      const data = await api<Mod[]>(`/mods/${serverId}/reorder`, {
-        method: 'POST',
-        body: JSON.stringify(newOrder.map((m) => m.id)),
-      })
-      setMods(data)
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('mods.reorderFailed'))
-      await loadMods()
-    }
+    const sourceId = dragId.current
     dragId.current = null
+    if (sourceId === null || sourceId === targetId) return
+    await moveModByIds(sourceId, targetId)
   }
 
   const filteredMods = mods.filter(
@@ -939,9 +1372,166 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       mod.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       mod.workshop_id.includes(searchTerm),
   )
+
+  // Multi-Select & Bulk-Aktionen ───────────────────────────────────────────
+  const toggleSelectMod = (modId: number, shiftKey: boolean) => {
+    setSelectedModIds((prev) => {
+      const next = new Set(prev)
+      if (shiftKey && lastSelectedModIdRef.current !== null) {
+        const startIdx = filteredMods.findIndex((m) => m.id === lastSelectedModIdRef.current)
+        const endIdx = filteredMods.findIndex((m) => m.id === modId)
+        if (startIdx !== -1 && endIdx !== -1) {
+          const [lo, hi] = startIdx <= endIdx ? [startIdx, endIdx] : [endIdx, startIdx]
+          for (let i = lo; i <= hi; i++) {
+            next.add(filteredMods[i].id)
+          }
+          lastSelectedModIdRef.current = modId
+          return next
+        }
+      }
+      if (next.has(modId)) {
+        next.delete(modId)
+      } else {
+        next.add(modId)
+      }
+      lastSelectedModIdRef.current = modId
+      return next
+    })
+  }
+
+  const allFilteredSelected =
+    filteredMods.length > 0 && filteredMods.every((m) => selectedModIds.has(m.id))
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedModIds((prev) => {
+      const next = new Set(prev)
+      if (allFilteredSelected) {
+        for (const mod of filteredMods) {
+          next.delete(mod.id)
+        }
+      } else {
+        for (const mod of filteredMods) {
+          next.add(mod.id)
+        }
+      }
+      return next
+    })
+  }
+
+  const runBulkModAction = async (action: 'update' | 'reinstall') => {
+    const targetIds = Array.from(selectedModIds)
+    if (targetIds.length === 0) return
+    const selectedMods = mods.filter((m) => selectedModIds.has(m.id))
+    if (selectedMods.some(hasActiveModInstall)) {
+      toast.error(t('mods.reinstallAllBlocked'))
+      return
+    }
+    if (action === 'reinstall') {
+      const ok = await confirm({
+        message: t('mods.confirmReinstallSelected', { count: targetIds.length }),
+        confirmText: t('mods.reinstallSelected'),
+      })
+      if (!ok) return
+    }
+    setBulkActionLoading(action)
+    try {
+      const data = await api<Mod[]>(`/mods/${serverId}/bulk-action`, {
+        method: 'POST',
+        body: JSON.stringify({ mod_ids: targetIds, action }),
+      })
+      setMods(data)
+      setSelectedModIds(new Set())
+      toast.success(
+        t(action === 'update' ? 'mods.selectedUpdateQueued' : 'mods.selectedReinstallQueued', {
+          count: targetIds.length,
+        }),
+      )
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t('mods.bulkActionFailed'))
+    } finally {
+      setBulkActionLoading(null)
+    }
+  }
+
+  const deleteSelectedMods = async () => {
+    const targetIds = Array.from(selectedModIds)
+    if (targetIds.length === 0) return
+    const selectedMods = mods.filter((m) => selectedModIds.has(m.id))
+    if (selectedMods.some(hasActiveModInstall)) {
+      toast.error(t('mods.reinstallAllBlocked'))
+      return
+    }
+    const ok = await confirm({
+      message: t('mods.confirmDeleteSelected', { count: targetIds.length }),
+      confirmText: t('mods.deleteSelected'),
+      danger: true,
+    })
+    if (!ok) return
+    setBulkActionLoading('delete')
+    try {
+      const res = await api<{ message: string; deleted_count?: number; mods?: Mod[] }>(
+        `/mods/${serverId}/bulk-delete`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ mod_ids: targetIds, delete_all: false }),
+        },
+      )
+      if (Array.isArray(res?.mods)) {
+        setMods(res.mods)
+      } else {
+        await loadMods()
+      }
+      setSelectedModIds(new Set())
+      toast.success(t('mods.deletedCount', { count: res?.deleted_count ?? targetIds.length }))
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t('mods.removeFailed'))
+    } finally {
+      setBulkActionLoading(null)
+    }
+  }
+
+  const deleteAllMods = async () => {
+    if (mods.length === 0) return
+    if (mods.some(hasActiveModInstall)) {
+      toast.error(t('mods.reinstallAllBlocked'))
+      return
+    }
+    const ok = await confirm({
+      message: t('mods.confirmDeleteAll', { count: mods.length }),
+      confirmText: t('mods.deleteAll'),
+      danger: true,
+    })
+    if (!ok) return
+    setBulkActionLoading('deleteAll')
+    try {
+      const res = await api<{ message: string; deleted_count?: number; mods?: Mod[] }>(
+        `/mods/${serverId}/bulk-delete`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ mod_ids: [], delete_all: true }),
+        },
+      )
+      setMods(Array.isArray(res?.mods) ? res.mods : [])
+      setSelectedModIds(new Set())
+      toast.success(t('mods.deletedCount', { count: res?.deleted_count ?? mods.length }))
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t('mods.removeFailed'))
+    } finally {
+      setBulkActionLoading(null)
+    }
+  }
+
   const visibleInstalled = filteredMods.slice(0, installedShown)
   const hasMoreInstalled = filteredMods.length > visibleInstalled.length
   const anyModInstallActive = mods.some(hasActiveModInstall)
+  const dragVisIndex =
+    pointerDragActiveId !== null
+      ? visibleInstalled.findIndex((m) => m.id === pointerDragActiveId)
+      : -1
+  const dropVisIndex =
+    pointerDropTargetId !== null
+      ? visibleInstalled.findIndex((m) => m.id === pointerDropTargetId)
+      : -1
 
   // Suche zeigt Suchtreffer-Grid, sonst das gewaehlte Browser-Tab-Grid.
   const isSearchMode = searchActive || steamResults.length > 0
@@ -1126,21 +1716,49 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               <span>{t('mods.installedTitle')}</span>
               <span className="text-on-surface-variant text-sm font-mono tabular-nums">({mods.length})</span>
             </h2>
-            {anyModInstallActive && (
-              <Kurzinfo text={t('mods.abortInstallsHint')} seite="ende">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  fingerziel
-                  onClick={() => void abortModInstalls()}
-                  disabled={loading}
-                  aria-description={t('mods.abortInstallsHint')}
-                >
-                  <X className="w-3.5 h-3.5 shrink-0" />
-                  {t('mods.abortInstalls')}
-                </Button>
-              </Kurzinfo>
-            )}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {anyModInstallActive && (
+                <Kurzinfo text={t('mods.abortInstallsHint')} seite="ende">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    fingerziel
+                    onClick={() => void abortModInstalls()}
+                    disabled={loading}
+                    aria-description={t('mods.abortInstallsHint')}
+                  >
+                    <X className="w-3.5 h-3.5 shrink-0" />
+                    {t('mods.abortInstalls')}
+                  </Button>
+                </Kurzinfo>
+              )}
+              {mods.length > 0 && (
+                <>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    fingerziel
+                    onClick={toggleSelectAllFiltered}
+                    disabled={loading || filteredMods.length === 0}
+                  >
+                    {allFilteredSelected ? t('mods.deselectAll') : t('mods.selectAll')}
+                  </Button>
+                  <Kurzinfo text={t('mods.deleteAllHint')} seite="ende">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      fingerziel
+                      onClick={() => void deleteAllMods()}
+                      disabled={loading || bulkActionLoading !== null || anyModInstallActive}
+                      aria-description={t('mods.deleteAllHint')}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                      {t('mods.deleteAll')}
+                    </Button>
+                  </Kurzinfo>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col md:flex-row md:items-center gap-3">
@@ -1181,9 +1799,73 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               </Button>
             </div>
           </div>
+
+          {selectedModIds.size > 0 && (
+            <div
+              className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 flex flex-wrap items-center justify-between gap-3"
+              role="region"
+              aria-label={t('mods.selectedCount', { count: selectedModIds.size })}
+            >
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <Badge variant="info">
+                  {t('mods.selectedCount', { count: selectedModIds.size })}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  fingerziel
+                  onClick={() => setSelectedModIds(new Set())}
+                  disabled={bulkActionLoading !== null}
+                >
+                  {t('mods.deselectAll')}
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  fingerziel
+                  onClick={() => void runBulkModAction('update')}
+                  disabled={
+                    bulkActionLoading !== null ||
+                    mods.filter((m) => selectedModIds.has(m.id)).some(hasActiveModInstall)
+                  }
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${bulkActionLoading === 'update' ? 'animate-spin' : ''}`} />
+                  {t('mods.updateSelected')}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  fingerziel
+                  onClick={() => void runBulkModAction('reinstall')}
+                  disabled={
+                    bulkActionLoading !== null ||
+                    mods.filter((m) => selectedModIds.has(m.id)).some(hasActiveModInstall)
+                  }
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 shrink-0 ${bulkActionLoading === 'reinstall' ? 'animate-spin' : ''}`} />
+                  {t('mods.reinstallSelected')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  fingerziel
+                  onClick={() => void deleteSelectedMods()}
+                  disabled={
+                    bulkActionLoading !== null ||
+                    mods.filter((m) => selectedModIds.has(m.id)).some(hasActiveModInstall)
+                  }
+                >
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  {t('mods.deleteSelected')}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="space-y-2">
+        <div ref={modsListRef} className="msm-mod-list space-y-2">
           {loading ? (
             <div className="text-center py-12 text-on-surface-variant font-body-md">
               {t('common.loading')}
@@ -1199,34 +1881,122 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               </p>
             </div>
           ) : (
-            visibleInstalled.map((mod) => {
+            visibleInstalled.map((mod, visIndex) => {
               const installStatus = getModInstallPresentation(mod, t)
-              const isInstalling = hasActiveModInstall(mod)
-              const hasPendingUpdate =
-                (mod.install_status === 'pending' && mod.install_action === 'update') ||
-                mod.update_status === 'outdated'
-              return (
-              <div
-                key={mod.id}
-                className={`msm-card p-4 transition-opacity ${mod.enabled ? '' : 'opacity-60'}`}
-                onDragOver={onDragOver}
-                onDrop={(e) => void onDrop(e, mod.id)}
-              >
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div
-                    className="cursor-grab active:cursor-grabbing p-1 text-on-surface-variant hover:text-on-surface flex-shrink-0"
-                    draggable
-                    onDragStart={(e) => onDragStart(e, mod.id)}
-                  >
-                    <GripVertical className="w-4 h-4" />
-                  </div>
+                const isInstalling = hasActiveModInstall(mod)
+                const isSelected = selectedModIds.has(mod.id)
+                const fullIndex = mods.findIndex((m) => m.id === mod.id)
+                const isDraggingThis = pointerDragActiveId === mod.id
+                const isSettlingThis = settledModId === mod.id && pointerDragActiveId === null
+                const isDropTarget =
+                  pointerDropTargetId === mod.id &&
+                  pointerDragActiveId !== null &&
+                  pointerDragActiveId !== mod.id
 
-                  <div className="flex-1 min-w-0">
-                    <h3
-                      className={`font-headline text-body-md ${mod.enabled ? 'text-on-surface' : 'text-on-surface-variant line-through'}`}
-                    >
-                      {mod.name || `${providerLabel} Mod ${mod.workshop_id}`}
-                    </h3>
+                let siblingShiftY = 0
+                if (
+                  !isDraggingThis &&
+                  dragVisIndex !== -1 &&
+                  dropVisIndex !== -1 &&
+                  dragSlotPitch > 0
+                ) {
+                  if (dragVisIndex < dropVisIndex && visIndex > dragVisIndex && visIndex <= dropVisIndex) {
+                    siblingShiftY = -dragSlotPitch
+                  } else if (dragVisIndex > dropVisIndex && visIndex >= dropVisIndex && visIndex < dragVisIndex) {
+                    siblingShiftY = dragSlotPitch
+                  }
+                }
+
+                const hasPendingUpdate =
+                  (mod.install_status === 'pending' && mod.install_action === 'update') ||
+                  mod.update_status === 'outdated'
+
+                return (
+                <div
+                  key={mod.id}
+                  data-mod-row-id={mod.id}
+                  style={siblingShiftY !== 0 ? { transform: `translate3d(0, ${siblingShiftY}px, 0)` } : undefined}
+                  className={`msm-card msm-mod-row p-4 ${mod.enabled ? '' : 'opacity-60'} ${
+                    isSelected ? 'border-primary/45 bg-primary/[0.04]' : ''
+                  } ${isDraggingThis ? 'msm-mod-row-dragging !opacity-100' : ''} ${
+                    isSettlingThis ? 'msm-mod-row-settle' : ''
+                  } ${isDropTarget && dragSlotPitch === 0 ? 'ring-2 ring-primary/60' : ''}`}
+                  onDragOver={onDragOver}
+                  onDrop={(e) => void onDrop(e, mod.id)}
+                >
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <label className="inline-flex h-10 w-10 md:h-8 md:w-8 items-center justify-center rounded-md hover:bg-surface-container-high/60 cursor-pointer">
+                        <Checkbox
+                          checked={isSelected}
+                          onClick={(e) => {
+                            shiftSelectPendingRef.current = e.shiftKey
+                          }}
+                          onCheckedChange={() => {
+                            const shiftKey = shiftSelectPendingRef.current
+                            shiftSelectPendingRef.current = false
+                            toggleSelectMod(mod.id, shiftKey)
+                          }}
+                          aria-label={t('mods.selectMod', { name: mod.name || mod.workshop_id })}
+                        />
+                      </label>
+
+                      <Kurzinfo text={t('mods.dragHandleHint')}>
+                        <div
+                          className={`touch-none select-none inline-flex h-10 w-8 md:h-8 md:w-7 items-center justify-center rounded-md transition-colors ${
+                            isDraggingThis
+                              ? 'cursor-grabbing bg-primary/20 text-primary'
+                              : 'cursor-grab active:cursor-grabbing text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60'
+                          }`}
+                          onDragStart={(e) => onDragStart(e, mod.id)}
+                          onPointerDown={(e) => startPointerDrag(e, mod.id)}
+                          aria-label={t('mods.dragHandleHint')}
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </div>
+                      </Kurzinfo>
+
+                      {mods.length > 1 && (
+                        <div className="inline-flex items-center rounded-lg border border-outline-variant/25 bg-surface-container/40 p-0.5">
+                          <Kurzinfo text={t('mods.moveUp')}>
+                            <button
+                              type="button"
+                              onClick={() => void moveModStep(mod.id, -1)}
+                              disabled={fullIndex <= 0}
+                              aria-label={t('mods.moveUp')}
+                              className="inline-flex h-9 w-9 md:h-7 md:w-7 items-center justify-center rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-35 disabled:pointer-events-none"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                          </Kurzinfo>
+                          <Kurzinfo text={t('mods.moveDown')}>
+                            <button
+                              type="button"
+                              onClick={() => void moveModStep(mod.id, 1)}
+                              disabled={fullIndex === -1 || fullIndex >= mods.length - 1}
+                              aria-label={t('mods.moveDown')}
+                              className="inline-flex h-9 w-9 md:h-7 md:w-7 items-center justify-center rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-35 disabled:pointer-events-none"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                          </Kurzinfo>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3
+                          className={`font-headline text-body-md ${mod.enabled ? 'text-on-surface' : 'text-on-surface-variant line-through'}`}
+                        >
+                          {mod.name || `${providerLabel} Mod ${mod.workshop_id}`}
+                        </h3>
+                        {isDraggingThis && dragVisIndex !== -1 && dropVisIndex !== -1 && dragVisIndex !== dropVisIndex && (
+                          <Badge variant="info" className="font-mono tabular-nums">
+                            #{dragVisIndex + 1} → #{dropVisIndex + 1}
+                          </Badge>
+                        )}
+                      </div>
                     <div className="flex flex-wrap items-center gap-4 mt-1 text-sm text-on-surface-variant font-body-md">
                       <span>ID: {mod.workshop_id}</span>
                       {mod.last_updated && (

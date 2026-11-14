@@ -606,3 +606,226 @@ class TestBatchModInstallEndpoint:
             assert row is not None
             assert row.install_status == "installed"
             assert row.install_error is None
+
+
+class TestBulkModActionsAndDelete:
+    def test_bulk_action_update_queues_selected_mods_only(
+        self,
+        client: TestClient,
+        owner_cookies: dict,
+        csrf_token: str,
+        test_server: Server,
+        db: Session,
+    ):
+        m1 = Mod(server_id=test_server.id, workshop_id="4001", name="Mod One", load_order=0, install_status="installed")
+        m2 = Mod(server_id=test_server.id, workshop_id="4002", name="Mod Two", load_order=1, install_status="installed")
+        m3 = Mod(server_id=test_server.id, workshop_id="4003", name="Mod Three", load_order=2, install_status="installed")
+        db.add_all([m1, m2, m3])
+        db.commit()
+        db.refresh(m1)
+        db.refresh(m2)
+        db.refresh(m3)
+
+        mock_plugin = MagicMock()
+        mock_plugin.supports_mods = True
+
+        with patch("routers.mods.get_plugin", return_value=mock_plugin), \
+             patch("routers.mods._refresh_mod_update_availability", return_value=[{"workshop_id": "4002", "remote_updated": "2026-10-01T12:00:00+00:00"}]), \
+             patch("routers.mods.bulk_mod_action_bg") as mock_bg:
+            response = client.post(
+                f"/api/mods/{test_server.id}/bulk-action",
+                json={"mod_ids": [m1.id, m2.id], "action": "update"},
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == 200
+        mock_bg.assert_called_once_with(
+            test_server.id,
+            ["4001", "4002"],
+            "update",
+            {"4002": "2026-10-01T12:00:00+00:00"},
+        )
+
+        db.expire_all()
+        r1 = db.query(Mod).filter(Mod.id == m1.id).first()
+        r2 = db.query(Mod).filter(Mod.id == m2.id).first()
+        r3 = db.query(Mod).filter(Mod.id == m3.id).first()
+        assert r1 is not None and r1.install_status == "pending" and r1.install_action == "update"
+        assert r2 is not None and r2.install_status == "pending" and r2.install_action == "update"
+        assert r3 is not None and r3.install_status == "installed" and r3.install_action is None
+
+    def test_bulk_action_bg_reinstall_cleans_disk_and_releases_lock(
+        self, test_server: Server, db: Session
+    ):
+        from routers.mods import bulk_mod_action_bg
+        from services.install_update_lock_service import (
+            active_install_update_lock,
+            reset_install_update_lock_for_tests,
+        )
+
+        reset_install_update_lock_for_tests()
+        mods = [
+            Mod(
+                server_id=test_server.id,
+                workshop_id=wid,
+                name=f"Mod {wid}",
+                load_order=idx,
+                install_status="pending",
+                install_action="reinstall",
+            )
+            for idx, wid in enumerate(["5001", "5002"])
+        ]
+        db.add_all(mods)
+        db.commit()
+
+        mock_plugin = MagicMock()
+        mock_plugin.supports_mods = True
+        mock_plugin.cleanup_mod.return_value = {"ok": True}
+        mock_plugin.install_mods.return_value = {
+            "ok": True,
+            "items": {"5001": {"ok": True}, "5002": {"ok": True}},
+        }
+
+        with patch("routers.mods.get_plugin", return_value=mock_plugin), \
+             patch("routers.mods.updater.update_mod_metadata_after_success"):
+            bulk_mod_action_bg(test_server.id, ["5001", "5002"], "reinstall")
+
+        assert mock_plugin.cleanup_mod.call_count == 2
+        mock_plugin.install_mods.assert_called_once()
+        mock_plugin.update_modlist.assert_called()
+        assert active_install_update_lock() is None
+
+        db.expire_all()
+        for wid in ("5001", "5002"):
+            row = db.query(Mod).filter(Mod.server_id == test_server.id, Mod.workshop_id == wid).first()
+            assert row is not None and row.install_status == "installed"
+
+    def test_bulk_delete_selected_removes_disk_files_and_db_records(
+        self,
+        client: TestClient,
+        owner_cookies: dict,
+        csrf_token: str,
+        test_server: Server,
+        db: Session,
+        tmp_path: Path,
+    ):
+        mod1_dir = tmp_path / "mods" / "6001"
+        mod2_dir = tmp_path / "mods" / "6002"
+        mod3_dir = tmp_path / "mods" / "6003"
+        for d in (mod1_dir, mod2_dir, mod3_dir):
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "mod.pak").write_bytes(b"pak-data")
+
+        m1 = Mod(server_id=test_server.id, workshop_id="6001", name="Delete One", load_order=0, install_status="installed")
+        m2 = Mod(server_id=test_server.id, workshop_id="6002", name="Delete Two", load_order=1, install_status="installed")
+        m3 = Mod(server_id=test_server.id, workshop_id="6003", name="Keep Three", load_order=2, install_status="installed")
+        db.add_all([m1, m2, m3])
+        db.commit()
+        db.refresh(m1)
+        db.refresh(m2)
+        db.refresh(m3)
+
+        import shutil
+
+        mock_plugin = MagicMock()
+        mock_plugin.supports_mods = True
+        mock_plugin.cleanup_mod.side_effect = lambda _srv, wid: shutil.rmtree(tmp_path / "mods" / wid, ignore_errors=False) or {"ok": True}
+
+        with patch("routers.mods.get_plugin", return_value=mock_plugin):
+            response = client.post(
+                f"/api/mods/{test_server.id}/bulk-delete",
+                json={"mod_ids": [m1.id, m2.id], "delete_all": False},
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["deleted_count"] == 2
+        assert [m["workshop_id"] for m in body["mods"]] == ["6003"]
+        assert not mod1_dir.exists()
+        assert not mod2_dir.exists()
+        assert mod3_dir.exists()
+        mock_plugin.update_modlist.assert_called_once()
+
+        db.expire_all()
+        remaining = db.query(Mod).filter(Mod.server_id == test_server.id).all()
+        assert [m.workshop_id for m in remaining] == ["6003"]
+
+    def test_bulk_delete_all_removes_all_mods_and_files(
+        self,
+        client: TestClient,
+        owner_cookies: dict,
+        csrf_token: str,
+        test_server: Server,
+        db: Session,
+        tmp_path: Path,
+    ):
+        for wid in ("7001", "7002"):
+            d = tmp_path / "allmods" / wid
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "data.bin").write_bytes(b"abc")
+
+        m1 = Mod(server_id=test_server.id, workshop_id="7001", name="One", load_order=0, install_status="installed")
+        m2 = Mod(server_id=test_server.id, workshop_id="7002", name="Two", load_order=1, install_status="installed")
+        db.add_all([m1, m2])
+        db.commit()
+
+        import shutil
+
+        mock_plugin = MagicMock()
+        mock_plugin.supports_mods = True
+        mock_plugin.cleanup_mod.side_effect = lambda _srv, wid: shutil.rmtree(tmp_path / "allmods" / wid, ignore_errors=False) or {"ok": True}
+
+        with patch("routers.mods.get_plugin", return_value=mock_plugin):
+            response = client.post(
+                f"/api/mods/{test_server.id}/bulk-delete",
+                json={"mod_ids": [], "delete_all": True},
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["deleted_count"] == 2
+        assert body["mods"] == []
+        assert not (tmp_path / "allmods" / "7001").exists()
+        assert not (tmp_path / "allmods" / "7002").exists()
+        mock_plugin.update_modlist.assert_called_once()
+
+    def test_bulk_delete_rejects_running_mod_and_reports_cleanup_error(
+        self,
+        client: TestClient,
+        owner_cookies: dict,
+        csrf_token: str,
+        test_server: Server,
+        db: Session,
+    ):
+        running_mod = Mod(server_id=test_server.id, workshop_id="8001", name="Busy Mod", load_order=0, install_status="installing")
+        idle_mod = Mod(server_id=test_server.id, workshop_id="8002", name="Idle Mod", load_order=1, install_status="installed")
+        db.add_all([running_mod, idle_mod])
+        db.commit()
+        db.refresh(running_mod)
+        db.refresh(idle_mod)
+
+        mock_plugin = MagicMock()
+        mock_plugin.supports_mods = True
+
+        with patch("routers.mods.get_plugin", return_value=mock_plugin):
+            res_busy = client.post(
+                f"/api/mods/{test_server.id}/bulk-delete",
+                json={"mod_ids": [running_mod.id], "delete_all": False},
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+            )
+            assert res_busy.status_code == 409
+
+            mock_plugin.cleanup_mod.return_value = {"ok": False}
+            res_fail = client.post(
+                f"/api/mods/{test_server.id}/bulk-delete",
+                json={"mod_ids": [idle_mod.id], "delete_all": False},
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+            )
+            assert res_fail.status_code == 502
