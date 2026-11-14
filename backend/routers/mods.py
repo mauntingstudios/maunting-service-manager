@@ -141,7 +141,7 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
         return
 
     acquired = acquire_install_update_lock_blocking(server_id, "mod_batch_install")
-    if not acquired:
+    if acquired is False:
         for wid in workshop_ids:
             mark_mod_failed(server_id, wid, "Eine andere Installation oder ein Update läuft bereits")
         return
@@ -160,6 +160,8 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
                 for wid in workshop_ids:
                     mark_mod_failed(server_id, wid, "Mods in diesem Spiel nicht aktiviert")
                 return
+            # Relation vor expunge laden, damit DetachedInstanceError bei server.node ausbleibt.
+            _ = getattr(server, "node", None)
             db.expunge(server)
         finally:
             db.close()

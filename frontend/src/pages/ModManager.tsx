@@ -19,8 +19,10 @@ import {
   Trash2,
   Upload,
   Users,
+  X,
 } from 'lucide-react'
 import { api } from '@/api/client'
+import { oeffneBrowser } from '@/desktop/tauri'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { getModInstallPresentation, hasActiveModInstall } from '@/services/modInstallStatus'
@@ -318,6 +320,25 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       }
       return changed ? next : prev
     })
+  }
+
+  const resolveModPageUrl = (workshopId: string, title?: string | null, directUrl?: string | null): string => {
+    if (directUrl) return directUrl
+    if (isCurseForge) {
+      return (
+        curseforgeUrlMap[workshopId] ||
+        `https://www.curseforge.com/search?search=${encodeURIComponent(title || workshopId)}`
+      )
+    }
+    return `https://steamcommunity.com/sharedfiles/filedetails/?id=${workshopId}`
+  }
+
+  const openExternalUrl = async (url: string) => {
+    try {
+      await oeffneBrowser(url)
+    } catch {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
   }
 
   const loadBrowserTab = async (
@@ -1014,32 +1035,35 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               </span>
             )}
           </div>
-          <div className="flex gap-2 mt-1">
+          <div className="flex items-center gap-2.5 mt-3 pt-3 border-t border-outline-variant/20">
             {isCollection ? (
               <Button
                 size="sm"
+                fingerziel
                 onClick={() => void openSteamCollectionPreview(mod)}
-                className="flex-1 inline-flex items-center justify-center gap-1.5"
+                className="flex-1"
               >
-                <Layers className="w-3.5 h-3.5" />
+                <Layers className="w-4 h-4 shrink-0" />
                 {t('mods.inspectCollection')}
               </Button>
             ) : isModpack ? (
               <Button
                 size="sm"
+                fingerziel
                 variant={isAdded ? 'secondary' : 'primary'}
                 onClick={() => void openCurseForgeBundlePreview(mod)}
-                className="flex-1 inline-flex items-center justify-center gap-1.5"
+                className="flex-1"
               >
-                <FolderArchive className="w-3.5 h-3.5" />
+                <FolderArchive className="w-4 h-4 shrink-0" />
                 {isAdded ? t('mods.added') : t('mods.inspectCollection')}
               </Button>
             ) : (
               <Button
                 size="sm"
+                fingerziel
                 onClick={() => void addSteamMod(mod)}
                 disabled={adding || isAdded}
-                className="flex-1 disabled:opacity-50"
+                className="flex-1"
               >
                 {checkingDepModId === mod.publishedfileid
                   ? t('common.loading')
@@ -1053,10 +1077,14 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                 href={mod.direct_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={buttonClasses('secondary', 'sm')}
+                onClick={(e) => {
+                  e.preventDefault()
+                  void openExternalUrl(mod.direct_url)
+                }}
+                className={buttonClasses('secondary', 'icon', 'shrink-0', true)}
                 aria-label={ansehenText}
               >
-                <ExternalLink className="w-3.5 h-3.5" />
+                <ExternalLink className="w-4 h-4" />
               </a>
             </Kurzinfo>
           </div>
@@ -1075,63 +1103,84 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   return (
     <div className="space-y-8">
       {/* Tab-Body Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-outline-variant/20">
         <p className="font-body-md text-body-md text-on-surface-variant">{t('mods.subtitle')}</p>
-        <Button variant="secondary"
+        <Button
+          variant="secondary"
+          size="md"
+          fingerziel
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2"
+          className="w-full sm:w-auto shrink-0"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4 shrink-0" />
           {t('mods.addById')}
         </Button>
       </div>
 
       {/* Installed Mods Section */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="font-headline text-body-lg text-on-surface inline-flex items-center gap-2">
-            <Package className="w-4 h-4 text-secondary" />
-            {t('mods.installedTitle')}
-            <span className="text-on-surface-variant text-sm font-mono">({mods.length})</span>
-          </h2>
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
-            <input
-              type="search"
-              placeholder={t('mods.searchPlaceholder')}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="msm-input pl-10 text-sm"
-            />
+      <section className="space-y-4">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-headline text-body-lg text-on-surface inline-flex items-center gap-2">
+              <Package className="w-4 h-4 text-secondary shrink-0" />
+              <span>{t('mods.installedTitle')}</span>
+              <span className="text-on-surface-variant text-sm font-mono tabular-nums">({mods.length})</span>
+            </h2>
+            {anyModInstallActive && (
+              <Kurzinfo text={t('mods.abortInstallsHint')} seite="ende">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  fingerziel
+                  onClick={() => void abortModInstalls()}
+                  disabled={loading}
+                  aria-description={t('mods.abortInstallsHint')}
+                >
+                  <X className="w-3.5 h-3.5 shrink-0" />
+                  {t('mods.abortInstalls')}
+                </Button>
+              </Kurzinfo>
+            )}
           </div>
-          <Kurzinfo text={t('mods.abortInstallsHint')}>
-            <Button variant="secondary"
-              onClick={() => void abortModInstalls()}
-              disabled={loading || !anyModInstallActive}
-              className="inline-flex items-center gap-2 disabled:opacity-50"
-              aria-description={t('mods.abortInstallsHint')}
-            >
-              {t('mods.abortInstalls')}
-            </Button>
-          </Kurzinfo>
-          <Kurzinfo text={t('mods.reinstallAllHint')}>
-            <Button variant="secondary"
-              onClick={() => void reinstallAllMods()}
-              disabled={loading || reinstallingAll || mods.length === 0 || anyModInstallActive}
-              className="inline-flex items-center gap-2 disabled:opacity-50"
-              aria-description={t('mods.reinstallAllHint')}
-            >
-              <RotateCcw className={`w-4 h-4 ${reinstallingAll ? 'animate-spin' : ''}`} />
-              {t('mods.reinstallAll')}
-            </Button>
-          </Kurzinfo>
-          <Button variant="secondary"
-            onClick={() => void checkModUpdates()}
-            className="inline-flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            {t('mods.checkUpdates')}
-          </Button>
+
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant pointer-events-none" />
+              <input
+                type="search"
+                placeholder={t('mods.searchPlaceholder')}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="msm-input h-10 max-md:h-11 pl-10 text-sm"
+              />
+            </div>
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
+              <Kurzinfo text={t('mods.reinstallAllHint')} aussen="flex-1 sm:flex-initial">
+                <Button
+                  variant="secondary"
+                  size="md"
+                  fingerziel
+                  onClick={() => void reinstallAllMods()}
+                  disabled={loading || reinstallingAll || mods.length === 0 || anyModInstallActive}
+                  className="w-full sm:w-auto"
+                  aria-description={t('mods.reinstallAllHint')}
+                >
+                  <RotateCcw className={`w-4 h-4 shrink-0 ${reinstallingAll ? 'animate-spin' : ''}`} />
+                  {t('mods.reinstallAll')}
+                </Button>
+              </Kurzinfo>
+              <Button
+                variant="secondary"
+                size="md"
+                fingerziel
+                onClick={() => void checkModUpdates()}
+                className="flex-1 sm:flex-initial"
+              >
+                <RefreshCw className="w-4 h-4 shrink-0" />
+                {t('mods.checkUpdates')}
+              </Button>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -1211,65 +1260,74 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {hasPendingUpdate && (
-                      <Button size="sm"
-                        onClick={() => void installExistingMod(mod, 'update')}
+                  <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5 flex-shrink-0 w-full sm:w-auto pt-3 mt-1 border-t border-outline-variant/20 sm:border-t-0 sm:pt-0 sm:mt-0">
+                    <div className="flex items-center gap-2">
+                      {hasPendingUpdate && (
+                        <Button
+                          size="sm"
+                          fingerziel
+                          onClick={() => void installExistingMod(mod, 'update')}
+                          disabled={isInstalling}
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                          {t('mods.updateAvailable')}
+                        </Button>
+                      )}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        fingerziel
+                        onClick={() => void installExistingMod(mod, 'reinstall')}
                         disabled={isInstalling}
-                        className="inline-flex items-center gap-1.5 disabled:opacity-50"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        {t('mods.updateAvailable')}
+                        <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                        {t('mods.reinstall')}
                       </Button>
-                    )}
-                    <Button variant="secondary" size="sm"
-                      onClick={() => void installExistingMod(mod, 'reinstall')}
-                      disabled={isInstalling}
-                      className="inline-flex items-center gap-1.5 disabled:opacity-50"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      {t('mods.reinstall')}
-                    </Button>
-                    <Kurzinfo text={mod.enabled ? t('mods.disable') : t('mods.enable')}>
-                      <button
-                        onClick={() => toggleEnabled(mod.id, mod.enabled)}
-                        aria-label={mod.enabled ? t('mods.disable') : t('mods.enable')}
-                        className="p-1.5 rounded-md hover:bg-surface-container transition-colors"
-                      >
-                        {mod.enabled ? (
-                          <ToggleRight className="w-5 h-5 text-primary" />
-                        ) : (
-                          <ToggleLeft className="w-5 h-5 text-on-surface-variant" />
-                        )}
-                      </button>
-                    </Kurzinfo>
+                    </div>
 
-                    <Kurzinfo text={ansehenText}>
-                      <a
-                        href={
-                          isCurseForge
-                            ? curseforgeUrlMap[mod.workshop_id] ||
-                              `https://www.curseforge.com/search?search=${encodeURIComponent(mod.name || mod.workshop_id)}`
-                            : `https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.workshop_id}`
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 rounded-md hover:bg-surface-container transition-colors"
-                        aria-label={ansehenText}
-                      >
-                        <ExternalLink className="w-4 h-4 text-on-surface-variant" />
-                      </a>
-                    </Kurzinfo>
+                    <div className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/25 bg-surface-container/40 p-0.5">
+                      <Kurzinfo text={mod.enabled ? t('mods.disable') : t('mods.enable')}>
+                        <button
+                          type="button"
+                          onClick={() => toggleEnabled(mod.id, mod.enabled)}
+                          aria-label={mod.enabled ? t('mods.disable') : t('mods.enable')}
+                          className="inline-flex h-10 w-10 md:h-7 md:w-7 items-center justify-center rounded-md hover:bg-surface-container-high transition-colors"
+                        >
+                          {mod.enabled ? (
+                            <ToggleRight className="w-4 h-4 text-primary" />
+                          ) : (
+                            <ToggleLeft className="w-4 h-4 text-on-surface-variant" />
+                          )}
+                        </button>
+                      </Kurzinfo>
 
-                    <Kurzinfo text={t('common.remove')} seite="ende">
-                      <button
-                        onClick={() => removeMod(mod.id)}
-                        className="p-1.5 rounded-md hover:bg-status-destructive/10 transition-colors"
-                        aria-label={t('common.remove')}
-                      >
-                        <Trash2 className="w-4 h-4 text-status-destructive" />
-                      </button>
-                    </Kurzinfo>
+                      <Kurzinfo text={ansehenText}>
+                        <a
+                          href={resolveModPageUrl(mod.workshop_id, mod.name)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            void openExternalUrl(resolveModPageUrl(mod.workshop_id, mod.name))
+                          }}
+                          className="inline-flex h-10 w-10 md:h-7 md:w-7 items-center justify-center rounded-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+                          aria-label={ansehenText}
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </Kurzinfo>
+
+                      <Kurzinfo text={t('common.remove')} seite="ende">
+                        <button
+                          type="button"
+                          onClick={() => removeMod(mod.id)}
+                          className="inline-flex h-10 w-10 md:h-7 md:w-7 items-center justify-center rounded-md text-status-destructive hover:bg-status-destructive/15 transition-colors"
+                          aria-label={t('common.remove')}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </Kurzinfo>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1277,11 +1335,13 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
             })
           )}
           {hasMoreInstalled && (
-            <Button variant="secondary"
+            <Button
+              variant="secondary"
+              fingerziel
               onClick={() => setInstalledShown((n) => n + INSTALLED_PAGE_SIZE)}
-              className="w-full inline-flex items-center justify-center gap-2"
+              className="w-full"
             >
-              <ChevronDown className="w-4 h-4" />
+              <ChevronDown className="w-4 h-4 shrink-0" />
               {t('mods.loadMore')} ({filteredMods.length - visibleInstalled.length})
             </Button>
           )}
@@ -1296,13 +1356,13 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
             {isCurseForge ? t('mods.curseforgeSearch', { defaultValue: 'CurseForge Browser' }) : t('mods.steamSearch')}
           </h2>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2.5 flex-wrap">
             {!isCurseForge && (
-              <div className="flex gap-1 bg-surface-container rounded-lg p-1">
+              <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25">
                 <button
                   type="button"
                   onClick={() => handleSteamContentTypeChange('mods')}
-                  className={`px-3 py-1 rounded-md text-xs font-body-md transition-colors ${
+                  className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
                     steamContentType === 'mods'
                       ? 'bg-surface text-primary shadow-sm font-semibold'
                       : 'text-on-surface-variant hover:text-on-surface'
@@ -1313,24 +1373,24 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                 <button
                   type="button"
                   onClick={() => handleSteamContentTypeChange('collections')}
-                  className={`px-3 py-1 rounded-md text-xs font-body-md transition-colors inline-flex items-center gap-1.5 ${
+                  className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors inline-flex items-center gap-1.5 ${
                     steamContentType === 'collections'
                       ? 'bg-surface text-primary shadow-sm font-semibold'
                       : 'text-on-surface-variant hover:text-on-surface'
                   }`}
                 >
-                  <Layers className="w-3.5 h-3.5" />
+                  <Layers className="w-3.5 h-3.5 shrink-0" />
                   {t('mods.tabCollections')}
                 </button>
               </div>
             )}
 
             {isCurseForge && (curseforgeClasses.length > 0 || supportsModpacks) && (
-              <div className="flex gap-1 bg-surface-container rounded-lg p-1 flex-wrap">
+              <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25 flex-wrap">
                 <button
                   type="button"
                   onClick={() => handleContentTypeChange('all')}
-                  className={`px-3 py-1 rounded-md text-xs font-body-md transition-colors ${
+                  className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
                     contentType === 'all'
                       ? 'bg-surface text-primary shadow-sm font-semibold'
                       : 'text-on-surface-variant hover:text-on-surface'
@@ -1346,7 +1406,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                         type="button"
                         key={cls.id}
                         onClick={() => handleContentTypeChange(clsKey)}
-                        className={`px-3 py-1 rounded-md text-xs font-body-md transition-colors ${
+                        className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
                           contentType === clsKey
                             ? 'bg-surface text-primary shadow-sm font-semibold'
                             : 'text-on-surface-variant hover:text-on-surface'
@@ -1361,7 +1421,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                     <button
                       type="button"
                       onClick={() => handleContentTypeChange('mods')}
-                      className={`px-3 py-1 rounded-md text-xs font-body-md transition-colors ${
+                      className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
                         contentType === 'mods'
                           ? 'bg-surface text-primary shadow-sm font-semibold'
                           : 'text-on-surface-variant hover:text-on-surface'
@@ -1372,7 +1432,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                     <button
                       type="button"
                       onClick={() => handleContentTypeChange('modpacks')}
-                      className={`px-3 py-1 rounded-md text-xs font-body-md transition-colors ${
+                      className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors ${
                         contentType === 'modpacks'
                           ? 'bg-surface text-primary shadow-sm font-semibold'
                           : 'text-on-surface-variant hover:text-on-surface'
@@ -1396,12 +1456,12 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                 />
                 <Button
                   size="sm"
+                  fingerziel
                   variant="secondary"
                   onClick={() => manifestInputRef.current?.click()}
                   disabled={importingManifest}
-                  className="inline-flex items-center gap-1.5"
                 >
-                  <Upload className="w-3.5 h-3.5" />
+                  <Upload className="w-3.5 h-3.5 shrink-0" />
                   {importingManifest ? t('common.loading') : t('mods.importManifest')}
                 </Button>
               </>
@@ -1409,9 +1469,9 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
           </div>
         </div>
 
-        <div className="flex gap-2 items-center flex-wrap">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
+        <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 sm:items-center">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant pointer-events-none" />
             <input
               type="search"
               placeholder={
@@ -1426,37 +1486,46 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               value={steamQuery}
               onChange={(e) => setSteamQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-              className="msm-input pl-10"
+              className="msm-input h-10 max-md:h-11 pl-10"
             />
           </div>
-          <Button
-            onClick={runSearch}
-            disabled={steamLoading || !steamQuery.trim()}
-            className="disabled:opacity-50"
-          >
-            {steamLoading && steamPage === 1 ? t('common.loading') : t('common.search')}
-          </Button>
-          {isSearchMode && (
-            <Button variant="secondary"
-              onClick={clearSearch}
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            <Button
+              size="md"
+              fingerziel
+              onClick={runSearch}
+              disabled={steamLoading || !steamQuery.trim()}
+              className="flex-1 sm:flex-initial"
             >
-              {t('mods.clearSearch')}
+              {steamLoading && steamPage === 1 ? t('common.loading') : t('common.search')}
             </Button>
-          )}
+            {isSearchMode && (
+              <Button
+                variant="secondary"
+                size="md"
+                fingerziel
+                onClick={clearSearch}
+                className="flex-1 sm:flex-initial"
+              >
+                {t('mods.clearSearch')}
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Tabs nur ausserhalb des Suchmodus. Nicht sticky, damit der Scroll-
             Anker (das Tab-Element) seine Position behaelt und der Browser beim
             Wechsel zwischen Tabs nicht nach oben springt. */}
         {!isSearchMode && (
-          <div className="flex gap-1 bg-surface-container rounded-lg p-1 overflow-x-auto">
+          <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25 overflow-x-auto">
             {BROWSER_TABS.map((tab) => (
               <button
                 key={tab.key}
+                type="button"
                 onClick={() => switchTab(tab.key)}
-                className={`flex-1 min-w-[110px] px-3 py-1.5 rounded-md text-sm font-body-md transition-colors ${
+                className={`flex-1 min-w-[110px] min-h-10 sm:min-h-8 px-3 py-1.5 rounded-md text-sm font-body-md transition-colors whitespace-nowrap ${
                   browserTab === tab.key
-                    ? 'bg-surface text-primary shadow-sm'
+                    ? 'bg-surface text-primary shadow-sm font-semibold'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
@@ -1473,12 +1542,14 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
             </div>
             {(showLoadMoreBrowser || showLoadMoreSearch) && (
               <div className="flex justify-center pt-2">
-                <Button variant="secondary"
+                <Button
+                  variant="secondary"
+                  fingerziel
                   onClick={isSearchMode ? loadMoreSearch : loadMoreBrowser}
                   disabled={browserLoading || steamLoading}
-                  className="inline-flex items-center gap-2 disabled:opacity-50"
+                  className="w-full sm:w-auto"
                 >
-                  <ChevronDown className="w-4 h-4" />
+                  <ChevronDown className="w-4 h-4 shrink-0" />
                   {isSearchMode
                     ? steamLoading
                       ? t('common.loading')
@@ -1514,176 +1585,228 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
           }
         }}
       >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 pr-6">
-              <Layers className="w-5 h-5 text-primary shrink-0" />
-              <span className="truncate">{collectionPreview.title || t('mods.collectionPreviewTitle')}</span>
-            </DialogTitle>
-            <DialogDescription>
-              {collectionPreview.creator
-                ? `${t('mods.collectionPreviewTitle')} · ${collectionPreview.creator}`
-                : t('mods.collectionPreviewTitle')}
-            </DialogDescription>
+        <DialogContent className="max-w-3xl max-h-[90dvh]">
+          <DialogHeader className="px-5 py-4 sm:px-6 sm:py-5">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 pr-9">
+              <div className="min-w-0">
+                <DialogTitle className="flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-primary shrink-0" />
+                  <span className="break-words">{collectionPreview.title || t('mods.collectionPreviewTitle')}</span>
+                </DialogTitle>
+                <DialogDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span>
+                    {collectionPreview.creator
+                      ? `${t('mods.collectionPreviewTitle')} · ${collectionPreview.creator}`
+                      : t('mods.collectionPreviewTitle')}
+                  </span>
+                  {!collectionPreview.loading && collectionPreview.items.length > 0 && (
+                    <>
+                      <span aria-hidden>·</span>
+                      <span className="tabular-nums">
+                        {t('mods.collectionItemsCount', { count: collectionPreview.items.length })}
+                      </span>
+                    </>
+                  )}
+                </DialogDescription>
+              </div>
+              {collectionPreview.directUrl && (
+                <a
+                  href={collectionPreview.directUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (collectionPreview.directUrl) {
+                      void openExternalUrl(collectionPreview.directUrl)
+                    }
+                  }}
+                  className={buttonClasses('ghost', 'sm', 'self-start shrink-0 border border-outline-variant/30', true)}
+                >
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                  {ansehenText}
+                </a>
+              )}
+            </div>
           </DialogHeader>
 
-          {collectionPreview.loading ? (
-            <div className="py-12 text-center text-on-surface-variant font-body-md">
-              {t('mods.collectionLoading')}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {collectionPreview.unavailableIds.length > 0 && (
-                <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
-                  {t('mods.collectionUnavailableHint', {
-                    count: collectionPreview.unavailableIds.length,
-                  })}
-                </div>
-              )}
-
-              {collectionPreview.wrongGameIds.length > 0 && (
-                <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
-                  {t('mods.wrongGameHint', {
-                    count: collectionPreview.wrongGameIds.length,
-                  })}
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() =>
-                      setCollectionPreview((prev) => ({
-                        ...prev,
-                        selectedIds: new Set(prev.items.map((item) => item.publishedfileid)),
-                      }))
-                    }
-                    disabled={collectionPreview.items.length === 0}
-                  >
-                    {t('mods.selectAll')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      const installedSet = new Set(mods.map((m) => m.workshop_id))
-                      setCollectionPreview((prev) => ({
-                        ...prev,
-                        selectedIds: new Set(
-                          prev.items
-                            .filter((item) => !installedSet.has(item.publishedfileid))
-                            .map((item) => item.publishedfileid),
-                        ),
-                      }))
-                    }}
-                    disabled={collectionPreview.items.length === 0}
-                  >
-                    {t('mods.selectMissingOnly')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() =>
-                      setCollectionPreview((prev) => ({
-                        ...prev,
-                        selectedIds: new Set(),
-                      }))
-                    }
-                    disabled={collectionPreview.selectedIds.size === 0}
-                  >
-                    {t('mods.deselectAll')}
-                  </Button>
-                </div>
-                {collectionPreview.directUrl && (
-                  <a
-                    href={collectionPreview.directUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buttonClasses('secondary', 'sm')}
-                  >
-                    <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                    {ansehenText}
-                  </a>
-                )}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6 sm:py-5">
+            {collectionPreview.loading ? (
+              <div className="py-12 text-center text-on-surface-variant font-body-md">
+                {t('mods.collectionLoading')}
               </div>
+            ) : (
+              <div className="space-y-4">
+                {collectionPreview.unavailableIds.length > 0 && (
+                  <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-xs text-status-warning">
+                    {t('mods.collectionUnavailableHint', {
+                      count: collectionPreview.unavailableIds.length,
+                    })}
+                  </div>
+                )}
 
-              {collectionPreview.items.length === 0 ? (
-                <div className="py-8 text-center text-sm text-on-surface-variant">
-                  {t('mods.collectionEmpty')}
+                {collectionPreview.wrongGameIds.length > 0 && (
+                  <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-xs text-status-warning">
+                    {t('mods.wrongGameHint', {
+                      count: collectionPreview.wrongGameIds.length,
+                    })}
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="inline-flex items-center gap-2 text-xs font-medium text-on-surface-variant tabular-nums">
+                    <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full bg-primary/15 text-primary font-semibold">
+                      {collectionPreview.selectedIds.size}
+                    </span>
+                    <span>
+                      / {t('mods.collectionItemsCount', { count: collectionPreview.items.length })}
+                    </span>
+                  </div>
+
+                  <div
+                    role="group"
+                    aria-label={t('mods.collectionPreviewTitle')}
+                    className="flex flex-wrap sm:flex-nowrap items-center gap-1 rounded-xl border border-outline-variant/30 bg-surface-container-low/80 p-1 w-full sm:w-auto"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCollectionPreview((prev) => ({
+                          ...prev,
+                          selectedIds: new Set(prev.items.map((item) => item.publishedfileid)),
+                        }))
+                      }
+                      disabled={collectionPreview.items.length === 0}
+                      className="flex-1 sm:flex-initial min-h-10 sm:min-h-8 px-3 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors whitespace-nowrap disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      {t('mods.selectAll')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const installedSet = new Set(mods.map((m) => m.workshop_id))
+                        setCollectionPreview((prev) => ({
+                          ...prev,
+                          selectedIds: new Set(
+                            prev.items
+                              .filter((item) => !installedSet.has(item.publishedfileid))
+                              .map((item) => item.publishedfileid),
+                          ),
+                        }))
+                      }}
+                      disabled={collectionPreview.items.length === 0}
+                      className="flex-1 sm:flex-initial min-h-10 sm:min-h-8 px-3 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors whitespace-nowrap disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      {t('mods.selectMissingOnly')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCollectionPreview((prev) => ({
+                          ...prev,
+                          selectedIds: new Set(),
+                        }))
+                      }
+                      disabled={collectionPreview.selectedIds.size === 0}
+                      className="flex-1 sm:flex-initial min-h-10 sm:min-h-8 px-3 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors whitespace-nowrap disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      {t('mods.deselectAll')}
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                <div className="max-h-[45vh] overflow-y-auto space-y-2 pr-1">
-                  {collectionPreview.items.map((item) => {
-                    const already = mods.some((m) => m.workshop_id === item.publishedfileid)
-                    const checked = collectionPreview.selectedIds.has(item.publishedfileid)
-                    return (
-                      <div
-                        key={item.publishedfileid}
-                        className="flex items-center gap-3 rounded-lg border border-outline-variant/30 bg-surface-container/60 p-2.5"
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(nextChecked) => {
-                            setCollectionPreview((prev) => {
-                              const next = new Set(prev.selectedIds)
-                              if (nextChecked) {
-                                next.add(item.publishedfileid)
-                              } else {
-                                next.delete(item.publishedfileid)
-                              }
-                              return { ...prev, selectedIds: next }
-                            })
-                          }}
-                          aria-label={item.title}
-                        />
-                        {item.preview_url ? (
-                          <img
-                            src={item.preview_url}
-                            alt={item.title}
-                            className="w-10 h-10 rounded object-cover shrink-0 bg-surface-container-highest"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded flex items-center justify-center shrink-0 bg-surface-container-highest">
-                            <Package className="w-5 h-5 text-on-surface-variant" />
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-body-md text-sm text-on-surface truncate">
-                              {item.title}
-                            </span>
-                            {already && <Badge variant="success">{t('mods.alreadyInstalled')}</Badge>}
-                          </div>
-                          <div className="text-xs text-on-surface-variant font-mono-sm flex items-center gap-3">
-                            <span>#{item.publishedfileid}</span>
-                            {item.file_size_mb > 0 && <span>{item.file_size_mb} MB</span>}
+
+                {collectionPreview.items.length === 0 ? (
+                  <div className="py-8 text-center text-sm text-on-surface-variant">
+                    {t('mods.collectionEmpty')}
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {collectionPreview.items.map((item) => {
+                      const already = mods.some((m) => m.workshop_id === item.publishedfileid)
+                      const checked = collectionPreview.selectedIds.has(item.publishedfileid)
+                      const itemUrl = resolveModPageUrl(item.publishedfileid, item.title, item.direct_url)
+                      return (
+                        <div
+                          key={item.publishedfileid}
+                          className="flex items-start sm:items-center gap-3 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-3.5"
+                        >
+                          <label className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 flex items-center justify-center shrink-0 cursor-pointer">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(nextChecked) => {
+                                setCollectionPreview((prev) => {
+                                  const next = new Set(prev.selectedIds)
+                                  if (nextChecked) {
+                                    next.add(item.publishedfileid)
+                                  } else {
+                                    next.delete(item.publishedfileid)
+                                  }
+                                  return { ...prev, selectedIds: next }
+                                })
+                              }}
+                              aria-label={item.title}
+                            />
+                          </label>
+                          {item.preview_url ? (
+                            <img
+                              src={item.preview_url}
+                              alt={item.title}
+                              className="w-12 h-12 rounded-md object-cover shrink-0 bg-surface-container-highest"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-md flex items-center justify-center shrink-0 bg-surface-container-highest">
+                              <Package className="w-5 h-5 text-on-surface-variant" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <a
+                                href={itemUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  void openExternalUrl(itemUrl)
+                                }}
+                                className="inline-flex items-center gap-1.5 font-body-md text-sm font-medium text-on-surface hover:text-primary hover:underline transition-colors break-words min-w-0 py-0.5"
+                              >
+                                <span className="break-words">{item.title}</span>
+                                <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                              </a>
+                              {already && <Badge variant="success">{t('mods.alreadyInstalled')}</Badge>}
+                            </div>
+                            <div className="text-xs text-on-surface-variant font-mono-sm flex flex-wrap items-center gap-3">
+                              <span>#{item.publishedfileid}</span>
+                              {item.file_size_mb > 0 && <span>{item.file_size_mb} MB</span>}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 px-5 py-4 sm:px-6 sm:py-5">
             <Button
-              variant="secondary"
+              variant="ghost"
+              fingerziel
               onClick={() => setCollectionPreview((prev) => ({ ...prev, open: false }))}
               disabled={collectionPreview.installing}
+              className="w-full sm:w-auto"
             >
               {t('common.cancel')}
             </Button>
             <Button
+              fingerziel
               onClick={() => void installSelectedCollectionItems()}
               disabled={
                 collectionPreview.loading ||
                 collectionPreview.installing ||
                 collectionPreview.selectedIds.size === 0
               }
+              className="w-full sm:w-auto"
             >
               {collectionPreview.installing
                 ? t('common.loading')
@@ -1702,134 +1825,150 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 pr-6">
-              <FolderArchive className="w-5 h-5 text-primary shrink-0" />
-              <span className="truncate">
-                {bundlePreview.mod?.title || t('mods.bundlePreviewTitle')}
-              </span>
-            </DialogTitle>
-            <DialogDescription>
-              {bundlePreview.mod?.creator
-                ? `${t('mods.bundlePreviewTitle')} · ${bundlePreview.mod.creator}`
-                : t('mods.bundlePreviewTitle')}
-            </DialogDescription>
+        <DialogContent className="max-w-2xl max-h-[90dvh]">
+          <DialogHeader className="px-5 py-4 sm:px-6 sm:py-5">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 pr-9">
+              <div className="min-w-0">
+                <DialogTitle className="flex items-center gap-2">
+                  <FolderArchive className="w-5 h-5 text-primary shrink-0" />
+                  <span className="break-words">
+                    {bundlePreview.mod?.title || t('mods.bundlePreviewTitle')}
+                  </span>
+                </DialogTitle>
+                <DialogDescription className="mt-1">
+                  {bundlePreview.mod?.creator
+                    ? `${t('mods.bundlePreviewTitle')} · ${bundlePreview.mod.creator}`
+                    : t('mods.bundlePreviewTitle')}
+                </DialogDescription>
+              </div>
+              {bundlePreview.mod?.direct_url && (
+                <a
+                  href={bundlePreview.mod.direct_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (bundlePreview.mod?.direct_url) {
+                      void openExternalUrl(bundlePreview.mod.direct_url)
+                    }
+                  }}
+                  className={buttonClasses('ghost', 'sm', 'self-start shrink-0 border border-outline-variant/30', true)}
+                >
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                  {ansehenText}
+                </a>
+              )}
+            </div>
           </DialogHeader>
 
-          {bundlePreview.loading ? (
-            <div className="py-10 text-center text-on-surface-variant font-body-md">
-              {t('common.loading')}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {bundlePreview.mod?.is_modpack && (
-                  <Badge variant="info">{t('mods.modpack')}</Badge>
-                )}
-                {bundlePreview.mod?.has_server_pack && (
-                  <Badge variant="success">{t('mods.serverPack')}</Badge>
-                )}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6 sm:py-5">
+            {bundlePreview.loading ? (
+              <div className="py-10 text-center text-on-surface-variant font-body-md">
+                {t('common.loading')}
               </div>
-
-              {!bundlePreview.supportsBundleInstall && (
-                <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
-                  {t('mods.noDistributionWarning')}
+            ) : (
+              <div className="space-y-5">
+                <div className="flex flex-wrap gap-2">
+                  {bundlePreview.mod?.is_modpack && (
+                    <Badge variant="info">{t('mods.modpack')}</Badge>
+                  )}
+                  {bundlePreview.mod?.has_server_pack && (
+                    <Badge variant="success">{t('mods.serverPack')}</Badge>
+                  )}
                 </div>
-              )}
 
-              {bundlePreview.mod?.description && (
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  {bundlePreview.mod.description}
-                </p>
-              )}
+                {!bundlePreview.supportsBundleInstall && (
+                  <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-xs text-status-warning">
+                    {t('mods.noDistributionWarning')}
+                  </div>
+                )}
 
-              {bundlePreview.dependencies.length > 0 && (
-                <div className="space-y-2 rounded-lg border border-outline-variant/30 bg-surface-container/50 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-on-surface">
-                      {t('mods.bundleDependencies', {
-                        count: bundlePreview.dependencies.length,
-                      })}
-                    </span>
-                    <label className="flex items-center gap-2 text-xs text-on-surface cursor-pointer">
-                      <Checkbox
-                        checked={bundlePreview.includeDependencies}
-                        onCheckedChange={(checked) =>
-                          setBundlePreview((prev) => ({ ...prev, includeDependencies: checked }))
-                        }
-                      />
-                      <span>
-                        {t('mods.installDependencies', {
+                {bundlePreview.mod?.description && (
+                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                    {bundlePreview.mod.description}
+                  </p>
+                )}
+
+                {bundlePreview.dependencies.length > 0 && (
+                  <div className="space-y-2.5 rounded-xl border border-outline-variant/30 bg-surface-container/50 p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                      <span className="text-xs font-semibold text-on-surface">
+                        {t('mods.bundleDependencies', {
                           count: bundlePreview.dependencies.length,
                         })}
                       </span>
-                    </label>
+                      <label className="flex items-center gap-2.5 min-h-11 sm:min-h-8 text-xs text-on-surface cursor-pointer">
+                        <Checkbox
+                          checked={bundlePreview.includeDependencies}
+                          onCheckedChange={(checked) =>
+                            setBundlePreview((prev) => ({ ...prev, includeDependencies: checked }))
+                          }
+                        />
+                        <span>
+                          {t('mods.installDependencies', {
+                            count: bundlePreview.dependencies.length,
+                          })}
+                        </span>
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {bundlePreview.dependencies.map((dep) => (
+                        <Badge key={dep.publishedfileid} variant="info">
+                          {dep.title}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {bundlePreview.dependencies.map((dep) => (
-                      <Badge key={dep.publishedfileid} variant="info">
-                        {dep.title}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
+                )}
 
-              {bundlePreview.files.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold text-on-surface">
-                    {t('mods.bundleFiles')}
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                    {bundlePreview.files.map((f) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center justify-between gap-2 rounded-md border border-outline-variant/25 bg-surface-container/40 px-2.5 py-1.5 text-xs"
-                      >
-                        <div className="min-w-0 truncate font-mono-sm text-on-surface">
-                          {f.display_name || f.file_name}
+                {bundlePreview.files.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="text-xs font-semibold text-on-surface">
+                      {t('mods.bundleFiles')}
+                    </div>
+                    <div className="max-h-48 overflow-y-auto overscroll-contain space-y-2 pr-1">
+                      {bundlePreview.files.map((f) => (
+                        <div
+                          key={f.id}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-outline-variant/25 bg-surface-container/40 px-3 py-2 text-xs"
+                        >
+                          <div className="min-w-0 truncate font-mono-sm text-on-surface">
+                            {f.display_name || f.file_name}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {f.is_server_pack && (
+                              <Badge variant="success">{t('mods.serverPack')}</Badge>
+                            )}
+                            {f.file_length > 0 && (
+                              <span className="text-on-surface-variant font-mono-sm">
+                                {(f.file_length / (1024 * 1024)).toFixed(1)} MB
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {f.is_server_pack && (
-                            <Badge variant="success">{t('mods.serverPack')}</Badge>
-                          )}
-                          {f.file_length > 0 && (
-                            <span className="text-on-surface-variant font-mono-sm">
-                              {(f.file_length / (1024 * 1024)).toFixed(1)} MB
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 px-5 py-4 sm:px-6 sm:py-5">
             <Button
-              variant="secondary"
+              variant="ghost"
+              fingerziel
               onClick={() => setBundlePreview((prev) => ({ ...prev, open: false }))}
               disabled={bundlePreview.installing}
+              className="w-full sm:w-auto"
             >
               {t('common.cancel')}
             </Button>
-            {bundlePreview.mod?.direct_url && (
-              <a
-                href={bundlePreview.mod.direct_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={buttonClasses('secondary', 'sm')}
-              >
-                <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                {ansehenText}
-              </a>
-            )}
             <Button
+              fingerziel
               onClick={() => void installCurseForgeBundle()}
               disabled={bundlePreview.loading || bundlePreview.installing || !bundlePreview.mod}
+              className="w-full sm:w-auto"
             >
               {bundlePreview.installing ? t('common.loading') : t('mods.installBundle')}
             </Button>
@@ -1846,11 +1985,11 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 pr-6">
+        <DialogContent className="max-w-2xl max-h-[90dvh]">
+          <DialogHeader className="px-5 py-4 sm:px-6 sm:py-5">
+            <DialogTitle className="flex items-center gap-2 pr-8">
               <Package className="w-5 h-5 text-primary shrink-0" />
-              <span className="truncate">{t('mods.dependenciesTitle')}</span>
+              <span className="break-words">{t('mods.dependenciesTitle')}</span>
             </DialogTitle>
             <DialogDescription>
               {t('mods.dependenciesPrompt', {
@@ -1866,47 +2005,68 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                 dependencyPrompt.selectedIds.has(dep.publishedfileid) &&
                 !installedSet.has(dep.publishedfileid),
             ).length
+            const targetUrl = resolveModPageUrl(
+              dependencyPrompt.targetMod.workshopId,
+              dependencyPrompt.targetMod.title,
+              dependencyPrompt.targetMod.direct_url,
+            )
 
             return (
               <>
-                <div className="space-y-3">
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6 sm:py-5 space-y-5">
                   {/* Target mod preview */}
-                  <div className="flex items-center gap-3 rounded-lg border border-outline-variant/30 bg-surface-container/60 p-3">
-                    {dependencyPrompt.targetMod.preview_url ? (
-                      <img
-                        src={dependencyPrompt.targetMod.preview_url}
-                        alt={dependencyPrompt.targetMod.title}
-                        className="w-12 h-12 rounded-md object-cover bg-surface-container-highest shrink-0"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
-                        <Package className="w-5 h-5 text-on-surface-variant" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold text-on-surface truncate">
-                        {dependencyPrompt.targetMod.title}
-                      </div>
-                      <div className="text-xs text-on-surface-variant font-mono-sm truncate">
-                        ID: {dependencyPrompt.targetMod.workshopId}
-                        {dependencyPrompt.targetMod.creator ? ` · ${dependencyPrompt.targetMod.creator}` : ''}
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 p-3.5 sm:p-4">
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                      {dependencyPrompt.targetMod.preview_url ? (
+                        <img
+                          src={dependencyPrompt.targetMod.preview_url}
+                          alt={dependencyPrompt.targetMod.title}
+                          className="w-12 h-12 rounded-md object-cover bg-surface-container-highest shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
+                          <Package className="w-5 h-5 text-on-surface-variant" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <a
+                          href={targetUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            void openExternalUrl(targetUrl)
+                          }}
+                          className="inline-flex items-center gap-1.5 text-sm font-semibold text-on-surface hover:text-primary hover:underline transition-colors break-words min-w-0 py-0.5"
+                        >
+                          <span className="break-words">{dependencyPrompt.targetMod.title}</span>
+                          <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                        </a>
+                        <div className="text-xs text-on-surface-variant font-mono-sm truncate">
+                          ID: {dependencyPrompt.targetMod.workshopId}
+                          {dependencyPrompt.targetMod.creator ? ` · ${dependencyPrompt.targetMod.creator}` : ''}
+                        </div>
                       </div>
                     </div>
                     {dependencyPrompt.targetMod.direct_url && (
                       <a
-                        href={dependencyPrompt.targetMod.direct_url}
+                        href={targetUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={buttonClasses('secondary', 'sm')}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          void openExternalUrl(targetUrl)
+                        }}
+                        aria-label={ansehenText}
+                        className={buttonClasses('ghost', 'icon', 'shrink-0 border border-outline-variant/30', true)}
                       >
-                        <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                        {ansehenText}
+                        <ExternalLink className="w-4 h-4" />
                       </a>
                     )}
                   </div>
 
                   {dependencyPrompt.unavailableIds.length > 0 && (
-                    <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
+                    <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-xs text-status-warning">
                       {t('mods.dependenciesUnavailableHint', {
                         count: dependencyPrompt.unavailableIds.length,
                       })}
@@ -1914,20 +2074,21 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                   )}
 
                   {/* Required dependencies list */}
-                  <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                  <div className="space-y-3">
                     {dependencyPrompt.dependencies.map((dep) => {
                       const alreadyInstalled = installedSet.has(dep.publishedfileid)
                       const checked =
                         !alreadyInstalled && dependencyPrompt.selectedIds.has(dep.publishedfileid)
                       const isSingleInstalling =
                         dependencyPrompt.installingSingleId === dep.publishedfileid
+                      const depUrl = resolveModPageUrl(dep.publishedfileid, dep.title, dep.direct_url)
 
                       return (
                         <div
                           key={dep.publishedfileid}
-                          className="flex items-start gap-3 rounded-lg border border-outline-variant/30 bg-surface-container/40 p-2.5"
+                          className="flex items-start gap-3 rounded-xl border border-outline-variant/30 bg-surface-container/40 p-3.5 sm:p-4"
                         >
-                          <div className="pt-1 shrink-0">
+                          <label className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 flex items-center justify-center shrink-0 cursor-pointer">
                             <Checkbox
                               checked={checked}
                               disabled={alreadyInstalled || dependencyPrompt.installing}
@@ -1941,25 +2102,35 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                               }}
                               aria-label={dep.title}
                             />
-                          </div>
+                          </label>
 
                           {dep.preview_url ? (
                             <img
                               src={dep.preview_url}
                               alt={dep.title}
-                              className="w-14 h-14 rounded-md object-cover bg-surface-container-highest shrink-0"
+                              className="w-12 h-12 sm:w-14 sm:h-14 rounded-md object-cover bg-surface-container-highest shrink-0"
                             />
                           ) : (
-                            <div className="w-14 h-14 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
+                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
                               <Package className="w-5 h-5 text-on-surface-variant" />
                             </div>
                           )}
 
-                          <div className="min-w-0 flex-1 space-y-1">
+                          <div className="min-w-0 flex-1 space-y-1.5">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-medium text-on-surface truncate">
-                                {dep.title}
-                              </span>
+                              <a
+                                href={depUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  void openExternalUrl(depUrl)
+                                }}
+                                className="inline-flex items-center gap-1.5 text-sm font-medium text-on-surface hover:text-primary hover:underline transition-colors break-words min-w-0 py-0.5"
+                              >
+                                <span className="break-words">{dep.title}</span>
+                                <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                              </a>
                               <Badge variant={alreadyInstalled ? 'success' : 'warning'}>
                                 {alreadyInstalled
                                   ? t('mods.alreadyInstalled')
@@ -1976,27 +2147,33 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                               {dep.creator && <span>{dep.creator}</span>}
                               {dep.file_size_mb > 0 && <span>{dep.file_size_mb} MB</span>}
                             </div>
-                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <div className="flex flex-col min-[420px]:flex-row flex-wrap sm:items-center gap-2 pt-3 mt-2 border-t border-outline-variant/20">
                               {!alreadyInstalled && (
                                 <Button
                                   size="sm"
+                                  fingerziel
                                   variant="secondary"
                                   onClick={() => void installSingleDependencyFromPrompt(dep)}
                                   disabled={dependencyPrompt.installing || isSingleInstalling}
+                                  className="w-full min-[420px]:w-auto"
                                 >
                                   {isSingleInstalling
                                     ? t('common.loading')
                                     : t('mods.installSingleDependency')}
                                 </Button>
                               )}
-                              {dep.direct_url && (
+                              {depUrl && (
                                 <a
-                                  href={dep.direct_url}
+                                  href={depUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className={buttonClasses('secondary', 'sm')}
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    void openExternalUrl(depUrl)
+                                  }}
+                                  className={buttonClasses('ghost', 'sm', 'w-full min-[420px]:w-auto text-on-surface-variant hover:text-primary', true)}
                                 >
-                                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                                   {t('mods.dependencyInspect', { provider: providerLabel })}
                                 </a>
                               )}
@@ -2008,31 +2185,39 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                   </div>
                 </div>
 
-                <DialogFooter className="flex-wrap gap-2">
+                <DialogFooter className="flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 px-5 py-4 sm:px-6 sm:py-5">
                   <Button
-                    variant="secondary"
+                    variant="ghost"
+                    fingerziel
                     onClick={() => setDependencyPrompt((prev) => ({ ...prev, open: false }))}
                     disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
+                    className="w-full sm:w-auto"
                   >
                     {t('common.cancel')}
                   </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => void installTargetModOnly()}
-                    disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
-                  >
-                    {t('mods.installModOnly')}
-                  </Button>
-                  <Button
-                    onClick={() => void installAllWithDependencies()}
-                    disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
-                  >
-                    {dependencyPrompt.installing
-                      ? t('common.loading')
-                      : t('mods.installAllWithDependencies', {
-                          count: selectedMissingCount + 1,
-                        })}
-                  </Button>
+                  <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
+                    <Button
+                      variant="secondary"
+                      fingerziel
+                      onClick={() => void installTargetModOnly()}
+                      disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
+                      className="w-full sm:w-auto"
+                    >
+                      {t('mods.installModOnly')}
+                    </Button>
+                    <Button
+                      fingerziel
+                      onClick={() => void installAllWithDependencies()}
+                      disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
+                      className="w-full sm:w-auto"
+                    >
+                      {dependencyPrompt.installing
+                        ? t('common.loading')
+                        : t('mods.installAllWithDependencies', {
+                            count: selectedMissingCount + 1,
+                          })}
+                    </Button>
+                  </div>
                 </DialogFooter>
               </>
             )
@@ -2071,14 +2256,15 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                 />
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
-              <Button variant="secondary" onClick={() => setShowAddModal(false)} className="flex-1">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 mt-6">
+              <Button variant="ghost" fingerziel onClick={() => setShowAddModal(false)} className="w-full sm:w-auto">
                 {t('common.cancel')}
               </Button>
               <Button
+                fingerziel
                 onClick={() => void addMod()}
                 disabled={adding || !newWorkshopId.trim()}
-                className="flex-1 disabled:opacity-50"
+                className="w-full sm:w-auto"
               >
                 {adding ? t('common.loading') : t('common.add')}
               </Button>

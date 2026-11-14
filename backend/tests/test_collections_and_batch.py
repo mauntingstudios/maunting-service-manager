@@ -555,3 +555,54 @@ class TestBatchModInstallEndpoint:
             row = db.query(Mod).filter(Mod.server_id == test_server.id, Mod.workshop_id == wid).first()
             assert row is not None
             assert row.install_status == "installed"
+
+    def test_batch_background_worker_uses_real_blocking_lock_and_detached_server_node(
+        self, test_server, db
+    ):
+        """Regression: real acquire_install_update_lock_blocking must not return falsy None
+        and cause every mod to fail with 'Eine andere Installation oder ein Update läuft bereits'
+        while leaking the lock, and detached Server.node must remain accessible."""
+        from routers.mods import install_mods_batch_bg
+        from services.install_update_lock_service import (
+            active_install_update_lock,
+            reset_install_update_lock_for_tests,
+        )
+
+        reset_install_update_lock_for_tests()
+        mods = [
+            Mod(
+                server_id=test_server.id,
+                workshop_id=wid,
+                name=f"Mod {wid}",
+                load_order=idx,
+                install_status="pending",
+                install_action="install",
+            )
+            for idx, wid in enumerate(["3001", "3002"])
+        ]
+        db.add_all(mods)
+        db.commit()
+
+        observed_nodes: list[object] = []
+        mock_plugin = MagicMock()
+        mock_plugin.supports_mods = True
+
+        def fake_install_mods(srv, chunk_ids):
+            observed_nodes.append(getattr(srv, "node", None))
+            return {"ok": True, "items": {wid: {"ok": True} for wid in chunk_ids}}
+
+        mock_plugin.install_mods.side_effect = fake_install_mods
+
+        with patch("routers.mods.get_plugin", return_value=mock_plugin), \
+             patch("routers.mods.updater.update_mod_metadata_after_success"):
+            install_mods_batch_bg(test_server.id, ["3001", "3002"])
+
+        assert len(observed_nodes) == 1
+        assert active_install_update_lock() is None
+
+        db.expire_all()
+        for wid in ("3001", "3002"):
+            row = db.query(Mod).filter(Mod.server_id == test_server.id, Mod.workshop_id == wid).first()
+            assert row is not None
+            assert row.install_status == "installed"
+            assert row.install_error is None

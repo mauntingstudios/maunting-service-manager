@@ -3,9 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ModManager } from './ModManager'
 
 const mockApi = vi.fn()
+const mockOeffneBrowser = vi.fn()
 
 vi.mock('@/api/client', () => ({
   api: (...args: unknown[]) => mockApi(...args),
+}))
+
+vi.mock('@/desktop/tauri', () => ({
+  oeffneBrowser: (...args: unknown[]) => mockOeffneBrowser(...args),
 }))
 
 vi.mock('@/stores/toastStore', () => ({
@@ -34,6 +39,7 @@ vi.mock('react-i18next', () => ({
 describe('ModManager Collections & CurseForge Bundles', () => {
   beforeEach(() => {
     mockApi.mockReset()
+    mockOeffneBrowser.mockReset().mockResolvedValue(undefined)
   })
 
   it('switches to Steam Collections, opens preview dialog, and installs selected mods in batch', async () => {
@@ -136,6 +142,11 @@ describe('ModManager Collections & CurseForge Bundles', () => {
     fireEvent.click(openBtn)
 
     expect(await screen.findByText('New Utility Mod')).toBeInTheDocument()
+    const modLink = screen.getByRole('link', { name: 'New Utility Mod' })
+    expect(modLink).toHaveAttribute('href', 'https://steamcommunity.com/sharedfiles/filedetails/?id=202')
+    expect(modLink).toHaveAttribute('target', '_blank')
+    fireEvent.click(modLink)
+    expect(mockOeffneBrowser).toHaveBeenCalledWith('https://steamcommunity.com/sharedfiles/filedetails/?id=202')
     expect(screen.getByText('mods.alreadyInstalled')).toBeInTheDocument()
 
     // Only missing mod ('202') is pre-selected -> count = 1
@@ -191,6 +202,7 @@ describe('ModManager Collections & CurseForge Bundles', () => {
 describe('ModManager Dependency Confirmation Dialog (Steam & CurseForge)', () => {
   beforeEach(() => {
     mockApi.mockReset()
+    mockOeffneBrowser.mockReset().mockResolvedValue(undefined)
   })
 
   it('prompts on Steam mod dependencies with images, links, single-dep install, mod-only, and install-all', async () => {

@@ -112,10 +112,11 @@ def acquire_install_update_lock_blocking(
     *,
     node_id: int | None = None,
     ttl_seconds: int = DEFAULT_INSTALL_UPDATE_LOCK_TTL_SECONDS,
-) -> None:
+) -> bool:
     """Reserve the install/update slot, blocking until it is free.
 
     Stale process-local locks are replaced after ``ttl_seconds``.
     """
     while not try_acquire_install_update_lock(server_id, operation, node_id=node_id, ttl_seconds=ttl_seconds):
         time.sleep(1)
+    return True
