@@ -259,6 +259,25 @@ pub async fn medien_papierkorb(
     ruf(&app, "inPapierkorb", json!({ "bilder": bilder, "videos": videos }))
 }
 
+fn pruefe_aufnahme_uri(uri: &str) -> Result<(), String> {
+    if uri.starts_with("content://media/") && uri.len() <= 512 && !uri.chars().any(char::is_control) {
+        Ok(())
+    } else {
+        Err("Ungültige Aufnahme-URI".to_string())
+    }
+}
+
+#[tauri::command(async)]
+pub async fn medien_aufnahme_vorschau(
+    app: AppHandle,
+    fenster: WebviewWindow,
+    uri: String,
+) -> Result<Value, String> {
+    nur_hauptfenster(&fenster)?;
+    pruefe_aufnahme_uri(&uri)?;
+    ruf(&app, "aufnahmeVorschau", json!({ "uri": uri }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,5 +336,14 @@ mod tests {
         assert!(pruefe_bucket(&"0".repeat(64)).is_ok());
         assert!(pruefe_bucket(&"0".repeat(63)).is_err());
         assert!(pruefe_bucket(&"g".repeat(64)).is_err());
+    }
+
+    #[test]
+    fn aufnahme_uri_nur_mediastore() {
+        assert!(pruefe_aufnahme_uri("content://media/external/images/media/42").is_ok());
+        assert!(pruefe_aufnahme_uri("content://media/external/video/media/7").is_ok());
+        assert!(pruefe_aufnahme_uri("file:///etc/passwd").is_err());
+        assert!(pruefe_aufnahme_uri("content://other/provider/1").is_err());
+        assert!(pruefe_aufnahme_uri("").is_err());
     }
 }

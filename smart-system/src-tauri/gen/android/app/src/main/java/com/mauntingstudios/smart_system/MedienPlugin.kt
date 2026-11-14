@@ -66,6 +66,11 @@ class PapierkorbArgs {
     var videos: LongArray = LongArray(0)
 }
 
+@InvokeArg
+class AufnahmeVorschauArgs {
+    lateinit var uri: String
+}
+
 /**
  * Die Kamera-Sicherung des Tresors von der App aus: Zugriff erfragen,
  * einrichten, Stand zeigen, Speicher freigeben. Gesichert wird nur im
@@ -313,6 +318,73 @@ class MedienPlugin(private val activity: Activity) : Plugin(activity) {
     @ActivityCallback
     private fun nachPapierkorb(invoke: Invoke, ergebnis: ActivityResult) {
         invoke.resolve(JSObject().apply { put("erledigt", ergebnis.resultCode == Activity.RESULT_OK) })
+    }
+
+    /**
+     * Erzeugt eine kompakte Sofort-Vorschau für eine gerade geschossene Kamera-URI
+     * (`content://media/...`), solange der Hintergrund-Upload in den Tresor noch
+     * läuft oder pausiert ist.
+     */
+    @Command
+    fun aufnahmeVorschau(invoke: Invoke) {
+        val args = argumente<AufnahmeVorschauArgs>(invoke) ?: return
+        im(invoke, "Aufnahme nicht lesbar") {
+            val geparst = Uri.parse(args.uri)
+            val erlaubt = (geparst.scheme == "content" && geparst.authority == MediaStore.AUTHORITY)
+            if (!erlaubt) throw IllegalArgumentException("Ungültige Aufnahme-URI")
+
+            var name = geparst.lastPathSegment ?: "aufnahme"
+            var typ = activity.contentResolver.getType(geparst) ?: ""
+            var aufgenommen: Long? = null
+            val spalten = mutableListOf(
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.MIME_TYPE,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+            )
+            if (Build.VERSION.SDK_INT >= 29) spalten.add(MediaStore.MediaColumns.DATE_TAKEN)
+            activity.contentResolver.query(geparst, spalten.toTypedArray(), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val iName = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val iTyp = c.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+                    val iMod = c.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                    val iTaken = if (Build.VERSION.SDK_INT >= 29) c.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN) else -1
+                    if (iName >= 0 && !c.isNull(iName)) name = c.getString(iName)
+                    if (iTyp >= 0 && !c.isNull(iTyp)) typ = c.getString(iTyp)
+                    aufgenommen = when {
+                        iTaken >= 0 && !c.isNull(iTaken) -> c.getLong(iTaken)
+                        iMod >= 0 && !c.isNull(iMod) -> c.getLong(iMod) * 1000L
+                        else -> null
+                    }
+                }
+            }
+
+            val istVideo = typ.startsWith("video/") || args.uri.contains("/video/")
+            if (typ.isEmpty()) typ = if (istVideo) "video/mp4" else "image/jpeg"
+            val lesbareUri = if (!istVideo && Build.VERSION.SDK_INT >= 29) {
+                runCatching { MediaStore.setRequireOriginal(geparst) }.getOrDefault(geparst)
+            } else {
+                geparst
+            }
+            val angaben = KameraBilder.angaben(activity, lesbareUri, istVideo)
+            val dataUrl = if (angaben.vorschau.isNotEmpty()) {
+                "data:image/webp;base64," + Base64.encodeToString(angaben.vorschau, Base64.NO_WRAP)
+            } else null
+            val medienId = runCatching { ContentUris.parseId(geparst) }.getOrNull()?.takeIf { it > 0 }
+
+            JSObject().apply {
+                if (medienId != null) put("medienId", medienId)
+                put("name", name)
+                put("typ", typ)
+                if (angaben.breite != null) put("breite", angaben.breite)
+                if (angaben.hoehe != null) put("hoehe", angaben.hoehe)
+                if (angaben.dauer != null) put("dauer", angaben.dauer)
+                if (aufgenommen != null || angaben.aufgenommen != null) {
+                    put("aufgenommen", angaben.aufgenommen ?: aufgenommen)
+                }
+                if (angaben.kamera != null) put("kamera", angaben.kamera)
+                if (dataUrl != null) put("vorschauDataUrl", dataUrl)
+            }
+        }
     }
 
     companion object {

@@ -20,10 +20,12 @@ import {
   kameraJetzt,
   kameraStand,
   kameraVergessen,
+  medienAufnahmeVorschau,
   medienPapierkorb,
   medienPruefsumme,
   medienZugriff,
   sicherungSchluessel,
+  type AufnahmeVorschau,
   type KameraStand,
   type MedienZugriff,
 } from '@/desktop/tauri'
@@ -36,7 +38,29 @@ import { posteingangEinrichten } from './tresorEingang'
 import { sichtbareEintraege } from './tresorOrdner'
 import { getPendingQueue, useVaultStore } from './vaultStore'
 
-export type { KameraStand, KameraWarten } from '@/desktop/tauri'
+export type { AufnahmeVorschau, KameraStand, KameraWarten } from '@/desktop/tauri'
+
+/** Stößt den Hintergrund-Upload auf Android sofort an und aktualisiert den Stand. */
+export async function kameraJetztAnstossen(): Promise<KameraStand | null> {
+  if (!androidApp() || typeof kameraJetzt !== 'function') return null
+  try {
+    const stand = await kameraJetzt()
+    useKameraSicherung.setState({ stand })
+    return stand
+  } catch {
+    return null
+  }
+}
+
+/** Lädt eine lokale Sofort-Vorschau für eine eben aufgenommene Android-Kamera-URI. */
+export async function kameraAufnahmeVorschau(uri: string): Promise<AufnahmeVorschau | null> {
+  if (!androidApp() || typeof medienAufnahmeVorschau !== 'function') return null
+  try {
+    return await medienAufnahmeVorschau(uri)
+  } catch {
+    return null
+  }
+}
 
 export const useKameraSicherung = create<{ stand: KameraStand | null }>(() => ({ stand: null }))
 

@@ -25,9 +25,12 @@ import { generateSecurePassword } from './vaultCrypto'
 import { createDebouncedLeakChecker, type LeakCheckResult } from './leakChecker'
 import { QrScannerModal } from './QrScannerModal'
 import { TresorDateiBereich } from './TresorDateiBereich'
-import { TresorGalerie } from './TresorGalerie'
+import { TresorGalerie, istMedium } from './TresorGalerie'
 import { TresorZahlung } from './TresorZahlung'
 import { blobBasisSetzen } from './tresorBlobApi'
+import { eingangAnstossen } from './tresorEingang'
+import { kameraJetztAnstossen } from './kameraSicherung'
+import { neueOeffnenNonce, useTresorOeffnenAnfrage, type TresorOeffnenAnfrage } from './tresorOeffnenAnfrage'
 import { inhaltVon, pfadVon, zielOrdner } from './tresorOrdner'
 import { still } from '@/lib/still'
 import { begruessungSchluessel } from '@/lib/tageszeit'
@@ -408,6 +411,23 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const [ansicht, setAnsicht] = useState<Ansicht>('uebersicht')
   const [filter, setFilter] = useState<TresorFilter>('alle')
   const [ordnerFilter, setOrdnerFilter] = useState<string | null>(null)
+  const [lokalOeffnen, setLokalOeffnen] = useState<TresorOeffnenAnfrage | null>(null)
+  const offnenAnfrage = useTresorOeffnenAnfrage((s) => (isTeam ? null : s.anfrage))
+  const aktivesOeffnenZiel = offnenAnfrage ?? lokalOeffnen
+  const oeffnenErledigt = (nonce: number) => {
+    if (!isTeam) useTresorOeffnenAnfrage.getState().erledigen(nonce)
+    setLokalOeffnen((z) => (z?.nonce === nonce ? null : z))
+  }
+
+  useEffect(() => {
+    if (isTeam || !offnenAnfrage) return
+    setAnsicht(offnenAnfrage.ansicht)
+    if (offnenAnfrage.ansicht === 'fotos' && personalStore.isUnlocked) {
+      const bucketId = useVaultStore.getState().bucketId
+      void kameraJetztAnstossen()
+      if (bucketId) void eingangAnstossen(bucketId)
+    }
+  }, [isTeam, offnenAnfrage, personalStore.isUnlocked])
   const [generatorOffen, setGeneratorOffen] = useState(false)
   const [checkOffen, setCheckOffen] = useState(false)
   const [notizDialogOffen, setNotizDialogOffen] = useState(false)
@@ -782,8 +802,24 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       setNotizDialogOffen(true)
       return
     }
-    if (item.category === 'ordner' || item.datei || item.category === 'album') {
-      setAnsicht(item.category === 'album' || item.datei?.typ.startsWith('image/') ? 'fotos' : 'dateien')
+    if (item.category === 'album') {
+      setLokalOeffnen({ ansicht: 'fotos', albumId: item.id, nonce: neueOeffnenNonce() })
+      setAnsicht('fotos')
+      return
+    }
+    if (item.datei && istMedium(item)) {
+      setLokalOeffnen({ ansicht: 'fotos', itemId: item.id, nonce: neueOeffnenNonce() })
+      setAnsicht('fotos')
+      return
+    }
+    if (item.category === 'ordner') {
+      setLokalOeffnen({ ansicht: 'dateien', ordnerId: item.id, nonce: neueOeffnenNonce() })
+      setAnsicht('dateien')
+      return
+    }
+    if (item.datei) {
+      setLokalOeffnen({ ansicht: 'dateien', itemId: item.id, ordnerId: item.ordner, nonce: neueOeffnenNonce() })
+      setAnsicht('dateien')
       return
     }
     openEditEntryModal(item)
@@ -1114,6 +1150,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       onDelete={handleDeleteItem}
       onArchive={handleArchiv}
       onToggleFavorite={activeToggleFavorite}
+      onOpen={ansicht === 'tresor' ? handleDashboardEintrag : undefined}
       onEdit={(target) => {
         if (target.category === 'secure_note') {
           setNotizBearbeitet(target)
@@ -1267,9 +1304,19 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
           dateiBusy={uploadBusy > 0}
         />
       ) : ansicht === 'fotos' ? (
-        <TresorGalerie suche={searchQuery} isTeam={isTeam} />
+        <TresorGalerie
+          suche={searchQuery}
+          isTeam={isTeam}
+          geforderteOeffnung={aktivesOeffnenZiel?.ansicht === 'fotos' ? aktivesOeffnenZiel : null}
+          onAnfrageErledigt={oeffnenErledigt}
+        />
       ) : ansicht === 'dateien' ? (
-        <TresorDateiBereich suche={searchQuery} isTeam={isTeam} />
+        <TresorDateiBereich
+          suche={searchQuery}
+          isTeam={isTeam}
+          geforderteOeffnung={aktivesOeffnenZiel?.ansicht === 'dateien' ? aktivesOeffnenZiel : null}
+          onAnfrageErledigt={oeffnenErledigt}
+        />
       ) : ansicht === 'zahlung' ? (
         isTeam ? (
           <Zustandsflaeche art="leer" icon={<CreditCard className="h-10 w-10" />} text={t('teams.vaultNoPaymentsYet', { defaultValue: 'Noch keine Zahlungsmethoden im Team-Tresor.' })} />

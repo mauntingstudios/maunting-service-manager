@@ -414,6 +414,7 @@ class CameraActivity : AppCompatActivity() {
 
             override fun onPhotoSaved(file: File) {
                 runOnUiThread {
+                    letztesAufnahmeUri = Uri.fromFile(file)
                     ThumbnailLoader.ladeFuer(file) { bmp ->
                         if (bmp != null) {
                             imgThumbnail.setImageBitmap(bmp)
@@ -484,6 +485,7 @@ class CameraActivity : AppCompatActivity() {
                 override fun onVideoSaved(file: File) {
                     runOnUiThread {
                         setzeVideoUiZurueck()
+                        letztesAufnahmeUri = Uri.fromFile(file)
                         ThumbnailLoader.ladeFuer(file) { bmp ->
                             if (bmp != null) {
                                 imgThumbnail.setImageBitmap(bmp)
@@ -538,6 +540,7 @@ class CameraActivity : AppCompatActivity() {
                 val ausstehende = InternalMediaStore.ausstehendeAufnahmen(this)
                 ThumbnailLoader.ladeNeuestes(ausstehende) { localBmp ->
                     if (localBmp != null) {
+                        ausstehende.maxByOrNull { it.lastModified() }?.let { letztesAufnahmeUri = Uri.fromFile(it) }
                         imgThumbnail.setImageBitmap(localBmp)
                         imgThumbnail.alpha = 1.0f
                     } else {

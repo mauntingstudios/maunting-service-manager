@@ -228,7 +228,7 @@ export function TresorDateiAnsicht({ item: anfang, ort, folge, onWechseln, onSch
         item={item}
         text={anzeige.text}
         ort={ort}
-        ansicht={art === 'markdown' || art === 'tabelle' ? art : undefined}
+        ansicht={art === 'markdown' || art === 'tabelle' ? art : 'text'}
         onFertig={onSchliessen}
         isTeam={isTeam}
       />

@@ -7844,6 +7844,11 @@
         "video": "Video",
         "videoMitDauer": "Video, {{dauer}}",
         "ladeFehler": "The photo could not be loaded.",
+        "wirdGesichert": "Saving capture to vault …",
+        "kamera": "Camera",
+        "wartenAufWlan": "Waiting for Wi-Fi to back up to the vault.",
+        "wartenAufAkku": "Backup paused by battery optimization.",
+        "nochNichtImTresor": "Not backed up to the vault yet.",
         "offlineNichtDa": "To open a photo offline, select it under “Files” and choose “{{aktion}}”.",
         "ablegenHochladen": "Release to upload photos and videos",
         "kurz": {

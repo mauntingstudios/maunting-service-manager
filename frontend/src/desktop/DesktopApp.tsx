@@ -76,6 +76,7 @@ import { DashboardBereich } from './dashboard/DashboardBereich'
 import { dashboardElternroute, dashboardTitelKey, istDashboardRoute } from './dashboard/dashboardWege'
 import { HilfeBereich, istHilfeRoute } from './hilfe/HilfeBereich'
 import { VaultView } from './vault/VaultView'
+import { useTresorOeffnenAnfrage } from './vault/tresorOeffnenAnfrage'
 import { SmartcardWalletModal } from './vault/SmartcardWalletModal'
 import { kameraBeobachten } from './vault/kameraSicherung'
 import { eingangBeobachten } from './vault/tresorEingang'
@@ -774,13 +775,43 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
 
   useEffect(() => {
     if (!isAndroid) return
-    const oeffneTresor = () => {
+    type MsmRandMitVault = {
+      vaultAngefordertVerbrauchen?: () => boolean
+      vaultAufnahmeUriVerbrauchen?: () => string | null
+    }
+    const msmRand = () => (window as unknown as { MsmRand?: MsmRandMitVault }).MsmRand
+    const oeffneTresor = (event: Event) => {
+      const detailUri = (event as CustomEvent<{ uri?: unknown }>).detail?.uri
+      let uri = typeof detailUri === 'string' && detailUri.trim() ? detailUri.trim() : undefined
+      try {
+        // Aufbewahrte URI und Flag aus MainActivity mit abräumen, damit ein späteres Remount nicht doppelt feuert.
+        const bridge = msmRand()
+        bridge?.vaultAngefordertVerbrauchen?.()
+        const gespeichert = bridge?.vaultAufnahmeUriVerbrauchen?.()
+        if (!uri && typeof gespeichert === 'string' && gespeichert.trim()) {
+          uri = gespeichert.trim()
+        }
+      } catch (err) {
+        still(err, 'NavigationEmpfaenger.vaultAufnahmeUriVerbrauchen')
+      }
+      useTresorOeffnenAnfrage.getState().anfordern({
+        ansicht: 'fotos',
+        aufnahmeUri: uri,
+        vonKamera: true,
+      })
       navigate('/tresor')
     }
     window.addEventListener('msm:open-vault', oeffneTresor)
     try {
-      const msmRand = (window as unknown as { MsmRand?: { vaultAngefordertVerbrauchen?: () => boolean } }).MsmRand
-      if (msmRand?.vaultAngefordertVerbrauchen?.()) {
+      const bridge = msmRand()
+      if (bridge?.vaultAngefordertVerbrauchen?.()) {
+        const gespeichert = bridge.vaultAufnahmeUriVerbrauchen?.()
+        const uri = typeof gespeichert === 'string' && gespeichert.trim() ? gespeichert.trim() : undefined
+        useTresorOeffnenAnfrage.getState().anfordern({
+          ansicht: 'fotos',
+          aufnahmeUri: uri,
+          vonKamera: true,
+        })
         navigate('/tresor')
       }
     } catch (err) {

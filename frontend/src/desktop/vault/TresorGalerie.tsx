@@ -31,6 +31,7 @@ import {
   ImageIcon,
   Images,
   Library,
+  LoaderCircle,
   Minus,
   Pencil,
   Play,
@@ -60,6 +61,9 @@ import { fehlerText } from './tresorFehler'
 import { inDenPapierkorb, insArchiv, zuruecknehmen, type SammelStand } from './tresorSammel'
 import { LadeFehlerHinweis, TresorDateiInfo, ladeFehler, useNeuBeiNetz, type LadeFehler } from './TresorLichtboxTeile'
 import { TresorSpeicherAnzeige, TresorUploadStand, useTresorSpeicher } from './TresorSpeicher'
+import { kameraAufnahmeVorschau, kameraJetztAnstossen, kameraStandLaden, useKameraSicherung, type AufnahmeVorschau } from './kameraSicherung'
+import { eingangAnstossen } from './tresorEingang'
+import { extractMedienIdAusUri, type TresorOeffnenAnfrage } from './tresorOeffnenAnfrage'
 
 type Filter = 'alle' | 'videos' | 'kuerzlich' | 'aehnlich' | 'alben'
 
@@ -349,10 +353,30 @@ const FILTER: { id: Filter; labelKey: string; icon: LucideIcon }[] = [
   { id: 'alben', labelKey: 'mss.vault.fotos.alben', icon: Library },
 ]
 
-export function TresorGalerie({ suche = '', isTeam = false }: { suche?: string; isTeam?: boolean }) {
+interface PendingKamera {
+  nonce: number
+  uri?: string
+  medienId: number | null
+  status: 'laedt' | 'bereit' | 'fehler'
+  daten: AufnahmeVorschau | null
+}
+
+export function TresorGalerie({
+  suche = '',
+  isTeam = false,
+  geforderteOeffnung = null,
+  onAnfrageErledigt,
+}: {
+  suche?: string
+  isTeam?: boolean
+  geforderteOeffnung?: TresorOeffnenAnfrage | null
+  onAnfrageErledigt?: (nonce: number) => void
+}) {
   const { t, i18n } = useTranslation()
   const items = isTeam ? useTeamVaultStore((s) => s.items) : useVaultStore((s) => s.items)
   const userKey = isTeam ? useTeamVaultStore((s) => s.userKey) : useVaultStore((s) => s.userKey)
+  const bucketId = useVaultStore((s) => s.bucketId)
+  const kameraStand = useKameraSicherung((s) => s.stand)
   const dateiHinzufuegen = isTeam ? useTeamVaultStore((s) => s.dateiHinzufuegen) : useVaultStore((s) => s.dateiHinzufuegen)
   const albumAnlegen = isTeam ? useTeamVaultStore((s) => s.albumAnlegen) : useVaultStore((s) => s.albumAnlegen)
   const albumAendern = isTeam ? useTeamVaultStore((s) => s.albumAendern) : useVaultStore((s) => s.albumAendern)
@@ -850,6 +874,132 @@ export function TresorGalerie({ suche = '', isTeam = false }: { suche?: string; 
     if (offen && !offenItem) setOffen(null)
   }, [offen, offenItem, offenIndex])
 
+  const [pendingKamera, setPendingKamera] = useState<PendingKamera | null>(null)
+  const erledigteNonce = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!geforderteOeffnung || geforderteOeffnung.ansicht !== 'fotos') return
+    if (erledigteNonce.current === geforderteOeffnung.nonce) return
+
+    if (geforderteOeffnung.albumId) {
+      erledigteNonce.current = geforderteOeffnung.nonce
+      setPendingKamera(null)
+      setFilterRoh('alben')
+      setAlbumId(geforderteOeffnung.albumId)
+      setQuelle('')
+      onAnfrageErledigt?.(geforderteOeffnung.nonce)
+      return
+    }
+
+    if (geforderteOeffnung.itemId) {
+      const treffer = medien.find((i) => i.id === geforderteOeffnung.itemId)
+      if (!treffer) return
+      if (filter !== 'alle' || albumId !== null || quelle !== '') {
+        setFilterRoh('alle')
+        setAlbumId(null)
+        setQuelle('')
+        return
+      }
+      const idx = liste.findIndex((i) => i.id === treffer.id)
+      if (idx < 0) return
+      erledigteNonce.current = geforderteOeffnung.nonce
+      setPendingKamera(null)
+      setOffen({ id: treffer.id, index: idx })
+      onAnfrageErledigt?.(geforderteOeffnung.nonce)
+      return
+    }
+
+    if (geforderteOeffnung.vonKamera) {
+      if (filter !== 'alle' || albumId !== null || quelle !== '') {
+        setFilterRoh('alle')
+        setAlbumId(null)
+        setQuelle('')
+        return
+      }
+      const medienId = extractMedienIdAusUri(geforderteOeffnung.aufnahmeUri)
+      const trefferIdx = medienId != null ? liste.findIndex((i) => i.datei?.quelle?.medienId === medienId) : -1
+      if (trefferIdx >= 0) {
+        erledigteNonce.current = geforderteOeffnung.nonce
+        setPendingKamera(null)
+        setOffen({ id: liste[trefferIdx].id, index: trefferIdx })
+        onAnfrageErledigt?.(geforderteOeffnung.nonce)
+        return
+      }
+      if (!geforderteOeffnung.aufnahmeUri) {
+        erledigteNonce.current = geforderteOeffnung.nonce
+        setPendingKamera(null)
+        if (liste.length > 0) setOffen({ id: liste[0].id, index: 0 })
+        onAnfrageErledigt?.(geforderteOeffnung.nonce)
+        return
+      }
+      erledigteNonce.current = geforderteOeffnung.nonce
+      setOffen(null)
+      setPendingKamera({
+        nonce: geforderteOeffnung.nonce,
+        uri: geforderteOeffnung.aufnahmeUri,
+        medienId,
+        status: 'laedt',
+        daten: null,
+      })
+      onAnfrageErledigt?.(geforderteOeffnung.nonce)
+    }
+  }, [geforderteOeffnung, medien, liste, filter, albumId, quelle, onAnfrageErledigt])
+
+  // Lokale Vorschau für frisch aufgenommene Kamera-URI laden und auf Tresor-Sync warten.
+  const pendingNonce = pendingKamera?.nonce
+  const pendingUri = pendingKamera?.uri
+  useEffect(() => {
+    if (!pendingNonce || !pendingUri) return
+    let abgebrochen = false
+    void kameraAufnahmeVorschau(pendingUri).then((daten) => {
+      if (abgebrochen) return
+      if (daten?.vorschauDataUrl) {
+        setPendingKamera((p) => (p?.nonce === pendingNonce ? { ...p, status: 'bereit', daten } : p))
+      } else {
+        setPendingKamera((p) => (p?.nonce === pendingNonce ? { ...p, status: 'fehler', daten: daten ?? null } : p))
+      }
+    })
+    return () => {
+      abgebrochen = true
+    }
+  }, [pendingNonce, pendingUri])
+
+  useEffect(() => {
+    if (!pendingKamera) return
+    if (pendingKamera.medienId != null) {
+      const idx = liste.findIndex((i) => i.datei?.quelle?.medienId === pendingKamera.medienId)
+      if (idx >= 0) {
+        setPendingKamera(null)
+        setOffen({ id: liste[idx].id, index: idx })
+        return
+      }
+    }
+    if (pendingKamera.status === 'fehler' && !pendingKamera.daten && liste.length > 0) {
+      setPendingKamera(null)
+      setOffen({ id: liste[0].id, index: 0 })
+    }
+  }, [pendingKamera, liste])
+
+  useEffect(() => {
+    if (!pendingKamera || isTeam || !userKey) return
+    let versuche = 0
+    const anspruch = () => {
+      void kameraJetztAnstossen()
+      void kameraStandLaden()
+      if (bucketId) void eingangAnstossen(bucketId)
+    }
+    anspruch()
+    const timer = window.setInterval(() => {
+      versuche += 1
+      if (versuche > 15) {
+        window.clearInterval(timer)
+        return
+      }
+      anspruch()
+    }, 1800)
+    return () => window.clearInterval(timer)
+  }, [pendingKamera?.nonce, isTeam, userKey, bucketId])
+
   // ── Darstellung ───────────────────────────────────────────────────────────
 
   const kante = KACHEL[stufe]
@@ -1167,6 +1317,14 @@ export function TresorGalerie({ suche = '', isTeam = false }: { suche?: string; 
           isTeam={isTeam}
         />
       )}
+
+      {!offenItem && pendingKamera && (
+        <KameraVorschauLichtbox
+          kamera={pendingKamera}
+          sicherung={kameraStand}
+          onSchliessen={() => setPendingKamera(null)}
+        />
+      )}
     </div>
   )
 }
@@ -1412,6 +1570,62 @@ function GalerieLichtbox({
       }
     >
       {inhalt}
+    </Lichtbox>
+  )
+}
+
+function KameraVorschauLichtbox({
+  kamera,
+  sicherung,
+  onSchliessen,
+}: {
+  kamera: PendingKamera
+  sicherung: ReturnType<typeof useKameraSicherung.getState>['stand']
+  onSchliessen: () => void
+}) {
+  const { t, i18n } = useTranslation()
+  const daten = kamera.daten
+  const titel = daten?.name ?? t('mss.vault.fotos.kamera')
+  const datum = daten?.aufgenommen ? formatZeitpunkt(daten.aufgenommen, i18n.language) : undefined
+  const istVideo = Boolean(daten?.typ?.startsWith('video/') || kamera.uri?.includes('/video/'))
+
+  const hinweis =
+    sicherung?.eingerichtet && sicherung.warten === 'wlan'
+      ? t('mss.vault.fotos.wartenAufWlan')
+      : sicherung?.eingerichtet && sicherung.warten === 'akku'
+        ? t('mss.vault.fotos.wartenAufAkku')
+        : sicherung?.eingerichtet
+          ? t('mss.vault.fotos.wirdGesichert')
+          : t('mss.vault.fotos.nochNichtImTresor')
+
+  return (
+    <Lichtbox
+      kennung={`kamera-${kamera.nonce}`}
+      titel={titel}
+      untertitel={datum}
+      onSchliessen={onSchliessen}
+      zoombar={Boolean(daten?.vorschauDataUrl && !istVideo)}
+    >
+      <div className="relative flex h-full w-full items-center justify-center">
+        {kamera.status === 'laedt' && !daten?.vorschauDataUrl ? (
+          <LoaderCircle className="h-8 w-8 animate-spin text-white/80" aria-label={hinweis} />
+        ) : daten?.vorschauDataUrl ? (
+          <img
+            src={daten.vorschauDataUrl}
+            alt={titel}
+            draggable={false}
+            className="max-h-full max-w-full object-contain"
+          />
+        ) : (
+          <p className="px-4 text-center text-sm text-white/80">{hinweis}</p>
+        )}
+        <div
+          role="status"
+          className="pointer-events-none absolute bottom-4 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-md"
+        >
+          {hinweis}
+        </div>
+      </div>
     </Lichtbox>
   )
 }

@@ -183,9 +183,21 @@ describe('TresorDateiAnsicht', () => {
     expect(await screen.findByText(i18n.t('mss.vault.dateien.formatNichtDarstellbar'))).toBeInTheDocument()
   })
 
-  it('öffnet eine unbekannte Datei, die Text ist, im Editor', async () => {
+  it('öffnet eine unbekannte Datei, die Text ist, zuerst in der Leseansicht und erlaubt Bearbeiten', async () => {
     zeigen(datei('Makefile.local', ''), new Blob(['all:\n\techo hallo']))
+    const lese = await screen.findByTestId('tresor-leseansicht')
+    expect(lese).toHaveTextContent('all:')
+    expect(lese).toHaveTextContent('echo hallo')
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.dateien.textBearbeiten') }))
     expect(await screen.findByRole('textbox', { name: 'inhalt' })).toHaveValue('all:\n\techo hallo')
+  })
+
+  it('zeigt eine reine Textdatei direkt als formatierte Leseansicht ohne Herunterladen', async () => {
+    zeigen(datei('notizen.txt', 'text/plain'), new Blob(['Zeile 1\nZeile 2']))
+    const lese = await screen.findByTestId('tresor-leseansicht')
+    expect(lese).toHaveTextContent('Zeile 1')
+    expect(lese).toHaveTextContent('Zeile 2')
+    expect(screen.getByRole('button', { name: i18n.t('mss.vault.dateien.textBearbeiten') })).toBeInTheDocument()
   })
 
   it('zeigt eine unbekannte Binärdatei als Karte', async () => {

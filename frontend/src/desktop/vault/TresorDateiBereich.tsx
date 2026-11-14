@@ -56,6 +56,7 @@ import { fehlerText } from './tresorFehler'
 import { inDenPapierkorb, insArchiv, type SammelStand } from './tresorSammel'
 import { TresorDateiAnsicht, dateiIcon, oeffnetImEditor } from './TresorDateiAnsicht'
 import { TresorSpeicherAnzeige, TresorUploadStand, useTresorSpeicher } from './TresorSpeicher'
+import type { TresorOeffnenAnfrage } from './tresorOeffnenAnfrage'
 
 /** Kennzeichnet beim Ziehen Einträge aus dem Tresor (im Unterschied zu Dateien vom Rechner). Wert: JSON-Liste der IDs. */
 export const ZIEH_TYP = 'application/x-msm-tresor'
@@ -73,9 +74,11 @@ interface Props {
   /** Suchbegriff aus der Kopfleiste des Tresors. Nicht leer: Treffer aus allen Ordnern statt des geöffneten. */
   suche?: string
   isTeam?: boolean
+  geforderteOeffnung?: TresorOeffnenAnfrage | null
+  onAnfrageErledigt?: (nonce: number) => void
 }
 
-export function TresorDateiBereich({ suche = '', isTeam = false }: Props) {
+export function TresorDateiBereich({ suche = '', isTeam = false, geforderteOeffnung = null, onAnfrageErledigt }: Props) {
   const { t, i18n } = useTranslation()
   const items = isTeam ? useTeamVaultStore((s) => s.items) : useVaultStore((s) => s.items)
   const userKey = isTeam ? useTeamVaultStore((s) => s.userKey) : useVaultStore((s) => s.userKey)
@@ -132,6 +135,25 @@ export function TresorDateiBereich({ suche = '', isTeam = false }: Props) {
     setOrdner(id)
     setVerlassenBei(suchwort || null)
   }
+
+  const erledigteNonce = useRef<number | null>(null)
+  useEffect(() => {
+    if (!geforderteOeffnung || geforderteOeffnung.ansicht !== 'dateien') return
+    if (erledigteNonce.current === geforderteOeffnung.nonce) return
+    const zielItem = geforderteOeffnung.itemId ? sichtbareItems.find((i) => i.id === geforderteOeffnung.itemId) : undefined
+    const zielOrdnerId = zielItem?.category === 'ordner' ? zielItem.id : (zielItem?.ordner ?? geforderteOeffnung.ordnerId)
+    if (zielOrdnerId && ordnerListe.some((o) => o.id === zielOrdnerId)) {
+      setOrdner(zielOrdnerId)
+      setVerlassenBei(suchwort || null)
+    } else if (!zielItem || !zielItem.ordner) {
+      setOrdner(undefined)
+    }
+    if (zielItem?.datei) {
+      setAnsicht(zielItem)
+    }
+    erledigteNonce.current = geforderteOeffnung.nonce
+    onAnfrageErledigt?.(geforderteOeffnung.nonce)
+  }, [geforderteOeffnung, sichtbareItems, ordnerListe, suchwort, onAnfrageErledigt])
 
   const inhalt = useMemo(() => {
     // Beim Suchen der ganze Tresor; `sichtbareItems` lässt Papierkorb und Archiv samt Inhalt schon weg.

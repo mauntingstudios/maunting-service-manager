@@ -638,3 +638,20 @@ export async function medienEinstellungen(): Promise<void> {
 export async function medienPapierkorb(bilder: number[], videos: number[]): Promise<boolean> {
   return (await invoke<{ erledigt: boolean }>('medien_papierkorb', { bilder, videos })).erledigt
 }
+
+export interface AufnahmeVorschau {
+  medienId?: number
+  name: string
+  typ: string
+  breite?: number
+  hoehe?: number
+  dauer?: number
+  aufgenommen?: number
+  kamera?: string
+  vorschauDataUrl?: string
+}
+
+/** Liest eine lokale Kamera-URI als kompakte Sofort-Vorschau, solange der Tresor-Upload noch läuft. */
+export async function medienAufnahmeVorschau(uri: string): Promise<AufnahmeVorschau> {
+  return invoke<AufnahmeVorschau>('medien_aufnahme_vorschau', { uri })
+}

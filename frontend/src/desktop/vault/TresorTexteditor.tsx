@@ -40,8 +40,8 @@ interface Props {
   text: string
   /** Ort der Datei für die Kopfzeile des Editors, etwa „Stammverzeichnis / Verträge“. */
   ort?: string
-  /** Markdown und Tabellen haben eine gelesene Ansicht neben dem Text. */
-  ansicht?: 'markdown' | 'tabelle'
+  /** Text-, Markdown- und Tabellendateien starten in einer lesefreundlichen Vorschau. */
+  ansicht?: 'text' | 'markdown' | 'tabelle'
   onFertig: (gespeichert: string | null) => void
   isTeam?: boolean
 }
@@ -138,9 +138,9 @@ export function TresorTexteditor({ item: anfang, text, ort, ansicht, onFertig, i
               aria-label={lesen ? t('mss.vault.dateien.textBearbeiten') : t(ansicht === 'markdown' ? 'mss.vault.dateien.dokumentLesen' : 'mss.vault.dateien.alsTabelle')}
               onClick={() => setLesen((l) => !l)}
             >
-              {lesen ? <Pencil className="h-4 w-4" /> : ansicht === 'markdown' ? <BookOpen className="h-4 w-4" /> : <Table2 className="h-4 w-4" />}
+              {lesen ? <Pencil className="h-4 w-4" /> : ansicht === 'markdown' ? <BookOpen className="h-4 w-4" /> : ansicht === 'tabelle' ? <Table2 className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
               <span className="hidden sm:inline">
-                {lesen ? t('mss.vault.dateien.textBearbeiten') : t(ansicht === 'markdown' ? 'mss.vault.dateien.dokumentLesen' : 'mss.vault.dateien.alsTabelle')}
+                {lesen ? t('mss.vault.dateien.textBearbeiten') : t(ansicht === 'tabelle' ? 'mss.vault.dateien.alsTabelle' : 'mss.vault.dateien.dokumentLesen')}
               </span>
             </Button>
           )}
@@ -177,8 +177,12 @@ export function TresorTexteditor({ item: anfang, text, ort, ansicht, onFertig, i
               <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-surface" data-testid="tresor-leseansicht">
                 {ansicht === 'markdown' ? (
                   <Markdownansicht text={tab.content} />
-                ) : (
+                ) : ansicht === 'tabelle' ? (
                   <Tabellenansicht zeilen={zeilen} label={item.service} />
+                ) : (
+                  <pre className="whitespace-pre-wrap break-words p-4 font-mono text-sm leading-relaxed text-on-surface select-text sm:p-6">
+                    {tab.content}
+                  </pre>
                 )}
               </div>
             )}

@@ -7844,6 +7844,11 @@
         "video": "Video",
         "videoMitDauer": "Video, {{dauer}}",
         "ladeFehler": "Das Foto ließ sich nicht laden.",
+        "wirdGesichert": "Aufnahme wird in den Tresor gesichert …",
+        "kamera": "Kamera",
+        "wartenAufWlan": "Wartet auf WLAN für die Tresor-Sicherung.",
+        "wartenAufAkku": "Sicherung durch Akku-Sparmodus pausiert.",
+        "nochNichtImTresor": "Noch nicht im Tresor gesichert.",
         "offlineNichtDa": "Damit ein Foto auch ohne Netz aufgeht, wähle es unter „Dateien“ und dann „{{aktion}}“.",
         "ablegenHochladen": "Loslassen, um Fotos und Videos hochzuladen",
         "kurz": {

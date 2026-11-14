@@ -8,12 +8,15 @@
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { Profiler } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { zurueckStapelLeeren } from '@maunting/ui'
 
 import i18n from '@/i18n'
 import { VaultView, restTageImPapierkorb } from './VaultView'
+import { extractMedienIdAusUri, useTresorOeffnenAnfrage } from './tresorOeffnenAnfrage'
+import { useKameraSicherung } from './kameraSicherung'
+import { kameraJetzt, kameraStand, medienAufnahmeVorschau } from '../tauri'
 import { useConfirmStore } from '@/stores/confirmStore'
 import { useToastStore } from '@/stores/toastStore'
 import { quelleVon } from './TresorGalerie'
@@ -31,6 +34,9 @@ vi.mock('../tauri', () => ({
   biometrieSpeicherFragtSelbst: vi.fn().mockResolvedValue(false),
   verifiziereBiometrie: vi.fn().mockResolvedValue(false),
   setzeTresorSchutz: vi.fn().mockResolvedValue(undefined),
+  kameraStand: vi.fn().mockResolvedValue(null),
+  medienAufnahmeVorschau: vi.fn().mockResolvedValue(null),
+  kameraJetzt: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('./tresorBlobApi', () => ({
@@ -564,5 +570,169 @@ describe('VaultView: Gesperrter Zustand & Maunting Card', () => {
     render(<VaultView />)
     expect(screen.getByText(/Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet/i)).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /Gerät autorisieren/i }).length).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('VaultView: Direktes Öffnen & Kamera-Vorschau', () => {
+  const dateiKopf = (id: string, typ: string, extra?: Partial<VaultItem['datei']>) =>
+    ({
+      id: `b-${id}`,
+      schluessel: 'AA==',
+      iv: 'AA==',
+      hash: `h-${id}`,
+      echt: 120,
+      laenge: 140,
+      typ,
+      teilbar: typ.startsWith('image/') || typ.startsWith('video/'),
+      erstellt: 1_700_000_000_000,
+      original: { id: `b-${id}`, schluessel: 'AA==', iv: 'AA==', hash: `h-${id}`, echt: 120, laenge: 140 },
+      vorschau: { id: `v-${id}`, schluessel: 'AA==', iv: 'AA==', hash: `hv-${id}`, echt: 80, laenge: 100 },
+      ...extra,
+    }) as VaultItem['datei']
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('de')
+    zurueckStapelLeeren()
+    window.history.replaceState(null, '')
+    useTresorOeffnenAnfrage.setState({ anfrage: null })
+    useKameraSicherung.setState({ stand: null })
+    vi.mocked(kameraStand).mockReset()
+    vi.mocked(kameraStand).mockResolvedValue(null)
+    vi.mocked(medienAufnahmeVorschau).mockReset()
+    vi.mocked(medienAufnahmeVorschau).mockResolvedValue(null)
+    vi.mocked(kameraJetzt).mockReset()
+    vi.mocked(kameraJetzt).mockResolvedValue(undefined)
+    useVaultStore.setState({
+      isInitialized: true,
+      isUnlocked: true,
+      isDeviceAuthorized: true,
+      hasHint: true,
+      searchQuery: '',
+      userKey: 'k' as never,
+      syncWithServer: vi.fn(async () => undefined),
+      fetchVaultSalt: vi.fn(async () => null),
+      checkHintStatus: vi.fn(async () => true),
+      items: [
+        eintrag('foto-1', 'strand.jpg', {
+          category: 'datei',
+          username: '',
+          password: '',
+          updatedAt: 300,
+          datei: dateiKopf('foto-1', 'image/jpeg', { quelle: { medienId: 42 } }),
+        }),
+        eintrag('txt-1', 'notiz.txt', {
+          category: 'datei',
+          username: '',
+          password: '',
+          updatedAt: 200,
+          datei: dateiKopf('txt-1', 'text/plain'),
+        }),
+        eintrag('ordner-1', 'Steuern', {
+          category: 'ordner',
+          username: '',
+          password: '',
+          updatedAt: 100,
+        }),
+      ],
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  })
+
+  it('extrahiert Medien-IDs ausschließlich aus MediaStore-URIs', () => {
+    expect(extractMedienIdAusUri('content://media/external/images/media/42')).toBe(42)
+    expect(extractMedienIdAusUri('content://media/picker/0/com.android.providers.media.photopicker/media/991')).toBe(991)
+    expect(extractMedienIdAusUri('file:///storage/emulated/0/Pictures/test.jpg')).toBeNull()
+    expect(extractMedienIdAusUri(null)).toBeNull()
+  })
+
+  it('öffnet ein Foto aus der Übersicht direkt im Fotomodus und zeigt beim Schließen die Galeriefilter', async () => {
+    render(<VaultView />)
+    const knopf = screen.getByRole('button', { name: /strand\.jpg/ })
+    fireEvent.click(knopf)
+
+    expect(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) })).toHaveAttribute('aria-selected', 'true')
+    const dialog = await screen.findByRole('dialog', { name: 'strand.jpg' })
+    expect(within(dialog).getByText('strand.jpg')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('common.close') }))
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.fotos.videos')) })).toBeInTheDocument()
+  })
+
+  it('öffnet eine Textdatei aus der Übersicht direkt in der Leseansicht ohne Herunterladen', async () => {
+    render(<VaultView />)
+    fireEvent.click(screen.getByRole('button', { name: /notiz\.txt/ }))
+
+    expect(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.dateien')) })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByTestId('tresor-leseansicht')).toBeInTheDocument()
+  })
+
+  it('öffnet einen Eintrag auch direkt aus der Tresor-Listenansicht', async () => {
+    render(<VaultView />)
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.tresor')) }))
+    fireEvent.click(screen.getByRole('button', { name: /strand\.jpg/ }))
+
+    expect(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) })).toHaveAttribute('aria-selected', 'true')
+    const dialog = await screen.findByRole('dialog', { name: 'strand.jpg' })
+    expect(within(dialog).getByText('strand.jpg')).toBeInTheDocument()
+  })
+
+  it('behält Kamera-Vorschau bei gesperrtem Tresor, zeigt lokale Vorschau bei noch nicht synchronisiertem Foto und wechselt nahtlos nach Upload', async () => {
+    ;(window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__ = {}
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Linux; Android 14)')
+    const sicherungStand = { eingerichtet: true, aktiv: true, laeuft: true, ausstehend: 1, gesamt: 1, fehler: 0, warten: null }
+    vi.mocked(kameraStand).mockResolvedValue(sicherungStand)
+    vi.mocked(medienAufnahmeVorschau).mockResolvedValue({
+      medienId: 777,
+      name: 'IMG_20261114_190000.jpg',
+      typ: 'image/jpeg',
+      vorschauDataUrl: 'data:image/webp;base64,AAAA',
+    })
+    useKameraSicherung.setState({ stand: sicherungStand })
+
+    // Start gesperrt mit eingehender Kamera-Anfrage
+    useVaultStore.setState({ isUnlocked: false })
+    useTresorOeffnenAnfrage.getState().anfordern({
+      ansicht: 'fotos',
+      aufnahmeUri: 'content://media/external/images/media/777',
+      vonKamera: true,
+    })
+
+    render(<VaultView />)
+    expect(screen.getByRole('button', { name: new RegExp(i18n.t('mss.vault.entsperren')) })).toBeInTheDocument()
+
+    // Entsperren -> muss automatisch direkt in den Fotomodus + lokale Kamera-Vorschau springen
+    act(() => {
+      useVaultStore.setState({ isUnlocked: true })
+    })
+
+    await vi.waitFor(() => expect(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) })).toHaveAttribute('aria-selected', 'true'))
+    const vorschau = await screen.findByRole('img', { name: 'IMG_20261114_190000.jpg' })
+    expect(vorschau).toHaveAttribute('src', 'data:image/webp;base64,AAAA')
+    expect(within(screen.getByRole('dialog')).getByRole('status')).toHaveTextContent(i18n.t('mss.vault.fotos.wirdGesichert'))
+    expect(kameraJetzt).toHaveBeenCalled()
+
+    // Sobald das hochgeladene Foto im Vault-Store ankommt, nahtloser Wechsel auf das echte VaultItem
+    act(() => {
+      useVaultStore.setState((s) => ({
+        items: [
+          eintrag('foto-777', 'IMG_20261114_190000.jpg', {
+            category: 'datei',
+            username: '',
+            password: '',
+            updatedAt: 500,
+            datei: dateiKopf('foto-777', 'image/jpeg', { quelle: { medienId: 777 } }),
+          }),
+          ...s.items,
+        ],
+      }))
+    })
+
+    await vi.waitFor(() => expect(within(screen.getByRole('dialog')).queryByText(i18n.t('mss.vault.fotos.wirdGesichert'))).toBeNull())
+    expect(await screen.findByRole('dialog', { name: 'IMG_20261114_190000.jpg' })).toBeInTheDocument()
   })
 })

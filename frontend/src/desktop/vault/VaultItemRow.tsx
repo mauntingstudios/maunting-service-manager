@@ -71,6 +71,8 @@ export interface VaultItemRowProps {
   onArchive: (item: VaultItem, archive: boolean) => Promise<void> | void
   onToggleFavorite: (itemId: string) => Promise<void> | void
   onEdit: (item: VaultItem) => void
+  /** Öffnet Dateien/Medien/Ordner/Notizen direkt in ihrer Ansicht. */
+  onOpen?: (item: VaultItem) => void
 }
 
 /** Einzelzeile eines Tresor-Eintrags in Liste, Archiv oder Papierkorb. */
@@ -88,9 +90,18 @@ export function VaultItemRow({
   onArchive,
   onToggleFavorite,
   onEdit,
+  onOpen,
 }: VaultItemRowProps) {
   const { t } = useTranslation()
   const istDatei = !istPasswortKategorie(item.category)
+  const kannDirektOeffnen = Boolean(
+    onOpen &&
+      (item.datei ||
+        item.category === 'ordner' ||
+        item.category === 'album' ||
+        item.category === 'secure_note' ||
+        item.zahlung),
+  )
   const ItemBrand =
     item.category === 'ordner'
       ? Folder
@@ -102,72 +113,99 @@ export function VaultItemRow({
             ? FileIcon
             : getBrandIcon(item.service, item.url)
 
+  const zeilenUntertitel = istDatei ? (
+    <div className="mt-0.5 text-label-sm text-on-surface-variant">
+      {item.zahlung
+        ? verdeckt(item.zahlung)
+        : item.category === 'ordner'
+          ? t('mss.vault.dateien.ordner')
+          : item.album
+            ? t('mss.vault.fotos.album', { count: item.album.eintraege.length })
+            : item.datei
+              ? formatBytes(item.datei.original.echt)
+              : ''}
+    </div>
+  ) : (
+    <div className="flex items-center gap-1.5 mt-0.5">
+      <span className="text-label-sm text-on-surface-variant truncate font-mono">
+        {item.username || '—'}
+      </span>
+      {item.username && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          fingerziel
+          onClick={() => void onCopy(item.username, `user-${item.id}`, item.id)}
+          className="text-on-surface-variant hover:text-on-surface"
+          aria-label={t('mss.vault.benutzernameKopieren')}
+        >
+          {copiedIdField === `user-${item.id}` ? (
+            <Check className="h-3 w-3 text-status-success" />
+          ) : (
+            <Copy className="h-3 w-3" />
+          )}
+        </Button>
+      )}
+    </div>
+  )
+
   return (
     <div className="group flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/20 transition-all shadow-sm">
       {/* Logo, Dienst, Benutzer */}
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <ZeilenBild item={item} Symbol={ItemBrand} />
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs font-semibold text-on-surface truncate">
-              {item.service}
-            </span>
-            {item.url && (
-              <a
-                href={item.url.startsWith('http') ? item.url : `https://${item.url}`}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={t('mss.vault.seiteOeffnen', { name: item.service })}
-                className="text-on-surface-variant hover:text-primary transition-colors"
-              >
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
-            {formatTransferBadge(item) && (
-              <span className="inline-flex items-center px-1.5 py-0.5 text-label-sm font-medium rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
-                {formatTransferBadge(item)}
-              </span>
-            )}
-          </div>
-
-          {istDatei ? (
-            <div className="mt-0.5 text-label-sm text-on-surface-variant">
-              {item.zahlung
-                ? verdeckt(item.zahlung)
-                : item.category === 'ordner'
-                  ? t('mss.vault.dateien.ordner')
-                  : item.album
-                    ? t('mss.vault.fotos.album', { count: item.album.eintraege.length })
-                    : item.datei
-                      ? formatBytes(item.datei.original.echt)
-                      : ''}
+        {kannDirektOeffnen && onOpen ? (
+          <button
+            type="button"
+            onClick={() => onOpen(item)}
+            className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:min-h-9"
+          >
+            <ZeilenBild item={item} Symbol={ItemBrand} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-semibold text-on-surface truncate">
+                  {item.service}
+                </span>
+                {formatTransferBadge(item) && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-label-sm font-medium rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
+                    {formatTransferBadge(item)}
+                  </span>
+                )}
+              </div>
+              {zeilenUntertitel}
             </div>
-          ) : (
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="text-label-sm text-on-surface-variant truncate font-mono">
-                {item.username || '—'}
-              </span>
-              {item.username && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  fingerziel
-                  onClick={() => void onCopy(item.username, `user-${item.id}`, item.id)}
-                  className="text-on-surface-variant hover:text-on-surface"
-                  aria-label={t('mss.vault.benutzernameKopieren')}
-                >
-                  {copiedIdField === `user-${item.id}` ? (
-                    <Check className="h-3 w-3 text-status-success" />
-                  ) : (
-                    <Copy className="h-3 w-3" />
-                  )}
-                </Button>
-              )}
+          </button>
+        ) : (
+          <>
+            <ZeilenBild item={item} Symbol={ItemBrand} />
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-semibold text-on-surface truncate">
+                  {item.service}
+                </span>
+                {item.url && (
+                  <a
+                    href={item.url.startsWith('http') ? item.url : `https://${item.url}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={t('mss.vault.seiteOeffnen', { name: item.service })}
+                    className="text-on-surface-variant hover:text-primary transition-colors"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+                {formatTransferBadge(item) && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-label-sm font-medium rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
+                    {formatTransferBadge(item)}
+                  </span>
+                )}
+              </div>
+
+              {zeilenUntertitel}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {/* Schnell-Aktionen (Passwort & 2FA) */}
