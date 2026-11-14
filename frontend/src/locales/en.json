@@ -2361,6 +2361,8 @@
   "shell": {
     "openNavigation": "Open navigation",
     "closeNavigation": "Close navigation",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
     "mainNavigation": "Main navigation",
     "areas": "Areas"
   },

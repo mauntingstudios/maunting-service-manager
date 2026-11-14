@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { ChevronRight } from 'lucide-react'
+import { Kurzinfo } from '@maunting/ui'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { VersionFooter } from '@/components/VersionFooter'
@@ -22,6 +25,7 @@ import { chatIstOffen } from '@/lib/chatVollbild'
 import { SmartcardWalletModal } from '@/desktop/vault/SmartcardWalletModal'
 
 export function Shell() {
+  const { t } = useTranslation()
   useMessengerSperreBereitschaft()
 
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
@@ -139,12 +143,24 @@ export function Shell() {
     // sichtbaren Bereich. Die mobile Navigation unten macht es schon so.
     <div className={`bg-background text-on-surface flex relative overflow-x-clip ${isFullHeightPage ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
       {/* Sidebar */}
-      {!sidebarHidden && (
+      {!sidebarHidden ? (
         <Sidebar
+          onCollapse={() => setSidebarHidden(true)}
           presenceStatus={presenceStatus}
           effectiveStatus={presenceEffektiv}
           onPresenceChange={handlePresenceChange}
         />
+      ) : (
+        <Kurzinfo text={t('shell.expandSidebar')} seite="anfang" aussen="hidden lg:block fixed left-3 top-3 z-40">
+          <button
+            type="button"
+            onClick={() => setSidebarHidden(false)}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+            aria-label={t('shell.expandSidebar')}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </Kurzinfo>
       )}
 
       {mobileNavigationOpen && (

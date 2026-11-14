@@ -2361,6 +2361,8 @@
   "shell": {
     "openNavigation": "Navigation öffnen",
     "closeNavigation": "Navigation schließen",
+    "collapseSidebar": "Seitenleiste einklappen",
+    "expandSidebar": "Seitenleiste einblenden",
     "mainNavigation": "Hauptnavigation",
     "areas": "Bereiche"
   },

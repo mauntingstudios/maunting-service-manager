@@ -161,4 +161,17 @@ describe('Shell', () => {
     await waitFor(() => expect(trigger).toHaveFocus())
     expect(document.body.style.overflow).toBe('')
   })
+
+  it('lässt die Desktop-Seitenleiste einklappen und wieder einblenden', () => {
+    renderShell()
+    expect(document.querySelector('aside.msm-sidebar')).not.toBeNull()
+
+    const collapseBtn = screen.getByRole('button', { name: i18n.t('shell.collapseSidebar') })
+    fireEvent.click(collapseBtn)
+    expect(document.querySelector('aside.msm-sidebar')).toBeNull()
+
+    const expandBtn = screen.getByRole('button', { name: i18n.t('shell.expandSidebar') })
+    fireEvent.click(expandBtn)
+    expect(document.querySelector('aside.msm-sidebar')).not.toBeNull()
+  })
 })

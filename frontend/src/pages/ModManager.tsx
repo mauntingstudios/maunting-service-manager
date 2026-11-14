@@ -490,7 +490,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
             >
               {isAdded ? t('mods.added') : t('common.add')}
             </Button>
-            <Kurzinfo text={ansehenText} seite="ende">
+            <Kurzinfo text={ansehenText} seite="ende" portal>
               <a
                 href={mod.direct_url}
                 target="_blank"

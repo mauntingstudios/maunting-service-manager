@@ -5,13 +5,13 @@ import { useAuthStore } from '@/stores/authStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { usePanelNavigation } from './usePanelNavigation'
 import { Logo } from '@/components/Logo'
-import { LogOut, Plus, User as UserIcon, X } from 'lucide-react'
+import { ChevronLeft, LogOut, Plus, User as UserIcon, X } from 'lucide-react'
 import type { NavGroupName } from './navigation'
 import { DesktopAppDownloadBadge } from './DesktopAppDownloadBadge'
 import { BrowserDownloadBadge } from './BrowserDownloadBadge'
 import { BenachrichtigungsGlocke } from '@/components/notifications/BenachrichtigungsGlocke'
 import { ProfileDropdown, ProfileDropdownItem } from '@/components/app/ProfileDropdown'
-import { buttonClasses } from '@maunting/ui'
+import { buttonClasses, Kurzinfo } from '@maunting/ui'
 import type { EffectivePresenceStatus, PresenceStatus } from '@/hooks/usePresenceAndActivity'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
@@ -21,12 +21,13 @@ import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 interface SidebarProps {
   mobile?: boolean
   onNavigate?: () => void
+  onCollapse?: () => void
   presenceStatus?: PresenceStatus
   effectiveStatus?: EffectivePresenceStatus
   onPresenceChange?: (status: PresenceStatus) => void
 }
 
-export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresenceStatus, effectiveStatus: propEffectiveStatus, onPresenceChange }: SidebarProps) {
+export function Sidebar({ mobile = false, onNavigate, onCollapse, presenceStatus: propPresenceStatus, effectiveStatus: propEffectiveStatus, onPresenceChange }: SidebarProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
@@ -133,6 +134,18 @@ export function Sidebar({ mobile = false, onNavigate, presenceStatus: propPresen
             MSM
           </h1>
         </div>
+        {!mobile && onCollapse && (
+          <Kurzinfo text={t('shell.collapseSidebar')} seite="ende" aussen="ml-auto">
+            <button
+              type="button"
+              onClick={onCollapse}
+              className="hidden lg:flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+              aria-label={t('shell.collapseSidebar')}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          </Kurzinfo>
+        )}
         {mobile && <button type="button" onClick={onNavigate} className="ml-auto grid min-h-11 min-w-11 place-items-center rounded-lg hover:bg-surface-container-high" aria-label={t('shell.closeNavigation')}><X className="h-5 w-5" /></button>}
       </div>
 
