@@ -17,6 +17,7 @@ export class FakeWebSocket {
   static CLOSED = 3
 
   url: string
+  protocols?: string | string[]
   readyState: number = FakeWebSocket.CONNECTING
   sent: string[] = []
   onopen: ((ev: Event) => void) | null = null
@@ -24,8 +25,9 @@ export class FakeWebSocket {
   onerror: ((ev: Event) => void) | null = null
   onclose: ((ev: CloseEvent) => void) | null = null
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url
+    this.protocols = protocols
     FakeWebSocket.instances.push(this)
   }
 

@@ -523,12 +523,16 @@ async def connect(
     # Abweisen ausserhalb des Schlosses: es gilt fuer alle Server, und ein
     # langsamer Client hielte sonst jede andere Konsole beim Verbinden auf.
     if voll:
-        await ws.accept()
+        from dependencies import ws_subprotokoll
+
+        await ws.accept(subprotocol=ws_subprotokoll(ws))
         await _close_safely(ws, code=1013)
         return
 
     try:
-        await ws.accept()
+        from dependencies import ws_subprotokoll
+
+        await ws.accept(subprotocol=ws_subprotokoll(ws))
         
         use_agent = False
         if node is not None and not getattr(node, "is_local", False):

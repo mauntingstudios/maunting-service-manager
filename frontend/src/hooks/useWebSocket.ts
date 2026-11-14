@@ -28,6 +28,7 @@
  *   })
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { hatNativeSitzung, wsProtokolle } from '@/api/client'
 import { wsUrl } from '@/config/api'
 
 export type ConnectionStatus = 'connecting' | 'live' | 'reconnecting' | 'failed'
@@ -177,11 +178,11 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketResult {
       reconnectTimerRef.current = window.setTimeout(connect, delay)
     }
 
-    const connect = () => {
+    const openSocket = (protokolle?: string[]) => {
       if (cancelledRef.current) return
-      setStatusAndNotify('connecting')
       // buildUrl may return a path (`/api/...`) or an absolute ws(s) URL.
-      const ws = new WebSocket(wsUrl(buildUrlRef.current()))
+      const url = wsUrl(buildUrlRef.current())
+      const ws = protokolle ? new WebSocket(url, protokolle) : new WebSocket(url)
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -242,6 +243,18 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketResult {
         }
         scheduleReconnect()
       }
+    }
+
+    const connect = () => {
+      if (cancelledRef.current) return
+      setStatusAndNotify('connecting')
+      if (!hatNativeSitzung()) {
+        openSocket()
+        return
+      }
+      void wsProtokolle()
+        .then((protokolle) => openSocket(protokolle))
+        .catch(() => openSocket())
     }
 
     connect()

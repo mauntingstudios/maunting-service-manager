@@ -116,8 +116,12 @@ export interface NativeSitzung {
 
 let nativeSitzung: NativeSitzung | null = null
 
-export function registriereNativeSitzung(sitzung: NativeSitzung): void {
+export function registriereNativeSitzung(sitzung: NativeSitzung | null): void {
   nativeSitzung = sitzung
+}
+
+export function hatNativeSitzung(): boolean {
+  return nativeSitzung !== null
 }
 
 /**

@@ -13,8 +13,9 @@
  * - send() returnt false wenn nicht offen
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 
+import { registriereNativeSitzung } from '@/api/client'
 import { useWebSocket } from './useWebSocket'
 import { FakeWebSocket, installFakeWebSocket } from '@/test/fakeWebSocket'
 
@@ -324,5 +325,27 @@ describe('useWebSocket', () => {
     unmount()
     // WS wurde geschlossen, kein Reconnect-Trigger nach Unmount.
     expect(ws.readyState).toBe(FakeWebSocket.CLOSED)
+  })
+
+  it('passes msm.bearer subprotocol when a native Tauri session is registered', async () => {
+    const futureExp = Math.floor(Date.now() / 1000) + 600
+    const payload = btoa(JSON.stringify({ exp: futureExp }))
+    const jwt = `hdr.${payload}.sig`
+    registriereNativeSitzung({
+      token: () => jwt,
+      erneuern: async () => true,
+    })
+    try {
+      renderHook(() =>
+        useWebSocket({
+          buildUrl: () => '/api/servers/1/console/ws',
+          onMessage: () => {},
+        })
+      )
+      await waitFor(() => expect(instances).toHaveLength(1))
+      expect(instances[0].protocols).toEqual(['msm.bearer', jwt])
+    } finally {
+      registriereNativeSitzung(null)
+    }
   })
 })
