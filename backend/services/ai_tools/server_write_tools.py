@@ -471,7 +471,7 @@ werkzeug(
 werkzeug(
     _PROPOSE_CONFIG_PATCH,
     art="server_write",
-    recht="server.files.write",
+    recht="server.files.write", gruppe="files",
     hinweis="Ersetzt eine Stelle in einer Serverdatei.",
     vorschlag=vorschlag_server("propose_config_patch"),
     ausfuehren=ausfuehrung_aus_tabelle("propose_config_patch"),
@@ -480,7 +480,7 @@ werkzeug(
 werkzeug(
     _PROPOSE_CONFIG_SET,
     art="server_write",
-    recht="server.files.write",
+    recht="server.files.write", gruppe="files",
     hinweis="Setzt einen Wert in einer Serverdatei.",
     vorschlag=vorschlag_server("propose_config_set"),
     ausfuehren=ausfuehrung_aus_tabelle("propose_config_set"),
@@ -489,7 +489,7 @@ werkzeug(
 werkzeug(
     _PROPOSE_CONFIG_UPDATE,
     art="server_write",
-    recht="server.files.write",
+    recht="server.files.write", gruppe="files",
     hinweis="Aendert eine Konfigurationsdatei.",
     vorschlag=vorschlag_server("propose_config_update"),
     ausfuehren=ausfuehrung_aus_tabelle("propose_config_update"),
@@ -507,7 +507,7 @@ werkzeug(
 werkzeug(
     _PROPOSE_FILE_DELETE,
     art="server_write",
-    recht="server.files.delete", immer_bestaetigen=True,
+    recht="server.files.delete", gruppe="files", immer_bestaetigen=True,
     hinweis="Loescht eine Serverdatei nach Bestaetigung.",
     vorschlag=vorschlag_server("propose_file_delete"),
     ausfuehren=ausfuehrung_aus_tabelle("propose_file_delete"),
@@ -525,7 +525,7 @@ werkzeug(
 werkzeug(
     _PROPOSE_MOD_INSTALL,
     art="server_write",
-    recht="server.mods.write",
+    recht="server.mods.write", gruppe="mods",
     hinweis="Installiert eine Mod auf dem Server.",
     vorschlag=vorschlag_server("propose_mod_install"),
     ausfuehren=ausfuehrung_aus_tabelle("propose_mod_install"),
@@ -534,7 +534,7 @@ werkzeug(
 werkzeug(
     _PROPOSE_MOD_TOGGLE,
     art="server_write",
-    recht="server.mods.toggle",
+    recht="server.mods.toggle", gruppe="mods",
     hinweis="Schaltet eine installierte Mod an oder aus.",
     vorschlag=vorschlag_server("propose_mod_toggle"),
     ausfuehren=ausfuehrung_aus_tabelle("propose_mod_toggle"),

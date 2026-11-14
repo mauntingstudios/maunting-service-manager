@@ -93,9 +93,68 @@ _REPARATUR_FOLGEN = {
     "reallocate_port": ("Belegte Ports werden neu vergeben", False),
 }
 
+
+def _pruefe_schluessel(
+    arguments: dict,
+    *,
+    pflicht: tuple[str, ...],
+    label: str,
+    schema_hinweis: str,
+) -> None:
+    """Prueft erwartete Top-Level-Schluessel ohne Werte zu spiegeln und nennt Abweichungen."""
+    erwartet = set(pflicht)
+    vorhanden = set(arguments)
+    if vorhanden == erwartet:
+        return
+    details: list[str] = []
+    fehlend = [k for k in pflicht if k not in vorhanden]
+    unbekannt = sorted(vorhanden - erwartet)
+    if fehlend:
+        details.append(f"fehlend: {', '.join(fehlend)}")
+    if unbekannt:
+        details.append(f"unbekannt: {', '.join(unbekannt)}")
+    raise AiActionValidationError(
+        f"{label} hat ungueltige Argumente ({'; '.join(details)}). {schema_hinweis}"
+    )
+
+
+def _pruefe_eintrag_schluessel(
+    eintrag: object,
+    *,
+    nummer: int,
+    einheit: str,
+    pflicht: tuple[str, ...],
+    beschreibung: str,
+) -> None:
+    """Prueft Schluessel einzelner Listen-Eintraege ohne Werte zu spiegeln."""
+    if not isinstance(eintrag, dict):
+        raise AiActionValidationError(f"{einheit} {nummer} braucht genau {beschreibung}")
+    erwartet = set(pflicht)
+    vorhanden = set(eintrag)
+    if vorhanden == erwartet:
+        return
+    details: list[str] = []
+    fehlend = [k for k in pflicht if k not in vorhanden]
+    unbekannt = sorted(vorhanden - erwartet)
+    if fehlend:
+        details.append(f"fehlend: {', '.join(fehlend)}")
+    if unbekannt:
+        details.append(f"unbekannt: {', '.join(unbekannt)}")
+    raise AiActionValidationError(
+        f"{einheit} {nummer} braucht genau {beschreibung} ({'; '.join(details)})"
+    )
+
+
 def _config_payload(db: Session, server_id: int, arguments: dict) -> tuple[dict, dict, str | None]:
-    if set(arguments) != {"path", "content", "expected_revision"}:
-        raise AiActionValidationError("Config-Tool hat ungueltige Argumente")
+    _pruefe_schluessel(
+        arguments,
+        pflicht=("path", "content", "expected_revision"),
+        label="Config-Tool",
+        schema_hinweis=(
+            "Erwartet: path, content, expected_revision (sha256:... aus read_config, "
+            "oder null bei neuer Datei) sowie server_id, reason, expected_effect."
+        ),
+    )
     path = _config_path(arguments["path"])
     content = arguments["content"]
     expected = arguments["expected_revision"]
@@ -261,8 +320,15 @@ def _config_patch_payload(
     Ohne diese Lockerung waere eine `serverconfig.xml` dauerhaft nur von Hand
     aenderbar — der Fall, aus dem die ganze Aenderung entstanden ist.
     """
-    if set(arguments) != {"path", "expected_revision", "edits"}:
-        raise AiActionValidationError("Patch-Tool hat ungueltige Argumente")
+    _pruefe_schluessel(
+        arguments,
+        pflicht=("path", "expected_revision", "edits"),
+        label="Patch-Tool",
+        schema_hinweis=(
+            'Erwartet: path, expected_revision (sha256:... aus read_config), '
+            'edits: [{"find": "...", "replace": "..."}] sowie server_id, reason, expected_effect.'
+        ),
+    )
     path = _config_path(arguments["path"])
     expected = arguments["expected_revision"]
     if (
@@ -283,10 +349,13 @@ def _config_patch_payload(
         )
     edits: list[tuple[str, str]] = []
     for nummer, eintrag in enumerate(roh, start=1):
-        if not isinstance(eintrag, dict) or set(eintrag) != {"find", "replace"}:
-            raise AiActionValidationError(
-                f"Ersetzung {nummer} braucht genau 'find' und 'replace'"
-            )
+        _pruefe_eintrag_schluessel(
+            eintrag,
+            nummer=nummer,
+            einheit="Ersetzung",
+            pflicht=("find", "replace"),
+            beschreibung="'find' und 'replace'",
+        )
         find, replace = eintrag["find"], eintrag["replace"]
         if not isinstance(find, str) or not find:
             raise AiActionValidationError(f"Ersetzung {nummer} hat keinen Suchtext")
@@ -387,8 +456,15 @@ def _config_set_payload(
     ``expected_revision: null`` legt eine fehlende Datei an — derselbe Weg wie
     bei ``propose_config_update``.
     """
-    if set(arguments) != {"path", "expected_revision", "entries"}:
-        raise AiActionValidationError("Set-Tool hat ungueltige Argumente")
+    _pruefe_schluessel(
+        arguments,
+        pflicht=("path", "expected_revision", "entries"),
+        label="Set-Tool",
+        schema_hinweis=(
+            'Erwartet: path, expected_revision (sha256:... aus read_config, oder null bei neuer Datei), '
+            'entries: [{"section": "...", "key": "...", "value": "..."}] sowie server_id, reason, expected_effect.'
+        ),
+    )
     path = _config_path(arguments["path"])
     expected = arguments["expected_revision"]
     if expected is not None and (
@@ -410,10 +486,13 @@ def _config_set_payload(
 
     eintraege: list[tuple[str, str, str]] = []
     for nummer, eintrag in enumerate(roh, start=1):
-        if not isinstance(eintrag, dict) or set(eintrag) != {"section", "key", "value"}:
-            raise AiActionValidationError(
-                f"Eintrag {nummer} braucht genau 'section', 'key' und 'value'"
-            )
+        _pruefe_eintrag_schluessel(
+            eintrag,
+            nummer=nummer,
+            einheit="Eintrag",
+            pflicht=("section", "key", "value"),
+            beschreibung="'section', 'key' und 'value'",
+        )
         sektion, schluessel, wert = eintrag["section"], eintrag["key"], eintrag["value"]
         if not isinstance(sektion, str) or not isinstance(schluessel, str):
             raise AiActionValidationError(f"Eintrag {nummer} ist unvollstaendig")

@@ -829,6 +829,15 @@ def execute_read_tool(
             for key, value in arguments.items()
             if key not in ("_docs_document_uid", "_docs_team_id")
         }
+    elif tool_name == "execute_server_action" and isinstance(arguments.get("parameters"), str):
+        raw_params = arguments["parameters"].strip()
+        if raw_params:
+            try:
+                decoded_params = json.loads(raw_params)
+            except (TypeError, ValueError):
+                decoded_params = None
+            if isinstance(decoded_params, dict):
+                arguments = {**arguments, "parameters": decoded_params}
 
     # Nur fuer umgestellte Werkzeuge: die uebrigen behalten ihren Weg, bis
     # ihre Domaene folgt.

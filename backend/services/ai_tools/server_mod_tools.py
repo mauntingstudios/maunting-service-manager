@@ -228,18 +228,21 @@ def suche_workshop(db, *, user, server, arguments):
 werkzeug(
     _MODS,
     art="server_read",
+    gruppe="mods",
     hinweis="Listet installierte Mods mit Aktivierungs- und Updatestatus.",
     handler=lies_mods,
 )
 werkzeug(
     _UPDATES,
     art="server_read",
+    gruppe="mods",
     hinweis="Prueft, fuer welche Mods ein Update oder eine Nachinstallation aussteht.",
     handler=lies_updates,
 )
 werkzeug(
     _SEARCH,
     art="server_read",
+    gruppe="mods",
     hinweis="Sucht Mods im Workshop oder bei CurseForge fuer dieses Spiel.",
     handler=suche_workshop,
 )

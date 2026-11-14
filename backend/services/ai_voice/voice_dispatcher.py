@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from uuid import uuid4
 
@@ -46,6 +47,17 @@ def _beschreibung(name: str) -> str:
             text = " ".join(str(funktion.get("description") or "").split())
             return text[:160]
     return ""
+
+
+def _parameter_schema(name: str) -> dict | None:
+    from services import ai_action_service as katalog
+
+    for eintrag in katalog.provider_tool_definitions():
+        funktion = eintrag.get("function", eintrag) if isinstance(eintrag, dict) else {}
+        if funktion.get("name") == name:
+            params = funktion.get("parameters")
+            return params if isinstance(params, dict) else None
+    return None
 
 
 def _rueckfrage(action: str, kandidaten: list[str]) -> tuple[dict, None, dict, list]:
@@ -145,7 +157,18 @@ def dispatch_voice_action(
     explicit_tool = arguments.get("tool_name")
     server_id = arguments.get("server_id")
     raw_params = arguments.get("parameters")
-    extra_params = dict(raw_params) if isinstance(raw_params, dict) else {}
+    if isinstance(raw_params, str) and raw_params.strip():
+        try:
+            decoded_params = json.loads(raw_params)
+        except (TypeError, ValueError):
+            wert = {"error": "Ungueltige Parameter fuer execute_server_action: 'parameters' ist kein gueltiges JSON-Objekt."}
+            return wert, "Ungueltige Parameter", {"tool_name": "execute_server_action", "failed": True}, []
+        if not isinstance(decoded_params, dict):
+            wert = {"error": "Ungueltige Parameter fuer execute_server_action: 'parameters' muss ein JSON-Objekt sein."}
+            return wert, "Ungueltige Parameter", {"tool_name": "execute_server_action", "failed": True}, []
+        extra_params = dict(decoded_params)
+    else:
+        extra_params = dict(raw_params) if isinstance(raw_params, dict) else {}
 
     if not action and not explicit_tool:
         wert = {"error": "Keine Aktion angegeben"}
@@ -201,7 +224,12 @@ def dispatch_voice_action(
         return wert, "Unbekanntes Werkzeug", {"tool_name": "execute_server_action", "failed": True}, []
 
     target_args: dict[str, object] = dict(extra_params)
-    if server_id is not None and "server_id" not in target_args:
+    schema_props = (_parameter_schema(target_tool) or {}).get("properties")
+    accepts_server_id = (
+        spec.art in {"server_read", "server_write"}
+        or (isinstance(schema_props, dict) and "server_id" in schema_props)
+    )
+    if server_id is not None and "server_id" not in target_args and accepts_server_id:
         try:
             target_args["server_id"] = int(server_id)
         except (TypeError, ValueError):
@@ -251,12 +279,28 @@ def dispatch_voice_action(
             run_id=None,
         )
         fehler = next((str(v.get("error")) for v in vorschlaege if v.get("error")), None)
-        wert = {
-            "executed_tool": target_tool,
-            "status": "proposal_created",
-            "proposals": vorschlaege,
-            "message": "Vorschlagskarte wurde im Panel erstellt; sie wartet auf den Klick des Benutzers.",
-        }
+        alle_abgelehnt = bool(vorschlaege) and all(v.get("status") == "rejected" for v in vorschlaege)
+        if alle_abgelehnt:
+            schema_params = _parameter_schema(target_tool)
+            wert = {
+                "executed_tool": target_tool,
+                "status": "rejected",
+                "proposals": vorschlaege,
+                "error": fehler or "Werkzeugaufruf abgelehnt",
+                "message": f"Der Aufruf von {target_tool} wurde abgelehnt: {fehler or 'ungueltige Argumente'}.",
+            }
+            if isinstance(schema_params, dict):
+                wert["expected_parameters"] = {
+                    "required": schema_params.get("required", []),
+                    "properties": schema_params.get("properties", {}),
+                }
+        else:
+            wert = {
+                "executed_tool": target_tool,
+                "status": "proposal_created",
+                "proposals": vorschlaege,
+                "message": "Vorschlagskarte wurde im Panel erstellt; sie wartet auf den Klick des Benutzers.",
+            }
         if hinweis := voice_interactions.klickhinweis(vorschlaege):
             wert["hinweis"] = hinweis
         ethik = voice_interactions.ethik_abholen(beratung, target_call)

@@ -1133,12 +1133,16 @@ Kurzbeschreibung vor.
 `install_error` — bei einer gescheiterten Installation erklaerst du daraus die \
 Ursache. An- und ausschalten ist `propose_mod_toggle`; installiert heisst \
 nicht aktiv.
-**Welche Mods aktiv sind, steht allein in der Mod-Liste des Panels**, nie in \
-einer Spielkonfiguration: such und schreib sie nicht in GameUserSettings.ini, \
-Game.ini oder Aehnliches. Die Startzeile entsteht beim naechsten Start aus der \
-Liste, deshalb wirkt jede Mod-Aenderung erst nach einem Neustart — schlag \
-`propose_server_lifecycle` (`restart`) gleich mit vor, wenn der Benutzer die \
-Wirkung jetzt will."""
+Standardmaessig gilt: **Welche Mods aktiv sind, steht allein in der Mod-Liste \
+des Panels**, nie in einer Spielkonfiguration wie GameUserSettings.ini, \
+Game.ini oder Aehnlichem; die Startzeile entsteht beim naechsten Start aus der \
+Liste. **Ausnahme dateibasierte Mod-Listen (`modInjection: "file"` / \
+`modListTargets` im Blueprint, z. B. Project Zomboid `WorkshopItems=` und \
+`Mods=` in `Server/*.ini`):** dort pruefst du die Zieldatei aus \
+`read_blueprint` und traegst oder korrigierst IDs und Ladereihenfolge gezielt \
+per `propose_config_patch` oder `propose_config_set`. Jede Mod-Aenderung \
+wirkt erst nach einem Neustart — schlag `propose_server_lifecycle` (`restart`) \
+gleich mit vor, wenn der Benutzer die Wirkung jetzt will."""
 
 
 # Der Anlass ist ein Satz, den die KI im Betrieb geschrieben hat: "der Port ist
@@ -1469,9 +1473,15 @@ zusätzliche Worker nur weil Plätze frei sind, und führe keine Recherche \
 doppelt aus.
 Schreibende Arbeit — Server einrichten, Mods, Konfigurationen, DNS, \
 Reparaturen, Backups — gibst du mit `worker_start` an einen Worker (oder \
-mehrere parallel), mit präzisen Anweisungen aus deiner Vorab-Recherche. Das \
-gilt auch ohne autonomen Modus: dann legt das System dem Benutzer eine Karte \
-vor. Sag nie wegen fehlender Autonomie ab.
+mehrere parallel), mit präzisen Anweisungen aus deiner Vorab-Recherche. Bei \
+offenen oder vagen Einstellungs- und Konfigurationswünschen („anfängerfreundlich“, \
+„Best Practice“, „so konfigurieren, wie man es einstellt“) recherchiere nicht \
+endlos vorab und frage nicht nach exakten Zahlen: kläre höchstens kurz Server-ID \
+und relevante Dateien und starte direkt `worker_start` mit Ziel, Vorgaben \
+(z. B. gewünschter Mod-Reihenfolge) und dem Auftrag, Best-Practice-Werte selbst \
+per `web_search` zu prüfen und per `propose_config_patch`/`propose_config_set` \
+vorzulegen. Das gilt auch ohne autonomen Modus: dann legt das System dem \
+Benutzer eine Karte vor. Sag nie wegen fehlender Autonomie ab.
 Smalltalk, Wissensfragen und alles, was du aus Gespräch, Logs, Status oder \
 Gedächtnis weißt, beantwortest du direkt.
 Den Rechner des Benutzers bedienst du selbst über Computer-Use: Bildschirm \
@@ -2153,13 +2163,14 @@ def werkzeug_index(werkzeuge: Iterable[str], *, budget: int = WERKZEUG_INDEX_BUD
         laenge += block_laenge
         for name, _, dekl in lesend(gruppenname):
             text = zeile(name, dekl)
-            if lese_budget <= 0:
+            eintrag_laenge = len(text) + 1
+            if eintrag_laenge > lese_budget:
                 break
-            if laenge + len(text) + 1 > budget:
+            if laenge + eintrag_laenge > budget:
                 break
             zeilen.append(text)
-            laenge += len(text) + 1
-            lese_budget -= len(text) + 1
+            laenge += eintrag_laenge
+            lese_budget -= eintrag_laenge
 
     if not zeilen:
         return ""
