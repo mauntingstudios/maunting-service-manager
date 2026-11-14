@@ -29,33 +29,44 @@ def _steam_api_error(exc: SteamApiUnavailable) -> HTTPException:
 
 
 
+def _resolve_steam_workshop_context(server_id: int, user: User, db: Session) -> tuple[str, list[str]]:
+    """Verify permission and resolve Steam Workshop App ID + required tags."""
+    require_server_permission(user, server_id, db, "server.mods.read")
+
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    plugin = get_plugin(server.game_type)
+    if not plugin or not plugin.supports_mods:
+        raise HTTPException(status_code=400, detail="Spiel unterstützt keine Mods")
+
+    mod_support = plugin.get_mod_support()
+    if not mod_support:
+        raise HTTPException(status_code=400, detail="Mod-Informationen nicht verfügbar")
+
+    return str(mod_support["workshop_id"]), list(mod_support.get("required_tags", []))
+
+
+def _content_type_to_filetype(content_type: str) -> int:
+    """Map API content_type string ('mods' | 'collections') to Steam filetype int."""
+    return 1 if content_type.strip().lower() in ("collections", "collection") else 0
+
+
 @router.get("/workshop/search")
 async def search_workshop_mods(
     server_id: int,
     query: str = Query("", description="Suchbegriff"),
     page: int = Query(1, ge=1, description="Seitennummer"),
     per_page: int = Query(20, ge=1, le=50, description="Ergebnisse pro Seite"),
+    content_type: str = Query("mods", description="Inhaltstyp: mods | collections"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ) -> List[dict]:
-    """Search workshop mods for server's game."""
-    require_server_permission(user, server_id, db, "server.mods.read")
-    
-    server = db.query(Server).filter(Server.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server nicht gefunden")
-    
-    plugin = get_plugin(server.game_type)
-    if not plugin or not plugin.supports_mods:
-        raise HTTPException(status_code=400, detail="Spiel unterstützt keine Mods")
-    
-    mod_support = plugin.get_mod_support()
-    if not mod_support:
-        raise HTTPException(status_code=400, detail="Mod-Informationen nicht verfügbar")
-    
-    workshop_id = mod_support["workshop_id"]
-    required_tags = mod_support.get("required_tags", [])
-    
+    """Search workshop mods or collections for server's game."""
+    workshop_id, required_tags = _resolve_steam_workshop_context(server_id, user, db)
+    filetype = _content_type_to_filetype(content_type)
+
     try:
         steam_service = await get_steam_service()
         mods = await steam_service.search_workshop_mods(
@@ -63,11 +74,12 @@ async def search_workshop_mods(
             query=query,
             page=page,
             per_page=per_page,
-            required_tags=required_tags if required_tags else None
+            required_tags=required_tags if required_tags else None,
+            filetype=filetype,
         )
-        
+
         return [_mod_to_dict(mod) for mod in mods]
-        
+
     except SteamApiUnavailable as e:
         raise _steam_api_error(e)
     except Exception:
@@ -80,27 +92,14 @@ async def get_popular_mods(
     limit: int = Query(20, ge=1, le=50, description="Anzahl der Mods"),
     page: int = Query(1, ge=1, description="Seitennummer (Pagination)"),
     sort: str = Query("trending", description="Sortierung: trending | popular | newest | updated"),
+    content_type: str = Query("mods", description="Inhaltstyp: mods | collections"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ) -> List[dict]:
-    """Get workshop mods for server's game, sorted by the given criteria."""
-    require_server_permission(user, server_id, db, "server.mods.read")
-    
-    server = db.query(Server).filter(Server.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server nicht gefunden")
-    
-    plugin = get_plugin(server.game_type)
-    if not plugin or not plugin.supports_mods:
-        raise HTTPException(status_code=400, detail="Spiel unterstützt keine Mods")
-    
-    mod_support = plugin.get_mod_support()
-    if not mod_support:
-        raise HTTPException(status_code=400, detail="Mod-Informationen nicht verfügbar")
-    
-    workshop_id = mod_support["workshop_id"]
-    required_tags = mod_support.get("required_tags", [])
-    
+    """Get workshop mods or collections for server's game, sorted by the given criteria."""
+    workshop_id, required_tags = _resolve_steam_workshop_context(server_id, user, db)
+    filetype = _content_type_to_filetype(content_type)
+
     if sort not in ("trending", "popular", "newest", "updated"):
         sort = "trending"
 
@@ -112,10 +111,11 @@ async def get_popular_mods(
             required_tags=required_tags if required_tags else None,
             sort=sort,
             page=page,
+            filetype=filetype,
         )
-        
+
         return [_mod_to_dict(mod) for mod in mods]
-        
+
     except SteamApiUnavailable as e:
         raise _steam_api_error(e)
     except Exception:
@@ -130,34 +130,60 @@ async def get_mod_details(
     user: User = Depends(get_current_user)
 ) -> dict:
     """Get detailed information for a specific workshop mod."""
-    require_server_permission(user, server_id, db, "server.mods.read")
-    
-    server = db.query(Server).filter(Server.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server nicht gefunden")
-    
-    plugin = get_plugin(server.game_type)
-    if not plugin or not plugin.supports_mods:
-        raise HTTPException(status_code=400, detail="Spiel unterstützt keine Mods")
-    
-    mod_support = plugin.get_mod_support()
-    if not mod_support:
-        raise HTTPException(status_code=400, detail="Mod-Informationen nicht verfügbar")
-    
-    workshop_id = mod_support["workshop_id"]
-    
+    workshop_id, _ = _resolve_steam_workshop_context(server_id, user, db)
+
     try:
         steam_service = await get_steam_service()
         mod = await steam_service.get_mod_details(
             appid=workshop_id,
             publishedfileid=publishedfileid
         )
-        
+
         if not mod:
             raise HTTPException(status_code=404, detail="Mod nicht gefunden")
-        
+
         return _mod_to_dict(mod)
-        
+
+    except HTTPException:
+        raise
+    except SteamApiUnavailable as e:
+        raise _steam_api_error(e)
+    except Exception:
+        raise HTTPException(status_code=500, detail="errors.steam_load_failed")
+
+
+@router.get("/workshop/collection/{publishedfileid}")
+async def get_collection_details(
+    publishedfileid: str,
+    server_id: int = Query(..., description="Server-ID zur Ermittlung der Steam App-ID"),
+    max_items: int = Query(500, ge=1, le=500, description="Maximale Anzahl aufgeloestem Mods"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Resolve a Steam Workshop Collection and its contained mods in order."""
+    clean_id = publishedfileid.strip()
+    if not clean_id.isdigit() or len(clean_id) > 20:
+        raise HTTPException(status_code=400, detail="Ungültige Collection-ID")
+
+    workshop_id, _ = _resolve_steam_workshop_context(server_id, user, db)
+
+    try:
+        steam_service = await get_steam_service()
+        details = await steam_service.get_collection_details(
+            appid=workshop_id,
+            collection_id=clean_id,
+            max_items=max_items,
+        )
+        if not details:
+            raise HTTPException(status_code=404, detail="Collection nicht gefunden")
+
+        return {
+            "collection": _mod_to_dict(details["collection"]),
+            "items": [_mod_to_dict(item) for item in details["items"]],
+            "unavailable_ids": details["unavailable_ids"],
+            "item_count": len(details["items"]),
+            "total_children": details["total_children"],
+        }
     except HTTPException:
         raise
     except SteamApiUnavailable as e:
@@ -182,4 +208,6 @@ def _mod_to_dict(mod: SteamModInfo) -> dict:
         "tags": mod.tags,
         "preview_url": mod.preview_url,
         "direct_url": mod.direct_url,
+        "item_type": getattr(mod, "item_type", "mod"),
+        "children_count": getattr(mod, "children_count", 0),
     }

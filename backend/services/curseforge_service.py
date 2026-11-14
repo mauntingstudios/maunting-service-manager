@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -141,6 +142,34 @@ def normalize_game_id(game_id: int | str | None, default: int | None = None) -> 
     return default
 
 
+_CURSEFORGE_URL_SLUG_RE = re.compile(
+    r"curseforge\.com/[^/\s]+/([^/\s]+)/([^/?#\s]+)",
+    re.IGNORECASE,
+)
+_CURSEFORGE_PROJECT_URL_RE = re.compile(
+    r"curseforge\.com/projects/(\d{1,20})",
+    re.IGNORECASE,
+)
+
+
+def extract_curseforge_url_query(query: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """Extract (slug_or_id, class_hint) from a pasted CurseForge URL or numeric ID."""
+    if not query:
+        return None, None
+    text = query.strip()
+    if text.isdigit() and len(text) <= 20:
+        return text, None
+    project_match = _CURSEFORGE_PROJECT_URL_RE.search(text)
+    if project_match:
+        return project_match.group(1), None
+    slug_match = _CURSEFORGE_URL_SLUG_RE.search(text)
+    if slug_match:
+        class_slug = slug_match.group(1).strip().lower()
+        mod_slug = slug_match.group(2).strip()
+        return mod_slug, class_slug
+    return None, None
+
+
 @dataclass
 class CurseForgeModInfo:
     publishedfileid: str
@@ -161,6 +190,8 @@ class CurseForgeModInfo:
     server_pack_file_id: Optional[int] = None
     allow_mod_distribution: bool = True
     game_id: Optional[str] = None
+    class_id: Optional[int] = None
+    is_modpack: bool = False
 
 
 class CurseForgeService:
@@ -290,6 +321,8 @@ class CurseForgeService:
 
         raw_game_id = item.get("gameId")
         game_id_str = str(raw_game_id) if raw_game_id is not None else None
+        raw_class_id = item.get("classId")
+        class_id_int = int(raw_class_id) if raw_class_id is not None else None
 
         return CurseForgeModInfo(
             publishedfileid=mod_id,
@@ -310,6 +343,7 @@ class CurseForgeService:
             server_pack_file_id=server_pack_file_id,
             allow_mod_distribution=allow_dist,
             game_id=game_id_str,
+            class_id=class_id_int,
         )
 
     async def get_games(self) -> List[Dict[str, Any]]:
@@ -695,6 +729,93 @@ class CurseForgeService:
         except Exception as e:
             logger.warning("CurseForge details failed: %s", type(e).__name__)
             raise CurseForgeApiUnavailable("curseforge_api_unavailable") from e
+
+    async def get_mods_by_ids(self, mod_ids: List[int | str]) -> List[CurseForgeModInfo]:
+        """Lädt Details für mehrere Mods gebündelt via POST /v1/mods."""
+        if not self.api_key:
+            raise CurseForgeApiUnavailable("curseforge_api_key_missing")
+
+        unique_ids: List[int] = []
+        seen: set[int] = set()
+        for raw in mod_ids:
+            text = str(raw).strip()
+            if not text.isdigit():
+                continue
+            mid = int(text)
+            if mid > 0 and mid not in seen:
+                seen.add(mid)
+                unique_ids.append(mid)
+
+        if not unique_ids:
+            return []
+
+        resolved: Dict[str, CurseForgeModInfo] = {}
+        missing: List[int] = []
+        for mid in unique_ids:
+            cached = self._get_cache(f"cf_details_{mid}")
+            if cached is not None:
+                resolved[str(mid)] = cached
+            else:
+                missing.append(mid)
+
+        if missing:
+            try:
+                for offset in range(0, len(missing), 50):
+                    chunk = missing[offset:offset + 50]
+                    response = await self.client.post(
+                        f"{self.API_BASE}/mods",
+                        json={"modIds": chunk},
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    for item in data.get("data") or []:
+                        mod = self._parse_mod_data(item)
+                        resolved[mod.publishedfileid] = mod
+                        self._set_cache(f"cf_details_{mod.publishedfileid}", mod)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code in (401, 403):
+                    raise CurseForgeApiUnavailable("curseforge_api_key_invalid") from e
+                raise CurseForgeApiUnavailable("curseforge_api_unavailable") from e
+            except Exception as e:
+                logger.warning("CurseForge batch mods lookup failed: %s", type(e).__name__)
+                raise CurseForgeApiUnavailable("curseforge_api_unavailable") from e
+
+        return [resolved[str(mid)] for mid in unique_ids if str(mid) in resolved]
+
+    async def get_game_classes(self, game_id: int | str) -> List[Dict[str, Any]]:
+        """Liefert die dynamischen Inhaltsklassen (z.B. Mods, Modpacks, Plugins) eines Spiels."""
+        classes = await self.get_categories(game_id, class_only=True)
+        normalized: List[Dict[str, Any]] = []
+        for entry in classes:
+            if not isinstance(entry, dict) or entry.get("id") is None:
+                continue
+            name = str(entry.get("name") or "").strip()
+            slug = str(entry.get("slug") or "").strip().lower()
+            lower_name = name.lower()
+            if "modpack" in slug or "modpack" in lower_name:
+                kind = "modpacks"
+            elif slug in ("mods", "mc-mods") or lower_name == "mods":
+                kind = "mods"
+            elif "plugin" in slug or "plugin" in lower_name:
+                kind = "plugins"
+            elif "world" in slug or "world" in lower_name:
+                kind = "worlds"
+            elif "resource" in slug or "texture" in slug:
+                kind = "resourcepacks"
+            else:
+                kind = "other"
+            normalized.append(
+                {
+                    "id": int(entry["id"]),
+                    "name": name or slug,
+                    "slug": slug,
+                    "icon_url": entry.get("iconUrl"),
+                    "kind": kind,
+                }
+            )
+        priority = {"mods": 0, "modpacks": 1, "plugins": 2, "worlds": 3, "resourcepacks": 4, "other": 5}
+        normalized.sort(key=lambda item: (priority.get(item["kind"], 9), item["name"].lower()))
+        return normalized
 
     async def get_mod_files(
         self,

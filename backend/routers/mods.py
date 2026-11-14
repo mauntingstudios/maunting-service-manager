@@ -3,6 +3,7 @@ import re
 import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db, SessionLocal
@@ -17,6 +18,7 @@ from services.install_update_lock_service import (
 )
 from services import mod_update_service
 from services.mod_install_status_service import (
+    INSTALL_DONE,
     INSTALL_RUNNING,
     mark_mod_failed,
     mark_mod_installed,
@@ -29,6 +31,23 @@ router = APIRouter(prefix="/api/mods", tags=["mods"])
 
 _MOD_ACTIONS = {"install", "update", "reinstall"}
 _WORKSHOP_ID_RE = re.compile(r"^\d{1,20}$")
+_BATCH_CHUNK_SIZE = 25
+try:
+    from games.blueprint_plugin import WORKSHOP_BATCH_SIZE as _BATCH_CHUNK_SIZE
+except Exception:
+    _BATCH_CHUNK_SIZE = 25
+
+
+class BatchModItem(BaseModel):
+    workshop_id: str = Field(..., min_length=1, max_length=32)
+    name: str | None = Field(default=None, max_length=255)
+
+
+class BatchModsInstallRequest(BaseModel):
+    items: list[BatchModItem] = Field(..., min_length=1, max_length=500)
+    auto_update: bool = True
+    enabled: bool = True
+    skip_existing: bool = True
 
 
 def _safe_error(value: object) -> str:
@@ -114,6 +133,143 @@ def install_mod_bg(server_id: int, workshop_id: str, action: str = "install", re
         release_install_update_lock(server_id)
     finally:
         db.close()
+
+
+def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
+    """Installiert eine Liste von Mods gebündelt in Blueprint-Chunks (z. B. Steam-Collections)."""
+    if not workshop_ids:
+        return
+
+    acquired = acquire_install_update_lock_blocking(server_id, "mod_batch_install")
+    if not acquired:
+        for wid in workshop_ids:
+            mark_mod_failed(server_id, wid, "Eine andere Installation oder ein Update läuft bereits")
+        return
+
+    try:
+        db = SessionLocal()
+        try:
+            server = db.query(Server).filter(Server.id == server_id).first()
+            if not server:
+                logger.error("Server %s nicht gefunden (batch-install)", server_id)
+                for wid in workshop_ids:
+                    mark_mod_failed(server_id, wid, "Server nicht gefunden")
+                return
+            plugin = get_plugin(server.game_type)
+            if not plugin or not plugin.supports_mods:
+                for wid in workshop_ids:
+                    mark_mod_failed(server_id, wid, "Mods in diesem Spiel nicht aktiviert")
+                return
+            db.expunge(server)
+        finally:
+            db.close()
+
+        _append_console_log(
+            server_id,
+            f"[MSM] Batch-Installation für {len(workshop_ids)} Mod(s) in Blöcken à {_BATCH_CHUNK_SIZE} gestartet.\n",
+        )
+
+        ok_count = 0
+        chunk_size = max(1, int(_BATCH_CHUNK_SIZE))
+        for offset in range(0, len(workshop_ids), chunk_size):
+            chunk = workshop_ids[offset:offset + chunk_size]
+
+            # Zwischen den Chunks prüfen, welche Mods noch pending sind (ermöglicht sauberen Abbruch)
+            db_check = SessionLocal()
+            try:
+                pending_rows = (
+                    db_check.query(Mod.workshop_id)
+                    .filter(
+                        Mod.server_id == server_id,
+                        Mod.workshop_id.in_(chunk),
+                        Mod.install_status == "pending",
+                    )
+                    .all()
+                )
+                pending_set = {row[0] for row in pending_rows}
+            finally:
+                db_check.close()
+
+            active_chunk = [wid for wid in chunk if wid in pending_set]
+            if not active_chunk:
+                continue
+
+            for wid in active_chunk:
+                mark_mod_installing(server_id, wid, "install")
+
+            try:
+                if hasattr(plugin, "install_mods"):
+                    result = plugin.install_mods(server, active_chunk)
+                else:
+                    # Fallback für Plugins ohne Batch-Implementierung
+                    per_item: dict[str, dict] = {}
+                    for wid in active_chunk:
+                        single_res = plugin.install_mod(server, wid)
+                        per_item[wid] = single_res if isinstance(single_res, dict) else {"ok": bool(single_res)}
+                    result = {
+                        "ok": all(v.get("ok", True) is not False and not v.get("error") for v in per_item.values()),
+                        "items": per_item,
+                    }
+            except Exception as exc:
+                err_msg = _safe_error(exc)
+                for wid in active_chunk:
+                    mark_mod_failed(server_id, wid, err_msg)
+                _append_console_log(server_id, f"[MSM] Batch-Block fehlgeschlagen — {exc}\n")
+                continue
+
+            items_map = result.get("items") if isinstance(result, dict) and isinstance(result.get("items"), dict) else {}
+            global_ok = result.get("ok", True) is not False and not result.get("error") if isinstance(result, dict) else not bool(result)
+            global_err = (
+                (result.get("error") or ("; ".join(result.get("errors") or []) if result.get("errors") else None))
+                if isinstance(result, dict)
+                else str(result)
+            )
+
+            for wid in active_chunk:
+                item_res = items_map.get(wid)
+                if isinstance(item_res, dict):
+                    item_ok = item_res.get("ok", True) is not False and not item_res.get("error")
+                    item_err = item_res.get("error") or global_err
+                else:
+                    item_ok = global_ok
+                    item_err = global_err
+
+                if item_ok:
+                    updater.update_mod_metadata_after_success(server_id, wid, None)
+                    mark_mod_installed(server_id, wid)
+                    ok_count += 1
+                else:
+                    mark_mod_failed(server_id, wid, _safe_error(item_err))
+
+        try:
+            plugin.update_modlist(server)
+        except Exception as exc:
+            logger.warning("Modlist-Update nach batch-install fehlgeschlagen: %s", exc)
+
+        _append_console_log(
+            server_id,
+            f"[MSM] Batch-Installation abgeschlossen ({ok_count}/{len(workshop_ids)} erfolgreich).\n",
+        )
+    except Exception:
+        logger.exception("batch-install fehlgeschlagen für Server %s", server_id)
+        db_err = SessionLocal()
+        try:
+            unfinished = (
+                db_err.query(Mod.workshop_id)
+                .filter(
+                    Mod.server_id == server_id,
+                    Mod.workshop_id.in_(workshop_ids),
+                    Mod.install_status.in_((INSTALL_RUNNING, "pending")),
+                )
+                .all()
+            )
+            unfinished_ids = [row[0] for row in unfinished]
+        finally:
+            db_err.close()
+        for wid in unfinished_ids:
+            mark_mod_failed(server_id, wid, "Batch-Installation abgebrochen")
+    finally:
+        release_install_update_lock(server_id)
 
 
 def reinstall_all_mods_bg(server_id: int, workshop_ids: list[str]) -> None:
@@ -246,6 +402,94 @@ def subscribe_mod(
         background_tasks.add_task(install_mod_bg, server.id, workshop_id)
 
     return mod
+
+
+@router.post("/{server_id}/batch")
+def subscribe_mods_batch(
+    server_id: int,
+    body: BatchModsInstallRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+):
+    """Abonniert und installiert mehrere Mods gebündelt (z. B. aus einer Steam Collection oder Manifest)."""
+    require_server_permission(user, server_id, db, "server.mods.write")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    plugin = get_plugin(server.game_type)
+    if not plugin or not plugin.supports_mods:
+        raise HTTPException(status_code=400, detail="Spiel unterstützt keine Mods")
+
+    ordered_items: list[tuple[str, str | None]] = []
+    seen_wids: set[str] = set()
+    for entry in body.items:
+        wid = _validate_workshop_id(entry.workshop_id)
+        if wid in seen_wids:
+            continue
+        seen_wids.add(wid)
+        clean_name = entry.name.strip()[:255] if entry.name else None
+        ordered_items.append((wid, clean_name or None))
+
+    existing_rows = db.query(Mod).filter(Mod.server_id == server_id).all()
+    existing_map = {m.workshop_id: m for m in existing_rows}
+    next_order = (max((m.load_order or 0 for m in existing_rows), default=-1)) + 1
+
+    queued_ids: list[str] = []
+    skipped_ids: list[str] = []
+
+    for wid, clean_name in ordered_items:
+        existing = existing_map.get(wid)
+        if existing is not None:
+            if existing.install_status in (INSTALL_RUNNING, "pending") or (
+                body.skip_existing and existing.install_status in (INSTALL_DONE, "success", "installed")
+            ):
+                skipped_ids.append(wid)
+                continue
+            if clean_name and not existing.name:
+                existing.name = clean_name
+            existing.install_status = "pending"
+            existing.install_action = "install"
+            existing.install_progress = 0
+            existing.install_error = None
+            existing.update_status = "missing"
+            existing.update_reason = "missing"
+            queued_ids.append(wid)
+        else:
+            mod = Mod(
+                server_id=server_id,
+                workshop_id=wid,
+                name=clean_name,
+                load_order=next_order,
+                auto_update=body.auto_update,
+                enabled=body.enabled,
+                install_status="pending",
+                install_action="install",
+                install_progress=0,
+                update_status="missing",
+                update_reason="missing",
+            )
+            next_order += 1
+            db.add(mod)
+            existing_map[wid] = mod
+            queued_ids.append(wid)
+
+    if queued_ids:
+        AchievementService.melde(db, user.id, "server_modpack_installer")
+    db.commit()
+
+    if queued_ids:
+        background_tasks.add_task(install_mods_batch_bg, server.id, queued_ids)
+
+    return {
+        "ok": True,
+        "queued": len(queued_ids),
+        "skipped": len(skipped_ids),
+        "queued_ids": queued_ids,
+        "skipped_ids": skipped_ids,
+        "total_requested": len(ordered_items),
+    }
 
 
 @router.post("/{server_id}/check-updates", response_model=list[ModResponse])
@@ -392,6 +636,13 @@ def abort_mod_installs(
             changed = True
         elif mod.install_status == "pending" and mod.install_action == "reinstall":
             mark_mod_installed(server_id, mod.workshop_id)
+            changed = True
+        elif mod.install_status == "pending" and mod.install_action == "install":
+            mark_mod_failed(
+                server_id,
+                mod.workshop_id,
+                "Installation abgebrochen — bitte erneut starten (Server-Konsole prüfen).",
+            )
             changed = True
     force_release_install_update_lock(server_id)
     if changed:

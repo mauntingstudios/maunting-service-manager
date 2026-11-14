@@ -30,6 +30,15 @@ def _sync_startup_arg_curseforge_mods(plugin, server, clean_ids: list[str]) -> d
         async def _resolve_titles() -> dict[str, str]:
             svc = await get_curseforge_service()
             titles: dict[str, str] = {}
+            if hasattr(svc, "get_mods_by_ids"):
+                try:
+                    infos = await svc.get_mods_by_ids(clean_ids)
+                    for info in infos:
+                        if info and info.title:
+                            titles[str(info.publishedfileid)] = info.title
+                    return titles
+                except Exception:
+                    pass
             for wid in clean_ids:
                 try:
                     info = await svc.get_mod_details(wid)
@@ -183,13 +192,23 @@ async def _extract_curseforge_zip(
     )
 
 
-def _select_curseforge_file_obj(mod_info) -> dict:
+def _select_curseforge_file_obj(mod_info) -> dict | None:
     """Wählt bei Modpacks bevorzugt den Server-Pack-Download, sonst die neueste Datei."""
     if mod_info.has_server_pack and mod_info.server_pack_file_id:
-        for lf in mod_info.latest_files:
+        for lf in mod_info.latest_files or []:
             if isinstance(lf, dict) and lf.get("id") == mod_info.server_pack_file_id:
                 return lf
-    return mod_info.latest_files[0]
+        return {
+            "id": mod_info.server_pack_file_id,
+            "fileName": None,
+            "downloadUrl": None,
+            "_is_server_pack_fallback": True,
+        }
+    if mod_info.latest_files:
+        return mod_info.latest_files[0]
+    if mod_info.main_file_id:
+        return {"id": mod_info.main_file_id, "fileName": None, "downloadUrl": None}
+    return None
 
 
 async def _download_single_curseforge_mod(
@@ -211,14 +230,25 @@ async def _download_single_curseforge_mod(
                 f"CurseForge ID {wid} nicht gefunden (404/ungueltige ID)",
                 {"ok": False, "error": f"Mod/Pack {wid} nicht auf CurseForge gefunden"},
             )
-        if not mod_info.latest_files:
+
+        file_obj = _select_curseforge_file_obj(mod_info)
+        if file_obj and file_obj.get("_is_server_pack_fallback") and hasattr(svc, "get_mod_files"):
+            try:
+                all_files = await svc.get_mod_files(wid)
+                for candidate in all_files or []:
+                    if isinstance(candidate, dict) and candidate.get("id") == mod_info.server_pack_file_id:
+                        file_obj = candidate
+                        break
+            except Exception:
+                pass
+
+        if not file_obj or not file_obj.get("id"):
             return (
                 False,
                 f"{mod_info.title} (ID {wid}): Keine Dateien auf CurseForge verfuegbar",
                 {"ok": False, "error": "Keine Release-Dateien verfuegbar"},
             )
 
-        file_obj = _select_curseforge_file_obj(mod_info)
         dl_url = file_obj.get("downloadUrl") or await svc.get_file_download_url(wid, file_obj["id"])
         if not dl_url:
             return (
@@ -227,7 +257,17 @@ async def _download_single_curseforge_mod(
                 {"ok": False, "error": "Keine Download-URL verfuegbar"},
             )
 
-        file_name = file_obj.get("fileName") or f"mod_{wid}"
+        file_name = file_obj.get("fileName")
+        if not file_name and isinstance(dl_url, str):
+            url_tail = dl_url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+            if url_tail:
+                file_name = url_tail
+        if not file_name:
+            file_name = (
+                f"serverpack_{file_obj['id']}.zip"
+                if mod_info.has_server_pack and mod_info.server_pack_file_id == file_obj["id"]
+                else f"mod_{wid}.jar"
+            )
         safe_name = Path(file_name).name
         dest_file_name = safe_name if str(wid) in safe_name else f"cf_{wid}_{safe_name}"
         dest_file = (target_dir / dest_file_name).resolve()
