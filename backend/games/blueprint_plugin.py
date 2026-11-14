@@ -49,6 +49,7 @@ from games.base import (
     run_steamcmd_install,
     run_steamcmd_workshop_download_batch,
 )
+from games.curseforge_installer import install_curseforge_mods
 from games.ini_utils import set_ini_value
 from services.docker_service import PortPublish, VolumeBind
 from services.port_role_service import blueprint_port_requirements, normalize_port_protocol
@@ -364,212 +365,221 @@ class BlueprintPlugin(GamePlugin):
 
     # ─ Setup ──────────────────────────────────────────────────────────────
 
+    def _install_steam_source(self, server, bp) -> dict:
+        assert bp.source.steam is not None
+        requires_login = bp.source.steam.requiresLogin
+
+        # Das Gate prueft dieselbe Aufloesung wie der spaetere Login: erst
+        # ein diesem Server zugewiesenes Konto, dann der panelweite Account.
+        # Sonst wuerde ein Kunde mit eigenem Steam-Konto hier abgewiesen,
+        # obwohl die Installation funktionieren wuerde.
+        if requires_login and _resolve_steam_login(server.id) is None:
+            error_msg = (
+                "Dieses Spiel benötigt einen Steam-Account-Login. Bitte im "
+                "Server unter Zugangsdaten ein eigenes Steam-Konto hinterlegen "
+                "oder unter Einstellungen → Steam Account einen panelweiten "
+                "Account setzen (Steam Guard muss deaktiviert sein)."
+            )
+            # Status auf "error" setzen, sonst bleibt der Server in
+            # "installing" haengen (Create-Route ignoriert Rueckgabewert).
+            finish_install(server.id, {"ok": False, "error": error_msg})
+            return {"error": error_msg}
+
+        app_id = bp.source.steam.appId
+        install_dir = server.install_dir
+        server_id = server.id
+
+        def _install(srv):
+            # Reinstall-Schutz (manuelle .cfg/.ini etc.): Cache vor, Restore nach.
+            from games.updater import _steam_effective_branch, perform_install_with_protection
+
+            platform_str = bp.source.steam.platform.value if bp.source.steam.platform else None
+            reinstall = _steam_install_is_reinstall(install_dir, app_id)
+            validate_flag = (
+                True
+                if reinstall
+                else bool(getattr(bp.source.steam, "validate_", True))
+            )
+            if reinstall:
+                _append_console_log(
+                    server_id,
+                    "[MSM] Reinstall: hole aktuelle Spiel-Binaries von Steam "
+                    "(Configs werden gesichert, Workshop-Mods nicht neu installiert).\n",
+                )
+            result = perform_install_with_protection(
+                srv,
+                lambda: run_steamcmd_install(
+                    server_id=server_id,
+                    install_dir=install_dir,
+                    app_id=app_id,
+                    use_authenticated_login=requires_login,
+                    platform=platform_str,
+                    # intentionally not passing steamcmd_image; use the dedicated STEAMCMD_IMAGE
+                    # which has the pre-installed binary at the expected path
+                    validate=validate_flag,
+                    beta_branch=_steam_effective_branch(bp.source.steam),
+                    node=getattr(srv, "node", None),
+                ),
+                blueprint=bp,
+            )
+            finish_install(server_id, result)
+
+        _start_install_worker(server_id, f"install-steam-{server_id}", _install)
+        return {"message": "Installation gestartet"}
+
+    def _install_http_source_async(self, server, bp) -> dict:
+        install_dir = server.install_dir
+        server_id = server.id
+
+        def _http_install(srv):
+            from games.updater import perform_install_with_protection
+
+            _append_console_log(server_id, "[MSM] HTTP-Source-Download startet\n")
+            node = getattr(srv, "node", None)
+            reinstall = (
+                Path(install_dir).is_dir() and any(Path(install_dir).iterdir())
+                if node is None or getattr(node, "is_local", False)
+                else False
+            ) if Path(install_dir).exists() else False
+            if reinstall:
+                _append_console_log(
+                    server_id,
+                    "[MSM] Reinstall: lade aktuelle Server-Dateien von der HTTP-Quelle "
+                    "(manuelle Configs werden gesichert, Workshop-Mods unverändert).\n",
+                )
+
+            def _install_source():
+                if node is not None and not getattr(node, "is_local", False):
+                    from urllib.parse import urlparse
+                    from blueprints.http_source import _detect_archive_type
+                    from services.node_client import NodeClient
+
+                    cfg = bp.source.http
+                    assert cfg is not None
+                    archive_type = cfg.archiveType or _detect_archive_type(urlparse(cfg.url).path)
+                    if archive_type is None:
+                        return {"ok": False, "error": "Archive-Typ konnte nicht erkannt werden"}
+                    return NodeClient.from_node(node, timeout=600).install_http_source({
+                        "server_id": str(server_id),
+                        "url": cfg.url,
+                        "sha256": cfg.sha256,
+                        "archive_type": archive_type.value,
+                        "extract_to": cfg.extractTo,
+                    })
+                return install_http_source(bp, install_dir)
+
+            result = perform_install_with_protection(srv, _install_source, blueprint=bp)
+            if result.get("ok"):
+                _append_console_log(server_id, "[MSM] HTTP-Source erfolgreich entpackt\n")
+            else:
+                _append_console_log(
+                    server_id,
+                    f"[MSM] HTTP-Source fehlgeschlagen: {result.get('error')}\n",
+                )
+            finish_install(server_id, result)
+
+        _start_install_worker(server_id, f"install-http-{server_id}", _http_install)
+        return {"message": "Installation gestartet"}
+
+    def _install_github_source_async(self, server, bp) -> dict:
+        install_dir = server.install_dir
+        server_id = server.id
+
+        def _github_install(srv):
+            from blueprints.github_source import install_github_source
+            from games.updater import perform_install_with_protection
+
+            _append_console_log(server_id, "[MSM] GitHub-Source: Clone/Pull startet\n")
+            reinstall = Path(install_dir).is_dir() and (Path(install_dir) / ".git").is_dir()
+            if reinstall:
+                _append_console_log(
+                    server_id,
+                    "[MSM] Reinstall/Update: git pull auf konfigurierten Branch "
+                    "(Configs werden gesichert).\n",
+                )
+
+            def _install_source():
+                node = getattr(srv, "node", None)
+                # Serverbezogener GitHub-Zugang vor dem panelweiten. Damit
+                # laeuft ein Kundenserver nicht mit dem Token des Betreibers.
+                token = _resolve_github_token_for_server(server_id)
+                if node is not None and not getattr(node, "is_local", False):
+                    from services.node_client import NodeClient
+
+                    cfg = bp.source.github
+                    assert cfg is not None
+                    return NodeClient.from_node(node, timeout=600).install_github_source({
+                        "server_id": str(server_id),
+                        "repo": cfg.repo,
+                        "branch": cfg.branch,
+                        "token": token,
+                        "setup_commands": cfg.setupCommands,
+                        "sub_path": cfg.subPath,
+                        "runtime_image": bp.runtime.image,
+                    })
+                return install_github_source(bp, install_dir, token)
+
+            result = perform_install_with_protection(srv, _install_source, blueprint=bp)
+            if result.get("ok"):
+                _append_console_log(
+                    server_id,
+                    f"[MSM] GitHub-Source OK (branch={result.get('branch')}, "
+                    f"commit={str(result.get('commit', ''))[:12]})\n",
+                )
+            else:
+                _append_console_log(
+                    server_id,
+                    f"[MSM] GitHub-Source fehlgeschlagen: {result.get('error')}\n",
+                )
+            finish_install(server_id, result)
+
+        _start_install_worker(server_id, f"install-github-{server_id}", _github_install)
+        return {"message": "Installation gestartet"}
+
+    def _install_manual_upload_source(self, server, bp) -> dict:
+        assert bp.source.manual is not None
+        install_dir = Path(server.install_dir)
+        node = getattr(server, "node", None)
+        is_remote = node is not None and not getattr(node, "is_local", False)
+        if not is_remote:
+            install_dir.mkdir(parents=True, exist_ok=True)
+
+        readme = install_dir / "MANUAL_INSTALL.md"
+        readme_content = (
+            f"# Manuelle Installation: {bp.meta.name}\n\n"
+            f"{bp.source.manual.instructions}\n\n"
+            f"Erforderliche Dateien:\n"
+            + "\n".join(f"- `{p}`" for p in bp.source.manual.requiredFiles)
+            + (f"\n\nWeitere Infos: {bp.source.manual.instructionsUrl}\n" if bp.source.manual.instructionsUrl else "\n")
+        )
+        if is_remote:
+            from services.node_client import NodeClient
+
+            NodeClient.from_node(node).files_write(server.id, "MANUAL_INSTALL.md", readme_content)
+        elif not readme.exists():
+            readme.write_text(readme_content, encoding="utf-8")
+
+        _append_console_log(
+            server.id,
+            f"[MSM] Blueprint '{bp.meta.id}' erwartet manuelle Uploads:\n"
+            + "\n".join(f"  - {p}" for p in bp.source.manual.requiredFiles)
+            + "\n[MSM] Status: awaiting_files\n",
+        )
+        finish_install(server.id, {"ok": True, "next_status": "awaiting_files"})
+        return {"message": "Installation: warte auf manuellen Upload"}
+
     def install(self, server) -> dict:
         bp = self._blueprint
-        if bp.source.type == BlueprintSourceType.STEAM:
-            assert bp.source.steam is not None
-            requires_login = bp.source.steam.requiresLogin
-
-            # Das Gate prueft dieselbe Aufloesung wie der spaetere Login: erst
-            # ein diesem Server zugewiesenes Konto, dann der panelweite Account.
-            # Sonst wuerde ein Kunde mit eigenem Steam-Konto hier abgewiesen,
-            # obwohl die Installation funktionieren wuerde.
-            if requires_login and _resolve_steam_login(server.id) is None:
-                error_msg = (
-                    "Dieses Spiel benötigt einen Steam-Account-Login. Bitte im "
-                    "Server unter Zugangsdaten ein eigenes Steam-Konto hinterlegen "
-                    "oder unter Einstellungen → Steam Account einen panelweiten "
-                    "Account setzen (Steam Guard muss deaktiviert sein)."
-                )
-                # Status auf "error" setzen, sonst bleibt der Server in
-                # "installing" haengen (Create-Route ignoriert Rueckgabewert).
-                finish_install(server.id, {"ok": False, "error": error_msg})
-                return {"error": error_msg}
-
-            app_id = bp.source.steam.appId
-            install_dir = server.install_dir
-            server_id = server.id
-
-            def _install(server):
-                # Reinstall-Schutz (manuelle .cfg/.ini etc.): Cache vor, Restore nach.
-                # Frische Install: 0 Dateien → No-Op. Nutzt zentrale Helper aus updater.py.
-                from games.updater import _steam_effective_branch, perform_install_with_protection
-                platform_str = bp.source.steam.platform.value if bp.source.steam.platform else None
-                reinstall = _steam_install_is_reinstall(install_dir, app_id)
-                # Reinstall: immer validate + aktuelle Binaries von Steam (Workshop unangetastet).
-                validate_flag = (
-                    True
-                    if reinstall
-                    else bool(getattr(bp.source.steam, "validate_", True))
-                )
-                if reinstall:
-                    _append_console_log(
-                        server_id,
-                        "[MSM] Reinstall: hole aktuelle Spiel-Binaries von Steam "
-                        "(Configs werden gesichert, Workshop-Mods nicht neu installiert).\n",
-                    )
-                result = perform_install_with_protection(
-                    server,
-                    lambda: run_steamcmd_install(
-                        server_id=server_id,
-                        install_dir=install_dir,
-                        app_id=app_id,
-                        use_authenticated_login=requires_login,
-                        platform=platform_str,
-                        # intentionally not passing steamcmd_image; use the dedicated STEAMCMD_IMAGE
-                        # which has the pre-installed binary at the expected path
-                        validate=validate_flag,
-                        beta_branch=_steam_effective_branch(bp.source.steam),
-                        node=getattr(server, "node", None),
-                    ),
-                    blueprint=bp,
-                )
-                finish_install(server_id, result)
-
-            _start_install_worker(server_id, f"install-steam-{server_id}", _install)
-            return {"message": "Installation gestartet"}
-
-        if bp.source.type == BlueprintSourceType.HTTP:
-            install_dir = server.install_dir
-            server_id = server.id
-
-            def _http_install(server):
-                _append_console_log(server_id, "[MSM] HTTP-Source-Download startet\n")
-                node = getattr(server, "node", None)
-                reinstall = (
-                    Path(install_dir).is_dir() and any(Path(install_dir).iterdir())
-                    if node is None or getattr(node, "is_local", False)
-                    else False
-                ) if Path(install_dir).exists() else False
-                if reinstall:
-                    _append_console_log(
-                        server_id,
-                        "[MSM] Reinstall: lade aktuelle Server-Dateien von der HTTP-Quelle "
-                        "(manuelle Configs werden gesichert, Workshop-Mods unverändert).\n",
-                    )
-                # Reinstall-Schutz (manuelle Configs): Cache vor, Restore nach dem Entpacken.
-                from games.updater import perform_install_with_protection
-                def _install_source():
-                    if node is not None and not getattr(node, "is_local", False):
-                        from blueprints.http_source import _detect_archive_type
-                        from services.node_client import NodeClient
-                        from urllib.parse import urlparse
-
-                        cfg = bp.source.http
-                        assert cfg is not None
-                        archive_type = cfg.archiveType or _detect_archive_type(urlparse(cfg.url).path)
-                        if archive_type is None:
-                            return {"ok": False, "error": "Archive-Typ konnte nicht erkannt werden"}
-                        return NodeClient.from_node(node, timeout=600).install_http_source({
-                            "server_id": str(server_id),
-                            "url": cfg.url,
-                            "sha256": cfg.sha256,
-                            "archive_type": archive_type.value,
-                            "extract_to": cfg.extractTo,
-                        })
-                    return install_http_source(bp, install_dir)
-
-                result = perform_install_with_protection(server, _install_source, blueprint=bp)
-                if result.get("ok"):
-                    _append_console_log(server_id, "[MSM] HTTP-Source erfolgreich entpackt\n")
-                else:
-                    _append_console_log(
-                        server_id,
-                        f"[MSM] HTTP-Source fehlgeschlagen: {result.get('error')}\n",
-                    )
-                finish_install(server_id, result)
-
-            _start_install_worker(server_id, f"install-http-{server_id}", _http_install)
-            return {"message": "Installation gestartet"}
-
-        if bp.source.type == BlueprintSourceType.GITHUB:
-            install_dir = server.install_dir
-            server_id = server.id
-
-            def _github_install(server):
-                from blueprints.github_source import install_github_source
-
-                _append_console_log(server_id, "[MSM] GitHub-Source: Clone/Pull startet\n")
-                reinstall = Path(install_dir).is_dir() and (Path(install_dir) / ".git").is_dir()
-                if reinstall:
-                    _append_console_log(
-                        server_id,
-                        "[MSM] Reinstall/Update: git pull auf konfigurierten Branch "
-                        "(Configs werden gesichert).\n",
-                    )
-                from games.updater import perform_install_with_protection
-
-                def _install_source():
-                    node = getattr(server, "node", None)
-                    # Serverbezogener GitHub-Zugang vor dem panelweiten. Damit
-                    # laeuft ein Kundenserver nicht mit dem Token des Betreibers.
-                    token = _resolve_github_token_for_server(server_id)
-                    if node is not None and not getattr(node, "is_local", False):
-                        from services.node_client import NodeClient
-
-                        cfg = bp.source.github
-                        assert cfg is not None
-                        return NodeClient.from_node(node, timeout=600).install_github_source({
-                            "server_id": str(server_id),
-                            "repo": cfg.repo,
-                            "branch": cfg.branch,
-                            "token": token,
-                            "setup_commands": cfg.setupCommands,
-                            "sub_path": cfg.subPath,
-                            "runtime_image": bp.runtime.image,
-                        })
-                    return install_github_source(bp, install_dir, token)
-
-                result = perform_install_with_protection(server, _install_source, blueprint=bp)
-                if result.get("ok"):
-                    _append_console_log(
-                        server_id,
-                        f"[MSM] GitHub-Source OK (branch={result.get('branch')}, "
-                        f"commit={str(result.get('commit', ''))[:12]})\n",
-                    )
-                else:
-                    _append_console_log(
-                        server_id,
-                        f"[MSM] GitHub-Source fehlgeschlagen: {result.get('error')}\n",
-                    )
-                finish_install(server_id, result)
-
-            _start_install_worker(server_id, f"install-github-{server_id}", _github_install)
-            return {"message": "Installation gestartet"}
-
-        if bp.source.type == BlueprintSourceType.MANUAL_UPLOAD:
-            assert bp.source.manual is not None
-            install_dir = Path(server.install_dir)
-            node = getattr(server, "node", None)
-            is_remote = node is not None and not getattr(node, "is_local", False)
-            if not is_remote:
-                install_dir.mkdir(parents=True, exist_ok=True)
-
-            readme = install_dir / "MANUAL_INSTALL.md"
-            readme_content = (
-                    f"# Manuelle Installation: {bp.meta.name}\n\n"
-                    f"{bp.source.manual.instructions}\n\n"
-                    f"Erforderliche Dateien:\n"
-                    + "\n".join(f"- `{p}`" for p in bp.source.manual.requiredFiles)
-                    + (f"\n\nWeitere Infos: {bp.source.manual.instructionsUrl}\n" if bp.source.manual.instructionsUrl else "\n")
-            )
-            if is_remote:
-                from services.node_client import NodeClient
-
-                NodeClient.from_node(node).files_write(server.id, "MANUAL_INSTALL.md", readme_content)
-            elif not readme.exists():
-                readme.write_text(readme_content, encoding="utf-8")
-
-            _append_console_log(
-                server.id,
-                f"[MSM] Blueprint '{bp.meta.id}' erwartet manuelle Uploads:\n"
-                + "\n".join(f"  - {p}" for p in bp.source.manual.requiredFiles)
-                + "\n[MSM] Status: awaiting_files\n",
-            )
-            finish_install(server.id, {"ok": True, "next_status": "awaiting_files"})
-            return {"message": "Installation: warte auf manuellen Upload"}
-
-        if bp.source.type in (BlueprintSourceType.DOCKER_ONLY, BlueprintSourceType.CUSTOM):
+        src_type = bp.source.type
+        if src_type == BlueprintSourceType.STEAM:
+            return self._install_steam_source(server, bp)
+        if src_type == BlueprintSourceType.HTTP:
+            return self._install_http_source_async(server, bp)
+        if src_type == BlueprintSourceType.GITHUB:
+            return self._install_github_source_async(server, bp)
+        if src_type == BlueprintSourceType.MANUAL_UPLOAD:
+            return self._install_manual_upload_source(server, bp)
+        if src_type in (BlueprintSourceType.DOCKER_ONLY, BlueprintSourceType.CUSTOM):
             _append_console_log(
                 server.id,
                 f"[MSM] Blueprint '{bp.meta.id}' ist Docker-only — keine Dateien "
@@ -577,8 +587,7 @@ class BlueprintPlugin(GamePlugin):
             )
             finish_install(server.id, {"ok": True})
             return {"message": "Installation nicht erforderlich (Source-Typ)"}
-
-        return {"error": f"Unbekannter Source-Typ: {bp.source.type}"}
+        return {"error": f"Unbekannter Source-Typ: {src_type}"}
 
     # ─ Container ──────────────────────────────────────────────────────────
 
@@ -667,7 +676,7 @@ class BlueprintPlugin(GamePlugin):
             logger.warning("Konnte server_runtime_env fuer Server %s nicht laden: %s", getattr(server, "id", None), exc)
         return base_env
 
-    def prepare_runtime(self, server) -> None:
+    def _build_runtime_port_values(self, server) -> dict:
         ports = self._server_ports(server)
         values = {
             "GAME_PORT": ports.get("game"),
@@ -683,7 +692,12 @@ class BlueprintPlugin(GamePlugin):
                     values[f"CUSTOM_PORT_{num}"] = v
                 else:
                     values[f"{k.upper()}_PORT"] = v
+        return values
 
+    def _resolve_runtime_seeds_and_patches(
+        self,
+        values: dict,
+    ) -> tuple[list[dict[str, str]], list[dict[str, str | None]], list[tuple[object, str]]]:
         resolved_seeds: list[dict[str, str]] = []
         for seed in self._blueprint.runtime.seedFiles:
             content = self._substitute_port_tokens(seed.content, values)
@@ -707,39 +721,16 @@ class BlueprintPlugin(GamePlugin):
                 "value": value,
             })
             local_patches.append((patch, value))
+        return resolved_seeds, resolved_patches, local_patches
 
-        executable_files = self._declared_required_executable_files()
-        node = getattr(server, "node", None)
-        if node is not None and not getattr(node, "is_local", False):
-            from services.node_client import NodeClient
-            from services import server_config_wishes
-
-            # Die dauerhaften Werte dieses Servers reisen im selben Kanal —
-            # sie sind strukturell dasselbe wie ein Blueprint-Patch, nur fuer
-            # einen Server statt fuer alle seines Spiels. **Hinten angehaengt**,
-            # damit ein Serverwunsch einen Blueprint-Patch ueberschreibt und
-            # nicht umgekehrt; der Agent wendet die Liste der Reihe nach an.
-            #
-            # Ohne das waere `wuensche_durchsetzen` auf einer entfernten Node
-            # ein stiller Fehlschlag: es schreibt lokal, wo die Datei gar nicht
-            # liegt.
-            wuensche = server_config_wishes.lese(
-                getattr(server, "config_wishes_json", None)
-            )
-
-            NodeClient.from_node(node).files_prepare_runtime(
-                server.id,
-                {
-                    "ensure_dirs": self._blueprint.runtime.ensureDirs,
-                    "required_files": self._blueprint.runtime.requiredFiles,
-                    "executable_files": executable_files,
-                    "seed_files": resolved_seeds,
-                    "patches": resolved_patches + server_config_wishes.als_patches(wuensche),
-                },
-            )
-            return
-
-        base = Path(server.install_dir).resolve()
+    def _apply_local_runtime_files_and_patches(
+        self,
+        server,
+        base: Path,
+        resolved_seeds: list[dict[str, str]],
+        local_patches: list[tuple[object, str]],
+        executable_files: list[str],
+    ) -> None:
         for rel_path in self._blueprint.runtime.ensureDirs:
             target = (base / rel_path).resolve()
             target.relative_to(base)
@@ -807,6 +798,46 @@ class BlueprintPlugin(GamePlugin):
             target = unresolved.resolve()
             target.relative_to(base)
             self._ensure_required_executable_mode(target, rel_path)
+
+    def prepare_runtime(self, server) -> None:
+        values = self._build_runtime_port_values(server)
+        resolved_seeds, resolved_patches, local_patches = self._resolve_runtime_seeds_and_patches(values)
+
+        executable_files = self._declared_required_executable_files()
+        node = getattr(server, "node", None)
+        if node is not None and not getattr(node, "is_local", False):
+            from services.node_client import NodeClient
+            from services import server_config_wishes
+
+            # Die dauerhaften Werte dieses Servers reisen im selben Kanal —
+            # sie sind strukturell dasselbe wie ein Blueprint-Patch, nur fuer
+            # einen Server statt fuer alle seines Spiels. **Hinten angehaengt**,
+            # damit ein Serverwunsch einen Blueprint-Patch ueberschreibt und
+            # nicht umgekehrt; der Agent wendet die Liste der Reihe nach an.
+            wuensche = server_config_wishes.lese(
+                getattr(server, "config_wishes_json", None)
+            )
+
+            NodeClient.from_node(node).files_prepare_runtime(
+                server.id,
+                {
+                    "ensure_dirs": self._blueprint.runtime.ensureDirs,
+                    "required_files": self._blueprint.runtime.requiredFiles,
+                    "executable_files": executable_files,
+                    "seed_files": resolved_seeds,
+                    "patches": resolved_patches + server_config_wishes.als_patches(wuensche),
+                },
+            )
+            return
+
+        base = Path(server.install_dir).resolve()
+        self._apply_local_runtime_files_and_patches(
+            server,
+            base,
+            resolved_seeds,
+            local_patches,
+            executable_files,
+        )
 
         try:
             self.update_modlist(server)
@@ -943,230 +974,7 @@ class BlueprintPlugin(GamePlugin):
         return self.install_mods(server, [workshop_id])
 
     def _install_curseforge_mods(self, server, workshop_ids: list[str]) -> dict:
-        bp_mods = self._blueprint.effective_mods()
-        clean_ids = [str(wid).strip() for wid in workshop_ids if str(wid).strip()]
-        if not clean_ids:
-            return {"ok": True, "applied": 0, "items": {}}
-
-        from services.curseforge_service import get_curseforge_service
-        from services.curseforge_api_key_service import resolve_key as resolve_cf_key
-        import asyncio
-        from database import SessionLocal
-        from models import Mod
-
-        # Startup-Arg Injektion (z. B. ASA) - Spiel laedt Mods beim Start selbst ueber -mods=...
-        if bp_mods.modInjection == BlueprintModInjection.STARTUP_ARG:
-            try:
-                async def _resolve_titles():
-                    svc = await get_curseforge_service()
-                    titles = {}
-                    for wid in clean_ids:
-                        try:
-                            info = await svc.get_mod_details(wid)
-                            if info and info.title:
-                                titles[wid] = info.title
-                        except Exception:
-                            pass
-                    return titles
-                titles = asyncio.run(_resolve_titles())
-                if titles:
-                    db = SessionLocal()
-                    try:
-                        for wid, title in titles.items():
-                            mod_row = db.query(Mod).filter(Mod.server_id == server.id, Mod.workshop_id == wid).first()
-                            if mod_row and not mod_row.name:
-                                mod_row.name = title
-                        db.commit()
-                    finally:
-                        db.close()
-            except Exception:
-                pass
-            for wid in clean_ids:
-                _append_console_log(server.id, f"[MSM] CurseForge Mod {wid} registriert (Start-Argument)\n")
-            self.update_modlist(server)
-            return {"ok": True, "applied": len(clean_ids), "items": {wid: {"ok": True} for wid in clean_ids}}
-
-        # Dateibasierte Installation (z. B. Minecraft mods/ oder plugins/)
-        import httpx
-
-        cf_key = resolve_cf_key()
-        if not cf_key:
-            return {"error": "CurseForge API-Key nicht konfiguriert (in Panel-Einstellungen hinterlegen)"}
-
-        base = Path(server.install_dir).resolve()
-        target_dir_rel = bp_mods.curseforgeInstallPath or "mods"
-        target_dir = (base / target_dir_rel).resolve()
-        try:
-            target_dir.relative_to(base)
-        except ValueError:
-            return {"error": "curseforgeInstallPath verlaesst install_dir"}
-
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        async def _download_cf():
-            svc = await get_curseforge_service()
-            errors = []
-            applied = 0
-            items = {}
-            for wid in clean_ids:
-                try:
-                    mod_info = await svc.get_mod_details(wid)
-                    if not mod_info:
-                        errors.append(f"CurseForge ID {wid} nicht gefunden (404/ungueltige ID)")
-                        items[wid] = {"ok": False, "error": f"Mod/Pack {wid} nicht auf CurseForge gefunden"}
-                        continue
-                    if not mod_info.latest_files:
-                        errors.append(f"{mod_info.title} (ID {wid}): Keine Dateien auf CurseForge verfuegbar")
-                        items[wid] = {"ok": False, "error": "Keine Release-Dateien verfuegbar"}
-                        continue
-                    file_obj = None
-                    if mod_info.has_server_pack and mod_info.server_pack_file_id:
-                        for lf in mod_info.latest_files:
-                            if isinstance(lf, dict) and lf.get("id") == mod_info.server_pack_file_id:
-                                file_obj = lf
-                                break
-                    if not file_obj:
-                        file_obj = mod_info.latest_files[0]
-
-                    dl_url = file_obj.get("downloadUrl")
-                    if not dl_url:
-                        dl_url = await svc.get_file_download_url(wid, file_obj["id"])
-                    if not dl_url:
-                        errors.append(f"{mod_info.title}: Direkter API-Download vom Mod-Autor deaktiviert oder keine URL")
-                        items[wid] = {"ok": False, "error": "Keine Download-URL verfuegbar"}
-                        continue
-                    file_name = file_obj.get("fileName") or f"mod_{wid}"
-                    safe_name = Path(file_name).name
-                    dest_file_name = safe_name if str(wid) in safe_name else f"cf_{wid}_{safe_name}"
-                    dest_file = (target_dir / dest_file_name).resolve()
-                    dest_file.relative_to(base)
-
-                    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as dl_client:
-                        resp = await dl_client.get(dl_url, headers={"x-api-key": cf_key})
-                        resp.raise_for_status()
-                        file_bytes = resp.content
-
-                    if safe_name.lower().endswith(".zip"):
-                        import io
-                        import json
-                        import zipfile
-                        with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
-                            namelist = zf.namelist()
-                            has_overrides = any(m.filename.startswith("overrides/") for m in zf.infolist())
-                            manifest_bytes = None
-                            if "manifest.json" in namelist:
-                                manifest_bytes = zf.read("manifest.json")
-                            # Zielverzeichnis: Bei Modpacks mit 'overrides/' ins Server-Hauptverzeichnis,
-                            # sonst in den vom Blueprint vorgegebenen Mod-Pfad (target_dir, z. B. mods/, plugins/, Pak-Ordner etc.)
-                            extract_root = base if has_overrides else target_dir
-                            for member in zf.infolist():
-                                member_path = Path(member.filename)
-                                if member_path.is_absolute() or ".." in member_path.parts:
-                                    continue
-                                if has_overrides and member.filename.startswith("overrides/"):
-                                    rel_part = member.filename[len("overrides/"):]
-                                    if not rel_part:
-                                        continue
-                                    extracted_path = (base / rel_part).resolve()
-                                else:
-                                    extracted_path = (extract_root / member.filename).resolve()
-                                try:
-                                    extracted_path.relative_to(base)
-                                    if member.is_dir():
-                                        extracted_path.mkdir(parents=True, exist_ok=True)
-                                    else:
-                                        extracted_path.parent.mkdir(parents=True, exist_ok=True)
-                                        extracted_path.write_bytes(zf.read(member))
-                                        self._try_chown_install_path(server, extracted_path)
-                                except (ValueError, Exception):
-                                    pass
-
-                            # Wenn manifest.json vorhanden ist: deklarierte Mod-Dateien (files) nachladen
-                            if manifest_bytes:
-                                try:
-                                    manifest_data = json.loads(manifest_bytes.decode("utf-8"))
-                                    manifest_files = manifest_data.get("files") or []
-                                    if manifest_files:
-                                        _append_console_log(
-                                            server.id,
-                                            f"[MSM] Modpack Manifest erkannt ({len(manifest_files)} Mods) — lade Mod-Dateien nach...\n",
-                                        )
-                                        mods_dir = (base / target_dir_rel).resolve()
-                                        mods_dir.mkdir(parents=True, exist_ok=True)
-                                        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as mc_client:
-                                            for idx, fentry in enumerate(manifest_files, 1):
-                                                pid = fentry.get("projectID")
-                                                fid = fentry.get("fileID")
-                                                if not pid or not fid:
-                                                    continue
-                                                try:
-                                                    m_url = await svc.get_file_download_url(pid, fid)
-                                                    if m_url:
-                                                        m_resp = await mc_client.get(m_url, headers={"x-api-key": cf_key})
-                                                        if m_resp.status_code == 200:
-                                                            m_name = Path(m_url.split("?")[0]).name or f"mod_{pid}_{fid}"
-                                                            safe_m_name = Path(m_name).name
-                                                            m_target = (mods_dir / safe_m_name).resolve()
-                                                            try:
-                                                                m_target.relative_to(base)
-                                                                m_target.write_bytes(m_resp.content)
-                                                                self._try_chown_install_path(server, m_target)
-                                                            except (ValueError, Exception) as write_err:
-                                                                logger.warning("Fehler beim Schreiben von Mod %s (%s): %s", pid, safe_m_name, write_err)
-                                                except Exception:
-                                                    pass
-                                                if idx % 10 == 0 or idx == len(manifest_files):
-                                                    _append_console_log(
-                                                        server.id,
-                                                        f"[MSM] Modpack Download-Fortschritt: {idx}/{len(manifest_files)} Mods geladen\n",
-                                                    )
-                                except Exception as m_err:
-                                    logger.warning("Fehler beim Nachladen der Modpack-Dateien: %s", m_err)
-
-                        _append_console_log(
-                            server.id,
-                            f"[MSM] CurseForge Archiv {mod_info.title} ({safe_name}) entpackt nach {'Server-Wurzelverzeichnis' if has_overrides else target_dir_rel + '/'}\n",
-                        )
-                    else:
-                        dest_file.write_bytes(file_bytes)
-                        self._try_chown_install_path(server, dest_file)
-                        _append_console_log(
-                            server.id,
-                            f"[MSM] CurseForge Mod {mod_info.title} ({dest_file_name}) heruntergeladen nach {target_dir_rel}/\n",
-                        )
-
-                    applied += 1
-                    items[wid] = {"ok": True}
-
-                    # Mod-Name in Datenbank aktualisieren, falls noch generisch
-                    try:
-                        db = SessionLocal()
-                        try:
-                            mod_row = db.query(Mod).filter(Mod.server_id == server.id, Mod.workshop_id == str(wid)).first()
-                            if mod_row and (not mod_row.name or mod_row.name.startswith("CurseForge Modpack ") or mod_row.name.startswith("Mod ")):
-                                mod_row.name = mod_info.title
-                                db.commit()
-                        finally:
-                            db.close()
-                    except Exception:
-                        pass
-
-                except Exception as exc:
-                    errors.append(f"{wid}: {exc}")
-                    items[wid] = {"ok": False, "error": str(exc)}
-            res = {
-                "ok": len(errors) == 0,
-                "applied": applied,
-                "errors": errors,
-                "items": items,
-            }
-            if errors:
-                res["error"] = "; ".join(errors)
-            return res
-
-        res = asyncio.run(_download_cf())
-        self.update_modlist(server)
-        return res
+        return install_curseforge_mods(self, server, workshop_ids)
 
     def install_mods(self, server, workshop_ids: list[str]) -> dict:
         bp_mods = self._blueprint.effective_mods()
