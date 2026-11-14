@@ -1,38 +1,16 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Input, ChatInputBar, VoiceRecordingBar, Blattmenue, Blatteintrag, Kurzinfo, Ablageflaeche, useMehrfachauswahl, useZurueckSchliesst, ChatInputBarRef } from '@maunting/ui'
+import { Ablageflaeche, useMehrfachauswahl, useZurueckSchliesst, ChatInputBarRef } from '@maunting/ui'
 import { useWischZurueck } from '@/hooks/useWischZurueck'
-import {
-  Send,
-  Search,
-  X,
-  Trash2,
-  Smile,
-  UserCheck,
-  Bell,
-  BellOff,
-  Pin,
-  PinOff,
-  Archive,
-  ArchiveRestore,
-  ChevronDown,
-  Timer,
-  ArrowDown,
-} from 'lucide-react'
+import { ArrowDown } from 'lucide-react'
 import { useCallStore } from '@/stores/useCallStore'
-import {
-  CircularVideoNoteRecorder,
-  type VideoNoteAufnahme,
-} from '@/components/social/CircularVideoNoteRecorder'
 import {
   ChatMessageBubble,
   type AntwortBezug,
   type BlasenAktionen,
-  type CalendarAttachment,
   type ChatMessage,
   type TonZustand,
-  type NoteAttachment,
 } from '@/components/social/ChatMessageBubble'
 import {
   type ChatGroupItem,
@@ -40,16 +18,9 @@ import {
   joinGroupByInvite,
   sendFriendRequest,
   getGroupInviteInfo,
-  getChatEphemeral,
-  setChatEphemeral,
 } from '@/api/social'
 // Chat-Kennungen werden lokal aus peerId/groupId gebildet.
-import { maxAnhangBytes } from '@/services/medienKrypto'
 import { messengerSocket } from '@/services/messengerSocket'
-import {
-  type FileAttachment,
-  type ImageAttachment,
-} from '@/components/social/ChatMediaAttachments'
 import { useSprachaufnahme } from '@/hooks/useSprachaufnahme'
 import { useSprachwiedergabe } from '@/hooks/useSprachwiedergabe'
 import { useChatSuche } from '@/hooks/useChatSuche'
@@ -63,17 +34,18 @@ import { useMessengerInteraktionen } from '@/hooks/useMessengerInteraktionen'
 import { useMessengerSync } from '@/hooks/useMessengerSync'
 import { useSicherheitsnummern } from '@/hooks/useSicherheitsnummern'
 import { useUeberallAnsicht } from '@/hooks/useUeberallAnsicht'
+import { MessengerSidebarColumn } from '@/pages/messenger/MessengerSidebarColumn'
+import { MessengerChatHeader } from '@/pages/messenger/MessengerChatHeader'
+import { MessengerComposerFooter } from '@/pages/messenger/MessengerComposerFooter'
+import { MessengerOverlays } from '@/pages/messenger/MessengerOverlays'
+import { useMessengerAnhaenge } from '@/pages/messenger/useMessengerAnhaenge'
+import { useMessengerScrollUndTrenner } from '@/pages/messenger/useMessengerScrollUndTrenner'
+import { useMessengerVerfall } from '@/pages/messenger/useMessengerVerfall'
 import {
-  loadNotesOfflineFirst,
-  loadCalendarEventsOfflineFirst,
-  saveNoteOffline,
-  saveCalendarEventOffline,
   getOutbox,
   setOutbox,
   replayOutbox,
 } from '@/lib/offlineSync'
-import type { NoteItem } from '@/pages/Notes'
-import type { CalendarEventItem } from '@/pages/Calendar'
 import { logischeUuid } from '@/services/wirkungTypen'
 import {
   lieseEinladungsKarte,
@@ -102,67 +74,26 @@ import {
   sucheVorschlaege,
   type Erwaehnungsvorschlag,
 } from '@/services/erwaehnungen'
-import {
-  istWeiterleitbar,
-  type Weiterleitungsziel,
-} from '@/services/nachrichtWeiterleiten'
+import { type Weiterleitungsziel } from '@/services/nachrichtWeiterleiten'
 import { vergissMailbox, type Treffer } from '@/services/verlaufSuche'
-import { istAbweisung } from '@/services/wirkungTypen'
-import {
-  faelligeZeilen,
-  raeumeAlleChats,
-  raeumeVerfalleneZeilen,
-  setzeVerfallsfrist,
-  stufenDativ,
-  stufenLabel,
-  VERFALL_STUFEN,
-  verfallStand,
-} from '@/services/nachrichtVerfall'
 import { sessionChatCache } from '@/services/klartextSpeicher'
-import { ErwaehnungsWache } from '@/components/social/ErwaehnungsWache'
-import { GruppenMetaWache } from '@/components/social/GruppenMetaWache'
-import { FreundschaftsanfragenKarte } from '@/components/social/FreundschaftsanfragenKarte'
-import { FunkenWache } from '@/components/social/FunkenWache'
-import { FunkenAbzeichen } from '@/components/social/FunkenBadge'
 import { rettungMoeglich } from '@/services/funkenService'
 import { useFunkenStore } from '@/stores/funkenStore'
-import { NachrichtenMenue } from '@/components/social/NachrichtenMenue'
-import { WeiterleitenAnsicht } from '@/components/social/WeiterleitenAnsicht'
 import { VerlaufSuchleiste } from '@/components/social/VerlaufSuchleiste'
-import { TrefferListe } from '@/components/social/TrefferListe'
 
-import { compressImageFile } from '@/lib/imageCompression'
-import { CreateStoryModal } from '@/components/social/CreateStoryModal'
 import { MessengerSperrschirm } from '@/components/social/MessengerSperrschirm'
 import { istGesperrt, useMessengerSperre } from '@/services/messengerSperre'
-import { StoryViewerModal, type StoryReplyContext } from '@/components/social/StoryViewerModal'
-import { NotePickerDialog } from '@/components/social/modals/NotePickerDialog'
-import { CalendarPickerDialog } from '@/components/social/modals/CalendarPickerDialog'
-import { ChatEntfernenDialog } from '@/components/social/modals/ChatEntfernenDialog'
-import { MessengerBottomNav } from '@/components/social/sidebar/MessengerModeNav'
-import { MessengerRail } from '@/components/social/sidebar/MessengerRail'
-import { FunkenEmpfaengerModal } from '@/components/social/modals/FunkenEmpfaengerModal'
 import { MessengerEmptyState } from '@/components/social/chat/MessengerEmptyState'
-import { StoriesCarouselBar } from '@/components/social/sidebar/StoriesCarouselBar'
-import { StatusUpdatesView } from '@/components/social/sidebar/StatusUpdatesView'
-import { CommunityView } from '@/components/social/sidebar/CommunityView'
-import { ContactListItem, type ChatContact } from '@/components/social/sidebar/ConversationListItem'
-import { ChatSelectionBar } from '@/components/social/chat/ChatSelectionBar'
-import { ChatHeader } from '@/components/social/chat/ChatHeader'
-import { ChatActionsMenu } from '@/components/social/chat/ChatActionsMenu'
+import { type ChatContact } from '@/components/social/sidebar/ConversationListItem'
 import { ChatPinnedBar } from '@/components/social/chat/ChatPinnedBar'
 import { ChatTimeline } from '@/components/social/chat/ChatTimeline'
-import { StagedImageBar, StagedFileBar, EditingBanner, BlockedNotice } from '@/components/social/chat/ChatComposerBars'
-import { StickerEmojiPicker, type PickerReiter } from '@/components/social/chat/StickerEmojiPicker'
-import { AttachMenu } from '@/components/social/chat/AttachMenu'
-import { MentionSuggestions, ChatReplyBar } from '@/components/social/chat/ChatComposerTop'
-import { ComposerSendActions } from '@/components/social/chat/ComposerSendActions'
+import { StagedImageBar, StagedFileBar, EditingBanner } from '@/components/social/chat/ChatComposerBars'
+import { type PickerReiter } from '@/components/social/chat/StickerEmojiPicker'
 import { ChatHintergrund } from '@/features/chatHintergrund'
-import { MessengerDialoge } from '@/components/social/modals/MessengerDialoge'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { still } from '@/lib/still'
-import { useMessengerNotificationStore, PINS_MAX } from '@/stores/messengerNotificationStore'
+import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import { STICKER_TRESOR_PARAM, STICKER_TRESOR_WERT } from '@/services/stickerTresor'
 
 /**
@@ -415,9 +346,31 @@ function MessengerSeite() {
   const [funkenRettung, setFunkenRettung] = useState<{ partnerId: number; name: string; anzahl: number } | null>(
     null,
   )
-  const [isDragOver, setIsDragOver] = useState(false)
-  const [stagedFile, setStagedFile] = useState<FileAttachment | null>(null)
-  const docInputRef = useRef<HTMLInputElement>(null)
+  const {
+    isDragOver,
+    setIsDragOver,
+    stagedFile,
+    setStagedFile,
+    selectedImage,
+    setSelectedImage,
+    viewingImage,
+    setViewingImage,
+    isNotePickerOpen,
+    setIsNotePickerOpen,
+    userNotes,
+    isCalendarPickerOpen,
+    setIsCalendarPickerOpen,
+    userEvents,
+    importedAttachmentIds,
+    fileInputRef,
+    docInputRef,
+    handleFileChange,
+    handleFileAttachment,
+    handleOpenNotePicker,
+    handleOpenCalendarPicker,
+    handleImportNote,
+    handleImportCalendar,
+  } = useMessengerAnhaenge(t)
 
   // Read receipts setting from profile
   const readReceiptsEnabled = useMemo(() => {
@@ -434,17 +387,6 @@ function MessengerSeite() {
   // nichts einzurichten, also auch keinen Zustand, in dem das Schreiben auf
   // Dauer gesperrt wäre — nur die kurze Spanne bis `ready`. Ist der Messenger
   // per PIN zu, steht ohnehin der Sperrschirm statt dieser Leiste.
-
-  // Attachments
-  const [isNotePickerOpen, setIsNotePickerOpen] = useState(false)
-  const [userNotes, setUserNotes] = useState<NoteItem[]>([])
-
-  const [isCalendarPickerOpen, setIsCalendarPickerOpen] = useState(false)
-  const [userEvents, setUserEvents] = useState<CalendarEventItem[]>([])
-
-  const [selectedImage, setSelectedImage] = useState<ImageAttachment | null>(null)
-  const [viewingImage, setViewingImage] = useState<string | null>(null)
-  useZurueckSchliesst(Boolean(viewingImage), () => setViewingImage(null))
 
   // Stickers / Emojis
   const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false)
@@ -471,18 +413,10 @@ function MessengerSeite() {
   const [isVideoNoteRecording, setIsVideoNoteRecording] = useState(false)
   const tonWiedergabe = useSprachwiedergabe()
 
-  // Double-import prevention state for shared notes & calendar entries
-  const [importedAttachmentIds, setImportedAttachmentIds] = useState<Set<string>>(() => new Set())
-
   // Der Chat-Hintergrund liegt im gemeinsamen Modul (`features/chatHintergrund`):
   // die Schicht liest ihre Wahl selbst und hört auf Änderungen, hier steht nur
   // noch, ob das Einstellungsfenster offen ist.
   const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false)
-
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const justSentRef = useRef<boolean>(false)
   // Message Editing State
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null)
 
@@ -509,8 +443,6 @@ function MessengerSeite() {
   const [angeheftet, setAngeheftet] = useState<ChatMessage | null>(null)
   /** Verfallsfrist dieses Chats in Sekunden, 0 = aus. */
   const [verfallSekunden, setVerfallSekunden] = useState(0)
-  const [verfallOffen, setVerfallOffen] = useState(false)
-  const [verfallVon, setVerfallVon] = useState<number | null>(null)
 
   const gruppenrechteVonRef = useRef<(konto: number) => Set<string>>(() => new Set())
   const wahlLeerenRef = useRef<() => void>(() => {})
@@ -550,6 +482,22 @@ function MessengerSeite() {
   const wahl = useMehrfachauswahl(auswahlReihe)
   wahlLeerenRef.current = wahl.leeren
   const auswahlModus = wahl.auswahl !== null
+  const {
+    messagesEndRef,
+    scrollContainerRef,
+    justSentRef,
+    weitOben,
+    trennerId,
+    oeffneAusListe,
+  } = useMessengerScrollUndTrenner({
+    blindMailboxId,
+    messages,
+    ladeAeltere,
+    hatMehrRef,
+    laedtAeltereRef,
+    unreadCounts,
+    markAsRead,
+  })
   const istSchreibenGesperrt = Boolean(activeContact) && identity.state === 'loading'
 
 
@@ -1176,158 +1124,30 @@ function MessengerSeite() {
       handleSendMessage,
     })
 
-  /**
-   * Wer die Frist eingeschaltet hat, entscheidet, ob ich sie umstellen darf.
-   * Der Server haelt dieselbe Regel; hier ist sie sichtbar, bevor jemand
-   * klickt. Der Stand kommt beim Oeffnen des Chats frisch vom Server.
-   */
-  useEffect(() => {
-    const typ = konversation.chatType
-    const id = konversation.chatId
-    if (!typ || !id) {
-      setVerfallVon(null)
-      return
-    }
-    let aktiv = true
-    getChatEphemeral(typ, id)
-      .then((stand) => {
-        if (!aktiv) return
-        setVerfallVon(stand.ephemeral_enabled_by_user_id)
-        setVerfallSekunden(stand.ephemeral_ttl_seconds)
-      })
-      .catch(() => {})
-    return () => {
-      aktiv = false
-    }
-  }, [konversation.chatType, konversation.chatId])
-
-  const verfallVonAnderem = verfallVon !== null && verfallVon !== currentUserId
-  /*
-   * Dieselbe Regel wie `set_ephemeral` im Server, nicht eine strengere.
-   *
-   * In der Gruppe darf das erste Einschalten, wer Owner oder Admin ist oder
-   * `set_disappearing_messages` hat; hat ein anderer sie gesetzt, bleibt der
-   * Owner und jeder mit dem Recht. Ein Admin ohne dieses Recht darf eine
-   * fremde Frist nicht umwerfen. Im Direktchat gibt es keine Rollen: dort
-   * ändert nur, wer sie gesetzt hat.
-   */
-  const gruppenVerfallsrecht = Boolean(activeGroup?.can_set_disappearing_messages)
-  const gruppenOwner =
-    Boolean(activeGroup) &&
-    (activeGroup?.owner_user_id === currentUserId || activeGroup?.role === 'owner')
-  const darfVerfallStellen = activeGroup
-    ? verfallVonAnderem
-      ? gruppenOwner || gruppenVerfallsrecht
-      : gruppenOwner || activeGroup.role === 'admin' || gruppenVerfallsrecht
-    : !verfallVonAnderem
-
-  const verfallVonName =
-    verfallVon === null
-      ? ''
-      : verfallVon === currentUserId
-        ? t('messenger.retentionYou')
-        : activeContact?.userId === verfallVon
-          ? activeContact.username
-          : (activeGroup?.members ?? []).find((m) => Number(m.user_id) === verfallVon)?.username ||
-            t('messenger.thisContact')
-
-  /**
-   * Die Verfallsfrist dieses Chats umstellen.
-   *
-   * Keine heimliche Änderung: der Umschlag geht an die Gegenseite, sie übernimmt
-   * die Frist und bekommt dieselbe Systemzeile. Scheitert das Senden, bleibt die
-   * alte Frist stehen — eine Frist, die nur hier gilt, wäre eine Lüge über das,
-   * was beim Gegenüber passiert.
-   *
-   * Lokal und im Umschlag steht **derselbe** Zeitpunkt. Mit zwei knapp
-   * verschiedenen käme der eigene Umschlag beim nächsten Abruf als „neuer" zurück
-   * und schriebe eine zweite Systemzeile.
-   */
-  const handleVerfallWaehlen = async (sekunden: number) => {
-    if (!blindMailboxId || sekunden === verfallSekunden) {
-      setVerfallOffen(false)
-      return
-    }
-    // Ohne das Recht ist die Auswahl gar nicht erst zu öffnen. Das hier fängt
-    // den Fall ab, dass es entzogen wurde, während sie offen stand: gesendet
-    // würde eine Umstellung, die jedes andere Gerät verwirft.
-    if (!darfVerfallStellen) {
-      setVerfallOffen(false)
-      toast.error(t('messenger.retentionNoRight'))
-      return
-    }
-    const vorher = verfallStand(blindMailboxId)
-    const jetzt = new Date().toISOString()
-    const typ = konversation.chatType
-    const chatId = konversation.chatId
-    setVerfallSekunden(sekunden)
-    setzeVerfallsfrist(blindMailboxId, sekunden, jetzt)
-    setVerfallOffen(false)
-    setVerfallVon(sekunden > 0 ? currentUserId : null)
-    try {
-      /*
-       * Der Server ist die Wahrheit — auch in einer Gruppe.
-       *
-       * Bis hierher trug nur die **Wirkung** die Frist zum Gegenüber, und der
-       * Server erfuhr sie erst, wenn die Gegenseite die Wirkung anwandte. In
-       * einer Gruppe kam das rarely vor: die Mitglieder sind nicht alle online,
-       * und niemand öffnet den Chat, nur um eine Frist zu übernehmen. Folge
-       * war zweierlei: die Auswahl beim Setzenden drehte sich beim nächsten
-       * Abruf zurück (die Seite brachte wieder den Serverstand 0), und die
-       * übrigen Mitglieder erfuhren nichts.
-       *
-       * Der Server setzt die Frist jetzt selbst und meldet sie per Ereignis an
-       * alle Mitglieder. Die Wirkung bleibt nur der Weg für den Fall, dass
-       * gar kein Netz da ist.
-       */
-      if (typ && chatId) {
-        await setChatEphemeral(typ, chatId, sekunden)
-      }
-      zeigeSystemzeile(
-        sekunden > 0
-          ? t('messenger.retentionSetSelf', {
-              name: t('messenger.retentionYou'),
-              frist: stufenDativ(sekunden, t),
-            })
-          : t('messenger.retentionOffSelf', { name: t('messenger.retentionYou') }),
-      )
-    } catch (fehler) {
-      const zuruecknehmen = () => {
-        setVerfallSekunden(vorher.sekunden)
-        setzeVerfallsfrist(blindMailboxId, vorher.sekunden, vorher.stand || jetzt)
-        setVerfallVon(vorher.sekunden > 0 ? verfallVon : null)
-      }
-      if (istAbweisung(fehler)) {
-        zuruecknehmen()
-        toast.error(t('messenger.actionRejected'))
-        return
-      }
-      // Kein Netz: die Umstellung wartet in der Outbox, statt sie hier
-      // zurückzunehmen. Zurückgenommen wird nur, was der Server endgültig
-      // abgelehnt hat.
-      try {
-        await sendeWirkung({
-          typ: 'retention',
-          felder: {
-            type: 'retention',
-            dauer: sekunden,
-            sekunden,
-            actor_id: currentUserId,
-            zeitpunkt: jetzt,
-          },
-          ruecknahme: {
-            art: 'verfall',
-            mailbox: blindMailboxId,
-            vorher: { sekunden: vorher.sekunden, stand: vorher.stand },
-            nachher: { sekunden, stand: jetzt },
-          },
-        })
-      } catch (zweite) {
-        zuruecknehmen()
-        if (istAbweisung(zweite)) toast.error(t('messenger.actionRejected'))
-      }
-    }
-  }
+  const {
+    verfallOffen,
+    setVerfallOffen,
+    verfallVonAnderem,
+    darfVerfallStellen,
+    verfallVonName,
+    handleVerfallWaehlen,
+    handleEphemeral,
+  } = useMessengerVerfall({
+    t,
+    currentUserId,
+    blindMailboxId,
+    chatType: konversation.chatType,
+    chatId: konversation.chatId,
+    activeContact,
+    activeGroup,
+    messengerGesperrt,
+    messages,
+    setMessages,
+    verfallSekunden,
+    setVerfallSekunden,
+    sendeWirkung,
+    zeigeSystemzeile,
+  })
 
   const chatSuche = useChatSuche(blindMailboxId, springeZu)
 
@@ -1393,92 +1213,6 @@ function MessengerSeite() {
       window.setTimeout(() => springeZu(uuid), 400)
     }
   }
-
-  /**
-   * Abgelaufene Zeilen wegräumen.
-   *
-   * Jede Seite tilgt bei sich lokal; beim Server räumt nur ab, wer selbst
-   * gesendet hat — niemand sonst darf das. Läuft still: ein Hinweis pro
-   * verschwundener Nachricht wäre genau das Gegenteil von „verschwunden".
-   */
-  useEffect(() => {
-    if (!blindMailboxId) return
-    let aktiv = true
-
-    const raeumeAuf = async () => {
-      const faellig = faelligeZeilen(messages)
-      if (!faellig.length || !aktiv) return
-      await raeumeVerfalleneZeilen(blindMailboxId, faellig)
-      if (!aktiv) return
-      const weg = new Set(faellig.map((m) => m.id))
-      setMessages((prev) => {
-        const uebrig = prev.filter((m) => !weg.has(m.id))
-        sessionChatCache.set(blindMailboxId, uebrig.slice(-80))
-        return uebrig
-      })
-      vergissMailbox(blindMailboxId)
-    }
-
-    void raeumeAuf()
-    const takt = window.setInterval(() => void raeumeAuf(), 60_000)
-    return () => {
-      aktiv = false
-      window.clearInterval(takt)
-    }
-  }, [blindMailboxId, messages])
-
-  /**
-   * Derselbe Durchgang über die Chats, die gerade nicht offen sind.
-   *
-   * Der Takt oben sieht nur den offenen Chat. Einen Chat, den man nie wieder
-   * öffnet, würde er nie aufräumen — die Nachricht wäre „nach 24 Stunden weg"
-   * und läge weiter auf der Platte.
-   */
-  useEffect(() => {
-    if (messengerGesperrt) return
-    void raeumeAlleChats().catch(() => {})
-    const takt = window.setInterval(() => void raeumeAlleChats().catch(() => {}), 300_000)
-    return () => window.clearInterval(takt)
-  }, [messengerGesperrt])
-
-  // Echtzeitstrom: Anrufe, eintreffende Nachrichten, Tippen.
-  /**
-   * Der Gegenueber hat die Verfallfrist gestellt. Die Zustandsanzeige unten
-   * haengt an `verfallVon`; ohne dieses Ereignis blieb sie bis zum Neuladen
-   * stehen und liess die falsche Seite aendern.
-   */
-  const handleEphemeral = useCallback((detail: {
-    ephemeral_ttl_seconds?: number
-    ephemeral_enabled_by_user_id?: number | null
-  }) => {
-    const ttl = Number(detail.ephemeral_ttl_seconds || 0)
-    const von = detail.ephemeral_enabled_by_user_id ?? null
-    // Das eigene Gerät hat den Wechsel schon lokal gesetzt und die Systemzeile
-    // geschrieben. Dasselbe Ereignis kommt über den Kanal zurück; ohne diesen
-    // Vergleich stünde die Zeile zweimal da.
-    const unveraendert = ttl === verfallSekunden && von === verfallVon
-    setVerfallSekunden(ttl)
-    setVerfallVon(von)
-    if (blindMailboxId) {
-      setzeVerfallsfrist(blindMailboxId, ttl, new Date().toISOString())
-    }
-    if (unveraendert) return
-    const name =
-      von === null
-        ? t('messenger.thisContact')
-        : von === currentUserId
-          ? t('messenger.retentionYou')
-          : activeContact?.userId === von
-            ? activeContact.username
-            : (activeGroup?.members ?? []).find((m) => Number(m.user_id) === von)?.username ||
-              t('messenger.thisContact')
-    zeigeSystemzeile(
-      ttl > 0
-        ? t('messenger.retentionSetOther', { name, frist: stufenDativ(ttl, t) })
-        : t('messenger.retentionOffOther', { name }),
-      `verfall-${ttl}-${von ?? 'niemand'}`,
-    )
-  }, [activeContact, activeGroup, blindMailboxId, currentUserId, setVerfallSekunden, t, verfallSekunden, verfallVon, zeigeSystemzeile])
 
   useMessengerSync({
     blindMailboxId,
@@ -1716,131 +1450,6 @@ function MessengerSeite() {
   }, [t])
 
   /**
-   * Beim Öffnen eines Chats steht man unten, bei der letzten Nachricht.
-   *
-   * Das klang einfacher, als es war. Ein weiches `scrollIntoView` beim Wechsel
-   * zielt auf ein Ende, das sich noch verschiebt: erst steht der lokale
-   * Verlauf, dann kommen die Umschläge vom Server, dann laden die Bilder und
-   * machen die Blasen höher. Die Animation läuft ins Leere und bleibt irgendwo
-   * in der Mitte stehen.
-   *
-   * Deshalb wird nach einem Wechsel eine knappe Sekunde lang bei jedem Bild
-   * hart ans Ende gesetzt — ohne Animation, weil ein Sprung über tausend
-   * Nachrichten niemandem hilft. Rührt der Nutzer das Rad oder den Finger an,
-   * hört das sofort auf: ab da scrollt nur noch er.
-   */
-  const ansEndeRef = useRef(false)
-  /** Scrollhöhe vor dem Nachladen älterer Nachrichten. */
-  const seitenAnkerRef = useRef<{ hoehe: number; oben: number } | null>(null)
-
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container || !blindMailboxId) return
-
-    ansEndeRef.current = true
-    let abbruch = false
-    const bis = Date.now() + 1200
-    const ziehen = () => {
-      if (abbruch || !ansEndeRef.current || !scrollContainerRef.current) return
-      const c = scrollContainerRef.current
-      c.scrollTop = c.scrollHeight
-      if (Date.now() < bis) requestAnimationFrame(ziehen)
-      else ansEndeRef.current = false
-    }
-    requestAnimationFrame(ziehen)
-
-    // Eine echte Nutzergeste beendet das Nachziehen. Auf das `scroll`-Ereignis
-    // zu hören ginge nicht: das löst das Nachziehen selbst aus.
-    const losIassen = () => {
-      ansEndeRef.current = false
-    }
-    container.addEventListener('wheel', losIassen, { passive: true })
-    container.addEventListener('touchstart', losIassen, { passive: true })
-
-    return () => {
-      abbruch = true
-      container.removeEventListener('wheel', losIassen)
-      container.removeEventListener('touchstart', losIassen)
-    }
-  }, [blindMailboxId])
-
-  // Autoscroll bei neuen Nachrichten im offenen Chat.
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
-    if (ansEndeRef.current) {
-      container.scrollTop = container.scrollHeight
-      return
-    }
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120
-    if (justSentRef.current || isNearBottom) {
-      messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' })
-      justSentRef.current = false
-    }
-  }, [messages])
-
-  /**
-   * Der Knopf „nach unten".
-   *
-   * Wer weiter oben liest, verliert sonst den Anschluss an das, was gerade
-   * hereinkommt. Beim Springen zu einem Suchtreffer ist er der Rückweg.
-   */
-  const [weitOben, setWeitOben] = useState(false)
-
-  /**
-   * Die Trennlinie „Neue Nachrichten".
-   *
-   * Der Zähler steht nur fest, solange der Chat noch nicht offen ist — mit dem
-   * Öffnen wird gelesen. Er wird deshalb beim Antippen der Zeile festgehalten
-   * und hier auf die erste noch ungelesene Nachricht umgerechnet.
-   */
-  const [trennerId, setTrennerId] = useState<number | null>(null)
-  const ungelesenBeimOeffnen = useRef(0)
-  const trennerGesetztFuer = useRef<string | null>(null)
-
-  useEffect(() => {
-    if (!blindMailboxId || !messages.length) return
-    if (trennerGesetztFuer.current === blindMailboxId) return
-    trennerGesetztFuer.current = blindMailboxId
-    const offen = ungelesenBeimOeffnen.current
-    ungelesenBeimOeffnen.current = 0
-    if (!offen) {
-      setTrennerId(null)
-      return
-    }
-    const fremde = messages.filter((m) => !m.isSelf && !m.isSystem)
-    const erste = fremde[Math.max(0, fremde.length - offen)]
-    setTrennerId(erste ? erste.id : null)
-  }, [blindMailboxId, messages])
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
-    const pruefe = () => {
-      setWeitOben(container.scrollHeight - container.scrollTop - container.clientHeight > 400)
-      if (
-        container.scrollTop < 120 &&
-        hatMehrRef.current &&
-        !laedtAeltereRef.current &&
-        !ansEndeRef.current
-      ) {
-        seitenAnkerRef.current = { hoehe: container.scrollHeight, oben: container.scrollTop }
-        void ladeAeltere()
-      }
-    }
-    pruefe()
-    container.addEventListener('scroll', pruefe, { passive: true })
-    return () => container.removeEventListener('scroll', pruefe)
-  }, [blindMailboxId, ladeAeltere, hatMehrRef, laedtAeltereRef])
-
-  useLayoutEffect(() => {
-    const container = scrollContainerRef.current
-    const anker = seitenAnkerRef.current
-    if (!container || !anker) return
-    seitenAnkerRef.current = null
-    container.scrollTop = anker.oben + (container.scrollHeight - anker.hoehe)
-  }, [messages])
-
-  /**
    * Eine endgültig gescheiterte Nachricht noch einmal schicken.
    *
    * Der Umschlag von damals ist weg (der Server hat ihn abgewiesen), also wird
@@ -1952,56 +1561,6 @@ function MessengerSeite() {
     onFertig: (audio) => void handleSendMessage({ text: '', audio }),
   })
 
-  // Handle Photo / Camera capture
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error(t('messenger.pickValidImage'))
-      return
-    }
-
-    try {
-      const compressed = await compressImageFile(file)
-      setSelectedImage({ dataUrl: compressed.dataUrl, name: compressed.name })
-    } catch {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string
-        if (dataUrl) {
-          setSelectedImage({ dataUrl, name: file.name })
-        }
-      }
-      reader.readAsDataURL(file)
-    }
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  // Open Note Picker
-  const handleOpenNotePicker = async () => {
-    try {
-      const res = await loadNotesOfflineFirst()
-      setUserNotes(res.notes.filter((n) => !n.is_archived))
-      setIsNotePickerOpen(true)
-    } catch {
-      toast.error(t('messenger.notesLoadFailed'))
-    }
-  }
-
-  // Open Calendar Event Picker
-  const handleOpenCalendarPicker = async () => {
-    try {
-      const now = new Date()
-      const start = new Date(now.getTime() - 30 * 86400000).toISOString()
-      const end = new Date(now.getTime() + 90 * 86400000).toISOString()
-      const res = await loadCalendarEventsOfflineFirst(start, end)
-      setUserEvents(res.events)
-      setIsCalendarPickerOpen(true)
-    } catch {
-      toast.error(t('messenger.calendarLoadFailed'))
-    }
-  }
-
   // Blockieren oder Aufheben aus dem Bestätigungsdialog, je nach heutigem Stand.
   const handleBlockConfirm = async () => {
     if (activeContact && isBlocked(activeContact.userId)) {
@@ -2019,145 +1578,7 @@ function MessengerSeite() {
     setIsBlockConfirmOpen(false)
   }
 
-  // File Attachment Helper (for drag-and-drop and document input)
-  const handleFileAttachment = (file: File) => {
-    // 1. Storage-Limits vor FileReader-Aufruf prüfen (Schutz vor Riesen-Dateien und Abstürzen)
-    //
-    // Die Obergrenze rechnet sich aus dem Deckel des Backends zurück: die Datei
-    // wird als data-URL gelesen (ein Drittel mehr) und dann verschlüsselt
-    // verpackt. Hier standen früher feste 25 MB — genau der Deckel, den der
-    // fertige Blob nicht überschreiten darf. Eine 20-MB-Datei lief damit durch
-    // die ganze Verschlüsselung und scheiterte erst am Upload.
-    const MAX_FILE_BYTES = maxAnhangBytes()
-    const MAX_IMAGE_BYTES = Math.min(8 * 1024 * 1024, MAX_FILE_BYTES)
-
-    const isImage = file.type.startsWith('image/')
-    const limit = isImage ? MAX_IMAGE_BYTES : MAX_FILE_BYTES
-    if (file.size > limit) {
-      toast.error(t('messenger.fileTooLarge', { limit: Math.floor(limit / (1024 * 1024)) }))
-      return
-    }
-
-    // 2. Blockiere ausfuehrbare Dateien clientseitig vorab
-    const lowerName = file.name.toLowerCase()
-    const blockedExtensions = ['.exe', '.dll', '.bat', '.cmd', '.sh', '.msi', '.vbs', '.ps1', '.elf', '.com', '.scr', '.pif']
-    if (blockedExtensions.some((ext) => lowerName.endsWith(ext))) {
-      toast.error(t('messenger.executableBlocked'))
-      return
-    }
-
-    if (isImage) {
-      compressImageFile(file)
-        .then((compressed) => {
-          setSelectedImage({ dataUrl: compressed.dataUrl, name: compressed.name })
-        })
-        .catch(() => {
-          const reader = new FileReader()
-          reader.onload = (event) => {
-            const dataUrl = event.target?.result as string
-            if (dataUrl) {
-              setSelectedImage({ dataUrl, name: file.name })
-            }
-          }
-          reader.readAsDataURL(file)
-        })
-      return
-    }
-
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string
-      if (dataUrl) {
-        setStagedFile({
-          name: file.name,
-          sizeBytes: file.size,
-          mimeType: file.type || 'application/octet-stream',
-          dataUrl,
-        })
-      }
-    }
-    reader.readAsDataURL(file)
-  }
-
-  const handleImportNote = async (note: NoteAttachment, itemKey?: string) => {
-    const key = itemKey || `${note.title}_${note.content?.slice(0, 30)}`
-    if (importedAttachmentIds.has(key)) {
-      toast.success(t('messenger.noteAlreadyTaken'))
-      return
-    }
-    try {
-      await saveNoteOffline({
-        title: note.title || t('messenger.sharedNote'),
-        content: note.content || '',
-        category: note.category || 'personal',
-        color: note.color || 'primary',
-        is_pinned: false,
-        note_type: 'personal',
-        team_id: null,
-      })
-      setImportedAttachmentIds((prev) => new Set([...prev, key]))
-      toast.success(t('messenger.noteSaved', { title: note.title || t('messenger.sharedNote') }))
-    } catch {
-      toast.error(t('messenger.noteSaveFailed'))
-    }
-  }
-
-  const handleImportCalendar = async (cal: CalendarAttachment, itemKey?: string) => {
-    const key = itemKey || `${cal.title}_${cal.start}`
-    if (importedAttachmentIds.has(key)) {
-      toast.success(t('messenger.eventAlreadyTaken'))
-      return
-    }
-    try {
-      await saveCalendarEventOffline({
-        title: cal.title || t('messenger.sharedEvent'),
-        start_time: cal.start,
-        end_time: cal.end,
-        description: cal.description || null,
-        location: cal.location || null,
-        all_day: false,
-        color: 'primary',
-        event_type: 'personal',
-        team_id: null,
-        server_id: null,
-      })
-      setImportedAttachmentIds((prev) => new Set([...prev, key]))
-      toast.success(t('messenger.eventSaved', { title: cal.title || t('messenger.sharedEvent') }))
-    } catch {
-      toast.error(t('messenger.eventSaveFailed'))
-    }
-  }
-
   const isChatOpen = Boolean(activeContact || activeGroup)
-
-  /** Ein Chat aus der Liste geht auf: gelesen, und der Trenner merkt sich, wo man stand. */
-  const oeffneAusListe = (mid: string | undefined) => {
-    if (!mid) return
-    ungelesenBeimOeffnen.current = unreadCounts[mid] || 0
-    trennerGesetztFuer.current = null
-    markAsRead(mid)
-  }
-
-  const zeichneKontakt = (c: ChatContact) => {
-    const cmid = contactMailboxMap[c.userId]
-    return (
-      <ContactListItem
-        key={c.listKey}
-        kontakt={c}
-        mid={cmid}
-        ausgewaehlt={activeContact?.userId === c.userId}
-        entwurf={cmid ? entwuerfe.vorschau[cmid] || '' : ''}
-        onOeffnen={() => {
-          setActiveContact(c)
-          setActiveGroup(null)
-          oeffneAusListe(cmid)
-        }}
-        onAnheften={handleAnheftenChat}
-        onArchivieren={handleArchivieren}
-        onMenue={(mid, name) => setZeilenMenue({ mid, name })}
-      />
-    )
-  }
 
   const storyIch = { avatarUrl: user?.avatar_url, username: user?.username }
 
@@ -2424,195 +1845,62 @@ function MessengerSeite() {
 
       {/* Main Split Layout: Left Rail + Contacts & Groups List, Right Chat Area */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Desktop Navigation Rail */}
-        <MessengerRail
-          modus={mobileNavTab}
-          onModus={(neu) => {
-            setMobileNavTab(neu)
-            setIsSidebarCollapsed(false)
-          }}
-          hatStories={stories.length > 0}
-          ungelesenGesamt={Object.values(unreadCounts).reduce((a, b) => a + b, 0)}
+        <MessengerSidebarColumn
+          mobileNavTab={mobileNavTab}
+          setMobileNavTab={setMobileNavTab}
+          isSidebarCollapsed={isSidebarCollapsed}
+          setIsSidebarCollapsed={setIsSidebarCollapsed}
+          isChatOpen={isChatOpen}
+          stories={stories}
+          storyIch={storyIch}
+          storyAnsicht={storyAnsicht}
+          unreadCounts={unreadCounts}
           ungelesenChats={ungelesenChats}
           ungelesenCommunity={ungelesenCommunity}
-          funkeZahl={funkeGesamt}
+          funkeGesamt={funkeGesamt}
           hatNeueMarkierung={hatNeueMarkierung}
-          ungeleseneErwaehnungen={mentionedChats.length}
+          onClearNeueMarkierung={() => setHatNeueMarkierung(false)}
+          mentionedChatsCount={mentionedChats.length}
           onFunke={handleFunkeTrigger}
-          onMarkierteNachrichten={() => {
-            setHatNeueMarkierung(false)
-            void ueberall.oeffne('markiert')
+          onOpenWallpaperModal={() => setIsWallpaperModalOpen(true)}
+          ueberall={ueberall}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          widerruf={widerruf}
+          onClearWiderruf={() => setWiderruf(null)}
+          archivZahl={archivZahl}
+          archivUngelesen={archivUngelesen}
+          archivOffen={archivOffen}
+          setArchivOffen={setArchivOffen}
+          filteredContacts={filteredContacts}
+          kontakteNachArchiv={kontakteNachArchiv}
+          contactsList={contactsList}
+          contactMailboxMap={contactMailboxMap}
+          groupMailboxMap={groupMailboxMap}
+          entwuerfeVorschau={entwuerfe.vorschau}
+          activeContact={activeContact}
+          activeGroup={activeGroup}
+          groups={groups}
+          onSelectContact={(c, cmid) => {
+            setActiveContact(c)
+            setActiveGroup(null)
+            oeffneAusListe(cmid)
           }}
-          onAntwortenAnMich={() => void ueberall.oeffne('anMich')}
-          onHintergrund={() => setIsWallpaperModalOpen(true)}
+          onOpenStatusChat={(c) => {
+            setActiveContact(c)
+            setActiveGroup(null)
+          }}
+          onSelectGroup={(g) => {
+            setActiveGroup(g)
+            setActiveContact(null)
+          }}
+          onOpenCreateGroup={() => setIsCreateGroupOpen(true)}
+          onCopyInviteLink={handleCopyInviteLink}
+          onAnheftenChat={handleAnheftenChat}
+          onArchivieren={handleArchivieren}
+          onZeilenMenue={(mid, name) => setZeilenMenue({ mid, name })}
+          onRefreshData={() => void loadData()}
         />
-
-        {/* Left Column: Modern Contacts & Groups List */}
-        <div
-          className={`w-full md:w-80 lg:w-96 shrink-0 flex flex-col min-h-0 border-r border-outline-variant/30 bg-surface-container messenger-sidebar msm-sidebar ${
-            isChatOpen ? 'hidden md:flex' : 'flex'
-          } ${isSidebarCollapsed ? 'md:hidden' : ''}`}
-        >
-          <FreundschaftsanfragenKarte />
-
-          {/* Stories Bar direkt oben über den Kontakten */}
-          {mobileNavTab === 'chats' && !searchQuery.trim() && (
-            <StoriesCarouselBar
-              ich={storyIch}
-              eigeneStories={storyAnsicht.eigene}
-              freunde={storyAnsicht.freunde}
-              onOeffnen={(s) => storyAnsicht.betrachter.oeffne(s)}
-              onErstellen={storyAnsicht.erstellung.mitText}
-            />
-          )}
-
-          {/* Suchleiste für Kontakte */}
-          {mobileNavTab === 'chats' && (
-            <div className="flex items-center gap-2 p-2.5 border-b border-outline-variant/20 bg-transparent">
-              <div className="relative flex-1">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50" />
-                <Input
-                  value={searchQuery}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-                  placeholder={t('messenger.searchPlaceholder')}
-                  className="text-xs pl-8 h-8 rounded-full bg-surface-container-high/40 border border-outline-variant/30 text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary/50 transition-all"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Der Rückweg nach einer Wischgeste. Unten, weil dort der Daumen ist. */}
-          {widerruf && (
-            <div className="shrink-0 mx-2 mb-1 px-3 py-2 rounded-xl bg-surface-container-high border border-outline-variant/30 flex items-center justify-between gap-2">
-              <span className="text-xs text-on-surface truncate">{widerruf.text}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  widerruf.zurueck()
-                  setWiderruf(null)
-                }}
-                className="min-h-11 px-3 text-xs font-semibold text-primary hover:bg-surface-container-highest rounded-lg transition-colors shrink-0"
-              >
-                Widerrufen
-              </button>
-            </div>
-          )}
-
-          {/* List Scroll Area */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {/* View 1: Standard Chats Mode - Nur Direktnachrichten, keine Gruppen */}
-            {mobileNavTab === 'chats' && (
-              <>
-                {/* Das Archiv */}
-                {archivZahl > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setArchivOffen((offen) => !offen)}
-                    className="w-full min-h-11 px-2.5 py-2 mb-1.5 flex items-center gap-2.5 rounded-2xl text-left bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 transition-colors"
-                    aria-expanded={archivOffen}
-                  >
-                    <span className="w-9 h-9 rounded-full bg-white/10 text-on-surface-variant flex items-center justify-center shrink-0">
-                      <Archive className="w-4 h-4" />
-                    </span>
-                    <span className="min-w-0 flex-1 text-xs font-semibold text-on-surface">
-                      Archiviert ({archivZahl})
-                    </span>
-                    {archivUngelesen > 0 && (
-                      <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-label-sm font-bold rounded-full bg-primary text-on-primary min-w-[18px]">
-                        {archivUngelesen > 99 ? '99+' : archivUngelesen}
-                      </span>
-                    )}
-                    <ChevronDown
-                      className={`w-4 h-4 text-on-surface-variant/70 shrink-0 transition-transform ${
-                        archivOffen ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-                )}
-
-                {/* Reine Kontaktliste */}
-                {filteredContacts.length > 0 && (
-                  <div className="space-y-1.5">
-                    {(archivOffen
-                      ? [...kontakteNachArchiv.sichtbar, ...kontakteNachArchiv.imArchiv]
-                      : kontakteNachArchiv.sichtbar
-                    ).map((c) => zeichneKontakt(c))}
-                  </div>
-                )}
-
-                {filteredContacts.length === 0 && (
-                  <p className="py-12 text-center text-xs text-on-surface-variant/70">
-                    {searchQuery.trim() ? 'Keine Kontakte gefunden.' : t('messenger.noContacts')}
-                  </p>
-                )}
-
-                {/* Volltextsuche über alle Chats, wenn ein Suchbegriff eingegeben wurde */}
-                {searchQuery.trim().length > 1 && (
-                  <div className="pt-2 mt-1 border-t border-outline-variant/20">
-                    <button
-                      type="button"
-                      onClick={() => void ueberall.oeffne('suche', searchQuery)}
-                      className="w-full min-h-11 px-2.5 flex items-center gap-2.5 rounded-2xl text-left text-xs text-primary hover:bg-surface-container-high/60 transition-colors"
-                    >
-                      <Search className="w-4 h-4 shrink-0" />
-                      <span className="truncate">{t('messenger.searchInMessages', { query: searchQuery.trim() })}</span>
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-
-            {mobileNavTab === 'community' && (
-              <CommunityView
-                gruppen={groups}
-                onGruppe={(g) => {
-                  setActiveGroup(g)
-                  setActiveContact(null)
-                }}
-                onNeueGruppe={() => setIsCreateGroupOpen(true)}
-                onEinladungKopieren={handleCopyInviteLink}
-                aktiveGruppeId={activeGroup?.id}
-                ungeleseneNachrichten={unreadCounts}
-                gruppenMailboxMap={groupMailboxMap}
-              />
-            )}
-
-            {mobileNavTab === 'updates' && (
-              <StatusUpdatesView
-                ich={storyIch}
-                eigeneStories={storyAnsicht.eigene}
-                freunde={storyAnsicht.freunde}
-                kontakte={contactsList}
-                onOeffnen={(s) => storyAnsicht.betrachter.oeffne(s)}
-                onErstellen={storyAnsicht.erstellung.mitText}
-                onChat={(c) => {
-                  setActiveContact(c)
-                  setActiveGroup(null)
-                }}
-              />
-            )}
-          </div>
-
-          {!isChatOpen && (
-            <MessengerBottomNav
-              modus={mobileNavTab}
-              onModus={setMobileNavTab}
-              ungelesenChats={ungelesenChats}
-              ungelesenCommunity={ungelesenCommunity}
-              hatStories={stories.length > 0}
-              hatNeueMarkierung={hatNeueMarkierung}
-              ungeleseneErwaehnungen={mentionedChats.length}
-              onFunke={handleFunkeTrigger}
-              onMarkierteNachrichten={() => {
-                setHatNeueMarkierung(false)
-                void ueberall.oeffne('markiert')
-              }}
-              onAntwortenAnMich={() => void ueberall.oeffne('anMich')}
-              onHintergrund={() => setIsWallpaperModalOpen(true)}
-              onAktualisieren={() => void loadData()}
-            />
-          )}
-        </div>
 
         {/* Right Column: Chat Thread & Input Area */}
         <div
@@ -2683,128 +1971,57 @@ function MessengerSeite() {
             <>
               {/* Eine Leiste, zwei Rollen: Auswahl ersetzt den Kopf, sonst
                   steht er. Beide liegen im Fluss; der Verlauf beginnt darunter. */}
-              {auswahlModus ? (
-                <ChatSelectionBar
-                  anzahl={wahl.auswahl?.size ?? 0}
-                  loeschenMoeglich={gewaehlteNachrichten().some((m) => m.isSelf && !m.isDeleted)}
-                  onBeenden={beendeAuswahl}
-                  onWeiterleiten={() => {
-                    const auswahl = gewaehlteNachrichten().filter(istWeiterleitbar)
-                    if (!auswahl.length) {
-                      toast.error(t('messenger.nothingToForwardPlural'))
-                      return
-                    }
-                    setWeiterzuleiten(auswahl)
-                  }}
-                  onKopieren={() => void handleAuswahlKopieren()}
-                  onMarkieren={() => {
-                    for (const m of gewaehlteNachrichten()) handleMarkieren(m)
-                    beendeAuswahl()
-                  }}
-                  onLoeschen={() => void handleAuswahlLoeschen()}
-                />
-              ) : (
-                <ChatHeader
-                  titel={(activeGroup ? gruppenTitel(activeGroup) : activeContact?.username) ?? ''}
-                  info={activeGroup ? null : activeContact?.info?.text ?? null}
-                  bild={activeGroup ? activeGroup.avatar_url ?? null : activeContact?.avatarUrl ?? null}
-                  stumm={Boolean(blindMailboxId && isChatMuted(blindMailboxId))}
-                  blockiert={Boolean(activeContact && isBlocked(activeContact.userId))}
-                  onZurueck={handleZurueckZurListe}
-                  onSeitenleisteUmschalten={() => setIsSidebarCollapsed((v) => !v)}
-                  seitenleisteEingeklappt={isSidebarCollapsed}
-                  onSprachanruf={
-                    activeContact?.isFriend
-                      ? () => void starteAnruf('audio')
-                      : activeGroup && groupCallPermissions.canStart
-                        ? () => handleStartGroupCall(false)
-                        : undefined
-                  }
-                  onVideoanruf={
-                    activeContact?.isFriend
-                      ? () => void starteAnruf('video')
-                      : activeGroup && groupCallPermissions.canStart
-                        ? () => handleStartGroupCall(true)
-                        : undefined
-                  }
-                  onAnheften={
-                    angeheftet && darfAnheften ? () => void handleAnheften(angeheftet) : undefined
-                  }
-                  angeheftet={Boolean(angeheftet)}
-                  online={activeContact?.status === 'online'}
-                  funke={
-                    activeContact?.isFriend ? (
-                      <FunkenAbzeichen
-                        partnerId={activeContact.userId}
-                        name={activeContact.username}
-                        interaktiv
-                        onWiederherstellen={() => void oeffneFunkenRettung(activeContact)}
-                      />
-                      ) : null
-                    }
-                    onFreundschaftsanfrage={
-                      activeContact && !activeContact.isFriend ? () => void sendeFreundschaftsanfrage() : undefined
-                    }
-                    anfrageGesendet={anfrageGesendet}
-                    onProfil={activeContact ? () => navigate(`/user/${activeContact.userId}`) : undefined}
-                    onSuche={chatSuche.oeffne}
-                  menue={(schliessen) => (
-                    <ChatActionsMenu
-                      schliessen={schliessen}
-                      stumm={blindMailboxId ? isChatMuted(blindMailboxId) : null}
-                      kontakt={
-                        activeContact
-                          ? { istFreund: activeContact.isFriend, blockiert: isBlocked(activeContact.userId) }
-                          : null
-                      }
-                      gruppe={
-                        activeGroup
-                          ? {
-                              hatEinladung: Boolean(activeGroup.invite_code),
-                              istEigentuemer: activeGroup.owner_user_id === currentUserId,
-                              istAdmin: activeGroup.role === 'admin',
-                            }
-                          : null
-                      }
-                      verfallStufe={stufenLabel(verfallSekunden > 0 ? verfallSekunden : 0, t)}
-                      verfallErlaubt={darfVerfallStellen}
-                      onStumm={() => setIsMuteModalOpen(true)}
-                      onProfil={() => activeContact && navigate(`/user/${activeContact.userId}`)}
-                      onSicherheitsnummer={() => sicherheitsnummern.setOffen(true)}
-                      onVerfall={() => setVerfallOffen(true)}
-                      onVideoanruf={() => void starteAnruf('video')}
-                      onSprachanruf={
-                        activeContact?.isFriend ? () => void starteAnruf('audio') : undefined
-                      }
-                      onGruppenanruf={
-                        activeGroup
-                          ? { erlaubt: groupCallPermissions.canStart, onStarten: () => handleStartGroupCall(false) }
-                          : undefined
-                      }
-                      onAugenblick={
-                        activeContact?.isFriend && !isBlocked(activeContact.userId) ? oeffneAugenblick : undefined
-                      }
-                      onHintergrund={() => {
-                        if (activeGroup) {
-                          setGroupSettingsTab('background')
-                          setIsGroupPermissionsOpen(true)
-                        } else {
-                          setIsWallpaperModalOpen(true)
-                        }
-                      }}
-                      onEinladung={() => activeGroup && handleCopyInviteLink(activeGroup)}
-                      onEinstellungen={() => {
-                        setGroupSettingsTab('general')
-                        setIsGroupPermissionsOpen(true)
-                      }}
-                      onLoeschen={() => activeGroup && handleDeleteGroup(activeGroup)}
-                      onVerlassen={() => activeGroup && handleLeaveGroup(activeGroup)}
-                      onBlockieren={() => setIsBlockConfirmOpen(true)}
-                      onChatEntfernen={() => setChatEntfernenOffen(true)}
-                    />
-                  )}
-                />
-              )}
+              <MessengerChatHeader
+                auswahlModus={auswahlModus}
+                auswahlGroesse={wahl.auswahl?.size ?? 0}
+                gewaehlteNachrichten={gewaehlteNachrichten}
+                onBeendeAuswahl={beendeAuswahl}
+                onForwardSelection={(auswahl) => setWeiterzuleiten(auswahl)}
+                onCopySelection={handleAuswahlKopieren}
+                onMarkieren={handleMarkieren}
+                onDeleteSelection={handleAuswahlLoeschen}
+                activeGroup={activeGroup}
+                activeContact={activeContact}
+                currentUserId={currentUserId}
+                gruppenTitel={gruppenTitel}
+                blindMailboxId={blindMailboxId}
+                isChatMuted={isChatMuted}
+                isBlocked={isBlocked}
+                onZurueck={handleZurueckZurListe}
+                isSidebarCollapsed={isSidebarCollapsed}
+                onToggleSidebar={() => setIsSidebarCollapsed((v) => !v)}
+                groupCallCanStart={groupCallPermissions.canStart}
+                onStartCall={starteAnruf}
+                onStartGroupCall={handleStartGroupCall}
+                angeheftet={angeheftet}
+                darfAnheften={darfAnheften}
+                onTogglePinned={handleAnheften}
+                onOpenFunkenRettung={oeffneFunkenRettung}
+                onSendFriendRequest={sendeFreundschaftsanfrage}
+                anfrageGesendet={anfrageGesendet}
+                onNavigateProfile={(userId) => navigate(`/user/${userId}`)}
+                onOpenSearch={chatSuche.oeffne}
+                verfallSekunden={verfallSekunden}
+                darfVerfallStellen={darfVerfallStellen}
+                onOpenMute={() => setIsMuteModalOpen(true)}
+                onOpenSafetyNumber={() => sicherheitsnummern.setOffen(true)}
+                onOpenDisappearing={() => setVerfallOffen(true)}
+                onOpenAugenblick={oeffneAugenblick}
+                onOpenGroupBackground={() => {
+                  setGroupSettingsTab('background')
+                  setIsGroupPermissionsOpen(true)
+                }}
+                onOpenPersonalWallpaper={() => setIsWallpaperModalOpen(true)}
+                onCopyInviteLink={handleCopyInviteLink}
+                onOpenGroupSettings={() => {
+                  setGroupSettingsTab('general')
+                  setIsGroupPermissionsOpen(true)
+                }}
+                onDeleteGroup={handleDeleteGroup}
+                onLeaveGroup={handleLeaveGroup}
+                onOpenBlockConfirm={() => setIsBlockConfirmOpen(true)}
+                onOpenRemoveChat={() => setChatEntfernenOffen(true)}
+              />
 
               {angeheftet && !auswahlModus && !chatSuche.offen && (
                 <ChatPinnedBar
@@ -2875,168 +2092,42 @@ function MessengerSeite() {
                   Inhalt bis an den Rand — auf einem iPhone lag die Eingabeleiste
                   damit unter dem Home-Balken, und jeder Griff dorthin wischte
                   die App weg, statt zu tippen. */}
-              <div className="p-2.5 pb-[calc(0.625rem+var(--msm-unten-sicher))] bg-transparent relative z-10">
-                <div className="mx-auto w-full max-w-3xl xl:max-w-4xl">
-                  {activeContact && isBlocked(activeContact.userId) ? (
-                  <BlockedNotice onAufheben={() => void unblockUser(activeContact.userId)} />
-                ) : aufnahme.laeuft ? (
-                  <VoiceRecordingBar
-                    durationSeconds={aufnahme.dauer}
-                    statusLabel={t('messenger.voiceRecording')}
-                    stream={aufnahme.stream}
-                    variant="danger"
-                    onCancel={() => aufnahme.beende(false)}
-                    onConfirm={() => aufnahme.beende(true)}
-                    cancelLabel="Abbrechen"
-                    confirmLabel="Senden"
-                    cancelIcon={<Trash2 className="w-3.5 h-3.5" />}
-                    confirmIcon={<Send className="w-3.5 h-3.5" />}
-                  />
-                ) : (
-                  <>
-                    {isStickerPickerOpen && (
-                      <StickerEmojiPicker
-                        reiter={stickerTab}
-                        onReiter={setStickerTab}
-                        startFotoTresor={startFotoTresor}
-                        onSticker={(stk) => {
-                          void handleSendMessage({ sticker: stk })
-                          setIsStickerPickerOpen(false)
-                          setStartFotoTresor(false)
-                        }}
-                        onEmoji={(emoji) => setInputText((prev) => prev + emoji)}
-                        onSchliessen={() => {
-                          setIsStickerPickerOpen(false)
-                          setStartFotoTresor(false)
-                        }}
-                      />
-                    )}
-
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault()
-                        handleSendMessage({
-                          text: inputText,
-                          img: selectedImage || undefined,
-                          file: stagedFile || undefined,
-                        })
-                      }}
-                    >
-                      {/* Hidden Image Input */}
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleFileChange}
-                      />
-
-                      {/* Hidden Doc/File Input */}
-                      <input
-                        ref={docInputRef}
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (file) handleFileAttachment(file)
-                          if (docInputRef.current) docInputRef.current.value = ''
-                        }}
-                      />
-
-                      <ChatInputBar
-                        ref={chatInputRef}
-                        variant="glass"
-                        value={inputText}
-                        onChange={handleInputChange}
-                        topSlot={
-                          <>
-                            <MentionSuggestions vorschlaege={erwaehnungsVorschlaege} onWaehlen={waehleErwaehnung} />
-                            {antwortAuf && <ChatReplyBar antwort={antwortAuf} onVerwerfen={() => setAntwortAuf(null)} />}
-                          </>
-                        }
-                        onSubmit={() => {
-                          handleSendMessage({
-                            text: inputText,
-                            img: selectedImage || undefined,
-                            file: stagedFile || undefined,
-                          })
-                        }}
-                        // Gesperrt heißt gesperrt: unter einer Identität, die
-                        // dieses Gerät nicht öffnen kann, wird nicht gesendet.
-                        // Während `loading` bleibt die Leiste offen, sonst
-                        // flackerte sie bei jedem Öffnen kurz tot.
-                        // Gruppenchats laufen über den Gruppenschlüssel weiter.
-                        disabled={istSchreibenGesperrt || !darfSchreiben}
-                        placeholder={
-                          !darfSchreiben
-                            ? // Kein Schlüsselproblem, sondern eine
-                              // Rechtelage: in dieser Gruppe darf dieses Konto
-                              // nicht schreiben. Das gehört gesagt, nicht
-                              // durch ein totes Feld angedeutet.
-                              t('messenger.sendNoRight')
-                            : istSchreibenGesperrt
-                            ? // Hier stand „zuerst den Schlüssel entsperren".
-                              // Das stammte aus der Zeit, als der
-                              // Identitätsschlüssel eine eigene Passphrase
-                              // hatte — die gibt es nicht mehr, und die
-                              // Aufforderung schickte den Benutzer nach
-                              // nirgendwo. Was bleibt, ist ein kurzer Moment.
-                              t('messenger.keyPreparing')
-                            : editingMessage
-                              ? t('messenger.editPlaceholder')
-                              : t('messenger.writePlaceholder')
-                        }
-                        leftActions={
-                          <>
-                            <AttachMenu
-                              erlaubt={darfAnhaengen}
-                              onKamera={() => setIsCameraModalOpen(true)}
-                              onFoto={() => fileInputRef.current?.click()}
-                              onDokument={() => docInputRef.current?.click()}
-                              onNotiz={() => void handleOpenNotePicker()}
-                              onTermin={() => void handleOpenCalendarPicker()}
-                            />
-
-                            {/* Bei offener Auswahl läge die Kurzinfo über ihr. */}
-                            <Kurzinfo
-                              text={t('messenger.stickers')}
-                              seite="anfang"
-                              lage="oben"
-                              aussen="shrink-0"
-                              className={isStickerPickerOpen ? '!hidden' : ''}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (isStickerPickerOpen) setStartFotoTresor(false)
-                                  setIsStickerPickerOpen((prev) => !prev)
-                                }}
-                                className={`grid h-9 w-9 place-items-center rounded-full transition-colors ${
-                                  isStickerPickerOpen
-                                    ? 'bg-primary/20 text-white border border-primary/50'
-                                    : 'text-white/70 hover:text-white hover:bg-white/10'
-                                }`}
-                                aria-label={t('messenger.pickSticker')}
-                              >
-                                <Smile className="w-4 h-4" />
-                              </button>
-                            </Kurzinfo>
-                          </>
-                        }
-                        rightActions={
-                          <ComposerSendActions
-                            hatInhalt={Boolean(inputText.trim() || selectedImage || stagedFile)}
-                            sendet={sending}
-                            onVideonotiz={() => setIsVideoNoteRecording(true)}
-                            onSprachnachricht={aufnahme.starte}
-                          />
-                        }
-                      />
-                    </form>
-                  </>
-                )}
-                </div>
-              </div>
+              <MessengerComposerFooter
+                activeContact={activeContact}
+                isBlocked={isBlocked}
+                onUnblock={unblockUser}
+                aufnahme={aufnahme}
+                isStickerPickerOpen={isStickerPickerOpen}
+                setIsStickerPickerOpen={setIsStickerPickerOpen}
+                stickerTab={stickerTab}
+                setStickerTab={setStickerTab}
+                startFotoTresor={startFotoTresor}
+                setStartFotoTresor={setStartFotoTresor}
+                handleSendMessage={handleSendMessage}
+                inputText={inputText}
+                setInputText={setInputText}
+                handleInputChange={handleInputChange}
+                selectedImage={selectedImage}
+                stagedFile={stagedFile}
+                fileInputRef={fileInputRef}
+                docInputRef={docInputRef}
+                chatInputRef={chatInputRef}
+                handleFileChange={handleFileChange}
+                handleFileAttachment={handleFileAttachment}
+                erwaehnungsVorschlaege={erwaehnungsVorschlaege}
+                waehleErwaehnung={waehleErwaehnung}
+                antwortAuf={antwortAuf}
+                setAntwortAuf={setAntwortAuf}
+                istSchreibenGesperrt={istSchreibenGesperrt}
+                darfSchreiben={darfSchreiben}
+                darfAnhaengen={darfAnhaengen}
+                editingMessage={editingMessage}
+                sending={sending}
+                onOpenCamera={() => setIsCameraModalOpen(true)}
+                onOpenNotePicker={handleOpenNotePicker}
+                onOpenCalendarPicker={handleOpenCalendarPicker}
+                onOpenVideoNote={() => setIsVideoNoteRecording(true)}
+              />
 
             </>
           ) : (
@@ -3054,414 +2145,116 @@ function MessengerSeite() {
         </div>
       </div>
 
-      {/* Das Menü zu einer einzelnen Nachricht. Portal an `document.body`,
-          weil `Shell.tsx` jedes `z-50` im Inhaltsbereich auf 10 kappt. */}
-      <NachrichtenMenue
-        msg={menueNachricht}
-        onSchliessen={() => setMenueNachricht(null)}
-        onReaktion={(m, emoji) => void handleReaktion(m, emoji)}
-        onAntworten={handleAntworten}
-        onWeiterleiten={(m) => {
-          if (!istWeiterleitbar(m)) {
-            toast.error(t('messenger.nothingToForward'))
-            return
-          }
-          setWeiterzuleiten([m])
-        }}
-        onKopieren={(m) => void handleKopieren(m)}
-        onMarkieren={handleMarkieren}
-        onAuswaehlen={(m) => wahl.umschalten(auswahlSchluessel(m))}
-        onBearbeiten={(m) => {
-          setEditingMessage(m)
-          setInputText(m.text)
-        }}
-        onLoeschen={(m) => void handleDeleteMessage(m)}
-        onAnheften={activeGroup ? (m) => void handleAnheften(m) : undefined}
+      <MessengerOverlays
+        menueNachricht={menueNachricht}
+        setMenueNachricht={setMenueNachricht}
+        handleReaktion={handleReaktion}
+        handleAntworten={handleAntworten}
+        weiterzuleiten={weiterzuleiten}
+        setWeiterzuleiten={setWeiterzuleiten}
+        wlFortschritt={wlFortschritt}
+        setWlFortschritt={setWlFortschritt}
+        weiterleitungsZiele={weiterleitungsZiele}
+        handleWeiterleiten={handleWeiterleiten}
+        handleKopieren={handleKopieren}
+        handleMarkieren={handleMarkieren}
+        onSelectMessage={(m) => wahl.umschalten(auswahlSchluessel(m))}
+        setEditingMessage={setEditingMessage}
+        setInputText={setInputText}
+        handleDeleteMessage={handleDeleteMessage}
+        activeGroup={activeGroup}
+        handleAnheften={handleAnheften}
         darfAnheften={darfAnheften}
         darfFremdeLoeschen={darfFremdeLoeschen}
-        istAngeheftet={Boolean(angeheftet && angeheftet.clientUuid === menueNachricht?.clientUuid)}
-      />
-
-      {/* Weiterleiten und die Trefferansicht sind eigene Ansichten über der
-          ganzen Seite, kein Kästchen, das bei offener Tastatur verschwindet.
-          Sie stehen hier und nicht im Chat-Ast: aus der Chatliste heraus
-          aufgerufen gibt es noch keinen offenen Chat, und dort hängend
-          rendern sie dann gar nicht. Beide gehen per Portal an den Body. */}
-      <WeiterleitenAnsicht
-        offen={Boolean(weiterzuleiten)}
-        onSchliessen={() => {
-          setWeiterzuleiten(null)
-          setWlFortschritt(null)
-        }}
-        ziele={weiterleitungsZiele}
-        anzahlNachrichten={weiterzuleiten?.length || 0}
-        fortschritt={wlFortschritt}
-        onSenden={handleWeiterleiten}
-      />
-
-      <TrefferListe
-        offen={ueberall.art !== 'aus'}
-        titel={
-          ueberall.art === 'markiert'
-            ? t('messenger.markedMessages')
-            : ueberall.art === 'anMich'
-              ? t('messenger.mentionsAndReplies')
-              : t('messenger.searchFor', { frage: ueberall.frage })
-        }
-        leerText={
-          ueberall.art === 'markiert'
-            ? t('messenger.nothingMarkedYet')
-            : ueberall.art === 'anMich'
-              ? t('messenger.nothingMentioned')
-              : t('messenger.noChatHasThisText')
-        }
-        chats={ueberall.chats}
-        verzeichnis={verzeichnisMitGruppen}
-        gesperrt={ueberall.gesperrt}
-        laeuft={ueberall.laeuft}
-        onSchliessen={ueberall.schliesse}
-        onTreffer={(treffer) => void oeffneTreffer(treffer)}
-      />
-
-      {/* Das Menü einer Chatzeile — derselbe Aufruf wie die Wischgeste, nur
-          auffindbar. Eine Geste allein findet niemand. */}
-      <Blattmenue
-        offen={Boolean(zeilenMenue)}
-        onSchliessen={() => setZeilenMenue(null)}
-        titel={zeilenMenue?.name || 'Chat'}
-      >
-        <div className="px-4 pt-2 pb-1 text-xs font-semibold text-on-surface-variant truncate">
-          {zeilenMenue?.name}
-        </div>
-        <div className="pb-2">
-          <Blatteintrag
-            icon={zeilenMenue && pinnedChats.includes(zeilenMenue.mid) ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
-            label={
-              zeilenMenue && pinnedChats.includes(zeilenMenue.mid)
-                ? t('messenger.unpin')
-                : t('messenger.pin')
-            }
-            hinweis={t('messenger.pinHint', { count: PINS_MAX })}
-            onClick={() => {
-              if (zeilenMenue) handleAnheftenChat(zeilenMenue.mid)
-              setZeilenMenue(null)
-            }}
-          />
-          <Blatteintrag
-            icon={zeilenMenue && archivedChats.includes(zeilenMenue.mid) ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
-            label={
-              zeilenMenue && archivedChats.includes(zeilenMenue.mid)
-                ? t('messenger.unarchive')
-                : t('messenger.archive')
-            }
-            onClick={() => {
-              if (zeilenMenue) handleArchivieren(zeilenMenue.mid)
-              setZeilenMenue(null)
-            }}
-          />
-          <Blatteintrag
-            icon={zeilenMenue && isChatMuted(zeilenMenue.mid) ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
-            label={
-              zeilenMenue && isChatMuted(zeilenMenue.mid)
-                ? t('messenger.unmute')
-                : t('messenger.mute')
-            }
-            onClick={() => {
-              if (!zeilenMenue) return
-              if (isChatMuted(zeilenMenue.mid)) void unmuteChat(zeilenMenue.mid)
-              else void muteChat(zeilenMenue.mid)
-              setZeilenMenue(null)
-            }}
-          />
-        </div>
-      </Blattmenue>
-
-      {/* Verschwindende Nachrichten. Die Grenze steht in der Auswahl selbst,
-          nicht in einer Fußnote: beim Server löschen kann nur, wer hochgeladen
-          hat. */}
-      <Blattmenue
-        offen={verfallOffen}
-        onSchliessen={() => setVerfallOffen(false)}
-        titel={t('messenger.disappearingMessages')}
-      >
-        <div className="px-4 pt-1 pb-3">
-          <p className="text-label-sm text-on-surface-variant leading-relaxed">
-            {t('messenger.disappearingHint')}
-          </p>
-
-          {verfallVonAnderem && (
-            <p className="mt-2 text-label-sm text-on-surface-variant leading-relaxed">
-              {darfVerfallStellen
-                ? t('messenger.disappearingEnabledBy', { name: verfallVonName })
-                : t('messenger.disappearingLocked', { name: verfallVonName })}
-            </p>
-          )}
-        </div>
-        <div className="pb-2">
-          {VERFALL_STUFEN.map((stufe) => (
-            <Blatteintrag
-              key={stufe.sekunden}
-              icon={
-                verfallSekunden === stufe.sekunden ? (
-                  <UserCheck className="w-4 h-4 text-primary" />
-                ) : (
-                  <Timer className="w-4 h-4" />
-                )
-              }
-              label={t(stufe.labelKey)}
-              disabled={!darfVerfallStellen}
-              onClick={() => void handleVerfallWaehlen(stufe.sekunden)}
-            />
-          ))}
-        </div>
-      </Blattmenue>
-
-      {/* Die Funkenwache liest Direktchats mit laufendem Funken mit, damit das
-          Abzeichen springt, ohne dass man den Chat öffnet. */}
-      <FunkenWache
-        aktiverPartner={activeContact?.userId ?? null}
-        eigeneId={currentUserId}
-        identitaetRef={identityRef}
-        aktiv={!messengerGesperrt && !!currentUserId}
-      />
-
-
-      {/* Die Wache liest Gruppen mit, die gerade nicht offen sind — sonst
-          erschiene ein @-Abzeichen erst, wenn man die Gruppe ohnehin öffnet. */}
-      <ErwaehnungsWache
-        gruppen={groups}
-        aktiveMailboxId={blindMailboxId || null}
-        eigeneId={currentUserId}
-        identitaetRef={identityRef}
-        onErwaehnung={merkeErwaehnung}
-        aktiv={!messengerGesperrt && !!currentUserId}
-      />
-
-      {/* Name, Beschreibung, Bild und Rollen kommen über den Ereignisstrom.
-          Ohne diese Wache bliebe eine offene Gruppe stehen, bis jemand sie
-          schließt und wieder öffnet. */}
-      <GruppenMetaWache
+        angeheftet={angeheftet}
+        ueberall={ueberall}
+        verzeichnisMitGruppen={verzeichnisMitGruppen}
+        oeffneTreffer={oeffneTreffer}
+        zeilenMenue={zeilenMenue}
+        setZeilenMenue={setZeilenMenue}
+        pinnedChats={pinnedChats}
+        archivedChats={archivedChats}
+        isChatMuted={isChatMuted}
+        handleAnheftenChat={handleAnheftenChat}
+        handleArchivieren={handleArchivieren}
+        muteChat={muteChat}
+        unmuteChat={unmuteChat}
+        verfallOffen={verfallOffen}
+        setVerfallOffen={setVerfallOffen}
+        verfallVonAnderem={verfallVonAnderem}
+        darfVerfallStellen={darfVerfallStellen}
+        verfallVonName={verfallVonName}
+        verfallSekunden={verfallSekunden}
+        handleVerfallWaehlen={handleVerfallWaehlen}
+        activeContact={activeContact}
+        currentUserId={currentUserId}
+        identityRef={identityRef}
+        messengerGesperrt={messengerGesperrt}
         groups={groups}
-        eigeneId={currentUserId}
-        onInfo={uebernimmGruppenInfo}
-        onStruktur={() => void loadData()}
-      />
-
-
-      <NotePickerDialog
-        open={isNotePickerOpen}
-        onOpenChange={setIsNotePickerOpen}
-        notes={userNotes}
-        onPick={(n) => {
-          setIsNotePickerOpen(false)
-          handleSendMessage({
-            text: '',
-            note: {
-              title: n.title,
-              content: n.content,
-              color: n.color,
-              category: n.category,
-            },
-          })
-        }}
-      />
-
-      <CalendarPickerDialog
-        open={isCalendarPickerOpen}
-        onOpenChange={setIsCalendarPickerOpen}
-        events={userEvents}
-        onPick={(ev) => {
-          setIsCalendarPickerOpen(false)
-          handleSendMessage({
-            text: '',
-            cal: {
-              title: ev.title,
-              start: ev.start,
-              end: ev.end,
-              description: ev.description,
-              location: ev.location,
-            },
-          })
-        }}
-      />
-
-      {/* Full-size Image Viewer */}
-      {viewingImage && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={t('messenger.fullView')}
-          className="msm-modal-overlay bg-black/80"
-          onClick={() => setViewingImage(null)}
-        >
-          <div className="relative max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={viewingImage}
-              alt={t('messenger.fullView')}
-              className="max-h-[85vh] max-w-full rounded-xl object-contain shadow-2xl"
-            />
-            <button
-              type="button"
-              onClick={() => setViewingImage(null)}
-              className="absolute -top-3 -right-3 p-1.5 rounded-full bg-surface-container-highest text-on-surface shadow-md"
-              aria-label={t('common.close')}
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-
-      {/* Create Story Modal */}
-      <CreateStoryModal
-        open={storyAnsicht.erstellung.offen}
-        onOpenChange={storyAnsicht.erstellung.setOffen}
-        onCreated={handleStoryCreated}
-        initialMode={storyAnsicht.erstellung.modus}
-        initialPhotoUrl={storyAnsicht.erstellung.fotoUrl}
-      />
-
-      {/* Story Viewer Modal */}
-      <StoryViewerModal
-        open={storyAnsicht.betrachter.offen}
-        onOpenChange={storyAnsicht.betrachter.setOffen}
-        stories={storyAnsicht.betrachter.stories}
-        initialIndex={storyAnsicht.betrachter.index}
-        onDeleted={handleStoryDeleted}
-        onReply={async (targetUserId, _targetUsername, text, storyContext: StoryReplyContext) => {
-          const contact = contactsList.find((c) => c.userId === targetUserId)
-          if (!contact || !currentUserId) {
-            toast.error(t('messenger.replyContactMissing'))
-            return
-          }
-          storyAnsicht.betrachter.setOffen(false)
-          // Das Ziel steht ausdrücklich im Auftrag. Bis 26.09.2026 wurde erst
-          // der Chat umgeschaltet und im selben Zug gesendet; der Versand sah
-          // noch das offene Gespräch, und die private Antwort samt Storyfoto
-          // ging an die gerade offene Gruppe.
-          const mailbox =
-            contactMailboxMap[contact.userId] ?? `direct:peer:${contact.userId}`
-          await handleSendMessage({
-            text,
-            storyReply: storyContext,
-            antwortAuf: null,
-            ziel: { blindMailboxId: mailbox, recipientId: contact.userId, groupId: null },
-          })
-          setActiveContact(contact)
-          setActiveGroup(null)
-        }}
-      />
-
-      {/* Live Camera Snapshot Modal */}
-
-      {/* Group Permissions & Roles Management Modal */}
-
-
-      <ChatEntfernenDialog
-        open={chatEntfernenOffen}
-        name={activeContact?.username ?? ''}
-        onCancel={() => setChatEntfernenOffen(false)}
-        onConfirm={() => {
-          setChatEntfernenOffen(false)
-          void handleChatAusListe()
-        }}
-      />
-      {/* Das Hintergrundfenster — dasselbe, das der KI-Chat öffnet. */}
-
-
-
-
-      <MessengerDialoge
+        blindMailboxId={blindMailboxId}
+        merkeErwaehnung={merkeErwaehnung}
+        uebernimmGruppenInfo={uebernimmGruppenInfo}
+        loadData={loadData}
+        isNotePickerOpen={isNotePickerOpen}
+        setIsNotePickerOpen={setIsNotePickerOpen}
+        userNotes={userNotes}
+        isCalendarPickerOpen={isCalendarPickerOpen}
+        setIsCalendarPickerOpen={setIsCalendarPickerOpen}
+        userEvents={userEvents}
+        handleSendMessage={handleSendMessage}
+        viewingImage={viewingImage}
+        setViewingImage={setViewingImage}
+        storyAnsicht={storyAnsicht}
+        handleStoryCreated={handleStoryCreated}
+        handleStoryDeleted={handleStoryDeleted}
+        contactsList={contactsList}
+        contactMailboxMap={contactMailboxMap}
+        setActiveContact={setActiveContact}
+        setActiveGroup={setActiveGroup}
+        chatEntfernenOffen={chatEntfernenOffen}
+        setChatEntfernenOffen={setChatEntfernenOffen}
+        handleChatAusListe={handleChatAusListe}
         isCreateGroupOpen={isCreateGroupOpen}
         setIsCreateGroupOpen={setIsCreateGroupOpen}
-        onCreateGroup={handleCreateGroup}
+        handleCreateGroup={handleCreateGroup}
         funkenRettung={funkenRettung}
         setFunkenRettung={setFunkenRettung}
-        onFunkenRettungBestaetigen={async () => {
-          const ziel = funkenRettung
-          setFunkenRettung(null)
-          if (!ziel || activeContact?.userId !== ziel.partnerId) return
-          await handleSendMessage({ text: '', funkenRettung: true, antwortAuf: null })
-        }}
-        activeContact={activeContact}
         isCameraModalOpen={isCameraModalOpen}
         setIsCameraModalOpen={setIsCameraModalOpen}
         augenblickModus={augenblickModus}
         setAugenblickModus={setAugenblickModus}
-        onCameraCapture={(dataUrl) => {
-          if (funkeModus === 'blast') {
-            setFunkeModus(null)
-            setFunkenFoto(dataUrl)
-            setIsFunkenEmpfaengerOpen(true)
-            return
-          }
-          if (augenblickModus && activeContact) {
-            void handleSendMessage({
-              text: '',
-              img: { dataUrl, name: 'augenblick.jpg' },
-              augenblick: true,
-              antwortAuf: null,
-            })
-            return
-          }
-          if (augenblickModus && !activeContact) {
-            setFunkenFoto(dataUrl)
-            setIsFunkenEmpfaengerOpen(true)
-            return
-          }
-          setSelectedImage({ dataUrl, name: 'kamera-aufnahme.jpg' })
-        }}
+        funkeModus={funkeModus}
+        setFunkeModus={setFunkeModus}
+        setFunkenFoto={setFunkenFoto}
+        setIsFunkenEmpfaengerOpen={setIsFunkenEmpfaengerOpen}
+        setSelectedImage={setSelectedImage}
         isGroupPermissionsOpen={isGroupPermissionsOpen}
         setIsGroupPermissionsOpen={setIsGroupPermissionsOpen}
         groupSettingsTab={groupSettingsTab}
-        onGroupInvite={() => activeGroup && handleCopyInviteLink(activeGroup)}
-        activeGroup={activeGroup}
-        currentUserId={currentUserId}
-        onGroupUpdated={(updatedGroup) => {
-          setActiveGroup(updatedGroup)
-          setGroups((prev) => prev.map((g) => (g.id === updatedGroup.id ? updatedGroup : g)))
-        }}
+        handleCopyInviteLink={handleCopyInviteLink}
+        setGroups={setGroups}
         groupToDelete={groupToDelete}
         setGroupToDelete={setGroupToDelete}
         isDeletingGroup={isDeletingGroup}
-        onConfirmDeleteGroup={handleConfirmDeleteGroup}
+        handleConfirmDeleteGroup={handleConfirmDeleteGroup}
         isWallpaperModalOpen={isWallpaperModalOpen}
         setIsWallpaperModalOpen={setIsWallpaperModalOpen}
         isMuteModalOpen={isMuteModalOpen}
         setIsMuteModalOpen={setIsMuteModalOpen}
-        blindMailboxId={blindMailboxId}
-        chatName={activeGroup ? gruppenTitel(activeGroup) : activeContact?.username ?? null}
+        gruppenTitel={gruppenTitel}
         sicherheitsnummern={sicherheitsnummern}
         isBlockConfirmOpen={isBlockConfirmOpen}
         setIsBlockConfirmOpen={setIsBlockConfirmOpen}
-        blocked={Boolean(activeContact && isBlocked(activeContact.userId))}
-        onBlockConfirm={handleBlockConfirm}
+        isBlocked={isBlocked}
+        handleBlockConfirm={handleBlockConfirm}
+        isFunkenEmpfaengerOpen={isFunkenEmpfaengerOpen}
+        funkenFoto={funkenFoto}
+        partnerMitFunkenIds={partnerMitFunken.map((c) => c.userId)}
+        handleSendFunkenBlast={handleSendFunkenBlast}
+        isFunkenSending={isFunkenSending}
+        isVideoNoteRecording={isVideoNoteRecording}
+        setIsVideoNoteRecording={setIsVideoNoteRecording}
       />
-
-      <FunkenEmpfaengerModal
-        open={isFunkenEmpfaengerOpen}
-        onOpenChange={setIsFunkenEmpfaengerOpen}
-        fotoDataUrl={funkenFoto}
-        kontakte={contactsList.filter((c) => c.isFriend)}
-        funkenPartnerIds={partnerMitFunken.map((c) => c.userId)}
-        onSenden={handleSendFunkenBlast}
-        sendet={isFunkenSending}
-      />
-
-      {/* Circular Video Note Recorder (R2) */}
-      {isVideoNoteRecording && (
-        <CircularVideoNoteRecorder
-          onCancel={() => setIsVideoNoteRecording(false)}
-          onComplete={async (aufnahme: VideoNoteAufnahme) => {
-            setIsVideoNoteRecording(false)
-            await handleSendMessage({
-              videoNote: aufnahme,
-              videoUrl: URL.createObjectURL(aufnahme.blob),
-            })
-          }}
-        />
-      )}
     </div>
   )
 }
