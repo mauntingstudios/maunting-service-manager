@@ -50,7 +50,13 @@ describe('ActionMenu', () => {
 
     const trigger = screen.getByRole('button', { name: 'Aktionen für Protokoll' })
     expect(trigger).not.toHaveTextContent('Aktionen')
-    expect(screen.getByTestId('menu-icon')).toBeInTheDocument()
+    expect(trigger.className).toContain('h-8')
+    expect(trigger.className).toContain('w-8')
+    expect(trigger.className).toContain('p-0')
+    expect(trigger.className).not.toMatch(/\bpx-(3|4)\b/)
+    const icon = screen.getByTestId('menu-icon')
+    expect(icon).toBeInTheDocument()
+    expect(icon.parentElement?.className).toContain('shrink-0')
 
     fireEvent.click(trigger)
     expect(await screen.findByRole('menuitem', { name: 'Archivieren' })).toBeInTheDocument()

@@ -14,7 +14,7 @@ import {
   Layers,
   LayoutGrid,
   List,
-  MoreHorizontal,
+  Menu,
   Package,
   Plus,
   RefreshCw,
@@ -270,6 +270,9 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   const [browserPage, setBrowserPage] = useState(1)
   const [installedLibraryPage, setInstalledLibraryPage] = useState(1)
   const [modMetadata, setModMetadata] = useState<Record<string, InstalledModMeta>>({})
+  const [brokenThumbIds, setBrokenThumbIds] = useState<Set<string>>(() => new Set())
+  const [installBatchTotal, setInstallBatchTotal] = useState(0)
+  const fetchedMetadataSigRef = useRef<string>('')
   const [installBarExpanded, setInstallBarExpanded] = useState(false)
   const [mobileSection, setMobileSection] = useState<'library' | 'active'>('library')
   const [curseforgeUrlMap, setCurseforgeUrlMap] = useState<Record<string, string>>({})
@@ -363,17 +366,64 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
 
   const modIdsSignature = mods.map((m) => m.workshop_id).sort().join(',')
 
+  const cacheModMetadata = useCallback(
+    (items: Array<Partial<SteamMod> | null | undefined>) => {
+      if (!items.length) return
+      setModMetadata((prev) => {
+        let changed = false
+        const next = { ...prev }
+        for (const item of items) {
+          const wid = item?.publishedfileid?.trim()
+          if (!wid) continue
+          const existing = next[wid]
+          const merged: InstalledModMeta = {
+            provider: existing?.provider ?? (isCurseForge ? 'curseforge' : 'steam'),
+            title: item?.title || existing?.title,
+            description: item?.description || existing?.description,
+            creator: item?.creator || existing?.creator,
+            preview_url: item?.preview_url ?? existing?.preview_url ?? null,
+            direct_url: item?.direct_url || existing?.direct_url,
+            file_size_mb:
+              typeof item?.file_size_mb === 'number' && item.file_size_mb > 0
+                ? item.file_size_mb
+                : existing?.file_size_mb,
+            tags: item?.tags?.length ? item.tags : existing?.tags,
+            subscriptions:
+              typeof item?.subscriptions === 'number' && item.subscriptions > 0
+                ? item.subscriptions
+                : existing?.subscriptions,
+            updated: item?.updated ?? item?.last_updated ?? existing?.updated ?? null,
+          }
+          if (
+            !existing ||
+            existing.preview_url !== merged.preview_url ||
+            existing.description !== merged.description ||
+            existing.title !== merged.title ||
+            existing.file_size_mb !== merged.file_size_mb
+          ) {
+            next[wid] = merged
+            changed = true
+          }
+        }
+        return changed ? next : prev
+      })
+    },
+    [isCurseForge],
+  )
+
   useEffect(() => {
     if (!modIdsSignature) {
+      fetchedMetadataSigRef.current = ''
       setModMetadata({})
       return
     }
+    const fetchKey = `${serverId}:${modIdsSignature}`
     let cancelled = false
     api<Record<string, InstalledModMeta>>(`/mods/${serverId}/metadata`)
       .then((meta) => {
-        if (!cancelled && meta && typeof meta === 'object' && !Array.isArray(meta)) {
-          setModMetadata(meta)
-        }
+        if (cancelled || !meta || typeof meta !== 'object' || Array.isArray(meta)) return
+        fetchedMetadataSigRef.current = fetchKey
+        setModMetadata((prev) => ({ ...prev, ...meta }))
       })
       .catch(() => {
         // Metadaten sind rein anreichernd; kein Fehler-Toast beim Polling nötig.
@@ -382,6 +432,15 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       cancelled = true
     }
   }, [modIdsSignature, serverId])
+
+  useEffect(() => {
+    const activeCount = mods.filter(hasActiveModInstall).length
+    if (activeCount === 0) {
+      setInstallBatchTotal(0)
+      return
+    }
+    setInstallBatchTotal((prev) => Math.max(prev, activeCount))
+  }, [mods])
 
   useEffect(() => {
     setSelectedGameFilter('')
@@ -536,6 +595,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
         : `/steam/workshop/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${steamTypeParam}${filterParam}`
       const data = await api<SteamMod[]>(endpoint)
       cacheCurseForgeUrls(data)
+      cacheModMetadata(data)
       setBrowserPage(page)
       setBrowserCache((prev) => ({
         ...prev,
@@ -606,6 +666,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
         : `/steam/workshop/search?server_id=${serverId}&query=${q}&per_page=${BROWSER_PAGE_SIZE}&page=${page}&sort=${sortTab}${steamTypeParam}${filterParam}`
       const data = await api<SteamMod[]>(endpoint)
       cacheCurseForgeUrls(data)
+      cacheModMetadata(data)
       setSteamResults((prev) => (append ? [...prev, ...data] : data))
       setSteamPage(page)
       setSteamHasMore(data.length === BROWSER_PAGE_SIZE)
@@ -680,6 +741,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
         items: SteamMod[]
         unavailable_ids: string[]
       }>(`/steam/workshop/collection/${collectionMod.publishedfileid}?server_id=${serverId}`)
+      cacheModMetadata([data.collection, ...(data.items || [])])
       const installedSet = new Set(mods.map((m) => m.workshop_id))
       const defaultSelected = new Set(
         data.items.filter((item) => !installedSet.has(item.publishedfileid)).map((item) => item.publishedfileid),
@@ -740,6 +802,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
         supports_bundle_install: boolean
       }>(`/curseforge/mod/${mod.publishedfileid}/bundle?server_id=${serverId}`)
       cacheCurseForgeUrls([data.mod, ...(data.dependencies || [])])
+      cacheModMetadata([data.mod, ...(data.dependencies || [])])
       setBundlePreview({
         open: true,
         loading: false,
@@ -794,6 +857,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
         body: formData,
       })
       cacheCurseForgeUrls(data.items || [])
+      cacheModMetadata(data.items || [])
       const installedSet = new Set(mods.map((m) => m.workshop_id))
       const defaultSelected = new Set(
         (data.items || [])
@@ -862,11 +926,13 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               direct_url: depData.mod.direct_url || resolvedTarget.direct_url,
             }
             cacheCurseForgeUrls([depData.mod])
+            cacheModMetadata([depData.mod])
           }
           resolvedDeps = depData?.dependencies || []
           unavailableIds = depData?.unavailable_ids || []
           if (resolvedDeps.length > 0) {
             cacheCurseForgeUrls(resolvedDeps)
+            cacheModMetadata(resolvedDeps)
           }
         } catch {
           // Fallback auf direkte Installation, falls Metadaten-/Abhaengigkeitsabfrage nicht erreichbar ist
@@ -1661,7 +1727,12 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   const activeInstallMods = mods.filter(hasActiveModInstall)
   const anyModInstallActive = activeInstallMods.length > 0
   const primaryActiveMod =
-    activeInstallMods.find((m) => m.install_status === 'installing') ?? activeInstallMods[0] ?? null
+    activeInstallMods.find(
+      (m) => m.install_status === 'installing' && (m.install_progress ?? 0) < 95,
+    ) ??
+    activeInstallMods.find((m) => m.install_status === 'installing') ??
+    activeInstallMods[0] ??
+    null
   const dragVisIndex =
     pointerDragActiveId !== null
       ? visibleInstalled.findIndex((m) => m.id === pointerDragActiveId)
@@ -1719,23 +1790,46 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   const browserEntry = browserCache[currentBrowserKey]
   const catalogRawMods = isSearchMode ? steamResults : browserEntry?.mods ?? []
 
+  const catalogItemFallbackMap = new Map<string, SteamMod>()
+  for (const entry of Object.values(browserCache)) {
+    for (const item of entry?.mods ?? []) {
+      catalogItemFallbackMap.set(item.publishedfileid, item)
+    }
+  }
+  for (const item of steamResults) {
+    catalogItemFallbackMap.set(item.publishedfileid, item)
+  }
+  for (const item of collectionPreview.items) {
+    catalogItemFallbackMap.set(item.publishedfileid, item)
+  }
+
   const filteredInstalledLibraryItems: SteamMod[] = isInstalledView
     ? (libraryFilter === 'updates' ? updatesMods : mods)
         .map((mod): SteamMod => {
           const meta = modMetadata[mod.workshop_id]
-          const title = meta?.title || mod.name || `${providerLabel} Mod ${mod.workshop_id}`
+          const cachedCatalog = catalogItemFallbackMap.get(mod.workshop_id)
+          const title =
+            meta?.title || cachedCatalog?.title || mod.name || `${providerLabel} Mod ${mod.workshop_id}`
+          const previewUrl =
+            meta?.preview_url && !brokenThumbIds.has(mod.workshop_id)
+              ? meta.preview_url
+              : cachedCatalog?.preview_url ?? null
           return {
             publishedfileid: mod.workshop_id,
             title,
-            description: meta?.description || '',
-            creator: meta?.creator || '',
-            file_size_mb: meta?.file_size_mb ?? 0,
-            subscriptions: meta?.subscriptions ?? 0,
-            favorites: 0,
-            preview_url: meta?.preview_url ?? null,
-            direct_url: resolveModPageUrl(mod.workshop_id, title, meta?.direct_url),
-            tags: meta?.tags ?? [],
-            updated: meta?.updated ?? mod.last_updated ?? undefined,
+            description: meta?.description || cachedCatalog?.description || '',
+            creator: meta?.creator || cachedCatalog?.creator || '',
+            file_size_mb: meta?.file_size_mb ?? cachedCatalog?.file_size_mb ?? 0,
+            subscriptions: meta?.subscriptions ?? cachedCatalog?.subscriptions ?? 0,
+            favorites: cachedCatalog?.favorites ?? 0,
+            preview_url: previewUrl,
+            direct_url: resolveModPageUrl(
+              mod.workshop_id,
+              title,
+              meta?.direct_url || cachedCatalog?.direct_url,
+            ),
+            tags: meta?.tags?.length ? meta.tags : cachedCatalog?.tags ?? [],
+            updated: meta?.updated ?? cachedCatalog?.updated ?? mod.last_updated ?? undefined,
           }
         })
         .filter((item) => {
@@ -1835,7 +1929,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
         }`}
       >
         <div className={isListMode ? 'relative shrink-0' : 'relative'}>
-          {mod.preview_url ? (
+          {mod.preview_url && !brokenThumbIds.has(mod.publishedfileid) ? (
             <img
               src={mod.preview_url}
               alt={mod.title}
@@ -1845,6 +1939,14 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                   : 'w-full h-40 object-cover bg-surface-container-highest'
               }
               loading="lazy"
+              onError={() => {
+                setBrokenThumbIds((prev) => {
+                  if (prev.has(mod.publishedfileid)) return prev
+                  const next = new Set(prev)
+                  next.add(mod.publishedfileid)
+                  return next
+                })
+              }}
             />
           ) : (
             <div
@@ -2369,7 +2471,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                         : 'text-on-surface-variant hover:text-on-surface'
                     }`}
                   >
-                    <LayoutGrid className="w-4 h-4" />
+                    <LayoutGrid className="w-4 h-4 shrink-0" />
                   </button>
                 </Kurzinfo>
                 <Kurzinfo text={t('mods.viewList')} seite="ende">
@@ -2384,7 +2486,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                         : 'text-on-surface-variant hover:text-on-surface'
                     }`}
                   >
-                    <List className="w-4 h-4" />
+                    <List className="w-4 h-4 shrink-0" />
                   </button>
                 </Kurzinfo>
               </div>
@@ -2464,11 +2566,11 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               <ActionMenu
                 label={t('mods.moreActions')}
                 ariaLabel={t('mods.moreActions')}
-                icon={<MoreHorizontal className="w-4 h-4" />}
+                icon={<Menu className="w-4 h-4 shrink-0" />}
                 iconOnly
+                compact
                 variant="secondary"
                 align="end"
-                surface="dna"
                 items={headerOverflowItems}
               />
             </div>
@@ -2716,12 +2818,20 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                       </Kurzinfo>
 
                       <div className="msm-mod-thumb w-10 h-10 rounded-lg border border-outline-variant/25 flex items-center justify-center">
-                        {meta?.preview_url ? (
+                        {meta?.preview_url && !brokenThumbIds.has(mod.workshop_id) ? (
                           <img
                             src={meta.preview_url}
                             alt={displayName}
                             className="w-full h-full object-cover"
                             loading="lazy"
+                            onError={() => {
+                              setBrokenThumbIds((prev) => {
+                                if (prev.has(mod.workshop_id)) return prev
+                                const next = new Set(prev)
+                                next.add(mod.workshop_id)
+                                return next
+                              })
+                            }}
                           />
                         ) : (
                           <Package className="w-4 h-4 text-on-surface-variant" />
@@ -2736,6 +2846,11 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                         >
                           {displayName}
                         </h3>
+                        {meta?.description && (
+                          <p className="font-body-md text-xs text-on-surface-variant line-clamp-1 mt-0.5">
+                            {meta.description}
+                          </p>
+                        )}
                         <div className="flex items-center gap-2 mt-0.5 text-xs text-on-surface-variant font-mono-sm min-w-0">
                           {meta && (meta.file_size_mb ?? 0) > 0 ? (
                             <span className="tabular-nums">{meta.file_size_mb} MB</span>
@@ -2772,12 +2887,11 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                         <ActionMenu
                           label={t('mods.modActions', { name: displayName })}
                           ariaLabel={t('mods.modActions', { name: displayName })}
-                          icon={<MoreHorizontal className="w-4 h-4" />}
+                          icon={<Menu className="w-4 h-4 shrink-0" />}
                           iconOnly
                           compact
                           variant="ghost"
                           align="end"
-                          surface="dna"
                           items={rowMenuItems}
                         />
                       </div>
@@ -2808,6 +2922,10 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
         const primaryMeta = modMetadata[primaryActiveMod.workshop_id]
         const primaryName =
           primaryActiveMod.name || primaryMeta?.title || `${providerLabel} Mod ${primaryActiveMod.workshop_id}`
+        const primaryPercent = primaryStatus.progress ?? 0
+        const effectiveBatchTotal = Math.max(installBatchTotal, activeInstallMods.length)
+        const completedCount = Math.max(0, effectiveBatchTotal - activeInstallMods.length)
+        const displayPercent = primaryPercent
         return (
           <div className="sticky bottom-3 z-20 space-y-2">
             {installBarExpanded && activeInstallMods.length > 0 && (
@@ -2823,7 +2941,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                   return (
                     <div key={item.id} className="flex items-center gap-3 text-xs">
                       <div className="msm-mod-thumb w-7 h-7 rounded-md flex items-center justify-center">
-                        {mMeta?.preview_url ? (
+                        {mMeta?.preview_url && !brokenThumbIds.has(item.workshop_id) ? (
                           <img src={mMeta.preview_url} alt={itemName} className="w-full h-full object-cover" />
                         ) : (
                           <Package className="w-3.5 h-3.5 text-on-surface-variant" />
@@ -2850,7 +2968,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="msm-mod-thumb w-10 h-10 rounded-lg border border-outline-variant/30 flex items-center justify-center">
-                  {primaryMeta?.preview_url ? (
+                  {primaryMeta?.preview_url && !brokenThumbIds.has(primaryActiveMod.workshop_id) ? (
                     <img
                       src={primaryMeta.preview_url}
                       alt={primaryName}
@@ -2865,11 +2983,11 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                     <span className="text-xs font-body-md text-primary font-semibold">
                       {primaryStatus.label}
                     </span>
-                    {activeInstallMods.length > 1 && (
+                    {effectiveBatchTotal > 1 && (
                       <span className="text-xs font-mono tabular-nums text-on-surface-variant">
                         {t('mods.installBarQueueCount', {
-                          active: 1,
-                          total: activeInstallMods.length,
+                          active: Math.min(effectiveBatchTotal, completedCount + 1),
+                          total: effectiveBatchTotal,
                         })}
                       </span>
                     )}
@@ -2880,13 +2998,9 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
 
               <div className="flex items-center gap-3 sm:w-64 md:w-80 shrink-0">
                 <ProgressBar
-                  value={primaryStatus.progress ?? 0}
+                  value={displayPercent}
                   ariaLabel={primaryName}
-                  hint={
-                    typeof primaryStatus.progress === 'number'
-                      ? `${Math.round(primaryStatus.progress)}%`
-                      : undefined
-                  }
+                  hint={`${Math.round(displayPercent)}%`}
                 />
               </div>
 
@@ -3140,13 +3254,13 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
             )}
           </div>
 
-          <DialogFooter className="flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 px-5 py-4 sm:px-6 sm:py-5">
+          <DialogFooter className="w-full min-w-0 shrink-0 flex-col-reverse sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-2.5 sm:gap-3 px-4 py-4 sm:px-6 sm:py-5">
             <Button
               variant="ghost"
               fingerziel
               onClick={() => setCollectionPreview((prev) => ({ ...prev, open: false }))}
               disabled={collectionPreview.installing}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto max-w-full min-w-0 !whitespace-normal text-center leading-snug h-auto min-h-11 sm:min-h-10 py-2"
             >
               {t('common.cancel')}
             </Button>
@@ -3158,7 +3272,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                 collectionPreview.installing ||
                 collectionPreview.selectedIds.size === 0
               }
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto max-w-full min-w-0 !whitespace-normal text-center leading-snug h-auto min-h-11 sm:min-h-10 py-2"
             >
               {collectionPreview.installing
                 ? t('common.loading')
@@ -3306,13 +3420,13 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
             )}
           </div>
 
-          <DialogFooter className="flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 px-5 py-4 sm:px-6 sm:py-5">
+          <DialogFooter className="w-full min-w-0 shrink-0 flex-col-reverse sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-2.5 sm:gap-3 px-4 py-4 sm:px-6 sm:py-5">
             <Button
               variant="ghost"
               fingerziel
               onClick={() => setBundlePreview((prev) => ({ ...prev, open: false }))}
               disabled={bundlePreview.installing}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto max-w-full min-w-0 !whitespace-normal text-center leading-snug h-auto min-h-11 sm:min-h-10 py-2"
             >
               {t('common.cancel')}
             </Button>
@@ -3320,7 +3434,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               fingerziel
               onClick={() => void installCurseForgeBundle()}
               disabled={bundlePreview.loading || bundlePreview.installing || !bundlePreview.mod}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto max-w-full min-w-0 !whitespace-normal text-center leading-snug h-auto min-h-11 sm:min-h-10 py-2"
             >
               {bundlePreview.installing ? t('common.loading') : t('mods.installBundle')}
             </Button>
@@ -3507,7 +3621,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                                   variant="secondary"
                                   onClick={() => void installSingleDependencyFromPrompt(dep)}
                                   disabled={dependencyPrompt.installing || isSingleInstalling}
-                                  className="w-full min-[420px]:w-auto"
+                                  className="w-full min-[420px]:w-auto max-w-full min-w-0 !whitespace-normal text-center leading-snug h-auto min-h-11 sm:min-h-8 py-1.5"
                                 >
                                   {isSingleInstalling
                                     ? t('common.loading')
@@ -3523,7 +3637,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                                     e.preventDefault()
                                     void openExternalUrl(depUrl)
                                   }}
-                                  className={buttonClasses('ghost', 'sm', 'w-full min-[420px]:w-auto text-on-surface-variant hover:text-primary', true)}
+                                  className={buttonClasses('ghost', 'sm', 'w-full min-[420px]:w-auto max-w-full min-w-0 !whitespace-normal text-center leading-snug h-auto min-h-11 sm:min-h-8 py-1.5 text-on-surface-variant hover:text-primary', true)}
                                 >
                                   <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                                   {t('mods.dependencyInspect', { provider: providerLabel })}
@@ -3537,23 +3651,23 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                   </div>
                 </div>
 
-                <DialogFooter className="flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 px-5 py-4 sm:px-6 sm:py-5">
+                <DialogFooter className="w-full min-w-0 shrink-0 flex-col-reverse sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-2.5 sm:gap-3 px-4 py-4 sm:px-6 sm:py-5">
                   <Button
                     variant="ghost"
                     fingerziel
                     onClick={() => setDependencyPrompt((prev) => ({ ...prev, open: false }))}
                     disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
-                    className="w-full sm:w-auto"
+                    className="w-full sm:w-auto max-w-full min-w-0 !whitespace-normal text-center leading-snug h-auto min-h-11 sm:min-h-10 py-2"
                   >
                     {t('common.cancel')}
                   </Button>
-                  <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
+                  <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-end gap-2.5 sm:gap-3 w-full sm:w-auto sm:ml-auto min-w-0 max-w-full">
                     <Button
                       variant="secondary"
                       fingerziel
                       onClick={() => void installTargetModOnly()}
                       disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
-                      className="w-full sm:w-auto"
+                      className="w-full sm:w-auto max-w-full min-w-0 !whitespace-normal text-center leading-snug h-auto min-h-11 sm:min-h-10 py-2"
                     >
                       {t('mods.installModOnly')}
                     </Button>
@@ -3561,7 +3675,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                       fingerziel
                       onClick={() => void installAllWithDependencies()}
                       disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
-                      className="w-full sm:w-auto"
+                      className="w-full sm:w-auto max-w-full min-w-0 !whitespace-normal text-center leading-snug h-auto min-h-11 sm:min-h-10 py-2"
                     >
                       {dependencyPrompt.installing
                         ? t('common.loading')

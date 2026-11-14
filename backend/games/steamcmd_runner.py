@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -62,7 +63,8 @@ def _build_steamcmd_bash_command(steam_args: list[str], chown_uid: int, chown_gi
     )
     script = (
         cleanup +
-        f"{shlex.quote(STEAMCMD_BIN)} {quoted}; "
+        f"if command -v stdbuf >/dev/null 2>&1; then stdbuf -oL -eL {shlex.quote(STEAMCMD_BIN)} {quoted}; "
+        f"else {shlex.quote(STEAMCMD_BIN)} {quoted}; fi; "
         "rc=$?; "
         f"chown -R {int(chown_uid)}:{int(chown_gid)} {shlex.quote(data_dir)} 2>/dev/null || true; "
         f"chmod -R a+rwx {shlex.quote(data_dir)} 2>/dev/null || true; "
@@ -619,37 +621,114 @@ def run_steamcmd_workshop_download_batch(
     live_output: list[str] = []
     _current_workshop_item: list[str | None] = [None]
     _item_line_re = re.compile(r"Downloading item (\d+)", re.IGNORECASE)
+    _success_line_re = re.compile(r"Success\.\s*Downloaded item (\d+)", re.IGNORECASE)
+    _monitor_stop = threading.Event()
+    _disk_progress_step: dict[str, int] = {}
+    _disk_last_bytes: dict[str, int] = {}
+
+    def _dir_size_bytes(path: Path) -> int:
+        if not path.exists():
+            return 0
+        total = 0
+        try:
+            for root, _dirs, files in os.walk(path):
+                for fname in files:
+                    try:
+                        total += os.path.getsize(os.path.join(root, fname))
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        return total
+
+    def _poll_workshop_disk_growth() -> None:
+        base_install = Path(install_dir)
+        while not _monitor_stop.wait(2.0):
+            active_wid = _current_workshop_item[0]
+            if not active_wid:
+                continue
+            dl_dir = base_install / "steamapps" / "workshop" / "downloads" / str(workshop_app_id) / active_wid
+            ct_dir = base_install / "steamapps" / "workshop" / "content" / str(workshop_app_id) / active_wid
+            cur_bytes = _dir_size_bytes(dl_dir) + _dir_size_bytes(ct_dir)
+            prev_bytes = _disk_last_bytes.get(active_wid, -1)
+            if cur_bytes > 0 and cur_bytes > prev_bytes:
+                _disk_last_bytes[active_wid] = cur_bytes
+                cur_pct = _disk_progress_step.get(active_wid, 15)
+                next_pct = min(88, cur_pct + max(3, (88 - cur_pct) // 5))
+                _disk_progress_step[active_wid] = next_pct
+                try:
+                    from services.mod_install_status_service import set_mod_install_progress
+
+                    set_mod_install_progress(server_id, active_wid, next_pct)
+                except Exception:
+                    pass
 
     def _live_log(line: str) -> None:
         safe_line = _redact(line, secrets_to_redact)
         _bounded_log_buffer_append(live_output, safe_line)
         _base._append_console_log(server_id, safe_line)
-        item_match = _item_line_re.search(line)
-        if item_match:
-            _current_workshop_item[0] = item_match.group(1)
-        active_wid = _current_workshop_item[0]
-        if active_wid:
-            try:
-                from services.mod_install_status_service import record_mod_download_output
+        for sub_line in re.split(r"[\r\n]+", line):
+            if not sub_line.strip():
+                continue
+            item_match = _item_line_re.search(sub_line)
+            if item_match:
+                prev_wid = _current_workshop_item[0]
+                next_wid = item_match.group(1)
+                _current_workshop_item[0] = next_wid
+                try:
+                    from services.mod_install_status_service import set_mod_install_progress
 
-                record_mod_download_output(server_id, active_wid, line)
-            except Exception:
-                pass
+                    if prev_wid and prev_wid != next_wid:
+                        set_mod_install_progress(server_id, prev_wid, 95)
+                    set_mod_install_progress(server_id, next_wid, 15, promote_from_pending=True)
+                    _disk_progress_step.setdefault(next_wid, 15)
+                except Exception:
+                    pass
+                continue
+
+            success_match = _success_line_re.search(sub_line)
+            if success_match:
+                done_wid = success_match.group(1)
+                try:
+                    from services.mod_install_status_service import set_mod_install_progress
+
+                    set_mod_install_progress(server_id, done_wid, 95)
+                except Exception:
+                    pass
+                continue
+
+            active_wid = _current_workshop_item[0]
+            if active_wid:
+                try:
+                    from services.mod_install_status_service import record_mod_download_output
+
+                    record_mod_download_output(server_id, active_wid, sub_line)
+                except Exception:
+                    pass
 
     uid, gid = _base.docker_service.container_runtime_uid_gid()
     image = steamcmd_image or STEAMCMD_IMAGE
-    result = _base.docker_service.run_ephemeral(
-        image=image,
-        command=_build_steamcmd_bash_command(steam_args, uid, gid),
-        volumes=[VolumeBind(install_dir, data_dir, read_only=False)],
-        user="0:0",
-        cap_adds=STEAMCMD_CAPS,
-        entrypoint="bash",
-        env={"HOME": data_dir},
-        timeout=timeout,
-        log_callback=_live_log,
-        node=node,
-    )
+    monitor_thread: threading.Thread | None = None
+    if node is None:
+        monitor_thread = threading.Thread(target=_poll_workshop_disk_growth, daemon=True)
+        monitor_thread.start()
+    try:
+        result = _base.docker_service.run_ephemeral(
+            image=image,
+            command=_build_steamcmd_bash_command(steam_args, uid, gid),
+            volumes=[VolumeBind(install_dir, data_dir, read_only=False)],
+            user="0:0",
+            cap_adds=STEAMCMD_CAPS,
+            entrypoint="bash",
+            env={"HOME": data_dir},
+            timeout=timeout,
+            log_callback=_live_log,
+            node=node,
+        )
+    finally:
+        _monitor_stop.set()
+        if monitor_thread is not None:
+            monitor_thread.join(timeout=1.0)
     out = (result.get("stdout") or "") + (result.get("stderr") or "")
     if out:
         _base._append_console_log(server_id, _redact(out, secrets_to_redact))

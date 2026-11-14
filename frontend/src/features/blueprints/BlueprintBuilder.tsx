@@ -995,12 +995,13 @@ export function BlueprintBuilder({ mode, sourceId, entries, onClose, onSaved }: 
           <Kurzinfo text={t('common.back')} seite="anfang" lage="oben" className="sm:!hidden">
             <Button
               variant="secondary"
-              className="min-h-11 w-11 px-0 sm:w-auto sm:px-4"
+              size="icon"
+              className="min-h-11 w-11 sm:w-auto sm:px-4"
               aria-label={t('common.back')}
               disabled={currentIndex === 0}
               onClick={() => setSection(sectionIds[currentIndex - 1])}
             >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="hidden sm:inline">{t('common.back')}</span>
             </Button>
           </Kurzinfo>
@@ -1008,11 +1009,12 @@ export function BlueprintBuilder({ mode, sourceId, entries, onClose, onSaved }: 
             <Kurzinfo text={t('blueprintBuilder.downloadJson')} lage="oben" className="sm:!hidden">
               <Button
                 variant="secondary"
-                className="min-h-11 w-11 px-0 sm:w-auto sm:px-4"
+                size="icon"
+                className="min-h-11 w-11 sm:w-auto sm:px-4"
                 aria-label={t('blueprintBuilder.downloadJson')}
                 onClick={downloadDraft}
               >
-                <Download className="h-4 w-4" aria-hidden="true" />
+                <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span className="hidden sm:inline">{t('blueprintBuilder.downloadJson')}</span>
               </Button>
             </Kurzinfo>

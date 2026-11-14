@@ -14,6 +14,7 @@ from database import SessionLocal
 from models import Mod
 from services.curseforge_api_key_service import resolve_key as resolve_cf_key
 from services.curseforge_service import get_curseforge_service
+from services.mod_install_status_service import set_mod_install_progress
 
 logger = logging.getLogger(__name__)
 
@@ -223,6 +224,7 @@ async def _download_single_curseforge_mod(
 ) -> tuple[bool, str | None, dict[str, object]]:
     """Lädt eine einzelne CurseForge-Mod/Modpack-Datei herunter und wendet sie an."""
     try:
+        set_mod_install_progress(server.id, wid, 10)
         mod_info = await svc.get_mod_details(wid)
         if not mod_info:
             return (
@@ -257,6 +259,7 @@ async def _download_single_curseforge_mod(
                 {"ok": False, "error": "Keine Download-URL verfuegbar"},
             )
 
+        set_mod_install_progress(server.id, wid, 20)
         file_name = file_obj.get("fileName")
         if not file_name and isinstance(dl_url, str):
             url_tail = dl_url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
@@ -274,10 +277,36 @@ async def _download_single_curseforge_mod(
         dest_file.relative_to(base)
 
         async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as dl_client:
-            resp = await dl_client.get(dl_url, headers={"x-api-key": cf_key})
-            resp.raise_for_status()
-            file_bytes = resp.content
+            if type(dl_client).__module__.startswith("httpx"):
+                buf = bytearray()
+                async with dl_client.stream("GET", dl_url, headers={"x-api-key": cf_key}) as resp:
+                    resp.raise_for_status()
+                    total_bytes = int(resp.headers.get("content-length") or 0) or (
+                        int(getattr(mod_info, "file_size", 0) or 0)
+                    )
+                    last_pct = 20
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        buf.extend(chunk)
+                        if total_bytes > 0:
+                            pct = min(85, 20 + int((len(buf) / total_bytes) * 65))
+                        else:
+                            pct = min(85, last_pct + 5)
+                        if pct >= last_pct + 5:
+                            last_pct = pct
+                            set_mod_install_progress(
+                                server.id,
+                                wid,
+                                pct,
+                                current_bytes=len(buf),
+                                total_bytes=total_bytes or None,
+                            )
+                file_bytes = bytes(buf)
+            else:
+                resp = await dl_client.get(dl_url, headers={"x-api-key": cf_key})
+                resp.raise_for_status()
+                file_bytes = resp.content
 
+        set_mod_install_progress(server.id, wid, 90)
         if safe_name.lower().endswith(".zip"):
             await _extract_curseforge_zip(
                 plugin,
@@ -299,6 +328,7 @@ async def _download_single_curseforge_mod(
                 f"[MSM] CurseForge Mod {mod_info.title} ({dest_file_name}) heruntergeladen nach {target_dir_rel}/\n",
             )
 
+        set_mod_install_progress(server.id, wid, 98)
         _update_curseforge_mod_title_in_db(server.id, wid, mod_info.title)
         return True, None, {"ok": True}
     except Exception as exc:

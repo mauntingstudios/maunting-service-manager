@@ -126,4 +126,16 @@ describe('Dialog', () => {
     expect(karte).not.toHaveAttribute('data-dialog-voll')
     expect(karte.className).toContain('max-w-lg')
   })
+
+  it('überschreibt max-w-2xl nicht mit max-w-lg', async () => {
+    await waitFor(() => expect(window.history.state?.msmTiefe ?? 0).toBe(0))
+    render(
+      <Dialog open onOpenChange={() => {}}>
+        <DialogContent className="max-w-2xl">Breiter Dialog</DialogContent>
+      </Dialog>,
+    )
+    const karte = screen.getByText('Breiter Dialog') as HTMLElement
+    expect(karte.className).toContain('max-w-2xl')
+    expect(karte.className).not.toContain('max-w-lg')
+  })
 })

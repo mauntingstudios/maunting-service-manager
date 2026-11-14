@@ -885,3 +885,41 @@ class TestBulkModActionsAndDelete:
 
         assert fallback_res.status_code == 200
         assert fallback_res.json() == {}
+
+    @pytest.mark.asyncio
+    async def test_steam_get_details_batch_public_fallback_resolves_without_api_key(self):
+        from services.steam_service import SteamService
+
+        service = SteamService()
+        service.api_key = None
+
+        fake_resp = MagicMock()
+        fake_resp.raise_for_status = MagicMock()
+        fake_resp.json.return_value = {
+            "response": {
+                "publishedfiledetails": [
+                    {
+                        "publishedfileid": "777001",
+                        "result": 1,
+                        "title": "Public Mod",
+                        "file_description": "[h1]Feature[/h1] Adds cool backpacks",
+                        "preview_url": "https://cdn.example/777001.jpg",
+                        "file_size": 2097152,
+                        "tags": [{"tag": "QoL"}],
+                    }
+                ]
+            }
+        }
+        service.client = MagicMock()
+        service.client.post = AsyncMock(return_value=fake_resp)
+
+        try:
+            details = await service.get_details_batch(["777001"], appid="108600", allow_public_fallback=True)
+        finally:
+            service.client = AsyncMock()
+            service.client.aclose = AsyncMock()
+
+        assert "777001" in details
+        assert details["777001"].preview_url == "https://cdn.example/777001.jpg"
+        assert details["777001"].description == "Feature Adds cool backpacks"
+        assert details["777001"].file_size == 2097152

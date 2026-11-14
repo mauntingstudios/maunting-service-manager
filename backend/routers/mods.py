@@ -207,8 +207,8 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
             if not active_chunk:
                 continue
 
-            for wid in active_chunk:
-                mark_mod_installing(server_id, wid, "install")
+            if active_chunk:
+                mark_mod_installing(server_id, active_chunk[0], "install")
 
             try:
                 if hasattr(plugin, "install_mods"):
@@ -425,8 +425,9 @@ def bulk_mod_action_bg(
             if not active_chunk:
                 continue
 
-            for wid in active_chunk:
-                mark_mod_installing(server_id, wid, action)
+            for idx, wid in enumerate(active_chunk):
+                if idx == 0:
+                    mark_mod_installing(server_id, wid, action)
                 if action == "reinstall":
                     try:
                         plugin.cleanup_mod(server, wid)
@@ -568,11 +569,15 @@ async def get_installed_mods_metadata(
     prefer_cf = bool(cf_game_id) and (provider_hint == "curseforge" or not workshop_appid)
 
     metadata: dict[str, dict] = {}
-    if not prefer_cf and workshop_appid:
+    if not prefer_cf and (workshop_appid or provider_hint == "steam"):
         try:
             from services.steam_service import get_steam_service
             steam_service = await get_steam_service()
-            details = await steam_service.get_details_batch(wids, appid=str(workshop_appid))
+            details = await steam_service.get_details_batch(
+                wids,
+                appid=str(workshop_appid) if workshop_appid else None,
+                allow_public_fallback=True,
+            )
             for wid, info in (details or {}).items():
                 metadata[str(wid)] = _serialize_mod_metadata(info, "steam")
         except Exception as exc:

@@ -140,10 +140,11 @@ export function DialogContent({
   if (!ziel) return null
 
   const voll = size === 'voll'
+  const hasCustomMaxWidth = /\b(?:[a-z0-9-]+:)*!?max-w-/.test(className)
   const overlayBasis = voll ? 'items-stretch p-0 sm:items-center sm:p-4' : ''
   const karteBasis = voll
     ? 'msm-card relative flex w-full max-w-none flex-col overflow-hidden rounded-none border-0 h-full max-h-full'
-    : 'msm-card relative w-full max-w-lg overflow-hidden flex flex-col'
+    : `msm-card relative w-full ${hasCustomMaxWidth ? '' : 'max-w-lg '}overflow-hidden flex flex-col`
 
   return createPortal(
     <div

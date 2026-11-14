@@ -48,7 +48,7 @@ def parse_steamcmd_progress(line: str) -> tuple[int | None, int | None, int | No
     progress_match = _PROGRESS_RE.search(line)
     if progress_match:
         try:
-            progress = _clamp_percent(float(progress_match.group(1)))
+            progress = _clamp_percent(float(progress_match.group(1).replace(",", ".")))
         except ValueError:
             progress = None
 
@@ -118,11 +118,57 @@ def mark_mod_installing(server_id: int, workshop_id: str, action: str = "install
             return
         mod.install_status = INSTALL_RUNNING
         mod.install_action = action
-        mod.install_progress = mod.install_progress or 0
+        mod.install_progress = max(mod.install_progress or 0, 5)
         mod.install_eta_seconds = None
         mod.install_started_at = _now()
         mod.install_completed_at = None
         mod.install_error = None
+        db.commit()
+    finally:
+        db.close()
+
+
+def set_mod_install_progress(
+    server_id: int,
+    workshop_id: str,
+    progress: int,
+    *,
+    current_bytes: int | None = None,
+    total_bytes: int | None = None,
+    promote_from_pending: bool = True,
+) -> None:
+    """Aktualisiert den Installationsfortschritt monoton (0..99) fuer laufende Jobs."""
+    clamped = max(0, min(99, int(progress)))
+    db = SessionLocal()
+    try:
+        mod = _get_mod(db, server_id, workshop_id)
+        if mod is None:
+            return
+        if mod.install_status == INSTALL_PENDING and promote_from_pending:
+            mod.install_status = INSTALL_RUNNING
+            mod.install_started_at = mod.install_started_at or _now()
+            mod.install_error = None
+        elif mod.install_status != INSTALL_RUNNING:
+            return
+
+        now = _now()
+        if mod.install_started_at is None:
+            mod.install_started_at = now
+        started_at = mod.install_started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        old_progress = mod.install_progress or 0
+        if clamped > old_progress:
+            mod.install_progress = clamped
+        if mod.install_progress > 0:
+            mod.install_eta_seconds = _estimate_eta_seconds(
+                now=now,
+                started_at=started_at,
+                progress=mod.install_progress,
+                current_bytes=current_bytes,
+                total_bytes=total_bytes,
+            )
         db.commit()
     finally:
         db.close()
@@ -133,29 +179,14 @@ def record_mod_download_output(server_id: int, workshop_id: str, line: str) -> N
     if progress is None:
         return
 
-    db = SessionLocal()
-    try:
-        mod = _get_mod(db, server_id, workshop_id)
-        if mod is None or mod.install_status != INSTALL_RUNNING:
-            return
-
-        now = _now()
-        started_at = mod.install_started_at or now
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
-
-        old_progress = mod.install_progress or 0
-        mod.install_progress = max(old_progress, progress)
-        mod.install_eta_seconds = _estimate_eta_seconds(
-            now=now,
-            started_at=started_at,
-            progress=mod.install_progress,
-            current_bytes=current_bytes,
-            total_bytes=total_bytes,
-        )
-        db.commit()
-    finally:
-        db.close()
+    set_mod_install_progress(
+        server_id,
+        workshop_id,
+        progress,
+        current_bytes=current_bytes,
+        total_bytes=total_bytes,
+        promote_from_pending=True,
+    )
 
 
 def mark_mod_installed(server_id: int, workshop_id: str) -> None:

@@ -137,20 +137,23 @@ export function ActionMenu({
           initialFocusRef.current = event.key === 'ArrowUp' ? 'last' : 'first'
           setOpen(true)
         }}
-        className={cx(
-          buttonClasses(variant, compact ? 'sm' : 'md', 'gap-1.5 disabled:cursor-not-allowed disabled:opacity-45'),
-          // Auf dem Telefon bleibt der Auslöser ein Daumenziel; ab sm gilt die
-          // Höhe des Knopfs daneben.
-          compact
-            ? surface === 'dna' ? 'h-11 sm:h-9' : 'h-11 sm:h-8'
-            : 'h-11 sm:h-10',
-          iconOnly && `w-11 justify-center px-0 ${surface === 'dna' ? 'sm:w-9' : 'sm:w-8'}`,
+        className={buttonClasses(
+          variant,
+          iconOnly ? 'icon' : (compact ? 'sm' : 'md'),
+          iconOnly
+            ? 'shrink-0 disabled:cursor-not-allowed disabled:opacity-45'
+            : 'gap-1.5 disabled:cursor-not-allowed disabled:opacity-45',
+          true,
         )}
       >
-        {icon}
+        {icon ? (
+          <span className="inline-flex shrink-0 items-center justify-center" aria-hidden>
+            {icon}
+          </span>
+        ) : null}
         {!iconOnly && <span>{label}</span>}
         {!iconOnly && (
-          <ChevronDown className={cx('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
+          <ChevronDown className={cx('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')} aria-hidden />
         )}
       </button>
       {open

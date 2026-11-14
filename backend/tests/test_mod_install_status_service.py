@@ -351,3 +351,70 @@ def test_perform_workshop_mod_updates_only_applies_auto_update_mods(db, test_ser
     assert result["ok"] is True
     assert result["applied"] == 1
     assert installed == ["111"]
+
+
+def test_steamcmd_workshop_batch_updates_stage_and_line_progress(db, test_server, tmp_path, monkeypatch):
+    from games import base as base_mod
+    from services.mod_install_status_service import set_mod_install_progress
+
+    m1 = Mod(
+        server_id=test_server.id,
+        workshop_id="111",
+        name="Mod One",
+        load_order=0,
+        install_status="installing",
+        install_action="update",
+        install_progress=5,
+    )
+    m2 = Mod(
+        server_id=test_server.id,
+        workshop_id="222",
+        name="Mod Two",
+        load_order=1,
+        install_status="pending",
+        install_action="update",
+        install_progress=0,
+    )
+    db.add_all([m1, m2])
+    db.commit()
+
+    observed_m1: list[int | None] = []
+    observed_m2_status: list[tuple[str, int | None, str | None]] = []
+
+    def fake_run_ephemeral(*, log_callback=None, **_kwargs):
+        assert log_callback is not None
+        log_callback("Downloading item 111 ...\rUpdate state (0x61) downloading, progress: 42.5 (425 / 1000)\n")
+        db.expire_all()
+        observed_m1.append(db.query(Mod).filter(Mod.id == m1.id).one().install_progress)
+
+        log_callback("Success. Downloaded item 111 to \"/data/steamapps/workshop/content/108600/111\"\n")
+        log_callback("Downloading item 222 ...\n")
+        db.expire_all()
+        row2 = db.query(Mod).filter(Mod.id == m2.id).one()
+        observed_m2_status.append((row2.install_status, row2.install_progress, row2.install_action))
+        log_callback("Success. Downloaded item 222 to \"/data/steamapps/workshop/content/108600/222\"\n")
+        return {"ok": True, "stdout": "", "stderr": ""}
+
+    monkeypatch.setattr(base_mod.docker_service, "run_ephemeral", fake_run_ephemeral)
+    monkeypatch.setattr(base_mod.docker_service, "repair_bind_mount_permissions", lambda *_a, **_kw: None)
+    monkeypatch.setattr(base_mod, "_append_console_log", lambda *_a, **_kw: None)
+
+    res = base_mod.run_steamcmd_workshop_download_batch(
+        server_id=test_server.id,
+        install_dir=str(tmp_path),
+        workshop_app_id="108600",
+        workshop_item_ids=["111", "222"],
+        use_authenticated_login=False,
+        retry=False,
+    )
+
+    assert res["ok"] is True
+    assert observed_m1 == [42]
+    assert observed_m2_status == [("installing", 15, "update")]
+    db.expire_all()
+    assert db.query(Mod).filter(Mod.id == m1.id).one().install_progress == 95
+    assert db.query(Mod).filter(Mod.id == m2.id).one().install_progress == 95
+
+    set_mod_install_progress(test_server.id, "222", 10)
+    db.expire_all()
+    assert db.query(Mod).filter(Mod.id == m2.id).one().install_progress == 95

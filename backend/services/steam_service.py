@@ -193,13 +193,40 @@ class SteamService:
             logger.warning("Steam API search failed: %s", type(e).__name__)
             raise SteamApiUnavailable("steam_api_unavailable") from e
 
+    async def _fetch_remote_storage_details(
+        self,
+        publishedfileids: List[str],
+    ) -> Dict[str, SteamModInfo]:
+        """Public keyless Steam fallback via ISteamRemoteStorage/GetPublishedFileDetails/v1."""
+        results: Dict[str, SteamModInfo] = {}
+        chunk_size = 50
+        for offset in range(0, len(publishedfileids), chunk_size):
+            chunk = publishedfileids[offset:offset + chunk_size]
+            form_data: Dict[str, Any] = {"itemcount": len(chunk)}
+            for idx, pid in enumerate(chunk):
+                form_data[f"publishedfileids[{idx}]"] = str(pid)
+            response = await self.client.post(
+                f"{self.API_BASE}/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
+                data=form_data,
+            )
+            response.raise_for_status()
+            data = response.json()
+            details_list = (data.get("response") or {}).get("publishedfiledetails") or []
+            for mod_data in details_list:
+                if mod_data.get("result") == 1:
+                    parsed = self._parse_mod_data(mod_data)
+                    results[parsed.publishedfileid] = parsed
+        return results
+
     async def get_details_batch(
         self,
         publishedfileids: List[str],
         appid: Optional[str] = None,
+        *,
+        allow_public_fallback: bool = False,
     ) -> Dict[str, SteamModInfo]:
-        """Batch-fetch published file details via IPublishedFileService/GetDetails/v1."""
-        if not self.api_key:
+        """Batch-fetch published file details via IPublishedFileService/GetDetails/v1 with public fallback."""
+        if not self.api_key and not allow_public_fallback:
             raise SteamApiUnavailable("steam_api_key_missing")
 
         unique_ids: List[str] = []
@@ -223,39 +250,76 @@ class SteamService:
         if not missing_ids:
             return results
 
-        chunk_size = 50
-        try:
-            for offset in range(0, len(missing_ids), chunk_size):
-                chunk = missing_ids[offset:offset + chunk_size]
-                query_data = {
-                    "publishedfileids": [int(pid) for pid in chunk],
-                    "includevotes": True,
-                    "short_description": True,
-                    "includechildren": True,
-                    "includetags": True,
-                }
-                params = {
-                    'key': self.api_key,
-                    'input_json': json.dumps(query_data, separators=(',', ':')),
-                }
-                response = await self.client.get(
-                    f"{self.API_BASE}/IPublishedFileService/GetDetails/v1/",
-                    params=params,
-                )
-                response.raise_for_status()
-                data = response.json()
-                details_list = (data.get('response') or {}).get('publishedfiledetails') or []
-                for mod_data in details_list:
-                    if mod_data.get('result') == 1:
-                        parsed = self._parse_mod_data(mod_data)
-                        results[parsed.publishedfileid] = parsed
-                        target_app = appid or parsed.consumer_appid
-                        if target_app:
-                            self._set_cache(f"details_{target_app}_{parsed.publishedfileid}", parsed)
-            return results
-        except Exception as e:
-            logger.warning("Steam API batch details failed: %s", type(e).__name__)
-            raise SteamApiUnavailable("steam_api_unavailable") from e
+        if self.api_key:
+            chunk_size = 50
+            try:
+                for offset in range(0, len(missing_ids), chunk_size):
+                    chunk = missing_ids[offset:offset + chunk_size]
+                    query_data = {
+                        "publishedfileids": [int(pid) for pid in chunk],
+                        "includevotes": True,
+                        "short_description": True,
+                        "includechildren": True,
+                        "includetags": True,
+                    }
+                    params = {
+                        'key': self.api_key,
+                        'input_json': json.dumps(query_data, separators=(',', ':')),
+                    }
+                    response = await self.client.get(
+                        f"{self.API_BASE}/IPublishedFileService/GetDetails/v1/",
+                        params=params,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    details_list = (data.get('response') or {}).get('publishedfiledetails') or []
+                    for mod_data in details_list:
+                        if mod_data.get('result') == 1:
+                            parsed = self._parse_mod_data(mod_data)
+                            results[parsed.publishedfileid] = parsed
+            except Exception as e:
+                if not allow_public_fallback:
+                    logger.warning("Steam API batch details failed: %s", type(e).__name__)
+                    raise SteamApiUnavailable("steam_api_unavailable") from e
+                logger.debug("Primary Steam GetDetails failed, falling back to public endpoint: %s", type(e).__name__)
+
+        if allow_public_fallback:
+            incomplete_ids = [
+                pid
+                for pid in missing_ids
+                if pid not in results
+                or not results[pid].preview_url
+                or not (results[pid].description or "").strip()
+            ]
+            if incomplete_ids:
+                try:
+                    public_map = await self._fetch_remote_storage_details(incomplete_ids)
+                    for pid, pub_item in public_map.items():
+                        existing = results.get(pid)
+                        if existing is None:
+                            results[pid] = pub_item
+                        else:
+                            if not existing.preview_url and pub_item.preview_url:
+                                existing.preview_url = pub_item.preview_url
+                            if not (existing.description or "").strip() and (pub_item.description or "").strip():
+                                existing.description = pub_item.description
+                            if existing.file_size <= 0 and pub_item.file_size > 0:
+                                existing.file_size = pub_item.file_size
+                            if not existing.tags and pub_item.tags:
+                                existing.tags = pub_item.tags
+                            if (not existing.title or existing.title == "Unknown Mod") and pub_item.title:
+                                existing.title = pub_item.title
+                except Exception as exc:
+                    logger.debug("Public Steam GetPublishedFileDetails fallback failed: %s", type(exc).__name__)
+                    if not results and not self.api_key:
+                        raise SteamApiUnavailable("steam_api_unavailable") from exc
+
+        for pid, parsed in results.items():
+            target_app = appid or parsed.consumer_appid
+            if target_app:
+                self._set_cache(f"details_{target_app}_{pid}", parsed)
+
+        return results
 
     async def get_collection_details(
         self,
@@ -572,10 +636,23 @@ class SteamService:
         except (TypeError, ValueError):
             declared_children = 0
 
+        raw_desc = (
+            mod_data.get('short_description')
+            or mod_data.get('file_description')
+            or mod_data.get('description')
+            or ''
+        )
+        clean_desc = re.sub(
+            r'\[/?(?:b|i|u|h[1-6]|url(?:=[^\]]*)?|list|quote(?:=[^\]]*)?|code|spoiler|strike|table|tr|th|td|\*|img|previewyoutube|noparse)\]',
+            '',
+            str(raw_desc),
+            flags=re.IGNORECASE,
+        ).strip()
+
         return SteamModInfo(
             publishedfileid=str(mod_data.get('publishedfileid', '')),
             title=mod_data.get('title', 'Unknown Mod'),
-            description=mod_data.get('short_description', mod_data.get('description', '')),
+            description=clean_desc,
             creator=mod_data.get('creator', 'Unknown'),
             file_size=int(mod_data.get('file_size') or 0),
             created=datetime.fromtimestamp(int(mod_data.get('time_created') or 0)),

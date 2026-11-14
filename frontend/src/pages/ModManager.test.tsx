@@ -760,12 +760,14 @@ describe('ModManager Reorder, Multi-Select & Bulk Operations', () => {
         return {
           '1001': {
             preview_url: 'https://steam.example/1001.jpg',
+            description: 'Core vehicle expansion description',
             file_size_mb: 12.5,
             tags: ['Vehicles'],
             title: 'Outdated Core Mod',
           },
           '1002': {
             preview_url: 'https://steam.example/1002.jpg',
+            description: 'Second queued description',
             file_size_mb: 4.2,
             tags: ['UI'],
             title: 'Second Queued Mod',
@@ -827,8 +829,9 @@ describe('ModManager Reorder, Multi-Select & Bulk Operations', () => {
       />,
     )
 
-    // Installed metadata thumbnail & size appear in Aktive Mods + Bottom live install bar renders
-    expect(await screen.findByText('12.5 MB')).toBeInTheDocument()
+    // Installed metadata thumbnail, description & size appear in Aktive Mods + Bottom live install bar renders
+    expect((await screen.findAllByText('12.5 MB')).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Core vehicle expansion description')).toBeInTheDocument()
     const liveStatusBar = screen.getByRole('status')
     expect(liveStatusBar).toHaveTextContent('Outdated Core Mod')
     expect(liveStatusBar).toHaveTextContent('64%')
