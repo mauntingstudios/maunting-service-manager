@@ -490,11 +490,12 @@ def provision_server(
                     user_creds = list_user_credentials(db, actor.user.id, kind=kind)
                     if user_creds:
                         # Automatisch das aktuellste eigene Credential des Erstellers binden
+                        latest_cred = max(user_creds, key=lambda c: (c.updated_at, c.id))
                         set_binding(
                             db,
                             server_id=server.id,
                             kind=kind,
-                            credential_id=user_creds[-1].id,
+                            credential_id=latest_cred.id,
                             actor=actor.user,
                         )
             db.commit()

@@ -1049,27 +1049,22 @@ verwendet werden (Einstellungen → **OAuth**).
 
 ## Zugangsdaten: panelweit, pro Benutzer, pro Server (Phase 7)
 
-GitHub-Token und Steam-Konto können auf drei Ebenen existieren. **Für einen
-Self-Hosted-Betrieb ändert sich nichts:** ohne eigene Zuordnung gilt weiterhin
-der panelweite Zugang.
+Steam-Konten können auf drei Ebenen existieren (panelweit, pro Benutzer oder pro Server). **GitHub-Tokens werden ausschließlich pro Benutzer unter Profil → Verbindungen hinterlegt und einzelnen Servern zugeordnet** — einen panelweiten GitHub-Fallback gibt es nicht mehr.
 
 ### Auflösungsreihenfolge
 
 1. **Server-Zuordnung** — das diesem Server ausdrücklich zugewiesene
    Benutzer-Credential.
-2. **Umgebungsvariable** — `MSM_GITHUB_CLONE_TOKEN` usw., wie bisher.
-3. **Panel-Zugang** — Einstellungen → GitHub bzw. Steam Account.
+2. **Panel-Zugang (nur Steam)** — Einstellungen → Steam Account.
 
-Die Zuordnung steht oben, weil sie die spezifischste Aussage ist. Stünde ENV
-davor, wäre eine bewusst gesetzte Kundenzuordnung wirkungslos.
+Die Zuordnung steht oben, weil sie die spezifischste Aussage ist.
 
 ### Bedienung
 
 | Wo | Was |
 | --- | --- |
-| Profil → **Zugangsdaten** | Jeder Benutzer hinterlegt eigene Steam-Konten oder GitHub-Token. Der Wert wird verschlüsselt gespeichert und **nie wieder angezeigt** — sichtbar bleiben nur Bezeichnung, Benutzername und die letzten vier Zeichen. |
+| Profil → **Verbindungen** | Jeder Benutzer hinterlegt eigene Steam-Konten oder GitHub-Tokens. Der Wert wird verschlüsselt gespeichert und **nie wieder angezeigt** — sichtbar bleiben nur Bezeichnung, Benutzername und die letzten vier Zeichen. |
 | Server-Detail → **Zugangsdaten** | Erscheint nur, wenn der Blueprint dieses Servers welche verlangt. Zeigt die Herkunft und erlaubt die Zuordnung. Erfordert `server.credentials.manage`. |
-| Einstellungen → **Hoster** | Schalter *Zentraler Fallback*: darf ein Server ohne eigene Zuordnung den panelweiten Zugang mitbenutzen? |
 
 ### Für Hoster
 

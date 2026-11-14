@@ -548,3 +548,28 @@ def test_the_panelwide_steam_username_stays_behind_the_settings_permission(
     assert row["configured"] is True
     assert row["username"] is None
     assert "betreiber-konto" not in response.text
+
+
+def test_singra_project_git_token_roundtrip_via_user_credentials(
+    db: Session, regular_user: User
+) -> None:
+    """Persoenliche GitHub-Tokens aus Verbindungen lassen sich fuer AI-Projekte speichern und entschluesseln."""
+    from models.ai_project import AiProject
+    from services.ai_project_git import resolve_git_token_for_user
+    from services.ai_project_service import update_project
+
+    project = AiProject(id="proj-cred-test", name="Mein Projekt (v1)", user_id=regular_user.id)
+    db.add(project)
+    db.commit()
+
+    updated = update_project(
+        db,
+        regular_user,
+        project.id,
+        git_provider="github",
+        git_token="ghp_test_user_token_9999",
+    )
+
+    assert updated.git_credential_id is not None
+    assert resolve_git_token_for_user(db, regular_user, "github") == "ghp_test_user_token_9999"
+

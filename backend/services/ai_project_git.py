@@ -74,18 +74,13 @@ def resolve_git_token_for_user(db: Session, user: User, provider: str | None = "
         creds = credential_service.list_user_credentials(db, user.id, kind=KIND_GITHUB_TOKEN)
         for cred in creds:
             try:
-                secret = AuthService.decrypt_secret(db, cred.encrypted_secret, aad=credential_service._aad(cred.id))
+                secret = AuthService.decrypt_secret(
+                    cred.secret_encrypted, aad=credential_service._aad(cred.id)
+                )
                 if secret and secret.strip():
                     return secret.strip()
             except Exception:
                 continue
-
-        try:
-            resolved = credential_service.resolve_panel_default(KIND_GITHUB_TOKEN)
-            if resolved and resolved.secret and resolved.secret.strip():
-                return resolved.secret.strip()
-        except Exception:
-            pass
     except Exception as exc:
         logger.debug("Konnte Git-Token für Benutzer %s nicht auflösen: %s", user.id, exc)
 

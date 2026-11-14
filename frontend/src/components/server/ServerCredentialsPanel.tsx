@@ -77,6 +77,8 @@ export function ServerCredentialsPanel({
   const relevant = rows.filter((row) => row.required || row.source === 'server')
   if (loading || relevant.length === 0) return null
 
+  const onlyGithub = relevant.every((row) => row.kind === 'github_token')
+
   return (
     <section className="msm-card space-y-4 p-6" aria-labelledby="server-credentials-title">
       <div className="flex items-center gap-2">
@@ -88,11 +90,14 @@ export function ServerCredentialsPanel({
           {t('credentials.serverTitle')}
         </h3>
       </div>
-      <p className="text-sm text-on-surface-variant">{t('credentials.serverDescription')}</p>
+      <p className="text-sm text-on-surface-variant">
+        {onlyGithub ? t('credentials.serverDescriptionGithub') : t('credentials.serverDescription')}
+      </p>
 
       <ul className="space-y-3">
         {relevant.map((row) => {
           const options = mine.filter((item) => item.kind === row.kind)
+          const isGithub = row.kind === 'github_token'
           return (
             <li
               key={row.kind}
@@ -114,7 +119,7 @@ export function ServerCredentialsPanel({
               </div>
               {!row.configured && (
                 <p className="mt-2 text-xs text-status-warning">
-                  {t('credentials.missing')}
+                  {isGithub ? t('credentials.missingGithub') : t('credentials.missing')}
                 </p>
               )}
               {/*
@@ -142,7 +147,12 @@ export function ServerCredentialsPanel({
                     value={row.credential_id ? String(row.credential_id) : ''}
                     onChange={(val) => void bind(row.kind, val === '' ? null : Number(val))}
                     options={[
-                      { value: '', label: t('credentials.usePanelDefault') },
+                      {
+                        value: '',
+                        label: isGithub
+                          ? t('credentials.noGithubToken')
+                          : t('credentials.usePanelDefault'),
+                      },
                       ...options.map((item) => ({
                         value: String(item.id),
                         label: item.label + (item.username ? ` (${item.username})` : ''),

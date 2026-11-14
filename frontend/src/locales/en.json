@@ -2580,10 +2580,10 @@
       "steamValidate": "true (default): SteamCMD +app_update … validate. false: faster update without validate (e.g. large Proton/Wine apps).",
       "steamRequiresLogin": "true when the global Steam account in panel settings is required for this app.",
       "sourceHttp": "HTTPS URL to the server archive (zip/tar).",
-      "sourceGithub": "GitHub repo owner/repo, branch, optional subPath and setupCommands (argv). Private repos: PAT in Settings → GitHub, or MSM_GITHUB_CLONE_TOKEN on the host.",
+      "sourceGithub": "GitHub repo owner/repo, branch, optional subPath and setupCommands (argv). Private repos use a personal GitHub token under Profile → Connections, assigned to the server.",
       "sourceManual": "List of required files if users must upload them manually.",
       "githubPrivateTitle": "Private repositories",
-      "githubPrivateBody": "For private repos, set a GitHub Personal Access Token in Settings → GitHub. Public repos work without a token.",
+      "githubPrivateBody": "For private repos: store a personal GitHub PAT under Profile → Connections and assign it in the server's credentials section. Public repos work without a token.",
       "modsSupportsMods": "Enables the Mod Manager tab for this server.",
       "modsSupportsSteamWorkshop": "Enables Steam Workshop integration.",
       "modsSupportsCurseForge": "Enables CurseForge integration for this server.",
@@ -5542,10 +5542,10 @@
     },
     "credentials": {
       "title": "Credentials and Kubernetes",
-      "intro": "GitHub tokens and Steam accounts can exist panel-wide, per user or per server. Nothing changes for self-hosted operation: without an own assignment the panel-wide access still applies.",
+      "intro": "Steam accounts can exist panel-wide, per user or per server. GitHub tokens are stored exclusively per user under Profile → Connections and assigned to individual servers.",
       "order": {
         "title": "Resolution order",
-        "body": "Server assignment before environment variable before panel access. The assignment comes first because it is the most specific statement."
+        "body": "For Steam accounts: server assignment before panel access. For GitHub tokens, only the server assignment from the user's account applies."
       },
       "vault": {
         "title": "Personal vault",
@@ -6873,11 +6873,14 @@
     "deleteConfirm": "Really remove entry {{label}}?",
     "bound": "Assignment saved",
     "serverTitle": "Credentials for this server",
-    "serverDescription": "This server needs the following credentials. Without an own assignment it uses the panel-wide access — if the operator allows that.",
+    "serverDescription": "This server needs the following credentials. For Steam accounts without an own assignment, the panel-wide access is used if configured.",
+    "serverDescriptionGithub": "This server can use an assigned GitHub token from your account (Profile → Connections) for private repositories. Public repositories work without a token.",
     "assign": "Assignment",
     "usePanelDefault": "Use panel-wide access",
-    "noneStored": "You have not stored any own credentials of this type in your profile yet.",
+    "noGithubToken": "No token (public repositories only)",
+    "noneStored": "You have not stored any own credentials of this type under Profile → Connections yet.",
     "missing": "No access is available. Installation and updates will fail until one is stored.",
+    "missingGithub": "No GitHub token assigned. Public repositories work without a token; for private repositories, store your token under Profile → Connections and select it here.",
     "kinds": {
       "steam_account": "Steam account",
       "github_token": "GitHub token"

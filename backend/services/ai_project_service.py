@@ -358,11 +358,13 @@ def update_project(
             from models.credential import KIND_GITHUB_TOKEN
             from services import credential_service
 
-            cred = credential_service.create_user_credential(
+            safe_name = re.sub(r"[^\w .\-]", "", project.name or "").strip()[:40]
+            cred_label = f"Git-Token {safe_name}".strip() if safe_name else "Git-Token"
+            cred = credential_service.upsert_user_credential(
                 db,
-                user.id,
+                user_id=user.id,
                 kind=KIND_GITHUB_TOKEN,
-                label=f"Git-Token ({project.name[:40]})",
+                label=cred_label,
                 secret=git_token.strip(),
             )
             project.git_credential_id = cred.id

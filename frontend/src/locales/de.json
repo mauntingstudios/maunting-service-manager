@@ -2580,10 +2580,10 @@
       "steamValidate": "true (Default): SteamCMD +app_update … validate. false: schnelleres Update ohne validate (z. B. große Proton/Wine-Apps).",
       "steamRequiresLogin": "true wenn der globale Steam-Account im Panel für diese App nötig ist (Einstellungen → Steam).",
       "sourceHttp": "HTTPS-URL zum Server-Archiv (zip/tar).",
-      "sourceGithub": "GitHub-Repo owner/repo, branch, optional subPath und setupCommands (argv). Privat: PAT unter Einstellungen → GitHub oder MSM_GITHUB_CLONE_TOKEN auf dem Host.",
+      "sourceGithub": "GitHub-Repo owner/repo, branch, optional subPath und setupCommands (argv). Private Repos nutzen ein persönliches GitHub-Token unter Profil → Verbindungen, das am Server zugeordnet wird.",
       "sourceManual": "Liste der benötigten Dateien, wenn User diese manuell hochladen müssen.",
       "githubPrivateTitle": "Private Repositories",
-      "githubPrivateBody": "Für private Repos: GitHub-PAT unter Einstellungen → GitHub hinterlegen. Öffentliche Repos funktionieren ohne Token.",
+      "githubPrivateBody": "Für private Repos: persönliches GitHub-PAT unter Profil → Verbindungen hinterlegen und beim Server unter „Zugangsdaten für diesen Server“ zuweisen. Öffentliche Repos funktionieren ohne Token.",
       "modsSupportsMods": "Aktiviert den Mod-Manager-Tab für diesen Server.",
       "modsSupportsSteamWorkshop": "Aktiviert Steam Workshop Integration.",
       "modsSupportsCurseForge": "Aktiviert CurseForge-Integration für diesen Server.",
@@ -5542,10 +5542,10 @@
     },
     "credentials": {
       "title": "Zugangsdaten und Kubernetes",
-      "intro": "GitHub-Token und Steam-Konto können panelweit, pro Benutzer oder pro Server existieren. Für einen Self-Hosted-Betrieb ändert sich nichts: ohne eigene Zuordnung gilt weiterhin der panelweite Zugang.",
+      "intro": "Steam-Konten können panelweit, pro Benutzer oder pro Server existieren. GitHub-Tokens werden ausschließlich pro Benutzer unter Profil → Verbindungen hinterlegt und einzelnen Servern zugeordnet.",
       "order": {
         "title": "Reihenfolge",
-        "body": "Server-Zuordnung vor Umgebungsvariable vor Panel-Zugang. Die Zuordnung steht oben, weil sie die spezifischste Aussage ist."
+        "body": "Bei Steam-Konten gilt: Server-Zuordnung vor Panel-Zugang. Bei GitHub-Tokens zählt ausschließlich die Server-Zuordnung aus dem jeweiligen Benutzerkonto."
       },
       "vault": {
         "title": "Eigener Tresor",
@@ -6873,11 +6873,14 @@
     "deleteConfirm": "Eintrag {{label}} wirklich entfernen?",
     "bound": "Zuordnung gespeichert",
     "serverTitle": "Zugangsdaten für diesen Server",
-    "serverDescription": "Dieser Server benötigt die folgenden Zugangsdaten. Ohne eigene Zuordnung verwendet er — sofern der Betreiber das erlaubt — den panelweiten Zugang.",
+    "serverDescription": "Dieser Server benötigt die folgenden Zugangsdaten. Bei Steam-Konten wird ohne eigene Zuordnung der panelweite Zugang verwendet, falls vorhanden.",
+    "serverDescriptionGithub": "Dieser Server kann für private Repositories ein zugeordnetes GitHub-Token aus deinem Konto (Profil → Verbindungen) verwenden. Öffentliche Repositories funktionieren ohne Token.",
     "assign": "Zuordnung",
     "usePanelDefault": "Panelweiten Zugang verwenden",
-    "noneStored": "Du hast für diese Art noch keine eigenen Zugangsdaten im Profil hinterlegt.",
+    "noGithubToken": "Kein Token (nur öffentliche Repositories)",
+    "noneStored": "Du hast für diese Art noch keine eigenen Zugangsdaten unter Profil → Verbindungen hinterlegt.",
     "missing": "Es ist kein Zugang verfügbar. Installation und Updates schlagen fehl, bis einer hinterlegt ist.",
+    "missingGithub": "Kein GitHub-Token zugeordnet. Öffentliche Repositories funktionieren ohne Token; für private Repositories hinterlege dein Token unter Profil → Verbindungen und wähle es hier aus.",
     "kinds": {
       "steam_account": "Steam-Konto",
       "github_token": "GitHub-Token"
