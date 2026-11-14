@@ -1,87 +1,41 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Archive,
-  ArchiveRestore,
-  ArrowRightLeft,
-  Check,
   Clock,
-  Copy,
-  Edit2,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  File as FileIcon,
-  Fingerprint,
-  Folder,
   CreditCard,
-  Landmark,
-  Images,
-  HelpCircle,
   KeyRound,
-  Lock,
-  Mail,
   Plus,
-  QrCode,
-  RefreshCw,
-  RotateCcw,
-  Search,
   SearchX,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
   Star,
   Trash2,
-  Unlock,
-  WifiOff,
-  Zap,
-  X,
 } from 'lucide-react'
 import type { TeamDetail } from '@/api/teams'
 import { getE2eeGeraete } from '@/api/social'
 import { useTeamVaultStore } from './teamVaultStore'
 import {
-  BrandIcon,
   Button,
-  Checkbox,
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Dropdown,
-  Input,
-  PasswordInput,
-  Textarea,
   Zustandsflaeche,
 } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { prompt } from '@/stores/promptStore'
 import { useAuthStore } from '@/stores/authStore'
-import { getBrandIcon } from './brandCatalog'
 import { generateTotpCode, getTotpSecondsRemaining } from './totpEngine'
-import { MASTER_PASSWORT_MINDESTLAENGE, generateSecurePassword } from './vaultCrypto'
+import { generateSecurePassword } from './vaultCrypto'
 import { createDebouncedLeakChecker, type LeakCheckResult } from './leakChecker'
 import { QrScannerModal } from './QrScannerModal'
-import { TresorZuruecksetzen } from './TresorZuruecksetzen'
-import { MauntingCard } from './MauntingCardView'
 import { TresorDateiBereich } from './TresorDateiBereich'
 import { TresorGalerie } from './TresorGalerie'
 import { TresorZahlung } from './TresorZahlung'
 import { blobBasisSetzen } from './tresorBlobApi'
-import { verdeckt } from './zahlung'
 import { inhaltVon, pfadVon, zielOrdner } from './tresorOrdner'
-import { useMiniatur } from './tresorMiniaturen'
-import { formatBytes } from '@/lib/format'
 import { still } from '@/lib/still'
 import { begruessungSchluessel } from '@/lib/tageszeit'
-import { TageszeitKulisse } from '@/components/layout/TageszeitKulisse'
 import { setzeTresorSchutz } from '../tauri'
 import { useShallow } from 'zustand/react/shallow'
 import { useMedienabfrage } from '@/hooks/useMedienabfrage'
 import { getLocalVaultSalt, useVaultStore } from './vaultStore'
-import { PAPIERKORB_TAGE, formatTransferBadge, istBekannteKategorie, istPasswortKategorie, type VaultItem } from './vaultEintrag'
+import { PAPIERKORB_TAGE, istBekannteKategorie, type VaultItem } from './vaultEintrag'
 import { fehlerText } from './tresorFehler'
 import { TransferToTeamVaultModal } from './TransferToTeamVaultModal'
 import type { VaultAnsicht } from './vaultAnsichten'
@@ -89,7 +43,6 @@ import {
   passtZumFilter,
   sichtbareEintraege,
   zaehleEintraege,
-  TRESOR_FILTER,
   type Sammlung,
   type StandardKategorieDef,
   type TresorFilter,
@@ -107,37 +60,18 @@ import {
 } from './TresorNotizDialog'
 import { TresorKategorieBildDialog } from './TresorKategorieBildDialog'
 import { TresorImportExportDialog, type ImportierterEintrag } from './TresorImportExportDialog'
+import { VaultGateScreen } from './VaultGateScreen'
+import { VaultItemRow, restTageImPapierkorb } from './VaultItemRow'
+import { VaultHeaderBereich } from './VaultHeaderBereich'
+import { VaultEntryModal } from './VaultEntryModal'
+import { VaultHintModal, VaultTeamRotationModal } from './VaultExtraModals'
+
+export { restTageImPapierkorb }
 
 type Ansicht = VaultAnsicht
 
-const TAG_MS = 24 * 60 * 60 * 1000
 const STANDARD_BILDER_SPEICHER = 'msm-vault-kategorie-bilder-v1'
 const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
-
-/** Miniatur einer Datei im Archiv oder Papierkorb, sonst das Marken-/Kategoriesymbol. */
-function ZeilenBild({ item, Symbol }: { item: VaultItem; Symbol: React.ComponentType<{ className?: string }> }) {
-  const url = useMiniatur(item.datei?.miniatur, item.id, true)
-  if (url) return <img src={url} alt="" className="h-9 w-9 shrink-0 rounded-xl object-cover" />
-  if (
-    item.category === 'ordner' ||
-    item.category === 'album' ||
-    item.category === 'datei' ||
-    item.category === 'secure_note' ||
-    item.zahlung
-  ) {
-    return (
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-outline-variant/20 bg-surface-container p-1.5 shadow-sm text-primary">
-        <Symbol className="h-5 w-5" />
-      </div>
-    )
-  }
-  return <BrandIcon name={item.service} domainOrUrl={item.url} size="md" />
-}
-
-/** Ganze Tage, bis ein Eintrag im Papierkorb endgültig gelöscht wird (mindestens 0). */
-export function restTageImPapierkorb(trashedAt: number, jetzt = Date.now()): number {
-  return Math.max(0, Math.ceil((trashedAt + PAPIERKORB_TAGE * TAG_MS - jetzt) / TAG_MS))
-}
 
 export interface VaultViewProps {
   mode?: 'personal' | 'team'
@@ -301,8 +235,6 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const isBiometricsEnabled = personalStore.isBiometricsEnabled
   const isBiometricsSupported = personalStore.isBiometricsSupported
   const isDeviceAuthorized = personalStore.isDeviceAuthorized
-  const [cardUnlockTrigger, setCardUnlockTrigger] = useState(false)
-  const [cardAuthorizeTrigger, setCardAuthorizeTrigger] = useState(false)
 
   // Team-Tresor angleichen: Schlüsselstand überholt (Rotation lief anderswo)?
   // Dann lautlos mit der neuen Hülle neu öffnen. Der Gründer rotiert bei
@@ -439,24 +371,6 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     }
   }
 
-  const handleKarteStecken = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!team?.id) return
-    setTeamBusy(true)
-    try {
-      // Nur die Karte stecken: Sobald der private Tresor offen ist, richtet
-      // der Effekt oben den Team-Tresor von selbst ein.
-      const okPersoenlich = await personalStore.unlock(masterPasswordInput)
-      if (!okPersoenlich) {
-        toast.error(personalStore.unlockError || t('mss.vault.falschesPasswort'))
-        return
-      }
-      setMasterPasswordInput('')
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
   const handleTeamRotate = async () => {
     if (!team?.id || rotBusy) return
     setRotBusy(true)
@@ -490,9 +404,6 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const activeSaveHint = async (hintText: string) => {
     await personalStore.saveHint(hintText)
   }
-
-  // Ersteinrichtung
-  const [skipHintSetup, setSkipHintSetup] = useState(false)
 
   const [ansicht, setAnsicht] = useState<Ansicht>('uebersicht')
   const [filter, setFilter] = useState<TresorFilter>('alle')
@@ -541,16 +452,12 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
 
   // UI-Zustände für Sperre & Ersteinrichtung
   const [isSetupMode, setIsSetupMode] = useState(!isInitialized)
-  const [zuruecksetzen, setZuruecksetzen] = useState(false)
 
   useEffect(() => {
     if (isInitialized) {
       setIsSetupMode(false)
     }
   }, [isInitialized])
-  const [masterPasswordInput, setMasterPasswordInput] = useState('')
-  const [confirmPasswordInput, setConfirmPasswordInput] = useState('')
-  const [hintInput, setHintInput] = useState('')
   const [isRequestingHint, setIsRequestingHint] = useState(false)
 
   // Feedback für kopierte Felder
@@ -1121,8 +1028,6 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       .sort((a, b) => a.service.localeCompare(b.service))
   }, [searchedItems, favoriteItems, recentItems, ansicht])
 
-  const ModalBrandIcon = getBrandIcon(modalService, modalUrl)
-
   const ansichtsTitel =
     ansicht === 'uebersicht'
       ? t('mss.vault.dashboard.uebersicht')
@@ -1156,731 +1061,69 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     dateien: t('mss.vault.dashboard.filterDateien'),
   }
 
-  // ── 0. TEAM-TRESOR: ZUTRITT VERWEHRT (Schranke bei fehlender Berechtigung) ──
   const hasVaultAccess = !isTeam || (team?.can_access_vault !== false && teamStore.canAccessVault !== false)
-  if (isTeam && !hasVaultAccess) {
+  if ((isTeam && !hasVaultAccess) || (isTeam && !isInitialized) || !isUnlocked) {
     return (
-      <div className="flex h-full w-full overflow-y-auto p-4">
-        <div className="my-auto mx-auto w-full max-w-sm p-6 space-y-4 rounded-2xl bg-surface-container border border-status-destructive/30 shadow-xl text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-status-destructive/10 text-status-destructive border border-status-destructive/30">
-            <Lock className="h-7 w-7" />
-          </div>
-          <div className="space-y-1.5">
-            <h2 className="text-base font-bold text-on-surface">{t('teams.vaultAccessDenied')}</h2>
-            <p className="text-xs text-on-surface-variant leading-relaxed">
-              {t('teams.vaultAccessDeniedDesc')}
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── 0. TEAM-TRESOR: SETUP & ENTSPERREN ──
-  if (isTeam && !isInitialized) {
-    if (!isOwner) {
-      return (
-        <div className="flex h-full w-full overflow-y-auto p-4">
-          <div className="my-auto mx-auto msm-card p-8 text-center space-y-3 max-w-md">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary mx-auto">
-              <Lock className="h-6 w-6" />
-            </div>
-            <h2 className="text-base font-semibold text-on-surface">{t('teams.vaultNotSetup')}</h2>
-            <p className="text-sm text-on-surface-variant max-w-md mx-auto">{t('teams.vaultNotSetupDesc')}</p>
-          </div>
-        </div>
-      )
-    }
-
-    // Kein Team-Passwort mehr: Der Schlüssel ist Zufall und liegt pro Mitglied
-    // verpackt auf dem Server. Der Gründer klickt nichts — sobald die Karte
-    // steckt, läuft die Einrichtung von selbst; hier bleibt nur Warten,
-    // Karte-Stecken oder (bei Fehlschlag) Wiederholen.
-    const karteSteckt = personalStore.isUnlocked
-    return (
-      <div className="flex h-full w-full overflow-y-auto p-4">
-        <div className="my-auto mx-auto w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
-          <div className="text-center space-y-1.5">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
-              <ShieldCheck className="h-6 w-6" />
-            </div>
-            <h2 className="text-base font-bold text-on-surface">{t('teams.vaultSetup')}</h2>
-            <p className="text-xs text-on-surface-variant">{t('teams.vaultSetupDesc')}</p>
-          </div>
-
-          {unlockError ? (
-            <div className="space-y-3.5">
-              <div className="rounded-xl bg-status-destructive/15 border border-status-destructive/30 p-2.5 text-xs text-status-destructive">
-                {unlockError}
-              </div>
-              <Button
-                type="button"
-                onClick={() => setSetupVersuch((v) => v + 1)}
-                disabled={teamBusy}
-                className="w-full"
-              >
-                {teamBusy ? (
-                  <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
-                ) : (
-                  <RotateCcw className="h-4 w-4 mr-1.5" />
-                )}
-                {t('common.retry')}
-              </Button>
-            </div>
-          ) : !karteSteckt ? (
-            <form onSubmit={handleKarteStecken} className="space-y-3.5">
-              <div className="space-y-1.5">
-                <p className="text-xs text-on-surface-variant">{t('teams.vaultSetupBrauchtKarte')}</p>
-                <PasswordInput
-                  id="tresor-team-karte-master"
-                  label={t('mss.vault.masterPasswort')}
-                  value={masterPasswordInput}
-                  onChange={(e) => setMasterPasswordInput(e.target.value)}
-                  placeholder={t('mss.vault.masterPasswort')}
-                  autoComplete="current-password"
-                  autoFocus
-                  required
-                />
-              </div>
-
-              <Button
-                type="submit"
-                disabled={teamBusy || !masterPasswordInput}
-                className="w-full"
-              >
-                {teamBusy ? (
-                  <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
-                ) : (
-                  <Unlock className="h-4 w-4 mr-1.5" />
-                )}
-                {t('mss.vault.entsperren')}
-              </Button>
-            </form>
-          ) : (
-            <div role="status" className="flex flex-col items-center gap-2 py-2">
-              <RefreshCw className="h-5 w-5 animate-spin text-primary" />
-              <p className="text-xs text-on-surface-variant">{t('mss.vault.richteEin')}</p>
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // ── 1. ERSTEINRICHTUNG (NUR wenn Ersteinrichtungs-Modus aktiv) ──
-  if (!isUnlocked && isSetupMode) {
-    const canSubmitSetup =
-      masterPasswordInput.length >= MASTER_PASSWORT_MINDESTLAENGE &&
-      masterPasswordInput === confirmPasswordInput &&
-      (hintInput.trim().length > 0 || skipHintSetup) &&
-      !isUnlocking
-
-    return (
-      <div className="flex h-full w-full overflow-y-auto p-4">
-        <div className="my-auto mx-auto w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
-          <div className="text-center space-y-1.5">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
-              <KeyRound className="h-6 w-6" />
-            </div>
-            <h2 className="text-base font-bold text-on-surface">
-              {t('mss.vault.einrichtenTitel')}
-            </h2>
-          </div>
-
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault()
-              if (!canSubmitSetup) return
-              const ok = await personalStore.initializeVault(masterPasswordInput)
-              if (ok) {
-                if (hintInput.trim()) {
-                  void personalStore.saveHint(hintInput)
-                }
-                setMasterPasswordInput('')
-                setConfirmPasswordInput('')
-                setHintInput('')
-                setSkipHintSetup(false)
-                setIsSetupMode(false)
-                toast.success(t('mss.vault.eingerichtet'))
-              }
-            }}
-            className="space-y-3.5"
-          >
-            <PasswordInput
-              id="tresor-neues-master"
-              label={t('mss.vault.neuesMasterPasswort')}
-              value={masterPasswordInput}
-              onChange={(e) => setMasterPasswordInput(e.target.value)}
-              placeholder={t('mss.vault.mindestlaenge', { anzahl: MASTER_PASSWORT_MINDESTLAENGE })}
-              autoComplete="new-password"
-              autoFocus
-            />
-
-            <div>
-              <PasswordInput
-                id="tresor-master-wiederholen"
-                label={t('mss.vault.passwortWiederholen')}
-                value={confirmPasswordInput}
-                onChange={(e) => setConfirmPasswordInput(e.target.value)}
-                placeholder={t('mss.vault.erneutEingeben')}
-                autoComplete="new-password"
-              />
-
-              {confirmPasswordInput.length > 0 && (
-                <div className="mt-1 text-label-sm">
-                  {masterPasswordInput === confirmPasswordInput ? (
-                    <span className="flex items-center gap-1 text-status-success">
-                      <Check className="h-3 w-3" /> {t('mss.vault.stimmtUeberein')}
-                    </span>
-                  ) : (
-                    <span className="text-status-destructive">{t('mss.vault.stimmtNichtUeberein')}</span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Passwort-Hinweis (Pflicht / Optionale Ablehnung) */}
-            <div className="space-y-1.5 pt-1 border-t border-outline-variant/20">
-              <div className="flex flex-wrap items-center justify-between gap-x-2">
-                <label htmlFor="tresor-hinweis-neu" className="block text-label-sm font-medium text-on-surface">
-                  {t('mss.vault.hinweisBezeichnung')} {!skipHintSetup && <span className="text-primary font-bold">*</span>}
-                </label>
-                <span className="text-label-sm text-on-surface-variant">{t('mss.vault.hinweisWozu')}</span>
-              </div>
-              <Input
-                id="tresor-hinweis-neu"
-                type="text"
-                disabled={skipHintSetup}
-                value={skipHintSetup ? '' : hintInput}
-                onChange={(e) => setHintInput(e.target.value)}
-                placeholder={skipHintSetup ? t('mss.vault.hinweisAbgelehnt') : t('mss.vault.hinweisPlatzhalter')}
-              />
-
-              <label className="flex items-center gap-2 cursor-pointer pt-0.5 text-label-sm text-on-surface-variant hover:text-on-surface">
-                <Checkbox
-                  checked={skipHintSetup}
-                  onCheckedChange={(gesetzt) => {
-                    setSkipHintSetup(gesetzt)
-                    if (gesetzt) setHintInput('')
-                  }}
-                />
-                <span>{t('mss.vault.ohneHinweisFortfahren')}</span>
-              </label>
-            </div>
-
-            {unlockError && (
-              <div className="rounded-xl bg-status-destructive/15 border border-status-destructive/30 p-2.5 text-xs text-status-destructive">
-                {unlockError}
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              disabled={!canSubmitSetup}
-              className="w-full bg-primary text-on-primary hover:bg-primary-hover py-2 text-xs font-medium"
-            >
-              {isUnlocking
-                ? t('mss.vault.richteEin')
-                : !hintInput.trim() && !skipHintSetup && masterPasswordInput.length >= MASTER_PASSWORT_MINDESTLAENGE && masterPasswordInput === confirmPasswordInput
-                  ? t('mss.vault.hinweisNoetig')
-                  : t('mss.vault.einrichten')}
-            </Button>
-          </form>
-
-          <div className="text-center pt-1">
-            <Button
-              fingerziel
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setIsSetupMode(false)
-                setMasterPasswordInput('')
-                setConfirmPasswordInput('')
-              }}
-              className="text-primary"
-            >
-              {t('mss.vault.bereitsEingerichtet')}
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── 2. ENTSPERREN MIT MAUNTING CARD ──
-  if (!isUnlocked) {
-    return (
-      <TageszeitKulisse>
-      <div className="flex h-full w-full flex-col overflow-y-auto">
-        <div className="my-auto mx-auto flex w-full max-w-xl flex-col items-center gap-6 px-4 py-6 sm:px-6">
-          {zuruecksetzen ? (
-            <div className="w-full max-w-sm p-6 space-y-5 rounded-2xl bg-surface-container border border-outline-variant/30 shadow-xl">
-              <TresorZuruecksetzen
-                isTeam={isTeam}
-                teamId={team?.id}
-                onAbbrechen={() => setZuruecksetzen(false)}
-                onFertig={() => {
-                  setZuruecksetzen(false)
-                  if (isTeam && team?.id) {
-                    void teamStore.loadStatus(team.id)
-                    // Nach dem Zurücksetzen richtet sich der Tresor neu ein.
-                    setSetupVersuch((v) => v + 1)
-                  } else {
-                    setIsSetupMode(true)
-                  }
-                }}
-              />
-            </div>
-          ) : (
-            <>
-              {/* Header */}
-              <div className="text-center space-y-2">
-                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20 shadow-sm backdrop-blur-md">
-                  <ShieldCheck className="h-6 w-6" />
-                </div>
-                <span className="mx-auto inline-flex items-center gap-1.5 rounded-full border border-outline-variant/25 bg-surface-container/70 px-2.5 py-0.5 text-label-sm font-semibold text-on-surface-variant backdrop-blur-md">
-                  <Lock className="h-3 w-3" aria-hidden="true" />
-                  {t('mss.vault.sperre.marke')}
-                </span>
-                <h1 className="text-lg font-bold text-on-surface sm:text-xl">
-                  {isTeam ? team?.name || t('teams.vaultUnlock') : t('mss.vault.titelManager')}
-                </h1>
-                <p className="text-xs text-on-surface-variant max-w-md">
-                  {!isDeviceAuthorized && isInitialized
-                    ? t('mss.card.vaultNeedsAuthorization', 'Dieses Gerät ist noch nicht für deine Maunting Card freigeschaltet. Bitte bestätige das Gerät einmalig.')
-                    : isTeam
-                      ? t('teams.vaultUnlockDesc')
-                      : t('mss.vault.sperre.untertitel')}
-                </p>
-              </div>
-
-              {/* Maunting Card als Tresor-Schloss */}
-              <div className="w-full flex justify-center">
-                <MauntingCard
-                  className="w-full"
-                  unlockOverride={activeUnlock}
-                  externalUnlockTrigger={cardUnlockTrigger}
-                  externalAuthorizeTrigger={cardAuthorizeTrigger}
-                  onExternalUnlockHandled={() => setCardUnlockTrigger(false)}
-                  onExternalAuthorizeHandled={() => setCardAuthorizeTrigger(false)}
-                  onUnlockSuccess={() => {
-                    toast.success(t('mss.vault.entsperrt'))
-                  }}
-                  onAuthorizeSuccess={() => {
-                    toast.success(t('mss.card.authorizedErfolg', 'Gerät erfolgreich autorisiert'))
-                  }}
-                />
-              </div>
-
-              {/* Aktionsleiste unter der Karte */}
-              <div className="w-full max-w-sm flex flex-col items-center space-y-3">
-                {!isDeviceAuthorized && isInitialized ? (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={() => setCardAuthorizeTrigger(true)}
-                    className="w-full py-2.5 flex items-center justify-center gap-2 text-xs font-semibold shadow-md"
-                  >
-                    <Shield className="h-4 w-4" />
-                    <span>{t('mss.card.actionAuthorize', 'Gerät autorisieren')}</span>
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      type="button"
-                      variant="primary"
-                      onClick={async () => {
-                        // Steckt die Karte schon, öffnet der Team-Tresor direkt per
-                        // Schlüsselhülle — sonst fragt erst der Karten-Dialog die PIN ab.
-                        if (isTeam && team?.id && personalStore.isUnlocked) {
-                          if (teamBusy) return
-                          setTeamBusy(true)
-                          try {
-                            const ok = await teamStore.unlock(team.id)
-                            if (ok) {
-                              toast.success(t('mss.vault.entsperrt'))
-                            }
-                          } finally {
-                            setTeamBusy(false)
-                          }
-                          return
-                        }
-                        setCardUnlockTrigger(true)
-                      }}
-                      disabled={isTeam ? teamBusy : isUnlocking}
-                      className="w-full py-2.5 flex items-center justify-center gap-2 text-xs font-semibold shadow-md"
-                    >
-                      {(isTeam ? teamBusy : isUnlocking) ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                          <span>{t('mss.vault.entschluessle')}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Unlock className="h-4 w-4" />
-                          <span>{t('mss.vault.entsperren')}</span>
-                        </>
-                      )}
-                    </Button>
-
-                    {isBiometricsEnabled && isBiometricsSupported && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={async () => {
-                          const isBusy = isTeam ? teamBusy : isUnlocking
-                          if (isBusy) return
-                          // Ein Fingerabdruck für beide: Erst die Karte per Biometrie
-                          // auf, dann öffnet die Hülle den Team-Tresor.
-                          const ok = isTeam && team
-                            ? (await personalStore.unlockWithBiometrics()) && await teamStore.unlock(team.id)
-                            : await personalStore.unlockWithBiometrics()
-                          if (ok) {
-                            toast.success(t('mss.vault.entsperrtBiometrie'))
-                          }
-                        }}
-                        disabled={isTeam ? teamBusy : isUnlocking}
-                        className="w-full flex items-center justify-center gap-2 py-2 text-xs border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
-                      >
-                        <Fingerprint className="h-4 w-4" />
-                        <span>{t('mss.vault.mitFingerabdruck')}</span>
-                      </Button>
-                    )}
-
-                    {!isTeam && isAndroid && isDeviceAuthorized && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => window.dispatchEvent(new Event('msm:open-wallet'))}
-                        disabled={isUnlocking}
-                        className="w-full flex items-center justify-center gap-2 py-2 text-xs border border-outline-variant/40 bg-surface-container-high/70 text-on-surface hover:border-primary/40 hover:text-primary"
-                      >
-                        <QrCode className="h-4 w-4 text-primary" />
-                        <span>{t('mss.vault.walletModusOeffnen', 'Smartcard-Wallet öffnen')}</span>
-                      </Button>
-                    )}
-                  </>
-                )}
-
-                {isTeam && teamStore.needsSlot && (
-                  <div className="w-full rounded-xl bg-primary/10 border border-primary/30 p-2.5 text-xs text-on-surface text-center">
-                    {t('teams.vaultWartetAufFreischaltung')}
-                  </div>
-                )}
-
-                {unlockError && (
-                  <div className="w-full rounded-xl bg-status-destructive/15 border border-status-destructive/30 p-2.5 text-xs text-status-destructive text-center">
-                    {unlockError}
-                  </div>
-                )}
-
-                {/* Sekundäre Aktionen: Hinweis anfordern, Einrichten, Zurücksetzen */}
-                <div className="flex flex-col items-center gap-1.5 pt-1">
-                  {!isTeam && activeHasHint && (
-                    <Button
-                      fingerziel
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleRequestHint}
-                      disabled={isRequestingHint}
-                      className="text-on-surface-variant hover:text-primary text-xs"
-                    >
-                      <HelpCircle className="h-3.5 w-3.5 mr-1" />
-                      <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.hinweisPerMail')}</span>
-                    </Button>
-                  )}
-
-                  {!isTeam && !isInitialized && (
-                    <Button
-                      fingerziel
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setIsSetupMode(true)
-                        setMasterPasswordInput('')
-                      }}
-                      className="text-on-surface-variant hover:text-primary text-xs"
-                    >
-                      {t('mss.vault.neuenTresorEinrichten')}
-                    </Button>
-                  )}
-
-                  {isInitialized && isOwner && (
-                    <Button
-                      fingerziel
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setZuruecksetzen(true)
-                        setMasterPasswordInput('')
-                      }}
-                      className="mt-1 border border-status-destructive/25 bg-status-destructive/10 text-xs text-status-destructive/90 backdrop-blur-md hover:border-status-destructive/45 hover:bg-status-destructive/15 hover:text-status-destructive"
-                    >
-                      <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                      {t('mss.vault.zuruecksetzen.link')}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-      </TageszeitKulisse>
+      <VaultGateScreen
+        isTeam={isTeam}
+        team={team}
+        hasVaultAccess={hasVaultAccess}
+        isInitialized={isInitialized}
+        isOwner={isOwner}
+        isUnlocked={isUnlocked}
+        isUnlocking={isUnlocking}
+        isSetupMode={isSetupMode}
+        onSetupModeChange={setIsSetupMode}
+        unlockError={unlockError}
+        teamBusy={teamBusy}
+        onTeamBusyChange={setTeamBusy}
+        personalUnlocked={personalStore.isUnlocked}
+        personalUnlock={personalStore.unlock}
+        personalUnlockError={personalStore.unlockError}
+        personalInitializeVault={personalStore.initializeVault}
+        personalSaveHint={personalStore.saveHint}
+        personalUnlockWithBiometrics={personalStore.unlockWithBiometrics}
+        teamUnlock={teamStore.unlock}
+        teamLoadStatus={teamStore.loadStatus}
+        teamNeedsSlot={teamStore.needsSlot}
+        isBiometricsEnabled={isBiometricsEnabled}
+        isBiometricsSupported={isBiometricsSupported}
+        isDeviceAuthorized={isDeviceAuthorized}
+        activeUnlock={activeUnlock}
+        activeHasHint={activeHasHint}
+        isRequestingHint={isRequestingHint}
+        onRequestHint={handleRequestHint}
+        onSetupRetry={() => setSetupVersuch((v) => v + 1)}
+      />
     )
   }
 
   // ── HILFSKOMPONENTE: ZEILE IN LISTE / TABELLE ──
-  const renderItemRow = (item: VaultItem) => {
-    const istDatei = !istPasswortKategorie(item.category)
-    const ItemBrand =
-      item.category === 'ordner'
-        ? Folder
-        : item.category === 'album'
-          ? Images
-          : item.zahlung
-            ? item.zahlung.art === 'konto' ? Landmark : CreditCard
-            : istDatei
-              ? FileIcon
-              : getBrandIcon(item.service, item.url)
-    const isRevealed = revealedPasswordId === item.id
-    const itemTotp = totpCodes[item.id]
-
-    return (
-      <div
-        key={item.id}
-        className="group flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl bg-surface-container hover:bg-surface-container-high border border-outline-variant/20 transition-all shadow-sm"
-      >
-        {/* Logo, Dienst, Benutzer */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <ZeilenBild item={item} Symbol={ItemBrand} />
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-semibold text-on-surface truncate">
-                {item.service}
-              </span>
-              {item.url && (
-                <a
-                  href={item.url.startsWith('http') ? item.url : `https://${item.url}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={t('mss.vault.seiteOeffnen', { name: item.service })}
-                  className="text-on-surface-variant hover:text-primary transition-colors"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              )}
-              {formatTransferBadge(item) && (
-                <span className="inline-flex items-center px-1.5 py-0.5 text-label-sm font-medium rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
-                  {formatTransferBadge(item)}
-                </span>
-              )}
-            </div>
-
-            {istDatei ? (
-              <div className="mt-0.5 text-label-sm text-on-surface-variant">
-                {item.zahlung
-                  ? verdeckt(item.zahlung)
-                  : item.category === 'ordner'
-                  ? t('mss.vault.dateien.ordner')
-                  : item.album
-                    ? t('mss.vault.fotos.album', { count: item.album.eintraege.length })
-                    : item.datei
-                      ? formatBytes(item.datei.original.echt)
-                      : ''}
-              </div>
-            ) : (
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="text-label-sm text-on-surface-variant truncate font-mono">
-                {item.username || '—'}
-              </span>
-              {item.username && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  fingerziel
-                  onClick={() => void handleCopy(item.username, `user-${item.id}`, item.id)}
-                  className="text-on-surface-variant hover:text-on-surface"
-                  aria-label={t('mss.vault.benutzernameKopieren')}
-                >
-                  {copiedIdField === `user-${item.id}` ? (
-                    <Check className="h-3 w-3 text-status-success" />
-                  ) : (
-                    <Copy className="h-3 w-3" />
-                  )}
-                </Button>
-              )}
-            </div>
-            )}
-          </div>
-        </div>
-
-        {/* Schnell-Aktionen (Passwort & 2FA) */}
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          {item.password && (
-            <div className="flex items-center rounded-lg bg-surface-container-low border border-outline-variant/20 px-2 py-0.5 gap-1 font-mono text-xs">
-              <span className="text-on-surface select-none">
-                {isRevealed ? item.password : '••••••••'}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                fingerziel
-                onClick={() => handleToggleRevealPassword(item.id)}
-                aria-label={t(isRevealed ? 'common.hidePassword' : 'common.showPassword')}
-                aria-pressed={isRevealed}
-                className="text-on-surface-variant hover:text-on-surface"
-              >
-                {isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                fingerziel
-                onClick={() => void handleCopy(item.password, `pwd-${item.id}`, item.id)}
-                className="text-primary hover:text-primary-hover"
-                aria-label={t('mss.vault.passwortKopieren')}
-              >
-                {copiedIdField === `pwd-${item.id}` ? (
-                  <Check className="h-3.5 w-3.5 text-status-success" />
-                ) : (
-                  <Copy className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            </div>
-          )}
-
-          {item.totpSecret && itemTotp && (
-            itemTotp === 'FEHLER' ? (
-              <div className="flex items-center rounded-lg bg-status-destructive/10 border border-status-destructive/20 px-2 py-0.5 gap-1 font-mono text-xs">
-                <span className="text-label-sm text-status-destructive font-semibold">2FA</span>
-                <span className="text-status-destructive font-medium text-label-sm">{t('mss.vault.ungueltigesSecret')}</span>
-              </div>
-            ) : (
-              <div className="flex items-center rounded-lg bg-status-success/10 border border-status-success/20 px-2 py-0.5 gap-1 font-mono text-xs">
-                <span className="text-label-sm text-status-success font-semibold">2FA</span>
-                <span className="text-status-success font-bold tracking-wider">
-                  {itemTotp.length === 6 ? `${itemTotp.slice(0, 3)} ${itemTotp.slice(3)}` : itemTotp}
-                </span>
-                <span className="text-label-sm text-status-success/70">({totpRemaining}s)</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  fingerziel
-                  onClick={() => void handleCopy(itemTotp, `totp-${item.id}`, item.id)}
-                  className="text-status-success hover:text-status-success/80"
-                  aria-label={t('mss.vault.codeKopieren')}
-                >
-                  {copiedIdField === `totp-${item.id}` ? (
-                    <Check className="h-3.5 w-3.5 text-status-success" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              </div>
-            )
-          )}
-
-          {ansicht === 'papierkorb' ? (
-            <div className="flex items-center gap-1 border-l border-outline-variant/20 pl-1.5">
-              {item.trashedAt && (
-                <span className="text-label-sm text-on-surface-variant">
-                  {t('mss.vault.nochTage', { count: restTageImPapierkorb(item.trashedAt) })}
-                </span>
-              )}
-              <Button
-                fingerziel
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => void handleRestoreItem(item)}
-                className="text-xs px-2 py-1 text-primary"
-              >
-                <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                {t('mss.vault.wiederherstellen')}
-              </Button>
-              <Button
-                fingerziel
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => void handleDeleteItem(item)}
-                className="text-xs px-2 py-1 text-status-destructive hover:bg-status-destructive/10"
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                {t('mss.vault.endgueltigLoeschen')}
-              </Button>
-            </div>
-          ) : (
-          /* Favorit & Edit */
-          <div className="flex items-center gap-0.5 border-l border-outline-variant/20 pl-1.5">
-            {ansicht === 'archiv' && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                fingerziel
-                onClick={() => void handleArchiv(item, false)}
-                aria-label={t('mss.vault.ausArchiv')}
-                className="text-on-surface-variant hover:text-primary"
-              >
-                <ArchiveRestore className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {!istDatei && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              fingerziel
-              onClick={() => void activeToggleFavorite(item.id)}
-              aria-label={t(item.isFavorite ? 'mss.vault.favoritEntfernen' : 'mss.vault.favoritSetzen', { name: item.service })}
-              aria-pressed={!!item.isFavorite}
-              className={`${
-                item.isFavorite
-                  ? 'text-status-warning hover:text-status-warning/80'
-                  : 'text-on-surface-variant hover:text-status-warning'
-              }`}
-            >
-              <Star className={`h-3.5 w-3.5 ${item.isFavorite ? 'fill-current' : ''}`} />
-            </Button>
-
-            )}
-            {!istDatei && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              fingerziel
-              onClick={() => {
-                if (item.category === 'secure_note') {
-                  setNotizBearbeitet(item)
-                  setNotizDialogOffen(true)
-                } else {
-                  openEditEntryModal(item)
-                }
-              }}
-              aria-label={t('mss.vault.eintragBearbeiten', { name: item.service })}
-              className="text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest"
-            >
-              <Edit2 className="h-3.5 w-3.5" />
-            </Button>
-            )}
-          </div>
-          )}
-        </div>
-      </div>
-    )
-  }
+  const renderItemRow = (item: VaultItem) => (
+    <VaultItemRow
+      key={item.id}
+      item={item}
+      ansicht={ansicht}
+      isRevealed={revealedPasswordId === item.id}
+      totpCode={totpCodes[item.id]}
+      totpRemaining={totpRemaining}
+      copiedIdField={copiedIdField}
+      onCopy={handleCopy}
+      onToggleRevealPassword={handleToggleRevealPassword}
+      onRestore={handleRestoreItem}
+      onDelete={handleDeleteItem}
+      onArchive={handleArchiv}
+      onToggleFavorite={activeToggleFavorite}
+      onEdit={(target) => {
+        if (target.category === 'secure_note') {
+          setNotizBearbeitet(target)
+          setNotizDialogOffen(true)
+        } else {
+          openEditEntryModal(target)
+        }
+      }}
+    />
+  )
 
   // ── 3. HAUPTANSICHT ──
   return (
@@ -1922,231 +1165,46 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      {/* KOPFZEILE */}
-      <div className="flex items-center justify-between border-b border-outline-variant/20 bg-surface-container px-4 py-2.5 backdrop-blur-xl">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
-            <Shield className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-xs font-bold text-on-surface">{ansichtsTitel}</h1>
-            <p className="truncate text-label-sm text-on-surface-variant">
-              {isTeam ? (team?.name ? `${team.name} · ${t('teams.vault')}` : t('teams.vault')) : t('mss.vault.titelManager')}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1">
-          {/* Neue Einträge gibt es nur im Tresor und auf der Übersicht; Archiv und Papierkorb nehmen nur auf, was schon da ist. */}
-          {(ansicht === 'tresor' || ansicht === 'uebersicht') && (
-          <Button
-            fingerziel
-            onClick={() => {
-              if (ansicht === 'tresor' && filter === 'notizen') {
-                setNotizBearbeitet(null)
-                setNotizDialogOffen(true)
-              } else {
-                openNewEntryModal()
-              }
-            }}
-            aria-label={t('mss.vault.neuerEintrag')}
-            className="hidden md:flex items-center gap-1 bg-primary text-on-primary hover:bg-primary-hover shadow-sm px-2.5 py-1.5 text-xs font-medium"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>{t('mss.vault.neuerEintrag')}</span>
-          </Button>
-          )}
-
-          <Button
-            fingerziel
-            size="icon"
-            variant="ghost"
-            onClick={() => void activeSyncWithServer()}
-            disabled={syncStatus === 'syncing'}
-            aria-label={t('mss.vault.abgleichen')}
-            className="text-on-surface-variant hover:text-on-surface"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-      </div>
-
-      {/* Kein Rotations-Banner: Der Gründer rotiert bei Bedarf automatisch. */}
-
-      {/* Unterbrochene Team-Rotation fortsetzen oder abbrechen */}
-      {isTeam && teamStore.rotationState === 'prepared' && (
-        <div role="alert" className="mx-4 mt-2.5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-status-warning/40 bg-status-warning/10 p-3 shadow-sm">
-          <p className="text-xs text-on-surface">{t('mss.vault.rotationFortsetzenHinweis')}</p>
-          <div className="flex gap-2">
-            {isOwner && (
-              <Button size="sm" onClick={() => setRotationOpen(true)} className="text-xs px-3 py-1.5">
-                {t('mss.vault.rotationFortsetzen')}
-              </Button>
-            )}
-            {isOwner && (
-              <Button size="sm" variant="ghost" onClick={() => team?.id && void teamStore.abortRotation(team.id)} className="text-xs px-3 py-1.5">
-                {t('mss.vault.rotationAbbrechen')}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Ohne diese Zeile sah man nicht, dass Gespeichertes noch nicht beim Server ist. */}
-      {!zurueckgesetzt && (syncStatus === 'offline' || syncStatus === 'error') && (
-        <div
-          role="status"
-          className={`flex items-center gap-2 border-b px-4 py-1.5 text-label-sm ${
-            syncStatus === 'error'
-              ? 'border-status-destructive/30 bg-status-destructive/10 text-status-destructive'
-              : 'border-outline-variant/20 bg-surface-container-low text-on-surface-variant'
-          }`}
-        >
-          {syncStatus === 'error' ? <ShieldAlert className="h-3.5 w-3.5 shrink-0" /> : <WifiOff className="h-3.5 w-3.5 shrink-0" />}
-          <span className="min-w-0 flex-1">{t(syncStatus === 'error' ? 'mss.vault.abgleichAbgelehnt' : 'mss.vault.offlineHinweis')}</span>
-          <Button fingerziel type="button" variant="ghost" size="sm" onClick={() => void activeSyncWithServer()} className="shrink-0">
-            {t('common.retry')}
-          </Button>
-        </div>
-      )}
-
-      {/* FILTER, SAMMLUNG UND SUCHE */}
-      {ansicht !== 'uebersicht' && (
-        <div className="flex flex-col gap-2 border-b border-outline-variant/15 bg-surface-container px-4 py-2">
-          {ansicht === 'tresor' && (
-            <div className="msm-ohne-rollbalken flex items-center gap-1.5 overflow-x-auto" role="group" aria-label={t('mss.vault.dashboard.werkzeuge')}>
-              {TRESOR_FILTER.map((eintrag) => {
-                const aktiv = filter === eintrag
-                return (
-                  <button
-                    key={eintrag}
-                    type="button"
-                    aria-pressed={aktiv}
-                    onClick={() => setFilter(eintrag)}
-                    className={`shrink-0 rounded-full border px-3 py-1 text-xs transition-colors ${
-                      aktiv
-                        ? 'border-primary/40 bg-primary/15 text-primary'
-                        : 'border-outline-variant/40 text-on-surface-variant hover:bg-surface-container'
-                    }`}
-                  >
-                    {filterLabels[eintrag]}
-                  </button>
-                )
-              })}
-              {ordnerFilter && (
-                <button
-                  type="button"
-                  onClick={() => setOrdnerFilter(null)}
-                  className="flex shrink-0 items-center gap-1.5 rounded-full border border-secondary/40 bg-secondary/15 px-3 py-1 text-xs text-secondary"
-                  aria-label={t('mss.vault.dashboard.alleAnsehen')}
-                >
-                  <Folder className="h-3 w-3" />
-                  <span className="max-w-[10rem] truncate">{ordnerFilterName}</span>
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          )}
-          <div className="relative w-full md:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-on-surface-variant" />
-            <Input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('common.search')}
-              aria-label={t('common.search')}
-              className="pl-8 pr-3"
-            />
-          </div>
-        </div>
-      )}
-
-      {zurueckgesetzt && (
-        <div role="alert" className="mx-4 mt-2.5 flex items-start gap-2.5 rounded-2xl border border-status-destructive/30 bg-status-destructive/10 p-3">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-status-destructive/20 text-status-destructive">
-            <ShieldAlert className="h-4 w-4" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-on-surface">{t('mss.vault.anderswoZurueckgesetzt')}</h3>
-            <p className="mt-0.5 text-label-sm text-on-surface-variant">{t('mss.vault.anderswoZurueckgesetztText')}</p>
-          </div>
-        </div>
-      )}
-
-      {/* HINWEIS-ERINNERUNG: Wenn nach dem Entsperren noch kein Hinweis hinterlegt ist (nur privat) */}
-      {!isTeam && activeHasHint === false && !dismissedHintReminder && (
-        <div className="mx-4 mt-2.5 p-3 rounded-2xl bg-status-warning/10 border border-status-warning/30 text-on-surface shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-status-warning/20 text-status-warning">
-                <KeyRound className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-xs font-bold text-on-surface">{t('mss.vault.keinHinweisHinterlegt')}</h3>
-                <p className="text-label-sm text-on-surface-variant mt-0.5">
-                  {t('mss.vault.hinweisErklaerungKurz')}
-                </p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              fingerziel
-              onClick={() => setDismissedHintReminder(true)}
-              className="text-on-surface-variant hover:text-on-surface"
-              aria-label={t('common.close')}
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault()
-              if (!editHintInput.trim() || isSavingHint) return
-              setIsSavingHint(true)
-              try {
-                await activeSaveHint(editHintInput.trim())
-                toast.success(t('mss.vault.hinweisHinterlegt'))
-                setEditHintInput('')
-              } catch {
-                toast.error(t('mss.vault.hinweisSpeichernFehlgeschlagen'))
-              } finally {
-                setIsSavingHint(false)
-              }
-            }}
-            className="mt-2.5 flex flex-wrap items-center gap-2"
-          >
-            <div className="min-w-[12rem] flex-1">
-              <Input
-                type="text"
-                value={editHintInput}
-                onChange={(e) => setEditHintInput(e.target.value)}
-                placeholder={t('mss.vault.hinweisPlatzhalterLang')}
-                aria-label={t('mss.vault.hinweisBezeichnung')}
-              />
-            </div>
-            <Button
-              type="submit"
-              disabled={!editHintInput.trim() || isSavingHint}
-              size="sm"
-              className="bg-status-warning hover:bg-status-warning/90 text-black font-semibold text-xs px-3 py-1.5 shrink-0"
-            >
-              {isSavingHint ? t('common.saving') : t('mss.vault.hinweisSpeichern')}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setDismissedHintReminder(true)}
-              className="text-xs text-on-surface-variant hover:text-on-surface px-2.5 py-1.5 shrink-0"
-            >
-              {t('mss.vault.spaeter')}
-            </Button>
-          </form>
-        </div>
-      )}
+      <VaultHeaderBereich
+        ansichtsTitel={ansichtsTitel}
+        isTeam={isTeam}
+        teamName={team?.name}
+        ansicht={ansicht}
+        filter={filter}
+        onFilterChange={setFilter}
+        filterLabels={filterLabels}
+        ordnerFilter={ordnerFilter}
+        ordnerFilterName={ordnerFilterName}
+        onClearOrdnerFilter={() => setOrdnerFilter(null)}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        onNewEntry={() => {
+          if (ansicht === 'tresor' && filter === 'notizen') {
+            setNotizBearbeitet(null)
+            setNotizDialogOffen(true)
+          } else {
+            openNewEntryModal()
+          }
+        }}
+        syncStatus={syncStatus}
+        onSyncWithServer={activeSyncWithServer}
+        showRotationPreparedBanner={isTeam && teamStore.rotationState === 'prepared'}
+        isOwner={isOwner}
+        onOpenRotation={() => setRotationOpen(true)}
+        onAbortRotation={() => {
+          if (team?.id) void teamStore.abortRotation(team.id)
+        }}
+        zurueckgesetzt={zurueckgesetzt}
+        activeHasHint={activeHasHint}
+        dismissedHintReminder={dismissedHintReminder}
+        onDismissHintReminder={() => setDismissedHintReminder(true)}
+        editHintInput={editHintInput}
+        onEditHintInputChange={setEditHintInput}
+        isSavingHint={isSavingHint}
+        onSavingHintChange={setIsSavingHint}
+        onSaveHint={activeSaveHint}
+        onClearEditHintInput={() => setEditHintInput('')}
+      />
 
       {/* ÜBERSICHT / LISTE */}
       {ansicht === 'uebersicht' ? (
@@ -2376,219 +1434,36 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       )}
 
       {/* ── 4. DIALOG: PASSWORT ANLEGEN / BEARBEITEN ── */}
-      <Dialog open={isModalOpen} onOpenChange={(offen) => !offen && void modalSchliessen()}>
-        <DialogContent className="max-w-md max-h-[90dvh]">
-          <DialogHeader className="px-4 py-3 pr-14">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface border border-outline-variant/20 p-1">
-                <ModalBrandIcon className="w-4 h-4" />
-              </div>
-              <DialogTitle className="text-sm">
-                {editingItemId ? t('common.edit') : t('mss.vault.neuerEintrag')}
-              </DialogTitle>
-            </div>
-          </DialogHeader>
-
-          <form onSubmit={handleModalSave} className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-              <Input
-                id="tresor-dienst"
-                label={t('mss.vault.dienstBezeichnung')}
-                type="text"
-                value={modalService}
-                onChange={(e) => setModalService(e.target.value)}
-                placeholder={t('mss.vault.dienstPlatzhalter')}
-                autoFocus
-                required
-              />
-
-              <Input
-                id="tresor-benutzer"
-                label={t('mss.vault.benutzernameBezeichnung')}
-                type="text"
-                value={modalUsername}
-                onChange={(e) => setModalUsername(e.target.value)}
-                placeholder={t('mss.vault.benutzernamePlatzhalter')}
-                autoComplete="off"
-              />
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label htmlFor="tresor-passwort" className="text-sm font-medium text-foreground">
-                    {t('common.password')}
-                  </label>
-                  <Button
-                    fingerziel
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      const newP = generateSecurePassword(20, true)
-                      setModalPassword(newP)
-                      debouncedLeakCheck(newP)
-                    }}
-                    className="text-primary"
-                  >
-                    <Zap className="h-3 w-3" />
-                    {t('mss.vault.generieren')}
-                  </Button>
-                </div>
-
-                <PasswordInput
-                  id="tresor-passwort"
-                  value={modalPassword}
-                  onChange={(e) => {
-                    setModalPassword(e.target.value)
-                    debouncedLeakCheck(e.target.value)
-                  }}
-                  placeholder={t('common.password')}
-                  autoComplete="new-password"
-                  className="font-mono"
-                  required
-                />
-
-                {leakCheckResult && leakCheckResult.checked && (
-                  <div className="mt-1" role="status">
-                    {leakCheckResult.isLeaked ? (
-                      <span className="flex items-center gap-1 text-label-sm text-status-destructive">
-                        <ShieldAlert className="h-3 w-3" />
-                        {t('mss.vault.leckGefunden', { count: leakCheckResult.count, anzahl: leakCheckResult.count.toLocaleString() })}
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-label-sm text-status-success">
-                        <ShieldCheck className="h-3 w-3" /> {t('mss.vault.keinLeck')}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label htmlFor="tresor-totp" className="text-sm font-medium text-foreground">
-                    {t('mss.vault.zweifaktorBezeichnung')}
-                  </label>
-                  <Button
-                    fingerziel
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowQrScanner(true)}
-                    className="text-primary"
-                  >
-                    <QrCode className="h-3 w-3" />
-                    {t('mss.vault.qr.scannen')}
-                  </Button>
-                </div>
-                <Input
-                  id="tresor-totp"
-                  type="text"
-                  value={modalTotpSecret}
-                  onChange={(e) => setModalTotpSecret(e.target.value.toUpperCase())}
-                  placeholder={t('mss.vault.zweifaktorPlatzhalter')}
-                  autoComplete="off"
-                  className="font-mono"
-                />
-              </div>
-
-              <div>
-                <span className="mb-1 block text-sm font-medium text-foreground">{t('mss.vault.dateien.ordner')}</span>
-                <Dropdown
-                  value={modalOrdner}
-                  onChange={setModalOrdner}
-                  options={ordnerOptionen}
-                  aria-label={t('mss.vault.dateien.ordner')}
-                  searchable={ordnerOptionen.length > 6}
-                />
-              </div>
-
-              <Textarea
-                id="tresor-notiz"
-                label={t('mss.vault.notizBezeichnung')}
-                rows={2}
-                value={modalNotes}
-                onChange={(e) => setModalNotes(e.target.value)}
-                placeholder={t('mss.vault.notizPlatzhalter')}
-              />
-            </div>
-
-            <DialogFooter className="flex flex-col gap-3 bg-transparent border-t border-outline-variant/20 p-4 w-full">
-              {editingItemId ? (
-                <div className="grid grid-cols-3 gap-2 w-full">
-                  <Button
-                    fingerziel
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-label={t('mss.vault.inPapierkorb')}
-                    onClick={() => {
-                      const item = items.find((i) => i.id === editingItemId)
-                      if (item) void handleTrashItem(item)
-                    }}
-                    className="w-full justify-center text-status-destructive hover:bg-status-destructive/10 text-xs px-2"
-                  >
-                    <Trash2 className="h-3.5 w-3.5 shrink-0 mr-1" />
-                    <span className="truncate">Papierkorb</span>
-                  </Button>
-                  <Button
-                    fingerziel
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-label={items.find((i) => i.id === editingItemId)?.archivedAt ? t('mss.vault.ausArchiv') : t('mss.vault.archivieren')}
-                    onClick={() => {
-                      const item = items.find((i) => i.id === editingItemId)
-                      if (item) void handleArchiv(item, !item.archivedAt)
-                    }}
-                    className="w-full justify-center text-on-surface-variant text-xs px-2"
-                  >
-                    {items.find((i) => i.id === editingItemId)?.archivedAt ? (
-                      <>
-                        <ArchiveRestore className="h-3.5 w-3.5 shrink-0 mr-1" />
-                        <span className="truncate">Aus Archiv</span>
-                      </>
-                    ) : (
-                      <>
-                        <Archive className="h-3.5 w-3.5 shrink-0 mr-1" />
-                        <span className="truncate">Archivieren</span>
-                      </>
-                    )}
-                  </Button>
-                  {!isTeam ? (
-                    <Button
-                      fingerziel
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-label={t('teams.transferToTeam')}
-                      onClick={() => {
-                        const item = items.find((i) => i.id === editingItemId)
-                        if (item) {
-                          setTransferItem(item)
-                          setTransferOpen(true)
-                        }
-                      }}
-                      className="w-full justify-center text-on-surface-variant hover:text-primary text-xs px-2"
-                    >
-                      <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 mr-1" />
-                      <span className="truncate">Übertragen</span>
-                    </Button>
-                  ) : (
-                    <div />
-                  )}
-                </div>
-              ) : null}
-
-              <div className="flex items-center justify-between w-full pt-1">
-                <Button type="button" variant="ghost" onClick={() => void modalSchliessen()}>
-                  {t('common.cancel')}
-                </Button>
-                <Button type="submit">{t('common.save')}</Button>
-              </div>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <VaultEntryModal
+        isOpen={isModalOpen}
+        onClose={modalSchliessen}
+        editingItem={editingItemId ? items.find((i) => i.id === editingItemId) : undefined}
+        isTeam={isTeam}
+        modalService={modalService}
+        onServiceChange={setModalService}
+        modalUsername={modalUsername}
+        onUsernameChange={setModalUsername}
+        modalPassword={modalPassword}
+        onPasswordChange={setModalPassword}
+        modalUrl={modalUrl}
+        modalTotpSecret={modalTotpSecret}
+        onTotpSecretChange={setModalTotpSecret}
+        modalOrdner={modalOrdner}
+        onOrdnerChange={setModalOrdner}
+        ordnerOptionen={ordnerOptionen}
+        modalNotes={modalNotes}
+        onNotesChange={setModalNotes}
+        leakCheckResult={leakCheckResult}
+        onLeakCheck={debouncedLeakCheck}
+        onOpenQrScanner={() => setShowQrScanner(true)}
+        onSubmit={handleModalSave}
+        onTrashItem={handleTrashItem}
+        onArchiveItem={handleArchiv}
+        onTransferItem={(item) => {
+          setTransferItem(item)
+          setTransferOpen(true)
+        }}
+      />
 
       {/* QR-Code Scanner */}
       <QrScannerModal
@@ -2598,128 +1473,31 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       />
 
       {/* Dialog: Passwort-Hinweis verwalten */}
-      <Dialog open={isHintModalOpen} onOpenChange={(offen) => !offen && void hinweisModalSchliessen()}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader className="px-5 py-4 pr-14">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <KeyRound className="h-4 w-4" />
-              </div>
-              <div>
-                <DialogTitle className="text-sm">{t('mss.vault.hinweisTitel')}</DialogTitle>
-                <p className="text-label-sm text-on-surface-variant">
-                  {activeHasHint ? t('mss.vault.hinweisVorhanden') : t('mss.vault.hinweisFehlt')}
-                </p>
-              </div>
-            </div>
-          </DialogHeader>
-
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault()
-              if (!editHintInput.trim() || isSavingHint) return
-              setIsSavingHint(true)
-              try {
-                await activeSaveHint(editHintInput.trim())
-                toast.success(t('mss.vault.hinweisGespeichert'))
-                setEditHintInput('')
-                setIsHintModalOpen(false)
-              } catch {
-                toast.error(t('mss.vault.hinweisSpeichernFehlgeschlagen'))
-              } finally {
-                setIsSavingHint(false)
-              }
-            }}
-          >
-            <div className="space-y-1 p-5">
-              <Input
-                id="tresor-hinweis"
-                label={activeHasHint ? t('mss.vault.hinweisAktualisieren') : t('mss.vault.hinweisAnlegen')}
-                type="text"
-                value={editHintInput}
-                onChange={(e) => setEditHintInput(e.target.value)}
-                placeholder={t('mss.vault.hinweisPlatzhalterLang')}
-                autoFocus
-              />
-              <p className="text-label-sm text-on-surface-variant/80 leading-relaxed">
-                {t('mss.vault.hinweisErklaerungLang')}
-              </p>
-            </div>
-
-            <DialogFooter className="flex-wrap justify-between">
-              {activeHasHint ? (
-                <Button
-                  fingerziel
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={isRequestingHint}
-                  onClick={() => void handleRequestHint()}
-                >
-                  <Mail className="h-3.5 w-3.5" />
-                  <span>{isRequestingHint ? t('mss.vault.sendeMail') : t('mss.vault.perMailTesten')}</span>
-                </Button>
-              ) : (
-                <div />
-              )}
-
-              <div className="flex items-center gap-1.5">
-                <Button type="button" variant="ghost" onClick={() => void hinweisModalSchliessen()}>
-                  {t('common.close')}
-                </Button>
-                <Button type="submit" disabled={!editHintInput.trim() || isSavingHint}>
-                  {isSavingHint ? t('common.saving') : t('common.save')}
-                </Button>
-              </div>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <VaultHintModal
+        isOpen={isHintModalOpen}
+        onClose={hinweisModalSchliessen}
+        activeHasHint={activeHasHint}
+        editHintInput={editHintInput}
+        onEditHintInputChange={setEditHintInput}
+        isSavingHint={isSavingHint}
+        onSavingHintChange={setIsSavingHint}
+        isRequestingHint={isRequestingHint}
+        onRequestHint={handleRequestHint}
+        onSaveHint={activeSaveHint}
+        onSavedSuccess={() => {
+          setEditHintInput('')
+          setIsHintModalOpen(false)
+        }}
+      />
 
       {/* Dialog: Team-Master-Passwort rotieren */}
       {isTeam && (
-        <Dialog open={rotationOpen} onOpenChange={setRotationOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader className="px-5 py-4">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-status-warning/20 text-status-warning">
-                  <RotateCcw className="h-4 w-4" />
-                </div>
-                <div>
-                  <DialogTitle className="text-sm font-semibold">{t('teams.vaultRotationTitle')}</DialogTitle>
-                  <p className="text-xs text-on-surface-variant">{t('teams.vaultRotationNotice')}</p>
-                </div>
-              </div>
-            </DialogHeader>
-
-            <div className="space-y-4 p-5">
-              <p className="text-xs text-on-surface-variant leading-relaxed">
-                {t('teams.vaultRotationConfirmDesc')}
-              </p>
-
-              <DialogFooter className="flex-wrap justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setRotationOpen(false)}
-                  disabled={rotBusy}
-                >
-                  {t('common.cancel')}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void handleTeamRotate()}
-                  disabled={rotBusy}
-                >
-                  {rotBusy ? <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-1.5" />}
-                  {t('teams.vaultRotateBtn')}
-                </Button>
-              </DialogFooter>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <VaultTeamRotationModal
+          isOpen={rotationOpen}
+          onOpenChange={setRotationOpen}
+          rotBusy={rotBusy}
+          onRotate={handleTeamRotate}
+        />
       )}
 
       {/* In Team-Tresor übertragen Modal */}
