@@ -332,12 +332,13 @@ export function FileEditorWorkspace({
     }
   }
 
+  const hasActiveTab = Boolean(activeTab)
   useEffect(() => {
-    if (!vollbild) return
+    if (!hasActiveTab) return
     const onKey = (event: KeyboardEvent) => shortcutRef.current(event)
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
-  }, [vollbild])
+  }, [hasActiveTab])
 
   const extensions = useMemo(() => {
     if (!activeTab) return []
@@ -394,7 +395,6 @@ export function FileEditorWorkspace({
 
   return (
     <section
-      onKeyDownCapture={vollbild ? undefined : (event) => shortcutRef.current(event.nativeEvent)}
       // Im Vollbild gilt nur der sichtbare Bereich: öffnet am Telefon die Tastatur, schrumpft der Editor
       // mit, statt unten samt Cursorzeile abgeschnitten zu werden.
       className={`flex h-full min-w-0 flex-1 flex-col bg-surface-container-lowest/55 ${vollbild ? 'min-h-0 max-h-[100dvh]' : 'min-h-[520px] lg:min-h-0'}`}
@@ -479,15 +479,18 @@ export function FileEditorWorkspace({
                     </Button>
                   </Kurzinfo>
                 )}
-                <Button variant="ghost" size="sm"
-                  type="button"
-                  onClick={() => (searchOpen ? closeSearch() : openSearch('find'))}
-                  className="flex w-8 items-center justify-center"
-                  aria-label={t('files.editor.searchAndReplace')}
-                  aria-pressed={searchOpen}
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
+                <Kurzinfo text={t('files.editor.searchAndReplace')}>
+                  <Button variant={searchOpen ? 'secondary' : 'ghost'} size="sm"
+                    type="button"
+                    onClick={() => (searchOpen ? closeSearch() : openSearch('find'))}
+                    className="inline-flex items-center gap-1.5 text-xs"
+                    aria-label={t('files.editor.searchAndReplace')}
+                    aria-pressed={searchOpen}
+                  >
+                    <Search className="h-4 w-4" />
+                    <span className="hidden sm:inline">{t('common.search')}</span>
+                  </Button>
+                </Kurzinfo>
                 {canWrite && (
                   <Button variant="secondary" size="sm"
                     type="button"

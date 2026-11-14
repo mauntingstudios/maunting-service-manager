@@ -274,6 +274,16 @@ describe('FileEditorWorkspace — Tastenkürzel', () => {
     expect(screen.queryByRole('textbox', { name: /Ersetzen durch/ })).toBeNull()
   })
 
+  it('fängt Strg+F auch im normalen Dateimanager im ganzen Dokument ab, wenn eine Datei offen ist', async () => {
+    render(<FileEditorWorkspace {...props()} />)
+    const ereignis = new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true })
+    document.body.dispatchEvent(ereignis)
+
+    expect(ereignis.defaultPrevented).toBe(true)
+    const suche = await screen.findByRole('textbox', { name: /Suchen/ })
+    await waitFor(() => expect(suche).toHaveFocus())
+  })
+
   it('fängt im Vollbild Strg+F im ganzen Dokument ab und zeigt den eigenen Ort', async () => {
     render(<FileEditorWorkspace {...props({ vollbild: true, ortLabel: 'Tresor / Notizen / liste.txt' })} />)
     expect(screen.getByText('Tresor / Notizen / liste.txt')).toBeInTheDocument()
