@@ -152,6 +152,42 @@ async def get_mod_details(
         raise HTTPException(status_code=500, detail="errors.steam_load_failed")
 
 
+@router.get("/workshop/mod/{publishedfileid}/dependencies")
+async def get_mod_dependencies(
+    publishedfileid: str,
+    server_id: int = Query(..., description="Server-ID zur Ermittlung der Steam App-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Resolve required Steam Workshop dependencies (Required Items) for a mod."""
+    clean_id = publishedfileid.strip()
+    if not clean_id.isdigit() or len(clean_id) > 20:
+        raise HTTPException(status_code=400, detail="Ungültige Workshop-ID")
+
+    workshop_id, _ = _resolve_steam_workshop_context(server_id, user, db)
+
+    try:
+        steam_service = await get_steam_service()
+        deps_data = await steam_service.get_mod_dependencies(
+            appid=workshop_id,
+            publishedfileid=clean_id,
+        )
+        if not deps_data:
+            raise HTTPException(status_code=404, detail="Mod nicht gefunden")
+
+        return {
+            "mod": _mod_to_dict(deps_data["mod"]),
+            "dependencies": [_mod_to_dict(dep) for dep in deps_data["dependencies"]],
+            "unavailable_ids": deps_data["unavailable_ids"],
+        }
+    except HTTPException:
+        raise
+    except SteamApiUnavailable as e:
+        raise _steam_api_error(e)
+    except Exception:
+        raise HTTPException(status_code=500, detail="errors.steam_load_failed")
+
+
 @router.get("/workshop/collection/{publishedfileid}")
 async def get_collection_details(
     publishedfileid: str,
@@ -210,4 +246,8 @@ def _mod_to_dict(mod: SteamModInfo) -> dict:
         "direct_url": mod.direct_url,
         "item_type": getattr(mod, "item_type", "mod"),
         "children_count": getattr(mod, "children_count", 0),
+        "dependencies_count": getattr(mod, "children_count", 0)
+        if getattr(mod, "item_type", "mod") != "collection"
+        else 0,
+        "child_ids": list(getattr(mod, "child_ids", []) or []),
     }

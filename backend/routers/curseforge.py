@@ -38,6 +38,74 @@ def _curseforge_api_error(exc: CurseForgeApiUnavailable) -> HTTPException:
     )
 
 
+_LOADER_NAMES: dict[int, str] = {
+    1: "forge",
+    4: "fabric",
+    5: "quilt",
+    6: "neoforge",
+}
+
+
+def _select_primary_curseforge_file(
+    files_raw: list[dict],
+    main_file_id: int | None = None,
+    *,
+    mod_loader_type: int | None = None,
+    game_version: str | None = None,
+    is_modpack: bool = False,
+) -> dict | None:
+    """Wählt die passendste CurseForge-Datei anhand Loader, Version oder mainFileId."""
+    dict_files = [f for f in files_raw if isinstance(f, dict)]
+    if not dict_files:
+        return None
+
+    loader_name = _LOADER_NAMES.get(mod_loader_type) if mod_loader_type is not None else None
+    ver_lower = game_version.lower() if game_version else None
+
+    if not is_modpack and (loader_name or ver_lower):
+        for require_ver in (True, False) if ver_lower else (False,):
+            for f in dict_files:
+                gv = [str(v).lower() for v in (f.get("gameVersions") or [])]
+                loader_ok = (loader_name is None) or (loader_name in gv)
+                ver_ok = (not require_ver) or (ver_lower in gv)
+                if loader_ok and ver_ok:
+                    return f
+
+    if main_file_id:
+        match = next((f for f in dict_files if f.get("id") == main_file_id), None)
+        if match is not None:
+            return match
+
+    return dict_files[0]
+
+
+def _extract_required_dep_ids(primary_file: dict | None, self_mod_id: int | str) -> list[int]:
+    """Extrahiert eindeutige Pflicht-Abhängigkeits-IDs (relationType 3 oder None) aus einer Datei."""
+    if not isinstance(primary_file, dict):
+        return []
+    try:
+        self_int = int(self_mod_id)
+    except (TypeError, ValueError):
+        self_int = -1
+
+    dep_ids: list[int] = []
+    seen: set[int] = set()
+    for dep in primary_file.get("dependencies") or []:
+        if not isinstance(dep, dict):
+            continue
+        dep_mod_id = dep.get("modId")
+        rel = dep.get("relationType")
+        if dep_mod_id and (rel in (None, 3)):
+            try:
+                dep_int = int(dep_mod_id)
+            except (TypeError, ValueError):
+                continue
+            if dep_int != self_int and dep_int not in seen:
+                seen.add(dep_int)
+                dep_ids.append(dep_int)
+    return dep_ids
+
+
 def _mod_to_dict(mod: CurseForgeModInfo, *, modpack_class_id: int | None = None) -> dict:
     """Konvertiert CurseForgeModInfo in das einheitliche ModBrowserItem-JSON."""
     raw_class_id = getattr(mod, "class_id", None)
@@ -50,6 +118,13 @@ def _mod_to_dict(mod: CurseForgeModInfo, *, modpack_class_id: int | None = None)
             and class_id_val == modpack_class_id
         )
     )
+    latest_files = getattr(mod, "latest_files", None) or []
+    primary = _select_primary_curseforge_file(
+        latest_files,
+        getattr(mod, "main_file_id", None),
+        is_modpack=is_modpack,
+    )
+    dep_ids = _extract_required_dep_ids(primary, getattr(mod, "publishedfileid", ""))
     return {
         "publishedfileid": mod.publishedfileid,
         "title": mod.title,
@@ -76,6 +151,7 @@ def _mod_to_dict(mod: CurseForgeModInfo, *, modpack_class_id: int | None = None)
         "allow_mod_distribution": bool(getattr(mod, "allow_mod_distribution", True)),
         "is_modpack": is_modpack,
         "item_type": "modpack" if is_modpack else "mod",
+        "dependencies_count": 0 if is_modpack else len(dep_ids),
     }
 
 
@@ -409,6 +485,136 @@ async def get_mod_details(
         raise HTTPException(status_code=500, detail="errors.curseforge_load_failed") from e
 
 
+async def _resolve_curseforge_mod_and_dependencies(
+    cf_service: Any,
+    server: Server,
+    plugin: Any,
+    game_id: str,
+    clean_id: str,
+    *,
+    include_transitive: bool = False,
+) -> dict[str, Any] | None:
+    """Löst Mod-Details, Dateien und erforderliche Abhängigkeiten (optional transitiv bis Tiefe 2) auf."""
+    mod = await cf_service.get_mod_details(clean_id)
+    if not mod:
+        return None
+
+    modpack_class_id = await _find_modpack_class_id_safe(cf_service, game_id)
+    mod_dict = _mod_to_dict(mod, modpack_class_id=modpack_class_id)
+    is_modpack = bool(mod_dict.get("is_modpack"))
+
+    files_raw = await cf_service.get_mod_files(clean_id)
+    if not files_raw and mod.latest_files:
+        files_raw = mod.latest_files
+
+    files_summary: List[dict] = []
+    for f in files_raw[:15]:
+        if not isinstance(f, dict):
+            continue
+        files_summary.append(
+            {
+                "id": f.get("id"),
+                "display_name": f.get("displayName") or f.get("fileName") or "",
+                "file_name": f.get("fileName") or "",
+                "file_date": f.get("fileDate"),
+                "file_length": int(f.get("fileLength") or 0),
+                "release_type": f.get("releaseType"),
+                "is_server_pack": bool(f.get("isServerPack")),
+                "server_pack_file_id": f.get("serverPackFileId"),
+                "game_versions": f.get("gameVersions") or [],
+            }
+        )
+
+    auto_loader, auto_ver, _ = _detect_game_modloader_and_version(server, plugin, game_id)
+    primary_file = _select_primary_curseforge_file(
+        files_raw,
+        getattr(mod, "main_file_id", None),
+        mod_loader_type=auto_loader,
+        game_version=auto_ver,
+        is_modpack=is_modpack,
+    )
+    direct_dep_ids = _extract_required_dep_ids(primary_file, clean_id)
+
+    dep_mod_map: dict[int, CurseForgeModInfo] = {}
+    sub_dep_map: dict[int, list[int]] = {}
+    if direct_dep_ids and hasattr(cf_service, "get_mods_by_ids"):
+        direct_mods = await cf_service.get_mods_by_ids(direct_dep_ids[:50])
+        for dep_mod in direct_mods:
+            try:
+                did = int(dep_mod.publishedfileid)
+            except (TypeError, ValueError):
+                continue
+            dep_mod_map[did] = dep_mod
+
+        if include_transitive:
+            level2_ids: list[int] = []
+            seen_level2: set[int] = {int(clean_id), *direct_dep_ids}
+            for did in direct_dep_ids:
+                dep_mod = dep_mod_map.get(did)
+                if not dep_mod:
+                    continue
+                dep_primary = _select_primary_curseforge_file(
+                    getattr(dep_mod, "latest_files", None) or [],
+                    getattr(dep_mod, "main_file_id", None),
+                    mod_loader_type=auto_loader,
+                    game_version=auto_ver,
+                    is_modpack=False,
+                )
+                sub_ids = _extract_required_dep_ids(dep_primary, did)
+                sub_dep_map[did] = sub_ids
+                for sid in sub_ids:
+                    if sid not in seen_level2 and len(dep_mod_map) + len(level2_ids) < 50:
+                        seen_level2.add(sid)
+                        level2_ids.append(sid)
+
+            if level2_ids:
+                level2_mods = await cf_service.get_mods_by_ids(level2_ids)
+                for dep_mod in level2_mods:
+                    try:
+                        dep_mod_map[int(dep_mod.publishedfileid)] = dep_mod
+                    except (TypeError, ValueError):
+                        continue
+
+    ordered_dependencies: List[dict] = []
+    unavailable_ids: List[str] = []
+    if include_transitive:
+        emitted: set[int] = set()
+        visiting: set[int] = {int(clean_id)}
+
+        def _visit(dep_int: int, depth: int) -> None:
+            if dep_int in emitted or dep_int in visiting or len(ordered_dependencies) >= 50:
+                return
+            visiting.add(dep_int)
+            if depth < 2:
+                for sub_int in sub_dep_map.get(dep_int, []):
+                    _visit(sub_int, depth + 1)
+            visiting.discard(dep_int)
+            emitted.add(dep_int)
+            dep_mod = dep_mod_map.get(dep_int)
+            if dep_mod:
+                ordered_dependencies.append(_mod_to_dict(dep_mod, modpack_class_id=modpack_class_id))
+            else:
+                unavailable_ids.append(str(dep_int))
+
+        for did in direct_dep_ids:
+            _visit(did, 1)
+    else:
+        for did in direct_dep_ids[:50]:
+            dep_mod = dep_mod_map.get(did)
+            if dep_mod:
+                ordered_dependencies.append(_mod_to_dict(dep_mod, modpack_class_id=modpack_class_id))
+            else:
+                unavailable_ids.append(str(did))
+
+    return {
+        "mod": mod_dict,
+        "files": files_summary,
+        "dependencies": ordered_dependencies,
+        "unavailable_ids": unavailable_ids,
+        "supports_bundle_install": bool(mod.allow_mod_distribution),
+    }
+
+
 @router.get("/mod/{mod_id}/bundle")
 async def get_curseforge_bundle_details(
     mod_id: str,
@@ -417,71 +623,68 @@ async def get_curseforge_bundle_details(
     user: User = Depends(get_current_user),
 ) -> dict:
     """Liefert Modpack-/Bundle-Dateien, Server-Pack-Status und erforderliche Abhängigkeiten."""
-    _server, _plugin, _mod_support, game_id = _resolve_curseforge_server(server_id, user, db)
+    server, plugin, _mod_support, game_id = _resolve_curseforge_server(server_id, user, db)
     clean_id = str(mod_id).strip()
     if not clean_id.isdigit() or len(clean_id) > 20:
         raise HTTPException(status_code=400, detail={"code": "invalid_workshop_id", "message": "errors.invalid_workshop_id"})
 
     try:
         cf_service = await get_curseforge_service()
-        mod = await cf_service.get_mod_details(clean_id)
-        if not mod:
+        bundle = await _resolve_curseforge_mod_and_dependencies(
+            cf_service,
+            server,
+            plugin,
+            game_id,
+            clean_id,
+            include_transitive=False,
+        )
+        if not bundle:
             raise HTTPException(status_code=404, detail="Mod nicht gefunden")
 
-        modpack_class_id = await _find_modpack_class_id_safe(cf_service, game_id)
-        mod_dict = _mod_to_dict(mod, modpack_class_id=modpack_class_id)
+        return {
+            "mod": bundle["mod"],
+            "files": bundle["files"],
+            "dependencies": bundle["dependencies"],
+            "supports_bundle_install": bundle["supports_bundle_install"],
+        }
+    except HTTPException:
+        raise
+    except CurseForgeApiUnavailable as e:
+        raise _curseforge_api_error(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="errors.curseforge_load_failed") from e
 
-        files_raw = await cf_service.get_mod_files(clean_id)
-        if not files_raw and mod.latest_files:
-            files_raw = mod.latest_files
 
-        files_summary: List[dict] = []
-        dep_ids: List[int] = []
-        seen_deps: set[int] = set()
-        for f in files_raw[:15]:
-            if not isinstance(f, dict):
-                continue
-            files_summary.append(
-                {
-                    "id": f.get("id"),
-                    "display_name": f.get("displayName") or f.get("fileName") or "",
-                    "file_name": f.get("fileName") or "",
-                    "file_date": f.get("fileDate"),
-                    "file_length": int(f.get("fileLength") or 0),
-                    "release_type": f.get("releaseType"),
-                    "is_server_pack": bool(f.get("isServerPack")),
-                    "server_pack_file_id": f.get("serverPackFileId"),
-                    "game_versions": f.get("gameVersions") or [],
-                }
-            )
-        # Abhängigkeiten bevorzugt aus der ersten Datei (oder mainFileId) auflösen
-        primary_file = None
-        if mod.main_file_id:
-            primary_file = next((f for f in files_raw if isinstance(f, dict) and f.get("id") == mod.main_file_id), None)
-        if primary_file is None and files_raw:
-            primary_file = files_raw[0] if isinstance(files_raw[0], dict) else None
+@router.get("/mod/{mod_id}/dependencies")
+async def get_curseforge_mod_dependencies(
+    mod_id: str,
+    server_id: int = Query(..., description="Server-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Löst erforderliche CurseForge-Abhängigkeiten (inkl. transitiver Bibliotheken) in Installationsreihenfolge auf."""
+    server, plugin, _mod_support, game_id = _resolve_curseforge_server(server_id, user, db)
+    clean_id = str(mod_id).strip()
+    if not clean_id.isdigit() or len(clean_id) > 20:
+        raise HTTPException(status_code=400, detail={"code": "invalid_workshop_id", "message": "errors.invalid_workshop_id"})
 
-        if isinstance(primary_file, dict):
-            for dep in primary_file.get("dependencies") or []:
-                if not isinstance(dep, dict):
-                    continue
-                dep_mod_id = dep.get("modId")
-                # relationType 3 = RequiredDependency (oder Fallback alle falls nicht gesetzt)
-                rel = dep.get("relationType")
-                if dep_mod_id and (rel in (None, 3)) and int(dep_mod_id) not in seen_deps:
-                    seen_deps.add(int(dep_mod_id))
-                    dep_ids.append(int(dep_mod_id))
-
-        dependencies: List[dict] = []
-        if dep_ids and hasattr(cf_service, "get_mods_by_ids"):
-            dep_mods = await cf_service.get_mods_by_ids(dep_ids[:50])
-            dependencies = [_mod_to_dict(dep_mod, modpack_class_id=modpack_class_id) for dep_mod in dep_mods]
+    try:
+        cf_service = await get_curseforge_service()
+        resolved = await _resolve_curseforge_mod_and_dependencies(
+            cf_service,
+            server,
+            plugin,
+            game_id,
+            clean_id,
+            include_transitive=True,
+        )
+        if not resolved:
+            raise HTTPException(status_code=404, detail="Mod nicht gefunden")
 
         return {
-            "mod": mod_dict,
-            "files": files_summary,
-            "dependencies": dependencies,
-            "supports_bundle_install": bool(mod.allow_mod_distribution),
+            "mod": resolved["mod"],
+            "dependencies": resolved["dependencies"],
+            "unavailable_ids": resolved["unavailable_ids"],
         }
     except HTTPException:
         raise

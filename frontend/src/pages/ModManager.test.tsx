@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ModManager } from './ModManager'
 
@@ -185,5 +185,300 @@ describe('ModManager Collections & CurseForge Bundles', () => {
 
     expect(await screen.findByRole('button', { name: 'Modpacks' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'mods.importManifest' })).toBeInTheDocument()
+  })
+})
+
+describe('ModManager Dependency Confirmation Dialog (Steam & CurseForge)', () => {
+  beforeEach(() => {
+    mockApi.mockReset()
+  })
+
+  it('prompts on Steam mod dependencies with images, links, single-dep install, mod-only, and install-all', async () => {
+    const installedMods: Array<Record<string, unknown>> = []
+    mockApi.mockImplementation(async (path: string, options?: { method?: string }) => {
+      if (path === '/mods/30' && (!options?.method || options.method === 'GET')) {
+        return [...installedMods]
+      }
+      if (path.startsWith('/steam/workshop/popular')) {
+        return [
+          {
+            publishedfileid: '1001',
+            title: 'Extended Base Building',
+            description: 'Needs core framework',
+            creator: 'Builder',
+            file_size_mb: 18,
+            subscriptions: 4200,
+            favorites: 310,
+            preview_url: 'https://steam.example/1001.jpg',
+            direct_url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=1001',
+            item_type: 'mod',
+            children_count: 1,
+            dependencies_count: 1,
+          },
+        ]
+      }
+      if (path === '/steam/workshop/mod/1001/dependencies?server_id=30') {
+        return {
+          mod: {
+            publishedfileid: '1001',
+            title: 'Extended Base Building',
+            creator: 'Builder',
+            preview_url: 'https://steam.example/1001.jpg',
+            direct_url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=1001',
+          },
+          dependencies: [
+            {
+              publishedfileid: '2001',
+              title: 'Core Framework Library',
+              description: 'Required base library',
+              creator: 'CoreDev',
+              file_size_mb: 5.5,
+              subscriptions: 9000,
+              favorites: 800,
+              preview_url: 'https://steam.example/2001.jpg',
+              direct_url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=2001',
+            },
+          ],
+          unavailable_ids: [],
+        }
+      }
+      if (path.startsWith('/mods/30?workshop_id=2001') && options?.method === 'POST') {
+        installedMods.push({
+          id: 99,
+          server_id: 30,
+          workshop_id: '2001',
+          name: 'Core Framework Library',
+          last_updated: null,
+          installed_version: null,
+          load_order: 0,
+          enabled: true,
+          dependencies_json: null,
+          install_status: 'installed',
+          install_action: null,
+          install_progress: 100,
+          install_eta_seconds: null,
+          install_started_at: null,
+          install_completed_at: null,
+          install_error: null,
+          update_status: 'up_to_date',
+          update_reason: null,
+          update_checked_at: null,
+        })
+        return installedMods[0]
+      }
+      if (path === '/mods/30/batch' && options?.method === 'POST') {
+        return { ok: true, queued: 2, skipped: 0 }
+      }
+      return []
+    })
+
+    render(
+      <ModManager
+        serverId={30}
+        gameInfo={{
+          id: 'conan_exiles_ue5',
+          name: 'Conan Exiles',
+          mod_support: true,
+          supports_steam_workshop: true,
+          mod_provider: 'steam',
+        }}
+      />,
+    )
+
+    const addBtn = await screen.findByRole('button', { name: 'common.add' })
+    fireEvent.click(addBtn)
+
+    // Dialog opens with dependency info, image & clickable inspect link
+    expect(await screen.findByText('mods.dependenciesTitle')).toBeInTheDocument()
+    expect(await screen.findByText('Core Framework Library')).toBeInTheDocument()
+    const depImg = screen.getByRole('img', { name: 'Core Framework Library' })
+    expect(depImg).toHaveAttribute('src', 'https://steam.example/2001.jpg')
+    const inspectLink = screen.getByRole('link', { name: 'mods.dependencyInspect' })
+    expect(inspectLink).toHaveAttribute('href', 'https://steamcommunity.com/sharedfiles/filedetails/?id=2001')
+
+    // Click "Install all" (1 dep + 1 main = 2) -> batch with dep BEFORE target mod
+    const installAllBtn = screen.getByRole('button', { name: 'mods.installAllWithDependencies:2' })
+    fireEvent.click(installAllBtn)
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        '/mods/30/batch',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            items: [
+              { workshop_id: '2001', name: 'Core Framework Library' },
+              { workshop_id: '1001', name: 'Extended Base Building' },
+            ],
+            skip_existing: true,
+          }),
+        }),
+      )
+    })
+
+    // Re-open and test installing single dependency individually + mod-only button
+    fireEvent.click(addBtn)
+    expect(await screen.findByText('Core Framework Library')).toBeInTheDocument()
+    const singleDepBtn = screen.getByRole('button', { name: 'mods.installSingleDependency' })
+    fireEvent.click(singleDepBtn)
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        expect.stringContaining('/mods/30?workshop_id=2001'),
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+
+    // Dialog stays open, now "only current mod" button installs target 1001 alone
+    const modOnlyBtn = screen.getByRole('button', { name: 'mods.installModOnly' })
+    fireEvent.click(modOnlyBtn)
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        expect.stringContaining('/mods/30?workshop_id=1001'),
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+  })
+
+  it('checks CurseForge mod dependencies and skips dialog when dependency is already installed', async () => {
+    const installedMods: Array<Record<string, unknown>> = []
+    mockApi.mockImplementation(async (path: string, options?: { method?: string }) => {
+      if (path === '/mods/40' && (!options?.method || options.method === 'GET')) {
+        return [...installedMods]
+      }
+      if (path === '/curseforge/classes?server_id=40') {
+        return [{ id: 6, name: 'Mods', slug: 'mc-mods', kind: 'mods' }]
+      }
+      if (path.startsWith('/curseforge/popular')) {
+        return [
+          {
+            publishedfileid: '7001',
+            title: 'JEI Plus',
+            description: 'Recipe viewer addon',
+            creator: 'Mezz',
+            file_size_mb: 3,
+            subscriptions: 5000,
+            favorites: 0,
+            preview_url: 'https://cf.example/7001.png',
+            direct_url: 'https://www.curseforge.com/minecraft/mc-mods/jei-plus',
+            item_type: 'mod',
+            is_modpack: false,
+            dependencies_count: 1,
+          },
+        ]
+      }
+      if (path === '/curseforge/mod/7001/dependencies?server_id=40') {
+        return {
+          mod: {
+            publishedfileid: '7001',
+            title: 'JEI Plus',
+            creator: 'Mezz',
+            preview_url: 'https://cf.example/7001.png',
+            direct_url: 'https://www.curseforge.com/minecraft/mc-mods/jei-plus',
+          },
+          dependencies: [
+            {
+              publishedfileid: '8001',
+              title: 'Architectury API',
+              description: 'Cross-loader API',
+              creator: 'shedaniel',
+              file_size_mb: 1.2,
+              subscriptions: 10000,
+              favorites: 0,
+              preview_url: 'https://cf.example/8001.png',
+              direct_url: 'https://www.curseforge.com/minecraft/mc-mods/architectury-api',
+            },
+          ],
+          unavailable_ids: [],
+        }
+      }
+      if (path === '/mods/40/batch' && options?.method === 'POST') {
+        return { ok: true, queued: 2, skipped: 0 }
+      }
+      if (path.startsWith('/mods/40?workshop_id=7001') && options?.method === 'POST') {
+        return { id: 2, server_id: 40, workshop_id: '7001' }
+      }
+      return []
+    })
+
+    render(
+      <ModManager
+        serverId={40}
+        gameInfo={{
+          id: 'minecraft_fabric',
+          name: 'Minecraft Fabric',
+          mod_support: true,
+          supports_curseforge: true,
+          mod_provider: 'curseforge',
+          curseforge_game_id: '432',
+          curseforge_class_id: '6',
+          supports_modpacks: false,
+        }}
+      />,
+    )
+
+    const addBtn = await screen.findByRole('button', { name: 'common.add' })
+    fireEvent.click(addBtn)
+
+    // Opens CurseForge dependency prompt with image + CurseForge link
+    expect(await screen.findByText('Architectury API')).toBeInTheDocument()
+    const depLink = screen.getByRole('link', { name: 'mods.dependencyInspect' })
+    expect(depLink).toHaveAttribute(
+      'href',
+      'https://www.curseforge.com/minecraft/mc-mods/architectury-api',
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+
+    // If Architectury API is now already installed, clicking Add installs 7001 directly without dialog
+    installedMods.push({
+      id: 1,
+      server_id: 40,
+      workshop_id: '8001',
+      name: 'Architectury API',
+      last_updated: null,
+      installed_version: null,
+      load_order: 0,
+      enabled: true,
+      dependencies_json: null,
+      install_status: 'installed',
+      install_action: null,
+      install_progress: 100,
+      install_eta_seconds: null,
+      install_started_at: null,
+      install_completed_at: null,
+      install_error: null,
+      update_status: 'up_to_date',
+      update_reason: null,
+      update_checked_at: null,
+    })
+
+    cleanup()
+    render(
+      <ModManager
+        serverId={40}
+        gameInfo={{
+          id: 'minecraft_fabric',
+          name: 'Minecraft Fabric',
+          mod_support: true,
+          supports_curseforge: true,
+          mod_provider: 'curseforge',
+          curseforge_game_id: '432',
+          curseforge_class_id: '6',
+          supports_modpacks: false,
+        }}
+      />,
+    )
+
+    expect(await screen.findByText('Architectury API')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'common.add' }))
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        expect.stringContaining('/mods/40?workshop_id=7001'),
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+    expect(screen.queryByText('mods.dependenciesTitle')).not.toBeInTheDocument()
   })
 })

@@ -10,7 +10,7 @@ import logging
 import re
 import httpx
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import os
 
@@ -58,6 +58,7 @@ class SteamModInfo:
     item_type: str = "mod"
     children_count: int = 0
     consumer_appid: Optional[str] = None
+    child_ids: List[str] = field(default_factory=list)
 
 
 class SteamService:
@@ -147,10 +148,10 @@ class SteamService:
                 'return_previews': True,
                 'return_details': True,
                 'return_metadata': True,
+                'return_children': True,
             }
             if filetype_int == 1:
                 query_data['filetype'] = 1
-                query_data['return_children'] = True
             elif required_tags:
                 query_data['requiredtags'] = ','.join(required_tags)
 
@@ -218,7 +219,8 @@ class SteamService:
                     "publishedfileids": [int(pid) for pid in chunk],
                     "includevotes": True,
                     "short_description": True,
-                    "return_children": True,
+                    "includechildren": True,
+                    "includetags": True,
                 }
                 params = {
                     'key': self.api_key,
@@ -376,6 +378,99 @@ class SteamService:
         except Exception as e:
             logger.warning("Steam API collection details failed: %s", type(e).__name__)
             raise SteamApiUnavailable("steam_api_unavailable") from e
+
+    async def get_mod_dependencies(
+        self,
+        appid: str,
+        publishedfileid: str,
+        max_depth: int = 2,
+        max_items: int = 50,
+    ) -> Optional[Dict[str, Any]]:
+        """Resolve required Workshop dependencies (children) in dependency-first order."""
+        if not self.api_key:
+            raise SteamApiUnavailable("steam_api_key_missing")
+
+        clean_id = str(publishedfileid).strip()
+        if not clean_id.isdigit():
+            return None
+
+        cache_key = f"deps_{appid}_{clean_id}_{max_depth}_{max_items}"
+        cached = self._get_cache(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            root_map = await self.get_details_batch([clean_id], appid=appid)
+            root_mod = root_map.get(clean_id)
+            if not root_mod:
+                return None
+
+            details_map: Dict[str, SteamModInfo] = {clean_id: root_mod}
+            frontier: List[str] = [
+                cid for cid in (root_mod.child_ids or []) if cid != clean_id
+            ]
+            discovered: set[str] = {clean_id}
+            depth = 1
+
+            while frontier and depth <= max_depth and len(details_map) - 1 < max_items:
+                to_fetch: List[str] = []
+                for dep_id in frontier:
+                    if dep_id not in discovered and len(discovered) - 1 + len(to_fetch) < max_items:
+                        discovered.add(dep_id)
+                        to_fetch.append(dep_id)
+                if not to_fetch:
+                    break
+
+                batch_map = await self.get_details_batch(to_fetch, appid=appid)
+                details_map.update(batch_map)
+
+                next_frontier: List[str] = []
+                if depth < max_depth:
+                    for dep_id in to_fetch:
+                        dep_mod = batch_map.get(dep_id)
+                        if dep_mod:
+                            for sub_id in dep_mod.child_ids or []:
+                                if sub_id not in discovered:
+                                    next_frontier.append(sub_id)
+                frontier = next_frontier
+                depth += 1
+
+            # Post-order (dependency-first) traversal with cycle guard
+            ordered_deps: List[SteamModInfo] = []
+            unavailable_ids: List[str] = []
+            emitted: set[str] = set()
+            visiting: set[str] = {clean_id}
+
+            def _visit(dep_id: str, cur_depth: int) -> None:
+                if dep_id in emitted or dep_id in visiting or len(ordered_deps) >= max_items:
+                    return
+                visiting.add(dep_id)
+                dep_mod = details_map.get(dep_id)
+                if dep_mod and cur_depth < max_depth:
+                    for sub_id in dep_mod.child_ids or []:
+                        _visit(sub_id, cur_depth + 1)
+                visiting.discard(dep_id)
+                emitted.add(dep_id)
+                if dep_mod:
+                    ordered_deps.append(dep_mod)
+                else:
+                    unavailable_ids.append(dep_id)
+
+            for direct_id in root_mod.child_ids or []:
+                _visit(direct_id, 1)
+
+            result = {
+                "mod": root_mod,
+                "dependencies": ordered_deps,
+                "unavailable_ids": unavailable_ids,
+            }
+            self._set_cache(cache_key, result)
+            return result
+        except SteamApiUnavailable:
+            raise
+        except Exception as e:
+            logger.warning("Steam API dependency lookup failed: %s", type(e).__name__)
+            raise SteamApiUnavailable("steam_api_unavailable") from e
     
     async def get_mod_details(self, appid: str, publishedfileid: str) -> Optional[SteamModInfo]:
         """Get detailed information for a specific mod."""
@@ -391,6 +486,9 @@ class SteamService:
             query_data = {
                 "publishedfileids": [int(publishedfileid)],
                 "includevotes": True,
+                "short_description": True,
+                "includechildren": True,
+                "includetags": True,
             }
 
             params = {
@@ -443,9 +541,24 @@ class SteamService:
                     break
         
         file_type = mod_data.get('file_type')
-        children = mod_data.get('children') or []
+        raw_children = mod_data.get('children') or []
+        child_ids: List[str] = []
+        if isinstance(raw_children, list):
+            dict_children = [ch for ch in raw_children if isinstance(ch, dict)]
+            dict_children.sort(key=lambda ch: int(ch.get('sortorder') or 0))
+            seen_children: set[str] = set()
+            self_id = str(mod_data.get('publishedfileid', '')).strip()
+            for ch in dict_children:
+                cid = str(ch.get('publishedfileid', '')).strip()
+                if cid and cid.isdigit() and cid != self_id and cid not in seen_children:
+                    seen_children.add(cid)
+                    child_ids.append(cid)
         item_type = "collection" if file_type == 2 else "mod"
         consumer_appid = mod_data.get('consumer_appid') or mod_data.get('consumer_app_id')
+        try:
+            declared_children = int(mod_data.get('num_children') or 0)
+        except (TypeError, ValueError):
+            declared_children = 0
 
         return SteamModInfo(
             publishedfileid=str(mod_data.get('publishedfileid', '')),
@@ -461,8 +574,9 @@ class SteamService:
             preview_url=preview_url,
             direct_url=f"https://steamcommunity.com/sharedfiles/filedetails/?id={mod_data.get('publishedfileid', '')}",
             item_type=item_type,
-            children_count=len(children) if isinstance(children, list) else 0,
+            children_count=max(len(child_ids), declared_children),
             consumer_appid=str(consumer_appid) if consumer_appid is not None else None,
+            child_ids=child_ids,
         )
     
     # query_type constants for Steam QueryFiles
@@ -515,12 +629,12 @@ class SteamService:
                 'return_short_description': True,
                 'return_tags': True,
                 'return_previews': True,
+                'return_children': True,
             }
             if sort == "trending":
                 query_data['days'] = 7
             if filetype_int == 1:
                 query_data['filetype'] = 1
-                query_data['return_children'] = True
             elif required_tags:
                 query_data['requiredtags'] = ','.join(required_tags)
 

@@ -3961,7 +3961,15 @@
     "noDistributionWarning": "Der Autor erlaubt für dieses Paket keinen automatischen API-Download.",
     "wrongGameHint": "{{count}} Mod(s) aus dem Manifest gehören zu einem anderen Spiel und wurden ausgeblendet.",
     "noCollectionsFound": "Keine Collections gefunden",
-    "noModpacksFound": "Keine Modpacks für dieses Spiel gefunden"
+    "noModpacksFound": "Keine Modpacks für dieses Spiel gefunden",
+    "dependenciesTitle": "Abhängigkeiten erforderlich",
+    "dependenciesPrompt": "„{{name}}“ benötigt weitere Mods, die auf dem Server noch fehlen:",
+    "dependencyRequired": "Erforderlich",
+    "dependencyInspect": "Auf {{provider}} öffnen",
+    "installSingleDependency": "Nur diese installieren",
+    "installModOnly": "Nur aktuelle Mod installieren",
+    "installAllWithDependencies": "Alle installieren ({{count}})",
+    "dependenciesUnavailableHint": "{{count}} Abhängigkeit(en) sind privat oder nicht mehr verfügbar."
   },
   "files": {
     "upload": "Hochladen",

@@ -80,6 +80,7 @@ interface SteamMod {
   allow_mod_distribution?: boolean
   is_modpack?: boolean
   manifest_file_id?: number | null
+  dependencies_count?: number
 }
 
 interface CurseForgeClassOption {
@@ -124,6 +125,22 @@ interface CurseForgeBundlePreviewState {
   includeDependencies: boolean
   supportsBundleInstall: boolean
   installing: boolean
+}
+
+interface DependencyPromptState {
+  open: boolean
+  targetMod: {
+    workshopId: string
+    title: string
+    creator?: string
+    preview_url?: string | null
+    direct_url?: string
+  } | null
+  dependencies: SteamMod[]
+  unavailableIds: string[]
+  selectedIds: Set<string>
+  installing: boolean
+  installingSingleId: string | null
 }
 
 type BrowserTab = 'trending' | 'popular' | 'newest' | 'updated'
@@ -200,6 +217,16 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     includeDependencies: true,
     supportsBundleInstall: true,
     installing: false,
+  })
+  const [checkingDepModId, setCheckingDepModId] = useState<string | null>(null)
+  const [dependencyPrompt, setDependencyPrompt] = useState<DependencyPromptState>({
+    open: false,
+    targetMod: null,
+    dependencies: [],
+    unavailableIds: [],
+    selectedIds: new Set(),
+    installing: false,
+    installingSingleId: null,
   })
   const [importingManifest, setImportingManifest] = useState(false)
   const manifestInputRef = useRef<HTMLInputElement | null>(null)
@@ -595,37 +622,166 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     }
   }
 
+  const requestModInstall = async (
+    workshopId: string,
+    modMeta?: Partial<SteamMod>,
+    opts?: { fromAddModal?: boolean },
+  ) => {
+    const cleanId = workshopId.trim()
+    if (!cleanId) return
+    setAdding(true)
+    setCheckingDepModId(cleanId)
+    try {
+      let resolvedTarget = {
+        workshopId: cleanId,
+        title: modMeta?.title || cleanId,
+        creator: modMeta?.creator,
+        preview_url: modMeta?.preview_url ?? null,
+        direct_url: modMeta?.direct_url,
+      }
+      let resolvedDeps: SteamMod[] = []
+      let unavailableIds: string[] = []
+
+      if (/^\d{1,20}$/.test(cleanId)) {
+        try {
+          const endpoint = isCurseForge
+            ? `/curseforge/mod/${cleanId}/dependencies?server_id=${serverId}`
+            : `/steam/workshop/mod/${cleanId}/dependencies?server_id=${serverId}`
+          const depData = await api<{
+            mod?: SteamMod
+            dependencies?: SteamMod[]
+            unavailable_ids?: string[]
+          }>(endpoint)
+          if (depData?.mod) {
+            resolvedTarget = {
+              workshopId: cleanId,
+              title: depData.mod.title || resolvedTarget.title,
+              creator: depData.mod.creator || resolvedTarget.creator,
+              preview_url: depData.mod.preview_url ?? resolvedTarget.preview_url,
+              direct_url: depData.mod.direct_url || resolvedTarget.direct_url,
+            }
+            cacheCurseForgeUrls([depData.mod])
+          }
+          resolvedDeps = depData?.dependencies || []
+          unavailableIds = depData?.unavailable_ids || []
+          if (resolvedDeps.length > 0) {
+            cacheCurseForgeUrls(resolvedDeps)
+          }
+        } catch {
+          // Fallback auf direkte Installation, falls Metadaten-/Abhaengigkeitsabfrage nicht erreichbar ist
+        }
+      }
+
+      const installedSet = new Set(mods.map((m) => m.workshop_id))
+      const missingDeps = resolvedDeps.filter((dep) => !installedSet.has(dep.publishedfileid))
+
+      if (missingDeps.length > 0) {
+        if (opts?.fromAddModal) {
+          setShowAddModal(false)
+          setNewWorkshopId('')
+          setNewModName('')
+        }
+        setDependencyPrompt({
+          open: true,
+          targetMod: resolvedTarget,
+          dependencies: resolvedDeps,
+          unavailableIds,
+          selectedIds: new Set(missingDeps.map((dep) => dep.publishedfileid)),
+          installing: false,
+          installingSingleId: null,
+        })
+        return
+      }
+
+      await subscribeMod(cleanId, resolvedTarget.title === cleanId ? modMeta?.title : resolvedTarget.title)
+      await loadMods()
+      if (opts?.fromAddModal) {
+        setShowAddModal(false)
+        setNewWorkshopId('')
+        setNewModName('')
+      }
+      toast.success(t('mods.added'))
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t('mods.addFailed'))
+    } finally {
+      setAdding(false)
+      setCheckingDepModId(null)
+    }
+  }
+
+  const installTargetModOnly = async () => {
+    const target = dependencyPrompt.targetMod
+    if (!target) return
+    setDependencyPrompt((prev) => ({ ...prev, installing: true }))
+    try {
+      await subscribeMod(target.workshopId, target.title)
+      await loadMods()
+      setDependencyPrompt((prev) => ({ ...prev, open: false, installing: false }))
+      toast.success(t('mods.added'))
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t('mods.addFailed'))
+      setDependencyPrompt((prev) => ({ ...prev, installing: false }))
+    }
+  }
+
+  const installSingleDependencyFromPrompt = async (dep: SteamMod) => {
+    setDependencyPrompt((prev) => ({ ...prev, installingSingleId: dep.publishedfileid }))
+    try {
+      await subscribeMod(dep.publishedfileid, dep.title)
+      await loadMods()
+      setDependencyPrompt((prev) => {
+        const nextSelected = new Set(prev.selectedIds)
+        nextSelected.delete(dep.publishedfileid)
+        return {
+          ...prev,
+          selectedIds: nextSelected,
+          installingSingleId: null,
+        }
+      })
+      toast.success(t('mods.added'))
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t('mods.addFailed'))
+      setDependencyPrompt((prev) => ({ ...prev, installingSingleId: null }))
+    }
+  }
+
+  const installAllWithDependencies = async () => {
+    const target = dependencyPrompt.targetMod
+    if (!target) return
+    const installedSet = new Set(mods.map((m) => m.workshop_id))
+    const selectedDeps = dependencyPrompt.dependencies.filter(
+      (dep) =>
+        dependencyPrompt.selectedIds.has(dep.publishedfileid) &&
+        !installedSet.has(dep.publishedfileid),
+    )
+    const batchItems = [
+      ...selectedDeps.map((dep) => ({ workshop_id: dep.publishedfileid, name: dep.title })),
+      { workshop_id: target.workshopId, name: target.title },
+    ]
+    setDependencyPrompt((prev) => ({ ...prev, installing: true }))
+    try {
+      await installBatchItems(batchItems)
+      setDependencyPrompt((prev) => ({ ...prev, open: false, installing: false }))
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t('mods.batchInstallFailed'))
+      setDependencyPrompt((prev) => ({ ...prev, installing: false }))
+    }
+  }
+
   const addMod = async () => {
     const rawInput = newWorkshopId.trim()
     if (!rawInput) return
     const steamUrlMatch = rawInput.match(/(?:\bid=|^)(\d{5,20})(?:&|$)/)
     const cleanId = steamUrlMatch ? steamUrlMatch[1] : rawInput
-    setAdding(true)
-    try {
-      await subscribeMod(cleanId, newModName.trim() || undefined)
-      await loadMods()
-      setShowAddModal(false)
-      setNewWorkshopId('')
-      setNewModName('')
-      toast.success(t('mods.added'))
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('mods.addFailed'))
-    } finally {
-      setAdding(false)
-    }
+    await requestModInstall(
+      cleanId,
+      { title: newModName.trim() || undefined },
+      { fromAddModal: true },
+    )
   }
 
-  const addSteamMod = async (workshopId: string, name?: string) => {
-    setAdding(true)
-    try {
-      await subscribeMod(workshopId, name)
-      await loadMods()
-      toast.success(t('mods.added'))
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('mods.addFailed'))
-    } finally {
-      setAdding(false)
-    }
+  const addSteamMod = async (mod: SteamMod) => {
+    await requestModInstall(mod.publishedfileid, mod)
   }
 
   const removeMod = async (modId: number) => {
@@ -808,7 +964,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               )}
             </div>
           )}
-          {(isCollection || isModpack || mod.has_server_pack) && (
+          {(isCollection || isModpack || mod.has_server_pack || (!isCollection && !isModpack && (mod.dependencies_count ?? 0) > 0)) && (
             <div className="absolute top-2 left-2 flex flex-wrap gap-1.5">
               {isCollection && (
                 <Badge variant="info" className="bg-surface/90 backdrop-blur-sm">
@@ -828,6 +984,11 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               {isCurseForge && mod.has_server_pack && (
                 <Badge variant="success" className="bg-surface/90 backdrop-blur-sm">
                   {t('mods.serverPack')}
+                </Badge>
+              )}
+              {!isCollection && !isModpack && (mod.dependencies_count ?? 0) > 0 && (
+                <Badge variant="warning" className="bg-surface/90 backdrop-blur-sm">
+                  {t('mods.bundleDependencies', { count: mod.dependencies_count })}
                 </Badge>
               )}
             </div>
@@ -876,11 +1037,15 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
             ) : (
               <Button
                 size="sm"
-                onClick={() => addSteamMod(mod.publishedfileid, mod.title)}
+                onClick={() => void addSteamMod(mod)}
                 disabled={adding || isAdded}
                 className="flex-1 disabled:opacity-50"
               >
-                {isAdded ? t('mods.added') : t('common.add')}
+                {checkingDepModId === mod.publishedfileid
+                  ? t('common.loading')
+                  : isAdded
+                    ? t('mods.added')
+                    : t('common.add')}
               </Button>
             )}
             <Kurzinfo text={ansehenText} seite="ende" portal>
@@ -1669,6 +1834,209 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
               {bundlePreview.installing ? t('common.loading') : t('mods.installBundle')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dependency Confirmation Dialog (Steam Workshop & CurseForge) */}
+      <Dialog
+        open={dependencyPrompt.open}
+        onOpenChange={(open) => {
+          if (!dependencyPrompt.installing && !dependencyPrompt.installingSingleId) {
+            setDependencyPrompt((prev) => ({ ...prev, open }))
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 pr-6">
+              <Package className="w-5 h-5 text-primary shrink-0" />
+              <span className="truncate">{t('mods.dependenciesTitle')}</span>
+            </DialogTitle>
+            <DialogDescription>
+              {t('mods.dependenciesPrompt', {
+                name: dependencyPrompt.targetMod?.title || dependencyPrompt.targetMod?.workshopId || '',
+              })}
+            </DialogDescription>
+          </DialogHeader>
+
+          {dependencyPrompt.targetMod && (() => {
+            const installedSet = new Set(mods.map((m) => m.workshop_id))
+            const selectedMissingCount = dependencyPrompt.dependencies.filter(
+              (dep) =>
+                dependencyPrompt.selectedIds.has(dep.publishedfileid) &&
+                !installedSet.has(dep.publishedfileid),
+            ).length
+
+            return (
+              <>
+                <div className="space-y-3">
+                  {/* Target mod preview */}
+                  <div className="flex items-center gap-3 rounded-lg border border-outline-variant/30 bg-surface-container/60 p-3">
+                    {dependencyPrompt.targetMod.preview_url ? (
+                      <img
+                        src={dependencyPrompt.targetMod.preview_url}
+                        alt={dependencyPrompt.targetMod.title}
+                        className="w-12 h-12 rounded-md object-cover bg-surface-container-highest shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
+                        <Package className="w-5 h-5 text-on-surface-variant" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-on-surface truncate">
+                        {dependencyPrompt.targetMod.title}
+                      </div>
+                      <div className="text-xs text-on-surface-variant font-mono-sm truncate">
+                        ID: {dependencyPrompt.targetMod.workshopId}
+                        {dependencyPrompt.targetMod.creator ? ` · ${dependencyPrompt.targetMod.creator}` : ''}
+                      </div>
+                    </div>
+                    {dependencyPrompt.targetMod.direct_url && (
+                      <a
+                        href={dependencyPrompt.targetMod.direct_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={buttonClasses('secondary', 'sm')}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                        {ansehenText}
+                      </a>
+                    )}
+                  </div>
+
+                  {dependencyPrompt.unavailableIds.length > 0 && (
+                    <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
+                      {t('mods.dependenciesUnavailableHint', {
+                        count: dependencyPrompt.unavailableIds.length,
+                      })}
+                    </div>
+                  )}
+
+                  {/* Required dependencies list */}
+                  <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                    {dependencyPrompt.dependencies.map((dep) => {
+                      const alreadyInstalled = installedSet.has(dep.publishedfileid)
+                      const checked =
+                        !alreadyInstalled && dependencyPrompt.selectedIds.has(dep.publishedfileid)
+                      const isSingleInstalling =
+                        dependencyPrompt.installingSingleId === dep.publishedfileid
+
+                      return (
+                        <div
+                          key={dep.publishedfileid}
+                          className="flex items-start gap-3 rounded-lg border border-outline-variant/30 bg-surface-container/40 p-2.5"
+                        >
+                          <div className="pt-1 shrink-0">
+                            <Checkbox
+                              checked={checked}
+                              disabled={alreadyInstalled || dependencyPrompt.installing}
+                              onCheckedChange={(nextChecked) => {
+                                setDependencyPrompt((prev) => {
+                                  const next = new Set(prev.selectedIds)
+                                  if (nextChecked) next.add(dep.publishedfileid)
+                                  else next.delete(dep.publishedfileid)
+                                  return { ...prev, selectedIds: next }
+                                })
+                              }}
+                              aria-label={dep.title}
+                            />
+                          </div>
+
+                          {dep.preview_url ? (
+                            <img
+                              src={dep.preview_url}
+                              alt={dep.title}
+                              className="w-14 h-14 rounded-md object-cover bg-surface-container-highest shrink-0"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
+                              <Package className="w-5 h-5 text-on-surface-variant" />
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-medium text-on-surface truncate">
+                                {dep.title}
+                              </span>
+                              <Badge variant={alreadyInstalled ? 'success' : 'warning'}>
+                                {alreadyInstalled
+                                  ? t('mods.alreadyInstalled')
+                                  : t('mods.dependencyRequired')}
+                              </Badge>
+                            </div>
+                            {dep.description && (
+                              <p className="text-xs text-on-surface-variant line-clamp-2">
+                                {dep.description}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-on-surface-variant font-mono-sm">
+                              <span>ID: {dep.publishedfileid}</span>
+                              {dep.creator && <span>{dep.creator}</span>}
+                              {dep.file_size_mb > 0 && <span>{dep.file_size_mb} MB</span>}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              {!alreadyInstalled && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => void installSingleDependencyFromPrompt(dep)}
+                                  disabled={dependencyPrompt.installing || isSingleInstalling}
+                                >
+                                  {isSingleInstalling
+                                    ? t('common.loading')
+                                    : t('mods.installSingleDependency')}
+                                </Button>
+                              )}
+                              {dep.direct_url && (
+                                <a
+                                  href={dep.direct_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={buttonClasses('secondary', 'sm')}
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                                  {t('mods.dependencyInspect', { provider: providerLabel })}
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <DialogFooter className="flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setDependencyPrompt((prev) => ({ ...prev, open: false }))}
+                    disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => void installTargetModOnly()}
+                    disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
+                  >
+                    {t('mods.installModOnly')}
+                  </Button>
+                  <Button
+                    onClick={() => void installAllWithDependencies()}
+                    disabled={dependencyPrompt.installing || Boolean(dependencyPrompt.installingSingleId)}
+                  >
+                    {dependencyPrompt.installing
+                      ? t('common.loading')
+                      : t('mods.installAllWithDependencies', {
+                          count: selectedMissingCount + 1,
+                        })}
+                  </Button>
+                </DialogFooter>
+              </>
+            )
+          })()}
         </DialogContent>
       </Dialog>
 

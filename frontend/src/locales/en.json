@@ -3961,7 +3961,15 @@
     "noDistributionWarning": "The author disabled third-party API downloads for this package.",
     "wrongGameHint": "{{count}} mod(s) from the manifest belong to a different game and were hidden.",
     "noCollectionsFound": "No collections found",
-    "noModpacksFound": "No modpacks found for this game"
+    "noModpacksFound": "No modpacks found for this game",
+    "dependenciesTitle": "Required dependencies",
+    "dependenciesPrompt": "\"{{name}}\" requires additional mods that are not yet installed on this server:",
+    "dependencyRequired": "Required",
+    "dependencyInspect": "Open on {{provider}}",
+    "installSingleDependency": "Install individually",
+    "installModOnly": "Install current mod only",
+    "installAllWithDependencies": "Install all ({{count}})",
+    "dependenciesUnavailableHint": "{{count}} dependency/dependencies are private or no longer available."
   },
   "tabs": {
     "files": "Files",
