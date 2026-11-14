@@ -17,6 +17,8 @@ in Docker-Containern. Isolation kommt von Docker, nicht von POSIX-Usern.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import re
@@ -1061,46 +1063,87 @@ class GamePlugin(ABC):
             elif target.valueSource.startswith("resolvedIds:"):
                 resolver_name = target.valueSource.split(":", 1)[1]
                 resolver = next((r for r in bp_mods.modIdResolvers if r.name == resolver_name), None)
+                if resolver is None:
+                    target_values[lookup_key] = []
+                    continue
+                fingerprint = _resolver_fingerprint(resolver)
                 collected_ids: list[str] = []
                 for mod in active_mods:
-                    raw_json = getattr(mod, "resolved_ids_json", None)
-                    if raw_json is None and resolver is not None:
-                        from games.blueprint_plugin import _resolve_mod_ids
+                    cached_ids = _read_valid_cached_ids(mod, fingerprint)
+                    if cached_ids is not None:
+                        collected_ids.extend(cached_ids)
+                        continue
+                    from games.blueprint_plugin import _resolve_mod_ids
 
-                        res_ids, err = _resolve_mod_ids(
-                            server,
-                            workshop_app_id=bp_mods.workshopAppId or "",
-                            workshop_id=str(mod.workshop_id),
-                            resolver=resolver,
-                        )
+                    res_ids, err = _resolve_mod_ids(
+                        server,
+                        workshop_app_id=bp_mods.workshopAppId or "",
+                        workshop_id=str(mod.workshop_id),
+                        resolver=resolver,
+                    )
+                    try:
+                        from database import SessionLocal
+                        from models.mod import Mod
+
+                        db = SessionLocal()
                         try:
-                            from database import SessionLocal
-                            from models.mod import Mod
-                            import json
-                            from datetime import datetime, timezone
-
-                            db = SessionLocal()
-                            try:
-                                db_mod = db.query(Mod).filter(Mod.id == mod.id).first()
-                                if db_mod:
-                                    db_mod.resolved_ids_json = json.dumps(res_ids)
-                                    db_mod.resolved_at = datetime.now(timezone.utc)
-                                    db_mod.resolve_error = err
-                                    db.commit()
-                            finally:
-                                db.close()
-                        except Exception:
-                            pass
-                        collected_ids.extend(res_ids)
-                    elif raw_json:
-                        try:
-                            import json
-
-                            parsed = json.loads(raw_json)
-                            if isinstance(parsed, list):
-                                collected_ids.extend(str(x) for x in parsed)
-                        except Exception:
-                            pass
+                            db_mod = db.query(Mod).filter(Mod.id == mod.id).first()
+                            if db_mod:
+                                db_mod.resolved_ids_json = json.dumps({"f": fingerprint, "ids": res_ids})
+                                db_mod.resolved_at = datetime.now(timezone.utc)
+                                db_mod.resolve_error = err
+                                db.commit()
+                        finally:
+                            db.close()
+                    except Exception:
+                        pass
+                    collected_ids.extend(res_ids)
                 target_values[lookup_key] = collected_ids
 
         write_workshop_modlist_targets(server, targets, target_values)
+
+
+def _resolver_fingerprint(resolver: Any) -> str:
+    """Erzeugt einen stabilen Fingerabdruck der Resolver-Konfiguration."""
+    fmt = resolver.format.value if hasattr(resolver.format, "value") else str(resolver.format)
+    payload = json.dumps(
+        {
+            "fileGlob": resolver.fileGlob,
+            "key": resolver.key,
+            "format": fmt,
+            "maxMatches": resolver.maxMatches,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _read_valid_cached_ids(mod: Any, fingerprint: str) -> list[str] | None:
+    """Liefert gecachte Mod-IDs nur, wenn Fingerabdruck, Fehlerfreiheit und Zeitstempel passen."""
+    if getattr(mod, "resolve_error", None):
+        return None
+    raw_json = getattr(mod, "resolved_ids_json", None)
+    if not raw_json:
+        return None
+    try:
+        parsed = json.loads(raw_json)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict) or parsed.get("f") != fingerprint:
+        return None
+    ids = parsed.get("ids")
+    if not isinstance(ids, list):
+        return None
+    last_updated = getattr(mod, "last_updated", None)
+    resolved_at = getattr(mod, "resolved_at", None)
+    if last_updated is not None:
+        if resolved_at is None or _as_utc(resolved_at) < _as_utc(last_updated):
+            return None
+    return [str(x) for x in ids]

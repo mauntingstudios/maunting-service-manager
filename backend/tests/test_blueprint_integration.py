@@ -159,12 +159,18 @@ def test_project_zomboid_blueprint_uses_the_native_linux_dedicated_server() -> N
     assert mods.modInjection.value == "file"
     targets = mods.effective_mod_list_targets()
     assert len(targets) == 2
-    assert targets[0].file == "Zomboid/Server/{SERVER_NAME}.ini"
+    assert targets[0].file == "Server/{SERVER_NAME}.ini"
     assert targets[0].key == "WorkshopItems"
     assert targets[0].valueSource == "workshopIds"
-    assert targets[1].file == "Zomboid/Server/{SERVER_NAME}.ini"
+    assert targets[1].file == "Server/{SERVER_NAME}.ini"
     assert targets[1].key == "Mods"
     assert targets[1].valueSource == "resolvedIds:zomboid_mod_info"
+    assert len(mods.modIdResolvers) >= 1
+    assert mods.modIdResolvers[0].fileGlob.endswith("mods/*/*/mod.info")
+    assert "Server" in bp.runtime.ensureDirs
+    assert "Zomboid" not in bp.runtime.ensureDirs
+    assert set(["Server", "Saves", "db"]).issubset(set(bp.backup.includePaths))
+    assert "server-console.txt" in bp.logs.sources
     assert [(port.name.value, port.protocol.value) for port in bp.ports] == [
         ("game", "udp"),
         ("custom", "udp"),

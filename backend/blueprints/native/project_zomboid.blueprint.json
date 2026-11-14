@@ -16,8 +16,7 @@
     },
     "startup": "./start-server.sh -cachedir=/data -servername {SERVER_NAME} -port {GAME_PORT} -udpport {CUSTOM_PORT_1}",
     "ensureDirs": [
-      "Zomboid",
-      "Zomboid/Server"
+      "Server"
     ],
     "requiredFiles": [
       "start-server.sh",
@@ -58,7 +57,7 @@
     "modIdResolvers": [
       {
         "name": "zomboid_mod_info",
-        "fileGlob": "steamapps/workshop/content/{WORKSHOP_APP_ID}/{WORKSHOP_ID}/mods/*/mod.info",
+        "fileGlob": "steamapps/workshop/content/{WORKSHOP_APP_ID}/{WORKSHOP_ID}/mods/*/*/mod.info",
         "format": "iniKey",
         "key": "id",
         "maxMatches": 32,
@@ -67,13 +66,13 @@
     ],
     "modListTargets": [
       {
-        "file": "Zomboid/Server/{SERVER_NAME}.ini",
+        "file": "Server/{SERVER_NAME}.ini",
         "key": "WorkshopItems",
         "valueSource": "workshopIds",
         "separator": ";"
       },
       {
-        "file": "Zomboid/Server/{SERVER_NAME}.ini",
+        "file": "Server/{SERVER_NAME}.ini",
         "key": "Mods",
         "valueSource": "resolvedIds:zomboid_mod_info",
         "separator": ";"
@@ -116,12 +115,14 @@
   },
   "backup": {
     "includePaths": [
-      "Zomboid"
+      "Server",
+      "Saves",
+      "db"
     ]
   },
   "logs": {
     "sources": [
-      "Zomboid/console.txt",
+      "server-console.txt",
       "stdout"
     ],
     "redact": []

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -37,10 +39,13 @@ class _ServerStub:
 @dataclass
 class _ModStub:
     workshop_id: str
+    id: int = 1
     enabled: bool = True
     load_order: int = 0
     resolved_ids_json: str | None = None
+    resolved_at: datetime | None = None
     resolve_error: str | None = None
+    last_updated: datetime | None = None
 
 
 def test_schema_mod_id_resolver_and_targets() -> None:
@@ -230,3 +235,166 @@ def test_native_blueprints_validate_new_features() -> None:
     assert len(targets) == 1
     assert targets[0].entryTemplate == "*{VALUE}"
     assert len(conan.mods.postInstall[0].purgeBefore) == 3
+
+
+def _zomboid_b42_resolver() -> BlueprintModIdResolver:
+    return BlueprintModIdResolver(
+        name="zomboid_mod_info",
+        fileGlob="steamapps/workshop/content/{WORKSHOP_APP_ID}/{WORKSHOP_ID}/mods/*/*/mod.info",
+        format=BlueprintModIdResolverFormat.INI_KEY,
+        key="id",
+        maxMatches=32,
+        fallback=BlueprintModIdResolverFallback.SKIP,
+    )
+
+
+def test_resolve_mod_ids_b42_ignores_root_b41_and_finds_versioned_and_common(tmp_path: Path) -> None:
+    """Build-42-Layout: Wurzel-mod.info wird ignoriert, 42/, 42.20.1/ und common/ werden gefunden."""
+    server = _ServerStub(id=1, name="pz_b42", install_dir=str(tmp_path))
+    base = tmp_path / "steamapps" / "workshop" / "content" / "108600" / "3809306528" / "mods"
+
+    # Build 41 root entry (must be ignored)
+    (base / "Viewpoint").mkdir(parents=True)
+    (base / "Viewpoint" / "mod.info").write_text("id=ViewpointB41\n", encoding="utf-8")
+    # Build 42 entry
+    (base / "Viewpoint" / "42").mkdir(parents=True)
+    (base / "Viewpoint" / "42" / "mod.info").write_text("id=Viewpoint\n", encoding="utf-8")
+    # Versioned subfolder (e.g. 42.20.1)
+    (base / "Foo" / "42.20.1").mkdir(parents=True)
+    (base / "Foo" / "42.20.1" / "mod.info").write_text("id=FooMod\n", encoding="utf-8")
+    # Common-only subfolder
+    (base / "Bar" / "common").mkdir(parents=True)
+    (base / "Bar" / "common" / "mod.info").write_text("id=BarCommon\n", encoding="utf-8")
+
+    ids, error = _resolve_mod_ids(
+        server,
+        workshop_app_id="108600",
+        workshop_id="3809306528",
+        resolver=_zomboid_b42_resolver(),
+    )
+    assert error is None
+    assert "ViewpointB41" not in ids
+    assert set(ids) == {"Viewpoint", "FooMod", "BarCommon"}
+
+
+def test_resolve_mod_ids_accepts_valid_special_chars_and_rejects_semicolon_or_newline(tmp_path: Path) -> None:
+    """Mod-IDs mit Leerzeichen, &, (), +, ' sind erlaubt; ; und Steuerzeichen werden verworfen."""
+    server = _ServerStub(id=1, name="pz_chars", install_dir=str(tmp_path))
+    base = tmp_path / "steamapps" / "workshop" / "content" / "108600" / "111222333" / "mods"
+
+    for folder, mod_id in [
+        ("m1", "Authentic Z - Current"),
+        ("m2", "Rock&Roll (B42)"),
+        ("m3", "AuthenticZBackpacks+"),
+        ("m4", "Bob's Mod"),
+        ("bad_semi", "Bad;Id"),
+    ]:
+        p = base / folder / "42"
+        p.mkdir(parents=True)
+        (p / "mod.info").write_text(f"id={mod_id}\n", encoding="utf-8")
+
+    ids, error = _resolve_mod_ids(
+        server,
+        workshop_app_id="108600",
+        workshop_id="111222333",
+        resolver=_zomboid_b42_resolver(),
+    )
+    assert error is None
+    assert ids == [
+        "Authentic Z - Current",
+        "Rock&Roll (B42)",
+        "AuthenticZBackpacks+",
+        "Bob's Mod",
+    ]
+
+    # Newline injection via regex format must also be rejected
+    regex_dir = tmp_path / "steamapps" / "workshop" / "content" / "108600" / "444555666" / "mods" / "nl" / "42"
+    regex_dir.mkdir(parents=True)
+    (regex_dir / "mod.info").write_text("id=Line1\nLine2", encoding="utf-8")
+    regex_resolver = BlueprintModIdResolver(
+        name="zomboid_regex",
+        fileGlob="steamapps/workshop/content/{WORKSHOP_APP_ID}/{WORKSHOP_ID}/mods/*/*/mod.info",
+        format=BlueprintModIdResolverFormat.REGEX,
+        regex=r"id=(Line1\nLine2)",
+        maxMatches=32,
+        fallback=BlueprintModIdResolverFallback.SKIP,
+    )
+    nl_ids, nl_err = _resolve_mod_ids(
+        server,
+        workshop_app_id="108600",
+        workshop_id="444555666",
+        resolver=regex_resolver,
+    )
+    assert nl_ids == []
+    assert nl_err == "mod_info_missing"
+
+
+def test_zomboid_update_modlist_real_pair_and_cache_invalidation(tmp_path: Path) -> None:
+    """Prüft reales Zomboid-Paar (WorkshopItems vs. Mods) und alle Cache-Invalidierungsfälle."""
+    from games.base import _resolver_fingerprint
+    from games.blueprint_plugin import BlueprintPlugin
+
+    repo_root = Path(__file__).resolve().parents[1]
+    bp = load_blueprint_file(repo_root / "blueprints" / "native" / "project_zomboid.blueprint.json")
+    plugin = BlueprintPlugin(bp)
+    resolver = bp.effective_mods().modIdResolvers[0]
+    fp = _resolver_fingerprint(resolver)
+
+    server = _ServerStub(id=7, name="pz_live", install_dir=str(tmp_path), game_type="project_zomboid")
+    ini_file = tmp_path / "Server" / "pz_live.ini"
+    ini_file.parent.mkdir(parents=True)
+    ini_file.write_text("PublicName=Test\nWorkshopItems=\nMods=\n", encoding="utf-8")
+
+    mod_dir = tmp_path / "steamapps" / "workshop" / "content" / "108600" / "3809306528" / "mods" / "Viewpoint" / "42"
+    mod_dir.mkdir(parents=True)
+    (mod_dir / "mod.info").write_text("id=Viewpoint\n", encoding="utf-8")
+
+    # 1. Alter Listen-Cache → wird neu aufgelöst
+    old_list_mod = _ModStub(id=1, workshop_id="3809306528", resolved_ids_json=json.dumps(["ViewpointB41"]))
+    with patch("games.base._query_active_mods", return_value=[old_list_mod]):
+        plugin.update_modlist(server)
+
+    content = ini_file.read_text(encoding="utf-8")
+    assert "WorkshopItems=3809306528\n" in content
+    assert "Mods=Viewpoint\n" in content
+
+    # 2. Passender Fingerabdruck, kein Fehler, resolved_at neuer als last_updated → kein Dateizugriff
+    now = datetime.now(timezone.utc)
+    valid_cached_mod = _ModStub(
+        id=2,
+        workshop_id="3809306528",
+        resolved_ids_json=json.dumps({"f": fp, "ids": ["CachedViewpoint"]}),
+        resolved_at=now,
+        last_updated=now - timedelta(minutes=5),
+        resolve_error=None,
+    )
+    with patch("games.base._query_active_mods", return_value=[valid_cached_mod]), \
+         patch("games.blueprint_plugin._resolve_mod_ids") as mock_resolve:
+        plugin.update_modlist(server)
+        mock_resolve.assert_not_called()
+    assert "Mods=CachedViewpoint\n" in ini_file.read_text(encoding="utf-8")
+
+    # 3. resolve_error gesetzt → erneut auflösen und Datei-ID übernehmen
+    err_mod = _ModStub(
+        id=3,
+        workshop_id="3809306528",
+        resolved_ids_json=json.dumps({"f": fp, "ids": []}),
+        resolved_at=now,
+        resolve_error="mod_info_missing",
+    )
+    with patch("games.base._query_active_mods", return_value=[err_mod]):
+        plugin.update_modlist(server)
+    assert "Mods=Viewpoint\n" in ini_file.read_text(encoding="utf-8")
+
+    # 4. Mod nach Auflösung aktualisiert (last_updated neuer als resolved_at) → erneut auflösen
+    stale_mod = _ModStub(
+        id=4,
+        workshop_id="3809306528",
+        resolved_ids_json=json.dumps({"f": fp, "ids": ["OldViewpoint"]}),
+        resolved_at=now - timedelta(hours=1),
+        last_updated=now,
+        resolve_error=None,
+    )
+    with patch("games.base._query_active_mods", return_value=[stale_mod]):
+        plugin.update_modlist(server)
+    assert "Mods=Viewpoint\n" in ini_file.read_text(encoding="utf-8")

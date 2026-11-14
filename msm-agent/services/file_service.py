@@ -346,7 +346,7 @@ def workshop_files(
     if mode == "resolve_ids":
         resolved_map: dict[str, list[str]] = {}
         error_map: dict[str, str] = {}
-        safe_re = re.compile(r"^[A-Za-z0-9_.\-]+$")
+        safe_re = re.compile(r"^[^\x00-\x1f\x7f;]{1,64}\Z")
         for res in resolvers or []:
             name = str(res.get("name") or "")
             file_glob = str(res.get("file_glob") or "")

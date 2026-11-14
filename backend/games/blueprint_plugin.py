@@ -246,7 +246,7 @@ def _purge_conan_extracted_mod_cache(install_base: Path, pak_basename: str) -> l
     )
 
 
-_SAFE_MOD_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+_SAFE_MOD_ID_RE = re.compile(r"^[^\x00-\x1f\x7f;]{1,64}\Z")
 
 
 def _resolve_mod_ids(
