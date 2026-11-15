@@ -63,4 +63,14 @@ describe('Tab-Ereignisse', () => {
       nativDa: true,
     })
   })
+
+  it('setzt die Adresszeile bei geladen auf die aktuelle Web-URL zurück (z. B. nach abgebrochenem Download-Navigationswechsel)', () => {
+    const aendern = vi.fn()
+    const tab = { id: 'tab-1', url: 'https://cdn.example/datei.zip', privat: false } as any
+    ereignisAnwenden(
+      { art: 'geladen', id: 'tab-1', url: 'https://seite.example/post/1' },
+      { finden: () => tab, aendern, zeigen: vi.fn(), neuerTab: vi.fn(() => ''), schliessen: vi.fn() },
+    )
+    expect(aendern).toHaveBeenCalledWith('tab-1', { laedt: false, url: 'https://seite.example/post/1' })
+  })
 })

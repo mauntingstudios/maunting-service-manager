@@ -45,6 +45,32 @@ describe('Sichtbares Download-Feedback', () => {
     expect(screen.getByTestId('ort')).toHaveTextContent('/downloads')
   })
 
+  it('öffnet die Liste auch dann sofort bei nr = 1, wenn bereits ein Alt-Download mit derselben nr existiert', () => {
+    useDownloadsStore.setState({
+      downloads: [
+        {
+          id: 'alt-sitzung-1',
+          nr: 1,
+          url: 'https://example.com/alt.zip',
+          datei: 'C:/Downloads/alt.zip',
+          stand: 'fertig',
+          zeit: 1000,
+          kategorie: 'archive',
+          existiert: true,
+          empfangen: 100,
+          gesamt: 100,
+          bytesProSekunde: null,
+          restSekunden: null,
+          letzteBytesZeit: null,
+        },
+      ],
+      neu: 0,
+    })
+    zeigen()
+    act(() => melden(1, 'start'))
+    expect(screen.getByTestId('ort')).toHaveTextContent('/downloads')
+  })
+
   it('öffnet alte Einträge beim Einhängen nicht erneut und meldet sich beim Entfernen ab', () => {
     melden(1)
     const { unmount } = zeigen()

@@ -6,8 +6,9 @@ search:
   safe_search: 0
   autocomplete: "duckduckgo"
   default_lang: "de"
-  # POST statt GET: der Suchbegriff steht dann in keinem Zugriffslog.
-  method: "POST"
+  # GET für Upstream-Suchmaschinenkompatibilität (POST triggert schneller CAPTCHAs).
+  # Die Kommunikation zwischen Backend und Sidecar bleibt lokal auf 127.0.0.1.
+  method: "GET"
   max_page: 20
   ban_time_on_fail: 5
   max_ban_time_on_fail: 60
@@ -61,7 +62,31 @@ engines:
     shortcut: sp
     categories: [general]
     weight: 1.8
+    disabled: true
+
+  - name: qwant
+    engine: qwant
+    shortcut: qw
+    categories: [general, web]
+    weight: 1.8
     disabled: false
+
+  - name: mojeek
+    engine: mojeek
+    shortcut: mj
+    categories: [general, web]
+    weight: 1.4
+    disabled: false
+
+  - name: yahoo
+    engine: yahoo
+    shortcut: yh
+    categories: [general, web]
+    weight: 1.6
+    disabled: false
+
+  - name: reuters
+    disabled: true
 
   - name: google
     engine: google
@@ -200,4 +225,37 @@ engines:
     shortcut: bin
     categories: [news]
     weight: 1.6
+    disabled: true
+
+  - name: startpage news
+    disabled: true
+
+  - name: qwant news
+    engine: qwant
+    qwant_categ: news
+    network: qwant
+    shortcut: qwn
+    categories: [news]
+    weight: 1.8
+    disabled: false
+
+  - name: yahoo news
+    engine: yahoo_news
+    shortcut: yhn
+    categories: [news]
+    weight: 1.6
+    disabled: false
+
+  - name: tagesschau
+    engine: tagesschau
+    shortcut: ts
+    categories: [news]
+    weight: 1.8
+    disabled: false
+
+  - name: wikinews
+    engine: wikinews
+    shortcut: wn
+    categories: [news]
+    weight: 1.2
     disabled: false

@@ -106,7 +106,7 @@ def nachrichten(sprache: str) -> dict:
             except WebSearchUnavailable:
                 return None
 
-        with ThreadPoolExecutor(max_workers=len(THEMEN)) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             ergebnisse = dict(zip(THEMEN, pool.map(holen, THEMEN)))
         if all(e is None for e in ergebnisse.values()):
             _fehlschlaege[sprache] = (jetzt, "AI_WEB_SEARCH_UNAVAILABLE")

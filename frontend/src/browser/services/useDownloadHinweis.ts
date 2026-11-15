@@ -12,7 +12,7 @@ export function useDownloadHinweis() {
   useEffect(
     () =>
       useDownloadsStore.subscribe((jetzt, vorher) => {
-        if (jetzt.downloads.some((d) => !vorher.downloads.some((alt) => alt.nr === d.nr))) {
+        if (jetzt.downloads.some((d) => !vorher.downloads.some((alt) => alt.id === d.id))) {
           navigate('/downloads')
         }
       }),

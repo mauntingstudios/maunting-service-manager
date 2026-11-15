@@ -65,8 +65,72 @@ struct Offen {
     lauf: Lauf,
 }
 
+#[derive(Clone)]
+struct Vorab {
+    nr: u64,
+    url: String,
+    name: String,
+}
+
+/// Dateinamensendungen, die im Browser praktisch immer als Dateidownload und
+/// nicht als Webseite gerendert werden. Erlaubt sofortige Rückmeldung schon
+/// beim Klick, bevor langsame Server ihre HTTP-Antwortheader senden.
+const DIREKTE_DOWNLOAD_ENDUNGEN: &[&str] = &[
+    ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".zst",
+    ".exe", ".msi", ".msix", ".appx", ".iso", ".img", ".dmg", ".pkg",
+    ".deb", ".rpm", ".apk", ".aab", ".bin", ".nupkg", ".vsix",
+];
+
+fn hex_nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn pfadsegment_dekodieren(roh: &str) -> String {
+    let mit_leer = roh.replace('+', " ");
+    let mut bytes = Vec::with_capacity(mit_leer.len());
+    let b = mit_leer.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let (Some(hi), Some(lo)) = (hex_nibble(b[i + 1]), hex_nibble(b[i + 2])) {
+                bytes.push((hi << 4) | lo);
+                i += 3;
+                continue;
+            }
+        }
+        bytes.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+pub(super) fn dateiname_aus_url(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+    let letztes = parsed.path_segments()?.filter(|s| !s.is_empty()).next_back()?;
+    let dekodiert = pfadsegment_dekodieren(letztes);
+    let sauber = downloads::sicherer_name(&dekodiert);
+    (!sauber.is_empty() && sauber != "download").then_some(sauber)
+}
+
+pub(super) fn ist_direkter_download_pfad(url: &str) -> bool {
+    let Some(name) = dateiname_aus_url(url) else { return false };
+    let klein = name.to_ascii_lowercase();
+    DIREKTE_DOWNLOAD_ENDUNGEN.iter().any(|endung| klein.ends_with(endung))
+}
+
 thread_local! {
     static OFFEN: RefCell<HashMap<u64, Offen>> = RefCell::new(HashMap::new());
+    /// Downloads, die bereits bei `NavigationStarting` anhand einer eindeutigen
+    /// Archiv-/Installer-URL vorgemerkt wurden, bis `DownloadStarting` übernimmt.
+    static VORAB: RefCell<HashMap<String, Vorab>> = RefCell::new(HashMap::new());
     /// Laufende Downloads je Tab.
     static LAUFEND: RefCell<HashMap<String, usize>> = RefCell::new(HashMap::new());
     /// Laufende WebView2-Vorgänge je Download-`nr`, für `abbrechen`. Sie
@@ -84,7 +148,8 @@ thread_local! {
 fn anzahl(tab: &str) -> usize {
     let laufend = LAUFEND.with(|l| l.borrow().get(tab).copied().unwrap_or(0));
     let wartend = OFFEN.with(|o| o.borrow().values().filter(|x| x.lauf.tab == tab).count());
-    laufend + wartend
+    let vorab = VORAB.with(|v| usize::from(v.borrow().contains_key(tab)));
+    laufend + wartend + vorab
 }
 
 pub(super) fn laeuft(tab: &str) -> bool {
@@ -97,10 +162,108 @@ pub(super) fn laeuft(tab: &str) -> bool {
 /// nächste Start (`quarantaene::beim_start`). UI-Faden.
 pub(super) fn verwerfen() {
     OFFEN.with(|o| o.borrow_mut().clear());
+    VORAB.with(|v| v.borrow_mut().clear());
     LAUFEND.with(|l| l.borrow_mut().clear());
     VORGAENGE.with(|v| v.borrow_mut().clear());
     VERBORGEN.with(|v| v.borrow_mut().clear());
     NUTZER_ABBRUCH.with(|n| n.borrow_mut().clear());
+}
+
+/// Registriert einen offensichtlichen Dateidownload bereits bei `NavigationStarting`,
+/// damit langsame Server (25+ s TTFB bis zu den HTTP-Antwortheadern) sofort sichtbares
+/// Download-Feedback liefern.
+pub(super) fn vorab_starten(app: &AppHandle, tab: &str, url: &str) {
+    if downloads::fragen(app) || !ist_direkter_download_pfad(url) {
+        return;
+    }
+    let schon_gleich = VORAB.with(|v| v.borrow().get(tab).is_some_and(|e| e.url == url));
+    if schon_gleich {
+        return;
+    }
+    let vorher = VORAB.with(|v| v.borrow_mut().remove(tab));
+    if let Some(alt) = vorher {
+        melden(
+            app,
+            TabEreignis::Download {
+                id: tab.to_string(),
+                nr: alt.nr,
+                stand: DownloadStand::Abgebrochen,
+                url: alt.url,
+                datei: Some(alt.name),
+            },
+        );
+    }
+    if zu_viele(tab) {
+        return;
+    }
+    let nr = downloads::naechste_nr();
+    let name = dateiname_aus_url(url).unwrap_or_else(|| "download".to_string());
+    let eintrag = Vorab { nr, url: url.to_string(), name: name.clone() };
+    VORAB.with(|v| v.borrow_mut().insert(tab.to_string(), eintrag));
+    melden(
+        app,
+        TabEreignis::Download {
+            id: tab.to_string(),
+            nr,
+            stand: DownloadStand::Start,
+            url: url.to_string(),
+            datei: Some(name),
+        },
+    );
+}
+
+/// Bereinigt eine Vorab-Vormerkung bei `NavigationCompleted`, falls `DownloadStarting`
+/// sie nicht übernommen hat (z. B. Netzwerkfehler, Server liefert HTML oder Abbruch).
+pub(super) fn vorab_beenden(app: &AppHandle, tab: &str, erfolg: bool, abgebrochen: bool) {
+    let Some(eintrag) = VORAB.with(|v| v.borrow().get(tab).cloned()) else { return };
+    if !erfolg && abgebrochen {
+        // WebView2 meldet `OPERATION_CANCELED` beim Umschalten einer Navigation auf
+        // einen Download mitunter einen Tick vor `DownloadStarting`. Erst nach
+        // kurzer Karenzzeit endgültig als abgebrochen werten, falls `DownloadStarting`
+        // den Eintrag bis dahin nicht übernommen hat.
+        let (app2, tab2, nr) = (app.clone(), tab.to_string(), eintrag.nr);
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let app_ui = app2.clone();
+            let _ = app2.run_on_main_thread(move || {
+                let noch_offen = VORAB.with(|v| {
+                    let mut m = v.borrow_mut();
+                    if m.get(&tab2).is_some_and(|e| e.nr == nr) {
+                        m.remove(&tab2)
+                    } else {
+                        None
+                    }
+                });
+                if let Some(alt) = noch_offen {
+                    melden(
+                        &app_ui,
+                        TabEreignis::Download {
+                            id: tab2.clone(),
+                            nr: alt.nr,
+                            stand: DownloadStand::Abgebrochen,
+                            url: alt.url,
+                            datei: Some(alt.name),
+                        },
+                    );
+                    freigeben(&app_ui, &tab2);
+                }
+            });
+        });
+        return;
+    }
+    VORAB.with(|v| v.borrow_mut().remove(tab));
+    let stand = if erfolg { DownloadStand::Abgebrochen } else { DownloadStand::Fehler };
+    melden(
+        app,
+        TabEreignis::Download {
+            id: tab.to_string(),
+            nr: eintrag.nr,
+            stand,
+            url: eintrag.url,
+            datei: Some(eintrag.name),
+        },
+    );
+    freigeben(app, tab);
 }
 
 fn zu_viele(tab: &str) -> bool {
@@ -219,10 +382,11 @@ pub(super) unsafe fn anbinden(app: &AppHandle, id: &str, core: &ICoreWebView2, p
             let vorgang = args.DownloadOperation()?;
             let url = text(|p| vorgang.Uri(p));
             let vorschlag = PathBuf::from(text(|p| args.ResultFilePath(p)));
+            let vorab = VORAB.with(|v| v.borrow_mut().remove(&id));
             let lauf = Lauf {
                 tab: id.clone(),
                 privat,
-                nr: downloads::naechste_nr(),
+                nr: vorab.as_ref().map(|v| v.nr).unwrap_or_else(downloads::naechste_nr),
                 name: downloads::name_fuer(&url, &vorschlag),
                 url,
                 gewaehlt: None,
@@ -232,12 +396,30 @@ pub(super) unsafe fn anbinden(app: &AppHandle, id: &str, core: &ICoreWebView2, p
                 return args.SetCancel(true);
             }
             if !downloads::fragen(&app) {
-                return starten(&app, &args, lauf);
+                starten(&app, &args, lauf)?;
+            } else {
+                let deferral = args.GetDeferral()?;
+                let (nr, name) = (lauf.nr, lauf.name.clone());
+                OFFEN.with(|o| o.borrow_mut().insert(nr, Offen { args, deferral, lauf }));
+                fragen(&app, nr, name);
             }
-            let deferral = args.GetDeferral()?;
-            let (nr, name) = (lauf.nr, lauf.name.clone());
-            OFFEN.with(|o| o.borrow_mut().insert(nr, Offen { args, deferral, lauf }));
-            fragen(&app, nr, name);
+            // Ein nur für den Download geöffnetes, leeres Popup-Fenster (`target="_blank"`)
+            // wird automatisch geschlossen; `schliessen()` behält den Controller verborgen
+            // in `VERBORGEN`, bis der Download endet.
+            let leeres_popup = id.starts_with("tab-p")
+                && super::NATIV.with(|n| {
+                    let karte = n.borrow();
+                    karte.len() > 1
+                        && karte.get(&id).is_some_and(|t| {
+                            let quelle = super::webview2::quelle(&t.core);
+                            let mut zurueck = windows::core::BOOL::default();
+                            let _ = t.core.CanGoBack(&mut zurueck);
+                            (quelle.is_empty() || quelle == "about:blank") && !zurueck.as_bool()
+                        })
+                });
+            if leeres_popup {
+                melden(&app, TabEreignis::Schliessen { id: id.clone() });
+            }
             Ok(())
         })),
         &mut token,
@@ -405,12 +587,51 @@ impl Fort {
 /// Vorgang gefunden und `Cancel` angestoßen wurde; das Ende meldet danach
 /// der `StateChanged`-Rückruf als `Abgebrochen`, Teilreste räumt er weg und
 /// Quotas gibt er frei.
-pub(super) fn abbrechen(nr: u64) -> bool {
+pub(super) fn abbrechen(app: &AppHandle, nr: u64) -> bool {
     let vorgang = VORGAENGE.with(|v| v.borrow().get(&nr).cloned());
-    let Some(vorgang) = vorgang else { return false };
-    NUTZER_ABBRUCH.with(|a| a.borrow_mut().insert(nr));
-    // UI-Faden: der einzige Faden, der den Vorgang anfassen darf.
-    unsafe { vorgang.Cancel().is_ok() }
+    if let Some(vorgang) = vorgang {
+        NUTZER_ABBRUCH.with(|a| a.borrow_mut().insert(nr));
+        // UI-Faden: der einzige Faden, der den Vorgang anfassen darf.
+        return unsafe { vorgang.Cancel().is_ok() };
+    }
+    let vorab_treffer = VORAB.with(|v| {
+        let mut m = v.borrow_mut();
+        let tab = m.iter().find(|(_, e)| e.nr == nr).map(|(k, _)| k.clone())?;
+        m.remove(&tab).map(|e| (tab, e))
+    });
+    if let Some((tab, eintrag)) = vorab_treffer {
+        super::NATIV.with(|n| {
+            if let Some(t) = n.borrow().get(&tab) {
+                unsafe {
+                    let _ = t.core.Stop();
+                }
+            }
+        });
+        VERBORGEN.with(|v| {
+            if let Some(liste) = v.borrow().get(&tab) {
+                for c in liste {
+                    unsafe {
+                        if let Ok(core) = c.CoreWebView2() {
+                            let _ = core.Stop();
+                        }
+                    }
+                }
+            }
+        });
+        melden(
+            app,
+            TabEreignis::Download {
+                id: tab.clone(),
+                nr: eintrag.nr,
+                stand: DownloadStand::Abgebrochen,
+                url: eintrag.url,
+                datei: Some(eintrag.name),
+            },
+        );
+        freigeben(app, &tab);
+        return true;
+    }
+    false
 }
 
 /// Einmaliges Ende eines Downloads: Zähler, Register und Teilreste werden
@@ -706,5 +927,23 @@ mod tests {
             zaehlen(tab, false);
         }
         assert!(LAUFEND.with(|l| !l.borrow().contains_key(tab)));
+    }
+
+    #[test]
+    fn erkennt_direkte_download_pfade_und_dekodiert_dateinamen() {
+        let wt = "https://cdn-live.warthunder.com/uploads/48/95/4d/ba82a801a29a0b66823a318b4ebcc98111/OPEX+Overhaul+1.1.5.zip";
+        assert!(ist_direkter_download_pfad(wt));
+        assert_eq!(dateiname_aus_url(wt).as_deref(), Some("OPEX Overhaul 1.1.5.zip"));
+
+        assert!(ist_direkter_download_pfad("https://example.com/setup/Installer%20v2.EXE?dl=1#top"));
+        assert_eq!(
+            dateiname_aus_url("https://example.com/setup/Installer%20v2.EXE?dl=1#top").as_deref(),
+            Some("Installer v2.EXE")
+        );
+
+        assert!(ist_direkter_download_pfad("https://example.com/release.tar.gz"));
+        assert!(!ist_direkter_download_pfad("https://example.com/seite.html"));
+        assert!(!ist_direkter_download_pfad("https://example.com/dokument.pdf"));
+        assert!(!ist_direkter_download_pfad("file:///C:/Temp/archiv.zip"));
     }
 }

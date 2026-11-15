@@ -90,6 +90,11 @@ _WIKI_HEADERS = {
     "User-Agent": "MauntingSearch/1.0 (https://mauntingstudios.com; privacy-proxy)",
     "Accept": "application/json",
 }
+_SEARXNG_HEADERS = {
+    "Accept": "application/json",
+    "X-Forwarded-For": "127.0.0.1",
+    "X-Real-IP": "127.0.0.1",
+}
 
 _client: httpx.Client | None = None
 _client_lock = threading.Lock()
@@ -1841,7 +1846,7 @@ def searxng_autocomplete(query: str, sprache: str = "de", s_url: str | None = No
         resp = _http_client().get(
             f"{target_url.rstrip('/')}/autocompleter",
             params={"q": q, "language": sprache},
-            headers={"Accept": "application/json"},
+            headers=_SEARXNG_HEADERS,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -2156,12 +2161,13 @@ def _searxng_ergebnis_berechnen(
     antworten: list[str] = []
     korrekturen: list[str] = []
     searxng_fehler: WebSearchUnavailable | None = None
+    searxng_unresponsive: bool = False
 
     brave_hits: list[dict] = []
     brave_fehler: WebSearchUnavailable | None = None
 
     def _abfrage_searxng() -> None:
-        nonlocal searxng_hits, suggestions, infobox, antworten, korrekturen, searxng_fehler
+        nonlocal searxng_hits, suggestions, infobox, antworten, korrekturen, searxng_fehler, searxng_unresponsive
         if not target_url:
             return
         params: dict[str, str | int] = {"q": query, "format": "json", "pageno": seite}
@@ -2177,11 +2183,12 @@ def _searxng_ergebnis_berechnen(
             resp = _http_client().get(
                 f"{target_url.rstrip('/')}/search",
                 params=params,
-                headers={"Accept": "application/json"},
+                headers=_SEARXNG_HEADERS,
             )
             if resp.status_code != 200:
                 raise WebSearchUnavailable("AI_WEB_SEARCH_REJECTED")
             data = resp.json()
+            searxng_unresponsive = bool(data.get("unresponsive_engines")) if isinstance(data, dict) else False
             raw = data.get("results") if isinstance(data, dict) else None
             for r in raw if isinstance(raw, list) else []:
                 if len(searxng_hits) >= limit:
@@ -2277,6 +2284,10 @@ def _searxng_ergebnis_berechnen(
             raise brave_fehler
         if searxng_fehler is not None:
             raise searxng_fehler
+        if kategorie in (None, "general") and seite == 1 and searxng_unresponsive:
+            fallback_hits = _direkt_web_fallback(query, limit=limit, sprache=sprache)
+            if fallback_hits:
+                searxng_hits = fallback_hits
 
     listen: list[list[dict]] = []
     if brave_hits:
@@ -2423,6 +2434,56 @@ def _search_duckduckgo(query: str, limit: int = MAX_RESULTS) -> list[dict]:
         return hits
     except Exception as exc:
         logger.debug("DuckDuckGo fallback failed: %s", exc)
+        return []
+
+
+def _direkt_web_fallback(
+    query: str,
+    limit: int = MAX_RESULTS,
+    sprache: str | None = None,
+) -> list[dict]:
+    """Letzter Rückfall, wenn SearXNG-Engines wegen CAPTCHAs/429s leer bleiben."""
+    ddg = _search_duckduckgo(query, limit=limit)
+    if ddg:
+        return ddg
+    lang = (sprache or "de").split("-")[0].lower()
+    if not re.fullmatch(r"[a-z]{2}", lang):
+        lang = "de"
+    try:
+        resp = _http_client().get(
+            f"https://{lang}.wikipedia.org/w/api.php",
+            params={
+                "action": "query",
+                "list": "search",
+                "srsearch": query,
+                "srlimit": min(limit, 8),
+                "format": "json",
+                "utf8": 1,
+            },
+            headers=_WIKI_HEADERS,
+        )
+        if resp.status_code != 200:
+            return []
+        entries = ((resp.json() or {}).get("query") or {}).get("search") or []
+        hits: list[dict] = []
+        for item in entries[:limit]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            if not title:
+                continue
+            wiki_url = f"https://{lang}.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+            if len(wiki_url) <= MAX_URL_CHARS and _is_safe_public_url(wiki_url):
+                hits.append({
+                    "title": redact_sensitive_text(title)[:MAX_TITLE_CHARS],
+                    "url": wiki_url,
+                    "snippet": redact_sensitive_text(
+                        html_to_clean_text(str(item.get("snippet") or ""), MAX_SNIPPET_CHARS)
+                    )[:MAX_SNIPPET_CHARS],
+                })
+        return hits
+    except Exception as exc:
+        logger.debug("Wikipedia web fallback failed: %s", type(exc).__name__)
         return []
 
 

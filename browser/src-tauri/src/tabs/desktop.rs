@@ -492,7 +492,8 @@ pub(super) fn tab_profil(eltern_id: &str) -> Option<String> {
 /// Stößt den Abbruch eines laufenden Downloads an (`nr` aus
 /// `TabEreignis::Download`). Der Abbruch selbst läuft auf dem UI-Faden.
 pub fn download_abbrechen(app: &AppHandle, nr: u64) -> Result<bool, String> {
-    auf_ui(app, move || Ok(herunterladen::abbrechen(nr)))
+    let app2 = app.clone();
+    auf_ui(app, move || Ok(herunterladen::abbrechen(&app2, nr)))
 }
 
 /// Zeigt den vorderen Tab, versteckt alle anderen. Der vordere wacht auf,

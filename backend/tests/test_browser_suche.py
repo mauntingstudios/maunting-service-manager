@@ -46,7 +46,7 @@ def searxng(monkeypatch: pytest.MonkeyPatch) -> dict:
 
     class Client:
         def get(self, url, params=None, headers=None):
-            gesehen["anfragen"].append({"url": url, "params": dict(params or {})})
+            gesehen["anfragen"].append({"url": url, "params": dict(params or {}), "headers": dict(headers or {})})
             antwort = gesehen["antwort"]
             if isinstance(antwort, Exception):
                 raise antwort
@@ -74,6 +74,8 @@ def test_sichere_suche_seite_und_sprache_gehen_an_searxng(searxng: dict) -> None
     assert params["safesearch"] == 2
     assert params["language"] == "de"
     assert searxng["anfragen"][0]["url"] == "http://127.0.0.1:8888/search"
+    assert searxng["anfragen"][0]["headers"].get("X-Forwarded-For") == "127.0.0.1"
+    assert searxng["anfragen"][0]["headers"].get("X-Real-IP") == "127.0.0.1"
 
 
 def test_ohne_sichere_suche_bestimmt_die_instanz(searxng: dict) -> None:
@@ -153,7 +155,7 @@ def test_autocomplete_fragt_den_autocompleter_der_instanz(monkeypatch: pytest.Mo
 
     class Client:
         def get(self, url, params=None, headers=None):
-            searxng["anfragen"].append({"url": url, "params": dict(params or {})})
+            searxng["anfragen"].append({"url": url, "params": dict(params or {}), "headers": dict(headers or {})})
             return Antwort()
 
     monkeypatch.setattr(ai_web_search_service, "_http_client", lambda: Client())
@@ -162,6 +164,8 @@ def test_autocomplete_fragt_den_autocompleter_der_instanz(monkeypatch: pytest.Mo
     assert antwort.json()["vorschlaege"] == ["wetter berlin", "wetter hamburg"]
     assert searxng["anfragen"][-1]["url"] == "http://127.0.0.1:8888/autocompleter"
     assert searxng["anfragen"][-1]["params"]["q"] == "wetter"
+    assert searxng["anfragen"][-1]["headers"].get("X-Forwarded-For") == "127.0.0.1"
+    assert searxng["anfragen"][-1]["headers"].get("X-Real-IP") == "127.0.0.1"
 
 
 def test_wissen_holt_zusammenfassung_und_eckdaten(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -399,3 +403,39 @@ def test_ein_unlesbares_datum_faellt_weg(nachrichten: dict) -> None:
     ]})
     themen = _app(konto=39).get("/api/browser/nachrichten").json()["themen"]
     assert [e["zeit"] for e in themen["politik"]] == [None, None]
+
+
+def test_suche_weicht_bei_unresponsive_engines_auf_direkt_fallback_aus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wenn SearXNG zwar HTTP 200 liefert, alle Upstream-Engines aber in CAPTCHAs/429s
+    stecken (`unresponsive_engines`), liefert Maunting Search trotzdem Fallback-Treffer.
+    """
+    monkeypatch.setattr(ai_web_search_service, "searxng_url", lambda: "http://127.0.0.1:8888")
+    monkeypatch.setattr(ai_web_search_service, "api_key", lambda: None)
+    monkeypatch.setattr(ai_web_search_service, "_search_duckduckgo", lambda q, limit=15: [])
+
+    class Client:
+        def get(self, url, params=None, headers=None):
+            if url == "http://127.0.0.1:8888/search":
+                return _Antwort({
+                    "results": [],
+                    "unresponsive_engines": [["duckduckgo", "CAPTCHA"], ["google", "HTTP 403"]],
+                })
+            if "wikipedia.org/w/api.php" in url:
+                return _Antwort({
+                    "query": {
+                        "search": [
+                            {"title": "Grand Theft Auto VI", "snippet": "Angekündigtes Videospiel von Rockstar Games."}
+                        ]
+                    }
+                })
+            raise AssertionError(f"Unerwarteter Aufruf: {url}")
+
+    monkeypatch.setattr(ai_web_search_service, "_http_client", lambda: Client())
+    antwort = _app(konto=40).post("/api/browser/suche", json={"q": "wann kommt GTA 6", "sprache": "de"})
+    assert antwort.status_code == 200
+    treffer = antwort.json()["treffer"]
+    assert len(treffer) == 1
+    assert treffer[0]["titel"] == "Grand Theft Auto VI"
+    assert treffer[0]["url"] == "https://de.wikipedia.org/wiki/Grand_Theft_Auto_VI"

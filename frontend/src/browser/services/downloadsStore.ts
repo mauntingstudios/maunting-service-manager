@@ -127,6 +127,7 @@ export const useDownloadsStore = create<DownloadsZustand>()(
           const neueDatei = e.datei ?? bestehend.datei
           downloads[index] = {
             ...bestehend,
+            url: e.url || bestehend.url,
             stand: e.stand,
             datei: neueDatei,
             kategorie: neueDatei ? kategorieFuerDatei(neueDatei) : bestehend.kategorie,
@@ -177,12 +178,15 @@ export const useDownloadsStore = create<DownloadsZustand>()(
       merge: (gespeichert, aktuell) => {
         const raw = gespeichert as Partial<DownloadsZustand> | undefined
         if (!raw || !Array.isArray(raw.downloads)) return aktuell
-        // Unvollendete Alt-Downloads beim Einlesen als abgebrochen markieren
-        const bereinigt: Download[] = raw.downloads.map((d) => {
+        // Unvollendete Alt-Downloads beim Einlesen als abgebrochen markieren und
+        // historische Nummern negativ normalisieren, damit neue Sitzungsnummern
+        // (ab 1) niemals mit Alt-Einträgen aus localStorage kollidieren.
+        const bereinigt: Download[] = raw.downloads.map((d, idx) => {
           const fertig = ABSCHLUSS.has(d.stand)
           const dateiOderName = d.datei || d.url || ''
           return {
             ...d,
+            nr: -(idx + 1),
             stand: fertig ? d.stand : 'abgebrochen',
             kategorie: d.kategorie || kategorieFuerDatei(dateiOderName),
             existiert: d.existiert ?? true,

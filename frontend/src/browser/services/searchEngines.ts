@@ -94,11 +94,14 @@ export function suchAdresse(
   const text = begriff.trim()
   if (!text) return null
   const q = encodeURIComponent(text)
-  if (id === 'msm' || id === 'searxng') {
+  if (id === 'msm') {
+    return msmSucheAdresse(text)
+  }
+  if (id === 'searxng') {
     const basis = searxngBasis(searxngUrl)
     if (basis) return `${basis}/search?q=${q}`
     const verbunden = gekoppelt ?? istGekoppelt(useSitzung.getState().stand)
-    if (verbunden || id === 'msm') return msmSucheAdresse(text)
+    if (verbunden) return msmSucheAdresse(text)
     return null
   }
   return suchmaschine(id).vorlage.replace('%s', q)

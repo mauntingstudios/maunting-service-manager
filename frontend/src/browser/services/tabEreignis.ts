@@ -88,7 +88,10 @@ export function ereignisAnwenden(e: TabEinzelEreignis, z: TabZugriff): void {
       protokollEreignis(e.id, e.methode, e.daten)
       break
     case 'geladen':
-      z.aendern(e.id, { laedt: false })
+      z.aendern(e.id, {
+        laedt: false,
+        ...(istWebseite(e.url) && !istIntern(tab.url) ? { url: e.url } : {}),
+      })
       if (!tab.privat && istWebseite(e.url)) {
         useVerlaufStore.getState().besucht(e.url, z.finden(e.id)?.titel || e.url)
       }

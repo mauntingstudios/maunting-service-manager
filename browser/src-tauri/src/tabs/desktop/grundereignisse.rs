@@ -278,6 +278,7 @@ pub(super) unsafe fn anbinden(app: &AppHandle, id: &str, core: &ICoreWebView2) -
                         }
                     }
                     Weg::Laden => {
+                        super::herunterladen::vorab_starten(&app, &id, &url);
                         melden(&app, TabEreignis::Laedt { id: id.clone(), url });
                         Ok(())
                     }
@@ -289,7 +290,20 @@ pub(super) unsafe fn anbinden(app: &AppHandle, id: &str, core: &ICoreWebView2) -
     {
         let (app, id) = (app.clone(), id.to_string());
         core.add_NavigationCompleted(
-            &NavigationCompletedEventHandler::create(Box::new(move |sender, _| {
+            &NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
+                let mut erfolg = true;
+                let mut abgebrochen = false;
+                if let Some(args) = args {
+                    let mut ok = windows::core::BOOL::default();
+                    if args.IsSuccess(&mut ok).is_ok() {
+                        erfolg = ok.as_bool();
+                    }
+                    let mut status = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+                    if args.WebErrorStatus(&mut status).is_ok() {
+                        abgebrochen = status == COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED;
+                    }
+                }
+                super::herunterladen::vorab_beenden(&app, &id, erfolg, abgebrochen);
                 if let Some(core) = sender {
                     let url = super::webview2::text(|p| core.Source(p));
                     melden(&app, TabEreignis::Geladen { id: id.clone(), url });

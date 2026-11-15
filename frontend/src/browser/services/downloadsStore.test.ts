@@ -136,4 +136,63 @@ describe('Download-Fortschritt', () => {
     useDownloadsStore.getState().leeren()
     expect(useDownloadsStore.getState().downloads.map((d) => d.nr)).toEqual([2])
   })
+
+  it('aktualisiert einen vorab registrierten Download mit derselben Nummer ohne Duplikat', () => {
+    useDownloadsStore.getState().ereignis({
+      art: 'download',
+      id: 'tab-a',
+      nr: 1,
+      url: 'https://cdn.example/OPEX+Overhaul+1.1.5.zip',
+      datei: 'OPEX Overhaul 1.1.5.zip',
+      stand: 'start',
+    })
+    useDownloadsStore.getState().ereignis({
+      art: 'download',
+      id: 'tab-a',
+      nr: 1,
+      url: 'https://cdn.example/OPEX+Overhaul+1.1.5.zip',
+      datei: 'C:/Downloads/OPEX Overhaul 1.1.5.zip',
+      stand: 'start',
+    })
+    const { downloads, neu } = useDownloadsStore.getState()
+    expect(downloads).toHaveLength(1)
+    expect(neu).toBe(1)
+    expect(downloads[0].datei).toBe('C:/Downloads/OPEX Overhaul 1.1.5.zip')
+  })
+
+  it('normalisiert persistierte Alt-Nummern beim Einlesen negativ, damit neue Sitzungsnummern nicht kollidieren', () => {
+    localStorage.setItem(
+      'msb:downloads',
+      JSON.stringify({
+        state: {
+          downloads: [
+            {
+              id: 'alt-1',
+              nr: 1,
+              url: 'https://alt.example/alt.zip',
+              datei: 'C:/Downloads/alt.zip',
+              stand: 'fertig',
+              zeit: 1000,
+              kategorie: 'archive',
+              existiert: true,
+              empfangen: 100,
+              gesamt: 100,
+              bytesProSekunde: null,
+              restSekunden: null,
+              letzteBytesZeit: null,
+            },
+          ],
+        },
+        version: 1,
+      }),
+    )
+    useDownloadsStore.persist.rehydrate()
+    expect(useDownloadsStore.getState().downloads[0].nr).toBeLessThan(0)
+
+    melden(1, 'start', 'neu.zip')
+    const { downloads } = useDownloadsStore.getState()
+    expect(downloads).toHaveLength(2)
+    expect(downloads[0].nr).toBe(1)
+    expect(downloads[1].id).toBe('alt-1')
+  })
 })
