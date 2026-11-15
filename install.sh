@@ -549,6 +549,7 @@ EOF
   "icc": false,
   "no-new-privileges": true,
   "userland-proxy": false,
+  "exec-opts": ["native.cgroupdriver=cgroupfs"],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "20m",
@@ -567,6 +568,7 @@ EOF
   "icc": false,
   "no-new-privileges": true,
   "userland-proxy": false,
+  "exec-opts": ["native.cgroupdriver=cgroupfs"],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "20m",

@@ -1068,6 +1068,7 @@ if [[ -d "$MSM_DIR/msm-agent" ]]; then
   "icc": false,
   "no-new-privileges": true,
   "userland-proxy": false,
+  "exec-opts": ["native.cgroupdriver=cgroupfs"],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "20m",
@@ -1075,6 +1076,24 @@ if [[ -d "$MSM_DIR/msm-agent" ]]; then
   }
 }
 EOF
+            chown "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "${MSM_DOCKER_HOME}/.config/docker/daemon.json"
+        else
+            python3 - "${MSM_DOCKER_HOME}/.config/docker/daemon.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    if isinstance(cfg, dict):
+        opts = [o for o in cfg.get("exec-opts", []) if not str(o).startswith("native.cgroupdriver=")]
+        opts.append("native.cgroupdriver=cgroupfs")
+        cfg["exec-opts"] = opts
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=2)
+            fh.write("\n")
+except Exception:
+    pass
+PYEOF
             chown "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "${MSM_DOCKER_HOME}/.config/docker/daemon.json"
         fi
         su -s /bin/bash "$MSM_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" 2>/dev/null || true
