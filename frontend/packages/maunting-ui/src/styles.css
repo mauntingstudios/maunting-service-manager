@@ -1,3 +1,9 @@
+@property --mui-ring-value {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
 /*
  * Komponenten-Rezepte der Maunting-DNA.
  *
@@ -210,5 +216,72 @@
 
   .mui-signal {
     background: linear-gradient(90deg, hsl(var(--mui-line) / 0.9), hsl(var(--mui-line) / 0));
+  }
+
+  /* ── Fortschrittsring ──────────────────────────────────────────────── */
+
+  .msm-progress-ring {
+    --ring-size: 48px;
+    --ring-thickness: 4.5px;
+    --ring-track: hsl(var(--mui-line-strong) / 0.35);
+    --ring-fill: hsl(var(--mui-focus));
+    --mui-ring-value: 0;
+    display: block;
+    inline-size: var(--ring-size);
+    block-size: var(--ring-size);
+    appearance: none;
+    border-radius: 50%;
+    border: var(--ring-thickness) solid transparent;
+    background: conic-gradient(
+      var(--ring-fill) calc(var(--mui-ring-value) * 1%),
+      var(--ring-track) 0
+    );
+    background-origin: border-box;
+    background-clip: border-area;
+    transition: --mui-ring-value 0s ease-in-out;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .msm-progress-ring {
+      transition-duration: 0.45s;
+      transition-timing-function: var(--mui-ease-out);
+    }
+  }
+
+  @supports not (background-clip: border-area) {
+    .msm-progress-ring {
+      border: 0;
+      -webkit-mask-image: radial-gradient(
+        transparent calc(50% - var(--ring-thickness)),
+        black calc(50% - var(--ring-thickness) + 0.5px)
+      );
+      mask-image: radial-gradient(
+        transparent calc(50% - var(--ring-thickness)),
+        black calc(50% - var(--ring-thickness) + 0.5px)
+      );
+    }
+  }
+
+  @media (forced-colors: active) {
+    .msm-progress-ring {
+      forced-color-adjust: none;
+      --ring-fill: CanvasText;
+      --ring-track: Canvas;
+    }
+  }
+
+  .msm-progress-ring::-webkit-progress-bar {
+    display: none;
+    background: none;
+  }
+
+  .msm-progress-ring::-webkit-progress-value {
+    display: none;
+    background: none;
+  }
+
+  .msm-progress-ring::-moz-progress-bar {
+    display: none;
+    background: none;
   }
 }

@@ -10,6 +10,7 @@ import {
   FileText,
   HardDrive,
   Menu,
+  Network,
   Package,
   Play,
   RefreshCw,
@@ -638,6 +639,7 @@ export function ServerDetail() {
     : null;
 
   const openResourceEditor = () => setShowEditResource(true);
+  const openNetworkEditor = () => setShowEditNetwork(true);
   const closeResourceEditor = () => setShowEditResource(false);
   const onResourceSaved = () => void fetchAll();
 
@@ -726,21 +728,6 @@ export function ServerDetail() {
       {t("servers.serverFileUpdateAvailable")}
     </span>
   );
-  const netzwerkKnopf = (
-    <Button
-      variant="ghost"
-      size="sm"
-      fingerziel
-      onClick={() => setShowEditNetwork(true)}
-      disabled={effectiveStatus === "running" || !!actionLoading}
-      aria-description={effectiveStatus === "running" ? t("servers.networkEditRequiresStopped") : undefined}
-      className={`h-7 px-2 text-xs text-on-surface-variant hover:text-primary ${
-        effectiveStatus === "running" || !!actionLoading ? "opacity-50 cursor-not-allowed" : ""
-      }`}
-    >
-      {t("common.edit")}
-    </Button>
-  );
 
   const switcherServers = allServers.some((s) => s.id === server.id)
     ? allServers
@@ -775,6 +762,13 @@ export function ServerDetail() {
           } satisfies ActionMenuItem,
         ]
       : []),
+    {
+      key: "edit-network",
+      label: t("servers.editNetworkTitle"),
+      icon: <Network className="h-4 w-4" />,
+      disabled: effectiveStatus === "running" || !!actionLoading,
+      onSelect: openNetworkEditor,
+    },
     ...(canInstallOrSwitch
       ? [
           {
@@ -832,14 +826,14 @@ export function ServerDetail() {
     isLifecycleBusy,
     actionLoading,
     canManageCredentials,
-    networkEditButton: netzwerkKnopf,
     onOpenResourceEditor: openResourceEditor,
+    onOpenNetworkEditor: openNetworkEditor,
   };
 
   return (
     <div className="msm-page">
-      {/* Server-Deck: Fokus-Aktionen oben, ruhiges Telemetrie-&-Netzwerkband darunter, volle Breite für Tabs */}
-      <header className="rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-3.5 py-3 sm:px-5 sm:py-3.5 space-y-3 overflow-hidden">
+      {/* Server-Deck: Fokus-Aktionen oben, kompakter Ressourcenstreifen darunter, volle Breite für Tabs */}
+      <header className="rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-3.5 py-3 sm:px-5 sm:py-3.5 space-y-2.5 overflow-x-clip">
         <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
           {/* Links: Zurück, Servername, Schnellwechsler, Status & kompakter Connect-Chip */}
           <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">

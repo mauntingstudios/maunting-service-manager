@@ -238,6 +238,36 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
   // Allowed cases: exactly one resource edit action is rendered
   // -------------------------------------------------------------------------
 
+  it('hides network ports and Docker container details behind one-click disclosure while keeping resources visible', async () => {
+    setPermissions(OWNER_ME)
+    renderServerDetail()
+    await waitForServerToLoad()
+
+    expect(screen.getByText('CPU')).toBeInTheDocument()
+    expect(screen.getByText('RAM')).toBeInTheDocument()
+    expect(screen.getByText('Disk')).toBeInTheDocument()
+
+    // No technical clutter permanently visible in the header strip
+    expect(screen.queryByText('msm-srv-84')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: i18n.t('serverDetail.networkSummary') })).not.toBeInTheDocument()
+
+    const trigger = screen.getByTestId('network-details-trigger')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(trigger).not.toHaveAttribute('aria-haspopup')
+
+    fireEvent.click(trigger)
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    const popover = screen.getByRole('dialog', { name: i18n.t('serverDetail.networkSummary') })
+    expect(within(popover).getByText('msm-srv-84')).toBeInTheDocument()
+    expect(within(popover).getByText('27015')).toBeInTheDocument()
+
+    fireEvent.click(within(popover).getByTestId('network-edit-btn'))
+
+    expect(screen.queryByRole('dialog', { name: i18n.t('serverDetail.networkSummary') })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: i18n.t('servers.editNetworkTitle') })).toBeInTheDocument()
+  })
+
   it('renders port numbers at the same type scale as the host IP next to them', async () => {
     // Die Portnummern standen auf `text-display-sm` — 36px fett gegen 16px
     // normal in derselben Rasterzeile. Neben der Host-IP sah das aus, als sei
@@ -246,6 +276,8 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
     setPermissions(VIEW_ONLY_ME)
     renderServerDetail()
     await waitForServerToLoad()
+
+    fireEvent.click(screen.getByTestId('network-details-trigger'))
 
     const networkRegion = screen.getByRole('region', { name: i18n.t('servers.network') })
     const hostIp = within(networkRegion).getByText('127.0.0.1')
@@ -260,6 +292,8 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
     setPermissions(VIEW_ONLY_ME)
     renderServerDetail()
     await waitForServerToLoad()
+
+    fireEvent.click(screen.getByTestId('network-details-trigger'))
 
     const copyButton = screen.getByRole('button', {
       name: i18n.t('servers.copyDockerContainerName'),

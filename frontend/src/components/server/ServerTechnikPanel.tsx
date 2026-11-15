@@ -1,7 +1,17 @@
-import type { ReactNode } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Copy, Cpu, Network } from 'lucide-react'
-import { Button, Kurzinfo, ProgressBar } from '@maunting/ui'
+import {
+  Check,
+  ChevronDown,
+  Clock,
+  Copy,
+  Cpu,
+  Database,
+  HardDrive,
+  Network,
+  SlidersHorizontal,
+} from 'lucide-react'
+import { Ankerfenster, Button, Kurzinfo, ProgressRing } from '@maunting/ui'
 import { ServerCredentialsPanel } from '@/components/server/ServerCredentialsPanel'
 import { UptimeDisplay } from '@/components/server/UptimeDisplay'
 import { formatMb, formatPortRoleLabel } from '@/lib/serverConnect'
@@ -30,14 +40,14 @@ interface ServerTechnikPanelProps {
   isLifecycleBusy: boolean
   actionLoading: string | null
   canManageCredentials: boolean
-  networkEditButton: ReactNode
   onOpenResourceEditor: () => void
+  onOpenNetworkEditor: () => void
 }
 
 /**
- * Ruhiges Telemetrie-, Node- und Netzwerk-Band direkt im unteren Bereich des Server-Decks.
- * Zeigt Auslastungsbalken (CPU, RAM, Disk), Node, Uptime, Ports und Container-ID
- * ohne seitlichen Platz für Mods, Dateien oder Konsole wegzunehmen.
+ * Kompakter Status- und Ressourcenstreifen im Server-Deck.
+ * Zeigt Auslastungsringe (CPU, RAM, Disk), Spiel, Node und Uptime auf einen Blick
+ * und hält Netzwerk, Ports sowie den Container-Namen sauber hinter einem Klick bereit.
  */
 export function ServerTechnikPanel({
   server,
@@ -54,10 +64,14 @@ export function ServerTechnikPanel({
   isLifecycleBusy,
   actionLoading,
   canManageCredentials,
-  networkEditButton,
   onOpenResourceEditor,
+  onOpenNetworkEditor,
 }: ServerTechnikPanelProps) {
   const { t } = useTranslation()
+  const [networkOpen, setNetworkOpen] = useState(false)
+  const [containerCopied, setContainerCopied] = useState(false)
+  const networkTriggerRef = useRef<HTMLButtonElement>(null)
+  const networkPanelId = useId()
 
   const fallbackPorts = [
     { role: 'game', port: server.game_port, protocol: 'udp' },
@@ -73,106 +87,193 @@ export function ServerTechnikPanel({
       : status?.cpu_percent != null
         ? Math.min(100, status.cpu_percent)
         : null
+  const cpuDisplay =
+    status?.cpu_percent != null ? `${status.cpu_percent.toFixed(1)}%` : '—'
   const cpuHint =
-    status?.cpu_percent != null
-      ? `${status.cpu_percent.toFixed(1)}% / ${configuredCpuLimit != null ? `${configuredCpuLimit}%` : '∞'}`
-      : configuredCpuLimit != null
-        ? `— / ${configuredCpuLimit}%`
-        : t('common.unlimited')
+    configuredCpuLimit != null
+      ? t('serverDetail.ofLimit', { limit: `${configuredCpuLimit}%` })
+      : t('common.unlimited')
 
+  const ramDisplay = status?.ram_mb != null ? formatMb(status.ram_mb) : '—'
   const ramHint =
-    status?.ram_mb != null
-      ? `${formatMb(status.ram_mb)} / ${configuredRamLimit != null ? formatMb(configuredRamLimit) : '∞'}`
-      : configuredRamLimit != null
-        ? `— / ${formatMb(configuredRamLimit)}`
-        : t('common.unlimited')
+    configuredRamLimit != null
+      ? t('serverDetail.ofLimit', { limit: formatMb(configuredRamLimit) })
+      : t('common.unlimited')
 
+  const diskDisplay =
+    status?.disk_used_mb != null ? formatMb(status.disk_used_mb) : '—'
   const diskHint =
-    status?.disk_used_mb != null
-      ? `${formatMb(status.disk_used_mb)} / ${configuredDiskLimit != null ? `${configuredDiskLimit} GB` : '∞'}`
-      : configuredDiskLimit != null
-        ? `— / ${configuredDiskLimit} GB`
-        : t('common.unlimited')
+    configuredDiskLimit != null
+      ? t('serverDetail.ofLimit', { limit: `${configuredDiskLimit} GB` })
+      : t('common.unlimited')
+
+  const networkEditDisabled = effectiveStatus === 'running' || !!actionLoading
+  const limitsDisabled = isLifecycleBusy || !!actionLoading
+
+  const handleOpenNetworkEdit = () => {
+    setNetworkOpen(false)
+    onOpenNetworkEditor()
+  }
+
+  const handleCopyContainer = () => {
+    void navigator.clipboard.writeText(`msm-srv-${server.id}`)
+    setContainerCopied(true)
+    toast.success(t('servers.dockerContainerNameCopied'))
+    window.setTimeout(() => setContainerCopied(false), 1800)
+  }
+
+  const limitsButton = (
+    <Button
+      variant="ghost"
+      size="sm"
+      fingerziel
+      onClick={onOpenResourceEditor}
+      disabled={limitsDisabled}
+      aria-description={isLifecycleBusy ? t('serverDetail.resourceEditor.lifecycleBusy') : undefined}
+      className="h-7 px-2.5 text-xs text-on-surface-variant hover:text-primary disabled:opacity-50"
+      data-testid="resource-edit-btn"
+    >
+      <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <span>{t('serverDetail.limitsAction')}</span>
+    </Button>
+  )
+
+  const networkEditButton = (
+    <Button
+      variant="ghost"
+      size="sm"
+      fingerziel
+      onClick={handleOpenNetworkEdit}
+      disabled={networkEditDisabled}
+      aria-description={effectiveStatus === 'running' ? t('servers.networkEditRequiresStopped') : undefined}
+      className={`h-7 px-2.5 text-xs text-on-surface-variant hover:text-primary ${
+        networkEditDisabled ? 'opacity-50 cursor-not-allowed' : ''
+      }`}
+      data-testid="network-edit-btn"
+    >
+      {t('common.edit')}
+    </Button>
+  )
 
   return (
     <div
-      className="border-t border-outline/45 pt-3 space-y-2.5"
+      className="border-t border-outline/40 pt-2.5 space-y-2.5"
       aria-label={t('serverDetail.technikPanel')}
     >
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-        {/* Ressourcen-Balken & Uptime */}
-        <section
-          aria-label={t('serverDetail.resources')}
-          className="lg:col-span-7 min-w-0 rounded-xl border border-outline-variant/40 bg-surface-container/35 px-3 py-2.5 flex flex-col justify-between gap-2"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h2 className="font-label-md text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
-                <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span>{t('serverDetail.resources')}</span>
-              </h2>
-              {effectiveStatus === 'running' ? (
-                <span className="inline-flex items-center gap-1 text-xs text-on-surface-variant">
+      <section aria-label={t('serverDetail.resources')} className="space-y-2.5">
+        {/* Ruhige Kontextzeile links, schneller 1-Klick-Zugriff für Limits & Netzwerk rechts */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-xs text-on-surface-variant">
+            <span className="font-medium text-on-surface">{t('serverDetail.resources')}</span>
+            <span aria-hidden="true" className="text-outline">·</span>
+            <span className="truncate max-w-[14rem]">{gameLabel}</span>
+            {server.node_name ? (
+              <>
+                <span aria-hidden="true" className="text-outline">·</span>
+                <span className="truncate max-w-[11rem]">{server.node_name}</span>
+              </>
+            ) : null}
+            {effectiveStatus === 'running' ? (
+              <>
+                <span aria-hidden="true" className="text-outline">·</span>
+                <span className="inline-flex items-center gap-1">
                   <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
                   <UptimeDisplay server={server} label="" compact />
                 </span>
-              ) : null}
-            </div>
+              </>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1 shrink-0">
             {showResourceEdit && (
-              <Button
-                variant="ghost"
-                size="sm"
-                fingerziel
-                onClick={onOpenResourceEditor}
-                disabled={isLifecycleBusy || !!actionLoading}
-                className="h-7 px-2 text-xs text-on-surface-variant hover:text-primary disabled:opacity-50"
-                data-testid="resource-edit-btn"
-              >
-                {t('common.edit')}
-              </Button>
+              isLifecycleBusy ? (
+                <Kurzinfo text={t('serverDetail.resourceEditor.lifecycleBusy')} seite="ende">
+                  {limitsButton}
+                </Kurzinfo>
+              ) : (
+                limitsButton
+              )
             )}
+
+            <Button
+              ref={networkTriggerRef}
+              type="button"
+              variant="ghost"
+              size="sm"
+              fingerziel
+              onClick={() => setNetworkOpen((current) => !current)}
+              aria-expanded={networkOpen}
+              aria-controls={networkPanelId}
+              data-testid="network-details-trigger"
+              className={`h-7 px-2.5 text-xs ${
+                networkOpen
+                  ? 'bg-surface-container-high text-primary'
+                  : 'text-on-surface-variant hover:text-primary'
+              }`}
+            >
+              <Network className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{t('servers.network')}</span>
+              {!server.public_bind_ip ? (
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-status-warning shrink-0"
+                  aria-hidden="true"
+                />
+              ) : null}
+              <ChevronDown
+                className={`h-3.5 w-3.5 shrink-0 transition-transform ${networkOpen ? 'rotate-180' : ''}`}
+                aria-hidden="true"
+              />
+            </Button>
           </div>
+        </div>
 
-          {showResourceEdit && isLifecycleBusy && (
-            <p className="font-body-md text-xs text-on-surface-variant">
-              {t('serverDetail.resourceEditor.lifecycleBusy')}
-            </p>
-          )}
+        {/* Moderne Auslastungsringe statt alter flacher Balken */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-5">
+          <ProgressRing
+            value={cpuValue}
+            label="CPU"
+            displayValue={cpuDisplay}
+            hint={cpuHint}
+            icon={<Cpu className="h-4 w-4" />}
+            heat
+          />
+          <ProgressRing
+            value={configuredRamLimit != null ? ramUsageOfLimit : null}
+            label="RAM"
+            displayValue={ramDisplay}
+            hint={ramHint}
+            icon={<Database className="h-4 w-4" />}
+            heat
+          />
+          <ProgressRing
+            value={configuredDiskLimit != null ? diskUsageOfLimit : null}
+            label="Disk"
+            displayValue={diskDisplay}
+            hint={diskHint}
+            icon={<HardDrive className="h-4 w-4" />}
+            heat
+          />
+        </div>
+      </section>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
-            <ProgressBar
-              value={cpuValue}
-              label="CPU"
-              hint={cpuHint}
-              heat
-            />
-            <ProgressBar
-              value={configuredRamLimit != null ? ramUsageOfLimit : null}
-              label="RAM"
-              hint={ramHint}
-              heat
-            />
-            <ProgressBar
-              value={configuredDiskLimit != null ? diskUsageOfLimit : null}
-              label="Disk"
-              hint={diskHint}
-              heat
-            />
-          </div>
-        </section>
-
-        {/* Node, Netzwerk, Ports & Container-ID */}
-        <section
-          aria-label={t('servers.network')}
-          className="lg:col-span-5 min-w-0 rounded-xl border border-outline-variant/40 bg-surface-container/35 px-3 py-2.5 flex flex-col justify-between gap-2"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 min-w-0">
-              <h2 className="font-label-md text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5 shrink-0">
-                <Network className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span>{t('servers.network')}</span>
-              </h2>
-              <span className="truncate text-xs text-on-surface-variant">{gameLabel}</span>
+      {/* Netzwerk, Ports & Container sauber im Ankerfenster auf Abruf */}
+      <Ankerfenster
+        offen={networkOpen}
+        onSchliessen={() => setNetworkOpen(false)}
+        anker={networkTriggerRef}
+        label={t('serverDetail.networkSummary')}
+        ausrichtung="ende"
+        maxHoehe="75dvh"
+        durchsichtig
+        className="w-[min(24rem,calc(100vw-2rem))] rounded-2xl border-outline-variant/40 overscroll-contain space-y-3.5"
+      >
+        <section id={networkPanelId} aria-label={t('servers.network')} className="space-y-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-on-surface">
+                {t('serverDetail.networkSummary')}
+              </h3>
+              <p className="text-xs text-on-surface-variant truncate">{gameLabel}</p>
             </div>
             <div className="shrink-0">
               {effectiveStatus === 'running' ? (
@@ -185,64 +286,75 @@ export function ServerTechnikPanel({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1.5 min-w-0">
-            <div className="inline-flex items-baseline gap-1.5 min-w-0">
-              <span className="text-label-sm font-medium uppercase tracking-wider text-on-surface-variant">
-                {t('servers.node')}
-              </span>
-              <span className="text-xs font-medium text-on-surface truncate max-w-[11rem]">
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            <div className="min-w-0">
+              <dt className="text-xs text-on-surface-variant">{t('servers.node')}</dt>
+              <dd className="mt-0.5 text-body-md font-medium text-on-surface truncate">
                 {server.node_name || t('servers.nodeUnknown', { defaultValue: '—' })}
-              </span>
+              </dd>
             </div>
-            <div className="inline-flex items-baseline gap-1.5 min-w-0">
-              <span className="text-label-sm font-medium uppercase tracking-wider text-on-surface-variant">
-                IP
-              </span>
-              <span className="font-headline text-body-md text-primary break-all">
+            <div className="min-w-0">
+              <dt className="text-xs text-on-surface-variant">{t('serverDetail.hostIpLabel')}</dt>
+              <dd className="mt-0.5 font-headline text-body-md text-primary break-all">
                 {server.public_bind_ip || (
                   <span className="text-xs font-body-md text-status-warning">
                     {t('servers.bindIp.unset')}
                   </span>
                 )}
-              </span>
+              </dd>
             </div>
-            {displayPorts.map((p) => (
-              <div key={`${p.role}-${p.protocol}`} className="inline-flex items-baseline gap-1">
-                <span className="text-label-sm uppercase tracking-wider text-on-surface-variant">
-                  {formatPortRoleLabel(p.role, t)}
-                </span>
-                <span className="font-headline text-body-md text-primary">
-                  {p.port ?? '-'}
-                </span>
-                <span className="font-mono text-label-sm text-on-surface-variant">
-                  {p.protocol.toUpperCase()}
-                </span>
-              </div>
-            ))}
-          </div>
+          </dl>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/25 pt-1.5">
+          {displayPorts.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs text-on-surface-variant">{t('serverDetail.exposedPorts')}</p>
+              <ul className="divide-y divide-outline-variant/25 rounded-xl border border-outline-variant/35 bg-surface-container/45">
+                {displayPorts.map((p) => (
+                  <li
+                    key={`${p.role}-${p.protocol}`}
+                    className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                  >
+                    <span className="text-on-surface-variant truncate">
+                      {formatPortRoleLabel(p.role, t)}
+                    </span>
+                    <span className="inline-flex items-baseline gap-2 shrink-0 tabular-nums">
+                      <span className="font-headline text-body-md text-on-surface">
+                        {p.port ?? '-'}
+                      </span>
+                      <span className="text-xs text-on-surface-variant">
+                        {p.protocol.toUpperCase()}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="border-t border-outline-variant/25 pt-2.5 flex items-center justify-between gap-2">
+            <span className="text-xs text-on-surface-variant">
+              {t('servers.dockerContainerLabel')}
+            </span>
             <Kurzinfo text={t('servers.dockerContainerInstallDirHint')} seite="ende">
               <button
                 type="button"
-                className="inline-flex min-h-[44px] md:min-h-[26px] items-center gap-2 rounded-md px-1.5 -mx-1.5 text-left text-on-surface-variant hover:bg-surface-container-high/70 hover:text-on-surface transition-colors"
+                className="inline-flex min-h-[44px] md:min-h-[30px] items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-on-surface hover:bg-surface-container-highest/70 transition-colors"
                 aria-label={t('servers.copyDockerContainerName')}
                 aria-description={t('servers.dockerContainerInstallDirHint')}
-                onClick={() => {
-                  void navigator.clipboard.writeText(`msm-srv-${server.id}`)
-                  toast.success(t('servers.dockerContainerNameCopied'))
-                }}
+                onClick={handleCopyContainer}
               >
-                <span className="font-label-md text-label-sm font-semibold uppercase tracking-wider">
-                  {t('servers.dockerContainerLabel')}
-                </span>
+                <span className="sr-only">{t('servers.dockerContainerLabel')}: </span>
                 <span className="font-mono text-xs text-on-surface">msm-srv-{server.id}</span>
-                <Copy className="h-3 w-3 shrink-0 opacity-70" aria-hidden="true" />
+                {containerCopied ? (
+                  <Check className="h-3.5 w-3.5 shrink-0 text-secondary" aria-hidden="true" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5 shrink-0 text-on-surface-variant" aria-hidden="true" />
+                )}
               </button>
             </Kurzinfo>
           </div>
         </section>
-      </div>
+      </Ankerfenster>
 
       {/* Zugangsdaten (rendert automatisch null, sofern der Blueprint keine benötigt) */}
       <ServerCredentialsPanel serverId={server.id} canManage={canManageCredentials} />

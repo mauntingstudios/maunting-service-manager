@@ -5277,6 +5277,10 @@
     "morePorts": "More ports",
     "noPublicIp": "No host IP set",
     "networkSummary": "Network & ports",
+    "exposedPorts": "Exposed ports",
+    "hostIpLabel": "IP address",
+    "limitsAction": "Limits",
+    "ofLimit": "of {{limit}}",
     "portRoles": {
       "database": "Database port",
       "web": "Web port",
